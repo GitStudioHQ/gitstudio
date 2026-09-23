@@ -122,8 +122,14 @@ gitstudio and exporting again:
 1. **Get the pull request**, into your merge-studio checkout:
 
    ```bash
-   git -C ../merge-studio fetch origin pull/<n>/head:pr-<n>
+   git -C ../merge-studio fetch origin
+   git -C ../merge-studio fetch origin +pull/<n>/head:pr-<n>
    ```
+
+   The first line brings `origin/main` up to date. The import's range starts
+   there, and a stale one takes in commits that are not the contributor's,
+   such as an export merged since you last fetched, which the import refuses.
+   The `+` fetches the pull request again after the contributor pushes to it.
 
    Or as a file: `gh pr diff <n> --repo GitStudioHQ/merge-studio --patch > pr.patch`
    keeps every commit and its author; plain
@@ -172,6 +178,9 @@ gitstudio and exporting again:
      commit that is merge-studio's own export, which a pull request picks up
      by merging main: replaying it could bring back what gitstudio reverted
      since. Import the squashed diff instead, or a range that starts after it.
+     Most often the export is simply on merge-studio's main and your
+     `origin/main` is older than it; the message then says to run
+     `git -C ../merge-studio fetch origin` and import the same range again.
    - *Skipped*: a commit that changes only generated files, or whose changes
      gitstudio already has. The rest of the pull request is still imported.
    - *Could not apply, and nothing of it was changed*: the pull request was

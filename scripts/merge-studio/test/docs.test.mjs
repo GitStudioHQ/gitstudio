@@ -107,6 +107,25 @@ test("every `npm run` in the docs names a script where it runs", () => {
   }
 });
 
+test("a doc that imports a pull request by --range fetches merge-studio's main first", () => {
+  // Run as written against a scratch export, the import refused a pull request
+  // opened after an export was merged: `fetch origin pull/<n>/head:pr-<n>`
+  // leaves origin/main where it was, so origin/main..pr-<n> took in the
+  // export's own commit. The range starts at origin/main, so the doc brings it
+  // up to date before it.
+  for (const doc of DOCS) {
+    const cmds = commandsIn(readFileSync(join(GITSTUDIO_ROOT, doc), "utf8"));
+    const pr = cmds.findIndex((c) => /fetch origin \+?pull\/7\/head:pr-7/.test(c));
+    const range = cmds.findIndex((c) => /import\.mjs .*--range origin\/main\.\.pr-7/.test(c));
+    if (range < 0) continue;
+    assert.ok(pr >= 0 && pr < range, `${doc}: fetches the pull request before importing it`);
+    const main = cmds.findIndex((c) => c === "git -C ../merge-studio fetch origin");
+    assert.ok(main >= 0 && main < pr, `${doc}: fetches merge-studio's main before the range that starts there`);
+    // A contributor who pushes again rewrites their branch; a re-import must still get it.
+    assert.match(cmds[pr], /fetch origin \+pull\//, `${doc}: the pull request's ref is fetched with a +`);
+  }
+});
+
 /** A changelog's first entry: Unreleased for GitStudio and the desktop app, 1.0.0 for Merge Studio. */
 function firstEntry(rel) {
   const text = readFileSync(join(GITSTUDIO_ROOT, rel), "utf8");

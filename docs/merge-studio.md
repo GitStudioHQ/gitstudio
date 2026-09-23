@@ -71,13 +71,18 @@ files, which the export never writes or removes: `release.yml`, `SECURITY.md`,
    merge-studio checked out beside it as `../merge-studio`, on a new branch:
 
    ```bash
-   git -C ../merge-studio fetch origin pull/<n>/head:pr-<n>
+   git -C ../merge-studio fetch origin
+   git -C ../merge-studio fetch origin +pull/<n>/head:pr-<n>
    git switch -c merge-studio/pr-<n>
    node scripts/merge-studio/import.mjs --from ../merge-studio --range origin/main..pr-<n> --pr <n> --dry-run
    node scripts/merge-studio/import.mjs --from ../merge-studio --range origin/main..pr-<n> --pr <n>
    ```
 
-   The dry run shows where every file goes and changes nothing. The import
+   The first fetch brings merge-studio's `origin/main` up to date: the range
+   starts there, and a stale one would take in commits that are not the
+   contributor's, such as an export merged since you last fetched (which the
+   import refuses). The dry run shows where every file goes and changes
+   nothing. The import
    makes one GitStudio commit for each commit of the pull request, with the
    contributor as author and an
    `Imported-from: GitStudioHQ/merge-studio#<n> / <sha>` trailer. It maps

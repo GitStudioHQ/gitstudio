@@ -730,6 +730,47 @@ test("a commit gitstudio already has is skipped; merge-studio's own export, carr
   }
 });
 
+test("a range from a stale origin/main takes in an export merged since: refused, saying to fetch it first; fetched, it imports", () => {
+  // Found running RELEASING.md as written against a scratch export: the pull
+  // request was opened after the export was merged, and the maintainer's
+  // `fetch origin pull/<n>/head:pr-<n>` left origin/main behind it.
+  const gs = scratchGitstudio();
+  const ms = scratchMergeStudio(gs);
+  try {
+    g(ms, "update-ref", "refs/remotes/origin/main", "main"); // what the maintainer last fetched
+    // gitstudio moves on, and is exported and merged on merge-studio's main.
+    const readme = join(gs, "apps/merge-studio/README.md");
+    writeFileSync(readme, `${readFileSync(readme, "utf8")}\nOne more line from gitstudio.\n`);
+    g(gs, "commit", "-qam", "gitstudio moves on");
+    g(ms, "switch", "-q", "main");
+    exportTo({ into: ms, gitstudio: gs });
+    g(ms, "add", "-A");
+    g(ms, "commit", "-qm", "Export again");
+    const exported = g(ms, "rev-parse", "HEAD");
+    // A contributor branches from that main.
+    g(ms, "switch", "-qc", "pr-7");
+    const theirs = contribute(ms, "A link", { "src/links.ts": append("// a link\n") });
+    const head = g(gs, "rev-parse", "HEAD");
+
+    assert.throws(
+      () => importPullRequest({ gitstudio: gs, from: ms, range: "origin/main..pr-7" }),
+      (e) =>
+        e instanceof ImportRefused &&
+        e.message.includes(`VENDORED_FROM.json (${exported.slice(0, 7)}): this commit is merge-studio's export`) &&
+        e.message.includes(`git -C ${ms} fetch origin`) &&
+        /origin\/main is behind/.test(e.message),
+    );
+    assert.equal(g(gs, "rev-parse", "HEAD"), head, "nothing was changed");
+
+    g(ms, "update-ref", "refs/remotes/origin/main", "main"); // git -C <ms> fetch origin
+    const r = importPullRequest({ gitstudio: gs, from: ms, range: "origin/main..pr-7" });
+    assert.deepEqual(r.commits.map((c) => [c.upstream, Boolean(c.sha)]), [[theirs, true]]);
+    assert.deepEqual(r.roundTrip.filter((x) => x.status !== "identical"), []);
+  } finally {
+    cleanup(gs, ms);
+  }
+});
+
 test("a binary conflict says there are no markers, and the printed commands finish it for any author name", () => {
   const gs = scratchGitstudio();
   const ms = scratchMergeStudio(gs);

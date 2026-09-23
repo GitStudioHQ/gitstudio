@@ -554,6 +554,7 @@ export function planImport({ gitstudio, commits, excludes = [] }) {
       unmapped.push({
         commit,
         path: MANIFEST_FILE,
+        carriedExport: true,
         why:
           `this commit is merge-studio's export of gitstudio ${exported.slice(0, 7)} (it moves ${MANIFEST_FILE}'s gitstudio sha), picked up by merging or rebasing on merge-studio's main. ` +
           "Its changes came from gitstudio, and replaying them could bring back what gitstudio has changed or reverted since. " +
@@ -857,8 +858,15 @@ export function importPullRequest({
   const plan = planImport({ gitstudio: top, commits, excludes });
   if (plan.unmapped.length) {
     const lines = plan.unmapped.map((u) => `  ${u.path}${u.commit.sha ? ` (${u.commit.sha.slice(0, 7)})` : ""}: ${u.why}`);
+    // The usual way a range takes in an export: the pull request was opened
+    // after an export was merged, and the local origin/main predates it.
+    const stale =
+      range && plan.unmapped.some((u) => u.carriedExport)
+        ? `If that export is on merge-studio's main, your origin/main is behind it: run \`git -C ${shellQuote(from)} fetch origin\` and import the same range again.\n`
+        : "";
     throw new ImportRefused(
       `import: refused, nothing was changed. ${plan.unmapped.length} path(s) cannot be imported into gitstudio:\n${lines.join("\n")}\n` +
+        stale +
         "Leave a path out on purpose with --exclude <path> (and merge that part in merge-studio directly).",
     );
   }
