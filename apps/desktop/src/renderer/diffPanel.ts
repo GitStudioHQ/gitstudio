@@ -19,7 +19,6 @@ import { bootMonaco } from "./monacoBoot";
 import { host } from "./bridge";
 import { confirmDialog, toast } from "./dialogs";
 import { whileSameRepo } from "./repoEpoch";
-import { resolvedOutsideMerge } from "@gitstudio/engine/conflict/documentText";
 import { el, span, glyph } from "./ui";
 import { didUndoable, registerMergeHistory } from "./undo";
 import {
@@ -29,6 +28,7 @@ import {
   detectJetBrains,
   loadMergeSettings,
   mergePayload,
+  submoduleCommits,
 } from "./mergeParity";
 
 /** What the Changes view does when the merge shell resolves, exits, or moves the operation. */
@@ -634,23 +634,19 @@ export class DiffPanel {
     path.title = model.path;
     title.append(glyph("git-merge"), path);
     bar.append(title);
-    // The Result starts over from the conflict (POLISH A1.2: seeding it from
-    // the file is the merge view's), so a file resolved before it opened —
-    // by hand, or by git rerere — says so where the file is named, and Apply
-    // asks before replacing that resolution.
-    if (resolvedOutsideMerge(model.result, model.base) && (model.shape ?? "text") === "text") {
-      bar.append(
-        span(
-          "Already resolved in the file: no conflict markers are left. The Result below starts from the conflict; Apply asks before replacing your resolution.",
-          "merge-bar-note",
-        ),
-      );
-    }
+    // A file resolved before the editor opened (by hand, or by git rerere) is
+    // said in the merge shell itself: the Result starts from that resolution
+    // (POLISH A1.2), and the shell's strip says so, the same in every host.
     const surface = el("div", "merge-surface");
     wrap.append(bar, surface);
     this.container.replaceChildren(wrap);
 
-    void Promise.all([loadMergeSettings(host.invoke), detectJetBrains(host.invoke)]).then(([settings, ide]) => {
+    void Promise.all([
+      loadMergeSettings(host.invoke),
+      detectJetBrains(host.invoke),
+      // A submodule's panel names its two commits; the model has none.
+      submoduleCommits(host.invoke, model),
+    ]).then(([settings, ide, commits]) => {
       if (gen !== this.mountGen) return;
       let shell: MergeShell | undefined;
       const adapter = new DesktopMergeAdapter(model, {
@@ -673,7 +669,7 @@ export class DiffPanel {
         // refresh-closing-dialogs).
         confirm: (spec) => confirmDialog({ ...spec, holdWhile: whileSameRepo() }),
       });
-      shell = new MergeShell(surface, mergePayload(model, settings, ide), {
+      shell = new MergeShell(surface, mergePayload(model, settings, ide, commits), {
         adapter,
         createView: (container) => new MergeView(container),
         // Outside the merge surface ⌘Z is the app's own undo; inside it, the

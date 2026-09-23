@@ -158,3 +158,32 @@ test("outside a repository the sides come from the markers, with no operation an
   assert.equal(p.source, "markers");
   assert.equal(p.hasBase, true);
 });
+
+test("a submodule's payload names the two commits its sides point at; no other shape reads them", async () => {
+  // The no-text panel says "yours at 1c34b25, theirs at 9d20bed" — the
+  // choice a submodule conflict IS (the payload gains them, in both hosts).
+  const commits = { yours: "1c34b25aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", theirs: "9d20bedbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" };
+  const reads: string[] = [];
+  const reader = (shape: "submodule" | "text") => ({
+    readSides: async (path: string) => ({
+      op: view("rebase"),
+      path,
+      shape,
+      hasBase: true,
+      source: "git-stages" as const,
+      base: "",
+      yours: "",
+      theirs: "",
+    }),
+    conflictFiles: async () => {
+      reads.push(shape);
+      return [{ path: "vendor/lib", commits }, { path: "other", commits: { yours: "x" } }];
+    },
+  });
+  const opts = { fileName: "/r/vendor/lib", workingText: "", autoApplyNonConflicting: false };
+  const sub = await readMergePayload(reader("submodule"), "vendor/lib", opts);
+  assert.deepEqual(sub.commits, commits);
+  const text = await readMergePayload(reader("text"), "vendor/lib", opts);
+  assert.equal(text.commits, undefined);
+  assert.deepEqual(reads, ["submodule"], "only a submodule reads git's facts");
+});

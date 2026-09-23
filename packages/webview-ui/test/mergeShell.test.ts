@@ -113,14 +113,14 @@ test("the strip, the pills and the buttons are named from the operation", { skip
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
-test("with no operation there is no strip, no Continue and no Cancel <operation>", { skip }, async () => {
+test("with no operation there is no strip, no Continue and no link to a conflicts list", { skip }, async () => {
   const v = await run(`
     mount(payload({ op: undefined, oursLabel: "Current change", theirsLabel: "Incoming change" }));
     expect(!shown(".ms-opstrip"), "no strip without an operation");
     expect(!shown(".ms-continue"), "no Continue");
-    click(".ms-cancel");
-    expect(!shown(".ms-pop"), "Cancel does not offer to cancel an operation it does not know");
-    expect(JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "exit" }), "it exits the viewer (" + JSON.stringify(last()) + ")");
+    expect(!$(".ms-op-list"), "nothing to link to");
+    click(".ms-close");
+    expect(JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "exit" }), "Close closes the editor (" + JSON.stringify(last()) + ")");
     expect($(".ms-accept-yours").title.includes("Current change"), "tooltips fall back to the pane labels");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
@@ -143,32 +143,67 @@ test("Accept Yours takes the left side, Accept Theirs the right", { skip }, asyn
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
-test("Cancel asks which: exit the viewer, or cancel the operation after an inline confirm", { skip }, async () => {
+test("Close ONLY closes the merge editor: beside Apply, nothing to abort in the bar, and with work in it it asks first", { skip }, async () => {
+  // The owner, after using it: an explicit Close that leaves the operation
+  // paused and the file as it is — aborting is not reachable from this bar
+  // at all (it lives in the conflicts list, which the strip links to).
   const v = await run(`
-    mount(payload());
-    click(".ms-cancel");
-    expect(shown(".ms-pop"), "Cancel opens its choices");
-    expect(text(".ms-exit") === "Exit viewer", "one is Exit viewer (" + text(".ms-exit") + ")");
-    expect(text(".ms-abort") === "Abort Rebase…", "the other names the operation (" + text(".ms-abort") + ")");
-    expect(posted.length === 0, "opening it posts nothing");
-    click(".ms-exit");
-    expect(JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "exit" }), "Exit viewer posts cancel{exit}");
-    expect(!shown(".ms-pop"), "and closes");
+    const shell = mount(payload());
+    const bar = [...$(".jb-bottom-bar").children].filter((b) => !b.hidden && b.tagName === "BUTTON").map((b) => b.className.match(/ms-[a-z-]+/)?.[0]);
+    expect(text(".ms-close") === "Close", "the button says Close (" + text(".ms-close") + ")");
+    expect(bar.indexOf("ms-close") === bar.indexOf("ms-apply") - 1, "beside Apply (" + bar.join(",") + ")");
+    expect(!$(".ms-cancel") && !$(".ms-abort") && !$(".ms-pop"), "no Cancel, no Abort, no popover anywhere in the bar");
+    expect(/Nothing is written: the rebase stays paused and src\\/app\\.ts keeps its conflict markers/.test($(".ms-close").title), "its tooltip says what it leaves alone (" + $(".ms-close").title + ")");
+    // No work in the editor: it just closes.
+    click(".ms-close");
+    expect(JSON.stringify(posted) === JSON.stringify([{ type: "cancel", mode: "exit" }]), "Close posts cancel{exit}, once (" + JSON.stringify(posted) + ")");
+    // Work in the editor, not applied: it is not kept, so Close asks.
+    fake.setCounts({ total: 2, pending: 1, conflictsPending: 1, hasProgress: true });
+    $(".ms-close").focus();
+    click(".ms-close");
+    expect(posted.length === 1, "the first press with work in it posts nothing");
+    expect(shown(".ms-close-confirm") && /not kept/.test(text(".ms-close-confirm")) && /The rebase stays paused/.test(text(".ms-close-confirm")), "it asks, saying what is lost and what is not (" + text(".ms-close-confirm") + ")");
+    expect(document.activeElement === $(".ms-close-keep"), "the safe answer has the keyboard");
+    click(".ms-close-keep");
+    expect(!shown(".ms-close-confirm") && posted.length === 1 && document.activeElement === $(".ms-close"), "Keep editing posts nothing and hands the keyboard back to Close");
+    click(".ms-close");
+    click(".ms-close-go");
+    expect(posted.length === 2 && JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "exit" }), "Close without applying closes (" + JSON.stringify(last()) + ")");
+    // Once Apply has saved the work, there is nothing to lose.
+    shell.handle({ type: "init", ...payload() });
+    fake.setCounts({ total: 1, pending: 0, conflictsPending: 0, hasProgress: true });
+    click(".ms-apply");
+    shell.handle({ type: "applied", staged: true });
+    click(".ms-close");
+    expect(!shown(".ms-close-confirm") && JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "exit" }), "after Apply, Close just closes");
+    expect(!posted.some((m) => m.type === "cancel" && m.mode === "abort"), "and nothing here ever posts an abort");
+    // Where the operation is ended: the strip links to the conflicts list.
+    expect(shown(".ms-op-list") && text(".ms-op-list") === "All conflicts", "the strip links to the conflicts list (" + text(".ms-op-list") + ")");
+    expect(/Continue Rebase or Abort Rebase/.test($(".ms-op-list").title), "and says what is there (" + $(".ms-op-list").title + ")");
+    click(".ms-op-list");
+    expect(JSON.stringify(last()) === JSON.stringify({ type: "showConflicts" }), "it opens the list (" + JSON.stringify(last()) + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
 
-    click(".ms-cancel");
-    click(".ms-abort");
-    expect(posted.length === 1, "choosing to abort ASKS first — nothing posted yet");
-    expect(/discarded/.test(text(".ms-pop-detail") || ""), "and says what is lost (" + text(".ms-pop-detail") + ")");
-    expect(document.activeElement === $(".ms-abort-keep"), "the safe answer has the keyboard");
-    click(".ms-abort-keep");
-    expect(posted.length === 1 && !shown(".ms-pop"), "Keep resolving posts nothing");
-    click(".ms-cancel");
-    click(".ms-abort");
-    click(".ms-abort-go");
-    expect(JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "abort" }), "confirmed, it posts cancel{abort} (" + JSON.stringify(last()) + ")");
-    expect(posted.length === 2, "exactly once");
-    click(".ms-cancel");
-    expect(!shown(".ms-pop"), "and the shell is locked until the host answers");
+test("Escape is Close — unless a question is open (Escape answers it the safe way) or something inside took the key", { skip }, async () => {
+  const v = await run(`
+    const shell = mount(payload());
+    const esc = (el) => (el || document.activeElement).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    $(".fake-view").focus();
+    esc();
+    expect(JSON.stringify(posted) === JSON.stringify([{ type: "cancel", mode: "exit" }]), "Escape in the editor closes it (" + JSON.stringify(posted) + ")");
+    fake.setCounts({ total: 2, pending: 1, conflictsPending: 1, hasProgress: true });
+    $(".fake-view").focus();
+    esc();
+    expect(posted.length === 1 && shown(".ms-close-confirm"), "with work in it, Escape asks first");
+    esc();
+    expect(!shown(".ms-close-confirm") && posted.length === 1, "and Escape again keeps editing");
+    // A key the editor already handled (its find widget, a selection) is not Close.
+    const claimed = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    $(".fake-view").addEventListener("keydown", (e) => e.preventDefault(), { once: true });
+    $(".fake-view").dispatchEvent(claimed);
+    expect(!shown(".ms-close-confirm") && posted.length === 1, "an Escape something inside claimed does nothing here");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
@@ -259,8 +294,7 @@ test("Continue appears only once the host reports no conflicts left and git woul
     const shell = mount(payload({ op: STASH }));
     shell.handle({ type: "opChanged", op: STASH, remainingConflicts: 0 });
     expect(!shown(".ms-continue"), "a kind with no Continue verb never shows one");
-    click(".ms-cancel");
-    expect(text(".ms-abort") === "Cancel the stash apply…", "and its cancel says what it cancels (" + text(".ms-abort") + ")");
+    expect(/stash apply/.test($(".ms-op-list").title) && !/Continue/.test($(".ms-op-list").title), "its link says what the list holds for it (" + $(".ms-op-list").title + ")");
   `);
   assert.deepEqual(w.fails, [], w.fails.join("\n"));
 });
@@ -406,7 +440,7 @@ test("⌘Z inside the shell drives the merge history once, whichever way it arri
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
-test("in a narrow pane the bottom bar wraps: Apply, its warning, Continue and the Cancel choices stay on screen", { skip }, async () => {
+test("in a narrow pane the bottom bar wraps: Apply, its warning, Continue, Close and its question stay on screen", { skip }, async () => {
   // The desktop gives the shell ONE pane of its window: 443px at a 1000px
   // window, beside the file list. The bar did not wrap, so Apply, the note
   // saying what Apply would save, and Continue were pushed past the pane's
@@ -423,7 +457,7 @@ test("in a narrow pane the bottom bar wraps: Apply, its warning, Continue and th
       const b = n.getBoundingClientRect();
       return b.width > 0 && b.left >= r.left - 1 && b.right <= r.right + 1 ? "" : sel + " at " + Math.round(b.left) + "–" + Math.round(b.right) + " outside " + Math.round(r.left) + "–" + Math.round(r.right);
     };
-    for (const sel of [".ms-accept-yours", ".ms-accept-theirs", ".jb-external", ".ms-cancel", ".ms-apply"]) {
+    for (const sel of [".ms-accept-yours", ".ms-accept-theirs", ".jb-external", ".ms-close", ".ms-apply"]) {
       const why = inside(sel);
       expect(!why, "on screen: " + why);
     }
@@ -431,12 +465,17 @@ test("in a narrow pane the bottom bar wraps: Apply, its warning, Continue and th
     expect(!inside(".ms-apply"), "the armed Apply is on screen: " + inside(".ms-apply"));
     const note = $(".ms-bottom-note");
     expect(!inside(".ms-bottom-note") && note.getBoundingClientRect().width > 120, "and so is what it will save (" + Math.round(note.getBoundingClientRect().width) + "px) " + inside(".ms-bottom-note"));
+    fake.setCounts({ total: 5, pending: 3, conflictsPending: 1, hasProgress: true });
+    click(".ms-close");
+    for (const sel of [".ms-close-confirm", ".ms-close-keep", ".ms-close-go"]) {
+      expect(shown(sel) && !inside(sel), "Close's question is on screen: " + sel + " " + inside(sel));
+    }
+    click(".ms-close-keep");
+    fake.setCounts({ total: 5, pending: 0, conflictsPending: 0 });
     click(".ms-apply");
     shell.handle({ type: "applied", staged: true });
     shell.handle({ type: "opChanged", op: { ...OP, canContinue: true }, remainingConflicts: 0 });
     expect(shown(".ms-continue") && !inside(".ms-continue"), "Continue is on screen: " + inside(".ms-continue"));
-    click(".ms-cancel");
-    expect(shown(".ms-pop") && !inside(".ms-pop"), "the Cancel choices open inside the pane: " + inside(".ms-pop"));
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
@@ -476,14 +515,13 @@ test("answering a question hands the keyboard back to what asked it", { skip }, 
   const v = await run(`
     const shell = mount(payload());
     const focused = () => document.activeElement === document.body ? "BODY" : (document.activeElement.className || document.activeElement.tagName);
-    $(".ms-cancel").focus();
-    click(".ms-cancel");
-    click(".ms-abort");
-    expect(document.activeElement === $(".ms-abort-keep"), "the safe answer has the keyboard");
-    click(".ms-abort-keep");
-    expect(document.activeElement === $(".ms-cancel"), "Keep resolving hands it back to Cancel (" + focused() + ")");
-
     fake.setCounts({ total: 2, pending: 1, conflictsPending: 1, hasProgress: true });
+    $(".ms-close").focus();
+    click(".ms-close");
+    expect(document.activeElement === $(".ms-close-keep"), "the safe answer has the keyboard");
+    click(".ms-close-keep");
+    expect(document.activeElement === $(".ms-close"), "Keep editing hands it back to Close (" + focused() + ")");
+
     const ws = $(".ms-ws");
     ws.focus();
     ws.value = "all"; ws.dispatchEvent(new Event("change"));
@@ -543,28 +581,26 @@ test("focus() puts the keyboard in the merge editor: on Next change, or on the p
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
-test("once the operation is over, Cancel has nothing to end", { skip }, async () => {
+test("once the operation is over, the strip has no conflicts list to point to", { skip }, async () => {
   // A Continue that finished leaves the editor open on a view of kind "none"
-  // — the extensions keep it on screen to show the outcome. Its Cancel still
-  // offered "Cancel the merge…", which runs \`git reset --merge\`: it unstages
-  // whatever is staged, after the operation it was meant to end had ended.
+  // — the extensions keep it on screen to show the outcome. There is nothing
+  // left there to continue or end.
   const v = await run(`
     const shell = mount(payload({ jetbrainsName: "WebStorm" }));
-    const NONE = { kind: "none", title: "", yours: OP.yours, theirs: OP.theirs, verbs: { abort: "Cancel" }, canContinue: false, canSkip: false, episode: "none" };
+    const NONE = { kind: "none", title: "Conflicts", yours: OP.yours, theirs: OP.theirs, verbs: { abort: "Cancel" }, canContinue: false, canSkip: false, episode: "none" };
+    expect(shown(".ms-op-list"), "a rebase in progress links to its list");
     shell.handle({ type: "outcome", kind: "done", text: "Rebase complete." });
     shell.handle({ type: "opChanged", op: NONE, remainingConflicts: 0 });
-    click(".ms-cancel");
-    expect(!shown(".ms-pop"), "no choices: there is no operation left to cancel");
-    expect(JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "exit" }), "Cancel just closes the viewer (" + JSON.stringify(last()) + ")");
+    expect(!$(".ms-op-list"), "none once it is over");
+    click(".ms-close");
+    expect(JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "exit" }), "Close just closes the viewer (" + JSON.stringify(last()) + ")");
     expect(!shown(".jb-external"), "and nothing is left to hand to the IDE");
-    // Unmerged files with no operation around them ARE something to reset.
+    // Unmerged files with no operation around them are still to settle there.
     const bare = mount(payload({ op: NONE }));
-    click(".ms-cancel");
-    expect(shown(".ms-pop") && text(".ms-abort") === "Cancel the merge…", "unmerged files with no operation can still be reset (" + text(".ms-abort") + ")");
     bare.handle({ type: "opChanged", op: NONE, remainingConflicts: 2 });
-    click(".ms-cancel");
-    click(".ms-cancel");
-    expect(shown(".ms-pop"), "…while any are left");
+    expect(shown(".ms-op-list"), "unmerged files with no operation still link to the list");
+    bare.handle({ type: "opChanged", op: NONE, remainingConflicts: 0 });
+    expect(!$(".ms-op-list"), "…while any are left");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
@@ -728,25 +764,21 @@ test("the shell's danger ink is the host's --gs-danger (the desktop's own red, n
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
-test("the sample's Cancel reads Close sample, and the Cancel choices are a named dialog", { skip }, async () => {
+test("the sample's Close reads Close sample; Close's question is announced, and names what it asks", { skip }, async () => {
   const v = await run(`
     const SAMPLE = { ...OP, kind: "none", verbs: { abort: "Close sample" }, episode: "sample", title: "Sample · rebasing" };
     const shell = mount(payload({ op: SAMPLE }));
     shell.handle({ type: "opChanged", op: SAMPLE, remainingConflicts: 0 });
-    expect(text(".ms-cancel") === "Close sample", "the sample's Cancel says what it does (" + text(".ms-cancel") + ")");
-    click(".ms-cancel");
+    expect(text(".ms-close") === "Close sample", "the sample's Close says what it closes (" + text(".ms-close") + ")");
+    expect(!$(".ms-op-list"), "and it has no conflicts list to point to");
+    click(".ms-close");
     expect(JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "exit" }), "and closes it");
     mount(payload());
-    expect(text(".ms-cancel") === "Cancel", "a real operation's Cancel still says Cancel (" + text(".ms-cancel") + ")");
-    click(".ms-cancel");
-    const pop = $(".ms-pop");
-    const nameOf = () => {
-      const by = pop.getAttribute("aria-labelledby");
-      return pop.getAttribute("aria-label") || (by && document.getElementById(by) ? document.getElementById(by).textContent : "");
-    };
-    expect(shown(".ms-pop") && pop.getAttribute("role") === "dialog" && !!nameOf(), "the Cancel choices have an accessible name (" + nameOf() + ")");
-    click(".ms-abort");
-    expect(/abort|end|rebase/i.test(nameOf()), "the abort confirm is named by its question (" + nameOf() + ")");
+    expect(text(".ms-close") === "Close", "a real operation's reads Close (" + text(".ms-close") + ")");
+    fake.setCounts({ total: 2, pending: 1, conflictsPending: 1, hasProgress: true });
+    click(".ms-close");
+    const box = $(".ms-close-confirm");
+    expect(box && box.getAttribute("role") === "alert" && /Close without applying\\?/.test(box.textContent), "the question is announced, in its own words (" + (box && box.getAttribute("role")) + ")");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });

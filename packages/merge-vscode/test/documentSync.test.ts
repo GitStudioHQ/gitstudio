@@ -37,12 +37,14 @@ interface Rig {
   notes: { kind: string; text: string; actions: string[] }[];
   saved: string[];
   answer: { value: boolean };
+  restored: string[];
 }
 
 function rig(working: string): Rig {
   const asked: string[] = [];
   const notes: { kind: string; text: string; actions: string[] }[] = [];
   const saved: string[] = [];
+  const restored: string[] = [];
   const answer = { value: false };
   const repo = {
     root: "/r",
@@ -59,6 +61,10 @@ function rig(working: string): Rig {
           theirs: THEIRS,
         }),
         noteChoice: () => {},
+        restore: async (path: string) => {
+          restored.push(path);
+          return { ok: true, changed: true };
+        },
       },
       conflict: { isConflicted: async () => true },
       operation: {
@@ -81,6 +87,7 @@ function rig(working: string): Rig {
       displayName: "GitStudio",
       settingsSection: "test.merge",
       viewTypes: { mergeEditor: "test.mergeEditor", diffView: "test.diff", conflicts: "test.conflicts" },
+      commands: { showConflicts: "test.showConflicts" },
       locator,
       ask: async (spec: { title: string }) => {
         asked.push(spec.title);
@@ -123,8 +130,11 @@ function rig(working: string): Rig {
       text = next;
     },
   } as unknown as vscode.TextDocument & { set(text: string): void };
-  return { provider: new MergeEditorProvider(host, noIde), document, asked, notes, saved, answer };
+  return { provider: new MergeEditorProvider(host, noIde), document, asked, notes, saved, answer, restored };
 }
+
+/** Every message the page was sent, by type. */
+const postedTypes = () => stub.panels[0].posted.map((m) => (m as HostMessage).type);
 
 async function open(r: Rig): Promise<void> {
   const panel = vscode.window.createWebviewPanel("test.mergeEditor", "app.txt", vscode.ViewColumn.Active, {});
@@ -163,14 +173,28 @@ test("A1.1: opening the editor (a Result that settles nothing) leaves the docume
   assert.equal(stub.applied.length, 0, "no edit, so the file is not dirty and autosave has nothing to write");
 });
 
-test("A1.2: a file already resolved by hand is not written over by a Result that starts from the conflict", async () => {
+test("A1.2: a file already resolved by hand is not written over before Apply; an Apply that keeps it asks nothing, one that changes it asks", async () => {
   const hand = L("a", "B1 by hand", "c", "d", "E2 by hand", "f");
   const r = rig(hand);
   await open(r);
-  assert.ok(r.notes.some((n) => n.kind === "warn" && /already resolved/.test(n.text)), "the user is told once");
+  // The Result starts FROM the resolution (the view seeds it) and says so in
+  // place: no toast over the editor.
+  assert.ok(!r.notes.some((n) => /already resolved/.test(n.text)), "no toast: the editor says it in place");
   stub.panels[0].receive({ type: "resultChanged", text: L("a", "B1-yours", "c", "d", "e2", "f") });
   await settle();
   assert.equal(stub.applied.length, 0, "the resolution in the file stays");
+  // "Apply with N unresolved" over the seeded Result writes the file's own
+  // resolution back — never base — and there is nothing to replace, so nothing to ask.
+  stub.panels[0].receive({ type: "apply", text: hand });
+  await settle();
+  assert.deepEqual(r.asked, [], "writing the resolution back asks nothing");
+  assert.deepEqual(r.saved, [hand], "and saves it as it was");
+});
+
+test("A1.2: an Apply that REPLACES a resolution made by hand asks first, and No writes nothing", async () => {
+  const hand = L("a", "B1 by hand", "c", "d", "E2 by hand", "f");
+  const r = rig(hand);
+  await open(r);
   r.answer.value = false;
   stub.panels[0].receive({ type: "apply", text: L("a", "B1-yours", "c", "d", "E2-theirs", "f") });
   await settle();
@@ -179,6 +203,24 @@ test("A1.2: a file already resolved by hand is not written over by a Result that
   const outcome = stub.panels[0].posted.find((m) => (m as HostMessage).type === "outcome") as Extract<HostMessage, { type: "outcome" }>;
   assert.equal(outcome?.kind, "failed");
   assert.match(outcome.text, /keeps the resolution/);
+});
+
+test("A1.1: a conflict with only ONE side in stays marked in the file — the page's `unsettled` text, not the Result, is what the document follows", async () => {
+  // Accept Yours on B1, Theirs still to decide: the Result holds Yours' line,
+  // which reads exactly like a conflict settled as Yours — and was written
+  // to the file that way, markers gone, one click after opening.
+  const r = rig(GIT_FILE);
+  await open(r);
+  stub.panels[0].receive({ type: "resultChanged", text: L("a", "B1-yours", "c", "d", "e2", "f"), unsettled: BASE });
+  await settle();
+  const written = stub.applied.length ? lastWrite(r) : r.document.getText();
+  assert.equal(markerBlocks(written!), 2, "both conflicts are still marked in the file (" + written + ")");
+  // Theirs set aside too: now it is settled, and written as settled.
+  stub.panels[0].receive({ type: "resultChanged", text: L("a", "B1-yours", "c", "d", "e2", "f") });
+  await settle();
+  const settled = lastWrite(r);
+  assert.equal(markerBlocks(settled!), 1, "the settled one is written as settled, the other still marked");
+  assert.match(settled!, /^a\nB1-yours\nc\n/);
 });
 
 test("A1.2: a file resolved PARTLY by hand keeps that resolution when the editor writes the rest", async () => {
@@ -208,28 +250,89 @@ test("A1.2: a file resolved PARTLY by hand keeps that resolution when the editor
   assert.equal(lastWrite(r), L("a", "B1-theirs", "c", "d", "E2-theirs", "f"));
 });
 
-test("A1.3: an edit made outside the merge editor is not written over without asking — and No keeps it", async () => {
+test("A1.3: an edit made outside the merge editor is asked about IN the editor (no dialog), and nothing is written until it is answered — Keep", async () => {
   const r = rig(GIT_FILE);
   await open(r);
   // Another tab types into the same file.
   r.document.set(GIT_FILE.replace("f\n", "f\ntyped elsewhere\n"));
   stub.onDidChangeTextDocument.fire({ document: r.document, contentChanges: [{ text: "typed elsewhere" }] });
-  r.answer.value = false;
+  await settle();
+  assert.equal(postedTypes().filter((t) => t === "fileChanged").length, 1, "the page is told, inline");
+  assert.deepEqual(r.asked, [], "no modal question over the editor");
+  // Until it is answered, nothing reaches the document…
   stub.panels[0].receive({ type: "resultChanged", text: L("a", "B1-yours", "c", "d", "e2", "f") });
   await settle();
-  assert.deepEqual(r.asked, ["app.txt changed outside the merge editor"]);
-  assert.equal(stub.applied.length, 0, "kept");
+  assert.equal(stub.applied.length, 0, "nothing written while the question is open");
   assert.match(r.document.getText(), /typed elsewhere/);
-  // Kept means the editor stops writing, without asking on every click...
-  stub.panels[0].receive({ type: "resultChanged", text: L("a", "B1-theirs", "c", "d", "e2", "f") });
-  await settle();
-  assert.equal(r.asked.length, 1);
-  assert.equal(stub.applied.length, 0);
-  // ...until Apply, which asks again.
+  // …not even an Apply from an older page that did not hold Apply back.
   stub.panels[0].receive({ type: "apply", text: L("a", "B1-theirs", "c", "d", "E2-yours", "f") });
   await settle();
-  assert.equal(r.asked.length, 2);
-  assert.equal(r.saved.length, 0);
+  assert.equal(r.saved.length, 0, "no Apply over an unanswered question");
+  // A second outside edit does not ask twice.
+  r.document.set(r.document.getText() + "more\n");
+  stub.onDidChangeTextDocument.fire({ document: r.document, contentChanges: [{ text: "more" }] });
+  await settle();
+  assert.equal(postedTypes().filter((t) => t === "fileChanged").length, 1, "asked once");
+  // Keep what's here: the editor stops writing…
+  stub.panels[0].receive({ type: "outsideEdit", answer: "keep" });
+  await settle();
+  stub.panels[0].receive({ type: "resultChanged", text: L("a", "B1-theirs", "c", "d", "e2", "f") });
+  await settle();
+  assert.equal(stub.applied.length, 0, "kept: the editor leaves the file alone");
+  assert.deepEqual(r.asked, []);
+  // …until Apply, which the page said replaces it.
+  stub.panels[0].receive({ type: "apply", text: L("a", "B1-theirs", "c", "d", "E2-yours", "f") });
+  await settle();
+  assert.equal(r.saved.length, 1, "Apply writes the Result");
+});
+
+test("A1.3: Reload the merge starts over from the file as it is now, and the editor writes again", async () => {
+  const r = rig(GIT_FILE);
+  await open(r);
+  const edited = GIT_FILE.replace("f\n", "f\ntyped elsewhere\n");
+  r.document.set(edited);
+  stub.onDidChangeTextDocument.fire({ document: r.document, contentChanges: [{ text: "typed elsewhere" }] });
+  await settle();
+  const inits = () => stub.panels[0].posted.filter((m) => (m as HostMessage).type === "init") as Extract<HostMessage, { type: "init" }>[];
+  assert.equal(inits().length, 1);
+  stub.panels[0].receive({ type: "outsideEdit", answer: "reload" });
+  await settle();
+  assert.equal(inits().length, 2, "a fresh init");
+  assert.equal(inits()[1].result, edited, "from the file as it is now");
+  stub.panels[0].receive({ type: "resultChanged", text: L("a", "B1-yours", "c", "d", "e2", "f") });
+  await settle();
+  assert.ok(stub.applied.length > 0, "and the editor follows the Result again");
+});
+
+test("after an Apply the page offers Undo in place: `applied{undoable}`, and undoApply brings the conflict back", async () => {
+  const r = rig(GIT_FILE);
+  await open(r);
+  stub.panels[0].receive({ type: "apply", text: L("a", "B1-yours", "c", "d", "E2-theirs", "f") });
+  await settle();
+  const applied = stub.panels[0].posted.find((m) => (m as HostMessage).type === "applied") as Extract<HostMessage, { type: "applied" }>;
+  assert.equal(applied?.staged, true);
+  assert.equal(applied?.undoable, true, "the page may offer Undo");
+  assert.equal(stub.messages.length, 0, "no toast carries it");
+  stub.panels[0].receive({ type: "undoApply" });
+  await settle();
+  assert.deepEqual(r.restored, ["app.txt"], "the conflict is brought back");
+  assert.equal(postedTypes().filter((t) => t === "init").length, 2, "and the editor shows it again");
+  // Only once.
+  stub.panels[0].receive({ type: "undoApply" });
+  await settle();
+  assert.deepEqual(r.restored, ["app.txt"], "a second Undo has nothing to undo");
+  const last = stub.panels[0].posted[stub.panels[0].posted.length - 1] as Extract<HostMessage, { type: "outcome" }>;
+  assert.equal(last.type, "outcome");
+  assert.equal(last.kind, "failed");
+});
+
+test("the strip's conflicts list opens the dashboard", async () => {
+  const r = rig(GIT_FILE);
+  await open(r);
+  stub.panels[0].receive({ type: "showConflicts" });
+  await settle();
+  assert.deepEqual(stub.commands.map((c) => c[0]), ["test.showConflicts"]);
+  assert.equal(stub.panels[0].disposed, false, "the editor stays");
 });
 
 test("A1.3: the editor's own writes, and VS Code reloading the file git left, are not someone else's edit", async () => {
@@ -252,9 +355,9 @@ test("Apply in the merge editor raises no toast over its own Apply / Continue co
   await settle();
   assert.equal(r.saved.length, 1, "applied");
   assert.deepEqual(
-    r.notes.filter((n) => /saved and staged/.test(n.text)).map((n) => [n.kind, n.actions.length]),
-    [["info", 0]],
-    "said once, as a status-bar line (an info with no action — an Undo button made it a toast)",
+    r.notes.filter((n) => n.actions.length > 0 || n.kind !== "info").map((n) => [n.kind, n.text]),
+    [],
+    "no toast and no Undo button over the editor (the editor says it in place, with Undo beside Apply)",
   );
   assert.equal(stub.messages.length, 0, "no notification toast");
 });

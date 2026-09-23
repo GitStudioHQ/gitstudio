@@ -24,7 +24,10 @@
      that word is mixed toward the foreground so it clears AA on both grounds. */
   --ms-yours: var(--vscode-charts-blue, #3794ff);
   --ms-theirs: var(--vscode-charts-purple, #b180d7);
-  --ms-danger: var(--vscode-errorForeground, #f14c4c);
+  /* The host's own danger ink (tokens.css): VS Code's error colour mixed
+     toward the foreground so it clears AA on a light ground too, and the
+     desktop's red where the desktop defines it. */
+  --ms-danger: var(--gs-danger);
   --ms-warn: var(--vscode-editorWarning-foreground, var(--gs-amber));
   --ms-ok: var(--gs-status-added);
   /* Secondary text, a step toward the foreground. The theme's own muted ink
@@ -47,6 +50,8 @@
 .codicon-trash::before { content: "\ea81"; }
 .codicon-file-binary::before { content: "\eae8"; }
 .codicon-diff-removed::before { content: "\eadf"; }
+.codicon-new-file::before { content: "\ea7f"; }
+.codicon-file-symlink-file::before { content: "\eaee"; }
 .codicon-git-commit::before { content: "\eafc"; }
 .codicon-git-merge::before { content: "\eafe"; }
 .codicon-debug-pause::before { content: "\ead1"; }
@@ -143,6 +148,24 @@
   color: var(--gs-fg);
 }
 .ms-op-note { font-style: italic; }
+/* Where the whole operation is continued or ended: the conflicts list. A
+   quiet link at the strip's end, never a second Abort. */
+.ms-op-list {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: var(--gs-radius);
+  background: transparent;
+  color: var(--vscode-textLink-foreground, var(--gs-fg));
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ms-op-list:hover { color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground, var(--gs-fg))); }
+.ms-op-list:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 
 /* ── Outcome line and notices ─────────────────────────────────────────────── */
 .ms-outcome,
@@ -158,8 +181,14 @@
   border-bottom: 1px solid var(--vscode-panel-border, var(--gs-border));
 }
 .ms-notices { display: flex; flex-direction: column; flex: 0 0 auto; }
+.ms-notice { flex-wrap: wrap; row-gap: 4px; }
 .ms-notice.is-warn .codicon,
 .ms-outcome.is-stopped .codicon { color: var(--ms-warn); }
+/* The file changed outside the editor, asked inline (A1.3). */
+.ms-notice.ms-note-outside.is-warn {
+  background: color-mix(in srgb, var(--ms-warn) 12%, var(--vscode-editor-background, transparent));
+}
+.ms-note-outside .jb-toolbar-btn { height: 24px; }
 .ms-notice.is-info .codicon { color: var(--ms-muted); }
 .ms-outcome.is-done { background: color-mix(in srgb, var(--ms-ok) 10%, transparent); }
 .ms-outcome.is-done .codicon { color: var(--ms-ok); }
@@ -207,7 +236,7 @@
 .ms-legend-slot { flex: 0 0 auto; }
 .ms-legend-slot:empty { display: none; }
 
-/* ── Bottom bar status and the Cancel popover ─────────────────────────────── */
+/* ── Bottom bar status and its inline questions ───────────────────────────── */
 .ms-bottom-note {
   display: inline-flex;
   align-items: center;
@@ -223,41 +252,14 @@
 .ms-bottom-note > .ms-confirm-text { white-space: normal; }
 .ms-bottom-note.is-warn > .jb-svg .codicon { color: var(--ms-warn); }
 .ms-bottom-note.is-info > .jb-svg .codicon { color: var(--ms-muted); }
-.ms-bottom-note.ms-drop-confirm {
+.ms-bottom-note.ms-drop-confirm,
+.ms-bottom-note.ms-close-confirm {
+  flex-wrap: wrap;
+  row-gap: 4px;
   padding: 3px 6px;
   border-radius: var(--gs-radius);
   background: color-mix(in srgb, var(--ms-warn) 12%, transparent);
 }
-.ms-cancel-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
-.ms-pop {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
-  z-index: 1000; /* above Monaco's widgets, like the history popover */
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  width: 300px;
-  padding: 10px;
-  border-radius: var(--gs-radius);
-  border: 1px solid var(--vscode-editorWidget-border, var(--gs-border));
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  color: var(--gs-fg);
-  box-shadow: 0 6px 20px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.35));
-  font-family: var(--gs-font-ui);
-  font-size: var(--gs-text-secondary);
-  white-space: normal;
-}
-/* Never wider than the shell it opens in; mergeShell's placeCancelPop slides
-   it along the bar until it fits. */
-.ms-shell .ms-pop { max-width: calc(100cqw - 16px); }
-.ms-pop .jb-toolbar-btn { justify-content: flex-start; height: 28px; }
-.ms-pop-hint,
-.ms-pop-detail { color: var(--ms-muted); line-height: 1.45; }
-.ms-pop-question { font-weight: var(--gs-weight-emphasis); }
-.ms-pop-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
-.ms-pop-actions .jb-toolbar-btn { justify-content: center; }
 
 .jb-toolbar-btn.ms-continue { gap: 6px; }
 
@@ -322,6 +324,13 @@
 }
 @container ms-shell (max-width: 1180px) {
   .jb-toolbar .jb-toolbar-label { display: none; }
+}
+/* The wand's words go before anything wraps: its icon keeps the toolbar's own
+   wand, and its tooltip and accessible name keep the words. */
+.ms-wand { gap: 5px; }
+@container ms-shell (max-width: 1150px) {
+  .jb-toolbar .ms-wand .ms-wand-label { display: none; }
+  .jb-toolbar .jb-toolbar-btn.ms-wand { width: 26px; padding: 0; justify-content: center; }
 }
 
 /* The bottom bar WRAPS rather than push its last buttons out of the pane. In

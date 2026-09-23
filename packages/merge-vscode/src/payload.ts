@@ -24,6 +24,13 @@ import type { ConflictType, MergeInitPayload } from "@gitstudio/host-bridge/prot
 /** The one read the payload is built from (ConflictOps in production, a fake in tests). */
 export interface SidesReader {
   readSides(path: string, opts?: ReadSidesOptions): Promise<MergeSides>;
+  /**
+   * git's facts for every unmerged path — read only for a submodule, whose
+   * panel names the two commits its sides point at (`commits`).
+   */
+  conflictFiles?(opts?: { op?: OperationView; signal?: AbortSignal }): Promise<
+    ReadonlyArray<{ path: string; commits?: { yours?: string; theirs?: string } }>
+  >;
 }
 
 export interface PayloadInput {
@@ -92,7 +99,19 @@ export async function readMergePayload(
     op: opts.op,
     signal: opts.signal,
   });
-  return buildMergePayload(sides, input);
+  const payload = buildMergePayload(sides, input);
+  // A submodule's choice is between two commits: the panel names them
+  // ("yours at 1c34b25, theirs at 9d20bed"). A read that fails names none.
+  if (sides.shape === "submodule" && reader.conflictFiles) {
+    try {
+      const facts = await reader.conflictFiles({ op: sides.op, signal: opts.signal });
+      const commits = facts.find((f) => f.path === rel)?.commits;
+      if (commits) payload.commits = commits;
+    } catch {
+      // the panel says it without the shas
+    }
+  }
+  return payload;
 }
 
 /**

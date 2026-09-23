@@ -157,13 +157,18 @@ export class MergeSession {
       } else if (staged.message) {
         d.notify("warn", staged.message);
       }
-      d.post({ type: "applied", staged: staged.staged, message: staged.message });
+      // What an Undo must find unchanged is read BEFORE `applied` goes out,
+      // so the page can offer the Undo in place, beside Apply.
+      const token =
+        staged.staged && resolving && d.offerUndo
+          ? await this.undoToken(await d.git.operation.view().catch(() => undefined))
+          : undefined;
+      d.post({ type: "applied", staged: staged.staged, message: staged.message, ...(token ? { undoable: true } : {}) });
       d.changed?.();
-      const op = await this.postOpChanged();
+      await this.postOpChanged();
       if (!staged.staged) {
         return;
       }
-      const token = resolving && d.offerUndo ? await this.undoToken(op) : undefined;
       if (token && d.offerUndo) {
         d.offerUndo("resolved file saved and staged.", () => this.undoApply(token));
       } else {
@@ -222,12 +227,16 @@ export class MergeSession {
       const refusal = await this.undoRefusal(token);
       if (refusal) {
         d.notify("info", refusal);
+        // The page's own Undo waits for an answer: say it there too.
+        d.post({ type: "outcome", kind: "failed", text: capitalise(refusal) });
         return;
       }
     }
     const result = await d.git.conflictOps.restore(d.rel);
     if (!result.ok) {
-      d.notify(result.expected ? "warn" : "error", result.message ?? "couldn't restore the conflict.");
+      const message = result.message ?? "couldn't restore the conflict.";
+      d.notify(result.expected ? "warn" : "error", message);
+      d.post({ type: "outcome", kind: "failed", text: capitalise(message) });
       return;
     }
     d.changed?.();

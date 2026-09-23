@@ -164,13 +164,18 @@ export type WebviewMessage =
   | { type: "resultChanged"; text: string; unsettled?: string }
   | { type: "apply"; text: string }
   /**
-   * Close the merge editor without applying (the dialog's Cancel button).
-   * S0 `mode`: "exit" (the default when absent) closes the viewer and keeps
-   * the conflict in the file — the host's exit guard stops it re-opening;
-   * "abort" cancels the whole operation (OperationProvider.abort), posted only
-   * after the shell's own inline confirm — hosts never ask again.
+   * Close the merge editor without applying (the bottom bar's Close, or
+   * Escape). S0 `mode`: "exit" (the default when absent) ONLY closes the
+   * editor: nothing is written, the operation stays paused and the file keeps
+   * its markers — no save prompt that could write half a merge, and the
+   * host's exit guard stops automatic routing sending it straight back.
+   * "abort" cancels the whole operation (OperationProvider.abort); the shell
+   * no longer sends it (ending the operation lives in the conflicts list),
+   * and hosts keep answering it for older pages.
    */
   | { type: "cancel"; mode?: "exit" | "abort" }
+  /** Open the conflicts list (dashboard): every conflicted file, and Continue / Abort. */
+  | { type: "showConflicts" }
   // Hand this conflict to the real JetBrains merge window and close the panel.
   | { type: "openInJetBrains" }
   /**

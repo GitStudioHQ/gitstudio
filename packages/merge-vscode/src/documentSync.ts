@@ -11,12 +11,12 @@
 //    `git add` or a later Continue staged half a merge. The engine's
 //    markUnsettled writes the open ones as diff3 markers instead.
 // 2. A file that was already resolved when the editor opened — by hand, or by
-//    git rerere, so no markers are left — is not overwritten by the Result,
-//    which starts over from the conflict. Only an Apply the user confirms
-//    replaces it.
+//    git rerere, so no markers are left — is not overwritten before Apply.
+//    The Result starts from that resolution (the view seeds it), and only an
+//    Apply that changes it asks first.
 // 3. An edit made outside the merge editor (a text tab on the same file, a
 //    formatter, a checkout in the terminal) is not written over silently: the
-//    next write asks first.
+//    editor asks, inline, and writes nothing until it is answered.
 
 import {
   hasConflictMarkers,
@@ -114,9 +114,16 @@ export class ResultMirror {
     return out.text;
   }
 
-  /** An Apply is about to write the plain Result over the file (rule 2 asks first). */
-  appliedOverResolution(): boolean {
-    return this.preserve;
+  /**
+   * An Apply is about to write `text` over a file that was already resolved
+   * when the editor opened (rule 2 asks first). The Result starts FROM that
+   * resolution (the view seeds it, POLISH A1.2), so an Apply that writes it
+   * back unchanged replaces nothing and asks nothing.
+   */
+  appliedOverResolution(text?: string): boolean {
+    if (!this.preserve) return false;
+    const was = this.payload?.result;
+    return text === undefined || was === undefined || normalizeEol(text) !== normalizeEol(was);
   }
 
   /**
