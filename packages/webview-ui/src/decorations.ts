@@ -55,18 +55,23 @@ export interface DecorationOptions {
 /**
  * Applies the JetBrains-style merge decorations, by colour CATEGORY
  * (PLAN §3.6). JetBrains' rules for WHAT is resolved (TextMergeChange,
- * ThreesideMergeHighlighters): each side of a change is resolved on its own —
- * applied or ignored — and the change (so its result lines) only when both
- * are. Only a side that changed is highlighted at all.
+ * ThreesideMergeHighlighters, DiffViewerHighlighters): each side of a change
+ * is resolved on its own — applied or ignored — and the change (so its result
+ * lines) only when both are. Only a side that changed is highlighted at all.
+ * What each state LOOKS like is ours, calmer than JetBrains' dotted frames:
  *
  * - pending: the tone's line tint (`jb-line-<tone>`, the line-number margin
  *   included, so the band runs uninterrupted across the pane), word tints when
  *   granularity allows, a POINT_PX line for an insertion/deletion point
  *   (`jb-point`), and `jb-frame` edge lines that only high contrast themes
  *   draw (solid, 1px, on the band's first and last pixel row);
- * - handled side, resolved block: calm — NO fill, a faint 1px line on the
- *   band's first and last pixel row (`jb-done`), the same rows the ribbons
- *   draw theirs on;
+ * - half done — a conflict with one side taken or ignored and the other still
+ *   to decide: the handled side is calm (no fill, a faint 1px line on its
+ *   band's first and last row, `jb-done`); the RESULT drops to a tint under
+ *   half strength (`jb-half`) between the same faint lines — no longer the
+ *   open question, not settled either; the pending side keeps its full band;
+ * - resolved: nothing in the side panes, and in the result one neutral faint
+ *   line top and bottom (`jb-settled`) — done, and quiet;
  * - whitespace-only: line tint only, never a word tint, plus a dotted left
  *   edge (`jb-ws`).
  *
@@ -94,24 +99,30 @@ export class DecorationManager {
       const tone = blockTone(block);
       const cat = category(block);
       const resolved = options.isResolved?.(block) ?? false;
+      const sideDone = (side: Side): boolean =>
+        !!(side === "left" ? block.left : block.right) && (options.isSideDone?.(block, side) ?? false);
+      // A side of its own is in while the change is not: half done.
+      const half = !resolved && (sideDone("left") || sideDone("right"));
 
       const span = options.resultSpanOf?.(block) ?? block.baseSpan;
-      if (!resolved) {
-        pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, palette && {
-          color: palette[tone],
-          // A thin mark in the right lane: findable from the scrollbar,
-          // never a block beside the text.
-          position: monaco.editor.OverviewRulerLane.Right,
-        });
-        if (showInner && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
-          // Word ranges are in BASE coordinates; the result is base while the
-          // block is untouched, but blocks above may have changed height.
-          const shift = span.start - block.baseSpan.start;
-          pushInner(result, block.left?.innerBase, tone, shift);
-          pushInner(result, block.right?.innerBase, tone, shift);
-        }
-      } else {
-        pushDone(result, this.editors.result, span, tone, cat);
+      if (resolved) {
+        // Settled: one neutral faint line in the result, nothing in the side
+        // panes — and nothing across the gutters (ribbons.ts).
+        pushSettled(result, this.editors.result, span, cat);
+        continue;
+      }
+      pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, palette && {
+        color: palette[tone],
+        // A thin mark in the right lane: findable from the scrollbar,
+        // never a block beside the text.
+        position: monaco.editor.OverviewRulerLane.Right,
+      }, half);
+      if (showInner && !half && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
+        // Word ranges are in BASE coordinates; the result is base while the
+        // block is untouched, but blocks above may have changed height.
+        const shift = span.start - block.baseSpan.start;
+        pushInner(result, block.left?.innerBase, tone, shift);
+        pushInner(result, block.right?.innerBase, tone, shift);
       }
       for (const [side, editor, target] of [
         ["left", this.editors.left, left],
@@ -125,7 +136,7 @@ export class DecorationManager {
         // lines — which is what accepting it writes, and what the ribbons and
         // the alignment spacers measure.
         const region = sideBlockSpan(block, side);
-        if (resolved || (options.isSideDone?.(block, side) ?? false)) {
+        if (sideDone(side)) {
           pushDone(target, editor, region, tone, cat);
           continue;
         }
@@ -272,7 +283,9 @@ function pushPoint(
 /**
  * A pending block's region in one pane: the tint, and the edge lines a high
  * contrast theme draws. An empty region (an insertion or deletion point) is a
- * point line instead.
+ * point line instead. `half`: the result of a conflict with one side in — the
+ * tint under half strength (`jb-half`), between the handled side's faint
+ * lines; the ribbon of its pending side still meets it on the same rows.
  */
 function pushPending(
   target: Deco[],
@@ -282,30 +295,49 @@ function pushPending(
   cat: MergeCategory,
   whitespaceOnly: boolean,
   ruler?: monaco.editor.IModelDecorationOverviewRulerOptions,
+  half = false,
 ): void {
   if (isEmptySpan(span)) {
     pushPoint(target, editor, span, `jb-point-${tone}`, cat, ruler);
     return;
   }
   const last = span.endExclusive - 1;
+  const halfClass = half ? " jb-half" : "";
   target.push({
     range: new monaco.Range(span.start, 1, last, 1),
     options: {
       isWholeLine: true,
-      className: `jb-line-${tone} jb-cat-${cat}${whitespaceOnly ? " jb-ws" : ""}`,
+      className: `jb-line-${tone}${halfClass} jb-cat-${cat}${whitespaceOnly ? " jb-ws" : ""}`,
       // Tint the line-number margin too, like IntelliJ, so the change
       // band runs uninterrupted across the pane.
-      marginClassName: `jb-line-${tone}`,
+      marginClassName: `jb-line-${tone}${halfClass}`,
       overviewRuler: ruler,
     },
   });
+  if (half) {
+    pushEdges(target, span, `jb-done jb-done-${tone}`, cat);
+    return;
+  }
   pushEdges(target, span, `jb-frame jb-frame-${tone}`);
 }
 
 /**
- * A handled side or a resolved block: calm. No fill — a faint 1px line on the
- * region's first and last pixel row; an empty region keeps its point line,
- * faint.
+ * A resolved change, in the result: one neutral faint line on its first and
+ * last pixel row (an empty region: a faint point line). It is settled and
+ * says so without a colour of its own.
+ */
+function pushSettled(target: Deco[], editor: Editor, span: LineSpan, cat: MergeCategory): void {
+  if (isEmptySpan(span)) {
+    pushPoint(target, editor, span, "jb-settled", cat);
+    return;
+  }
+  pushEdges(target, span, "jb-settled", cat);
+}
+
+/**
+ * A handled side while the other side of its conflict is still to decide:
+ * calm. No fill — a faint 1px line on the region's first and last pixel row;
+ * an empty region keeps its point line, faint.
  */
 function pushDone(
   target: Deco[],

@@ -29,7 +29,7 @@ import { computeAlignmentZones, type Spacer } from "@gitstudio/engine/alignment"
 import { RibbonOverlay, lineTopY, scheduleFrame } from "./ribbons";
 import { lineDocOf, planLineWrite } from "./lineEdits";
 import { LARGE_FILE_LINE_THRESHOLD } from "./limits";
-import { MergeLegend } from "./mergeLegend";
+import { MergeLegend, type LegendDetail } from "./mergeLegend";
 import {
   emptyCategoryCounts,
   emptyMergeCounts,
@@ -131,8 +131,11 @@ const SIDE_PANE_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
  * by what the change did). Every change is one continuous band — side pane,
  * filled ribbon, result — and its controls are the ones JetBrains and VS Code
  * users already know: an arrow toward the result to accept a side, × to
- * ignore it, each with its action in words. A handled side and a resolved
- * block go calm (no fill, a faint outline on the same rows).
+ * ignore it, each with its action in words. Once one side of a conflict is in,
+ * that side goes calm (a faint outline on the same rows), the result drops to a
+ * paler tint between the same lines, and only the side still to decide keeps
+ * its full band; a resolved change leaves the side panes and gutters, and the
+ * result keeps one neutral faint line for it.
  */
 export class MergeView implements MergeViewApi {
   private editors: Editor[] = [];
@@ -272,10 +275,10 @@ export class MergeView implements MergeViewApi {
    */
   public attachLegend(slot: HTMLElement): void {
     if (!this.legend) {
-      this.legend = new MergeLegend((cat) => this.goToNextChange(cat));
+      this.legend = new MergeLegend((cats) => this.navigate(1, cats));
     }
     slot.appendChild(this.legend.element);
-    this.legend.update(this.lastCounts);
+    this.legend.update(this.lastCounts, this.legendDetail());
   }
 
   private build(payload: MergeInitPayload): void {
@@ -933,19 +936,20 @@ export class MergeView implements MergeViewApi {
    * With a category, only pending blocks of that category (a legend chip).
    */
   public goToNextChange(cat?: MergeCategory): void {
-    this.navigate(1, cat);
+    this.navigate(1, cat ? [cat] : undefined);
   }
 
   public goToPrevChange(cat?: MergeCategory): void {
-    this.navigate(-1, cat);
+    this.navigate(-1, cat ? [cat] : undefined);
   }
 
-  private navigate(direction: 1 | -1, cat?: MergeCategory): void {
+  /** With categories, only pending blocks of those (a legend item may name two). */
+  private navigate(direction: 1 | -1, cats?: readonly MergeCategory[]): void {
     if (!this.model || !this.result) {
       return;
     }
     const pending = this.model.blocks.filter(
-      (b) => !this.isResolved(b) && (!cat || category(b) === cat),
+      (b) => !this.isResolved(b) && (!cats || cats.includes(category(b))),
     );
     if (pending.length === 0) {
       return;
@@ -1116,7 +1120,8 @@ export class MergeView implements MergeViewApi {
    * result, or ignore. That holds for every category, a change made the same
    * on both sides included (either side accepts it, like JetBrains). Once one
    * side of a conflict is in, the other side's arrow stays an arrow and says
-   * what it now does: "Add Theirs after Yours". A handled side has none.
+   * what it now does — "Add Theirs after Yours" — and its × says "Discard
+   * Theirs: keep Yours as the result". A handled side has none.
    */
   private rebuildButtons(): void {
     if (
@@ -1220,9 +1225,11 @@ export class MergeView implements MergeViewApi {
     const ordinal = this.ordinalText(block);
     // The other side of this conflict is already in the result: this one is
     // ADDED after it. The control stays the same arrow (JetBrains bends it);
-    // its words say what it now does.
-    const addAfter =
-      cat === "conflict" && (this.blockState.get(block.id)?.applied ?? false);
+    // its words say what it now does. And its × no longer "ignores" in the
+    // abstract: it discards this side, and the result is settled as it is.
+    const state = this.blockState.get(block.id);
+    const addAfter = cat === "conflict" && (state?.applied ?? false);
+    const otherIn = cat === "conflict" && this.halfDone(block) !== undefined;
 
     const acceptWords = addAfter ? `Add ${who} after ${other}` : `Accept ${who} for ${what}`;
     const accept = this.makeButton(
@@ -1239,11 +1246,15 @@ export class MergeView implements MergeViewApi {
       },
     );
 
-    const ignoreWords = `Ignore ${who} for ${what}`;
+    const ignoreWords = otherIn
+      ? addAfter
+        ? `Discard ${who}: keep ${other} as the result`
+        : `Discard ${who} too: the result keeps what it has`
+      : `Ignore ${who} for ${what}`;
     const ignore = this.makeButton(
       "jb-gutter-btn jb-btn-ignore",
       cross,
-      `${ignoreWords}\nThe result keeps what it has`,
+      otherIn ? ignoreWords : `${ignoreWords}\nThe result keeps what it has`,
       `${ignoreWords}${ordinal}`,
       () => this.ignoreSide(block, side),
     );
@@ -1290,8 +1301,36 @@ export class MergeView implements MergeViewApi {
       hasProgress: this.hasProgress(),
     };
     this.lastCounts = counts;
-    this.legend?.update(counts);
+    this.legend?.update(counts, this.legendDetail());
     this.onCountsChanged?.(counts);
+  }
+
+  /**
+   * The pending conflicts with one side in (taken or ignored) and the other
+   * still to decide — JetBrains: that side is resolved, the change is not.
+   * The legend says it in words ("Yours taken, Theirs to decide").
+   */
+  private legendDetail(): LegendDetail {
+    const halfDone: LegendDetail["halfDone"] = [];
+    for (const block of this.model?.blocks ?? []) {
+      const half = this.halfDone(block);
+      if (half) {
+        halfDone.push(half);
+      }
+    }
+    return { halfDone };
+  }
+
+  /** Which side of a pending block is in, when exactly one of its own sides is. */
+  private halfDone(block: ChangeBlock): LegendDetail["halfDone"][number] | undefined {
+    const state = this.blockState.get(block.id);
+    if (!state || !block.left || !block.right || this.isResolved(block)) {
+      return undefined;
+    }
+    if (state.doneLeft === state.doneRight) {
+      return undefined;
+    }
+    return { done: state.doneLeft ? "yours" : "theirs", taken: state.applied };
   }
 
   /** Whether anything differs from the baseline (text, or any block's state). */

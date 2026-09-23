@@ -76,36 +76,52 @@ const BEND_RADIUS = 7;
 export interface RibbonOptions {
   /** Current result-pane span for a block (defaults to its base span). */
   resultSpanOf?: (block: ChangeBlock) => LineSpan;
-  /** Fully resolved blocks keep only a faint outline, never a fill. */
+  /** A fully resolved block draws nothing across the gutters. */
   isResolved?: (block: ChangeBlock) => boolean;
-  /** A handled (applied or ignored) side keeps only a faint outline, never a fill. */
+  /** A handled (applied or ignored) side of a pending block keeps only a faint outline, never a fill. */
   isSideDone?: (block: ChangeBlock, side: Side) => boolean;
 }
 
-/** A gutter's horizontal extent on the stage, snapped to device pixels. */
+/** A gutter's horizontal extent on the stage, snapped as its box is painted. */
 interface GutterRange {
   left: number;
   right: number;
 }
 
-/** A band's [top, bottom] on the stage, snapped to device pixels. */
+/** A band's [top, bottom] on the stage, snapped as the pane's boxes are painted. */
 type Band = [number, number];
 
 /**
  * Stage geometry. Every coordinate a ribbon uses is a CLIENT coordinate
- * rounded to the device-pixel grid, less the stage's own (rounded) origin —
- * because that is where the browser paints the pane's line highlights: a box
- * at a fractional position is snapped to whole device pixels, while an SVG
- * edge at the same fractional position is antialiased across two rows. Both
- * rounded the same way, every band edge in a pane, its ribbon and the result
- * sits on the same device row (scripts/merge-e2e/alignment.ts measures it).
+ * rounded the way the browser snaps the boxes it is drawn against, less the
+ * stage's own snapped origin — because that is where the browser paints the
+ * pane's line highlights, the gutters' borders and the stage itself. Measured
+ * (headless Chrome at 1x, 1.5x and 2x): a box — and an SVG root — at a
+ * fractional position is snapped to whole CSS pixels (half up), and only then
+ * scaled to the screen. So an edge at 490.66 is painted at 491 (982 device
+ * rows at 2x), and a ribbon rounded to DEVICE pixels ended at 981: one device
+ * column short of the pane, which is how the gutter's border came to show
+ * through every band. Snapped the same way, every band edge in a pane, its
+ * ribbon and the result sits on the same row (scripts/merge-e2e/alignment.ts
+ * measures it, pixels included).
+ *
+ * A browser that snaps to device pixels instead agrees wherever the panes
+ * sit on whole CSS pixels at a whole scale — rows always do (Monaco's lines
+ * are whole pixels) — and where it does not, the OVERLAP covers it: each ribbon
+ * end reaches two device pixels into its pane (see bandGeometry).
+ *
+ * Line widths are the panes' own CSS widths, from the same snapped edge: a 1px
+ * border at 1.5x is one and a half device rows (the second antialiased), and a
+ * 1px stroke drawn inside the band from that edge covers the same rows.
  */
 class Frame {
-  private readonly dpr = window.devicePixelRatio || 1;
+  readonly dpr = window.devicePixelRatio || 1;
   readonly originX: number;
   readonly originY: number;
   readonly width: number;
   readonly height: number;
+  /** How far a ribbon end reaches into its pane: two device pixels, in CSS px. */
+  readonly overlap: number;
 
   constructor(stage: SVGSVGElement) {
     const rect = stage.getBoundingClientRect();
@@ -113,10 +129,25 @@ class Frame {
     this.originY = this.snap(rect.top);
     this.width = rect.width;
     this.height = rect.height;
+    this.overlap = 2 / this.dpr;
   }
 
   snap(v: number): number {
-    return Math.round(v * this.dpr) / this.dpr;
+    return Math.round(v);
+  }
+
+  /**
+   * Where a ribbon's ends stop inside the panes, left and right of `gutter`:
+   * at least `overlap` beyond each edge, on a whole DEVICE pixel — that end is
+   * the one vertical edge a band has there, and a band end on a fraction of a
+   * pixel is antialiased twice (its base, then its tint), which left a
+   * one-pixel-dark column inside the pane's band at 1.25x.
+   */
+  reach(gutter: GutterRange): { left: number; right: number } {
+    const d = this.dpr;
+    const left = Math.floor((this.originX + gutter.left - this.overlap) * d + 1e-6) / d - this.originX;
+    const right = Math.ceil((this.originX + gutter.right + this.overlap) * d - 1e-6) / d - this.originX;
+    return { left, right };
   }
 
   gutter(el: HTMLElement): GutterRange {
@@ -148,12 +179,14 @@ class Frame {
  *
  * A PENDING side is one continuous band: its line tint in the side pane, a
  * polygon FILLED with the same tint across the gutter, and the tint in the
- * result — every edge on the same device row (see Frame). A HANDLED side
- * (applied or ignored), and every side of a resolved block, is calm: no fill,
- * only a faint 1px top and bottom line inside the band's own rows, the same
- * rows the panes draw theirs on. High contrast themes add a solid 1px edge on
- * those rows to pending bands too (the `jb-ribbon-frame` paths; diff.css shows
- * them only there).
+ * result — every edge on the same row (see Frame), and each end two
+ * device pixels INTO the pane it meets, so no column of the gutter's border
+ * can show between them at any zoom. A HANDLED side of a conflict whose other
+ * side is still pending is calm: no fill, only a faint line on the band's own
+ * first and last rows — the rows the panes draw theirs on. A RESOLVED change
+ * draws nothing across the gutters at all: it is done, and the result alone
+ * keeps a faint line for it. High contrast themes add a solid edge to pending
+ * bands too (the `jb-ribbon-frame` paths; diff.css shows them only there).
  */
 export class RibbonOverlay {
   private readonly svg: SVGSVGElement;
@@ -207,9 +240,15 @@ export class RibbonOverlay {
     const stripA: IconStrip = { side: "a", width: MERGE_ICON_STRIP };
     const stripB: IconStrip = { side: "b", width: MERGE_ICON_STRIP };
 
+    // A pane's edge line is a 1px border (diff.css).
+    const line = 1;
+
     for (const block of model.blocks) {
+      if (this.options.isResolved?.(block) ?? false) {
+        // Settled: nothing across the gutters (the result keeps a faint line).
+        continue;
+      }
       const tone = blockTone(block);
-      const resolved = this.options.isResolved?.(block) ?? false;
       const resultSpan = this.options.resultSpanOf?.(block) ?? block.baseSpan;
       const result = frame.band(this.editors.result, resultSpan, lineHeight);
 
@@ -222,22 +261,23 @@ export class RibbonOverlay {
         }
         const editor = side === "left" ? this.editors.left : this.editors.right;
         const region = frame.band(editor, sideBlockSpan(block, side), lineHeight);
-        const done = resolved || (this.options.isSideDone?.(block, side) ?? false);
+        const done = this.options.isSideDone?.(block, side) ?? false;
         const [gutter, a, b, strip] =
           side === "left"
             ? [gutterA, region, result, stripA]
             : [gutterB, result, region, stripB];
-        const geometry = bandGeometry(gutter, frame.height, a, b, strip);
+        const geometry = bandGeometry(gutter, frame.height, a, b, frame.reach(gutter), strip);
         if (!geometry) {
           continue;
         }
         const data = { block: String(block.id), side, tone, state: done ? "done" : "pending" };
         if (done) {
-          appendEdges(this.svg, geometry, `jb-ribbon-done jb-ribbon-done-${tone}`, data);
+          appendEdges(this.svg, geometry, "jb-ribbon-line-base", data, line);
+          appendEdges(this.svg, geometry, `jb-ribbon-done jb-ribbon-done-${tone}`, data, line);
         } else {
           appendBand(this.svg, geometry, "jb-ribbon-base", data);
           appendBand(this.svg, geometry, `jb-ribbon jb-ribbon-${tone}`, data);
-          appendEdges(this.svg, geometry, `jb-ribbon-frame jb-ribbon-frame-${tone}`, data);
+          appendEdges(this.svg, geometry, `jb-ribbon-frame jb-ribbon-frame-${tone}`, data, line);
         }
       }
     }
@@ -300,7 +340,7 @@ export class DiffRibbonOverlay {
     for (const block of model.blocks) {
       const left = frame.band(this.editors.left, block.leftSpan, lineHeight);
       const right = frame.band(this.editors.right, block.rightSpan, lineHeight);
-      const geometry = bandGeometry(gutter, frame.height, left, right, {
+      const geometry = bandGeometry(gutter, frame.height, left, right, frame.reach(gutter), {
         side: "a",
         width: DIFF_ICON_STRIP,
       });
@@ -368,14 +408,20 @@ interface BandGeometry {
  * wholly off-screen. `a` meets the gutter's left edge (the pane before it), `b`
  * its right edge. With an icon strip, the band stays RECTANGULAR across the
  * strip — the gutter action icons live there, inside the colour — and only
- * slants toward the other pane in the remaining width. Both runs start and end
- * EXACTLY on the band edges of the panes they join.
+ * slants toward the other pane in the remaining width. Both runs meet the
+ * panes EXACTLY on their band edges, and then carry on flat for `overlap` (two
+ * device pixels) into each pane: wherever the browser starts the pane's band
+ * — on the CSS pixel the snap chose, or on a device pixel either side of it —
+ * the gutter's border column in between is covered, never a hairline across
+ * the band. Over the pane's band the overlap paints the very same colour
+ * (base + tint), so it cannot show.
  */
 function bandGeometry(
   gutter: GutterRange,
   height: number,
   a: Band,
   b: Band,
+  reach: { left: number; right: number },
   strip?: IconStrip,
 ): BandGeometry | undefined {
   const [aTop, aBottom] = a;
@@ -388,21 +434,16 @@ function bandGeometry(
   const width = x1 - x0;
   // Degrade to a plain trapezoid when the gutter is too narrow for a slant.
   const stripWidth = strip ? Math.min(strip.width, width - 8) : 0;
-  const top: Array<[number, number]> = [];
-  const bottom: Array<[number, number]> = [];
-  if (strip && stripWidth > 0 && strip.side === "a") {
-    top.push([x0, aTop], [x0 + stripWidth, aTop], [x1, bTop]);
-    bottom.push([x0, aBottom], [x0 + stripWidth, aBottom], [x1, bBottom]);
-  } else if (strip && stripWidth > 0 && strip.side === "b") {
-    top.push([x0, aTop], [x1 - stripWidth, bTop], [x1, bTop]);
-    bottom.push([x0, aBottom], [x1 - stripWidth, bBottom], [x1, bBottom]);
-  } else {
-    top.push([x0, aTop], [x1, bTop]);
-    bottom.push([x0, aBottom], [x1, bBottom]);
-  }
+  const run = (ya: number, yb: number): Array<[number, number]> => {
+    const pts: Array<[number, number]> = [[reach.left, ya], [x0, ya]];
+    if (strip && stripWidth > 0 && strip.side === "a") pts.push([x0 + stripWidth, ya]);
+    else if (strip && stripWidth > 0 && strip.side === "b") pts.push([x1 - stripWidth, yb]);
+    pts.push([x1, yb], [reach.right, yb]);
+    return pts;
+  };
   // The corners at the gutter edges stay sharp: they sit flush against the
   // panes' line highlights.
-  return { top, bottom, roundable: (x) => x > x0 + 0.5 && x < x1 - 0.5 };
+  return { top: run(aTop, bTop), bottom: run(aBottom, bBottom), roundable: (x) => x > x0 + 0.5 && x < x1 - 0.5 };
 }
 
 type PathData = Record<string, string>;
@@ -414,19 +455,22 @@ function appendBand(target: SVGElement, g: BandGeometry, className: string, data
 }
 
 /**
- * A band's top and bottom edge lines, 1px, INSIDE the band: the top line on
- * its first pixel row, the bottom line on its last — the rows a pane's
- * `border-top` / `border-bottom` occupy on the band's first and last line.
+ * A band's top and bottom edge lines, `width` thick (a pane border's width in
+ * whole device pixels), INSIDE the band: the top line on its first rows, the
+ * bottom line on its last — the rows a pane's `border-top` / `border-bottom`
+ * occupy on the band's first and last line.
  */
-function appendEdges(target: SVGElement, g: BandGeometry, className: string, data: PathData): void {
-  appendPath(target, roundedPath(g.top, 0.5, g.roundable), className, { ...data, edge: "top" });
-  appendPath(target, roundedPath(g.bottom, -0.5, g.roundable), className, { ...data, edge: "bottom" });
+function appendEdges(target: SVGElement, g: BandGeometry, className: string, data: PathData, width: number): void {
+  const style = `stroke-width:${fmt(width)}px`;
+  appendPath(target, roundedPath(g.top, width / 2, g.roundable), className, { ...data, edge: "top" }, style);
+  appendPath(target, roundedPath(g.bottom, -width / 2, g.roundable), className, { ...data, edge: "bottom" }, style);
 }
 
-function appendPath(target: SVGElement, d: string, className: string, data: PathData): void {
+function appendPath(target: SVGElement, d: string, className: string, data: PathData, style?: string): void {
   const path = document.createElementNS(SVG_NS, "path");
   path.setAttribute("d", d);
   path.setAttribute("class", className);
+  if (style) path.setAttribute("style", style);
   for (const [key, value] of Object.entries(data)) {
     path.setAttribute(`data-${key}`, value);
   }

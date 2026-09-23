@@ -9,9 +9,20 @@
  *          change reads as one continuous band;
  * - inner: the changed characters, a step stronger, drawn over the line tint;
  * - edge:  solid, >= 3:1 on the background — insertion/deletion point lines,
- *          high-contrast frames, legend swatch borders;
- * - done:  the faint 1px outline a handled side / resolved block keeps;
+ *          high-contrast frames, the legend's colour dots;
+ * - done:  the faint 1px outline a handled SIDE keeps while the other side of
+ *          its conflict is still to decide (that outline carries information:
+ *          this half is in);
+ * - half:  the result of a conflict with one side taken and the other still to
+ *          decide — the tint at under half strength, between its done lines;
  * - ruler: the overview-ruler mark, at reduced strength.
+ * And one neutral colour, --jb-settled: the faint line a RESOLVED change keeps
+ * in the result only — no colour of its own, nothing across the gutters.
+ *
+ * The dark conflict red is as quiet as the rules below allow: it stood ΔE 21.9
+ * off Dark+'s background (the owner: maroon dominated a page of conflicts),
+ * and now 17.3 — any lighter and red and green, or red and violet, run
+ * together under deuteranopia or protanopia.
  *
  * Measured, not eyeballed (packages/webview-ui/test/mergeContrast.test.ts):
  * editor text on every line tint and every word tint >= 4.5:1 in VS Code
@@ -62,39 +73,47 @@
 
 /* ── Change colour tokens ──────────────────────────────────────────────────── */
 :root {
-  --jb-line-conflict: rgba(255,90,95,.30);   --jb-inner-conflict: rgba(255,90,95,.16);   --jb-edge-conflict: #f0686a;
-  --jb-line-same:     rgba(140,100,250,.16); --jb-inner-same:     rgba(140,100,250,.20); --jb-edge-same:     #a086f7;
+  --jb-line-conflict: rgba(240,105,100,.24); --jb-inner-conflict: rgba(240,105,100,.14); --jb-edge-conflict: #f0686a;
+  --jb-line-same:     rgba(140,100,250,.18); --jb-inner-same:     rgba(140,100,250,.22); --jb-edge-same:     #a086f7;
   --jb-line-modified: rgba(40,150,245,.28);  --jb-inner-modified: rgba(40,150,245,.18);  --jb-edge-modified: #4a9ff5;
-  --jb-line-inserted: rgba(80,180,40,.16);   --jb-inner-inserted: rgba(80,180,40,.18);   --jb-edge-inserted: #62b34a;
+  --jb-line-inserted: rgba(80,180,40,.14);   --jb-inner-inserted: rgba(80,180,40,.16);   --jb-edge-inserted: #62b34a;
   --jb-line-deleted:  rgba(139,148,158,.22); --jb-inner-deleted:  rgba(139,148,158,.20); --jb-edge-deleted:  #8b949e;
-  --jb-done-conflict: rgba(240,104,106,.5);  --jb-ruler-conflict: rgba(240,104,106,.6);
-  --jb-done-same:     rgba(160,134,247,.5);  --jb-ruler-same:     rgba(160,134,247,.6);
-  --jb-done-modified: rgba(74,159,245,.5);   --jb-ruler-modified: rgba(74,159,245,.6);
-  --jb-done-inserted: rgba(98,179,74,.5);    --jb-ruler-inserted: rgba(98,179,74,.6);
-  --jb-done-deleted:  rgba(139,148,158,.5);  --jb-ruler-deleted:  rgba(139,148,158,.6);
+  --jb-done-conflict: rgba(240,104,106,.5);  --jb-ruler-conflict: rgba(240,104,106,.6);  --jb-half-conflict: rgba(240,105,100,.10);
+  --jb-done-same:     rgba(160,134,247,.5);  --jb-ruler-same:     rgba(160,134,247,.6);  --jb-half-same:     rgba(140,100,250,.07);
+  --jb-done-modified: rgba(74,159,245,.5);   --jb-ruler-modified: rgba(74,159,245,.6);   --jb-half-modified: rgba(40,150,245,.10);
+  --jb-done-inserted: rgba(98,179,74,.5);    --jb-ruler-inserted: rgba(98,179,74,.6);    --jb-half-inserted: rgba(80,180,40,.07);
+  --jb-done-deleted:  rgba(139,148,158,.5);  --jb-ruler-deleted:  rgba(139,148,158,.6);  --jb-half-deleted:  rgba(139,148,158,.09);
+  --jb-settled: rgba(204,204,204,.24);
 }
 body.vscode-light, body.vscode-high-contrast-light {
-  --jb-line-conflict: rgba(235,72,72,.34);   --jb-inner-conflict: rgba(235,72,72,.18);   --jb-edge-conflict: #cf222e;
+  --jb-line-conflict: rgba(240,75,70,.30);   --jb-inner-conflict: rgba(240,75,70,.16);   --jb-edge-conflict: #cf222e;
   --jb-line-same:     rgba(160,90,250,.16);  --jb-inner-same:     rgba(160,90,250,.20);  --jb-edge-same:     #8250df;
   --jb-line-modified: rgba(64,128,255,.28);  --jb-inner-modified: rgba(64,128,255,.18);  --jb-edge-modified: #0969da;
   --jb-line-inserted: rgba(80,180,40,.16);   --jb-inner-inserted: rgba(80,180,40,.20);   --jb-edge-inserted: #1a7f37;
   --jb-line-deleted:  rgba(110,118,129,.26); --jb-inner-deleted:  rgba(110,118,129,.26); --jb-edge-deleted:  #59636e;
-  --jb-done-conflict: rgba(207,34,46,.45);   --jb-ruler-conflict: rgba(207,34,46,.55);
-  --jb-done-same:     rgba(130,80,223,.45);  --jb-ruler-same:     rgba(130,80,223,.55);
-  --jb-done-modified: rgba(9,105,218,.45);   --jb-ruler-modified: rgba(9,105,218,.55);
-  --jb-done-inserted: rgba(26,127,55,.45);   --jb-ruler-inserted: rgba(26,127,55,.55);
-  --jb-done-deleted:  rgba(89,99,110,.45);   --jb-ruler-deleted:  rgba(89,99,110,.55);
+  --jb-done-conflict: rgba(207,34,46,.45);   --jb-ruler-conflict: rgba(207,34,46,.55);   --jb-half-conflict: rgba(240,75,70,.10);
+  --jb-done-same:     rgba(130,80,223,.45);  --jb-ruler-same:     rgba(130,80,223,.55);  --jb-half-same:     rgba(160,90,250,.07);
+  --jb-done-modified: rgba(9,105,218,.45);   --jb-ruler-modified: rgba(9,105,218,.55);   --jb-half-modified: rgba(64,128,255,.10);
+  --jb-done-inserted: rgba(26,127,55,.45);   --jb-ruler-inserted: rgba(26,127,55,.55);   --jb-half-inserted: rgba(80,180,40,.07);
+  --jb-done-deleted:  rgba(89,99,110,.45);   --jb-ruler-deleted:  rgba(89,99,110,.55);   --jb-half-deleted:  rgba(110,118,129,.10);
+  --jb-settled: rgba(0,0,0,.17);
 }
 
 /* ── Bands ─────────────────────────────────────────────────────────────────────
  * Whole-line tints (Monaco isWholeLine decorations, content AND line-number
  * margin). Each tone class also names its edge / done colour as `--jb-e`, for
  * the edge lines below. */
-.jb-line-inserted { background-color: var(--jb-line-inserted); --jb-tone-edge: var(--jb-edge-inserted); }
-.jb-line-deleted { background-color: var(--jb-line-deleted); --jb-tone-edge: var(--jb-edge-deleted); }
-.jb-line-modified { background-color: var(--jb-line-modified); --jb-tone-edge: var(--jb-edge-modified); }
-.jb-line-same { background-color: var(--jb-line-same); --jb-tone-edge: var(--jb-edge-same); }
-.jb-line-conflict { background-color: var(--jb-line-conflict); --jb-tone-edge: var(--jb-edge-conflict); }
+.jb-line-inserted { background-color: var(--jb-line-inserted); --jb-tone-edge: var(--jb-edge-inserted); --jb-tone-half: var(--jb-half-inserted); }
+.jb-line-deleted { background-color: var(--jb-line-deleted); --jb-tone-edge: var(--jb-edge-deleted); --jb-tone-half: var(--jb-half-deleted); }
+.jb-line-modified { background-color: var(--jb-line-modified); --jb-tone-edge: var(--jb-edge-modified); --jb-tone-half: var(--jb-half-modified); }
+.jb-line-same { background-color: var(--jb-line-same); --jb-tone-edge: var(--jb-edge-same); --jb-tone-half: var(--jb-half-same); }
+.jb-line-conflict { background-color: var(--jb-line-conflict); --jb-tone-edge: var(--jb-edge-conflict); --jb-tone-half: var(--jb-half-conflict); }
+/* A conflict with one side taken (or ignored) and the other still to decide:
+ * its result is no longer the open question it was — the tint drops to under
+ * half strength, between the done lines of the side that is in. Only the
+ * pending half, in its own pane and across its own gutter, stays at full
+ * strength. (Two classes, so it outranks the tone's own tint.) */
+.jb-half.jb-half { background-color: var(--jb-tone-half); }
 
 .jb-frame-inserted, .jb-point-inserted { --jb-e: var(--jb-edge-inserted); }
 .jb-frame-deleted, .jb-point-deleted { --jb-e: var(--jb-edge-deleted); }
@@ -118,13 +137,17 @@ body.vscode-light, body.vscode-high-contrast-light {
  * bottom one on its last (a line decoration keeps its height; the border is
  * inside it) — the very rows the ribbon draws its own edges on (ribbons.ts
  * appendEdges), so pane and gutter meet on the same device pixel.
- * - handled side / resolved block (`jb-done`): calm, no fill, a faint 1px line;
+ * - a handled side while its conflict's other side is pending (`jb-done`),
+ *   and that conflict's half-strength result: calm, a faint 1px line;
+ * - a resolved change (`jb-settled`): in the result only, one neutral faint
+ *   line — no colour of its own, nothing in the side panes or the gutters;
  * - pending band in HIGH CONTRAST only (`jb-frame`): a solid 1px line, so a
  *   change's extent never rests on a tint alone. */
-.jb-done, .jb-frame, .jb-point { box-sizing: border-box; }
-.jb-done { background: none; }
-.jb-done.jb-edge-top { border-top: 1px solid var(--jb-e); }
-.jb-done.jb-edge-bottom { border-bottom: 1px solid var(--jb-e); }
+.jb-done, .jb-frame, .jb-point, .jb-settled { box-sizing: border-box; }
+.jb-done, .jb-settled { background: none; }
+.jb-settled { --jb-e: var(--jb-settled); }
+.jb-done.jb-edge-top, .jb-settled.jb-edge-top { border-top: 1px solid var(--jb-e); }
+.jb-done.jb-edge-bottom, .jb-settled.jb-edge-bottom { border-bottom: 1px solid var(--jb-e); }
 body.vscode-high-contrast .jb-frame.jb-edge-top { border-top: 1px solid var(--jb-e); }
 body.vscode-high-contrast .jb-frame.jb-edge-bottom { border-bottom: 1px solid var(--jb-e); }
 
@@ -161,26 +184,34 @@ body.vscode-high-contrast .jb-frame.jb-edge-bottom { border-bottom: 1px solid va
   z-index: 1;
 }
 /* A pending band across a gutter: FILLED with the line tint it connects, no
- * outline — the polygon is the band's continuation, not a frame around it. */
+ * outline — the polygon is the band's continuation, not a frame around it.
+ * Each end reaches one device pixel into the pane it meets (ribbons.ts), so
+ * no column of the gutter's border can show between the two at any zoom. */
 .jb-ribbon { stroke: none; }
 /* Under each band, the same polygon in the editor background: the tint is
  * translucent, and without it the gutter's 1px border lines show through as
  * seams across the band. With it, the band's colour in the gutter is exactly
- * its colour in the panes (tint over editor background). */
+ * its colour in the panes (tint over editor background) — which is also why
+ * the pixel it lays over the pane's own band changes nothing there. */
 .jb-ribbon-base { stroke: none; fill: var(--vscode-editor-background); }
 .jb-ribbon-inserted { fill: var(--jb-line-inserted); }
 .jb-ribbon-deleted { fill: var(--jb-line-deleted); }
 .jb-ribbon-modified { fill: var(--jb-line-modified); }
 .jb-ribbon-same { fill: var(--jb-line-same); }
 .jb-ribbon-conflict { fill: var(--jb-line-conflict); }
-/* Its edges, high contrast only; and a handled side's faint outline. */
+/* Its edges, high contrast only; and a handled side's faint outline. The
+ * stroke WIDTH is set per path (ribbons.ts) to the pane's own 1px border,
+ * drawn inside the band from the same snapped edge — so at any zoom it covers
+ * the rows that border covers. Under a translucent outline, the same line in
+ * the editor background, for the same reason as the band's base. */
 .jb-ribbon-frame,
-.jb-ribbon-done {
+.jb-ribbon-done,
+.jb-ribbon-line-base {
   fill: none;
-  stroke-width: 1;
   stroke-linecap: butt;
   stroke-linejoin: round;
 }
+.jb-ribbon-line-base { stroke: var(--vscode-editor-background); }
 .jb-ribbon-frame { stroke: none; }
 body.vscode-high-contrast .jb-ribbon-frame-inserted { stroke: var(--jb-edge-inserted); }
 body.vscode-high-contrast .jb-ribbon-frame-deleted { stroke: var(--jb-edge-deleted); }
@@ -380,8 +411,14 @@ body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conf
   border-color: var(--vscode-inputOption-activeBorder, transparent);
   color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
 }
+/* A bordered button must read as a button on every ground. Its border is not
+ * `--vscode-button-border`: the desktop declares that one transparent (for
+ * its primary buttons) and paints its secondary background in the editor's
+ * own white, so "Accept Yours" / "Cancel" were bare words in its light theme.
+ * High contrast themes supply contrastBorder; everywhere else it is the
+ * foreground at low strength, which every host defines. */
 .jb-toolbar-btn.jb-bordered {
-  border-color: var(--vscode-button-border, var(--vscode-panel-border));
+  border-color: var(--vscode-contrastBorder, color-mix(in srgb, var(--vscode-foreground) 26%, transparent));
   background: var(--vscode-button-secondaryBackground, transparent);
   color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
   padding: 0 12px;
@@ -595,12 +632,19 @@ body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conf
   background: color-mix(in srgb, var(--gs-status-deleted) 16%, transparent);
 }
 
-/* ── The category legend (mergeLegend.ts), mounted by the shell ───────────── */
+/* ── The colour legend (mergeLegend.ts), mounted by the shell ───────────────
+ * It explains the COLOURS the panes show, in words, each beside a solid dot of
+ * that colour: "● Conflicts 6 you choose · ● Same on both sides 1 same result
+ * either way · ● Changed ● Added ● Removed on one side 5 safe to take". A dot
+ * is not a box: nothing here should look like a checkbox waiting for a tick.
+ * Clicking an item goes to the next change of that kind. */
 .jb-legend {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  flex: 0 1 auto;
+  min-width: 0;
   font-family: var(--gs-font-ui);
   font-size: var(--gs-text-secondary, 12px);
 }
@@ -609,11 +653,11 @@ body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conf
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   height: 22px;
-  padding: 0 6px;
+  padding: 0 7px;
   border: 1px solid transparent;
-  border-radius: var(--gs-radius, 4px);
+  border-radius: var(--gs-radius-pill, 999px);
   background: transparent;
   color: var(--vscode-foreground);
   font: inherit;
@@ -623,41 +667,54 @@ body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conf
 .jb-legend-help:hover { background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.16)); }
 .jb-legend-chip:focus-visible,
 .jb-legend-help:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-.jb-legend-chip[disabled] { cursor: default; opacity: 0.6; }
+.jb-legend-chip[disabled] { cursor: default; }
+.jb-legend-chip[disabled] .jb-legend-label,
+.jb-legend-chip[disabled] .jb-legend-count { opacity: 0.7; }
 .jb-legend-chip.jb-legend-none { display: none; }
 .jb-legend-count { font-variant-numeric: tabular-nums; font-weight: 600; }
-/* "Conflicts 2 · Same on both sides 1 · …": a quiet dot between chips. */
+/* What a colour asks of you, quieter than its name. The muted ink is mixed a
+ * step toward the foreground so it stays readable on the toolbar grounds. */
+.jb-legend-note {
+  color: color-mix(in srgb, var(--vscode-descriptionForeground, var(--vscode-foreground)) 80%, var(--vscode-foreground));
+}
+.jb-legend-kind { display: inline-flex; align-items: center; gap: 4px; }
 .jb-legend-sep {
   color: var(--vscode-descriptionForeground, var(--vscode-foreground));
   user-select: none;
 }
 .jb-legend-sep[hidden] { display: none; }
 .jb-legend-help { width: 22px; padding: 0; justify-content: center; }
-.jb-legend-swatch {
+/* A solid dot of the colour, at full strength: the band it names is the
+ * same hue, lighter. */
+.jb-legend-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--jb-dot, currentColor);
+}
+.jb-dot-inserted { --jb-dot: var(--jb-edge-inserted); }
+.jb-dot-deleted { --jb-dot: var(--jb-edge-deleted); }
+.jb-dot-modified { --jb-dot: var(--jb-edge-modified); }
+.jb-dot-same { --jb-dot: var(--jb-edge-same); }
+.jb-dot-conflict { --jb-dot: var(--jb-edge-conflict); }
+/* The key's samples of the MARKS (not colours): a strip of band as the pane
+ * draws it, 16 by 10 — a conflict with one side taken (the pale tint between
+ * two faint lines), a handled side's outline, a resolved change's line, an
+ * insertion point, a whitespace-only change's dotted edge. */
+.jb-legend-sample {
   display: inline-block;
   flex: 0 0 auto;
   box-sizing: border-box;
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  border: 1px solid transparent;
+  width: 16px;
+  height: 10px;
 }
-.jb-swatch-inserted { background: var(--jb-line-inserted); border-color: var(--jb-edge-inserted); }
-.jb-swatch-deleted { background: var(--jb-line-deleted); border-color: var(--jb-edge-deleted); }
-.jb-swatch-modified { background: var(--jb-line-modified); border-color: var(--jb-edge-modified); }
-.jb-swatch-same { background: var(--jb-line-same); border-color: var(--jb-edge-same); }
-.jb-swatch-conflict { background: var(--jb-line-conflict); border-color: var(--jb-edge-conflict); }
-/* A one-sided change is coloured by what it did, so its chip shows all three. */
-.jb-swatch-one-sided {
-  background: linear-gradient(to bottom,
-    var(--jb-line-inserted) 0 34%, var(--jb-line-modified) 34% 67%, var(--jb-line-deleted) 67% 100%);
-  border-color: color-mix(in srgb, var(--vscode-foreground) 45%, transparent);
-}
-/* The key's samples of the other marks: a handled change's faint outline,
- * an insertion point's line, a whitespace-only change's dotted edge. */
-.jb-swatch-done { background: none; border: 0; border-radius: 0; border-top: 1px solid var(--jb-done-conflict); border-bottom: 1px solid var(--jb-done-conflict); }
-.jb-swatch-point { background: none; border: 0; border-radius: 0; border-top: 2px solid var(--jb-edge-inserted); height: 8px; margin-top: 4px; }
-.jb-swatch-ws { background: var(--jb-line-modified); border: none; border-left: 2px dotted var(--jb-edge-modified); }
+.jb-sample-half { background: var(--jb-half-conflict); border-top: 1px solid var(--jb-done-conflict); border-bottom: 1px solid var(--jb-done-conflict); }
+.jb-sample-done { border-top: 1px solid var(--jb-done-conflict); border-bottom: 1px solid var(--jb-done-conflict); }
+.jb-sample-settled { border-top: 1px solid var(--jb-settled); border-bottom: 1px solid var(--jb-settled); }
+.jb-sample-point { border-top: 2px solid var(--jb-edge-inserted); height: 6px; }
+.jb-sample-ws { background: var(--jb-line-modified); border-left: 2px dotted var(--jb-edge-modified); }
 .jb-legend-pop {
   /* Fixed: the legend sits in a toolbar that scrolls sideways (overflow-x),
    * which would clip an absolutely positioned popover. */
@@ -667,7 +724,7 @@ body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conf
   flex-direction: column;
   gap: 6px;
   width: max-content;
-  max-width: min(420px, calc(100vw - 16px));
+  max-width: min(440px, calc(100vw - 16px));
   padding: 10px 12px;
   border-radius: var(--gs-radius, 4px);
   border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
@@ -679,12 +736,12 @@ body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conf
 .jb-legend-pop[hidden] { display: none; }
 .jb-legend-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 34px minmax(0, 1fr);
   align-items: center;
   column-gap: 8px;
   line-height: 1.35;
 }
-.jb-legend-row > :first-child { justify-self: center; }
+.jb-legend-row > :first-child { display: inline-flex; gap: 3px; justify-self: center; }
 
 /* ---- Responsive toolbar: collapse gracefully in narrow editor groups ---- */
 @media (max-width: 1000px) {

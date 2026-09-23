@@ -48,10 +48,11 @@ test("diff.css declares every tone's tokens in both palettes; every class the vi
   for (const head of [":root {", "body.vscode-light, body.vscode-high-contrast-light {"]) {
     const b = block(head);
     for (const tone of TONES) {
-      for (const kind of ["line", "inner", "edge", "done", "ruler"]) {
+      for (const kind of ["line", "inner", "edge", "done", "ruler", "half"]) {
         assert.ok(b.includes(`--jb-${kind}-${tone}:`), `${head} declares --jb-${kind}-${tone}`);
       }
     }
+    assert.ok(b.includes("--jb-settled:"), `${head} declares --jb-settled`);
   }
   assert.ok(!/--jb-(line|edge)-resolved/.test(css), "no grey 'resolved' wash");
   // Every class the merge and diff views put on the page has a rule — a class
@@ -61,7 +62,7 @@ test("diff.css declares every tone's tokens in both palettes; every class the vi
     selectors.push(
       `.jb-line-${tone}`, `.jb-inner-${tone}`, `.jb-ribbon-${tone}`, `.jb-point-${tone}`,
       `.jb-done-${tone}`, `.jb-frame-${tone}`, `.jb-ribbon-done-${tone}`, `.jb-ribbon-frame-${tone}`,
-      `.jb-btn-accept.jb-tone-${tone}:hover`, `.jb-swatch-${tone}`,
+      `.jb-btn-accept.jb-tone-${tone}:hover`, `.jb-dot-${tone}`,
     );
   }
   // The 2-way diff names its ROLE (diffView.ts): transfer arrow and point markers.
@@ -70,9 +71,11 @@ test("diff.css declares every tone's tokens in both palettes; every class the vi
   }
   selectors.push(
     ".jb-ws", ".jb-done", ".jb-frame", ".jb-point", ".jb-point-after", ".jb-edge-top", ".jb-edge-bottom",
-    ".jb-ribbon-base", ".jb-ribbon-done", ".jb-ribbon-frame", ".jb-legend", ".jb-legend-chip",
+    ".jb-half", ".jb-settled",
+    ".jb-ribbon-base", ".jb-ribbon-line-base", ".jb-ribbon-done", ".jb-ribbon-frame", ".jb-legend", ".jb-legend-chip",
     ".jb-legend-help", ".jb-legend-pop", ".jb-legend-row", ".jb-legend-count", ".jb-legend-sep",
-    ".jb-swatch-one-sided", ".jb-swatch-done", ".jb-swatch-point", ".jb-swatch-ws",
+    ".jb-legend-dot", ".jb-legend-note", ".jb-legend-kind", ".jb-legend-sample",
+    ".jb-sample-half", ".jb-sample-done", ".jb-sample-settled", ".jb-sample-point", ".jb-sample-ws",
     ".codicon-arrow-right", ".codicon-arrow-left", ".codicon-close", ".codicon-wand", ".codicon-question",
   );
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -83,7 +86,8 @@ test("diff.css declares every tone's tokens in both palettes; every class the vi
   }
   // What the owner rejected is gone for good: the invented marks, the per-change
   // wand and append icon, the dashed "applied" style.
-  for (const gone of [".jb-mark", ".jb-result-actions", ".jb-btn-append", ".jb-btn-keep-base", ".jb-btn-wand", ".jb-legend-glyph", ".jb-legend-extra", ".codicon-insert", ".codicon-sparkle"]) {
+  // And the legend's square swatches, which read as unticked checkboxes.
+  for (const gone of [".jb-mark", ".jb-result-actions", ".jb-btn-append", ".jb-btn-keep-base", ".jb-btn-wand", ".jb-legend-glyph", ".jb-legend-extra", ".codicon-insert", ".codicon-sparkle", ".jb-legend-swatch", ".jb-swatch-conflict", ".jb-swatch-one-sided"]) {
     assert.ok(!new RegExp(`${escape(gone)}(?![\\w-])`).test(css), `no rule for the retired ${gone}`);
   }
   assert.ok(!/jb-applied|dasharray|\bdashed\b/.test(css), "no dashed 'applied' style anywhere");
@@ -235,6 +239,8 @@ interface Measured {
   done: string;
   ruler: string;
   frame: string;
+  half: string;
+  settled: string;
 }
 
 /**
@@ -283,6 +289,9 @@ test("text on every tint, edges on every background, and the categories apart �
           done: probe("", "color:var(--jb-done-" + t + ")").color,
           ruler: probe("", "color:var(--jb-ruler-" + t + ")").color,
           frame: probe("jb-frame jb-frame-" + t + " jb-edge-top").border,
+          // The classes a half-done conflict's result carries.
+          half: probe("jb-line-" + t + " jb-half").bg,
+          settled: probe("", "color:var(--jb-settled)").color,
         };
       }
       out[key] = tones;
@@ -330,6 +339,34 @@ test("text on every tint, edges on every background, and the categories apart �
       if (doneVsBg < 1.5 || doneVsBg >= edgeVsBg) problems.push(`${theme.name}: the ${tone} handled outline is ${doneVsBg.toFixed(2)}:1 (want ≥ 1.5 and below the edge's ${edgeVsBg.toFixed(2)})`);
       // A ruler mark at reduced strength: findable, never the full edge colour.
       if (rulerVsBg < 1.8 || rulerVsBg >= edgeVsBg) problems.push(`${theme.name}: the ${tone} ruler mark is ${rulerVsBg.toFixed(2)}:1 (want ≥ 1.8 and below the edge's ${edgeVsBg.toFixed(2)})`);
+      if (tone === "conflict" && (theme.body === "dark" || theme.body === "hcDark")) {
+        // The owner found the dark conflict red heavy: with six conflicts,
+        // maroon dominated the page. It stood ΔE 21.9 off Dark+'s background;
+        // it may stand no further than 19 in any dark theme (and the category
+        // rules below still hold, colour-blind ones included — they are what
+        // keeps it from going lighter still).
+        const weight = deltaE2000(line, bg);
+        row.push(`conflict weight ΔE ${weight.toFixed(1)}`);
+        if (weight > 19) problems.push(`${theme.name}: the conflict band stands ΔE ${weight.toFixed(1)} off the background (> 19): heavy`);
+      }
+      if (tone === "conflict") {
+        // A conflict with one side in: its result is a DIFFERENT, quieter
+        // tint than the open conflict (the owner: "after Accept Yours the
+        // result still wears the full conflict look"), still readable, still
+        // there against the background.
+        const half = over(parseColor(m.half), bg);
+        const halfStep = deltaE2000(half, line);
+        const halfVsBg = deltaE2000(half, bg);
+        row.push(`half: text ${contrast(fg, half).toFixed(2)} ΔE ${halfStep.toFixed(1)} from open, ${halfVsBg.toFixed(1)} from bg`);
+        if (contrast(fg, half) < 4.5) problems.push(`${theme.name}: text on the half-done conflict tint is ${contrast(fg, half).toFixed(2)}:1 (< 4.5)`);
+        if (halfStep < 5) problems.push(`${theme.name}: a half-done conflict's result is only ΔE ${halfStep.toFixed(1)} from an open one (< 5)`);
+        if (halfVsBg < 2) problems.push(`${theme.name}: a half-done conflict's result is only ΔE ${halfVsBg.toFixed(1)} from the background (< 2)`);
+        // A resolved change's line: faint, neutral, quieter than a handled side's.
+        const settled = over(parseColor(m.settled), bg);
+        const settledVsBg = contrast(settled, bg);
+        row.push(`settled ${settledVsBg.toFixed(2)}`);
+        if (settledVsBg < 1.3 || settledVsBg > doneVsBg) problems.push(`${theme.name}: the settled line is ${settledVsBg.toFixed(2)}:1 (want ≥ 1.3 and at most the handled outline's ${doneVsBg.toFixed(2)})`);
+      }
       const hc = theme.body === "hcDark" || theme.body === "hcLight";
       if (hc && m.frame !== "solid") problems.push(`${theme.name}: a pending ${tone} block has no solid frame edge (${m.frame})`);
       if (!hc && m.frame !== "none") problems.push(`${theme.name}: frame edges drawn outside high contrast (${m.frame})`);

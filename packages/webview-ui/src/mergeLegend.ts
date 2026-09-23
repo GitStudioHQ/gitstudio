@@ -1,88 +1,166 @@
-// The merge view's colour legend, in WORDS: one chip per category — a colour
-// swatch, what the category is called, and how many are still to do —
-// "Conflicts 2 · Same on both sides 1 · Only in Yours 2 · Only in Theirs 2",
-// and a "?" key that says what every colour and line in the panes means.
+// The merge view's colour legend: it explains the COLOURS the panes show, in
+// words, each beside a solid dot of that colour —
+//
+//   ● Conflicts 6 you choose · ● Same on both sides 1 same result either way ·
+//   ● Changed ● Added ● Removed on one side 5 safe to take   (?)
+//
+// — with a count of what is still to do, and a "?" key for the MARKS (a
+// point line, a dotted edge, a handled side's outline, a settled change).
+// Clicking an item goes to the next change of that kind.
+//
+// Organised by colour, not by the engine's categories: the bands of a change
+// made on one side are blue, green or grey by what it did, so a legend that
+// said "Only in Theirs" beside a grey square explained nothing on screen.
+// Yours-only and Theirs-only are one item here; the tooltip says how many of
+// each, and the toolbar's "Apply non-conflicting changes: Yours / Theirs"
+// already speaks per side.
 //
 // No symbols of our own: the owner found invented glyphs (≠ = ‹ › ≈ ✨) not
-// self-explanatory. Words carry the meaning, for everyone and for
-// colour-blind users in particular; the swatch only ties a word to a colour.
+// self-explanatory, and small bordered squares read as unticked checkboxes.
+// Words carry the meaning, for everyone and for colour-blind users in
+// particular; a dot only ties a word to a colour.
 //
-// Built here (P1) and mounted by the shell through MergeViewApi.attachLegend:
-// the shell owns WHERE it sits (a slot in its toolbar), the view owns WHAT it
-// says and keeps it current on every change. No cross-import either way.
-//
-// Names and counts are set as text nodes only — never innerHTML with data.
+// Built here and mounted by the shell through MergeViewApi.attachLegend: the
+// shell owns WHERE it sits, the view owns WHAT it says and keeps it current on
+// every change. Names and counts are set as text nodes only — never innerHTML
+// with data.
 
-import {
-  MERGE_CATEGORIES,
-  type MergeCategory,
-  type MergeCountsView,
-} from "./mergeViewApi";
+import type { MergeCategory, MergeCountsView } from "./mergeViewApi";
 import { iconElement, questionIcon } from "./icons";
 
-interface ChipWords {
-  /** The swatch: the category's tone, or all three for a one-sided change. */
-  swatch: string;
+/** One legend item: the categories it counts, and the colours it names. */
+export type LegendItem = "conflict" | "same" | "one-sided";
+
+export const LEGEND_ITEMS: readonly LegendItem[] = ["conflict", "same", "one-sided"];
+
+/** The categories a legend item counts (and jumps between). */
+export const LEGEND_CATEGORIES: Record<LegendItem, readonly MergeCategory[]> = {
+  conflict: ["conflict"],
+  same: ["same"],
+  "one-sided": ["yours-only", "theirs-only"],
+};
+
+/**
+ * What the view knows beyond the counts: the conflicts with one side in and
+ * the other still to decide (JetBrains: that side is resolved, the change is
+ * not). Said in words on the conflict item — "Yours taken, Theirs to decide".
+ */
+export interface LegendDetail {
+  halfDone: Array<{ done: "yours" | "theirs"; taken: boolean }>;
+}
+
+interface ItemWords {
+  /** Dot colours before the label, and the words beside each. */
+  dots: Array<{ tone: string; word?: string }>;
   label: string;
+  /** What the colour asks of you. */
+  note: string;
   one: string;
   many: string;
 }
 
-const WORDS: Record<MergeCategory, ChipWords> = {
-  conflict: { swatch: "conflict", label: "Conflicts", one: "conflict", many: "conflicts" },
-  same: { swatch: "same", label: "Same on both sides", one: "change made the same on both sides", many: "changes made the same on both sides" },
-  "yours-only": { swatch: "one-sided", label: "Only in Yours", one: "change only in Yours", many: "changes only in Yours" },
-  "theirs-only": { swatch: "one-sided", label: "Only in Theirs", one: "change only in Theirs", many: "changes only in Theirs" },
+const WORDS: Record<LegendItem, ItemWords> = {
+  conflict: {
+    dots: [{ tone: "conflict" }],
+    label: "Conflicts",
+    note: "you choose",
+    one: "conflict",
+    many: "conflicts",
+  },
+  same: {
+    dots: [{ tone: "same" }],
+    label: "Same on both sides",
+    note: "same result either way",
+    one: "change made the same on both sides",
+    many: "changes made the same on both sides",
+  },
+  "one-sided": {
+    dots: [
+      { tone: "modified", word: "Changed" },
+      { tone: "inserted", word: "Added" },
+      { tone: "deleted", word: "Removed" },
+    ],
+    label: "on one side",
+    note: "safe to take",
+    one: "change made on one side only",
+    many: "changes made on one side only",
+  },
 };
 
 interface Chip {
   button: HTMLButtonElement;
   count: HTMLElement;
-  /** The dot before this chip (none before the first). */
+  note: HTMLElement;
+  /** The dot before this item (none before the first). */
   sep?: HTMLElement;
 }
 
-/** One row of the "?" key: a sample of the mark, and what it means. */
+/** One row of the "?" key: a sample (dots or a mark), and what it means. */
 interface KeyRow {
-  swatch: string;
+  dots?: string[];
+  sample?: string;
   text: string;
 }
 
-function swatch(kind: string): HTMLElement {
+const KEY: KeyRow[] = [
+  { dots: ["conflict"], text: "Red: a conflict. Both sides changed these lines, differently — you choose: accept one side, both, or edit the result." },
+  { dots: ["same"], text: "Violet: both sides made the same change. Either side gives the same result." },
+  { dots: ["modified", "inserted", "deleted"], text: "Blue, green, grey: lines changed, added or removed on one side only. Safe to take." },
+  { sample: "point", text: "A line between two rows: lines were added or removed at that point." },
+  { sample: "ws", text: "A dotted left edge: only whitespace changed." },
+  { sample: "half", text: "Pale red between two faint lines: a conflict with one side taken, the other still to decide." },
+  { sample: "done", text: "A faint outline, no colour: that side is already accepted or ignored." },
+  { sample: "settled", text: "A faint grey line in the result: that change is resolved." },
+];
+
+function dot(tone: string): HTMLElement {
+  const d = document.createElement("span");
+  d.className = `jb-legend-dot jb-dot-${tone}`;
+  d.setAttribute("aria-hidden", "true");
+  return d;
+}
+
+function sample(kind: string): HTMLElement {
   const s = document.createElement("span");
-  s.className = `jb-legend-swatch jb-swatch-${kind}`;
+  s.className = `jb-legend-sample jb-sample-${kind}`;
   s.setAttribute("aria-hidden", "true");
   return s;
 }
 
-const KEY: KeyRow[] = [
-  { swatch: "conflict", text: "Conflict: both sides changed these lines, differently. Accept one side, both, or edit the result." },
-  { swatch: "same", text: "Same on both sides: both made this change. Accepting either side takes it." },
-  { swatch: "inserted", text: "Lines added on one side only" },
-  { swatch: "modified", text: "Lines changed on one side only" },
-  { swatch: "deleted", text: "Lines removed on one side only" },
-  { swatch: "point", text: "A line between two rows: lines were added or removed at that point" },
-  { swatch: "ws", text: "Dotted left edge: only whitespace changed" },
-  { swatch: "done", text: "No colour, a faint outline: already accepted or ignored" },
-];
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** "Yours taken, Theirs to decide", or "2 with one side taken" — undefined when none. */
+export function halfDoneWords(detail: LegendDetail | undefined, pendingConflicts: number): string | undefined {
+  const half = detail?.halfDone ?? [];
+  if (half.length === 0) return undefined;
+  if (half.length === 1 && pendingConflicts === 1) {
+    const [{ done, taken }] = half;
+    const doneWord = done === "yours" ? "Yours" : "Theirs";
+    const otherWord = done === "yours" ? "Theirs" : "Yours";
+    return `${doneWord} ${taken ? "taken" : "ignored"}, ${otherWord} to decide`;
+  }
+  return `${half.length} with one side in, the other to decide`;
+}
 
 export class MergeLegend {
   public readonly element: HTMLElement;
-  private readonly chips = new Map<MergeCategory, Chip>();
+  private readonly chips = new Map<LegendItem, Chip>();
   private readonly helpButton: HTMLButtonElement;
   private readonly pop: HTMLElement;
   private open = false;
   private closeListeners?: () => void;
 
-  constructor(private readonly onJump: (category: MergeCategory) => void) {
+  constructor(private readonly onJump: (categories: readonly MergeCategory[]) => void) {
     const root = document.createElement("div");
     root.className = "jb-legend";
     root.setAttribute("role", "group");
-    root.setAttribute("aria-label", "Changes by kind");
+    root.setAttribute("aria-label", "What the colours mean");
     this.element = root;
 
-    for (const cat of MERGE_CATEGORIES) {
-      const words = WORDS[cat];
+    for (const item of LEGEND_ITEMS) {
+      const words = WORDS[item];
       let sep: HTMLElement | undefined;
       if (this.chips.size > 0) {
         sep = document.createElement("span");
@@ -93,25 +171,38 @@ export class MergeLegend {
       }
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `jb-legend-chip jb-legend-${cat}`;
-      button.dataset.category = cat;
+      button.className = `jb-legend-chip jb-legend-${item}`;
+      button.dataset.category = item;
+      for (const d of words.dots) {
+        if (d.word) {
+          const kind = document.createElement("span");
+          kind.className = "jb-legend-kind";
+          kind.append(dot(d.tone), document.createTextNode(d.word));
+          button.appendChild(kind);
+        } else {
+          button.appendChild(dot(d.tone));
+        }
+      }
       const label = document.createElement("span");
       label.className = "jb-legend-label";
       label.textContent = words.label;
       const count = document.createElement("span");
       count.className = "jb-legend-count";
       count.textContent = "0";
-      button.append(swatch(words.swatch), label, count);
-      button.addEventListener("click", () => this.onJump(cat));
-      this.chips.set(cat, { button, count, sep });
+      const note = document.createElement("span");
+      note.className = "jb-legend-note";
+      note.textContent = words.note;
+      button.append(label, count, note);
+      button.addEventListener("click", () => this.onJump(LEGEND_CATEGORIES[item]));
+      this.chips.set(item, { button, count, note, sep });
       root.appendChild(button);
     }
 
     const help = document.createElement("button");
     help.type = "button";
     help.className = "jb-legend-help";
-    help.setAttribute("aria-label", "What the colours mean");
-    help.title = "What the colours mean";
+    help.setAttribute("aria-label", "What the colours and lines mean");
+    help.title = "What the colours and lines mean";
     help.setAttribute("aria-expanded", "false");
     help.appendChild(iconElement(questionIcon));
     this.helpButton = help;
@@ -120,14 +211,18 @@ export class MergeLegend {
     pop.className = "jb-legend-pop";
     pop.id = `jb-legend-pop-${Math.random().toString(36).slice(2)}`;
     pop.setAttribute("role", "dialog");
-    pop.setAttribute("aria-label", "What the merge colours mean");
+    pop.setAttribute("aria-label", "What the merge colours and lines mean");
     pop.hidden = true;
     for (const row of KEY) {
       const line = document.createElement("div");
       line.className = "jb-legend-row";
+      const lead = document.createElement("span");
+      lead.setAttribute("aria-hidden", "true");
+      for (const tone of row.dots ?? []) lead.appendChild(dot(tone));
+      if (row.sample) lead.appendChild(sample(row.sample));
       const text = document.createElement("span");
       text.textContent = row.text;
-      line.append(swatch(row.swatch), text);
+      line.append(lead, text);
       pop.appendChild(line);
     }
     help.setAttribute("aria-controls", pop.id);
@@ -139,39 +234,59 @@ export class MergeLegend {
     root.append(help, pop);
   }
 
-  /** Repaints every chip from the view's counts. */
-  public update(counts: MergeCountsView): void {
+  /** Repaints every item from the view's counts (and what it knows of half-done conflicts). */
+  public update(counts: MergeCountsView, detail?: LegendDetail): void {
     let shownBefore = false;
-    for (const cat of MERGE_CATEGORIES) {
-      const chip = this.chips.get(cat);
+    for (const item of LEGEND_ITEMS) {
+      const chip = this.chips.get(item);
       if (!chip) {
         continue;
       }
-      const { total, pending } = counts.byCategory[cat];
-      const words = WORDS[cat];
+      let total = 0;
+      let pending = 0;
+      for (const cat of LEGEND_CATEGORIES[item]) {
+        total += counts.byCategory[cat].total;
+        pending += counts.byCategory[cat].pending;
+      }
+      const words = WORDS[item];
       chip.count.textContent = String(pending);
       chip.button.disabled = pending === 0;
       chip.button.classList.toggle("jb-legend-none", total === 0);
-      // A dot only BETWEEN two chips on screen.
+      // A dot only BETWEEN two items on screen.
       if (chip.sep) chip.sep.hidden = total === 0 || !shownBefore;
       shownBefore ||= total > 0;
+
+      const half = item === "conflict" ? halfDoneWords(detail, pending) : undefined;
+      // Nothing left of this colour: its count says 0, and it asks nothing.
+      chip.note.textContent = pending === 0 ? "" : half ?? words.note;
+      chip.note.hidden = pending === 0;
+
       let text =
         total === 0
           ? `No ${words.many}`
           : pending === 0
             ? `${total === 1 ? `The ${words.one} is` : `All ${total} ${words.many} are`} dealt with`
-            : `${pending} ${pending === 1 ? words.one : words.many} left${pending < total ? ` of ${total}` : ""}`;
-      if (cat === "conflict") {
+            : `${plural(pending, words.one, words.many)} left${pending < total ? ` of ${total}` : ""}`;
+      if (item === "conflict") {
+        if (half) text += ` (${half})`;
         const k = counts.resolvableConflictsPending;
         if (k > 0) {
           text += `; ${k === pending ? (k === 1 ? "it" : "all") : k} can be resolved automatically (Resolve simple conflicts)`;
         }
+        if (pending > 0) text += ". Both sides changed these lines, differently: you choose";
+      } else if (item === "same" && pending > 0) {
+        text += ". Both sides made this change: either side gives the same result";
+      } else if (item === "one-sided" && pending > 0) {
+        const y = counts.byCategory["yours-only"].pending;
+        const t = counts.byCategory["theirs-only"].pending;
+        text += ` (${y} in Yours, ${t} in Theirs). Changed in blue, added in green, removed in grey; safe to take`;
       }
       if (pending > 0) {
         text += ". Go to the next one.";
       }
+      const name = item === "one-sided" ? "Changed, added or removed on one side" : words.label;
       chip.button.title = text;
-      chip.button.setAttribute("aria-label", `${words.label}: ${text}`);
+      chip.button.setAttribute("aria-label", `${name}: ${text}`);
     }
   }
 
