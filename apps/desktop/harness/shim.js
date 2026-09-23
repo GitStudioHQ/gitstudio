@@ -2447,6 +2447,12 @@
     syncConflictRows();
     return { ok: true, view: mp.view(), remainingConflicts: 0 };
   };
+  // The rebase view reloads after a verb: once one has ENDED the operation it
+  // is no longer in progress (the planner comes back), as in the real app.
+  dynamic["rebase:load"] = () => {
+    const ended = mp.state.op === mp.NONE && invoked.some((r) => /^op:(continue|skip|abort)$/.test(r.channel));
+    return { ...fixtures["rebase:load"], inProgress: fixtures["rebase:load"].inProgress && !ended };
+  };
   const IDE = { id: "webstorm", name: "WebStorm", command: "/Applications/WebStorm.app/Contents/MacOS/webstorm" };
   dynamic["jetbrains:detect"] = () => (params.get("noide") === "1" ? undefined : IDE);
   dynamic["jetbrains:merge"] = (req) => {

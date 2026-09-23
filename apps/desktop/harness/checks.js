@@ -4634,8 +4634,10 @@
     /**
      * The rebase view's verbs say what they act on, as the dashboard's do
      * ("Continue Rebase", not a bare "Continue"), and after one runs the view
-     * is rebuilt under the button — which left the keyboard on the page, Tab
-     * starting again from the top bar. It comes back to the view.
+     * is rebuilt under the button. While the rebase is still stopped the
+     * app's focus rescue finds the same button again; once the verb ENDS it,
+     * the card is gone and the keyboard fell to the page, Tab starting again
+     * from the top bar. It comes back to the view.
      */
     "the-rebase-view-names-its-verbs-and-keeps-the-keyboard": async (f) => {
       const c = check(f);
@@ -4652,6 +4654,7 @@
       $(".modal-ok")?.click();
       await settle(1500);
       c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 1, "precondition: one op:abort ran");
+      c.ok(!$(".rb-inprogress"), "precondition: the rebase is over, and its card with it");
       const a = document.activeElement;
       const view = $(".rb-view");
       c.ok(!!a && a !== document.body && !!view && view.contains(a), `the keyboard is back in the rebase view (on ${a ? a.tagName + "." + a.className : "nothing"})`);
