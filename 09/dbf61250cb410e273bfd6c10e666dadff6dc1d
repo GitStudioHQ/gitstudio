@@ -1,0 +1,32 @@
+apps/merge-studio/RELEASING.md
+  s_26f5e669d3043c::t_e468a2e6ebd491 3-30,37-94,97-112,117-132,138-142,144,147-153,165,193-198,200-227,243-244,249-252,258,260-262,265-269,272-284
+docs/merge-studio.md
+  s_26f5e669d3043c::t_3e448bc8203f16 116-118
+  s_26f5e669d3043c::t_a6e9ac08c52693 103-104
+  s_26f5e669d3043c::t_f03e7cfa28c248 1-102,105-115,119-187
+README.md
+  s_26f5e669d3043c::t_880ce1a0228f85 125-128,135-138
+  s_26f5e669d3043c::t_fd820907b5b31b 195
+  s_26f5e669d3043c::t_87a6b1c66550e6 191
+  s_26f5e669d3043c::t_488423a75a0f69 181-182
+CONTRIBUTING.md
+  s_26f5e669d3043c::t_ceb94bc6edc8de 1-55
+apps/merge-studio/CONTRIBUTING.md
+  s_26f5e669d3043c::t_aa0e6a46390387 3-28,32,34-40,42-47,49-51,53-70,76,78,81-83,87,96-106,108-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "09dbf61250cb410e273bfd6c10e666dadff6dc1d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
