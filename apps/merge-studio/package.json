@@ -196,10 +196,10 @@
           {
             "id": "mergeStudio.readColours",
             "title": "Read the colours",
-            "description": "The legend names every kind of change in words: Conflicts, Same on both sides, Only in Yours, Only in Theirs. Orange is a real conflict, and the wand on the toolbar resolves the ones whose edits don't overlap. Violet means both sides made the same edit. Green, blue and grey are changes only one side made: inserted, changed and deleted lines.",
+            "description": "The legend names every kind of change in words: Conflicts, Same on both sides, and Changed, Added or Removed on one side. Red is a real conflict, and Resolve simple on the toolbar resolves the ones whose edits don't overlap. Violet means both sides made the same edit. Blue, green and grey are changes only one side made: changed, added and removed lines.",
             "media": {
               "svg": "media/walkthrough/legend.svg",
-              "altText": "The legend, in words: Conflicts in orange, Same on both sides in violet, Only in Yours and Only in Theirs in green, blue and grey."
+              "altText": "The legend, in words: Conflicts in red, Same on both sides in violet, and Changed, Added and Removed on one side in blue, green and grey."
             },
             "completionEvents": [
               "onStepSelected"

@@ -35,9 +35,10 @@ does, the other does. (merge-studio#12)
   Operation*.
 - **A sample merge that shows everything** (*Open Sample Merge*): a rebase
   stop on *Sample: authorizeRequest.ts* with every kind of change the
-  legend names in words — Conflicts, Same on both sides, Only in Yours, Only
-  in Theirs — both branch names, the step and the commit. It touches no
-  repository: *Apply* says what a real Apply does and *Cancel* closes it.
+  legend names in words — Conflicts, Same on both sides, and Changed, Added
+  or Removed on one side — both branch names, the step and the commit. It
+  touches no repository: *Apply* says what a real Apply does and *Cancel*
+  closes it.
 
 ### Changed
 - **During a rebase, Yours is your commit, on the left** — the side

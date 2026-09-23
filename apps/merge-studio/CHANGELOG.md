@@ -8,7 +8,7 @@
 
 - **Continue, Skip and Abort** in the Conflicts dashboard, for merge, rebase, cherry-pick, revert and git am. Continue says why when it can't run yet, and asks before git drops a commit your resolution left empty.
 - **Where you are**: "Rebasing test onto master · commit 2 of 3" and the commit being replayed, in the dashboard and above the merge editor.
-- **Every kind of change has its own colour**, with a legend that names each in words: Conflicts (orange), Same on both sides (violet), Only in Yours and Only in Theirs (green for inserted lines, blue for changed ones, grey for deleted ones).
+- **Every kind of change has its own colour**, with a legend that names each in words: Conflicts (red), Same on both sides (violet), and a change made on one side only by what it did: Changed (blue), Added (green) or Removed (grey).
 - The wand applies both sides of a conflict whose edits don't overlap.
 - `jbMerge.autoApplyNonConflicting` applies every non-conflicting change when a file opens (off unless you turn it on).
 - Binary files, and files deleted or added on one side, open a panel with the choices that make sense: keep yours, keep theirs, or delete the file.

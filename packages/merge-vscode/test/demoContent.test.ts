@@ -24,8 +24,8 @@ import { MergeEditorProvider } from "../src/mergeEditorProvider";
 import type { MergeProduct } from "../src/product";
 
 // POLISH A6.1 — the sample merge the walkthroughs open. What it holds is read
-// from the ENGINE, never typed here: the legend's four categories (Conflicts ·
-// Same on both sides · Only in Yours · Only in Theirs) each occur, and the
+// from the ENGINE, never typed here: the four categories the legend counts
+// (conflict, same on both sides, Yours only, Theirs only) each occur, and the
 // counts below are whatever buildMergeModel says.
 
 beforeEach(() => stub.reset());

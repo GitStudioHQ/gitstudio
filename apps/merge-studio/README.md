@@ -30,16 +30,16 @@ During a rebase git swaps its own words: `--ours` is the branch you are rebasing
 ## Every change, colour-coded
 
 The legend above the panes names each kind of change in words, with its
-colour and how many are left: **Conflicts · Same on both sides · Only in
-Yours · Only in Theirs**.
+colour and how many are left: **Conflicts · Same on both sides · Changed
+Added Removed on one side**.
 
 | Colour | In the legend | Meaning |
 | --- | --- | --- |
-| orange | Conflicts | A real conflict: both sides changed the same lines differently. When the two edits touch but don't overlap, the wand on the toolbar applies both. |
+| red | Conflicts | A real conflict: both sides changed the same lines differently. When the two edits touch but don't overlap, **Resolve simple** on the toolbar applies both. |
 | violet | Same on both sides | Both sides made the same edit. |
-| green, blue, grey | Only in Yours / Only in Theirs | A change only one side made: green for lines it inserted, blue for lines it changed, grey for lines it deleted. |
+| blue, green, grey | Changed, Added, Removed on one side | A change only one side made: blue for lines it changed, green for lines it added, grey for lines it removed. |
 
-<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The three-pane merge editor in a light theme: YOURS on the left, the result in the middle, THEIRS on the right; an orange conflict, a violet identical edit, and green, blue and grey one-sided changes, with the legend above."></p>
+<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The three-pane merge editor in a light theme: YOURS on the left, the result in the middle, THEIRS on the right; a red conflict, a violet identical edit, and blue, green and grey one-sided changes, with the legend above."></p>
 
 ## The Conflicts dashboard
 

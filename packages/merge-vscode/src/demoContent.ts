@@ -7,8 +7,8 @@
 // rebase would stop on it — three versions, sent as stages with a synthetic
 // operation, so the editor shows what a real stop shows: the direction bar
 // with branch names, the step, the commit, and every kind of change the
-// legend names (Conflicts · Same on both sides · Only in Yours · Only in
-// Theirs), including a conflict the wand can resolve. What it contains is
+// legend counts (a conflict, the same change on both sides, and a change in
+// Yours only and in Theirs only), including a conflict the wand can resolve. What it contains is
 // never typed here: the engine classifies the three versions, and
 // test/demoContent.test.ts holds the sample to "every category at least once".
 
