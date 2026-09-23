@@ -1,0 +1,61 @@
+packages/engine/test/documentText.test.ts
+  s_26f5e669d3043c::t_35259bd083c63a 200-214
+  s_26f5e669d3043c::t_af34f7477d95a6 177-199
+  s_26f5e669d3043c::t_5b1cc2810c05b3 157-176,215-239
+scripts/merge-e2e/editorHosts.test.ts
+  s_26f5e669d3043c::t_449e7972b0eeb1 189-199,206
+  s_26f5e669d3043c::t_2213875d064984 221-266,270-294
+  s_26f5e669d3043c::t_d9ffffa212caff 267-269
+  s_26f5e669d3043c::t_e53f763fa2ad56 295-335
+  s_26f5e669d3043c::t_eb9b245484b630 213
+packages/engine/src/conflict/documentText.ts
+  s_26f5e669d3043c::t_10cb8e663aaac5 188-204
+  s_26f5e669d3043c::t_88dcd20868c6bb 21-28
+  s_26f5e669d3043c::t_66535068b5adc3 137
+  s_26f5e669d3043c::t_52b24c15a7c4cf 243
+  s_26f5e669d3043c::t_3665e4d8adc6c7 453-458,473-486,490-491,494
+  s_26f5e669d3043c::t_b0cf0a39dc44b5 179-183
+  s_26f5e669d3043c::t_191647022fe49d 588-593
+  s_26f5e669d3043c::t_5802a5cf576d7a 222-233
+  s_26f5e669d3043c::t_3d486c610f4717 133
+  s_26f5e669d3043c::t_3c78b59aa83e27 407,410
+  s_26f5e669d3043c::t_e1a07b20bc2caf 364-368,370-371,374
+  s_26f5e669d3043c::t_fcc0834e02940b 401-406,411-413
+  s_26f5e669d3043c::t_c6249dab23c9d4 103-112,117-122,128,136,143-144,146-147,151,160,168,173,184,187,205-213,234-242,244-270
+  s_26f5e669d3043c::t_47e17b7c82e22e 378,380-382
+  s_26f5e669d3043c::t_f70eced273250f 459-472
+  s_26f5e669d3043c::t_950c400fb74d9c 102,214,271,529-587,594-611
+  s_26f5e669d3043c::t_cb7a4eaf519f7e 272
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_eb6b21f8f82246 95-97,101-102
+packages/merge-vscode/test/documentSync.test.ts
+  s_26f5e669d3043c::t_000389dd20b490 184-210
+  s_26f5e669d3043c::t_2c5ba72a91678c 261-287
+apps/merge-studio/CHANGELOG.md
+  s_26f5e669d3043c::t_fe49d59269f3f3 42-43
+packages/merge-vscode/src/documentSync.ts
+  s_26f5e669d3043c::t_f984cc0f74ac52 100-110
+  s_26f5e669d3043c::t_3920613db5ba17 93-98
+  s_26f5e669d3043c::t_f48729d1717ca2 61,71
+  s_26f5e669d3043c::t_f8a3da4137506b 62-63,69
+  s_26f5e669d3043c::t_c432b4e674e939 121-130
+  s_26f5e669d3043c::t_bf454d1eee65ab 26-27
+packages/merge-vscode/src/mergeEditorProvider.ts
+  s_26f5e669d3043c::t_2f4922453100f9 87-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "45978eeb15f9164b550219856dd57b772f6ed9c3",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
