@@ -40,6 +40,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   in progress and reveal the Changes view, instead of git's *"Pulling is not
   possible because you have unmerged files"* — or, from Update, the
   Merge / Rebase question all over again.
+- **"Rebase onto" over uncommitted changes said it had hit conflicts.** In any
+  repository where a rebase had once stopped and then been finished, a rebase
+  that git refused because of uncommitted changes was reported as *"Rebase hit
+  conflicts"*. It now shows git's actual reason.
 
 ## [1.13.0] - 2026-09-21
 
