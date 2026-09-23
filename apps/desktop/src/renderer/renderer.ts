@@ -84,6 +84,7 @@ import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
 import { askPullMode, pullWithChoice, pullVerdict, type PullOutcome, type PullVerdict } from "./pullFlow";
+import { installInTheWayAsker } from "./inTheWayAsk";
 import type { RowRef } from "./refMenuItems";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
@@ -468,6 +469,10 @@ class App {
   private terminalHeight = 280;
 
   async start(): Promise<void> {
+    // Before anything can invoke a commit-applying command: the one place that
+    // asks Stash & Retry or Cancel for all of them (bridge.ts). It holds its
+    // question while this repository stays open — see whileThisRepo.
+    installInTheWayAsker(() => this.currentRepo?.root);
     // Views can pop the history from here on. Before this the only way back
     // from a detail page was a forward navigation dressed as a back button.
     this.installNav();
@@ -2794,6 +2799,9 @@ class App {
         action === "apply" ? "stash:apply" : action === "pop" ? "stash:pop" : "stash:drop",
         st.ref,
       );
+      // Uncommitted changes in the stash's way were asked about (Stash &
+      // Retry or Cancel — bridge.ts), and the user cancelled: nothing ran.
+      if (r.cancelled) return;
       if (!r.ok) {
         toast(r.message ?? `Couldn't ${action} ${st.ref}.`, r.expected ? "info" : "error");
         return;
@@ -2899,6 +2907,8 @@ class App {
           undo: async () => {
             const failed: string[] = [];
             for (const b of restorable) {
+              // in-the-way-reviewed: a restore never switches, so it changes no
+              // file and is never refused over uncommitted work.
               const back = await host.invoke("branch:create", {
                 name: b.name,
                 startPoint: b.was,
@@ -3527,11 +3537,18 @@ class App {
     };
     const run = async (
       label: string,
-      p: Promise<{ ok: boolean; message?: string }>,
+      p: Promise<{ ok: boolean; message?: string; expected?: boolean; cancelled?: true }>,
     ): Promise<void> => {
       try {
         const r = await p;
-        if (!r.ok) toast(cleanErr(r.message) || `Couldn't ${label}.`, "error");
+        // A merge or rebase over uncommitted changes in its way asks Stash &
+        // Retry or Cancel (bridge.ts); cancelled, nothing ran and nothing is
+        // said. A refusal that is the user's state — the changes still in the
+        // way, a merge that stopped on conflicts — is said in the neutral
+        // tone, not as a failure.
+        if (r.cancelled) {
+          // nothing to say
+        } else if (!r.ok) toast(cleanErr(r.message) || `Couldn't ${label}.`, r.expected ? "info" : "error");
         else toast(`${label} ✓`, "success");
       } catch (e) {
         toast(cleanErr(e) || `Couldn't ${label}.`, "error");
@@ -3597,6 +3614,7 @@ class App {
       items.push({
         label: `Merge ${b.name} into current`,
         icon: "git-merge",
+        // in-the-way-reviewed: run() above says nothing on `cancelled`.
         onClick: () => void run(`merge ${b.name}`, host.invoke("branch:merge", { name: b.name })),
       });
       items.push({
@@ -3618,6 +3636,7 @@ class App {
               danger: true,
             });
             if (!ok) return;
+            // in-the-way-reviewed: run() above says nothing on `cancelled`.
             await run(`rebase onto ${b.name}`, host.invoke("branch:rebase", { onto: b.name }));
           })(),
       });
@@ -4076,6 +4095,8 @@ class App {
       didUndoable(`Deleted ${name}.`, {
         label: `Restore ${name}`,
         undo: async () => {
+          // in-the-way-reviewed: a restore never switches, so it changes no
+          // file and is never refused over uncommitted work.
           const back = await host.invoke("branch:create", {
             name,
             startPoint: restore,
@@ -4153,16 +4174,20 @@ class App {
       return;
     }
     restore();
-    // On failure (e.g. uncommitted changes block the switch) HEAD didn't move —
-    // surface the error and DON'T refresh as if it succeeded (which made the UI
-    // look like the branch was checked out when it wasn't).
+    // Uncommitted changes in the switch's way were asked about (Stash & Retry
+    // or Cancel — bridge.ts), and the user cancelled: nothing ran.
+    if (result?.cancelled) return;
+    // On failure HEAD didn't move — surface the reason and DON'T refresh as if
+    // it succeeded (which made the UI look like the branch was checked out
+    // when it wasn't). A refusal that is the user's state (`expected`) is said
+    // in the neutral tone.
     //
     // `result` is typed non-nullable but arrives over IPC: a channel that
     // failed to register, or a main-process throw, hands back undefined, and
     // reading `.ok` off it threw inside an async handler — no toast, no error,
     // the click simply did nothing.
     if (!result?.ok) {
-      toast(result.message || "Couldn't check out — you may have uncommitted changes.", "error");
+      toast(result?.message || "Couldn't check out.", result?.expected ? "info" : "error");
       return;
     }
     toast(`Checked out ${ref}.`, "success");
@@ -8022,6 +8047,8 @@ class App {
   private pullAsking(): Promise<PullOutcome> {
     // pull-stop-reviewed: a forwarder. Both doors that call it hand its outcome
     // to pullVerdict, which settles a stop and a block.
+    // in-the-way-reviewed: …and a Cancel at the Stash & Retry question, which
+    // pullVerdict reads as `cancelled`.
     return pullWithChoice({
       pull: (o) => host.invoke("sync:pull", o),
       ask: (d) => askPullMode(d, this.whileThisRepo()),
@@ -9792,6 +9819,9 @@ class App {
     }
     try {
       const result = await host.invoke("commit:action", req);
+      // Asked "Stash & Retry or Cancel?" over the user's changes in the way
+      // (bridge.ts), and cancelled: nothing ran, nothing failed.
+      if (result.cancelled) return;
       if (!result.ok) {
         toast(
           result.message ?? `Couldn't ${req.action.replace(/-/g, " ")}.`,
@@ -9933,7 +9963,6 @@ function savePrefs(p: Record<string, unknown>): void {
     /* storage may be unavailable; prefs are non-essential */
   }
 }
-
 
 new App().start().catch((err) => {
   // eslint-disable-next-line no-console

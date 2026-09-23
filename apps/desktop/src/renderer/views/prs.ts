@@ -2044,8 +2044,11 @@ async function doCheckout(n: number, btn: HTMLElement): Promise<void> {
   (btn as HTMLButtonElement).disabled = true;
   try {
     const r = await host.invoke("pr:checkout", n);
+    // Uncommitted changes in the switch's way were asked about (Stash & Retry
+    // or Cancel — bridge.ts), and the user cancelled: nothing ran.
+    if (r.cancelled) return;
     if (!r.ok) {
-      toast(r.message ?? "Couldn't check out the PR.", "error");
+      toast(r.message ?? "Couldn't check out the PR.", r.expected ? "info" : "error");
       return;
     }
     toast(`Checked out PR #${n} as pr/${n}.`, "success");

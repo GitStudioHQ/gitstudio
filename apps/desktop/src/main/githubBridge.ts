@@ -22,6 +22,7 @@ import { parseGitHubRemote } from "./githubRemote";
 // Re-exported so existing importers (and their tests) keep their seam.
 export { parseGitHubRemote } from "./githubRemote";
 import { errorFields } from "./githubErrors";
+import { applyForDoor, checkoutOp } from "./inTheWay";
 import type {
   CheckRun,
   CommitActionResult,
@@ -382,20 +383,34 @@ export class GitHubBridge {
   }
 
   /** Fetch the PR's head into a local `pr/<n>` branch and check it out. */
-  async prCheckout(n: number): Promise<CommitActionResult> {
+  async prCheckout(req: number | { number: number; stashFirst?: string }): Promise<CommitActionResult> {
     const ctx = this.repos.getContext();
     if (!ctx) {
       return { ok: false, changed: false, expected: true, message: "No repository open." };
+    }
+    // The number, or — sent again after Stash & Retry — `{ number, stashFirst }`.
+    const n = typeof req === "number" ? req : req?.number;
+    const stashFirst = typeof req === "number" ? undefined : req?.stashFirst;
+    if (!Number.isSafeInteger(n) || (n as number) <= 0) {
+      return { ok: false, changed: false, message: "That isn't a pull request number." };
     }
     try {
       const f = await ctx.process.run(["fetch", "origin", `pull/${n}/head:pr/${n}`]);
       if (f.code !== 0) {
         return { ok: false, changed: false, message: f.stderr.trim() };
       }
-      const c = await ctx.process.run(["checkout", `pr/${n}`]);
+      // Through the one door for commit-applying commands (main/inTheWay.ts):
+      // a switch refused over uncommitted work in its way said which files and
+      // offered nothing — git's "would be overwritten by checkout", in red, and
+      // filed. It answers which files now, `expected`, and the renderer offers
+      // Stash & Retry.
+      const applied = await applyForDoor(ctx, checkoutOp(["checkout", `pr/${n}`]), stashFirst);
+      if ("answer" in applied) return applied.answer;
+      const c = applied.result;
+      const withNote = applied.stashNote ? { stashNote: applied.stashNote } : {};
       return c.code === 0
-        ? { ok: true, changed: true }
-        : { ok: false, changed: false, message: c.stderr.trim() };
+        ? { ok: true, changed: true, ...withNote }
+        : { ok: false, changed: false, message: c.stderr.trim(), ...withNote };
     } catch (err) {
       return { ok: false, changed: false, message: String(err) };
     }

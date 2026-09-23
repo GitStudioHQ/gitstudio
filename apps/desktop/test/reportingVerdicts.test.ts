@@ -19,7 +19,7 @@ import "./hermeticGit";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -369,7 +369,10 @@ test("a pull the user's uncommitted work is in the way of files nothing, says so
     assert.equal(await filed(async () => r), undefined, `${label}: nothing filed`);
     assert.equal(r.dirty?.files, 1, label);
     assert.match(r.message ?? "", /uncommitted changes to base\.txt/, label);
-    assert.match(r.message ?? "", /commit or stash it, then pull again/i, label);
+    // …and it is answerable: the renderer asks Stash & Retry or Cancel about
+    // exactly these files (main/inTheWay.ts, renderer/bridge.ts).
+    assert.match(r.message ?? "", /Stash it and try again, or commit it first\./, label);
+    assert.deepEqual(r.inTheWay, { kind: "pull", files: ["base.txt"], root: realpathSync(work) }, label);
     assert.doesNotMatch(r.message ?? "", /error:|Aborting|Updating|->|Please commit/, `${label}: not git's lines`);
     const v = pullVerdict({ result: r, cancelled: false }, "Pull failed.");
     assert.equal(v.kind, "blocked", `${label}: settled in Changes, where the work is committed or stashed`);

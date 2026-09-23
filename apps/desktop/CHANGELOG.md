@@ -89,8 +89,22 @@ but they share the same engine, so most Git behaviour lands in both at once.
   pulling with rebase — Pull showed git's *"Your local changes to the following
   files would be overwritten by merge"* (or *"cannot pull with rebase"*) in
   red, after the fetch's own lines, and sent a crash report. It now says which
-  files are in the way and to commit or stash them, and takes you to
-  **Changes**.
+  files are in the way and offers **Stash & Retry** — stash just those files,
+  pull, and put them back — or **Cancel**.
+- **Revert, cherry-pick, checkout, merge, rebase and stash apply over your
+  changes showed git's refusal and sent a crash report.** Reverting a commit
+  while you had an edit to a file it touches showed *"Your local changes to the
+  following files would be overwritten by merge … fatal: revert failed"* in
+  red, as if the app had failed. Every command that applies commits — Revert,
+  Cherry-pick and Check out (from the commit page, the Commits list and the
+  Branches view), Merge, Rebase onto, Create and switch, a stash's Apply and
+  Pop, and a pull request's Checkout — now says which of your changes are in
+  the way (*"Your uncommitted changes to notes.md are in the way of the
+  revert"*) and offers **Stash & Retry** or **Cancel**. Stash & Retry puts your
+  changes back exactly as they were, staged ones staged; when they can't simply
+  come back (they conflict with what came in, or the command stopped on
+  conflicts of its own) it says which stash they are in. Nothing is sent as a
+  crash report — and a command that fails for any other reason still is.
 - **With `pull.ff only` in your git config, a diverged branch got git's
   advice.** That setting is one git's own advice suggests, and Pull then showed
   *"Diverging branches can't be fast-forwarded"* and its hints in red, and sent

@@ -299,6 +299,18 @@ export interface CommitActionRequest {
    * and `git checkout heads/release` detaches HEAD at the branch tip.
    */
   fullName?: string;
+  /** See StashFirst: this request again, after the user chose Stash & Retry. */
+  stashFirst?: string;
+}
+
+/**
+ * Carried by a commit-applying request sent AGAIN after the user chose Stash &
+ * Retry (see CommitActionResult.inTheWay): the root of the repository the
+ * refusal came from. The main process stashes the changes in the way, runs
+ * the same request, and puts them back — and refuses in any other repository.
+ */
+export interface StashFirst {
+  stashFirst?: string;
 }
 
 export interface CommitActionResult {
@@ -313,6 +325,28 @@ export interface CommitActionResult {
    * paths (see main/expectedError.ts).
    */
   expected?: boolean;
+  /**
+   * A command that applies commits was refused because the user's uncommitted
+   * work is in its way (main/inTheWay.ts). Always with `expected` and the
+   * engine's sentence in `message`. The renderer asks Stash & Retry or Cancel,
+   * and a Stash & Retry sends the same request again with `stashFirst: root`.
+   */
+  inTheWay?: InTheWayInfo;
+  /** After a Stash & Retry: what became of the stashed changes, when it is
+   *  anything but "back where they were". Said in the neutral tone. */
+  stashNote?: string;
+  /** The renderer asked about changes in the way and the user cancelled:
+   *  nothing ran, nothing failed, nothing to say. Never sent by main. */
+  cancelled?: true;
+}
+
+/** See CommitActionResult.inTheWay. */
+export interface InTheWayInfo {
+  kind: "cherry-pick" | "revert" | "merge" | "rebase" | "checkout" | "stash" | "pull";
+  /** The user's files in the way, repo-relative. Never empty. */
+  files: string[];
+  /** The repository the refusal came from; a retry is refused in any other. */
+  root: string;
 }
 
 /**
@@ -1846,8 +1880,8 @@ export interface IpcChannels {
   "commit": [{ message: string; amend?: boolean }, CommitActionResult];
   // ── Stashes ──
   "stash:list": [void, StashInfo[]];
-  "stash:apply": [string, CommitActionResult];
-  "stash:pop": [string, CommitActionResult];
+  "stash:apply": [string | ({ ref: string } & StashFirst), CommitActionResult];
+  "stash:pop": [string | ({ ref: string } & StashFirst), CommitActionResult];
   "stash:drop": [string, CommitActionResult];
   /**
    * Put a dropped stash back — `git stash store <sha>`.
@@ -1886,9 +1920,11 @@ export interface IpcChannels {
    * Pull. With no `mode` the bridge decides — and when the branch has diverged
    * with nothing in the user's config to settle it, it changes NOTHING and
    * answers `{ ok: false, expected: true, diverged }` so the caller can ask.
-   * Calling again with `mode` passes the flag to git explicitly.
+   * Calling again with `mode` passes the flag to git explicitly. Refused over
+   * the user's uncommitted work it answers `inTheWay` (and `dirty`), and sent
+   * again with `stashFirst` it stashes them, pulls, and puts them back.
    */
-  "sync:pull": [{ mode?: PullMode } | void, PullActionResult];
+  "sync:pull": [({ mode?: PullMode } & StashFirst) | void, PullActionResult];
   "sync:push": [{ setUpstream?: boolean; force?: boolean } | void, PushActionResult];
   /** Push (or publish) ONE named branch, not just the checked-out one. */
   "branch:push": [{ name: string }, CommitActionResult];
@@ -1922,7 +1958,7 @@ export interface IpcChannels {
    *  `upstream` ("origin/foo") re-establishes the tracking a delete took with
    *  it, so the restored branch is ahead/behind the same thing it was. */
   "branch:create": [
-    { name: string; checkout?: boolean; startPoint?: string; upstream?: string },
+    { name: string; checkout?: boolean; startPoint?: string; upstream?: string } & StashFirst,
     CommitActionResult,
   ];
   /** Delete a local branch. `was` is the tip it pointed at and `upstream` what
@@ -2054,7 +2090,7 @@ export interface IpcChannels {
    *  `closed` (they carry `mergedAt`), so the renderer narrows those locally. */
   "pr:list": [{ state?: "open" | "closed" | "all" } | void, PullRequest[]];
   "pr:detail": [number, PrDetail | undefined];
-  "pr:checkout": [number, CommitActionResult];
+  "pr:checkout": [number | ({ number: number } & StashFirst), CommitActionResult];
   "pr:merge": [{ number: number; method: MergeMethod }, CommitActionResult];
   "pr:commits": [number, PrCommitInfo[]];
   "pr:conversation": [number, PrComment[]];
@@ -2270,8 +2306,8 @@ export interface IpcChannels {
     CommitActionResult & { indexText?: string },
   ];
   // ── Branch ops (engine-backed: merge / rebase / rename / upstream) ──
-  "branch:merge": [{ name: string; noFf?: boolean }, CommitActionResult];
-  "branch:rebase": [{ onto: string }, CommitActionResult];
+  "branch:merge": [{ name: string; noFf?: boolean } & StashFirst, CommitActionResult];
+  "branch:rebase": [{ onto: string } & StashFirst, CommitActionResult];
   "branch:rename": [{ from: string; to: string }, CommitActionResult];
   "branch:setUpstream": [{ name: string; upstream: string }, CommitActionResult];
   /** Delete a branch ON the remote. `was` is the commit the remote-tracking

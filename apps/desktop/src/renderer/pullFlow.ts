@@ -142,7 +142,11 @@ export type PullVerdict =
   | { kind: "pulled"; message: string };
 
 export function pullVerdict(out: PullOutcome, fallback: string): PullVerdict {
-  if (out.cancelled) return { kind: "cancelled" };
+  // Cancelled at either question: how to reconcile a divergence, or — the
+  // user's uncommitted work in the pull's way — Stash & Retry or Cancel
+  // (bridge.ts answers that one for every door, as `cancelled`). Either way the
+  // first pull already fetched, so the door refreshes the counts.
+  if (out.cancelled || out.result.cancelled) return { kind: "cancelled" };
   const r = out.result;
   if (r.stopped) {
     const n = r.stopped.conflicts;

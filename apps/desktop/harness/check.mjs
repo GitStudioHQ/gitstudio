@@ -629,6 +629,23 @@ const CASES = [
   // Commit & Push whose force the bridge refuses: the neutral tone, and Pull.
   ["a-refused-force-push-after-commit-says-so-and-offers-pull", "changes", { extra: "forcerefused=1" }],
   ["a-refused-force-push-after-commit-says-so-and-offers-pull", "changes", { extra: "forcerefused=1", theme: "light" }],
+  // Uncommitted work in a command's way (crash report #18): every door asks
+  // Stash & Retry or Cancel, from one place, and the question survives the
+  // watcher's refresh. ?intheway= refuses each door's first request.
+  ["a-revert-over-your-changes-asks-and-outlives-the-refresh", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "intheway=1" }],
+  ["a-revert-over-your-changes-asks-and-outlives-the-refresh", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "intheway=1", theme: "light" }],
+  ["cancelling-the-stash-question-runs-nothing-and-says-nothing", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "intheway=1" }],
+  ["a-pull-over-your-changes-asks-and-outlives-its-own-fetch", "code", { extra: "intheway=1" }],
+  ["a-pull-over-your-changes-asks-and-outlives-its-own-fetch", "code", { extra: "intheway=1", theme: "light" }],
+  ["the-stash-question-does-not-follow-you-to-another-repository", "code", { extra: "intheway=1" }],
+  ["a-merge-over-your-changes-asks-too", "branches", { extra: "intheway=1" }],
+  ["a-rebase-cancelled-at-the-stash-question-says-nothing", "branches", { extra: "intheway=1" }],
+  ["a-stash-apply-over-your-changes-asks-too", "branches~click:.gh-seg-btn:nth-child(4)", { extra: "intheway=1" }],
+  ["a-pull-request-checkout-over-your-changes-asks-too", "prs~open106", { extra: "intheway=1" }],
+  ["what-a-stash-and-retry-could-not-put-back-is-said", "code", { extra: "intheway=note" }],
+  ["what-a-stash-and-retry-could-not-put-back-is-said", "code", { extra: "intheway=note", theme: "light" }],
+  ["still-in-the-way-after-the-stash-is-said-not-asked-again", "code", { extra: "intheway=still" }],
+  ["a-genuine-failure-asks-nothing-and-stays-red", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "intheway=fail" }],
 ];
 
 function run(scene, checkId, opts = {}) {

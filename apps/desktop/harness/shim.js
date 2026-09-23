@@ -1062,6 +1062,66 @@
     return fn(req);
   };
 
+  // ── Uncommitted work in a command's way (crash report #18) ──────────────
+  // ?intheway=1 → every door that applies commits — commit:action's checkout,
+  // checkout-ref, cherry-pick and revert; stash:apply / stash:pop;
+  // branch:merge / branch:rebase; branch:create with a switch from elsewhere;
+  // pr:checkout; sync:pull — answers its FIRST request as the bridge answers a
+  // refusal over the user's uncommitted work (main/inTheWay.ts): ok:false,
+  // expected, the engine's sentence, and `inTheWay` naming the file and the
+  // repository. The renderer then asks Stash & Retry or Cancel (bridge.ts),
+  // and the retry comes back carrying `stashFirst`, answered as the door's
+  // success. Without these the doors had no fixture at all (stash:apply,
+  // branch:merge and pr:checkout fell through to the mutation fallback's
+  // {ok:true}), so no refusal could happen in a scene.
+  //   intheway=note  → the retry succeeds, and says where the stashed changes
+  //                    are (they could not simply come back)
+  //   intheway=still → the retry is STILL refused over uncommitted work
+  //                    (something the stash could not cover)
+  //   intheway=fail  → the first request fails for a reason that is NOT the
+  //                    user's work — a genuine failure, which stays red
+  const inTheWayScene = params.get("intheway");
+  const WAY_FILE = "docs/notes.md";
+  const THE_WAY = {
+    revert: "the revert",
+    "cherry-pick": "the cherry-pick",
+    merge: "the merge",
+    rebase: "the rebase",
+    checkout: "switching to it",
+    stash: "applying the stash",
+    pull: "the pull",
+  };
+  function throughTheDoor(req, kind, succeed) {
+    if (!inTheWayScene) return succeed(req);
+    const retry = !!(req && typeof req === "object" && typeof req.stashFirst === "string");
+    if (inTheWayScene === "fail" && !retry) {
+      return { ok: false, changed: false, message: "fatal: unable to read tree 1a2b3c4d5e6f" };
+    }
+    if (!retry || inTheWayScene === "still") {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          kind === "rebase"
+            ? `A rebase needs a clean working tree, and your uncommitted changes to ${WAY_FILE} are in the way. ` +
+              "Stash it and try again, or commit it first."
+            : `Your uncommitted changes to ${WAY_FILE} are in the way of ${THE_WAY[kind]} — git won't overwrite them. ` +
+              "Stash it and try again, or commit it first.",
+        inTheWay: { kind, files: [WAY_FILE], root: (fixtures["repo:current"] || {}).root },
+      };
+    }
+    const done = succeed(req);
+    return inTheWayScene === "note"
+      ? {
+          ...done,
+          stashNote:
+            `Your changes to ${WAY_FILE} are kept in the stash "GitStudio: before ${kind === "pull" ? "pulling" : kind}" — ` +
+            "git won't put them back over the changes that just came in. Apply it when you're ready.",
+        }
+      : done;
+  }
+
   const dynamic = {
     // A READ that the fallback used to answer with a mutation shape. Present so
     // the AI-gating path is exercised instead of silently failing open.
@@ -1110,6 +1170,21 @@
     "sync:pull": (opts) => {
       const mode = (opts && opts.mode) || null;
       window.__gsPulledWith = mode;
+      // ?intheway=1 → a branch that is only behind, with an edit to a file the
+      // incoming commits change: refused over it (see throughTheDoor). The
+      // pull FETCHED before it was refused, so the watcher reports the moved
+      // remote-tracking ref 250 ms later — while the question is on screen.
+      if (inTheWayScene) {
+        const answer = throughTheDoor(opts, "pull", () => {
+          pullState.done = true;
+          return { ok: true, changed: true };
+        });
+        if (!(opts && opts.stashFirst)) {
+          pullState.fetched = true;
+          setTimeout(() => window.__gsEmit("repo:filesChanged", { gitDir: true }), 250);
+        }
+        return answer.inTheWay ? { ...answer, dirty: { files: answer.inTheWay.files.length } } : answer;
+      }
       if (!params.get("diverged")) return { ok: true, changed: true };
       // Pull pressed AGAIN over the merge or rebase that stopped: the branch is
       // still ahead and behind, so Pull is still on offer, and git refuses it
@@ -1194,7 +1269,10 @@
     // top-bar action is Push, so Pull — and the question it now asks — was
     // unreachable from every scene.
     "sync:status": () =>
-      params.get("diverged")
+      // ?intheway=1 → only behind, so the top bar's action is Pull.
+      inTheWayScene
+        ? { branch: "main", upstream: "origin/main", ahead: 0, behind: pullState.done ? 0 : 3, noUpstream: false }
+        : params.get("diverged")
         ? {
             branch: "main",
             upstream: "origin/main",
@@ -1598,19 +1676,33 @@
         ? { ok: true, changed: true }
         : { ok: true, changed: true, was: "b1a5ded", upstream: hit.upstream };
     },
-    "branch:create": ({ name, startPoint }) => {
-      const was = deletedBranches.get(name);
-      if (was && startPoint) {
-        deletedBranches.delete(name);
-        branches = [...branches, was];
+    "branch:create": (req) => {
+      const create = ({ name, startPoint }) => {
+        const was = deletedBranches.get(name);
+        if (was && startPoint) {
+          deletedBranches.delete(name);
+          branches = [...branches, was];
+          return { ok: true, changed: true };
+        }
+        if (branches.some((b) => b.name === name)) {
+          return { ok: false, changed: false, message: "a branch of that name already exists" };
+        }
+        branches = [...branches, { name, current: false, ahead: 0, behind: 0, subject: "new", date: S(0) }];
         return { ok: true, changed: true };
-      }
-      if (branches.some((b) => b.name === name)) {
-        return { ok: false, changed: false, message: "a branch of that name already exists" };
-      }
-      branches = [...branches, { name, current: false, ahead: 0, behind: 0, subject: "new", date: S(0) }];
-      return { ok: true, changed: true };
+      };
+      // Create AND switch from somewhere else is a checkout — through the door.
+      return req && req.checkout && req.startPoint ? throughTheDoor(req, "checkout", create) : create(req);
     },
+    // A merge or a rebase from the Branches view. MUTATIONS with no fixture,
+    // so both answered the fallback's {ok:true} and no refusal could happen.
+    "branch:merge": (req) => throughTheDoor(req, "merge", () => ({ ok: true, changed: true })),
+    "branch:rebase": (req) => throughTheDoor(req, "rebase", () => ({ ok: true, changed: true })),
+    // Apply / pop from the stash list or a stash's page: the ref, or — sent
+    // again after Stash & Retry — `{ ref, stashFirst }`.
+    "stash:apply": (req) => throughTheDoor(req, "stash", () => ({ ok: true, changed: true })),
+    "stash:pop": (req) => throughTheDoor(req, "stash", () => ({ ok: true, changed: true })),
+    // A pull request fetched and checked out: the number, or `{ number, stashFirst }`.
+    "pr:checkout": (req) => throughTheDoor(req, "checkout", () => ({ ok: true, changed: true })),
     // A rename carries the tracking over UNCHANGED, exactly as `git branch -m`
     // does — which is the whole reason the reconcile question exists.
     "branch:rename": ({ from, to }) => {
@@ -2054,11 +2146,16 @@
     // the missing-channel path and returned undefined, so the caller's
     // `result.ok` threw and the click looked inert — which is exactly how the
     // branch switcher's checkout hid while it was being tested.
-    "commit:action": (req) => ({
-      ok: true,
-      changed: true,
-      message: `${req?.action ?? "action"} ok`,
-    }),
+    //
+    // A checkout, a cherry-pick or a revert goes through the door (see
+    // throughTheDoor): ?intheway=1 refuses it over uncommitted work first.
+    "commit:action": (req) => {
+      const done = () => ({ ok: true, changed: true, message: `${req?.action ?? "action"} ok` });
+      const kind = { checkout: "checkout", "checkout-ref": "checkout", "cherry-pick": "cherry-pick", revert: "revert" }[
+        req?.action
+      ];
+      return kind ? throughTheDoor(req, kind, done) : done();
+    },
     "pr:fileDiff": (req) => (/\.(png|jpe?g|gif|ico|pdf|zip|dmg|vsix|woff2?)$/i.test(req.path)
       ? {
           // A binary in a pull request used to come back as the SAME

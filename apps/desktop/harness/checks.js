@@ -13291,6 +13291,306 @@
       const pulled = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
       c.ok(pulled.length > 0, "and Pull pulls");
     },
+
+    // ── Uncommitted work in a command's way (crash report #18) ─────────────
+    // A revert over an edit to a file it touches: git refused ("Your local
+    // changes to the following files would be overwritten by merge … fatal:
+    // revert failed"), and the door showed that in red and filed it as a crash.
+    // Every door that applies commits now answers such a refusal with the files
+    // in the way (main/inTheWay.ts), and bridge.ts asks — once, for every door
+    // — Stash & Retry or Cancel. These run on ?intheway=, where each door's
+    // FIRST request is refused as the bridge refuses it (see the shim).
+    /**
+     * Report #18's own door: the commit page's Revert. It asks, naming the
+     * file; the question outlives the watcher's refresh; Stash & Retry sends
+     * the same revert again, carrying the repository it was asked in.
+     */
+    "a-revert-over-your-changes-asks-and-outlives-the-refresh": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const sent = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "revert");
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      c.ok(!!more, "the commit page carries its actions menu");
+      if (!more) return;
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Revert this commit/.test(text(i) || ""));
+      c.ok(!!item, "it offers Revert");
+      if (!item) return;
+      item.click();
+      await settle(350);
+      const ok = $(".modal-ok");
+      c.ok(!!ok, "Revert confirms first, as it always has");
+      if (!ok) return;
+      ok.click();
+      await settle(700);
+      c.eq(sent().length, 1, "the revert was sent");
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "refused over the user's changes, it ASKS");
+      c.match(text(".modal-message"), /changes to docs\/notes\.md are in the way of the revert/, "…naming the file, and what it is in the way of");
+      const labels = $$(".modal-choice-label").map((e) => text(e));
+      c.ok(labels.includes("Stash & Retry"), `Stash & Retry is offered (${labels.join(" | ")})`);
+      c.ok(!!$$(".modal-actions button").find((b) => /^Cancel$/.test(text(b) || "")), "…and Cancel");
+      c.ok(!$(".toast-error"), "nothing is red: this is the user's state, not a failure");
+      c.ok(!/overwritten by merge|fatal:|Aborting/.test(text("#root") + text("#toast-stack")), "…and git's text is shown nowhere");
+      // A refused command can still refresh the index, and the watcher's
+      // refresh re-routes the view, which tears floating layers down — the
+      // pull's own question was answered "Cancel" that way, by nobody.
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      c.ok(window.__gsEmit("repo:filesChanged", { gitDir: true }) > 0, "precondition: the app listens for the watcher");
+      await settle(900);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the refresh re-routed underneath");
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "the question is still there after the refresh");
+      c.eq(sent().length, 1, "…and nothing was answered for the user");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return;
+      stash.click();
+      await settle(800);
+      c.eq(sent().length, 2, "Stash & Retry sends the revert again — once");
+      const [first, again] = sent().map((r) => r.payload);
+      c.eq(again?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…carrying the repository the refusal came from");
+      c.eq(again?.sha, first?.sha, "…for the same commit");
+      c.eq(first?.stashFirst, undefined, "the first request asked for nothing to be stashed");
+      c.ok(!$(".modal-card"), "the question is answered and gone");
+      const t = $$("#toast-stack .toast").find((x) => /Revert commit created/.test(text(x)));
+      c.ok(!!t && t.classList.contains("toast-success"), "…and the revert is reported done");
+      c.ok(!$(".toast-error"), "nothing red at any point");
+    },
+    /** Cancel runs nothing, says nothing, and files nothing. */
+    "cancelling-the-stash-question-runs-nothing-and-says-nothing": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const sent = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "cherry-pick");
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      if (!more) return c.ok(false, "no actions menu to press");
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Cherry-pick onto current branch/.test(text(i) || ""));
+      c.ok(!!item, "it offers Cherry-pick");
+      if (!item) return;
+      item.click();
+      await settle(700);
+      c.match(text(".modal-message"), /in the way of the cherry-pick/, "a cherry-pick asks the same question");
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b) || ""));
+      if (!cancel) return c.ok(false, "no Cancel to press");
+      cancel.click();
+      await settle(700);
+      c.ok(!$(".modal-card"), "the question closes");
+      c.eq(sent().length, 1, "nothing is sent again");
+      c.eq($$("#toast-stack .toast").length, 0, `and nothing is said (${text("#toast-stack")})`);
+    },
+    /**
+     * The top bar's Pull, over an edit to a file the pull changes. The pull
+     * FETCHED before git refused, so the watcher reports the moved ref while
+     * the question is up — and the question survives it; Stash & Retry pulls.
+     */
+    "a-pull-over-your-changes-asks-and-outlives-its-own-fetch": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const main = $(".topbar-sync .sync-main");
+      c.match(text(main), /^Pull 3$/, "the branch is behind, so the top bar offers Pull");
+      if (!main) return;
+      main.click();
+      await settle(200);
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "the refused pull asks");
+      c.match(text(".modal-message"), /changes to docs\/notes\.md are in the way of the pull/, "…naming the file");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      await settle(900); // the shim's watcher fires 250 ms after the fetch
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the fetch's refresh re-routed underneath");
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "the question outlives the refresh its own fetch caused");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull").map((r) => r.payload);
+      c.eq(pulls.length, 2, "the pull, then its retry");
+      c.eq(pulls[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "the retry stashes first, in this repository");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /Pulled/.test(text(t))), `and it pulled (${text("#toast-stack")})`);
+      c.ok(!$(".toast-error"), "nothing red");
+    },
+    /** Switching repository answers the question with Cancel: a Stash & Retry
+     *  there would stash and run in a repository nobody asked about. */
+    "the-stash-question-does-not-follow-you-to-another-repository": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(200);
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "precondition: the question is up");
+      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
+      await settle(900);
+      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
+      c.eq(pulls.length, 1, "…and nothing is stashed or pulled");
+      const failed = $$("#toast-stack .toast").filter((t) => /fail|couldn/i.test(text(t) || ""));
+      c.eq(failed.length, 0, `…and a cancelled question is not said as a failed pull (${text("#toast-stack")})`);
+    },
+    /** The Branches view's Rebase, cancelled at the question: nothing ran and
+     *  nothing is said — the menu's own reporter used to toast every ok:false. */
+    "a-rebase-cancelled-at-the-stash-question-says-nothing": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const kebab = $$("button").find((b) => /^More actions for (?!main$)/.test(b.getAttribute("aria-label") || ""));
+      if (!kebab) return c.ok(false, "no branch actions to open");
+      kebab.click();
+      await settle(350);
+      const rebase = $$(".dropdown-item").find((r) => /^Rebase current onto /.test(text(r) || ""));
+      c.ok(!!rebase, "it offers Rebase");
+      if (!rebase) return;
+      rebase.click();
+      await settle(350);
+      const ok = $(".modal-ok");
+      c.ok(!!ok, "a rebase confirms first, as it always has");
+      if (!ok) return;
+      ok.click();
+      await settle(700);
+      c.match(text(".modal-message"), /^A rebase needs a clean working tree/, "the refused rebase asks, in the rebase's own words");
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b) || ""));
+      if (!cancel) return c.ok(false, "no Cancel to press");
+      cancel.click();
+      await settle(900);
+      c.eq((window.__GS_INVOKED || []).filter((r) => r.channel === "branch:rebase").length, 1, "nothing is sent again");
+      c.eq($$("#toast-stack .toast").length, 0, `and nothing is said (${text("#toast-stack")})`);
+    },
+    /** The Branches view's Merge asks the same question, from the same place. */
+    "a-merge-over-your-changes-asks-too": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const kebab = $$("button").find((b) => /^More actions for (?!main$)/.test(b.getAttribute("aria-label") || ""));
+      c.ok(!!kebab, "a branch other than the current one offers its actions");
+      if (!kebab) return;
+      const name = (kebab.getAttribute("aria-label") || "").replace(/^More actions for /, "");
+      kebab.click();
+      await settle(350);
+      const merge = $$(".dropdown-item").find((r) => /^Merge .* into current/.test(text(r) || ""));
+      c.ok(!!merge, "it offers Merge");
+      if (!merge) return;
+      merge.click();
+      await settle(700);
+      c.match(text(".modal-message"), /in the way of the merge/, "the refused merge asks");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const merges = (window.__GS_INVOKED || []).filter((r) => r.channel === "branch:merge").map((r) => r.payload);
+      c.eq(merges.length, 2, "the merge, then its retry");
+      c.eq(merges[1]?.name, name, "…of the same branch");
+      c.eq(merges[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…stashing first");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /merge/.test(text(t))), `and the merge is reported (${text("#toast-stack")})`);
+    },
+    /** A stash applied from the stash list over changes in its way: the same
+     *  question, and the retry names the stash it was asked about. */
+    "a-stash-apply-over-your-changes-asks-too": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const row = $$(".sec-row")[0];
+      c.ok(!!row, "a stash is listed");
+      if (!row) return;
+      const apply = row.querySelector('button[aria-label^="Apply "]');
+      c.ok(!!apply, "the stash offers Apply");
+      if (!apply) return;
+      apply.click();
+      await settle(900);
+      c.match(text(".modal-message"), /in the way of applying the stash/, "the refused apply asks");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const applies = (window.__GS_INVOKED || []).filter((r) => r.channel === "stash:apply").map((r) => r.payload);
+      c.eq(applies.length, 2, "the apply, then its retry");
+      c.eq(typeof applies[0], "string", "the first request is the ref, as it always was");
+      c.eq(applies[1]?.ref, applies[0], "the retry names the same stash");
+      c.eq(applies[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…and stashes first");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /Applied/.test(text(t))), `and it is applied (${text("#toast-stack")})`);
+    },
+    /** A pull request checked out over changes in its way. */
+    "a-pull-request-checkout-over-your-changes-asks-too": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const btn = $$("button").find((b) => /^Checkout$/.test(text(b) || "") && /as pr\//.test(b.title || ""));
+      c.ok(!!btn, "the pull request offers Checkout");
+      if (!btn) return;
+      btn.click();
+      await settle(700);
+      c.match(text(".modal-message"), /in the way of switching to it/, "the refused checkout asks");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const outs = (window.__GS_INVOKED || []).filter((r) => r.channel === "pr:checkout").map((r) => r.payload);
+      c.eq(outs.length, 2, "the checkout, then its retry");
+      c.eq(outs[1]?.number, outs[0], "…of the same pull request");
+      c.eq(outs[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…stashing first");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /Checked out PR/.test(text(t))), `and it is checked out (${text("#toast-stack")})`);
+    },
+    /** When the stashed changes cannot simply come back, the retry says where
+     *  they are — in the neutral tone, with the stash's name. */
+    "what-a-stash-and-retry-could-not-put-back-is-said": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(300);
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const note = $$("#toast-stack .toast").find((t) => /kept in the stash "GitStudio: before pulling"/.test(text(t)));
+      c.ok(!!note, `where the changes are is said (${text("#toast-stack")})`);
+      c.ok(!!note && note.classList.contains("toast-info"), "…in the neutral tone");
+    },
+    /** Still in the way after the stash (something it could not cover): said
+     *  once, in the neutral tone — never asked a second time, never a loop. */
+    "still-in-the-way-after-the-stash-is-said-not-asked-again": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(300);
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      c.ok(!$(".modal-card"), "not asked a second time");
+      const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
+      c.eq(pulls.length, 2, "one pull and one retry — no loop");
+      c.ok(!!$$("#toast-stack .toast").find((t) => /in the way of the pull/.test(text(t))), `the refusal is said (${text("#toast-stack")})`);
+      c.ok(!$(".toast-error"), "…and not as a failure");
+    },
+    /** A failure that is NOT the user's work in the way asks nothing, and is
+     *  still said as a failure — the door must not swallow a real one. */
+    "a-genuine-failure-asks-nothing-and-stays-red": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      if (!more) return c.ok(false, "no actions menu to press");
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Cherry-pick onto current branch/.test(text(i) || ""));
+      if (!item) return c.ok(false, "no Cherry-pick to press");
+      item.click();
+      await settle(700);
+      c.ok(!$(".modal-card"), "nothing is asked");
+      const t = $$("#toast-stack .toast").find((x) => /unable to read tree/.test(text(x)));
+      c.ok(!!t && t.classList.contains("toast-error"), `the failure is said, in red (${text("#toast-stack")})`);
+    },
     /** The PR's review threads: one GitHub could not return has no file to hang
      *  on, so every file's panel says it — "No comments on this file" is not a
      *  claim the panel can make about a thread nobody could read. */

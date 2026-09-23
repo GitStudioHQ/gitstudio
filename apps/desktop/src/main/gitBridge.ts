@@ -10,6 +10,8 @@ import { readFile, readdir, writeFile, stat, lstat, readlink, realpath } from "n
 import { continueRebase, skipRebase, abortRebase } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { ExpectedError } from "./expectedError";
+import { applyForDoor, checkoutOp, pullForDoor, type DoorApplied } from "./inTheWay";
+import type { ApplyOp } from "@gitstudio/git-service/changesInTheWay";
 import { join, resolve, sep, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
@@ -27,7 +29,6 @@ import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvi
 import {
   pullBlockedMessage,
   pullDetachedMessage,
-  pullDirtyMessage,
   pullStoppedMessage,
   pushUnseenMessage,
 } from "@gitstudio/git-service/SyncOps";
@@ -1218,13 +1219,25 @@ export class GitBridge {
       return [];
     }
   }
-  async stashApply(ref: string): Promise<CommitActionResult> {
+  /**
+   * Apply / pop, through the one door for commit-applying commands: refused
+   * over uncommitted work in the stash's way, they say which files and the
+   * renderer offers Stash & Retry. The request is the ref, or — sent again
+   * after Stash & Retry — `{ ref, stashFirst }`.
+   */
+  async stashApply(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
+    const { ref, stashFirst } = stashRequest(req);
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => ctx.stashes.apply(ref));
+    return this.staged(async (ctx) =>
+      stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: false }, stashFirst)),
+    );
   }
-  async stashPop(ref: string): Promise<CommitActionResult> {
+  async stashPop(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
+    const { ref, stashFirst } = stashRequest(req);
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => ctx.stashes.pop(ref));
+    return this.staged(async (ctx) =>
+      stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: true }, stashFirst)),
+    );
   }
   async stashDrop(ref: string): Promise<CommitActionResult> {
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
@@ -1808,7 +1821,7 @@ export class GitBridge {
    * manually… git rebase --continue" hint in a red toast and a crash report —
    * report #12's symptom, reached through the door built to close it.
    */
-  async syncPull(opts?: { mode?: PullMode }): Promise<PullActionResult> {
+  async syncPull(opts?: { mode?: PullMode; stashFirst?: string }): Promise<PullActionResult> {
     if (!safePullMode(opts?.mode)) {
       // Only a malformed renderer request can get here: the mode comes from two
       // buttons in one dialog. That is our defect, so it REPORTS — marking it
@@ -1824,7 +1837,18 @@ export class GitBridge {
     let blocked: PullBlockInfo | undefined;
     let dirty: PullDirtyInfo | undefined;
     const r = await this.staged(async (ctx) => {
-      const out = await ctx.sync.pull({ mode: opts?.mode });
+      // Through the one door for commands that apply commits (main/inTheWay.ts):
+      // the user's uncommitted work in the pull's way answers which files,
+      // `expected`, and the renderer offers Stash & Retry — which sends this
+      // request again with `stashFirst`. It used to be said as "commit or stash
+      // them, then pull again", with nothing to do it.
+      const door = await pullForDoor(ctx, opts?.mode, opts?.stashFirst);
+      if ("answer" in door) {
+        if (door.answer.inTheWay) dirty = { files: door.answer.inTheWay.files.length };
+        return door.answer;
+      }
+      const out = door.pulled;
+      const note = door.stashNote ? { stashNote: door.stashNote } : {};
       if (out.stopped) {
         stopped = { operation: out.stopped.operation, conflicts: out.stopped.conflicted.length };
         return {
@@ -1832,6 +1856,7 @@ export class GitBridge {
           changed: true,
           expected: true,
           message: pullStoppedMessage(out.stopped),
+          ...note,
         };
       }
       // A merge or rebase still paused — the one a stop above lands the user
@@ -1846,24 +1871,21 @@ export class GitBridge {
           changed: false,
           expected: true,
           message: pullBlockedMessage(out.blocked),
+          ...note,
         };
       }
       // A commit or a tag checked out: no branch to pull into. The user's
       // state, in the app's words rather than git's terminal advice.
       if (out.detached) {
-        return { ok: false, changed: false, expected: true, message: pullDetachedMessage() };
+        return { ok: false, changed: false, expected: true, message: pullDetachedMessage(), ...note };
       }
-      // The user's uncommitted work in the way: a rebase needs a clean tree, a
-      // merge will not overwrite an edit it brings changes to. Work in
-      // progress — nothing ran — so it is said in the app's words and never
-      // filed. It used to be git's "error: Your local changes to the following
-      // files would be overwritten by merge" wall, in red, and a crash report.
-      if (out.dirty) {
-        dirty = { files: out.dirty.paths.length };
-        return { ok: false, changed: false, expected: true, message: pullDirtyMessage(out.dirty) };
-      }
+      // The user's uncommitted work in the way (a rebase needs a clean tree, a
+      // merge will not overwrite an edit it brings changes to) never gets
+      // here: the door answered it above, naming the files — it used to be
+      // git's "error: Your local changes to the following files would be
+      // overwritten by merge" wall, in red, and a crash report.
       if (!out.diverged) {
-        return out;
+        return { ...out, ...note };
       }
       diverged = out.diverged;
       const { branch, upstream, ahead, behind } = out.diverged;
@@ -1874,6 +1896,7 @@ export class GitBridge {
         message:
           `'${branch}' and ${upstream} have both moved on — ${commits(ahead)} here, ` +
           `${commits(behind)} there. Choose how to combine them.`,
+        ...note,
       };
     });
     if (stopped) return { ...r, stopped };
@@ -2177,14 +2200,24 @@ export class GitBridge {
     checkout?: boolean;
     startPoint?: string;
     upstream?: string;
+    stashFirst?: string;
   }): Promise<CommitActionResult> {
     if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
     if (req.startPoint && !safeArg(req.startPoint)) return UNSAFE_REF_RESULT;
     if (req.upstream && !safeArg(req.upstream)) return UNSAFE_REF_RESULT;
-    const made = await this.staged((ctx) =>
-      req.checkout
-        ? ctx.branches.checkoutNew(req.name, req.startPoint)
-        : ctx.branches.create(req.name, req.startPoint),
+    const made = await this.staged(async (ctx) =>
+      // Switching to a new branch that starts somewhere else is a checkout,
+      // refused like one over uncommitted work in its way — so it goes through
+      // the same door (main/inTheWay.ts). At HEAD it changes no file.
+      req.checkout && req.startPoint
+        ? stagedFrom(
+            await applyForDoor(ctx, checkoutOp(["checkout", "-b", req.name, req.startPoint]), req.stashFirst),
+          )
+        : req.checkout
+          ? // in-the-way-reviewed: a new branch AT HEAD changes no file, so
+            // nothing of the user's can be in its way.
+            ctx.branches.checkoutNew(req.name)
+          : ctx.branches.create(req.name, req.startPoint),
     );
     // Best-effort: a branch that exists again but tracks nothing is still the
     // branch back, and failing the whole call over the tracking config would
@@ -2365,20 +2398,27 @@ export class GitBridge {
                 ["checkout", "--detach", name]
               : ["checkout", name];
       }
-      const r = await ctx.process.run(args);
+      // Through the one door for commit-applying commands: a switch refused
+      // over uncommitted work in its way answers which files, `expected`, and
+      // the renderer offers Stash & Retry.
+      const applied = await applyForDoor(ctx, checkoutOp(args), req.stashFirst);
+      if ("answer" in applied) return applied.answer;
+      const r = applied.result;
+      const withNote = applied.stashNote ? { stashNote: applied.stashNote } : {};
       if (r.code === 0) {
-        return { ok: true, changed: true };
+        return { ok: true, changed: true, ...withNote };
       }
       const stderr = r.stderr.trim();
       const conflicts = await this.conflictExplains(ctx);
       if (conflicts) {
-        return { ok: false, changed: false, expected: true, message: conflicts };
+        return { ok: false, changed: false, expected: true, message: conflicts, ...withNote };
       }
       return {
         ok: false,
         changed: false,
         message: stderr || r.stdout.trim() || "The checkout failed.",
         ...(declinedOnStdout(r.stdout, stderr) ? { expected: true } : {}),
+        ...withNote,
       };
     });
   }
@@ -2443,6 +2483,9 @@ export class GitBridge {
       message?: string;
       changed?: boolean;
       expected?: boolean;
+      /** Carried through untouched — see applyForDoor. */
+      inTheWay?: CommitActionResult["inTheWay"];
+      stashNote?: string;
     }>,
   ): Promise<CommitActionResult> {
     const ctx = this.ctx();
@@ -2454,7 +2497,7 @@ export class GitBridge {
         const r = await op(ctx);
         const ok = r.ok ?? r.code === 0;
         if (ok) {
-          return { ok, changed: true };
+          return { ok, changed: true, ...(r.stashNote ? { stashNote: r.stashNote } : {}) };
         }
         const stderr = r.stderr?.trim() ?? "";
         const stdout = r.stdout?.trim() ?? "";
@@ -2467,6 +2510,8 @@ export class GitBridge {
             changed: r.changed ?? false,
             message: r.message,
             ...(r.expected ? { expected: true } : {}),
+            ...(r.inTheWay ? { inTheWay: r.inTheWay } : {}),
+            ...(r.stashNote ? { stashNote: r.stashNote } : {}),
           };
         }
         const both = `${stdout}\n${stderr}`;
@@ -2494,6 +2539,7 @@ export class GitBridge {
           // — and showing only stderr threw away the half that helps.
           message: [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") || "The operation failed.",
           ...(ordinary || declinedOnStdout(stdout, stderr) ? { expected: true } : {}),
+          ...(r.stashNote ? { stashNote: r.stashNote } : {}),
         };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
@@ -2528,7 +2574,24 @@ export class GitBridge {
     }
     return this.serialize(async () => {
       try {
-        const result = await ctx.process.run(args);
+        // Checkout, cherry-pick and revert go through the one door for
+        // commit-applying commands (main/inTheWay.ts). Report #18 was a revert
+        // refused over the user's uncommitted edit, filed as a crash with git's
+        // "would be overwritten by merge" text; refused like that, these now
+        // answer which files are in the way, `expected`, and the renderer
+        // offers Stash & Retry. The rest (branch, tag, reset) run as before.
+        const op = applyOpFor(req, args);
+        let note: string | undefined;
+        let result: { code: number; stdout: string; stderr: string };
+        if (op) {
+          const applied = await applyForDoor(ctx, op, req.stashFirst);
+          if ("answer" in applied) return applied.answer;
+          result = applied.result;
+          note = applied.stashNote;
+        } else {
+          result = await ctx.process.run(args);
+        }
+        const withNote = note ? { stashNote: note } : {};
         if (result.code !== 0) {
           // Same stdout fallback and same `expected` rule as staged(): reverting
           // a commit that is already reverted exits non-zero with stderr EMPTY
@@ -2539,16 +2602,17 @@ export class GitBridge {
           const stdout = result.stdout.trim();
           const conflicts = await this.conflictExplains(ctx);
           if (conflicts) {
-            return { ok: false, changed: false, expected: true, message: conflicts };
+            return { ok: false, changed: !!note, expected: true, message: conflicts, ...withNote };
           }
           return {
             ok: false,
             changed: false,
             message: stderr || stdout || "The operation failed.",
             ...(declinedOnStdout(stdout, stderr) ? { expected: true } : {}),
+            ...withNote,
           };
         }
-        return { ok: true, changed: true };
+        return { ok: true, changed: true, ...withNote };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
       }
@@ -2557,14 +2621,29 @@ export class GitBridge {
 
   // ── Branch ops (merge / rebase / rename / upstream) ─────────────────────────
 
-  async branchMerge(req: { name: string; noFf?: boolean }): Promise<CommitActionResult> {
+  /**
+   * Merge and rebase run through the one door for commit-applying commands
+   * (main/inTheWay.ts): refused over the user's uncommitted work, they answer
+   * which files are in the way, `expected`, and the renderer offers Stash &
+   * Retry — they used to answer git's "would be overwritten by merge" /
+   * "cannot rebase: You have unstaged changes" in red, and file it.
+   */
+  async branchMerge(req: { name: string; noFf?: boolean; stashFirst?: string }): Promise<CommitActionResult> {
     if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.merge(req.name, { noFf: req.noFf }));
+    // The argv BranchOps.merge runs.
+    const args = ["merge", ...(req.noFf ? ["--no-ff"] : []), req.name];
+    return this.staged(async (ctx) =>
+      stagedFrom(await applyForDoor(ctx, { kind: "merge", target: req.name, noFf: req.noFf, args }, req.stashFirst)),
+    );
   }
 
-  async branchRebase(req: { onto: string }): Promise<CommitActionResult> {
+  async branchRebase(req: { onto: string; stashFirst?: string }): Promise<CommitActionResult> {
     if (!safeArg(req.onto)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.rebaseOnto(req.onto));
+    return this.staged(async (ctx) =>
+      stagedFrom(
+        await applyForDoor(ctx, { kind: "rebase", onto: req.onto, args: ["rebase", req.onto] }, req.stashFirst),
+      ),
+    );
   }
 
   async branchRename(req: { from: string; to: string }): Promise<CommitActionResult> {
@@ -3541,6 +3620,51 @@ function rangesOverlap(a: LineRange, b: LineRange): boolean {
   const aEnd = a.end < a.start ? a.start : a.end;
   const bEnd = b.end < b.start ? b.start : b.end;
   return a.start <= bEnd && b.start <= aEnd;
+}
+
+/**
+ * A door's applied command (applyForDoor) in the shape `staged` maps: the
+ * door's own answer as it is — changes in the way, said and answerable — or
+ * git's run, with a Stash & Retry's note carried along.
+ */
+function stagedFrom(applied: DoorApplied): {
+  ok?: boolean;
+  code?: number;
+  stdout?: string;
+  stderr?: string;
+  message?: string;
+  changed?: boolean;
+  expected?: boolean;
+  inTheWay?: CommitActionResult["inTheWay"];
+  stashNote?: string;
+} {
+  if ("answer" in applied) return applied.answer;
+  const { code, stdout, stderr } = applied.result;
+  return { code, stdout, stderr, ...(applied.stashNote ? { stashNote: applied.stashNote } : {}) };
+}
+
+/** stash:apply / stash:pop take the ref, or `{ ref, stashFirst }` when sent again after Stash & Retry. */
+function stashRequest(req: unknown): { ref: unknown; stashFirst?: unknown } {
+  if (typeof req === "string") return { ref: req };
+  if (req && typeof req === "object") {
+    const r = req as { ref?: unknown; stashFirst?: unknown };
+    return { ref: r.ref, stashFirst: r.stashFirst };
+  }
+  return { ref: undefined };
+}
+
+/** The commit-applying actions of commit:action, as the one door runs them. */
+function applyOpFor(req: CommitActionRequest, args: string[]): ApplyOp | undefined {
+  switch (req.action) {
+    case "checkout":
+      return checkoutOp(args);
+    case "cherry-pick":
+      return { kind: "cherry-pick", commit: req.sha, args };
+    case "revert":
+      return { kind: "revert", commit: req.sha, args };
+    default:
+      return undefined;
+  }
 }
 
 /** The git argv for a commit action, or undefined for renderer-only actions. */
