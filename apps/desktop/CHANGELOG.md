@@ -9,6 +9,56 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Added
+- **The conflicts dashboard.** While a merge, rebase, cherry-pick, revert,
+  `git am` or stash apply is stopped, the Changes view shows every conflicted
+  file with what can be done to it — **Accept Yours**, **Accept Theirs**,
+  **Merge…**, or **Delete the file** where one side has none — a progress bar,
+  and a way out named for the operation: **Continue Rebase**, **Skip this
+  commit** where git allows it, **Abort Rebase**. It names the two sides with
+  their real branches and which way the work goes (**YOURS test → onto →
+  THEIRS master**), the commit being replayed and "commit 2 of 3". Continue is
+  disabled with the reason on screen until it can work; Skip and Abort ask
+  first, inline; a resolved file can be put back by holding **Hold to undo**
+  (mouse, or Enter / Space held). It replaces the "rebase in progress —
+  resolve and continue" banner, and it is the same dashboard the VS Code
+  extension and Merge Studio show. (merge-studio#12)
+- **The full merge editor.** A conflicted file now opens with the toolbar the
+  extension has always had — undo / redo / history, previous / next change,
+  **Apply non-conflicting changes: Yours · All · Theirs**, the wand, whitespace
+  and highlight granularity, sync scrolling, reset — an operation strip naming
+  both sides, and **Accept Yours / Accept Theirs / Cancel / Apply** at the
+  bottom. **Cancel** offers **Exit viewer** (keep the conflict for later) or
+  ending the operation; after the last file, **Continue Rebase** appears right
+  there.
+- **Settings ▸ Merge**: open merges with the non-conflicting changes already
+  applied (off by default), resolve conflicts and show diffs with GitStudio or
+  a JetBrains IDE, which IDE, and its launcher path. With the IDE chosen, a
+  conflicted file opens in its merge window and **Mark resolved** stages it.
+- A stopped operation shows from every view: a count on the **Changes** rail
+  item, and a chip in the top bar that goes straight to it.
+- The Rebase view offers **Skip this commit** where git names it as the way
+  out; on an emptied patch it was the only way forward, and it was missing.
+
+### Changed
+- **A merge no longer opens with every non-conflicting change already
+  applied.** It used to, unconditionally; now every change waits for you, as
+  it does in JetBrains IDEs and the VS Code extension. Turn **Settings ▸ Merge
+  ▸ Apply non-conflicting changes when a merge opens** on to get the old
+  behaviour back.
+- **Apply with changes still unresolved asks once instead of refusing.** The
+  merge used to stay locked until every block was settled; now the first press
+  says how many are unresolved and that they keep the original text, and a
+  second press saves.
+- The whole-file buttons read **Accept Yours / Accept Theirs**, not "Take
+  (side name)", and during a rebase Yours is your commit — on the left.
+- ⌘Z with the merge editor focused undoes the last merge action (not text, and
+  not something elsewhere in the app), whether it comes from the key or from
+  **Edit ▸ Undo**; resolving a file is itself undoable, and brings the
+  conflict back.
+
 ## [2.0.2] - 2026-09-21
 
 ### Added

@@ -180,9 +180,15 @@ export class ConflictsDashboard {
   private paint(focusKeyOverride?: string): void {
     const state = this.state;
     if (!state) return;
-    // Keep the keyboard where it was across a repaint.
+    // Keep the keyboard where it was across a repaint — only when it was IN
+    // the dashboard: a host page has its own `data-key`s (the desktop's file
+    // rows), and a repaint must never pull focus in from outside.
+    const active = document.activeElement as HTMLElement | null;
     const focusKey =
-      focusKeyOverride ?? (document.activeElement as HTMLElement | null)?.closest?.("[data-key]")?.getAttribute("data-key") ?? undefined;
+      focusKeyOverride ??
+      (active && this.element.contains(active)
+        ? active.closest("[data-key]")?.getAttribute("data-key") ?? undefined
+        : undefined);
     for (const cancel of [...this.holds]) cancel();
     this.holds.clear();
 

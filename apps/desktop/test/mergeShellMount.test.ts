@@ -367,6 +367,24 @@ test("a state read that fails says so on the dashboard instead of showing an emp
   await broken.ctl.refresh();
   assert.equal(broken.last().notice?.kind, "error");
   assert.match(broken.last().notice?.text ?? "", /Couldn't read the conflicts/);
+
+  // A read that works again clears it — but never an action's own error.
+  let fail = true;
+  const flaky = controllerRig({
+    "conflict:state": () => {
+      if (fail) throw new Error("index.lock");
+      return snapshot();
+    },
+    "conflict:takeRole": { ok: false, changed: false, message: "src/app.ts is locked" },
+  });
+  (flaky.ctl as unknown as { snapshot: ConflictsSnapshot }).snapshot = snapshot();
+  await flaky.ctl.refresh();
+  assert.match(flaky.last().notice?.text ?? "", /index\.lock/);
+  fail = false;
+  await flaky.ctl.refresh();
+  assert.equal(flaky.last().notice, undefined, "the read works again: the read error is gone");
+  await flaky.ctl.handle({ type: "accept", path: "src/app.ts", role: "yours" });
+  assert.equal(flaky.last().notice?.text, "src/app.ts is locked", "and an action's error survives the refresh after it");
 });
 
 // ── the rail badge / top-bar chip ───────────────────────────────────────────

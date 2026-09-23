@@ -4086,43 +4086,474 @@
     },
 
     /**
-     * The Changes banner names four operations and had two ways out. Three of
-     * the four therefore aborted with `git merge --abort`, which fails outright
-     * because MERGE_HEAD does not exist during a cherry-pick, a revert, or a
-     * rebase. The banner said the right thing and its only control did nothing.
+     * The Changes view's operation banner is the conflicts dashboard now — the
+     * component the extension and Merge Studio mount — and its way out still
+     * has to be the operation's own. The banner once aborted a cherry-pick, a
+     * revert and a rebase with `git merge --abort`, which fails outright; now
+     * the renderer sends ONE verb (op:abort) and the main process picks git's
+     * command per kind (P2's opMatrix covers that half). What this pins is the
+     * renderer half: the button is named for the operation, it asks INLINE
+     * (no modal), says what is lost, and sends exactly one verb.
      *
      * Parameterised by `?op=` — the check runs once per operation.
      */
-    "an-operation-is-ended-by-its-own-command": async (f) => {
+    "the-dashboard-ends-an-operation-with-its-own-verb": async (f) => {
       const c = check(f);
       const op = new URLSearchParams(location.search).get("op") || "merge";
-      const banner = $(".dc-opbanner");
-      c.ok(!!banner, `${op} in progress puts a banner on screen`);
-      if (!banner) return;
-      c.ok(banner.textContent.toLowerCase().includes(op), `the banner names the operation (${op})`);
-      const abort = [...banner.querySelectorAll("button")].find((b) => /abort/i.test(b.textContent));
-      c.ok(!!abort, "it offers an Abort");
+      await settle(600);
+      const dash = $(".cd-dash");
+      c.ok(!!dash, `${op} in progress puts the conflicts dashboard on screen`);
+      if (!dash) return;
+      c.ok(!$(".dc-opbanner"), "the old banner is gone");
+      const want = {
+        merge: "Abort Merge",
+        rebase: "Abort Rebase",
+        "cherry-pick": "Abort Cherry-pick",
+        revert: "Abort Revert",
+        am: "Abort (git am)",
+      }[op];
+      const abort = $$(".cd-foot button").find((b) => text(b) === want);
+      c.ok(!!abort, `the way out is named for the operation ("${want}"; found ${$$(".cd-foot button").map((b) => text(b)).join(" | ")})`);
       if (!abort) return;
       const before = window.__GS_INVOKED.length;
       abort.click();
       await settle(300);
-      // Abort ASKS now. Working through a conflicted merge by hand and then
-      // pressing Abort — which sits right beside Continue — discards every
-      // resolution, and none of them were ever committed, so nothing can bring
-      // them back. It was the only irreversible click in the app that did not
-      // confirm.
-      const modal = $(".modal-ok");
-      c.ok(!!modal, "Abort asks before discarding the resolutions");
-      if (!modal) return;
-      c.ok(
-        /resolved|abandon/i.test(text($(".modal-message")) || ""),
-        "and says what is lost, not just that something will happen",
-      );
-      modal.click();
+      c.ok(!$(".modal-ok"), "it asks INLINE, not in a modal");
+      const confirm = $(".cd-confirm");
+      c.ok(!!confirm, "Abort asks before discarding the resolutions");
+      if (!confirm) return;
+      c.match(text(confirm), /discarded|undone/i, "and says what is lost");
+      c.ok(document.activeElement && /Keep going/.test(text(document.activeElement)), "the safe answer has the keyboard");
+      confirm.querySelector(".cd-danger")?.click();
+      await settle(900);
+      const sent = window.__GS_INVOKED.slice(before).map((r) => r.channel).filter((ch) => /:(abort|continue|skip)$/.test(ch));
+      c.eq(sent.join(","), "op:abort", "Abort sends the one operation verb, once");
+      c.ok(!$(".cd-dash"), "and once the operation is over, the dashboard goes");
+    },
+
+    /**
+     * Pressing a verb twice must not run it twice. `serialize()` in the main
+     * process QUEUES the second call rather than dropping it, so an enabled
+     * button really did discard two patches on a double-click. The dashboard
+     * and the merge editor share one lock (mergeParity `exclusive`).
+     */
+    "a-dashboard-verb-cannot-be-fired-twice": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const cont = $$(".cd-foot button").find((b) => /^Continue/.test(text(b)));
+      c.ok(!!cont && !cont.disabled, "a merge with nothing left to resolve offers Continue");
+      if (!cont) return;
+      const before = window.__GS_INVOKED.length;
+      cont.click();
+      cont.click();
+      cont.click();
+      await settle(900);
+      const sent = window.__GS_INVOKED.slice(before).map((r) => r.channel).filter((ch) => /^op:/.test(ch));
+      c.eq(sent.length, 1, `three clicks send ONE verb, not ${sent.length} (${sent.join(", ")})`);
+    },
+
+    /**
+     * Skip exists only where git names it as the way out: never for a merge,
+     * never on a merge-backend rebase stop (`rebase --skip` hard-resets a
+     * deliberate pause), always for a cherry-pick, a revert or `git am`, and on
+     * the apply backend's emptied patch. The main process decides (`canSkip`);
+     * the dashboard must render that faithfully — and Skip drops work, so it
+     * asks and is never the primary button.
+     */
+    "skip-only-where-git-allows": async (f) => {
+      const c = check(f);
+      const want = window.__GS_ARG === "yes";
+      await settle(600);
+      c.ok(!!$(".cd-dash"), "the dashboard renders");
+      const skip = $$(".cd-foot button").find((b) => /^Skip/.test(text(b)));
+      if (!want) {
+        c.ok(!skip, `no Skip where git would not accept it (found "${skip ? text(skip) : ""}")`);
+        return;
+      }
+      c.ok(!!skip, "Skip is offered where git names it");
+      if (!skip) return;
+      c.ok(!skip.classList.contains("cd-primary"), "Skip is never the primary button: it discards work");
+      const before = window.__GS_INVOKED.length;
+      skip.click();
       await settle(300);
-      const sent = window.__GS_INVOKED.slice(before).map((r) => r.channel).filter((ch) => /:(abort|continue)$/.test(ch));
-      const family = { merge: "merge", rebase: "rebase", "cherry-pick": "cherryPick", revert: "revert" }[op];
-      c.eq(sent[0], `${family}:abort`, `Abort ends the ${op}, not something else`);
+      c.ok(!!$(".cd-confirm"), "and it asks first");
+      c.eq(window.__GS_INVOKED.slice(before).filter((r) => r.channel === "op:skip").length, 0, "nothing sent before the answer");
+      $(".cd-confirm .cd-danger")?.click();
+      await settle(700);
+      c.eq(window.__GS_INVOKED.slice(before).filter((r) => r.channel === "op:skip").length, 1, "confirmed, one op:skip");
+    },
+
+    /**
+     * A Continue that cannot work is disabled WITH the reason on screen — not
+     * a live button git refuses, and not a dead one that says nothing. Then,
+     * resolving the files from the dashboard itself turns it on.
+     */
+    "continue-disabled-says-why": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const cont = () => $$(".cd-foot button").find((b) => /^Continue/.test(text(b)));
+      c.ok(!!cont(), "the dashboard offers Continue");
+      if (!cont()) return;
+      c.ok(cont().disabled, "two files unresolved: Continue is disabled");
+      const why = $(".cd-why");
+      c.ok(!!why && why.getBoundingClientRect().width > 0, "the reason is on screen, not only in a tooltip");
+      c.eq(text(why), "Resolve the 2 conflicted files first.", "the reason, in words");
+      c.eq(cont().getAttribute("aria-describedby"), "cd-why", "and it is the button's description");
+      for (let i = 0; i < 2; i++) {
+        const accept = $$(".cd-row:not(.is-resolved) button").find((b) => text(b) === "Accept Yours");
+        c.ok(!!accept, `row ${i + 1} offers Accept Yours`);
+        accept?.click();
+        await settle(900);
+      }
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "conflict:takeRole").length, 2, "each Accept Yours resolved its file by role");
+      c.ok(!!cont() && !cont().disabled, "with both resolved, Continue is enabled");
+      c.ok(!$(".cd-why"), "and has nothing to explain");
+      c.eq(text(".cd-done-title"), "All conflicts resolved", "the success card shows");
+    },
+
+    /**
+     * Issue #12 in the dashboard: `git checkout test; git rebase master`. The
+     * reporter asked to see "test → onto → master", and which commit is being
+     * replayed. Yours is test (git's stage 3), on the left.
+     */
+    "dashboard-names-rebase-direction": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const bar = $(".cd-dirbar");
+      c.ok(!!bar, "the dashboard draws a direction bar");
+      if (!bar) return;
+      c.eq(bar.getAttribute("aria-label"), "YOURS test → onto → THEIRS master", "the direction reads the reporter's way");
+      const pills = $$(".cd-dirbar .cd-branch");
+      c.ok(pills[0]?.classList.contains("cd-branch-yours"), "YOURS comes first");
+      c.eq(text(pills[0]?.querySelector(".cd-bname")), "test", "and it is test, the branch being rebased");
+      c.eq(text(pills[1]?.querySelector(".cd-bname")), "master", "THEIRS is master");
+      c.eq(text(".cd-chip"), "Rebase in progress", "the chip names the operation");
+      c.match(text(".cd-commit"), /1a2b3c4.*test change/, "the commit being replayed is named");
+      c.match(text(".cd-step"), /commit 1 of 1/, "and where it is in the sequence");
+      const badge = $('.nav-item[data-view="changes"] .nav-badge');
+      c.eq(text(badge), "1", "the Changes rail item carries the count");
+      c.ok(!!$(".topbar-opchip") && !$(".topbar-opchip").hidden, "the top bar names the stopped operation");
+      c.eq(text(".topbar-opchip"), "Rebasing · 1 conflict", "in words");
+    },
+
+    /**
+     * The whole reporter flow on the desktop: Merge… opens the SHARED merge
+     * editor with Yours = test on the left, Accept Yours keeps test's line,
+     * Apply writes it, the dashboard comes back with the file resolved, and
+     * Continue Rebase finishes. The data-loss bug #12 reported was "Accept
+     * yours" keeping master and the rebase dropping test's only commit.
+     */
+    "the-reporters-rebase-resolves-the-right-way-round": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const merge = $$(".cd-row button").find((b) => text(b) === "Merge…");
+      c.ok(!!merge, "file.txt offers Merge…");
+      if (!merge) return;
+      merge.click();
+      await settle(1200);
+      c.ok(!!$(".ms-shell"), "the shared merge shell opens");
+      c.ok(!!$('.dc-file.active[data-path="file.txt"]'), "and the file's row is selected");
+      c.eq(text(".ms-pill-yours .ms-pill-name"), "test", "YOURS is test");
+      c.eq(text(".ms-pill-theirs .ms-pill-name"), "master", "THEIRS is master");
+      const labels = $$(".jb-pane-label").map((n) => text(n));
+      c.ok(labels.includes("Rebasing 1a2b3c4 from test"), `the left pane is titled for test (${labels.join(" | ")})`);
+      c.ok(labels.includes("Already rebased commits and commits from master"), "the right pane for master");
+      const accept = $(".ms-accept-yours");
+      c.ok(!!accept && !accept.disabled, "Accept Yours is offered");
+      accept?.click();
+      await settle(300);
+      const before = window.__GS_INVOKED.length;
+      $(".ms-apply")?.click();
+      await settle(300);
+      if (window.__GS_INVOKED.slice(before).every((r) => r.channel !== "conflict:resolve")) $(".ms-apply")?.click();
+      await settle(1200);
+      const wrote = window.__GS_INVOKED.find((r) => r.channel === "conflict:resolve");
+      c.ok(!!wrote, "Apply writes the result");
+      c.match(wrote?.payload?.content, /three-test/, "and the result keeps TEST's line 3");
+      c.ok(!/three-master/.test(wrote?.payload?.content || ""), "not master's");
+      c.ok(!!$(".cd-dash"), "the dashboard comes back after Apply");
+      c.eq(text(".cd-choice"), "✓ merged", "with the file resolved");
+      const cont = $$(".cd-foot button").find((b) => text(b) === "Continue Rebase");
+      c.ok(!!cont && !cont.disabled, "and Continue Rebase ready");
+      cont?.click();
+      await settle(1200);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:continue").length, 1, "one Continue");
+      c.ok(!$(".cd-dash"), "the rebase is over: no dashboard");
+      c.ok(!$(".topbar-opchip") || $(".topbar-opchip").hidden, "and no chip");
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /Rebase complete/, "it says so");
+    },
+
+    /**
+     * A three-commit rebase where every commit conflicts: the list is keyed by
+     * the STOP, so after Continue lands on commit 2 the file is pending again
+     * — not carried over as "resolved" from commit 1 (Merge Studio's list
+     * accumulated across steps).
+     */
+    "the-dashboard-resets-for-each-rebase-step": async (f) => {
+      const c = check(f);
+      await settle(600);
+      c.match(text(".cd-step"), /commit 1 of 3/, "starts at commit 1 of 3");
+      $$(".cd-row button").find((b) => text(b) === "Accept Yours")?.click();
+      await settle(900);
+      const cont = $$(".cd-foot button").find((b) => text(b) === "Continue Rebase");
+      c.ok(!!cont && !cont.disabled, "resolved: Continue is enabled");
+      cont?.click();
+      await settle(1300);
+      c.match(text(".cd-step"), /commit 2 of 3/, "the next stop is commit 2 of 3");
+      c.ok(!$(".cd-row.is-resolved"), "and its file is pending again, not remembered from commit 1");
+      c.eq($$(".cd-row").length, 1, "one row for this stop");
+      c.match(text(".cd-outcome"), /Stopped at commit 2 of 3/, "the outcome line says where it stopped");
+    },
+
+    /** An emptied commit asks before it is dropped — the reporter's data loss, caught before git does it. */
+    "an-emptied-commit-is-not-dropped-silently": async (f) => {
+      const c = check(f);
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Accept Theirs")?.click();
+      await settle(900);
+      c.ok(!!$(".cd-willdrop"), "the dashboard warns that the commit is now empty");
+      const cont = $$(".cd-foot button").find((b) => text(b) === "Continue Rebase");
+      cont?.click();
+      await settle(300);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:continue").length, 0, "Continue asks first");
+      c.match(text(".cd-confirm"), /test change/, "naming the commit it would drop");
+      $$(".cd-confirm button").find((b) => text(b) === "Drop it and continue")?.click();
+      await settle(900);
+      const sent = window.__GS_INVOKED.filter((r) => r.channel === "op:continue");
+      c.eq(sent.length, 1, "confirmed: one Continue");
+      c.eq(JSON.stringify(sent[0]?.payload), JSON.stringify({ confirmDrop: true }), "carrying the confirmation");
+    },
+
+    /**
+     * The desktop mounts the extension's merge toolbar and bottom bar, not its
+     * own three buttons — and paints them: diff.css reads the button tokens
+     * bare, and the desktop had never declared them, so Apply would have been
+     * a transparent button on a borderless bar.
+     */
+    "merge-shell-has-toolbar-on-desktop": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1200);
+      const shell = $(".ms-shell");
+      c.ok(!!shell, "the shared merge shell is mounted");
+      if (!shell) return;
+      const tb = shell.querySelector(".jb-toolbar");
+      c.ok(!!tb && tb.getBoundingClientRect().height > 20, "with its toolbar");
+      for (const [sel, what] of [
+        ['button[title^="Undo"]', "Undo"],
+        ['button[title^="Redo"]', "Redo"],
+        ['button[title="Action history"]', "history"],
+        ['button[title^="Previous change"]', "previous change"],
+        ['button[title^="Next change"]', "next change"],
+        [".ms-apply-yours", "Apply non-conflicting: Yours"],
+        [".ms-apply-all", "…All"],
+        [".ms-apply-theirs", "…Theirs"],
+        [".ms-wand", "the wand"],
+        [".ms-ws", "whitespace"],
+        ['button[title="Synchronized scrolling"]', "sync scrolling"],
+        ['button[title^="Reset"]', "reset"],
+      ]) c.ok(!!shell.querySelector(sel), `the toolbar has ${what}`);
+      for (const [sel, words] of [
+        [".ms-accept-yours", "Accept Yours"],
+        [".ms-accept-theirs", "Accept Theirs"],
+        [".ms-cancel", "Cancel"],
+        [".ms-apply", "Apply"],
+      ]) c.eq(text(shell.querySelector(sel)), words, `the bottom bar says ${words}`);
+      c.ok(!!shell.querySelector(".ms-opstrip"), "and the operation strip");
+      c.ok(!!shell.querySelector(".ms-legend-slot"), "and a slot for the legend");
+      c.ok(!$(".merge-resolve") && !$(".merge-bar-actions"), "the desktop's own three-button bar is gone");
+      const apply = shell.querySelector(".ms-apply");
+      const bg = getComputedStyle(apply).backgroundImage + " " + getComputedStyle(apply).backgroundColor;
+      c.ok(!/^none rgba\(0, 0, 0, 0\)$/.test(bg.trim()), `Apply is painted, not transparent (${bg})`);
+      const bar = shell.querySelector(".jb-bottom-bar");
+      c.ok(getComputedStyle(bar).borderTopStyle !== "none" && getComputedStyle(bar).borderTopWidth !== "0px", "the bottom bar has its rule");
+      c.ok(!!$(".merge-bar-path-text") && text(".merge-bar-path-text") === "src/app.ts", "the path is named above it");
+    },
+
+    /** Exit viewer leaves the conflict in the file and goes back to the dashboard, running nothing in git. */
+    "exit-viewer-returns-to-the-dashboard": async (f) => {
+      const c = check(f);
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1200);
+      c.ok(!!$(".ms-shell"), "the merge editor is open");
+      c.ok(!!$(".dc-opstrip") && !$(".dc-opstrip").hidden, "the strip names the operation while a file covers the dashboard");
+      const before = window.__GS_INVOKED.length;
+      $(".ms-cancel")?.click();
+      await settle(300);
+      const exit = $(".ms-exit");
+      c.ok(!!exit, "Cancel offers Exit viewer");
+      c.eq(text(".ms-abort"), "Abort Merge…", "and ending the merge, by name");
+      exit?.click();
+      await settle(700);
+      c.ok(!!$(".cd-dash"), "Exit viewer brings the dashboard back");
+      c.ok(!$(".dc-file.active"), "with no row left selected");
+      c.ok($(".dc-opstrip")?.hidden !== false, "and the strip gives way to it");
+      const git = window.__GS_INVOKED.slice(before).map((r) => r.channel).filter((ch) => /^(op|conflict):/.test(ch) && ch !== "conflict:state");
+      c.eq(git.join(","), "", "and nothing ran in git");
+      c.eq($$(".cd-row:not(.is-resolved)").length, 3, "every conflict is still there");
+    },
+
+    /**
+     * ⌘Z in the merge editor is the MERGE's undo — the key, and the Edit
+     * menu's copy of it (menu:command undo) — and outside it the app's own.
+     * The Electron menu owns the accelerator, so without routing the menu's
+     * ⌘Z fell through to a text undo underneath the merge's history.
+     */
+    "cmd-z-in-the-merge-editor-drives-the-merge": async (f) => {
+      const c = check(f);
+      await settle(600);
+      // Something on the APP's undo stack first: resolving another file from
+      // the dashboard is undoable (it brings the conflict back). A ⌘Z meant
+      // for the merge editor must never pop it.
+      const notes = $('.cd-row[data-path="docs/notes.md"]');
+      [...(notes?.querySelectorAll("button") || [])].find((b) => text(b) === "Accept Yours")?.click();
+      await settle(1000);
+      c.ok(!!$('.cd-row.is-resolved[data-path="docs/notes.md"]'), "another file was resolved first (an app-level undo is waiting)");
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1200);
+      const counter = () => text(".ms-shell .jb-counter");
+      const start = counter();
+      c.match(start, /changes?\./, `the merge starts with changes pending (${start})`);
+      $(".ms-accept-yours")?.click();
+      await settle(200);
+      c.eq(counter(), "All changes have been processed", "Accept Yours settles them");
+      // A control that stays enabled whatever the history holds: Undo itself
+      // disables once there is nothing left, and a disabled button drops focus
+      // to <body> — outside the merge editor.
+      const inside = $('.ms-shell button[title="Synchronized scrolling"]');
+      inside?.focus();
+      c.ok(document.activeElement === inside, "focus is inside the merge editor");
+      const key = (opts) =>
+        document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "z", bubbles: true, cancelable: true, ...opts }));
+      key({ metaKey: true, ctrlKey: !/mac/i.test(navigator.platform) });
+      await settle(200);
+      c.eq(counter(), start, "⌘Z undid the Accept");
+      c.eq(
+        window.__GS_INVOKED.filter((r) => r.channel === "conflict:restore").length,
+        0,
+        "and did not ALSO undo the other file's resolution from the app's stack",
+      );
+      await settle(500);
+      key({ metaKey: true, ctrlKey: !/mac/i.test(navigator.platform), shiftKey: true });
+      await settle(200);
+      c.eq(counter(), "All changes have been processed", "⇧⌘Z redid it");
+      await settle(500);
+      c.ok(window.__gsEmit("menu:command", { command: "undo" }) > 0, "the app listens for the Edit menu");
+      await settle(300);
+      c.eq(counter(), start, "the Edit menu's Undo, with focus in the merge editor, undoes the MERGE action");
+      c.ok(!$$(".toast-msg").some((t) => /Nothing to undo/.test(text(t))), "not the app's own (empty) stack");
+      $(".dc-message")?.focus();
+      await settle(500);
+      window.__gsEmit("menu:command", { command: "undo" });
+      await settle(300);
+      c.eq(counter(), start, "outside it, the menu's Undo leaves the merge alone");
+    },
+
+    /** The legend chips count what the view counts (P1's legend; the shell provides the slot). */
+    "merge-legend-counts": async (f) => {
+      const c = check(f);
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1200);
+      const slot = $(".ms-legend-slot");
+      c.ok(!!slot, "the shell has a legend slot");
+      const chips = slot ? [...slot.querySelectorAll("button, [role=button]")] : [];
+      c.ok(chips.length >= 4, `the legend shows a chip per category (${chips.length})`);
+      const nums = chips.map((b) => Number((/(\d+)/.exec(text(b)) || [0, 0])[1]));
+      const total = nums.reduce((a, b) => a + b, 0);
+      const pending = Number((/(\d+) changes?/.exec(text(".ms-shell .jb-counter")) || [0, 0])[1]);
+      c.ok(total >= pending && pending > 0, `the chips account for every pending change (${total} vs ${pending})`);
+    },
+
+    /**
+     * The rebase view said "A rebase is in progress" and offered Continue and
+     * Abort only. On the apply backend's emptied patch Continue is refused,
+     * so there was no way forward from this view at all.
+     */
+    "the-rebase-view-offers-skip-where-git-does": async (f) => {
+      const c = check(f);
+      const want = window.__GS_ARG === "yes";
+      await settle(900);
+      c.ok(!!$(".rb-inprogress"), "the rebase view shows the in-progress card");
+      const skip = $$(".rb-inprogress button").find((b) => /^Skip/.test(text(b)));
+      if (!want) {
+        c.ok(!skip || skip.hidden, "no Skip where git would hard-reset a deliberate stop");
+        return;
+      }
+      c.ok(!!skip && !skip.hidden, "Skip is offered where git allows it");
+      if (!skip) return;
+      skip.click();
+      await settle(300);
+      const ok = $(".modal-ok");
+      c.ok(!!ok, "and it asks first");
+      ok?.click();
+      await settle(700);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "rebase:skip").length, 1, "one rebase:skip");
+    },
+
+    /** Settings ▸ Merge: the same five settings the extensions expose, auto-apply OFF by default. */
+    "settings-has-a-merge-card": async (f) => {
+      const c = check(f);
+      await settle(700);
+      const card = $(".merge-settings-card");
+      c.ok(!!card, "Settings has a Merge card");
+      if (!card) return;
+      const box = card.querySelector('.merge-auto input[type="checkbox"]');
+      c.ok(!!box && !box.checked, "auto-apply is OFF by default");
+      const activeSeg = card.querySelectorAll(".settings-seg-btn.active");
+      c.eq([...activeSeg].map((b) => text(b)).join(" | "), "GitStudio's merge editor | GitStudio", "both tools default to GitStudio's own");
+      c.match(text(".merge-ide-found"), /Using WebStorm/, "and it says which IDE it would use");
+      c.eq(card.querySelector(".merge-ide-select")?.value, "auto", "the IDE is chosen automatically");
+      box?.click();
+      await settle(400);
+      const sent = window.__GS_INVOKED.filter((r) => r.channel === "merge:setSettings").map((r) => JSON.stringify(r.payload));
+      c.eq(sent.join(","), JSON.stringify({ autoApplyNonConflicting: true }), "ticking it saves exactly that");
+      c.ok(card.querySelector('.merge-auto input[type="checkbox"]')?.checked, "and it reads back as on");
+    },
+
+    /** A stopped operation is visible from every view, and the chip goes to it. */
+    "a-stopped-operation-shows-from-every-view": async (f) => {
+      const c = check(f);
+      const want = window.__GS_ARG !== "none";
+      await settle(900);
+      const badge = $('.nav-item[data-view="changes"] .nav-badge');
+      const chip = $(".topbar-opchip");
+      if (!want) {
+        c.ok(!badge, "nothing in progress: no badge");
+        c.ok(!chip || chip.hidden, "and no chip");
+        return;
+      }
+      c.eq(text(badge), "2", "the Changes rail item counts the conflicts");
+      c.match($('.nav-item[data-view="changes"]').getAttribute("aria-label"), /2 files have conflicts/, "and says so to a screen reader");
+      c.ok(!!chip && !chip.hidden, "the top bar names the operation");
+      c.eq(text(chip), "Rebasing · 2 conflicts", "in words");
+      chip?.click();
+      await settle(900);
+      c.ok(!!$(".changes-view"), "the chip goes to Changes");
+      c.ok(!!$(".cd-dash"), "where the dashboard is waiting");
+    },
+
+    /**
+     * Settings ▸ Merge ▸ "Resolve conflicts with: a JetBrains IDE" — Merge…
+     * hands the file to the IDE and says so; "Mark resolved" stages it.
+     */
+    "the-ide-route-hands-over-and-marks-resolved": async (f) => {
+      const c = check(f);
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1200);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length, 1, "the file goes to the IDE");
+      c.ok(!$(".ms-shell"), "not to the built-in editor");
+      c.match(text(".diff-empty"), /WebStorm/, "and the pane says where it went");
+      const mark = $$(".diff-empty-actions button").find((b) => text(b) === "Mark resolved");
+      c.ok(!!mark, "with Mark resolved");
+      mark?.click();
+      await settle(1000);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:markResolved").length, 1, "which stages it");
+      c.ok(!!$(".cd-dash") && !!$(".cd-row.is-resolved"), "and the dashboard shows it resolved");
     },
 
     /**
@@ -4381,69 +4812,6 @@
         );
       }
       c.ok(measured > 0, "at least one divider in this scene could actually be measured");
-    },
-
-    /**
-     * The banner's forward controls, in the two shapes that decide them.
-     *
-     * `canContinue` / `canSkip` come from the host now, and the banner's job is
-     * to render them faithfully. Both halves of that had been wrong: an enabled
-     * Continue on an operation git would refuse, and a Skip that hard-resets
-     * offered at a pause the user asked for. `?skip=1` is the emptied-patch
-     * shape; without it the same scene is the ordinary one.
-     */
-    "the-banner-offers-only-what-git-would-accept": async (f) => {
-      const c = check(f);
-      const arg = (window.__GS_ARG || "continue").split(":");
-      const wantSkip = arg[0] === "skip";
-      const banner = $(".dc-opbanner");
-      c.ok(!!banner, "the banner renders");
-      if (!banner) return;
-      const btns = [...banner.querySelectorAll("button")];
-      const byText = (re) => btns.find((b) => re.test((b.textContent || "").trim()));
-      const cont = byText(/^Continue$/);
-      const skip = byText(/^Skip/);
-      c.ok(!!byText(/^Abort$/), "Abort is always there");
-
-      if (wantSkip) {
-        c.ok(!!skip, "an emptied patch offers Skip — git's own way out");
-        c.ok(!cont || cont.disabled, "and does not offer a Continue git would refuse");
-        c.ok(
-          !skip || !skip.classList.contains("btn-primary"),
-          "Skip is never the primary button: it discards work",
-        );
-      } else {
-        c.ok(!!cont && !cont.disabled, "an ordinary stop offers Continue");
-        c.ok(!skip, "and no Skip, which would discard the commit");
-      }
-    },
-
-    /**
-     * Pressing a banner button twice must not run it twice. `serialize()` in
-     * the main process QUEUES the second call rather than dropping it, so an
-     * enabled button really did discard two patches on a double-click.
-     */
-    "a-banner-button-cannot-be-fired-twice": async (f) => {
-      const c = check(f);
-      const banner = $(".dc-opbanner");
-      c.ok(!!banner, "the banner renders");
-      if (!banner) return;
-      const abort = [...banner.querySelectorAll("button")].find((b) => /^Abort$/.test((b.textContent || "").trim()));
-      c.ok(!!abort, "with an Abort");
-      if (!abort) return;
-      const before = window.__GS_INVOKED.length;
-      // Three clicks on Abort. It opens a confirm now, so the second and third
-      // land on the scrim — which must not stack three dialogs, and answering
-      // once must not send the command three times.
-      abort.click();
-      abort.click();
-      abort.click();
-      await settle(400);
-      c.eq($$(".modal-ok").length, 1, "three clicks open ONE dialog");
-      $(".modal-ok")?.click();
-      await settle(400);
-      const sent = window.__GS_INVOKED.slice(before).map((r) => r.channel).filter((ch) => /:(abort|continue|skip)$/.test(ch));
-      c.eq(sent.length, 1, `three clicks send ONE command, not ${sent.length} (${sent.join(", ")})`);
     },
 
     /**
@@ -11077,6 +11445,8 @@
       c.ok(!!row, "there is a file to open");
       if (!row) return;
 
+      // A model from a main process that knows no operation (the legacy
+      // flags): the shared shell still has to tell the shapes apart.
       const MODEL = {
         path: "logo.png",
         hasBase: true,
@@ -11088,11 +11458,12 @@
         theirsLabel: "Incoming change",
       };
       const CELLS = [
-        { name: "binary", model: { ...MODEL, binary: true }, want: /binary/i },
+        { name: "binary", model: { ...MODEL, binary: true }, want: /binary/i, buttons: "Accept Yours|Accept Theirs" },
         {
           name: "modify/delete",
           model: { ...MODEL, path: "notes.md", ours: "kept\n", missingSide: "theirs" },
           want: /deleted/i,
+          buttons: "Accept Yours|Delete the file",
         },
         {
           name: "ordinary content",
@@ -11120,36 +11491,32 @@
           row.click();
           await settle(900);
 
-          const btns = $$(".merge-bar-actions .mini-btn");
-          const sides = btns.map((b) => text(b) || "");
-          c.ok(btns.length >= 2, `${cell.name}: both side buttons are offered`);
-          if (cell.name === "modify/delete") {
-            // Taking the side that has no file DELETES it. That button was
-            // labelled "Take <side>" with the tooltip "Replace the file with
-            // …" — the wrong verb for the only irreversible thing on this bar —
-            // and it carried `is-danger`, which was styled for menu items only,
-            // so it was pixel-identical to the button beside it that KEEPS the
-            // file.
-            const del = btns.find((b) => /delete the file/i.test(text(b) || ""));
-            c.ok(!!del, "the deleting side says it deletes");
-            const keep = btns.find((b) => b !== del && /take /i.test(text(b) || ""));
-            if (del && keep) {
-              c.ok(
-                getComputedStyle(del).color !== getComputedStyle(keep).color,
-                "and does not look identical to the one that keeps it",
-              );
-            }
-          }
           if (cell.want) {
-            const note = $(".merge-notext");
-            c.ok(!!note, `${cell.name}: an explanation instead of a merge editor`);
-            c.ok(cell.want.test(text(note) || ""), `${cell.name}: which names what happened`);
-            // "Mark resolved" saves the RESULT PANE, and there is no result
-            // pane here — leaving it would be a button with nothing behind it.
-            c.ok(!$(".merge-resolve"), `${cell.name}: no "Mark resolved" over nothing to save`);
+            const panel = $(".ms-notext");
+            c.ok(!!panel, `${cell.name}: an explanation instead of a merge editor`);
+            c.ok(cell.want.test(text(panel) || ""), `${cell.name}: which names what happened`);
+            const btns = $$(".ms-notext-btn");
+            c.eq(btns.map((b) => text(b)).join("|"), cell.buttons, `${cell.name}: the moves on offer`);
+            // Apply saves the RESULT PANE, and there is no result pane here —
+            // a button with nothing behind it.
+            c.ok(!$(".ms-apply") || $(".ms-apply").hidden, `${cell.name}: no Apply over nothing to save`);
+            c.ok(!$(".ms-shell .jb-toolbar") || $(".ms-shell .jb-toolbar").hidden, `${cell.name}: no merge toolbar`);
+            if (cell.name === "modify/delete") {
+              // Taking the side that has no file DELETES it — the only
+              // irreversible move here, so it must not look like the one
+              // beside it that keeps the file.
+              const del = btns.find((b) => text(b) === "Delete the file");
+              const keep = btns.find((b) => b !== del);
+              if (del && keep) {
+                c.ok(
+                  getComputedStyle(del).color !== getComputedStyle(keep).color,
+                  "the deleting side does not look identical to the one that keeps the file",
+                );
+              }
+            }
           } else {
-            c.ok(!$(".merge-notext"), `${cell.name}: still gets the real merge editor`);
-            c.ok(!!$(".merge-resolve"), `${cell.name}: and can still be marked resolved`);
+            c.ok(!$(".ms-notext"), `${cell.name}: still gets the real merge editor`);
+            c.ok(!!$(".ms-apply") && !$(".ms-apply").hidden, `${cell.name}: and can still be applied`);
           }
         }
       } finally {

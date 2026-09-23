@@ -413,6 +413,12 @@ export class DesktopConflicts {
   private outcome?: ConflictsState["outcome"];
   private outcomeEpisode?: string;
   private notice?: ConflictsState["notice"];
+  /**
+   * The last state READ failed. Kept apart from `notice` (an action's own
+   * error): the next read that works clears this one, and must not wipe the
+   * reason a Continue or an Accept just gave.
+   */
+  private readError?: string;
   private readonly deps: ConflictsControllerDeps;
 
   constructor(deps: ConflictsControllerDeps) {
@@ -446,6 +452,7 @@ export class DesktopConflicts {
       const s = await this.deps.invoke("conflict:state", undefined);
       if (!s) throw new Error("The conflict state came back empty.");
       this.snapshot = s;
+      this.readError = undefined;
       // An outcome describes the stop it happened at, plus the one it led
       // to. Two stops later it is history.
       if (this.outcome && this.outcomeEpisode && this.outcomeEpisode !== s.op.episode) {
@@ -455,7 +462,7 @@ export class DesktopConflicts {
       this.paint();
       return s;
     } catch (e) {
-      this.notice = { kind: "error", text: `Couldn't read the conflicts: ${e instanceof Error ? e.message : String(e)}` };
+      this.readError = `Couldn't read the conflicts: ${e instanceof Error ? e.message : String(e)}`;
       this.paint();
       return undefined;
     }
@@ -473,7 +480,7 @@ export class DesktopConflicts {
       resolved: s.resolved,
       busy: this.busy || verbInFlight,
       holdToUndoMs: HOLD_TO_UNDO_MS,
-      notice: this.notice,
+      notice: this.notice ?? (this.readError ? { kind: "error", text: this.readError } : undefined),
       outcome: this.outcome,
     };
   }
