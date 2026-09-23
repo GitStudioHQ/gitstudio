@@ -1,0 +1,21 @@
+apps/desktop/test/expectedConditions.test.ts
+  s_26f5e669d3043c::t_33aac7021d35b3 37,149-150,156-157,159-168,170-184,186-200,203,205-206,209-239,241,243-249,251,255-256,258-276,278,280-304,306-310,313,315
+  s_26f5e669d3043c::t_20a2b1d12f733e 421-452
+  s_26f5e669d3043c::t_84eac6f2404ae6 387-391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "430dc8b2549e81fe2dc93d22ef22363e4a1baab5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
