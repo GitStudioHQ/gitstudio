@@ -1,0 +1,74 @@
+# Merge Studio's CI.
+#
+# Written by GitStudio's scripts/merge-studio/export.mjs, from
+# scripts/merge-studio/merge-studio-ci.yml in GitStudioHQ/gitstudio. Change it
+# there, or in a pull request here that a maintainer imports: the next export
+# writes it again. (merge-studio's release.yml is its own; the export never
+# touches it.)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # vendor/gitstudio is GitStudio's shared merge code, exported from
+  # GitStudioHQ/gitstudio. A pull request may change it: this job then says the
+  # change is one a maintainer imports into GitStudio, and passes. On main,
+  # vendor/gitstudio must match GitStudio exactly, and a difference fails.
+  # It is a job of its own, so a pull request that changes vendor/gitstudio
+  # still gets the build job's type-check and test results.
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Vendored GitStudio code matches GitStudio
+        run: node scripts/check-parity.mjs ${{ github.event_name == 'pull_request' && '--pull-request' || '' }}
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Hermetic git for the tests: no user or system config leaks in.
+      GIT_CONFIG_NOSYSTEM: '1'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run check-types
+
+      - name: Test
+        run: npm test
+
+      - name: Package (smoke-test the build)
+        if: matrix.os == 'ubuntu-latest'
+        run: npx @vscode/vsce package --no-dependencies -o merge-studio.vsix
+
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: merge-studio-vsix
+          path: merge-studio.vsix

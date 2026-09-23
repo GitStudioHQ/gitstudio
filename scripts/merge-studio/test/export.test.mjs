@@ -226,6 +226,64 @@ test("a shell file the previous export wrote and gitstudio no longer has is remo
   }
 });
 
+/** A workflow's jobs, by name: the lines of each, read by indentation (no YAML library in either repository). */
+function workflowJobs(yml) {
+  const lines = yml.split("\n");
+  const start = lines.indexOf("jobs:");
+  assert.ok(start >= 0, "the workflow has jobs");
+  const jobs = {};
+  let current;
+  for (const line of lines.slice(start + 1)) {
+    const name = /^ {2}([\w-]+):\s*$/.exec(line);
+    if (name) jobs[(current = name[1])] = [];
+    else if (current && !/^\s*#/.test(line)) jobs[current].push(line);
+  }
+  return Object.fromEntries(Object.entries(jobs).map(([k, v]) => [k, v.join("\n")]));
+}
+
+test("the export writes merge-studio's CI: check-parity in a job of its own, neutral on a pull request, strict on main", () => {
+  const into = mkdtempSync(join(tmpdir(), "ms-export-ci-"));
+  try {
+    // merge-studio's hand-kept workflow before the first export that writes it.
+    mkdirSync(join(into, ".github/workflows"), { recursive: true });
+    writeFileSync(join(into, ".github/workflows/ci.yml"), "name: CI\n# hand-kept\n");
+    writeFileSync(join(into, ".github/workflows/release.yml"), "name: Release\n");
+    exportTo({ into, allowDirty: true, lock: false });
+
+    const yml = readFileSync(join(into, ".github/workflows/ci.yml"), "utf8");
+    assert.equal(yml, readFileSync(join(GITSTUDIO_ROOT, "scripts/merge-studio/merge-studio-ci.yml"), "utf8"), "written from gitstudio's template, byte for byte");
+    assert.equal(readFileSync(join(into, ".github/workflows/release.yml"), "utf8"), "name: Release\n", "merge-studio's own release workflow is left alone");
+    assert.match(yml, /^on:\n {2}push:\n {4}branches: \[main\]\n {2}pull_request:\n/m, "it runs on pushes to main and on pull requests");
+
+    const jobs = workflowJobs(yml);
+    assert.deepEqual(Object.keys(jobs).sort(), ["build", "parity"]);
+    // The parity job: the one place check-parity runs, relaxed on a pull request only.
+    const parityRuns = jobs.parity.split("\n").filter((l) => /check-parity/.test(l));
+    assert.deepEqual(parityRuns.map((l) => l.trim()), [
+      "run: node scripts/check-parity.mjs ${{ github.event_name == 'pull_request' && '--pull-request' || '' }}",
+    ]);
+    assert.doesNotMatch(jobs.parity, /npm ci/, "it needs no install");
+    // The build job type-checks and tests whatever the parity job says.
+    assert.doesNotMatch(jobs.build, /check-parity/);
+    assert.doesNotMatch(jobs.build, /\bneeds:/);
+    assert.doesNotMatch(jobs.build, /continue-on-error/);
+    for (const step of ["run: npm ci", "run: npm run check-types", "run: npm test"]) assert.ok(jobs.build.includes(step), step);
+
+    // Every npm script it runs is one the exported package.json has.
+    const pkg = JSON.parse(readFileSync(join(into, "package.json"), "utf8"));
+    for (const [, script] of yml.matchAll(/npm run ([\w:-]+)/g)) assert.ok(pkg.scripts[script], `npm run ${script}`);
+    assert.ok(existsSync(join(into, "scripts/check-parity.mjs")));
+
+    // The export records it with the shell files, so check-parity warns when merge-studio edits it by hand.
+    const manifest = JSON.parse(readFileSync(join(into, "VENDORED_FROM.json"), "utf8"));
+    assert.ok(".github/workflows/ci.yml" in manifest.shell);
+    writeFileSync(join(into, ".github/workflows/ci.yml"), `${yml}# local edit\n`);
+    assert.match(checkParity(into).warnings.join("\n"), /shell modified: \.github\/workflows\/ci\.yml/);
+  } finally {
+    rmSync(into, { recursive: true, force: true });
+  }
+});
+
 test("the export never writes into this gitstudio checkout", () => {
   assert.throws(() => exportTo({ into: GITSTUDIO_ROOT, allowDirty: true }), /must be a merge-studio checkout/);
 });

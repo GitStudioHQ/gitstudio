@@ -22,14 +22,22 @@
 // With `--gitstudio <checkout>`, it also warns when GitStudio has commits
 // touching the vendored sources after the recorded sha (the copy is stale).
 //
-// usage: node scripts/check-parity.mjs [--root <merge-studio checkout>] [--strict] [--gitstudio <gitstudio checkout>]
-// Exit 0 when the vendored tree matches, 1 when it does not (or the manifest is missing).
+// With `--pull-request` (merge-studio's CI passes it on a pull request), a
+// difference is reported, not failed: a contributor may change
+// vendor/gitstudio, and a maintainer imports the change into GitStudio. The
+// run says so in plain words (a notice and a step summary in GitHub Actions)
+// and exits 0. A missing or unreadable manifest still fails: then nothing can
+// be compared. A push to main runs without the flag and must match exactly.
+//
+// usage: node scripts/check-parity.mjs [--root <merge-studio checkout>] [--strict] [--pull-request] [--gitstudio <gitstudio checkout>]
+// Exit 0 when the vendored tree matches (or, with --pull-request, differs), 1
+// when it does not match (or the manifest is missing).
 //
 // No dependencies: node's own crypto and fs only, so it runs before `npm ci`.
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,14 +48,21 @@ export const VENDOR_DIR = "vendor/gitstudio";
 export const FAILURE_HELP = [
   `${VENDOR_DIR}/ is a copy of GitStudio's shared code (https://github.com/GitStudioHQ/gitstudio), where it is kept.`,
   "",
-  "Contributing a change? Keep it and open your pull request anyway: this check stays red on it, and",
-  "that is expected. Check the change itself with `npm run check-types && npm test`. A maintainer brings",
-  "the pull request into GitStudio (scripts/merge-studio/import.mjs there), with you as the author of",
-  "every commit, and the next export brings it back here. CONTRIBUTING.md has the details.",
+  "Contributing a change? Keep it and open your pull request anyway: on a pull request, CI reports this",
+  "change for a maintainer to import instead of failing (`npm run check-parity -- --pull-request` says the",
+  "same here). Check the change itself with `npm run check-types && npm test`. A maintainer brings the",
+  "pull request into GitStudio (scripts/merge-studio/import.mjs there), with you as the author of every",
+  "commit, and the next export brings it back here. CONTRIBUTING.md has the details.",
   "",
-  "Maintaining? Import the pull request into gitstudio with scripts/merge-studio/import.mjs, or make the",
-  "change in gitstudio, then run scripts/merge-studio/export.mjs again.",
+  "Maintaining? main must match GitStudio: import the pull request into gitstudio with",
+  "scripts/merge-studio/import.mjs, or make the change in gitstudio, then run scripts/merge-studio/export.mjs again.",
 ].join("\n");
+
+/** What a pull request that changes the vendored code is told: nothing is wrong with it. */
+export const PULL_REQUEST_NOTE =
+  "a maintainer will import this change into GitStudio (https://github.com/GitStudioHQ/gitstudio), " +
+  "with you as the author of every commit, and the next export brings it back here. " +
+  "Nothing to fix on your side: the type-check and test results are in the build job.";
 
 /** Finder litter is never drift. */
 const IGNORED_NAMES = new Set([".DS_Store"]);
@@ -80,24 +95,27 @@ export function hashFiles(root, relPaths) {
 }
 
 /**
- * Compare the checkout at `root` with its VENDORED_FROM.json.
- * @returns {{ ok: boolean, problems: string[], warnings: string[], checked: number, manifest?: object }}
+ * Compare the checkout at `root` with its VENDORED_FROM.json. `broken` says
+ * the manifest itself cannot be used (missing, not JSON, or empty): nothing was
+ * compared, so no difference can be reported as a contribution.
+ * @returns {{ ok: boolean, broken: boolean, problems: string[], warnings: string[], checked: number, manifest?: object }}
  */
 export function checkParity(root, { strict = false } = {}) {
   const problems = [];
   const warnings = [];
   const manifestPath = join(root, MANIFEST_FILE);
   if (!existsSync(manifestPath)) {
-    return { ok: false, problems: [`${MANIFEST_FILE} is missing: this checkout was not written by export.mjs`], warnings, checked: 0 };
+    return { ok: false, broken: true, problems: [`${MANIFEST_FILE} is missing: this checkout was not written by export.mjs`], warnings, checked: 0 };
   }
   let manifest;
   try {
     manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   } catch (e) {
-    return { ok: false, problems: [`${MANIFEST_FILE} is not valid JSON: ${e.message}`], warnings, checked: 0 };
+    return { ok: false, broken: true, problems: [`${MANIFEST_FILE} is not valid JSON: ${e.message}`], warnings, checked: 0 };
   }
   const expected = manifest.files ?? {};
-  if (Object.keys(expected).length === 0) {
+  const broken = Object.keys(expected).length === 0;
+  if (broken) {
     problems.push(`${MANIFEST_FILE} lists no vendored files`);
   }
   const actual = listFiles(join(root, VENDOR_DIR), root);
@@ -117,7 +135,7 @@ export function checkParity(root, { strict = false } = {}) {
     const differs = !existsSync(file) || sha256(readFileSync(file)) !== hash;
     if (differs) (strict ? problems : warnings).push(`shell ${existsSync(file) ? "modified" : "missing"}: ${rel} (differs from the export of gitstudio ${short(manifest)})`);
   }
-  return { ok: problems.length === 0, problems, warnings, checked: Object.keys(expected).length, manifest };
+  return { ok: problems.length === 0, broken, problems, warnings, checked: Object.keys(expected).length, manifest };
 }
 
 /**
@@ -145,11 +163,12 @@ function short(manifest) {
 }
 
 function parseArgs(argv) {
-  const args = { root: process.cwd(), strict: false, gitstudio: undefined };
+  const args = { root: process.cwd(), strict: false, pullRequest: false, gitstudio: undefined };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--root") args.root = resolve(argv[++i]);
     else if (a === "--strict") args.strict = true;
+    else if (a === "--pull-request") args.pullRequest = true;
     else if (a === "--gitstudio") args.gitstudio = resolve(argv[++i]);
     else if (a === "--help" || a === "-h") args.help = true;
     else throw new Error(`unknown argument: ${a}`);
@@ -157,10 +176,42 @@ function parseArgs(argv) {
   return args;
 }
 
+/** A pull request that changes the vendored code: said as what it is, and the run passes. */
+function reportContribution(result) {
+  const lines = [
+    `check-parity: this pull request changes ${result.problems.length} file(s) in ${VENDOR_DIR}/, GitStudio's shared code:`,
+    ...result.problems.map((p) => `  ${p}`),
+    "",
+    `That is expected: ${PULL_REQUEST_NOTE}`,
+  ];
+  console.log(lines.join("\n"));
+  if (process.env.GITHUB_ACTIONS === "true") {
+    // A notice, not an error: the check is neutral on a pull request. (%0A is
+    // how a workflow command carries a line break.)
+    console.log(`::notice title=Vendored GitStudio code changed::This pull request changes ${VENDOR_DIR}/: ${PULL_REQUEST_NOTE}`.replace(/\n/g, "%0A"));
+  }
+  const summary = process.env.GITHUB_STEP_SUMMARY;
+  if (summary) {
+    const md = [
+      "### Vendored GitStudio code",
+      "",
+      `This pull request changes ${result.problems.length} file(s) in \`${VENDOR_DIR}/\`, GitStudio's shared code. That is expected: ${PULL_REQUEST_NOTE}`,
+      "",
+      ...result.problems.map((p) => `- \`${p}\``),
+      "",
+    ].join("\n");
+    try {
+      appendFileSync(summary, md);
+    } catch (e) {
+      console.warn(`warning: could not write the step summary: ${e.message}`);
+    }
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
-    console.log("usage: node scripts/check-parity.mjs [--root <dir>] [--strict] [--gitstudio <gitstudio checkout>]");
+    console.log("usage: node scripts/check-parity.mjs [--root <dir>] [--strict] [--pull-request] [--gitstudio <gitstudio checkout>]");
     return;
   }
   const result = checkParity(args.root, { strict: args.strict });
@@ -169,6 +220,10 @@ function main() {
     const behind = commitsBehind(result.manifest, args.gitstudio);
     if (behind === undefined) console.warn(`warning: could not compare with ${args.gitstudio}`);
     else if (behind > 0) console.warn(`warning: vendored from gitstudio ${short(result.manifest)}, which is ${behind} commit(s) behind on the vendored paths — export again`);
+  }
+  if (!result.ok && args.pullRequest && !result.broken) {
+    reportContribution(result);
+    return;
   }
   if (!result.ok) {
     console.error(`check-parity: FAILED — ${result.problems.length} problem(s) in ${VENDOR_DIR} against ${MANIFEST_FILE}:`);

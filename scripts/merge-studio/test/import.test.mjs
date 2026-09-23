@@ -77,7 +77,8 @@ function scratchMergeStudio(gs) {
   g(root, "init", "-q", "-b", "main");
   identity(root);
   for (const [rel, text] of Object.entries({
-    ".github/workflows/ci.yml": "name: CI\n",
+    ".github/workflows/ci.yml": "name: CI\n", // replaced by the export's own
+    ".github/workflows/release.yml": "name: Release\n",
     "SECURITY.md": "# Security\n",
     "docs/index.md": "# Merge Studio\n",
     "test-fixtures/make-conflict.sh": "#!/bin/sh\n",
@@ -275,7 +276,7 @@ test("a path outside the mapping is refused before anything changes, and --exclu
   try {
     contribute(ms, "A mixed pull request", {
       [MERGE_MODEL]: append("// contributed\n"),
-      ".github/workflows/ci.yml": append("# merge-studio's own CI\n"),
+      ".github/workflows/release.yml": append("# merge-studio's own release\n"),
       "docs/index.md": append("More docs.\n"),
       "NEWS.md": () => "News.\n",
       "vendor/gitstudio/extra/helper.ts": () => "export {};\n",
@@ -291,7 +292,7 @@ test("a path outside the mapping is refused before anything changes, and --exclu
         return e instanceof ImportRefused;
       },
     );
-    for (const path of [".github/workflows/ci.yml", "docs/index.md", "NEWS.md", "vendor/gitstudio/extra/helper.ts", "scripts/release.mjs", "media/screenshots/new.png"]) {
+    for (const path of [".github/workflows/release.yml", "docs/index.md", "NEWS.md", "vendor/gitstudio/extra/helper.ts", "scripts/release.mjs", "media/screenshots/new.png"]) {
       assert.match(refused.message, new RegExp(`^  ${path.replace(/[./]/g, "\\$&")} \\([0-9a-f]{7}\\): `, "m"), path);
     }
     assert.doesNotMatch(refused.message, /mergeModel/, "the mapped path is not listed");
@@ -309,6 +310,23 @@ test("a path outside the mapping is refused before anything changes, and --exclu
     assert.equal(r.commits.length, 1);
     assert.deepEqual(g(gs, "diff", "--name-only", "main", "HEAD").split("\n"), ["packages/engine/src/mergeModel.ts"]);
     assert.equal(r.excluded.length, 6);
+  } finally {
+    cleanup(gs, ms);
+  }
+});
+
+test("a change to the CI workflow the export writes comes back to its template, and exports as the contributor wrote it", () => {
+  const gs = scratchGitstudio();
+  const ms = scratchMergeStudio(gs);
+  try {
+    const sha = contribute(ms, "CI: cache the npm download", {
+      ".github/workflows/ci.yml": (t) => t.replace("          cache: npm\n", "          cache: npm\n          cache-dependency-path: package-lock.json\n"),
+    });
+    const r = importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib", pr: "31" });
+    assert.equal(r.commits.length, 1);
+    assert.deepEqual(g(gs, "diff", "--name-only", "main", "HEAD").split("\n"), ["scripts/merge-studio/merge-studio-ci.yml"]);
+    assert.deepEqual(r.roundTrip.map((x) => [x.path, x.status]), [[".github/workflows/ci.yml", "identical"]]);
+    assert.equal(exportOverMain(ms, gs, sha), "", "the next export writes the contributor's workflow, and nothing else differs");
   } finally {
     cleanup(gs, ms);
   }
@@ -784,12 +802,16 @@ test("the table: new files map by the folder they land in; merge-studio's own fi
   assert.equal(map("src/deep/new.ts", true).gitstudio, "apps/merge-studio/src/deep/new.ts", "src/ is the shell's as a whole");
   assert.equal(map("media/walkthrough/new.svg", true).gitstudio, "apps/merge-studio/media/walkthrough/new.svg");
   assert.equal(map("README.md").gitstudio, "apps/merge-studio/README.md");
+  // The CI workflow the export writes comes back to the template it is written from.
+  assert.deepEqual(map(".github/workflows/ci.yml"), { kind: "copied", gitstudio: "scripts/merge-studio/merge-studio-ci.yml", shell: false });
   for (const p of ["package.json", "package-lock.json", "tsconfig.json", "VENDORED_FROM.json", "vendor/gitstudio/.gitattributes"]) {
     assert.equal(map(p).kind, "generated", p);
   }
   for (const [p, isNew] of [
     ["SECURITY.md", false],
-    [".github/workflows/ci.yml", false],
+    [".github/workflows/release.yml", false],
+    [".github/workflows/nightly.yml", true],
+    [".github/dependabot.yml", false],
     ["media/screenshots/new.png", true],
     ["NEWS.md", true],
     ["vendor/gitstudio/engine/package-lock.json", true],

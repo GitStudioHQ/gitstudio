@@ -8,7 +8,8 @@
 // Every path in a merge-studio checkout is one of three things:
 // - COPIED: the bytes of one gitstudio file. The vendored packages, GitStudio's
 //   LICENSE and NOTICE, the two files the parity test reads, check-parity and
-//   its test, and the shell (apps/merge-studio) at the repository root.
+//   its test, the CI workflow that runs them, and the shell (apps/merge-studio)
+//   at the repository root.
 // - GENERATED: computed by the export (VENDORED_FROM.json, the standalone
 //   package.json, tsconfig.json, package-lock.json, vendor/gitstudio/.gitattributes).
 // - merge-studio's own: everything else (.github/, docs/, SECURITY.md, …). The
@@ -41,6 +42,11 @@ export const COPIED = [
   // The parity check travels with the vendored code.
   { gitstudio: "scripts/merge-studio/check-parity.mjs", mergeStudio: "scripts/check-parity.mjs" },
   { gitstudio: "scripts/merge-studio/test/checkParity.test.mjs", mergeStudio: "scripts/test/checkParity.test.mjs" },
+  // And so does the CI that runs it: the parity job's rule (a pull request's
+  // change to vendor/ is reported for a maintainer to import, main must match)
+  // is the check's, so it is kept beside it. merge-studio's other workflows
+  // (release.yml) are its own.
+  { gitstudio: "scripts/merge-studio/merge-studio-ci.yml", mergeStudio: ".github/workflows/ci.yml" },
   { gitstudio: `${SHELL_DIR}/`, mergeStudio: "", shell: true },
 ];
 

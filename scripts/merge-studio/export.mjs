@@ -23,9 +23,12 @@
 //    package-lock.json cut from gitstudio's own lockfile, so `npm ci` installs
 //    exactly gitstudio's toolchain. esbuild.js needs no rewrite: it sees
 //    vendor/gitstudio and aliases @gitstudio/* there itself;
-// 5. copies check-parity.mjs (and its test) to scripts/, and writes
-//    VENDORED_FROM.json: the gitstudio sha, and a sha256 for every vendored
-//    file (checked) and every shell file (reported).
+// 5. copies check-parity.mjs (and its test) to scripts/, and the CI workflow
+//    that runs it (scripts/merge-studio/merge-studio-ci.yml) to
+//    .github/workflows/ci.yml: check-parity in a job of its own, reporting a
+//    pull request's change to vendor/ for a maintainer to import and failing
+//    only on main. Then it writes VENDORED_FROM.json: the gitstudio sha, and a
+//    sha256 for every vendored file (checked) and every shell file (reported).
 //
 // Nothing is committed, pushed or published: the target is left as a working
 // tree change for a human to review. The other direction, a merge-studio pull
@@ -272,8 +275,8 @@ export function exportTo({ into, allowDirty = false, lock = true, gitstudio = GI
   }
 
   // 2 and 3. Every copied file, by layout.mjs's table: the vendored packages,
-  // GitStudio's licence, the parity inputs, check-parity (it travels with the
-  // vendored code) and the shell.
+  // GitStudio's licence, the parity inputs, check-parity and the CI that runs
+  // it (they travel with the vendored code) and the shell.
   const copied = copiedFiles(root);
   for (const [from, to] of copied) {
     mkdirSync(dirname(join(target, to)), { recursive: true });
