@@ -1,0 +1,68 @@
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_95b60be83af23d 13149-13184
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_e12eb00e5dccb4 610-615
+apps/desktop/test/graphqlPartial.test.ts
+  s_26f5e669d3043c::t_1cd0e62ce5d396 318-373
+  s_26f5e669d3043c::t_31df87dbfd5bbd 242,246-249
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_b747a05ca616eb 1928-1929
+  s_26f5e669d3043c::t_ff9cac796c2cca 1954-1955,1963
+  s_26f5e669d3043c::t_6899a9bf11eaa7 598-600
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_21aa219530a97c 11193-11198
+apps/desktop/src/renderer/views/common.ts
+  s_26f5e669d3043c::t_880b80c7324cb8 1677-1695
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_77d5089f3b079a 1596
+  s_26f5e669d3043c::t_672c2b471bd8eb 1641-1644
+  s_26f5e669d3043c::t_1c0f0a33046afd 1726-1727
+  s_26f5e669d3043c::t_4ea376fb587a7b 1484,1486-1487
+  s_26f5e669d3043c::t_6d0405aa29576e 74
+  s_26f5e669d3043c::t_a86b0d6ec14235 1620-1628
+  s_26f5e669d3043c::t_ca9252e274c80c 1573
+apps/desktop/src/main/github/prs.ts
+  s_26f5e669d3043c::t_0dc0a0f176e84b 391-395
+  s_26f5e669d3043c::t_45b4e4ea4048aa 410,413-434
+  s_26f5e669d3043c::t_71a8c10ce6bf22 24,33
+  s_26f5e669d3043c::t_bceccc4df13a88 359-361
+  s_26f5e669d3043c::t_a12b607b61345f 368,373,375
+apps/desktop/src/renderer/views/projects.ts
+  s_26f5e669d3043c::t_1ebc7f62e605a7 187-189
+  s_26f5e669d3043c::t_ddd5e03c17e41e 29,31
+  s_26f5e669d3043c::t_bd1266d096d5a3 80,82-86
+  s_26f5e669d3043c::t_f2106b643cf52c 57-58,60,63,70-71,73-76
+  s_26f5e669d3043c::t_d0c78f5fe5b0cc 87-88
+apps/desktop/src/main/githubErrors.ts
+  s_26f5e669d3043c::t_0b563342c2f952 231-260
+  s_26f5e669d3043c::t_38a3018c64a242 230
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_3a08b28733f28f 2298
+  s_26f5e669d3043c::t_0c8304516ae712 2119
+  s_26f5e669d3043c::t_1c2e2c2cbb2aba 2524-2530
+  s_26f5e669d3043c::t_b26dc974ef5f3f 1086-1099
+apps/desktop/src/main/github/projects.ts
+  s_26f5e669d3043c::t_a65b88a9986274 78-82,92,95-96
+  s_26f5e669d3043c::t_0a9f2edad550e5 127
+  s_26f5e669d3043c::t_26736a098e036c 155
+  s_26f5e669d3043c::t_a8d8d1a118fab5 168-177
+  s_26f5e669d3043c::t_941282bc879d25 193
+  s_26f5e669d3043c::t_529ccf8f51dc0c 16-17
+  s_26f5e669d3043c::t_348fbb2251c4bf 108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0c4010699fd022ed39e565b388b508d60d6becf3",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
