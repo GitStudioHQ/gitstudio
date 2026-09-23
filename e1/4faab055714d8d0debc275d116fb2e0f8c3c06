@@ -1,0 +1,31 @@
+packages/merge-vscode/src/stageResolved.ts
+  s_26f5e669d3043c::t_25c86f1e31621f 12
+packages/merge-vscode/src/mergeEditorProvider.ts
+  s_26f5e669d3043c::t_624d8f846683a7 76-78
+packages/merge-vscode/src/mergeSession.ts
+  s_26f5e669d3043c::t_26d5ffe2042ece 76-80,83-86
+  s_26f5e669d3043c::t_fc0bb9a485e580 359-381
+  s_26f5e669d3043c::t_e4a9b7778b76ba 123-132,135-136,162-171,173
+  s_26f5e669d3043c::t_0ec0cd95a5cf2c 204-205,207-214,216,221-226
+  s_26f5e669d3043c::t_9f9cf4c817c8ea 227,239-240,243,248,251-278,280
+packages/merge-vscode/test/mergeSession.test.ts
+  s_26f5e669d3043c::t_fb141c193ab5dc 367
+  s_26f5e669d3043c::t_166aec0cbfe4cf 501-511,514,520,540,543-577,581-582
+  s_26f5e669d3043c::t_03464efb8eeaef 387,390,392-395,399-424,429-500,512-513,515-519,521-539,541-542,578-580,583-586
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e14faab055714d8d0debc275d116fb2e0f8c3c06",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
