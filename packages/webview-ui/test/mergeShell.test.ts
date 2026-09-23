@@ -64,6 +64,28 @@ const PROLOGUE = `
 
 const run = (script: string) =>
   runInChrome(CHROME!, ENTRY, PROLOGUE + script, { css: CSS, width: 1280, height: 700 });
+// VS Code's Light Modern: errorForeground #F85149 is 3.35:1 on its white
+// editor — under AA for the danger buttons' text (the verifier's finding).
+const LIGHT_MODERN = `
+  document.body.className = "vscode-light";
+  document.documentElement.style.cssText +=
+    ";--vscode-errorForeground:#F85149;--vscode-foreground:#3B3B3B;--vscode-editor-background:#FFFFFF";
+  const rgbOf = (c) => {
+    let m = /rgba?\\(([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)/.exec(c);
+    if (m) return [+m[1], +m[2], +m[3]];
+    m = /color\\(srgb ([\\d.]+) ([\\d.]+) ([\\d.]+)/.exec(c);
+    return m ? [m[1] * 255, m[2] * 255, m[3] * 255] : null;
+  };
+  const lum = (rgb) => {
+    const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]);
+  };
+  const contrastOnWhite = (el) => {
+    const rgb = rgbOf(getComputedStyle(el).color);
+    return rgb ? 1.05 / (lum(rgb) + 0.05) : 0;
+  };
+`;
+
 const skip = !CHROME && "no Chrome on this machine";
 
 test("the strip, the pills and the buttons are named from the operation", { skip }, async () => {
@@ -285,6 +307,19 @@ test("a whitespace change asks first when it would throw away resolutions; granu
     const granCalls = fake.calls.filter((c) => c.name === "setRenderOptions" && "showInner" in c.args[0]);
     expect(granCalls.length === 1 && granCalls[0].args[0].showInner === false, "granularity only re-decorates, no question asked");
     expect(!shown(".ms-ws-confirm"), "and raises no confirm");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("on a light theme the no-text panel's Delete the file clears AA (Light Modern's red does not)", { skip }, async () => {
+  const v = await run(LIGHT_MODERN + `
+    mount(payload({ shape: "modify-delete", missingRole: "theirs" }));
+    const del = [...document.querySelectorAll(".ms-notext .ms-danger")];
+    expect(del.length === 1, "one danger button (" + del.length + ")");
+    for (const b of del) {
+      const c = contrastOnWhite(b);
+      expect(c >= 4.5, b.textContent.trim() + ": " + c.toFixed(2) + ":1 on white");
+    }
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });

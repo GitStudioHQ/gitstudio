@@ -1191,6 +1191,13 @@ function doneMessage(kind: OperationKind, verb: "continue" | "skip" | "abort"): 
     if (kind === "am") return "Patch series abandoned";
     return `${OP_NOUN[kind]} aborted`;
   }
+  // A Skip that ENDED the operation left its last commit out: saying "All
+  // patches applied" of a series whose one patch was just skipped is wrong.
+  if (verb === "skip") {
+    return kind === "am"
+      ? "Last patch skipped. The series is finished, without it"
+      : `Last commit skipped. ${OP_NOUN[kind]} complete, without it`;
+  }
   if (kind === "am") return "All patches applied";
   return `${OP_NOUN[kind]} complete`;
 }

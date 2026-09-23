@@ -15,6 +15,7 @@
 //
 // vscode-free, so it is unit-tested against real git under plain node.
 
+import { conflictTypeFor } from "@gitstudio/engine/conflict/conflictType";
 import { parseConflictMarkers } from "@gitstudio/engine/conflict/markers";
 import type { MergeSides, ReadSidesOptions } from "@gitstudio/git-service/ConflictOps";
 import type { OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
@@ -105,11 +106,7 @@ export function markersOnlyPayload(input: PayloadInput): MergeInitPayload {
   const base = parsed.hasConflicts && parsed.isDiff3 ? parsed.base : "";
   return {
     fileName: input.fileName,
-    conflictType: parsed.hasConflicts
-      ? parsed.isDiff3
-        ? "content"
-        : "add-add"
-      : "unknown",
+    conflictType: conflictTypeFor({ shape: "text", hasBase: parsed.isDiff3, source }),
     source,
     hasBase: parsed.hasConflicts && parsed.isDiff3,
     oursLabel: GENERIC_LABELS.yours,
@@ -126,28 +123,11 @@ export function markersOnlyPayload(input: PayloadInput): MergeInitPayload {
 
 /**
  * The legacy conflict-type note, stated in ROLE terms: "deleted-by-us" means
- * Yours has no version of the file (whichever stage that is).
+ * Yours has no version of the file (whichever stage that is). The engine's
+ * one mapping, which the desktop uses too — from the shape git's stages
+ * decided, never from which texts happen to be empty (an emptied file is
+ * not a deleted one).
  */
 export function conflictTypeOf(sides: MergeSides): ConflictType {
-  if (sides.source === "none") {
-    return "unknown";
-  }
-  if (sides.shape === "added-both") {
-    return "add-add";
-  }
-  if (sides.missingRole) {
-    return sides.missingRole === "yours" ? "deleted-by-us" : "deleted-by-them";
-  }
-  const hasYours = sides.yours !== "";
-  const hasTheirs = sides.theirs !== "";
-  if (hasYours && hasTheirs) {
-    return sides.hasBase ? "content" : "add-add";
-  }
-  if (hasYours) {
-    return "deleted-by-them";
-  }
-  if (hasTheirs) {
-    return "deleted-by-us";
-  }
-  return "unknown";
+  return conflictTypeFor(sides);
 }

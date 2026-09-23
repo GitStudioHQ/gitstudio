@@ -198,6 +198,8 @@ export interface OperationOutcome {
  *
  * - "text" / "added-both": a line-by-line merge is possible (added-both has no base).
  * - "binary" / "too-large": take a side only.
+ * - "submodule" (a gitlink) / "symlink": take a side only — a link has a
+ *   target, not lines; neither is a binary file, and saying so misled.
  * - "modify-delete": one side edited, the other deleted (`missingRole` = the deleter).
  * - "added-one-side": new on one side, absent on the other, no base (`missingRole` = absent side).
  * - "both-deleted": git's DD; nothing to take — the only resolution is deleting it.
@@ -206,6 +208,8 @@ export type ConflictShape =
   | "text"
   | "binary"
   | "too-large"
+  | "submodule"
+  | "symlink"
   | "modify-delete"
   | "both-deleted"
   | "added-one-side"
@@ -227,6 +231,8 @@ export interface ConflictFileView {
   shape: ConflictShape;
   /** modify-delete / added-one-side: the role with NO version of the file. */
   missingRole?: SideRole;
+  /** A submodule: the commit each side points it at (full shas, by role). */
+  commits?: { yours?: string; theirs?: string };
 }
 
 /**

@@ -1,7 +1,7 @@
 // The panel shown INSTEAD of the three-pane editor for a conflict with no text
-// to merge line by line: a binary file, one too large to read whole, a file
-// deleted on one side (modify/delete), deleted on both (git's DD), or added on
-// one side only.
+// to merge line by line: a binary file, one too large to read whole, a
+// submodule or a symbolic link, a file deleted on one side (modify/delete),
+// deleted on both (git's DD), or added on one side only.
 //
 // Generalised from the desktop's diffPanel explanations, so the extension,
 // Merge Studio and the desktop say the same thing and offer the same moves:
@@ -18,7 +18,7 @@ import type {
   SideRole,
 } from "@gitstudio/host-bridge/conflictsProtocol";
 import { otherRole, roleWord, sideName, sideOf } from "./conflicts/opText";
-import { binaryIcon, checkIcon, glyphEl, removedIcon, trashIcon, warningIcon } from "./shellIcons";
+import { binaryIcon, checkIcon, commitIcon, glyphEl, removedIcon, trashIcon, warningIcon } from "./shellIcons";
 
 export interface NoTextPanelInput {
   path: string;
@@ -29,6 +29,8 @@ export interface NoTextPanelInput {
   /** Pane labels, for hosts that know no operation. */
   yoursLabel: string;
   theirsLabel: string;
+  /** A submodule: the commit each side points it at, when the host passes them. */
+  commits?: { yours?: string; theirs?: string };
 }
 
 export interface NoTextPanelHandlers {
@@ -61,7 +63,29 @@ export function describeNoText(input: NoTextPanelInput): { title: string; detail
   const path = fileLabel(input.path);
   const name = (role: SideRole): string =>
     sideName(op, role, role === "yours" ? input.yoursLabel : input.theirsLabel);
+  const sha7 = (role: SideRole): string | undefined => input.commits?.[role]?.slice(0, 7);
   switch (shape) {
+    case "submodule": {
+      // Not "binary": a submodule is a pointer to a commit, and the choice is
+      // between two commits (the verifier found it called a binary file).
+      const y = sha7("yours");
+      const t = sha7("theirs");
+      const at = y && t ? `: yours at ${y}, theirs at ${t}` : "";
+      return {
+        title: "Conflicted submodule",
+        detail:
+          `${path} is a submodule (a gitlink), and ${name("yours")} and ${name("theirs")} point it at different ` +
+          `commits${at}. Accept one side to record its commit. The submodule's own checkout is left as it is: run ` +
+          `git submodule update afterwards.`,
+      };
+    }
+    case "symlink":
+      return {
+        title: "Conflicted symbolic link",
+        detail:
+          `${path} is a symbolic link, and ${name("yours")} and ${name("theirs")} point it at different targets. ` +
+          `A link has no lines to merge: accept the side whose target you want.`,
+      };
     case "binary":
       return {
         title: "Conflicted binary file",
@@ -116,7 +140,15 @@ export function buildNoTextPanel(input: NoTextPanelInput, handlers: NoTextPanelH
   const badge = document.createElement("div");
   badge.className = "ms-notext-badge";
   badge.appendChild(
-    glyphEl(input.shape === "binary" ? binaryIcon : input.shape === "too-large" ? warningIcon : removedIcon),
+    glyphEl(
+      input.shape === "submodule"
+        ? commitIcon
+        : input.shape === "binary" || input.shape === "symlink"
+          ? binaryIcon
+          : input.shape === "too-large"
+            ? warningIcon
+            : removedIcon,
+    ),
   );
   const { title, detail } = describeNoText(input);
   const h = document.createElement("div");
@@ -171,9 +203,11 @@ export function buildNoTextPanel(input: NoTextPanelInput, handlers: NoTextPanelH
             )
           : mkBtn(
               `Accept ${word}`,
-              side?.description
-                ? `Keep ${side.description} and stage it`
-                : `Replace the file with ${named} and stage it`,
+              input.shape === "submodule"
+                ? `Point the submodule at ${named}'s commit${input.commits?.[role] ? ` ${input.commits[role]!.slice(0, 7)}` : ""} and stage it`
+                : side?.description
+                  ? `Keep ${side.description} and stage it`
+                  : `Replace the file with ${named} and stage it`,
               false,
               () => handlers.takeRole(role),
             ),

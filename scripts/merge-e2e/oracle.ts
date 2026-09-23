@@ -62,7 +62,7 @@ export const LEGEND = {
   c: "conflict",
   r: "conflict the wand resolves (non-overlapping edits)",
   s: "same change on both sides (exact)",
-  w: "same change up to whitespace (≈)",
+  w: "same change up to whitespace",
   y: "Yours only",
   t: "Theirs only",
 } as const;

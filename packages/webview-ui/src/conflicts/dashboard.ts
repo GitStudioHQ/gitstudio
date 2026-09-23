@@ -454,12 +454,15 @@ export class ConflictsDashboard {
         for (const role of ["yours", "theirs"] as const) {
           const side = sideOf(state.op, role);
           const missing = f.missingRole === role;
+          const commit = f.shape === "submodule" ? f.commits?.[role] : undefined;
           actions.appendChild(
             this.button(
               missing ? "Delete the file" : `Accept ${roleWord(role)}`,
               missing
                 ? `${roleWord(role)}${side.name ? ` (${side.name})` : ""} has no version of this file — accepting it deletes the file`
-                : `Resolve the whole file with ${role}${side.description ? ` — ${side.description}` : side.name ? ` (${side.name})` : ""}`,
+                : f.shape === "submodule"
+                  ? `Point the submodule at ${role}'s commit${commit ? ` ${commit.slice(0, 7)}` : ""}${side.name ? ` (${side.name})` : ""} and stage it`
+                  : `Resolve the whole file with ${role}${side.description ? ` — ${side.description}` : side.name ? ` (${side.name})` : ""}`,
               `accept:${role}:${f.path}`,
               disabled,
               () => {
@@ -686,7 +689,9 @@ export class ConflictsDashboard {
 
     if (this.closable && allDone) {
       foot.appendChild(
-        this.button("Close", "Close this dashboard", "close", false, () => this.post({ type: "close" }), "cd-primary-quiet"),
+        // Secondary: beside Continue there is ONE primary action (the verifier
+        // found two identical primary buttons on the finished card).
+        this.button("Close", "Close this dashboard", "close", false, () => this.post({ type: "close" })),
       );
     }
     return foot;

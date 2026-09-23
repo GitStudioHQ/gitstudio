@@ -109,6 +109,9 @@
      amber, and the decoration colour stays as the fallback for the rare theme
      that omits the charts palette. */
   --gs-amber: var(--vscode-charts-yellow, var(--vscode-gitDecoration-modifiedResourceForeground));
+  /* Danger ink for TEXT (a Delete, an Abort): the theme's error colour. Light
+     themes darken it below — see .vscode-light. */
+  --gs-danger: var(--vscode-errorForeground, #f14c4c);
 
   /* ---- Brand ------------------------------------------------------------ */
   /* GitStudio violet. The mark's "one git tone" is #A98CFF (a light line
@@ -151,6 +154,17 @@
 .vscode-light {
   --gs-hover: color-mix(in srgb, var(--gs-fg) 6%, var(--vscode-list-hoverBackground, transparent));
   --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 10%, var(--vscode-list-hoverBackground, transparent));
+  /* VS Code's Light Modern ships errorForeground #F85149: 3.35:1 on its white
+     editor, under AA for the text of a Delete or Abort button. Mixed 40%
+     toward the foreground it keeps its red and reads 5.5:1 (Light+'s darker
+     #A1260D only gets darker). */
+  --gs-danger: color-mix(in srgb, var(--vscode-errorForeground, #e51400) 60%, var(--vscode-foreground, #000000));
+}
+/* The merge shell sets its own danger ink on .ms-shell (shell.css); on a light
+   theme it takes the darkened one, so the no-text panel's Delete the file
+   clears AA too. */
+.vscode-light .ms-shell {
+  --ms-danger: var(--gs-danger);
 }
 :root {
   --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 12%, var(--gs-hover));

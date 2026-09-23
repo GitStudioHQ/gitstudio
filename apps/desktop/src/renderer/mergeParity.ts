@@ -26,6 +26,7 @@ import {
   type SideRole,
 } from "@gitstudio/host-bridge/conflictsProtocol";
 import { roleOfStage } from "@gitstudio/engine/conflict/sides";
+import { conflictTypeFor } from "@gitstudio/engine/conflict/conflictType";
 import {
   continueBlockedText,
   opChipLabel,
@@ -101,9 +102,12 @@ export function mergePayload(
   ide?: JetBrainsIdeInfo,
 ): MergeInitPayload {
   const shape = conflictShape(model);
+  const missingRole = missingRoleOf(model);
   return {
     fileName: model.path,
-    conflictType: shape === "added-both" ? "add-add" : "content",
+    // The extensions' own mapping (engine conflictTypeFor): a modify/delete,
+    // a one-sided add and a double delete were all "content" here.
+    conflictType: conflictTypeFor({ shape, missingRole, hasBase: model.hasBase, source: "git-stages" }),
     source: "git-stages",
     hasBase: model.hasBase,
     oursLabel: model.oursLabel,
@@ -118,7 +122,7 @@ export function mergePayload(
     // now the Settings ▸ Merge setting, OFF unless turned on.
     autoApplyNonConflicting: settings.autoApplyNonConflicting,
     shape,
-    missingRole: missingRoleOf(model),
+    missingRole,
   };
 }
 
@@ -182,7 +186,7 @@ export function outcomeLine(
         (verb === "abort"
           ? `${cap} ended. The repository is back where it was before it started.`
           : verb === "skip"
-            ? `Skipped. The ${noun} carried on.`
+            ? `Last ${before.kind === "am" ? "patch" : "commit"} skipped. The ${noun} is complete, without it.`
             : `${cap} complete.`),
     };
   }
@@ -664,6 +668,13 @@ export function opIndicator(op: GitOpState | undefined): { badge: string; label:
       badge: String(op.conflicts),
       label: op.kind ? `${verb} · ${files}` : files,
       title: `${op.kind ? `${verb}: ` : ""}${op.conflicts} file${op.conflicts === 1 ? " has" : "s have"} conflicts — open Changes to resolve`,
+    };
+  }
+  if (op.kind && op.canContinue) {
+    return {
+      badge: "•",
+      label: "Ready to continue",
+      title: `${verb}: every conflict is resolved — open Changes to continue`,
     };
   }
   return {

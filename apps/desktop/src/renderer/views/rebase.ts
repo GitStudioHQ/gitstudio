@@ -75,7 +75,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
 
   // A rebase already in flight owns the repo — offer continue/abort only.
   if (state.inProgress) {
-    wrap.replaceChildren(inProgressCard(() => void mount(wrap, nav)));
+    wrap.replaceChildren(inProgressCard(() => mount(wrap, nav), wrap));
     return;
   }
 
@@ -722,8 +722,25 @@ function baseBar(state: RebasePlanState, wrap: HTMLElement, nav: (v: string) => 
   return bar;
 }
 
+/**
+ * After a verb the view is rebuilt under the button that ran it, and the
+ * keyboard fell to the page (Tab started again from the top bar). It goes
+ * back to the same verb when the rebase is still stopped, else to the first
+ * control of whatever the view shows now — only if it is still nowhere.
+ */
+function returnKeyboard(wrap: HTMLElement, verb: "continue" | "skip" | "abort"): void {
+  const active = document.activeElement;
+  if (active && active !== document.body && active.isConnected) return;
+  const again = wrap.querySelector<HTMLButtonElement>(`.rb-inprogress button[data-verb="${verb}"]`);
+  const target =
+    again && !again.hidden && !again.disabled
+      ? again
+      : wrap.querySelector<HTMLElement>("button:not([disabled]):not([hidden]), input:not([disabled]), [tabindex='0']");
+  target?.focus();
+}
+
 /** Shown when git is mid-rebase: continue, abort — and skip, where git itself names it as the way out. */
-function inProgressCard(reload: () => void): HTMLElement {
+function inProgressCard(reload: () => Promise<void>, wrap: HTMLElement): HTMLElement {
   const card = el("div", "rb-inprogress");
   const head = el("div", "rb-inprogress-head");
   head.append(glyph("debug-pause"), span("A rebase is in progress"));
@@ -735,10 +752,14 @@ function inProgressCard(reload: () => void): HTMLElement {
     "rb-inprogress-body",
   );
   const btns = el("div", "rb-inprogress-btns");
+  // The operation's own verbs, as the dashboard and the merge editor say them
+  // (a bare "Continue" here, "Continue Rebase" everywhere else).
   const cont = el("button", "rb-btn primary") as HTMLButtonElement;
-  cont.append(glyph("debug-continue"), span("Continue"));
+  cont.append(glyph("debug-continue"), span("Continue Rebase"));
+  cont.dataset.verb = "continue";
   const abort = el("button", "rb-btn danger") as HTMLButtonElement;
-  abort.append(glyph("circle-slash"), span("Abort"));
+  abort.append(glyph("circle-slash"), span("Abort Rebase"));
+  abort.dataset.verb = "abort";
   // Skip, ONLY where git offers it. The Changes view's banner had it; this
   // view, which says "a rebase is in progress" in so many words, did not — so
   // an apply-backend rebase stopped on an emptied patch had no way forward
@@ -750,6 +771,7 @@ function inProgressCard(reload: () => void): HTMLElement {
   skip.append(glyph("debug-step-over"), span("Skip this commit"));
   skip.title = "Leave out the commit git is stuck on and carry on with the rest";
   skip.hidden = true;
+  skip.dataset.verb = "skip";
 
   // The operation as the main process describes it NOW (names, willDrop,
   // canSkip) — read when a button is pressed, never from a view built earlier.
@@ -780,7 +802,8 @@ function inProgressCard(reload: () => void): HTMLElement {
       if (!o) return; // another verb is running (exclusive() dropped this one)
       const line = outcomeLine(o, before ?? o.view, verb);
       toast(line.text, line.kind === "done" ? "success" : line.kind === "stopped" ? "info" : o.expected ? "info" : "error", 6000);
-      reload();
+      await reload();
+      returnKeyboard(wrap, verb);
     } catch (e) {
       toast(cleanErr(e) || `Couldn't ${verb} the rebase.`, "error", 6000);
     } finally {

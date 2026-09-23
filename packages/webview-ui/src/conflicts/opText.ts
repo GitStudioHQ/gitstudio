@@ -223,6 +223,10 @@ export function shapeWord(shape: ConflictShape): string {
   switch (shape) {
     case "binary":
       return "binary";
+    case "submodule":
+      return "submodule";
+    case "symlink":
+      return "symbolic link";
     case "too-large":
       return "too large to merge here";
     case "modify-delete":

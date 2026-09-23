@@ -122,7 +122,7 @@ export interface EngineExpect {
   /** Yours and Theirs disagree about line endings. */
   eolMismatch?: boolean;
   eol?: "LF" | "CRLF";
-  /** With whitespace ignored, at least one identical (≈) block appears. */
+  /** With whitespace ignored, at least one block is the same change up to whitespace. */
   sameIgnoringWhitespace?: boolean;
 }
 
@@ -220,7 +220,7 @@ export const CONTENT_CASES: readonly ContentCase[] = [
   {
     id: "whitespace-only",
     source: "matrix",
-    what: "X's change is whitespace only; and an edit both made, Y's with trailing spaces (≈)",
+    what: "X's change is whitespace only; and an edit both made, Y's with trailing spaces (the same up to whitespace)",
     files: [uu("cases/whitespace.txt")],
     engine: { sameIgnoringWhitespace: true },
   },
@@ -307,13 +307,13 @@ export const CONTENT_CASES: readonly ContentCase[] = [
     id: "symlink",
     source: "matrix",
     what: "a symlink whose target both sides changed",
-    files: [uu("links/current", "binary")],
+    files: [uu("links/current", "symlink")],
   },
   {
     id: "submodule",
     source: "matrix",
     what: "a submodule (gitlink) both sides moved",
-    files: [uu("vendor/lib", "binary")],
+    files: [uu("vendor/lib", "submodule")],
   },
   {
     id: "reporter-line3",

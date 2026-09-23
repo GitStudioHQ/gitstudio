@@ -58,6 +58,8 @@ export interface ConflictFileFacts {
   badge: string;
   /** A common ancestor (stage 1) exists. */
   hasBase: boolean;
+  /** A submodule: the commit each side points it at (full shas, by role). */
+  commits?: { yours?: string; theirs?: string };
 }
 
 /**
@@ -216,6 +218,7 @@ export class ConflictOps {
         ...(f?.badge ? { badge: f.badge } : {}),
         shape: f?.shape ?? "text",
         ...(f?.missingRole ? { missingRole: f.missingRole } : {}),
+        ...(f?.commits ? { commits: f.commits } : {}),
       });
     }
     return {
@@ -503,21 +506,29 @@ export class ConflictOps {
       let { shape, missing } = shapeOfStages(present);
       if (textCapable(stages)) {
         if (await this.tooLarge(path, stages, sizes)) shape = "too-large";
-        else if (isLinkOrGitlink(stages) || unmergeable.has(path)) shape = "binary";
+        else if (isLinkOrGitlink(stages)) shape = linkShape(stages);
+        else if (unmergeable.has(path)) shape = "binary";
         // Only a file with a stage git calls non-text is asked again, with
         // git's own merge-time test (a NUL in the head of the blob): `i/-text`
         // is also what a CR-only text file gets, and that one merges fine.
         else if (listing.nonText.has(path) && (await this.isBinary(stages, signal))) shape = "binary";
       }
       const xy = xyFromStages(present);
+      // A submodule names the two commits its sides point at: that IS the
+      // choice (the no-text panel and the dashboard said "binary").
+      const commits =
+        shape === "submodule"
+          ? { yours: stages.get(stageOf(op, "yours"))?.sha, theirs: stages.get(stageOf(op, "theirs"))?.sha }
+          : undefined;
       out.push({
         path,
         xy,
         stages: [...present].sort() as Array<1 | 2 | 3>,
         shape,
         ...(missing ? { missingRole: roleOfStage(op, missing) } : {}),
-        badge: badgeFor(xy, op),
+        badge: commits ? submoduleBadge(commits) : badgeFor(xy, op),
         hasBase: present.has(1),
+        ...(commits ? { commits } : {}),
       });
     }
     return out;
@@ -718,6 +729,18 @@ export function parseUnmergedStagesEol(out: string): Listing {
     if (m[4] === "-text") map.nonText.add(path);
   }
   return map;
+}
+
+/** Which link: a gitlink (submodule) on either side makes it a submodule. */
+function linkShape(stages: StageMap): "submodule" | "symlink" {
+  for (const e of stages.values()) if (e.mode === "160000") return "submodule";
+  return "symlink";
+}
+
+/** "submodule: yours at 1c34b25, theirs at 9d20bed" — the row's badge. */
+function submoduleBadge(commits: { yours?: string; theirs?: string }): string {
+  const at = (role: string, sha?: string): string => (sha ? `${role} at ${sha.slice(0, 7)}` : `${role} has none`);
+  return `submodule: ${at("yours", commits.yours)}, ${at("theirs", commits.theirs)}`;
 }
 
 /** A symlink or a submodule: "take a side only" — there is no line merge of a link target. */

@@ -115,7 +115,7 @@ test("every content shape of a merge, with XY exactly as git reports it and badg
 
     assert.equal(by.get("art.bin")!.shape, "binary", "git's own numstat says '-\\t-'");
     assert.equal(by.get("big.txt")!.shape, "too-large");
-    assert.equal(by.get("link")!.shape, "binary", "a symlink has no line merge — take a side");
+    assert.equal(by.get("link")!.shape, "symlink", "a symlink has no line merge — take a side");
 
     // fileFacts agrees with the list.
     assert.deepEqual(await ctx.conflictOps.fileFacts("keep.txt"), by.get("keep.txt"));

@@ -365,6 +365,7 @@ test("cherry-pick × resolved to stage 2: nothing to commit, so Skip", () =>
     assert.equal(refused.refused, "blocked", "refused before git ever said 'now empty'");
     const out = await ctx.operation.skip();
     assert.equal(out.ok, true, out.message);
+    assert.equal(out.message, "Last commit skipped. Cherry-pick complete, without it");
     assert.equal(r.exists(".git/CHERRY_PICK_HEAD"), false);
     assert.equal(r.sha("HEAD"), sha.master);
   }));
@@ -572,6 +573,9 @@ test("am -3 × resolved to stage 2: nothing left of the patch, so Skip", () =>
     assert.equal(v.canSkip, true);
     const out = await ctx.operation.skip();
     assert.equal(out.ok, true, out.message);
+    // The verifier: skipping the last patch said "All patches applied" — of a
+    // series whose one patch was just left out.
+    assert.equal(out.message, "Last patch skipped. The series is finished, without it");
     assert.equal(r.sha("HEAD"), sha.master);
     assert.equal(r.exists(".git/rebase-apply"), false);
   }));

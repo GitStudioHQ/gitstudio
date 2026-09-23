@@ -90,7 +90,7 @@ function doneText(kind: OperationKind, verb: OperationVerb): string {
     return verb === "continue"
       ? "All patches applied."
       : verb === "skip"
-        ? "Patch skipped — the series carried on."
+        ? "Last patch skipped — the series is finished, without it."
         : "Patch series abandoned — the branch is back where it was before it started.";
   }
   if (kind === "stash") {
@@ -103,7 +103,7 @@ function doneText(kind: OperationKind, verb: OperationVerb): string {
   return verb === "abort"
     ? `${noun} cancelled — the repository is back where it was before.`
     : verb === "skip"
-      ? `Commit skipped — the ${opNoun(kind)} carried on.`
+      ? `Last commit skipped — the ${opNoun(kind)} is complete, without it.`
       : `${noun} complete.`;
 }
 

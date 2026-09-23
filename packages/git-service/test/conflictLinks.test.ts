@@ -79,7 +79,16 @@ for (const op of ["merge", "rebase"] as const) {
         const stage = role === "yours" ? view.yours.stage : view.theirs.stage;
         const want = entry(r, "lib", stage);
         const facts = await ctx.conflictOps.fileFacts("lib");
-        assert.equal(facts?.shape, "binary", "a gitlink has no text to merge");
+        // A gitlink has no text to merge — and it is not a binary file either:
+        // the no-text panel said "Conflicted binary file" of a submodule.
+        assert.equal(facts?.shape, "submodule");
+        const yoursSha = entry(r, "lib", view.yours.stage);
+        const theirsSha = entry(r, "lib", view.theirs.stage);
+        assert.deepEqual(facts?.commits, { yours: yoursSha, theirs: theirsSha }, "the two commits, by role");
+        assert.equal(
+          facts?.badge,
+          `submodule: yours at ${yoursSha!.slice(0, 7)}, theirs at ${theirsSha!.slice(0, 7)}`,
+        );
         const out = await ctx.conflictOps.takeRole("lib", role);
         assert.equal(out.ok, true, out.message);
         assert.equal(entry(r, "lib", 2), undefined, "no longer conflicted");

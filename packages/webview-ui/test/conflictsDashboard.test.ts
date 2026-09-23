@@ -102,6 +102,28 @@ const PROLOGUE = `
 `;
 
 const run = (script: string) => runInChrome(CHROME!, ENTRY, PROLOGUE + script, { css: CSS, width: 1000, height: 820 });
+// VS Code's Light Modern: errorForeground #F85149 is 3.35:1 on its white
+// editor — under AA for the danger buttons' text (the verifier's finding).
+const LIGHT_MODERN = `
+  document.body.className = "vscode-light";
+  document.documentElement.style.cssText +=
+    ";--vscode-errorForeground:#F85149;--vscode-foreground:#3B3B3B;--vscode-editor-background:#FFFFFF";
+  const rgbOf = (c) => {
+    let m = /rgba?\\(([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)/.exec(c);
+    if (m) return [+m[1], +m[2], +m[3]];
+    m = /color\\(srgb ([\\d.]+) ([\\d.]+) ([\\d.]+)/.exec(c);
+    return m ? [m[1] * 255, m[2] * 255, m[3] * 255] : null;
+  };
+  const lum = (rgb) => {
+    const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]);
+  };
+  const contrastOnWhite = (el) => {
+    const rgb = rgbOf(getComputedStyle(el).color);
+    return rgb ? 1.05 / (lum(rgb) + 0.05) : 0;
+  };
+`;
+
 const skip = !CHROME && "no Chrome on this machine";
 
 test("every operation's dashboard names its direction, step and verbs", { skip }, async () => {
@@ -403,6 +425,56 @@ test("support links: only the problem report mid-operation; rating and sponsorin
     expect(shown() === "Report a problem", "a failure is no time to ask for a rating (" + shown() + ")");
     d.render(state(OPS.rebase, [row("a.ts")]));
     expect(!$(".cd-support"), "no links, no slot (GitStudio)");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("every file resolved: Continue is the one primary button, and Close beside it is secondary", { skip }, async () => {
+  // The verifier: the success card showed Close and Continue Rebase as two
+  // identical primary buttons (.cd-primary-quiet was styled as .cd-primary).
+  const v = await run(`
+    const d = mount({ closable: true });
+    d.render(state({ ...OPS.rebase, canContinue: true }, [row("a.ts", { status: "resolved", choice: "yours" })]));
+    const close = btn("Close");
+    const cont = btn("Continue Rebase");
+    expect(!!close && !!cont, "both are offered");
+    const bg = (b) => getComputedStyle(b).backgroundColor;
+    expect(bg(close) !== bg(cont), "Close does not look like Continue (" + bg(close) + " / " + bg(cont) + ")");
+    expect(![...close.classList].some((c) => c.startsWith("cd-primary")), "Close is not a primary button: " + close.className);
+    const accept = document.createElement("button");
+    accept.className = "cd-btn";
+    document.querySelector(".cd-dash").appendChild(accept);
+    expect(bg(close) === bg(accept), "Close is painted as a secondary button (" + bg(close) + " / " + bg(accept) + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("on a light theme the danger buttons' text clears AA (Light Modern's red does not)", { skip }, async () => {
+  const v = await run(LIGHT_MODERN + `
+    const d = mount();
+    d.render(state(OPS.merge, [row("m.txt", { shape: "modify-delete", missingRole: "yours", badge: "deleted in yours (main)" })]));
+    const danger = $$(".cd-btn.cd-danger");
+    expect(danger.length >= 2, "the row's Delete the file and the footer's Abort are danger buttons (" + danger.length + ")");
+    for (const b of danger) {
+      const c = contrastOnWhite(b);
+      expect(c >= 4.5, b.textContent.trim() + ": " + c.toFixed(2) + ":1 on white");
+    }
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("a submodule row names the two commits, and each Accept says which it records", { skip }, async () => {
+  const v = await run(`
+    const d = mount();
+    d.render(state(OPS.merge, [row("vendor/lib", {
+      shape: "submodule",
+      badge: "submodule: yours at 1c34b25, theirs at 9d20bed",
+      commits: { yours: "1c34b25aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", theirs: "9d20bedbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    })]));
+    expect(text(".cd-badge") === "submodule: yours at 1c34b25, theirs at 9d20bed", "the badge (" + text(".cd-badge") + ")");
+    expect(!btn("Merge…"), "no line-by-line merge of a submodule");
+    expect(/commit 1c34b25/.test(btn("Accept Yours").title), "Accept Yours: " + btn("Accept Yours").title);
+    expect(/commit 9d20bed/.test(btn("Accept Theirs").title), "Accept Theirs: " + btn("Accept Theirs").title);
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });

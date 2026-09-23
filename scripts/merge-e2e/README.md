@@ -56,7 +56,7 @@ both, per file (`yours`, `theirs`).
 - **Merge Studio's stress fixture:** `stress/userService.js` (unequal-height conflicts, delete-vs-modify, an overlapping insertion, one-line values, an identical edit on both sides, one-sided changes, a conflict at end of file) and `stress/config.json`.
 - **Merge Studio's load fixture:** `load/bigService.js` (1201 blocks), `load/giantList.js`, `load/config.json`.
 - **Everything else:**
-  - `cases/whitespace.txt`: a whitespace-only change, and an edit both sides made that differs only in whitespace (≈).
+  - `cases/whitespace.txt`: a whitespace-only change, and an edit both sides made that differs only in whitespace.
   - `cases/adjacent.txt`: resolvable, meaning the edits are adjacent but don't overlap.
   - `cases/windows.txt`: CRLF.
   - `cases/eol-mixed.txt`: CRLF on one side, LF on the other.

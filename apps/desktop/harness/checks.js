@@ -4631,6 +4631,32 @@
       c.eq(window.__GS_INVOKED.filter((r) => /^rebase:(skip|continue|abort)$/.test(r.channel)).length, 0, "no legacy rebase verb");
     },
 
+    /**
+     * The rebase view's verbs say what they act on, as the dashboard's do
+     * ("Continue Rebase", not a bare "Continue"), and after one runs the view
+     * is rebuilt under the button — which left the keyboard on the page, Tab
+     * starting again from the top bar. It comes back to the view.
+     */
+    "the-rebase-view-names-its-verbs-and-keeps-the-keyboard": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const labels = $$(".rb-inprogress button").filter((b) => !b.hidden).map((b) => text(b));
+      c.ok(labels.includes("Continue Rebase"), `Continue names the operation (${labels.join(" | ")})`);
+      c.ok(labels.includes("Abort Rebase"), `Abort names the operation (${labels.join(" | ")})`);
+      const abort = $$(".rb-inprogress button").find((b) => /^Abort/.test(text(b)));
+      c.ok(!!abort, "precondition: Abort is on screen");
+      if (!abort) return;
+      abort.focus();
+      abort.click();
+      await settle(500);
+      $(".modal-ok")?.click();
+      await settle(1500);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 1, "precondition: one op:abort ran");
+      const a = document.activeElement;
+      const view = $(".rb-view");
+      c.ok(!!a && a !== document.body && !!view && view.contains(a), `the keyboard is back in the rebase view (on ${a ? a.tagName + "." + a.className : "nothing"})`);
+    },
+
     /** …and a repository SWITCH still closes the question: the verb would act on the new repository. */
     "a-rebase-question-does-not-follow-you-to-another-repository": async (f) => {
       const c = check(f);

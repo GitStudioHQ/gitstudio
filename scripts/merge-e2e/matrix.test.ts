@@ -87,7 +87,7 @@ test("the matrix definition still has everything that was asked for", () => {
   const shapes = new Set(CONTENT_CASES.flatMap((c) => c.files.map((f) => f.shape)));
   assert.deepEqual(
     [...shapes].sort(),
-    ["added-both", "added-one-side", "binary", "both-deleted", "modify-delete", "text", "too-large"],
+    ["added-both", "added-one-side", "binary", "both-deleted", "modify-delete", "submodule", "symlink", "text", "too-large"],
   );
 });
 

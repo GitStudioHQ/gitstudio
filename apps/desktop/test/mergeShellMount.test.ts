@@ -586,6 +586,11 @@ test("the rail badge and chip name a stopped operation, and nothing otherwise", 
     ["2", "Rebasing · 2 conflicts"],
   );
   assert.equal(opIndicator(op({ kind: "cherry-pick", cherryPicking: true }))?.label, "Cherry-picking · paused");
+  // Every conflict resolved and git ready to go on: not "paused" — the verifier
+  // found "Merging · paused" on the chip over a merge waiting only for Continue.
+  const ready = opIndicator(op({ kind: "merge", merging: true, conflicts: 0, canContinue: true }));
+  assert.equal(ready?.label, "Ready to continue");
+  assert.equal(ready?.title, "Merging: every conflict is resolved — open Changes to continue");
   assert.equal(opIndicator(op({ conflicts: 1 }))?.label, "1 conflict", "unmerged files with no operation still show");
 });
 

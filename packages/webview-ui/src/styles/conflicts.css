@@ -21,7 +21,7 @@
   --cd-theirs: var(--vscode-charts-purple, #b180d7);
   --cd-accent: var(--gs-status-conflict);
   --cd-ok: var(--gs-status-added);
-  --cd-danger: var(--vscode-errorForeground, #f14c4c);
+  --cd-danger: var(--gs-danger);
   --cd-warn: var(--vscode-editorWarning-foreground, var(--gs-amber));
   --cd-line: var(--vscode-widget-border, var(--vscode-editorWidget-border, var(--gs-border)));
   /* Secondary text, a step toward the foreground: the theme's muted ink falls
@@ -411,14 +411,12 @@
   outline-offset: 1px;
 }
 .cd-btn:disabled { opacity: 0.5; cursor: default; }
-.cd-btn.cd-primary,
-.cd-btn.cd-primary-quiet {
+.cd-btn.cd-primary {
   border-color: transparent;
   background: var(--gs-brand);
   color: var(--gs-brand-fg);
 }
-.cd-btn.cd-primary:hover:not(:disabled),
-.cd-btn.cd-primary-quiet:hover:not(:disabled) { background: var(--gs-brand-hover); }
+.cd-btn.cd-primary:hover:not(:disabled) { background: var(--gs-brand-hover); }
 .cd-btn.cd-danger {
   background: transparent;
   border-color: color-mix(in srgb, var(--cd-danger) 70%, transparent);

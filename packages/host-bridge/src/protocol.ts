@@ -7,11 +7,18 @@
 
 import type { ConflictShape, OperationView, SideRole } from "./conflictsProtocol";
 
+/**
+ * In ROLE terms ("us" is Yours, whichever stage that is), in git status's own
+ * words. Every host derives it with the engine's conflictTypeFor.
+ */
 export type ConflictType =
   | "content" // both sides modified; real common ancestor (the common case)
   | "add-add" // both sides added the file; no common ancestor
   | "deleted-by-us" // we deleted, they modified
   | "deleted-by-them" // they deleted, we modified
+  | "added-by-us" // only we added it (no ancestor, nothing in theirs)
+  | "added-by-them" // only they added it
+  | "deleted-by-both" // both deleted it (git's DD)
   | "unknown";
 
 export type VersionsSource =

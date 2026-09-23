@@ -406,6 +406,7 @@ const CASES = [
   ["a-stopped-operation-shows-from-every-view", "issues", { arg: "none" }],
   ["the-rebase-view-offers-skip-where-git-does", "rebase", { extra: "rebasing=1&op=rebase&apply=1&skip=1", arg: "yes" }],
   ["the-rebase-view-offers-skip-where-git-does", "rebase", { extra: "rebasing=1&op=rebase", arg: "no" }],
+  ["the-rebase-view-names-its-verbs-and-keeps-the-keyboard", "rebase", { extra: "rebasing=1&op=rebase" }],
   ["settings-has-a-merge-card", "settings"],
   ["the-composer-keeps-your-place-through-a-repaint", "changes"],
   ["escape-closes-one-layer-at-a-time", "branches"],
