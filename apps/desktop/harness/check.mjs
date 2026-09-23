@@ -53,6 +53,7 @@ const CASES = [
   ["a-branch-name-git-would-refuse-is-caught-before-git", "branches"],
   ["a-rename-refuses-a-name-git-would-refuse", "branches"],
   ["renaming-a-published-branch-offers-to-rename-it-on-the-remote", "branches"],
+  ["the-rename-question-outlives-the-refresh-the-rename-causes", "branches"],
   ["renaming-an-unpublished-branch-asks-nothing", "branches"],
   ["a-prompt-that-does-not-validate-still-submits", "actions"],
   // Reading a repository — yours or anyone's.
@@ -601,6 +602,10 @@ const CASES = [
   ["a-pull-that-stops-on-conflicts-lands-in-changes", "code", { extra: "diverged=1&pullconflict=1" }],
   ["the-branches-pull-pill-asks-and-refreshes-on-cancel", "branches", { extra: "diverged=1" }],
   ["the-branches-pull-pill-lands-in-changes-when-it-stops", "branches", { extra: "diverged=1&pullconflict=1" }],
+  // …and the question survives the watcher refresh its own fetch sets off.
+  ["the-pull-question-outlives-the-refresh-its-own-fetch-causes", "code", { extra: "diverged=1" }],
+  ["the-branches-pull-question-outlives-the-refresh-its-own-fetch-causes", "branches", { extra: "diverged=1" }],
+  ["the-pull-question-does-not-follow-you-to-another-repository", "code", { extra: "diverged=1" }],
 ];
 
 function run(scene, checkId, opts = {}) {

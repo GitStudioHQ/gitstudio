@@ -83,7 +83,7 @@ import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
-import { askPullMode, pullWithChoice, pullVerdict, type PullVerdict } from "./pullFlow";
+import { askPullMode, pullWithChoice, pullVerdict, type PullOutcome, type PullVerdict } from "./pullFlow";
 import type { RowRef } from "./refMenuItems";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
@@ -3807,10 +3807,7 @@ class App {
       // helper. A branch you are NOT standing on fast-forwards or refuses;
       // there is nothing to reconcile without a worktree to reconcile it in.
       const out = b.current
-        ? await pullWithChoice({
-            pull: (o) => host.invoke("sync:pull", o),
-            ask: askPullMode,
-          })
+        ? await this.pullAsking()
         : {
             result: await host.invoke("branch:pullFf", { name: b.name }),
             cancelled: false,
@@ -4011,6 +4008,9 @@ class App {
       hint: `${local} still tracks ${upstream} — renaming it here doesn't rename it on the remote.`,
       choices: ways,
       cancelId: "keep",
+      // Asked right after the rename moved a ref — the watcher's refresh lands
+      // while this is on screen, and would otherwise answer "keep" for the user.
+      holdWhile: this.whileThisRepo(),
     });
     if (choice === "keep") return null;
 
@@ -8002,6 +8002,30 @@ class App {
   }
 
   /**
+   * Pull the checked-out branch, asking how to reconcile if it diverged — the
+   * one pull behind both doors (the top bar's Pull and the Branches list's ↓
+   * pill), so the question and how it is held cannot differ between them.
+   */
+  private pullAsking(): Promise<PullOutcome> {
+    return pullWithChoice({
+      pull: (o) => host.invoke("sync:pull", o),
+      ask: (d) => askPullMode(d, this.whileThisRepo()),
+    });
+  }
+
+  /**
+   * "Is the repository that was open when this was asked still the open one?"
+   *
+   * The hold for a question asked after a git write (see promptChoice's
+   * `holdWhile`): it outlives the watcher's refresh of this repository, but not
+   * a switch to another, because its answer acts on whichever one is open.
+   */
+  private whileThisRepo(): () => boolean {
+    const root = this.currentRepo?.root;
+    return () => root !== undefined && this.currentRepo?.root === root;
+  }
+
+  /**
    * Every pull outcome that is NOT "it pulled", settled the same way at both
    * doors — the top bar's Pull and the Branches list's ↓ pill. The caller has
    * nothing left to do afterwards.
@@ -8068,10 +8092,7 @@ class App {
       // question (merge / rebase / cancel), never as git's config advice — and
       // its answer is settled by the same verdict the Branches ↓ pill uses.
       if (action === "pull") {
-        const out = await pullWithChoice({
-          pull: (o) => host.invoke("sync:pull", o),
-          ask: askPullMode,
-        });
+        const out = await this.pullAsking();
         const v = pullVerdict(out, "Pull failed.");
         if (v.kind !== "pulled") {
           await this.settleUnpulled(v);

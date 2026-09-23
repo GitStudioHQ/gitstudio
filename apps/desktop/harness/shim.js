@@ -1096,10 +1096,20 @@
     // conflicts, answered the way the bridge answers it: ok:false, changed,
     // expected, and a `stopped` fact with the count. From then on `git:opState`
     // reports the paused operation, as the real repository would.
+    //
+    // And every one of those pulls WRITES REFS — the fetch moves
+    // refs/remotes/origin/main, a merge or rebase moves the branch — which the
+    // real app's repository watcher reports DEBOUNCE_MS (250 ms) later as
+    // `repo:filesChanged {gitDir: true}`. That refresh re-routes the view, and
+    // a re-route tears every floating layer down. The fixture used to leave it
+    // out, so the divergence question could be answered here at leisure while
+    // in the real app the watcher answered "Cancel" for the user ~200 ms after
+    // the question appeared. Modelled here so no pull check can pass without it.
     "sync:pull": (opts) => {
       const mode = (opts && opts.mode) || null;
       window.__gsPulledWith = mode;
       if (!params.get("diverged")) return { ok: true, changed: true };
+      setTimeout(() => window.__gsEmit("repo:filesChanged", { gitDir: true }), 250);
       pullState.fetched = true;
       if (mode && params.get("pullconflict")) {
         pullState.stopped = { operation: mode, conflicts: 2 };

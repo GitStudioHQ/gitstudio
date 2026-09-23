@@ -12336,6 +12336,24 @@
         "each option explains what will actually happen",
       );
     },
+    /** The sibling of the pull question: this one is asked right after the
+     *  rename MOVED A REF, so the watcher's refresh (250 ms after the write,
+     *  emitted here as the real watcher would) lands while it is on screen —
+     *  and used to answer "Keep tracking" for the user. */
+    "the-rename-question-outlives-the-refresh-the-rename-causes": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const done = await renameFirstBranch("feat/line-staging", "feat/line-staging-v2");
+      c.ok(done, "the rename dialog was driven");
+      if (!done) return;
+      await settle(300);
+      c.ok(/on origin too\?$/.test(text(".modal-title")), "precondition: the remote question is up");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      c.ok(window.__gsEmit("repo:filesChanged", { gitDir: true }) > 0, "precondition: the app listens for the watcher");
+      await settle(900);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the refresh re-routed underneath");
+      c.ok(/on origin too\?$/.test(text(".modal-title")), "the question is still there after the refresh");
+    },
     /** An unpublished branch has no remote to reconcile, so it must not ask. */
     "renaming-an-unpublished-branch-asks-nothing": async (f) => {
       const c = check(f);
@@ -13033,6 +13051,62 @@
       const routes = window.__GS_ROUTES || [];
       c.eq((routes[routes.length - 1] || {}).view, "changes", "the user is taken to Changes");
       c.match(text(".dc-opbanner"), /rebase in progress — 2 files still conflicted/, "…where the paused rebase is waiting");
+    },
+    /** The question is asked BECAUSE the pull's fetch moved a ref — and that
+     *  same write wakes the repository watcher 250 ms later, whose refresh
+     *  re-routes the view and tears floating layers down. In the real app the
+     *  question used to vanish ~200 ms after it appeared, answered "Cancel" by
+     *  nobody. It has to outlive that refresh, from both doors. */
+    "the-pull-question-outlives-the-refresh-its-own-fetch-causes": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(200);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      // Well past the watcher's debounce: the refresh has happened.
+      await settle(1500);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the watcher's refresh re-routed underneath");
+      c.ok(!!$(".modal-card"), "the question is still there after the refresh");
+      c.eq(window.__gsPulledWith, null, "…and nothing answered it on the user's behalf");
+      const merge = $$(".modal-choice").find((r) => /^Merge$/.test(text($$(".modal-choice-label", r)[0])));
+      if (!merge) return c.ok(false, "no Merge option to pick");
+      merge.click();
+      await settle(900);
+      c.eq(window.__gsPulledWith, "merge", "the user's answer is the one that reached git");
+    },
+    "the-branches-pull-question-outlives-the-refresh-its-own-fetch-causes": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const pill = $('button[aria-label="Pull main"]');
+      if (!pill) return c.ok(false, "main's row offers no Pull");
+      pill.click();
+      await settle(200);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      await settle(1500);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the watcher's refresh re-routed underneath");
+      c.ok(!!$(".modal-card"), "the question is still there after the refresh");
+      c.eq(window.__gsPulledWith, null, "…and nothing answered it on the user's behalf");
+    },
+    /** Holding the question against a refresh must not hold it across a
+     *  REPOSITORY switch: `sync:pull` acts on whatever repository is open, so
+     *  an answer given after the switch would pull a repository the question
+     *  was never about. */
+    "the-pull-question-does-not-follow-you-to-another-repository": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(200);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
+      await settle(900);
+      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      c.eq(window.__gsPulledWith, null, "…and pulls nothing");
     },
   };
 })();

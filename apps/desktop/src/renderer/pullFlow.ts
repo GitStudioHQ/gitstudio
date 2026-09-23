@@ -64,8 +64,17 @@ export async function pullWithChoice(deps: PullFlowDeps): Promise<PullOutcome> {
  * Both options are ordinary — neither is `danger` — but they do different
  * things to history, and the sub-lines say which, because that is the whole
  * reason this is a modal and not a menu (a menu row ellipsises its sub-label).
+ *
+ * `holdWhile` keeps it up through the refresh its own fetch sets off (see
+ * promptChoice): the fetch that found the divergence moved the upstream's
+ * remote-tracking ref, and the watcher's refresh arrives while the question is
+ * on screen. Without it the question was answered "Cancel" before anyone could
+ * read it.
  */
-export async function askPullMode(d: PullDivergence): Promise<PullMode | undefined> {
+export async function askPullMode(
+  d: PullDivergence,
+  holdWhile?: () => boolean,
+): Promise<PullMode | undefined> {
   const mine = `${d.ahead} commit${d.ahead === 1 ? "" : "s"}`;
   const theirs = `${d.behind} commit${d.behind === 1 ? "" : "s"}`;
   const pick = await promptChoice({
@@ -88,6 +97,7 @@ export async function askPullMode(d: PullDivergence): Promise<PullMode | undefin
       },
     ],
     cancelId: "cancel",
+    holdWhile,
   });
   return pick === "merge" || pick === "rebase" ? pick : undefined;
 }
