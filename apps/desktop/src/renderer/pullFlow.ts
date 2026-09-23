@@ -133,7 +133,9 @@ export type PullVerdict =
    * Nothing ran: a merge or rebase is still paused — usually the one a stop
    * above left, since the branch is still ahead and behind and Pull is still on
    * offer. Settled like a stop (neutral, then Changes), because Changes is where
-   * that operation is finished or aborted.
+   * that operation is finished or aborted. A pull the user's uncommitted work
+   * was in the way of lands here too: Changes is where it is committed or
+   * stashed.
    */
   | { kind: "blocked"; message: string }
   | { kind: "failed"; message: string; tone: "info" | "error" }
@@ -155,6 +157,14 @@ export function pullVerdict(out: PullOutcome, fallback: string): PullVerdict {
     return {
       kind: "blocked",
       message: r.message || "An operation is still in progress. Finish or abort it in Changes before pulling again.",
+    };
+  }
+  // The user's uncommitted work was in the way. Nothing ran — settled like a
+  // block, because Changes is where that work is committed or stashed.
+  if (r.dirty) {
+    return {
+      kind: "blocked",
+      message: r.message || "Your uncommitted changes are in the way. Commit or stash them in Changes, then pull again.",
     };
   }
   if (!r.ok) {

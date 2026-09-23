@@ -186,6 +186,7 @@ test("the shared pull settler settles a pull refused over a stop, not only the s
     .join("\n");
   assert.match(code, /stopped\?:/, "it takes a stop");
   assert.match(code, /blocked\?:/, "…and a pull git refused over one already under way");
+  assert.match(code, /dirty\?:/, "…and a pull the user's uncommitted work was in the way of");
   assert.match(
     code,
     /pullPauseMessage\(result\)/,
@@ -245,4 +246,25 @@ test("the status bar's Pull asks nothing before it knows there is a branch", asy
   assert.ok(start >= 0);
   const arm = src.slice(start, src.indexOf("askRebase()", start));
   assert.match(arm, /\.detached\b/, "the HEAD is checked before the question");
+});
+
+test("the status bar's Pull asks about a paused operation BEFORE the detached HEAD", async () => {
+  // A paused rebase leaves HEAD detached. Looking only at the HEAD, Pull told a
+  // user in the middle of their rebase "HEAD is detached … Check out a branch
+  // first" — with a button to do it — when what is left is to finish or abort
+  // the rebase (replayed through the real door). And over a paused merge it
+  // asked "merge or rebase?", every answer of which git refuses. The engine's
+  // own order is the paused operation first (SyncOps.pull); the door's must be.
+  const src = await readFile(join(ROOT, "apps/extension/src/statusBar/syncStatus.ts"), "utf8");
+  const start = src.indexOf('case "pull": {');
+  const code = src
+    .slice(start, src.indexOf("askRebase()", start))
+    .split("\n")
+    .filter((l) => !COMMENT.test(l))
+    .join("\n");
+  const paused = code.search(/\.pausedOperation\(\)/);
+  const detached = code.search(/\.detached\b/);
+  assert.ok(paused >= 0, "the paused operation is asked about before the question");
+  assert.ok(paused < detached, "…and before the HEAD, which a paused rebase leaves detached");
+  assert.match(code, /settlePullStop\(\{\s*blocked:/, "settled as the block it is, in the engine's words");
 });

@@ -1,6 +1,7 @@
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { parseUnmergedPaths } from "./ConflictProvider";
 import { rebaseInProgress } from "./rebaseInProgress";
+import { parseV2 } from "./StatusProvider";
 
 /** How far the branch is ahead of / behind its upstream. */
 export interface AheadBehind {
@@ -78,6 +79,39 @@ export interface PullBlock {
 }
 
 /**
+ * A pull git refused because the user's uncommitted work is in its way — work
+ * in progress, not a defect, and nothing was changed.
+ *
+ * Two shapes, both read from git's state rather than its English: a pull that
+ * REBASES refuses any uncommitted change to a tracked file (exit 128, "cannot
+ * pull with rebase: You have unstaged changes"); a merge or fast-forward
+ * refuses only when an uncommitted — or untracked — file is one the incoming
+ * commits change ("Your local changes to the following files would be
+ * overwritten by merge", exit 1 or 2). Neither applies when git is configured
+ * to stash around the pull (`rebase.autoStash` / `merge.autoStash`).
+ */
+export interface PullDirty {
+  /** The files in the way, repo-relative. Never empty. */
+  paths: string[];
+  /** The pull was rebasing, which needs the whole working tree clean. */
+  rebase?: true;
+}
+
+/** What to tell the user when uncommitted work stopped a pull (`PullDirty`). */
+export function pullDirtyMessage(d: PullDirty): string {
+  const n = d.paths.length;
+  const which = n === 1 ? d.paths[0] : `${n} files`;
+  const them = n === 1 ? "it" : "them";
+  if (d.rebase) {
+    return (
+      `Pulling with rebase needs a clean working tree, and you have uncommitted changes to ${which}. ` +
+      `Commit or stash ${them}, then pull again.`
+    );
+  }
+  return `The pull would overwrite your uncommitted changes to ${which}. Commit or stash ${them}, then pull again.`;
+}
+
+/**
  * What to tell the user when a pull was blocked by a paused operation — what
  * is paused, how many files are still conflicted, and the two ways out, in the
  * app's words rather than git's `git add/rm` hint.
@@ -100,14 +134,21 @@ export function pullBlockedMessage(block: PullBlock): string {
 }
 
 /**
- * The sentence for a pull that STOPPED on conflicts, or that was BLOCKED by the
- * operation a stop left paused — undefined for every other result. The
- * extension's settler shows exactly this, so the two faces of a stop cannot be
- * settled by one door and forgotten by another.
+ * The sentence for a pull that STOPPED on conflicts, that was BLOCKED by the
+ * operation a stop left paused, or that the user's uncommitted work was in the
+ * way of (`dirty`) — undefined for every other result. The extension's settler
+ * shows exactly this, and takes the user to Changes, where each of the three is
+ * finished; so no face of it can be settled by one door and forgotten by
+ * another.
  */
-export function pullPauseMessage(result: { stopped?: PullStop; blocked?: PullBlock }): string | undefined {
+export function pullPauseMessage(result: {
+  stopped?: PullStop;
+  blocked?: PullBlock;
+  dirty?: PullDirty;
+}): string | undefined {
   if (result.stopped) return pullStoppedMessage(result.stopped);
   if (result.blocked) return pullBlockedMessage(result.blocked);
+  if (result.dirty) return pullDirtyMessage(result.dirty);
   return undefined;
 }
 
@@ -122,6 +163,8 @@ export interface PullResult extends SyncOpResult {
   stopped?: PullStop;
   /** Set when the pull could not start because an operation is paused. */
   blocked?: PullBlock;
+  /** Set when git refused because the user's uncommitted work is in the way. */
+  dirty?: PullDirty;
   /**
    * Set when HEAD is detached — a commit or a tag checked out, nothing paused
    * — so there is no branch to pull into. git's own answer is terminal advice
@@ -137,6 +180,11 @@ export interface PullResult extends SyncOpResult {
   stdout?: string;
 }
 
+/** What to tell the user when a pull found HEAD detached (`PullResult.detached`). */
+export function pullDetachedMessage(): string {
+  return "HEAD is detached, so there is no branch to pull into. Check out a branch first.";
+}
+
 /**
  * What to tell the user when a pull stopped on conflicts — in the app's words,
  * with the count and the next step, and nothing a terminal would say.
@@ -145,11 +193,6 @@ export interface PullResult extends SyncOpResult {
  * beside ConflictProvider: the extension and the desktop app describe the same
  * state, and two copies of the sentence is how they start to disagree.
  */
-/** What to tell the user when a pull found HEAD detached (`PullResult.detached`). */
-export function pullDetachedMessage(): string {
-  return "HEAD is detached, so there is no branch to pull into. Check out a branch first.";
-}
-
 export function pullStoppedMessage(stop: PullStop): string {
   const n = stop.conflicted.length;
   const files = n === 1 ? "1 file" : `${n} files`;
@@ -197,6 +240,23 @@ const FLAG_FOR_MODE: Record<PullMode, string> = {
  * which is 128. See `SyncOps.pull`.
  */
 const GIT_PULL_STOPPED_OR_FETCH_FAILED = 1;
+
+/**
+ * The work in progress `git status --porcelain=v2 -z` shows: tracked files
+ * with staged or unstaged changes, and untracked files — the two kinds a pull
+ * can be refused over (see `PullDirty`). Parsed by StatusProvider's parser, the
+ * one every other status read uses.
+ */
+function parseWorkInProgress(porcelain: string): { tracked: string[]; untracked: string[] } {
+  const s = parseV2(porcelain);
+  const untracked = s.unstaged.filter((f) => f.status === "U").map((f) => f.path);
+  const tracked = new Set<string>([
+    ...s.staged.map((f) => f.path),
+    ...s.unstaged.filter((f) => f.status !== "U").map((f) => f.path),
+    ...s.merge.map((f) => f.path),
+  ]);
+  return { tracked: [...tracked], untracked };
+}
 
 /**
  * Sync operations against the upstream: ahead/behind counts, push, pull, fetch,
@@ -522,6 +582,11 @@ export class SyncOps {
    *   behind — comes back `blocked` (see `PullBlock`), and is checked before
    *   the divergence: git refused without fetching, so there is nothing new to
    *   ask about, and any answer would be refused the same way.
+   * - A pull refused because the user's uncommitted work is in its way comes
+   *   back `dirty` (see `PullDirty`) — work in progress, not a failure.
+   * - `pull.ff=only` in the user's config is treated as the auto case above:
+   *   it makes a mode-less pull `--ff-only`, so a diverged branch is the same
+   *   question, not git's advice.
    */
   async pull(opts?: PullOptions): Promise<PullResult> {
     const mode: PullMode | undefined =
@@ -532,6 +597,13 @@ export class SyncOps {
     // Only the no-mode, no-config case is ours to decide; everything else runs
     // the pull the caller (or the user's own config) asked for.
     const auto = mode === undefined && !(await this.reconcileConfigured(signal));
+    // `pull.ff=only` is the answer git's own divergence advice suggests, and it
+    // makes a mode-less pull exactly our `--ff-only` (git lets it win over a
+    // configured pull.rebase; only a flag on the command line overrides it). So
+    // a diverged branch meets the same refusal the auto path turns into a
+    // question — and handed on as git's hint wall, it was report #12 again for
+    // everyone who had taken git's advice.
+    const ffOnly = auto || (mode === undefined && (await this.configuredFfOnly(signal)));
 
     const args = ["pull"];
     // No flag at all ONLY when the user's own config is driving.
@@ -582,10 +654,18 @@ export class SyncOps {
     if ((await this.proc.run(["symbolic-ref", "-q", "HEAD"], { signal })).code === 1) {
       return { ...failed, detached: true };
     }
+    // The user's uncommitted work in the way — see `PullDirty`. After the
+    // paused operation (a conflicted file is "uncommitted" too, and what is
+    // left there is to finish the operation) and before the divergence: a
+    // fast-forward refused for divergence is 128, which this never claims.
+    const dirty = await this.inTheWay(mode, r.code, signal);
+    if (dirty) {
+      return { ...failed, dirty };
+    }
     if (r.code === GIT_PULL_STOPPED_OR_FETCH_FAILED) {
       return failed;
     }
-    if (auto) {
+    if (ffOnly) {
       // The fetch half of `pull --ff-only` already ran — and succeeded, or the
       // exit code above would have said so — so the counts below are current.
       // Diverged is a structural fact — both sides have commits the other does
@@ -669,10 +749,113 @@ export class SyncOps {
     return { conflicted };
   }
 
+  /**
+   * The paused operation a pull would run into RIGHT NOW, or null — the same
+   * answer `pull()` gives as `blocked`, for a door that asks a question before
+   * it pulls. "Merge or rebase?" over a merge still in progress is a question
+   * every answer of which git refuses; and a paused rebase leaves HEAD
+   * detached, so a door that looked only at the HEAD sent the user off to
+   * "check out a branch" in the middle of their rebase.
+   */
+  pausedOperation(signal?: AbortSignal): Promise<PullBlock | null> {
+    return this.pausedByOperation(signal);
+  }
+
   /** See ./rebaseInProgress — the state directory, never REBASE_HEAD. */
   private rebaseInProgress(signal?: AbortSignal): Promise<boolean> {
     return rebaseInProgress(this.proc, signal);
   }
+
+  /** Is `key` set to a true boolean in the user's config? */
+  private async configTrue(key: string, signal?: AbortSignal): Promise<boolean> {
+    const r = await this.proc.run(["config", "--bool", "--get", key], { signal });
+    return r.code === 0 && r.stdout.trim() === "true";
+  }
+
+  /** `pull.ff=only` — git's own "only ever fast-forward" answer. */
+  private async configuredFfOnly(signal?: AbortSignal): Promise<boolean> {
+    const r = await this.proc.run(["config", "--get", "pull.ff"], { signal });
+    return r.code === 0 && r.stdout.trim() === "only";
+  }
+
+  /**
+   * Does the user's config make a mode-less pull REBASE? `branch.<name>.rebase`
+   * over `pull.rebase`, any value but false — and not under `pull.ff=only`,
+   * which git lets win over both.
+   */
+  private async rebasesByConfig(signal?: AbortSignal): Promise<boolean> {
+    if (await this.configuredFfOnly(signal)) {
+      return false;
+    }
+    const head = await this.proc.run(["symbolic-ref", "--quiet", "HEAD"], { signal });
+    const fullRef = head.stdout.trim();
+    const keys = head.code === 0 && fullRef.startsWith("refs/heads/")
+      ? [`branch.${fullRef.slice("refs/heads/".length)}.rebase`, "pull.rebase"]
+      : ["pull.rebase"];
+    for (const key of keys) {
+      const r = await this.proc.run(["config", "--get", key], { signal });
+      const v = r.stdout.trim().toLowerCase();
+      if (r.code === 0 && v.length > 0) {
+        return !["false", "no", "off", "0"].includes(v);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The user's uncommitted work a FAILED pull was refused over, or null — see
+   * `PullDirty`. Read from porcelain status and the upstream's own diff, never
+   * from git's English, and only for the exit each refusal has:
+   *
+   * - rebasing, 128: git's `require_clean_work_tree` — any staged or unstaged
+   *   change to a tracked file, submodules ignored — unless `rebase.autoStash`
+   *   stashes it;
+   * - merging or fast-forwarding, 1 or 2: a changed tracked file (unless
+   *   `merge.autoStash`), or an untracked one, that the incoming commits touch.
+   *
+   * Exit 1 is also a fetch that failed; the upstream diff is then the last one
+   * fetched — and if THAT already runs through the user's edits, pulling it is
+   * refused the moment the remote answers, so "commit or stash first" is true
+   * either way. With nothing incoming it is never claimed.
+   */
+  private async inTheWay(
+    mode: PullMode | undefined,
+    code: number,
+    signal?: AbortSignal,
+  ): Promise<PullDirty | null> {
+    const rebasing = mode === "rebase" || (mode === undefined && (await this.rebasesByConfig(signal)));
+    if (!(rebasing && code === 128) && code !== 1 && code !== 2) {
+      return null;
+    }
+    const status = await this.proc.run(
+      ["status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=all"],
+      { signal },
+    );
+    if (status.code !== 0) {
+      return null;
+    }
+    const { tracked, untracked } = parseWorkInProgress(status.stdout);
+    if (rebasing && code === 128) {
+      return tracked.length > 0 && !(await this.configTrue("rebase.autoStash", signal))
+        ? { paths: tracked, rebase: true }
+        : null;
+    }
+    if (tracked.length + untracked.length === 0) {
+      return null;
+    }
+    const incoming = await this.proc.run(
+      ["diff", "--name-only", "-z", "--no-renames", "HEAD...@{upstream}", "--"],
+      { signal },
+    );
+    if (incoming.code !== 0) {
+      return null;
+    }
+    const touched = new Set(incoming.stdout.split("\0").filter((p) => p.length > 0));
+    const stashed = await this.configTrue(rebasing ? "rebase.autoStash" : "merge.autoStash", signal);
+    const paths = [...(stashed ? [] : tracked), ...untracked].filter((p) => touched.has(p));
+    return paths.length > 0 ? { paths } : null;
+  }
+
 
   /**
    * Has the user already told git how to reconcile a pull? `pull.rebase` and

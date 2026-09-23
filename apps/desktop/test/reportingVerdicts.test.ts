@@ -34,6 +34,7 @@ import { getProjectBoard, listProjects } from "../src/main/github/projects";
 import { installMcp, type McpRuntime } from "../src/main/mcpConfig";
 import { openGitHubRepo } from "../src/main/ghRepoOpen";
 import { isExpectedError, reportableResultMessage } from "../src/main/expectedError";
+import { pullVerdict } from "../src/renderer/pullFlow";
 
 /**
  * What main.ts's `handle()` files for one call: the message it would send to
@@ -340,6 +341,53 @@ test("a pull on a detached HEAD files nothing, and says there is no branch to pu
   assert.equal(await filed(async () => r), undefined);
   assert.match(r.message ?? "", /no branch to pull into/);
   assert.doesNotMatch(r.message ?? "", /git pull|<remote>|git-pull\(1\)/);
+});
+
+test("a pull the user's uncommitted work is in the way of files nothing, says so, and lands on Changes", async () => {
+  // The commonest refusal a Pull meets: an edit to a file the incoming commits
+  // change (merge / fast-forward), or ANY edit when the pull rebases. git's
+  // "error: Your local changes to the following files would be overwritten by
+  // merge … Please commit your changes or stash them before you merge.
+  // Aborting" went out in red — after "Updating a..b" and the fetch's own
+  // lines — and was filed as a crash.
+  const cases: Array<[string, (git: (...a: string[]) => string, work: string) => void, { mode?: "rebase" } | undefined]> = [
+    ["an edit the fast-forward would overwrite", (git, work) => {
+      git("reset", "-q", "--hard", "HEAD~1");
+      writeFileSync(join(work, "base.txt"), "editing\n");
+    }, undefined],
+    ["any edit, when the answer was rebase", (_git, work) => {
+      writeFileSync(join(work, "notes.txt"), "untracked is fine\n");
+      writeFileSync(join(work, "base.txt"), "mine, still editing\n");
+    }, { mode: "rebase" }],
+  ];
+  for (const [label, arrange, opts] of cases) {
+    const { work, git } = collidingClone();
+    arrange(git, work);
+    const bridge = await bridgeOn(work);
+    const r = await bridge.syncPull(opts);
+    assert.equal(r.ok, false, label);
+    assert.equal(await filed(async () => r), undefined, `${label}: nothing filed`);
+    assert.equal(r.dirty?.files, 1, label);
+    assert.match(r.message ?? "", /uncommitted changes to base\.txt/, label);
+    assert.match(r.message ?? "", /commit or stash it, then pull again/i, label);
+    assert.doesNotMatch(r.message ?? "", /error:|Aborting|Updating|->|Please commit/, `${label}: not git's lines`);
+    const v = pullVerdict({ result: r, cancelled: false }, "Pull failed.");
+    assert.equal(v.kind, "blocked", `${label}: settled in Changes, where the work is committed or stashed`);
+  }
+});
+
+test("#12 again, for a user who took git's advice: pull.ff=only on a diverged branch asks, and files nothing", async () => {
+  // `git config pull.ff only` is one of the three lines git's divergence advice
+  // suggests. With it set, a mode-less pull is --ff-only, and a diverged branch
+  // came back as git's "Diverging branches can't be fast-forwarded" hint wall,
+  // in red, filed as a crash — report #12, through the config.
+  const { work, git } = collidingClone();
+  git("config", "pull.ff", "only");
+  const bridge = await bridgeOn(work);
+  const r = await bridge.syncPull();
+  assert.ok(r.diverged, JSON.stringify(r));
+  assert.equal(await filed(async () => r), undefined);
+  assert.doesNotMatch(r.message ?? "", /hint:|fast-forward/i);
 });
 
 test("#13: browsing a repository with no commits files nothing", async () => {

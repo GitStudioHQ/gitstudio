@@ -24,7 +24,12 @@ import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
-import { pullBlockedMessage, pullDetachedMessage, pullStoppedMessage } from "@gitstudio/git-service/SyncOps";
+import {
+  pullBlockedMessage,
+  pullDetachedMessage,
+  pullDirtyMessage,
+  pullStoppedMessage,
+} from "@gitstudio/git-service/SyncOps";
 import { GitProcess } from "@gitstudio/git-service/GitProcess";
 import type {
   CommitRecord,
@@ -53,6 +58,7 @@ import type {
   HeadInfo,
   PullActionResult,
   PullBlockInfo,
+  PullDirtyInfo,
   PullDivergence,
   PullMode,
   PullStopInfo,
@@ -1814,6 +1820,7 @@ export class GitBridge {
     let diverged: PullDivergence | undefined;
     let stopped: PullStopInfo | undefined;
     let blocked: PullBlockInfo | undefined;
+    let dirty: PullDirtyInfo | undefined;
     const r = await this.staged(async (ctx) => {
       const out = await ctx.sync.pull({ mode: opts?.mode });
       if (out.stopped) {
@@ -1844,6 +1851,15 @@ export class GitBridge {
       if (out.detached) {
         return { ok: false, changed: false, expected: true, message: pullDetachedMessage() };
       }
+      // The user's uncommitted work in the way: a rebase needs a clean tree, a
+      // merge will not overwrite an edit it brings changes to. Work in
+      // progress — nothing ran — so it is said in the app's words and never
+      // filed. It used to be git's "error: Your local changes to the following
+      // files would be overwritten by merge" wall, in red, and a crash report.
+      if (out.dirty) {
+        dirty = { files: out.dirty.paths.length };
+        return { ok: false, changed: false, expected: true, message: pullDirtyMessage(out.dirty) };
+      }
       if (!out.diverged) {
         return out;
       }
@@ -1860,6 +1876,7 @@ export class GitBridge {
     });
     if (stopped) return { ...r, stopped };
     if (blocked) return { ...r, blocked };
+    if (dirty) return { ...r, dirty };
     return diverged ? { ...r, diverged } : r;
   }
   /**

@@ -269,8 +269,16 @@ export class SyncStatusItem implements vscode.Disposable {
         break;
       }
       case "pull": {
-        // Looked at BEFORE the question: "merge or rebase?" about a detached
-        // HEAD is a question whose every answer ends in the same refusal.
+        // Looked at BEFORE the question: "merge or rebase?" over a merge or
+        // rebase still in progress, or about a detached HEAD, is a question
+        // whose every answer ends in the same refusal. The paused operation
+        // FIRST: a paused rebase leaves HEAD detached too, and this used to
+        // tell a user in the middle of their rebase to go and check out a
+        // branch — what is left there is to finish or abort the rebase.
+        const paused = await active.ctx.sync.pausedOperation();
+        if (paused && settlePullStop({ blocked: paused })) {
+          return;
+        }
         const head = await active.ctx.refs.getHead();
         if (settlePullDetached({ detached: head.detached }, this.openBranchUi)) {
           return;

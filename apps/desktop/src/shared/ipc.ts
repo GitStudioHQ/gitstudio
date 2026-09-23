@@ -450,13 +450,25 @@ export interface PullBlockInfo {
   conflicts: number;
 }
 
+/**
+ * A pull git refused because the user's uncommitted work was in its way — a
+ * rebase needs a clean tree; a merge will not overwrite an edited or untracked
+ * file it changes. Nothing ran.
+ */
+export interface PullDirtyInfo {
+  /** How many files are in the way. */
+  files: number;
+}
+
 /** `sync:pull`'s answer — a CommitActionResult that can ask a question back,
  *  say that it stopped for the user to resolve conflicts, or say that an
- *  operation already paused kept it from starting. */
+ *  operation already paused — or the user's uncommitted work — kept it from
+ *  starting. */
 export interface PullActionResult extends CommitActionResult {
   diverged?: PullDivergence;
   stopped?: PullStopInfo;
   blocked?: PullBlockInfo;
+  dirty?: PullDirtyInfo;
 }
 
 /** A branch with remote-tracking context, for the Branches manager. */

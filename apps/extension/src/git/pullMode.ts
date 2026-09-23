@@ -3,6 +3,7 @@ import {
   pullDetachedMessage,
   pullPauseMessage,
   type PullBlock,
+  type PullDirty,
   type PullDivergence,
   type PullMode,
   type PullStop,
@@ -27,12 +28,21 @@ import { promptPick } from "../ui/dialogs";
  * `askPullMode` is: an answer settled inside one door is an answer the next
  * door gets wrong.
  */
-export function settlePullStop(result: { stopped?: PullStop; blocked?: PullBlock }): boolean {
+export function settlePullStop(result: {
+  stopped?: PullStop;
+  blocked?: PullBlock;
+  dirty?: PullDirty;
+}): boolean {
   // `blocked` is the same place reached the other way round: Pull pressed
   // AGAIN over the merge or rebase a stop left paused (the branch is still
   // ahead and behind, so every door still offers it). git refuses before doing
   // anything, and that refusal used to come back as git's "git add/rm" hint in
   // an error toast — or, from Update, as the divergence question all over again.
+  //
+  // `dirty` is the user's uncommitted work in the pull's way — git's "Your
+  // local changes … would be overwritten by merge" or "cannot pull with rebase:
+  // You have unstaged changes", which went out as an error. Nothing ran, and
+  // Changes is where that work is committed or stashed.
   const message = pullPauseMessage(result);
   if (!message) {
     return false;
