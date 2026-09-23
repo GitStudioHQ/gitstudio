@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
 import { pushUnseenMessage, type PullResult } from "@gitstudio/git-service/SyncOps";
 import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
+import { applyOrAsk, checkoutOp } from "../git/inTheWay";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
@@ -1471,6 +1472,8 @@ export class CommitViewProvider
         case "new": {
           const name = (msg.ref ?? "").trim();
           if (!name) return;
+          // in-the-way-reviewed: a new branch AT HEAD — the working tree does
+          // not change, so no uncommitted work can be in its way.
           result = await entry.ctx.branches.checkoutNew(name);
           if (result.ok) await this.noteRecentBranch(entry, name);
           break;
@@ -1478,7 +1481,17 @@ export class CommitViewProvider
         case "checkoutRef": {
           const r = (msg.ref ?? "").trim();
           if (!r) return;
-          result = await entry.ctx.branches.checkout(r, { detach: true });
+          // Through the shared door: uncommitted work in the checkout's way is
+          // said, with Stash & Retry, rather than as git's refusal in red.
+          const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", "--detach", r]));
+          if (applied.cancelled) {
+            cancelled = true;
+            break;
+          }
+          if (applied.settled) {
+            settled = true;
+          }
+          result = { ok: applied.result.code === 0, stderr: applied.result.stderr };
           break;
         }
         case "pull":
@@ -2032,6 +2045,8 @@ export class CommitViewProvider
     }
     let result: { ok: boolean; stderr: string };
     try {
+      // in-the-way-reviewed: a new branch AT HEAD — nothing in the working
+      // tree changes, so nothing of the user's can be in its way.
       result = await entry.ctx.branches.checkoutNew(name);
     } catch (err) {
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };

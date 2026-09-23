@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { describeStashScope, listForHint, type StashRequest } from "./stashScope";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
+import { applyOrAsk, type Applied } from "../git/inTheWay";
 import { promptConfirm, promptInput, promptPickMany } from "../ui/dialogs";
 
 // The Stashes pillar — genuinely absent from free VS Code, so GitStudio makes it
@@ -271,8 +272,9 @@ export async function applyStash(
   if (!a || !ref) {
     return;
   }
-  const result = await a.ctx.stashes.apply(ref);
-  reportStashOp(result, "Applied stash", refresh);
+  // Through the shared door: uncommitted work in the stash's way is said, with
+  // Stash & Retry, instead of git's "would be overwritten by merge" in red.
+  reportStashApplied(await applyOrAsk(a.ctx, { kind: "stash", stash: ref }), "Applied stash", refresh);
 }
 
 /** Apply then drop a stash (routed through Undo). */
@@ -286,11 +288,23 @@ export async function popStash(
     return;
   }
   const ledger = repos.getUndoLedger();
-  const run = () => a.ctx.stashes.pop(ref);
-  const result = ledger
+  const run = () => applyOrAsk(a.ctx, { kind: "stash", stash: ref, pop: true });
+  const applied = ledger
     ? await ledger.runWithUndo(a, `Pop ${ref}`, run)
     : await run();
-  reportStashOp(result, "Popped stash", refresh);
+  reportStashApplied(applied, "Popped stash", refresh);
+}
+
+/** reportStashOp for a stash applied through the shared door. */
+function reportStashApplied(applied: Applied, success: string, refresh: () => void): void {
+  if (applied.cancelled) {
+    return;
+  }
+  if (applied.settled) {
+    refresh();
+    return;
+  }
+  reportStashOp({ ok: applied.result.code === 0, stderr: applied.result.stderr }, success, refresh);
 }
 
 /** Confirm + drop a stash (routed through Undo). */
