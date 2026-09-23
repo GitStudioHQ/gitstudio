@@ -149,6 +149,12 @@ test("Continue is disabled with the reason in words, and enabled once git would 
     expect(c.getAttribute("aria-describedby") === "cd-why", "the reason is the button's description");
     d.render(state({ ...OPS.rebase, continueBlocked: "b.ts still has conflict markers staged" }, [row("a.ts", { status: "resolved", choice: "merged" })]));
     expect(text(".cd-why") === "b.ts still has conflict markers staged", "git's own gate is said in its words (" + text(".cd-why") + ")");
+    // Nothing conflicted and still no Continue — an emptied cherry-pick, a
+    // patch git could not apply: the reason is the stop's, not a conflict's.
+    d.render(state({ ...OPS.cherry, canContinue: false }, []));
+    expect(/Nothing is left to commit at this step/.test(text(".cd-why") || ""), "an emptied stop says there is nothing to commit (" + text(".cd-why") + ")");
+    d.render(state({ ...OPS.am, canContinue: false }, []));
+    expect(/couldn't apply this patch/.test(text(".cd-why") || ""), "and git am says the patch did not apply (" + text(".cd-why") + ")");
     d.render(state({ ...OPS.rebase, canContinue: true }, [row("a.ts", { status: "resolved", choice: "theirs" })]));
     expect(!btn("Continue Rebase").disabled && !$(".cd-why"), "all resolved and allowed: enabled, no reason");
     expect(text(".cd-done-title") === "All conflicts resolved", "the success card shows");

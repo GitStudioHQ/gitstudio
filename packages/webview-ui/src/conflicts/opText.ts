@@ -188,6 +188,15 @@ export function continueBlockedText(op: OperationView, pending: number): string 
       ? "Resolve the last conflicted file first."
       : `Resolve the ${pending} conflicted files first.`;
   }
+  // Nothing conflicted, and still no Continue: the stop has nothing left to
+  // record. The banner this dashboard replaced said so, and a disabled button
+  // with no reason sends the reader hunting for a conflict that does not
+  // exist. Skip is git's own way out there.
+  if (op.canSkip && !op.canContinue) {
+    return op.kind === "am"
+      ? "git couldn't apply this patch. Skip it, or abort."
+      : "Nothing is left to commit at this step: it is already on the branch. Skip it, or abort.";
+  }
   return "";
 }
 
