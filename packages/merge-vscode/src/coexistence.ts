@@ -12,11 +12,21 @@ import * as vscode from "vscode";
 import type { MergeHostCore } from "./host";
 import { COMPETING_BUILT_INS, competingBuiltIns } from "./product";
 
+/** Products that have started asking this session (scans call in quick succession). */
+const asking = new WeakSet<object>();
+
 export async function maybeOfferCoexistence(host: MergeHostCore): Promise<void> {
   const { context, product } = host;
-  if (host.defers() || context.globalState.get<boolean>(product.coexistencePromptKey)) {
+  if (
+    asking.has(context) ||
+    host.defers() ||
+    context.globalState.get<boolean>(product.coexistencePromptKey)
+  ) {
     return;
   }
+  // Claimed synchronously: the globalState write below is async, and a second
+  // scan landing before it resolves must not ask again.
+  asking.add(context);
   const config = vscode.workspace.getConfiguration();
   const competing = competingBuiltIns((key) => config.get(key));
   // Asked at most once, answered or not; a later change in Settings is the user's.
