@@ -1,0 +1,47 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_4d0307fcc95248 95-104
+  s_26f5e669d3043c::t_e0bbe17fedc0bc 140-156
+  s_26f5e669d3043c::t_7a7a766e615e47 15
+  s_26f5e669d3043c::t_7f56b1758b77e4 187-188
+  s_26f5e669d3043c::t_8bf7838e07dd7e 87-91
+  s_26f5e669d3043c::t_d8fc4895cee9fd 172-174
+  s_26f5e669d3043c::t_b5704321ea57c6 208-211
+  s_26f5e669d3043c::t_164a2ac94350a5 294
+  s_26f5e669d3043c::t_163be1261e92a1 268-293,299-301
+  s_26f5e669d3043c::t_d85625b1d70cd9 295-298
+  s_26f5e669d3043c::t_12e884513a89e7 25-36,39-42
+  s_26f5e669d3043c::t_deaef817d5cb88 248-262
+apps/merge-studio/CHANGELOG.md
+  s_26f5e669d3043c::t_664305fb9ac728 77
+  s_26f5e669d3043c::t_2305d51c126251 48-49
+  s_26f5e669d3043c::t_8864f4dc9a9544 66
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_34a28549271dc6 167-170
+  s_26f5e669d3043c::t_4c8ca6fcf6ef83 240-252
+  s_26f5e669d3043c::t_5aa72806426ab8 82-88
+  s_26f5e669d3043c::t_7308916146cc31 292-296
+  s_26f5e669d3043c::t_e4a17a7896261b 308-331,335-339
+  s_26f5e669d3043c::t_ab8b04d5ec0814 117-119
+  s_26f5e669d3043c::t_c044f7cca78251 332-334
+  s_26f5e669d3043c::t_48e72f3b410429 133-153
+  s_26f5e669d3043c::t_24e9c45c627b8c 177-179
+  s_26f5e669d3043c::t_ccc7281a30df28 220-223
+  s_26f5e669d3043c::t_ab6b338aed2090 30-32
+  s_26f5e669d3043c::t_f968d3ee7ecc08 37-46,49-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "257704851693e5b3b529abe0fa9f09727ce24a76",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
