@@ -467,6 +467,71 @@ test("am × HEAD moved since the stop: Abort says git declined to rewind", () =>
     assert.equal(r.git("log", "-1", "--format=%s").trim(), "moved", "git left HEAD where it was");
   }));
 
+test("am -3 × resolved to stage 2: nothing left of the patch, so Skip", () =>
+  withStop(S.am3Stop, async ({ r, sha }) => {
+    const ctx = r.ctx();
+    await ctx.conflictOps.takeStage("f.txt", 2);
+    const v = await ctx.operation.view();
+    assert.equal(v.canContinue, false);
+    assert.equal(v.continueBlocked, "Nothing is staged for this patch. Apply it by hand and stage the result, or skip the patch.");
+    assert.equal(v.canSkip, true);
+    const out = await ctx.operation.skip();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(r.sha("HEAD"), sha.master);
+    assert.equal(r.exists(".git/rebase-apply"), false);
+  }));
+
+test("am -3 × resolved to stage 3: Continue applies the patch as it was", () =>
+  withStop(S.am3Stop, async ({ r }) => {
+    const ctx = r.ctx();
+    await ctx.conflictOps.takeStage("f.txt", 3);
+    assert.equal((await ctx.operation.view()).canContinue, true);
+    const out = await ctx.operation.continue();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(r.git("show", "HEAD:f.txt").split("\n")[2], "three-test");
+  }));
+
+test("cherry-pick range × resolved to stage 3: Continue records it and the rest of the range", () =>
+  withStop(S.cherryPickRangeStop, async ({ r }) => {
+    const ctx = r.ctx();
+    await ctx.conflictOps.takeStage("f.txt", 3);
+    const out = await ctx.operation.continue();
+    // Taking T2's WHOLE file drops master's line 5 too, so T3 (line 5) then
+    // applies cleanly and the range finishes.
+    assert.equal(out.ok, true, out.message);
+    assert.equal(out.message, "Cherry-pick complete");
+    assert.deepEqual(r.git("log", "-3", "--format=%s").trim().split("\n"), [
+      "test: edit line 5",
+      "test: edit line 3",
+      "test: add g",
+    ]);
+    assert.equal(r.exists(".git/sequencer"), false);
+  }));
+
+test("stash pop × resolved: nothing is stopped any more, and the stash entry is still there", () =>
+  withStop(S.stashStop, async ({ r }) => {
+    const ctx = r.ctx();
+    const took = await ctx.conflictOps.takeRole("f.txt", "yours");
+    assert.equal(took.ok, true, took.message);
+    assert.equal(line(r.read("f.txt"), 3), "three-stashed", "Yours = the stashed change");
+    const v = await ctx.operation.view();
+    assert.equal(v.kind, "none");
+    assert.equal(v.title, "");
+    assert.equal(r.git("stash", "list").trim().split("\n").length, 1, "git keeps the entry after a conflicted pop");
+  }));
+
+test("autostash re-apply × Cancel: the autostash stays safe in the stash list", () =>
+  withStop(S.autostashStop, async ({ r, sha }) => {
+    const ctx = r.ctx();
+    const out = await ctx.operation.abort();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(out.message, "Cancelled. Your stashed changes are still in the stash.");
+    assert.equal(r.git("ls-files", "-u").trim(), "");
+    assert.match(r.git("stash", "list"), /autostash/);
+    assert.equal(r.sha("HEAD"), r.sha("test"));
+    assert.ok(sha.test);
+  }));
+
 test("plain am × the patch did not apply: nothing unmerged, Continue explains, Skip works", () =>
   withStop(S.amPlainStop, async ({ r, sha }) => {
     const ctx = r.ctx();
