@@ -259,3 +259,23 @@ test("accept and ignore write exactly the chosen lines, in any order, at the fil
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+test("a conflict with one side taken is still pending, and the counts say its Result no longer holds the original text", { skip }, async () => {
+  const v = await runMergePage(CHROME!, PROLOGUE + `
+    CUR = { base: "one\\ntwo\\nthree\\nfour\\n", ours: "one\\ntwo\\nthree-test\\nfour\\n", theirs: "one\\ntwo\\nthree-master\\nfour\\n", mode: "none" };
+    mount(CUR);
+    const block = view.model.blocks[0];
+    expect(counts.pending === 1 && counts.pendingChanged === 0, "fresh: pending and untouched " + show(counts));
+    view.ignoreSide(block, "left");
+    expect(counts.pending === 1 && counts.pendingChanged === 0, "ignoring Yours leaves the original text " + show(counts));
+    view.undo();
+    view.acceptSide(block, "left", "auto");
+    expect(counts.pending === 1 && counts.pendingChanged === 1 && view.getResultText().includes("three-test"),
+      "Yours taken, Theirs still open: pending, and changed " + show(counts));
+    view.undo();
+    view.result.getModel().applyEdits([{ range: new W.monaco.Range(3, 1, 3, 6), text: "by hand" }]);
+    await sleep(200);
+    expect(counts.pending === 1 && counts.pendingChanged === 1, "a hand edit in a pending block counts as changed " + show(counts));
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});

@@ -166,6 +166,30 @@ test("Apply with unresolved changes asks once, with the count, then applies", { 
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 
+  // A conflict with one side already taken is still unresolved, but its
+  // Result holds that side, not the original text — the warning must not say
+  // the choice will be thrown away (the reporter's own flow: accept Yours'
+  // arrow, then Apply).
+  const half = await run(`
+    mount(payload());
+    fake.setCounts({ total: 1, pending: 1, conflictsPending: 1, pendingChanged: 1 });
+    click(".ms-apply");
+    const note = text(".ms-bottom-note") || "";
+    expect(!/original text/.test(note), "a half-taken conflict does not keep the original text (" + note + ")");
+    expect(/1 unresolved change will be saved as the Result shows it/.test(note), "it is saved as shown (" + note + ")");
+    window.__shellHandle = null;
+  `);
+  assert.deepEqual(half.fails, [], half.fails.join("\n"));
+  const mix = await run(`
+    mount(payload());
+    fake.setCounts({ total: 5, pending: 3, conflictsPending: 2, pendingChanged: 1 });
+    click(".ms-apply");
+    const note = text(".ms-bottom-note") || "";
+    expect(/3 unresolved changes: 2 will keep the original text, 1 will be saved as the Result shows it/.test(note), "a mix says both (" + note + ")");
+    window.__shellHandle = null;
+  `);
+  assert.deepEqual(mix.fails, [], mix.fails.join("\n"));
+
   const w = await run(`
     const shell = mount(payload());
     fake.setCounts({ total: 2, pending: 0, conflictsPending: 0 });

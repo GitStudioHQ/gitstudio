@@ -198,6 +198,21 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
+/**
+ * What an Apply with unresolved changes saves, said truthfully (D3): an
+ * untouched block keeps the original text, but a conflict with one side
+ * already taken (or a block edited by hand) is saved as the Result shows it.
+ */
+export function unresolvedWords(counts: Pick<MergeCountsView, "pending" | "pendingChanged">): string {
+  const n = counts.pending;
+  const changed = Math.max(0, Math.min(counts.pendingChanged ?? 0, n));
+  const kept = n - changed;
+  const asShown = (k: number): string => `will be saved as the Result shows ${k === 1 ? "it" : "them"}`;
+  if (changed === 0) return `${plural(n, "unresolved change")} will keep the original text.`;
+  if (kept === 0) return `${plural(n, "unresolved change")} ${asShown(n)}.`;
+  return `${plural(n, "unresolved change")}: ${kept} will keep the original text, ${changed} ${asShown(changed)}.`;
+}
+
 /** The counter's words — unchanged from the extension's toolbar. */
 export function counterText(counts: MergeCountsView): { text: string; done: boolean } {
   if (counts.total === 0) return { text: "No changes", done: false };
@@ -858,7 +873,8 @@ export class MergeShell {
     const pending = this.counts.pending;
     if (pending > 0 && !this.armTimer) {
       // Allowed, as in IntelliJ — but only once the reader has been told what
-      // they are saving: every unresolved block still holds the ORIGINAL text.
+      // they are saving: an untouched block keeps the ORIGINAL text, one with
+      // a side already taken is saved as shown (unresolvedWords).
       this.applyBtn.classList.add("jb-warn");
       this.applyBtn.textContent = `Apply with ${pending} unresolved`;
       this.armTimer = window.setTimeout(() => {
@@ -1081,8 +1097,7 @@ export class MergeShell {
       return;
     }
     if (this.armTimer) {
-      const n = this.counts.pending;
-      text = `${plural(n, "unresolved change")} will keep the original text. Click Apply again to save anyway.`;
+      text = `${unresolvedWords(this.counts)} Click Apply again to save anyway.`;
       kind = "warn";
     } else if (this.appliedWarn) {
       text = this.appliedWarn;

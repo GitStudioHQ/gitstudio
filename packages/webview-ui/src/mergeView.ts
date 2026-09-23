@@ -725,6 +725,11 @@ export class MergeView implements MergeViewApi {
     if (!state || state.applied || state.doneLeft || state.doneRight) {
       return false;
     }
+    return this.holdsBase(block);
+  }
+
+  /** The block's lines in the Result are still exactly base's. */
+  private holdsBase(block: ChangeBlock): boolean {
     const baseRegion = this.baseLines.slice(
       block.baseSpan.start - 1,
       block.baseSpan.endExclusive - 1,
@@ -1358,6 +1363,7 @@ export class MergeView implements MergeViewApi {
     let pending = 0;
     let conflictsPending = 0;
     let resolvableConflictsPending = 0;
+    let pendingChanged = 0;
     for (const block of this.model.blocks) {
       const cat = category(block);
       byCategory[cat].total++;
@@ -1366,6 +1372,9 @@ export class MergeView implements MergeViewApi {
       }
       pending++;
       byCategory[cat].pending++;
+      if (!this.holdsBase(block)) {
+        pendingChanged++;
+      }
       if (cat === "conflict") {
         conflictsPending++;
         if (this.isWandable(block)) {
@@ -1379,6 +1388,7 @@ export class MergeView implements MergeViewApi {
       conflictsPending,
       byCategory,
       resolvableConflictsPending,
+      pendingChanged,
       hasProgress: this.hasProgress(),
     };
     this.lastCounts = counts;
