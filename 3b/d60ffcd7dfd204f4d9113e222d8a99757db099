@@ -1,0 +1,60 @@
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_74610cf6aaa72e 250
+  s_26f5e669d3043c::t_00ffc9c3566d29 617-637
+  s_26f5e669d3043c::t_8c2f5ae3624461 358
+  s_26f5e669d3043c::t_fbdfeedb8786e4 402-412
+  s_26f5e669d3043c::t_c3426d4e708d97 516-523
+  s_26f5e669d3043c::t_b9d48053f208ff 315
+  s_26f5e669d3043c::t_9b42c00c89eb8e 6
+  s_26f5e669d3043c::t_2b6c2263a69ad2 638
+apps/extension/src/git/inTheWay.ts
+  s_26f5e669d3043c::t_7b4438267c3d44 1-98
+apps/extension/src/pr/checkoutPr.ts
+  s_26f5e669d3043c::t_b23560c54f3bbc 46-57
+  s_26f5e669d3043c::t_de088943f039ce 4
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_6ebf23129fcaad 872-886
+  s_26f5e669d3043c::t_b38b8c83f6b6fd 482-492
+  s_26f5e669d3043c::t_f29f74d5afa6ae 172-180
+  s_26f5e669d3043c::t_ef0f97b785ab26 601-605
+  s_26f5e669d3043c::t_5f07b76455b40a 6
+  s_26f5e669d3043c::t_e3b43344fcd83b 536
+  s_26f5e669d3043c::t_9b785521f9adcd 107-111
+  s_26f5e669d3043c::t_3b5a878394d985 134-141
+  s_59c0dd2af30db2::t_39ef1ae7a7cfbd 887-888
+apps/extension/src/views/stashesView.ts
+  s_26f5e669d3043c::t_68900b06f3f21b 5
+  s_26f5e669d3043c::t_57354107560882 291-292,295-307
+  s_26f5e669d3043c::t_32928e2beb6d2a 275-277
+apps/extension/test/inTheWayDoors.test.ts
+  s_26f5e669d3043c::t_a8519c841b04f3 1-112
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_4688643cfddf61 1475-1476
+  s_26f5e669d3043c::t_08fcbb1b998914 1484-1494
+  s_26f5e669d3043c::t_08213fafa82006 2048-2049
+  s_26f5e669d3043c::t_152f7355e9f955 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3bd60ffcd7dfd204f4d9113e222d8a99757db099",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_59c0dd2af30db2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54ca11b6-e37a-494e-95d0-c9e5a1baed9f",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
