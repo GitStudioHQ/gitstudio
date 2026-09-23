@@ -1,0 +1,126 @@
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_6dea8669ce5906 24
+  s_26f5e669d3043c::t_5419b956419054 610-614,616-617
+  s_26f5e669d3043c::t_feb3b2e6ea60c2 1785-1786
+  s_26f5e669d3043c::t_8f7955bbedb969 541-543,546
+  s_26f5e669d3043c::t_7de783a319edd8 567-570,578-579
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_85927f38f682e2 2040-2042
+  s_26f5e669d3043c::t_aaa8a492388307 2010
+  s_26f5e669d3043c::t_84e8ad1e69f0a2 611-616
+apps/extension/test/syncLabel.test.ts
+  s_26f5e669d3043c::t_07cfd763d729b4 1-80
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_b8cbd2adea5663 1794-1796
+  s_26f5e669d3043c::t_6cbe349c763af3 1601-1602
+  s_26f5e669d3043c::t_d15bfe162a3d77 4
+packages/webview-ui/test/search.test.ts
+  s_26f5e669d3043c::t_12f56e21733191 21
+packages/webview-ui/test/chipLabels.test.ts
+  s_26f5e669d3043c::t_78ded888dba2ff 1-164
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_62389ef8211ef5 300-303
+  s_26f5e669d3043c::t_4981003a5bb953 78-79
+  s_26f5e669d3043c::t_24552fa62b8699 5-6
+  s_26f5e669d3043c::t_9137dbdd40c0a8 452-454
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_9f1b2fcfafe982 9392
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_35698da7e415a0 2832-2837,2840,2844,2846,2848-2849,2855,2857-2858
+  s_26f5e669d3043c::t_1ca4a9b16ca897 3304,3309
+  s_26f5e669d3043c::t_08c70fb92f863c 3202-3203,3206
+  s_26f5e669d3043c::t_006d0c5c72d388 4097-4099
+  s_26f5e669d3043c::t_6f407916c5c844 3185
+  s_26f5e669d3043c::t_974291923592c0 2817-2820,2822
+  s_26f5e669d3043c::t_65b92dd592548d 225-239
+  s_26f5e669d3043c::t_e5957854224d0c 1734-1735,1737-1738
+  s_26f5e669d3043c::t_ba0aa1cb64487b 3244,3247
+  s_26f5e669d3043c::t_87136a1d2a59b6 3818
+  s_26f5e669d3043c::t_be7bd64b7c4e42 4411,4413,4416-4417,4421
+  s_26f5e669d3043c::t_e0cd65a9fe18fc 4449-4451,4454-4459,4461-4463
+apps/desktop/src/renderer/graphMount.ts
+  s_26f5e669d3043c::t_b6caad06e3c22b 234
+  s_26f5e669d3043c::t_bf2829643c772e 238
+packages/webview-ui/src/commit-details.ts
+  s_26f5e669d3043c::t_1d27a290272b9a 18
+  s_26f5e669d3043c::t_b3ecd7847be383 69-73,77
+  s_26f5e669d3043c::t_11431306bbd7f3 957,962
+  s_26f5e669d3043c::t_3da1b574869bd8 1015-1017,1022-1023
+  s_26f5e669d3043c::t_854aed7814f5a9 940-942,944,946
+apps/extension/src/statusBar/syncLabel.ts
+  s_26f5e669d3043c::t_1513be31a9be71 1-18
+packages/host-bridge/src/git.ts
+  s_26f5e669d3043c::t_8ff5974edc5730 85-86
+  s_26f5e669d3043c::t_06603295fb5f58 83-84,88-89
+packages/host-bridge/test/graphRefFilter.test.ts
+  s_26f5e669d3043c::t_46f8da2ef4713e 207,209-210,214,218-232,234-236,239-246
+  s_26f5e669d3043c::t_4bc1985bf4b0f3 17
+packages/webview-ui/src/graph/main.ts
+  s_26f5e669d3043c::t_f6198287403b67 137,141
+  s_26f5e669d3043c::t_2340bf164e6ce6 189
+apps/desktop/test/branchFullNames.test.ts
+  s_26f5e669d3043c::t_bd7cb738a78619 204-217
+packages/webview-ui/src/graph/refFilter.ts
+  s_26f5e669d3043c::t_2136d0cd963b4d 12
+  s_26f5e669d3043c::t_cc8f208430c390 88-90
+packages/webview-ui/test/detailsChipMenu.test.ts
+  s_26f5e669d3043c::t_1053f9b20ef51b 51,53
+  s_26f5e669d3043c::t_12f56e21733191 44-50,52,54
+packages/host-bridge/src/graphRefFilter.ts
+  s_26f5e669d3043c::t_42254af8819333 26-31,34-37,41-42,44-57
+packages/host-bridge/test/graphWire.test.ts
+  s_26f5e669d3043c::t_3c60621d7d2743 64-67,76-93,97
+packages/host-bridge/src/graphWire.ts
+  s_26f5e669d3043c::t_d565061e233860 34-35
+  s_26f5e669d3043c::t_be6d54b391f9cb 78-81,83,91,93
+packages/webview-ui/test/refLayout.test.ts
+  s_26f5e669d3043c::t_3499f6ecc6d405 18-20,26-57
+packages/webview-ui/test/filterFollowUp.test.ts
+  s_26f5e669d3043c::t_12f56e21733191 42-48,50,52
+  s_26f5e669d3043c::t_1053f9b20ef51b 49,51
+  s_26f5e669d3043c::t_1bd787662fef96 267
+  s_26f5e669d3043c::t_d9b14169d5b964 253-257
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_6cdfc55fd340df 1288-1294,1296-1311
+  s_26f5e669d3043c::t_e4649a77ffd314 144-148,152-153
+  s_26f5e669d3043c::t_8655602d5732f9 1338,1340-1343,1346-1349
+  s_26f5e669d3043c::t_bfd8c6310e3dda 71
+  s_26f5e669d3043c::t_b236ad5264f518 1361-1363,1366
+  s_26f5e669d3043c::t_b840a24242d102 916,918-919
+  s_26f5e669d3043c::t_397fec01f9bb17 1258
+  s_26f5e669d3043c::t_f5d893d5927443 1803-1807,1815
+  s_26f5e669d3043c::t_3aca2732d467c0 2124-2126
+packages/webview-ui/src/graph/refTip.ts
+  s_26f5e669d3043c::t_160e243a02dbdd 312
+  s_26f5e669d3043c::t_f420a8ad170dd6 29,31-36,39
+  s_26f5e669d3043c::t_2673f9e11c2cff 71-78,85,91-94,97-98
+  s_26f5e669d3043c::t_6116eb6876bf04 327-331,333
+packages/git-service/src/RefProvider.ts
+  s_26f5e669d3043c::t_0979820eb3d7ea 193-201,204,209,211-213
+  s_26f5e669d3043c::t_e961c4a0d5fd2f 67-79
+packages/webview-ui/test/refPicker.test.ts
+  s_26f5e669d3043c::t_1053f9b20ef51b 33,35
+  s_26f5e669d3043c::t_12f56e21733191 26-32,34,36
+packages/host-bridge/src/graphProtocol.ts
+  s_26f5e669d3043c::t_d6af3d5ba824f7 12-18,20-26
+packages/webview-ui/src/graph/refLayout.ts
+  s_26f5e669d3043c::t_cfc3569e90df4d 2
+  s_26f5e669d3043c::t_fb86257b92ce6d 15-17,20-22
+  s_26f5e669d3043c::t_1e080fcba125c9 34-39,43-49,53,55-56,62-64,66-67,70,72-73,75,83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c3456d2c89cda6a03f5bf7be7ec836b1e24650b8",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
