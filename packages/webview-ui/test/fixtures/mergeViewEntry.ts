@@ -7,6 +7,9 @@
 
 import "../../src/styles/diff.css";
 import { MergeView } from "../../src/mergeView";
+import { DiffView } from "../../src/diffView";
+import * as monaco from "monaco-editor";
+import { spanY } from "../../src/ribbons";
 import { buildMergeModel } from "@gitstudio/engine/mergeModel";
 import { category } from "@gitstudio/engine/types";
 import type { MergeInitPayload } from "@gitstudio/host-bridge/protocol";
@@ -141,6 +144,9 @@ export function payload(over: Partial<MergeInitPayload> = {}): MergeInitPayload 
 
 (window as unknown as { gsMerge: unknown }).gsMerge = {
   MergeView,
+  DiffView,
+  monaco,
+  spanY,
   buildMergeModel,
   category,
   FIXTURE,

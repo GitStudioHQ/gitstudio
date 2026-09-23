@@ -189,6 +189,18 @@ body [class*="jb-frame-"].jb-edge-bottom { border-top: none; }
 .jb-merge-grid .jb-marker-modified { border-top: 3px double var(--jb-edge-modified); }
 .jb-merge-grid .jb-marker-same { border-top: 3px double var(--jb-edge-same); }
 .jb-merge-grid .jb-marker-conflict { border-top: 3px double var(--jb-edge-conflict); }
+/* A point AFTER an unterminated last line has no line of its own, so its
+ * marker goes on the last line's BOTTOM edge (decorations.ts pastEnd). */
+.jb-marker-after.jb-marker-inserted { border-top: 0; border-bottom: 2px solid var(--jb-inner-inserted); }
+.jb-marker-after.jb-marker-deleted { border-top: 0; border-bottom: 2px solid var(--jb-inner-deleted); }
+.jb-marker-after.jb-marker-modified { border-top: 0; border-bottom: 2px solid var(--jb-inner-modified); }
+.jb-marker-after.jb-marker-same { border-top: 0; border-bottom: 2px solid var(--jb-inner-same); }
+.jb-marker-after.jb-marker-conflict { border-top: 0; border-bottom: 2px solid var(--jb-inner-conflict); }
+.jb-merge-grid .jb-marker-after.jb-marker-inserted { border-top: 0; border-bottom: 3px double var(--jb-edge-inserted); }
+.jb-merge-grid .jb-marker-after.jb-marker-deleted { border-top: 0; border-bottom: 3px double var(--jb-edge-deleted); }
+.jb-merge-grid .jb-marker-after.jb-marker-modified { border-top: 0; border-bottom: 3px double var(--jb-edge-modified); }
+.jb-merge-grid .jb-marker-after.jb-marker-same { border-top: 0; border-bottom: 3px double var(--jb-edge-same); }
+.jb-merge-grid .jb-marker-after.jb-marker-conflict { border-top: 0; border-bottom: 3px double var(--jb-edge-conflict); }
 
 /* ---- App shell + toolbar ---- */
 .jb-app {

@@ -1,7 +1,6 @@
 import * as monaco from "monaco-editor";
 import type { DiffInitPayload } from "@gitstudio/host-bridge/protocol";
 import type { DiffBlock, DiffModel } from "@gitstudio/engine/types";
-import { isEmptySpan } from "@gitstudio/engine/types";
 import { buildDiffModel } from "@gitstudio/engine/diffModel";
 import type { WhitespaceMode } from "@gitstudio/engine/lineDiff";
 import { splitLines } from "@gitstudio/engine/lineDiff";
@@ -10,12 +9,16 @@ import { ensureNativeTheme, nativeFontOptions } from "./theme";
 import { DiffDecorationManager } from "./decorations";
 import { chevronDoubleRight, iconElement, lockIcon } from "./icons";
 import { computeDiffAlignment, type Spacer } from "@gitstudio/engine/alignment";
-import { DiffRibbonOverlay } from "./ribbons";
+import { DiffRibbonOverlay, lineTopY, scheduleFrame } from "./ribbons";
+import { lineDocOf, planLineWrite } from "./lineEdits";
 import { LARGE_FILE_LINE_THRESHOLD } from "./limits";
 import { StageTickLayer, type TickRow } from "./stageTicks";
 import { deriveTickStates } from "./tickState";
 
 type Editor = monaco.editor.IStandaloneCodeEditor;
+
+/** Numbers each DiffView's keybinding scope (installNavigationKeys). */
+let diffViewSerial = 0;
 
 /** Pixel height of the transfer action drawn in the gutter strip. */
 const ACTION_ROW_HEIGHT = 16;
@@ -68,7 +71,11 @@ export class DiffView {
   private viewSubs: monaco.IDisposable[] = [];
   private syncingScroll = false;
   private rediffTimer = 0;
-  private buttonsRaf = 0;
+  /** Cancels the pending button-layer repaint (see scheduleButtons). */
+  private cancelButtons?: () => void;
+  /** F7 is registered once per view, scoped to its editors (installNavigationKeys). */
+  private navKeysInstalled = false;
+  private readonly keyScope = `gsDiffView${++diffViewSerial}`;
   /** Timestamp of the last local right-pane edit (typing / transfer). */
   private lastLocalEdit = 0;
   /** Guards the content listener while WE write external text into a pane. */
@@ -260,6 +267,8 @@ export class DiffView {
 
     this.model = buildDiffModel(leftText, rightText, {
       whitespace: this.renderOptions.whitespace,
+      // A large file draws no word ranges, so none are computed either.
+      innerLineBudget: this.largeFile ? 0 : undefined,
     });
     this.installAlignment(this.model);
     this.decorations?.apply(this.model, {
@@ -295,12 +304,28 @@ export class DiffView {
     }
   }
 
+  /**
+   * F7 / Shift+F7. Monaco's addCommand registers into a PAGE-GLOBAL
+   * keybinding service with no disposable, so — as in the merge view — the
+   * rules are registered once per view (build() runs on every re-render, and
+   * each run used to add two more), and scoped by a context key only this
+   * view's editors carry: unscoped, F7 in any other Monaco editor on the page
+   * moved this diff.
+   */
   private installNavigationKeys(): void {
     for (const editor of this.editors) {
-      editor.addCommand(monaco.KeyCode.F7, () => this.goToNextChange());
+      editor.createContextKey(this.keyScope, true);
+    }
+    if (this.navKeysInstalled) {
+      return;
+    }
+    this.navKeysInstalled = true;
+    for (const editor of this.editors) {
+      editor.addCommand(monaco.KeyCode.F7, () => this.goToNextChange(), this.keyScope);
       editor.addCommand(
         monaco.KeyMod.Shift | monaco.KeyCode.F7,
         () => this.goToPrevChange(),
+        this.keyScope,
       );
     }
   }
@@ -355,13 +380,17 @@ export class DiffView {
 
   // --- transfer arrows (copy left change into the editable right pane) ---
 
-  /** Coalesces button-layer rebuilds to one per animation frame. */
+  /**
+   * Coalesces button-layer rebuilds to one per frame — racing the frame with
+   * a timer (scheduleFrame), like the merge view's overlays: an occluded
+   * window or a headless run is served no frames, and the arrows never came.
+   */
   private scheduleButtons(): void {
-    if (this.buttonsRaf) {
+    if (this.cancelButtons) {
       return;
     }
-    this.buttonsRaf = requestAnimationFrame(() => {
-      this.buttonsRaf = 0;
+    this.cancelButtons = scheduleFrame(() => {
+      this.cancelButtons = undefined;
       this.rebuildButtons();
     });
   }
@@ -381,13 +410,13 @@ export class DiffView {
       return;
     }
 
-    const scrollTop = this.left.getScrollTop();
     const height = this.gutter?.clientHeight ?? 0;
     const lineHeight = this.left.getOption(monaco.editor.EditorOption.lineHeight);
     const centerOffset = Math.max(0, (lineHeight - ACTION_ROW_HEIGHT) / 2);
 
     for (const block of this.model.blocks) {
-      const y = this.left.getTopForLineNumber(block.leftSpan.start) - scrollTop;
+      // lineTopY: a point after an unterminated last line is its bottom edge.
+      const y = lineTopY(this.left, block.leftSpan.start, lineHeight);
       if (y < -24 || y > height + 24) {
         continue;
       }
@@ -505,31 +534,18 @@ export class DiffView {
       }
       block = fresh;
     }
-    const leftText = this.leftLines
-      .slice(block.leftSpan.start - 1, block.leftSpan.endExclusive - 1)
-      .join("\n");
-
-    const span = block.rightSpan;
-    const lineCount = model.getLineCount();
-    let range: monaco.Range;
-    let text: string;
-    if (isEmptySpan(span)) {
-      // Pure insertion point on the right: insert the left lines there.
-      range = new monaco.Range(span.start, 1, span.start, 1);
-      text = leftText.length ? `${leftText}\n` : "";
-    } else if (span.endExclusive > lineCount) {
-      range = new monaco.Range(
-        span.start,
-        1,
-        lineCount,
-        model.getLineMaxColumn(lineCount),
-      );
-      text = leftText;
-    } else {
-      range = new monaco.Range(span.start, 1, span.endExclusive, 1);
-      text = leftText.length ? `${leftText}\n` : "";
-    }
-    editor.executeEdits("jbDiff", [{ range, text, forceMoveMarkers: true }]);
+    // The left side's lines as an ARRAY, never joined: [""] (one blank line)
+    // joined is "", which wrote nothing.
+    const lines = this.leftLines.slice(block.leftSpan.start - 1, block.leftSpan.endExclusive - 1);
+    // The same line-break rules as the merge view's accepts (lineEdits.ts):
+    // this copy used to carry its own, and restoring a deleted unterminated
+    // last line glued it onto the line above. No forceMoveMarkers either — it
+    // dragged a neighbour's edge over the inserted lines.
+    const plan = planLineWrite(lineDocOf(model), block.rightSpan, lines);
+    if (!plan) return;
+    const r = plan.range;
+    const range = new monaco.Range(r.startLine, r.startColumn, r.endLine, r.endColumn);
+    editor.executeEdits("jbDiff", [{ range, text: plan.text }]);
     // Re-diff immediately so the applied change's band/button vanish in step.
     this.refreshDiff();
   }
@@ -684,10 +700,8 @@ export class DiffView {
       window.clearTimeout(this.rediffTimer);
       this.rediffTimer = 0;
     }
-    if (this.buttonsRaf) {
-      cancelAnimationFrame(this.buttonsRaf);
-      this.buttonsRaf = 0;
-    }
+    this.cancelButtons?.();
+    this.cancelButtons = undefined;
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
     this.themeObserver?.disconnect();

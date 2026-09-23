@@ -299,14 +299,33 @@ export class DiffRibbonOverlay {
   }
 }
 
+/**
+ * The viewport Y of the boundary ABOVE `line` — which, for the point after
+ * the last line (line = lineCount + 1, where an insertion after an
+ * unterminated last line sits), is the last line's BOTTOM edge. Monaco clamps
+ * getTopForLineNumber to the last line, which drew such a point at the top of
+ * the line it comes after: the preview said "above b" while the write went
+ * after it.
+ */
+export function lineTopY(
+  editor: monaco.editor.IStandaloneCodeEditor,
+  line: number,
+  lineHeight: number,
+): number {
+  const count = editor.getModel()?.getLineCount() ?? 1;
+  const scrollTop = editor.getScrollTop();
+  if (line > count) return editor.getTopForLineNumber(count) + lineHeight - scrollTop;
+  return editor.getTopForLineNumber(line) - scrollTop;
+}
+
 /** Returns [topY, bottomY] of a span in the editor's viewport coordinates. */
-function spanY(
+export function spanY(
   editor: monaco.editor.IStandaloneCodeEditor,
   span: LineSpan,
   lineHeight: number,
 ): [number, number] {
   const scrollTop = editor.getScrollTop();
-  const top = editor.getTopForLineNumber(span.start) - scrollTop;
+  const top = lineTopY(editor, span.start, lineHeight);
   if (isEmptySpan(span)) {
     return [top, top];
   }

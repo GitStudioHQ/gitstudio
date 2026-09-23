@@ -29,7 +29,8 @@ import {
   magicWand,
 } from "./icons";
 import { computeAlignmentZones, type Spacer } from "@gitstudio/engine/alignment";
-import { RibbonOverlay, scheduleFrame } from "./ribbons";
+import { RibbonOverlay, lineTopY, scheduleFrame } from "./ribbons";
+import { lineDocOf, planLineWrite } from "./lineEdits";
 import { LARGE_FILE_LINE_THRESHOLD } from "./limits";
 import { MergeLegend } from "./mergeLegend";
 import {
@@ -53,6 +54,9 @@ type Editor = monaco.editor.IStandaloneCodeEditor;
 // Must fit inside one code line WITH clearance (line height is typically
 // 18-19px) so the icon row never touches the band's frame lines.
 const ACTION_ROW_HEIGHT = 16;
+
+/** Numbers each MergeView's keybinding scope (installNavigationKeys). */
+let mergeViewSerial = 0;
 
 /** How each category is named to a screen reader ("Conflict 2 of 5: …"). */
 const CATEGORY_NAME: Record<MergeCategory, string> = {
@@ -177,6 +181,8 @@ export class MergeView implements MergeViewApi {
   private typingTimer = 0;
   /** Keybindings register into a page-global service — once per view only. */
   private navKeysInstalled = false;
+  /** The context key only this view's editors carry (see installNavigationKeys). */
+  private readonly keyScope = `gsMergeView${++mergeViewSerial}`;
 
   private gutterA?: HTMLElement;
   private gutterB?: HTMLElement;
@@ -350,6 +356,8 @@ export class MergeView implements MergeViewApi {
 
     this.model = buildMergeModel(payload.base, payload.ours, payload.theirs, {
       whitespace: this.renderOptions.whitespace,
+      // A large file draws no word ranges, so none are computed either.
+      innerLineBudget: this.largeFile ? 0 : undefined,
     });
     this.computeOrdinals();
     this.initBlockState();
@@ -1004,38 +1012,15 @@ export class MergeView implements MergeViewApi {
     if (!editor || !model) {
       return span;
     }
-    const lineCount = model.getLineCount();
-    const endOf = (line: number) => model.getLineMaxColumn(line);
-    let range: monaco.Range | undefined;
-    let text = "";
-    let next: LineSpan = { start: span.start, endExclusive: span.start + lines.length };
-    if (span.endExclusive <= lineCount) {
-      range = new monaco.Range(span.start, 1, span.endExclusive, 1);
-      text = lines.map((line) => `${line}\n`).join("");
-    } else if (model.getValueLength() === 0) {
-      range = model.getFullModelRange();
-      text = lines.join("\n");
-      next = lines.length
-        ? { start: 1, endExclusive: 1 + lines.length }
-        : { start: 2, endExclusive: 2 };
-    } else if (lines.length && span.start <= lineCount) {
-      range = new monaco.Range(span.start, 1, lineCount, endOf(lineCount));
-      text = lines.join("\n");
-    } else if (lines.length) {
-      range = new monaco.Range(lineCount, endOf(lineCount), lineCount, endOf(lineCount));
-      text = `\n${lines.join("\n")}`;
-      next = { start: lineCount + 1, endExclusive: lineCount + 1 + lines.length };
-    } else if (span.start <= lineCount) {
-      range =
-        span.start > 1
-          ? new monaco.Range(span.start - 1, endOf(span.start - 1), lineCount, endOf(lineCount))
-          : model.getFullModelRange();
-      // The block is now the point after whatever is left.
-      next = { start: Math.max(span.start, 2), endExclusive: Math.max(span.start, 2) };
-    }
-    if (!range) {
+    // The line-break rules live in lineEdits.ts, shared with the 2-way diff's
+    // copy arrow, which had its own copy of them and the same bugs.
+    const plan = planLineWrite(lineDocOf(model), span, lines);
+    if (!plan) {
       return span; // nothing to write, and nothing to remove
     }
+    const r = plan.range;
+    const range = new monaco.Range(r.startLine, r.startColumn, r.endLine, r.endColumn);
+    const { text, next } = plan;
     // Suppressed so the content listener doesn't mistake this for typing.
     // No forceMoveMarkers: every OTHER block's tracker keeps its own edge (the
     // trackers never grow at their edges) — forcing them to the end of the
@@ -1136,8 +1121,8 @@ export class MergeView implements MergeViewApi {
     // SIDE pane's rows — so they anchor to the side editor's geometry, not
     // the result's, and can never drift out of the colored band.
     const place = (editor: Editor, span: LineSpan): number | undefined => {
-      const top =
-        editor.getTopForLineNumber(span.start) - editor.getScrollTop();
+      // The point after an unterminated last line is that line's bottom edge.
+      const top = lineTopY(editor, span.start, lineHeight);
       // Center the icon row on the first line (or on the boundary for
       // insertion points), like IntelliJ anchors its gutter actions. The
       // clamp keeps the row below the band's 1px top frame even when the
@@ -1697,29 +1682,44 @@ export class MergeView implements MergeViewApi {
     // whitespace toggle, re-init) leaks rules. The handlers only reference
     // `this`, and the global rules keep dispatching for rebuilt editors, so
     // one registration per MergeView lifetime suffices.
+    //
+    // And the rules are GLOBAL: with no when-clause, F7 and ⌘Z/⌘Y in ANY
+    // Monaco editor on the page (the desktop's diff, a message box) drove this
+    // merge's navigation and history. Each rule is scoped by a context key
+    // only this view's editors carry, so it fires only while one of them has
+    // the keyboard. The key is set again on every build — rebuilt editors are
+    // new editors.
+    for (const editor of this.editors) {
+      editor.createContextKey(this.keyScope, true);
+    }
     if (this.navKeysInstalled) {
       return;
     }
     this.navKeysInstalled = true;
+    const when = this.keyScope;
     for (const editor of this.editors) {
-      editor.addCommand(monaco.KeyCode.F7, () => this.goToNextChange());
+      editor.addCommand(monaco.KeyCode.F7, () => this.goToNextChange(), when);
       editor.addCommand(
         monaco.KeyMod.Shift | monaco.KeyCode.F7,
         () => this.goToPrevChange(),
+        when,
       );
       // Shadow Monaco's native undo/redo: text-only undo desyncs blockState
       // and the tracked spans, so the merge owns its own history.
       editor.addCommand(
         monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ,
         () => this.undo(),
+        when,
       );
       editor.addCommand(
         monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ,
         () => this.redo(),
+        when,
       );
       editor.addCommand(
         monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY,
         () => this.redo(),
+        when,
       );
     }
   }
@@ -1743,6 +1743,13 @@ export class MergeView implements MergeViewApi {
       this.result.onDidChangeModelContent(() => {
         if (!this.suppressHistory) {
           this.onUserEdit(); // manual typing — make it undoable
+          // The FIRST keystroke is progress now, not after the re-align
+          // debounce: a shell that asks "is there work to lose?" in the same
+          // tick (the whitespace confirm, D7) must hear yes. Later keystrokes
+          // cannot change the answer, so they wait for the debounce.
+          if (!this.lastCounts.hasProgress) {
+            this.notifyCounts();
+          }
         }
         this.ribbons?.scheduleDraw();
         this.scheduleButtons();

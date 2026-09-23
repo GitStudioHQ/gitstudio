@@ -227,6 +227,16 @@ function clampLine(editor: Editor, line: number): number {
 }
 
 /**
+ * A point AFTER the last line (an insertion after an unterminated last line):
+ * Monaco has no such line, so its marker goes on the last line's BOTTOM edge
+ * (`jb-marker-after`) — drawn on the top edge, it said the text goes above
+ * the line it actually follows.
+ */
+function pastEnd(editor: Editor, line: number): boolean {
+  return line > (editor.getModel()?.getLineCount() ?? 1);
+}
+
+/**
  * A pending block's region in one pane: the tint, and the edge lines a high
  * contrast theme draws. An empty region (an insertion or deletion point) is a
  * double marker line instead.
@@ -242,11 +252,12 @@ function pushPending(
 ): void {
   if (isEmptySpan(span)) {
     const line = clampLine(editor, span.start);
+    const after = pastEnd(editor, span.start) ? " jb-marker-after" : "";
     target.push({
       range: new monaco.Range(line, 1, line, 1),
       options: {
         isWholeLine: true,
-        className: `jb-marker-${tone} jb-cat-${cat}`,
+        className: `jb-marker-${tone}${after} jb-cat-${cat}`,
         overviewRuler: ruler,
       },
     });
@@ -280,11 +291,12 @@ function pushApplied(
 ): void {
   if (isEmptySpan(span)) {
     const line = clampLine(editor, span.start);
+    const edge = pastEnd(editor, span.start) ? "jb-edge-bottom" : "jb-edge-top";
     target.push({
       range: new monaco.Range(line, 1, line, 1),
       options: {
         isWholeLine: true,
-        className: `jb-applied-${tone} jb-edge-top jb-cat-${cat}`,
+        className: `jb-applied-${tone} ${edge} jb-cat-${cat}`,
       },
     });
     return;
@@ -330,11 +342,11 @@ function pushLine(
     ? { color: rulerColor, position: monaco.editor.OverviewRulerLane.Full }
     : undefined;
   if (isEmptySpan(span)) {
-    const lineCount = editor.getModel()?.getLineCount() ?? 1;
-    const line = Math.min(Math.max(span.start, 1), lineCount);
+    const line = clampLine(editor, span.start);
+    const after = pastEnd(editor, span.start) ? " jb-marker-after" : "";
     target.push({
       range: new monaco.Range(line, 1, line, 1),
-      options: { isWholeLine: true, className: `jb-marker-${role}`, overviewRuler },
+      options: { isWholeLine: true, className: `jb-marker-${role}${after}`, overviewRuler },
     });
   } else {
     target.push({
