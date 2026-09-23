@@ -162,7 +162,7 @@ function short(manifest) {
   return String(manifest?.gitstudio?.sha ?? "?").slice(0, 7);
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = { root: process.cwd(), strict: false, pullRequest: false, gitstudio: undefined };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];

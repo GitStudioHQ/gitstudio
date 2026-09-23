@@ -320,7 +320,7 @@ export function exportTo({ into, allowDirty = false, lock = true, gitstudio = GI
   return { sha, dirty, removed, stale, vendored: vendored.length, shell: shellWritten.length, target };
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = { into: undefined, allowDirty: false, lock: true, gitstudio: GITSTUDIO_ROOT };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
