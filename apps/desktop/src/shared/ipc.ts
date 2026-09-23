@@ -2743,6 +2743,11 @@ export interface McpClientInfo {
   installed: boolean;
   /** Absolute path of the client's config file (for display). */
   configPath?: string;
+  /** Installed, but the GitStudio its entry names is no longer there (the app
+   *  was moved or reinstalled elsewhere) — the card offers Re-add. */
+  stale?: boolean;
+  /** Said beside the Re-add, in plain words. */
+  staleReason?: string;
 }
 
 export interface McpInfo {
@@ -2760,9 +2765,10 @@ export interface McpInfo {
   configSnippet: string;
   clients: McpClientInfo[];
   repoRoot?: string;
-  /** Whether the bundled server file exists. */
+  /** Whether Add can work: the bundled server exists, and the app is not
+   *  running from a translocated copy whose path vanishes on quit. */
   available: boolean;
-  /** When it does not: why, in words for whoever can act on it. */
+  /** When it cannot: why, in words for whoever can act on it. */
   missing?: string;
 }
 

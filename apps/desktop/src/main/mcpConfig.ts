@@ -8,7 +8,7 @@
 import { app } from "electron";
 import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { McpClientInfo, McpInfo, McpInstallRequest, OkResult } from "../shared/ipc";
 
 // ── Where the server is, and what runs it ─────────────────────────────────────
@@ -104,6 +104,26 @@ function stableServerPath(rt: McpRuntime): string {
     return bin;
   }
 }
+
+/**
+ * Is this executable running from a Gatekeeper App Translocation mount?
+ *
+ * macOS runs a downloaded, quarantined app that has not been moved from where
+ * it was unpacked (Downloads, the mounted DMG) from a random read-only copy
+ * under /private/var/folders/…/AppTranslocation/<uuid>/d/ — a path that
+ * disappears when the app quits. A client config naming it works exactly until
+ * then, and the agent then fails to start with nothing on screen to say why.
+ */
+export function isTranslocated(execPath: string): boolean {
+  return /^(?:\/private)?\/var\/folders\/.+\/AppTranslocation\//.test(execPath);
+}
+
+/** Why Agent Access will not write a translocated path, and what to do. */
+const TRANSLOCATED_MESSAGE =
+  "GitStudio is running from a temporary copy macOS made because the app hasn't been moved " +
+  "to Applications yet, and that copy disappears when GitStudio quits — an agent set up now " +
+  "would stop working. Move GitStudio to your Applications folder, open it from there, then " +
+  "add it again.";
 
 /**
  * What a client runs to start the server: the app's OWN executable as Node
@@ -231,14 +251,34 @@ function readJson(path: string): Record<string, unknown> | undefined {
   return r.kind === "parsed" ? r.json : undefined;
 }
 
-/** Is GitStudio's server already present in a client's config? */
-function isInstalled(cfg: ClientConfig): boolean {
+/** GitStudio's entry in a client's config, or undefined when it has none. */
+function installedEntry(cfg: ClientConfig): { command?: unknown; args?: unknown } | undefined {
   const json = readJson(cfg.path);
   if (!json) {
-    return false;
+    return undefined;
   }
   const servers = json[cfg.serversKey];
-  return !!servers && typeof servers === "object" && "gitstudio" in (servers as Record<string, unknown>);
+  if (!servers || typeof servers !== "object" || !("gitstudio" in (servers as Record<string, unknown>))) {
+    return undefined;
+  }
+  const entry = (servers as Record<string, unknown>).gitstudio;
+  return entry && typeof entry === "object" ? (entry as { command?: unknown; args?: unknown }) : {};
+}
+
+/**
+ * Why a configured entry can no longer start the server — the GitStudio it
+ * names is not where it was (the app was moved, reinstalled elsewhere, or set
+ * up from a translocated copy) — or undefined when its paths still exist.
+ *
+ * Only absolute paths are judged: an old entry's bare `node` is a PATH lookup
+ * this cannot answer for.
+ */
+function staleEntry(entry: { command?: unknown; args?: unknown }): string | undefined {
+  const paths = [entry.command, Array.isArray(entry.args) ? entry.args[0] : undefined].filter(
+    (p): p is string => typeof p === "string" && isAbsolute(p),
+  );
+  const gone = paths.find((p) => !existsSync(p));
+  return gone ? `The GitStudio this was set up with is no longer at ${gone}.` : undefined;
 }
 
 /**
@@ -279,13 +319,20 @@ export function mcpInfo(repoRoot: string | undefined, rt: McpRuntime = currentRu
   const { command, env } = mcpLaunch(rt);
   const args = serverArgs(binPath, repoRoot, { write: false, destructive: false });
   const snippet = JSON.stringify({ mcpServers: { gitstudio: { command, args, env } } }, null, 2);
-  const clients: McpClientInfo[] = clientConfigs().map((c) => ({
-    id: c.id,
-    label: c.label,
-    installed: isInstalled(c),
-    configPath: c.path,
-  }));
-  const missing = missingServer(rt, binPath);
+  const clients: McpClientInfo[] = clientConfigs().map((c) => {
+    const entry = installedEntry(c);
+    const staleReason = entry ? staleEntry(entry) : undefined;
+    return {
+      id: c.id,
+      label: c.label,
+      installed: !!entry,
+      configPath: c.path,
+      ...(staleReason ? { stale: true, staleReason } : {}),
+    };
+  });
+  // Nothing to offer when the server is missing — or when the path Add would
+  // write is a translocated copy that vanishes on quit.
+  const unavailable = isTranslocated(rt.execPath) ? TRANSLOCATED_MESSAGE : missingServer(rt, binPath)?.message;
   return {
     binPath,
     command,
@@ -294,8 +341,8 @@ export function mcpInfo(repoRoot: string | undefined, rt: McpRuntime = currentRu
     configSnippet: snippet,
     clients,
     repoRoot,
-    available: !missing,
-    ...(missing ? { missing: missing.message } : {}),
+    available: !unavailable,
+    ...(unavailable ? { missing: unavailable } : {}),
   };
 }
 
@@ -310,6 +357,12 @@ export function installMcp(
   // that is not JSON is a state of the machine (see main/expectedError.ts).
   if (!cfg) {
     return { ok: false, message: `Unknown client: ${req.client}.` };
+  }
+  // Refused, not written: the path would name a copy of the app that is gone
+  // the moment it quits. Where the app runs from is the user's state, and the
+  // way on is theirs to take — so `expected`, with the way on in the message.
+  if (isTranslocated(rt.execPath)) {
+    return { ok: false, expected: true, message: TRANSLOCATED_MESSAGE };
   }
   const binPath = stableServerPath(rt);
   const missing = missingServer(rt, binPath);

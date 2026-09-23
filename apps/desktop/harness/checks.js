@@ -11779,6 +11779,40 @@
       const adds = $$(".mcp-client .mini-btn", card);
       c.ok(adds.length > 0 && adds.every((b) => b.disabled), "no Add that can only fail");
     },
+    /** Running from a Gatekeeper-translocated copy: the path Add would write
+     *  vanishes on quit. The card says why and what to do, offers no Add, and
+     *  no snippet to paste that path by hand either. */
+    "agent-access-refuses-a-translocated-app": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      c.match(text($(".mcp-missing", card)), /Move GitStudio to your Applications folder/, "it says what to do");
+      const adds = $$(".mcp-client .mini-btn", card);
+      c.ok(adds.length > 0 && adds.every((b) => b.disabled), "no Add that would write a vanishing path");
+      c.ok(!$(".mcp-snippet", card), "…and no snippet that names it for pasting");
+    },
+    /** A client set up with a GitStudio that has since moved: not "Connected" —
+     *  it cannot start. The card says so and offers Re-add. */
+    "agent-access-notices-a-moved-app": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      // `$` takes one argument; a row-scoped lookup is the row's own querySelector.
+      const row = $$(".mcp-client", card).find((r) => /Cursor/.test(text(r.querySelector(".mcp-client-name"))));
+      c.ok(!!row, "the Cursor row is there");
+      if (!row) return;
+      c.ok(!/Connected/.test(text(row.querySelector(".mcp-client-name"))), "a client that cannot start is not called Connected");
+      c.match(text(row.querySelector(".mcp-client-stale")), /no longer at/, "it says why");
+      const btn = row.querySelector(".mini-btn");
+      c.match(text(btn), /^Re-add$/, "and the one button puts the current path back");
+      c.ok(btn && !btn.disabled, "…live");
+      btn && btn.click();
+      await settle(400);
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "ai:mcpInstall");
+      c.ok(sent.length > 0 && (sent[sent.length - 1].payload || {}).client === "cursor", "Re-add installs Cursor again");
+    },
     "editors-are-configurable-in-settings": async (f) => {
       const c = check(f);
       await settle(300);

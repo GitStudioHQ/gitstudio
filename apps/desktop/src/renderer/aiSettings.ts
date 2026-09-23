@@ -498,11 +498,23 @@ export function agentAccessCard(): HTMLElement {
       const m = el("div", "mcp-client-meta");
       const n = el("div", "mcp-client-name");
       n.append(span(cl.label));
-      if (cl.installed) n.append(pill("Connected", "is-ready"));
+      // Configured, but pointing at a GitStudio that is no longer there (the
+      // app was moved after Add): not "Connected" — it cannot start. Say why,
+      // and make the one button put the current path back.
+      if (cl.installed && cl.stale) n.append(pill("Moved", "is-warn"));
+      else if (cl.installed) n.append(pill("Connected", "is-ready"));
       m.append(n);
+      if (cl.stale && cl.staleReason) {
+        const why = el("div", "mcp-client-stale");
+        why.textContent = cl.staleReason;
+        m.append(why);
+      }
       r.append(m);
       const btn = el("button", "mini-btn") as HTMLButtonElement;
-      btn.append(glyph(cl.installed ? "sync" : "add"), span(cl.installed ? "Update" : "Add"));
+      btn.append(
+        glyph(cl.stale ? "refresh" : cl.installed ? "sync" : "add"),
+        span(cl.stale ? "Re-add" : cl.installed ? "Update" : "Add"),
+      );
       // No server, no install: a button that can only fail is not an offer.
       if (!info.available) {
         btn.disabled = true;
@@ -526,7 +538,10 @@ export function agentAccessCard(): HTMLElement {
     }
     body.append(clients);
 
-    // Manual config snippet (copy).
+    // Manual config snippet (copy) — only when it could work. With no server,
+    // or from a translocated copy whose path vanishes on quit, it names a
+    // command no client could run, and copying it is Add without the refusal.
+    if (!info.available) return;
     const snippet = buildSnippet(info, permission);
     const codeWrap = el("div", "mcp-snippet");
     const codeHead = el("div", "mcp-snippet-head");

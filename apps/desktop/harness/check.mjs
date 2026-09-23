@@ -574,6 +574,9 @@ const CASES = [
   ["editors-are-configurable-in-settings", "settings"],
   ["agent-access-offers-an-add-that-works", "settings"],
   ["agent-access-without-a-server-offers-no-dead-button", "settings", { extra: "mcpmissing=1" }],
+  ["agent-access-refuses-a-translocated-app", "settings", { extra: "mcptransloc=1" }],
+  ["agent-access-notices-a-moved-app", "settings", { extra: "mcpmoved=1" }],
+  ["agent-access-notices-a-moved-app", "settings", { extra: "mcpmoved=1", theme: "light" }],
   // The composer is one field with the action in its corner.
   ["the-send-button-lives-inside-the-composer-field", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["an-empty-composer-does-not-offer-a-lit-send", "assistant~click:.topbar-assistant", { extra: "ai=1" }],

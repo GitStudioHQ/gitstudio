@@ -1352,7 +1352,15 @@
       const env = { ELECTRON_RUN_AS_NODE: "1" };
       const repoRoot = "/Users/anton/Developer/GitStudioHQ/gitstudio";
       const args = [bin, "--repo", repoRoot];
-      const missing = params.get("mcpmissing") === "1";
+      // ?mcptransloc=1: the app is running from a Gatekeeper-translocated copy,
+      // whose path vanishes on quit. ?mcpmoved=1: Cursor was set up with a
+      // GitStudio that has since been moved.
+      const transloc = params.get("mcptransloc") === "1";
+      const moved = params.get("mcpmoved") === "1";
+      const missing = params.get("mcpmissing") === "1" || transloc;
+      const unavailable = transloc
+        ? "GitStudio is running from a temporary copy macOS made because the app hasn't been moved to Applications yet, and that copy disappears when GitStudio quits — an agent set up now would stop working. Move GitStudio to your Applications folder, open it from there, then add it again."
+        : "This build of GitStudio is missing its MCP server, so Agent Access can't be set up. Reinstalling the app restores it.";
       return {
         binPath: bin,
         command,
@@ -1361,17 +1369,21 @@
         configSnippet: JSON.stringify({ mcpServers: { gitstudio: { command, args, env } } }, null, 2),
         clients: [
           { id: "claude", label: "Claude Desktop", installed: false, configPath: "~/Library/Application Support/Claude/claude_desktop_config.json" },
-          { id: "cursor", label: "Cursor", installed: true, configPath: "~/.cursor/mcp.json" },
+          { id: "cursor", label: "Cursor", installed: true, configPath: "~/.cursor/mcp.json",
+            ...(moved ? { stale: true, staleReason: "The GitStudio this was set up with is no longer at /Users/anton/Downloads/GitStudio.app/Contents/MacOS/GitStudio." } : {}) },
           { id: "windsurf", label: "Windsurf", installed: false, configPath: "~/.codeium/windsurf/mcp_config.json" },
           { id: "vscode", label: "VS Code (Copilot)", installed: false, configPath: "~/Library/Application Support/Code/User/mcp.json" },
         ],
         repoRoot,
         available: !missing,
-        ...(missing
-          ? { missing: "This build of GitStudio is missing its MCP server, so Agent Access can't be set up. Reinstalling the app restores it." }
-          : {}),
+        ...(missing ? { missing: unavailable } : {}),
       };
     },
+    // Add / Update / Re-add, answered as installMcp answers a success.
+    "ai:mcpInstall": (req) => ({
+      ok: true,
+      message: `Added GitStudio (read-only) to ${req && req.client}. Restart it to pick it up.`,
+    }),
     // NOT ifEmpty: GitHub's `/branches` answers an empty repository with an
     // empty LIST (200, `[]`) — only the content endpoints refuse. Throwing here
     // made the ref switcher reachable only as a failure toast, so a check of
