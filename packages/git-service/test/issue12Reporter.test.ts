@@ -110,6 +110,28 @@ test("the reporter's data loss — taking master's side — is caught before Con
   }
 });
 
+test("a resolution the user committed by hand is not mistaken for an emptied commit", async () => {
+  // `git commit` during a rebase stop is a legitimate way through: afterwards
+  // the index equals HEAD exactly as it does for an emptied commit, but
+  // nothing will be dropped — git simply carries on. No false alarm.
+  const r = reporterRepo();
+  try {
+    r.tryGit("rebase", "master");
+    const ctx = r.ctx();
+    await ctx.conflictOps.takeRole("f.txt", "yours");
+    r.git("commit", "-q", "-m", "resolved by hand");
+    const ins = await ctx.operation.inspect();
+    assert.equal(ins.indexMatchesHead, true);
+    assert.equal(ins.view.canContinue, true);
+    assert.equal(ins.view.willDrop, undefined, "nothing is about to be dropped");
+    const out = await ctx.operation.continue();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(r.git("log", "--format=%s", "master..test").trim(), "resolved by hand");
+  } finally {
+    r.cleanup();
+  }
+});
+
 test("the reporter's rebase reads the same under a German git", async (t) => {
   const de = germanLocale();
   if (!de) {

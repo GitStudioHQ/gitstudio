@@ -206,10 +206,15 @@ export class OperationProvider implements OperationSource, OperationControl {
     // commit mid-range) — the gates below need it too.
     let pickHead: string | undefined;
 
+    // Is HEAD still where the rebase itself put it (onto, or a commit it has
+    // written)? A user who committed their resolution by hand has moved it.
+    let headIsRebases = false;
+
     if (kind === "rebase" || kind === "rebase-merge-step") {
       const dir = backend === "apply" ? paths["rebase-apply"] : paths["rebase-merge"];
       const r = await this.rebaseFacts(dir, backend ?? "merge", kind, unmerged.length, signal);
       Object.assign(facts, r.facts);
+      headIsRebases = !!headSha && r.written.has(headSha);
       episode = `${kind}:${r.origHead ?? ""}:${r.position}:${r.rebaseHead ?? "-"}`;
     } else if (kind === "cherry-pick" || kind === "revert") {
       const head = await this.revParse(kind === "cherry-pick" ? "CHERRY_PICK_HEAD" : "REVERT_HEAD", signal);
@@ -293,11 +298,15 @@ export class OperationProvider implements OperationSource, OperationControl {
         // silently, on --continue (continue.out: "EMPTY after resolution";
         // verified the same under -i, --empty=stop and --empty=keep). That is
         // the reporter's data loss in its purest form, so it needs a confirm.
+        // Not when the user committed the resolution by hand: the index equals
+        // HEAD there too, but HEAD has moved past anything the rebase wrote and
+        // nothing will be dropped.
         if (
           backend === "merge" &&
           canContinue &&
           !facts.pause &&
           indexMatchesHead &&
+          headIsRebases &&
           facts.commit
         ) {
           willDrop = { sha: facts.commit.sha, subject: facts.commit.subject, branch: facts.branch ?? current };
@@ -606,8 +615,10 @@ export class OperationProvider implements OperationSource, OperationControl {
     rebaseHead?: string;
     origHead?: string;
     position: string;
+    /** Commits the rebase itself has put HEAD on: onto, every rewritten commit, every label. */
+    written: Set<string>;
   }> {
-    const [headName, ontoRaw, origRaw, done, todo, amend, squashOnto, next, last, stoppedSha] =
+    const [headName, ontoRaw, origRaw, done, todo, amend, squashOnto, next, last, stoppedSha, rewritten, labels] =
       await Promise.all([
         readText(join(dir, "head-name")),
         readText(join(dir, "onto")),
@@ -619,11 +630,25 @@ export class OperationProvider implements OperationSource, OperationControl {
         backend === "apply" ? readText(join(dir, "next")) : Promise.resolve(undefined),
         backend === "apply" ? readText(join(dir, "last")) : Promise.resolve(undefined),
         backend === "merge" ? readText(join(dir, "stopped-sha")) : Promise.resolve(undefined),
+        readText(join(dir, backend === "merge" ? "rewritten-list" : "rewritten")),
+        backend === "merge"
+          ? this.proc.run(["for-each-ref", "--format=%(objectname)", "refs/rewritten/"], { signal })
+          : Promise.resolve(undefined),
       ]);
     const onto = firstLine(ontoRaw);
     const origHead = firstLine(origRaw);
     const rebaseHead = await this.revParse("REBASE_HEAD", signal);
     const facts: Partial<OperationFacts> = {};
+    // "<old> <new>" per rewritten commit; `reset <label>` moves HEAD to a
+    // refs/rewritten/<label> commit.
+    const written = new Set<string>(onto ? [onto] : []);
+    for (const l of (rewritten ?? "").split("\n")) {
+      const n = l.trim().split(/\s+/)[1];
+      if (n) written.add(n);
+    }
+    if (labels && labels.code === 0) {
+      for (const l of labels.stdout.split("\n")) if (l.trim()) written.add(l.trim());
+    }
 
     // The branch being rebased: head-name, or the short orig-head when the
     // rebase started detached ("detached HEAD" is literally what git writes).
@@ -690,7 +715,7 @@ export class OperationProvider implements OperationSource, OperationControl {
       const c = await this.commitInfo(rebaseHead, signal);
       if (c) facts.commit = c;
     }
-    return { facts, rebaseHead, origHead, position };
+    return { facts, rebaseHead, origHead, position, written };
   }
 
   /**
