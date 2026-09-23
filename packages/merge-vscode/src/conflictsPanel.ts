@@ -16,7 +16,7 @@ import type {
 import type { ConflictOpResult } from "@gitstudio/git-service/ConflictOps";
 import { DashboardController, dashboardTitle } from "./dashboardController";
 import { closeMergeEditorTabs, fileUri, type MergeHostCore } from "./host";
-import { saveConflictedDocuments } from "./mergeEditorProvider";
+import { saveConflictedDocuments, saveDocumentAt } from "./mergeEditorProvider";
 import { outcomeLine, type OperationVerb } from "./outcome";
 import type { MergeRepo } from "./product";
 import { conflictsWebviewHtml } from "./webviewHtml";
@@ -29,6 +29,12 @@ export class ConflictsDashboard implements vscode.Disposable {
   private refreshing: Promise<void> | undefined;
   private refreshQueued = false;
   private queuedAuto = false;
+  /**
+   * Panels this host is disposing itself (the operation ended, another
+   * repository, shutdown). Any other dispose is the user closing the tab,
+   * which the controller must hear as a close for this stop.
+   */
+  private readonly closingOurselves = new WeakSet<vscode.WebviewPanel>();
 
   constructor(
     private readonly host: MergeHostCore,
@@ -73,8 +79,15 @@ export class ConflictsDashboard implements vscode.Disposable {
       brand: this.host.product.brand,
       supportLinks: this.host.product.supportLinks,
     });
-    if (this.panel) {
-      this.panel.dispose();
+    this.disposePanel();
+  }
+
+  /** Dispose the panel as the HOST (not a close by the user). */
+  private disposePanel(): void {
+    const panel = this.panel;
+    if (panel) {
+      this.closingOurselves.add(panel);
+      panel.dispose();
     }
   }
 
@@ -99,9 +112,15 @@ export class ConflictsDashboard implements vscode.Disposable {
     });
     panel.onDidDispose(() => {
       sub.dispose();
+      const ours = this.closingOurselves.has(panel);
       if (this.panel === panel) {
         this.panel = undefined;
         this.ready = false;
+        if (!ours) {
+          // The tab's ✕ (or any close we did not make): the same as the page's
+          // own Close — respected until the next stop.
+          this.controller?.userClosed();
+        }
       }
     });
   }
@@ -151,7 +170,7 @@ export class ConflictsDashboard implements vscode.Disposable {
       autoShow: auto && this.host.settings().autoOpen && !this.host.defers(),
     });
     if (decision.close && this.panel) {
-      this.panel.dispose();
+      this.disposePanel();
       return;
     }
     if (decision.show && !this.panel) {
@@ -194,7 +213,7 @@ export class ConflictsDashboard implements vscode.Disposable {
         return;
       case "close":
         controller.userClosed();
-        this.panel?.dispose();
+        this.disposePanel();
         return;
       case "openExternal":
         // Only the brand's support links, and only ever web pages.
@@ -247,6 +266,10 @@ export class ConflictsDashboard implements vscode.Disposable {
     this.post();
     let result: ConflictOpResult;
     try {
+      // A merge editor on this file may hold unapplied work: save it now, so
+      // the document follows what git writes next and closing that editor
+      // afterwards has nothing to ask (see saveDocumentAt).
+      await saveDocumentAt(fileUri(repo, path));
       const run = () => act();
       result =
         undoLabel && this.host.product.runWithUndo
@@ -302,7 +325,7 @@ export class ConflictsDashboard implements vscode.Disposable {
   }
 
   dispose(): void {
-    this.panel?.dispose();
+    this.disposePanel();
     this.panel = undefined;
   }
 }

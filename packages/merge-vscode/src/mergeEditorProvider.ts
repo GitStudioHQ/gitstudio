@@ -182,6 +182,26 @@ async function syncDocument(document: vscode.TextDocument, text: string): Promis
 }
 
 /**
+ * Before a whole-file action (Accept Yours / Theirs, delete, hold-to-undo)
+ * rewrites one file: save its open, dirty document — a merge editor holding
+ * unapplied progress. Left dirty, the document would not follow what git
+ * wrote, and closing its merge editor afterwards would ask to save that
+ * partial merge over the side just taken. Saved, it reloads from git's result.
+ */
+export async function saveDocumentAt(uri: vscode.Uri): Promise<void> {
+  const target = uri.toString();
+  for (const document of vscode.workspace.textDocuments) {
+    if (document.isDirty && document.uri.toString() === target) {
+      try {
+        await document.save();
+      } catch {
+        // git overwrites the file anyway
+      }
+    }
+  }
+}
+
+/**
  * Before an Abort rewrites the conflicted files: save the open, dirty ones.
  * A merge editor's document is dirty whenever it holds unapplied progress; left
  * dirty, closing its tab after the abort would offer to save that partial
