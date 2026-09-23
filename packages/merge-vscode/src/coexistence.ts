@@ -18,11 +18,12 @@
 //   as Undo too).
 //
 // Nothing is asked when nothing competes, or while another product owns the
-// automatic behaviour (D4).
+// automatic behaviour (D4). A product standing down says so instead, once
+// (maybeSayDeferred).
 
 import * as vscode from "vscode";
 import type { MergeHostCore } from "./host";
-import { COMPETING_BUILT_INS, competingBuiltIns } from "./product";
+import { COMPETING_BUILT_INS, competingBuiltIns, type MergeProduct } from "./product";
 
 const TURN_OFF = "Turn them off";
 const NOT_NOW = "Not now";
@@ -36,10 +37,27 @@ function previousKey(promptKey: string): string {
   return `${promptKey}.previous`;
 }
 
+/**
+ * Every globalState key of this product that follows the user to their other
+ * machines: the product's own (its walkthrough, …) and the answers kept here.
+ * VS Code keeps ONE list per extension and each setKeysForSync call replaces
+ * it, so registerMergeExperience sets this whole list once; nothing else may
+ * call setKeysForSync (it used to be called here with only these two keys,
+ * which dropped Merge Studio's walkthrough key from sync at the first conflict).
+ */
+export function syncedKeys(product: MergeProduct): string[] {
+  return [
+    ...new Set([
+      ...(product.syncedStateKeys ?? []),
+      product.coexistencePromptKey,
+      previousKey(product.coexistencePromptKey),
+      ...(product.deferral ? [product.deferral.noticeKey] : []),
+    ]),
+  ];
+}
+
 export async function maybeOfferCoexistence(host: MergeHostCore): Promise<void> {
   const { context, product } = host;
-  // Remembered answers follow the user to their other machines.
-  context.globalState.setKeysForSync?.([product.coexistencePromptKey, previousKey(product.coexistencePromptKey)]);
   if (
     onScreen.has(context) ||
     host.defers() ||
@@ -91,6 +109,50 @@ export async function maybeOfferCoexistence(host: MergeHostCore): Promise<void> 
       void restoreBuiltIns(host);
     }
   });
+}
+
+const OK = "OK";
+
+/**
+ * D4, said once (POLISH A5.8): the first conflict at which this product
+ * stands down, it tells the user who opens their conflicts instead, that its
+ * own commands still work, and offers to have it the other way round — which
+ * sets the owner's `autoOpen` to false (user settings), so this product takes
+ * the automatic behaviour back at once.
+ *
+ * Remembered AS IT IS SAID. It is information, not a question: nothing hangs
+ * on an answer, and a notice left in the notification center (VS Code moves
+ * an unanswered toast there after a while) must not come back at every
+ * session. The button still works from the center, whenever it is pressed.
+ * (The coexistence QUESTION is the opposite: remembered only once answered.)
+ *
+ * @returns true when the user handed the automatic behaviour back.
+ */
+export async function maybeSayDeferred(host: MergeHostCore): Promise<boolean> {
+  const { context, product } = host;
+  const deferral = product.deferral;
+  if (!deferral || context.globalState.get<boolean>(deferral.noticeKey)) {
+    return false;
+  }
+  // Set before the first await (a Memento's value is visible at once), so a
+  // second scan in the same moment finds it and says nothing.
+  const remembered = context.globalState.update(deferral.noticeKey, true);
+  const takeOver = `Let ${product.displayName} open conflicts`;
+  const choice = await host.notify(
+    "info",
+    `${deferral.owner} is installed, so ${deferral.owner} opens your conflicts, with the same merge editor and ` +
+      `Conflicts dashboard. ${product.displayName}'s own commands still work.`,
+    OK,
+    takeOver,
+  );
+  await remembered;
+  if (choice !== takeOver) {
+    return false;
+  }
+  await vscode.workspace
+    .getConfiguration(deferral.handBack.section)
+    .update(deferral.handBack.key, false, vscode.ConfigurationTarget.Global);
+  return true;
 }
 
 /**

@@ -365,3 +365,44 @@ test("once our Continue ends the operation, the header says nothing is in progre
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+test("after the operation finishes: 'Rebase complete', with no 'Unmerged files' chip and no empty-list line above it", { skip }, async () => {
+  // Seen in real VS Code after Continue Rebase: a red UNMERGED FILES chip and
+  // "No conflicted files." sat over "Rebase complete".
+  const v = await run(`
+    const d = mount();
+    d.render(state(base({ kind: "none", verbs: {} }), [], { outcome: { kind: "done", text: "Rebase complete" } }));
+    expect(!$(".cd-chip"), "no chip: nothing is in progress or unmerged (" + text(".cd-chip") + ")");
+    expect(!$(".cd-empty"), "no 'No conflicted files.' over the outcome (" + text(".cd-empty") + ")");
+    expect(!$(".cd-list"), "and no empty list box");
+    expect(text(".cd-outcome") === "Rebase complete", "the outcome says it (" + text(".cd-outcome") + ")");
+    d.render(state(base({ kind: "none", verbs: {} }), [row("x.ts")]));
+    expect(text(".cd-chip") === "Unmerged files", "unmerged files with no operation keep their chip (" + text(".cd-chip") + ")");
+    d.render(state(OPS.rebase, []));
+    expect(text(".cd-empty") === "No conflicted files at this step.", "a stop with nothing to resolve still says so (" + text(".cd-empty") + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("support links: only the problem report mid-operation; rating and sponsoring once the work is done (POLISH A5.10)", { skip }, async () => {
+  const v = await run(`
+    const d = mount();
+    const LINKS = [
+      { label: "Report a problem", url: "https://example.com/issues/new" },
+      { label: "Rate Merge Studio", url: "https://example.com/rate" },
+      { label: "Sponsor", url: "https://example.com/sponsor" },
+    ];
+    const shown = () => $$(".cd-support button").map((b) => b.textContent.trim()).join("|");
+    d.render(state(OPS.rebase, [row("a.ts"), row("b.ts", { status: "resolved", choice: "yours" })], { supportLinks: LINKS }));
+    expect(shown() === "Report a problem", "mid-rebase, beside Abort and Continue: only the problem report (" + shown() + ")");
+    d.render(state(OPS.rebase, [row("a.ts", { status: "resolved", choice: "theirs" })], { supportLinks: LINKS }));
+    expect(shown() === "Report a problem|Rate Merge Studio|Sponsor", "every file resolved: all of them (" + shown() + ")");
+    d.render(state(base({ kind: "none", verbs: {} }), [], { supportLinks: LINKS, outcome: { kind: "done", text: "Rebase complete" } }));
+    expect(shown() === "Report a problem|Rate Merge Studio|Sponsor", "the operation finished: all of them (" + shown() + ")");
+    d.render(state(OPS.rebase, [row("a.ts")], { supportLinks: LINKS, outcome: { kind: "failed", text: "git refused" } }));
+    expect(shown() === "Report a problem", "a failure is no time to ask for a rating (" + shown() + ")");
+    d.render(state(OPS.rebase, [row("a.ts")]));
+    expect(!$(".cd-support"), "no links, no slot (GitStudio)");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});

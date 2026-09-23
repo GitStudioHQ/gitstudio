@@ -17,7 +17,13 @@ import type { OperationOutcome, OperationView } from "@gitstudio/host-bridge/con
 import { locate, targetUri } from "./args";
 import { decideExplicitOpen } from "./autoRoute";
 import { registerAutoRoute } from "./autoRouteHost";
-import { maybeOfferCoexistence, offerRestoreAfterAutoOpenOff, restoreBuiltIns } from "./coexistence";
+import {
+  maybeOfferCoexistence,
+  maybeSayDeferred,
+  offerRestoreAfterAutoOpenOff,
+  restoreBuiltIns,
+  syncedKeys,
+} from "./coexistence";
 import { ConflictsDashboard } from "./conflictsPanel";
 import { openDemoMerge } from "./demo";
 import { DiffCommands, DiffPanel } from "./diffPanel";
@@ -59,6 +65,8 @@ export function registerMergeExperience(
   const exitGuard = new ExitGuard();
   const host = createHostCore(context, product, exitGuard);
   const disposables: vscode.Disposable[] = [];
+  // The ONE setKeysForSync call (each call replaces the extension's list).
+  context.globalState.setKeysForSync?.(syncedKeys(product));
 
   const openEmbedded = async (uri: vscode.Uri): Promise<void> => {
     exitGuard.clear(uri.toString());
@@ -154,12 +162,19 @@ export function registerMergeExperience(
           repos.map((r) => r.ctx.operation.detect().catch(() => ({ kind: "none" as const, unmerged: 0 }))),
         );
         const total = detections.reduce((n, d) => n + d.unmerged, 0);
-        status.update(total, host.defers());
-        // The coexistence question, in both products: at the FIRST conflict of
-        // a run (conflicts appearing after none), never at activation. A
-        // "Not now" is asked again at the next run, not at every scan.
+        const defers = host.defers();
+        status.update(total, defers);
+        // At the FIRST conflict of a run (conflicts appearing after none),
+        // never at activation: the coexistence question in the product that
+        // owns the automatic behaviour — a "Not now" is asked again at the
+        // next run, not at every scan — and, in a product standing down (D4),
+        // the one notice that says so.
         if (total > 0 && !hadConflicts && host.settings().autoOpen) {
-          void maybeOfferCoexistence(host);
+          if (defers) {
+            void maybeSayDeferred(host).then((handedBack) => handedBack && scheduleScan());
+          } else {
+            void maybeOfferCoexistence(host);
+          }
         }
         hadConflicts = total > 0;
         const withConflicts = repos.filter((_, i) => detections[i].unmerged > 0);

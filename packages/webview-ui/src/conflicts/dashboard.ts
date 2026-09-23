@@ -219,9 +219,11 @@ export class ConflictsDashboard {
     const title = el("h1", "cd-title", "Conflicts");
     head.append(mark, title);
     // Nothing in progress and nothing unmerged (our own Continue just ended the
-    // operation, and the page stays to say so): no chip — "Unmerged files"
-    // over "No conflicted files" would contradict itself.
-    if (!allDone && (op.kind !== "none" || pending > 0)) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
+    // operation, and the page stays to say "Rebase complete"): no chip. It used
+    // to read a red "UNMERGED FILES" over that, contradicting it. (Short of
+    // allDone, no file pending means no files at all.)
+    const nothingLeft = op.kind === "none" && pending === 0;
+    if (!allDone && !nothingLeft) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
     if (state.repoName) head.appendChild(el("span", "cd-repo", state.repoName));
     root.appendChild(head);
 
@@ -317,7 +319,8 @@ export class ConflictsDashboard {
 
     const list = el("div", "cd-list");
     list.setAttribute("role", "list");
-    if (files.length === 0 && !op.pause) {
+    // An empty list says so — unless an outcome ("Rebase complete") already says more.
+    if (files.length === 0 && !op.pause && state.outcome?.kind !== "done") {
       list.appendChild(
         el(
           "div",
@@ -327,7 +330,7 @@ export class ConflictsDashboard {
       );
     }
     for (const f of files) list.appendChild(this.row(f, state));
-    if (files.length > 0 || !op.pause) root.appendChild(list);
+    if (list.childElementCount > 0) root.appendChild(list);
 
     if (state.outcome) {
       const o = el("div", `cd-outcome is-${state.outcome.kind}`);
@@ -589,9 +592,15 @@ export class ConflictsDashboard {
     if (op.kind !== "none" || state.total > 0) foot.appendChild(abort);
 
     foot.appendChild(el("span", "cd-spacer"));
-    if (state.supportLinks?.length) {
+    // POLISH A5.10: in the middle of an operation only the FIRST link (the
+    // product's problem report) sits beside Abort and Continue; the rest
+    // (a rating, sponsoring) wait until the work is done — every file
+    // resolved, or the operation finished.
+    const finished = allDone || state.outcome?.kind === "done";
+    const links = finished ? (state.supportLinks ?? []) : (state.supportLinks ?? []).slice(0, 1);
+    if (links.length) {
       const support = el("div", "cd-support");
-      for (const link of state.supportLinks) {
+      for (const link of links) {
         support.appendChild(
           this.button(link.label, link.url, `link:${link.url}`, false, () =>
             this.post({ type: "openExternal", url: link.url }),

@@ -9,11 +9,14 @@ export type { MergeExperience, OperationVerbOptions } from "./register";
 export {
   normalizeMergeSettings,
   shouldDeferToGitStudio,
+  hasSharedMergeExperience,
+  GITSTUDIO_SHARED_MERGE_COMMAND,
   competingBuiltIns,
   COMPETING_BUILT_INS,
 } from "./product";
 export type {
   AskSpec,
+  DeferralNotice,
   MergeCommandIds,
   MergeHostSettings,
   MergeProduct,

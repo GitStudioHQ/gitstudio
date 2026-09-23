@@ -1,0 +1,281 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-label="Merge Studio — the merge editor for VS Code and Cursor">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1E222A"/>
+      <stop offset="1" stop-color="#191C23"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8E82F2"/>
+      <stop offset="1" stop-color="#6B5BE6"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6B5BE6" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#6B5BE6" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ribbonV" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8E82F2"/>
+      <stop offset="1" stop-color="#6B5BE6"/>
+    </linearGradient>
+    <clipPath id="winClip">
+      <rect x="372" y="40" width="868" height="280" rx="12"/>
+    </clipPath>
+    <clipPath id="bandsClip">
+      <rect x="372" y="74" width="868" height="246"/>
+    </clipPath>
+  </defs>
+
+  <!-- base -->
+  <rect width="1280" height="360" fill="url(#bg)"/>
+
+  <!-- ambient indigo glow behind editor -->
+  <ellipse cx="500" cy="160" rx="520" ry="300" fill="url(#glow)"/>
+
+  <!-- ===================== EDITOR WINDOW ===================== -->
+  <g>
+    <!-- window frame -->
+    <rect x="372" y="40" width="868" height="280" rx="12" fill="#2A2F3A" stroke="#3C4250" stroke-width="1"/>
+
+    <g clip-path="url(#winClip)">
+      <!-- title bar -->
+      <rect x="372" y="40" width="868" height="34" fill="#252A33"/>
+      <line x1="372" y1="74" x2="1240" y2="74" stroke="#3C4250" stroke-width="1"/>
+      <!-- traffic dots -->
+      <circle cx="392" cy="57" r="4" fill="#E06A52"/>
+      <circle cx="408" cy="57" r="4" fill="#4A86C8"/>
+      <circle cx="424" cy="57" r="4" fill="#57A75F"/>
+      <!-- tab -->
+      <rect x="452" y="46" width="150" height="22" rx="4" fill="#333B4A"/>
+      <rect x="463" y="54" width="10" height="6" rx="1.5" fill="#6B5BE6"/>
+      <rect x="481" y="55" width="86" height="5" rx="2.5" fill="#9AA4B2"/>
+      <!-- title bar labels -->
+      <rect x="980" y="55" width="60" height="5" rx="2.5" fill="#3C4250"/>
+      <rect x="1052" y="55" width="44" height="5" rx="2.5" fill="#3C4250"/>
+
+      <!-- pane background body -->
+      <rect x="372" y="74" width="868" height="246" fill="#252A33"/>
+
+      <!-- ===== PANE COLUMNS ===== -->
+      <!-- Pane geometry: gutter 34px + body. Three panes -->
+      <!-- LEFT pane (Local) body bg -->
+      <rect x="372" y="74" width="280" height="246" fill="#333B4A"/>
+      <!-- CENTER pane (Result) body bg, slightly raised -->
+      <rect x="668" y="74" width="276" height="246" fill="#363E4E"/>
+      <!-- RIGHT pane (Remote) body bg -->
+      <rect x="960" y="74" width="280" height="246" fill="#333B4A"/>
+
+      <!-- gutters -->
+      <rect x="372" y="74" width="32" height="246" fill="#2C333F"/>
+      <rect x="668" y="74" width="32" height="246" fill="#2F3744"/>
+      <rect x="960" y="74" width="32" height="246" fill="#2C333F"/>
+
+      <!-- pane separators -->
+      <line x1="652" y1="74" x2="652" y2="320" stroke="#3C4250" stroke-width="1"/>
+      <line x1="668" y1="74" x2="668" y2="320" stroke="#3C4250" stroke-width="1"/>
+      <line x1="944" y1="74" x2="944" y2="320" stroke="#3C4250" stroke-width="1"/>
+      <line x1="960" y1="74" x2="960" y2="320" stroke="#3C4250" stroke-width="1"/>
+
+      <!-- pane header labels -->
+      <rect x="412" y="84" width="56" height="6" rx="3" fill="#9AA4B2"/>
+      <rect x="708" y="84" width="56" height="6" rx="3" fill="#E6E9EF"/>
+      <rect x="1000" y="84" width="56" height="6" rx="3" fill="#9AA4B2"/>
+
+      <g clip-path="url(#bandsClip)">
+        <!-- ============ CHANGE BANDS ============ -->
+        <!-- Conflict band (rows ~106-150) spanning -->
+        <rect x="404" y="106" width="248" height="44" fill="#E06A52" opacity="0.12"/>
+        <rect x="700" y="106" width="244" height="44" fill="#E06A52" opacity="0.12"/>
+        <rect x="992" y="106" width="248" height="44" fill="#E06A52" opacity="0.12"/>
+        <rect x="404" y="106" width="3" height="44" fill="#E06A52"/>
+        <rect x="700" y="106" width="3" height="44" fill="#E06A52"/>
+        <rect x="992" y="106" width="3" height="44" fill="#E06A52"/>
+
+        <!-- Insert band (rows ~172-200) green, center+right -->
+        <rect x="700" y="172" width="244" height="28" fill="#57A75F" opacity="0.13"/>
+        <rect x="992" y="172" width="248" height="28" fill="#57A75F" opacity="0.13"/>
+        <rect x="700" y="172" width="3" height="28" fill="#57A75F"/>
+        <rect x="992" y="172" width="3" height="28" fill="#57A75F"/>
+
+        <!-- Modify band (rows ~222-258) blue, left+center -->
+        <rect x="404" y="222" width="248" height="36" fill="#4A86C8" opacity="0.14"/>
+        <rect x="700" y="222" width="244" height="36" fill="#4A86C8" opacity="0.14"/>
+        <rect x="404" y="222" width="3" height="36" fill="#4A86C8"/>
+        <rect x="700" y="222" width="3" height="36" fill="#4A86C8"/>
+
+        <!-- Insert band 2 (rows ~278-300) green, left -->
+        <rect x="404" y="278" width="248" height="22" fill="#57A75F" opacity="0.13"/>
+        <rect x="404" y="278" width="3" height="22" fill="#57A75F"/>
+
+        <!-- ============ CODE LINES (text rows) ============ -->
+        <!-- left pane lines -->
+        <g fill="#9AA4B2">
+          <rect x="414" y="115" width="120" height="5" rx="2.5"/>
+          <rect x="414" y="129" width="170" height="5" rx="2.5"/>
+          <rect x="414" y="143" width="96"  height="5" rx="2.5"/>
+          <rect x="414" y="231" width="150" height="5" rx="2.5"/>
+          <rect x="414" y="245" width="110" height="5" rx="2.5"/>
+          <rect x="414" y="285" width="160" height="5" rx="2.5"/>
+        </g>
+        <g fill="#5A6473">
+          <rect x="414" y="161" width="140" height="5" rx="2.5"/>
+          <rect x="414" y="178" width="90"  height="5" rx="2.5"/>
+          <rect x="414" y="195" width="120" height="5" rx="2.5"/>
+          <rect x="414" y="212" width="60"  height="5" rx="2.5"/>
+          <rect x="414" y="305" width="100" height="5" rx="2.5"/>
+        </g>
+
+        <!-- center pane lines (result — brighter) -->
+        <g fill="#E6E9EF">
+          <rect x="710" y="115" width="150" height="5" rx="2.5"/>
+          <rect x="710" y="129" width="110" height="5" rx="2.5"/>
+          <rect x="710" y="181" width="130" height="5" rx="2.5"/>
+          <rect x="710" y="231" width="170" height="5" rx="2.5"/>
+          <rect x="710" y="245" width="100" height="5" rx="2.5"/>
+        </g>
+        <g fill="#9AA4B2">
+          <rect x="710" y="143" width="90"  height="5" rx="2.5"/>
+          <rect x="710" y="161" width="120" height="5" rx="2.5"/>
+          <rect x="710" y="195" width="140" height="5" rx="2.5"/>
+          <rect x="710" y="212" width="70"  height="5" rx="2.5"/>
+          <rect x="710" y="305" width="120" height="5" rx="2.5"/>
+        </g>
+
+        <!-- right pane lines -->
+        <g fill="#9AA4B2">
+          <rect x="1002" y="115" width="110" height="5" rx="2.5"/>
+          <rect x="1002" y="129" width="150" height="5" rx="2.5"/>
+          <rect x="1002" y="143" width="86"  height="5" rx="2.5"/>
+          <rect x="1002" y="181" width="140" height="5" rx="2.5"/>
+          <rect x="1002" y="195" width="100" height="5" rx="2.5"/>
+        </g>
+        <g fill="#5A6473">
+          <rect x="1002" y="161" width="120" height="5" rx="2.5"/>
+          <rect x="1002" y="231" width="130" height="5" rx="2.5"/>
+          <rect x="1002" y="245" width="90"  height="5" rx="2.5"/>
+          <rect x="1002" y="285" width="110" height="5" rx="2.5"/>
+          <rect x="1002" y="305" width="70"  height="5" rx="2.5"/>
+        </g>
+
+        <!-- ============ INDIGO MERGE RIBBONS across gutters ============ -->
+        <!-- ribbon connectors carry change from side panes into the result.
+             They cross the gutter regions between panes. Indigo = brand focal -->
+        <!-- left->center conflict ribbon -->
+        <path d="M652 116 C 660 116, 660 116, 668 116 L668 140 C660 140,660 140,652 140 Z" fill="url(#ribbonV)" opacity="0.9"/>
+        <!-- center->right insert ribbon -->
+        <path d="M944 178 C 952 178, 952 178, 960 178 L960 196 C952 196,952 196,944 196 Z" fill="url(#ribbonV)" opacity="0.9"/>
+        <!-- left->center modify ribbon -->
+        <path d="M652 230 C 660 230, 660 230, 668 230 L668 252 C660 252,660 252,652 252 Z" fill="url(#ribbonV)" opacity="0.9"/>
+
+        <!-- gutter accept chevrons (apply arrows): left gutter points right,
+             right gutter points left — both converging on the result. -->
+        <g fill="#F4F6FA">
+          <path d="M655 121 l7 7 l-7 7 z"/>
+          <path d="M954 181 l-7 7 l7 7 z"/>
+          <path d="M655 235 l7 7 l-7 7 z"/>
+        </g>
+
+        <!-- subtle line-number ticks in gutters -->
+        <g fill="#4A5263">
+          <rect x="384" y="116" width="10" height="4" rx="1"/>
+          <rect x="384" y="130" width="10" height="4" rx="1"/>
+          <rect x="384" y="144" width="10" height="4" rx="1"/>
+          <rect x="384" y="162" width="10" height="4" rx="1"/>
+          <rect x="384" y="232" width="10" height="4" rx="1"/>
+          <rect x="384" y="286" width="10" height="4" rx="1"/>
+          <rect x="680" y="116" width="10" height="4" rx="1"/>
+          <rect x="680" y="130" width="10" height="4" rx="1"/>
+          <rect x="680" y="182" width="10" height="4" rx="1"/>
+          <rect x="680" y="232" width="10" height="4" rx="1"/>
+          <rect x="972" y="116" width="10" height="4" rx="1"/>
+          <rect x="972" y="130" width="10" height="4" rx="1"/>
+          <rect x="972" y="182" width="10" height="4" rx="1"/>
+          <rect x="972" y="232" width="10" height="4" rx="1"/>
+        </g>
+      </g>
+    </g>
+
+    <!-- crisp re-stroke of frame over clip -->
+    <rect x="372" y="40" width="868" height="280" rx="12" fill="none" stroke="#3C4250" stroke-width="1"/>
+  </g>
+
+  <!-- ===================== WORDMARK + TAGLINE (top-left) ===================== -->
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+    <!-- logo mark: merging panes glyph -->
+    <g>
+      <!-- logo mark = the app icon (three-column conflict resolver) -->
+      <svg x="60" y="58" width="48" height="48" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="mk_bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2C3343"/><stop offset="1" stop-color="#181C24"/></linearGradient>
+    <linearGradient id="mk_res" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9486F6"/><stop offset="1" stop-color="#6B5BE6"/></linearGradient>
+    <linearGradient id="mk_cs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.10"/><stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+    <linearGradient id="mk_ts" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.06"/><stop offset="0.4" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+    <radialGradient id="mk_gl" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#8E82F2" stop-opacity="0.55"/><stop offset="1" stop-color="#6B5BE6" stop-opacity="0"/></radialGradient>
+    <radialGradient id="mk_sh" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#0C0E13" stop-opacity="0.55"/><stop offset="1" stop-color="#0C0E13" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="url(#mk_bg)"/>
+  <rect x="1" y="1" width="254" height="254" rx="51" fill="url(#mk_ts)"/>
+  <ellipse cx="128" cy="214" rx="46" ry="14" fill="url(#mk_sh)"/>
+  <ellipse cx="128" cy="128" rx="58" ry="92" fill="url(#mk_gl)"/>
+
+  <!-- CENTER result column -->
+  <rect x="100" y="46" width="56" height="166" rx="11" fill="url(#mk_res)" stroke="#AEA6F8" stroke-width="1.5"/>
+  <rect x="101.5" y="47.5" width="53" height="60" rx="9" fill="url(#mk_cs)"/>
+  <rect x="110" y="72" width="36" height="6" rx="3" fill="#FFFFFF" opacity="0.9"/>
+  <rect x="110" y="170" width="28" height="6" rx="3" fill="#FFFFFF" opacity="0.6"/>
+  <rect x="108" y="116" width="40" height="22" rx="5" fill="#FFFFFF" opacity="0.96"/>
+
+  <!-- ACCEPT arrows: from each editor edge, stepping onto the result -->
+  <path d="M84 116 L102 127 L84 138" fill="none" stroke="#F4F6FA" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M172 116 L154 127 L172 138" fill="none" stroke="#F4F6FA" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- LEFT editor (yours) — on top of the arrow's tail -->
+  <g>
+    <rect x="32" y="56" width="52" height="146" rx="9" fill="#454F62" stroke="#5A6679" stroke-width="1.5"/>
+    <rect x="33.5" y="57.5" width="49" height="60" rx="8" fill="url(#mk_cs)"/>
+    <rect x="42" y="80" width="30" height="6" rx="3" fill="#AEB6C2" opacity="0.7"/>
+    <rect x="42" y="170" width="24" height="6" rx="3" fill="#AEB6C2" opacity="0.7"/>
+    <rect x="40" y="116" width="36" height="22" rx="5" fill="#E06A52"/>
+  </g>
+  <!-- RIGHT editor (theirs) -->
+  <g>
+    <rect x="172" y="56" width="52" height="146" rx="9" fill="#454F62" stroke="#5A6679" stroke-width="1.5"/>
+    <rect x="173.5" y="57.5" width="49" height="60" rx="8" fill="url(#mk_cs)"/>
+    <rect x="184" y="80" width="30" height="6" rx="3" fill="#AEB6C2" opacity="0.7"/>
+    <rect x="184" y="170" width="24" height="6" rx="3" fill="#AEB6C2" opacity="0.7"/>
+    <rect x="180" y="116" width="36" height="22" rx="5" fill="#E06A52"/>
+  </g>
+  <rect x="2.25" y="2.25" width="251.5" height="251.5" rx="50.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="1.5"/>
+</svg>
+      <rect x="60" y="58" width="48" height="48" rx="11" fill="none" stroke="#3C4250" stroke-width="1.5"/>
+    </g>
+
+    <!-- wordmark -->
+    <text x="128" y="80" font-size="40" font-weight="700" letter-spacing="-0.5" fill="#E6E9EF">Merge<tspan fill="#8E82F2"> Studio</tspan></text>
+
+    <!-- tagline -->
+    <text x="129" y="106" font-size="16.5" font-weight="500" letter-spacing="0.2" fill="#9AA4B2">The merge editor for VS Code and Cursor.</text>
+
+    <!-- accent rule under header -->
+    <rect x="129" y="120" width="200" height="2.5" rx="1.25" fill="#6B5BE6"/>
+
+    <!-- feature chips -->
+    <g>
+      <rect x="60" y="168" width="190" height="34" rx="8" fill="#2A2F3A" stroke="#3C4250" stroke-width="1"/>
+      <circle cx="80" cy="185" r="5" fill="#6B5BE6"/>
+      <rect x="94" y="182" width="138" height="6" rx="3" fill="#9AA4B2"/>
+
+      <rect x="60" y="212" width="190" height="34" rx="8" fill="#2A2F3A" stroke="#3C4250" stroke-width="1"/>
+      <circle cx="80" cy="229" r="5" fill="#57A75F"/>
+      <rect x="94" y="226" width="120" height="6" rx="3" fill="#9AA4B2"/>
+
+      <rect x="60" y="256" width="190" height="34" rx="8" fill="#2A2F3A" stroke="#3C4250" stroke-width="1"/>
+      <circle cx="80" cy="273" r="5" fill="#4A86C8"/>
+      <rect x="94" y="270" width="150" height="6" rx="3" fill="#9AA4B2"/>
+    </g>
+
+    <!-- secondary tagline pill bottom-left -->
+    <g>
+      <rect x="60" y="306" width="246" height="22" rx="11" fill="#6B5BE6" opacity="0.16"/>
+      <text x="74" y="321" font-size="12.5" font-weight="600" letter-spacing="0.3" fill="#8E82F2">Three panes. Zero context-switching.</text>
+    </g>
+  </g>
+</svg>

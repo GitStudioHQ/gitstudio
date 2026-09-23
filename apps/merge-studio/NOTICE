@@ -1,0 +1,34 @@
+Merge Studio
+Copyright (c) 2026 Anton Arnaudov
+
+Merge Studio's own files (its manifest, extension entry point, walkthrough,
+media and documentation) are licensed under the MIT License; see LICENSE.
+
+Merge Studio bundles the GitStudio project's shared merge packages
+(https://github.com/GitStudioHQ/gitstudio): the merge engine, the git service,
+the host bridge, the webview UI (merge editor, diff, conflicts dashboard) and
+the VS Code host glue. They are Copyright 2026 GitStudio and licensed under
+the Apache License, Version 2.0; see LICENSE-APACHE. In the merge-studio
+repository they are vendored, unmodified, under vendor/gitstudio (see
+VENDORED_FROM.json for the exact GitStudio commit and file hashes). Portions
+of those packages originate from Merge Studio itself, contributed under MIT
+and redistributed by GitStudio under Apache-2.0.
+
+The GitStudio packages' own NOTICE, reproduced as the Apache License
+(section 4(d)) asks:
+
+    GitStudio
+    Copyright 2026 GitStudio
+
+    This product includes software developed for the GitStudio project
+    (https://gitstudio.dev).
+
+This product also bundles third-party software, including:
+- Monaco Editor (MIT), Microsoft Corporation
+- vscode-diff (MIT)
+- DOMPurify (Apache-2.0 / MPL-2.0)
+- @vscode/codicons (CC-BY-4.0 for the icon font, MIT for the code), Microsoft Corporation
+
+JetBrains, IntelliJ IDEA, WebStorm, PyCharm, PhpStorm, GoLand, CLion, Rider,
+RubyMine and DataGrip are trademarks of JetBrains s.r.o. Merge Studio is an
+independent project and is not affiliated with, or endorsed by, JetBrains.

@@ -4,7 +4,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
-import { maybeOfferCoexistence, offerRestoreAfterAutoOpenOff, restoreBuiltIns } from "../src/coexistence";
+import {
+  maybeOfferCoexistence,
+  maybeSayDeferred,
+  offerRestoreAfterAutoOpenOff,
+  restoreBuiltIns,
+  syncedKeys,
+} from "../src/coexistence";
 import { ExitGuard } from "../src/exitGuard";
 import { createHostCore, type MergeHostCore } from "../src/host";
 import type { MergeProduct } from "../src/product";
@@ -21,7 +27,11 @@ beforeEach(() => stub.reset());
 
 const KEY = "test.merge.coexistencePromptShown";
 
-function hostAndState(): { host: MergeHostCore; state: Map<string, unknown>; synced: string[] } {
+function hostAndState(extra: Partial<MergeProduct> = {}): {
+  host: MergeHostCore;
+  state: Map<string, unknown>;
+  synced: string[];
+} {
   const state = new Map<string, unknown>();
   const synced: string[] = [];
   const context = {
@@ -41,6 +51,7 @@ function hostAndState(): { host: MergeHostCore; state: Map<string, unknown>; syn
     settingsSection: "test.merge",
     coexistencePromptKey: KEY,
     commands: { restoreBuiltInMergeEditor: "test.restoreBuiltInMergeEditor" },
+    ...extra,
   } as unknown as MergeProduct;
   return { host: createHostCore(context, product, new ExitGuard()), state, synced };
 }
@@ -88,7 +99,8 @@ test("Turn them off saves the previous values, and Restore puts them back", asyn
   await maybeOfferCoexistence(host);
   await settle();
   assert.equal(state.get(KEY), true, "an answer is recorded");
-  assert.ok(synced.includes(KEY), "and synced, so another machine is not asked again");
+  assert.deepEqual(synced, [], "the question never sets the sync list itself (that replaced the product's own keys)");
+  assert.ok(syncedKeys(host.product).includes(KEY), "the answer is in the one list registerMergeExperience syncs");
   assert.equal(stub.config["git.mergeEditor"], false);
   assert.equal(stub.config["merge-conflict.codeLens.enabled"], false);
   assert.equal(stub.config["merge-conflict.decorators.enabled"], false);
@@ -142,4 +154,74 @@ test("turning autoOpen off offers the built-ins back — only if this product sw
   await offerRestoreAfterAutoOpenOff(host);
   assert.equal(stub.messages.length >= 1, true, "offered");
   assert.equal(stub.config["git.mergeEditor"], true, "and restored on yes");
+});
+
+// ── D4, said once (POLISH A5.8) ─────────────────────────────────────────────
+
+const NOTICE_KEY = "test.merge.deferralNoticeShown";
+const DEFERRAL = {
+  owner: "GitStudio",
+  noticeKey: NOTICE_KEY,
+  handBack: { section: "gitstudio.merge", key: "autoOpen" },
+};
+
+test("a product standing down says so once: who opens conflicts instead, that its commands still work, and a way back", async () => {
+  const { host, state } = hostAndState({ deferral: DEFERRAL });
+  assert.equal(await maybeSayDeferred(host), false);
+  await settle();
+  assert.equal(stub.messages.length, 1);
+  const m = stub.messages[0];
+  assert.equal(m.kind, "info", "a toast, never a modal");
+  assert.equal(
+    m.message,
+    "Merge Studio: GitStudio is installed, so GitStudio opens your conflicts, with the same merge editor and " +
+      "Conflicts dashboard. Merge Studio's own commands still work.",
+  );
+  assert.deepEqual(m.actions, ["OK", "Let Merge Studio open conflicts"]);
+  assert.equal(state.get(NOTICE_KEY), true, "remembered");
+  await maybeSayDeferred(host);
+  assert.equal(stub.messages.length, 1, "said once, not at every conflict");
+  assert.equal("gitstudio.merge.autoOpen" in stub.config, false, "and nothing was changed");
+});
+
+test("'Let Merge Studio open conflicts' turns the owner's autoOpen off in user settings, and says it handed back", async () => {
+  const { host, state } = hostAndState({ deferral: DEFERRAL });
+  stub.answer = (_k, _m, actions) => actions.find((a) => a.startsWith("Let "));
+  assert.equal(await maybeSayDeferred(host), true);
+  assert.equal(stub.config["gitstudio.merge.autoOpen"], false);
+  assert.equal(state.get(NOTICE_KEY), true);
+});
+
+test("the notice is remembered as it is said: left unanswered in the notification center, it never comes back", async () => {
+  // VS Code moves an unanswered toast to the notification center, where its
+  // promise stays pending, possibly until the window closes. Information needs
+  // no answer, so waiting for one would say it again every session.
+  const { host, state } = hostAndState({ deferral: DEFERRAL });
+  stub.answer = () => new Promise<never>(() => {}) as unknown as string;
+  void maybeSayDeferred(host);
+  void maybeSayDeferred(host);
+  await settle();
+  assert.equal(stub.messages.length, 1, "said once, even by two scans in the same moment");
+  assert.equal(state.get(NOTICE_KEY), true, "remembered while it is still on screen");
+  stub.answer = undefined;
+  assert.equal(await maybeSayDeferred(host), false);
+  assert.equal(stub.messages.length, 1, "and not said again");
+});
+
+test("a product that never defers has no notice to give", async () => {
+  const { host } = hostAndState();
+  assert.equal(await maybeSayDeferred(host), false);
+  assert.equal(stub.messages.length, 0);
+});
+
+test("the ONE sync list holds the product's own keys, the coexistence answer and the deferral notice", () => {
+  const { host } = hostAndState({ deferral: DEFERRAL, syncedStateKeys: ["test.walkthroughShown", KEY] });
+  assert.deepEqual(syncedKeys(host.product), [
+    "test.walkthroughShown",
+    KEY,
+    `${KEY}.previous`,
+    NOTICE_KEY,
+  ]);
+  const src = readFileSync(join(__dirname, "../src/coexistence.ts"), "utf8");
+  assert.doesNotMatch(src, /setKeysForSync\?*\.?\(/, "nothing here replaces the list");
 });
