@@ -213,6 +213,19 @@ export function unresolvedWords(counts: Pick<MergeCountsView, "pending" | "pendi
   return `${plural(n, "unresolved change")}: ${kept} will keep the original text, ${changed} ${asShown(changed)}.`;
 }
 
+/**
+ * The file as a sentence names it. The desktop sends a repository-relative
+ * path ("rename2/by-x.txt"), which reads fine; the extension sends the
+ * document's absolute path, which put three lines of the user's own home
+ * folder before the explanation — the file's name says it without them.
+ */
+export function displayPath(fileName: string): string {
+  const absolute = fileName.startsWith("/") || /^[A-Za-z]:[\\/]/.test(fileName) || fileName.startsWith("\\\\");
+  if (!absolute) return fileName;
+  const parts = fileName.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? fileName;
+}
+
 /** The counter's words — unchanged from the extension's toolbar. */
 export function counterText(counts: MergeCountsView): { text: string; done: boolean } {
   if (counts.total === 0) return { text: "No changes", done: false };
@@ -363,8 +376,12 @@ export class MergeShell {
     this.applyYoursBtn.classList.add("ms-apply-yours");
     this.applyAllBtn.classList.add("ms-apply-all");
     this.applyTheirsBtn.classList.add("ms-apply-theirs");
-    this.wandBtn = toolbarIconButton(
+    // The wand is JetBrains' own icon for this, but on its own it was the one
+    // unexplained mark in a toolbar of words: it says what it does, like its
+    // neighbours.
+    this.wandBtn = toolbarIconTextButton(
       magicWand,
+      "Resolve simple",
       "Resolve simple conflicts (apply both sides where their edits don't overlap)",
     );
     this.wandBtn.classList.add("ms-wand");
@@ -397,6 +414,7 @@ export class MergeShell {
       this.applyYoursBtn,
       this.applyAllBtn,
       this.applyTheirsBtn,
+      toolbarSeparator(),
       this.wandBtn,
       toolbarSeparator(),
       this.wsSelect,
@@ -616,7 +634,7 @@ export class MergeShell {
       this.element.classList.add("ms-no-text");
       this.panel = buildNoTextPanel(
         {
-          path: payload.fileName,
+          path: displayPath(payload.fileName),
           shape: payload.shape ?? "text",
           missingRole: payload.missingRole,
           op: payload.op,

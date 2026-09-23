@@ -4637,7 +4637,9 @@
       const slot = $(".ms-legend-slot");
       c.ok(!!slot && !slot.hidden, "the shell has a legend slot, shown");
       const chips = slot ? [...slot.querySelectorAll(".jb-legend-chip[data-category]")] : [];
-      c.ok(chips.length >= 4, `the legend shows a chip per category (${chips.length})`);
+      // One item per COLOUR family: conflicts, the same on both sides, and a
+      // change on one side only (blue / green / grey by what it did).
+      c.ok(chips.length >= 3, `the legend shows an item per colour (${chips.length})`);
       const read = () => {
         const by = {};
         for (const b of slot.querySelectorAll(".jb-legend-chip[data-category]")) {
@@ -4672,6 +4674,74 @@
       const done = read();
       c.eq(done.counter, "All changes have been processed", "Accept Yours settles the rest");
       c.eq(done.sum, 0, `no chip counts anything left (${JSON.stringify(done.by)})`);
+    },
+
+    /**
+     * The merge colours RESOLVE here, not only in the extension: diff.css's
+     * tokens read `--vscode-editor-background` and the body theme class, which
+     * the desktop must supply (memory: shared-package-token-boundary). Asserted
+     * on computed styles of the classes the view emits — never class names
+     * alone — plus the owner's rules: no invented marks, controls in words,
+     * the legend in words.
+     */
+    "the-merge-colours-resolve-on-the-desktop": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1400);
+      const grid = $(".jb-merge-grid");
+      c.ok(!!grid, "the merge view is up");
+      if (!grid) return;
+      const light = document.body.classList.contains("vscode-light");
+      const want = light
+        ? { conflict: "rgba(240, 75, 70, 0.3)", half: "rgba(240, 75, 70, 0.1)", done: "rgba(207, 34, 46, 0.45)", settled: "rgba(0, 0, 0, 0.17)", edge: "rgb(26, 127, 55)", dot: "rgb(207, 34, 46)" }
+        : { conflict: "rgba(240, 105, 100, 0.24)", half: "rgba(240, 105, 100, 0.1)", done: "rgba(240, 104, 106, 0.5)", settled: "rgba(204, 204, 204, 0.24)", edge: "rgb(98, 179, 74)", dot: "rgb(240, 104, 106)" };
+      const body = grid.querySelector(".jb-pane-body");
+      const probe = (cls) => {
+        const el = document.createElement("div");
+        el.className = cls;
+        el.style.cssText = "position:absolute;left:0;top:0;width:40px;height:18px";
+        body.appendChild(el);
+        const cs = getComputedStyle(el);
+        const out = { bg: cs.backgroundColor, bt: `${cs.borderTopStyle} ${cs.borderTopWidth} ${cs.borderTopColor}`, bb: `${cs.borderBottomStyle} ${cs.borderBottomWidth}` };
+        el.remove();
+        return out;
+      };
+      c.eq(probe("jb-line-conflict").bg, want.conflict, "a conflict band is the red tint of this theme");
+      c.eq(probe("jb-line-conflict jb-half").bg, want.half, "a conflict with one side in: its result at under half strength — not the open conflict's look");
+      const done = probe("jb-done jb-done-conflict jb-edge-top jb-edge-bottom");
+      c.eq(`${done.bg} | ${done.bt} | ${done.bb}`, `rgba(0, 0, 0, 0) | solid 1px ${want.done} | solid 1px`, "a handled side: no fill, a faint 1px line top and bottom");
+      const settled = probe("jb-settled jb-edge-top jb-edge-bottom");
+      c.eq(`${settled.bg} | ${settled.bt} | ${settled.bb}`, `rgba(0, 0, 0, 0) | solid 1px ${want.settled} | solid 1px`, "a resolved change: one neutral faint line, no fill");
+      c.eq(probe("jb-point jb-point-inserted").bt, `solid 2px ${want.edge}`, "an insertion point is a 2px line in its edge colour");
+      c.eq(probe("jb-frame jb-frame-conflict jb-edge-top").bt.split(" ")[0], "none", "no frame lines outside high contrast");
+      // The ribbons land on the 32 ms timer, which the virtual clock does serve.
+      const band = grid.querySelector(".jb-ribbon-stage path.jb-ribbon-conflict");
+      c.ok(!!band, "the ribbons are drawn");
+      if (band) c.eq(getComputedStyle(band).fill, want.conflict, "a ribbon is FILLED with the tint it connects");
+      const base = grid.querySelector(".jb-ribbon-stage path.jb-ribbon-base");
+      const editorBg = getComputedStyle(grid).backgroundColor;
+      if (base) c.eq(getComputedStyle(base).fill, editorBg, "…over the editor background, so no gutter border shows through it");
+      c.ok(!grid.querySelector(".jb-ribbon-stage path.jb-ribbon-applied, .jb-ribbon-stage path.jb-ribbon-edge"), "no dashed or framing lines of the old look");
+      c.ok(!document.querySelector(".jb-mark, .jb-result-actions, .jb-btn-wand, .jb-btn-append"), "no invented marks, no per-change wand, no append icon");
+      const buttons = $$(".jb-change-actions button");
+      c.ok(buttons.length > 0, `the gutters carry controls (${buttons.length})`);
+      const odd = buttons.filter((b) => !/codicon-(arrow-right|arrow-left|close)\b/.test(b.innerHTML) || !/^(Accept|Ignore|Add|Discard) (Yours|Theirs)\b/.test(b.title) || !b.getAttribute("aria-label"));
+      c.eq(odd.map((b) => b.title || b.innerHTML).join(" | "), "", "every control is an arrow or ×, with its action in words");
+      const legend = $(".ms-legend-slot .jb-legend");
+      c.ok(!!legend && /Conflicts/.test(legend.textContent) && /Changed/.test(legend.textContent) && !/[≠≈‹›✨]/.test(legend.textContent), `the legend is words (${legend && legend.textContent.replace(/\s+/g, " ").trim()})`);
+      // …with a solid round dot of each colour — never a square box that reads as a checkbox.
+      const dot = legend && legend.querySelector('.jb-legend-chip[data-category="conflict"] .jb-legend-dot');
+      const dcs = dot && getComputedStyle(dot);
+      c.eq(dcs ? `${dcs.backgroundColor} | ${dcs.borderRadius}` : "none", `${want.dot} | 50%`, "the conflict item's dot is the conflict red, round");
+      c.ok(!legend || !legend.querySelector(".jb-legend-swatch"), "no square swatches in the legend");
+      // The bottom bar's secondary buttons read as buttons here too: a visible
+      // border (the desktop's own button-border is transparent).
+      const accept = $(".ms-shell .ms-accept-yours");
+      const bcs = accept && getComputedStyle(accept);
+      const alphaOf = (col) => { const m = /rgba?\(([^)]*)\)/.exec(col || ""); if (m) { const p = m[1].split(/[\s,/]+/).filter(Boolean); return p.length > 3 ? parseFloat(p[3]) : 1; } const n = /\/\s*([\d.]+)\s*\)/.exec(col || ""); return n ? parseFloat(n[1]) : 1; };
+      c.ok(!!bcs && bcs.borderTopStyle === "solid" && alphaOf(bcs.borderTopColor) > 0.1, `Accept Yours has a visible border (${bcs && bcs.borderTopColor})`);
     },
 
     /**

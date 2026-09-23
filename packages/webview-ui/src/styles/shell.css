@@ -187,12 +187,19 @@
   min-width: 0;
 }
 .ms-confirm-text .codicon { color: var(--ms-warn); flex: 0 0 auto; }
+/* The destructive button draws its red on the editor's own ground, never on
+   the secondary button fill: VS Code Light+'s errorForeground on its grey
+   secondary background measured 1.37:1. Three classes, so it outranks the
+   bordered button's fill in diff.css whatever the stylesheet order. */
+.jb-toolbar-btn.jb-bordered.ms-danger,
 .jb-toolbar-btn.ms-danger {
   color: var(--ms-danger);
-  border-color: color-mix(in srgb, var(--ms-danger) 60%, transparent);
+  background: var(--vscode-editor-background, transparent);
+  border-color: color-mix(in srgb, var(--ms-danger) 70%, transparent);
 }
+.jb-toolbar-btn.jb-bordered.ms-danger:not([disabled]):hover,
 .jb-toolbar-btn.ms-danger:not([disabled]):hover {
-  background: color-mix(in srgb, var(--ms-danger) 14%, transparent);
+  background: color-mix(in srgb, var(--ms-danger) 12%, var(--vscode-editor-background, transparent));
 }
 .jb-toolbar-btn .jb-svg .codicon { font-size: 14px; }
 
@@ -329,6 +336,11 @@
   row-gap: 6px;
   padding-top: 6px;
   padding-bottom: 6px;
+}
+/* In a narrow shell the legend keeps its colours, names and counts, and
+   drops what each colour asks of you (the tooltip still says it). */
+@container ms-shell (max-width: 900px) {
+  .jb-legend .jb-legend-note { display: none; }
 }
 @container ms-shell (max-width: 960px) {
   .jb-toolbar { padding: 0 4px; gap: 1px; }

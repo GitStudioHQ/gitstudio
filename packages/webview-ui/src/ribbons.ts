@@ -17,8 +17,8 @@ const SVG_NS = "http://www.w3.org/2000/svg";
  * frame comes. Headless Chrome under a virtual-time budget services no frames
  * at all, and an occluded or minimised window is served none either; an
  * overlay repaint that waits on requestAnimationFrame alone then never lands
- * (the ribbons, the gutter buttons, the conflict frames all stay where they
- * last were). Whichever fires first runs `fn`, once. Returns a cancel.
+ * (the ribbons and the gutter buttons stay where they last were). Whichever
+ * fires first runs `fn`, once. Returns a cancel.
  */
 export function scheduleFrame(fn: () => void, fallbackMs = OVERLAY_FALLBACK_MS): () => void {
   let done = false;
@@ -46,13 +46,21 @@ export function scheduleFrame(fn: () => void, fallbackMs = OVERLAY_FALLBACK_MS):
  * Width of the straight, rectangular segment of a merge-gutter band that hugs
  * the side pane. The accept/ignore icons live inside this segment, and the
  * slanted connection to the result pane only starts after it — IntelliJ's
- * layout, and what keeps the icons inside the color at every scroll offset.
+ * layout, and what keeps the icons inside the colour at every scroll offset.
  * Must fit the action row built in mergeView.makeActions (2 buttons + gaps).
  */
 export const MERGE_ICON_STRIP = 46;
 
 /** Same idea for the 2-way diff's single transfer button (left-anchored). */
 export const DIFF_ICON_STRIP = 24;
+
+/**
+ * How tall an insertion or deletion POINT is drawn, in CSS px: the pane's
+ * marker line (`jb-point` in diff.css, `jb-marker-*` in the 2-way diff) and
+ * the ribbon's end at that point are both exactly this, on the same rows —
+ * the line below the boundary, or above it for the point after the last line.
+ */
+export const POINT_PX = 2;
 
 /** Which edge of the gutter carries the rectangular icon segment. */
 type StripSide = "a" | "b";
@@ -62,32 +70,123 @@ interface IconStrip {
   width: number;
 }
 
-/** Corner radius for the frame-line and band bends. */
+/** Corner radius for the band bends inside a gutter. */
 const BEND_RADIUS = 7;
 
 export interface RibbonOptions {
   /** Current result-pane span for a block (defaults to its base span). */
   resultSpanOf?: (block: ChangeBlock) => LineSpan;
-  /** Fully resolved blocks keep a dashed outline band, never a fill. */
+  /** A fully resolved block draws nothing across the gutters. */
   isResolved?: (block: ChangeBlock) => boolean;
-  /** Already-processed sides get the dashed outline band instead of the fill. */
+  /** A handled (applied or ignored) side of a pending block keeps only a faint outline, never a fill. */
   isSideDone?: (block: ChangeBlock, side: Side) => boolean;
 }
 
-/** A gutter's horizontal placement on the stage. */
+/** A gutter's horizontal extent on the stage, snapped as its box is painted. */
 interface GutterRange {
   left: number;
-  width: number;
+  right: number;
+}
+
+/** A band's [top, bottom] on the stage, snapped as the pane's boxes are painted. */
+type Band = [number, number];
+
+/**
+ * Stage geometry. Every coordinate a ribbon uses is a CLIENT coordinate
+ * rounded the way the browser snaps the boxes it is drawn against, less the
+ * stage's own snapped origin — because that is where the browser paints the
+ * pane's line highlights, the gutters' borders and the stage itself. Measured
+ * (headless Chrome at 1x, 1.5x and 2x): a box — and an SVG root — at a
+ * fractional position is snapped to whole CSS pixels (half up), and only then
+ * scaled to the screen. So an edge at 490.66 is painted at 491 (982 device
+ * rows at 2x), and a ribbon rounded to DEVICE pixels ended at 981: one device
+ * column short of the pane, which is how the gutter's border came to show
+ * through every band. Snapped the same way, every band edge in a pane, its
+ * ribbon and the result sits on the same row (scripts/merge-e2e/alignment.ts
+ * measures it, pixels included).
+ *
+ * A browser that snaps to device pixels instead agrees wherever the panes
+ * sit on whole CSS pixels at a whole scale — rows always do (Monaco's lines
+ * are whole pixels) — and where it does not, the OVERLAP covers it: each ribbon
+ * end reaches two device pixels into its pane (see bandGeometry).
+ *
+ * Line widths are the panes' own CSS widths, from the same snapped edge: a 1px
+ * border at 1.5x is one and a half device rows (the second antialiased), and a
+ * 1px stroke drawn inside the band from that edge covers the same rows.
+ */
+class Frame {
+  readonly dpr = window.devicePixelRatio || 1;
+  readonly originX: number;
+  readonly originY: number;
+  readonly width: number;
+  readonly height: number;
+  /** How far a ribbon end reaches into its pane: two device pixels, in CSS px. */
+  readonly overlap: number;
+
+  constructor(stage: SVGSVGElement) {
+    const rect = stage.getBoundingClientRect();
+    this.originX = this.snap(rect.left);
+    this.originY = this.snap(rect.top);
+    this.width = rect.width;
+    this.height = rect.height;
+    this.overlap = 2 / this.dpr;
+  }
+
+  snap(v: number): number {
+    return Math.round(v);
+  }
+
+  /**
+   * Where a ribbon's ends stop inside the panes, left and right of `gutter`:
+   * at least `overlap` beyond each edge, on a whole DEVICE pixel — that end is
+   * the one vertical edge a band has there, and a band end on a fraction of a
+   * pixel is antialiased twice (its base, then its tint), which left a
+   * one-pixel-dark column inside the pane's band at 1.25x.
+   */
+  reach(gutter: GutterRange): { left: number; right: number } {
+    const d = this.dpr;
+    const left = Math.floor((this.originX + gutter.left - this.overlap) * d + 1e-6) / d - this.originX;
+    const right = Math.ceil((this.originX + gutter.right + this.overlap) * d - 1e-6) / d - this.originX;
+    return { left, right };
+  }
+
+  gutter(el: HTMLElement): GutterRange {
+    const r = el.getBoundingClientRect();
+    return { left: this.snap(r.left) - this.originX, right: this.snap(r.right) - this.originX };
+  }
+
+  /**
+   * A span's band in `editor`, on the stage. An empty span (an insertion or
+   * deletion point) is POINT_PX tall: below the boundary, or above it for the
+   * point after the last line — exactly the rows the pane's marker paints.
+   */
+  band(editor: monaco.editor.IStandaloneCodeEditor, span: LineSpan, lineHeight: number): Band {
+    const top = editor.getContainerDomNode().getBoundingClientRect().top;
+    const [y0, y1] = spanY(editor, span, lineHeight);
+    const a = this.snap(top + y0) - this.originY;
+    if (!isEmptySpan(span)) {
+      return [a, this.snap(top + y1) - this.originY];
+    }
+    const count = editor.getModel()?.getLineCount() ?? 1;
+    return span.start > count ? [a - POINT_PX, a] : [a, a + POINT_PX];
+  }
 }
 
 /**
- * Draws the JetBrains-style connecting bands and the conflict frame lines on
- * ONE full-width SVG stage that spans all five columns (a late sibling of the
- * panes, covering the editor-row area of the grid). Everything — gutter
- * bands, icon strips, and the frame lines running across the panes — lives
- * inside this single viewport in absolute stage coordinates, so nothing
- * depends on overflow, clip-path, or per-gutter stacking behavior, and each
- * frame edge is one continuous path by construction.
+ * Draws the JetBrains-style connecting bands on ONE full-width SVG stage that
+ * spans all five columns (a late sibling of the panes, covering the
+ * editor-row area of the grid), in absolute stage coordinates.
+ *
+ * A PENDING side is one continuous band: its line tint in the side pane, a
+ * polygon FILLED with the same tint across the gutter, and the tint in the
+ * result — every edge on the same row (see Frame), and each end two
+ * device pixels INTO the pane it meets, so no column of the gutter's border
+ * can show between them at any zoom. A HANDLED side of a conflict whose other
+ * side is still pending is calm: no fill, only a faint line on the band's own
+ * first and last rows — the rows the panes draw theirs on. A RESOLVED change
+ * draws nothing across the gutters at all: it is done, and the result alone
+ * keeps a faint line for it. High contrast themes add a solid edge to pending
+ * bands too (the `jb-ribbon-frame` paths; diff.css shows them only there).
  */
 export class RibbonOverlay {
   private readonly svg: SVGSVGElement;
@@ -103,7 +202,7 @@ export class RibbonOverlay {
   ) {
     this.svg = createStage();
     // Last child of the grid: paints above the panes' z-auto content while
-    // the gutter button layers (z-index 2) stay above the lines.
+    // the gutter button layers (z-index 2) stay above the bands.
     (gutterA.parentElement ?? gutterA).appendChild(this.svg);
 
     for (const editor of [editors.left, editors.result, editors.right]) {
@@ -134,84 +233,52 @@ export class RibbonOverlay {
     if (!model) {
       return;
     }
-    const lineHeight = this.editors.left.getOption(
-      monaco.editor.EditorOption.lineHeight,
-    );
-    const stageRect = this.svg.getBoundingClientRect();
-    const rectA = this.gutterA.getBoundingClientRect();
-    const rectB = this.gutterB.getBoundingClientRect();
-    const gutterA: GutterRange = {
-      left: rectA.left - stageRect.left,
-      width: rectA.width,
-    };
-    const gutterB: GutterRange = {
-      left: rectB.left - stageRect.left,
-      width: rectB.width,
-    };
-    const stageWidth = stageRect.width;
-    const height = stageRect.height;
-
+    const lineHeight = this.editors.left.getOption(monaco.editor.EditorOption.lineHeight);
+    const frame = new Frame(this.svg);
+    const gutterA = frame.gutter(this.gutterA);
+    const gutterB = frame.gutter(this.gutterB);
     const stripA: IconStrip = { side: "a", width: MERGE_ICON_STRIP };
     const stripB: IconStrip = { side: "b", width: MERGE_ICON_STRIP };
+
+    // A pane's edge line is a 1px border (diff.css).
+    const line = 1;
+
     for (const block of model.blocks) {
+      if (this.options.isResolved?.(block) ?? false) {
+        // Settled: nothing across the gutters (the result keeps a faint line).
+        continue;
+      }
       const tone = blockTone(block);
-      const resolved = this.options.isResolved?.(block) ?? false;
       const resultSpan = this.options.resultSpanOf?.(block) ?? block.baseSpan;
-      const leftDone = resolved || (this.options.isSideDone?.(block, "left") ?? false);
-      const rightDone = resolved || (this.options.isSideDone?.(block, "right") ?? false);
+      const result = frame.band(this.editors.result, resultSpan, lineHeight);
 
       // Each side's FULL region (its change plus the passthrough lines of the
       // block), so the band meets the same rows the pane highlights and the
       // alignment spacers balance.
-      const regionL = block.left
-        ? spanY(this.editors.left, sideBlockSpan(block, "left"), lineHeight)
-        : undefined;
-      const regionR = block.right
-        ? spanY(this.editors.right, sideBlockSpan(block, "right"), lineHeight)
-        : undefined;
-      const result = spanY(this.editors.result, resultSpan, lineHeight);
-
-      // A processed side keeps its band as a dashed outline in the category's
-      // edge colour, so what was applied (or ignored) stays readable.
-      if (regionL) {
-        if (leftDone) {
-          appendAppliedRibbon(this.svg, gutterA, height, regionL, result, tone, stripA);
-        } else {
-          appendRibbon(this.svg, gutterA, height, regionL, result, tone, stripA);
+      for (const side of ["left", "right"] as const) {
+        if (!(side === "left" ? block.left : block.right)) {
+          continue;
         }
-      }
-      if (regionR) {
-        if (rightDone) {
-          appendAppliedRibbon(this.svg, gutterB, height, result, regionR, tone, stripB);
-        } else {
-          appendRibbon(this.svg, gutterB, height, result, regionR, tone, stripB);
+        const editor = side === "left" ? this.editors.left : this.editors.right;
+        const region = frame.band(editor, sideBlockSpan(block, side), lineHeight);
+        const done = this.options.isSideDone?.(block, side) ?? false;
+        const [gutter, a, b, strip] =
+          side === "left"
+            ? [gutterA, region, result, stripA]
+            : [gutterB, result, region, stripB];
+        const geometry = bandGeometry(gutter, frame.height, a, b, frame.reach(gutter), strip);
+        if (!geometry) {
+          continue;
         }
-      }
-
-      const sideL = regionL && !leftDone ? regionL : undefined;
-      const sideR = regionR && !rightDone ? regionR : undefined;
-      // Conflict frame: ONE path per edge spanning every covered column, so
-      // every bend (strip boundaries AND pane junctions) is an interior
-      // vertex and gets rounded — path endpoints can't be.
-      if (tone === "conflict" && !resolved && (sideL || sideR)) {
-        appendFrame(this.svg, height, {
-          top: framePolyline(
-            sideL?.[0],
-            result[0],
-            sideR?.[0],
-            gutterA,
-            gutterB,
-            stageWidth,
-          ),
-          bottom: framePolyline(
-            sideL?.[1],
-            result[1],
-            sideR?.[1],
-            gutterA,
-            gutterB,
-            stageWidth,
-          ),
-        });
+        const data = { block: String(block.id), side, tone, state: done ? "done" : "pending" };
+        if (done) {
+          appendEdges(this.svg, geometry, "jb-ribbon-line-base", data, line);
+          appendEdges(this.svg, geometry, `jb-ribbon-done jb-ribbon-done-${tone}`, data, line);
+        } else {
+          appendBand(this.svg, geometry, "jb-ribbon-base", data);
+          appendBand(this.svg, geometry, `jb-ribbon jb-ribbon-${tone}`, data);
+          appendEdges(this.svg, geometry, `jb-ribbon-frame jb-ribbon-frame-${tone}`, data, line);
+        }
       }
     }
   }
@@ -267,24 +334,20 @@ export class DiffRibbonOverlay {
     if (!model) {
       return;
     }
-    const lineHeight = this.editors.left.getOption(
-      monaco.editor.EditorOption.lineHeight,
-    );
-    const stageRect = this.svg.getBoundingClientRect();
-    const rect = this.gutter.getBoundingClientRect();
-    const gutter: GutterRange = {
-      left: rect.left - stageRect.left,
-      width: rect.width,
-    };
-    const height = stageRect.height;
-
+    const lineHeight = this.editors.left.getOption(monaco.editor.EditorOption.lineHeight);
+    const frame = new Frame(this.svg);
+    const gutter = frame.gutter(this.gutter);
     for (const block of model.blocks) {
-      const left = spanY(this.editors.left, block.leftSpan, lineHeight);
-      const right = spanY(this.editors.right, block.rightSpan, lineHeight);
-      appendRibbon(this.svg, gutter, height, left, right, block.role, {
+      const left = frame.band(this.editors.left, block.leftSpan, lineHeight);
+      const right = frame.band(this.editors.right, block.rightSpan, lineHeight);
+      const geometry = bandGeometry(gutter, frame.height, left, right, frame.reach(gutter), {
         side: "a",
         width: DIFF_ICON_STRIP,
       });
+      if (geometry) {
+        appendBand(this.svg, geometry, "jb-ribbon-base", { tone: block.role });
+        appendBand(this.svg, geometry, `jb-ribbon jb-ribbon-${block.role}`, { tone: block.role });
+      }
     }
   }
 
@@ -318,7 +381,7 @@ export function lineTopY(
   return editor.getTopForLineNumber(line) - scrollTop;
 }
 
-/** Returns [topY, bottomY] of a span in the editor's viewport coordinates. */
+/** Returns [topY, bottomY] of a span in the editor's viewport coordinates (a point: top === bottom). */
 export function spanY(
   editor: monaco.editor.IStandaloneCodeEditor,
   span: LineSpan,
@@ -334,156 +397,84 @@ export function spanY(
   return [top, bottom];
 }
 
-/**
- * Draws one flat connector band (and, for conflicts, its frame lines) onto
- * the stage. `a` is the gutter's left edge (the pane before it), `b` its
- * right edge. With an icon strip, the band stays RECTANGULAR across the
- * strip — the gutter action icons live there, glued to the color — and only
- * slants toward the other pane in the remaining width. Frame lines run from
- * `frame.fromX` to `frame.toX` across the panes as one continuous path.
- */
-function appendRibbon(
-  target: SVGElement,
-  gutter: GutterRange,
-  height: number,
-  a: [number, number],
-  b: [number, number],
-  role: string,
-  strip?: IconStrip,
-): void {
-  const band = bandGeometry(gutter, height, a, b, strip);
-  if (!band) {
-    return;
-  }
-  // Band fill: a closed ring of the top run + reversed bottom run, with the
-  // interior bends rounded. The corners at the gutter edges stay sharp —
-  // they must sit flush against the pane line-highlights.
-  const ring = [...band.top, ...band.bottom.slice().reverse()];
-  const d = roundedPath(ring, 0, band.roundable) + " Z";
-
-  const path = document.createElementNS(SVG_NS, "path");
-  path.setAttribute("d", d);
-  path.setAttribute("class", `jb-ribbon jb-ribbon-${role}`);
-  target.appendChild(path);
+interface BandGeometry {
+  top: Array<[number, number]>;
+  bottom: Array<[number, number]>;
+  roundable: (x: number) => boolean;
 }
 
 /**
- * An applied / ignored side's band: no fill, only its top and bottom edges,
- * dashed in the category's edge colour — the same "processed" mark the panes
- * draw, so a change you already took stays visible and still reads as what it
- * was (JetBrains keeps resolved changes outlined the same way).
+ * The top and bottom runs of a band across one gutter, or undefined when it is
+ * wholly off-screen. `a` meets the gutter's left edge (the pane before it), `b`
+ * its right edge. With an icon strip, the band stays RECTANGULAR across the
+ * strip — the gutter action icons live there, inside the colour — and only
+ * slants toward the other pane in the remaining width. Both runs meet the
+ * panes EXACTLY on their band edges, and then carry on flat for `overlap` (two
+ * device pixels) into each pane: wherever the browser starts the pane's band
+ * — on the CSS pixel the snap chose, or on a device pixel either side of it —
+ * the gutter's border column in between is covered, never a hairline across
+ * the band. Over the pane's band the overlap paints the very same colour
+ * (base + tint), so it cannot show.
  */
-function appendAppliedRibbon(
-  target: SVGElement,
-  gutter: GutterRange,
-  height: number,
-  a: [number, number],
-  b: [number, number],
-  tone: string,
-  strip?: IconStrip,
-): void {
-  const band = bandGeometry(gutter, height, a, b, strip);
-  if (!band) {
-    return;
-  }
-  for (const edge of [band.top, band.bottom]) {
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", roundedPath(edge, 0.5, band.roundable));
-    path.setAttribute("class", `jb-ribbon-applied jb-ribbon-applied-${tone}`);
-    target.appendChild(path);
-  }
-}
-
-/** The top and bottom runs of a band across one gutter, or undefined when off-screen. */
 function bandGeometry(
   gutter: GutterRange,
   height: number,
-  a: [number, number],
-  b: [number, number],
+  a: Band,
+  b: Band,
+  reach: { left: number; right: number },
   strip?: IconStrip,
-):
-  | { top: Array<[number, number]>; bottom: Array<[number, number]>; roundable: (x: number) => boolean }
-  | undefined {
+): BandGeometry | undefined {
   const [aTop, aBottom] = a;
   const [bTop, bBottom] = b;
   if ((aBottom < 0 && bBottom < 0) || (aTop > height && bTop > height)) {
-    return undefined; // fully outside the viewport
+    return undefined;
   }
-
   const x0 = gutter.left;
-  const x1 = gutter.left + gutter.width;
-  // x of the strip boundary; degrade to a plain trapezoid when the gutter is
-  // too narrow for a meaningful slant region.
-  const stripWidth = strip ? Math.min(strip.width, gutter.width - 8) : 0;
-  const top: Array<[number, number]> = [];
-  const bottom: Array<[number, number]> = [];
-  if (strip && stripWidth > 0 && strip.side === "a") {
-    top.push([x0, aTop], [x0 + stripWidth, aTop], [x1, bTop]);
-    bottom.push([x0, aBottom], [x0 + stripWidth, aBottom], [x1, bBottom]);
-  } else if (strip && stripWidth > 0 && strip.side === "b") {
-    top.push([x0, aTop], [x1 - stripWidth, bTop], [x1, bTop]);
-    bottom.push([x0, aBottom], [x1 - stripWidth, bBottom], [x1, bBottom]);
-  } else {
-    top.push([x0, aTop], [x1, bTop]);
-    bottom.push([x0, aBottom], [x1, bBottom]);
-  }
-  return { top, bottom, roundable: (x) => x > x0 + 0.5 && x < x1 - 0.5 };
+  const x1 = gutter.right;
+  const width = x1 - x0;
+  // Degrade to a plain trapezoid when the gutter is too narrow for a slant.
+  const stripWidth = strip ? Math.min(strip.width, width - 8) : 0;
+  const run = (ya: number, yb: number): Array<[number, number]> => {
+    const pts: Array<[number, number]> = [[reach.left, ya], [x0, ya]];
+    if (strip && stripWidth > 0 && strip.side === "a") pts.push([x0 + stripWidth, ya]);
+    else if (strip && stripWidth > 0 && strip.side === "b") pts.push([x1 - stripWidth, yb]);
+    pts.push([x1, yb], [reach.right, yb]);
+    return pts;
+  };
+  // The corners at the gutter edges stay sharp: they sit flush against the
+  // panes' line highlights.
+  return { top: run(aTop, bTop), bottom: run(aBottom, bBottom), roundable: (x) => x > x0 + 0.5 && x < x1 - 0.5 };
+}
+
+type PathData = Record<string, string>;
+
+/** A filled band: a closed ring of the top run and the reversed bottom run. */
+function appendBand(target: SVGElement, g: BandGeometry, className: string, data: PathData): void {
+  const ring = [...g.top, ...g.bottom.slice().reverse()];
+  appendPath(target, roundedPath(ring, 0, g.roundable) + " Z", className, data);
 }
 
 /**
- * One conflict frame edge (top or bottom) as a single polyline across every
- * column the conflict still covers: left pane → gutter A (strip, then
- * slant) → result pane → gutter B (slant, then strip) → right pane. Sides
- * already resolved (undefined y) shorten the line accordingly.
+ * A band's top and bottom edge lines, `width` thick (a pane border's width in
+ * whole device pixels), INSIDE the band: the top line on its first rows, the
+ * bottom line on its last — the rows a pane's `border-top` / `border-bottom`
+ * occupy on the band's first and last line.
  */
-function framePolyline(
-  leftY: number | undefined,
-  resultY: number,
-  rightY: number | undefined,
-  gutterA: GutterRange,
-  gutterB: GutterRange,
-  stageWidth: number,
-): Array<[number, number]> {
-  const points: Array<[number, number]> = [];
-  const aRight = gutterA.left + gutterA.width;
-  const bRight = gutterB.left + gutterB.width;
-  if (leftY !== undefined) {
-    const stripEnd =
-      gutterA.left + Math.min(MERGE_ICON_STRIP, gutterA.width - 8);
-    points.push(
-      [0, leftY],
-      [gutterA.left, leftY],
-      [stripEnd, leftY],
-      [aRight, resultY],
-    );
-  } else {
-    points.push([aRight, resultY]);
-  }
-  points.push([gutterB.left, resultY]);
-  if (rightY !== undefined) {
-    const stripStart =
-      bRight - Math.min(MERGE_ICON_STRIP, gutterB.width - 8);
-    points.push([stripStart, rightY], [bRight, rightY], [stageWidth, rightY]);
-  }
-  return points;
+function appendEdges(target: SVGElement, g: BandGeometry, className: string, data: PathData, width: number): void {
+  const style = `stroke-width:${fmt(width)}px`;
+  appendPath(target, roundedPath(g.top, width / 2, g.roundable), className, { ...data, edge: "top" }, style);
+  appendPath(target, roundedPath(g.bottom, -width / 2, g.roundable), className, { ...data, edge: "bottom" }, style);
 }
 
-/** Draws a block's two frame edges, culled when fully outside the viewport. */
-function appendFrame(
-  target: SVGElement,
-  height: number,
-  frame: {
-    top: Array<[number, number]>;
-    bottom: Array<[number, number]>;
-  },
-): void {
-  const ys = [...frame.top, ...frame.bottom].map(([, y]) => y);
-  if (Math.max(...ys) < 0 || Math.min(...ys) > height) {
-    return;
+function appendPath(target: SVGElement, d: string, className: string, data: PathData, style?: string): void {
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", d);
+  path.setAttribute("class", className);
+  if (style) path.setAttribute("style", style);
+  for (const [key, value] of Object.entries(data)) {
+    path.setAttribute(`data-${key}`, value);
   }
-  // +0.5 keeps the 1px stroke crisp on its pixel row.
-  appendEdge(target, roundedPath(frame.top, 0.5));
-  appendEdge(target, roundedPath(frame.bottom, 0.5));
+  target.appendChild(path);
 }
 
 /**
@@ -524,19 +515,12 @@ function roundedPath(
   return d;
 }
 
-/** One solid conflict-boundary line (pane + gutter + pane, one path). */
-function appendEdge(target: SVGElement, d: string): void {
-  const edge = document.createElementNS(SVG_NS, "path");
-  edge.setAttribute("d", d);
-  edge.setAttribute("class", "jb-ribbon-edge");
-  target.appendChild(edge);
-}
-
 /** The full-width drawing stage covering the grid's editor-row area. */
 function createStage(): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.setAttribute("class", "jb-ribbon-stage");
   svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
   return svg;
 }
 
@@ -546,6 +530,8 @@ function clearChildren(node: Element): void {
   }
 }
 
+/** Enough digits for any device-pixel grid (1/3 px at 3x), none that matter beyond it. */
 function fmt(value: number): string {
-  return value.toFixed(1);
+  return String(Math.round(value * 1000) / 1000);
 }
+

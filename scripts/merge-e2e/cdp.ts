@@ -95,8 +95,15 @@ export class Page {
     }
   }
 
-  async screenshot(): Promise<Buffer> {
-    const r = await this.send<{ data: string }>("Page.captureScreenshot", { format: "png" });
+  /**
+   * A PNG of the page, or of `clip` (CSS px). The image is in DEVICE pixels:
+   * a clip whose edges sit on whole device pixels is copied, never resampled.
+   */
+  async screenshot(clip?: { x: number; y: number; width: number; height: number }): Promise<Buffer> {
+    const r = await this.send<{ data: string }>(
+      "Page.captureScreenshot",
+      clip ? { format: "png", clip: { ...clip, scale: 1 } } : { format: "png" },
+    );
     return Buffer.from(r.data, "base64");
   }
 }
@@ -147,7 +154,7 @@ export class Browser {
       } catch {
         /* gone */
       }
-      rmSync(profile, { recursive: true, force: true });
+      removeProfile(profile);
     };
     process.once("exit", cleanup);
     const url = await new Promise<string>((resolve, reject) => {
@@ -223,6 +230,20 @@ export class Browser {
     } catch {
       /* gone */
     }
-    rmSync(this.profile, { recursive: true, force: true });
+    removeProfile(this.profile);
+  }
+}
+
+/**
+ * Removes a browser profile. A killed Chrome's helpers can still be writing
+ * its cache as it goes (ENOTEMPTY): retried, and a profile left behind in the
+ * temp directory is no reason to fail a measurement that has already run —
+ * this also runs on process exit, where a throw turns exit 0 into 1.
+ */
+function removeProfile(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch {
+    /* left in the temp directory */
   }
 }

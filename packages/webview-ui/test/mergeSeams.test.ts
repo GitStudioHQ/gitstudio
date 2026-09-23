@@ -7,9 +7,12 @@ import { findChrome, runMergePage } from "./fixtures/mergeViewPage";
  * headless Chrome against the REAL MergeView, Monaco and the legend.
  *
  * 1. Every PLAN Appendix A case: the engine's categories, the view's counts and
- *    the legend's chips must all say what the table says. Three layers each
- *    count on their own, so a category the engine gets right can still reach
- *    the legend wrong (a chip wired to the wrong key, a stale update).
+ *    the legend must all say what the table says. Three layers each count on
+ *    their own, so a category the engine gets right can still reach the legend
+ *    wrong (an item wired to the wrong key, a stale update). The legend has one
+ *    item per COLOUR — Yours-only and Theirs-only share "on one side", whose
+ *    tooltip says how many of each — so a category is read from its item, and
+ *    a one-sided one from that tooltip.
  * 2. What an accept or an ignore writes, against an oracle that knows nothing
  *    about Monaco: the result is base with each block's region replaced by the
  *    lines of whatever was chosen (Yours' region, Theirs' region, both in
@@ -78,11 +81,19 @@ const PROLOGUE = `
   view.onCountsChanged = (c) => { counts = c; };
   const show = (s) => JSON.stringify(s);
   const CATS = ["conflict", "same", "yours-only", "theirs-only"];
-  const chip = (cat) => slot.querySelector('.jb-legend-chip[data-category="' + cat + '"]');
-  const chipCount = (cat) => Number(chip(cat).querySelector(".jb-legend-count").textContent);
+  const chip = (item) => slot.querySelector('.jb-legend-chip[data-category="' + item + '"]');
+  const itemCount = (item) => Number(chip(item).querySelector(".jb-legend-count").textContent);
+  /** What the legend says is left of one engine category (NaN when it does not say). */
+  const chipCount = (cat) => {
+    if (cat === "conflict" || cat === "same") return itemCount(cat);
+    if (itemCount("one-sided") === 0) return 0;
+    const m = /\\((\\d+) in Yours, (\\d+) in Theirs\\)/.exec(chip("one-sided").title);
+    return m ? Number(cat === "yours-only" ? m[1] : m[2]) : NaN;
+  };
+  /** The conflicts the legend says Resolve simple can settle: "; k|it|all can be resolved automatically". */
   const chipResolvable = () => {
-    const extra = chip("conflict").querySelector(".jb-legend-extra");
-    return extra.hidden ? 0 : Number(extra.textContent.replace(/[^0-9]/g, ""));
+    const m = /; (\\d+|it|all) can be resolved automatically/.exec(chip("conflict").title);
+    return !m ? 0 : m[1] === "it" ? 1 : m[1] === "all" ? itemCount("conflict") : Number(m[1]);
   };
   const norm = (t) => t.replace(/\\r\\n?/g, "\\n");
   const EOL = { LF: "\\n", CRLF: "\\r\\n", CR: "\\r" };
@@ -131,10 +142,12 @@ test("Appendix A: the engine, the view's counts and the legend chips agree with 
         expect(engineCats[cat] === want, tag + ": engine " + cat + " = " + engineCats[cat] + ", Appendix A says " + want);
         expect(counts && counts.byCategory[cat].total === engineCats[cat] && counts.byCategory[cat].pending === engineCats[cat],
           tag + ": the view's " + cat + " counts " + show(counts && counts.byCategory[cat]) + " vs engine " + engineCats[cat]);
-        expect(chipCount(cat) === engineCats[cat], tag + ": the " + cat + " chip reads " + chipCount(cat) + ", engine " + engineCats[cat]);
+        expect(chipCount(cat) === engineCats[cat], tag + ": the legend says " + chipCount(cat) + " " + cat + ", engine " + engineCats[cat]);
       }
+      expect(itemCount("one-sided") === engineCats["yours-only"] + engineCats["theirs-only"],
+        tag + ": the one-sided item counts both sides: " + itemCount("one-sided") + " vs engine " + (engineCats["yours-only"] + engineCats["theirs-only"]));
       expect(chipResolvable() === engine.counts.resolvableConflicts,
-        tag + ": the chip's resolvable note " + chipResolvable() + " vs engine " + engine.counts.resolvableConflicts);
+        tag + ": the conflict item's tooltip says " + chipResolvable() + " resolvable, engine " + engine.counts.resolvableConflicts);
       if (c.resolvable !== undefined) {
         expect(engine.counts.resolvableConflicts === c.resolvable, tag + ": resolvable " + engine.counts.resolvableConflicts + ", Appendix A says " + c.resolvable);
       }
