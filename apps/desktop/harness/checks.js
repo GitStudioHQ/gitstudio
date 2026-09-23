@@ -56,7 +56,7 @@
    * here fails CI instead of going unchecked.
    */
   const MERGE_SHARED_TOKENS = [
-    "--gs-accent", "--gs-amber", "--gs-border", "--gs-brand", "--gs-brand-fg", "--gs-brand-hover",
+    "--gs-accent", "--gs-amber", "--gs-border", "--gs-brand", "--gs-brand-fg", "--gs-brand-hover", "--gs-danger",
     "--gs-ease", "--gs-fg", "--gs-fg-muted", "--gs-font-mono", "--gs-font-ui", "--gs-hover",
     "--gs-icon-check", "--gs-motion-fast", "--gs-radius", "--gs-radius-pill", "--gs-radius-sm",
     "--gs-shadow-1", "--gs-shadow-2", "--gs-space-1", "--gs-space-2", "--gs-space-3", "--gs-space-4",

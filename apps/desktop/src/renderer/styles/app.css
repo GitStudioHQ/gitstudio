@@ -12981,6 +12981,13 @@ body.vscode-light .cmp-seg-btn.active:hover {
   --gs-status-modified: var(--vscode-charts-blue, #58a6ff);
   --gs-status-deleted: var(--vscode-charts-red, #f85149);
   --gs-status-conflict: var(--vscode-gitDecoration-conflictingResourceForeground, var(--vscode-charts-red));
+  --gs-danger: var(--vscode-errorForeground, #f14c4c);
+}
+/* The light theme's darker danger ink (tokens.css, .vscode-light), re-derived
+   on the same roots: the line above would otherwise hide it there. */
+.vscode-light .ms-shell,
+.vscode-light .cd-dash {
+  --gs-danger: color-mix(in srgb, var(--vscode-errorForeground, #e51400) 60%, var(--vscode-foreground, #000000));
 }
 
 /* ── Merge parity: rail badge, top-bar chip, IDE hand-off, Settings ▸ Merge ── */
