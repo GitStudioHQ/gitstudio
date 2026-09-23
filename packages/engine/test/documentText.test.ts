@@ -212,9 +212,9 @@ test("a line edited far from every block is a change to write, with every confli
   assert.match(out.text, /^x edited$/m);
 });
 
-test("a blank common line deleted between open conflicts is not found again further down", () => {
-  // The walk looked for the deleted chunk ("") again, found the NEXT blank
-  // line, and read everything up to it as the first conflict's region.
+test("a blank common line deleted between open conflicts leaves all three marked", () => {
+  // With the line between them gone, the diff's anchors put two conflicts in
+  // one region, which was read as "settled by hand" as a whole.
   const base = lines("x", "one", "", "two", "", "three", "", "end");
   const yours = lines("x", "ONE-y", "", "TWO-y", "", "THREE-y", "", "end");
   const theirs = lines("x", "ONE-t", "", "TWO-t", "", "THREE-t", "", "end");
@@ -224,6 +224,32 @@ test("a blank common line deleted between open conflicts is not found again furt
   assert.equal(count(out.text), 3, "all three still marked");
   const parsed = parseConflictMarkers(out.text);
   assert.equal(parsed.ours, lines("x", "ONE-y", "TWO-y", "", "THREE-y", "", "end"));
+});
+
+test("a blank line deleted before an open conflict: the walk does not jump to a '}' and blank line inside it", () => {
+  // stress/userService.js, in every scenario of the matrix: the chunk before
+  // a conflict was "}" and a blank line, the blank line was deleted, and the
+  // walk found "}" + blank again INSIDE the conflict's own base (it spans two
+  // functions) — so the one-sided change before it swallowed the conflict's
+  // first lines, and the conflict lost its markers.
+  const base = ["function a() {", "  return 1;", "}", "", "function b() {", "  return 2;", "}", "", "function c() {", "  const x = 1;", "  if (x) {", "    return x;", "  }", "}"];
+  const yours = [...base];
+  yours.splice(4, 6, "function bee() {", "  return 20;", "}", "", "function cee() {", "  const x = 10;");
+  const theirs = [...base];
+  theirs.splice(1, 1, "  return 11;");
+  theirs.splice(5, 4, "  return 21;", "};", "//", "function c () {");
+  const p = prepareMerge({ base: lines(...base), ours: lines(...yours), theirs: lines(...theirs) });
+  assert.deepEqual(
+    p.model.blocks.map((b) => [b.kind, b.baseSpan.start, b.baseSpan.endExclusive]),
+    [["right-only", 2, 3], ["conflict", 5, 11]],
+    "one conflict across both functions, with a '}' and a blank line inside it",
+  );
+  const deleted = [...base];
+  deleted.splice(3, 1);
+  const out = markUnsettled(p, lines(...deleted), MERGE)!;
+  assert.equal(count(out.text), 1, "the conflict is still marked");
+  const parsed = parseConflictMarkers(out.text);
+  assert.equal(parsed.ours, lines("function a() {", "  return 11;", "}", ...yours.slice(4)));
 });
 
 test("a conflict with no base lines (both sides inserted at one spot) stays marked beside a line typed there", () => {
