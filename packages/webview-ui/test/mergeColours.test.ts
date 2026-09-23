@@ -306,6 +306,19 @@ test("one side's 'Apply non-conflicting' takes the identical changes too, in tha
     expect(getComputedStyle(keep).visibility === "visible", "keep-base shows once focus is inside its control");
     keep.focus();
     expect(document.activeElement === keep, "…and can then take focus itself");
+    // …and by the MOUSE: the group takes no pointer events, so any strip
+    // between the two buttons drops its :hover, hides keep-base under the
+    // pointer, and a hidden button can never be hovered back. Every point on
+    // the path from ✓ to ✕ must land on the control.
+    const ar = same.querySelector(".jb-btn-accept").getBoundingClientRect();
+    const kr = keep.getBoundingClientRect();
+    const yMid = (ar.top + ar.bottom) / 2;
+    const holes = [];
+    for (let x = Math.ceil(ar.left) + 1; x < Math.floor(kr.right) - 1; x++) {
+      const at = document.elementFromPoint(x, yMid);
+      if (!at || !same.contains(at)) holes.push(x);
+    }
+    expect(kr.left > ar.left && holes.length === 0, "the pointer path from accept to keep-base stays on the control (leaves it at x = " + holes.join(",") + ")");
     keep.click();
     expect(counts.byCategory.same.pending === 1 && view.getResultText().split("\\n")[6] === "s1 = base", "keep-base settles the identical change on the base text");
   `);

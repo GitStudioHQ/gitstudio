@@ -597,12 +597,15 @@ body [class*="jb-frame-"].jb-edge-bottom { border-top: none; }
   z-index: 3;
   pointer-events: none;
 }
+/* No gap between the buttons: the group takes no pointer events, so a gap is a
+ * strip where the pointer leaves the control — keep-base hides the moment it
+ * crosses it, and a hidden button cannot be hovered back into view. */
 .jb-result-group {
   position: absolute;
   left: 0;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   pointer-events: none;
 }
 .jb-result-group .jb-gutter-btn { width: 18px; }
