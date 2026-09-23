@@ -102,6 +102,16 @@ export interface MergeHostSettings extends MergeSettings {
   autoOpen: boolean;
 }
 
+/** What a deferring product says when it stands down (see MergeProduct.deferral). */
+export interface DeferralNotice {
+  /** The product that owns the automatic behaviour instead ("GitStudio"). */
+  readonly owner: string;
+  /** globalState key remembering the notice was seen. */
+  readonly noticeKey: string;
+  /** The owner's setting that, set to false, hands the automatic behaviour back. */
+  readonly handBack: { readonly section: string; readonly key: string };
+}
+
 export interface MergeProduct {
   /** Stable product key, for telemetry-free bookkeeping only. */
   readonly key: "gitstudio" | "merge-studio";
@@ -123,7 +133,11 @@ export interface MergeProduct {
    * conflict, non-modally; there is no activation-time question any more.
    */
   readonly coexistencePromptKey: string;
-  /** The dashboard's support-link slot (Merge Studio's "Report an issue" / "Rate"). */
+  /**
+   * The dashboard's support-link slot (Merge Studio's "Report a problem" /
+   * "Rate" / "Sponsor"). The first is the only one shown mid-operation, so
+   * it is the problem report; the rest wait until the work is done.
+   */
   readonly supportLinks?: { label: string; url: string }[];
   readonly locator: RepoLocator;
   /** Ask a yes/no question. GitStudio: promptConfirm (never a modal). Merge Studio: a modal. */
@@ -137,6 +151,20 @@ export interface MergeProduct {
    * `gitstudio.merge.autoOpen` on; GitStudio never defers.
    */
   defersTo?(): boolean;
+  /**
+   * D4's notice, said ONCE — the first conflict at which this product stands
+   * down — so a user who installed it and sees another product open their
+   * conflicts knows why, and how to have it the other way (POLISH A5.8).
+   * Only a product that can defer has one (Merge Studio).
+   */
+  readonly deferral?: DeferralNotice;
+  /**
+   * The product's own globalState keys that follow the user to their other
+   * machines (Settings Sync), besides the ones this package keeps. VS Code
+   * keeps ONE list per extension — each setKeysForSync call replaces the last —
+   * so the list is set in one place, by registerMergeExperience.
+   */
+  readonly syncedStateKeys?: readonly string[];
   /** GitStudio: "Open Changes" in the editor's own diff (the embedded one is `openDiff`). */
   openChangesEmbedded?(uri: vscode.Uri): Promise<void>;
   /** A single-file Compare with no second file selected (GitStudio asks HEAD or another file). */
@@ -188,16 +216,40 @@ export function normalizeMergeSettings(
 }
 
 /**
- * D4, as a pure rule: Merge Studio stands down its automatic behaviour while
- * GitStudio is installed AND GitStudio's `merge.autoOpen` is on (unset reads as
- * the default, on). Turning GitStudio's off — or uninstalling it — hands the
- * automatic behaviour back.
+ * The command only a GitStudio that runs THIS shared merge experience
+ * contributes (its "Resolve Conflicts…", the dashboard). GitStudio 1.13.0 and
+ * older have `gitstudio.merge.autoOpen` but no dashboard: they open every
+ * conflicted file in the old editor, with a rebase's sides still swapped.
+ */
+export const GITSTUDIO_SHARED_MERGE_COMMAND = "gitstudio.showConflicts";
+
+/**
+ * Whether an installed GitStudio's manifest (its `packageJSON`, readable
+ * without activating it) carries the shared merge experience.
+ */
+export function hasSharedMergeExperience(packageJSON: unknown): boolean {
+  const commands = (packageJSON as { contributes?: { commands?: unknown } } | undefined)?.contributes?.commands;
+  return (
+    Array.isArray(commands) &&
+    commands.some((c) => (c as { command?: unknown } | null)?.command === GITSTUDIO_SHARED_MERGE_COMMAND)
+  );
+}
+
+/**
+ * D4, as a pure rule: Merge Studio stands down its automatic behaviour while a
+ * GitStudio WITH THE SAME MERGE EXPERIENCE is installed AND GitStudio's
+ * `merge.autoOpen` is on (unset reads as the default, on). Turning GitStudio's
+ * off — or uninstalling it — hands the automatic behaviour back. An older
+ * GitStudio (no dashboard, sides still swapped in a rebase) is never deferred
+ * to: standing down for it would bring merge-studio#12 back (POLISH A5.1).
  */
 export function shouldDeferToGitStudio(gitStudio: {
   installed: boolean;
+  /** hasSharedMergeExperience of the installed GitStudio's manifest. */
+  sharedMerge: boolean;
   autoOpen: boolean | undefined;
 }): boolean {
-  return gitStudio.installed && gitStudio.autoOpen !== false;
+  return gitStudio.installed && gitStudio.sharedMerge && gitStudio.autoOpen !== false;
 }
 
 /**

@@ -1,13 +1,14 @@
 // The few decisions that belong to Merge Studio's shell rather than to the
 // shared merge experience: when the walkthrough opens, how a question is
 // asked, which facts about GitStudio decide D4 (the RULE is merge-vscode's
-// shouldDeferToGitStudio — this only reads its inputs), and the one legacy
-// setting value 0.3.4 users may have.
+// shouldDeferToGitStudio — this only reads its inputs), and what 0.3.4 left
+// behind (one setting value, one "already asked" flag).
 //
 // vscode-free: the editor is reached through the small function types below,
 // so every decision is unit-tested under plain node.
 
-import type { AskSpec } from "@gitstudio/merge-vscode/product";
+import { hasSharedMergeExperience, type AskSpec, type DeferralNotice } from "@gitstudio/merge-vscode/product";
+import { MS_034_COEXIST_KEY, MS_COEXISTENCE_PROMPT_KEY, MS_DEFERRAL_NOTICE_KEY } from "./ids";
 
 // ── The walkthrough ─────────────────────────────────────────────────────────
 
@@ -70,17 +71,32 @@ export const GITSTUDIO_AUTO_OPEN_KEY = "autoOpen";
 
 /**
  * The inputs merge-vscode's shouldDeferToGitStudio decides on: is GitStudio
- * installed, and what does its `gitstudio.merge.autoOpen` say (undefined when
- * unset or when GitStudio is not there to declare it).
+ * installed, does its manifest carry the shared merge experience (merge-vscode's
+ * hasSharedMergeExperience — GitStudio 1.13.0 and older do not), and what does
+ * its `gitstudio.merge.autoOpen` say (undefined when unset or when GitStudio is
+ * not there to declare it).
  */
 export function gitStudioFacts(editor: {
-  hasExtension(id: string): boolean;
+  /** vscode.extensions.getExtension, reduced to the manifest (readable without activating it). */
+  extension(id: string): { packageJSON?: unknown } | undefined;
   setting(section: string, key: string): unknown;
-}): { installed: boolean; autoOpen: boolean | undefined } {
-  const installed = editor.hasExtension(GITSTUDIO_EXTENSION_ID);
+}): { installed: boolean; sharedMerge: boolean; autoOpen: boolean | undefined } {
+  const ext = editor.extension(GITSTUDIO_EXTENSION_ID);
+  const installed = ext !== undefined;
   const value = installed ? editor.setting(GITSTUDIO_AUTO_OPEN_SECTION, GITSTUDIO_AUTO_OPEN_KEY) : undefined;
-  return { installed, autoOpen: typeof value === "boolean" ? value : undefined };
+  return {
+    installed,
+    sharedMerge: installed && hasSharedMergeExperience(ext.packageJSON),
+    autoOpen: typeof value === "boolean" ? value : undefined,
+  };
 }
+
+/** What Merge Studio says, once, the first time it stands down for GitStudio (merge-vscode's maybeSayDeferred). */
+export const GITSTUDIO_DEFERRAL: DeferralNotice = {
+  owner: "GitStudio",
+  noticeKey: MS_DEFERRAL_NOTICE_KEY,
+  handBack: { section: GITSTUDIO_AUTO_OPEN_SECTION, key: GITSTUDIO_AUTO_OPEN_KEY },
+};
 
 // ── Legacy setting values ───────────────────────────────────────────────────
 
@@ -102,4 +118,20 @@ export function legacySettingUpdates(
 ): { key: string; value: string }[] {
   const resolver = inspect("conflictResolver");
   return resolver?.globalValue === "webview" ? [{ key: "conflictResolver", value: "embedded" }] : [];
+}
+
+/**
+ * 0.3.4 asked its question about VS Code's own merge editor once, at its first
+ * activation, and wrote `jbMerge.coexistPromptShown`. Whatever the answer was
+ * — "Disable built-ins", "Keep them", or the toast closed — that user WAS
+ * asked, so 0.4 never asks them again ("nothing asks twice"): the old key
+ * counts as an answer. (Someone who turned the built-ins off is not asked
+ * anyway; everyone can switch with the settings or "Restore VS Code's Merge
+ * Editor".) Fresh installs have no old key and are asked at their first
+ * conflict.
+ */
+export function legacyStateUpdates(get: (key: string) => unknown): { key: string; value: true }[] {
+  return get(MS_034_COEXIST_KEY) === true && get(MS_COEXISTENCE_PROMPT_KEY) === undefined
+    ? [{ key: MS_COEXISTENCE_PROMPT_KEY, value: true }]
+    : [];
 }

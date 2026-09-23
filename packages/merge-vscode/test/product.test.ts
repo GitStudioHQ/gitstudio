@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { DEFAULT_MERGE_SETTINGS } from "@gitstudio/host-bridge/conflictsProtocol";
 import {
   competingBuiltIns,
+  GITSTUDIO_SHARED_MERGE_COMMAND,
+  hasSharedMergeExperience,
   normalizeMergeSettings,
   shouldDeferToGitStudio,
   type MergeHostSettings,
@@ -58,11 +60,42 @@ test("real values pass through (a padded launcher path is trimmed)", () => {
   });
 });
 
-test("D4: Merge Studio defers exactly while GitStudio is installed with merge.autoOpen not turned off", () => {
-  assert.equal(shouldDeferToGitStudio({ installed: true, autoOpen: true }), true);
-  assert.equal(shouldDeferToGitStudio({ installed: true, autoOpen: undefined }), true, "unset = GitStudio's default, on");
-  assert.equal(shouldDeferToGitStudio({ installed: true, autoOpen: false }), false, "GitStudio's routing off → Merge Studio takes over");
-  assert.equal(shouldDeferToGitStudio({ installed: false, autoOpen: true }), false, "uninstalled → Merge Studio takes over");
+test("D4: Merge Studio defers exactly while a GitStudio with this merge experience is installed with merge.autoOpen not turned off", () => {
+  const gs = { installed: true, sharedMerge: true };
+  assert.equal(shouldDeferToGitStudio({ ...gs, autoOpen: true }), true);
+  assert.equal(shouldDeferToGitStudio({ ...gs, autoOpen: undefined }), true, "unset = GitStudio's default, on");
+  assert.equal(shouldDeferToGitStudio({ ...gs, autoOpen: false }), false, "GitStudio's routing off → Merge Studio takes over");
+  assert.equal(
+    shouldDeferToGitStudio({ installed: false, sharedMerge: false, autoOpen: true }),
+    false,
+    "uninstalled → Merge Studio takes over",
+  );
+  // POLISH A5.1 (skew-a): GitStudio 1.13.0 has merge.autoOpen but no
+  // dashboard, and still shows a rebase's sides swapped. Standing down for it
+  // would hand merge-studio#12 straight back.
+  assert.equal(
+    shouldDeferToGitStudio({ installed: true, sharedMerge: false, autoOpen: undefined }),
+    false,
+    "an older GitStudio is never deferred to",
+  );
+  assert.equal(shouldDeferToGitStudio({ installed: true, sharedMerge: false, autoOpen: true }), false);
+});
+
+test("D4's capability test reads GitStudio's manifest: its Resolve Conflicts… command marks the shared experience", () => {
+  const manifest = (commands: unknown) => ({ contributes: { commands } });
+  assert.equal(GITSTUDIO_SHARED_MERGE_COMMAND, "gitstudio.showConflicts");
+  assert.equal(
+    hasSharedMergeExperience(manifest([{ command: "gitstudio.graph" }, { command: "gitstudio.showConflicts" }])),
+    true,
+  );
+  // GitStudio 1.13.0 (ext-v1.13.0): its merge editor and ticks, no dashboard.
+  assert.equal(
+    hasSharedMergeExperience(manifest([{ command: "gitstudio.resolveInMergeEditor" }, { command: "gitstudio.stageWithTicks" }])),
+    false,
+  );
+  for (const junk of [undefined, null, {}, { contributes: {} }, manifest("gitstudio.showConflicts"), manifest([null, 3])]) {
+    assert.equal(hasSharedMergeExperience(junk), false, JSON.stringify(junk));
+  }
 });
 
 test("the coexistence question is asked only about built-ins that are actually on", () => {

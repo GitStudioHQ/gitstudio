@@ -8,16 +8,17 @@
 // What stays here is brand-only: the walkthrough, the context key that
 // switches its "Using GitStudio too?" step, and one legacy setting value.
 //
-// When GitStudio is installed with `gitstudio.merge.autoOpen` on, GitStudio
-// owns everything automatic (decision D4); the rule is merge-vscode's
-// shouldDeferToGitStudio, and Merge Studio's commands keep working.
+// When a GitStudio with this same merge experience is installed with
+// `gitstudio.merge.autoOpen` on, GitStudio owns everything automatic (decision
+// D4) and Merge Studio says so once; the rule and the notice are merge-vscode's
+// (shouldDeferToGitStudio, maybeSayDeferred), and Merge Studio's commands keep
+// working. An older GitStudio, without the dashboard, is never deferred to.
 
 import * as vscode from "vscode";
 import { shouldDeferToGitStudio } from "@gitstudio/merge-vscode/product";
 import { registerMergeExperience } from "@gitstudio/merge-vscode/register";
 import { VscodeGitLocator } from "@gitstudio/merge-vscode/vscodeGitLocator";
 import {
-  MS_COEXISTENCE_PROMPT_KEY,
   MS_DEFERS_CONTEXT_KEY,
   MS_SETTINGS_SECTION,
   MS_WALKTHROUGH_COMMAND,
@@ -32,6 +33,7 @@ import {
   GITSTUDIO_AUTO_OPEN_SECTION,
   gitStudioFacts,
   legacySettingUpdates,
+  legacyStateUpdates,
   modalAsk,
 } from "./shell";
 
@@ -45,10 +47,16 @@ export function activate(context: vscode.ExtensionContext): void {
   const defersTo = (): boolean =>
     shouldDeferToGitStudio(
       gitStudioFacts({
-        hasExtension: (id) => vscode.extensions.getExtension(id) !== undefined,
+        extension: (id) => vscode.extensions.getExtension(id),
         setting: (section, key) => vscode.workspace.getConfiguration(section).get(key),
       }),
     );
+
+  // What 0.3.4 left in globalState, read before the experience's first scan
+  // (a Memento update is visible to get() at once).
+  for (const update of legacyStateUpdates((key) => context.globalState.get(key))) {
+    void context.globalState.update(update.key, update.value);
+  }
 
   const MS_PRODUCT = buildMsProduct({
     locator,
@@ -100,14 +108,9 @@ function registerWalkthrough(context: vscode.ExtensionContext, locator: LateLoca
     vscode.commands.executeCommand("workbench.action.openWalkthrough", MS_WALKTHROUGH_FULL_ID, false);
   context.subscriptions.push(vscode.commands.registerCommand(MS_WALKTHROUGH_COMMAND, open));
 
-  // Answers and "already shown" follow the user to their other machines.
-  // (merge-vscode's coexistence.ts sets its own two keys too; both lists name
-  // the same coexistence keys so neither call drops the other's.)
-  context.globalState.setKeysForSync([
-    MS_WALKTHROUGH_SHOWN_KEY,
-    MS_COEXISTENCE_PROMPT_KEY,
-    `${MS_COEXISTENCE_PROMPT_KEY}.previous`,
-  ]);
+  // "Already shown" follows the user to their other machines: it is in
+  // MS_PRODUCT.syncedStateKeys, and merge-vscode sets the extension's one sync
+  // list (a second setKeysForSync here would replace it).
 
   if (context.globalState.get<boolean>(MS_WALKTHROUGH_SHOWN_KEY)) {
     return;

@@ -5,8 +5,9 @@
 // diff panel, the coexistence question) is @gitstudio/merge-vscode, the code
 // GitStudio runs too.
 //
-// vscode-free at runtime (type-only imports): extension.ts supplies the parts
-// that touch the editor, so the product itself is unit-tested.
+// vscode-free at runtime (only vscode-free modules are imported): extension.ts
+// supplies the parts that touch the editor, so the product itself is
+// unit-tested.
 
 import type { AskSpec, MergeProduct, RepoLocator } from "@gitstudio/merge-vscode/product";
 import {
@@ -16,7 +17,9 @@ import {
   MS_MERGE_VIEW_TYPES,
   MS_SETTINGS_SECTION,
   MS_STATUS_ITEM_ID,
+  MS_WALKTHROUGH_SHOWN_KEY,
 } from "./ids";
+import { GITSTUDIO_DEFERRAL } from "./shell";
 
 export interface MsProductParts {
   locator: RepoLocator;
@@ -41,6 +44,11 @@ export function buildMsProduct(parts: MsProductParts): MergeProduct {
     locator: parts.locator,
     ask: parts.ask,
     defersTo: parts.defersTo,
+    // D4, said once: "GitStudio is installed, so GitStudio opens your conflicts…"
+    deferral: GITSTUDIO_DEFERRAL,
+    // Follows the user to their other machines, with the shared answers
+    // (merge-vscode sets the extension's one sync list).
+    syncedStateKeys: [MS_WALKTHROUGH_SHOWN_KEY],
     // No runWithUndo: Merge Studio has no undo ledger of its own; a resolved
     // file is undone from the dashboard (hold to undo). No openChangesEmbedded
     // or compareSingle: Open Changes and a one-file Compare use the embedded

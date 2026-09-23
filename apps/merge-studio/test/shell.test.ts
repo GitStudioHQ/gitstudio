@@ -18,7 +18,7 @@ import {
   type EditorFacts,
 } from "../src/links";
 import { buildMsProduct } from "../src/msProduct";
-import { decideWalkthrough, gitStudioFacts, legacySettingUpdates, modalAsk } from "../src/shell";
+import { decideWalkthrough, gitStudioFacts, legacySettingUpdates, legacyStateUpdates, modalAsk } from "../src/shell";
 
 // The shell's own behaviour: everything Merge Studio decides that is not the
 // shared merge experience.
@@ -61,9 +61,19 @@ test("MS_PRODUCT: Merge Studio's brand, jbMerge settings and ids, and the parts 
   assert.equal(product.runWithUndo, undefined);
 });
 
-test("the coexistence answer is a new key: 0.3.4 set its key before asking, so it proves no answer", () => {
-  assert.notEqual(MS_COEXISTENCE_PROMPT_KEY, MS_034_COEXIST_KEY);
-  assert.match(MS_COEXISTENCE_PROMPT_KEY, /^jbMerge\./);
+test("an upgrader 0.3.4 already asked about VS Code's merge editor is never asked again", () => {
+  const state = (entries: Record<string, unknown>) => (key: string) => entries[key];
+  // 0.3.4 wrote its flag whatever the answer ("Disable built-ins", "Keep them", closed).
+  assert.deepEqual(legacyStateUpdates(state({ [MS_034_COEXIST_KEY]: true })), [
+    { key: MS_COEXISTENCE_PROMPT_KEY, value: true },
+  ]);
+  assert.deepEqual(legacyStateUpdates(state({})), [], "a fresh install is asked at its first conflict");
+  assert.deepEqual(
+    legacyStateUpdates(state({ [MS_034_COEXIST_KEY]: true, [MS_COEXISTENCE_PROMPT_KEY]: true })),
+    [],
+    "already carried over",
+  );
+  assert.equal(MS_034_COEXIST_KEY, "jbMerge.coexistPromptShown", "0.3.4's own key (src/extension.ts COEXIST_PROMPT_KEY)");
 });
 
 test("the walkthrough command opens this extension's walkthrough", () => {
@@ -72,23 +82,49 @@ test("the walkthrough command opens this extension's walkthrough", () => {
 
 // ── D4: GitStudio owns the automatic behaviour ──────────────────────────────
 
-test("D4: Merge Studio stands down while GitStudio is installed with merge.autoOpen on or unset, and only then", () => {
-  const facts = (installed: boolean, autoOpen: unknown) =>
-    gitStudioFacts({
-      hasExtension: (id) => installed && id === "gitstudio.gitstudio",
-      setting: (section, key) => (section === "gitstudio.merge" && key === "autoOpen" ? autoOpen : undefined),
-    });
-  assert.equal(shouldDeferToGitStudio(facts(true, undefined)), true, "installed, default on");
-  assert.equal(shouldDeferToGitStudio(facts(true, true)), true);
-  assert.equal(shouldDeferToGitStudio(facts(true, false)), false, "GitStudio's autoOpen off hands it back");
-  assert.equal(shouldDeferToGitStudio(facts(false, true)), false, "not installed");
-  assert.equal(shouldDeferToGitStudio(facts(true, "yes")), true, "a non-boolean reads as unset (on)");
+/** A GitStudio manifest: the new one contributes the shared "Resolve Conflicts…". */
+const GS_NEW = { contributes: { commands: [{ command: "gitstudio.graph" }, { command: "gitstudio.showConflicts" }] } };
+/** GitStudio 1.13.0 (ext-v1.13.0, on the Marketplace today): merge.autoOpen, no dashboard. */
+const GS_1_13_0 = { contributes: { commands: [{ command: "gitstudio.resolveInMergeEditor" }, { command: "gitstudio.stageWithTicks" }] } };
+
+const factsFor = (manifest: unknown, autoOpen: unknown) =>
+  gitStudioFacts({
+    extension: (id) => (manifest !== undefined && id === "gitstudio.gitstudio" ? { packageJSON: manifest } : undefined),
+    setting: (section, key) => (section === "gitstudio.merge" && key === "autoOpen" ? autoOpen : undefined),
+  });
+
+test("D4: Merge Studio stands down while a GitStudio with the shared merge experience is installed with merge.autoOpen on or unset, and only then", () => {
+  assert.equal(shouldDeferToGitStudio(factsFor(GS_NEW, undefined)), true, "installed, default on");
+  assert.equal(shouldDeferToGitStudio(factsFor(GS_NEW, true)), true);
+  assert.equal(shouldDeferToGitStudio(factsFor(GS_NEW, false)), false, "GitStudio's autoOpen off hands it back");
+  assert.equal(shouldDeferToGitStudio(factsFor(undefined, true)), false, "not installed");
+  assert.equal(shouldDeferToGitStudio(factsFor(GS_NEW, "yes")), true, "a non-boolean reads as unset (on)");
+});
+
+test("D4 under version skew (POLISH A5.1): Merge Studio 0.4 never stands down for GitStudio 1.13.0", () => {
+  // 1.13.0 would open the conflict in its old editor, sides swapped in a
+  // rebase and no dashboard: merge-studio#12 all over again.
+  const facts = factsFor(GS_1_13_0, undefined);
+  assert.deepEqual(facts, { installed: true, sharedMerge: false, autoOpen: undefined });
+  assert.equal(shouldDeferToGitStudio(facts), false);
+  assert.equal(shouldDeferToGitStudio(factsFor({}, true)), false, "a manifest with no commands is not the shared experience");
 });
 
 test("D4 reads GitStudio's setting only when GitStudio is there to declare it", () => {
   let read = 0;
-  gitStudioFacts({ hasExtension: () => false, setting: () => (read++, false) });
+  gitStudioFacts({ extension: () => undefined, setting: () => (read++, false) });
   assert.equal(read, 0);
+});
+
+test("D4, said once: MS_PRODUCT names GitStudio, its own notice key, and GitStudio's autoOpen as the way back", () => {
+  const product = buildMsProduct({ locator: new LateLocator(), ask: async () => false, defersTo: () => true, supportLinks: [] });
+  assert.deepEqual(product.deferral, {
+    owner: "GitStudio",
+    noticeKey: "jbMerge.deferralNoticeShown",
+    handBack: { section: "gitstudio.merge", key: "autoOpen" },
+  });
+  // The walkthrough's "already shown" syncs with the shared answers, in the one list merge-vscode sets.
+  assert.deepEqual(product.syncedStateKeys, ["jbMerge.walkthroughShown"]);
 });
 
 // ── The walkthrough ─────────────────────────────────────────────────────────
@@ -147,6 +183,7 @@ test("the dashboard's support links are https pages only (the panel refuses anyt
   assert.deepEqual(
     links.map((l) => l.label),
     ["Report a problem", "Rate Merge Studio", "Sponsor"],
+    "the problem report first: the dashboard keeps only the first link mid-operation (POLISH A5.10)",
   );
   for (const l of links) assert.match(l.url, /^https:\/\//);
   assert.equal(links[1].url, MS_OPENVSX_REVIEWS_URL);

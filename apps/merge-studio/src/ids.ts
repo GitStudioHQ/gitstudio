@@ -67,16 +67,17 @@ export const MS_WALKTHROUGH_FULL_ID = `${MS_EXTENSION_ID}#${MS_WALKTHROUGH_ID}`;
 export const MS_WALKTHROUGH_SHOWN_KEY = "jbMerge.walkthroughShown";
 
 /**
- * globalState: the ANSWER to the question about VS Code's own merge editor.
+ * globalState: the ANSWER to the question about VS Code's own merge editor
+ * (merge-vscode's coexistence.ts writes it only after an answer).
  *
- * Deliberately NOT 0.3.4's `jbMerge.coexistPromptShown`: 0.3.4 wrote that key
- * before it asked, so it is set for every 0.3.4 user whether they answered or
- * never saw the toast. The shared question is asked at the first conflict,
- * non-modally, and skipped when the built-ins are already off — so an upgrader
- * who turned them off is not asked again, and one who never saw it is asked
- * once.
+ * 0.3.4 asked the same question at its first activation and wrote its own key
+ * (below) before asking. An upgrader carrying that key was asked, so it counts
+ * as an answer here (shell.ts legacyStateUpdates): nothing asks twice.
  */
 export const MS_COEXISTENCE_PROMPT_KEY = "jbMerge.coexistence.answered";
 
-/** Merge Studio 0.3.4's globalState keys, for the record (never written by 0.4). */
+/** Merge Studio 0.3.4's "asked about the built-ins" flag: read once, never written by 0.4. */
 export const MS_034_COEXIST_KEY = "jbMerge.coexistPromptShown";
+
+/** globalState: Merge Studio said, once, that it stands down for GitStudio (POLISH A5.8). */
+export const MS_DEFERRAL_NOTICE_KEY = "jbMerge.deferralNoticeShown";

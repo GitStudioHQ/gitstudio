@@ -11,7 +11,11 @@ import {
   MERGE_SETTINGS_SPEC,
   type CommandRole,
 } from "@gitstudio/merge-vscode/contract";
-import type { MergeCommandIds } from "@gitstudio/merge-vscode/product";
+import {
+  GITSTUDIO_SHARED_MERGE_COMMAND,
+  hasSharedMergeExperience,
+  type MergeCommandIds,
+} from "@gitstudio/merge-vscode/product";
 import { MS_IDE_CONTEXT_KEY, MS_MERGE_COMMANDS, MS_SETTINGS_SECTION, MS_WALKTHROUGH_COMMAND } from "../src/ids";
 
 // "No diff between the standalone extension and the combined one, no parts
@@ -213,6 +217,15 @@ test("keybindings: a merge command bound in one product is bound in the other, o
   const gsBound = bound(gs, gsRole);
   const differ = [...new Set([...msBound, ...gsBound])].filter((r) => msBound.has(r) !== gsBound.has(r));
   assert.deepEqual(differ.sort(), (Object.keys(KEYBINDING_EXCEPTIONS) as Role[]).sort());
+});
+
+test("D4's capability marker is GitStudio's own Resolve Conflicts… command, and GitStudio's manifest carries it", () => {
+  // Merge Studio stands down only for a GitStudio whose manifest has this
+  // command (merge-vscode's hasSharedMergeExperience). Renaming GitStudio's
+  // command without this would make Merge Studio never defer, silently.
+  assert.equal(GITSTUDIO_SHARED_MERGE_COMMAND, GS_COMMANDS.showConflicts);
+  assert.ok(hasSharedMergeExperience(gs), "GitStudio's manifest reads as the shared experience");
+  assert.ok(!hasSharedMergeExperience(ms), "and Merge Studio's own does not");
 });
 
 test("the SCM view's Merge Changes header offers Resolve Conflicts… as a button in both products", () => {
