@@ -1156,6 +1156,39 @@
         diverged: { branch: "main", upstream: "origin/main", ahead: 2, behind: pullState.behind() },
       };
     },
+    // A commit, answered as the bridge answers one that worked. There was no
+    // fixture, so `host.invoke("commit")` answered undefined and every Commit
+    // press in a scene ended in the catch's "Commit failed." — nothing after
+    // a commit (the push, what Commit & Push says) could be reached.
+    "commit": () => ({ ok: true, changed: true }),
+    // Push. A MUTATION, so the fallback answered {ok:true} and no refusal could
+    // happen in a scene. ?forcerefused=1 → the branch was rewritten while the
+    // remote has somebody else's version too: a plain push is refused
+    // non-fast-forward (git's words, as the bridge passes them on), and the
+    // force the app then offers is refused by the bridge — `expected`, with
+    // `pullFirst` — as it refuses one that would delete commits this branch
+    // never had. The request is readable as `window.__gsPushedWith`.
+    "sync:push": (opts) => {
+      window.__gsPushedWith = (window.__gsPushedWith || []).concat([opts || null]);
+      if (!params.get("forcerefused")) return { ok: true, changed: true };
+      if (!(opts && opts.force)) {
+        return {
+          ok: false,
+          changed: false,
+          message: " ! [rejected]        main -> main (non-fast-forward)\nerror: failed to push some refs",
+        };
+      }
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        pullFirst: true,
+        message:
+          "The remote branch has commits this branch has never had — fetched in the background, " +
+          "from another machine or someone else — and a force push would delete them. " +
+          "Pull them in first, then push.",
+      };
+    },
     // ?diverged=1 → the branch and its upstream have BOTH moved, which is the
     // one sync state the widget could not be driven into: with behind: 0 the
     // top-bar action is Push, so Pull — and the question it now asks — was

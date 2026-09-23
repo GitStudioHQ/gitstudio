@@ -13243,6 +13243,54 @@
       const e = $$("#toast-stack .toast").find((x) => text(x).includes("Something did fail"));
       c.ok(!!e && e.classList.contains("toast-error"), "an error notice is still red");
     },
+    /**
+     * Commit & Push, where the force it offers is refused: said as what it is.
+     *
+     * A rewritten branch is pushed plainly, refused non-fast-forward, and the
+     * app offers a force. When the remote has commits that are not this
+     * branch's to replace — somebody else's, or the same commit amended on
+     * another machine and fetched in the background — the bridge refuses that
+     * force (`expected`, `pullFirst`). That arrived as "Committed, but push
+     * failed: …" in red: a refusal that was the app doing its job, read as a
+     * failure, with nothing offered. The commit is made and nothing was pushed;
+     * the toast says so in the neutral tone and offers the way on — Pull.
+     */
+    "a-refused-force-push-after-commit-says-so-and-offers-pull": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const ta = $(".dc-message");
+      const push = $(".dc-push");
+      c.ok(!!ta && !!push, "the composer offers Commit & Push");
+      if (!ta || !push) return;
+      ta.value = "fix: a thing";
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(300);
+      c.ok(!push.disabled, "Commit & Push is armed");
+      push.click();
+      await settle(700);
+      const ok = $(".modal-ok");
+      c.ok(!!ok && /force/i.test(text(ok)), "the refused plain push offers a force");
+      if (!ok) return;
+      ok.click();
+      await settle(700);
+      const pushes = window.__gsPushedWith || [];
+      c.eq(pushes.length, 2, "a plain push, then the forced one");
+      c.eq(!!(pushes[1] && pushes[1].force), true, "the second one is the force");
+      const t = $$("#toast-stack .toast").find((x) => /Committed/.test(text(x)));
+      c.ok(!!t, "the outcome is said");
+      if (!t) return;
+      c.ok(!t.classList.contains("toast-error"), `in the neutral tone, not as a failure (${t.className})`);
+      c.ok(!/push failed/i.test(text(t)), `and not called a failed push (${JSON.stringify(text(t))})`);
+      c.match(text(t), /not pushed/i, "it says the commit was made and nothing was pushed");
+      c.match(text(t), /Pull them in first/, "…and why, in the bridge's words");
+      const act = t.querySelector(".toast-action");
+      c.eq(text(act), "Pull", "the way on is offered");
+      if (!act) return;
+      act.click();
+      await settle(500);
+      const pulled = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
+      c.ok(pulled.length > 0, "and Pull pulls");
+    },
     /** The PR's review threads: one GitHub could not return has no file to hang
      *  on, so every file's panel says it — "No comments on this file" is not a
      *  claim the panel can make about a thread nobody could read. */

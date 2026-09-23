@@ -624,6 +624,9 @@ const CASES = [
   ["a-list-github-could-not-fully-return-says-so", "projects"],
   ["a-review-thread-github-could-not-return-is-said", "prs~open106~text:Files", { extra: "partial=1" }],
   ["a-folder-that-will-not-open-is-not-painted-as-a-failure", "code"],
+  // Commit & Push whose force the bridge refuses: the neutral tone, and Pull.
+  ["a-refused-force-push-after-commit-says-so-and-offers-pull", "changes", { extra: "forcerefused=1" }],
+  ["a-refused-force-push-after-commit-says-so-and-offers-pull", "changes", { extra: "forcerefused=1", theme: "light" }],
 ];
 
 function run(scene, checkId, opts = {}) {

@@ -7685,7 +7685,22 @@ class App {
           }
         }
         // The commit already happened — be explicit if only the push failed.
-        if (!p.ok) {
+        //
+        // …and do not call it a failure when it was not one. A force push the
+        // bridge REFUSED (the remote has commits that are not this branch's to
+        // replace — somebody else's, or the same commit amended on another
+        // machine) is the repository's state, marked `expected`: the commit is
+        // made, nothing was pushed, and the way on is to pull those commits
+        // in. It used to arrive as "Committed, but push failed: …" in red,
+        // for a refusal that was the app doing its job.
+        if (!p.ok && p.expected) {
+          toast(
+            `Committed, not pushed. ${p.message ?? ""}`.trim(),
+            "info",
+            undefined,
+            p.pullFirst ? { label: "Pull", onClick: () => void this.doSync("pull") } : undefined,
+          );
+        } else if (!p.ok) {
           toast(`Committed, but push failed: ${p.message ?? "unknown error"}`, "error");
         } else {
           toast("Committed and pushed.", "success");
