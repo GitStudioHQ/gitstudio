@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { GitProcess } from "./GitProcess";
 import {
   abortRebase,
@@ -95,6 +95,12 @@ export interface OperationMarkers {
   revertHead: boolean;
   /** `sequencer/todo`: a cherry-pick / revert range is still queued. */
   sequencer: boolean;
+  /**
+   * `sequencer/todo` queues REVERTS (its first command is `revert`), not
+   * picks — what tells a range of reverts from a range of cherry-picks once
+   * the *_HEAD ref is gone (git's own sequencer_get_last_command).
+   */
+  sequencerRevert: boolean;
 }
 
 /** Everything one read learned — the view plus the raw facts the desktop adapter needs. */
@@ -465,11 +471,26 @@ export class OperationProvider implements OperationSource, OperationControl {
         ran = fromRunner(await abortRebase(this.root, opts?.runner ?? this.runner));
         break;
       case "cherry-pick":
-        ran = await this.git(["cherry-pick", "--abort"], opts);
+      case "revert": {
+        // A RANGE is rewound to where it started (sequencer/head) — unless
+        // HEAD moved since its last pick (a commit made by hand mid-range):
+        // then git prints "Not rewinding, check your HEAD!", drops the queue
+        // and exits 0 (sequencer.c rollback_is_safe), and every commit the
+        // range already made stays on the branch. "Aborted" alone would say
+        // the opposite, so the outcome is checked, not git's English.
+        const start = before.markers.sequencer
+          ? firstLine(await readText(join(dirname((await this.gitPaths(opts))["sequencer/todo"]), "head")))
+          : undefined;
+        ran = await this.git([v.kind, "--abort"], opts);
+        const head = start ? await this.revParse("HEAD", opts?.signal) : undefined;
+        if (ran.code === 0 && start && head && head !== start) {
+          warning =
+            `The ${v.kind === "revert" ? "revert" : "cherry-pick"} was stopped, but HEAD had moved since its ` +
+            "last commit, so git left the branch where it is rather than rewinding — the commits it had " +
+            "already made are still there. Check the log before carrying on.";
+        }
         break;
-      case "revert":
-        ran = await this.git(["revert", "--abort"], opts);
-        break;
+      }
       case "am": {
         // git declines to rewind when HEAD moved since the last am failure,
         // prints "Not rewinding to ORIG_HEAD" and still exits 0. Decided from
@@ -543,7 +564,11 @@ export class OperationProvider implements OperationSource, OperationControl {
         exists(paths.REVERT_HEAD),
         exists(paths["sequencer/todo"]),
       ]);
-    return { mergeHead, rebaseMerge, rebaseApply, applying, cherryPickHead, revertHead, sequencer };
+    // What the queue holds, from its first command — `pick` or `revert` —
+    // exactly as `git status` decides it (wt-status.c → sequencer.c).
+    const sequencerRevert =
+      sequencer && /^revert\s/.test(todoCommands(await readText(paths["sequencer/todo"]))[0] ?? "");
+    return { mergeHead, rebaseMerge, rebaseApply, applying, cherryPickHead, revertHead, sequencer, sequencerRevert };
   }
 
   /** Distinct unmerged paths, `-z` so non-ASCII names are never C-quoted. */
@@ -986,6 +1011,7 @@ const NO_MARKERS: OperationMarkers = {
   cherryPickHead: false,
   revertHead: false,
   sequencer: false,
+  sequencerRevert: false,
 };
 
 function anyMarker(m: OperationMarkers): boolean {
@@ -1015,10 +1041,12 @@ export function kindOf(
   if (m.revertHead) return { kind: "revert" };
   if (m.mergeHead) return { kind: "merge" };
   if (m.sequencer) {
-    // A range whose current pick was committed by hand: CHERRY_PICK_HEAD is
-    // gone, the queue is not, and `--continue` is the way on. git status reads
-    // the same file to report it.
-    return { kind: "cherry-pick" };
+    // A range whose current pick was committed by hand: CHERRY_PICK_HEAD /
+    // REVERT_HEAD is gone, the queue is not, and `--continue` is the way on.
+    // git status reads the same file to report it — and which verb the queue
+    // holds decides which `--continue` works: `cherry-pick --continue` on a
+    // queue of reverts refuses ("cannot cherry-pick during a revert").
+    return { kind: m.sequencerRevert ? "revert" : "cherry-pick" };
   }
   if (stash) return { kind: "stash" };
   return { kind: "none" };

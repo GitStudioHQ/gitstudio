@@ -330,6 +330,7 @@ test("kindOf: THE precedence — a merge step is a rebase, am is not a rebase", 
     cherryPickHead: false,
     revertHead: false,
     sequencer: false,
+    sequencerRevert: false,
   };
   assert.deepEqual(kindOf({ ...none, rebaseMerge: true, mergeHead: true }, false), {
     kind: "rebase-merge-step",
@@ -342,6 +343,7 @@ test("kindOf: THE precedence — a merge step is a rebase, am is not a rebase", 
   assert.deepEqual(kindOf({ ...none, revertHead: true }, false), { kind: "revert" });
   assert.deepEqual(kindOf({ ...none, mergeHead: true }, true), { kind: "merge" }, "stash markers never outrank a real operation");
   assert.deepEqual(kindOf({ ...none, sequencer: true }, false), { kind: "cherry-pick" });
+  assert.deepEqual(kindOf({ ...none, sequencer: true, sequencerRevert: true }, false), { kind: "revert" });
   assert.deepEqual(kindOf(none, true), { kind: "stash" });
   assert.deepEqual(kindOf(none, false), { kind: "none" });
 });

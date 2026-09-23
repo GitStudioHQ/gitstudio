@@ -410,6 +410,30 @@ test("cherry-pick range × the current pick committed by hand: still an operatio
     assert.equal(out.stopped, true, out.message); // T3 conflicts next
   }));
 
+test("cherry-pick range × a commit made by hand, then Abort: git does not rewind, and says so", () =>
+  withStop(S.cherryPickRangeStop, async ({ r, sha }) => {
+    const ctx = r.ctx();
+    r.write("f.txt", edit(FIVE, { three: "three-R", five: "five-master" }));
+    r.git("add", "f.txt");
+    r.git("commit", "-q", "--no-edit");
+    const handMade = r.sha("HEAD");
+    const out = await ctx.operation.abort();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(r.exists(".git/sequencer"), false, "the queue is gone");
+    assert.equal(r.sha("HEAD"), handMade, "git declined to rewind: the picks are still on the branch");
+    assert.notEqual(r.sha("HEAD"), sha.master);
+    assert.match(out.message ?? "", /git left the branch where it is/, "never a bare 'aborted' over commits that stayed");
+  }));
+
+test("cherry-pick range × Abort at the stop: the whole range is rewound, with no caveat", () =>
+  withStop(S.cherryPickRangeStop, async ({ r, sha }) => {
+    const ctx = r.ctx();
+    const out = await ctx.operation.abort();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(out.message, "Cherry-pick aborted");
+    assert.equal(r.sha("HEAD"), sha.master, "T1, already picked, is undone too");
+  }));
+
 // ── revert ──────────────────────────────────────────────────────────────────
 
 test("revert × conflicted: Theirs is the undo, never 'parent of'", () =>
@@ -446,6 +470,51 @@ test("revert × resolved to stage 2: Skip ends it", () =>
     const out = await ctx.operation.skip();
     assert.equal(out.ok, true, out.message);
     assert.equal(r.sha("HEAD"), sha.m2);
+  }));
+
+test("revert range × conflicted: a revert with one more queued", () =>
+  withStop(S.revertRangeStop, async ({ r, sha }) => {
+    const ctx = r.ctx();
+    const v = await ctx.operation.view();
+    assert.equal(v.kind, "revert");
+    assert.equal(v.queued, 1);
+    assert.equal(v.commit?.sha, sha.a);
+    assert.equal(v.verbs.continue, "Continue Revert");
+  }));
+
+test("revert range × the current revert committed by hand: still a REVERT, and Continue carries on", () =>
+  withStop(S.revertRangeStop, async ({ r, sha }) => {
+    const ctx = r.ctx();
+    r.write("f.txt", edit(FIVE, { three: "three-by-hand" }));
+    r.git("add", "f.txt");
+    r.git("commit", "-q", "-m", "hand revert of A");
+    const v = await ctx.operation.view();
+    assert.equal(v.kind, "revert", "REVERT_HEAD is gone; the queue of reverts is not");
+    assert.equal((await ctx.operation.detect()).kind, "revert");
+    assert.equal(v.canContinue, true);
+    assert.equal(v.canSkip, false, "there is no current revert to skip");
+    // `cherry-pick --continue` here is refused by git: "cannot cherry-pick during a revert".
+    const out = await ctx.operation.continue();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(out.message, "Revert complete");
+    assert.deepEqual(r.git("log", "--format=%s", `${sha.c}..HEAD`).trim().split("\n"), [
+      'Revert "C add h"',
+      "hand revert of A",
+    ]);
+    assert.equal(r.exists(".git/sequencer"), false);
+  }));
+
+test("revert range × a revert made by hand, then Abort: the warning names the revert", () =>
+  withStop(S.revertRangeStop, async ({ r, sha }) => {
+    const ctx = r.ctx();
+    r.write("f.txt", edit(FIVE, { three: "three-by-hand" }));
+    r.git("add", "f.txt");
+    r.git("commit", "-q", "-m", "hand revert of A");
+    const out = await ctx.operation.abort();
+    assert.equal(out.ok, true, out.message);
+    assert.match(out.message ?? "", /^The revert was stopped, but HEAD had moved/);
+    assert.notEqual(r.sha("HEAD"), sha.c);
+    assert.equal(r.exists(".git/sequencer"), false);
   }));
 
 // ── am ──────────────────────────────────────────────────────────────────────
