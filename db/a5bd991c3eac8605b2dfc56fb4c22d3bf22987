@@ -1,0 +1,58 @@
+packages/webview-ui/src/decorations.ts
+  s_26f5e669d3043c::t_eedaa98d96cb11 230-238,255,260,294,299,345-346,349
+  s_26f5e669d3043c::t_fc42c22cd2a1b9 229
+packages/webview-ui/src/diffView.ts
+  s_26f5e669d3043c::t_cdda955d492880 12,418-419
+  s_26f5e669d3043c::t_eef8f7a08f0fa2 270-271
+  s_26f5e669d3043c::t_a7e1f65cbb9a5f 76-78
+  s_26f5e669d3043c::t_cb95d3327fd370 13,74-75,703-704
+  s_26f5e669d3043c::t_fada4da93808e5 20-22
+  s_26f5e669d3043c::t_f307610dc9d4ac 383-387,389,392-393
+  s_26f5e669d3043c::t_76426b2b49a987 537-548
+  s_26f5e669d3043c::t_05f8c718819916 307-314,317-324,328
+packages/webview-ui/test/mergeKeysAndProgress.test.ts
+  s_26f5e669d3043c::t_ab82edd452ab97 1-89,117-126
+  s_26f5e669d3043c::t_08967e22ad036a 90-116
+packages/webview-ui/src/ribbons.ts
+  s_26f5e669d3043c::t_9a8283cfc927f7 302-320,328
+  s_26f5e669d3043c::t_aee4dcafe0465c 322
+packages/webview-ui/src/lineEdits.ts
+  s_26f5e669d3043c::t_fba1dd5ad17aea 33-45
+  s_26f5e669d3043c::t_966780be7910b8 1-32,46-92
+packages/webview-ui/src/styles/diff.css
+  s_26f5e669d3043c::t_ee2ab3f94a2d96 192-203
+packages/webview-ui/test/mergeEofPoint.test.ts
+  s_26f5e669d3043c::t_383200e0a7d322 1-81
+packages/webview-ui/src/mergeView.ts
+  s_26f5e669d3043c::t_cdda955d492880 32
+  s_26f5e669d3043c::t_eef8f7a08f0fa2 359-360
+  s_26f5e669d3043c::t_c0c35cc5bcc278 184-185
+  s_26f5e669d3043c::t_53c99f2314b85a 1124-1125
+  s_26f5e669d3043c::t_ff3a0fd9a4fa28 1015-1018,1021-1023
+  s_26f5e669d3043c::t_d979c844477924 33
+  s_26f5e669d3043c::t_9e4e0f4f59b3ad 58-60
+  s_26f5e669d3043c::t_9624c0b4ebb4b4 1685-1694,1699,1701,1705,1712,1717,1722
+  s_26f5e669d3043c::t_a4114e0c0bf3f1 1746-1752
+packages/webview-ui/test/diffViewEdges.test.ts
+  s_26f5e669d3043c::t_8082617ccfab8a 78-80
+  s_26f5e669d3043c::t_5935a424745daf 1-77,81-88
+packages/webview-ui/test/fixtures/mergeViewEntry.ts
+  s_26f5e669d3043c::t_aee4dcafe0465c 11-12,148-149
+  s_26f5e669d3043c::t_fd9c06c85dc234 10,147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dba5bd991c3eac8605b2dfc56fb4c22d3bf22987",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
