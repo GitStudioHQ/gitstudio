@@ -347,6 +347,104 @@ test("Continue, Skip and Abort each run once, even pressed twice, and the outcom
   assert.equal(r.sent("op:skip").length + r.sent("op:abort").length, 1, "a Skip in flight blocks an Abort pressed on top of it");
 });
 
+/**
+ * A fake host whose `conflict:state` read AFTER a verb is held open until the
+ * test releases it — the moment between "git finished the verb" and "the
+ * dashboard knows what git did now".
+ */
+function gatedHost(verbAnswer: (channel: string) => unknown, before: ConflictsSnapshot, after: ConflictsSnapshot) {
+  const calls: Call[] = [];
+  let ran = false;
+  let release: (() => void) | undefined;
+  let markPending: () => void = () => {};
+  const readPending = new Promise<void>((r) => (markPending = r));
+  const invoke = (async (channel: string, payload: unknown) => {
+    calls.push({ channel, payload });
+    if (channel === "conflict:state") {
+      if (!ran) return before;
+      const held = new Promise<void>((r) => (release = r));
+      markPending();
+      await held;
+      return after;
+    }
+    ran = true;
+    return verbAnswer(channel);
+  }) as unknown as Invoke;
+  return {
+    invoke,
+    calls,
+    readPending,
+    release: () => release?.(),
+    sent: (ch: string) => calls.filter((c) => c.channel === ch),
+  };
+}
+
+test("the dashboard stays locked until it has read what the verb did — a second press never lands on the old buttons", async () => {
+  // The banner this replaced kept its buttons dead through the repaint for
+  // exactly this reason: the verb returns in ~10 ms, and a lock released then
+  // hands a double-click's second press a LIVE Continue drawn from the state
+  // BEFORE the verb. At an edit pause that second Continue walks straight past
+  // the stop the user asked for; after a finished merge it reports a failure
+  // over "Merge complete".
+  const ready = snapshot({ op: { ...REBASE, canContinue: true }, files: [], total: 0 });
+  const g = gatedHost(
+    () => ({ ok: true, view: { ...NONE, episode: "none" }, remainingConflicts: 0 }),
+    ready,
+    snapshot({ op: NONE, files: [], total: 0 }),
+  );
+  const renders: ConflictsState[] = [];
+  const ctl = new DesktopConflicts({
+    invoke: g.invoke,
+    openMerge: () => {},
+    onFileChanged: () => {},
+    onOperationChanged: () => {},
+    notify: () => {},
+    undoable: () => {},
+  });
+  ctl.attach((s) => renders.push(s));
+  await ctl.refresh();
+  const first = ctl.handle({ type: "continue" });
+  await g.readPending;
+  const painted = renders[renders.length - 1];
+  assert.ok(
+    painted.busy || !painted.op.canContinue,
+    "while the new state is read, the dashboard must not offer the OLD Continue as live",
+  );
+  const second = ctl.handle({ type: "continue" });
+  g.release();
+  await Promise.all([first, second]);
+  assert.equal(g.sent("op:continue").length, 1, "a press that lands before the state is read back runs nothing");
+  assert.equal(renders[renders.length - 1].busy, false, "and once it is read, the dashboard unlocks");
+
+  // The same window after a whole-file Accept: the row is still drawn pending
+  // with live buttons, and a second press asks git to take a side of a file
+  // that is no longer conflicted.
+  const rowBefore = snapshot();
+  const h = gatedHost(
+    () => OK,
+    rowBefore,
+    snapshot({ files: [{ path: "src/app.ts", status: "resolved", choice: "yours", shape: "text" }], resolved: 1 }),
+  );
+  const rows: ConflictsState[] = [];
+  const ctl2 = new DesktopConflicts({
+    invoke: h.invoke,
+    openMerge: () => {},
+    onFileChanged: () => {},
+    onOperationChanged: () => {},
+    notify: () => {},
+    undoable: () => {},
+  });
+  ctl2.attach((s) => rows.push(s));
+  await ctl2.refresh();
+  const a = ctl2.handle({ type: "accept", path: "src/app.ts", role: "yours" });
+  await h.readPending;
+  assert.equal(rows[rows.length - 1].busy, true, "the list stays locked until the resolved row is read back");
+  const b = ctl2.handle({ type: "accept", path: "src/app.ts", role: "theirs" });
+  h.release();
+  await Promise.all([a, b]);
+  assert.deepEqual(h.sent("conflict:takeRole").map((c) => c.payload), [{ path: "src/app.ts", role: "yours" }]);
+});
+
 test("Merge… opens the file in the merge editor and runs nothing; restore and delete use their own channels", async () => {
   const r = controllerRig({ "conflict:state": snapshot(), "conflict:restore": OK, "conflict:delete": OK });
   await r.ctl.refresh();

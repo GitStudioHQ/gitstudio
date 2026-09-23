@@ -510,18 +510,22 @@ export class DesktopConflicts {
         const before = this.snapshot?.op;
         if (!before) return;
         this.notice = undefined;
-        const o = await this.run(() =>
-          action.type === "continue"
-            ? invoke("op:continue", action.confirmDrop ? { confirmDrop: true } : {})
-            : action.type === "skip"
-              ? invoke("op:skip", undefined)
-              : invoke("op:abort", undefined),
+        let line: { kind: "done" | "stopped" | "failed"; text: string } | undefined;
+        const o = await this.run(
+          () =>
+            action.type === "continue"
+              ? invoke("op:continue", action.confirmDrop ? { confirmDrop: true } : {})
+              : action.type === "skip"
+                ? invoke("op:skip", undefined)
+                : invoke("op:abort", undefined),
+          async (done) => {
+            line = outcomeLine(done, before, action.type);
+            this.outcome = line;
+            this.outcomeEpisode = done.view.episode;
+            await this.refresh();
+          },
         );
-        if (!o) return;
-        const line = outcomeLine(o, before, action.type);
-        this.outcome = line;
-        this.outcomeEpisode = o.view.episode;
-        await this.refresh();
+        if (!o || !line) return;
         this.deps.onOperationChanged(line);
         return;
       }
@@ -538,40 +542,59 @@ export class DesktopConflicts {
     const { invoke } = this.deps;
     const path = action.path;
     this.notice = undefined;
-    const r = await this.run(() =>
-      action.type === "accept"
-        ? invoke("conflict:takeRole", { path, role: action.role })
-        : action.type === "delete"
-          ? invoke("conflict:delete", { path })
-          : invoke("conflict:restore", { path }),
+    const r = await this.run(
+      () =>
+        action.type === "accept"
+          ? invoke("conflict:takeRole", { path, role: action.role })
+          : action.type === "delete"
+            ? invoke("conflict:delete", { path })
+            : invoke("conflict:restore", { path }),
+      async (res) => {
+        if (!res.ok) {
+          this.notice = { kind: "error", text: res.message || `Couldn't change ${path}.` };
+        } else if (action.type !== "restore") {
+          this.deps.undoable(action.type === "delete" ? `Deleted ${path}.` : `Resolved ${path}.`, {
+            label: `Bring back the conflict in ${path}`,
+            undo: async () => {
+              const u = await invoke("conflict:restore", { path });
+              return u.ok ? undefined : u.message || `Couldn't bring the conflict in ${path} back.`;
+            },
+            after: () => {
+              void this.refresh();
+              this.deps.onFileChanged();
+            },
+          });
+        }
+        await this.refresh();
+      },
     );
     if (!r) return;
-    if (!r.ok) {
-      this.notice = { kind: "error", text: r.message || `Couldn't change ${path}.` };
-    } else if (action.type !== "restore") {
-      this.deps.undoable(action.type === "delete" ? `Deleted ${path}.` : `Resolved ${path}.`, {
-        label: `Bring back the conflict in ${path}`,
-        undo: async () => {
-          const u = await invoke("conflict:restore", { path });
-          return u.ok ? undefined : u.message || `Couldn't bring the conflict in ${path} back.`;
-        },
-        after: () => {
-          void this.refresh();
-          this.deps.onFileChanged();
-        },
-      });
-    }
-    await this.refresh();
     this.deps.onFileChanged();
   }
 
-  /** One verb at a time, with the dashboard locked (busy) while it runs. */
-  private async run<T>(fn: () => Promise<T>): Promise<T | undefined> {
+  /**
+   * One verb at a time, with the dashboard locked (busy) while it runs AND
+   * while the state it led to is read back (`settle`).
+   *
+   * Unlocking when the verb returns is not enough. The verb takes ~10 ms; the
+   * read of what it did takes longer — and in between, the dashboard repaints
+   * from the state BEFORE the verb with every control live again. The second
+   * press of a double-click lands on that stale Continue: at an edit pause it
+   * walks past the stop the user asked for, after a finished merge it reports
+   * a failure over "Merge complete", and on a row it takes a side of a file
+   * that is no longer conflicted. The banner this replaced kept its buttons
+   * dead through its repaint for the same reason.
+   */
+  private async run<T>(fn: () => Promise<T>, settle: (result: T) => Promise<void>): Promise<T | undefined> {
     if (verbInFlight) return undefined;
     this.busy = true;
     this.paint();
     try {
-      return await exclusive(fn);
+      return await exclusive(async () => {
+        const result = await fn();
+        await settle(result);
+        return result;
+      });
     } catch (e) {
       this.notice = { kind: "error", text: e instanceof Error ? e.message : String(e) };
       return undefined;
