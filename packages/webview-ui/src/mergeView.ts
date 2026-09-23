@@ -143,6 +143,16 @@ export class MergeView implements MergeViewApi {
   private cancelButtons?: () => void;
 
   private trackers = new Map<number, string>();
+  /**
+   * Blocks that own the END of the result document. A range cannot say this on
+   * its own: the file's final line may be empty (the text ends with a break),
+   * and an empty line has no width — so "up to and including that line" and
+   * "up to the break before it", or "the empty last line" and "the point after
+   * it", are the same range. "span" runs to the end (last line included);
+   * "point" is an insertion point after the last line. Replacing a block's own
+   * lines never changes which it is, so it is decided whenever a tracker is set.
+   */
+  private eofKind = new Map<number, "span" | "point">();
   private blockState = new Map<number, BlockState>();
   /** Each block's place within its category, for "Conflict 2 of 5". */
   private ordinals = new Map<number, { index: number; total: number }>();
@@ -515,17 +525,35 @@ export class MergeView implements MergeViewApi {
     const ids = model.deltaDecorations([], specs);
     this.model.blocks.forEach((block, index) => {
       this.trackers.set(block.id, ids[index]);
+      this.noteEof(block, block.baseSpan, model);
     });
+  }
+
+  /** Records whether a block's span owns the end of the document (see eofKind). */
+  private noteEof(block: ChangeBlock, span: LineSpan, model: monaco.editor.ITextModel): void {
+    if (span.endExclusive > model.getLineCount()) {
+      this.eofKind.set(block.id, isEmptySpan(span) ? "point" : "span");
+    } else {
+      this.eofKind.delete(block.id);
+    }
   }
 
   private trackerRange(
     model: monaco.editor.ITextModel,
     span: LineSpan,
   ): monaco.Range {
+    const lineCount = model.getLineCount();
+    if (span.start > lineCount) {
+      // The point after the last line — the end of the document. Said
+      // explicitly rather than left to Monaco's clamping of line lineCount + 1
+      // (which lands in the same place); what makes it read back as "after
+      // the last line", not "before it", is the block's eofKind.
+      const column = model.getLineMaxColumn(lineCount);
+      return new monaco.Range(lineCount, column, lineCount, column);
+    }
     if (isEmptySpan(span)) {
       return new monaco.Range(span.start, 1, span.start, 1);
     }
-    const lineCount = model.getLineCount();
     if (span.endExclusive > lineCount) {
       return new monaco.Range(
         span.start,
@@ -573,17 +601,31 @@ export class MergeView implements MergeViewApi {
     if (!range) {
       return block.baseSpan;
     }
-    const start = range.startLineNumber;
-    let endExclusive: number;
+    const lineCount = model.getLineCount();
+    const eof = this.eofKind.get(block.id);
     if (
-      range.startLineNumber === range.endLineNumber &&
-      range.startColumn === range.endColumn
+      eof &&
+      range.endLineNumber === lineCount &&
+      range.endColumn === model.getLineMaxColumn(lineCount)
     ) {
-      endExclusive = start; // collapsed (insertion point)
-    } else {
-      endExclusive = range.endColumn === 1 ? range.endLineNumber : range.endLineNumber + 1;
+      // The block owns the end of the document, so its range's end means
+      // "through the last line" — even when that line is empty and the range
+      // cannot show it (see eofKind).
+      if (eof === "point" && range.isEmpty()) {
+        return { start: lineCount + 1, endExclusive: lineCount + 1 };
+      }
+      return { start: range.startLineNumber, endExclusive: lineCount + 1 };
     }
-    return { start, endExclusive };
+    if (range.isEmpty()) {
+      // An insertion point. At the end of a non-empty line it is the point
+      // AFTER that line, not before it.
+      const line = range.startLineNumber;
+      const after = range.startColumn > 1 && range.startColumn === model.getLineMaxColumn(line);
+      const start = after ? line + 1 : line;
+      return { start, endExclusive: start };
+    }
+    const endExclusive = range.endColumn === 1 ? range.endLineNumber : range.endLineNumber + 1;
+    return { start: range.startLineNumber, endExclusive };
   }
 
   /** "yours" / "theirs", plus the side's real name when the host knows it. */
@@ -607,28 +649,17 @@ export class MergeView implements MergeViewApi {
     if (!state || this.isSideDone(block, side)) {
       return;
     }
-    const sideText = this.sideText(block, side);
+    const sideLines = this.sideLines(block, side);
     const span = this.currentResultSpan(block);
 
     const append = mode === "append" || (mode === "auto" && state.applied);
     this.pushHistory(
       `${append ? "Append" : "Accept"} ${this.sideWords(side).role}, change ${block.id + 1}`,
     );
-    let newText = sideText;
-    if (append) {
-      const existing = this.readResultLines(span);
-      newText = existing.length ? `${existing}\n${sideText}` : sideText;
-    }
-    this.replaceResultLines(span, newText);
-    // Replacing the whole tracked range makes Monaco collapse the tracker to
-    // an empty span (forceMoveMarkers pushes both endpoints to the end of the
-    // inserted text). Re-anchor it onto the inserted lines so alignment,
-    // highlights, and follow-up accepts keep seeing the block's real extent.
-    this.retrackBlock(block, {
-      start: span.start,
-      endExclusive:
-        span.start + (newText.length ? splitLines(newText).length : 0),
-    });
+    const lines = append ? [...this.readResultLines(span), ...sideLines] : sideLines;
+    // Re-anchor the tracker onto the written lines so alignment, highlights
+    // and follow-up accepts keep seeing the block's real extent.
+    this.retrackBlock(block, this.replaceResultLines(span, lines));
 
     state.applied = true;
     this.markSideDone(state, block, side);
@@ -657,6 +688,7 @@ export class MergeView implements MergeViewApi {
       ],
     );
     this.trackers.set(block.id, newId);
+    this.noteEof(block, span, model);
   }
 
   /** Marks one side processed without touching the result (the ✕ action). */
@@ -685,11 +717,12 @@ export class MergeView implements MergeViewApi {
     if (!state || state.applied || state.doneLeft || state.doneRight) {
       return false;
     }
-    const span = this.currentResultSpan(block);
-    const baseText = this.baseLines
-      .slice(block.baseSpan.start - 1, block.baseSpan.endExclusive - 1)
-      .join("\n");
-    return this.readResultLines(span) === baseText;
+    const baseRegion = this.baseLines.slice(
+      block.baseSpan.start - 1,
+      block.baseSpan.endExclusive - 1,
+    );
+    const now = this.readResultLines(this.currentResultSpan(block));
+    return now.length === baseRegion.length && now.every((line, i) => line === baseRegion[i]);
   }
 
   /** Writes a resolvable conflict's `resolvedText`: both sides' edits, in base order. */
@@ -700,12 +733,9 @@ export class MergeView implements MergeViewApi {
     }
     this.pushHistory(`Apply both sides, change ${block.id + 1}`);
     const span = this.currentResultSpan(block);
-    const text = block.resolvedText;
-    this.replaceResultLines(span, text);
-    this.retrackBlock(block, {
-      start: span.start,
-      endExclusive: span.start + (text.length ? splitLines(text).length : 0),
-    });
+    // Never empty: both sides' regions are non-empty for a resolvable block,
+    // so "" here is one empty line, which splitLines says.
+    this.retrackBlock(block, this.replaceResultLines(span, splitLines(block.resolvedText)));
     state.applied = true;
     state.doneLeft = state.doneRight = true;
     if (!this.batching) {
@@ -924,10 +954,15 @@ export class MergeView implements MergeViewApi {
     this.result.focus();
   }
 
-  private sideText(block: ChangeBlock, side: Side): string {
+  /**
+   * The LINES a side contributes to a block — an array, never a joined
+   * string: joined, one empty line ([""]) and no lines at all ([]) are both
+   * "", and accepting a side that inserted a single blank line wrote nothing.
+   */
+  private sideLines(block: ChangeBlock, side: Side): string[] {
     const change = side === "left" ? block.left : block.right;
     if (!change) {
-      return "";
+      return [];
     }
     const lines = side === "left" ? this.oursLines : this.theirsLines;
     // The side's FULL block region, not just its change hunk: a clustered block
@@ -935,56 +970,85 @@ export class MergeView implements MergeViewApi {
     // the side must carry them along — otherwise resolving a modify/delete (or
     // any asymmetric conflict) silently drops the unchanged lines.
     const span = sideBlockSpan(block, side);
-    return lines.slice(span.start - 1, span.endExclusive - 1).join("\n");
+    return lines.slice(span.start - 1, span.endExclusive - 1);
   }
 
-  private readResultLines(span: LineSpan): string {
+  private readResultLines(span: LineSpan): string[] {
     const model = this.result?.getModel();
-    if (!model || span.endExclusive <= span.start) {
-      return "";
+    if (!model) {
+      return [];
     }
-    const lastLine = Math.min(span.endExclusive - 1, model.getLineCount());
-    return model.getValueInRange(
-      new monaco.Range(span.start, 1, lastLine, model.getLineMaxColumn(lastLine)),
-    );
+    const last = Math.min(span.endExclusive - 1, model.getLineCount());
+    const lines: string[] = [];
+    for (let line = span.start; line <= last; line++) {
+      lines.push(model.getLineContent(line));
+    }
+    return lines;
   }
 
-  private replaceResultLines(span: LineSpan, newText: string): void {
+  /**
+   * Replaces a block's lines in the result and returns the span they now
+   * occupy. Text is lines joined by "\n", so where the block sits decides who
+   * owns each break:
+   * - lines follow it: every written line ends with a break;
+   * - it runs to the end: the last written line takes none (the side's own
+   *   region ends with an empty line when its file ends with a break);
+   * - nothing is written at the end: the break BEFORE the block goes too, or
+   *   removing a final newline (or the file's last lines) left one behind;
+   * - an insertion after the last line takes the break before it — unless the
+   *   document is empty, whose one "line" is no line at all.
+   */
+  private replaceResultLines(span: LineSpan, lines: string[]): LineSpan {
     const editor = this.result;
     const model = editor?.getModel();
     if (!editor || !model) {
-      return;
+      return span;
     }
     const lineCount = model.getLineCount();
-    let range: monaco.Range;
-    let text: string;
-    // An EMPTY result document is always at end-of-file, whatever the span
-    // says. Monaco reports one line for "", so `endExclusive > lineCount` is
-    // false for a single-block accept and the non-EOF branch appends a newline
-    // — writing a trailing blank line the accepted side never had. It is the
-    // ordinary case for a conflict with no common ancestor (git's AA/UA/AU),
-    // where the seed is the empty base.
-    if (span.endExclusive > lineCount || model.getValueLength() === 0) {
-      // Block reaches end-of-file: replace to the end without a trailing newline.
-      range = new monaco.Range(
-        span.start,
-        1,
-        lineCount,
-        model.getLineMaxColumn(lineCount),
-      );
-      text = newText;
-    } else {
+    const endOf = (line: number) => model.getLineMaxColumn(line);
+    let range: monaco.Range | undefined;
+    let text = "";
+    let next: LineSpan = { start: span.start, endExclusive: span.start + lines.length };
+    if (span.endExclusive <= lineCount) {
       range = new monaco.Range(span.start, 1, span.endExclusive, 1);
-      text = newText.length ? `${newText}\n` : "";
+      text = lines.map((line) => `${line}\n`).join("");
+    } else if (model.getValueLength() === 0) {
+      range = model.getFullModelRange();
+      text = lines.join("\n");
+      next = lines.length
+        ? { start: 1, endExclusive: 1 + lines.length }
+        : { start: 2, endExclusive: 2 };
+    } else if (lines.length && span.start <= lineCount) {
+      range = new monaco.Range(span.start, 1, lineCount, endOf(lineCount));
+      text = lines.join("\n");
+    } else if (lines.length) {
+      range = new monaco.Range(lineCount, endOf(lineCount), lineCount, endOf(lineCount));
+      text = `\n${lines.join("\n")}`;
+      next = { start: lineCount + 1, endExclusive: lineCount + 1 + lines.length };
+    } else if (span.start <= lineCount) {
+      range =
+        span.start > 1
+          ? new monaco.Range(span.start - 1, endOf(span.start - 1), lineCount, endOf(lineCount))
+          : model.getFullModelRange();
+      // The block is now the point after whatever is left.
+      next = { start: Math.max(span.start, 2), endExclusive: Math.max(span.start, 2) };
+    }
+    if (!range) {
+      return span; // nothing to write, and nothing to remove
     }
     // Suppressed so the content listener doesn't mistake this for typing.
+    // No forceMoveMarkers: every OTHER block's tracker keeps its own edge (the
+    // trackers never grow at their edges) — forcing them to the end of the
+    // insert dragged a neighbour that ended at the insertion point over the
+    // new lines. This block's own tracker is re-set by the caller.
     const wasSuppressed = this.suppressHistory;
     this.suppressHistory = true;
     try {
-      editor.executeEdits("jbMerge", [{ range, text, forceMoveMarkers: true }]);
+      editor.executeEdits("jbMerge", [{ range, text }]);
     } finally {
       this.suppressHistory = wasSuppressed;
     }
+    return next;
   }
 
   // --- rendering refresh ---
@@ -1744,6 +1808,7 @@ export class MergeView implements MergeViewApi {
     this.viewSubs = [];
     this.zoneIds.clear();
     this.trackers.clear();
+    this.eofKind.clear();
     this.blockState.clear();
     this.ordinals.clear();
     for (const editor of this.editors) {

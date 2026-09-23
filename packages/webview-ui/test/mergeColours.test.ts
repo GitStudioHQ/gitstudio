@@ -518,3 +518,87 @@ test("the pane grid is one definition: 28px header, 64px gutters, ribbons on the
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+/**
+ * What an accept WRITES, at the edges of the file. The result is lines joined
+ * by "\n", so the block that owns the end of the document owns the final
+ * break, a single blank line is a line, and "after the last line" is a place.
+ * Each case here wrote the wrong text before (a kept final newline, a dropped
+ * blank line, an insertion above the last line) — silently, into the file the
+ * user saves.
+ */
+test("accepts write exactly the side's lines at the start and end of the file", { skip }, async () => {
+  const v = await runMergePage(CHROME!, `
+    const W = gsMerge;
+    const view = new W.MergeView(host);
+    const show = (s) => JSON.stringify(s);
+    const accept = (base, ours, theirs, side, want, init) => {
+      view.render(W.payload({ base, ours, theirs, result: base }), init);
+      if (side === "left") view.acceptAllLeft();
+      else if (side === "right") view.acceptAllRight();
+      const got = view.getResultText();
+      expect(got === want, show({ base, ours, theirs, side }) + ": got " + show(got) + ", want " + show(want));
+    };
+    // Removing the final newline (Theirs) — the break used to stay behind.
+    accept("a\\nb\\n", "a\\nb\\n", "a\\nb", "right", "a\\nb");
+    // Deleting the last line of an unterminated file left an empty line.
+    accept("a\\nb\\nc", "a\\nb", "a\\nb\\nc", "left", "a\\nb");
+    // One blank line inserted at the top was written as nothing.
+    accept("a\\nb", "a\\nb", "\\na\\nb", "right", "\\na\\nb");
+    // A line added after an unterminated last line landed ABOVE it.
+    accept("y\\nc", "y\\nc\\na", "x\\ny\\nc", "left", "y\\nc\\na");
+    // A conflict that owns the final empty line: each side, exactly.
+    accept("b\\ne\\nc\\n", "b\\ne\\nc\\nb\\n", "b\\ne\\nd", "left", "b\\ne\\nc\\nb\\n");
+    accept("b\\ne\\nc\\n", "b\\ne\\nc\\nb\\n", "b\\ne\\nd", "right", "b\\ne\\nd");
+    // The auto-applied baseline is written the same way.
+    accept("e\\nd\\n", "e\\ny", "e\\nd\\n", "none", "e\\ny", { autoApplyNonConflicting: true });
+    // Append at the end: Yours, then Theirs after it, line for line.
+    view.render(W.payload({ base: "a\\nb\\n", ours: "a\\nX\\n", theirs: "a\\nY", result: "a\\nb\\n" }));
+    const block = view.model.blocks[0];
+    view.acceptSide(block, "left", "auto");
+    view.acceptSide(block, "right", "auto");
+    expect(view.getResultText() === "a\\nX\\n\\nY", "append after an accept that owns the end: " + show(view.getResultText()));
+    // A neighbour ending where an insertion lands keeps its own extent.
+    view.render(W.payload({ base: "a\\nb\\n", ours: "a\\nB\\n", theirs: "a\\nb\\n\\nx", result: "a\\nb\\n" }));
+    view.acceptSide(view.model.blocks[1], "right", "auto");
+    view.acceptSide(view.model.blocks[0], "left", "auto");
+    expect(view.getResultText() === "a\\nB\\n\\nx", "both changes, neither overwriting the other: " + show(view.getResultText()));
+
+    // And a seeded sweep: Accept Yours / Theirs everywhere reproduces that
+    // side byte for byte, in every whitespace mode; undo returns to base.
+    let seed = 20260923;
+    const rnd = () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const pick = (a) => a[Math.floor(rnd() * a.length)];
+    const POOL = ["a", "b", "c", "", "a ", " b", "x"];
+    const mutate = (lines) => {
+      const out = [];
+      for (const l of lines) {
+        const r = rnd();
+        if (r < 0.15) continue;
+        if (r < 0.3) { out.push(pick(POOL)); continue; }
+        if (r < 0.4) { out.push(pick(POOL)); out.push(l); continue; }
+        out.push(l);
+      }
+      if (rnd() < 0.25) out.push(pick(POOL));
+      if (rnd() < 0.1) out.unshift(pick(POOL));
+      return out;
+    };
+    const doc = (lines) => lines.join("\\n") + (lines.length && rnd() < 0.5 ? "\\n" : "");
+    let wrong = 0;
+    for (let i = 0; i < 80 && wrong < 3; i++) {
+      const baseL = Array.from({ length: Math.floor(rnd() * 6) }, () => pick(POOL));
+      const base = doc(baseL), ours = doc(mutate(baseL)), theirs = doc(mutate(baseL));
+      for (const mode of ["none", "trailing", "all"]) {
+        view.setRenderOptions({ whitespace: mode });
+        view.render(W.payload({ base, ours, theirs, result: base }));
+        view.acceptAllLeft();
+        if (view.getResultText() !== ours) { wrong++; expect(false, mode + " yours " + show({ base, ours, theirs }) + " got " + show(view.getResultText())); }
+        view.undo();
+        if (view.getResultText() !== base) { wrong++; expect(false, mode + " undo " + show({ base, ours, theirs }) + " got " + show(view.getResultText())); }
+        view.acceptAllRight();
+        if (view.getResultText() !== theirs) { wrong++; expect(false, mode + " theirs " + show({ base, ours, theirs }) + " got " + show(view.getResultText())); }
+      }
+    }
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
