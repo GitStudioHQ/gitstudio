@@ -7677,8 +7677,8 @@ class App {
             title: "Force push?",
             message:
               "The remote still has the version of this commit you rewrote, so a "
-              + "normal push was refused. Force pushing uses --force-with-lease, "
-              + "which still refuses if someone else has pushed.",
+              + "normal push was refused. Force pushing replaces only commits you "
+              + "rewrote — if anyone else's are there, it is refused.",
             confirmLabel: "Force push",
             danger: true,
           });

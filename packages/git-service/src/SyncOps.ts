@@ -666,6 +666,38 @@ export class SyncOps {
   }
 
   /**
+   * Did WE rewrite the commits only the upstream has — an amend, or a reword in
+   * an interactive rebase, of work already pushed — rather than the upstream
+   * moving on without us?
+   *
+   * Both leave the branch ahead AND behind, and they need opposite answers: a
+   * rewrite is settled by a force push (pulling brings the old version back),
+   * a divergence by a merge or a rebase (a force push deletes somebody else's
+   * commits). And `--force-with-lease` does NOT tell them apart after a fetch:
+   * the lease is the remote-tracking ref, which the fetch has just made equal
+   * to the remote, so it is satisfied either way.
+   *
+   * What an amend and a rebase keep, and a colleague's commit does not, is the
+   * AUTHOR and the AUTHOR DATE. So: true only when every commit the upstream
+   * has that HEAD lacks reappears, by author and author date, among the commits
+   * HEAD has that the upstream lacks. One commit there that we did not rewrite
+   * — somebody else's, or a merge — and it is a divergence. Errs toward false,
+   * which asks merge-or-rebase and loses nothing.
+   */
+  async rewroteUpstream(signal?: AbortSignal): Promise<boolean> {
+    const identity = ["--format=%an%x00%ae%x00%ad", "--date=raw"];
+    const theirs = await this.proc.run(["log", ...identity, "HEAD..@{upstream}", "--"], { signal });
+    const ours = await this.proc.run(["log", ...identity, "@{upstream}..HEAD", "--"], { signal });
+    if (theirs.code !== 0 || ours.code !== 0) {
+      return false;
+    }
+    const lines = (s: string): string[] => s.split("\n").filter((l) => l.length > 0);
+    const replaced = lines(theirs.stdout);
+    const rewritten = new Set(lines(ours.stdout));
+    return replaced.length > 0 && replaced.every((c) => rewritten.has(c));
+  }
+
+  /**
    * The current branch and its upstream when BOTH have moved — the state git
    * will not reconcile on its own. Null for every other state, including a
    * detached HEAD and a branch with no upstream.

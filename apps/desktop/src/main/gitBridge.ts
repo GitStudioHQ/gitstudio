@@ -1826,9 +1826,25 @@ export class GitBridge {
   async syncPush(
     opts: { setUpstream?: boolean; force?: boolean } | undefined,
   ): Promise<CommitActionResult> {
-    return this.staged((ctx) =>
-      ctx.sync.push({ setUpstream: opts?.setUpstream, force: opts?.force }),
-    );
+    return this.staged(async (ctx) => {
+      // A force push is offered for ONE situation: we rewrote commits the
+      // remote already has (an amend, a rebase), so a plain push is refused.
+      // The same refusal comes back when somebody ELSE pushed — and once their
+      // commits have been fetched, the lease (the remote-tracking ref) matches
+      // the remote, so --force-with-lease deletes them. "Commit & Push" offered
+      // exactly that after any non-fast-forward. Refused here, for every door.
+      if (opts?.force && !(await ctx.sync.rewroteUpstream())) {
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message:
+            "The remote branch has commits that are not yours to replace. Pull them in " +
+            "(merge or rebase) and push again — a force push would delete them.",
+        };
+      }
+      return ctx.sync.push({ setUpstream: opts?.setUpstream, force: opts?.force });
+    });
   }
 
   /** Fast-forward a local branch straight from its upstream WITHOUT checking it

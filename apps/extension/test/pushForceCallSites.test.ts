@@ -69,3 +69,45 @@ test("every push call site has decided about force-with-lease", async () => {
       unreviewed.join("\n"),
   );
 });
+
+// The other half of the same decision: WHEN to offer the force.
+//
+// Every ahead-and-behind branch used to be treated as "you rewrote it" — the
+// status bar's Sync, the branch view's Push and the push modal all offered
+// "Force push — uses --force-with-lease, which still refuses if someone else
+// pushed". It does not refuse once their commits have been FETCHED (Sync
+// fetches first; the ↓ pill means someone did): the lease is the
+// remote-tracking ref, and it matches. Replayed against a real repository, a
+// colleague's two commits were deleted from the remote.
+//
+// So a force may be offered only where the rewrite was established — by
+// `rewroteUpstream()` (same author, same author date: what an amend and a
+// rebase keep) — in the same condition that offers it.
+const FORCE_OFFER = /(?:\baskRewrite\w*\(|\bneedsForce\s*=)/;
+const DECLARED = /^\s*(?:private|public|protected)?\s*async\s+askRewrite/;
+
+test("a force push is offered only for a divergence we caused", async () => {
+  const ungated: string[] = [];
+  let seen = 0;
+  for (const file of await tsFiles(join(ROOT, "apps/extension/src"))) {
+    const lines = (await readFile(file, "utf8")).split("\n");
+    lines.forEach((line, i) => {
+      if (/^\s*(?:\/\/|\*)/.test(line) || DECLARED.test(line)) return;
+      if (!FORCE_OFFER.test(line)) return;
+      // Webview script (a template literal) READS `data.needsForce`; only the
+      // host assigns it, and that assignment is what must be gated.
+      if (/data\.needsForce/.test(line)) return;
+      seen++;
+      const statement = lines.slice(Math.max(0, i - 3), i + 3).join("\n");
+      if (/rewroteUpstream\(/.test(statement)) return;
+      ungated.push(`${relative(ROOT, file)}:${i + 1} — ${line.trim()}`);
+    });
+  }
+  assert.ok(seen >= 3, `the scan found only ${seen} force offers — it broke`);
+  assert.equal(
+    ungated.join("\n"),
+    "",
+    "force-push offers not gated on rewroteUpstream() — a colleague's fetched " +
+      "commits would be deleted:\n" + ungated.join("\n"),
+  );
+});

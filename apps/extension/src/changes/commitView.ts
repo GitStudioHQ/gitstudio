@@ -1498,11 +1498,17 @@ export class CommitViewProvider
           break;
         }
         case "push": {
-          // Same rule as the push modal: a branch that diverged both ways can
-          // only be pushed with the lease, so ask rather than fail.
+          // Same rule as the push modal: a branch whose pushed commits WE
+          // rewrote can only be pushed with the lease, so ask rather than fail.
+          // Only then — a branch that diverged because somebody else pushed is
+          // not a rewrite, and once their commits have been fetched the lease
+          // no longer protects them (see SyncOps.rewroteUpstream). That push is
+          // left to be refused, which loses nothing.
           const ab = await entry.ctx.sync.aheadBehind();
           const force =
-            ab.ahead > 0 && ab.behind > 0 ? await this.askRewritePush() : false;
+            ab.ahead > 0 && ab.behind > 0 && (await entry.ctx.sync.rewroteUpstream())
+              ? await this.askRewritePush()
+              : false;
           if (force === undefined) {
             // Backing out must still tell the webview the op is over. A bare
             // return would skip the branchActionDone below and leave the ahead
@@ -1715,7 +1721,13 @@ export class CommitViewProvider
     // Diverged in BOTH directions means our tip is not a descendant of the
     // upstream, which is exactly when git refuses a fast-forward. Derived from
     // the ahead/behind we already have — no fetch, no network.
-    const needsForce = !!upstream && ab.ahead > 0 && ab.behind > 0;
+    //
+    // But only a divergence WE caused (an amend, a rebase of pushed commits)
+    // is settled by forcing. If somebody else pushed and we have fetched it,
+    // the lease matches and a force push deletes their commits — so that case
+    // stays a plain Push with "N behind — pull first".
+    const needsForce =
+      !!upstream && ab.ahead > 0 && ab.behind > 0 && (await entry.ctx.sync.rewroteUpstream());
     return {
       hasUpstream: !!upstream,
       target,
@@ -1822,7 +1834,7 @@ export class CommitViewProvider
           icon: "repo-force-push",
           danger: true,
           description:
-            "Uses --force-with-lease, which still refuses if someone else pushed.",
+            "Replaces only the versions you rewrote — nobody else's commits are on the remote branch.",
         },
         {
           id: "cancel",
@@ -5948,7 +5960,7 @@ export class CommitViewProvider
       if (data.needsForce) {
         pushB.title =
           "You rewrote a commit the remote already has, so a normal push is refused. "
-          + "This uses --force-with-lease, which still refuses if someone else pushed.";
+          + "This replaces only the versions you rewrote — nobody else's commits are on the remote branch.";
       }
       if (!data.canPush) { pushB.disabled = true; pushB.title = data.reason || "Cannot push"; }
       pushB.addEventListener("click", () => {

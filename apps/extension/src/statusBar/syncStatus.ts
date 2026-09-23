@@ -206,8 +206,19 @@ export class SyncStatusItem implements vscode.Disposable {
         // and without it you get a merge that puts the pre-amend commit back
         // beside the new one. Force-with-lease is the only correct move, and
         // the lease still refuses if the remote really did move.
+        //
+        // …except that it does NOT: the fetch above has just made the lease
+        // (the remote-tracking ref) equal to the remote, so it is satisfied
+        // whoever moved it. Every ahead-and-behind branch used to take this
+        // branch, and a colleague's push — a plain divergence — was offered as
+        // "This branch was rewritten" with a Force push that deleted their
+        // commits from the remote (replayed against a real repository). So the
+        // rewrite has to be established, not assumed: only when our commits
+        // replaced theirs (same author, same author date — what an amend and a
+        // rebase keep). Anything else falls through to the pull below, which
+        // asks merge-or-rebase about a divergence.
         const ab = await active.ctx.sync.aheadBehind();
-        if (ab.ahead > 0 && ab.behind > 0) {
+        if (ab.ahead > 0 && ab.behind > 0 && (await active.ctx.sync.rewroteUpstream())) {
           const forced = await this.askRewrite(ab);
           if (forced === undefined) {
             return;
@@ -220,12 +231,12 @@ export class SyncStatusItem implements vscode.Disposable {
           break;
         }
         let pull = await active.ctx.sync.pull();
-        // The divergence check above ran against the counts as they were a
-        // moment ago. If the remote moved in between, the pull comes back
-        // `diverged` rather than reconciled — ask the same question the branch
-        // view asks instead of reporting git's fast-forward refusal, which is
-        // advice for a terminal and no more use here than the wall report #12
-        // was.
+        // A divergence that is not our own rewrite — somebody else pushed —
+        // comes back `diverged` rather than reconciled (as does one that
+        // appeared since the counts above were read). Ask the same question the
+        // branch view asks instead of reporting git's fast-forward refusal,
+        // which is advice for a terminal and no more use here than the wall
+        // report #12 was.
         if (pull.diverged) {
           const mode = await askPullMode(pull.diverged);
           if (mode === undefined) {
@@ -418,8 +429,11 @@ export class SyncStatusItem implements vscode.Disposable {
           label: "Force push",
           icon: "repo-force-push",
           danger: true,
+          // Not "the lease refuses if someone else pushed": Sync has just
+          // fetched, so the lease cannot. What makes this safe is the check
+          // that routed here — every commit being replaced is one of yours.
           description:
-            "Uses --force-with-lease, which still refuses if someone else pushed.",
+            "Replaces only the versions you rewrote — nobody else's commits are on the remote branch.",
         },
         {
           id: "cancel",
