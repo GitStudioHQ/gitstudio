@@ -1,0 +1,59 @@
+apps/merge-studio/media/walkthrough/diff.svg
+  s_26f5e669d3043c::t_d3da654b18a0a7 2,10
+apps/merge-studio/media/walkthrough/legend.svg
+  s_26f5e669d3043c::t_d3da654b18a0a7 2,10
+scripts/merge-studio/test/import.test.mjs
+  s_26f5e669d3043c::t_e05451c34e3de3 183,209,227,231,233,383,385,395,399
+  s_26f5e669d3043c::t_3381c06c7de836 230
+  s_26f5e669d3043c::t_964f5e4e2649b6 181-182
+  s_26f5e669d3043c::t_55c05678ffd23d 43-47
+apps/merge-studio/package.json
+  s_26f5e669d3043c::t_e18181082c6492 5
+apps/merge-studio/SHOTS.md
+  s_26f5e669d3043c::t_72eaf8f3abdea3 1,4
+apps/merge-studio/media/walkthrough/choose-editor.svg
+  s_26f5e669d3043c::t_d3da654b18a0a7 2,10
+apps/merge-studio/media/walkthrough/rebase-sides.svg
+  s_26f5e669d3043c::t_d3da654b18a0a7 2,10
+apps/merge-studio/CHANGELOG.md
+  s_26f5e669d3043c::t_829ae3a0e888e3 76-77
+  s_26f5e669d3043c::t_12647dac4f81c3 3,5,7,9-26,28-55,58-59,61,63,65,68-70,73,75
+  s_26f5e669d3043c::t_db1e6e2354bbdc 115
+apps/merge-studio/media/walkthrough/jetbrains.svg
+  s_26f5e669d3043c::t_d3da654b18a0a7 2,10
+apps/merge-studio/test/manifest.test.ts
+  s_26f5e669d3043c::t_cd1a7e4fca2dc5 208-209,211-213,217,220-221,224-253
+  s_26f5e669d3043c::t_50d6c2d561dbc4 52-55
+  s_26f5e669d3043c::t_055f2b936ce05a 197
+apps/merge-studio/src/shell.ts
+  s_26f5e669d3043c::t_c0978e6eb6ddaf 109,127
+apps/merge-studio/test/shell.test.ts
+  s_26f5e669d3043c::t_c0978e6eb6ddaf 27,104
+  s_26f5e669d3043c::t_e10c1be5b8a2e0 168
+apps/merge-studio/media/walkthrough/dashboard.svg
+  s_26f5e669d3043c::t_d3da654b18a0a7 2,10
+apps/merge-studio/media/walkthrough/gitstudio.svg
+  s_26f5e669d3043c::t_d3da654b18a0a7 2,10
+package-lock.json
+  s_26f5e669d3043c::t_e7eb293519161b 124
+apps/merge-studio/src/ids.ts
+  s_26f5e669d3043c::t_c0978e6eb6ddaf 8,29,79
+apps/merge-studio/media/walkthrough/sample-merge.svg
+  s_26f5e669d3043c::t_d3da654b18a0a7 2,10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "898cb4c73866a32f16e9ad64c4486732d5b5c5c0",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
