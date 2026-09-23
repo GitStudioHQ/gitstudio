@@ -1,0 +1,28 @@
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_44822a6ec122eb 239-240
+apps/extension/test/refFilterStore.test.ts
+  s_26f5e669d3043c::t_984e95c981559a 102
+  s_26f5e669d3043c::t_11523a1963a939 236,238-240,242,244-305
+  s_26f5e669d3043c::t_f17be4a3748b48 5
+apps/extension/src/graph/refFilterStore.ts
+  s_26f5e669d3043c::t_7d679349caa7c4 2-4,6-21,23,26-27,36-59,62-64,66-84,93-94,106-108,115-116,121-156
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_c305409066b02c 173-177,179-181
+  s_26f5e669d3043c::t_4c36f9a6349e08 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b29343bb51a2503b3a68ac93aa7c7e59956adc75",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
