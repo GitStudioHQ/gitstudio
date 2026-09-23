@@ -1,0 +1,88 @@
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_1ca1887b8c1ddd 345
+  s_26f5e669d3043c::t_a232e6a565b199 251-263
+apps/desktop/test/destructiveGuards.test.ts
+  s_26f5e669d3043c::t_71e5aa0caed93e 42-49,51
+  s_26f5e669d3043c::t_909e9cedf6ee0e 40
+apps/desktop/src/renderer/views/mergeSettingsCard.ts
+  s_26f5e669d3043c::t_85a82c17ba0543 178-188
+apps/desktop/src/renderer/repoEpoch.ts
+  s_26f5e669d3043c::t_c2cf7866e18cf5 1-24
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_83472e29933db1 4812,4829-4859
+  s_26f5e669d3043c::t_46c9ac504ee8df 53-66
+  s_26f5e669d3043c::t_c5c84c9496a6b7 4723,4725,4729,4731-4733
+  s_26f5e669d3043c::t_d93e8432bec7d0 4813-4828
+  s_26f5e669d3043c::t_d38cba91500704 4525-4526,4528-4550,4553-4557
+  s_26f5e669d3043c::t_7a765fd74ee6a1 4551-4552,4558-4565,4686-4687
+  s_26f5e669d3043c::t_b8054380414ebb 4591-4685,4688-4722,4724,4726-4728,4730,4734-4789
+  s_26f5e669d3043c::t_87c9b71ea5c07f 52
+apps/desktop/src/renderer/undo.ts
+  s_26f5e669d3043c::t_f720d6d5a1302e 108-109
+  s_26f5e669d3043c::t_4e020d8f30a155 45-47
+  s_26f5e669d3043c::t_7b2655d865b778 35-40
+  s_26f5e669d3043c::t_b796201d509317 106-107
+apps/desktop/test/mergeShellMount.test.ts
+  s_26f5e669d3043c::t_dad59bdfb32f7a 193-214
+apps/desktop/src/renderer/views/rebase.ts
+  s_26f5e669d3043c::t_fdf7ac96124a1f 11-14
+  s_26f5e669d3043c::t_8c310c9b15a68b 753-773,775-778,781-810,812-828,830-831,835-838,840-842,844,846
+  s_26f5e669d3043c::t_1add0d1f6cdf0d 774,779-780,811,829,847
+apps/desktop/src/renderer/diffPanel.ts
+  s_26f5e669d3043c::t_4bd872fc5a4efc 752
+  s_26f5e669d3043c::t_a3aa08b4ff6a9c 566-573,575
+  s_26f5e669d3043c::t_9e3db97288a1f5 90-100,106-121
+  s_26f5e669d3043c::t_d96c116a6dcf69 688-689,693
+  s_26f5e669d3043c::t_aca2e9ad9877b8 598-602
+  s_26f5e669d3043c::t_cceab3fbc351d9 733
+  s_26f5e669d3043c::t_8b8120bbeaff2c 777-778,782-800
+  s_26f5e669d3043c::t_794c5eca3fbd41 122,801
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_8a0789e714bbb0 60-91
+apps/desktop/test/opVerbsCensus.test.ts
+  s_26f5e669d3043c::t_4c1c13c6b5c86d 1-53
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_8f9f23e32cb811 2443-2453
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_3f176fffb7bc4d 7063-7065
+  s_26f5e669d3043c::t_3c776e3577405e 8846-8848
+  s_26f5e669d3043c::t_41149acda7948b 8854-8855,8859-8861
+  s_26f5e669d3043c::t_6a5ba4e7793f23 6870-6875
+  s_26f5e669d3043c::t_5cbeb4d05606d6 6392-6406
+  s_26f5e669d3043c::t_744f7650a68b12 1526-1534
+  s_26f5e669d3043c::t_6cd1775f12367e 6951-6964
+  s_26f5e669d3043c::t_5afb1cc2a13a8e 7045
+  s_26f5e669d3043c::t_ba1a9d7e552f84 23
+  s_26f5e669d3043c::t_36eda74532be00 6321-6330
+  s_26f5e669d3043c::t_71fd7990a3a50a 7147-7156,7161
+  s_26f5e669d3043c::t_24ae46ee20866a 219-231
+  s_26f5e669d3043c::t_819a125cfd4b9e 6526-6531
+  s_26f5e669d3043c::t_1d006040d5bd6b 7012-7017
+  s_26f5e669d3043c::t_82c4f3e4ff125f 7075
+packages/webview-ui/test/sharedCssTokens.test.ts
+  s_26f5e669d3043c::t_a8130695b95678 122-148
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_09c2ede2c0a183 390
+  s_26f5e669d3043c::t_244db987684dd2 376-389
+apps/desktop/src/renderer/mergeParity.ts
+  s_26f5e669d3043c::t_02541fe3a8b814 388
+  s_26f5e669d3043c::t_f4c30c5b5b49b4 46-50,53-66
+  s_26f5e669d3043c::t_ae82b4f4a24179 574
+  s_26f5e669d3043c::t_1e639e263a7c92 67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e09acea2e53cd1d762d2d8f7c9945b8c55ebff1b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
