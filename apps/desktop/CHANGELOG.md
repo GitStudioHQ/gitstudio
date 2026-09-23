@@ -27,16 +27,30 @@ but they share the same engine, so most Git behaviour lands in both at once.
   extension and Merge Studio show. (merge-studio#12)
 - **The full merge editor.** A conflicted file now opens with the toolbar the
   extension has always had — undo / redo / history, previous / next change,
-  **Apply non-conflicting changes: Yours · All · Theirs**, the wand, whitespace
-  and highlight granularity, sync scrolling, reset — an operation strip naming
+  **Apply non-conflicting changes: Yours · All · Theirs**, **Resolve simple**,
+  whitespace and highlight granularity, sync scrolling, reset — an operation
+  strip naming
   both sides, and **Accept Yours / Accept Theirs / Cancel / Apply** at the
   bottom. **Cancel** offers **Exit viewer** (keep the conflict for later) or
   ending the operation; after the last file, **Continue Rebase** appears right
   there.
+- **Every kind of change in its own colour.** The merge editor's legend names
+  each in words, with how many are left: **Conflicts** in red (both sides
+  changed the same lines, differently), **Same on both sides** in violet, and
+  **Changed**, **Added** or **Removed** on one side in blue, green or grey.
+  Each change is one band from its side into the result; a conflict with one
+  side taken looks half done, and a settled change goes quiet. Every change
+  has an arrow toward the result and a cross to leave it out, each saying
+  what it does ("Accept Yours (test) for this conflict"), from the mouse, the
+  keyboard or a screen reader. **Resolve simple** on the toolbar settles every
+  conflict whose two edits touch but don't overlap.
 - **Settings ▸ Merge**: open merges with the non-conflicting changes already
   applied (off by default), resolve conflicts and show diffs with GitStudio or
-  a JetBrains IDE, which IDE, and its launcher path. With the IDE chosen, a
-  conflicted file opens in its merge window and **Mark resolved** stages it.
+  a JetBrains IDE, which IDE, and its launcher path (the launcher, or the
+  IDE's install folder; Toolbox and snap installs are found too). With the
+  IDE chosen, a conflicted file opens in its merge window and **Mark
+  resolved** stages it. A file the merge editor could not write back safely
+  (not UTF-8 text, or reached through a linked folder) is not handed over.
 - A stopped operation shows from every view: a count on the **Changes** rail
   item, and a chip in the top bar that goes straight to it.
 - The Rebase view offers **Skip this commit** where git names it as the way
@@ -65,6 +79,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   drop it silently — and a double click runs one Continue, not two.
 - Undoing a resolution after the operation has finished says why it can't
   (git has moved on), as a note rather than an error.
+- **Apply non-conflicting changes** also takes the changes both sides made the
+  same way, and two edits that touch without overlapping are one conflict, as
+  git and JetBrains IDEs see them, which **Resolve simple** settles.
+- **A refusal that describes where you are is information, not a crash.** No
+  repository open, nothing selected, something already gone, a tool not
+  installed: these are no longer sent as crash reports, and are shown in the
+  neutral tone rather than in red.
 
 ### Fixed
 - **A question asked mid-operation vanished on its own.** "Abort the rebase?",
@@ -93,8 +114,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   launcher (or the IDE's install folder); anything else is refused, and the
   field says so instead of quietly going back to the old value.
 - **In a linked worktree, a stopped operation did not appear until you clicked
-  something.** The repository watcher watched the worktree's own folder, not
-  the shared one git writes the operation's state to.
+  something**, and neither did a commit made there from a terminal. The
+  repository watcher watched the worktree's own folder, not the ones git
+  writes to.
 - A conflicted file git could not read (a locked index, a killed git) says so
   in the pane, instead of leaving the previous file on screen.
 - **Taking a side of a submodule conflict recorded the wrong commit.** It
@@ -108,7 +130,27 @@ but they share the same engine, so most Git behaviour lands in both at once.
   the file list the editor is one pane of the window, and its bottom bar ran
   past the pane's edge: at 1000px, Apply, Continue and the note saying what
   Apply would save were cut off. The bar wraps, and so do the dashboard's rows,
-  which had squeezed a file's name to nothing beside its buttons.
+  which had squeezed a file's name to nothing beside its buttons; the toolbar
+  folds to fit, where its change counter used to run off the edge.
+- **Apply non-conflicting changes could lose one side's deletion.** Where both
+  sides rewrote the same line and one of them also deleted the next, the
+  change was taken as "the same on both sides", and the deletion was dropped
+  without a word. Each side is now compared over everything it changed.
+- **Accepting a side writes exactly that side's lines**, also at the very
+  start and end of the file: a final newline, a blank last line, and a line
+  added after a last line with no newline were lost or doubled. The diff's
+  copy arrow had the same fault, and is fixed with it.
+- With *Trim* or *Ignore whitespace*, a change that only touched whitespace
+  was dropped, and the result kept the original bytes; it is shown as a
+  change, with a dotted edge. A side that only changed its line endings is no
+  longer a conflict over the whole file, and word highlights under *Ignore
+  whitespace* are drawn at the right columns.
+- With the merge editor open, F7 and ⌘Z in another editor elsewhere in the
+  app drove the merge. They stay with the editor they are pressed in.
+- **A range of reverts was called a cherry-pick** once you had committed one of
+  them yourself, and its Continue could never work; it is a revert again. And
+  when git declines to rewind an Abort (after such a commit), it says the
+  branch was left where it is instead of "aborted".
 - **The IDE routes skip what an IDE cannot merge.** With Settings ▸ Merge
   resolving in a JetBrains IDE, opening a binary (or a file deleted on one
   side) put up an error — again on every refresh — instead of the panel that
@@ -122,21 +164,19 @@ but they share the same engine, so most Git behaviour lands in both at once.
   Exit viewer or Apply puts it back on that file's row; answering one of the
   editor's questions returns it to the button that asked. It was left on
   nothing, and Tab started again from the top bar.
-- **Apply asks before writing over something the merge editor did not make.**
-  A file already resolved when it opened (no conflict markers left — fixed by
-  hand, or by git rerere) says so beside its name, and Apply asks before
-  replacing that resolution with the Result; a file changed on disk since the
-  editor opened (another editor, a checkout in a terminal) is not overwritten
-  without asking either.
+- **Apply asks before writing over a resolution the merge editor did not
+  make.** A file already resolved when it opened (no conflict markers left —
+  fixed by hand, or by git rerere) says so beside its name, and Apply asks
+  before replacing that resolution with the Result.
 - **A submodule conflict is called a submodule**, not a "Conflicted binary
   file": the panel says what a gitlink is and that its checkout is left
   alone, and the dashboard row names the commit each side points it at. A
   symbolic link is called one too.
 - **The top-bar chip says "Ready to continue"** when every conflict is
   resolved, instead of "Merging · paused".
-- **The Rebase view names its verbs** ("Continue Rebase", "Abort Rebase"), and
-  when one ends the rebase the keyboard stays in the view instead of falling
-  to the top of the window.
+- **The Rebase view names its verbs** ("Continue Rebase", "Abort Rebase"), its
+  buttons show the focus ring, and when one ends the rebase the keyboard stays
+  in the view instead of falling to the top of the window.
 - Skipping the last patch of a `git am` said "All patches applied"; it now
   says the patch was skipped.
 - The dashboard's finished card had Close and Continue as two identical
@@ -177,8 +217,10 @@ but they share the same engine, so most Git behaviour lands in both at once.
   had already been fetched — the app offered **Force push**, promising the
   lease would refuse if anyone else had pushed. It would not have, and their
   commits would have been deleted from the remote. Force push is now only done
-  when the commits it replaces are ones you rewrote (an amend or a rebase);
-  otherwise it explains that the remote's commits need pulling in first.
+  when the commits it replaces are ones you rewrote (an amend or a rebase),
+  and never over a version your branch never had, such as the same commit
+  amended on another machine and fetched in the background. Otherwise the
+  toast says "Committed, not pushed", why, and offers **Pull**.
 - **Renaming a published branch answered its own question.** "Rename it on
   origin too?" closed itself a moment after it appeared, as if you had picked
   **Keep tracking**. It now waits for your answer.
@@ -195,15 +237,19 @@ but they share the same engine, so most Git behaviour lands in both at once.
   repository open the card showed two empty fields and **Save identity**
   answered *"No repository open."*, which is exactly when a new install sets
   them. The card now reads and saves your global identity either way.
-- **An empty GitHub repository still read as broken in two places.** **Go to
-  file** showed its "This repository is empty" note as a red error, and the
-  branch switcher failed with a red toast instead of saying there are no
-  branches yet.
-- **Projects could look complete while missing an entry.** When GitHub listed
-  a project, a card or a pull request's review thread it could not return —
-  usually one in a repository your account can no longer see — the rest showed
-  as if it were everything. The Projects list, the board and the review panel
-  now say how many could not be read.
+- **An empty GitHub repository read as broken.** Browsing a repository nobody
+  has pushed to yet painted "Couldn't read this repository" with a Retry that
+  could never help (and sent a crash report), **Go to file** showed its "This
+  repository is empty" note as a red error, and the branch switcher failed
+  with a red toast. The page, the file browser and Go to file now show it as
+  empty, and the switcher says there are no branches yet.
+- **Projects could fail, or look complete while missing an entry.** When the
+  repository behind your remote had been renamed, deleted or moved out of
+  your account's reach, Projects failed altogether, in GitHub's own words, and
+  sent a crash report. And when GitHub listed a project, a card or a pull
+  request's review thread it could not return, the rest showed as if it were
+  everything. What can be read is shown now, and the Projects list, the board
+  and the review panel say how many entries could not be read.
 - **A repository you can't read said it wasn't a repository.** Opening one
   whose `.git` folder you don't have permission to read said *"… is not inside
   a Git repository."* in red. It now says it is a Git repository you don't have
@@ -243,11 +289,11 @@ but they share the same engine, so most Git behaviour lands in both at once.
   concluded your merge"* or *"It seems that there is already a rebase-merge
   directory"* in red, and filed it. During a `git am` — and for a pull with
   rebase during a cherry-pick or revert — your resolved files were offered to
-  **Stash & Retry**, which took them out of the operation. And a checkout
-  quietly ended a stopped merge, cherry-pick or revert. Each now says what is
-  in progress and how many files are left to resolve — finish it or abort it
-  first — and nothing is filed; a checkout, merge, rebase or pull is not run
-  over a stopped operation at all.
+  **Stash & Retry**, which took them out of the operation. And a checkout, or
+  a new branch, quietly ended a stopped merge, cherry-pick or revert. Each now
+  says what is in progress and how many files are left to resolve — finish it
+  or abort it first — and nothing is filed; a checkout, a new branch, a merge,
+  a rebase or a pull is not run over a stopped operation at all.
 - **With `pull.ff only` in your git config, a diverged branch got git's
   advice.** That setting is one git's own advice suggests, and Pull then showed
   *"Diverging branches can't be fast-forwarded"* and its hints in red, and sent
@@ -259,6 +305,38 @@ but they share the same engine, so most Git behaviour lands in both at once.
   quit. Agent Access now asks you to move GitStudio to Applications first. And
   when GitStudio has moved since an agent was set up, the card shows it as
   **Moved** with a **Re-add** button, instead of **Connected**.
+- **A branch named like an option could discard your work.** A branch called
+  `-f` (git's plumbing and a fetch can make one) was checked out as
+  `git checkout -f`, which throws away every uncommitted change. Every door now
+  refuses it, says why, and offers to rename the branch.
+- **A branch and a tag with the same name** (`release`, say) were told apart
+  only by git's short names, "heads/release" and "tags/release", and several
+  commands got the wrong one: checking out the branch left HEAD detached while
+  saying it had switched, a merge was recorded as "Merge branch
+  'heads/release'", publishing pushed a branch called `heads/release`, a
+  fast-forward pull created one, and rename and delete found no branch. The
+  default branch beside a tag of its name lost its **default** pill, was
+  measured against the tag, and **the finished-branches sweep offered to
+  delete it**. Every branch action now names the branch exactly, and the
+  Branches view, the switcher, chips, menus and the top bar say "release".
+  Beside a local branch called `origin/x`, the remote branch's row said it
+  lived on a remote called "remotes", and **Pull into**, **Delete remote
+  branch** and checking it out failed. The Assistant's and Agent Access's
+  checkout and branch delete go by the exact name too.
+- **Commit graph branch filter (#30), after its first release:** with many
+  branches (about 800 on Windows) the filtered graph showed an error instead
+  of history; **Show only** a branch you are not on also showed your current
+  branch's history; **Current branch** stayed on the old branch after a
+  checkout, and **Local only** missed branches made after it was picked; on a
+  detached HEAD the graph said "no commits yet"; a new filter opened far down
+  the list and loaded every page. The chips in a commit's details now open the
+  same menu as the graph's (and no longer show `origin/HEAD`, whose menu could
+  do nothing); revealing a commit the filter hides offers to add a branch that
+  has it (*Add main to the filter*) before **Show all branches**; and the open
+  picker's labels are readable in the light theme.
+- **Crash reports no longer carry a repository's name** when an error message
+  quotes it (GitHub's "Could not resolve to a Repository with the name …"
+  did), or a quoted path.
 
 ## [2.0.2] - 2026-09-21
 

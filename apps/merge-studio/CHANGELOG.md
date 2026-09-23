@@ -45,7 +45,8 @@ Every change has the two controls JetBrains IDEs use: an arrow toward the result
 - **Accept Yours and Accept Theirs no longer delete a file when git fails** for another reason, such as a locked index. Taking a side while the merge editor holds unfinished work no longer asks "Save changes?" over the side you just took.
 - **Accept Theirs on a submodule conflict recorded yours.** Taking a side of a submodule now records that side's commit (the submodule's own checkout is left for you to update), and Hold Undo brings a submodule or a symbolic link conflict back.
 - **The merge result keeps its line endings.** With Yours in CRLF and Theirs in LF, the editor said the result keeps CRLF but saved LF, changing every line of your file.
-- **Accepting a side writes exactly that side's lines**, also at the very start and end of the file: a final newline, a blank last line and a line added after an unfinished last line are kept as they are.
+- **Accepting a side writes exactly that side's lines**, also at the very start and end of the file: a final newline, a blank last line and a line added after a last line with no newline were lost or doubled. The diff's copy arrow had the same fault, and is fixed with it.
+- **Apply non-conflicting changes could lose one side's deletion.** Where both sides rewrote the same line and one of them also deleted the next, the change was taken as "the same on both sides", and the deletion was dropped without a word. Each side is now compared over everything it changed.
 - Undo is refused once the operation it belongs to has finished, instead of putting conflict markers back into a finished merge.
 - Changing the whitespace mode keeps your picks, and asks first when it can't.
 - Handing a conflict to a JetBrains IDE while the merge editor holds unapplied work asks first. A file that is not UTF-8 text, or one reached through a linked folder, is not handed over.
@@ -62,7 +63,7 @@ Every change has the two controls JetBrains IDEs use: an arrow toward the result
 
 - With GitStudio installed, GitStudio opens conflicts automatically and Merge Studio stays quiet, and says so the first time, with a button to let Merge Studio do it instead. Merge Studio's commands still work and open the same screens. An older GitStudio without the Conflicts dashboard changes nothing.
 - The question about VS Code's own merge editor now comes at your first conflict, as a notification, and is remembered only once you answer it. It used to be asked once at install, where it was easy to miss. If Merge Studio 0.3 already asked you, you're not asked again.
-- **Apply non-conflicting changes** also takes the changes both sides made the same way, as JetBrains IDEs do.
+- **Apply non-conflicting changes** also takes the changes both sides made the same way, and two edits that touch without overlapping are one conflict, as git and JetBrains IDEs see them, which **Resolve simple** settles.
 - In Restricted Mode the Extensions view now says why Merge Studio is off: it works through VS Code's built-in Git extension, which Restricted Mode turns off. Trust the folder to use it.
 - `jbMerge.conflictResolver`'s `webview` value is now called `embedded`; a user setting is updated for you.
 - `jbMerge.jetbrainsPath` can be set in user settings only, never by a workspace, and it can point at the IDE's install folder as well as its launcher.
@@ -73,6 +74,7 @@ Every change has the two controls JetBrains IDEs use: an arrow toward the result
 ### Fixed since 0.3.4
 
 - Accepting one side of a conflict where both sides added the file no longer adds a blank line.
+- With *Trim* or *Ignore whitespace*, a change that only touched whitespace was dropped, and the result kept the original bytes; it is shown as a change, with a dotted edge. A side that only changed its line endings is no longer a conflict over the whole file, and word highlights under *Ignore whitespace* are drawn at the right columns.
 - No notification after Apply: it covered Apply and Continue in the editor's corner, and the editor already says "Merge applied and staged".
 - Closing the dashboard keeps it closed for the rest of that stop; it used to come back on the next git event. *Merge Studio: Resolve Conflicts…* opens it again.
 - A refresh of the dashboard no longer cancels a Hold Undo you are in the middle of.
