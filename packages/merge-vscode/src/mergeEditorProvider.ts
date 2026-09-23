@@ -8,6 +8,7 @@
 // has open (the other is diffPanel.ts): it owns the document it edits.
 
 import * as vscode from "vscode";
+import { detectEol } from "@gitstudio/engine/lineDiff";
 import type { HostMessage, WebviewMessage } from "@gitstudio/host-bridge/protocol";
 import { locate } from "./args";
 import { closeMergeEditorTabs, fileUri, type MergeHostCore } from "./host";
@@ -91,7 +92,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       diskText: async () =>
         new TextDecoder("utf-8").decode(await vscode.workspace.fs.readFile(document.uri)),
       save: async (text) => {
-        await syncDocument(document, text);
+        await syncResult(document, text);
         if (!(await document.save())) {
           throw new Error("the editor did not save the file");
         }
@@ -136,7 +137,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
         await session.init();
         break;
       case "resultChanged":
-        await syncDocument(document, message.text);
+        await syncResult(document, message.text);
         break;
       case "apply":
         await session.apply(message.text);
@@ -230,6 +231,33 @@ async function syncDocument(document: vscode.TextDocument, text: string): Promis
     new vscode.Range(new vscode.Position(0, 0), new vscode.Position(document.lineCount, 0)),
     text,
   );
+  await vscode.workspace.applyEdit(edit);
+}
+
+/**
+ * Mirror the merge RESULT, line endings included. The view writes the result
+ * in Yours' line ending (and says so when the sides differ), but a text edit
+ * takes the DOCUMENT's — and VS Code opened the conflicted file with whichever
+ * ending most of git's mixed lines had. So a CRLF Yours merged against an LF
+ * Theirs was saved and staged as LF, every line of Yours' file changed. The
+ * document takes the result's ending along with its text.
+ */
+async function syncResult(document: vscode.TextDocument, text: string): Promise<void> {
+  const ending = detectEol(text);
+  const want =
+    ending === "CRLF" ? vscode.EndOfLine.CRLF : ending === "LF" ? vscode.EndOfLine.LF : undefined;
+  if (want === undefined || document.eol === want) {
+    await syncDocument(document, text);
+    return;
+  }
+  const edit = new vscode.WorkspaceEdit();
+  edit.set(document.uri, [
+    vscode.TextEdit.replace(
+      new vscode.Range(new vscode.Position(0, 0), new vscode.Position(document.lineCount, 0)),
+      text,
+    ),
+    vscode.TextEdit.setEndOfLine(want),
+  ]);
   await vscode.workspace.applyEdit(edit);
 }
 

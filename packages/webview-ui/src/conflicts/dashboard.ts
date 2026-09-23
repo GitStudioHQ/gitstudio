@@ -152,6 +152,13 @@ export class ConflictsDashboard {
 
   /** Paint a full state. Every host re-sends one after each change. */
   render(state: ConflictsState): void {
+    // Hosts re-send the whole state after any repository event (in VS Code a
+    // click that focuses the window sets off vscode.git's refresh). A repaint
+    // cancels every hold, so while one is in progress a re-send of exactly
+    // what is on screen is not painted — the hold would never complete.
+    if (this.holds.size > 0 && this.state && JSON.stringify(state) === JSON.stringify(this.state)) {
+      return;
+    }
     if (state.op.episode !== this.episode) {
       // A new stop — a rebase's next commit, or a different operation: the
       // file list, a half-answered confirm and any row spinner belong to the
@@ -211,7 +218,10 @@ export class ConflictsDashboard {
     mark.title = state.brand.name;
     const title = el("h1", "cd-title", "Conflicts");
     head.append(mark, title);
-    if (!allDone) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
+    // Nothing in progress and nothing unmerged (our own Continue just ended the
+    // operation, and the page stays to say so): no chip — "Unmerged files"
+    // over "No conflicted files" would contradict itself.
+    if (!allDone && (op.kind !== "none" || pending > 0)) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
     if (state.repoName) head.appendChild(el("span", "cd-repo", state.repoName));
     root.appendChild(head);
 

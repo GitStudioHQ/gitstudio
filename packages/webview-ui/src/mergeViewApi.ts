@@ -71,6 +71,13 @@ export interface MergeCountsView {
   /** Pending conflicts the wand can resolve (both edits apply without overlap). */
   resolvableConflictsPending: number;
   /**
+   * Pending blocks whose Result no longer holds the base text: a conflict with
+   * one side taken and the other still open, or a block edited by hand. The
+   * rest of `pending` still holds the original text — which is what an Apply
+   * with unresolved changes saves for them, and the shell says so per group.
+   */
+  pendingChanged: number;
+  /**
    * The user has changed something since the baseline this view opened with
    * (any accept / ignore / edit since render() or the last Reset; the
    * auto-applied baseline itself does not count). The shell asks before a
@@ -196,6 +203,7 @@ export function emptyMergeCounts(): MergeCountsView {
     conflictsPending: 0,
     byCategory: emptyCategoryCounts(),
     resolvableConflictsPending: 0,
+    pendingChanged: 0,
     hasProgress: false,
   };
 }

@@ -266,6 +266,17 @@ export class ConflictOps {
       const rm = await this.git(["rm", "-f", "-q", "--", path], opts?.signal);
       return rm.code === 0 ? done() : failed(rm.stderr, `Couldn't delete ${path}.`);
     }
+    const chosen = stages.get(stage)!;
+    if (chosen.mode === "160000") {
+      // A submodule. `checkout --ours|--theirs` leaves a gitlink's checkout
+      // alone, so the `add` below would record whatever commit the submodule
+      // happens to have checked out — the other side's, as often as not —
+      // and report success. Record the chosen side's commit itself; the
+      // submodule's own checkout is the user's to move, as git leaves it.
+      // (update-index takes a path, not a pathspec.)
+      const ui = await this.git(["update-index", "--cacheinfo", "160000", chosen.sha, path], opts?.signal, false);
+      return ui.code === 0 ? done() : failed(ui.stderr, `Couldn't take that version of ${path}. Nothing was changed.`);
+    }
     const co = await this.git(["checkout", stage === 2 ? "--ours" : "--theirs", "--", path], opts?.signal);
     if (co.code !== 0) {
       // A failed checkout says nothing about which side exists. The file stays.
@@ -331,7 +342,11 @@ export class ConflictOps {
     if (!stages) {
       return refuse(`There is no earlier conflict to bring back for ${path}.`);
     }
-    if (stages.has(2) && stages.has(3)) {
+    // `checkout -m` re-merges the sides' TEXT: a gitlink has none ("unable to
+    // read blob object"), and a symlink would get the marker text as its
+    // target. Those come back through the index, with the link as git first
+    // left it (stage 2's) and a submodule's checkout untouched.
+    if (stages.has(2) && stages.has(3) && !isLinkOrGitlink(stages)) {
       const r = await this.git(["checkout", "-m", "--", path], opts?.signal);
       if (r.code !== 0) return failed(r.stderr, `Couldn't bring the conflict in ${path} back.`);
     } else {

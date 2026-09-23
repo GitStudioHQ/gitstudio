@@ -96,6 +96,23 @@ class WorkspaceEdit {
   replace(uri, range, text) {
     this.edits.push({ uri, range, text });
   }
+  set(uri, edits) {
+    for (const e of edits) this.edits.push({ uri, ...e });
+  }
+}
+const EndOfLine = { LF: 1, CRLF: 2 };
+class TextEdit {
+  static replace(range, newText) {
+    const e = new TextEdit();
+    e.range = range;
+    e.text = newText;
+    return e;
+  }
+  static setEndOfLine(eol) {
+    const e = new TextEdit();
+    e.newEol = eol;
+    return e;
+  }
 }
 
 const stub = {
@@ -118,7 +135,10 @@ const stub = {
   onDidChangeActiveTextEditor: new EventEmitter(),
   onDidChangeConfiguration: new EventEmitter(),
   onDidChangeTextDocument: new EventEmitter(),
+  /** Every WorkspaceEdit handed to workspace.applyEdit, in order. */
+  applied: [],
   reset() {
+    this.applied.length = 0;
     this.panels.length = 0;
     this.messages.length = 0;
     this.statusMessages.length = 0;
@@ -264,7 +284,10 @@ const workspace = {
     stub.watchers.push(w);
     return w;
   },
-  applyEdit: async () => true,
+  applyEdit: async (edit) => {
+    stub.applied.push(edit);
+    return true;
+  },
   openTextDocument: async (uri) => {
     const doc = workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
     if (!doc) throw new Error(`no document for ${uri}`);
@@ -285,6 +308,8 @@ module.exports = {
   Position,
   Range,
   WorkspaceEdit,
+  TextEdit,
+  EndOfLine,
   ViewColumn: { Active: -1, Beside: -2, One: 1, Two: 2 },
   StatusBarAlignment: { Left: 1, Right: 2 },
   ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },

@@ -53,6 +53,8 @@ export interface VscodeStub {
   answer?: (kind: string, message: string, actions: string[]) => string | undefined;
   onCloseTabs?: (tabs: unknown[]) => void | Promise<void>;
   tabGroupsAll: { tabs: unknown[] }[];
+  /** Every WorkspaceEdit handed to workspace.applyEdit, in order. */
+  applied: { edits: { text?: string; newEol?: number }[] }[];
   reset(): void;
 }
 
