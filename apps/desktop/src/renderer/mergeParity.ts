@@ -25,7 +25,7 @@ import {
   type OperationView,
   type SideRole,
 } from "@gitstudio/host-bridge/conflictsProtocol";
-import { roleOfStage } from "@gitstudio/engine/conflict/sides";
+import { roleOfStage, skipEndedText } from "@gitstudio/engine/conflict/sides";
 import { resolvedOutsideMerge } from "@gitstudio/engine/conflict/documentText";
 import { conflictTypeFor } from "@gitstudio/engine/conflict/conflictType";
 import {
@@ -218,7 +218,8 @@ export function outcomeLine(
         (verb === "abort"
           ? `${cap} ended. The repository is back where it was before it started.`
           : verb === "skip"
-            ? `Last ${before.kind === "am" ? "patch" : "commit"} skipped. The ${noun} is complete, without it.`
+            ? // Which one it left out, and whether git applied the rest after it.
+              `${skipEndedText(before)}.`
             : `${cap} complete.`),
     };
   }

@@ -124,6 +124,50 @@ export function pauseDetail(facts: Pick<OperationFacts, "pause" | "commit">): st
   return p.command ? `Paused because the command “${p.command}” failed` : "Paused because a command in the rebase plan failed";
 }
 
+/**
+ * What a Skip that ENDED the operation did, said from the operation as it was
+ * when Skip was pressed. Skipping the last commit or patch finishes without
+ * it; skipping one with more after it — commit 2 of 3, a pick with more
+ * queued — means git went on and applied the rest, and "Last commit skipped"
+ * said the opposite. No closing period: each host punctuates its own line.
+ *
+ *   Commit 2 of 3 skipped; the rest applied — rebase complete
+ *   Last patch skipped. The series is finished, without it
+ */
+export function skipEndedText(before: Pick<OperationView, "kind" | "step" | "queued" | "commit">): string {
+  const am = before.kind === "am";
+  const noun = SKIP_NOUN[before.kind];
+  // What came AFTER the skipped one: the rest of the sequence (rebase, am),
+  // or the picks still queued behind it (a cherry-pick or revert range).
+  const rest = before.step ? before.step.m - before.step.n : (before.queued ?? 0);
+  if (rest > 0) {
+    const unit = before.step?.unit ?? "commit";
+    const which = before.step
+      ? `${unit.charAt(0).toUpperCase()}${unit.slice(1)} ${before.step.n} of ${before.step.m}`
+      : before.commit?.sha
+        ? `Commit ${sha7(before.commit.sha)}`
+        : "The current commit";
+    return am
+      ? `${which} skipped; the rest applied — the series is finished`
+      : `${which} skipped; the rest applied — ${noun} complete`;
+  }
+  return am
+    ? "Last patch skipped. The series is finished, without it"
+    : `Last commit skipped. ${noun.charAt(0).toUpperCase()}${noun.slice(1)} complete, without it`;
+}
+
+/** The operation as the end of a sentence names it ("… — rebase complete"). */
+const SKIP_NOUN: Readonly<Record<OperationKind, string>> = {
+  merge: "merge",
+  rebase: "rebase",
+  "rebase-merge-step": "rebase",
+  "cherry-pick": "cherry-pick",
+  revert: "revert",
+  am: "patch series",
+  stash: "stash",
+  none: "operation",
+};
+
 // ── Wording per operation (PLAN §3.1) ─────────────────────────────────────────
 
 interface SideWords {

@@ -8,7 +8,7 @@ import {
   type RebaseOutcome,
   type RebaseRunOptions,
 } from "./RebaseRunner";
-import { describeSides, type OperationFacts } from "@gitstudio/engine/conflict/sides";
+import { describeSides, skipEndedText, type OperationFacts } from "@gitstudio/engine/conflict/sides";
 import type {
   OperationKind,
   OperationOutcome,
@@ -972,7 +972,7 @@ export class OperationProvider implements OperationSource, OperationControl {
     const kindBefore = before.view.kind;
     const ended = v.kind === "none" && remainingConflicts === 0;
     if (ended && ran.code === 0) {
-      return { ok: true, message: doneMessage(kindBefore, verb), view: v, remainingConflicts };
+      return { ok: true, message: doneMessage(before.view, verb), view: v, remainingConflicts };
     }
     const moved = v.kind !== "none" && v.episode !== before.view.episode;
     if (verb !== "abort" && (moved || (ran.code === 0 && v.kind !== "none"))) {
@@ -981,7 +981,7 @@ export class OperationProvider implements OperationSource, OperationControl {
       const message =
         v.kind !== kindBefore && !(kindBefore === "rebase" && v.kind === "rebase-merge-step") &&
         !(kindBefore === "rebase-merge-step" && v.kind === "rebase")
-          ? `${doneMessage(kindBefore, verb)}. Then: ${v.title}`
+          ? `${doneMessage(before.view, verb)}. Then: ${v.title}`
           : stoppedMessage(v, remainingConflicts);
       return { ok: false, stopped: true, expected: true, message, view: v, remainingConflicts };
     }
@@ -1184,20 +1184,20 @@ const OP_NOUN: Record<OperationKind, string> = {
   none: "Operation",
 };
 
-function doneMessage(kind: OperationKind, verb: "continue" | "skip" | "abort"): string {
+/** What the verb did, said of the operation as it was when it was pressed. */
+function doneMessage(before: OperationView, verb: "continue" | "skip" | "abort"): string {
+  const kind = before.kind;
   if (verb === "abort") {
     if (kind === "stash") return "Cancelled. Your stashed changes are still in the stash.";
     if (kind === "none") return "Cancelled. The conflicted files are back to their last commit.";
     if (kind === "am") return "Patch series abandoned";
     return `${OP_NOUN[kind]} aborted`;
   }
-  // A Skip that ENDED the operation left its last commit out: saying "All
-  // patches applied" of a series whose one patch was just skipped is wrong.
-  if (verb === "skip") {
-    return kind === "am"
-      ? "Last patch skipped. The series is finished, without it"
-      : `Last commit skipped. ${OP_NOUN[kind]} complete, without it`;
-  }
+  // A Skip that ENDED the operation: "All patches applied" of a series whose
+  // one patch was just skipped is wrong, and so is "Last commit skipped" of
+  // commit 2 of 3 when git went on and applied commit 3. Which one it was,
+  // and whether anything came after it, is read off the stop it ended.
+  if (verb === "skip") return skipEndedText(before);
   if (kind === "am") return "All patches applied";
   return `${OP_NOUN[kind]} complete`;
 }

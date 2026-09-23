@@ -68,10 +68,11 @@ does, the other does. (merge-studio#12)
 - `gitstudio.merge.jetbrainsPath` is a **user** setting only: a workspace's own
   settings cannot name the program GitStudio launches.
 - Continue / Skip / Abort say what they do per operation — "All patches
-  applied.", "Last patch skipped — the series is finished, without it.",
-  "Stash apply cancelled — the stash is still in your list." — in
-  the same words as the Conflicts dashboard, and cancelling unmerged files
-  with no operation now warns that anything staged is discarded too.
+  applied.", "Commit 2 of 3 skipped; the rest applied — rebase complete",
+  "Last patch skipped. The series is finished, without it", "Stash apply
+  cancelled — the stash is still in your list." — in the same words as the
+  Conflicts dashboard, and cancelling unmerged files with no operation now
+  warns that anything staged is discarded too.
 - Opening a conflict in the JetBrains IDE while the merge editor holds
   unapplied work asks first: the IDE starts the merge over, so that work is
   discarded — never left behind to be saved over the IDE's result.

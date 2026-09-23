@@ -2,6 +2,7 @@
 // PLAN §4 P2 "THE STATE TABLE"; scripts ported from scratchpad
 // merge/git-semantics/{scenarios,continue,extra}.sh).
 
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { makeRepo, topoRepo, FIVE, edit, seqEditor, type Repo } from "./opRepo";
 
@@ -178,6 +179,57 @@ export function autostashStop(): Stopped {
   r.write("f.txt", edit(FIVE, { three: "three-dirty" }));
   r.tryGit("rebase", "--autostash", "master");
   return { r, sha: { test: r.sha("test") } };
+}
+
+/**
+ * Three commits on test where only the MIDDLE one conflicts with master:
+ * T1 adds g.txt, T2 edits line 3 (master edited it too), T3 adds h.txt.
+ * Replaying them stops at T2 — "2 of 3" — and, once T2 is skipped, T3
+ * applies cleanly and the operation finishes. Left on master.
+ */
+function middleConflictRepo(name: string): Repo {
+  const r = makeRepo(name);
+  r.write("f.txt", FIVE);
+  r.commitAll("base");
+  r.git("checkout", "-q", "-b", "test");
+  r.write("g.txt", "g\n");
+  r.commitAll("test: add g");
+  r.write("f.txt", edit(FIVE, { three: "three-test" }));
+  r.commitAll("test: edit line 3");
+  r.write("h.txt", "h\n");
+  r.commitAll("test: add h");
+  r.git("checkout", "-q", "master");
+  r.write("f.txt", edit(FIVE, { three: "three-master" }));
+  r.commitAll("master: edit line 3");
+  return r;
+}
+
+/** On test: `git rebase --apply master` — stops at T2, commit 2 of 3; T3 would apply cleanly. */
+export function rebaseApplyMiddleStop(): Stopped {
+  const r = middleConflictRepo("rebase-apply-middle");
+  r.git("checkout", "-q", "test");
+  const sha = { master: r.sha("master"), t2: r.sha("test~1") };
+  r.tryGit("rebase", "--apply", "master");
+  return { r, sha };
+}
+
+/** On master: `git cherry-pick master..test` — T1 applies, stops at T2 with T3 queued; T3 would apply cleanly. */
+export function cherryPickMiddleStop(): Stopped {
+  const r = middleConflictRepo("cherry-middle");
+  const sha = { master: r.sha("master"), t2: r.sha("test~1") };
+  r.tryGit("cherry-pick", "master..test");
+  return { r, sha };
+}
+
+/** On master: `git am -3` of T1..T3 — patch 1 applies, stops at patch 2 of 3; patch 3 would apply cleanly. */
+export function amMiddleStop(): Stopped {
+  const r = middleConflictRepo("am-middle");
+  const patches = join(r.root, ".git", "p-am-middle");
+  r.git("format-patch", "-q", "-3", "test", "-o", patches);
+  const files = readdirSync(patches).sort().map((f) => join(patches, f));
+  const sha = { master: r.sha("master") };
+  r.tryGit("am", "-3", ...files);
+  return { r, sha };
 }
 
 /** A clean repository: nothing stopped. */

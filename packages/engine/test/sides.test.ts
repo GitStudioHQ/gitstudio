@@ -6,6 +6,7 @@ import {
   describeSides,
   pauseDetail,
   roleOfStage,
+  skipEndedText,
   stageOf,
   YOURS_STAGE,
   type SideStages,
@@ -169,4 +170,28 @@ test("roleOfStage and stageOf agree with each other for both orientations", () =
       assert.equal(roleOfStage(o, stageOf(o, role)), role);
     }
   }
+});
+
+// A Skip that ENDED the operation said "Last commit skipped" every time — also
+// of commit 2 of 3, after which git applied commit 3. The words now follow the
+// stop the Skip ended: which one, and whether anything came after it.
+test("a Skip that ended the operation says which one it left out, and whether the rest applied", () => {
+  const commit = { sha: "1a2b3c4d5e6f708192a3", subject: "fix" };
+  assert.equal(
+    skipEndedText({ kind: "rebase", step: { n: 2, m: 3, unit: "commit" } }),
+    "Commit 2 of 3 skipped; the rest applied — rebase complete",
+  );
+  assert.equal(skipEndedText({ kind: "rebase", step: { n: 3, m: 3, unit: "commit" } }), "Last commit skipped. Rebase complete, without it");
+  assert.equal(
+    skipEndedText({ kind: "am", step: { n: 2, m: 5, unit: "patch" } }),
+    "Patch 2 of 5 skipped; the rest applied — the series is finished",
+  );
+  assert.equal(skipEndedText({ kind: "am", step: { n: 1, m: 1, unit: "patch" } }), "Last patch skipped. The series is finished, without it");
+  assert.equal(
+    skipEndedText({ kind: "cherry-pick", queued: 2, commit }),
+    "Commit 1a2b3c4 skipped; the rest applied — cherry-pick complete",
+  );
+  assert.equal(skipEndedText({ kind: "revert", queued: 1, commit }), "Commit 1a2b3c4 skipped; the rest applied — revert complete");
+  assert.equal(skipEndedText({ kind: "cherry-pick", commit }), "Last commit skipped. Cherry-pick complete, without it");
+  assert.equal(skipEndedText({ kind: "rebase" }), "Last commit skipped. Rebase complete, without it", "nothing known after it: the last");
 });

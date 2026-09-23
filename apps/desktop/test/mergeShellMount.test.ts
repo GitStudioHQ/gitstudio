@@ -406,6 +406,26 @@ test("a host that can show the hand-off gets it, instead of a toast that disappe
   assert.deepEqual(handed2, [], "nothing was handed over when the IDE did not open");
 });
 
+test("a Skip that ended the operation says which one it left out, and whether the rest applied", () => {
+  // The main process says it (OperationProvider); these are the words when it
+  // does not, and they must not claim "last" of commit 2 of 3.
+  const done = { ok: true, view: NONE, remainingConflicts: 0 } as OperationOutcome;
+  assert.equal(
+    outcomeLine(done, { ...REBASE, step: { n: 2, m: 3, unit: "commit" } }, "skip").text,
+    "Commit 2 of 3 skipped; the rest applied — rebase complete.",
+  );
+  assert.equal(outcomeLine(done, REBASE, "skip").text, "Last commit skipped. Rebase complete, without it.");
+  assert.equal(
+    outcomeLine(done, { ...REBASE, kind: "am", step: { n: 5, m: 5, unit: "patch" } }, "skip").text,
+    "Last patch skipped. The series is finished, without it.",
+  );
+  assert.equal(
+    outcomeLine({ ...done, message: "Commit 2 of 3 skipped; the rest applied — rebase complete" }, REBASE, "skip").text,
+    "Commit 2 of 3 skipped; the rest applied — rebase complete",
+    "the main process's own words win",
+  );
+});
+
 test("outcomes: done, stopped, and the reasons a refusal gives", () => {
   assert.deepEqual(outcomeLine({ ok: true, view: NONE, remainingConflicts: 0 }, REBASE, "continue"), {
     kind: "done",

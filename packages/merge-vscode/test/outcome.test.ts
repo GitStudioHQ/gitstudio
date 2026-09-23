@@ -49,7 +49,7 @@ test("anything else → failed, with git's reason, or the refusal in plain words
 
 test("every operation's outcome reads as a sentence", () => {
   assert.equal(outcomeLine(o({ ok: true }), "continue", view("am")).text, "All patches applied.");
-  assert.equal(outcomeLine(o({ ok: true }), "skip", view("am")).text, "Last patch skipped — the series is finished, without it.");
+  assert.equal(outcomeLine(o({ ok: true }), "skip", view("am")).text, "Last patch skipped. The series is finished, without it.");
   assert.equal(
     outcomeLine(o({ ok: true }), "abort", view("am")).text,
     "Patch series abandoned — the branch is back where it was before it started.",
@@ -62,7 +62,16 @@ test("every operation's outcome reads as a sentence", () => {
     outcomeLine(o({ ok: true }), "abort", view("none")).text,
     "The conflicted files are back to their last committed versions.",
   );
-  assert.equal(outcomeLine(o({ ok: true }), "skip", view("rebase")).text, "Last commit skipped — the rebase is complete, without it.");
+  assert.equal(outcomeLine(o({ ok: true }), "skip", view("rebase")).text, "Last commit skipped. Rebase complete, without it.");
+  // Not the last one: git went on and applied the rest (git-service's words).
+  assert.equal(
+    outcomeLine(o({ ok: true }), "skip", view("rebase", { step: { n: 2, m: 3, unit: "commit" } })).text,
+    "Commit 2 of 3 skipped; the rest applied — rebase complete.",
+  );
+  assert.equal(
+    outcomeLine(o({ ok: true }), "skip", view("am", { step: { n: 2, m: 5, unit: "patch" } })).text,
+    "Patch 2 of 5 skipped; the rest applied — the series is finished.",
+  );
   for (const kind of ["merge", "rebase", "rebase-merge-step", "cherry-pick", "revert", "am", "stash", "none"] as const) {
     for (const verb of ["continue", "skip", "abort"] as const) {
       const text = outcomeLine(o({ ok: true }), verb, view(kind)).text;
