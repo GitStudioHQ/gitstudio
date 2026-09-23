@@ -7,6 +7,7 @@
 // shared by both hosts).
 
 import { readFile, readdir, writeFile, lstat, readlink } from "node:fs/promises";
+import { rmSync } from "node:fs";
 import { continueRebase, skipRebase, abortRebase } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { textWriteSafe } from "@gitstudio/git-service/ConflictOps";
@@ -97,6 +98,13 @@ export interface GraphRefFilterStore {
 
 /** Commits per graph page — matches the extension's PAGE_SIZE. */
 const PAGE_SIZE = 500;
+/**
+ * How long a cached `conflict:state` may be served without the watcher or a
+ * verb saying git moved (see GitBridge.conflictStateCache). Long enough to
+ * collapse a burst of repaints into one read, short enough that a repository
+ * with no working watcher is never stale for long.
+ */
+const CONFLICT_STATE_MAX_AGE_MS = 2000;
 
 /** Max blob size the read-only file viewer / README will load (512 KiB). */
 const FILE_CAP_BYTES = 512 * 1024;
@@ -229,11 +237,13 @@ export class GitBridge {
   /** Bumped by a fresh load so queued stale pages discard themselves. */
   private graphGen = 0;
   /**
-   * JetBrains merge windows still open, by repo root + path: their LOCAL /
-   * REMOTE / BASE temp files are removed by "Mark resolved" (or when the same
-   * file is handed over again).
+   * JetBrains merge windows still open, by repo root + path, with the stop
+   * (op.episode) they were opened for. Their LOCAL / REMOTE / BASE temp files
+   * are removed by "Mark resolved", when the same file is handed over again,
+   * when that stop is over (a Continue, Skip or Abort, here or in a terminal —
+   * see pruneIdeLaunches), and on quit (disposeIdeLaunches).
    */
-  private readonly ideLaunches = new Map<string, JetBrainsLaunch>();
+  private readonly ideLaunches = new Map<string, { launch: JetBrainsLaunch; root: string; episode: string }>();
 
   constructor(
     private readonly repos: RepoStore,
@@ -2226,7 +2236,18 @@ export class GitBridge {
    */
   private mutationChain: Promise<unknown> = Promise.resolve();
   private serialize<T>(op: () => Promise<T>): Promise<T> {
-    const result = this.mutationChain.then(op, op);
+    // Every mutation can move git's state, so the cached conflict state goes —
+    // both when it starts and when it ends (a read that raced the mutation
+    // must not be served after it).
+    this.invalidateConflictState();
+    const run = async (): Promise<T> => {
+      try {
+        return await op();
+      } finally {
+        this.invalidateConflictState();
+      }
+    };
+    const result = this.mutationChain.then(run, run);
     // Keep the chain alive whatever this op does; swallow on the chain copy so a
     // failed mutation can't surface as an unhandled rejection (the caller still
     // receives the real outcome via `result`).
@@ -2923,7 +2944,7 @@ export class GitBridge {
       try {
         // The advice names the buttons this renderer shows today.
         return await ctx.conflictOps.writeResolution(req.path, req.content, {
-          takeSideAdvice: "use Take ours or Take theirs",
+          takeSideAdvice: "use Accept Yours or Accept Theirs",
         });
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
@@ -2955,11 +2976,43 @@ export class GitBridge {
 
   // ── Merge parity: role-based conflicts and the operation (S0 channels) ─────
 
+  /**
+   * The last `conflict:state` answer, for the repository it was read in.
+   *
+   * The renderer reads conflict:state on every Changes repaint while an
+   * operation is stopped, and a snapshot is a dozen git processes. Its answer
+   * changes only when git's state does, which two things see: the repository
+   * watcher (main.ts calls `invalidateConflictState` on every event — a
+   * terminal `git add`, the next rebase step) and this bridge's own mutations
+   * (`serialize` drops it before and after each). The age limit is the safety
+   * net for a watcher that could not start (a huge tree on Linux).
+   */
+  private conflictStateCache?: { root: string; at: number; value: Promise<ConflictsSnapshot> };
+
+  /** Forget the cached conflict state: git's state may have moved. */
+  invalidateConflictState(): void {
+    this.conflictStateCache = undefined;
+  }
+
   /** `conflict:state` — the conflicts dashboard's git half. */
   async conflictState(): Promise<ConflictsSnapshot> {
     const ctx = this.ctx();
     if (!ctx) return { repoName: "", op: noneOperationView(""), files: [], total: 0, resolved: 0 };
-    return ctx.conflictOps.snapshot();
+    const c = this.conflictStateCache;
+    if (c && c.root === ctx.root && Date.now() - c.at < CONFLICT_STATE_MAX_AGE_MS) return c.value;
+    const value = ctx.conflictOps.snapshot();
+    const entry = { root: ctx.root, at: Date.now(), value };
+    this.conflictStateCache = entry;
+    // A failed read is never served again.
+    value.then(
+      // The operation moved on (here or in a terminal): hand-offs made for
+      // an earlier stop have nothing left to do.
+      (s) => void this.pruneIdeLaunches(ctx.root, s.op.episode),
+      () => {
+        if (this.conflictStateCache === entry) this.conflictStateCache = undefined;
+      },
+    );
+    return value;
   }
 
   /** `conflict:takeRole` — Accept Yours / Accept Theirs (a role with no file deletes it). */
@@ -3041,10 +3094,48 @@ export class GitBridge {
         remainingConflicts: 0,
       };
     }
-    return this.serialize(() => run(ctx, this.repos.runnerOptions()));
+    const out = await this.serialize(() => run(ctx, this.repos.runnerOptions()));
+    await this.pruneIdeLaunches(ctx.root, out.view.episode);
+    return out;
   }
 
   // ── JetBrains hand-off (Settings ▸ Merge) ───────────────────────────────────
+
+  /**
+   * Remove every hand-off's temp files — the app is quitting. The removal
+   * itself is SYNCHRONOUS: `before-quit` cannot wait for a promise, and an
+   * async rm that loses the race with the exit leaves the files behind.
+   */
+  disposeIdeLaunches(): Promise<void> {
+    const all = [...this.ideLaunches.values()];
+    this.ideLaunches.clear();
+    for (const l of all) {
+      if (!l.launch.tempDir) continue;
+      try {
+        rmSync(l.launch.tempDir, { recursive: true, force: true });
+      } catch {
+        /* best effort: a temp dir the OS reclaims */
+      }
+    }
+    return Promise.all(all.map((l) => l.launch.dispose())).then(() => undefined);
+  }
+
+  /**
+   * The stop a hand-off belonged to is over (the repository moved to another
+   * episode, or nothing is stopped any more): its merge window has nothing
+   * left to resolve, and its temp files would otherwise stay in $TMPDIR for
+   * good — "Mark resolved" was the only thing that removed them.
+   */
+  private async pruneIdeLaunches(root: string, episode: string): Promise<void> {
+    const done: Array<Promise<void>> = [];
+    for (const [key, l] of this.ideLaunches) {
+      if (l.root === root && l.episode !== episode) {
+        this.ideLaunches.delete(key);
+        done.push(l.launch.dispose());
+      }
+    }
+    await Promise.all(done);
+  }
 
   private settings(): MergeSettings {
     return this.mergeSettings?.get() ?? { ...DEFAULT_MERGE_SETTINGS };
@@ -3077,7 +3168,7 @@ export class GitBridge {
     if (!input.ok) return input.result;
     const { abs, sides } = input;
     const key = `${ctx.root}\0${req.path}`;
-    await this.ideLaunches.get(key)?.dispose();
+    await this.ideLaunches.get(key)?.launch.dispose();
     const launch = await launchJetBrainsMerge({
       ide,
       outputPath: abs,
@@ -3088,7 +3179,7 @@ export class GitBridge {
     if (!launch.ok) {
       return { ok: false, changed: false, expected: true, message: launch.message ?? `Couldn't open ${ide.name}.` };
     }
-    this.ideLaunches.set(key, launch);
+    this.ideLaunches.set(key, { launch, root: ctx.root, episode: sides.op.episode });
     return {
       ok: true,
       changed: false,
@@ -3133,7 +3224,7 @@ export class GitBridge {
     if (out.ok) {
       ctx.conflictOps.noteChoice(req.path, "merged");
       const key = `${ctx.root}\0${req.path}`;
-      await this.ideLaunches.get(key)?.dispose();
+      await this.ideLaunches.get(key)?.launch.dispose();
       this.ideLaunches.delete(key);
     }
     return out;

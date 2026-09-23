@@ -117,6 +117,29 @@ export async function locateJetBrainsIde(
 }
 
 /**
+ * Is `path` (a launcher, or an install folder holding one) a JetBrains IDE
+ * launcher that exists? The command and product name when it is.
+ *
+ * For a host that stores the path on the user's behalf and later SPAWNS it:
+ * only an existing file whose name is a JetBrains launcher (idea, webstorm,
+ * pycharm64.exe, a snap's pycharm-professional, …) qualifies, so a stored
+ * path can never be `/bin/sh` or anything else a caller cared to name.
+ */
+export function resolveJetBrainsLauncher(
+  path: string,
+  opts: Pick<LocateJetBrainsOptions, "platform" | "exists"> = {},
+): { command: string; name: string } | undefined {
+  const platform = opts.platform ?? process.platform;
+  const j = platform === "win32" ? win32.join : posix.join;
+  const p = path.trim();
+  if (!p || p.includes("\0")) return undefined;
+  if (!(platform === "win32" ? win32.isAbsolute(p) : posix.isAbsolute(p))) return undefined;
+  const command = resolveExplicit(p, platform, opts.exists ?? fileExists, j);
+  const name = command ? knownName(command) : undefined;
+  return command && name ? { command, name } : undefined;
+}
+
+/**
  * A path the user chose: a launcher, or an install FOLDER we look inside — a
  * macOS bundle (`Contents/MacOS/<bin>`, with or without its ".app" showing),
  * or a Linux / Windows install (`bin/<bin>.sh`, `bin/<bin>64.exe`, …).

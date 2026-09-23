@@ -5,7 +5,10 @@
 // path from each renderer request would make every `jetbrains:merge` an exec
 // primitive for anything that can post to IPC. The renderer reads and edits
 // them through `merge:settings` / `merge:setSettings`; the JetBrains channels
-// read them here.
+// read them here. Owning the value is not enough on its own — a renderer that
+// could set any path and then ask for a merge would still have the primitive
+// in two calls — so `update` stores a launcher path only when it IS an
+// existing JetBrains launcher (resolveJetBrainsLauncher).
 //
 // Electron-free (every path injected) so it unit-tests under plain node, and
 // tolerant of a missing, unreadable or hand-edited file: anything that is not
@@ -18,6 +21,7 @@ import {
   JETBRAINS_IDES,
   type MergeSettings,
 } from "@gitstudio/host-bridge/conflictsProtocol";
+import { resolveJetBrainsLauncher } from "@gitstudio/git-service/jetbrains/locator";
 
 export class MergeSettingsStore {
   private constructor(
@@ -45,9 +49,19 @@ export class MergeSettingsStore {
    * Apply the VALID fields of `patch` and persist. Unknown keys and wrong
    * types are ignored rather than stored, so the file never carries a value
    * the rest of the app would have to second-guess.
+   *
+   * `jetbrainsPath` is the one this process later SPAWNS, so it is stored
+   * only when it names an existing JetBrains launcher (or an install folder
+   * holding one) — never merely because the renderer sent a string. Without
+   * this, "set the path, then jetbrains:merge" was an exec primitive for
+   * anything able to post to IPC. Clearing it is always allowed.
    */
   async update(patch: Partial<MergeSettings> | undefined): Promise<MergeSettings> {
-    this.data = sanitize({ ...this.data, ...(isRecord(patch) ? patch : {}) }, this.data);
+    const next: Record<string, unknown> = isRecord(patch) ? { ...patch } : {};
+    if (typeof next.jetbrainsPath === "string" && next.jetbrainsPath.trim() !== "") {
+      if (!resolveJetBrainsLauncher(next.jetbrainsPath)) delete next.jetbrainsPath;
+    }
+    this.data = sanitize({ ...this.data, ...next }, this.data);
     try {
       await mkdir(join(this.file, ".."), { recursive: true });
       await writeFile(this.file, JSON.stringify(this.data, null, 2), "utf8");

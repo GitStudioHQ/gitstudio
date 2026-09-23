@@ -46,7 +46,7 @@ import { editorsView, openEditor, revealRoot, withIcons } from "./editors";
 import type { UpdateManager } from "./autoUpdate";
 import { ErrorReporter } from "./errorReporter";
 import { isExpectedError } from "./expectedError";
-import { RepoWatcher } from "./repoWatcher";
+import { RepoWatcher, gitWatchDirs } from "./repoWatcher";
 import * as issuesApi from "./github/issues";
 import * as myWorkApi from "./github/myWork";
 import * as prsApi from "./github/prs";
@@ -354,7 +354,16 @@ function buildMenu(): void {
           accelerator: "CmdOrCtrl+Z",
           click: () => send("menu:command", { command: "undo" }),
         },
-        { role: "redo" },
+        // NOT `role: "redo"` either, for the same reason: that role is a text
+        // redo, so in the merge editor ⇧⌘Z from the MENU redid typing under
+        // the merge's own history. The renderer routes it (redoOrText) — the
+        // merge's redo while focus is in the merge editor, text redo elsewhere.
+        // The accelerator is the one the role used on each platform.
+        {
+          label: "Redo",
+          accelerator: process.platform === "win32" ? "Ctrl+Y" : "Shift+CmdOrCtrl+Z",
+          click: () => send("menu:command", { command: "redo" }),
+        },
         { type: "separator" },
         { role: "cut" },
         { role: "copy" },
@@ -1285,9 +1294,20 @@ async function boot(): Promise<void> {
     // handle on a directory the user may be about to delete or unmount.
     repoWatcher?.dispose();
     repoWatcher = undefined;
-    const root = repos?.getContext()?.root;
-    if (root) {
-      repoWatcher = new RepoWatcher(root, (info) => send("repo:filesChanged", info));
+    const ctx = repos?.getContext();
+    const root = ctx?.root;
+    if (root && ctx) {
+      const w = new RepoWatcher(root, (info) => {
+        // What the conflicts dashboard read is stale the moment git moves.
+        bridge.invalidateConflictState();
+        send("repo:filesChanged", info);
+      });
+      repoWatcher = w;
+      // A linked worktree keeps its git state outside the root (`.git` is a
+      // file): ask git where, and watch there too.
+      void gitWatchDirs(ctx).then((dirs) => {
+        if (dirs && repoWatcher === w) w.watchGitDirs(dirs);
+      });
     }
   });
   // Stream every git command the open repo runs to the renderer's Output tab.
@@ -1362,6 +1382,9 @@ app.on("activate", () => {
 app.on("before-quit", () => {
   void saveState();
   ai?.dispose();
+  // A JetBrains hand-off never marked resolved leaves LOCAL / REMOTE / BASE
+  // in the temp folder; they go with the app (removed synchronously).
+  void bridge?.disposeIdeLaunches();
   repos?.dispose();
 });
 

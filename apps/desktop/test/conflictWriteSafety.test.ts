@@ -89,7 +89,7 @@ test("marking a conflicted symlink resolved does not write through it", async ()
     assert.equal(r.ok, false, "saving text into a symlink is refused");
     assert.equal(r.expected, true, "as a condition, not a crash to report");
     assert.match(r.message ?? "", /symbolic link/i, "and says what it is");
-    assert.match(r.message ?? "", /Take ours or Take theirs/, "and names a way through that works");
+    assert.match(r.message ?? "", /Accept Yours or Accept Theirs/, "and names a way through that works — the buttons the merge editor shows");
 
     assert.equal(
       readFileSync(secret, "utf8"),

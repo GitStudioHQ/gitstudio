@@ -117,6 +117,52 @@ test("conflict:state is the dashboard's git half, and conflict:takeRole resolves
   }
 });
 
+test("main.ts: the watcher drops the conflict-state cache, and follows a linked worktree's git dirs", () => {
+  const main = readFileSync(fileURLToPath(new URL("../src/main/main.ts", import.meta.url)), "utf8");
+  const at = main.indexOf("new RepoWatcher(");
+  assert.ok(at > 0, "the watcher is created in main.ts");
+  const block = main.slice(at, at + 900);
+  assert.match(block, /bridge\.invalidateConflictState\(\)/, "every watcher event invalidates the cached conflict:state");
+  assert.match(block, /gitWatchDirs\(ctx\)[\s\S]*watchGitDirs\(dirs\)/, "the git dirs come from --git-path and are watched");
+});
+
+test("conflict:state answers a repaint from memory until git moves (P3 → P2: keep it cheap)", async () => {
+  // The renderer reads conflict:state on EVERY Changes repaint while an
+  // operation is stopped — and a snapshot is a dozen git processes (the
+  // operation's names and gates, the listing, attributes). The answer only
+  // changes when git does, which the watcher and our own verbs both know.
+  const r = reporter();
+  try {
+    const repos = new RepoStore([]);
+    await repos.open(r.root);
+    const b = new GitBridge(repos);
+    let runs = 0;
+    repos.onGitRun = () => {
+      runs++;
+    };
+    const first = await b.conflictState();
+    assert.ok(runs > 0, "precondition: the first read asks git");
+    runs = 0;
+    const again = await b.conflictState();
+    assert.equal(runs, 0, "a repaint's read costs no git at all");
+    assert.deepEqual(again, first);
+
+    // The watcher saw git move (a terminal `git add`): the next read is fresh.
+    r.git("add", "f.txt");
+    b.invalidateConflictState();
+    runs = 0;
+    const afterAdd = await b.conflictState();
+    assert.ok(runs > 0, "invalidated: read again");
+    assert.equal(afterAdd.files[0].status, "resolved");
+
+    // Our own verb moves git too, and must never be answered from before it.
+    await b.conflictRestore({ path: "f.txt" });
+    assert.equal((await b.conflictState()).files[0].status, "pending", "a verb's result is never a stale read");
+  } finally {
+    removeTempRepo(r.root);
+  }
+});
+
 test("conflict:delete settles a both-deleted file; conflict:takeSide no longer deletes it by accident", async () => {
   const r = repo("dd");
   try {
@@ -238,6 +284,8 @@ test("a merge continued through op:continue (and merge:continue) leaves no '# Co
 test("merge settings: defaults (auto-apply OFF), persisted, and only valid values stored", async () => {
   const dir = mkdtempSync(join(tmpdir(), "gs-merge-settings-"));
   try {
+    const launcher = join(dir, "idea.sh");
+    writeFileSync(launcher, "#!/bin/sh\n");
     const store = await MergeSettingsStore.load(dir);
     assert.deepEqual(store.get(), DEFAULT_MERGE_SETTINGS);
     assert.equal(store.get().autoApplyNonConflicting, false, "JetBrains' own default");
@@ -245,10 +293,10 @@ test("merge settings: defaults (auto-apply OFF), persisted, and only valid value
       autoApplyNonConflicting: true,
       conflictResolver: "jetbrains",
       preferredIde: "goland",
-      jetbrainsPath: "  /opt/idea/bin/idea.sh  ",
+      jetbrainsPath: `  ${launcher}  `,
     });
     assert.equal(next.autoApplyNonConflicting, true);
-    assert.equal(next.jetbrainsPath, "/opt/idea/bin/idea.sh");
+    assert.equal(next.jetbrainsPath, launcher);
     const reloaded = await MergeSettingsStore.load(dir);
     assert.deepEqual(reloaded.get(), next, "survives a restart");
 
@@ -262,6 +310,28 @@ test("merge settings: defaults (auto-apply OFF), persisted, and only valid value
     writeFileSync(join(dir, "merge-settings.json"), "{ not json");
     assert.deepEqual((await MergeSettingsStore.load(dir)).get(), DEFAULT_MERGE_SETTINGS, "a broken file falls back");
     assert.deepEqual(sanitize({ conflictResolver: "webview" }, DEFAULT_MERGE_SETTINGS).conflictResolver, "embedded");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("merge:setSettings stores a launcher path only when it IS a JetBrains launcher (main owns what it spawns)", async () => {
+  // jetbrains:merge spawns jetbrainsPath. Taking any string from the renderer
+  // made "set the path, then merge" a two-call exec primitive for anything
+  // that can post to IPC. The path now has to resolve to an existing JetBrains
+  // launcher (or an install folder holding one); clearing it is always allowed.
+  const dir = mkdtempSync(join(tmpdir(), "gs-merge-settings-"));
+  try {
+    const store = await MergeSettingsStore.load(dir);
+    for (const bad of ["/bin/sh", process.execPath, join(dir, "missing", "idea"), "idea"]) {
+      const out = await store.update({ jetbrainsPath: bad });
+      assert.equal(out.jetbrainsPath, "", `${bad} is not a JetBrains launcher and is not stored`);
+    }
+    const good = join(dir, "webstorm");
+    writeFileSync(good, "#!/bin/sh\n");
+    assert.equal((await store.update({ jetbrainsPath: good })).jetbrainsPath, good, "a real launcher is stored");
+    assert.equal((await store.update({ jetbrainsPath: "/bin/sh" })).jetbrainsPath, good, "…and a bad one does not replace it");
+    assert.equal((await store.update({ jetbrainsPath: "" })).jetbrainsPath, "", "clearing always works");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -404,5 +474,36 @@ test("jetbrains:merge passes the Apply's guards: no non-UTF-8 text, no folder th
     removeTempRepo(r.root);
     rmSync(ide.dir, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("a JetBrains hand-off's temp files go with a new stop, and on quit", { skip: posixOnly }, async () => {
+  // LOCAL / REMOTE / BASE were removed only by "Mark resolved": a merge
+  // finished in the IDE and continued from a terminal, or an abort, left its
+  // mkdtemp directory in $TMPDIR for good.
+  const r = reporter();
+  const ide = fakeIde();
+  try {
+    const b = await bridgeFor(r.root, { ...DEFAULT_MERGE_SETTINGS, jetbrainsPath: ide.command });
+    assert.equal((await b.jetbrainsMerge({ path: "f.txt" })).ok, true);
+    const log = await waitFor(ide.log);
+    const tempDir = join([...log.matchAll(/^ARG (.*)$/gm)].map((m) => m[1])[1], "..");
+    assert.equal(existsSync(tempDir), true, "precondition: the IDE's files exist");
+    const out = await b.opAbort();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(existsSync(tempDir), false, "the stop they belonged to is over, so they are gone");
+
+    // And on quit, whatever is still open.
+    r.tryGit("rebase", "main");
+    rmSync(ide.log, { force: true });
+    assert.equal((await b.jetbrainsMerge({ path: "f.txt" })).ok, true);
+    const log2 = await waitFor(ide.log);
+    const tempDir2 = join([...log2.matchAll(/^ARG (.*)$/gm)].map((m) => m[1])[1], "..");
+    assert.equal(existsSync(tempDir2), true);
+    await b.disposeIdeLaunches();
+    assert.equal(existsSync(tempDir2), false, "quitting removes them");
+  } finally {
+    removeTempRepo(r.root);
+    rmSync(ide.dir, { recursive: true, force: true });
   }
 });
