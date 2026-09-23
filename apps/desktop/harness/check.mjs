@@ -673,7 +673,10 @@ const CASES = [
   ["an-answer-can-be-copied", "assistant~click:.topbar-assistant", { extra: "ai=1&chat=1" }],
   ["the-empty-assistant-offers-real-work", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-live-turn-shows-its-steps", "assistant~click:.topbar-assistant~click:.assistant-chip", { extra: "ai=1&chat=live" }],
-  ["jump-to-latest-appears-when-you-scroll-up", "assistant~click:.topbar-assistant~click:.assistant-chip", { extra: "ai=1&chat=live" }],
+  // frames=none: the streamed answer must paint with no animation frame at all
+  // (an occluded window gets none), and a frame arriving by luck made this
+  // pass some runs and fail others.
+  ["jump-to-latest-appears-when-you-scroll-up", "assistant~click:.topbar-assistant~click:.assistant-chip", { extra: "ai=1&chat=live&frames=none" }],
   ["a-failed-turn-offers-a-retry", "assistant~click:.topbar-assistant", { extra: "ai=1&fail=ai:chatSend" }],
   // Pull on a branch that has diverged from its upstream (report #12).
   ["a-diverged-pull-asks-instead-of-quoting-git", "code", { extra: "diverged=1" }],

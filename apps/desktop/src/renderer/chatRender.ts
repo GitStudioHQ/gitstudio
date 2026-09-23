@@ -190,6 +190,9 @@ export function onDelta(state: TurnState, delta: string): void {
  * `state.stream`, so a tick that lands after the turn ends does nothing.
  */
 const STREAM_RENDER_MS = 100;
+/** How long a due paint waits for an animation frame before painting anyway
+ *  (the log pane's fallback is the same 80 ms). */
+const STREAM_FRAME_FALLBACK_MS = 80;
 
 function scheduleStreamRender(state: TurnState): void {
   if (state.pending || !state.stream) return;
@@ -211,11 +214,26 @@ function scheduleStreamRender(state: TurnState): void {
   const since = Date.now() - state.lastRenderAt;
   if (since >= STREAM_RENDER_MS) {
     // Due now: keep the animation frame, so the paint still lands with the
-    // browser's own rhythm rather than between two of them.
-    requestAnimationFrame(() => {
+    // browser's own rhythm rather than between two of them — or on a timer if
+    // no frame comes. A window that is occluded or minimised is served NO
+    // frames, and this was rAF alone: `pending` then stayed true, every later
+    // delta returned at the guard above, and the answer stopped painting until
+    // the window was shown again (the log pane's scheduleScrollFrame learned
+    // the same). Whichever fires first paints and cancels the other; a visible
+    // window's frame always comes well inside the fallback.
+    let frame = 0;
+    let timer = 0;
+    const once = (): void => {
+      if (!frame && !timer) return;
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      frame = 0;
+      timer = 0;
       state.lastRenderAt = Date.now();
       paint();
-    });
+    };
+    frame = requestAnimationFrame(once);
+    timer = window.setTimeout(once, STREAM_FRAME_FALLBACK_MS);
     return;
   }
   window.setTimeout(() => {
