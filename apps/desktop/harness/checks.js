@@ -4980,10 +4980,13 @@
       c.ok(!$(".ms-shell"), "and the stale editor does not come back");
       const mark = $$(".diff-empty-actions button").find((b) => text(b) === "Mark resolved");
       c.ok(!!mark, "Mark resolved stays on screen, not only in a toast");
+      mark?.focus();
       mark?.click();
       await settle(1200);
       c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:markResolved").length, 1, "and stages it");
       c.ok(!!$('.cd-row.is-resolved[data-path="src/app.ts"]'), "the dashboard shows it resolved");
+      const a = document.activeElement;
+      c.eq(a && a.dataset && a.dataset.key, "restore:src/app.ts", "and the keyboard lands on that file's row, not on <body>");
     },
 
     /**

@@ -7163,7 +7163,9 @@ class App {
    */
   private returnKeyboardToDashboard(path: string): void {
     const active = document.activeElement as HTMLElement | null;
-    const inEditor = !active || active === document.body || !!active.closest(".merge-wrap, .ms-shell");
+    // The editor, or the pane that stands in for it while the IDE has the
+    // file (its Mark resolved goes the same way).
+    const inEditor = !active || active === document.body || !!active.closest(".merge-wrap, .ms-shell, .diff-empty");
     this.changesDashFocus = inEditor ? { path, at: Date.now() } : undefined;
   }
 
