@@ -372,12 +372,22 @@ test("the legend counts what is left per category and jumps to it", { skip }, as
     for (const phrase of ["Conflict", "Identical", "whitespace", "Dashed outline", "Added lines", "Removed lines", "Changed lines"]) {
       expect(key.includes(phrase), "the key explains " + phrase);
     }
+    expect(getComputedStyle(pop).display !== "none", "…and is on screen, not just un-hidden: " + getComputedStyle(pop).display);
     help.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    expect(pop.hidden, "Escape closes it");
+    // The popover, the resolvable note and the chips all set their own display,
+    // which beats the hidden attribute unless a [hidden] rule says otherwise —
+    // so what is checked is what renders.
+    expect(pop.hidden && getComputedStyle(pop).display === "none", "Escape closes it (display " + getComputedStyle(pop).display + ")");
+    expect(getComputedStyle(chip("conflict").querySelector(".jb-legend-extra")).display === "none", "the hidden resolvable note takes no room");
 
     // The legend survives a rebuild (a whitespace change) and keeps counting.
     view.setRenderOptions({ whitespace: "none" });
     expect(document.querySelectorAll("#slot .jb-legend").length === 1 && text("conflict").startsWith("≠Conflicts3"), "after a re-diff the same legend shows the new counts: " + text("conflict"));
+    // A category with no changes at all has no chip on screen.
+    view.render(W.payload({ base: "a\\nb\\nc", ours: "a\\nX\\nc", theirs: "a\\nY\\nc", result: "a\\nb\\nc" }));
+    const shown = (cat) => getComputedStyle(chip(cat)).display !== "none";
+    expect(shown("conflict") && !shown("same") && !shown("yours-only") && !shown("theirs-only"),
+      "only the conflict chip shows: " + ["conflict", "same", "yours-only", "theirs-only"].map((c) => c + "=" + getComputedStyle(chip(c)).display).join(" "));
     view.dispose();
     expect(!document.querySelector("#slot .jb-legend"), "dispose() takes the legend down");
   `);
