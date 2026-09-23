@@ -1,0 +1,225 @@
+apps/desktop/test/silentGitFailure.test.ts
+  s_26f5e669d3043c::t_ce375457e9c652 36,78,100
+  s_26f5e669d3043c::t_b9d1bb1dd31eb1 51-52,94,116
+apps/desktop/test/inTheWayDoors.test.ts
+  s_26f5e669d3043c::t_b9d1bb1dd31eb1 161,202,204,216,219,311,352
+apps/desktop/test/gitBridgeArgGuards.test.ts
+  s_26f5e669d3043c::t_913636352dbd0a 109-112,117-119
+apps/desktop/test/inTheWayCensus.test.ts
+  s_26f5e669d3043c::t_33ff50a3d2c707 109-113,115-117,136-139
+  s_26f5e669d3043c::t_b9d1bb1dd31eb1 314
+  s_26f5e669d3043c::t_8f565b5b3353c8 140-141
+apps/extension/test/refCheckout.test.ts
+  s_26f5e669d3043c::t_b563b86d329045 1-239
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_4c1c8707e7c7db 3868-3870,3874,3878,3883
+  s_26f5e669d3043c::t_913636352dbd0a 41-42,89-91,113,1911,2012-2015,2019,2030-2033,2107,2213,2245,2251-2253,2265,2446,2507-2509,2511,2518,2520-2524,2527,2574,2592-2594,2598-2602,2605,2619,2627,2653,2657,2876-2881,2883,2902,2905,2913-2914,2919-2920,3026-3027,3195,3197,3202,3356-3362,3370,3379,3382,3442,3447,3468,3475-3477,3486,3488-3489,3495-3496,3502-3504,3508,3515-3516,3525,3541,3544,3547,3563-3566,3617-3618,3624,3626,3634,3650,3653-3654,3657,3667,3669,3676,3684,3692,3698-3702,3713,3715,3739,3743-3749,3752,3759,3767,3776,3787,3800,3803-3804,3828,3838-3839,3864,3889,3905-3906,3940-3944,3948,3952,3954,3956,3961,3964-3965,3975,3979,3983,3990,4001,4035-4044,4106-4110,4129,4138,4185-4193,4195-4198,4200-4201,4221,4241-4242,9295,9301-9333,9384-9388,9393,9397,9403,9415,9417-9418,9428,9432,9434,9586-9597,9926-9931
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_92f4dd1170a7c7 361-367,2353-2356
+  s_26f5e669d3043c::t_913636352dbd0a 13,66-67,69-81,88-93,314-319,548,550-552,554-555,557-559,1869-1871,1967-1969,2007,2011-2012,2348-2352,2357-2359
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_913636352dbd0a 312-337,464-466,652-657,706-716,1717-1721,1767-1769,1788-1798,2227,2230-2239,2383,2413-2415,2456-2466,2468,2470-2500,2517-2518,2520-2521,2527,2530-2548,2550,2553,2555-2559,2565-2566,2584-2586,2588-2591,2593-2594
+  s_26f5e669d3043c::t_139fca7d23ebf9 1785-1787
+  s_26f5e669d3043c::t_36851c1b4d903b 1665-1666,1670-1680,2228-2229
+  s_26f5e669d3043c::t_ccfb65666a8223 1749-1758
+  s_26f5e669d3043c::t_be79f2c798f5ca 717
+apps/extension/test/inTheWayCallSites.test.ts
+  s_26f5e669d3043c::t_b563b86d329045 33-37,49,52,87-88,91,119
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_913636352dbd0a 8-10,71-72,82,93,100,238-244,324-340
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_913636352dbd0a 2747-2751,7716-7722,7772,7775-7776,7780,7785,7787-7790,7797,7805,7845-7848,7878-8093,8224-8252,12669-12815
+apps/desktop/test/inTheWayStateTable.test.ts
+  s_26f5e669d3043c::t_b9d1bb1dd31eb1 159,161
+apps/desktop/src/renderer/views/refDetail.ts
+  s_26f5e669d3043c::t_913636352dbd0a 17-19,144-147,149,151,154,239,244-246,248,251-253,266-267,275-278,280,294
+packages/git-service/src/BranchOps.ts
+  s_26f5e669d3043c::t_806f207c78cfd5 201,215,217-227,235-238,240-241,243,249,298,303
+  s_26f5e669d3043c::t_3deded2beddfcf 45-74,143-148,194-195,202-214,242,244-248,250-269,289-290,292,299-302,309
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_913636352dbd0a 7-10,110-119,123-137,140-179,188-189,192-196,198,223,237-238,241-245,247-248,268,282-288,291-293,295,297,301,304,309,416-422,426,433-435,438,445,447,457-465,477-478,481,484,496,498,510,517-519,528-532,534,537-538,546-547,556,560-569,571-573,655-658,670,677,681-686,689,726-728,740-743,747,754-757,769-772,776,780-783
+  s_26f5e669d3043c::t_552f5c9792ff91 120-122,138-139,206-214,254-255,259
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_f48708b134e1e9 2048-2058,2541,2768-2773,2775,2777-2785,2788,2790,2792-2793
+  s_26f5e669d3043c::t_913636352dbd0a 21,24-26,84-85,88,160-184,277-279,284-285,288-291,348-358,399-401,415-416,427-430,439-449,453-466,474-475,478,491-492,514,529-539,547,550,555,597-599,602,623-626,634-635,663-668,1875-1876,2059-2061,2088-2092,2094-2098,2102,2164-2166,2173-2174,2194-2197,2200,2237-2244,2246,2262-2263,2265,2268-2270,2272,2275,2411-2414,2442,2444-2447,2455,2457,2460,2496-2510,2517-2532,2534-2536,2761-2767,2774,2776,2789,2797-2805,2808-2812
+apps/desktop/harness/README.md
+  s_26f5e669d3043c::t_e88187a7336a42 54-68
+apps/desktop/harness/affordance.mjs
+  s_26f5e669d3043c::t_775c19e1fcd91e 15-21,114-136,145-149,159-174,180-185,202-207,210-217,275-312,336-339,342,344,346-347,351,356-360,363-378,382-383,402-404,418-427,430
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_0a86beb7f82fde 60-65,537-541
+apps/desktop/harness/contrast.mjs
+  s_26f5e669d3043c::t_b514c0e6d3ac01 80-84,112-145,236,238,240-255,362-365
+apps/desktop/harness/fit.mjs
+  s_26f5e669d3043c::t_4e4c4c13cba397 11-16,83-87,89,91-101,104-108,118-119,121-137,162,166-173,181-184,186-189,227-231,234-249,251,261-262,269-273,285-299
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_038d05a3f4546c 811,823
+apps/desktop/src/renderer/branchRequests.ts
+  s_26f5e669d3043c::t_b701dbc4d38ec9 1-62
+apps/desktop/src/renderer/bridge.ts
+  s_26f5e669d3043c::t_a41359b0d1bb45 114-123,168-172,179-180
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_8517b8e1434ce8 44-47,65-66,68,73,95
+apps/desktop/src/renderer/graphMount.ts
+  s_26f5e669d3043c::t_aa46c07ab8d86b 10-11,101,231-256
+apps/desktop/src/renderer/optionLikeRename.ts
+  s_26f5e669d3043c::t_4df2d486340ba7 1-66
+apps/desktop/src/renderer/peeks.ts
+  s_26f5e669d3043c::t_2aa36d47378bdb 31-34
+apps/desktop/src/renderer/refMenuItems.ts
+  s_26f5e669d3043c::t_075ce0d52aebc6 9-10,54-56,59,61,65,72-106
+apps/desktop/src/shared/graphAdapterCore.ts
+  s_26f5e669d3043c::t_c45cb8f8f9fd04 31-34
+apps/desktop/test/branchFullNames.test.ts
+  s_26f5e669d3043c::t_8d76a702c6a64f 1-229
+apps/desktop/test/branchListCollisions.test.ts
+  s_26f5e669d3043c::t_72985556a11b87 1-134
+apps/desktop/test/branchPush.test.ts
+  s_26f5e669d3043c::t_ef0187471410c0 77,113,151,184,210
+apps/desktop/test/branchSweep.test.ts
+  s_26f5e669d3043c::t_b016b31bb0b09b 20,28-29,34,41-53,101,123
+apps/desktop/test/checkoutRefArm.test.ts
+  s_26f5e669d3043c::t_8262da7cda091b 9,100-148
+apps/desktop/test/checkoutRequest.test.ts
+  s_26f5e669d3043c::t_21d42294964d4c 26,105-106,108-109,111,115-143,145-150,199-202,204-208,211
+apps/desktop/test/detailsRefs.test.ts
+  s_26f5e669d3043c::t_1e80702af576e7 1-77
+apps/desktop/test/graphAdapterCore.test.ts
+  s_26f5e669d3043c::t_a0e08cdb09e239 33,63-72
+apps/desktop/test/graphRefFilter.test.ts
+  s_26f5e669d3043c::t_cf33b07c3bc52d 9,17-18,89,102,134,141,143-144,155-241,260-334
+apps/desktop/test/mergeReport.test.ts
+  s_26f5e669d3043c::t_2c6180b5ce275a 50,72,100
+apps/desktop/test/refMenuItems.test.ts
+  s_26f5e669d3043c::t_b7a6314879c8f2 17-28
+apps/desktop/test/rewordAcrossStop.test.ts
+  s_26f5e669d3043c::t_29673ba1ea3644 228,346
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_5f96eec0343564 7,1378-1381,1383,1709-1710,1915-1917
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_115651370e6005 33,173-177,179-181
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_7a271fd8ba3b89 8,18,21-23,25,27-28,30,177-179,183-184,187-190,242-243,255-257,323-335,389,392,434-436,440,462-474,504,811-812,877-888,904-908,1012-1013,1035-1045,1048-1060,1062-1070,1097-1102,1406-1412,1414
+apps/extension/src/graph/refFilterStore.ts
+  s_26f5e669d3043c::t_1469400c7b3953 2-4,6-21,23,26-29,38-61,64-66,68-86,95-96,100,108-114,121-122,127-162
+apps/extension/src/statusBar/syncLabel.ts
+  s_26f5e669d3043c::t_2c312eb251be9f 1-18
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_e3e095371c3da4 7-8,80-81,411-414,545-547
+apps/extension/src/views/branchesView.ts
+  s_26f5e669d3043c::t_abc425ddf74b97 3,47-58,63,114,191-195
+apps/extension/src/views/optionLikeBranch.ts
+  s_26f5e669d3043c::t_163695742cc86c 1-70
+apps/extension/src/views/refCheckout.ts
+  s_26f5e669d3043c::t_194c6552098a1d 1-97
+apps/extension/src/views/worktreeRefs.ts
+  s_26f5e669d3043c::t_9c966a01de6db5 2,28-31,33-53,56-57,61,63,65,67,72-73,76-77,79
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_312ef4c4caa3e3 12,447-458,462-463,465,470,473-474,480,489-492,507
+apps/extension/test/branchesTreeLabels.test.ts
+  s_26f5e669d3043c::t_c14c715d9df9d7 1-141
+apps/extension/test/checkoutCommitOptionLike.test.ts
+  s_26f5e669d3043c::t_bad82d79505e61 1-135
+apps/extension/test/graphRefListCourier.test.ts
+  s_26f5e669d3043c::t_b706cc7de841ea 1-52
+apps/extension/test/paneRefs.test.ts
+  s_26f5e669d3043c::t_f8a3e47795f2e3 1-62
+apps/extension/test/refFilterStore.test.ts
+  s_26f5e669d3043c::t_a7b7c5722c0d13 5,46-48,103,107-138,174,180-185,188-189,208-210,246,248-250,252,254-343
+apps/extension/test/syncLabel.test.ts
+  s_26f5e669d3043c::t_e5866a9c52abd4 1-80
+apps/extension/test/worktreeRefs.test.ts
+  s_26f5e669d3043c::t_3a86958e23153c 7,44-50,62-101
+packages/git-service/src/GitProcess.ts
+  s_26f5e669d3043c::t_03cc0c4b160ad6 56-58,78-111,218,238,257,309-318,322,333,429,451
+packages/git-service/src/GitToolHost.ts
+  s_26f5e669d3043c::t_3f870af0e9b4a8 23-24,298-318,322-339,378-384
+packages/git-service/src/LogProvider.ts
+  s_26f5e669d3043c::t_57ed5a8b55b594 32-36,39-50,74-75,96-98,102-104,106-119,132,154-156,169,171-176,184-189,193,202-232
+packages/git-service/src/RefProvider.ts
+  s_26f5e669d3043c::t_f75776948edeaf 67-79,178-191,193-201,204,209,211-213,231,245,277-280,283
+packages/git-service/src/checkoutRef.ts
+  s_26f5e669d3043c::t_1650d6964bb3e4 28,46-104,118-127,137-139
+packages/git-service/src/checkoutRemote.ts
+  s_26f5e669d3043c::t_9ba7fe7887ae78 60-67,88
+packages/git-service/test/branchFullNames.test.ts
+  s_26f5e669d3043c::t_04f03c4865fe4e 1-267
+packages/git-service/test/checkoutRef.test.ts
+  s_26f5e669d3043c::t_00e71e4e9d1464 7,158-186,198-232,239-278
+packages/git-service/test/gitToolHost.test.ts
+  s_26f5e669d3043c::t_0b9dc30feac163 102-160
+packages/git-service/test/logRefs.test.ts
+  s_26f5e669d3043c::t_96db9a2d05a9ba 7-8,12-20,23-42,59,61,65-67,72-79,100-101,105,109,111,113,118,122-132,159,163-169,172,176-212,215,217-291,297-300,304,308-316,323
+packages/git-service/test/logRefsMany.test.ts
+  s_26f5e669d3043c::t_b9857aa917d6f8 1-156
+packages/git-service/test/streamStdin.test.ts
+  s_26f5e669d3043c::t_49ea0492781ea1 1-181
+packages/host-bridge/src/git.ts
+  s_26f5e669d3043c::t_165fff8891a4b6 83-86,88-89
+packages/host-bridge/src/graphProtocol.ts
+  s_26f5e669d3043c::t_18c4b604268546 12-18,20-26,94-102,106-108,121-122,124-141
+packages/host-bridge/src/graphRefFilter.ts
+  s_26f5e669d3043c::t_9bbf72c8b0bf08 7,9,22-24,26-37,41-42,44-57,92-277,284-286,297,305-308,313,315-316,319,325-391
+packages/host-bridge/src/graphWire.ts
+  s_26f5e669d3043c::t_7a361ae90f2295 34-35,78-81,83,91,93
+packages/host-bridge/test/graphRefFilter.test.ts
+  s_26f5e669d3043c::t_14f982bea32ce7 6-12,14-15,17-20,22-23,26,96-99,110,112-202,210,212-213,217,221-283,292-354
+packages/host-bridge/test/graphWire.test.ts
+  s_26f5e669d3043c::t_cdecc32a74915b 64-67,76-93,97
+packages/webview-ui/src/commit-details.ts
+  s_26f5e669d3043c::t_ae5bf2293f63d7 18,66-85,89,93-98,117,561-571,940-969,989-1025
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_cc0248382c69c4 44,67-68,71,74,222-239,279,522-527,574,600-601,664-667,702-703,709,1695-1697,1724-1729,1732-1733,1735-1736,1742-1744,1855-1856,1869,1932-1934,1939-1946,1981-1986,2042-2054,2675-2682,2685-2692,2745-2747,2795-2797,2799-2802,2815-2818,2820-2856,2861,3183,3200-3201,3204,3238-3246,3302,3304-3307,3800-3809,3811-3812,3816,3980,4003,4008,4028,4059,4085-4089,4094-4098,4102-4103,4107,4112,4116,4123,4158-4161,4409,4411,4414-4415,4419,4447-4449,4452-4457,4459-4461
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_883ba5510a8c34 42,63-64,67,70-71,144-148,152-153,166,205-208,211,286-288,292,298,759-761,767,808-813,834-835,868-870,879,881-884,889,903-905,923,925-926,991-992,1015,1065-1067,1072-1078,1265,1295-1301,1303-1318,1345,1347-1350,1353-1356,1368-1370,1373,1412-1416,1786-1788,1790-1801,1810-1814,1822,1915,1935-1950,1961,1989,2000-2007,2010,2016,2032,2064,2121-2125,2130-2134,2139,2143,2148,2152,2160,2193-2196
+packages/webview-ui/src/graph/graphInit.ts
+  s_26f5e669d3043c::t_d9ba04e5ad1c41 1-38
+packages/webview-ui/src/graph/main.ts
+  s_26f5e669d3043c::t_6e768867f12b60 10,12,16,128-143,183-193,276
+packages/webview-ui/src/graph/refFilter.ts
+  s_26f5e669d3043c::t_060a1e00660e29 11-12,14,24-30,67-78,81-90,94-98,100-111,113,118-139
+packages/webview-ui/src/graph/refLayout.ts
+  s_26f5e669d3043c::t_d139cb8a357b03 2,15-17,20-22,34-39,43-49,53,55-56,62-64,66-67,70,72-73,75,83
+packages/webview-ui/src/graph/refTip.ts
+  s_26f5e669d3043c::t_5fda6ed6c045ac 29,31-36,39,71-78,85,91-94,97-98,312,327-331,333
+packages/webview-ui/src/graph/sidebar-main.ts
+  s_26f5e669d3043c::t_bc252f79cab04e 9,87
+packages/webview-ui/src/styles/hostTokens.ts
+  s_26f5e669d3043c::t_49929c775c3b38 25-37
+packages/webview-ui/src/styles/tokens.css
+  s_26f5e669d3043c::t_8fab54c5ca5162 61-63
+packages/webview-ui/test/chipLabels.test.ts
+  s_26f5e669d3043c::t_8eb4522631f0fc 1-164
+packages/webview-ui/test/detailsChipMenu.test.ts
+  s_26f5e669d3043c::t_b41052e92873b4 1-273
+packages/webview-ui/test/filterFollowUp.test.ts
+  s_26f5e669d3043c::t_e65cdb5ec244c0 1-366
+packages/webview-ui/test/headless.ts
+  s_26f5e669d3043c::t_a092d71dc0196d 40,42-45,52,57-60,75-84,86,90,92-93
+packages/webview-ui/test/popoverContrast.test.ts
+  s_26f5e669d3043c::t_ab2d0623e4f134 1-260
+packages/webview-ui/test/refFilter.test.ts
+  s_26f5e669d3043c::t_d0e8b180ca2533 12,15,55-97
+packages/webview-ui/test/refLayout.test.ts
+  s_26f5e669d3043c::t_bbb617e0fa55a5 18-20,26-57
+packages/webview-ui/test/refPicker.test.ts
+  s_26f5e669d3043c::t_202212612920e2 26-36,159-161,164-166,168,171-173
+packages/webview-ui/test/search.test.ts
+  s_26f5e669d3043c::t_9d985327eb6a15 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f3d590bfd20bdccbd25ef04cce1b61fc8e37bc4e",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
