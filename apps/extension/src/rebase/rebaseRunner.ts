@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import {
   runRebasePlan as runShared,
   continueRebase as continueShared,
-  abortRebaseAt as abortShared,
   isRebaseInProgress as inProgressShared,
   type RebasePlan,
   type RebaseOutcome,
@@ -28,11 +27,6 @@ export function runRebasePlan(root: string, plan: RebasePlan): Promise<RebaseOut
 /** `git rebase --continue` (after resolving a conflict / finishing an edit). */
 export function continueRebase(root: string): Promise<RebaseOutcome> {
   return continueShared(root, opts());
-}
-
-/** `git rebase --abort`. */
-export function abortRebaseAt(root: string): Promise<boolean> {
-  return abortShared(root, opts());
 }
 
 /** True while a rebase is mid-flight (conflict or `edit` stop) in this repo. */

@@ -6,6 +6,7 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { UndoLedger } from "../undo/undoLedger";
 import { operationInProgressMessage } from "../git/pausedForUser";
 import { detectOperation } from "../git/pauseNotice";
+import { abortRebaseLike, nothingToAbortText } from "./rebaseAbort";
 
 // Launching & aborting interactive rebases.
 //
@@ -72,23 +73,31 @@ export async function startInteractiveRebase(
   });
 }
 
-/** `gitstudio.abortRebase` — `git rebase --abort`. */
+/**
+ * `gitstudio.abortRebase` — through the shared operation core (rebaseAbort.ts):
+ * a rebase ends with `rebase --abort`, a `git am` stopped in the same
+ * rebase-apply/ directory with `am --abort`. It ran `rebase --abort` for both,
+ * which git refuses during am.
+ */
 export async function abortRebase(repos: RepoManager): Promise<void> {
   const active = repos.getActive();
   if (!active) {
     void vscode.window.showInformationMessage("No active repository.");
     return;
   }
-  const result = await active.ctx.process.run(["rebase", "--abort"]);
-  if (result.code === 0) {
+  const result = await abortRebaseLike(active.ctx.operation);
+  if (!result.ran) {
+    void vscode.window.showInformationMessage(nothingToAbortText(result.kind));
+    return;
+  }
+  if (result.outcome.ok) {
     void vscode.window.setStatusBarMessage(
-      "$(discard) Rebase aborted",
+      `$(discard) ${result.kind === "am" ? "Patch series abandoned" : "Rebase aborted"}`,
       2500,
     );
   } else {
-    const stderr = result.stderr.trim();
     void vscode.window.showErrorMessage(
-      stderr ? `Abort rebase failed: ${stderr}` : "No rebase in progress.",
+      `${result.kind === "am" ? "Abort (git am)" : "Abort rebase"} failed: ${result.outcome.message ?? "git refused."}`,
     );
   }
 }

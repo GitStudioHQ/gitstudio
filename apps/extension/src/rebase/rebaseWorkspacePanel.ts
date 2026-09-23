@@ -7,12 +7,12 @@ import type { UndoLedger } from "../undo/undoLedger";
 import { getNonce } from "../webview/html";
 import { operationInProgressMessage } from "../git/pausedForUser";
 import { detectOperation } from "../git/pauseNotice";
+import { abortRebaseLike, nothingToAbortText } from "./rebaseAbort";
 import type { OperationOutcome } from "@gitstudio/host-bridge/conflictsProtocol";
 import { relativeTime } from "../util/relativeTime";
 import {
   runRebasePlan,
   continueRebase,
-  abortRebaseAt,
   type RebaseOutcome,
 } from "./rebaseRunner";
 // Shared design tokens, inlined by esbuild — matches every other GitStudio surface.
@@ -174,11 +174,18 @@ export class RebaseWorkspacePanel {
         await vscode.commands.executeCommand("gitstudio.showConflicts");
         return;
       case "abort": {
-        const ok = await abortRebaseAt(this.repoRoot());
+        // Through the shared operation core (rebaseAbort.ts): `am --abort`
+        // for a git am stopped in the same rebase-apply/ directory, never a
+        // `rebase --abort` git refuses there.
+        const active = this.repos.getActive();
+        const result = active ? await abortRebaseLike(active.ctx.operation) : undefined;
+        const ok = !!result?.ran && result.outcome.ok;
         this.post({ type: "aborted", ok });
         if (ok) {
-          vscode.window.setStatusBarMessage("$(discard) Rebase aborted", 2500);
+          vscode.window.setStatusBarMessage(`$(discard) ${result?.kind === "am" ? "Patch series abandoned" : "Rebase aborted"}`, 2500);
           this.dispose();
+        } else if (result && !result.ran) {
+          void vscode.window.showInformationMessage(nothingToAbortText(result.kind));
         }
         return;
       }
