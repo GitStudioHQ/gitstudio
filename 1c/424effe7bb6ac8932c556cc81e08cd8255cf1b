@@ -1,0 +1,61 @@
+packages/webview-ui/test/conflictsDashboard.test.ts
+  s_26f5e669d3043c::t_2b30f69770aa3d 342-343
+  s_26f5e669d3043c::t_4ac10bd078f133 325-341,344-346,349,353-360
+  s_26f5e669d3043c::t_6c1d102c826253 347-348,350-352
+packages/webview-ui/src/conflicts/dashboard.ts
+  s_26f5e669d3043c::t_f9c3de9e630a20 175-195
+packages/webview-ui/src/noTextPanel.ts
+  s_26f5e669d3043c::t_2e99001ffd6e40 47-57,60-61
+packages/webview-ui/test/mergeShell.test.ts
+  s_26f5e669d3043c::t_a2abe2a669f036 349-480
+packages/webview-ui/src/styles/shell.css
+  s_26f5e669d3043c::t_f27948011650bd 245-246
+  s_26f5e669d3043c::t_fe3103292b1768 247
+  s_26f5e669d3043c::t_f8a3d829808b46 319-332
+packages/webview-ui/src/mergeShell.ts
+  s_26f5e669d3043c::t_e2a489f090e318 939-941
+  s_26f5e669d3043c::t_0fb0a1a840c980 983-985
+  s_26f5e669d3043c::t_88c7800d0fb2f4 1029-1031,1035-1036,1039-1047
+  s_26f5e669d3043c::t_4bd15d1a5c3d68 831,836,847-853,857
+  s_26f5e669d3043c::t_fea6ee5ed3a7f6 261-268
+  s_26f5e669d3043c::t_16d0e1e3401379 891-892,899-918
+  s_26f5e669d3043c::t_973370f286169e 919,1048,1222-1228
+  s_26f5e669d3043c::t_7ab18ac1f2c49a 1215
+  s_26f5e669d3043c::t_e7cca933e79797 1108-1109
+  s_26f5e669d3043c::t_21424ae6ade628 1146-1148,1150-1151,1154
+  s_26f5e669d3043c::t_cc3aa5bffce5e8 1098,1103-1104,1111
+  s_26f5e669d3043c::t_ce9d9d1375c14c 505
+  s_26f5e669d3043c::t_e7b75decd4b08f 1083
+  s_26f5e669d3043c::t_b2be6d3de61348 547-548,555-557
+  s_26f5e669d3043c::t_4ad2edb0615062 979,986-999
+  s_26f5e669d3043c::t_a8746fad787936 1009-1012,1022,1027-1028,1032-1034,1037-1038
+  s_26f5e669d3043c::t_b65a4f5f5a42ae 1329,1332
+  s_59c0dd2af30db2::t_a46dcb1613dc04 920,1049
+packages/webview-ui/src/styles/conflicts.css
+  s_26f5e669d3043c::t_81d15440c7d1c6 297-303,306,309,314
+  s_26f5e669d3043c::t_9984a664913f9e 352-353
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1c424effe7bb6ac8932c556cc81e08cd8255cf1b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_59c0dd2af30db2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54ca11b6-e37a-494e-95d0-c9e5a1baed9f",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
