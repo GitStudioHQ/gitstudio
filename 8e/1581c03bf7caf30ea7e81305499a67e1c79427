@@ -1,0 +1,21 @@
+packages/merge-vscode/test/closeEditor.test.ts
+  s_26f5e669d3043c::t_7d7bdc0a96f2d2 181-219
+packages/merge-vscode/src/mergeEditorProvider.ts
+  s_26f5e669d3043c::t_19f5c1f0ed5835 348-352,355-362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8e1581c03bf7caf30ea7e81305499a67e1c79427",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
