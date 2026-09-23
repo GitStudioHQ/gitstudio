@@ -4008,9 +4008,7 @@ class App {
       hint: `${local} still tracks ${upstream} — renaming it here doesn't rename it on the remote.`,
       choices: ways,
       cancelId: "keep",
-      // Asked right after the rename moved a ref — the watcher's refresh lands
-      // while this is on screen, and would otherwise answer "keep" for the user.
-      holdWhile: this.whileThisRepo(),
+      holdWhile: this.whileThisRepo(), // asked right after a ref moved — see promptChoice
     });
     if (choice === "keep") return null;
 
