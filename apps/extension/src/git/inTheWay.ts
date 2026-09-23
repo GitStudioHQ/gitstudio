@@ -1,10 +1,12 @@
 import * as vscode from "vscode";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRunResult } from "@gitstudio/git-service/GitProcess";
+import type { PullMode, PullResult } from "@gitstudio/git-service/SyncOps";
 import {
   changesInTheWayMessage,
   runApplying,
   stashAndRetry,
+  stashAndRetryPull,
   stashRetryNote,
   type ApplyOp,
   type ChangesInTheWay,
@@ -15,7 +17,8 @@ import { promptPick } from "../ui/dialogs";
  * Every extension door that applies commits — the graph's Cherry-Pick, Revert
  * and Checkout, the Branches view's Checkout, Merge, Rebase and Create and
  * Switch, the Changes view's Checkout Revision, the Stashes view's Apply and
- * Pop — runs its git command through here.
+ * Pop — runs its git command through here, and every pull door its pull
+ * (`pullOrAsk`).
  *
  * Crash report #18 was a revert refused over the user's uncommitted edit:
  * "Your local changes to the following files would be overwritten by merge …
@@ -65,6 +68,55 @@ export async function applyOrAsk(ctx: GitContext, op: ApplyOp): Promise<Applied>
     void vscode.window.showWarningMessage(`GitStudio: ${note}`);
   }
   return { result: out.result };
+}
+
+/**
+ * A pull, through the same door. Every extension pull door (the Changes
+ * view's Update / Pull using Merge / Pull using Rebase, the status bar's Sync
+ * and Pull) runs its `sync.pull` through here: refused over the user's
+ * uncommitted work (`dirty`), it asks the question above, and Stash & Retry
+ * stashes just those files, pulls again and puts them back
+ * (stashAndRetryPull). It used to be said as "commit or stash them, then pull
+ * again", with nothing to do it — the one door the desktop answered and the
+ * extension did not.
+ *
+ * Returns the pull's result — the retry's after a Stash & Retry — for the door
+ * to settle as it always has (`diverged`, `stopped`, `blocked`, `detached`,
+ * and `dirty` when the stash could not cover it). `undefined` when there is
+ * nothing more to say: the user cancelled, or the stash failed and that was
+ * said here. Nothing ran then.
+ */
+export async function pullOrAsk(ctx: GitContext, mode?: PullMode): Promise<PullResult | undefined> {
+  // pull-stop-reviewed: pull-detached-reviewed: a forwarder. What it pulls
+  // goes back to the door, which hands it to settlePullStop and
+  // settlePullDetached — only the refusal over the user's work is answered
+  // here.
+  const pull = (): Promise<PullResult> => ctx.sync.pull(mode ? { mode } : undefined);
+  const first = await pull();
+  if (!first.dirty) {
+    return first;
+  }
+  const v: ChangesInTheWay = {
+    kind: "pull",
+    paths: first.dirty.paths,
+    untracked: [],
+    ...(first.dirty.rebase ? { rebase: true as const } : {}),
+  };
+  if (!(await askStashRetry(v))) {
+    return undefined;
+  }
+  const out = await stashAndRetryPull(ctx.process, pull);
+  if (out.stashFailed) {
+    void vscode.window.showWarningMessage(
+      `GitStudio: couldn't stash your changes, so nothing ran — ${out.stashFailed}`,
+    );
+    return undefined;
+  }
+  const note = stashRetryNote(out);
+  if (note) {
+    void vscode.window.showWarningMessage(`GitStudio: ${note}`);
+  }
+  return out.pulled;
 }
 
 /** The question itself: which changes are in the way, and the two answers. */

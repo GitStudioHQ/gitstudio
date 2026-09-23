@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
 import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
+import { pullOrAsk } from "../git/inTheWay";
 import { pruneOnFetch } from "../git/fetchOptions";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
@@ -258,19 +259,26 @@ export class SyncStatusItem implements vscode.Disposable {
           reportSync(pushed, "Push", "Pushed");
           break;
         }
-        let pull = await active.ctx.sync.pull();
+        // Through the shared door (git/inTheWay.ts): uncommitted work in the
+        // pull's way is asked about — Stash & Retry or Cancel — and `undefined`
+        // is a Cancel, with nothing run and nothing pushed.
+        //
         // A divergence that is not our own rewrite — somebody else pushed —
         // comes back `diverged` rather than reconciled (as does one that
         // appeared since the counts above were read). Ask the same question the
         // branch view asks instead of reporting git's fast-forward refusal,
         // which is advice for a terminal and no more use here than the wall
         // report #12 was.
-        if (pull.diverged) {
+        let pull = await pullOrAsk(active.ctx);
+        if (pull?.diverged) {
           const mode = await askPullMode(pull.diverged);
           if (mode === undefined) {
             return; // backed out — nothing ran, so there is nothing to report
           }
-          pull = await active.ctx.sync.pull({ mode });
+          pull = await pullOrAsk(active.ctx, mode);
+        }
+        if (pull === undefined) {
+          return; // cancelled at Stash & Retry — nothing ran, nothing to push
         }
         // Stopped on conflicts: said plainly, Changes revealed — and NOTHING is
         // pushed. The branch is mid-merge or mid-rebase until they are resolved.
@@ -320,13 +328,18 @@ export class SyncStatusItem implements vscode.Disposable {
         // `diverged`, with nothing changed, exactly when both sides have moved
         // — the one state the question is about. Sync has always asked this
         // way; this is the same question from the same place.
-        let pulled = await active.ctx.sync.pull();
-        if (pulled.diverged) {
+        // Through the shared door, as Sync above: `undefined` is a Cancel at
+        // the Stash & Retry question — nothing ran.
+        let pulled = await pullOrAsk(active.ctx);
+        if (pulled?.diverged) {
           const mode = await askPullMode(pulled.diverged);
           if (mode === undefined) {
             return; // backed out — nothing ran, so there is nothing to report
           }
-          pulled = await active.ctx.sync.pull({ mode });
+          pulled = await pullOrAsk(active.ctx, mode);
+        }
+        if (pulled === undefined) {
+          return;
         }
         if (settlePullStop(pulled) || settlePullDetached(pulled, this.openBranchUi)) {
           return;

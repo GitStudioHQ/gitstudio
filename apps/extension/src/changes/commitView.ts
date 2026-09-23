@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
 import { pushUnseenMessage, type PullResult } from "@gitstudio/git-service/SyncOps";
 import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
-import { applyOrAsk, checkoutOp } from "../git/inTheWay";
+import { applyOrAsk, checkoutOp, pullOrAsk } from "../git/inTheWay";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
@@ -1591,7 +1591,8 @@ export class CommitViewProvider
 
   /**
    * The branch view's three pull items, as one operation. `undefined` means
-   * the divergence question was asked and dismissed — nothing merged.
+   * a question was asked and dismissed — how to combine a divergence, or
+   * Stash & Retry over uncommitted work in the way — and nothing merged.
    *
    * A stop on conflicts — or a pull blocked by the operation a stop left
    * paused — is settled HERE, by the shared settler; `settled` tells the caller
@@ -1601,32 +1602,36 @@ export class CommitViewProvider
     entry: RepoEntry,
     action: string,
   ): Promise<{ result: PullResult; settled: boolean } | undefined> {
-    let r: PullResult;
+    // Every pull through the shared door (git/inTheWay.ts): refused over the
+    // user's uncommitted work it asks Stash & Retry or Cancel, and `undefined`
+    // is a Cancel there — nothing ran, as for the divergence question.
+    let r: PullResult | undefined;
     if (action === "pullMerge") {
       // The menu item says "using Merge", so say it to git too. Leaving the
       // flag off walked this item into the divergent-branches wall — in the one
       // state where the user had already answered the question.
-      r = await entry.ctx.sync.pull({ mode: "merge" });
+      r = await pullOrAsk(entry.ctx, "merge");
     } else if (action === "pullRebase") {
-      r = await entry.ctx.sync.pull({ mode: "rebase" });
+      r = await pullOrAsk(entry.ctx, "rebase");
     } else {
       // "Update (pull)" names no reconciliation, so SyncOps decides. It hands
       // back `diverged` rather than git's "you have divergent branches" advice
       // when both sides have moved and nothing in the user's config settles it
       // — and that is a question, so ask it.
-      r = await entry.ctx.sync.pull();
-      if (r.diverged) {
+      r = await pullOrAsk(entry.ctx);
+      if (r?.diverged) {
         const mode = await askPullMode(r.diverged);
         if (mode === undefined) {
           return undefined;
         }
-        r = await entry.ctx.sync.pull({ mode });
+        r = await pullOrAsk(entry.ctx, mode);
       }
     }
     // A stop, a block, or a detached HEAD (no branch to pull into) — each said
     // plainly by its settler, so the caller must not call it a failure too.
-    const settled = settlePullStop(r) || settlePullDetached(r, () => this.openBranchMenu());
-    return { result: r, settled };
+    // (`undefined`: cancelled at the Stash & Retry question — nothing ran.)
+    const settled = !!r && (settlePullStop(r) || settlePullDetached(r, () => this.openBranchMenu()));
+    return r === undefined ? undefined : { result: r, settled };
   }
 
   /**

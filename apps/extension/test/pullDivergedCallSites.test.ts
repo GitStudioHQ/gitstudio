@@ -36,12 +36,16 @@ import { fileURLToPath } from "node:url";
 const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const SCAN = ["apps/extension/src", "apps/desktop/src", "packages/git-service/src"];
 
-/** A direct engine/bridge call: captures its argument text. */
-const CALL = /(?:sync\.pull|syncPull)\s*\(([^)]*)/;
+/** A direct engine/bridge call — or the extension's door onto it, `pullOrAsk`
+ *  (git/inTheWay.ts), which every extension pull goes through: captures its
+ *  argument text. */
+const CALL = /(?:sync\.pull|syncPull|pullOrAsk)\s*\(([^)]*)/;
+/** Any extension pull: the door, or the engine call inside it. */
+const PULL = /\b(?:sync\.pull|pullOrAsk)\(/;
 /** The desktop's IPC door onto the same operation. */
 const INVOKE = /invoke\(\s*"sync:pull"/;
 /** The reconciliation named in the call's own arguments. */
-const NAMED = /mode|rebase/i;
+const NAMED = /mode|rebase|"merge"/i;
 /** The question being asked about the answer that came back. */
 const ASKED = /\.diverged|pullWithChoice/;
 const EXEMPT = /pull-diverged-reviewed:/;
@@ -126,7 +130,7 @@ const READS_BOTH = (code: string): boolean => /\.stopped\b/.test(code) && /\.blo
 const STOP_EXEMPT = /pull-stop-reviewed:/;
 /** A method DECLARATION (`async syncPull(opts) {`) is not a call site; the
  *  call inside its body is, and is checked on its own line. */
-const DECLARATION = /^\s*(?:(?:public|private|protected)\s+)?async\s+\w+\s*\(/;
+const DECLARATION = /^\s*(?:export\s+)?(?:(?:public|private|protected)\s+)?async\s+(?:function\s+)?\w+\s*\(/;
 
 test("every pull call site has decided about a pull that stops on conflicts", async () => {
   const unhandled: string[] = [];
@@ -207,7 +211,7 @@ test("every extension pull door settles a detached HEAD", async () => {
   for (const file of await tsFiles(join(ROOT, "apps/extension/src"))) {
     const lines = (await readFile(file, "utf8")).split("\n");
     lines.forEach((line, i) => {
-      if (COMMENT.test(line) || DECLARATION.test(line) || !/\bsync\.pull\(/.test(line)) return;
+      if (COMMENT.test(line) || DECLARATION.test(line) || !PULL.test(line)) return;
       seen++;
       const below: string[] = [];
       for (let k = i; k < lines.length && below.length < 16; k++) {
@@ -254,7 +258,7 @@ test("the status bar's Pull asks nothing before it knows there is a branch", asy
   // A pull on a detached HEAD has no branch to pull into, and git says so in
   // advice for a terminal. The HEAD is looked at before anything is pulled.
   const code = await statusBarPullArm();
-  const firstPull = code.search(/\bsync\.pull\(/);
+  const firstPull = code.search(PULL);
   assert.ok(firstPull >= 0, "the arm pulls");
   assert.match(code.slice(0, firstPull), /\.detached\b/, "the HEAD is checked before the pull");
 });
@@ -266,10 +270,10 @@ test("the status bar's Pull asks how to combine only when the branch has diverge
   // fast-forwards on its own and comes back `diverged`, with nothing changed,
   // exactly when both sides have moved; the question belongs after that.
   const code = await statusBarPullArm();
-  const pulls = [...code.matchAll(/\bsync\.pull\(([^)]*)\)/g)];
+  const pulls = [...code.matchAll(/\b(?:sync\.pull|pullOrAsk)\(([^)]*)\)/g)];
   assert.ok(pulls.length >= 1, "the arm pulls");
   const first = pulls[0];
-  assert.equal(first[1].trim(), "", "the first pull names no reconciliation — git fast-forwards, or says it cannot");
+  assert.doesNotMatch(first[1], /mode|rebase|merge/, "the first pull names no reconciliation — git fast-forwards, or says it cannot");
   const before = code.slice(0, first.index);
   assert.doesNotMatch(before, /promptPick\(|askPullMode\(|askRebase\(/, "nothing is asked before it");
   const after = code.slice(first.index);
@@ -277,7 +281,11 @@ test("the status bar's Pull asks how to combine only when the branch has diverge
   const asked = after.search(/askPullMode\(/);
   assert.ok(diverged >= 0, "the answer is read for a divergence");
   assert.ok(asked > diverged, "and the merge-or-rebase question is asked only about one");
-  assert.match(after.slice(asked), /sync\.pull\(\{\s*mode\s*\}\)/, "whose answer goes to git as the one pull's flag");
+  assert.match(
+    after.slice(asked),
+    /sync\.pull\(\{\s*mode\s*\}\)|pullOrAsk\([^)]*,\s*mode\s*\)/,
+    "whose answer goes to git as the one pull's flag",
+  );
 });
 
 test("the status bar's Pull asks about a paused operation BEFORE the detached HEAD", async () => {
@@ -288,7 +296,7 @@ test("the status bar's Pull asks about a paused operation BEFORE the detached HE
   // asked "merge or rebase?", every answer of which git refuses. The engine's
   // own order is the paused operation first (SyncOps.pull); the door's must be.
   const arm = await statusBarPullArm();
-  const code = arm.slice(0, arm.search(/\bsync\.pull\(/));
+  const code = arm.slice(0, arm.search(PULL));
   const paused = code.search(/\.pausedOperation\(\)/);
   const detached = code.search(/\.detached\b/);
   assert.ok(paused >= 0, "the paused operation is asked about before the question");
