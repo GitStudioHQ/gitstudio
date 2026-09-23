@@ -63,6 +63,10 @@ function fakeGit(over: {
         return { ok: false, changed: false, expected: true, message: "Not a both-deleted file." };
       },
       noteChoice: (path, choice) => over.calls.push(`note:${path}:${choice}`),
+      restore: async (path) => {
+        over.calls.push(`restore:${path}`);
+        return { ok: true, changed: true };
+      },
     },
     conflict: { isConflicted: async () => over.stillConflicted ?? false },
     process: {
@@ -354,4 +358,44 @@ test("REAL git: Apply stages the resolution and git agrees", async () => {
     ctx.dispose();
     removeTemp(r.dir);
   }
+});
+
+test("no undo envelope (Merge Studio): Apply offers Undo, and Undo re-creates the conflict and re-inits", async () => {
+  const calls: string[] = [];
+  let undo: (() => Promise<void>) | undefined;
+  const h = harness(
+    fakeGit({ calls }),
+    {
+      offerUndo: (text, fn) => {
+        calls.push(`offer:${text}`);
+        undo = fn;
+      },
+      diskText: async () => "<<<<<<< ours\nback\n=======\nagain\n>>>>>>> theirs\n",
+    },
+    calls,
+  );
+  const session = new MergeSession(h.deps);
+  await session.apply("resolved\n");
+  assert.ok(calls.includes("offer:resolved file saved and staged."), calls.join(" | "));
+  assert.ok(!h.notes.some((n) => n.text === "resolved file saved and staged."), "offered, not flashed");
+  h.posts.length = 0;
+  await undo!();
+  assert.ok(calls.includes("restore:a.txt"));
+  assert.deepEqual(h.posts.map((p) => p.type), ["opChanged", "init"], "the shell is told, then shown the conflict again");
+});
+
+test("with an undo envelope (GitStudio's ledger) nothing extra is offered — the ledger's Undo covers it", async () => {
+  const calls: string[] = [];
+  const h = harness(
+    fakeGit({ calls }),
+    {
+      withUndo: async (_label, fn) => fn(),
+      offerUndo: () => {
+        calls.push("offer");
+      },
+    },
+    calls,
+  );
+  await new MergeSession(h.deps).apply("resolved\n");
+  assert.ok(!calls.includes("offer"));
 });

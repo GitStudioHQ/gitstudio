@@ -46,6 +46,8 @@ export interface SessionGit {
     takeRole(path: string, role: SideRole): Promise<ConflictOpResult>;
     deleteFile(path: string): Promise<ConflictOpResult>;
     noteChoice(path: string, choice: SideRole | "merged"): void;
+    /** Hold-to-undo's `checkout -m`: re-create the conflict of a resolved path. */
+    restore(path: string): Promise<ConflictOpResult>;
   };
   conflict: { isConflicted(path: string): Promise<boolean> };
   process: GitRunner;
@@ -73,6 +75,12 @@ export interface MergeSessionDeps {
   jetbrainsName(): string | undefined;
   /** The product's undo envelope (GitStudio's UndoLedger). */
   withUndo?<T>(label: string, fn: () => Promise<T>): Promise<T>;
+  /**
+   * A product WITHOUT an undo envelope (Merge Studio) offers the one-step undo
+   * here instead: show `text` with an Undo action that runs `undo` (PLAN
+   * matrix row 22 — the Undo is re-creating the conflict, `git checkout -m`).
+   */
+  offerUndo?(text: string, undo: () => Promise<void>): void;
   notify(kind: "info" | "warn" | "error", text: string): void;
   /** Repository state changed (refresh views, poke the git provider). */
   changed?(): void;
@@ -130,7 +138,11 @@ export class MergeSession {
       const staged = await stageResolvedPath(d.git.process, d.rel);
       if (staged.staged) {
         d.git.conflictOps.noteChoice(d.rel, "merged");
-        d.notify("info", "resolved file saved and staged.");
+        if (!d.withUndo && d.offerUndo) {
+          d.offerUndo("resolved file saved and staged.", () => this.undoApply());
+        } else {
+          d.notify("info", "resolved file saved and staged.");
+        }
       } else if (staged.message) {
         d.notify("warn", staged.message);
       }
@@ -166,6 +178,27 @@ export class MergeSession {
       await this.deps.beforeAbort?.();
       return git.operation.abort();
     });
+  }
+
+  /**
+   * The Undo of an Apply, for a product with no undo envelope: put the conflict
+   * back (`checkout -m`, which rewrites the markers as ours/theirs) and show the
+   * file's sides again.
+   */
+  async undoApply(): Promise<void> {
+    const d = this.deps;
+    if (!d.git || d.rel === undefined) {
+      return;
+    }
+    const result = await d.git.conflictOps.restore(d.rel);
+    if (!result.ok) {
+      d.notify(result.expected ? "warn" : "error", result.message ?? "couldn't restore the conflict.");
+      return;
+    }
+    d.changed?.();
+    await this.postOpChanged();
+    const text = d.diskText ? await d.diskText().catch(() => undefined) : undefined;
+    await this.init(text);
   }
 
   /** Re-read the operation and tell the shell how many conflicts remain. */
