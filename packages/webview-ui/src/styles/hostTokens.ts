@@ -29,14 +29,12 @@ export const hostTokens = css`
        into the editor background: the graph's 70% read at AA on the desktop's
        ink and 3.18:1 on Light+'s #616161, whose ink leaves no room to fade.
        The theme's own secondary-text colour, firmed a fifth of the way toward
-       the menu's ink, is AA on every ground these sit on — measured in
+       the foreground, is AA on every ground these sit on — measured in
        test/popoverContrast.test.ts (VS Code Light+/Dark+) and by the
-       desktop's contrast.mjs (its own light and dark). */
-    --gs-menu-muted: color-mix(
-      in srgb,
-      var(--vscode-descriptionForeground) 80%,
-      var(--vscode-menu-foreground, var(--vscode-foreground))
-    );
+       desktop's contrast.mjs (its own light and dark). The foreground and not
+       the menu's ink: the desktop declares no menu tokens (cssTokens.test),
+       and Light+/Dark+ paint their menus in the foreground anyway. */
+    --gs-menu-muted: color-mix(in srgb, var(--vscode-descriptionForeground) 80%, var(--vscode-foreground));
     --gs-accent: var(--vscode-focusBorder);
     --gs-accent-text: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
     --gs-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
