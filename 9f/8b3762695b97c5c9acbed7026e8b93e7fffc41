@@ -1,0 +1,43 @@
+apps/desktop/test/mcpTranslocation.test.ts
+  s_26f5e669d3043c::t_1076f8be2a5de1 1-126
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_64e68450c249c6 8306-8313
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_cac2adad557935 1355-1363,1372-1373
+  s_26f5e669d3043c::t_dc45d28df4226f 1379
+  s_26f5e669d3043c::t_a8be86193230b9 1382-1386
+apps/desktop/src/main/mcpConfig.ts
+  s_26f5e669d3043c::t_93e9ba37b0be58 11
+  s_26f5e669d3043c::t_f8a2d083729214 109-127
+  s_26f5e669d3043c::t_9265ba22bb085a 322-335,344-345
+  s_26f5e669d3043c::t_4d60f1044c07c9 108,254-255,258,261-281
+  s_26f5e669d3043c::t_b4d488aabacfd5 361-366
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_d35e902da91ebc 577-579
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_4bf7c46f45a3fe 2768-2769,2771
+  s_26f5e669d3043c::t_e29b00d6dab199 2746-2750
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_843d60d2afa632 11813-11814
+  s_26f5e669d3043c::t_2184ec068363a5 11782-11801,11804-11805,11809-11812,11815
+  s_26f5e669d3043c::t_201aa281fd9179 11802-11803,11806-11808
+apps/desktop/src/renderer/aiSettings.ts
+  s_26f5e669d3043c::t_320411badebb47 501-505,507-511,514-517
+  s_26f5e669d3043c::t_458c098a831868 541-544
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9f8b3762695b97c5c9acbed7026e8b93e7fffc41",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
