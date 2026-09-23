@@ -60,6 +60,12 @@ does, the other does. (merge-studio#12)
 - *Apply* said "resolved file saved and staged" even when `git add` failed
   (for example on a stale `index.lock`); it now says the file is saved but
   not staged, and why.
+- *Apply* in the merge editor can be undone in one step: its message offers
+  **Undo**, which brings the conflict back while git is still stopped there.
+  GitStudio's Undo history cannot record a change while files are unmerged,
+  so before this an Apply could not be undone at all.
+- *Pull* from the Changes view's branch menu reported a pull that stopped on
+  conflicts as a failure; it now says so and offers *Resolve Conflicts…*.
 - Conflicts in a **linked worktree** were noticed late: GitStudio watched
   `<worktree>/.git`, which is a file there. It now asks git where the
   operation files are.
