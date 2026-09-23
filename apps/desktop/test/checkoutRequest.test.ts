@@ -204,6 +204,10 @@ test("a remote branch row asks for the remote treatment", () => {
   assert.match(text, /primary\.addEventListener\("click", \(\) => void this\.checkoutRef\(r\.fullName, primary\)\);/);
   assert.equal(refCheckoutRequest("refs/remotes/origin/x").refKind, "remote");
   // And the branch switcher's remote section, which promises "as a local
-  // branch" in its own tooltip.
-  assert.match(text, /title: `Check out \$\{b\.name\} as a local branch`,\s*onClick: \(\) => void this\.checkoutRef\(b\.fullName\),/);
+  // branch" in its own tooltip — and names the ref by its full name shorn,
+  // never git's "remotes/origin/x" beside a local branch called "origin/x".
+  assert.match(
+    text,
+    /title: `Check out \$\{refDisplay\(b\.fullName\)\} as a local branch`,\s*onClick: \(\) => void this\.checkoutRef\(b\.fullName\),/,
+  );
 });
