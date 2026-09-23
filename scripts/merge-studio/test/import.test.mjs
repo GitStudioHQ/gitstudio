@@ -571,13 +571,18 @@ test("a pull request on an older export: a file gitstudio has since deleted or m
   const files = mkdtempSync(join(tmpdir(), "ms-import-files-"));
   try {
     const engine = g(gs, "ls-files", "packages/engine/src").split("\n").filter((p) => p.endsWith(".ts") && !p.endsWith("mergeModel.ts"));
-    const [deleted, moved, bothDeleted] = engine;
+    const [deleted, moved, bothDeleted, movedHere, deletedRenamed, editedRenamed, movedDeleted] = engine;
     const msOf = (p) => p.replace(/^packages\//, "vendor/gitstudio/");
     // gitstudio moves on after the export the contributor works from.
     unlinkSync(join(gs, deleted));
     unlinkSync(join(gs, bothDeleted));
+    unlinkSync(join(gs, deletedRenamed));
+    writeFileSync(join(gs, editedRenamed), `// gitstudio's later edit\n${readFileSync(join(gs, editedRenamed), "utf8")}`);
     renameSync(join(gs, moved), join(gs, moved.replace(/\.ts$/, "Moved.ts")));
+    renameSync(join(gs, movedHere), join(gs, movedHere.replace(/\.ts$/, "InGitstudio.ts")));
+    renameSync(join(gs, movedDeleted), join(gs, movedDeleted.replace(/\.ts$/, "InGitstudio.ts")));
     unlinkSync(join(gs, "apps/merge-studio/SHOTS.md"));
+    unlinkSync(join(gs, "apps/merge-studio/media/banner.svg"));
     g(gs, "add", "-A");
     g(gs, "commit", "-qm", "gitstudio tidies up");
     const tidy = g(gs, "rev-parse", "--short=7", "HEAD");
@@ -588,6 +593,15 @@ test("a pull request on an older export: a file gitstudio has since deleted or m
       [msOf(moved)]: append("// edited\n"),
       "SHOTS.md": append("Edited.\n"),
       [msOf(bothDeleted)]: null,
+      "media/banner.svg": null,
+      // Moved in gitstudio, deleted by the contributor: a real disagreement, not "already deleted".
+      [msOf(movedDeleted)]: null,
+      // Moved in gitstudio, renamed by the contributor: never two copies.
+      [msOf(movedHere)]: { renameTo: msOf(movedHere).replace(/\.ts$/, "ByContributor.ts") },
+      // Deleted in gitstudio, renamed by the contributor: it does not come back under the new name.
+      [msOf(deletedRenamed)]: { renameTo: msOf(deletedRenamed).replace(/\.ts$/, "ByContributor.ts") },
+      // Edited in gitstudio, renamed by the contributor: the edit moves with it.
+      [msOf(editedRenamed)]: { renameTo: msOf(editedRenamed).replace(/\.ts$/, "ByContributor.ts") },
     });
     const head = g(gs, "rev-parse", "HEAD");
     for (const how of ["range", "patch"]) {
@@ -609,17 +623,28 @@ test("a pull request on an older export: a file gitstudio has since deleted or m
       assert.match(line("SHOTS.md"), /rebase onto merge-studio's latest export/);
       assert.equal(line("vendor/gitstudio/engine/src/brandNew.ts"), "", `${how}: made by an earlier commit of the same pull request`);
       assert.equal(line(msOf(bothDeleted)), "", `${how}: deleted on both sides is no conflict`);
+      assert.equal(line("media/banner.svg"), "", `${how}: a root shell file deleted on both sides too`);
+      assert.match(line(msOf(movedHere)), new RegExp(`gitstudio moved ${movedHere} to ${movedHere.replace(/\.ts$/, "InGitstudio.ts")}`), how);
+      assert.match(line(msOf(deletedRenamed)), new RegExp(`gitstudio deleted ${deletedRenamed} in ${tidy}`), how);
+      assert.match(line(msOf(movedDeleted)), new RegExp(`gitstudio moved ${movedDeleted} to `), how);
+      assert.equal(line(msOf(editedRenamed)), "", `${how}: a rename of a file gitstudio edited is no conflict`);
       assert.equal(g(gs, "rev-parse", "HEAD"), head);
       assert.equal(g(gs, "status", "--porcelain"), "");
     }
     // Left out on purpose, the rest comes in, and a file deleted on both sides stays deleted.
-    const r = importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib", excludes: [msOf(deleted), msOf(moved), "SHOTS.md"] });
+    const r = importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib", excludes: [msOf(deleted), msOf(moved), "SHOTS.md", msOf(movedDeleted), ...[movedHere, deletedRenamed].flatMap((f) => [msOf(f), msOf(f).replace(/\.ts$/, "ByContributor.ts")])] });
+    const renamedTo = editedRenamed.replace(/\.ts$/, "ByContributor.ts");
+    assert.match(readFileSync(join(gs, renamedTo), "utf8"), /^\/\/ gitstudio's later edit\n/, "gitstudio's edit moved with the rename");
+    assert.ok(!existsSync(join(gs, editedRenamed)) && !existsSync(join(gs, deletedRenamed.replace(/\.ts$/, "ByContributor.ts"))));
     assert.equal(r.commits.filter((c) => c.sha).length, 2);
     assert.match(r.commits[1].notes.join("\n"), new RegExp(`gitstudio has already deleted ${bothDeleted}`));
     assert.deepEqual(r.roundTrip.map((x) => [x.path, x.status]).sort(), [
+      ["media/banner.svg", "identical"],
       [msOf(bothDeleted), "identical"],
       ["vendor/gitstudio/engine/src/brandNew.ts", "identical"],
-    ]);
+      [msOf(editedRenamed), "identical"],
+      [msOf(renamedTo), "identical"],
+    ].sort());
   } finally {
     cleanup(gs, ms, files);
   }

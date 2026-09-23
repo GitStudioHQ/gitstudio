@@ -392,7 +392,10 @@ export function readRange(from, range) {
     const [name, email, date, message] = git(from, "show", "-s", "--format=%an%x00%ae%x00%aI%x00%B", sha).split("\0");
     const patch = run(
       from,
-      ["diff-tree", "-r", "-p", "--binary", "--full-index", "--no-renames", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", `${sha}^`, sha],
+      // -M, as `gh pr diff --patch` has them: a rename stays one change, so it
+      // keeps what gitstudio changed in the file since, and never brings back
+      // a file gitstudio deleted under its new name.
+      ["diff-tree", "-r", "-p", "-M", "--binary", "--full-index", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", `${sha}^`, sha],
       { buffer: true },
     ).stdout.toString("latin1");
     const readFile = (rev, path) => {
@@ -465,14 +468,15 @@ function trackedFiles(gitstudio) {
 
 /**
  * What became of a gitstudio file that is not there any more: the commit that
- * deleted or moved it, in words for the refusal. Undefined when gitstudio's
- * history never had it.
+ * deleted it, and where it went if that commit moved it. Undefined when
+ * gitstudio's history never had it.
+ * @returns {{ sha: string, subject: string, movedTo?: string, why: string } | undefined}
  */
 function goneFromGitstudio(gitstudio, gsPath) {
-  const del = run(gitstudio, ["log", "-1", "--format=%H", "--diff-filter=D", "HEAD", "--", gsPath], { allowFail: true }).stdout.trim();
-  if (!del) return undefined;
-  const subject = git(gitstudio, "log", "-1", "--format=%s", del);
-  const fields = run(gitstudio, ["diff-tree", "-r", "-M", "-z", "--name-status", `${del}^`, del], { allowFail: true }).stdout.split("\0");
+  const sha = run(gitstudio, ["log", "-1", "--format=%H", "--diff-filter=D", "HEAD", "--", gsPath], { allowFail: true }).stdout.trim();
+  if (!sha) return undefined;
+  const subject = git(gitstudio, "log", "-1", "--format=%s", sha);
+  const fields = run(gitstudio, ["diff-tree", "-r", "-M", "-z", "--name-status", `${sha}^`, sha], { allowFail: true }).stdout.split("\0");
   let movedTo;
   for (let i = 0; i + 1 < fields.length; ) {
     const status = fields[i];
@@ -483,10 +487,10 @@ function goneFromGitstudio(gitstudio, gsPath) {
       i += 2;
     }
   }
-  return (
-    `gitstudio ${movedTo ? `moved ${gsPath} to ${movedTo}` : `deleted ${gsPath}`} in ${del.slice(0, 7)} "${subject}", ` +
-    "after the export this pull request is based on: ask the contributor to rebase onto merge-studio's latest export, or leave it out with --exclude"
-  );
+  const why =
+    `gitstudio ${movedTo ? `moved ${gsPath} to ${movedTo}` : `deleted ${gsPath}`} in ${sha.slice(0, 7)} "${subject}", ` +
+    "after the export this pull request is based on: ask the contributor to rebase onto merge-studio's latest export, or leave it out with --exclude";
+  return { sha, subject, movedTo, why };
 }
 
 /**
@@ -507,13 +511,14 @@ export function planImport({ gitstudio, commits, excludes = [] }) {
       if (paths.some((p) => excluded(p, excludes))) return { kind: "excluded", msPath, file };
       const created = file.isNew || file.renamed || file.copied;
       let oldMap = file.oldPath === undefined ? undefined : toGitstudio(file.oldPath, { shell });
-      const newMap = file.newPath === undefined ? undefined : toGitstudio(file.newPath, { shell, isNew: created });
-      if (oldMap?.kind === "unmapped" && tracked) {
+      if (oldMap?.kind === "unmapped" && tracked && goneFromGitstudio(gitstudio, `${SHELL_DIR}/${file.oldPath}`)) {
         // A shell file at the root that gitstudio has since deleted looks like
-        // merge-studio's own to the table; its history says otherwise.
-        const gone = goneFromGitstudio(gitstudio, `${SHELL_DIR}/${file.oldPath}`);
-        if (gone) oldMap = { kind: "unmapped", why: gone };
+        // merge-studio's own to the table; its history says otherwise, and
+        // the check below says what became of it.
+        oldMap = { kind: "copied", gitstudio: `${SHELL_DIR}/${file.oldPath}`, shell: true };
       }
+      // An edit's two sides are one path.
+      const newMap = file.newPath === undefined ? undefined : created ? toGitstudio(file.newPath, { shell, isNew: true }) : oldMap;
       const maps = [oldMap, newMap].filter(Boolean);
       const bad = maps.find((mm) => mm.kind === "unmapped");
       if (bad) {
@@ -529,9 +534,13 @@ export function planImport({ gitstudio, commits, excludes = [] }) {
         return { kind: "unmapped", msPath, why, file };
       }
       if (tracked && oldMap && !tracked.has(oldMap.gitstudio)) {
-        // Deleted on both sides: nothing to do, and the round trip still checks it is gone.
-        if (file.isDeleted) return { kind: "done", msPath, file, oldGs: oldMap.gitstudio, why: `gitstudio has already deleted ${oldMap.gitstudio}` };
-        const why = goneFromGitstudio(gitstudio, oldMap.gitstudio) ?? `gitstudio has no ${oldMap.gitstudio}`;
+        const gone = goneFromGitstudio(gitstudio, oldMap.gitstudio);
+        // Deleted on both sides: nothing to do, and the round trip still checks
+        // it is gone. Not when gitstudio moved it: the content lives on there.
+        if (file.isDeleted && gone && !gone.movedTo) {
+          return { kind: "done", msPath, file, oldGs: oldMap.gitstudio, why: `gitstudio has already deleted ${oldMap.gitstudio} (${gone.sha.slice(0, 7)})` };
+        }
+        const why = gone?.why ?? `gitstudio has no ${oldMap.gitstudio}`;
         unmapped.push({ commit, path: file.oldPath, why });
         return { kind: "unmapped", msPath: file.oldPath, why, file };
       }
