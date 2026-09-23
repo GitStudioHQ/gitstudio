@@ -12,7 +12,7 @@
 //
 // vscode-free: this computes the targets; the hosts create the watchers.
 
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 
 /** All this needs: OperationProvider.gitPath. */
 export interface GitPathSource {
@@ -47,9 +47,18 @@ export const OP_STATE_ENTRIES = [
   "sequencer",
 ] as const;
 
-/** Resolve the watch targets for one repository (two `rev-parse` calls). */
+/**
+ * Resolve the watch targets for one repository (two `rev-parse` calls).
+ * Rejects unless git named the entries it was asked about: a git killed
+ * mid-answer (its context disposed) reads as exit 0 with nothing on stdout,
+ * which resolves to the worktree root — and its dirname is the folder ABOVE
+ * the repository, not a git dir.
+ */
 export async function gitWatchTargets(source: GitPathSource): Promise<GitWatchTargets> {
   const [head, refs] = await Promise.all([source.gitPath("HEAD"), source.gitPath("refs")]);
+  if (basename(head) !== "HEAD" || basename(refs) !== "refs") {
+    throw new Error("git did not say where this repository keeps its files.");
+  }
   return {
     gitDir: dirname(head),
     commonDir: dirname(refs),

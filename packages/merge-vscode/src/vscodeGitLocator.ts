@@ -107,6 +107,12 @@ export class VscodeGitLocator implements RepoLocator, vscode.Disposable {
   private async watch(repo: MergeRepo, into: vscode.Disposable[]): Promise<void> {
     try {
       const t = await gitWatchTargets(repo.ctx.operation);
+      // The repository may have closed, or the locator been disposed, while
+      // git answered: its disposables were already disposed, so watchers
+      // pushed now would never be (GitStudio's RepoManager checks the same).
+      if (this.bindings.get(repo.root)?.disposables !== into) {
+        return;
+      }
       const poke = () => {
         void repo.poke?.();
         this.fire();

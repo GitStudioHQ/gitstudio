@@ -66,3 +66,14 @@ test("in the main worktree both targets are its .git directory", async () => {
     ctx.dispose();
   }
 });
+
+test("an answer that is not the entry asked about is refused, never watched one folder too high", async () => {
+  // GitProcess reads a git killed by dispose() as exit 0 with empty stdout;
+  // `--git-path refs` then resolves to the worktree root, and its dirname —
+  // the folder ABOVE the repository — became a watch base (seen in
+  // vscodeGitLocator.test.ts before the locator learned to drop the answer).
+  await assert.rejects(
+    gitWatchTargets({ gitPath: async (name) => (name === "refs" ? "/work/repo" : "/work/repo/.git/HEAD") }),
+    /did not say where/,
+  );
+});
