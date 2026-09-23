@@ -204,6 +204,9 @@ test("the chip menu's checkout runs the commit menu's own ref-checkout arm, by t
   assert.match(actions, /export function refActionId\(fullName: string\): string \{\s*return `\$\{REF_ACTION\}\$\{fullName\}`;/);
   // …and the menu's own rows are built through it, so there is one id format.
   assert.equal((actions.match(/refActionId\(ref\.fullName\)/g) ?? []).length, 3);
+  // …labelled by the full name shorn, never git's "heads/release" (#30).
+  assert.equal((actions.match(/label: `Checkout \$\{refLabel\(ref\.fullName\)\}…?`/g) ?? []).length, 3);
+  assert.doesNotMatch(actions, /label: `Checkout \$\{ref\.name\}/);
   // The arm itself plans from the full name, through git-service, so the
   // desktop's graph menu means the same thing.
   assert.match(actions, /const plan = await planRefCheckout\(ctx\.process, fullName\);/);

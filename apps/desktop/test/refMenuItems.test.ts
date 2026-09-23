@@ -14,6 +14,18 @@ test("a local branch on the row becomes a plain checkout", () => {
   ]);
 });
 
+test("beside a tag of the same name, the items name the ref 'release', not git's heads/ or tags/", () => {
+  // The chips say "release" (issue #30's follow-up); the menu that checks
+  // them out said "Checkout heads/release".
+  const items = refMenuItems([
+    { name: "heads/release", kind: "head", fullName: "refs/heads/release" },
+    { name: "tags/release", kind: "tag", fullName: "refs/tags/release" },
+  ]);
+  assert.deepEqual(items.map((i) => i.label), ["Checkout release", "Checkout release…"]);
+  assert.match(items[1].confirm ?? "", /^Check out tag release\?/);
+  assert.equal(items[0].ref.fullName, "refs/heads/release", "and it still checks out by the full name");
+});
+
 test("the branch you are already on is skipped", () => {
   // The most common row to right-click, and switching to where you already are
   // is not an action.

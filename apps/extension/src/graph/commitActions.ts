@@ -6,6 +6,7 @@ import { pausedForUser } from "../git/pausedForUser";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { explainOptionLikeCheckout } from "../views/optionLikeBranch";
+import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 import { ellipsizeMiddle, resolveCheckoutTarget, type MenuRef } from "./checkoutTarget";
 
@@ -66,6 +67,8 @@ export function refActionId(fullName: string): string {
  * rides in the id, so this needs no protocol change.
  */
 export function refMenuItems(refs: readonly MenuRef[]): GraphMenuItem[] {
+  // Labelled by the full name shorn (refLabel) — "Checkout release", never
+  // git's "heads/release" beside a tag of that name, as the chips say it.
   const items: GraphMenuItem[] = [];
   for (const ref of refs) {
     // Already on it — offering to switch to where you are is noise.
@@ -75,7 +78,7 @@ export function refMenuItems(refs: readonly MenuRef[]): GraphMenuItem[] {
     if (ref.kind === "head") {
       items.push({
         id: refActionId(ref.fullName),
-        label: `Checkout ${ref.name}`,
+        label: `Checkout ${refLabel(ref.fullName)}`,
         icon: "git-branch",
       });
     } else if (ref.kind === "remoteHead") {
@@ -86,14 +89,14 @@ export function refMenuItems(refs: readonly MenuRef[]): GraphMenuItem[] {
       // is for. The tag arm below keeps its ellipsis because it still asks.
       items.push({
         id: refActionId(ref.fullName),
-        label: `Checkout ${ref.name}`,
+        label: `Checkout ${refLabel(ref.fullName)}`,
         icon: "cloud",
       });
     } else {
       // Ellipsis: checking out a tag confirms first, because it detaches HEAD.
       items.push({
         id: refActionId(ref.fullName),
-        label: `Checkout ${ref.name}…`,
+        label: `Checkout ${refLabel(ref.fullName)}…`,
         icon: "tag",
       });
     }

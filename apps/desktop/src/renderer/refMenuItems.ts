@@ -51,15 +51,18 @@ export function refMenuItems(refs: readonly RowRef[]): RefMenuItem[] {
       continue;
     }
     const full = ref.fullName ? { fullName: ref.fullName } : {};
+    // Named by the full name shorn — "release", never git's "heads/release"
+    // beside a tag of that name (the chips say "release" too).
+    const said = ref.fullName ? refDisplay(ref.fullName) : ref.name;
     if (ref.kind === "tag") {
       items.push({
-        label: `Checkout ${ref.name}…`,
+        label: `Checkout ${said}…`,
         ref: { name: ref.name, kind: "tag", ...full },
-        confirm: `Check out tag ${ref.name}? You'll be on a detached HEAD, not on a branch.`,
+        confirm: `Check out tag ${said}? You'll be on a detached HEAD, not on a branch.`,
       });
     } else {
       items.push({
-        label: `Checkout ${ref.name}`,
+        label: `Checkout ${said}`,
         ref: { name: ref.name, kind: ref.kind, ...full },
       });
     }
