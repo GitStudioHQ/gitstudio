@@ -4444,7 +4444,15 @@
       c.ok(window.__gsEmit("menu:command", { command: "undo" }) > 0, "the app listens for the Edit menu");
       await settle(300);
       c.eq(counter(), start, "the Edit menu's Undo, with focus in the merge editor, undoes the MERGE action");
-      c.ok(!$$(".toast-msg").some((t) => /Nothing to undo/.test(text(t))), "not the app's own (empty) stack");
+      // The counter alone cannot tell: popping the app's stack instead brings
+      // the OTHER file's conflict back, which rebuilds the view around a fresh
+      // merge whose counter reads the same. Ask what the app's stack did.
+      c.eq(
+        window.__GS_INVOKED.filter((r) => r.channel === "conflict:restore").length,
+        0,
+        "the Edit menu's Undo did not pop the app's own stack (no other file was brought back)",
+      );
+      c.ok(!!$(".ms-shell") && document.activeElement && $(".ms-shell").contains(document.activeElement), "and the merge editor still has the keyboard");
       $(".dc-message")?.focus();
       await settle(500);
       window.__gsEmit("menu:command", { command: "undo" });
