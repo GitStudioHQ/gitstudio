@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { RepoWatcher, shouldRefreshFor, DEBOUNCE_MS } from "../src/main/repoWatcher";
+import { dirname, join } from "node:path";
+import { GitContext } from "@gitstudio/git-service/GitContext";
+import { RepoWatcher, gitWatchDirs, shouldRefreshFor, DEBOUNCE_MS } from "../src/main/repoWatcher";
 
 // The app never watched the filesystem, so editing a file elsewhere and switching
 // back showed a stale Changes list (issue #17). A watcher fixes that only if it
@@ -271,4 +273,65 @@ test("a missing directory degrades instead of throwing", () => {
   const w = new RepoWatcher(join(tmpdir(), "gs-does-not-exist-" + Date.now()), () => {});
   assert.equal(w.degraded, true, "no watcher, but no crash either");
   w.dispose();
+});
+
+// ── Linked worktrees (the watcher's .git is not a directory) ────────────────
+//
+// In a LINKED worktree `.git` is a FILE pointing at <main>/.git/worktrees/<wt>,
+// where HEAD, the index, MERGE_HEAD and rebase-merge/ live; the refs a commit
+// moves live in the main repository's common dir. A watcher that only
+// matches `.git/<name>` under the worktree root saw none of it: a merge or
+// rebase stopping there, or a commit made there from a terminal, never
+// refreshed anything. The directories come from `git rev-parse --git-path`,
+// as every operation read already does.
+
+test("sequencer/ (a cherry-pick or revert range) is worth a refresh", () => {
+  assert.equal(shouldRefreshFor(".git/sequencer/todo"), true);
+  assert.equal(shouldRefreshFor(".git/sequencer/head"), true);
+});
+
+test("a linked worktree's git dir is watched: a commit made there is a git-dir change", async () => {
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_OPTIONAL_LOCKS: "0" };
+  const git = (cwd: string, ...a: string[]): string =>
+    execFileSync("git", a, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "gs-watch-wt-")));
+  const mainRoot = join(base, "main");
+  const wt = join(base, "wt");
+  mkdirSync(mainRoot);
+  git(mainRoot, "init", "-q", "-b", "main");
+  git(mainRoot, "config", "user.email", "t@t");
+  git(mainRoot, "config", "user.name", "t");
+  writeFileSync(join(mainRoot, "a.txt"), "a\n");
+  git(mainRoot, "add", "-A");
+  git(mainRoot, "commit", "-qm", "base");
+  git(mainRoot, "worktree", "add", "-q", "-b", "side", wt);
+  const ctx = new GitContext({ root: wt });
+  let fire: ((i: { gitDir: boolean }) => void) | undefined;
+  const w = new RepoWatcher(wt, (i) => fire?.(i));
+  try {
+    if (w.degraded) return;
+    const dirs = await gitWatchDirs(ctx);
+    assert.ok(dirs, "git named the worktree's directories");
+    assert.equal(realpathSync(dirs!.commonDir), join(mainRoot, ".git"));
+    assert.equal(dirname(realpathSync(dirs!.gitDir)), join(mainRoot, ".git", "worktrees"));
+    w.watchGitDirs(dirs!);
+    let n = 0;
+    const info = await changeAfter(
+      (cb) => (fire = cb),
+      () => git(wt, "commit", "-q", "--allow-empty", "-m", `empty ${n++}`),
+    );
+    assert.equal(info.gitDir, true, "a commit is history moving, not a file edit");
+  } finally {
+    w.dispose();
+    ctx.dispose();
+    removeTempRepo(base);
+  }
+});
+
+test("gitWatchDirs refuses an answer that does not name what it asked for", async () => {
+  // A git killed mid-answer used to come back as exit 0 with no output, and
+  // `resolve(root, "")` is the root — the folder ABOVE .git would have been
+  // watched as the "git dir".
+  const fake = { operation: { gitPath: async (name: string) => (name === "HEAD" ? "/repo" : "/repo/.git/refs") } };
+  assert.equal(await gitWatchDirs(fake), undefined);
 });

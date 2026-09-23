@@ -22,7 +22,7 @@
 //      the common case of coming back to the app.
 
 import { watch, type FSWatcher } from "node:fs";
-import { sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 
 /**
  * How long to wait after the last filesystem event before refreshing. Saving a
@@ -71,6 +71,9 @@ const GIT_PATHS_OF_INTEREST = [
   "refs",
   "rebase-merge",
   "rebase-apply",
+  // A cherry-pick or revert RANGE keeps its queue here; a stop mid-range
+  // changes nothing else under .git that the list above names.
+  "sequencer",
 ];
 
 /**
@@ -119,6 +122,9 @@ export function shouldRefreshFor(relPath: string): boolean {
  */
 export class RepoWatcher {
   private watcher: FSWatcher | undefined;
+  /** The git-dir watches of a linked worktree (see watchGitDirs). */
+  private readonly extra: FSWatcher[] = [];
+  private disposed = false;
   private timer: NodeJS.Timeout | undefined;
   private pendingGitDir = false;
   /** True when the recursive watch could not be established (see ENOSPC above). */
@@ -183,11 +189,97 @@ export class RepoWatcher {
     this.watcher = undefined;
   }
 
+  /**
+   * Watch the repository's git directories where they are NOT under the root:
+   * a linked worktree's own git dir (<main>/.git/worktrees/<wt>: HEAD, index,
+   * MERGE_HEAD, rebase-merge/, sequencer/) and the common dir its refs live
+   * in. For an ordinary repository both are `<root>/.git`, which the root
+   * watch already covers, and nothing is added.
+   *
+   * Called once the directories are known (`gitWatchDirs`, which asks git);
+   * a watch that cannot start degrades to none, as the root watch does.
+   */
+  watchGitDirs(dirs: GitWatchDirs): void {
+    if (this.disposed) return;
+    const outside = (p: string): boolean => {
+      const rel = relative(this.root, p);
+      return rel === "" ? false : rel.startsWith("..") || isAbsolute(rel);
+    };
+    const add = (dir: string, recursive: boolean, keep: (rel: string) => boolean): void => {
+      try {
+        const w = watch(dir, { recursive, persistent: false }, (_event, filename) => {
+          if (!filename) {
+            this.schedule(true);
+            return;
+          }
+          const rel = String(filename);
+          if (rel.split(/[/\\]/).some((p) => p.endsWith(".lock"))) return;
+          if (keep(rel)) this.schedule(true);
+        });
+        w.on("error", () => {
+          try {
+            w.close();
+          } catch {
+            /* already gone */
+          }
+        });
+        this.extra.push(w);
+      } catch {
+        /* the directory vanished, or the platform refused: no extra watch */
+      }
+    };
+    if (outside(dirs.gitDir)) {
+      // The per-worktree state: every entry of interest, at any depth under it.
+      add(dirs.gitDir, true, (rel) => GIT_PATHS_OF_INTEREST.includes(rel.split(/[/\\]/)[0] ?? ""));
+    }
+    if (dirs.commonDir !== dirs.gitDir && outside(dirs.commonDir)) {
+      // The shared refs: refs/** and packed-refs — not objects/, which churns.
+      add(dirs.commonDir, false, (rel) => rel === "packed-refs");
+      add(join(dirs.commonDir, "refs"), true, () => true);
+    }
+  }
+
   dispose(): void {
+    this.disposed = true;
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
     this.stopWatching();
+    for (const w of this.extra.splice(0)) {
+      try {
+        w.close();
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+}
+
+/** Where a repository's git state lives: its own git dir and the common dir (refs). */
+export interface GitWatchDirs {
+  gitDir: string;
+  commonDir: string;
+}
+
+/**
+ * The repository's git directories, from `git rev-parse --git-path` — the
+ * worktree-safe answer (a linked worktree's `.git` is a file). `HEAD` is
+ * per-worktree, so its folder is the git dir; `refs` is shared, so its folder
+ * is the common dir.
+ *
+ * An answer that does not name the entry asked for is refused: a git killed
+ * mid-answer once came back as success with no output, and "" resolves to
+ * the worktree root — whose parent would then have been watched.
+ */
+export async function gitWatchDirs(ctx: {
+  operation: { gitPath(name: string): Promise<string> };
+}): Promise<GitWatchDirs | undefined> {
+  try {
+    const [head, refs] = await Promise.all([ctx.operation.gitPath("HEAD"), ctx.operation.gitPath("refs")]);
+    if (basename(head) !== "HEAD" || basename(refs) !== "refs") return undefined;
+    return { gitDir: dirname(head), commonDir: dirname(refs) };
+  } catch {
+    return undefined;
   }
 }
