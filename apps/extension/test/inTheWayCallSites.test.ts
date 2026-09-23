@@ -33,14 +33,15 @@ import { fileURLToPath } from "node:url";
 //     `sync.pull(`, and no `process.run(plan.args` (nor `c.plan.args` — a
 //     plan by any name) — those run git past the door;
 //   · BranchOps' merge argv (`branches.mergeArgs(`, which carries the
-//     message a full-name merge records) is handed to the door the same way
-//     a literal argv is;
+//     message a full-name merge records) and the engine's new branch at HEAD
+//     (`newBranchAtHead(` — nothing of the user's is in its way, but a stopped
+//     operation is) are handed to the door the same way a literal argv is;
 //   · an argv that starts a cherry-pick, revert, merge, rebase, checkout or
 //     switch (not its --abort / --continue / --skip / --quit, and not
 //     `checkout --`, which restores files), or a stash apply / pop, is handed
 //     to `applyOrAsk(` or `runCheckout(` in the lines around it;
 //   · or the line carries an `in-the-way-reviewed:` note saying why it cannot
-//     be refused (a new branch at HEAD changes no file).
+//     be refused.
 
 const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const SRC = join(ROOT, "apps/extension/src");
@@ -49,7 +50,10 @@ const DIRECT =
   /\b(?:branches\.(?:checkout|checkoutNew|merge|rebaseOnto)|stashes\.(?:apply|pop)|sync\.pull)\(|process\.run\(\s*(?:[\w.]+\.)?plan\.args/;
 const ARGV = /\[\s*"(cherry-pick|revert|merge|rebase|checkout|switch)"(?:\s*,\s*"([^"]*)")?/;
 const STASH_ARGV = /\[\s*"stash"\s*,\s*"(?:apply|pop)"/;
-const BUILT_ARGV = /\bbranches\.mergeArgs\(/;
+// The engine's new-branch-at-HEAD op is an argv built for the door too:
+// nothing of the user's is in its way, but `git checkout -b` over a stopped
+// merge, cherry-pick or revert ends it, and the door refuses it there.
+const BUILT_ARGV = /\bbranches\.mergeArgs\(|\bnewBranchAtHead\(/;
 const NOT_APPLYING = /^--(?:abort|continue|skip|quit)?$/;
 const ARGV_CONTEXT = /\b(?:run|runGit|args|checkoutOp|runCheckout|applyOrAsk)\b/;
 const ROUTED = /\b(?:applyOrAsk|runCheckout|checkoutOp)\(/;

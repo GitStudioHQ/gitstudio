@@ -3,6 +3,7 @@ import type { GitRef } from "@gitstudio/git-service/index";
 import { pushUnseenMessage, type PullResult } from "@gitstudio/git-service/SyncOps";
 import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
 import { applyOrAsk, checkoutOp, pullOrAsk } from "../git/inTheWay";
+import { newBranchAtHead } from "@gitstudio/git-service/changesInTheWay";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
@@ -1570,9 +1571,16 @@ export class CommitViewProvider
         case "new": {
           const name = (msg.ref ?? "").trim();
           if (!name) return;
-          // in-the-way-reviewed: a new branch AT HEAD — the working tree does
-          // not change, so no uncommitted work can be in its way.
-          result = await entry.ctx.branches.checkoutNew(name);
+          // A new branch AT HEAD: the working tree does not change, so no
+          // uncommitted work can be in its way (its target is HEAD itself) —
+          // but it is a switch, and `git checkout -b` over a stopped merge,
+          // cherry-pick or revert ENDS it. Through the door, which refuses it
+          // there as `git switch -c` does, and says so.
+          const applied = await applyOrAsk(entry.ctx, newBranchAtHead(name));
+          if (applied.settled) {
+            settled = true;
+          }
+          result = { ok: applied.result.code === 0, stderr: applied.result.stderr };
           if (result.ok) await this.noteRecentBranch(entry, name);
           break;
         }
@@ -2154,9 +2162,14 @@ export class CommitViewProvider
     }
     let result: { ok: boolean; stderr: string };
     try {
-      // in-the-way-reviewed: a new branch AT HEAD — nothing in the working
-      // tree changes, so nothing of the user's can be in its way.
-      result = await entry.ctx.branches.checkoutNew(name);
+      // A new branch AT HEAD, through the door — nothing of the user's can
+      // be in its way, but a stopped operation can, and `git checkout -b`
+      // over it would end it (see the branch menu's "new" above).
+      const applied = await applyOrAsk(entry.ctx, newBranchAtHead(name));
+      if (applied.settled) {
+        return; // said by the door; keep the modal open
+      }
+      result = { ok: applied.result.code === 0, stderr: applied.result.stderr };
     } catch (err) {
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
     }

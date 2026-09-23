@@ -167,6 +167,7 @@ type Door =
   | "checkout --detach"
   | "checkout a branch"
   | "create and switch"
+  | "create at HEAD and switch"
   | "merge"
   | "rebase"
   | "stash apply"
@@ -180,6 +181,7 @@ const DOORS: Door[] = [
   "checkout --detach",
   "checkout a branch",
   "create and switch",
+  "create at HEAD and switch",
   "merge",
   "rebase",
   "stash apply",
@@ -208,6 +210,8 @@ async function press(door: Door, c: { dir: string; other: string; main: string }
       return bridge.commitAction({ action: "checkout-ref", sha: "other", name: "other", fullName: "refs/heads/other", refKind: "head" });
     case "create and switch":
       return bridge.branchCreate({ name: "fresh", checkout: true, startPoint: c.other });
+    case "create at HEAD and switch":
+      return bridge.branchCreate({ name: "fresh", checkout: true });
     case "merge":
       return bridge.branchMerge({ fullName: "refs/heads/other" });
     case "rebase":
@@ -247,8 +251,13 @@ for (const stop of ["merge", "rebase", "cherry-pick", "revert", "am", "stash"] a
         assert.equal(reportableResultMessage(r), undefined, `nothing filed: ${r.message}`);
         assert.equal(r.inTheWay, undefined, `the stop's files are never offered to a stash: ${r.message}`);
         if (r.ok) {
-          // git let it run: only a stash applied over a staged resolution may.
-          assert.ok(door.startsWith("stash") && resolved, `${door} never runs over a stopped operation`);
+          // git let it run: only a stash applied over a staged resolution may
+          // — and, with no operation at all (a conflicted stash pop), a branch
+          // made at HEAD, which ends nothing.
+          assert.ok(
+            (door.startsWith("stash") && resolved) || (stop === "stash" && door === "create at HEAD and switch"),
+            `${door} never runs over a stopped operation`,
+          );
           assert.ok(state(c.dir).includes(JSON.parse(before).markers), "the operation still stopped");
           return;
         }

@@ -36,6 +36,7 @@ import { removeTempRepo } from "./tmpRepo";
 import { GitProcess } from "../src/GitProcess";
 import { GitContext } from "../src/GitContext";
 import {
+  newBranchAtHead,
   operationInTheWayMessage,
   runApplying,
   stashAndRetry,
@@ -190,7 +191,7 @@ const OPERATION: Record<Stop, string | undefined> = {
   stash: undefined, // unmerged files, no operation
 };
 
-const DOOR_NAMES = ["merge", "rebase", "cherry-pick", "revert", "stash apply", "checkout", "checkout --detach"];
+const DOOR_NAMES = ["merge", "rebase", "cherry-pick", "revert", "stash apply", "checkout", "checkout --detach", "new branch at HEAD"];
 
 function doors(t: { other: string; main: string }): { name: string; op: ApplyOp }[] {
   return [
@@ -201,6 +202,7 @@ function doors(t: { other: string; main: string }): { name: string; op: ApplyOp 
     { name: "stash apply", op: { kind: "stash", stash: "stash@{0}" } },
     { name: "checkout", op: { kind: "checkout", target: "other", args: ["checkout", "other"] } },
     { name: "checkout --detach", op: { kind: "checkout", target: t.other, args: ["checkout", "--detach", t.other] } },
+    { name: "new branch at HEAD", op: newBranchAtHead("fresh") },
   ];
 }
 
@@ -222,7 +224,12 @@ for (const stop of STOPS) {
         if (out.result.code === 0) {
           // git let it run — only a stash apply may: it touches no operation
           // file (a stash applied over a staged resolution merges into it).
-          assert.equal(d.name, "stash apply", `${d.name}: never run over a stopped operation`);
+          // With no operation at all (a conflicted stash pop), a branch made
+          // at HEAD ends nothing either.
+          assert.ok(
+            d.name === "stash apply" || (stop === "stash" && d.name === "new branch at HEAD"),
+            `${d.name}: never run over a stopped operation`,
+          );
           assert.equal(out.blocked, undefined, `${d.name}: ran, so not blocked`);
           assert.equal(state(r.dir).includes(`"markers":""`), before.includes(`"markers":""`), "the operation still stopped");
           continue;

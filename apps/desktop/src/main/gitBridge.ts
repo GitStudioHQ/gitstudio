@@ -22,7 +22,7 @@ import { DEFAULT_MERGE_SETTINGS } from "@gitstudio/host-bridge/conflictsProtocol
 import { stageOf } from "@gitstudio/engine/conflict/sides";
 import { ExpectedError } from "./expectedError";
 import { applyForDoor, checkoutOp, pullForDoor, type DoorApplied } from "./inTheWay";
-import type { ApplyOp } from "@gitstudio/git-service/changesInTheWay";
+import { newBranchAtHead, type ApplyOp } from "@gitstudio/git-service/changesInTheWay";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
@@ -2359,15 +2359,17 @@ export class GitBridge {
     const made = await this.staged(async (ctx) =>
       // Switching to a new branch that starts somewhere else is a checkout,
       // refused like one over uncommitted work in its way — so it goes through
-      // the same door (main/inTheWay.ts). At HEAD it changes no file.
+      // the same door (main/inTheWay.ts). At HEAD it changes no file, so
+      // nothing of the user's can be in its way (its target is HEAD itself) —
+      // but it is a switch all the same, and `git checkout -b` over a stopped
+      // merge, cherry-pick or revert ENDS it: the door refuses it there, as
+      // `git switch -c` does.
       req.checkout && req.startPoint
         ? stagedFrom(
             await applyForDoor(ctx, checkoutOp(["checkout", "-b", req.name, req.startPoint]), req.stashFirst),
           )
         : req.checkout
-          ? // in-the-way-reviewed: a new branch AT HEAD changes no file, so
-            // nothing of the user's can be in its way.
-            ctx.branches.checkoutNew(req.name)
+          ? stagedFrom(await applyForDoor(ctx, newBranchAtHead(req.name), req.stashFirst))
           : ctx.branches.create(req.name, req.startPoint),
     );
     // Best-effort: a branch that exists again but tracks nothing is still the

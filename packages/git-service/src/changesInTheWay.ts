@@ -95,6 +95,17 @@ export interface ChangesInTheWay {
   rebase?: true;
 }
 
+/**
+ * Create a branch at HEAD and switch to it (`git checkout -b <name>`), as a
+ * door op. Its target is HEAD itself: the working tree does not change, so
+ * nothing of the user's is ever in its way — but it is a switch, and over a
+ * stopped merge, cherry-pick or revert `git checkout -b` ENDS the operation
+ * (`git switch -c` refuses), so the door refuses it there.
+ */
+export function newBranchAtHead(name: string): ApplyOp {
+  return { kind: "checkout", target: "HEAD", args: ["checkout", "-b", name] };
+}
+
 /** The argv an op runs. */
 export function applyArgs(op: ApplyOp): string[] {
   return op.kind === "stash" ? ["stash", op.pop ? "pop" : "apply", op.stash] : op.args;

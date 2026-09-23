@@ -113,8 +113,10 @@ test("every main-process command that applies commits goes through the door", as
     /\b(?:branches\.(?:checkout|checkoutNew|merge|rebaseOnto)|stashes\.(?:apply|pop)|sync\.pull)\(|process\.run\(\s*(?:[\w.]+\.)?plan\.args/;
   const ARGV = /\[\s*"(cherry-pick|revert|merge|rebase|checkout)"(?:\s*,\s*"([^"]*)")?/;
   // …and so is BranchOps' merge argv (the message a full-name merge records
-  // comes with it): built for the door, it must be run BY the door.
-  const BUILT_ARGV = /\bbranches\.mergeArgs\(/;
+  // comes with it): built for the door, it must be run BY the door. So is
+  // the engine's new-branch-at-HEAD op: nothing of the user's is in its way,
+  // but `git checkout -b` over a stopped merge ends it, and the door refuses.
+  const BUILT_ARGV = /\bbranches\.mergeArgs\(|\bnewBranchAtHead\(/;
   const NOT_APPLYING = /^--(?:abort|continue|skip|quit|ours|theirs|merge)?$/;
   const ARGV_CONTEXT = /\b(?:run|runResult|args|checkoutOp|applyForDoor)\b/;
   const ROUTED = /\b(?:applyForDoor|pullForDoor|checkoutOp)\(/;
