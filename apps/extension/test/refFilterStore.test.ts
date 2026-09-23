@@ -43,8 +43,9 @@ test("set remembers per repository, and null forgets only that repository", asyn
   assert.equal(s.get("/repo/a"), null);
   assert.deepEqual(s.get("/repo/b"), ["refs/tags/v1"]);
   // What is on disk is one record under one key — a stale root costs a line,
-  // not a key namespace.
-  assert.deepEqual(m.data, { "gitstudio.graph.refFilter": { "/repo/b": ["refs/tags/v1"] } });
+  // not a key namespace. All is kept as a null entry: a CHOICE, which the
+  // migration from an old workspace must not overwrite (see below).
+  assert.deepEqual(m.data, { "gitstudio.graph.refFilter": { "/repo/a": null, "/repo/b": ["refs/tags/v1"] } });
 });
 
 test("an empty list is the same as forgetting: a filter of nothing never exists", async () => {
@@ -295,6 +296,34 @@ test("a selection remembered per workspace is carried over once, and then forgot
   await new RefFilterStore(global, { canonical, legacy: quiet }).migrated;
   assert.equal(global.writes, before);
   assert.equal(quiet.writes, 0);
+});
+
+test("All chosen after the upgrade is not rolled back by an older workspace's selection", async () => {
+  // The migration keeps a global selection over a workspace's old one — the
+  // global one is the newer word. But All was stored as NO entry, so a
+  // repository set back to every branch after the upgrade looked like one
+  // never touched, and the next old workspace to open carried its stale
+  // selection over it: the graph narrowed itself again, in every window.
+  const global = memento();
+  const canonical = (r: string) => r;
+  const since = new RefFilterStore(global, { canonical });
+  await since.set("/repo/r", ["refs/heads/x"]);
+  await since.set("/repo/r", null);
+  const old = memento({ "gitstudio.graph.refFilter": { "/repo/r": ["refs/heads/stale"], "/repo/other": ["refs/heads/y"] } });
+  const opened = new RefFilterStore(global, { canonical, legacy: old });
+  await opened.migrated;
+  assert.equal(opened.get("/repo/r"), null, "All — the newer choice — stands");
+  assert.equal(since.get("/repo/r"), null);
+  assert.deepEqual(opened.get("/repo/other"), ["refs/heads/y"], "a repository with no newer word still carries over");
+  assert.equal(old.data["gitstudio.graph.refFilter"], undefined, "and the old record is gone, as before");
+  // A prune to nothing (every remembered ref deleted) is a choice of All too.
+  await since.set("/repo/other", [], { silent: true });
+  const again = new RefFilterStore(global, {
+    canonical,
+    legacy: memento({ "gitstudio.graph.refFilter": { "/repo/other": ["refs/heads/y"] } }),
+  });
+  await again.migrated;
+  assert.equal(again.get("/repo/other"), null);
 });
 
 test("realpathRoot resolves a symlinked root to the repository's real path", async () => {

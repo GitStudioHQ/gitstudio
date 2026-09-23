@@ -23,8 +23,10 @@
 import { realpathSync } from "node:fs";
 import type { GraphRefFilter } from "@gitstudio/host-bridge/graphProtocol";
 
-/** Memento key → `Record<canonical repo root, string[]>` (a repo with no
- *  entry is All). The same key in globalState and, before, workspaceState. */
+/** Memento key → `Record<canonical repo root, string[] | null>`: a list is a
+ *  selection, null is All CHOSEN, and no entry is All never chosen since the
+ *  upgrade (which a migration may fill). The same key in globalState and,
+ *  before, workspaceState. */
 const STATE_KEY = "gitstudio.graph.refFilter";
 
 /** The slice of `vscode.Memento` the store uses. */
@@ -95,7 +97,7 @@ export class RefFilterStore {
   }
 
   /**
-   * Remember `refs` for a repository (null forgets it) and tell every graph
+   * Remember `refs` for a repository (null, or an empty list, is All) and tell every graph
    * showing that repository — the surface that made the change included, so
    * a change has exactly one path to a reload rather than a direct one plus
    * an echo. `silent` skips the telling: a host pruning refs that no longer
@@ -104,8 +106,12 @@ export class RefFilterStore {
   async set(root: string, refs: GraphRefFilter, opts?: { silent?: boolean }): Promise<void> {
     const all = { ...(this.memento.get<Record<string, unknown>>(STATE_KEY) ?? {}) };
     const key = this.key(root);
-    if (refs && refs.length > 0) all[key] = refs;
-    else delete all[key];
+    // All is remembered as a CHOICE (null), not as a missing entry: a missing
+    // entry is what a repository nobody has touched since the upgrade looks
+    // like, and migrate() carries an old workspace's selection into exactly
+    // those — so All chosen here was rolled back by the next old workspace to
+    // open. A null entry reads as All (clean) and says "decided".
+    all[key] = refs && refs.length > 0 ? refs : null;
     await this.memento.update(STATE_KEY, all);
     if (opts?.silent) return;
     for (const fn of [...this.listeners]) fn(root);
