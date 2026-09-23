@@ -1,0 +1,62 @@
+apps/desktop/src/main/mergeSettings.ts
+  s_26f5e669d3043c::t_13832310966a52 1-86
+apps/desktop/test/conflictKinds.test.ts
+  s_26f5e669d3043c::t_34d9a167233347 125-126
+  s_26f5e669d3043c::t_bf0993616124d4 141
+  s_26f5e669d3043c::t_999e9ea7e2c36b 157-158
+  s_26f5e669d3043c::t_ffc242a9f357e4 227
+  s_26f5e669d3043c::t_62a76a070d2d24 331-369
+  s_26f5e669d3043c::t_4df71dd6c4321a 84-88
+  s_26f5e669d3043c::t_13496771ff3848 279-280
+  s_26f5e669d3043c::t_cb76e5a09043b0 370-373
+apps/desktop/test/binaryConflict.test.ts
+  s_26f5e669d3043c::t_2a270da49c3cf4 154-200
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_4dd8400af08e71 9,12,14-20,23
+  s_26f5e669d3043c::t_fd4f7ab63a3c1e 13
+  s_26f5e669d3043c::t_64558363273545 21
+  s_26f5e669d3043c::t_a3816379a70681 72-76
+  s_26f5e669d3043c::t_58b40b28256cd2 231-236,241-242
+  s_26f5e669d3043c::t_24051b921ef1a5 3226-3227,3235
+  s_26f5e669d3043c::t_251038c3b43b60 143-153
+  s_26f5e669d3043c::t_16b2bc86f88660 2906-2916,2921,2924-2927,2934-2941,2946,2949-2975,2981-3146
+  s_26f5e669d3043c::t_acd4e167e85fc4 2549-2551,2555
+  s_26f5e669d3043c::t_f8a80e1c71c250 2477-2489,2491,2493-2503,2505-2510,2513-2518
+  s_26f5e669d3043c::t_b1193acbbcdf21 2606-2612,2614
+  s_26f5e669d3043c::t_d60bfd83d2b0f5 766-783,791-800,802,804-817,820-823,825-826,830-833
+packages/git-service/src/ConflictOps.ts
+  s_26f5e669d3043c::t_a0f89d23a1c4e4 487-490
+apps/desktop/test/opMatrix.test.ts
+  s_26f5e669d3043c::t_833dab1df444d2 474-655
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_cc50ccd7b6eee0 82
+  s_26f5e669d3043c::t_e79fbc26a3f008 32
+  s_26f5e669d3043c::t_bbf13e40fae3f9 553-567
+  s_26f5e669d3043c::t_bfb083790d0e91 1152-1167
+  s_26f5e669d3043c::t_277fb729366084 1248-1259
+apps/desktop/test/conflictSideLabels.test.ts
+  s_26f5e669d3043c::t_4f80c6013c4579 1-5,7-8,10-15,17-20,25,28-30,32,34-35,38,43,48-81,85-102,105-119,122-159,162-189,191-211,213-236
+apps/desktop/test/conflictResolve.test.ts
+  s_26f5e669d3043c::t_2a270da49c3cf4 122-179
+  s_26f5e669d3043c::t_10a0b578c36365 4
+apps/desktop/test/opContext.test.ts
+  s_26f5e669d3043c::t_a04420c76f0a04 4
+  s_26f5e669d3043c::t_0e7bfb30e97305 1-3,5-307,309-358
+  s_26f5e669d3043c::t_1df65cdbc426fa 308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3e699c7f55d99cf327de3867b231289171f2c0f0",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
