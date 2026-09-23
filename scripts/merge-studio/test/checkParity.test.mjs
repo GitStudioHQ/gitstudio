@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkParity, hashFiles, listFiles, MANIFEST_FILE, sha256, VENDOR_DIR } from "../check-parity.mjs";
+import { checkParity, FAILURE_HELP, hashFiles, listFiles, MANIFEST_FILE, sha256, VENDOR_DIR } from "../check-parity.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "check-parity.mjs");
 
@@ -68,6 +68,11 @@ test("one changed byte in a vendored file fails, naming the file", () => {
     const run = cli(root);
     assert.equal(run.status, 1);
     assert.match(run.stderr, /modified: vendor\/gitstudio\/engine\/src\/mergeModel\.ts/);
+    // A contributor reading the red CI step learns what to do: keep the pull request.
+    assert.ok(run.stderr.includes(FAILURE_HELP));
+    assert.match(FAILURE_HELP, /Contributing a change\? Keep it and open your pull request anyway/);
+    assert.match(FAILURE_HELP, /npm run check-types && npm test/);
+    assert.match(FAILURE_HELP, /scripts\/merge-studio\/import\.mjs/);
   } finally {
     cleanup(root);
   }

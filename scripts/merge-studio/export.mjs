@@ -11,7 +11,8 @@
 //    vendor/gitstudio/<pkg>/, with GitStudio's LICENSE and NOTICE, plus the two
 //    GitStudio files the parity test compares against (apps/extension's
 //    package.json and src/merge/mergeIds.ts) under vendor/gitstudio/extension/;
-// 3. copies apps/merge-studio's files to the target's root;
+// 3. copies apps/merge-studio's files to the target's root (2 and 3 follow
+//    layout.mjs, the same table import.mjs maps a merge-studio change back by);
 // 4. rewrites what differs standalone: package.json (no @gitstudio/*
 //    workspace dependencies; the packages' own third-party dependencies added;
 //    every version pinned to what gitstudio builds with), tsconfig.json
@@ -24,28 +25,24 @@
 //    file (checked) and every shell file (reported).
 //
 // Nothing is committed, pushed or published: the target is left as a working
-// tree change for a human to review.
+// tree change for a human to review. The other direction, a merge-studio pull
+// request replayed into gitstudio, is import.mjs.
 //
-// usage: node scripts/merge-studio/export.mjs --into <merge-studio checkout> [--allow-dirty] [--no-lock]
+// usage: node scripts/merge-studio/export.mjs --into <merge-studio checkout> [--allow-dirty] [--no-lock] [--gitstudio <checkout>]
 
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hashFiles, listFiles, MANIFEST_FILE, VENDOR_DIR } from "./check-parity.mjs";
+import { COPIED, copiedFiles, REPLACED, SHELL_DIR, sourcePaths, VENDORED_PACKAGES } from "./layout.mjs";
+
+export { REPLACED, SHELL_DIR, sourcePaths, VENDORED_PACKAGES };
 
 export const GITSTUDIO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-export const SHELL_DIR = "apps/merge-studio";
-export const VENDORED_PACKAGES = ["engine", "git-service", "host-bridge", "webview-ui", "merge-vscode"];
 
 /** GitStudio files the parity test reads, and where the export puts them. */
-export const PARITY_INPUTS = [
-  ["apps/extension/package.json", `${VENDOR_DIR}/extension/package.json`],
-  ["apps/extension/src/merge/mergeIds.ts", `${VENDOR_DIR}/extension/src/merge/mergeIds.ts`],
-];
-
-/** Paths in the target the shell replaces; removed before writing. */
-export const REPLACED = ["src", "webview", "test", "test-harness", VENDOR_DIR, "scripts/check-parity.mjs", "scripts/test/checkParity.test.mjs"];
+export const PARITY_INPUTS = COPIED.filter((row) => row.parityInput).map((row) => [row.gitstudio, row.mergeStudio]);
 
 /** vendor/gitstudio/.gitattributes: the hashed bytes are stored and checked out as they are. */
 export const VENDOR_GITATTRIBUTES =
@@ -53,31 +50,28 @@ export const VENDOR_GITATTRIBUTES =
   "# files, so git must not convert their line endings on any platform.\n" +
   "* -text\n";
 
-/** Shell files that are not copied as they are (regenerated) or never (build output). */
-const SHELL_SKIP = [/^node_modules(\/|$)/, /^dist(\/|$)/, /\.vsix$/, /^package\.json$/, /^tsconfig\.json$/, /(^|\/)\.DS_Store$/];
+/** The scripts the standalone package.json always has, whatever the shell says. */
+export const STANDALONE_SCRIPTS = {
+  "check-types": "tsc --noEmit -p tsconfig.json",
+  test: 'tsx --test "test/**/*.test.ts" && node --test "scripts/test/*.test.mjs"',
+  "check-parity": "node scripts/check-parity.mjs",
+};
 
-const git = (...args) =>
-  execFileSync("git", ["-C", GITSTUDIO_ROOT, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+/**
+ * The parts of the standalone package.json the export computes rather than
+ * copies from apps/merge-studio/package.json, as key paths. import.mjs reports
+ * a change to them and does not import it.
+ */
+export const GENERATED_PACKAGE_FIELDS = [["dependencies"], ["devDependencies"], ["overrides"], ...Object.keys(STANDALONE_SCRIPTS).map((k) => ["scripts", k])];
+
+const gitIn = (root, ...args) =>
+  execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 const readJson = (file) => JSON.parse(readFileSync(file, "utf8"));
 const writeJson = (file, value) => {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 };
-
-/** The gitstudio paths an export reads (for the dirty check and staleness). */
-export function sourcePaths() {
-  return [
-    ...VENDORED_PACKAGES.flatMap((p) => [`packages/${p}/src`, `packages/${p}/package.json`]),
-    ...PARITY_INPUTS.map(([from]) => from),
-    SHELL_DIR,
-    "scripts/merge-studio",
-    "LICENSE",
-    "NOTICE",
-    "tsconfig.base.json",
-    "package-lock.json",
-  ];
-}
 
 /**
  * The version gitstudio's lockfile resolves `name` to when `fromPath` (a lock
@@ -122,13 +116,21 @@ export function standalonePackageJson({ shell, packages, lock, rootPackage }) {
     [...wanted.entries()].sort(([a], [b]) => a.localeCompare(b, "en")).map(([name, at]) => [name, lock.packages[at].version]),
   );
   if (rootPackage.overrides) pkg.overrides = rootPackage.overrides;
-  pkg.scripts = {
-    ...pkg.scripts,
-    "check-types": "tsc --noEmit -p tsconfig.json",
-    test: 'tsx --test "test/**/*.test.ts" && node --test "scripts/test/*.test.mjs"',
-    "check-parity": "node scripts/check-parity.mjs",
-  };
+  pkg.scripts = { ...pkg.scripts, ...STANDALONE_SCRIPTS };
   return { pkg, resolved: wanted };
+}
+
+/** standalonePackageJson() for the gitstudio checkout at `root`, as it is on disk. */
+export function standaloneFrom(root = GITSTUDIO_ROOT) {
+  const lock = readJson(join(root, "package-lock.json"));
+  const packages = Object.fromEntries(VENDORED_PACKAGES.map((p) => [p, readJson(join(root, "packages", p, "package.json"))]));
+  const { pkg, resolved } = standalonePackageJson({
+    shell: readJson(join(root, SHELL_DIR, "package.json")),
+    packages,
+    lock,
+    rootPackage: readJson(join(root, "package.json")),
+  });
+  return { pkg, resolved, lock };
 }
 
 /**
@@ -197,15 +199,18 @@ export function standaloneTsconfig(base) {
 }
 
 /**
- * Export into `into`. Returns what was written.
- * @param {{ into: string, allowDirty?: boolean, lock?: boolean }} opts
+ * Export the gitstudio checkout at `gitstudio` (this one by default) into
+ * `into`. Returns what was written.
+ * @param {{ into: string, allowDirty?: boolean, lock?: boolean, gitstudio?: string }} opts
  */
-export function exportTo({ into, allowDirty = false, lock = true }) {
+export function exportTo({ into, allowDirty = false, lock = true, gitstudio = GITSTUDIO_ROOT }) {
+  const root = resolve(gitstudio);
   const target = resolve(into);
   if (!existsSync(target) || !statSync(target).isDirectory()) throw new Error(`--into ${target}: not a directory`);
-  if (resolve(target) === GITSTUDIO_ROOT || resolve(target).startsWith(`${GITSTUDIO_ROOT}/packages`)) {
+  if (target === root || target.startsWith(`${root}${sep}packages`) || target.startsWith(`${root}${sep}apps`)) {
     throw new Error("--into must be a merge-studio checkout, not this gitstudio checkout");
   }
+  const git = (...args) => gitIn(root, ...args);
   const sha = git("rev-parse", "HEAD");
   const dirtyLines = git("status", "--porcelain", "--", ...sourcePaths());
   const dirty = dirtyLines.length > 0;
@@ -223,57 +228,37 @@ export function exportTo({ into, allowDirty = false, lock = true }) {
     }
   }
 
-  // 2. The vendored packages, GitStudio's licence, and the parity inputs.
-  const packages = {};
-  for (const p of VENDORED_PACKAGES) {
-    const from = join(GITSTUDIO_ROOT, "packages", p);
-    cpSync(join(from, "src"), join(target, VENDOR_DIR, p, "src"), {
-      recursive: true,
-      filter: (s) => !s.endsWith(".DS_Store"),
-    });
-    cpSync(join(from, "package.json"), join(target, VENDOR_DIR, p, "package.json"));
-    packages[p] = readJson(join(from, "package.json"));
+  // 2 and 3. Every copied file, by layout.mjs's table: the vendored packages,
+  // GitStudio's licence, the parity inputs, check-parity (it travels with the
+  // vendored code) and the shell.
+  const copied = copiedFiles(root);
+  for (const [from, to] of copied) {
+    mkdirSync(dirname(join(target, to)), { recursive: true });
+    cpSync(join(root, from), join(target, to));
   }
-  cpSync(join(GITSTUDIO_ROOT, "LICENSE"), join(target, VENDOR_DIR, "LICENSE"));
-  cpSync(join(GITSTUDIO_ROOT, "NOTICE"), join(target, VENDOR_DIR, "NOTICE"));
   // Vendored bytes are hashed, so git must never rewrite them: no line-ending
   // conversion on a Windows checkout (core.autocrlf), in either repository.
   writeFileSync(join(target, VENDOR_DIR, ".gitattributes"), VENDOR_GITATTRIBUTES);
-  for (const [from, to] of PARITY_INPUTS) {
-    mkdirSync(dirname(join(target, to)), { recursive: true });
-    cpSync(join(GITSTUDIO_ROOT, from), join(target, to));
-  }
-
-  // 3. The shell.
-  const shellRoot = join(GITSTUDIO_ROOT, SHELL_DIR);
-  const shellFiles = listFiles(shellRoot).filter((rel) => !SHELL_SKIP.some((re) => re.test(rel)));
-  for (const rel of shellFiles) {
-    mkdirSync(dirname(join(target, rel)), { recursive: true });
-    cpSync(join(shellRoot, rel), join(target, rel));
-  }
 
   // 4. What differs standalone.
-  const gsLock = readJson(join(GITSTUDIO_ROOT, "package-lock.json"));
-  const { pkg, resolved } = standalonePackageJson({
-    shell: readJson(join(shellRoot, "package.json")),
-    packages,
-    lock: gsLock,
-    rootPackage: readJson(join(GITSTUDIO_ROOT, "package.json")),
-  });
+  const { pkg, resolved, lock: gsLock } = standaloneFrom(root);
   writeJson(join(target, "package.json"), pkg);
-  writeJson(join(target, "tsconfig.json"), standaloneTsconfig(readJson(join(GITSTUDIO_ROOT, "tsconfig.base.json"))));
+  writeJson(join(target, "tsconfig.json"), standaloneTsconfig(readJson(join(root, "tsconfig.base.json"))));
   if (lock) writeJson(join(target, "package-lock.json"), lockSubset({ lock: gsLock, pkg, resolved }));
 
-  // 5. The parity check travels with the vendored code.
-  cpSync(join(GITSTUDIO_ROOT, "scripts/merge-studio/check-parity.mjs"), join(target, "scripts/check-parity.mjs"));
-  mkdirSync(join(target, "scripts/test"), { recursive: true });
-  cpSync(join(GITSTUDIO_ROOT, "scripts/merge-studio/test/checkParity.test.mjs"), join(target, "scripts/test/checkParity.test.mjs"));
-
   const vendored = listFiles(join(target, VENDOR_DIR), target);
-  const shellWritten = [...shellFiles, "package.json", "tsconfig.json", ...(lock ? ["package-lock.json"] : []), "scripts/check-parity.mjs", "scripts/test/checkParity.test.mjs"].sort();
+  const shellWritten = [
+    ...copied.map(([, to]) => to).filter((to) => !to.startsWith(`${VENDOR_DIR}/`)),
+    "package.json",
+    "tsconfig.json",
+    ...(lock ? ["package-lock.json"] : []),
+  ].sort();
   const manifest = {
     schema: 1,
-    note: "Written by gitstudio's scripts/merge-studio/export.mjs. Files under vendor/gitstudio are GitStudio's: change them there and export again; `npm run check-parity` fails on any edit here.",
+    note:
+      "Written by gitstudio's scripts/merge-studio/export.mjs. Files under vendor/gitstudio are copies of GitStudio's shared code, " +
+      "and `npm run check-parity` reports any difference. A pull request may still change them: a maintainer imports it into gitstudio " +
+      "(scripts/merge-studio/import.mjs) and exports again.",
     gitstudio: { repository: "https://github.com/GitStudioHQ/gitstudio", sha, dirty },
     sources: sourcePaths(),
     packages: VENDORED_PACKAGES,
@@ -285,12 +270,13 @@ export function exportTo({ into, allowDirty = false, lock = true }) {
 }
 
 function parseArgs(argv) {
-  const args = { into: undefined, allowDirty: false, lock: true };
+  const args = { into: undefined, allowDirty: false, lock: true, gitstudio: GITSTUDIO_ROOT };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--into") args.into = argv[++i];
     else if (a === "--allow-dirty") args.allowDirty = true;
     else if (a === "--no-lock") args.lock = false;
+    else if (a === "--gitstudio") args.gitstudio = resolve(argv[++i]);
     else if (a === "--help" || a === "-h") args.help = true;
     else throw new Error(`unknown argument: ${a}`);
   }
@@ -301,7 +287,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const args = parseArgs(process.argv.slice(2));
     if (args.help || !args.into) {
-      console.log("usage: node scripts/merge-studio/export.mjs --into <merge-studio checkout> [--allow-dirty] [--no-lock]");
+      console.log("usage: node scripts/merge-studio/export.mjs --into <merge-studio checkout> [--allow-dirty] [--no-lock] [--gitstudio <checkout>]");
       process.exitCode = args.help ? 0 : 2;
     } else {
       const r = exportTo(args);
