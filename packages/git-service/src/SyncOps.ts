@@ -123,6 +123,13 @@ export interface PullResult extends SyncOpResult {
   /** Set when the pull could not start because an operation is paused. */
   blocked?: PullBlock;
   /**
+   * Set when HEAD is detached — a commit or a tag checked out, nothing paused
+   * — so there is no branch to pull into. git's own answer is terminal advice
+   * ("You are not currently on a branch… git pull <remote> <branch>"); the way
+   * on is to check out a branch. See `pullDetachedMessage`.
+   */
+  detached?: true;
+  /**
    * git's stdout on failure. A merge that conflicts explains itself HERE
    * ("CONFLICT (content): …") and writes nothing to stderr, so a caller that
    * shows only stderr has nothing to say.
@@ -138,6 +145,11 @@ export interface PullResult extends SyncOpResult {
  * beside ConflictProvider: the extension and the desktop app describe the same
  * state, and two copies of the sentence is how they start to disagree.
  */
+/** What to tell the user when a pull found HEAD detached (`PullResult.detached`). */
+export function pullDetachedMessage(): string {
+  return "HEAD is detached, so there is no branch to pull into. Check out a branch first.";
+}
+
 export function pullStoppedMessage(stop: PullStop): string {
   const n = stop.conflicted.length;
   const files = n === 1 ? "1 file" : `${n} files`;
@@ -562,6 +574,13 @@ export class SyncOps {
     const blocked = await this.pausedByOperation(signal);
     if (blocked) {
       return { ...failed, blocked };
+    }
+    // Nothing paused, and HEAD on no branch: a commit or a tag checked out.
+    // git fetched and then had nothing to merge into (exit 1, "You are not
+    // currently on a branch"). Asked after the paused operation, because a
+    // paused rebase is detached too and what is left there is to finish it.
+    if ((await this.proc.run(["symbolic-ref", "-q", "HEAD"], { signal })).code === 1) {
+      return { ...failed, detached: true };
     }
     if (r.code === GIT_PULL_STOPPED_OR_FETCH_FAILED) {
       return failed;

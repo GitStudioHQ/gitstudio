@@ -192,3 +192,57 @@ test("the shared pull settler settles a pull refused over a stop, not only the s
     "in the engine's words for both, shared with the desktop — not a stop-only sentence",
   );
 });
+
+// A pull on a DETACHED HEAD — a commit or a tag checked out — has no branch to
+// pull into. git fetches and then prints advice for a terminal ("You are not
+// currently on a branch. Please specify which branch you want to merge with.
+// See git-pull(1) for details. git pull <remote> <branch>"), and the status
+// bar's Sync and Pull showed exactly that, as an error. `SyncOps.pull` answers
+// it as `detached`; every extension door hands its result to
+// `settlePullDetached`, which says it plainly and offers to check out a branch.
+test("every extension pull door settles a detached HEAD", async () => {
+  const unsettled: string[] = [];
+  let seen = 0;
+  for (const file of await tsFiles(join(ROOT, "apps/extension/src"))) {
+    const lines = (await readFile(file, "utf8")).split("\n");
+    lines.forEach((line, i) => {
+      if (COMMENT.test(line) || DECLARATION.test(line) || !/\bsync\.pull\(/.test(line)) return;
+      seen++;
+      const below: string[] = [];
+      for (let k = i; k < lines.length && below.length < 16; k++) {
+        if (!COMMENT.test(lines[k])) below.push(lines[k]);
+      }
+      if (/settlePullDetached\(/.test(below.join("\n"))) return;
+      if (/pull-detached-reviewed:/.test(lines.slice(Math.max(0, i - 5), i + 2).join("\n"))) return;
+      unsettled.push(`${relative(ROOT, file)}:${i + 1} — ${line.trim()}`);
+    });
+  }
+  assert.ok(seen >= 4, `the scan found only ${seen} extension pull call sites — it broke`);
+  assert.equal(unsettled.join("\n"), "", "pulls that would show git's detached-HEAD advice:\n" + unsettled.join("\n"));
+});
+
+test("the detached-HEAD settler says it plainly and offers to check out a branch", async () => {
+  const src = await readFile(join(ROOT, "apps/extension/src/git/pullMode.ts"), "utf8");
+  const start = src.indexOf("export function settlePullDetached(");
+  assert.ok(start >= 0, "settlePullDetached is where every extension pull door settles a detached HEAD");
+  const code = src
+    .slice(start, src.indexOf("\n}\n", start))
+    .split("\n")
+    .filter((l) => !COMMENT.test(l))
+    .join("\n");
+  assert.match(code, /\.detached\b/, "it reads the engine's fact");
+  assert.match(code, /pullDetachedMessage\(\)/, "in the engine's words, not git's");
+  assert.match(code, /showWarningMessage\([\s\S]*?,\s*CHECK_OUT_BRANCH\)/, "a warning, with the way on as its button");
+  assert.match(code, /checkOut\(\)/, "…which opens the branch UI");
+  assert.doesNotMatch(code, /showErrorMessage/, "nothing failed");
+});
+
+test("the status bar's Pull asks nothing before it knows there is a branch", async () => {
+  // "Merge or rebase?" about a detached HEAD is a question whose every answer
+  // ends in the same refusal. The Pull verb asks first, so it looks first.
+  const src = await readFile(join(ROOT, "apps/extension/src/statusBar/syncStatus.ts"), "utf8");
+  const start = src.indexOf('case "pull": {');
+  assert.ok(start >= 0);
+  const arm = src.slice(start, src.indexOf("askRebase()", start));
+  assert.match(arm, /\.detached\b/, "the HEAD is checked before the question");
+});

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
 import type { PullResult } from "@gitstudio/git-service/SyncOps";
-import { askPullMode, settlePullStop } from "../git/pullMode";
+import { askPullMode, settlePullDetached, settlePullStop } from "../git/pullMode";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
@@ -1594,7 +1594,10 @@ export class CommitViewProvider
         r = await entry.ctx.sync.pull({ mode });
       }
     }
-    return { result: r, settled: settlePullStop(r) };
+    // A stop, a block, or a detached HEAD (no branch to pull into) — each said
+    // plainly by its settler, so the caller must not call it a failure too.
+    const settled = settlePullStop(r) || settlePullDetached(r, () => this.openBranchMenu());
+    return { result: r, settled };
   }
 
   /**

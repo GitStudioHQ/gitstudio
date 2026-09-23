@@ -30,7 +30,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
 import { GitContext } from "../src/GitContext";
-import { pullBlockedMessage, pullPauseMessage, pullStoppedMessage, type PullBlock } from "../src/SyncOps";
+import {
+  pullBlockedMessage,
+  pullDetachedMessage,
+  pullPauseMessage,
+  pullStoppedMessage,
+  type PullBlock,
+} from "../src/SyncOps";
 
 const trash: string[] = [];
 const contexts: GitContext[] = [];
@@ -425,4 +431,49 @@ test("a diverged branch whose remote IS reachable still asks", async () => {
   const r = await ctx.sync.pull();
   assert.ok(r.diverged, "diverged and reachable → the question");
   assert.equal(r.stopped, undefined, "…and nothing was merged or rebased yet");
+});
+
+// ── A detached HEAD: there is no branch to pull into ─────────────────────────
+//
+// `git pull` on a detached HEAD fetches and then fails with 1: "You are not
+// currently on a branch. Please specify which branch you want to merge with.
+// See git-pull(1) for details. git pull <remote> <branch>" — advice for a
+// terminal, which the extension's status-bar Sync and Pull showed verbatim as
+// an error. Nothing is broken and nothing is paused; the user checked out a
+// commit or a tag. `detached` says so, read from git (`symbolic-ref`), never
+// from its English.
+
+test("a pull on a detached HEAD says there is no branch — not git's advice", async () => {
+  const { clone, ctx } = collidingClone();
+  gitIn(clone, ["checkout", "-q", "--detach", "HEAD"]);
+  for (const mode of [undefined, "merge", "rebase"] as const) {
+    const r = await ctx.sync.pull(mode ? { mode } : undefined);
+    assert.equal(r.ok, false, `mode ${mode}`);
+    assert.equal(r.detached, true, `mode ${mode}: the fact the caller acts on`);
+    assert.equal(r.blocked, undefined, `mode ${mode}: nothing is paused`);
+    assert.equal(r.stopped, undefined, `mode ${mode}`);
+    assert.equal(r.diverged, undefined, `mode ${mode}`);
+  }
+  const said = pullDetachedMessage();
+  assert.match(said, /no branch to pull into/i);
+  assert.doesNotMatch(said, /git pull|<remote>|git-pull\(1\)|hint:/i);
+});
+
+test("a rebase paused on its detached HEAD is still a paused rebase, not a detached HEAD", async () => {
+  const { clone, ctx } = collidingClone();
+  assert.ok((await ctx.sync.pull({ mode: "rebase" })).stopped, "precondition: the rebase stopped");
+  writeFileSync(join(clone, "shared.txt"), "one\nBOTH\nthree\n");
+  gitIn(clone, ["add", "shared.txt"]);
+  const r = await ctx.sync.pull();
+  assert.deepEqual(r.blocked, { operation: "rebase", conflicted: 0 });
+  assert.equal(r.detached, undefined, "what is left to do is finish the rebase, not check out a branch");
+});
+
+test("a pull on a branch that fails for another reason is not called detached", async () => {
+  const { clone, ctx } = collidingClone();
+  const gone = join(tmpdir(), `gitstudio-stop-gone-dh-${process.pid}-${Date.now()}.git`);
+  gitIn(clone, ["remote", "set-url", "origin", gone]);
+  const r = await ctx.sync.pull({ mode: "merge" });
+  assert.equal(r.ok, false);
+  assert.equal(r.detached, undefined);
 });

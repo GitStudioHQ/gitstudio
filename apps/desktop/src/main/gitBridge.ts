@@ -24,7 +24,7 @@ import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
-import { pullBlockedMessage, pullStoppedMessage } from "@gitstudio/git-service/SyncOps";
+import { pullBlockedMessage, pullDetachedMessage, pullStoppedMessage } from "@gitstudio/git-service/SyncOps";
 import { GitProcess } from "@gitstudio/git-service/GitProcess";
 import type {
   CommitRecord,
@@ -1838,6 +1838,11 @@ export class GitBridge {
           expected: true,
           message: pullBlockedMessage(out.blocked),
         };
+      }
+      // A commit or a tag checked out: no branch to pull into. The user's
+      // state, in the app's words rather than git's terminal advice.
+      if (out.detached) {
+        return { ok: false, changed: false, expected: true, message: pullDetachedMessage() };
       }
       if (!out.diverged) {
         return out;

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import {
+  pullDetachedMessage,
   pullPauseMessage,
   type PullBlock,
   type PullDivergence,
@@ -38,6 +39,34 @@ export function settlePullStop(result: { stopped?: PullStop; blocked?: PullBlock
   }
   void vscode.window.showWarningMessage(`GitStudio: ${message}`);
   void vscode.commands.executeCommand("gitstudio.commit.focus");
+  return true;
+}
+
+const CHECK_OUT_BRANCH = "Check Out a Branch…";
+
+/**
+ * A pull on a DETACHED HEAD — a commit or a tag checked out — has no branch to
+ * pull into. git fetches and then prints advice for a terminal ("You are not
+ * currently on a branch… git pull <remote> <branch>"), which the status bar's
+ * Sync and Pull used to show verbatim as an error. Nothing failed: say so
+ * plainly, and offer the way on — the branch UI, where a branch is checked out.
+ *
+ * Returns true when the result WAS detached, and the caller must then not
+ * report it as a failure. Shared by every extension pull door, as
+ * `settlePullStop` is.
+ */
+export function settlePullDetached(
+  result: { detached?: boolean },
+  checkOut: () => unknown,
+): boolean {
+  if (!result.detached) {
+    return false;
+  }
+  void vscode.window
+    .showWarningMessage(`GitStudio: ${pullDetachedMessage()}`, CHECK_OUT_BRANCH)
+    .then((pick) => {
+      if (pick === CHECK_OUT_BRANCH) void checkOut();
+    });
   return true;
 }
 

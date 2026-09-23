@@ -327,6 +327,21 @@ test("#12: pressing Pull again over a rebase that is still stopped files nothing
   assert.equal(await filed(() => bridge.syncPull()), undefined, "rebase resolved, not continued");
 });
 
+test("a pull on a detached HEAD files nothing, and says there is no branch to pull into", async () => {
+  // A commit or a tag checked out: git fetches, then prints terminal advice
+  // ("You are not currently on a branch… git pull <remote> <branch>"). The
+  // user's state, said in the app's words — the same engine fact the
+  // extension's status bar settles with a "Check Out a Branch…" offer.
+  const { work, git } = collidingClone();
+  git("checkout", "-q", "--detach", "HEAD");
+  const bridge = await bridgeOn(work);
+  const r = await bridge.syncPull();
+  assert.equal(r.ok, false);
+  assert.equal(await filed(async () => r), undefined);
+  assert.match(r.message ?? "", /no branch to pull into/);
+  assert.doesNotMatch(r.message ?? "", /git pull|<remote>|git-pull\(1\)/);
+});
+
 test("#13: browsing a repository with no commits files nothing", async () => {
   for (const [status, message] of [
     [404, "This repository is empty."],

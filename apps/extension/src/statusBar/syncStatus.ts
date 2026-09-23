@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
-import { askPullMode, settlePullStop } from "../git/pullMode";
+import { askPullMode, settlePullDetached, settlePullStop } from "../git/pullMode";
 import { pruneOnFetch } from "../git/fetchOptions";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
@@ -249,6 +249,11 @@ export class SyncStatusItem implements vscode.Disposable {
         if (settlePullStop(pull)) {
           return;
         }
+        // No branch to pull into (a commit or tag checked out): said plainly,
+        // with the branch UI offered, instead of git's terminal advice in red.
+        if (settlePullDetached(pull, this.openBranchUi)) {
+          return;
+        }
         if (!pull.ok) {
           if (await this.offerUpstreamRepair(active, pull.stderr)) {
             return;
@@ -264,12 +269,18 @@ export class SyncStatusItem implements vscode.Disposable {
         break;
       }
       case "pull": {
+        // Looked at BEFORE the question: "merge or rebase?" about a detached
+        // HEAD is a question whose every answer ends in the same refusal.
+        const head = await active.ctx.refs.getHead();
+        if (settlePullDetached({ detached: head.detached }, this.openBranchUi)) {
+          return;
+        }
         const rebase = await this.askRebase();
         if (rebase === undefined) {
           return;
         }
         const pulled = await active.ctx.sync.pull({ rebase });
-        if (settlePullStop(pulled)) {
+        if (settlePullStop(pulled) || settlePullDetached(pulled, this.openBranchUi)) {
           return;
         }
         reportSync(pulled, "Pull", "Pulled");
