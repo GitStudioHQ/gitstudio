@@ -22,6 +22,7 @@
 // Everything here is a count, and counts are what survive that. For real
 // timings, drive the packaged app over CDP instead.
 import { execFile } from "node:child_process";
+import { chromeProfile } from "./profile.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -164,12 +165,14 @@ function originOf(map, frame) {
 }
 
 // ── run ────────────────────────────────────────────────────────────────────
+const profile = chromeProfile("gs-perf-");
 execFile(
   CHROME,
   [
     "--headless",
     "--disable-gpu",
     "--hide-scrollbars",
+    profile.flag,
     "--window-size=1600,1000",
     "--virtual-time-budget=30000",
     // Lets the census collect before it counts, which is the difference between
@@ -180,6 +183,7 @@ execFile(
   ],
   { maxBuffer: 128 * 1024 * 1024, timeout: 180_000, killSignal: "SIGKILL" },
   (err, stdout) => {
+    profile.cleanup();
     if (err && !stdout) {
       console.error("chrome failed:", err.message);
       process.exit(1);

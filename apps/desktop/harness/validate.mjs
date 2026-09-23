@@ -19,6 +19,7 @@
 // what is not — quoting the sentence, because that is the form it will be read
 // in. An UNMET row is not a failure of the harness. It is the backlog.
 import { execFile } from "node:child_process";
+import { chromeProfile } from "./profile.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -85,11 +86,13 @@ try {
     const theme = req.theme ?? "dark";
     const width = req.width ?? 1600;
     const url = `file://${PAGE}?scene=${req.scene}&theme=${theme}&probe=${probe}${extra}`;
+    const profile = chromeProfile("gs-validate-");
     execFile(
       CHROME,
-      ["--headless", "--disable-gpu", "--hide-scrollbars", `--window-size=${width},1000`, "--virtual-time-budget=20000", "--dump-dom", url],
+      ["--headless", "--disable-gpu", "--hide-scrollbars", profile.flag, `--window-size=${width},1000`, "--virtual-time-budget=20000", "--dump-dom", url],
       { maxBuffer: 64 * 1024 * 1024, timeout: 120_000, killSignal: "SIGKILL" },
       (err, stdout) => {
+        profile.cleanup();
         const m = /<title>PROBE ([\s\S]*?)<\/title>/.exec(stdout || "");
         if (!m) {
           done({ id: req.id, says: req.says, met: false, detail: "the scene did not answer" });

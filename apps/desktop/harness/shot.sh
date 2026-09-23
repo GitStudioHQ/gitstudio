@@ -21,8 +21,12 @@ OUT="${2:-$HARNESS/out/$SCENE.png}"
 THEME="${3:-dark}"
 EXTRA="${4:-}"
 mkdir -p "$(dirname "$OUT")"
+# Its own throwaway profile: left to itself headless Chrome leaves a
+# .com.google.Chrome.* directory in $TMPDIR behind on every launch.
+PROFILE="$(mktemp -d "${TMPDIR:-/tmp}/gs-shot-XXXXXX")"
+trap 'rm -rf "$PROFILE"' EXIT
 "${GS_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}" \
-  --headless --disable-gpu --hide-scrollbars \
+  --headless --disable-gpu --hide-scrollbars --user-data-dir="$PROFILE" \
   --window-size=1600,1000 --force-device-scale-factor=2 \
   --virtual-time-budget=9000 \
   --screenshot="$OUT" \

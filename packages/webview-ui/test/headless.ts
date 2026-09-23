@@ -11,7 +11,7 @@
 
 import { build } from "esbuild";
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -119,6 +119,10 @@ window.addEventListener("unhandledrejection", (e) => window.verdict({ fails: ["r
         "--disable-gpu",
         "--hide-scrollbars",
         "--no-sandbox",
+        // Our own profile inside the page's temp dir, removed with it below. Left
+        // to itself headless Chrome leaves a .com.google.Chrome.* profile in the
+        // temp directory on every launch; a night of runs filled the disk.
+        `--user-data-dir=${join(dir, "profile")}`,
         `--window-size=${width},${height}`,
         // Virtual time: Chrome fast-forwards timers, so a generous budget costs
         // nothing on a page that finishes early — and a paging test on a slow
@@ -129,6 +133,7 @@ window.addEventListener("unhandledrejection", (e) => window.verdict({ fails: ["r
       ],
       { maxBuffer: 64 * 1024 * 1024, timeout: 60_000, killSignal: "SIGKILL" },
       (err, stdout) => {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
         if (err && !stdout) return res({ fails: [`chrome failed: ${err.message}`] });
         const m = /<title>CHECK ([\s\S]*?)<\/title>/.exec(stdout);
         if (!m) {

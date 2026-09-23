@@ -13,6 +13,7 @@
 // Exit code is non-zero if any case fails, so it can gate a commit.
 
 import { execFile } from "node:child_process";
+import { chromeProfile } from "./profile.mjs";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -671,6 +672,7 @@ function run(scene, checkId, opts = {}) {
   // reachable only through a pref still has to be assertable.
   const extra = opts.extra ? `&${opts.extra}` : "";
   const url = `file://${PAGE}?scene=${scene}&theme=${theme}&check=${checkId}${arg}${extra}`;
+  const profile = chromeProfile("gs-check-");
   return new Promise((res) => {
     execFile(
       CHROME,
@@ -678,6 +680,7 @@ function run(scene, checkId, opts = {}) {
         "--headless",
         "--disable-gpu",
         "--hide-scrollbars",
+        profile.flag,
         `--window-size=${width},${height}`,
         "--virtual-time-budget=12000",
         "--dump-dom",
@@ -688,6 +691,7 @@ function run(scene, checkId, opts = {}) {
       // timeout that hangs the WHOLE suite with no clue which case did it.
       { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
       (err, stdout) => {
+        profile.cleanup();
         if (err?.killed && !stdout) return res({ fails: ["timed out after 90s — the page never settled"] });
         if (err && !stdout) return res({ fails: [`chrome failed: ${err.message}`] });
         const m = /<title>CHECK ([\s\S]*?)<\/title>/.exec(stdout);
