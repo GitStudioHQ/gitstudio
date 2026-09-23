@@ -1,0 +1,23 @@
+apps/desktop/src/renderer/bridge.ts
+  s_26f5e669d3043c::t_d0cfb5909e4f3f 47
+apps/desktop/test/forcePushTable.test.ts
+  s_26f5e669d3043c::t_db758055ce05d7 118
+  s_26f5e669d3043c::t_cde1982afda123 138-139,141-149
+  s_26f5e669d3043c::t_37b9f3d371756c 1-117,119-137,140,150-153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a8940efbf7f16512441c3c9813c1ae310ca1ee70",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
