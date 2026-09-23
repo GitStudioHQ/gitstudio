@@ -1,0 +1,25 @@
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_1821d31628531c 197-201,225-233,235-236,242
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_1821d31628531c 24-31,252-254,421-430,879-888
+apps/extension/test/pushForceCallSites.test.ts
+  s_26f5e669d3043c::t_7d07a3606f5971 114-153
+packages/git-service/test/pushLease.test.ts
+  s_26f5e669d3043c::t_88166a66035196 1-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f6b814f4dbc84fe97231949b504fc28bcacc8121",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
