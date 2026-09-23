@@ -1,0 +1,31 @@
+packages/webview-ui/test/sharedCssTokens.test.ts
+  s_26f5e669d3043c::t_265b88edaee6a4 100-104
+  s_26f5e669d3043c::t_d3ef8156755cdf 75-99,105-111,113-121
+  s_26f5e669d3043c::t_fba7817dc3aa68 112
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_7a1f72f6916a51 12948-12976
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_4cb593b84fc507 4237-4251
+  s_26f5e669d3043c::t_5765d50527a345 4388-4399
+packages/webview-ui/src/styles/shell.css
+  s_26f5e669d3043c::t_ae6ae1a656dfc6 30-35,83,139,163,218,247,275,284
+  s_26f5e669d3043c::t_e77cacfb854c8a 303-322
+packages/webview-ui/src/styles/conflicts.css
+  s_26f5e669d3043c::t_4b562fb648629c 27-29,105,161,178-179,182,215,226,263,282,295,335,349,423,431,469,493
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a04029da6a64bb8a762c3d655eed4828f8ced981",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
