@@ -203,6 +203,20 @@ test("readSides maps a missing side and names the shape", async () => {
   }
 });
 
+test("readSides of a both-deleted file still carries its base", async () => {
+  const r = renameRename();
+  try {
+    const sides = await r.ctx().conflictOps.readSides("doomed.txt");
+    assert.equal(sides.shape, "both-deleted");
+    assert.equal(sides.hasBase, true);
+    assert.equal(sides.base, "contents\n", "hasBase and base agree");
+    assert.equal(sides.yours, "");
+    assert.equal(sides.theirs, "");
+  } finally {
+    r.cleanup();
+  }
+});
+
 // ── takeRole / takeStage ────────────────────────────────────────────────────
 
 test("modify/delete: the side that kept the file keeps it; the side that deleted it deletes it", async () => {

@@ -162,6 +162,14 @@ export class ConflictOps {
       }),
     ]);
     const sides = byRole(op, v.ours, v.theirs);
+    // ConflictProvider answers from the stages only when stage 2 or 3 exists,
+    // so a both-deleted file (stage 1 alone) came back with no base while the
+    // facts say it has one. Read it, so `hasBase` and `base` agree.
+    let base = v.base;
+    if (facts?.hasBase && v.source !== "git-stages") {
+      const r = await this.proc.run(["show", `:1:${path}`], { signal: opts?.signal });
+      if (r.code === 0) base = r.stdout;
+    }
     return {
       op,
       path,
@@ -169,7 +177,7 @@ export class ConflictOps {
       ...(facts?.missingRole ? { missingRole: facts.missingRole } : {}),
       hasBase: facts ? facts.hasBase : v.hasBase,
       source: v.source,
-      base: v.base,
+      base,
       yours: sides.yours,
       theirs: sides.theirs,
     };
