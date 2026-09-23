@@ -1,0 +1,31 @@
+packages/git-service/test/pullStashRetry.test.ts
+  s_26f5e669d3043c::t_604bebc9162839 18
+  s_26f5e669d3043c::t_c54beef03a6581 1-17,19-190
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_9b12786db7bbc1 5,37-40,75-78,81,86-88,97,104,121,123-124,288-300,302
+  s_26f5e669d3043c::t_1f84693a909399 332,384,397-399,401,405,407-411,413,418,423-468,470-518,520-535,537-572,595
+  s_26f5e669d3043c::t_c9702f86e9441b 412
+  s_26f5e669d3043c::t_b6f13e69f6904a 337-339
+  s_26f5e669d3043c::t_acd997547034b7 386
+packages/git-service/test/changesInTheWay.test.ts
+  s_26f5e669d3043c::t_306af5e25bfe7a 189-190,287
+  s_26f5e669d3043c::t_17ae5219652243 173-187,191-192,282,285,289,292
+  s_26f5e669d3043c::t_ba15db1cd6e3a0 188
+  s_26f5e669d3043c::t_3717e37a5b0208 281,283-284,286,288,290-291,293-298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5e444901c48a0d63fab6e2eea5d74fd88b41fa17",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
