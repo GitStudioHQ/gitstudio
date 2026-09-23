@@ -27,6 +27,7 @@
 //   node harness/probe.mjs code 'return $$("button").filter(b=>!b.textContent.trim()&&!b.title).length'
 
 import { execFile } from "node:child_process";
+import { chromeProfile } from "./profile.mjs";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,12 +94,14 @@ const probe = encodeURIComponent(PRELUDE + "\n" + body);
 const extra = flags.extra ? `&${flags.extra}` : "";
 const url = `file://${PAGE}?scene=${scene}&theme=${theme}&probe=${probe}${extra}`;
 
+const profile = chromeProfile("gs-probe-");
 execFile(
   CHROME,
   [
     "--headless",
     "--disable-gpu",
     "--hide-scrollbars",
+    profile.flag,
     `--window-size=${width},${height}`,
     "--virtual-time-budget=12000",
     "--dump-dom",
@@ -109,6 +112,7 @@ execFile(
   // one that fails — it hangs whatever asked the question.
   { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
   (err, stdout) => {
+    profile.cleanup();
     if (err && !stdout) {
       console.error("chrome failed:", err.message);
       process.exit(1);
