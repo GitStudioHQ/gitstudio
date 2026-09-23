@@ -134,6 +134,21 @@ test("every door that runs a git verb which can stop on conflicts can say so thr
   assert.deepEqual(silent, [], silent.join("\n"));
 });
 
+test("the pull doors' shared settler says a stop through notifyPaused, so it offers Resolve Conflicts… too", async () => {
+  // Every extension pull hands its result to settlePullStop
+  // (pullDivergedCallSites.test.ts holds the doors to that), so a pull's stop
+  // is said THERE, before any door's own fallback is reached — and said
+  // there without the button it would be the one "git stopped for you" toast
+  // with no way through. Work in the way (`dirty`) has nothing to resolve and
+  // keeps the plain warning.
+  const src = stripComments(await readFile(join(SRC, "git/pullMode.ts"), "utf8"));
+  const start = src.indexOf("export function settlePullStop(");
+  assert.ok(start >= 0, "settlePullStop is where every extension pull door settles");
+  const body = src.slice(start, src.indexOf("\n}\n", start));
+  assert.match(body, /\bnotifyPaused\(/, "a stop with files to resolve goes through notifyPaused");
+  assert.match(body, /result\.stopped[\s\S]*conflicted/, "…decided by the files git left unmerged");
+});
+
 test("a paused notice offers Resolve Conflicts…, which opens the dashboard; dismissing does nothing", async () => {
   const calls: string[] = [];
   await announcePause(
