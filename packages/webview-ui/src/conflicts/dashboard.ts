@@ -211,7 +211,10 @@ export class ConflictsDashboard {
     mark.title = state.brand.name;
     const title = el("h1", "cd-title", "Conflicts");
     head.append(mark, title);
-    if (!allDone) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
+    // Nothing in progress and nothing unmerged (the operation just finished):
+    // no chip. It used to read "UNMERGED FILES" over "Rebase complete".
+    const nothingLeft = op.kind === "none" && files.length === 0;
+    if (!allDone && !nothingLeft) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
     if (state.repoName) head.appendChild(el("span", "cd-repo", state.repoName));
     root.appendChild(head);
 
@@ -307,7 +310,8 @@ export class ConflictsDashboard {
 
     const list = el("div", "cd-list");
     list.setAttribute("role", "list");
-    if (files.length === 0 && !op.pause) {
+    // An empty list says so — unless an outcome ("Rebase complete") already says more.
+    if (files.length === 0 && !op.pause && state.outcome?.kind !== "done") {
       list.appendChild(
         el(
           "div",
@@ -317,7 +321,7 @@ export class ConflictsDashboard {
       );
     }
     for (const f of files) list.appendChild(this.row(f, state));
-    if (files.length > 0 || !op.pause) root.appendChild(list);
+    if (list.childElementCount > 0) root.appendChild(list);
 
     if (state.outcome) {
       const o = el("div", `cd-outcome is-${state.outcome.kind}`);
