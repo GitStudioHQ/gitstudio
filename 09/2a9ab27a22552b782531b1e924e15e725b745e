@@ -1,0 +1,42 @@
+apps/extension/test/inTheWayCallSites.test.ts
+  s_26f5e669d3043c::t_a882172bc994e4 36-38,44
+  s_26f5e669d3043c::t_edfc10d7e35091 53-56
+packages/git-service/test/operationInTheWay.test.ts
+  s_26f5e669d3043c::t_20d4d76ebee23f 194
+  s_26f5e669d3043c::t_3073c7b1811d75 227-232
+  s_26f5e669d3043c::t_1cee141659a5f6 205
+  s_26f5e669d3043c::t_c228a7d4aa67d1 39
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_c3b807be374403 98-108
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_f90df5123bf015 25
+  s_26f5e669d3043c::t_da674907f71317 2362-2366
+  s_26f5e669d3043c::t_06eef0818a23b7 2372
+apps/desktop/test/operationInTheWayTable.test.ts
+  s_26f5e669d3043c::t_f7b0ae7c3604c8 213-214
+  s_26f5e669d3043c::t_ad14602d3994f7 254-260
+  s_26f5e669d3043c::t_49e02a8a542281 170
+  s_26f5e669d3043c::t_4d94cdf51f3c72 184
+apps/desktop/test/inTheWayCensus.test.ts
+  s_26f5e669d3043c::t_55ce8af6654041 116-119
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_e3a1d2b9ecf405 2165-2172
+  s_26f5e669d3043c::t_c22d3f60050e5b 6
+  s_26f5e669d3043c::t_a53f8101b0e56c 1574-1583
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "092a9ab27a22552b782531b1e924e15e725b745e",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
