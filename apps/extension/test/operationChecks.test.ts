@@ -104,6 +104,25 @@ test("every 'paused' toast goes through notifyPaused, so each one offers Resolve
   assert.deepEqual(hits, [], hits.join("\n"));
 });
 
+test("every door that runs a git verb which can stop on conflicts can say so through notifyPaused", async () => {
+  // The census above only sees doors that already SAY "hit conflicts". A door
+  // that runs a pull / merge / rebase / cherry-pick / revert / stash apply and
+  // never asks whether git stopped reports the stop as a failure, with no way
+  // through: the Changes view's branch-menu Pull did exactly that ("pull
+  // failed — …") while its status-bar twin offered Resolve Conflicts….
+  const VERB =
+    /\bsync\.pull\(|\bbranches\.(?:merge|rebaseOnto)\(|\bstashes\.(?:apply|pop)\(|\[\s*"(?:cherry-pick|revert)"/;
+  const silent: string[] = [];
+  for (const file of await tsFiles(SRC)) {
+    const rel = relative(SRC, file).split("\\").join("/");
+    const code = stripComments(await readFile(file, "utf8"));
+    if (VERB.test(code) && !/\bnotifyPaused\(/.test(code)) {
+      silent.push(rel);
+    }
+  }
+  assert.deepEqual(silent, [], silent.join("\n"));
+});
+
 test("a paused notice offers Resolve Conflicts…, which opens the dashboard; dismissing does nothing", async () => {
   const calls: string[] = [];
   await announcePause(

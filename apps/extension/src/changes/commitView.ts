@@ -49,6 +49,8 @@ import {
 } from "../compare/refCompare";
 import { toRevisionUri } from "../history/revisionContentProvider";
 import { operationBanner, type OperationBannerData } from "./operationBanner";
+import { stoppedByThisCommand, type DetectedOperation } from "../git/pausedForUser";
+import { detectOperation, notifyPaused } from "../git/pauseNotice";
 
 // The unified Commit window: ONE WebviewView ("Commit", viewId gitstudio.commit)
 // that renders BOTH the commit message box AND the working-tree changes —
@@ -1534,6 +1536,11 @@ export class CommitViewProvider
       return;
     }
     let result: { ok: boolean; stderr?: string } = { ok: true };
+    // A pull can stop on conflicts. What git was doing BEFORE it ran, so a
+    // failed pull that left git stopped reads as "paused for you" (with the
+    // dashboard one click away), not as an error — the status bar's Pull
+    // twin (statusBar/syncStatus.ts) decides it the same way.
+    let before: DetectedOperation | undefined;
     try {
       // Checking out a branch is not an action here: the menu routes every
       // checkout through branchRefCommand (gitstudio.branch.checkout /
@@ -1557,9 +1564,11 @@ export class CommitViewProvider
           break;
         }
         case "pull":
+          before = await detectOperation(entry.ctx);
           result = await entry.ctx.sync.pull();
           break;
         case "pullRebase":
+          before = await detectOperation(entry.ctx);
           result = await entry.ctx.sync.pull({ rebase: true });
           break;
         case "push": {
@@ -1595,7 +1604,9 @@ export class CommitViewProvider
     } catch (err) {
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
     }
-    if (!result.ok) {
+    if (!result.ok && before && stoppedByThisCommand(before, await detectOperation(entry.ctx))) {
+      notifyPaused("Pull hit conflicts. Resolve them, then continue or abort.");
+    } else if (!result.ok) {
       void vscode.window.showErrorMessage(
         `GitStudio: ${msg.action} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
       );
