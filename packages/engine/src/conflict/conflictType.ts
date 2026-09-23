@@ -19,7 +19,10 @@ export interface ConflictTypeInput {
 }
 
 export function conflictTypeFor(input: ConflictTypeInput): ConflictType {
-  if (input.source === "none") return "unknown";
+  // No readable versions says nothing about a shape git's stages decided (a
+  // file deleted on both sides, a submodule): only a plain text file with no
+  // versions and no markers is of an unknown kind.
+  if (input.source === "none" && (!input.shape || input.shape === "text")) return "unknown";
   switch (input.shape) {
     case "added-both":
       return "add-add";
