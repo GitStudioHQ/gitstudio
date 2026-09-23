@@ -526,6 +526,23 @@ export class MergeShell {
     this.viewApi?.layout();
   }
 
+  /**
+   * Put the keyboard in the merge editor — for a host that opened it from a
+   * button the editor then covers (the desktop dashboard's Merge…), which
+   * otherwise leaves it on <body>. Text: on Next change, one Enter from the
+   * first change (and that lands in the Result). No text: on the panel's
+   * first answer. Else the first live control.
+   */
+  focus(): void {
+    const live = (b: HTMLButtonElement | null | undefined): b is HTMLButtonElement =>
+      !!b && !b.disabled && !b.hidden && !b.closest("[hidden]");
+    const target =
+      (this.panel ? this.panel.element.querySelector<HTMLButtonElement>("button:not([disabled])") : undefined) ??
+      [this.nextBtn].find(live) ??
+      [...this.element.querySelectorAll<HTMLButtonElement>("button")].find(live);
+    target?.focus();
+  }
+
   dispose(): void {
     this.ac.abort();
     window.clearTimeout(this.armTimer);

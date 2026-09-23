@@ -5010,6 +5010,25 @@
     },
 
     /**
+     * …and going IN: Merge… is a dashboard button, and the merge editor takes
+     * the dashboard's place — with the button in it. The keyboard was left on
+     * <body>, so F7 went nowhere and Tab started over from the top bar.
+     */
+    "the-keyboard-follows-merge-into-the-editor": async (f) => {
+      const c = check(f);
+      await settle(700);
+      const merge = $('[data-key="merge:src/app.ts"]');
+      c.ok(!!merge, "precondition: src/app.ts offers Merge…");
+      merge?.focus();
+      merge?.click();
+      await settle(1500);
+      c.ok(!!$(".ms-shell"), "the merge editor opens");
+      const a = document.activeElement;
+      c.ok(!!a && a !== document.body && !!a.closest(".ms-shell"), `the keyboard is in it (${a === document.body ? "BODY" : a && (a.title || a.className)})`);
+      c.eq(a && a.title, "Next change (F7)", "on Next change, one Enter from the first conflict");
+    },
+
+    /**
      * Leaving the merge editor puts the keyboard back where it came from. Exit
      * viewer, and Apply, take the editor away with the focused button in it,
      * and the dashboard that comes back was not given focus — so the keyboard

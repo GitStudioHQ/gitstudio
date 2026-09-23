@@ -233,6 +233,8 @@ class App {
   private changesDash?: ConflictsDashboard;
   /** The file whose row gets the keyboard when the dashboard comes back from the merge editor. */
   private changesDashFocus?: { path: string; at: number };
+  /** The file the dashboard's Merge… just opened: the merge editor takes the keyboard when it is up. */
+  private changesShellFocus?: { path: string; at: number };
   /** The top-bar chip naming a stopped operation. */
   private opChipEl?: HTMLButtonElement;
   /** The repo changed while the graph was parked — reload in place on return. */
@@ -6991,6 +6993,9 @@ class App {
           },
         };
         if (await this.resolveInIde(diffPanel, model, gen, handlers)) return;
+        const want = this.changesShellFocus;
+        this.changesShellFocus = undefined;
+        handlers.focusOnMount = !!want && want.path === path && Date.now() - want.at < 5000;
         diffPanel.showConflict(model, handlers);
         return;
       }
@@ -7130,7 +7135,13 @@ class App {
   private conflicts(): DesktopConflicts {
     this.conflictsCtl ??= new DesktopConflicts({
       invoke: host.invoke,
-      openMerge: (path) => this.changesOpenMerge?.(path),
+      openMerge: (path) => {
+        // Merge… is a dashboard button, and the merge editor takes the
+        // dashboard's place with the button in it: the keyboard goes INTO
+        // the editor once it is up (openWorkingFile), not to <body>.
+        this.changesShellFocus = { path, at: Date.now() };
+        this.changesOpenMerge?.(path);
+      },
       onFileChanged: () => void this.repaintChanges(),
       onOperationChanged: (outcome) => void this.afterOperationVerb(outcome),
       notify: (message, kind, action) => toast(message, kind, action ? 8000 : undefined, action),

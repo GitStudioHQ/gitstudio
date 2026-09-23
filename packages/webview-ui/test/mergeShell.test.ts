@@ -453,6 +453,22 @@ test("answering a question hands the keyboard back to what asked it", { skip }, 
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
+test("focus() puts the keyboard in the merge editor: on Next change, or on the panel's first answer", { skip }, async () => {
+  // For a host that opens the editor from a button the editor then covers
+  // (the desktop dashboard's Merge…): without it the keyboard was left on
+  // <body>, and F7 went nowhere.
+  const v = await run(`
+    const shell = mount(payload());
+    fake.setCounts({ total: 2, pending: 2, conflictsPending: 1 });
+    shell.focus();
+    expect(document.activeElement === $$(".jb-toolbar button").find((b) => b.title === "Next change (F7)"), "text: the keyboard is on Next change (" + (document.activeElement && document.activeElement.title) + ")");
+    shell.handle({ type: "init", ...payload({ shape: "binary" }) });
+    shell.focus();
+    expect(document.activeElement === $(".ms-notext-btn"), "no text: on the panel's first answer (" + (document.activeElement && document.activeElement.textContent) + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
 test("once the operation is over, Cancel has nothing to end", { skip }, async () => {
   // A Continue that finished leaves the editor open on a view of kind "none"
   // — the extensions keep it on screen to show the outcome. Its Cancel still
