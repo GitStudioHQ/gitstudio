@@ -242,6 +242,9 @@
   font-size: var(--gs-text-secondary);
   white-space: normal;
 }
+/* Never wider than the shell it opens in; mergeShell's placeCancelPop slides
+   it along the bar until it fits. */
+.ms-shell .ms-pop { max-width: calc(100cqw - 16px); }
 .ms-pop .jb-toolbar-btn { justify-content: flex-start; height: 28px; }
 .ms-pop-hint,
 .ms-pop-detail { color: var(--ms-muted); line-height: 1.45; }
@@ -312,6 +315,20 @@
 }
 @container ms-shell (max-width: 1180px) {
   .jb-toolbar .jb-toolbar-label { display: none; }
+}
+
+/* The bottom bar WRAPS rather than push its last buttons out of the pane. In
+   the desktop the shell is one pane of the window (443px at a 1000px window,
+   beside the file list), and a bar that could not wrap put Apply, the note
+   saying what Apply would save, and Continue past its edge, where nothing
+   could reach them. At full width it is one row, as before. */
+.ms-shell .jb-bottom-bar {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 40px;
+  row-gap: 6px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 @container ms-shell (max-width: 960px) {
   .jb-toolbar { padding: 0 4px; gap: 1px; }

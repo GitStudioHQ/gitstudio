@@ -172,6 +172,27 @@ export class ConflictsDashboard {
     this.element.remove();
   }
 
+  /**
+   * Put the keyboard on a file's row — its Merge… while it is pending, its
+   * Hold to undo once resolved, else its first live button. For a host that
+   * brings the dashboard back after the merge editor closed: the editor took
+   * the focused button with it, and the keyboard should land where it left
+   * from, not on <body>. False when the row, or a live control in it, is not
+   * there (yet).
+   */
+  focusFile(path: string): boolean {
+    const row = [...this.element.querySelectorAll<HTMLElement>(".cd-row")].find((r) => r.dataset.path === path);
+    if (!row) return false;
+    const live = (b: HTMLButtonElement | null | undefined): b is HTMLButtonElement => !!b && !b.disabled;
+    const byKey = [`merge:${path}`, `restore:${path}`]
+      .map((k) => row.querySelector<HTMLButtonElement>(`[data-key="${cssEscape(k)}"]`))
+      .find(live);
+    const pick = byKey ?? [...row.querySelectorAll<HTMLButtonElement>("button")].find(live);
+    if (!pick) return false;
+    pick.focus();
+    return document.activeElement === pick;
+  }
+
   // ── painting ──
 
   private rerender(focusKey?: string): void {

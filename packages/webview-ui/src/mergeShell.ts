@@ -258,6 +258,14 @@ export class MergeShell {
   private menuHistoryAt = -Infinity;
   private dropConfirming = false;
   private wsPending?: WhitespaceMode;
+  /** The operation finished here (an outcome "done"): nothing is left to end. */
+  private ended = false;
+  /**
+   * Apply disabled the button that had the keyboard (it is spent, or busy):
+   * hand focus on to the next thing to press once the host has answered,
+   * rather than leave it on <body>.
+   */
+  private applyHadFocus = false;
 
   // chrome
   private readonly toolbar: HTMLElement;
@@ -494,6 +502,7 @@ export class MergeShell {
         this.remaining = message.remainingConflicts;
         this.renderStrip();
         this.syncBottom();
+        this.passFocusOnFromApply();
         break;
       case "outcome":
         this.onOutcome(message.kind, message.text);
@@ -535,21 +544,22 @@ export class MergeShell {
     this.applied = false;
     this.appliedWarn = "";
     this.lastTake = undefined;
+    this.ended = false;
+    this.applyHadFocus = false;
     this.setBusy("");
     this.disarmApply();
     this.dropConfirming = false;
     this.closeCancelPop();
     this.hideWsConfirm();
 
-    // The JetBrains escape hatch, only when the host found an IDE.
+    // The JetBrains escape hatch, only when the host found an IDE — and only
+    // for text: the IDE merges lines, and the hosts refuse to hand it a
+    // binary, a deleted side or a file too large to read (syncBottom).
     this.jetbrainsBtn.replaceChildren();
     if (payload.jetbrainsName) {
       this.jetbrainsBtn.append(iconElement(openExternal), document.createTextNode(`Open in ${payload.jetbrainsName}`));
       this.jetbrainsBtn.title =
         `Close this editor and resolve the conflict in the ${payload.jetbrainsName} merge window`;
-      this.jetbrainsBtn.hidden = false;
-    } else {
-      this.jetbrainsBtn.hidden = true;
     }
 
     this.labelSides();
@@ -818,12 +828,12 @@ export class MergeShell {
     );
     const keep = toolbarButton("Keep my changes", "bordered");
     keep.classList.add("ms-ws-keep");
-    keep.addEventListener("click", () => this.hideWsConfirm());
+    keep.addEventListener("click", () => this.hideWsConfirm(true));
     const go = toolbarButton("Change anyway", "bordered");
     go.classList.add("ms-ws-go", "ms-danger");
     go.addEventListener("click", () => {
       const next = this.wsPending;
-      this.hideWsConfirm();
+      this.hideWsConfirm(true);
       if (!next) return;
       this.wsMode = next;
       this.wsSelect.value = next;
@@ -834,10 +844,17 @@ export class MergeShell {
     keep.focus();
   }
 
-  private hideWsConfirm(): void {
+  /**
+   * Put the whitespace question away. Answered (a button, or Escape), the
+   * keyboard goes back to the select that asked it — removing the focused
+   * button otherwise dropped it on <body>.
+   */
+  private hideWsConfirm(returnFocus = false): void {
+    const had = !this.wsConfirm.hidden;
     this.wsPending = undefined;
     this.wsConfirm.hidden = true;
     this.wsConfirm.replaceChildren();
+    if (returnFocus && had) this.wsSelect.focus();
   }
 
   // ── Apply (D3) ──
@@ -871,10 +888,34 @@ export class MergeShell {
     }
     this.disarmApply();
     this.dropConfirming = false;
+    // Apply is about to be disabled under the keyboard (busy, then spent).
+    this.applyHadFocus = document.activeElement === this.applyBtn;
     this.setBusy("apply");
     this.clearOutcome();
     this.syncBottom();
     this.adapter.post({ type: "apply", text: view.getResultText() });
+  }
+
+  /**
+   * After an Apply that had the keyboard: once the host has answered, hand it
+   * to the next thing to press — Continue when it has appeared, else Apply
+   * again if it is live, else Cancel — instead of leaving it on <body>. Only
+   * when the keyboard is still nowhere (or on the spent button): a user who
+   * has moved on keeps their place.
+   */
+  private passFocusOnFromApply(): void {
+    if (!this.applyHadFocus) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== this.applyBtn) {
+      this.applyHadFocus = false;
+      return;
+    }
+    const next = [this.continueBtn, this.applyBtn, this.cancelBtn].find(
+      (b) => b.isConnected && !b.hidden && !b.disabled && !b.closest("[hidden]"),
+    );
+    if (!next || next === active) return;
+    this.applyHadFocus = false;
+    next.focus();
   }
 
   private onApplied(staged: boolean, message?: string): void {
@@ -895,6 +936,9 @@ export class MergeShell {
       this.counter.classList.add("jb-done");
     }
     this.syncBottom();
+    // A host that knows an operation follows with opChanged (which may bring
+    // Continue); one that does not has said all it will.
+    if (!this.op) this.passFocusOnFromApply();
   }
 
   // ── Continue / Cancel ──
@@ -932,9 +976,27 @@ export class MergeShell {
     if (kind === "done") {
       // The operation is over: nothing here can act on it any more.
       this.remaining = undefined;
+      this.ended = true;
       if (this.op) this.op = { ...this.op, canContinue: false };
     }
     this.syncBottom();
+    // An Apply that failed (nothing written) leaves Apply live: the keyboard
+    // goes back to it.
+    this.passFocusOnFromApply();
+  }
+
+  /**
+   * Is there still an operation for Cancel to end? Not once it has finished
+   * here (an outcome "done"), and not when the host reports no operation and
+   * no unmerged file left: "Cancel the merge" then runs `git reset --merge`
+   * over nothing — which still unstages whatever is staged. Unmerged files
+   * with no operation around them (kind "none" while any remain) ARE
+   * something to reset.
+   */
+  private endable(): boolean {
+    const op = this.op;
+    if (!op || this.ended) return false;
+    return !(op.kind === "none" && this.remaining === 0);
   }
 
   private clearOutcome(): void {
@@ -944,8 +1006,10 @@ export class MergeShell {
 
   private toggleCancelPop(): void {
     const op = this.op;
-    // No operation known: Cancel means one thing, so it does it.
-    if (!op) {
+    // No operation known, or none left to end: Cancel means one thing, so it
+    // does it.
+    if (!op || !this.endable()) {
+      this.closeCancelPop();
       this.adapter.post({ type: "cancel", mode: "exit" });
       return;
     }
@@ -955,8 +1019,32 @@ export class MergeShell {
     }
     this.renderCancelChoices(op);
     this.cancelPop.hidden = false;
+    this.placeCancelPop();
     this.cancelBtn.setAttribute("aria-expanded", "true");
     this.cancelPop.querySelector<HTMLButtonElement>("button")?.focus();
+  }
+
+  /**
+   * Keep the Cancel choices inside the shell. They open above Cancel, aligned
+   * to its right edge — until the pane is narrow: once the bottom bar wraps,
+   * Cancel can sit anywhere along it, and a 300px popover pinned to either of
+   * its edges ran out of a 443px pane. Slide it along until it fits.
+   */
+  private placeCancelPop(): void {
+    const pop = this.cancelPop;
+    pop.style.left = "";
+    pop.style.right = "";
+    if (pop.hidden) return;
+    const shell = this.element.getBoundingClientRect();
+    const wrap = this.cancelWrap.getBoundingClientRect();
+    const box = pop.getBoundingClientRect();
+    const margin = 8;
+    const min = shell.left + margin;
+    const max = shell.right - margin - box.width;
+    if (box.left >= min && box.left <= max) return;
+    const left = Math.max(min, Math.min(max, box.left));
+    pop.style.right = "auto";
+    pop.style.left = `${Math.round(left - wrap.left)}px`;
   }
 
   private renderCancelChoices(op: OperationView): void {
@@ -992,7 +1080,7 @@ export class MergeShell {
     d.textContent = ask.detail;
     const keep = toolbarButton("Keep resolving", "bordered");
     keep.classList.add("ms-abort-keep");
-    keep.addEventListener("click", () => this.closeCancelPop());
+    keep.addEventListener("click", () => this.closeCancelPop(true));
     const go = toolbarButton(ask.confirm, "bordered");
     go.classList.add("ms-abort-go", "ms-danger");
     go.addEventListener("click", () => {
@@ -1007,15 +1095,20 @@ export class MergeShell {
     row.className = "ms-pop-actions";
     row.append(keep, go);
     this.cancelPop.append(q, d, row);
+    this.placeCancelPop();
     // A destructive question starts on the safe answer.
     keep.focus();
   }
 
-  private closeCancelPop(): void {
+  /** Close the Cancel choices; answered from inside, the keyboard goes back to Cancel. */
+  private closeCancelPop(returnFocus = false): void {
     if (this.cancelPop.hidden) return;
     this.cancelPop.hidden = true;
     this.cancelPop.replaceChildren();
+    this.cancelPop.style.left = "";
+    this.cancelPop.style.right = "";
     this.cancelBtn.setAttribute("aria-expanded", "false");
+    if (returnFocus) this.cancelBtn.focus();
   }
 
   // ── bottom bar ──
@@ -1050,11 +1143,15 @@ export class MergeShell {
       this.acceptTheirsBtn.disabled = nothingPending || busy;
       this.applyBtn.disabled = busy || this.applied;
     }
+    // The IDE merges lines: never offered over a panel with no text, nor once
+    // the operation is over and there is no conflict left to hand it.
+    this.jetbrainsBtn.hidden = !this.payload.jetbrainsName || noText || (!!this.op && !this.endable());
     this.cancelBtn.disabled = busy;
-    this.cancelBtn.title = this.op
+    const endable = this.endable();
+    this.cancelBtn.title = endable
       ? "Exit the viewer, or end the whole operation"
       : "Close the merge editor and keep the conflict in the file";
-    this.cancelBtn.setAttribute("aria-haspopup", this.op ? "dialog" : "false");
+    this.cancelBtn.setAttribute("aria-haspopup", endable ? "dialog" : "false");
 
     const showContinue = this.continueVisible();
     this.continueBtn.hidden = !showContinue;
@@ -1115,14 +1212,18 @@ export class MergeShell {
     text.append(glyphEl(warningIcon), document.createTextNode(willDropText(op)));
     const keep = toolbarButton("Keep editing", "bordered");
     keep.classList.add("ms-drop-keep");
-    keep.addEventListener("click", () => {
-      this.dropConfirming = false;
-      this.syncBottom();
-    });
+    keep.addEventListener("click", () => this.closeDropConfirm());
     const go = toolbarButton("Drop it and continue", "bordered");
     go.classList.add("ms-drop-go", "ms-danger");
     go.addEventListener("click", () => this.clickContinue());
     note.append(text, keep, go);
+  }
+
+  /** Keep editing (or Escape): the question goes, the keyboard goes back to Continue. */
+  private closeDropConfirm(): void {
+    this.dropConfirming = false;
+    this.syncBottom();
+    if (!this.continueBtn.hidden && !this.continueBtn.disabled) this.continueBtn.focus();
   }
 
   // ── keys & wiring ──
@@ -1225,11 +1326,10 @@ export class MergeShell {
         this.cancelBtn.focus();
       } else if (!this.wsConfirm.hidden) {
         event.stopPropagation();
-        this.hideWsConfirm();
+        this.hideWsConfirm(true);
       } else if (this.dropConfirming) {
         event.stopPropagation();
-        this.dropConfirming = false;
-        this.syncBottom();
+        this.closeDropConfirm();
       }
     });
 

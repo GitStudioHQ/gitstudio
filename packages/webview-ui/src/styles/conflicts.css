@@ -294,14 +294,24 @@
   font-size: 12px;
   color: var(--cd-muted);
 }
+/* A row WRAPS when its buttons do not fit beside the name, by the width of
+   the row itself. It wrapped only under a 560px viewport (below), which the
+   desktop never has — there the dashboard is one pane of the window, 443px at
+   a 1000px window — so a row with a badge and two or three buttons squeezed
+   its file name to nothing and pushed its last button out of the row. The
+   name keeps at least 10em; the buttons move to a line of their own,
+   right-aligned. */
 .cd-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+  row-gap: 6px;
   min-height: 42px;
   padding: 7px 14px;
   border-bottom: 1px solid var(--cd-line);
 }
+.cd-row > button:first-of-type { margin-left: auto; }
 .cd-row:last-child { border-bottom: none; }
 .cd-row:hover { background: var(--gs-hover); }
 .cd-row.is-resolved { background: color-mix(in srgb, var(--cd-ok) 6%, transparent); }
@@ -339,8 +349,8 @@
 }
 @keyframes cd-spin { to { transform: rotate(360deg); } }
 .cd-file {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 10em;
+  min-width: min(10em, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
