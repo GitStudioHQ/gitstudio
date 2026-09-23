@@ -1,0 +1,41 @@
+scripts/merge-e2e/fixtures.sh
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-936
+scripts/merge-e2e/render.ts
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-365
+scripts/merge-e2e/completeness.ts
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-113
+scripts/merge-e2e/matrix.test.ts
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-180
+scripts/merge-e2e/tsconfig.json
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-7
+scripts/merge-e2e/oracle.ts
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-524
+scripts/merge-e2e/cases.ts
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-343
+scripts/merge-e2e/README.md
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-89
+scripts/merge-e2e/themes.ts
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-265
+scripts/merge-e2e/oracle.json
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-1503
+scripts/merge-e2e/cdp.ts
+  s_26f5e669d3043c::t_a5370ac00d5a63 1-228
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_a5370ac00d5a63 425-431,504-506,524-525,539-541,571,2478
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "006742452392d672c3953855e004495d94a12495",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
