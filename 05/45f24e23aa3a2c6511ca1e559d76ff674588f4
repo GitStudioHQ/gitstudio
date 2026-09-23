@@ -1,0 +1,25 @@
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_91a86e3348a35a 664-669
+  s_26f5e669d3043c::t_7d715496048fa5 735-738
+  s_26f5e669d3043c::t_e072c18477f3d2 115-116,118-123
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_279268d89efaba 164-167
+packages/git-service/test/pullStopped.test.ts
+  s_26f5e669d3043c::t_065cbb1cee3e05 320-322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0545f24e23aa3a2c6511ca1e559d76ff674588f4",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
