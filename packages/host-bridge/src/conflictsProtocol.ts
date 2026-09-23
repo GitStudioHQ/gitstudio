@@ -263,7 +263,11 @@ export interface ConflictsState {
   notice?: { kind: "info" | "warn" | "error"; text: string };
   /** The last Continue / Skip / Abort result ("Rebase complete", git's reason on failure). */
   outcome?: { kind: "done" | "stopped" | "failed"; text: string };
-  /** Brand slot: Merge Studio's "Report an issue" / "Rate" links; absent in GitStudio. */
+  /**
+   * Brand slot: Merge Studio's "Report a problem" / "Rate" / "Sponsor" links;
+   * absent in GitStudio. The FIRST link is the only one shown mid-operation
+   * (make it the problem report); the rest appear once the work is done.
+   */
   supportLinks?: { label: string; url: string }[];
 }
 

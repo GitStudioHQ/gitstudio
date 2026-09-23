@@ -579,9 +579,15 @@ export class ConflictsDashboard {
     if (op.kind !== "none" || state.total > 0) foot.appendChild(abort);
 
     foot.appendChild(el("span", "cd-spacer"));
-    if (state.supportLinks?.length) {
+    // POLISH A5.10: in the middle of an operation only the FIRST link (the
+    // product's problem report) sits beside Abort and Continue; the rest
+    // (a rating, sponsoring) wait until the work is done — every file
+    // resolved, or the operation finished.
+    const finished = allDone || state.outcome?.kind === "done";
+    const links = finished ? (state.supportLinks ?? []) : (state.supportLinks ?? []).slice(0, 1);
+    if (links.length) {
       const support = el("div", "cd-support");
-      for (const link of state.supportLinks) {
+      for (const link of links) {
         support.appendChild(
           this.button(link.label, link.url, `link:${link.url}`, false, () =>
             this.post({ type: "openExternal", url: link.url }),

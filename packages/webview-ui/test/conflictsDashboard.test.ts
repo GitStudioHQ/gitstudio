@@ -322,3 +322,26 @@ test("a new stop resets a half-answered confirm, and a host that cannot close of
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+test("support links: only the problem report mid-operation; rating and sponsoring once the work is done (POLISH A5.10)", { skip }, async () => {
+  const v = await run(`
+    const d = mount();
+    const LINKS = [
+      { label: "Report a problem", url: "https://example.com/issues/new" },
+      { label: "Rate Merge Studio", url: "https://example.com/rate" },
+      { label: "Sponsor", url: "https://example.com/sponsor" },
+    ];
+    const shown = () => $$(".cd-support button").map((b) => b.textContent.trim()).join("|");
+    d.render(state(OPS.rebase, [row("a.ts"), row("b.ts", { status: "resolved", choice: "yours" })], { supportLinks: LINKS }));
+    expect(shown() === "Report a problem", "mid-rebase, beside Abort and Continue: only the problem report (" + shown() + ")");
+    d.render(state(OPS.rebase, [row("a.ts", { status: "resolved", choice: "theirs" })], { supportLinks: LINKS }));
+    expect(shown() === "Report a problem|Rate Merge Studio|Sponsor", "every file resolved: all of them (" + shown() + ")");
+    d.render(state(base({ kind: "none", verbs: {} }), [], { supportLinks: LINKS, outcome: { kind: "done", text: "Rebase complete" } }));
+    expect(shown() === "Report a problem|Rate Merge Studio|Sponsor", "the operation finished: all of them (" + shown() + ")");
+    d.render(state(OPS.rebase, [row("a.ts")], { supportLinks: LINKS, outcome: { kind: "failed", text: "git refused" } }));
+    expect(shown() === "Report a problem", "a failure is no time to ask for a rating (" + shown() + ")");
+    d.render(state(OPS.rebase, [row("a.ts")]));
+    expect(!$(".cd-support"), "no links, no slot (GitStudio)");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
