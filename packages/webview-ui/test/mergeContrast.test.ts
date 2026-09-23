@@ -12,13 +12,15 @@ import { findChrome, runMergePage } from "./fixtures/mergeViewPage";
  *
  * Thresholds (PLAN §4 P1 (e)):
  * - the editor's text on every line tint, and on every word tint over it, >= 4.5:1
- *   (WCAG 1.4.3);
- * - every edge colour (frames, dashed outlines, ruler marks) >= 3:1 against
- *   the editor background (WCAG 1.4.11, non-text);
+ *   (WCAG 1.4.3); the word tint a visible step (ΔE >= 5) over its line;
+ * - every edge colour (point lines, high-contrast frames, swatch borders)
+ *   >= 3:1 against the editor background (WCAG 1.4.11, non-text); a handled
+ *   change's outline and a ruler mark visible but quieter than an edge;
  * - every pair of line tints >= 10 apart (CIEDE2000) with normal vision;
- * - identical (violet) vs conflict (orange) >= 15 apart under simulated
- *   deuteranopia and protanopia (Machado et al. 2009, severity 1) — the one
- *   pair whose confusion would mislead: "safe to take" read as "needs you".
+ * - every CATEGORY pair >= 4 apart under simulated deuteranopia and
+ *   protanopia (Machado et al. 2009, severity 1), and identical (violet) vs
+ *   conflict (red) >= 15 — the pair whose confusion would mislead: "safe to
+ *   take" read as "needs you".
  *
  * Themes: VS Code Dark+, Dark Modern, Light+, Light Modern, High Contrast
  * dark and light, and the desktop app's own dark and light editor colours,
@@ -34,54 +36,57 @@ const APP_CSS = fileURLToPath(
 const TONES = ["inserted", "deleted", "modified", "same", "conflict"] as const;
 type Tone = (typeof TONES)[number];
 
-// ── Appendix B, byte for byte ─────────────────────────────────────────────────
+// ── The token block and the classes the views emit ────────────────────────────
 
-const APPENDIX_B = `:root {
-  --jb-line-inserted: rgba(63,185,80,.14);   --jb-inner-inserted: rgba(63,185,80,.24);   --jb-edge-inserted: rgba(63,185,80,.90);
-  --jb-line-deleted:  rgba(139,148,158,.24); --jb-inner-deleted:  rgba(139,148,158,.22); --jb-edge-deleted:  rgba(139,148,158,.90);
-  --jb-line-modified: rgba(56,139,253,.24);  --jb-inner-modified: rgba(56,139,253,.24);  --jb-edge-modified: rgba(56,139,253,.90);
-  --jb-line-same:     rgba(163,113,247,.16); --jb-inner-same:     rgba(163,113,247,.24); --jb-edge-same:     rgba(163,113,247,.95);
-  --jb-line-conflict: rgba(255,123,58,.24);  --jb-inner-conflict: rgba(255,123,58,.20);  --jb-edge-conflict: rgba(255,123,58,.95);
-}
-body.vscode-light, body.vscode-high-contrast-light {
-  --jb-line-inserted: rgba(63,185,80,.16);   --jb-inner-inserted: rgba(63,185,80,.28);   --jb-edge-inserted: #1a7f37;
-  --jb-line-deleted:  rgba(139,148,158,.30); --jb-inner-deleted:  rgba(139,148,158,.28); --jb-edge-deleted:  #59636e;
-  --jb-line-modified: rgba(56,139,253,.30);  --jb-inner-modified: rgba(56,139,253,.28);  --jb-edge-modified: #0969da;
-  --jb-line-same:     rgba(163,113,247,.21); --jb-inner-same:     rgba(163,113,247,.28); --jb-edge-same:     #8250df;
-  --jb-line-conflict: rgba(255,123,58,.27);  --jb-inner-conflict: rgba(255,123,58,.28);  --jb-edge-conflict: #bc4c00;
-}`;
-
-test("diff.css carries the Appendix B tokens byte for byte, and no leftover 'resolved' grey", () => {
+test("diff.css declares every tone's tokens in both palettes; every class the views emit has a rule, and the retired marks have none", () => {
   const css = readFileSync(DIFF_CSS, "utf8");
-  assert.ok(css.includes(APPENDIX_B), "the token block is Appendix B exactly (it is identical in both repos)");
-  assert.ok(!/--jb-(line|edge)-resolved/.test(css), "the grey 'resolved' wash is gone — applied changes are dashed");
+  const block = (head: string) => {
+    const start = css.indexOf(head);
+    assert.ok(start >= 0, `diff.css has a "${head}" palette block`);
+    return css.slice(start, css.indexOf("}", start));
+  };
+  for (const head of [":root {", "body.vscode-light, body.vscode-high-contrast-light {"]) {
+    const b = block(head);
+    for (const tone of TONES) {
+      for (const kind of ["line", "inner", "edge", "done", "ruler"]) {
+        assert.ok(b.includes(`--jb-${kind}-${tone}:`), `${head} declares --jb-${kind}-${tone}`);
+      }
+    }
+  }
+  assert.ok(!/--jb-(line|edge)-resolved/.test(css), "no grey 'resolved' wash");
   // Every class the merge and diff views put on the page has a rule — a class
   // with no rule fails silently (memory: dead CSS class names).
   const selectors: string[] = [];
   for (const tone of TONES) {
     selectors.push(
-      `.jb-line-${tone}`, `.jb-inner-${tone}`, `.jb-ribbon-${tone}`, `.jb-marker-${tone}`,
-      `.jb-applied-${tone}`, `.jb-frame-${tone}`, `.jb-ribbon-applied-${tone}`,
+      `.jb-line-${tone}`, `.jb-inner-${tone}`, `.jb-ribbon-${tone}`, `.jb-point-${tone}`,
+      `.jb-done-${tone}`, `.jb-frame-${tone}`, `.jb-ribbon-done-${tone}`, `.jb-ribbon-frame-${tone}`,
       `.jb-btn-accept.jb-tone-${tone}:hover`, `.jb-swatch-${tone}`,
     );
   }
-  // The 2-way diff's transfer arrow names its ROLE (diffView.ts).
+  // The 2-way diff names its ROLE (diffView.ts): transfer arrow and point markers.
   for (const role of ["inserted", "deleted", "modified"]) {
-    selectors.push(`.jb-btn-accept.jb-role-${role}:hover`);
+    selectors.push(`.jb-btn-accept.jb-role-${role}:hover`, `.jb-marker-${role}`);
   }
   selectors.push(
-    ".jb-ws", ".jb-mark", ".jb-result-actions", ".jb-result-group", ".jb-btn-keep-base",
-    ".jb-btn-append", ".jb-btn-wand.jb-tone-conflict:hover", ".jb-legend", ".jb-legend-chip",
-    ".jb-legend-help", ".jb-legend-pop", ".jb-legend-row", ".jb-legend-count", ".jb-legend-extra",
-    ".jb-ribbon-applied", ".jb-edge-top", ".jb-edge-bottom", ".codicon-insert", ".codicon-check",
-    ".codicon-sparkle", ".codicon-question",
+    ".jb-ws", ".jb-done", ".jb-frame", ".jb-point", ".jb-point-after", ".jb-edge-top", ".jb-edge-bottom",
+    ".jb-ribbon-base", ".jb-ribbon-done", ".jb-ribbon-frame", ".jb-legend", ".jb-legend-chip",
+    ".jb-legend-help", ".jb-legend-pop", ".jb-legend-row", ".jb-legend-count", ".jb-legend-sep",
+    ".jb-swatch-one-sided", ".jb-swatch-done", ".jb-swatch-point", ".jb-swatch-ws",
+    ".codicon-arrow-right", ".codicon-arrow-left", ".codicon-close", ".codicon-wand", ".codicon-question",
   );
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const sel of selectors) {
     // The selector itself, not a longer class that starts with it
-    // (".jb-mark" must not be satisfied by ".jb-marker-inserted").
+    // (".jb-point" must not be satisfied by ".jb-point-inserted").
     assert.ok(new RegExp(`${escape(sel)}(?![\\w-])`).test(css), `a rule names ${sel}`);
   }
+  // What the owner rejected is gone for good: the invented marks, the per-change
+  // wand and append icon, the dashed "applied" style.
+  for (const gone of [".jb-mark", ".jb-result-actions", ".jb-btn-append", ".jb-btn-keep-base", ".jb-btn-wand", ".jb-legend-glyph", ".jb-legend-extra", ".codicon-insert", ".codicon-sparkle"]) {
+    assert.ok(!new RegExp(`${escape(gone)}(?![\\w-])`).test(css), `no rule for the retired ${gone}`);
+  }
+  assert.ok(!/jb-applied|dasharray|\bdashed\b/.test(css), "no dashed 'applied' style anywhere");
 });
 
 // ── colour maths (contrast: WCAG 2; distance: CIEDE2000; CVD: Machado 2009) ───
@@ -227,8 +232,22 @@ interface Measured {
   line: string;
   inner: string;
   edge: string;
+  done: string;
+  ruler: string;
   frame: string;
 }
+
+/**
+ * The pairs that tell a CATEGORY apart — conflict, the same on both sides, a
+ * one-sided change (whichever of its three tones) — must stay apart under
+ * deuteranopia and protanopia too. Inserted / modified / deleted among
+ * themselves only say what a one-sided change did; the words (legend,
+ * tooltips) carry that for everyone.
+ */
+const CATEGORY_PAIRS: Array<[Tone, Tone]> = [
+  ["conflict", "same"], ["conflict", "inserted"], ["conflict", "modified"], ["conflict", "deleted"],
+  ["same", "inserted"], ["same", "modified"], ["same", "deleted"],
+];
 
 test("text on every tint, edges on every background, and the categories apart — in every theme", { skip: !CHROME && "no Chrome on this machine" }, async (t) => {
   // The page resolves the tokens under each theme's BODY CLASS — the only
@@ -261,7 +280,9 @@ test("text on every tint, edges on every background, and the categories apart �
           line: probe("jb-line-" + t).bg,
           inner: probe("jb-inner-" + t).bg,
           edge: probe("", "color:var(--jb-edge-" + t + ")").color,
-          frame: probe("jb-frame-" + t).border,
+          done: probe("", "color:var(--jb-done-" + t + ")").color,
+          ruler: probe("", "color:var(--jb-ruler-" + t + ")").color,
+          frame: probe("jb-frame jb-frame-" + t + " jb-edge-top").border,
         };
       }
       out[key] = tones;
@@ -290,14 +311,25 @@ test("text on every tint, edges on every background, and the categories apart �
       const line = over(lineRGBA, bg);
       const inner = over(parseColor(m.inner), line);
       const edge = over(parseColor(m.edge), bg);
+      const done = over(parseColor(m.done), bg);
+      const ruler = over(parseColor(m.ruler), bg);
       lines[tone] = line;
       const onLine = contrast(fg, line);
       const onInner = contrast(fg, inner);
       const edgeVsBg = contrast(edge, bg);
-      row.push(`${tone} text ${onLine.toFixed(2)}/${onInner.toFixed(2)} edge ${edgeVsBg.toFixed(2)}`);
+      const doneVsBg = contrast(done, bg);
+      const rulerVsBg = contrast(ruler, bg);
+      // "A step stronger": the word tint must be seen against its own line.
+      const innerStep = deltaE2000(inner, line);
+      row.push(`${tone} text ${onLine.toFixed(2)}/${onInner.toFixed(2)} edge ${edgeVsBg.toFixed(2)} done ${doneVsBg.toFixed(2)} ruler ${rulerVsBg.toFixed(2)} word-step ΔE ${innerStep.toFixed(1)}`);
       if (onLine < 4.5) problems.push(`${theme.name}: text on the ${tone} line tint is ${onLine.toFixed(2)}:1 (< 4.5)`);
       if (onInner < 4.5) problems.push(`${theme.name}: text on the ${tone} word tint is ${onInner.toFixed(2)}:1 (< 4.5)`);
       if (edgeVsBg < 3) problems.push(`${theme.name}: the ${tone} edge is ${edgeVsBg.toFixed(2)}:1 against the background (< 3)`);
+      if (innerStep < 5) problems.push(`${theme.name}: the ${tone} word tint is only ΔE ${innerStep.toFixed(1)} from its line (< 5)`);
+      // A handled change's outline is FAINT, but there: visible, and quieter than an edge.
+      if (doneVsBg < 1.5 || doneVsBg >= edgeVsBg) problems.push(`${theme.name}: the ${tone} handled outline is ${doneVsBg.toFixed(2)}:1 (want ≥ 1.5 and below the edge's ${edgeVsBg.toFixed(2)})`);
+      // A ruler mark at reduced strength: findable, never the full edge colour.
+      if (rulerVsBg < 1.8 || rulerVsBg >= edgeVsBg) problems.push(`${theme.name}: the ${tone} ruler mark is ${rulerVsBg.toFixed(2)}:1 (want ≥ 1.8 and below the edge's ${edgeVsBg.toFixed(2)})`);
       const hc = theme.body === "hcDark" || theme.body === "hcLight";
       if (hc && m.frame !== "solid") problems.push(`${theme.name}: a pending ${tone} block has no solid frame edge (${m.frame})`);
       if (!hc && m.frame !== "none") problems.push(`${theme.name}: frame edges drawn outside high contrast (${m.frame})`);
@@ -310,11 +342,17 @@ test("text on every tint, edges on every background, and the categories apart �
         if (d < 10) problems.push(`${theme.name}: ${ta} and ${tb} tints are only ΔE ${d.toFixed(1)} apart (< 10)`);
       }
     }
-    if (lines.same && lines.conflict) {
+    for (const [a, b] of CATEGORY_PAIRS) {
+      if (!lines[a] || !lines[b]) continue;
       for (const [kind, m] of Object.entries(CVD)) {
-        const d = deltaE2000(simulate(lines.same, m), simulate(lines.conflict, m));
-        row.push(`same~conflict ${kind} ΔE ${d.toFixed(1)}`);
-        if (d < 15) problems.push(`${theme.name}: identical vs conflict under ${kind} is ΔE ${d.toFixed(1)} (< 15)`);
+        const d = deltaE2000(simulate(lines[a], m), simulate(lines[b], m));
+        // Identical vs conflict is the pair whose confusion would mislead
+        // ("safe to take" read as "needs you"): far apart. Every other
+        // category pair: still visibly apart (JetBrains' own New UI palette
+        // measures 3.7 for inserted vs conflict under deuteranopia).
+        const floor = a === "conflict" && b === "same" ? 15 : 4;
+        if (a === "conflict" && b === "same") row.push(`same~conflict ${kind} ΔE ${d.toFixed(1)}`);
+        if (d < floor) problems.push(`${theme.name}: ${a} vs ${b} under ${kind} is ΔE ${d.toFixed(1)} (< ${floor})`);
       }
     }
     report.push(`${theme.name}: ${row.join(", ")}`);

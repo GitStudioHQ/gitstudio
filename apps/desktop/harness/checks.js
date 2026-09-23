@@ -4562,6 +4562,60 @@
     },
 
     /**
+     * The merge colours RESOLVE here, not only in the extension: diff.css's
+     * tokens read `--vscode-editor-background` and the body theme class, which
+     * the desktop must supply (memory: shared-package-token-boundary). Asserted
+     * on computed styles of the classes the view emits — never class names
+     * alone — plus the owner's rules: no invented marks, controls in words,
+     * the legend in words.
+     */
+    "the-merge-colours-resolve-on-the-desktop": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1400);
+      const grid = $(".jb-merge-grid");
+      c.ok(!!grid, "the merge view is up");
+      if (!grid) return;
+      const light = document.body.classList.contains("vscode-light");
+      const want = light
+        ? { conflict: "rgba(235, 72, 72, 0.34)", done: "rgba(207, 34, 46, 0.45)", edge: "rgb(26, 127, 55)" }
+        : { conflict: "rgba(255, 90, 95, 0.3)", done: "rgba(240, 104, 106, 0.5)", edge: "rgb(98, 179, 74)" };
+      const body = grid.querySelector(".jb-pane-body");
+      const probe = (cls) => {
+        const el = document.createElement("div");
+        el.className = cls;
+        el.style.cssText = "position:absolute;left:0;top:0;width:40px;height:18px";
+        body.appendChild(el);
+        const cs = getComputedStyle(el);
+        const out = { bg: cs.backgroundColor, bt: `${cs.borderTopStyle} ${cs.borderTopWidth} ${cs.borderTopColor}`, bb: `${cs.borderBottomStyle} ${cs.borderBottomWidth}` };
+        el.remove();
+        return out;
+      };
+      c.eq(probe("jb-line-conflict").bg, want.conflict, "a conflict band is the red tint of this theme");
+      const done = probe("jb-done jb-done-conflict jb-edge-top jb-edge-bottom");
+      c.eq(`${done.bg} | ${done.bt} | ${done.bb}`, `rgba(0, 0, 0, 0) | solid 1px ${want.done} | solid 1px`, "a handled band: no fill, a faint 1px line top and bottom");
+      c.eq(probe("jb-point jb-point-inserted").bt, `solid 2px ${want.edge}`, "an insertion point is a 2px line in its edge colour");
+      c.eq(probe("jb-frame jb-frame-conflict jb-edge-top").bt.split(" ")[0], "none", "no frame lines outside high contrast");
+      // The ribbons land on the 32 ms timer, which the virtual clock does serve.
+      const band = grid.querySelector(".jb-ribbon-stage path.jb-ribbon-conflict");
+      c.ok(!!band, "the ribbons are drawn");
+      if (band) c.eq(getComputedStyle(band).fill, want.conflict, "a ribbon is FILLED with the tint it connects");
+      const base = grid.querySelector(".jb-ribbon-stage path.jb-ribbon-base");
+      const editorBg = getComputedStyle(grid).backgroundColor;
+      if (base) c.eq(getComputedStyle(base).fill, editorBg, "…over the editor background, so no gutter border shows through it");
+      c.ok(!grid.querySelector(".jb-ribbon-stage path.jb-ribbon-applied, .jb-ribbon-stage path.jb-ribbon-edge"), "no dashed or framing lines of the old look");
+      c.ok(!document.querySelector(".jb-mark, .jb-result-actions, .jb-btn-wand, .jb-btn-append"), "no invented marks, no per-change wand, no append icon");
+      const buttons = $$(".jb-change-actions button");
+      c.ok(buttons.length > 0, `the gutters carry controls (${buttons.length})`);
+      const odd = buttons.filter((b) => !/codicon-(arrow-right|arrow-left|close)\b/.test(b.innerHTML) || !/^(Accept|Ignore|Add) (Yours|Theirs)\b/.test(b.title) || !b.getAttribute("aria-label"));
+      c.eq(odd.map((b) => b.title || b.innerHTML).join(" | "), "", "every control is an arrow or ×, with its action in words");
+      const legend = $(".ms-legend-slot .jb-legend");
+      c.ok(!!legend && /Conflicts/.test(legend.textContent) && !/[≠≈‹›✨]/.test(legend.textContent), `the legend is words (${legend && legend.textContent.replace(/\s+/g, " ").trim()})`);
+    },
+
+    /**
      * The rebase view said "A rebase is in progress" and offered Continue and
      * Abort only. On the apply backend's emptied patch Continue is refused,
      * so there was no way forward from this view at all.

@@ -128,8 +128,9 @@ export interface MergeViewApi {
   /** Re-measure the editors after the container changed size or became visible. */
   layout(): void;
   /**
-   * Mount the category legend (chips "≠ Conflicts n (✨ k resolvable) · = Identical n
-   * · ‹ Yours only n · › Theirs only n" + the "?" key popover) into `slot`.
+   * Mount the category legend (chips in words with a colour swatch, "Conflicts n
+   * · Same on both sides n · Only in Yours n · Only in Theirs n", + the "?" key
+   * popover) into `slot`.
    * The view keeps it current; a later call moves it to the new slot. The EOL
    * notice is NOT part of the legend — the shell renders it from onEolMismatch.
    */

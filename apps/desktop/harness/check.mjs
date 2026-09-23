@@ -377,6 +377,8 @@ const CASES = [
   ["cmd-z-in-the-merge-editor-drives-the-merge", "changes", { extra: "opctx=merge" }],
   // The legend is P1's (mergeLegend.ts); the shell hands it a slot.
   ["merge-legend-counts", "changes", { extra: "opctx=merge" }],
+  ["the-merge-colours-resolve-on-the-desktop", "changes", { extra: "opctx=merge" }],
+  ["the-merge-colours-resolve-on-the-desktop", "changes", { extra: "opctx=merge", theme: "light" }],
   ["the-merge-surfaces-resolve-every-shared-token", "changes", { extra: "opctx=merge" }],
   ["the-merge-surfaces-resolve-every-shared-token", "changes", { extra: "opctx=merge", theme: "light" }],
   // A watcher refresh (the index changes under every git command) must not eat

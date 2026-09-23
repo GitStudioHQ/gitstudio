@@ -31,34 +31,51 @@ export interface MergeEditors {
 export interface DecorationOptions {
   /** Current result-pane span for a block (defaults to its base span). */
   resultSpanOf?: (block: ChangeBlock) => LineSpan;
-  /** Whether a block has been fully resolved (every pane then shows it dashed). */
+  /** Whether a block has been fully resolved (every pane then shows it calm). */
   isResolved?: (block: ChangeBlock) => boolean;
-  /** Whether one side of a block has been processed (that side is then dashed). */
+  /** Whether one side of a block has been handled — applied or ignored (that side is then calm). */
   isSideDone?: (block: ChangeBlock, side: Side) => boolean;
+  /**
+   * Whether a side's text has been written into the result for this block.
+   * The result then no longer holds the base text the word ranges were
+   * computed on, so its word tints would mark the wrong characters.
+   */
+  isApplied?: (block: ChangeBlock) => boolean;
   /** When false, character-level inner decorations are skipped (line-only). */
   showInner?: boolean;
+  /**
+   * Whether pending blocks mark the result's overview ruler. The view turns it
+   * off while the whole document fits the viewport: a ruler maps the document
+   * onto its full height, so in a short file one line's mark is a big block
+   * beside the text — and there is nothing off-screen for it to find.
+   */
+  rulerMarks?: boolean;
 }
 
 /**
  * Applies the JetBrains-style merge decorations, by colour CATEGORY
- * (PLAN §3.6):
+ * (PLAN §3.6). JetBrains' rules for WHAT is resolved (TextMergeChange,
+ * ThreesideMergeHighlighters): each side of a change is resolved on its own —
+ * applied or ignored — and the change (so its result lines) only when both
+ * are. Only a side that changed is highlighted at all.
  *
- * - pending block: the tone's line tint (`jb-line-<tone>`), word tints when
- *   granularity allows, a double marker line for an insertion/deletion point
- *   (`jb-marker-<tone>`), and `jb-frame-<tone>` edge lines that only high
- *   contrast themes draw (solid top + bottom);
- * - applied / ignored side or block: NO fill — a 1px dashed top and bottom edge
- *   in the tone's edge colour (`jb-applied-<tone>`), in every pane that showed
- *   it, so what was taken stays readable as what it was;
+ * - pending: the tone's line tint (`jb-line-<tone>`, the line-number margin
+ *   included, so the band runs uninterrupted across the pane), word tints when
+ *   granularity allows, a POINT_PX line for an insertion/deletion point
+ *   (`jb-point`), and `jb-frame` edge lines that only high contrast themes
+ *   draw (solid, 1px, on the band's first and last pixel row);
+ * - handled side, resolved block: calm — NO fill, a faint 1px line on the
+ *   band's first and last pixel row (`jb-done`), the same rows the ribbons
+ *   draw theirs on;
  * - whitespace-only: line tint only, never a word tint, plus a dotted left
  *   edge (`jb-ws`).
  *
  * Every block decoration also carries `jb-cat-<category>` so a reader (or a
  * test) can tell the four categories apart without decoding colours.
  *
- * Tones: a conflict is orange, an identical change violet, and a one-sided
- * change is coloured by what it did (green inserted, blue modified, grey
- * deleted).
+ * Tones: a conflict is red, a change made the same on both sides violet, and
+ * a one-sided change is coloured by what it did (green inserted, blue
+ * modified, grey deleted).
  */
 export class DecorationManager {
   private collections: Collection[] = [];
@@ -71,45 +88,34 @@ export class DecorationManager {
     const result: Deco[] = [];
     const right: Deco[] = [];
     const showInner = options.showInner ?? true;
-    const palette = rulerPalette();
+    const palette = options.rulerMarks === false ? undefined : rulerPalette();
 
-    // Note: conflict frame lines are NOT drawn here. They are SVG polylines
-    // in the gutter overlays (ribbons.ts) that extend across the panes — a
-    // single renderer keeps them pixel-continuous, which CSS borders +
-    // separate SVG strokes never quite were.
     for (const block of model.blocks) {
       const tone = blockTone(block);
       const cat = category(block);
       const resolved = options.isResolved?.(block) ?? false;
-      const leftDone =
-        resolved || (options.isSideDone?.(block, "left") ?? false);
-      const rightDone =
-        resolved || (options.isSideDone?.(block, "right") ?? false);
 
       const span = options.resultSpanOf?.(block) ?? block.baseSpan;
       if (!resolved) {
-        pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, {
+        pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, palette && {
           color: palette[tone],
-          // The error stripe: conflicts take the full width, everything else a
-          // narrow lane, so a conflict is findable from the scrollbar alone.
-          position:
-            tone === "conflict"
-              ? monaco.editor.OverviewRulerLane.Full
-              : monaco.editor.OverviewRulerLane.Center,
+          // A thin mark in the right lane: findable from the scrollbar,
+          // never a block beside the text.
+          position: monaco.editor.OverviewRulerLane.Right,
         });
-        if (showInner && !block.whitespaceOnly) {
+        if (showInner && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
           // Word ranges are in BASE coordinates; the result is base while the
-          // block is pending, but blocks above may have changed height.
+          // block is untouched, but blocks above may have changed height.
           const shift = span.start - block.baseSpan.start;
           pushInner(result, block.left?.innerBase, tone, shift);
           pushInner(result, block.right?.innerBase, tone, shift);
         }
       } else {
-        pushApplied(result, this.editors.result, span, tone, cat);
+        pushDone(result, this.editors.result, span, tone, cat);
       }
-      for (const [side, editor, target, done] of [
-        ["left", this.editors.left, left, leftDone],
-        ["right", this.editors.right, right, rightDone],
+      for (const [side, editor, target] of [
+        ["left", this.editors.left, left],
+        ["right", this.editors.right, right],
       ] as const) {
         const change = side === "left" ? block.left : block.right;
         if (!change) {
@@ -119,8 +125,8 @@ export class DecorationManager {
         // lines — which is what accepting it writes, and what the ribbons and
         // the alignment spacers measure.
         const region = sideBlockSpan(block, side);
-        if (done) {
-          pushApplied(target, editor, region, tone, cat);
+        if (resolved || (options.isSideDone?.(block, side) ?? false)) {
+          pushDone(target, editor, region, tone, cat);
           continue;
         }
         pushPending(target, editor, region, tone, cat, !!change.whitespaceOnly);
@@ -194,14 +200,14 @@ export class DiffDecorationManager {
 
 /**
  * Resolves the tone -> stripe colour map from the live CSS palette, for the
- * IntelliJ-style overview-ruler ("error stripe") marks: the EDGE colours, which
- * are the ones measured to stand off the editor background (≥ 3:1).
+ * IntelliJ-style overview-ruler ("error stripe") marks: `--jb-ruler-<tone>`,
+ * the category colour at reduced strength — a thin mark to find a change by,
+ * not a block to read.
  */
 function rulerPalette(): Record<BlockTone, string> {
   // Resolved through a probe's computed `color`, not the raw custom-property
-  // text: the tokens are written "rgba(63,185,80,.90)" / "#1a7f37", and the
-  // browser's canonical "rgba(63, 185, 80, 0.9)" is the one form every
-  // colour consumer (Monaco's own parser included) reads.
+  // text: the browser's canonical "rgba(63, 185, 80, 0.6)" is the one form
+  // every colour consumer (Monaco's own parser included) reads.
   const probe = document.createElement("span");
   probe.style.display = "none";
   document.body.appendChild(probe);
@@ -210,11 +216,11 @@ function rulerPalette(): Record<BlockTone, string> {
     return getComputedStyle(probe).color;
   };
   const palette = {
-    inserted: read("--jb-edge-inserted"),
-    deleted: read("--jb-edge-deleted"),
-    modified: read("--jb-edge-modified"),
-    same: read("--jb-edge-same"),
-    conflict: read("--jb-edge-conflict"),
+    inserted: read("--jb-ruler-inserted"),
+    deleted: read("--jb-ruler-deleted"),
+    modified: read("--jb-ruler-modified"),
+    same: read("--jb-ruler-same"),
+    conflict: read("--jb-ruler-conflict"),
   };
   probe.remove();
   return palette;
@@ -229,7 +235,7 @@ function clampLine(editor: Editor, line: number): number {
 /**
  * A point AFTER the last line (an insertion after an unterminated last line):
  * Monaco has no such line, so its marker goes on the last line's BOTTOM edge
- * (`jb-marker-after`) — drawn on the top edge, it said the text goes above
+ * (`jb-point-after`) — drawn on the top edge, it said the text goes above
  * the line it actually follows.
  */
 function pastEnd(editor: Editor, line: number): boolean {
@@ -237,9 +243,36 @@ function pastEnd(editor: Editor, line: number): boolean {
 }
 
 /**
+ * An insertion or deletion POINT: a POINT_PX line on the line after the
+ * boundary (its top rows), or on the last line's bottom rows for the point
+ * after it. The ribbon's end at a point is exactly those rows (ribbons.ts).
+ */
+function pushPoint(
+  target: Deco[],
+  editor: Editor,
+  span: LineSpan,
+  className: string,
+  cat: MergeCategory,
+  ruler?: monaco.editor.IModelDecorationOverviewRulerOptions,
+): void {
+  const line = clampLine(editor, span.start);
+  const classes = `${className} jb-point${pastEnd(editor, span.start) ? " jb-point-after" : ""}`;
+  target.push({
+    range: new monaco.Range(line, 1, line, 1),
+    options: {
+      isWholeLine: true,
+      className: `${classes} jb-cat-${cat}`,
+      // The line-number margin too, so the mark runs across the whole pane.
+      marginClassName: classes,
+      overviewRuler: ruler,
+    },
+  });
+}
+
+/**
  * A pending block's region in one pane: the tint, and the edge lines a high
  * contrast theme draws. An empty region (an insertion or deletion point) is a
- * double marker line instead.
+ * point line instead.
  */
 function pushPending(
   target: Deco[],
@@ -251,16 +284,7 @@ function pushPending(
   ruler?: monaco.editor.IModelDecorationOverviewRulerOptions,
 ): void {
   if (isEmptySpan(span)) {
-    const line = clampLine(editor, span.start);
-    const after = pastEnd(editor, span.start) ? " jb-marker-after" : "";
-    target.push({
-      range: new monaco.Range(line, 1, line, 1),
-      options: {
-        isWholeLine: true,
-        className: `jb-marker-${tone}${after} jb-cat-${cat}`,
-        overviewRuler: ruler,
-      },
-    });
+    pushPoint(target, editor, span, `jb-point-${tone}`, cat, ruler);
     return;
   }
   const last = span.endExclusive - 1;
@@ -275,14 +299,15 @@ function pushPending(
       overviewRuler: ruler,
     },
   });
-  pushEdges(target, span, `jb-frame-${tone}`);
+  pushEdges(target, span, `jb-frame jb-frame-${tone}`);
 }
 
 /**
- * An applied / ignored region: no fill, a dashed top and bottom edge in the
- * tone's edge colour. An empty region keeps a dashed marker line.
+ * A handled side or a resolved block: calm. No fill — a faint 1px line on the
+ * region's first and last pixel row; an empty region keeps its point line,
+ * faint.
  */
-function pushApplied(
+function pushDone(
   target: Deco[],
   editor: Editor,
   span: LineSpan,
@@ -290,45 +315,38 @@ function pushApplied(
   cat: MergeCategory,
 ): void {
   if (isEmptySpan(span)) {
-    const line = clampLine(editor, span.start);
-    const edge = pastEnd(editor, span.start) ? "jb-edge-bottom" : "jb-edge-top";
+    pushPoint(target, editor, span, `jb-done jb-done-${tone}`, cat);
+    return;
+  }
+  pushEdges(target, span, `jb-done jb-done-${tone}`, cat);
+}
+
+/**
+ * Top and bottom edge lines of a region. A whole-line decoration is drawn
+ * once PER LINE, so a border on the range's own class would rule every line;
+ * the edges go on the first line (`jb-edge-top`) and the last
+ * (`jb-edge-bottom`) only — both on a one-line region. The margin carries
+ * them too, so an edge runs across the line numbers as well.
+ */
+function pushEdges(target: Deco[], span: LineSpan, className: string, cat?: MergeCategory): void {
+  const last = span.endExclusive - 1;
+  const catClass = cat ? ` jb-cat-${cat}` : "";
+  const edge = (line: number, edges: string) => {
     target.push({
       range: new monaco.Range(line, 1, line, 1),
       options: {
         isWholeLine: true,
-        className: `jb-applied-${tone} ${edge} jb-cat-${cat}`,
+        className: `${className} ${edges}${catClass}`,
+        marginClassName: `${className} ${edges}`,
       },
     });
-    return;
-  }
-  pushEdges(target, span, `jb-applied-${tone} jb-cat-${cat}`);
-}
-
-/**
- * Top and bottom edge lines around a region. A whole-line decoration is drawn
- * once PER LINE, so a border on the range's own class would rule every line;
- * the edges go on the first and last lines only (`jb-edge-top` keeps just the
- * top border, `jb-edge-bottom` just the bottom; a one-line region keeps both).
- */
-function pushEdges(target: Deco[], span: LineSpan, className: string): void {
-  const last = span.endExclusive - 1;
+  };
   if (last === span.start) {
-    target.push({
-      range: new monaco.Range(span.start, 1, span.start, 1),
-      options: { isWholeLine: true, className },
-    });
+    edge(span.start, "jb-edge-top jb-edge-bottom");
     return;
   }
-  target.push(
-    {
-      range: new monaco.Range(span.start, 1, span.start, 1),
-      options: { isWholeLine: true, className: `${className} jb-edge-top` },
-    },
-    {
-      range: new monaco.Range(last, 1, last, 1),
-      options: { isWholeLine: true, className: `${className} jb-edge-bottom` },
-    },
-  );
+  edge(span.start, "jb-edge-top");
+  edge(last, "jb-edge-bottom");
 }
 
 function pushLine(

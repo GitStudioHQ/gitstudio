@@ -20,7 +20,7 @@ export const chevronDoubleRight = codicon("arrow-right");
 /** ← apply a change from the right pane into the result. */
 export const chevronDoubleLeft = codicon("arrow-left");
 
-/** ✕ — ignore a change (keep the base text). */
+/** × — ignore a change (keep the result as it is). */
 export const cross = codicon("close");
 
 /** Navigation arrows (previous / next change). */
@@ -30,21 +30,11 @@ export const arrowDown = codicon("arrow-down");
 /** Merge — apply all non-conflicting changes from both sides. */
 export const chevronsInward = codicon("merge");
 
-/** Magic wand — apply both sides of a conflict whose edits don't overlap. */
-export const magicWand = codicon("wand");
-
 /**
- * Append — take this side's text AFTER what the other side already put in the
- * result (JetBrains swaps the apply arrow for this once one side of a conflict
- * has been applied).
+ * Magic wand — the toolbar's "Resolve simple conflicts" (JetBrains' own icon
+ * for it). Toolbar only: no per-change marks of our own invention.
  */
-export const appendIcon = codicon("insert");
-
-/** Check — accept an identical change (the same on both sides). */
-export const checkIcon = codicon("check");
-
-/** Sparkle — marks a conflict the wand can resolve. */
-export const sparkleIcon = codicon("sparkle");
+export const magicWand = codicon("wand");
 
 /** Question — the colour legend's key. */
 export const questionIcon = codicon("question");
