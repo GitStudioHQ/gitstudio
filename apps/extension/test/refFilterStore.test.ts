@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { RefFilterStore, type RefFilterMemento } from "../src/graph/refFilterStore";
+import { RefFilterStore, realpathRoot, type RefFilterMemento } from "../src/graph/refFilterStore";
 
 // The Commit Graph's branch filter (issue #30) in the extension: one selection
 // per repository in workspaceState, shared by the bottom panel, the Commits
@@ -99,7 +99,7 @@ test("the graph host routes a filter change through the store, and reloads from 
   const fn = text.slice(text.indexOf("private async setRefFilter("), text.indexOf("private async loadRefs("));
   assert.match(fn, /await store\.set\(active\.root, refs\);\s*return;/);
   const ctor = text.slice(text.indexOf("private constructor("), text.indexOf("// ── Webview messages"));
-  assert.match(ctor, /store\.onDidChange\(\(root\) => \{\s*if \(root === this\.repoRoot && this\.ready\) void this\.loadInitial\(\);/);
+  assert.match(ctor, /store\.onDidChange\(\(root\) => \{[\s\S]*?if \(store\.sameRepo\(root, this\.repoRoot\) && this\.ready\) void this\.loadInitial\(\);/);
   // …and loadInitial is the paging reset: skip and the accumulated rows go.
   const load = text.slice(text.indexOf("private async loadInitial("), text.indexOf("private async loadMore("));
   assert.match(load, /this\.loaded = \[\];\s*this\.nextSkip = 0;/);
@@ -233,10 +233,74 @@ test("a failed stats batch goes back unanswered, and the webview releases it for
   );
 });
 
-test("the store is installed before the first graph host is built", async () => {
+test("the store is installed before the first graph host is built — global, real-path keyed, migrating", async () => {
   const text = await readFile(`${SRC}/extension.ts`, "utf8");
-  const installed = text.indexOf("setRefFilterStore(new RefFilterStore(context.workspaceState))");
+  const installed = text.search(
+    /setRefFilterStore\(\s*new RefFilterStore\(context\.globalState, \{ canonical: realpathRoot, legacy: context\.workspaceState \}\),\s*\)/,
+  );
   const firstHost = text.indexOf("new CommitPanelViewProvider(");
-  assert.ok(installed > 0, "the store is installed from workspaceState");
+  assert.ok(installed > 0, "the store lives in globalState, keyed by real path, carrying workspaceState over");
   assert.ok(firstHost > installed, "…before any graph host exists to miss it");
+  assert.doesNotMatch(text, /new RefFilterStore\(context\.workspaceState\)/, "no longer per workspace");
+});
+
+// ── One repository, one selection (the follow-up to #30) ────────────────────
+
+test("the same repository reached by two roots is ONE selection — as in the desktop app", async () => {
+  // The desktop keeps its filters in app-wide settings keyed by the roots its
+  // repo manager hands out, which are realpath'd. The extension kept them in
+  // workspaceState keyed by the root as opened: a folder window and a
+  // .code-workspace window (two workspaceStates), or /tmp/r and
+  // /private/tmp/r, were separate selections for one repository.
+  const global = memento();
+  const canonical = (r: string) => r.replace(/^\/tmp\//, "/private/tmp/");
+  const inFolder = new RefFilterStore(global, { canonical });
+  const inWorkspace = new RefFilterStore(global, { canonical });
+  await inFolder.set("/tmp/r", ["refs/heads/main"]);
+  assert.deepEqual(inWorkspace.get("/private/tmp/r"), ["refs/heads/main"], "another window, another path, the same selection");
+  assert.equal(inFolder.sameRepo("/tmp/r", "/private/tmp/r"), true);
+  assert.equal(inFolder.sameRepo("/tmp/r", "/tmp/other"), false);
+  assert.deepEqual(global.data, { "gitstudio.graph.refFilter": { "/private/tmp/r": ["refs/heads/main"] } }, "stored once, under the real path");
+});
+
+test("a selection remembered per workspace is carried over once, and then forgotten there", async () => {
+  const global = memento();
+  const legacy = memento({ "gitstudio.graph.refFilter": { "/tmp/r": ["refs/heads/dev"], "/repo/b": ["@current"], "/repo/junk": "main" } });
+  const canonical = (r: string) => r.replace(/^\/tmp\//, "/private/tmp/");
+  const s = new RefFilterStore(global, { canonical, legacy });
+  await s.migrated;
+  assert.deepEqual(s.get("/private/tmp/r"), ["refs/heads/dev"], "re-keyed by its real path");
+  assert.deepEqual(s.get("/repo/b"), ["@current"], "presets travel as they are");
+  assert.equal(s.get("/repo/junk"), null, "garbage stays behind");
+  assert.equal(legacy.data["gitstudio.graph.refFilter"], undefined, "the workspace's record is gone — once means once");
+  // A second workspace opening the same repository with ITS old selection
+  // does not roll back the one already carried over (or chosen since).
+  const legacy2 = memento({ "gitstudio.graph.refFilter": { "/private/tmp/r": ["refs/heads/other"] } });
+  const s2 = new RefFilterStore(global, { canonical, legacy: legacy2 });
+  await s2.migrated;
+  assert.deepEqual(s2.get("/tmp/r"), ["refs/heads/dev"], "the global selection stands");
+  assert.equal(legacy2.data["gitstudio.graph.refFilter"], undefined);
+  // Nothing to carry: nothing written.
+  const quiet = memento();
+  const before = global.writes;
+  await new RefFilterStore(global, { canonical, legacy: quiet }).migrated;
+  assert.equal(global.writes, before);
+  assert.equal(quiet.writes, 0);
+});
+
+test("realpathRoot resolves a symlinked root to the repository's real path", async () => {
+  const { mkdtempSync, mkdirSync, symlinkSync, realpathSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const base = mkdtempSync(join(tmpdir(), "gs-rf-"));
+  const real = join(base, "repo");
+  mkdirSync(real);
+  const link = join(base, "link");
+  symlinkSync(real, link);
+  assert.equal(realpathRoot(link), realpathSync.native(real));
+  assert.equal(realpathRoot(real), realpathSync.native(real));
+  assert.equal(realpathRoot(join(base, "gone")), join(base, "gone"), "an unresolvable root is its own key");
+  const store = new RefFilterStore(memento(), { canonical: realpathRoot });
+  await store.set(link, ["refs/heads/main"]);
+  assert.deepEqual(store.get(real), ["refs/heads/main"]);
 });

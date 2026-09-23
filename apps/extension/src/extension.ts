@@ -30,7 +30,7 @@ import * as branchActions from "./views/branchActions";
 import { CommitGraphPanel } from "./graph/graphPanel";
 import { CommitsGraphViewProvider } from "./graph/commitsGraphView";
 import { CommitPanelViewProvider } from "./graph/commitPanelView";
-import { RefFilterStore, setRefFilterStore } from "./graph/refFilterStore";
+import { RefFilterStore, realpathRoot, setRefFilterStore } from "./graph/refFilterStore";
 import {
   GitHubAuthorAvatars,
   setAuthorAvatarResolver,
@@ -170,10 +170,15 @@ export function activate(context: vscode.ExtensionContext): void {
     const blame = new BlameController(repos, context, log);
     context.subscriptions.push(blame);
 
-    // The graph's branch filter (issue #30) is remembered per repository in
-    // workspaceState and shared by every graph surface. Installed before the
+    // The graph's branch filter (issue #30) is remembered per REPOSITORY in
+    // globalState, keyed by the root's real path — the same repository opened
+    // as a folder or inside a .code-workspace keeps one selection, as it does
+    // in the desktop app — and shared by every graph surface. This workspace's
+    // old workspaceState record is carried over once. Installed before the
     // first graph host exists, so none of them starts without it.
-    setRefFilterStore(new RefFilterStore(context.workspaceState));
+    setRefFilterStore(
+      new RefFilterStore(context.globalState, { canonical: realpathRoot, legacy: context.workspaceState }),
+    );
     context.subscriptions.push({ dispose: () => setRefFilterStore(undefined) });
 
     // Inspecting a commit means revealing it in OUR Commit Graph — hosted in

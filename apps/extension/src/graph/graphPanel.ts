@@ -236,7 +236,8 @@ export class CommitGraphPanel {
     const store = getRefFilterStore();
     if (store) {
       const off = store.onDidChange((root) => {
-        if (root === this.repoRoot && this.ready) void this.loadInitial();
+        // The same REPOSITORY, however its root was reached (sameRepo).
+        if (store.sameRepo(root, this.repoRoot) && this.ready) void this.loadInitial();
       });
       this.disposables.push({ dispose: off });
     }
