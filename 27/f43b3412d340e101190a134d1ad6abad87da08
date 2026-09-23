@@ -1,0 +1,30 @@
+packages/webview-ui/test/mergeColours.test.ts
+  s_26f5e669d3043c::t_18124c3a910bcf 521-604
+packages/webview-ui/src/mergeView.ts
+  s_26f5e669d3043c::t_2da86803226b05 1811
+  s_26f5e669d3043c::t_4d28a2ec3e158d 547-550
+  s_26f5e669d3043c::t_1d3e72d792aa5e 957-962,965,973,976,978-979,981-986,989-1001,1005,1008-1012,1014-1037,1040-1043,1047,1051
+  s_26f5e669d3043c::t_ae8aff4ce7eb46 652,659-662
+  s_26f5e669d3043c::t_71b127bac29cd0 528,532-540,545-546,551-553
+  s_26f5e669d3043c::t_8a1157f52043e6 691
+  s_26f5e669d3043c::t_5fc417f594d542 604-605,607-609,611-617,619-628
+  s_26f5e669d3043c::t_1f3111890d159f 736-738
+  s_26f5e669d3043c::t_2a934df45580c5 720-725
+  s_26f5e669d3043c::t_72edebad0039a3 146-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "27f43b3412d340e101190a134d1ad6abad87da08",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": null
+    }
+  }
+}
