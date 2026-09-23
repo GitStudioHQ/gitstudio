@@ -453,6 +453,21 @@ test("answering a question hands the keyboard back to what asked it", { skip }, 
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
+test("the no-text panel's answer, like Apply, hands the keyboard on once the host has answered", { skip }, async () => {
+  // Taking a side locks the panel's buttons under the keyboard and then hides
+  // them: the sibling of Apply disabling itself, which left it on <body>.
+  const v = await run(`
+    const shell = mount(payload({ shape: "binary" }));
+    const first = $(".ms-notext-btn");
+    first.focus();
+    click(first);
+    shell.handle({ type: "applied", staged: true });
+    shell.handle({ type: "opChanged", op: { ...OP, canContinue: true }, remainingConflicts: 0 });
+    expect(document.activeElement === $(".ms-continue"), "the keyboard moves on to Continue (" + (document.activeElement === document.body ? "BODY" : document.activeElement.className) + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
 test("focus() puts the keyboard in the merge editor: on Next change, or on the panel's first answer", { skip }, async () => {
   // For a host that opens the editor from a button the editor then covers
   // (the desktop dashboard's Merge…): without it the keyboard was left on

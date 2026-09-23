@@ -612,6 +612,8 @@ export class MergeShell {
           takeRole: (role) => {
             if (this.busy) return;
             this.lastTake = role;
+            // The panel's buttons lock, then go, under the keyboard — as Apply's does.
+            this.applyHadFocus = !!this.panel?.element.contains(document.activeElement);
             this.setBusy("take");
             this.clearOutcome();
             this.adapter.post({ type: "takeRole", role });
@@ -619,6 +621,7 @@ export class MergeShell {
           deleteFile: () => {
             if (this.busy) return;
             this.lastTake = "delete";
+            this.applyHadFocus = !!this.panel?.element.contains(document.activeElement);
             this.setBusy("take");
             this.clearOutcome();
             this.adapter.post({ type: "deleteFile" });
@@ -923,7 +926,10 @@ export class MergeShell {
   private passFocusOnFromApply(): void {
     if (!this.applyHadFocus) return;
     const active = document.activeElement;
-    if (active && active !== document.body && active !== this.applyBtn) {
+    // Still nowhere, or still on the spent control (Apply, or the no-text
+    // panel's answer): anything else means the user has moved on.
+    const stale = active === this.applyBtn || (!!this.panel && !!active && this.panel.element.contains(active));
+    if (active && active !== document.body && !stale) {
       this.applyHadFocus = false;
       return;
     }
