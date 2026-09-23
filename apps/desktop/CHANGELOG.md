@@ -89,6 +89,24 @@ but they share the same engine, so most Git behaviour lands in both at once.
   the shared one git writes the operation's state to.
 - A conflicted file git could not read (a locked index, a killed git) says so
   in the pane, instead of leaving the previous file on screen.
+- **In a narrower window the merge editor's Apply was out of reach.** Beside
+  the file list the editor is one pane of the window, and its bottom bar ran
+  past the pane's edge: at 1000px, Apply, Continue and the note saying what
+  Apply would save were cut off. The bar wraps, and so do the dashboard's rows,
+  which had squeezed a file's name to nothing beside its buttons.
+- **The IDE routes skip what an IDE cannot merge.** With Settings ▸ Merge
+  resolving in a JetBrains IDE, opening a binary (or a file deleted on one
+  side) put up an error — again on every refresh — instead of the panel that
+  resolves it; showing diffs in the IDE handed it a binary as garbled text.
+- **Open in WebStorm (or your IDE) from the merge editor** now closes the
+  editor and keeps **Mark resolved** on screen, as the Settings route does; it
+  left the editor open over the IDE's work, with Mark resolved only in a
+  passing notification. **Resolve here instead** now sticks: a refresh used to
+  send the file back to the IDE and open another window.
+- **The keyboard follows the merge editor.** Merge… puts it in the editor, and
+  Exit viewer or Apply puts it back on that file's row; answering one of the
+  editor's questions returns it to the button that asked. It was left on
+  nothing, and Tab started again from the top bar.
 
 ## [2.0.2] - 2026-09-21
 
