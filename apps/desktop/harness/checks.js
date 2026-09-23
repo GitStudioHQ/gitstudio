@@ -13889,7 +13889,11 @@
       await settle(900);
       const merges = (window.__GS_INVOKED || []).filter((r) => r.channel === "branch:merge").map((r) => r.payload);
       c.eq(merges.length, 2, "the merge, then its retry");
-      c.eq(merges[1]?.name, name, "…of the same branch");
+      // By FULL name, both times (issue #30's follow-up: the short name is
+      // "heads/x" beside a tag "x", which `git merge` records verbatim).
+      c.eq(merges[0]?.fullName, `refs/heads/${name}`, "the merge names the branch by its full name");
+      c.eq(merges[1]?.fullName, merges[0]?.fullName, "…and the retry is of the same branch");
+      c.eq(merges[1]?.name, undefined, "…never by the short one");
       c.eq(merges[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…stashing first");
       c.ok(!!$$("#toast-stack .toast-success").find((t) => /merge/.test(text(t))), `and the merge is reported (${text("#toast-stack")})`);
     },
