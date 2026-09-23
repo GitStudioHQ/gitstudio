@@ -439,11 +439,24 @@ export interface PullStopInfo {
   conflicts: number;
 }
 
+/**
+ * A pull that could not START because an operation is still paused — most
+ * often the merge or rebase an earlier pull stopped on, since the branch is
+ * still ahead and behind and Pull is still offered. Nothing ran.
+ */
+export interface PullBlockInfo {
+  operation?: "merge" | "rebase" | "cherry-pick" | "revert";
+  /** Files still conflicted; 0 when resolved but not yet committed/continued. */
+  conflicts: number;
+}
+
 /** `sync:pull`'s answer — a CommitActionResult that can ask a question back,
- *  or say that it stopped for the user to resolve conflicts. */
+ *  say that it stopped for the user to resolve conflicts, or say that an
+ *  operation already paused kept it from starting. */
 export interface PullActionResult extends CommitActionResult {
   diverged?: PullDivergence;
   stopped?: PullStopInfo;
+  blocked?: PullBlockInfo;
 }
 
 /** A branch with remote-tracking context, for the Branches manager. */

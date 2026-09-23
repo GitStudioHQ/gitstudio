@@ -30,7 +30,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
 import { GitContext } from "../src/GitContext";
-import { pullStoppedMessage } from "../src/SyncOps";
+import { pullBlockedMessage, pullPauseMessage, pullStoppedMessage, type PullBlock } from "../src/SyncOps";
 
 const trash: string[] = [];
 const contexts: GitContext[] = [];
@@ -179,6 +179,107 @@ test("a pull that could not reach the remote says THAT, whatever the stale refs 
   assert.equal(r.ok, false);
   assert.equal(r.diverged, undefined, "no reconcile question about a remote we never reached");
   assert.match(r.stderr, /does not appear to be a git repository|Could not read from remote/i);
+});
+
+// ── Pulling AGAIN from the state a stop leaves behind ────────────────────────
+//
+// A stop lands the user in Changes, mid-merge or mid-rebase — and the branch is
+// still ahead AND behind, so the top bar still offers "Pull 2". git refuses a
+// pull from there before it does anything (128: "Pulling is not possible
+// because you have unmerged files" / "You have not concluded your merge"), or,
+// mid-rebase, fails because HEAD is detached. The mode-less pull read that
+// refusal as a divergence and asked "merge or rebase?" all over again; the
+// answer then put git's `git add/rm` hint in a red toast and a crash report.
+// Driven on a real repository in the real app before these were written.
+
+test("pulling again while the merge is still stopped asks nothing, and names the merge", async () => {
+  const { ctx } = collidingClone();
+  assert.ok((await ctx.sync.pull({ mode: "merge" })).stopped, "precondition: the merge stopped");
+
+  const again = await ctx.sync.pull();
+  assert.equal(again.ok, false);
+  assert.equal(again.diverged, undefined, "not a question: git refused before fetching anything");
+  assert.equal(again.stopped, undefined, "…and not a new stop either");
+  assert.deepEqual(again.blocked, { operation: "merge", conflicted: 1 });
+});
+
+test("a pull with a mode is blocked the same way", async () => {
+  const { ctx } = collidingClone();
+  assert.ok((await ctx.sync.pull({ mode: "merge" })).stopped, "precondition: the merge stopped");
+  for (const mode of ["merge", "rebase"] as const) {
+    const r = await ctx.sync.pull({ mode });
+    assert.deepEqual(r.blocked, { operation: "merge", conflicted: 1 }, `mode ${mode}`);
+  }
+});
+
+test("a merge whose conflicts are resolved but not yet committed still blocks, with none left", async () => {
+  const { clone, ctx } = collidingClone();
+  assert.ok((await ctx.sync.pull({ mode: "merge" })).stopped, "precondition: the merge stopped");
+  writeFileSync(join(clone, "shared.txt"), "one\nBOTH\nthree\n");
+  gitIn(clone, ["add", "shared.txt"]);
+  const r = await ctx.sync.pull();
+  assert.equal(r.diverged, undefined);
+  assert.deepEqual(r.blocked, { operation: "merge", conflicted: 0 });
+});
+
+test("pulling again mid-rebase names the rebase — conflicted or already resolved", async () => {
+  const { clone, ctx } = collidingClone();
+  assert.ok((await ctx.sync.pull({ mode: "rebase" })).stopped, "precondition: the rebase stopped");
+  const conflicted = await ctx.sync.pull();
+  assert.deepEqual(conflicted.blocked, { operation: "rebase", conflicted: 1 });
+
+  // Resolved, not continued: nothing is unmerged and HEAD is detached, so git
+  // no longer refuses up front — it fetches and then fails with exit 1 ("You
+  // are not currently on a branch"). Still the paused rebase's doing.
+  writeFileSync(join(clone, "shared.txt"), "one\nBOTH\nthree\n");
+  gitIn(clone, ["add", "shared.txt"]);
+  for (const mode of [undefined, "merge", "rebase"] as const) {
+    const r = await ctx.sync.pull(mode ? { mode } : undefined);
+    assert.equal(r.stopped, undefined, `mode ${mode}: not a new stop`);
+    assert.deepEqual(r.blocked, { operation: "rebase", conflicted: 0 }, `mode ${mode}`);
+  }
+});
+
+test("a pull that fails for some OTHER reason is not blamed on a finished cherry-pick's marker", async () => {
+  // CHERRY_PICK_HEAD with nothing unmerged does not stop git pull (it checks
+  // only the index and MERGE_HEAD) — so a failure then is its own failure and
+  // must keep its own message, and keep reporting. See unresolvedConflictsMessage
+  // for the report that marker-based matching once silenced.
+  const { clone, ctx } = collidingClone();
+  const gone = join(tmpdir(), `gitstudio-stop-gone-cp-${process.pid}-${Date.now()}.git`);
+  gitIn(clone, ["remote", "set-url", "origin", gone]);
+  const head = gitIn(clone, ["rev-parse", "HEAD"]).trim();
+  gitIn(clone, ["update-ref", "CHERRY_PICK_HEAD", head]);
+  const r = await ctx.sync.pull();
+  assert.equal(r.ok, false);
+  assert.equal(r.blocked, undefined);
+  assert.match(r.stderr, /does not appear to be a git repository|Could not read from remote/i);
+});
+
+test("the block is described in the app's words: what is paused, and the two ways out", () => {
+  const cases: [PullBlock, RegExp[]][] = [
+    [{ operation: "merge", conflicted: 2 }, [/merge is still in progress/, /\b2 files\b/, /commit the merge/]],
+    [{ operation: "merge", conflicted: 0 }, [/merge is still in progress/, /commit it/i]],
+    [{ operation: "rebase", conflicted: 1 }, [/rebase is still in progress/, /\b1 file\b/, /continue the rebase/]],
+    [{ operation: "rebase", conflicted: 0 }, [/rebase is still in progress/, /continue it/i]],
+    [{ operation: "cherry-pick", conflicted: 1 }, [/cherry-pick is still in progress/]],
+    [{ conflicted: 3 }, [/\b3 files\b/, /conflicted/]],
+  ];
+  for (const [b, want] of cases) {
+    const m = pullBlockedMessage(b);
+    for (const re of want) assert.match(m, re, JSON.stringify(b));
+    assert.doesNotMatch(m, /git (add|rm|rebase|commit|merge)|--continue|--abort|hint:/i, m);
+    assert.match(m, /before pulling again/, m);
+    if (b.operation) assert.match(m, /abort/i, m);
+  }
+});
+
+test("the extension's settler has a sentence for both faces of a stop, and for nothing else", () => {
+  const stop = { operation: "rebase" as const, conflicted: ["a.ts"] };
+  const block: PullBlock = { operation: "rebase", conflicted: 1 };
+  assert.equal(pullPauseMessage({ stopped: stop }), pullStoppedMessage(stop));
+  assert.equal(pullPauseMessage({ blocked: block }), pullBlockedMessage(block));
+  assert.equal(pullPauseMessage({}), undefined, "an ordinary failure is not settled as a stop");
 });
 
 test("a diverged branch whose remote IS reachable still asks", async () => {

@@ -58,6 +58,58 @@ export interface PullStop {
   conflicted: string[];
 }
 
+/**
+ * A pull that never started, because an operation is still paused in the
+ * repository — most often the very merge or rebase an earlier pull stopped on.
+ *
+ * git refuses that pull before it fetches anything ("Pulling is not possible
+ * because you have unmerged files", "You have not concluded your merge") or,
+ * mid-rebase, fails on the detached HEAD. Like `PullStop` it is a state, not a
+ * defect: the caller says what is paused and sends the user to finish it.
+ */
+export interface PullBlock {
+  /** What is paused. Absent when files are unmerged with no operation marker
+   *  (a conflicted `stash pop`, say). */
+  operation?: "merge" | "rebase" | "cherry-pick" | "revert";
+  /** Files still unmerged. 0 once every conflict is resolved but the operation
+   *  has not been committed or continued. */
+  conflicted: number;
+}
+
+/**
+ * What to tell the user when a pull was blocked by a paused operation — what
+ * is paused, how many files are still conflicted, and the two ways out, in the
+ * app's words rather than git's `git add/rm` hint.
+ */
+export function pullBlockedMessage(block: PullBlock): string {
+  const n = block.conflicted;
+  const files = n === 1 ? "1 file" : `${n} files`;
+  if (!block.operation) {
+    return `${files} ${n === 1 ? "is" : "are"} still conflicted. Resolve ${n === 1 ? "it" : "them"} before pulling again.`;
+  }
+  const op = block.operation;
+  const finish = op === "merge" ? "commit" : "continue";
+  if (n === 0) {
+    return `A ${op} is still in progress. ${finish === "commit" ? "Commit" : "Continue"} it — or abort it — before pulling again.`;
+  }
+  return (
+    `A ${op} is still in progress, with ${files} still conflicted. ` +
+    `Resolve ${n === 1 ? "it" : "them"} and ${finish} the ${op} — or abort it — before pulling again.`
+  );
+}
+
+/**
+ * The sentence for a pull that STOPPED on conflicts, or that was BLOCKED by the
+ * operation a stop left paused — undefined for every other result. The
+ * extension's settler shows exactly this, so the two faces of a stop cannot be
+ * settled by one door and forgotten by another.
+ */
+export function pullPauseMessage(result: { stopped?: PullStop; blocked?: PullBlock }): string | undefined {
+  if (result.stopped) return pullStoppedMessage(result.stopped);
+  if (result.blocked) return pullBlockedMessage(result.blocked);
+  return undefined;
+}
+
 export interface PullResult extends SyncOpResult {
   /**
    * Set when the pull stopped because the branch and its upstream have
@@ -67,6 +119,8 @@ export interface PullResult extends SyncOpResult {
   diverged?: PullDivergence;
   /** Set when the merge or rebase the pull ran stopped on conflicts. */
   stopped?: PullStop;
+  /** Set when the pull could not start because an operation is paused. */
+  blocked?: PullBlock;
   /**
    * git's stdout on failure. A merge that conflicts explains itself HERE
    * ("CONFLICT (content): …") and writes nothing to stderr, so a caller that
@@ -450,6 +504,11 @@ export class SyncOps {
    *   can show a divergence that asking about would only answer with this same
    *   transport error. Both codes are pinned against real git in
    *   test/pullStopped.test.ts.
+   * - A pull that could not START because a merge or rebase is still paused —
+   *   the state a stop leaves the user in, with the branch still ahead and
+   *   behind — comes back `blocked` (see `PullBlock`), and is checked before
+   *   the divergence: git refused without fetching, so there is nothing new to
+   *   ask about, and any answer would be refused the same way.
    */
   async pull(opts?: PullOptions): Promise<PullResult> {
     const mode: PullMode | undefined =
@@ -486,9 +545,25 @@ export class SyncOps {
     const failed = { ok: false, stderr: r.stderr, stdout: r.stdout };
     if (r.code === GIT_PULL_STOPPED_OR_FETCH_FAILED) {
       // Either the merge/rebase stopped for the user, or the fetch never got
-      // through. Files left unmerged tell the two apart.
+      // through. Files left unmerged tell the two apart. (Files unmerged BEFORE
+      // this pull cannot be mistaken for its stop: git refuses such a pull up
+      // front with 128, never 1.)
       const stopped = await this.stoppedOnConflicts(mode, signal);
-      return stopped ? { ...failed, stopped } : failed;
+      if (stopped) {
+        return { ...failed, stopped };
+      }
+    }
+    // An operation still paused from before — typically the merge or rebase an
+    // earlier pull stopped on, which is exactly where that stop sent the user.
+    // Checked BEFORE the divergence below: git refused without fetching, so the
+    // counts are the ones that made the first pull ask, and asking again would
+    // offer a choice git is going to refuse whatever the answer.
+    const blocked = await this.pausedByOperation(signal);
+    if (blocked) {
+      return { ...failed, blocked };
+    }
+    if (r.code === GIT_PULL_STOPPED_OR_FETCH_FAILED) {
+      return failed;
     }
     if (auto) {
       // The fetch half of `pull --ff-only` already ran — and succeeded, or the
@@ -533,6 +608,40 @@ export class SyncOps {
           ? "rebase"
           : "merge";
     return { operation, conflicted };
+  }
+
+  /**
+   * The paused operation a FAILED pull ran into, or null when nothing is.
+   *
+   * Mirrors what actually stops git's pull, and nothing more: an unmerged index
+   * and MERGE_HEAD are refused up front (builtin/pull.c), and a rebase that is
+   * still paused (REBASE_HEAD) leaves HEAD detached, which fails every pull.
+   * A CHERRY_PICK_HEAD or REVERT_HEAD with nothing unmerged does NOT stop git
+   * pull, so on its own it is never blamed — a failure then is some other
+   * failure, and keeps its own message (and keeps reporting). Those two only
+   * NAME the operation when files are unmerged.
+   */
+  private async pausedByOperation(signal?: AbortSignal): Promise<PullBlock | null> {
+    const status = await this.proc.run(["status", "--porcelain=v2", "-z"], { signal });
+    const conflicted = status.code === 0 ? parseUnmergedPaths(status.stdout).length : 0;
+    const has = async (ref: string): Promise<boolean> =>
+      (await this.proc.run(["rev-parse", "--verify", "--quiet", ref], { signal })).code === 0;
+    if (await has("REBASE_HEAD")) {
+      return { operation: "rebase", conflicted };
+    }
+    if (await has("MERGE_HEAD")) {
+      return { operation: "merge", conflicted };
+    }
+    if (conflicted === 0) {
+      return null;
+    }
+    if (await has("CHERRY_PICK_HEAD")) {
+      return { operation: "cherry-pick", conflicted };
+    }
+    if (await has("REVERT_HEAD")) {
+      return { operation: "revert", conflicted };
+    }
+    return { conflicted };
   }
 
   /**

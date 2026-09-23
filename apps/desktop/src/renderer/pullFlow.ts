@@ -129,6 +129,13 @@ export type PullVerdict =
    * Changes, where the paused-operation banner and the merge editor live.
    */
   | { kind: "stopped"; message: string }
+  /**
+   * Nothing ran: a merge or rebase is still paused — usually the one a stop
+   * above left, since the branch is still ahead and behind and Pull is still on
+   * offer. Settled like a stop (neutral, then Changes), because Changes is where
+   * that operation is finished or aborted.
+   */
+  | { kind: "blocked"; message: string }
   | { kind: "failed"; message: string; tone: "info" | "error" }
   | { kind: "pulled"; message: string };
 
@@ -142,6 +149,12 @@ export function pullVerdict(out: PullOutcome, fallback: string): PullVerdict {
       message:
         r.message ||
         `The pull stopped on conflicts in ${n === 1 ? "1 file" : `${n} files`}. Resolve them in Changes.`,
+    };
+  }
+  if (r.blocked) {
+    return {
+      kind: "blocked",
+      message: r.message || "An operation is still in progress. Finish or abort it in Changes before pulling again.",
     };
   }
   if (!r.ok) {

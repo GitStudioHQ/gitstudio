@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import {
-  pullStoppedMessage,
+  pullPauseMessage,
+  type PullBlock,
   type PullDivergence,
   type PullMode,
   type PullStop,
@@ -25,11 +26,17 @@ import { promptPick } from "../ui/dialogs";
  * `askPullMode` is: an answer settled inside one door is an answer the next
  * door gets wrong.
  */
-export function settlePullStop(result: { stopped?: PullStop }): boolean {
-  if (!result.stopped) {
+export function settlePullStop(result: { stopped?: PullStop; blocked?: PullBlock }): boolean {
+  // `blocked` is the same place reached the other way round: Pull pressed
+  // AGAIN over the merge or rebase a stop left paused (the branch is still
+  // ahead and behind, so every door still offers it). git refuses before doing
+  // anything, and that refusal used to come back as git's "git add/rm" hint in
+  // an error toast — or, from Update, as the divergence question all over again.
+  const message = pullPauseMessage(result);
+  if (!message) {
     return false;
   }
-  void vscode.window.showWarningMessage(`GitStudio: ${pullStoppedMessage(result.stopped)}`);
+  void vscode.window.showWarningMessage(`GitStudio: ${message}`);
   void vscode.commands.executeCommand("gitstudio.commit.focus");
   return true;
 }

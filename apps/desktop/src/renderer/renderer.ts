@@ -8007,6 +8007,8 @@ class App {
    * pill), so the question and how it is held cannot differ between them.
    */
   private pullAsking(): Promise<PullOutcome> {
+    // pull-stop-reviewed: a forwarder. Both doors that call it hand its outcome
+    // to pullVerdict, which settles a stop and a block.
     return pullWithChoice({
       pull: (o) => host.invoke("sync:pull", o),
       ask: (d) => askPullMode(d, this.whileThisRepo()),
@@ -8046,10 +8048,12 @@ class App {
         await this.refreshBranchesSoft();
         return;
       case "stopped":
+      case "blocked":
         // A pull that stopped on conflicts has done its part; the rest is the
         // user's, and it happens in Changes — the paused-operation banner
         // (Abort / Continue) and the merge editor are there. Neutral, not red:
-        // nothing failed.
+        // nothing failed. A pull BLOCKED by that same paused operation (Pull
+        // pressed again from it) goes to the same place, for the same reason.
         toast(v.message, "info");
         await this.landOnConflicts();
         return;

@@ -111,11 +111,18 @@ test("every pull call site has decided about a diverged branch", async () => {
 // pulls that name one that stop.
 //
 // Evidence: the CODE just after the call (comments do not count — prose about
-// a stop is not handling one) reads `.stopped`, or hands the result to the
-// shared settler (`settlePullStop` in the extension, `pullVerdict` in the
-// desktop renderer, both of which do), or the call carries a
+// a stop is not handling one) hands the result to the shared settler
+// (`settlePullStop` in the extension, `pullVerdict` in the desktop renderer),
+// or reads BOTH `.stopped` and `.blocked` itself, or the call carries a
 // `pull-stop-reviewed:` note saying why neither applies.
-const STOP_HANDLED = /\.stopped\b|settlePullStop|pullVerdict/;
+//
+// Both, because a stop has a second face: Pull pressed again over the merge or
+// rebase that stop left paused. git refuses that before doing anything, and
+// `SyncOps.pull` answers it as `blocked`. A site that read only `.stopped`
+// passed this census while the refusal went out as git's "git add/rm" hint in
+// a red toast and a crash report — found by driving the real app, not by this.
+const STOP_HANDLED = /settlePullStop|pullVerdict/;
+const READS_BOTH = (code: string): boolean => /\.stopped\b/.test(code) && /\.blocked\b/.test(code);
 const STOP_EXEMPT = /pull-stop-reviewed:/;
 /** A method DECLARATION (`async syncPull(opts) {`) is not a call site; the
  *  call inside its body is, and is checked on its own line. */
@@ -140,7 +147,7 @@ test("every pull call site has decided about a pull that stops on conflicts", as
         for (let k = i; k < lines.length && below.length < 14; k++) {
           if (!COMMENT.test(lines[k])) below.push(lines[k]);
         }
-        if (STOP_HANDLED.test(below.join("\n"))) return;
+        if (STOP_HANDLED.test(below.join("\n")) || READS_BOTH(below.join("\n"))) return;
         if (STOP_EXEMPT.test(lines.slice(Math.max(0, i - 5), i + 2).join("\n"))) return;
         unhandled.push(`${relative(ROOT, file)}:${i + 1} — ${line.trim()}`);
       });

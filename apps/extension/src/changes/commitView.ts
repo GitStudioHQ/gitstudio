@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
-import type { PullResult, PullStop } from "@gitstudio/git-service/SyncOps";
+import type { PullResult } from "@gitstudio/git-service/SyncOps";
 import { askPullMode, settlePullStop } from "../git/pullMode";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
@@ -1454,9 +1454,11 @@ export class CommitViewProvider
     // how to reconcile them" — a question to ask, not a failure to report —
     // and `stopped` how it answers "the merge or rebase stopped on conflicts",
     // an outcome that runPull has already told the user about.
-    let result: { ok: boolean; stderr?: string; stopped?: PullStop } = { ok: true };
+    let result: { ok: boolean; stderr?: string } = { ok: true };
     /** The divergence question was asked and dismissed: nothing merged. */
     let cancelled = false;
+    /** A pull stop or block that runPull has already told the user about. */
+    let settled = false;
     try {
       // Checking out a branch is not an action here: the menu routes every
       // checkout through branchRefCommand (gitstudio.branch.checkout /
@@ -1491,7 +1493,8 @@ export class CommitViewProvider
             cancelled = true;
             break;
           }
-          result = pulled;
+          result = pulled.result;
+          settled = pulled.settled;
           break;
         }
         case "push": {
@@ -1527,9 +1530,10 @@ export class CommitViewProvider
     } catch (err) {
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
     }
-    if (cancelled || result.stopped) {
-      // Nothing to report: a dismissed question ran nothing, and a stop was
-      // already said, plainly and with its count, by settlePullStop.
+    if (cancelled || settled) {
+      // Nothing to report: a dismissed question ran nothing, and a stop (or a
+      // pull blocked by the operation a stop left paused) was already said,
+      // plainly and with its count, by settlePullStop.
     } else if (!result.ok) {
       void vscode.window.showErrorMessage(
         `GitStudio: ${msg.action} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
@@ -1554,10 +1558,14 @@ export class CommitViewProvider
    * The branch view's three pull items, as one operation. `undefined` means
    * the divergence question was asked and dismissed — nothing merged.
    *
-   * A stop on conflicts is settled HERE, by the shared settler, so the caller
-   * only has to not call it a failure.
+   * A stop on conflicts — or a pull blocked by the operation a stop left
+   * paused — is settled HERE, by the shared settler; `settled` tells the caller
+   * not to call it a failure as well.
    */
-  private async runPull(entry: RepoEntry, action: string): Promise<PullResult | undefined> {
+  private async runPull(
+    entry: RepoEntry,
+    action: string,
+  ): Promise<{ result: PullResult; settled: boolean } | undefined> {
     let r: PullResult;
     if (action === "pullMerge") {
       // The menu item says "using Merge", so say it to git too. Leaving the
@@ -1580,8 +1588,7 @@ export class CommitViewProvider
         r = await entry.ctx.sync.pull({ mode });
       }
     }
-    settlePullStop(r);
-    return r;
+    return { result: r, settled: settlePullStop(r) };
   }
 
   /**

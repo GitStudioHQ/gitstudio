@@ -606,6 +606,7 @@ const CASES = [
   ["the-pull-question-outlives-the-refresh-its-own-fetch-causes", "code", { extra: "diverged=1" }],
   ["the-branches-pull-question-outlives-the-refresh-its-own-fetch-causes", "branches", { extra: "diverged=1" }],
   ["the-pull-question-does-not-follow-you-to-another-repository", "code", { extra: "diverged=1" }],
+  ["pulling-again-over-the-stopped-merge-says-what-is-paused", "code", { extra: "diverged=1&pullconflict=1" }],
 ];
 
 function run(scene, checkId, opts = {}) {

@@ -227,6 +227,49 @@ for (const mode of ["merge", "rebase"] as const) {
   });
 }
 
+// …and then Pull pressed AGAIN from where that stop left the user. The branch
+// is still ahead and behind, so the top bar still offers "Pull 2" over the
+// paused merge. Driven in the real app: it asked "merge or rebase?" all over
+// again (git's up-front refusal read as a divergence), and the answer put
+// git's "git add/rm" hint in a red toast and filed a crash report.
+for (const mode of ["merge", "rebase"] as const) {
+  test(`pulling again over the paused ${mode} asks nothing, says what is paused, and reports nothing`, async () => {
+    const { work, cleanup } = divergedRepo({ collide: true });
+    try {
+      const bridge = await bridgeOn(work);
+      assert.ok((await bridge.syncPull()).diverged, "precondition: it asks");
+      assert.ok((await bridge.syncPull({ mode })).stopped, `precondition: the ${mode} stopped`);
+
+      for (const again of [undefined, { mode: "merge" as const }, { mode: "rebase" as const }]) {
+        const r = await bridge.syncPull(again);
+        const label = `again with ${again?.mode ?? "no mode"}`;
+        assert.equal(r.diverged, undefined, `${label}: no second question`);
+        assert.equal(r.stopped, undefined, `${label}: not a new stop`);
+        assert.deepEqual(r.blocked, { operation: mode, conflicts: 1 }, label);
+        assert.equal(r.changed, false, `${label}: nothing ran`);
+        assert.equal(reportableResultMessage(r), undefined, `${label}: not crash-report material`);
+        assert.match(r.message ?? "", new RegExp(`${mode} is still in progress`), label);
+        assert.doesNotMatch(r.message ?? "", /hint:|git add\/rm|not possible|concluded/, label);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+}
+
+test("a pull blocked by a paused operation settles like a stop — neutral, then Changes", () => {
+  const blocked: PullActionResult = {
+    ok: false,
+    changed: false,
+    expected: true,
+    message: "A merge is still in progress, with 1 file still conflicted.",
+    blocked: { operation: "merge", conflicts: 1 },
+  };
+  const v = pullVerdict({ result: blocked, cancelled: false }, "Pull failed.");
+  assert.equal(v.kind, "blocked", "never the 'failed' arm");
+  assert.match(v.kind === "blocked" ? v.message : "", /still in progress/);
+});
+
 // The pull fixtures above depend on git's configuration: SyncOps.pull honours a
 // user's own pull.rebase / pull.ff, which on a developer machine with
 // `pull.rebase=true` turned "it asks" into "it rebased" and failed three of

@@ -1109,6 +1109,22 @@
       const mode = (opts && opts.mode) || null;
       window.__gsPulledWith = mode;
       if (!params.get("diverged")) return { ok: true, changed: true };
+      // Pull pressed AGAIN over the merge or rebase that stopped: the branch is
+      // still ahead and behind, so Pull is still on offer, and git refuses it
+      // before running anything — answered as the bridge answers it. Nothing
+      // is written, so nothing wakes the watcher.
+      if (pullState.stopped) {
+        const op = pullState.stopped.operation;
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message:
+            `A ${op} is still in progress, with 2 files still conflicted. Resolve them and ` +
+            `${op === "rebase" ? "continue" : "commit"} the ${op} — or abort it — before pulling again.`,
+          blocked: { operation: op, conflicts: 2 },
+        };
+      }
       setTimeout(() => window.__gsEmit("repo:filesChanged", { gitDir: true }), 250);
       pullState.fetched = true;
       if (mode && params.get("pullconflict")) {

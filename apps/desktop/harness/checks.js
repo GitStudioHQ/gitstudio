@@ -13091,6 +13091,39 @@
       c.ok(!!$(".modal-card"), "the question is still there after the refresh");
       c.eq(window.__gsPulledWith, null, "…and nothing answered it on the user's behalf");
     },
+    /** A stop lands the user in Changes with the branch still ahead and behind
+     *  — so the top bar still offers Pull. Pressing it there must not ask the
+     *  question again or paint git's refusal red: it says what is paused, and
+     *  stays in Changes, where that is finished or aborted. */
+    "pulling-again-over-the-stopped-merge-says-what-is-paused": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(500);
+      const merge = $$(".modal-choice").find((r) => /^Merge$/.test(text($$(".modal-choice-label", r)[0])));
+      if (!merge) return c.ok(false, "no Merge option to pick");
+      merge.click();
+      await settle(1500);
+      c.match(text(".dc-opbanner"), /merge in progress/, "precondition: the merge stopped and Changes shows it");
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      window.__gsPulledWith = "untouched";
+      const again = $(".topbar-sync .sync-main");
+      c.match(text(again), /^Pull \d+$/, "precondition: Pull is still on offer over the paused merge");
+      if (!again) return;
+      again.click();
+      await settle(1200);
+      c.eq(window.__gsPulledWith, null, "one mode-less pull was sent — and no second one");
+      c.ok(!$(".modal-card"), "no merge-or-rebase question over a merge that is already under way");
+      const toasts = $$("#toast-stack .toast");
+      const said = toasts.map((t) => text(t)).join(" | ");
+      c.match(said, /merge is still in progress/, "the toast says what is paused");
+      c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `nothing is painted as a failure (${said})`);
+      c.ok(!/git add\/rm|hint:|not possible/.test(said), "no git terminal advice");
+      const routes = window.__GS_ROUTES || [];
+      c.eq((routes[routes.length - 1] || {}).view, "changes", "…and the user is where the merge is finished");
+    },
     /** Holding the question against a refresh must not hold it across a
      *  REPOSITORY switch: `sync:pull` acts on whatever repository is open, so
      *  an answer given after the switch would pull a repository the question
