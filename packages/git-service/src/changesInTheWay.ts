@@ -1,7 +1,7 @@
 import { refShortName } from "./checkoutRef";
 import type { GitProcess, GitRunOptions, GitRunResult } from "./GitProcess";
 import { rebaseInProgress } from "./rebaseInProgress";
-import { StashProvider } from "./StashProvider";
+import { literalPathspec as literally, StashProvider } from "./StashProvider";
 import { parseV2 } from "./StatusProvider";
 import { pick, sameStop, stoppedIn, type OperationInTheWay, type StoppedHere } from "./stoppedOperation";
 import type { PullDirty, PullResult } from "./SyncOps";
@@ -729,9 +729,6 @@ interface Stashed {
    *  once the stash is popped (see stashTheWay). */
   restage: string[];
 }
-
-/** `path` as a pathspec that matches it and nothing else — no glob, no magic. */
-const literally = (path: string): string => `:(literal)${path}`;
 
 /**
  * Put the changes in the way into a stash of their own.

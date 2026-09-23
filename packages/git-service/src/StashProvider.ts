@@ -27,8 +27,11 @@ export interface StashSaveOptions extends GitRunOptions {
   /**
    * Restrict the stash to these repo-relative paths (`git stash push -- …`).
    *
-   * Empty or omitted means the whole working tree. Paths are passed after `--`,
-   * so a file named like an option cannot be read as one.
+   * Empty or omitted means the whole working tree. Each is a FILE NAME (or a
+   * directory's), never a pattern: it is passed after `--` as a literal
+   * pathspec (see `literalPathspec`), so a file named like an option, like
+   * pathspec magic (":odd") or like a glob ("*glob*", "a[bc].txt") is that
+   * file and nothing else.
    */
   paths?: readonly string[];
   /**
@@ -189,10 +192,9 @@ export class StashProvider {
     if (opts?.message) {
       args.push("-m", opts.message);
     }
-    if (paths.length > 0) {
-      // After `--`, so a path that looks like an option cannot become one.
-      args.push("--", ...paths);
-    }
+    // After `--`, so a path that looks like an option cannot become one, and
+    // literal, so one that looks like magic or a glob cannot either.
+    args.push(...pathspecOf(paths));
     // Asked BEFORE the push, not after, and deliberately so.
     //
     // The obvious implementation compares the stash list before and after. It is
@@ -248,8 +250,7 @@ export class StashProvider {
     // see the rest of the dirty tree, conclude there was something to stash, and
     // report a stash that git declined to make — the exact lie this whole
     // mechanism exists to prevent, just scoped down.
-    const paths = opts?.paths?.filter((p) => p.length > 0) ?? [];
-    const scope = paths.length > 0 ? ["--", ...paths] : [];
+    const scope = pathspecOf(opts?.paths?.filter((p) => p.length > 0) ?? []);
 
     const [worktree, index] = await Promise.all([
       this.proc.run(["diff", "--name-only", "-z", ...scope], {
@@ -282,7 +283,7 @@ export class StashProvider {
   private async hasUntracked(opts?: StashSaveOptions): Promise<boolean> {
     const paths = opts?.paths?.filter((p) => p.length > 0) ?? [];
     const r = await this.proc.run(
-      ["ls-files", "--others", "--exclude-standard", "-z", ...(paths.length > 0 ? ["--", ...paths] : [])],
+      ["ls-files", "--others", "--exclude-standard", "-z", ...pathspecOf(paths)],
       { signal: opts?.signal },
     );
     return countPaths(r) > 0;
@@ -331,6 +332,27 @@ export class StashProvider {
     });
     return { ok: r.code === 0, stderr: r.stderr };
   }
+}
+
+/**
+ * `path` as a pathspec that matches that file (or everything under that
+ * directory) and nothing else: no magic, no glob.
+ *
+ * A bare path after `--` is still a PATTERN. ":odd" is short magic for the
+ * file "odd", so a stash of ":odd" took "odd" and left ":odd" where it was;
+ * "*glob*" and "a[bc].txt" match their neighbours too. `:(literal)` per path
+ * rather than `--literal-pathspecs` for the whole command: under that flag a
+ * pathspec that already says `:(literal)` is read as a file of that name, so
+ * the two cannot be mixed, and this one form is what stashTheWay's `reset`
+ * and `rm --cached` use as well.
+ */
+export function literalPathspec(path: string): string {
+  return `:(literal)${path}`;
+}
+
+/** `-- <each path, literally>`, or nothing for no paths (the whole tree). */
+function pathspecOf(paths: readonly string[]): string[] {
+  return paths.length > 0 ? ["--", ...paths.map(literalPathspec)] : [];
 }
 
 function splitLines(text: string): string[] {
