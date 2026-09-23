@@ -4926,6 +4926,67 @@
     },
 
     /**
+     * "Resolve here instead" is the user's answer for THIS conflict. The next
+     * repaint the repository watcher set off asked the IDE route again: it
+     * launched a second IDE window and put the hand-off pane back over the
+     * built-in editor — with whatever had been merged in it.
+     */
+    "resolve-here-instead-survives-the-watchers-refresh": async (f) => {
+      const c = check(f);
+      await settle(700);
+      $('[data-key="merge:src/app.ts"]')?.click();
+      await settle(1500);
+      const launches = () => window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length;
+      c.eq(launches(), 1, "precondition: Settings sends the file to the IDE");
+      $$(".diff-empty-actions button").find((b) => /Resolve here instead/.test(text(b)))?.click();
+      await settle(1500);
+      const shell = $(".ms-shell");
+      c.ok(!!shell, "Resolve here instead opens the built-in editor");
+      $(".ms-accept-yours")?.click();
+      await settle(200);
+      for (const gitDir of [false, true]) {
+        window.__gsEmit("repo:filesChanged", { gitDir });
+        await settle(1600);
+      }
+      c.eq(launches(), 1, "a repaint does not send it to the IDE again");
+      c.ok(!!$(".ms-shell") && $(".ms-shell") === shell, "the same editor is still there");
+      c.eq(text(".ms-shell .jb-counter"), "All changes have been processed", "with the work done in it");
+    },
+
+    /**
+     * The merge editor's own "Open in WebStorm" says it will "close this editor
+     * and resolve the conflict in the WebStorm merge window". On the desktop it
+     * left the editor open, stale, with Apply live over the IDE's work, and
+     * "Mark resolved" lived only in an 8-second toast.
+     */
+    "the-ide-button-hands-the-file-over-like-the-setting-does": async (f) => {
+      const c = check(f);
+      await settle(700);
+      $('[data-key="merge:src/app.ts"]')?.click();
+      await settle(1500);
+      const ide = $(".ms-shell .jb-external");
+      c.ok(!!ide && !ide.hidden, "the merge editor offers Open in WebStorm");
+      ide?.click();
+      await settle(1200);
+      const launches = () => window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length;
+      c.eq(launches(), 1, "the file goes to the IDE");
+      c.ok(!$(".ms-shell"), "and the editor closes, as its tooltip says");
+      c.match(text(".diff-empty"), /open in WebStorm/, "the pane says where it went");
+      for (const gitDir of [false, true]) {
+        window.__gsEmit("repo:filesChanged", { gitDir });
+        await settle(1600);
+      }
+      c.eq(launches(), 1, "not handed over again on a repaint");
+      c.ok(!$(".ms-shell"), "and the stale editor does not come back");
+      const mark = $$(".diff-empty-actions button").find((b) => text(b) === "Mark resolved");
+      c.ok(!!mark, "Mark resolved stays on screen, not only in a toast");
+      mark?.click();
+      await settle(1200);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:markResolved").length, 1, "and stages it");
+      c.ok(!!$('.cd-row.is-resolved[data-path="src/app.ts"]'), "the dashboard shows it resolved");
+    },
+
+    /**
      * The same rule for "Show diffs with: a JetBrains IDE". The main process
      * hands the IDE HEAD's side as a decoded STRING, so a changed binary
      * arrived as U+FFFD beside the real file — a diff of the damage.

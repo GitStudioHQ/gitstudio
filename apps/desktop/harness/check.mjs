@@ -393,6 +393,8 @@ const CASES = [
   ["the-ide-route-hands-over-and-marks-resolved", "changes", { extra: "opctx=merge&resolver=jetbrains" }],
   ["the-ide-route-leaves-a-conflict-with-no-text-to-the-panel", "changes", { extra: "opctx=merge&resolver=jetbrains" }],
   ["the-ide-diff-route-leaves-a-binary-to-the-built-in-pane", "changes", { extra: "difftool=jetbrains" }],
+  ["resolve-here-instead-survives-the-watchers-refresh", "changes", { extra: "opctx=merge&resolver=jetbrains" }],
+  ["the-ide-button-hands-the-file-over-like-the-setting-does", "changes", { extra: "opctx=merge" }],
   ["the-keyboard-comes-back-to-the-dashboard-after-the-merge-editor", "changes", { extra: "opctx=merge" }],
   ["the-keyboard-follows-merge-into-the-editor", "changes", { extra: "opctx=merge" }],
   // A 1000px window: the merge editor and the dashboard are one 443px pane.

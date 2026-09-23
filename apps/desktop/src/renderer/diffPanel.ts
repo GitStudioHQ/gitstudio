@@ -36,6 +36,8 @@ export interface ConflictHandlers {
    * keyboard on <body>.
    */
   focusOnMount?: boolean;
+  /** The editor's Open in <IDE> handed the file over: show the hand-off in its place. */
+  onHandedToIde?: () => void;
 }
 
 /** How the diff renders: unified single column, or the 2-pane split view. */
@@ -606,6 +608,12 @@ export class DiffPanel {
         onResolved: () => this.conflictHandlers.onResolved?.(),
         onExit: () => this.conflictHandlers.onExit?.(),
         onOperationChanged: (outcome) => this.conflictHandlers.onOperationChanged?.(outcome),
+        onHandedToIde: () => {
+          const show = this.conflictHandlers.onHandedToIde;
+          if (!show) return false;
+          show();
+          return true;
+        },
         undoable: didUndoable,
         notify: (message, kind, action) => toast(message, kind, action ? 8000 : undefined, action),
       });

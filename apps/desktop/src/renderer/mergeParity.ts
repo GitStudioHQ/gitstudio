@@ -249,6 +249,13 @@ export interface MergeAdapterDeps {
   onExit(): void;
   /** The operation moved (Continue / Abort): refresh refs, the branch, everything. */
   onOperationChanged(outcome: { kind: "done" | "stopped" | "failed"; text: string }): void;
+  /**
+   * The file went to the IDE (Open in <IDE>): the host puts the editor away
+   * and shows the hand-off — "Resolving in <IDE>", with Mark resolved — the
+   * way the Settings route does. False when it has nowhere to, and the
+   * adapter says it in a toast instead.
+   */
+  onHandedToIde?(): boolean;
   undoable: Undoable;
   notify: Notify;
 }
@@ -354,6 +361,10 @@ export class DesktopMergeAdapter {
             this.deps.notify(r.message || "Couldn't open the IDE.", "error");
             return;
           }
+          // The button says it closes this editor: the host shows the hand-off
+          // in its place. A toast is only for a host with nowhere to put it —
+          // it goes in seconds, and "Mark resolved" with it.
+          if (this.deps.onHandedToIde?.()) return;
           this.deps.notify(`Resolve ${path} in the IDE's merge window, then mark it resolved here.`, "info", {
             label: "Mark resolved",
             onClick: () => void this.markResolvedInIde(),

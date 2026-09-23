@@ -294,6 +294,48 @@ test("Open in the IDE hands the file over and offers Mark resolved, which stages
   assert.ok(r.log.includes("resolved"));
 });
 
+test("a host that can show the hand-off gets it, instead of a toast that disappears", async () => {
+  // The Changes view replaces the merge editor with the same "Resolving in
+  // <IDE>" pane the Settings route shows, whose Mark resolved stays on
+  // screen; only a host with nowhere to put it falls back to the toast.
+  const handed: string[] = [];
+  const host = fakeHost({ "jetbrains:merge": OK });
+  const notices: string[] = [];
+  const adapter = new DesktopMergeAdapter(model({ op: REBASE }), {
+    invoke: host.invoke,
+    deliver: () => {},
+    onResolved: () => {},
+    onExit: () => {},
+    onOperationChanged: () => {},
+    onHandedToIde: () => {
+      handed.push("pane");
+      return true;
+    },
+    undoable: () => {},
+    notify: (message) => notices.push(message),
+  });
+  await adapter.handle({ type: "openInJetBrains" });
+  assert.deepEqual(handed, ["pane"], "the host shows the hand-off");
+  assert.deepEqual(notices, [], "and no toast is needed");
+  const refused = fakeHost({ "jetbrains:merge": { ok: false, changed: false, message: "no IDE" } });
+  const handed2: string[] = [];
+  const failing = new DesktopMergeAdapter(model({ op: REBASE }), {
+    invoke: refused.invoke,
+    deliver: () => {},
+    onResolved: () => {},
+    onExit: () => {},
+    onOperationChanged: () => {},
+    onHandedToIde: () => {
+      handed2.push("pane");
+      return true;
+    },
+    undoable: () => {},
+    notify: () => {},
+  });
+  await failing.handle({ type: "openInJetBrains" });
+  assert.deepEqual(handed2, [], "nothing was handed over when the IDE did not open");
+});
+
 test("outcomes: done, stopped, and the reasons a refusal gives", () => {
   assert.deepEqual(outcomeLine({ ok: true, view: NONE, remainingConflicts: 0 }, REBASE, "continue"), {
     kind: "done",
