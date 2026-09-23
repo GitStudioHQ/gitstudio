@@ -69,6 +69,26 @@ but they share the same engine, so most Git behaviour lands in both at once.
   file** showed its "This repository is empty" note as a red error, and the
   branch switcher failed with a red toast instead of saying there are no
   branches yet.
+- **Projects could look complete while missing an entry.** When GitHub listed
+  a project, a card or a pull request's review thread it could not return —
+  usually one in a repository your account can no longer see — the rest showed
+  as if it were everything. The Projects list, the board and the review panel
+  now say how many could not be read.
+- **A repository you can't read said it wasn't a repository.** Opening one
+  whose `.git` folder you don't have permission to read said *"… is not inside
+  a Git repository."* in red. It now says it is a Git repository you don't have
+  permission to read (or one that belongs to another account, or may be
+  damaged). Opening a folder that isn't a repository is no longer shown as an
+  error either.
+- **Start rebase over uncommitted changes showed git's refusal.** The Rebase
+  view now says you have uncommitted changes to commit or stash first, before
+  anything is written.
+- **Agent Access could point an agent at a copy of GitStudio that disappears.**
+  Opened straight from Downloads or the disk image, macOS runs GitStudio from a
+  temporary copy, and an agent set up from it stopped working once GitStudio
+  quit. Agent Access now asks you to move GitStudio to Applications first. And
+  when GitStudio has moved since an agent was set up, the card shows it as
+  **Moved** with a **Re-add** button, instead of **Connected**.
 
 ## [2.0.2] - 2026-09-21
 

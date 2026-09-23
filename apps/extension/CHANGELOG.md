@@ -44,6 +44,14 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   repository where a rebase had once stopped and then been finished, a rebase
   that git refused because of uncommitted changes was reported as *"Rebase hit
   conflicts"*. It now shows git's actual reason.
+- **Sync and Pull on a detached HEAD showed git's terminal advice as an
+  error.** With a commit or a tag checked out, the status bar's **Sync** and
+  **Pull** (and the branch menu's pulls) said *"You are not currently on a
+  branch… git pull &lt;remote&gt; &lt;branch&gt;"*. They now say there is no
+  branch to pull into and offer **Check Out a Branch…**; **Pull** no longer
+  asks *Merge or Rebase?* first.
+- **Start Rebase over uncommitted changes** in the rebase panel now says to
+  commit or stash them first, before anything is written.
 
 ## [1.13.0] - 2026-09-21
 
