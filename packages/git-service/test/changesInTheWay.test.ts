@@ -170,6 +170,26 @@ test("checking out a branch is refused over an edit to a file that differs, or a
   assert.deepEqual(r.inTheWay?.untracked, ["c.txt"]);
 });
 
+// `git checkout release` looks refs/heads/ up FIRST and switches to the branch
+// (with a warning that the name is ambiguous); `git diff HEAD release` resolves
+// the TAG. So the paths a branch switch writes were read from the wrong commit,
+// the edit truly in its way was not among them, and the refusal was handed on
+// as git's text — the crash report this module exists to prevent. Both hosts
+// send a branch switch as `checkout <name>` (planRefCheckout, the Branches view).
+test("a branch that shares its name with a tag is read as the branch, as git's checkout reads it", async () => {
+  const { dir, proc } = repo();
+  git(dir, "tag", "feature", "main~1"); // the tag sits at base, the branch changes a.txt
+  writeFileSync(join(dir, "a.txt"), LINES("mine", 4));
+  const r = await runApplying(proc, checkout("feature"));
+  assert.notEqual(r.result.code, 0, "git refused the switch to the branch");
+  assert.deepEqual(r.inTheWay, { kind: "checkout", paths: ["a.txt"], untracked: [] });
+  const out = await stashAndRetry(proc, checkout("feature"));
+  assert.equal(out.result.code, 0, out.result.stderr);
+  assert.equal(git(dir, "symbolic-ref", "HEAD").trim(), "refs/heads/feature", "on the branch, not the tag");
+  assert.equal(out.fate, "restored");
+  assert.equal(readFileSync(join(dir, "a.txt"), "utf8"), LINES("feature", 0).replace("line 4\n", "mine\n"));
+});
+
 test("a stash apply or pop is refused over an edit to a file the stash touches", async () => {
   const { dir, proc } = repo();
   writeFileSync(join(dir, "a.txt"), LINES("stashed", 2));
@@ -256,6 +276,24 @@ test("Stash & Retry: a staged change the pick does not touch is stashed, the pic
   assert.equal(status(dir), "M  b.txt", "back where it was — staged");
   assert.equal(git(dir, "stash", "list").trim(), "", "and no stash left behind");
   assert.equal(stashRetryNote(out), undefined, "nothing more to say");
+});
+
+test("Stash & Retry puts a file back EXACTLY: staged half in the index, the rest in the working tree", async () => {
+  const { dir, proc } = repo();
+  // b.txt, which a pick of feature~1 does not touch — but a staged change is
+  // always in a pick's way — staged at line 5 and edited further at line 7.
+  const staged = LINES("main", 0).replace("line 5\n", "staged\n");
+  const both = staged.replace("line 7\n", "unstaged\n");
+  writeFileSync(join(dir, "b.txt"), staged);
+  git(dir, "add", "b.txt");
+  writeFileSync(join(dir, "b.txt"), both);
+  const out = await stashAndRetry(proc, pick(dir, "feature~1"));
+  assert.equal(out.result.code, 0, out.result.stderr);
+  assert.equal(out.fate, "restored");
+  assert.equal(status(dir), "MM b.txt", "staged AND modified, as it was");
+  assert.equal(git(dir, "show", ":b.txt"), staged, "the index holds the staged half");
+  assert.equal(readFileSync(join(dir, "b.txt"), "utf8"), both, "the working tree holds both");
+  assert.equal(git(dir, "stash", "list").trim(), "");
 });
 
 test("Stash & Retry: report #18's revert — the edit comes back, merged into what the revert changed", async () => {
