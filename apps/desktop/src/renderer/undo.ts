@@ -32,11 +32,18 @@ import { toast } from "./dialogs";
 export interface Undoable {
   /** What happens if you undo, in the imperative — "Restore ~/work". */
   label: string;
-  /** Perform the reversal. Throw or return a message to report a failure. */
-  undo: () => Promise<string | void> | string | void;
+  /**
+   * Perform the reversal. Throw or return a message to report a failure; return
+   * `{ info }` when the reversal is refused for an expected reason (the
+   * operation it belonged to has finished) — said plainly, not as an error.
+   */
+  undo: () => Promise<UndoResult> | UndoResult;
   /** Redraw whatever was showing the changed state. */
   after?: () => Promise<void> | void;
 }
+
+/** What an undo reports: nothing (done), a failure message, or an expected refusal. */
+export type UndoResult = string | { info: string } | void;
 
 /** Deepest first. Small on purpose: this is "I didn't mean that", not history. */
 const stack: Undoable[] = [];
@@ -96,6 +103,10 @@ async function run(action: Undoable): Promise<void> {
     const failure = await action.undo();
     if (typeof failure === "string" && failure) {
       toast(failure, "error");
+      return;
+    }
+    if (failure && typeof failure === "object" && failure.info) {
+      toast(failure.info, "info");
       return;
     }
   } catch (e) {

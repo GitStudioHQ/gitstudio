@@ -175,6 +175,17 @@ export function mergeSettingsCard(): HTMLElement {
     try {
       const next = await saveMergeSettings(host.invoke, patch);
       const ide = await detectJetBrains(host.invoke);
+      // The main process stores a launcher path only when it IS a JetBrains
+      // launcher (it spawns it): a refused path comes back unchanged. Say so,
+      // rather than letting the field quietly snap back.
+      const asked = typeof patch.jetbrainsPath === "string" ? patch.jetbrainsPath.trim() : "";
+      if (asked && next.jetbrainsPath !== asked) {
+        toast(
+          `${asked} isn't a JetBrains IDE launcher. Choose the IDE's launcher (idea, webstorm, pycharm…) or its install folder.`,
+          "error",
+          8000,
+        );
+      }
       paint(next, ide);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Couldn't save the merge settings.", "error");

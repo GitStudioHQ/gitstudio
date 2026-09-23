@@ -43,8 +43,27 @@ export type Notify = (
 ) => void;
 export type Undoable = (
   message: string,
-  action: { label: string; undo: () => Promise<string | void>; after?: () => void | Promise<void> },
+  action: {
+    label: string;
+    undo: () => Promise<string | { info: string } | void>;
+    after?: () => void | Promise<void>;
+  },
 ) => void;
+
+/**
+ * What an undo of a resolution reports. conflict:restore refuses as EXPECTED
+ * once the operation the file was resolved in has finished (git keeps the
+ * resolve-undo record past the commit, and `checkout -m` would put markers
+ * back into finished work) — that is news for the user, not an error.
+ */
+function restoreResult(
+  r: { ok: boolean; message?: string; expected?: boolean },
+  path: string,
+): string | { info: string } | void {
+  if (r.ok) return undefined;
+  const message = r.message || `Couldn't bring the conflict in ${path} back.`;
+  return r.expected ? { info: message } : message;
+}
 
 // ── the model → payload mapping ──────────────────────────────────────────────
 
@@ -366,10 +385,7 @@ export class DesktopMergeAdapter {
     const path = this.model.path;
     this.deps.undoable(message, {
       label: `Bring back the conflict in ${path}`,
-      undo: async () => {
-        const r = await this.deps.invoke("conflict:restore", { path });
-        return r.ok ? undefined : r.message || `Couldn't bring the conflict in ${path} back.`;
-      },
+      undo: async () => restoreResult(await this.deps.invoke("conflict:restore", { path }), path),
       after: () => this.deps.onResolved(),
     });
   }
@@ -555,10 +571,7 @@ export class DesktopConflicts {
         } else if (action.type !== "restore") {
           this.deps.undoable(action.type === "delete" ? `Deleted ${path}.` : `Resolved ${path}.`, {
             label: `Bring back the conflict in ${path}`,
-            undo: async () => {
-              const u = await invoke("conflict:restore", { path });
-              return u.ok ? undefined : u.message || `Couldn't bring the conflict in ${path} back.`;
-            },
+            undo: async () => restoreResult(await invoke("conflict:restore", { path }), path),
             after: () => {
               void this.refresh();
               this.deps.onFileChanged();

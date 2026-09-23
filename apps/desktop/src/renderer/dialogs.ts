@@ -248,6 +248,19 @@ export function confirmDialog(opts: {
    *  posted an approval for a run that no longer existed. A dialog tied to
    *  something cancellable should be cancelled with it. */
   signal?: AbortSignal;
+  /**
+   * While this returns true, a route change the user did not make leaves the
+   * question on screen instead of answering it "Cancel".
+   *
+   * For a question asked DURING a git operation. A write moves a ref, the
+   * repository watcher reports it ~250 ms later, the refresh re-routes — and
+   * a re-route tears every floating layer down, so "Abort the rebase?" was
+   * answered by nobody (memory: refresh-closing-dialogs). A question the user
+   * owes an answer is work in progress (ModalSpec.hasUnsavedWork). A
+   * predicate, not a flag: a repository SWITCH should still close it
+   * (repoEpoch.whileSameRepo), since the verb acts on whatever is open.
+   */
+  holdWhile?: () => boolean;
 }): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
@@ -329,6 +342,7 @@ export function confirmDialog(opts: {
         onClose: () => {
           if (!settled) resolve(false);
         },
+        hasUnsavedWork: () => opts.holdWhile?.() ?? false,
       };
     });
   });

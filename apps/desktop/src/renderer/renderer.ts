@@ -20,6 +20,7 @@ import type { ConflictsState } from "@gitstudio/host-bridge/conflictsProtocol";
 import { clickIntent, parseRowKey, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import { installNavStack } from "./navStack";
 import { clearUndo, didUndoable, installUndoKey, redoOrText, undoOrText } from "./undo";
+import { repoChanged } from "./repoEpoch";
 import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
 import { renderReleaseCompose } from "./views/releaseCompose";
@@ -215,6 +216,19 @@ class App {
   private changesShowConflicts?: () => void;
   /** Open a conflicted file from the dashboard's Merge… (set by the live Changes view). */
   private changesOpenMerge?: (path: string) => void;
+  /**
+   * The Changes view's diff surface, KEPT across its repaints. The view is
+   * rebuilt on every stage, every refresh and every repository-watcher tick,
+   * and rebuilding the surface threw away whatever was in it: the merge in
+   * progress, and every confirm on screen mid-operation — the dashboard's
+   * "Abort the rebase?", the merge editor's "drop the emptied commit?" — the
+   * moment anything on disk moved (memory: refresh-closing-dialogs). The
+   * surface element and its panel move into each rebuilt view instead; a
+   * route AWAY disposes them, and a repository switch drops them.
+   */
+  private changesPanel?: { root: string; surface: HTMLElement; panel: DiffPanel };
+  /** The conflicts dashboard in that surface, kept with it (its inline confirms are its state). */
+  private changesDash?: ConflictsDashboard;
   /** The top-bar chip naming a stopped operation. */
   private opChipEl?: HTMLButtonElement;
   /** The repo changed while the graph was parked — reload in place on return. */
@@ -1509,9 +1523,15 @@ class App {
     this.currentTarget = target;
     this.persist();
     this.routeGen++; // supersede any in-flight async work from the prior view
-    // Free the previous view's Monaco surface before swapping the DOM under it.
-    this.activeMonacoView?.dispose();
-    this.activeMonacoView = undefined;
+    // Free the previous view's Monaco surface before swapping the DOM under it —
+    // except the Changes view's kept surface on a re-route to Changes itself
+    // (a refresh): it moves into the rebuilt view, merge and confirms intact.
+    const keepChanges =
+      id === "changes" && prev === "changes" && !!this.changesPanel && this.activeMonacoView === this.changesPanel.panel;
+    if (!keepChanges) {
+      this.activeMonacoView?.dispose();
+      this.activeMonacoView = undefined;
+    }
     // The "Diff" dock tab exists ONLY while a file diff is actually open — it
     // used to appear the moment you entered the commits view and sit there
     // empty. openFile() creates it on demand; leaving the view removes it.
@@ -6298,7 +6318,16 @@ class App {
     // A draggable divider between the file list and the diff (persisted width).
     const divider = el("div", "cmp-vsplit dc-vsplit");
     divider.append(el("div", "cmp-vsplit-grip"));
-    const surface = el("div", "diff-surface");
+    // The diff surface survives this rebuild (see `changesPanel`): same
+    // repository, panel still alive → the SAME element, with the merge editor,
+    // the dashboard and any confirm in it, moves into the new view.
+    const kept =
+      this.changesPanel &&
+      !this.changesPanel.panel.isDisposed &&
+      this.changesPanel.root === this.currentRepo?.root
+        ? this.changesPanel
+        : undefined;
+    const surface = kept ? kept.surface : el("div", "diff-surface");
     // ONE writer for the width, because there were two and they disagreed: the
     // keyboard set `listCol`, the pointer drag set `lists` — the inner list
     // INSIDE that column — to `0 0 Wpx`, which also destroyed the `1 1 auto`
@@ -6360,10 +6389,22 @@ class App {
       textarea.setSelectionRange(Math.min(caret?.start ?? end, end), Math.min(caret?.end ?? end, end));
     }
 
-    this.activeMonacoView?.dispose();
-    const diffPanel = new DiffPanel(surface);
+    let diffPanel: DiffPanel;
+    if (kept) {
+      diffPanel = kept.panel;
+      // Moved, not rebuilt: tell the editors their box may have changed.
+      window.setTimeout(() => {
+        if (!diffPanel.isDisposed) diffPanel.layout();
+      }, 0);
+    } else {
+      if (this.activeMonacoView !== this.changesPanel?.panel) this.activeMonacoView?.dispose();
+      this.changesPanel?.panel.dispose();
+      this.changesDash = undefined;
+      diffPanel = new DiffPanel(surface);
+      this.changesPanel = { root: this.currentRepo?.root ?? "", surface, panel: diffPanel };
+      diffPanel.showEmpty("Select a file to view its diff.");
+    }
     this.activeMonacoView = diffPanel;
-    diffPanel.showEmpty("Select a file to view its diff.");
 
     // Paint from what we already know, and only rebuild if the tree ACTUALLY
     // moved. Before this, the file list was a 6-row skeleton on every entry and
@@ -6482,6 +6523,12 @@ class App {
         if (!op || (!op.kind && op.conflicts === 0)) {
           this.changesShowConflicts = undefined;
           this.changesOpenMerge = undefined;
+          // Nothing stopped any more: a dashboard kept in the surface from
+          // before this repaint has nothing left to show.
+          if (diffPanel.hostElement("dc-conflicts")) {
+            this.changesDash = undefined;
+            diffPanel.showEmpty("Select a file to view its diff.");
+          }
           return;
         }
         conflictsUi = this.mountChangesConflicts(wrap, diffPanel, {
@@ -6820,6 +6867,12 @@ class App {
       if (f && row) selectRow(row, f);
       else this.changesOpenKey = undefined;
     }
+    // A KEPT surface still shows what it showed before this repaint. With no
+    // file to reopen, that is stale — unless it is the conflicts dashboard,
+    // which the operation check below keeps or retires.
+    if (kept && this.changesOpenKey === undefined && !diffPanel.hostElement("dc-conflicts")) {
+      diffPanel.showEmpty("Select a file to view its diff.");
+    }
     if (this.changesScroll > 0) lists.scrollTop = this.changesScroll;
   }
 
@@ -6895,7 +6948,20 @@ class App {
       return;
     }
     if (diff.conflicted) {
-      const model = await host.invoke("conflict:model", path);
+      // A read git could not answer (a killed or locked git now reports a
+      // failure instead of "nothing conflicted") says so here, rather than
+      // escaping as an unhandled rejection with the panel left as it was.
+      let model: ConflictModel | undefined;
+      try {
+        model = await host.invoke("conflict:model", path);
+      } catch (e) {
+        if (gen !== this.diffGen) return;
+        diffPanel.showEmpty(`Couldn't read the conflict in ${path}: ${cleanErr(e)}`, {
+          title: "Couldn't read this conflict",
+          kind: "error",
+        });
+        return;
+      }
       if (gen !== this.diffGen) return;
       if (model) {
         // The shared merge shell decides between the three-pane editor and the
@@ -6943,6 +7009,12 @@ class App {
     const [settings, ide] = await Promise.all([loadMergeSettings(host.invoke), detectJetBrains(host.invoke)]);
     if (gen !== this.diffGen) return true;
     if (settings.conflictResolver !== "jetbrains") return false;
+    // Already handed over and still waiting (the view repainted around it):
+    // do not launch the IDE again. Every repaint used to open another merge
+    // window — and the main process removed the previous window's LOCAL /
+    // REMOTE / BASE as it did.
+    const tag = `ide-merge:${model.path}:${model.op?.episode ?? ""}`;
+    if (panel.shows(tag)) return true;
     if (!ide) {
       if (!App.noIdeSaid) {
         App.noIdeSaid = true;
@@ -6970,6 +7042,7 @@ class App {
       {
         title: `Resolving in ${ide.name}`,
         kind: "waiting",
+        tag,
         actions: [
           { label: "Mark resolved", icon: "check", primary: true, onClick: () => void markResolved() },
           { label: "Resolve here instead", icon: "git-merge", onClick: () => panel.showConflict(model, handlers) },
@@ -6987,6 +7060,9 @@ class App {
     const [settings, ide] = await Promise.all([loadMergeSettings(host.invoke), detectJetBrains(host.invoke)]);
     if (gen !== this.diffGen) return true;
     if (settings.diffTool !== "jetbrains" || !ide) return false;
+    // Already open in the IDE (the view repainted around the pane): not again.
+    const tag = `ide-diff:${diff.path}`;
+    if (panel.shows(tag)) return true;
     const r = await host.invoke("jetbrains:diff", { path: diff.path });
     if (gen !== this.diffGen) return true;
     if (!r.ok) {
@@ -6996,6 +7072,7 @@ class App {
     panel.showEmpty(`${diff.path} is open in ${ide.name}'s diff window.`, {
       title: `Opened in ${ide.name}`,
       kind: "none",
+      tag,
       actions: [{ label: "Show the diff here", icon: "diff", onClick: () => panel.showDiff(diff) }],
     });
     return true;
@@ -7067,10 +7144,21 @@ class App {
     const show = (): void => {
       if (!wrap.isConnected) return;
       hooks.deselect();
+      // Still on screen from before this repaint (the surface is kept): keep
+      // it, and any confirm open in it — rebuilding answered "Abort?" with
+      // nothing the moment the repository watcher fired.
+      const hosted = diffPanel.hostElement("dc-conflicts");
+      if (hosted && this.changesDash && hosted.contains(this.changesDash.element)) {
+        dash = this.changesDash;
+        strip.hidden = true;
+        void ctl.refresh();
+        return;
+      }
       const hostEl = diffPanel.showHost("dc-conflicts");
       // The dashboard announces itself (`ready`); the controller answers with
       // the state, asynchronously, by which time `dash` is assigned.
       dash = new ConflictsDashboard(hostEl, { post: handle, closable: false });
+      this.changesDash = dash;
       strip.hidden = true;
     };
     back.addEventListener("click", show);
@@ -8755,15 +8843,22 @@ class App {
 
   private wireHostEvents(): void {
     host.on("repo:changed", (info) => {
+      // FIRST: a question held open through refreshes (repoEpoch) is about the
+      // repository that was open, and must close with it.
+      repoChanged();
       // Every pending undo belongs to the repository it was recorded in. A
       // branch restored into whatever repo happens to be open now would be a
       // brand-new branch in the wrong place — the one outcome an undo must
       // never produce — so switching repositories drops them.
       clearUndo();
-      // A stopped operation belongs to its repository too.
+      // A stopped operation belongs to its repository too — and so does the
+      // Changes surface kept across repaints, with whatever merge is in it.
       this.conflictsCtl = undefined;
       this.changesShowConflicts = undefined;
       this.changesOpenMerge = undefined;
+      this.changesPanel?.panel.dispose();
+      this.changesPanel = undefined;
+      this.changesDash = undefined;
       // Closing the repository keeps the shell and lands on Home, rather than
       // dropping you onto a separate card with no navigation on it.
       this.showRepoScreen(info);

@@ -57,7 +57,38 @@ but they share the same engine, so most Git behaviour lands in both at once.
 - ⌘Z with the merge editor focused undoes the last merge action (not text, and
   not something elsewhere in the app), whether it comes from the key or from
   **Edit ▸ Undo**; resolving a file is itself undoable, and brings the
-  conflict back.
+  conflict back. **Edit ▸ Redo** (⇧⌘Z) redoes it the same way.
+- The Rebase view's **Continue**, **Skip** and **Abort** do what the conflicts
+  dashboard does and ask in the same words. Continuing a rebase whose commit
+  your resolution emptied asks before dropping it — the Rebase view used to
+  drop it silently — and a double click runs one Continue, not two.
+- Undoing a resolution after the operation has finished says why it can't
+  (git has moved on), as a note rather than an error.
+
+### Fixed
+- **A question asked mid-operation vanished on its own.** "Abort the rebase?",
+  "Skip this commit?" and "Drop the emptied commit?" — in the Rebase view, the
+  conflicts dashboard and the merge editor — closed a moment after they
+  appeared, answered by nobody, whenever anything in the repository moved: the
+  refresh after every git write rebuilt the view under them. They stay until
+  you answer now. Switching to another repository still closes them, since
+  the answer would act on the new one.
+- **A merge in progress was thrown away by the same refresh.** Accepting
+  changes and then saving a file elsewhere, or running `git add` in a
+  terminal, rebuilt the merge editor from scratch. The editor, its changes and
+  its questions now survive the refresh.
+- **With Settings ▸ Merge resolving in a JetBrains IDE, every refresh opened
+  another merge window** — and removed the files the previous one was editing.
+  The file is handed over once.
+- **The launcher path in Settings ▸ Merge accepted any program.** It is run
+  when a conflict opens, so it is kept only when it is a JetBrains IDE
+  launcher (or the IDE's install folder); anything else is refused, and the
+  field says so instead of quietly going back to the old value.
+- **In a linked worktree, a stopped operation did not appear until you clicked
+  something.** The repository watcher watched the worktree's own folder, not
+  the shared one git writes the operation's state to.
+- A conflicted file git could not read (a locked index, a killed git) says so
+  in the pane, instead of leaving the previous file on screen.
 
 ## [2.0.2] - 2026-09-21
 

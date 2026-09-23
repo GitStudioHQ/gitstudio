@@ -87,9 +87,37 @@ export class DiffPanel {
   private renderedMode?: DiffMode;
   /** Fired after a tick changes the index, so the Changes list can refresh. */
   public onStagingChanged?: () => void;
+  /**
+   * What is on screen, when it is something a caller may want to KEEP rather
+   * than rebuild: the merge shell for one conflict model, an IDE hand-off pane,
+   * or a hosted component. See `shows` / `showConflict`.
+   */
+  private shownTag?: string;
+  /** The conflict the shell is showing, for keeping it across a repaint. */
+  private shownConflict?: string;
+  /** The handlers the live shell reports to — replaced when a repaint re-asks. */
+  private conflictHandlers: ConflictHandlers = {};
+  private disposed = false;
 
   constructor(private readonly container: HTMLElement) {
     bootMonaco();
+  }
+
+  /** Disposed panels are never reused (the Changes view keeps one across repaints). */
+  get isDisposed(): boolean {
+    return this.disposed;
+  }
+
+  /** Is `tag` what is on screen? (An IDE pane, a hosted component.) */
+  shows(tag: string): boolean {
+    return this.shownTag === tag;
+  }
+
+  /** The element a `showHost` handed out, while it is still the content. */
+  hostElement(className: string): HTMLElement | undefined {
+    if (this.shownTag !== `host:${className}`) return undefined;
+    const el = this.container.firstElementChild as HTMLElement | null;
+    return el && el.classList.contains(className) ? el : undefined;
   }
 
   /** The active mode: the user's persisted choice, else width-derived —
@@ -535,7 +563,16 @@ export class DiffPanel {
    * `autoApplyNonConflicting`, OFF by default; it used to be unconditional.
    */
   showConflict(model: ConflictModel, handlers: ConflictHandlers = {}): void {
+    // The SAME conflict, asked again (the Changes view repaints on every
+    // watcher tick and reopens the file it had open): keep the live shell.
+    // Rebuilding it threw away the merge in progress and every confirm on
+    // screen — Abort's, Continue's "drop the emptied commit?", Apply's — the
+    // moment anything on disk moved (memory: refresh-closing-dialogs).
+    const sig = conflictSignature(model);
+    this.conflictHandlers = handlers;
+    if (this.shell && this.shownConflict === sig) return;
     this.teardown();
+    this.shownConflict = sig;
     const gen = ++this.mountGen;
 
     const wrap = el("div", "merge-wrap");
@@ -558,9 +595,11 @@ export class DiffPanel {
       const adapter = new DesktopMergeAdapter(model, {
         invoke: host.invoke,
         deliver: (message) => shell?.handle(message),
-        onResolved: () => handlers.onResolved?.(),
-        onExit: () => handlers.onExit?.(),
-        onOperationChanged: (outcome) => handlers.onOperationChanged?.(outcome),
+        // Read through the panel: a repaint that keeps this shell hands it the
+        // new view's handlers.
+        onResolved: () => this.conflictHandlers.onResolved?.(),
+        onExit: () => this.conflictHandlers.onExit?.(),
+        onOperationChanged: (outcome) => this.conflictHandlers.onOperationChanged?.(outcome),
         undoable: didUndoable,
         notify: (message, kind, action) => toast(message, kind, action ? 8000 : undefined, action),
       });
@@ -646,9 +685,12 @@ export class DiffPanel {
       kind?: "waiting" | "none" | "error";
       /** Buttons under the explanation (an IDE hand-off's "Mark resolved"). */
       actions?: Array<{ label: string; icon?: string; primary?: boolean; onClick: () => void }>;
+      /** Names this content, so a repaint can ask whether it is still what is shown (`shows`). */
+      tag?: string;
     } = {},
   ): void {
     this.teardown();
+    this.shownTag = opts.tag;
     const kind = opts.kind ?? "waiting";
     const icon = kind === "error" ? "warning" : kind === "none" ? "check-all" : "git-compare";
     const title =
@@ -688,6 +730,7 @@ export class DiffPanel {
     this.teardown();
     const hostEl = el("div", className);
     this.container.replaceChildren(hostEl);
+    this.shownTag = `host:${className}`;
     return hostEl;
   }
 
@@ -706,6 +749,7 @@ export class DiffPanel {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.teardown();
   }
 
@@ -730,6 +774,28 @@ export class DiffPanel {
 
   private teardown(): void {
     this.disposeEditors();
+    this.shownTag = undefined;
+    this.shownConflict = undefined;
     this.container.replaceChildren();
   }
+}
+
+/**
+ * What identifies a conflict as "the same one": the file, the stop it belongs
+ * to, and the three texts and titles. A Continue that stopped on the next
+ * commit, or a file changed by hand, is a different conflict and rebuilds.
+ */
+function conflictSignature(m: ConflictModel): string {
+  return JSON.stringify([
+    m.path,
+    m.op?.episode ?? "",
+    m.shape ?? "",
+    m.missingRole ?? "",
+    m.oursLabel,
+    m.theirsLabel,
+    m.base,
+    m.ours,
+    m.theirs,
+    m.result,
+  ]);
 }

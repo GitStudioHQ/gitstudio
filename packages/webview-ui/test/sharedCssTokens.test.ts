@@ -119,6 +119,33 @@ test("the desktop re-derives, on the merge roots, every host-derived token the m
   assert.deepEqual(drifted, [], `re-derived differently from tokens.css:\n${drifted.join("\n")}`);
 });
 
+test("the desktop harness proves EVERY --gs-* the merge stylesheets use resolves (its list is complete)", () => {
+  // The textual checks above see only BARE uses and the first :root block; a
+  // token defined in a later block (or used with a fallback that itself does
+  // not resolve) slips past them. The harness check
+  // the-merge-surfaces-resolve-every-shared-token reads the COMPUTED value of
+  // each token inside the real dashboard, merge shell and legend, in both
+  // themes — this pins its list against the stylesheets.
+  const checks = readFileSync(
+    fileURLToPath(new URL("../../../apps/desktop/harness/checks.js", import.meta.url)),
+    "utf8",
+  );
+  const listed = new Set(
+    [...(/const MERGE_SHARED_TOKENS = \[([\s\S]*?)\];/.exec(checks)?.[1] ?? "").matchAll(/"(--gs-[a-zA-Z0-9-]+)"/g)].map(
+      (m) => m[1],
+    ),
+  );
+  assert.ok(listed.size > 10, "the harness list was found");
+  const used = new Set<string>();
+  for (const css of Object.values(SHARED)) {
+    for (const m of css.matchAll(/var\(\s*(--gs-[a-zA-Z0-9-]+)/g)) used.add(m[1]);
+  }
+  const missing = [...used].filter((t) => !listed.has(t)).sort();
+  const stale = [...listed].filter((t) => !used.has(t)).sort();
+  assert.deepEqual(missing, [], `the harness does not check: ${missing.join(", ")}`);
+  assert.deepEqual(stale, [], `the harness checks tokens no merge stylesheet uses: ${stale.join(", ")}`);
+});
+
 test("the census sees the stylesheets it claims to check", () => {
   // A check that matches nothing passes forever.
   for (const [file, css] of Object.entries(SHARED)) {

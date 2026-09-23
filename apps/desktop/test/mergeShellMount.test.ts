@@ -190,6 +190,28 @@ test("Apply writes and stages through conflict:resolve, offers an undo, and repo
   assert.deepEqual(r.sent("conflict:restore").map((c) => c.payload), [{ path: "src/app.ts" }], "undo brings the conflict back");
 });
 
+test("an undo git REFUSES as expected (the operation already finished) is news, not an error", async () => {
+  // conflict:restore answers {ok:false, expected:true} once the operation the
+  // file was resolved in is over (P2's review: checkout -m would otherwise put
+  // markers back into a finished merge). That is a plain fact to tell the
+  // user, not a failure to paint red — and a real failure still is one.
+  const finished = "The operation src/app.ts was resolved in has finished — its conflict can't be brought back.";
+  const r = adapterRig({
+    "conflict:resolve": OK,
+    "conflict:restore": { ok: false, changed: false, expected: true, message: finished },
+    "conflict:state": snapshot(),
+  });
+  await r.adapter.handle({ type: "apply", text: "merged\n" });
+  assert.deepEqual(await r.undos[0].undo(), { info: finished }, "an expected refusal is reported as info");
+  const broken = adapterRig({
+    "conflict:resolve": OK,
+    "conflict:restore": { ok: false, changed: false, message: "index.lock exists" },
+    "conflict:state": snapshot(),
+  });
+  await broken.adapter.handle({ type: "apply", text: "merged\n" });
+  assert.equal(await broken.undos[0].undo(), "index.lock exists", "a real failure stays an error");
+});
+
 test("a failed write is said, never reported as staged", async () => {
   const r = adapterRig({ "conflict:resolve": { ok: false, changed: false, message: "index.lock exists" } });
   await r.adapter.handle({ type: "apply", text: "x" });

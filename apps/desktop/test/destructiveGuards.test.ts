@@ -37,11 +37,18 @@ const ROOT = fileURLToPath(new URL("../src/renderer", import.meta.url));
  * index, the next patch in a series).
  */
 const DESTRUCTIVE =
-  /"(stash:drop|branch:delete|branch:deleteRemote|gist:delete|release:delete|release:deleteAsset|actions:deleteSecret|actions:deleteVariable|ai:removeConnection|rebase:abort|merge:abort|cherryPick:abort|revert:abort|am:abort|rebase:skip|cherryPick:skip|revert:skip|am:skip|git:discard|discard:all|reset:hard|commit:reset|repos:trash|branch:rebase)"/;
+  /"(stash:drop|branch:delete|branch:deleteRemote|gist:delete|release:delete|release:deleteAsset|actions:deleteSecret|actions:deleteVariable|ai:removeConnection|rebase:abort|merge:abort|cherryPick:abort|revert:abort|am:abort|rebase:skip|cherryPick:skip|revert:skip|am:skip|git:discard|discard:all|reset:hard|commit:reset|repos:trash|branch:rebase|op:abort|op:skip|op:continue|conflict:takeRole|conflict:delete|conflict:resolve)"/;
 
-/** Anything in the enclosing lines that makes a second press harmless. */
+/**
+ * Anything in the enclosing lines that makes a second press harmless.
+ *
+ * `exclusive(` / `this.run(` are the merge-parity verbs' guard (mergeParity.ts):
+ * ONE renderer-wide lock shared by the conflicts dashboard, the merge editor
+ * and the rebase view, which DROPS a second verb while one is running, and
+ * keeps the dashboard locked until the state the verb led to is read back.
+ */
 const GUARD =
-  /confirmDialog|confirmDanger|requireTyped|promptChoice|askForCommitAction|disabled = true|is-busy|runBusy|refreshInPlace/;
+  /confirmDialog|confirmDanger|requireTyped|promptChoice|askForCommitAction|disabled = true|is-busy|runBusy|refreshInPlace|exclusive\(|this\.run\(/;
 
 /** Call sites reviewed and found safe without either guard. */
 const REVIEWED: Record<string, string> = {

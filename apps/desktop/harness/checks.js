@@ -50,6 +50,21 @@
   const left = (el) => Math.round(el.getBoundingClientRect().left);
 
   /**
+   * Every --gs-* token the shared merge stylesheets (packages/webview-ui
+   * shell.css, conflicts.css, diff.css) use. webview-ui's sharedCssTokens test
+   * compares this list with the stylesheets, so a token added there and not
+   * here fails CI instead of going unchecked.
+   */
+  const MERGE_SHARED_TOKENS = [
+    "--gs-accent", "--gs-amber", "--gs-border", "--gs-brand", "--gs-brand-fg", "--gs-brand-hover",
+    "--gs-ease", "--gs-fg", "--gs-fg-muted", "--gs-font-mono", "--gs-font-ui", "--gs-hover",
+    "--gs-icon-check", "--gs-motion-fast", "--gs-radius", "--gs-radius-pill", "--gs-radius-sm",
+    "--gs-shadow-1", "--gs-shadow-2", "--gs-space-1", "--gs-space-2", "--gs-space-3", "--gs-space-4",
+    "--gs-status-added", "--gs-status-conflict", "--gs-status-deleted", "--gs-surface", "--gs-surface-2",
+    "--gs-text-base", "--gs-text-secondary", "--gs-weight-emphasis",
+  ];
+
+  /**
    * Drive the Rename dialog for one branch, end to end.
    *
    * Returns false when the row, its menu or the dialog is not there, so a
@@ -4507,13 +4522,47 @@
       $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
       await settle(1200);
       const slot = $(".ms-legend-slot");
-      c.ok(!!slot, "the shell has a legend slot");
-      const chips = slot ? [...slot.querySelectorAll("button, [role=button]")] : [];
+      c.ok(!!slot && !slot.hidden, "the shell has a legend slot, shown");
+      const chips = slot ? [...slot.querySelectorAll(".jb-legend-chip[data-category]")] : [];
       c.ok(chips.length >= 4, `the legend shows a chip per category (${chips.length})`);
-      const nums = chips.map((b) => Number((/(\d+)/.exec(text(b)) || [0, 0])[1]));
-      const total = nums.reduce((a, b) => a + b, 0);
-      const pending = Number((/(\d+) changes?/.exec(text(".ms-shell .jb-counter")) || [0, 0])[1]);
-      c.ok(total >= pending && pending > 0, `the chips account for every pending change (${total} vs ${pending})`);
+      const read = () => {
+        const by = {};
+        for (const b of slot.querySelectorAll(".jb-legend-chip[data-category]")) {
+          by[b.dataset.category] = Number(text(b.querySelector(".jb-legend-count")) || "NaN");
+        }
+        const counter = text(".ms-shell .jb-counter");
+        return {
+          by,
+          sum: Object.values(by).reduce((a, b) => a + b, 0),
+          pending: Number((/(\d+) changes?\./.exec(counter) || [0, 0])[1]),
+          conflicts: Number((/(\d+) conflicts?\./.exec(counter) || [0, 0])[1]),
+          counter,
+        };
+      };
+      const before = read();
+      c.ok(before.pending > 0, `the fixture leaves changes to make (${before.counter})`);
+      c.eq(before.sum, before.pending, `the chips count exactly the pending changes (${JSON.stringify(before.by)} vs "${before.counter}")`);
+      c.eq(before.by.conflict ?? -1, before.conflicts, "the conflict chip counts the pending conflicts");
+      // A chip with nothing left is not a way to jump anywhere.
+      for (const b of chips) {
+        const n = Number(text(b.querySelector(".jb-legend-count")));
+        c.eq(b.disabled, n === 0, `${b.dataset.category}: disabled exactly when it has none left`);
+      }
+      // The counts follow the view: apply every non-conflicting change, and
+      // only the conflict chip still counts.
+      $(".ms-shell .ms-apply-all")?.click();
+      await settle(900);
+      const after = read();
+      c.eq(after.sum, after.pending, `after Apply non-conflicting, the chips still match (${JSON.stringify(after.by)} vs "${after.counter}")`);
+      c.eq(after.pending, after.conflicts, "and only conflicts are left");
+      c.eq(after.sum, before.conflicts, `the non-conflict chips dropped to zero (${before.sum} → ${after.sum})`);
+      // …and settling the rest empties every chip.
+      $(".ms-shell .ms-accept-yours")?.click();
+      await settle(900);
+      const done = read();
+      c.eq(done.counter, "All changes have been processed", "Accept Yours settles the rest");
+      c.eq(done.sum, 0, `every chip reads 0 (${JSON.stringify(done.by)})`);
+      c.ok([...slot.querySelectorAll(".jb-legend-chip")].every((b) => b.disabled), "and none offers a jump");
     },
 
     /**
@@ -4539,7 +4588,205 @@
       c.ok(!!ok, "and it asks first");
       ok?.click();
       await settle(700);
-      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "rebase:skip").length, 1, "one rebase:skip");
+      // The SHARED verb (op:skip), not the legacy rebase:skip.
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:skip").length, 1, "one op:skip");
+      c.eq(window.__GS_INVOKED.filter((r) => /^rebase:(skip|continue|abort)$/.test(r.channel)).length, 0, "and no legacy rebase verb");
+    },
+
+    /**
+     * The rebase view's Continue / Abort run the shared operation verbs too —
+     * with the emptied-commit question the legacy rebase:continue never asked
+     * (it dropped the commit), and each question outlives the refresh the
+     * repository watcher fires while it is open (memory:
+     * refresh-closing-dialogs): a re-route used to answer it "Cancel".
+     */
+    "the-rebase-views-questions-outlive-the-watchers-refresh": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const card = $(".rb-inprogress");
+      c.ok(!!card, "the rebase view shows the in-progress card");
+      if (!card) return;
+      // 1. Continue on an emptied commit asks first — and the question stays up.
+      const cont = $$(".rb-inprogress button").find((b) => /^Continue/.test(text(b)));
+      cont?.click();
+      await settle(500);
+      c.match(text(".modal-title"), /Drop the emptied commit\?/, "Continue on an emptied commit asks before dropping it");
+      c.match(text(".modal-message"), /test change/, "naming the commit");
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:continue").length, 0, "nothing sent before the answer");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      c.ok(window.__gsEmit("repo:filesChanged", { gitDir: true }) > 0, "precondition: the app listens for the watcher");
+      await settle(1500);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the watcher's refresh re-routed underneath");
+      c.match(text(".modal-title"), /Drop the emptied commit\?/, "the question is still there after the refresh");
+      $$(".modal-actions button").find((b) => /Cancel/.test(text(b)))?.click();
+      await settle(500);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:continue").length, 0, "Cancel sends nothing");
+      // 2. Abort: the shared words, and it outlives the refresh too.
+      const abort = $$(".rb-inprogress button").find((b) => /^Abort/.test(text(b)));
+      abort?.click();
+      await settle(500);
+      c.eq(text(".modal-title"), "Abort the rebase?", "Abort asks in the shared words");
+      window.__gsEmit("repo:filesChanged", { gitDir: true });
+      await settle(1500);
+      c.eq(text(".modal-title"), "Abort the rebase?", "and the question outlives the watcher's refresh");
+      $(".modal-ok")?.click();
+      await settle(900);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 1, "the answer reaches git: one op:abort");
+      c.eq(window.__GS_INVOKED.filter((r) => /^rebase:(skip|continue|abort)$/.test(r.channel)).length, 0, "no legacy rebase verb");
+    },
+
+    /** …and a repository SWITCH still closes the question: the verb would act on the new repository. */
+    "a-rebase-question-does-not-follow-you-to-another-repository": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$(".rb-inprogress button").find((b) => /^Abort/.test(text(b)))?.click();
+      await settle(500);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
+      await settle(900);
+      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 0, "and nothing was aborted");
+    },
+
+    /**
+     * Every inline confirm the conflicts dashboard raises mid-operation
+     * survives the repository watcher's refresh. The Changes view is rebuilt
+     * on every refresh, and the dashboard was rebuilt with it — so "Abort the
+     * rebase?" vanished ~250 ms after a write, answered by nobody. The surface
+     * is kept now; `__GS_ARG` picks the question.
+     */
+    "the-dashboards-questions-outlive-the-watchers-refresh": async (f) => {
+      const c = check(f);
+      const which = window.__GS_ARG || "abort";
+      await settle(700);
+      c.ok(!!$(".cd-dash"), "the dashboard is up");
+      let verb;
+      if (which === "drop") {
+        $$(".cd-row button").find((b) => text(b) === "Accept Theirs")?.click();
+        await settle(900);
+        $$(".cd-foot button").find((b) => text(b) === "Continue Rebase")?.click();
+        verb = "op:continue";
+      } else if (which === "skip") {
+        $$(".cd-foot button").find((b) => /^Skip/.test(text(b)))?.click();
+        verb = "op:skip";
+      } else {
+        $$(".cd-foot button").find((b) => /^Abort/.test(text(b)))?.click();
+        verb = "op:abort";
+      }
+      await settle(400);
+      const question = () => text(".cd-confirm");
+      const asked = question();
+      c.ok(!!asked, `the ${which} question is on screen`);
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      c.ok(window.__gsEmit("repo:filesChanged", { gitDir: true }) > 0, "precondition: the app listens for the watcher");
+      await settle(1500);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the watcher's refresh re-routed underneath");
+      c.eq(question(), asked, "the question is still there after the refresh");
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === verb).length, 0, "and nothing answered it on the user's behalf");
+      // The confirming button: danger for abort/skip, primary for "Drop it and continue".
+      $(".cd-confirm .cd-danger, .cd-confirm .cd-primary")?.click();
+      await settle(900);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === verb).length, 1, `the user's answer reaches git: one ${verb}`);
+    },
+
+    /**
+     * The merge editor itself — its work and its questions — survives the
+     * watcher's refresh. The Changes view rebuilt the surface on every tick
+     * (a file saved elsewhere, a terminal `git add`), so the merge in progress
+     * and the Cancel → "Abort the merge?" question went with it.
+     */
+    "the-merge-editor-and-its-questions-outlive-the-watchers-refresh": async (f) => {
+      const c = check(f);
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1200);
+      const shell0 = $(".ms-shell");
+      c.ok(!!shell0, "the merge editor is open");
+      if (!shell0) return;
+      const counter = () => text(".ms-shell .jb-counter");
+      $(".ms-accept-yours")?.click();
+      await settle(200);
+      c.eq(counter(), "All changes have been processed", "work in progress: Accept Yours settled the changes");
+      for (const gitDir of [false, true]) {
+        const routesBefore = (window.__GS_ROUTES || []).length;
+        window.__gsEmit("repo:filesChanged", { gitDir });
+        await settle(1500);
+        if (gitDir) c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the git-dir refresh re-routed underneath");
+        c.ok($(".ms-shell") === shell0, `the SAME merge editor is on screen after a ${gitDir ? "git-dir" : "working-tree"} refresh`);
+        c.eq(counter(), "All changes have been processed", "with the work in it");
+      }
+      // Cancel → Abort… → the inline question, through another refresh.
+      $(".ms-cancel")?.click();
+      await settle(300);
+      $(".ms-abort")?.click();
+      await settle(300);
+      const confirm = () => $(".ms-shell .ms-pop-question");
+      const q = confirm();
+      c.ok(!!q && !q.closest("[hidden]"), "Abort… asks inline");
+      const asked = text(q);
+      window.__gsEmit("repo:filesChanged", { gitDir: true });
+      await settle(1500);
+      c.ok(!!confirm() && !confirm().closest("[hidden]") && text(confirm()) === asked, "and the question outlives the refresh");
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 0, "nothing answered it for the user");
+      $(".ms-shell .ms-abort-go")?.click();
+      await settle(900);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 1, "the user's answer reaches git: one op:abort");
+    },
+
+    /**
+     * With Settings ▸ Merge resolving in the IDE, the file is handed over once
+     * — not again on every repaint of the Changes view. Each repaint used to
+     * relaunch the IDE, and the main process removed the previous window's
+     * LOCAL / REMOTE / BASE as it did.
+     */
+    "the-ide-hand-off-is-not-repeated-by-a-refresh": async (f) => {
+      const c = check(f);
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1200);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length, 1, "handed to the IDE once");
+      for (const gitDir of [false, true]) {
+        window.__gsEmit("repo:filesChanged", { gitDir });
+        await settle(1500);
+      }
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length, 1, "and not again when the view repaints");
+      c.match(text(".diff-empty"), /WebStorm/, "the pane still says where it went");
+    },
+
+    /**
+     * Every --gs-* token the shared merge stylesheets (shell.css,
+     * conflicts.css, diff.css) use RESOLVES on the desktop, inside the
+     * dashboard, the merge shell and the legend's key — in dark and in light.
+     * tokens.css derives them on :root from --vscode-* names the desktop
+     * declares on body, where :root cannot see them: an unresolved token is a
+     * property that silently does not apply (memory:
+     * shared-package-token-boundary). The list is pinned against the
+     * stylesheets by webview-ui's sharedCssTokens test, so it cannot go stale.
+     */
+    "the-merge-surfaces-resolve-every-shared-token": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const empty = (el) => MERGE_SHARED_TOKENS.filter((t) => getComputedStyle(el).getPropertyValue(t).trim() === "");
+      const dash = $(".cd-dash");
+      c.ok(!!dash, "the dashboard is up");
+      if (dash) c.eq(empty(dash).join(", "), "", "every shared token resolves inside the dashboard");
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1200);
+      const shell = $(".ms-shell");
+      c.ok(!!shell, "the merge editor is up");
+      if (!shell) return;
+      c.eq(empty(shell).join(", "), "", "every shared token resolves inside the merge editor");
+      const bottom = shell.querySelector(".jb-bottom-bar");
+      if (bottom) c.eq(empty(bottom).join(", "), "", "…down to its bottom bar");
+      shell.querySelector(".jb-legend-help")?.click();
+      await settle(200);
+      const pop = shell.querySelector(".jb-legend-pop");
+      c.ok(!!pop && !pop.hidden, "the legend's key opens");
+      if (pop) c.eq(empty(pop).join(", "), "", "and every shared token resolves in it too");
+      // Painted, not merely declared: the fg token is the theme's ink.
+      const fg = getComputedStyle(shell).getPropertyValue("--gs-fg").trim();
+      const bodyFg = getComputedStyle(document.body).getPropertyValue("--vscode-foreground").trim();
+      c.eq(fg, bodyFg, "--gs-fg IS the desktop theme's foreground");
     },
 
     /** Settings ▸ Merge: the same five settings the extensions expose, auto-apply OFF by default. */
@@ -4560,6 +4807,54 @@
       const sent = window.__GS_INVOKED.filter((r) => r.channel === "merge:setSettings").map((r) => JSON.stringify(r.payload));
       c.eq(sent.join(","), JSON.stringify({ autoApplyNonConflicting: true }), "ticking it saves exactly that");
       c.ok(card.querySelector('.merge-auto input[type="checkbox"]')?.checked, "and it reads back as on");
+    },
+
+    /**
+     * A conflict git could not read (a locked index, a killed git — which the
+     * conflict reads now REPORT instead of answering "nothing conflicted")
+     * says so in the pane. It escaped as an unhandled rejection, and the pane
+     * kept showing whatever it showed before.
+     */
+    "a-conflict-git-could-not-read-says-so": async (f) => {
+      const c = check(f);
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1200);
+      c.ok(window.__GS_INVOKED.some((r) => r.channel === "conflict:model"), "precondition: the conflict was asked for");
+      c.ok(!$(".ms-shell"), "no merge editor over a read that failed");
+      c.match(text(".diff-empty"), /Couldn't read the conflict in file\.txt/, "the pane says the read failed, and for which file");
+    },
+
+    /**
+     * The main process spawns the launcher path, so it stores one only when it
+     * IS a JetBrains launcher. A refused path must SAY so — not quietly snap
+     * back to the old value in the field.
+     */
+    "a-launcher-path-that-is-not-an-ide-is-refused-and-says-so": async (f) => {
+      const c = check(f);
+      await settle(700);
+      const card = $(".merge-settings-card");
+      c.ok(!!card, "Settings has a Merge card");
+      if (!card) return;
+      const input = card.querySelector(".merge-ide-path input");
+      const use = $$(".merge-settings-card button").find((b) => text(b) === "Use this path");
+      c.ok(!!input && !!use, "the card has a launcher path field");
+      if (!input || !use) return;
+      input.focus();
+      input.value = "/bin/sh";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(100);
+      use.click();
+      await settle(700);
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /isn't a JetBrains IDE launcher/, "a shell is refused, and the refusal is said");
+      input.value = "/opt/idea/bin/idea.sh";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(100);
+      use.click();
+      await settle(700);
+      const saved = window.__GS_INVOKED.filter((r) => r.channel === "merge:setSettings").map((r) => r.payload.jetbrainsPath);
+      c.eq(saved.join(","), "/bin/sh,/opt/idea/bin/idea.sh", "both were asked for");
+      c.eq(card.querySelector(".merge-ide-path input")?.value, "/opt/idea/bin/idea.sh", "the real launcher is kept");
     },
 
     /** A stopped operation is visible from every view, and the chip goes to it. */

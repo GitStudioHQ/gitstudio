@@ -373,9 +373,21 @@ const CASES = [
   ["merge-shell-has-toolbar-on-desktop", "changes", { extra: "opctx=merge", theme: "light" }],
   ["exit-viewer-returns-to-the-dashboard", "changes", { extra: "opctx=merge" }],
   ["cmd-z-in-the-merge-editor-drives-the-merge", "changes", { extra: "opctx=merge" }],
-  // The legend is P1's (mergeLegend.ts); the shell only hands it a slot. This
-  // describes the finished thing, and passes once the real view mounts one.
-  ["merge-legend-counts", "changes", { extra: "opctx=merge", pending: true }],
+  // The legend is P1's (mergeLegend.ts); the shell hands it a slot.
+  ["merge-legend-counts", "changes", { extra: "opctx=merge" }],
+  ["the-merge-surfaces-resolve-every-shared-token", "changes", { extra: "opctx=merge" }],
+  ["the-merge-surfaces-resolve-every-shared-token", "changes", { extra: "opctx=merge", theme: "light" }],
+  // A watcher refresh (the index changes under every git command) must not eat
+  // an open question, the merge editor, or re-launch an IDE hand-off.
+  ["the-dashboards-questions-outlive-the-watchers-refresh", "changes", { extra: "opctx=reporter", arg: "abort" }],
+  ["the-dashboards-questions-outlive-the-watchers-refresh", "changes", { extra: "op=cherry-pick&conflicts=1", arg: "skip" }],
+  ["the-dashboards-questions-outlive-the-watchers-refresh", "changes", { extra: "opctx=reporter&willdrop=1", arg: "drop" }],
+  ["the-merge-editor-and-its-questions-outlive-the-watchers-refresh", "changes", { extra: "opctx=reporter" }],
+  ["the-ide-hand-off-is-not-repeated-by-a-refresh", "changes", { extra: "opctx=reporter&resolver=jetbrains" }],
+  ["the-rebase-views-questions-outlive-the-watchers-refresh", "rebase", { extra: "rebasing=1&op=rebase&willdrop=1" }],
+  ["a-rebase-question-does-not-follow-you-to-another-repository", "rebase", { extra: "rebasing=1&op=rebase" }],
+  ["a-launcher-path-that-is-not-an-ide-is-refused-and-says-so", "settings"],
+  ["a-conflict-git-could-not-read-says-so", "changes", { extra: "opctx=reporter&fail=conflict:model" }],
   ["the-ide-route-hands-over-and-marks-resolved", "changes", { extra: "opctx=merge&resolver=jetbrains" }],
   ["a-stopped-operation-shows-from-every-view", "issues", { extra: "op=rebase&conflicts=2" }],
   ["a-stopped-operation-shows-from-every-view", "issues", { arg: "none" }],

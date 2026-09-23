@@ -8,6 +8,10 @@
 import { host } from "../bridge";
 import { el, span, glyph, emptyState, cleanErr } from "../ui";
 import { toast, confirmDialog, promptInline } from "../dialogs";
+import { exclusive, outcomeLine } from "../mergeParity";
+import { whileSameRepo } from "../repoEpoch";
+import { abortConfirm, skipConfirm, willDropText } from "@gitstudio/webview-ui/conflicts/opText";
+import type { OperationOutcome, OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
 import type { SectionRender } from "./common";
 import type {
   RebaseAction,
@@ -733,41 +737,8 @@ function inProgressCard(reload: () => void): HTMLElement {
   const btns = el("div", "rb-inprogress-btns");
   const cont = el("button", "rb-btn primary") as HTMLButtonElement;
   cont.append(glyph("debug-continue"), span("Continue"));
-  cont.addEventListener("click", () => {
-    void (async () => {
-      cont.disabled = true;
-      const r = await host.invoke("rebase:continue", undefined);
-      if (r.ok) {
-        toast("Rebase continued.", "success");
-      } else if (r.expected) {
-        // A PAUSE is not a failure. Continuing into an `edit` row, or into the
-        // next conflict, is the plan working — the bridge marks those
-        // `expected`, and painting them red told the user something had gone
-        // wrong when nothing had.
-        toast(r.message || "Rebase paused again — the plan asked for it.", "info", 5000);
-      } else {
-        toast(r.message || "Couldn't continue — unresolved conflicts?", "error", 6000);
-      }
-      cont.disabled = false;
-      reload();
-    })();
-  });
   const abort = el("button", "rb-btn danger") as HTMLButtonElement;
   abort.append(glyph("circle-slash"), span("Abort"));
-  abort.addEventListener("click", () => {
-    void (async () => {
-      const ok = await confirmDialog({
-        title: "Abort the rebase?",
-        message: "The branch returns to exactly where it was before the rebase started.",
-        confirmLabel: "Abort rebase",
-        danger: true,
-      });
-      if (!ok) return;
-      const r = await host.invoke("rebase:abort", undefined);
-      toast(r.ok ? "Rebase aborted." : r.message || "Couldn't abort.", r.ok ? "success" : "error");
-      reload();
-    })();
-  });
   // Skip, ONLY where git offers it. The Changes view's banner had it; this
   // view, which says "a rebase is in progress" in so many words, did not — so
   // an apply-backend rebase stopped on an emptied patch had no way forward
@@ -779,24 +750,101 @@ function inProgressCard(reload: () => void): HTMLElement {
   skip.append(glyph("debug-step-over"), span("Skip this commit"));
   skip.title = "Leave out the commit git is stuck on and carry on with the rest";
   skip.hidden = true;
+
+  // The operation as the main process describes it NOW (names, willDrop,
+  // canSkip) — read when a button is pressed, never from a view built earlier.
+  const currentOp = async (): Promise<OperationView | undefined> =>
+    host
+      .invoke("conflict:state", undefined)
+      .then((s) => s?.op)
+      .catch(() => undefined);
+
+  /**
+   * Every verb goes through the SHARED operation core (op:continue / op:skip /
+   * op:abort), the one the dashboard and the merge editor use — not the legacy
+   * rebase:* verbs, which never asked before dropping an emptied commit,
+   * finished a --rebase-merges merge step without recording the merge, and
+   * decided "not rewinding" from git's English. And through `exclusive()`, the
+   * renderer's one verb lock: the main process queues a second call rather
+   * than dropping it, so a double click would run two Continues. Every button
+   * is dead while one runs.
+   */
+  const run = async (
+    verb: "continue" | "skip" | "abort",
+    fn: () => Promise<OperationOutcome | undefined>,
+    before: OperationView | undefined,
+  ): Promise<void> => {
+    for (const b of [cont, skip, abort]) b.disabled = true;
+    try {
+      const o = await fn();
+      if (!o) return; // another verb is running (exclusive() dropped this one)
+      const line = outcomeLine(o, before ?? o.view, verb);
+      toast(line.text, line.kind === "done" ? "success" : line.kind === "stopped" ? "info" : o.expected ? "info" : "error", 6000);
+      reload();
+    } catch (e) {
+      toast(cleanErr(e) || `Couldn't ${verb} the rebase.`, "error", 6000);
+    } finally {
+      for (const b of [cont, skip, abort]) {
+        if (b.isConnected) b.disabled = false;
+      }
+    }
+  };
+
+  cont.addEventListener("click", () => {
+    void (async () => {
+      if (cont.disabled) return;
+      const before = await currentOp();
+      // Continuing would DROP an emptied commit: say so first (the shared
+      // words), and only a yes sends confirmDrop. The main process refuses
+      // without it either way.
+      let confirmDrop = false;
+      if (before?.willDrop) {
+        confirmDrop = await confirmDialog({
+          title: "Drop the emptied commit?",
+          message: willDropText(before),
+          confirmLabel: "Drop it and continue",
+          danger: true,
+          holdWhile: whileSameRepo(),
+        });
+        if (!confirmDrop) return;
+      }
+      await run("continue", () => exclusive(() => host.invoke("op:continue", confirmDrop ? { confirmDrop: true } : {})), before);
+    })();
+  });
+  abort.addEventListener("click", () => {
+    void (async () => {
+      if (abort.disabled) return;
+      const before = await currentOp();
+      const words = before
+        ? abortConfirm(before)
+        : { question: "Abort the rebase?", detail: "The branch returns to where it was before the rebase started.", confirm: "Abort Rebase" };
+      const ok = await confirmDialog({
+        title: words.question,
+        message: words.detail,
+        confirmLabel: words.confirm,
+        danger: true,
+        holdWhile: whileSameRepo(),
+      });
+      if (!ok) return;
+      await run("abort", () => exclusive(() => host.invoke("op:abort", undefined)), before);
+    })();
+  });
   skip.addEventListener("click", () => {
     void (async () => {
       if (skip.disabled) return;
-      skip.disabled = true;
+      const before = await currentOp();
+      const words = before
+        ? skipConfirm(before)
+        : { question: "Skip this commit?", detail: "The commit git is stuck on is left out and the rest carries on.", confirm: "Skip this commit" };
       const ok = await confirmDialog({
-        title: "Skip this commit?",
-        message: "The commit git is stuck on is left out of the rebase and the rest carries on. It cannot be undone from here.",
-        confirmLabel: "Skip commit",
+        title: words.question,
+        message: words.detail,
+        confirmLabel: words.confirm,
         danger: true,
+        holdWhile: whileSameRepo(),
       });
-      if (!ok) {
-        skip.disabled = false;
-        return;
-      }
-      const r = await host.invoke("rebase:skip", undefined);
-      if (r.ok) toast(r.message || "Skipped. The rebase carried on.", "success");
-      else toast(r.message || "Couldn't skip that commit.", r.expected ? "info" : "error", 6000);
-      reload();
+      if (!ok) return;
+      await run("skip", () => exclusive(() => host.invoke("op:skip", undefined)), before);
     })();
   });
   void host

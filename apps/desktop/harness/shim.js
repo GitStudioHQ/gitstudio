@@ -2440,7 +2440,17 @@
   dynamic["jetbrains:markResolved"] = (req) => resolveRow(req && req.path, "merged");
   dynamic["merge:settings"] = () => ({ ...mp.state.settings });
   dynamic["merge:setSettings"] = (patch) => {
-    Object.assign(mp.state.settings, patch || {});
+    const next = { ...(patch || {}) };
+    // As the main process does (mergeSettings.ts → resolveJetBrainsLauncher):
+    // a launcher path is stored only when it names a JetBrains launcher or an
+    // app bundle; anything else comes back unchanged.
+    if (typeof next.jetbrainsPath === "string" && next.jetbrainsPath.trim()) {
+      const p = next.jetbrainsPath.trim();
+      const launcher = /(^|\/)(idea|webstorm|pycharm|phpstorm|goland|clion|rider|rubymine|datagrip)(64)?(\.sh|\.exe|\.cmd|\.bat)?$|\.app\/?$/i;
+      if (!p.startsWith("/") || !launcher.test(p)) delete next.jetbrainsPath;
+      else next.jetbrainsPath = p;
+    }
+    Object.assign(mp.state.settings, next);
     return { ...mp.state.settings };
   };
   // The rebase view's own Skip (views/rebase.ts), answered like the host would.
