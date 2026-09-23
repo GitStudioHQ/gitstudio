@@ -9156,10 +9156,12 @@ body.vscode-light .gh-label-chip {
    prefers-reduced-motion reset near the top of this file.
    ════════════════════════════════════════════════════════════════════════════ */
 
-/* ── 1 · Conflict-resolution merge bar (diffPanel.ts) ───────────────────────── */
-/* The merge editor lives in a column: a slim toolbar on top, the Monaco merge
-   surface filling the rest. `.merge-surface` MUST keep min-height:0 so the editor
-   resolves a real pixel height inside the flex parent (else Monaco collapses). */
+/* ── 1 · Conflict-resolution merge header (diffPanel.ts) ────────────────────── */
+/* The merge editor lives in a column: the file's path on top, then the SHARED
+   merge shell (packages/webview-ui mergeShell + shell.css) filling the rest —
+   its toolbar, operation strip and bottom bar are the extension's own.
+   `.merge-surface` MUST keep min-height:0 so the editor resolves a real pixel
+   height inside the flex parent (else Monaco collapses). */
 .merge-wrap {
   display: flex;
   flex-direction: column;
@@ -9173,7 +9175,7 @@ body.vscode-light .gh-label-chip {
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
-  padding: 8px 12px;
+  padding: 6px 12px;
   background: var(--app-surface, var(--app-panel));
   border-bottom: 1px solid var(--app-border);
 }
@@ -9199,21 +9201,20 @@ body.vscode-light .gh-label-chip {
   direction: rtl;
   text-align: left;
 }
-.merge-bar-actions {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+/* The same bidi isolate as the diff's path: the box ellipsises on the left,
+   the characters stay in the order they were written. */
+.merge-bar-path-text { direction: ltr; unicode-bidi: isolate; }
 .merge-surface {
   flex: 1 1 auto;
   min-height: 0; /* CRITICAL — gives the Monaco merge editor real height */
   position: relative;
 }
-/* `.merge-resolve` already carries .btn .btn-primary .mini-btn. Those skins fully
-   define the face; the only thing to guard is that the 28px mini-btn height wins
-   over the 40px .btn-primary height so it sits flush in the slim bar. */
-.merge-resolve.mini-btn { height: 28px; padding: 0 12px; }
+/* The shell fills the surface exactly: its own column (toolbar, strip, panes,
+   bottom bar) needs a definite box, not a percentage of a flex item. */
+.merge-surface > .ms-shell {
+  position: absolute;
+  inset: 0;
+}
 
 /* ── 2 · GitHub Actions — run logs / artifacts / secrets (views/actions.ts) ──── */
 
@@ -9543,46 +9544,50 @@ body.vscode-light .gh-label-chip {
   border-color: var(--app-border);
 }
 
-/* ── 6 · Op-state banner — merge/rebase in progress (Changes view) ──────────── */
-/* Pinned at the top of the Changes view when a merge/rebase/cherry-pick is mid-op;
-   a soft amber "attention" wash with the Abort/Continue actions on the right. */
-.dc-opbanner {
+/* ── 6 · A stopped operation in the Changes view ───────────────────────────── */
+/* The conflicts dashboard (packages/webview-ui conflicts.css) fills the diff
+   surface while no file is open. With a file open, this strip across the top of
+   the view names the operation and leads back to it: the same soft amber
+   "attention" wash the banner it replaces had. */
+.dc-opstrip {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
   margin-bottom: 10px;
-  padding: 10px 12px;
+  padding: 7px 10px 7px 12px;
   border: 1px solid color-mix(in srgb, var(--status-warn) 38%, var(--app-border));
   border-left: 3px solid var(--status-warn);
   border-radius: 10px;
   background: color-mix(in srgb, var(--status-warn) 12%, transparent);
+  font-size: var(--text-sm);
+  color: var(--vscode-foreground);
 }
-.dc-opbanner-text {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+.dc-opstrip > .glyph { flex: 0 0 auto; color: var(--status-warn); }
+.dc-opstrip-chip {
+  flex: 0 0 auto;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.dc-opstrip-title {
   flex: 1 1 auto;
-}
-.dc-opbanner-text .glyph,
-.dc-opbanner-text > .codicon { flex: 0 0 auto; color: var(--status-warn); }
-.dc-opbanner-text .codicon { font-size: 15px; }
-.dc-opbanner-strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-sm);
-  font-weight: 600;
   color: var(--vscode-foreground);
 }
-.dc-opbanner-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.dc-opstrip-count {
   flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--app-muted);
+}
+.dc-opstrip-back { flex: 0 0 auto; }
+/* The dashboard's own column scrolls inside the surface. */
+.dc-conflicts {
+  height: 100%;
+  overflow: auto;
+  background: var(--vscode-editor-background);
 }
 
 /* ── 7 · PR review depth — Files tab + inline threads (views/prs.ts) ─────────── */
@@ -12924,3 +12929,70 @@ body.vscode-light .cmp-seg-btn.active:hover {
   order: 3;
   margin-left: 8px;
 }
+
+/* ── Merge parity: rail badge, top-bar chip, IDE hand-off, Settings ▸ Merge ── */
+/* A stopped operation is visible from every view: a count on the Changes rail
+   item, and a chip in the top bar that goes straight there. */
+.nav-item .nav-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: #ffffff;
+  background: color-mix(in srgb, var(--status-warn) 55%, #3b1d00);
+}
+.nav-rail.collapsed .nav-item .nav-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-size: 9px;
+  line-height: 14px;
+}
+.topbar-opchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--status-warn) 55%, var(--app-border));
+  background: color-mix(in srgb, var(--status-warn) 14%, var(--app-elevated));
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.topbar-opchip .codicon { color: var(--status-warn); }
+.topbar-opchip:hover { background: color-mix(in srgb, var(--status-warn) 22%, var(--app-elevated)); }
+.topbar-opchip:focus-visible {
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: 2px;
+}
+.diff-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.merge-settings-card .merge-settings-group { margin-top: var(--sp-3); }
+.merge-settings-card .merge-ide-select {
+  display: block;
+  width: min(320px, 100%);
+  margin-top: 6px;
+}
+.merge-settings-card .merge-ide-found { margin-top: 6px; overflow-wrap: anywhere; }
+.merge-settings-card .merge-ide-found.is-missing { color: var(--status-warn); }
+.merge-settings-card .merge-ide-path { margin-top: var(--sp-3); }
