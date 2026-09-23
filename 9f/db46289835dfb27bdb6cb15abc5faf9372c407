@@ -1,0 +1,60 @@
+apps/extension/test/unresolvedWordsOverAStop.test.ts
+  s_26f5e669d3043c::t_f8c29ee43b094b 1-97
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_1fd679db57aab8 41,2521-2522
+apps/desktop/test/unresolvedWordsOverAStop.test.ts
+  s_26f5e669d3043c::t_a224e2ce4442ac 47-52,67
+  s_26f5e669d3043c::t_cea9c0e5ddb97c 1-46,53-66,68-71
+apps/extension/src/git/inTheWay.ts
+  s_26f5e669d3043c::t_34ee83b6163794 177-179
+packages/git-service/src/ConflictProvider.ts
+  s_26f5e669d3043c::t_f517b4e5ace0e5 190,192-202
+  s_26f5e669d3043c::t_701133b2ec129d 4
+packages/git-service/src/stoppedOperation.ts
+  s_26f5e669d3043c::t_7c8d0402d2ec39 117-119
+packages/ai/src/gitTools.ts
+  s_26f5e669d3043c::t_cb637dff0b86ee 425-427,447-448
+packages/git-service/test/changesInTheWay.test.ts
+  s_26f5e669d3043c::t_9c2e6f62fe7e99 535-608
+apps/desktop/src/main/inTheWay.ts
+  s_26f5e669d3043c::t_34ee83b6163794 185-187
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_1fd679db57aab8 9,709-710,712
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_e2c03ddedaeed0 350
+  s_26f5e669d3043c::t_f71623c29c9c0a 409-423
+  s_26f5e669d3043c::t_1ef24956e04c6b 1
+  s_26f5e669d3043c::t_8112da49f7cca9 110-114
+  s_26f5e669d3043c::t_610977a40ec40a 115,351,424,535
+  s_26f5e669d3043c::t_9af690b6e28fcc 532-534
+packages/git-service/src/GitToolHost.ts
+  s_26f5e669d3043c::t_a4be0039d083a6 24-26,28-31
+  s_26f5e669d3043c::t_66c47e725ca32e 27
+  s_26f5e669d3043c::t_f876c5940dcf30 325-344
+  s_26f5e669d3043c::t_71854308854a85 299-301
+packages/git-service/test/aiToolsOverAStop.test.ts
+  s_26f5e669d3043c::t_74f5d6f76164b0 69,75-76,79-81
+  s_26f5e669d3043c::t_c02521789e796a 70-74,77-78
+  s_26f5e669d3043c::t_4e16a61557da86 1-22,24,26-68,82-83,88-109,111-125,127,133-140,162-167,169-173,175-189,191-198,200,205-207,209-219
+  s_26f5e669d3043c::t_b2fe080c59acb1 168
+  s_26f5e669d3043c::t_f2b849b0fe4330 202-204
+  s_26f5e669d3043c::t_daee5265309b91 23,25,84-87,110,126,128-132,141-161,174,190,199,201,208
+packages/git-service/test/unmergedSignal.test.ts
+  s_26f5e669d3043c::t_3e2241b661318e 131-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9fdb46289835dfb27bdb6cb15abc5faf9372c407",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
