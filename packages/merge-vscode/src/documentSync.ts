@@ -23,6 +23,8 @@ import {
   markUnsettled,
   prepareMerge,
   resolvedOutsideMerge,
+  seedFromWorking,
+  type KeptRegion,
   type MarkerLabels,
   type PreparedMerge,
 } from "@gitstudio/engine/conflict/documentText";
@@ -56,12 +58,17 @@ export class ResultMirror {
   private prepared?: PreparedMerge;
   private written = false;
   private preserve = false;
+  private settled = false;
+  /** Regions settled outside the markers at open (seedFromWorking); null when the file could not be read. */
+  private keep?: KeptRegion[] | null;
 
   /** A fresh `init` went to the view: new sides, nothing written for them yet. */
   init(payload: MergeInitPayload): void {
     this.payload = payload;
     this.prepared = undefined;
+    this.keep = undefined;
     this.written = false;
+    this.settled = false;
     // Rule 2: git's stages say the file is conflicted, yet no markers are left
     // in it and it is not simply base — someone resolved it already.
     this.preserve =
@@ -83,8 +90,24 @@ export class ResultMirror {
     const payload = this.payload;
     if (!payload || this.preserve) return undefined;
     if (!textual(payload)) return undefined;
+    // Applied and staged: the conflict is over in git's eyes, and the Result —
+    // any block left open included, by the user's own "Apply with N
+    // unresolved" — is the file. A resultChanged that lands after the Apply
+    // (the shell's debounce) or an edit made after it must not put markers
+    // back over what was staged.
+    if (this.settled) return result;
     this.prepared ??= prepareMerge(payload);
-    const out = markUnsettled(this.prepared, result, markerLabelsFor(payload));
+    // Rule 2, in part: regions the file had already settled outside its
+    // markers when the editor opened (a conflict resolved by hand in a text
+    // editor, by rerere, or by git's own merge) stay as the file had them
+    // until the Result settles them itself. A file that cannot be read
+    // against the merge at all is not written.
+    if (this.keep === undefined) {
+      const seed = hasConflictMarkers(payload.result) ? seedFromWorking(this.prepared, payload.result) : undefined;
+      this.keep = seed?.kind === "ask" ? null : seed?.kind === "markers" ? seed.keep : [];
+    }
+    if (this.keep === null) return undefined;
+    const out = markUnsettled(this.prepared, result, markerLabelsFor(payload), this.keep);
     if (!out) return undefined;
     if (!this.written && out.changes === 0) return undefined;
     this.written = true;
@@ -94,6 +117,16 @@ export class ResultMirror {
   /** An Apply is about to write the plain Result over the file (rule 2 asks first). */
   appliedOverResolution(): boolean {
     return this.preserve;
+  }
+
+  /**
+   * An Apply wrote the Result and git staged it. Until the next `init`, the
+   * document follows the Result as it is: the merge is no longer unfinished,
+   * and a resolution the file had before was replaced with the user's yes.
+   */
+  applied(): void {
+    this.settled = true;
+    this.preserve = false;
   }
 }
 

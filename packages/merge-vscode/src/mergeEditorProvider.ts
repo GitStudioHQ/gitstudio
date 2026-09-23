@@ -84,6 +84,9 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
           );
         }
       }
+      if (message.type === "applied" && message.staged) {
+        sync.mirror.applied();
+      }
       if (!disposed) {
         void webview.postMessage(message);
       }

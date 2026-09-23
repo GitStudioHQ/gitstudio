@@ -186,26 +186,150 @@ test("one accept: every other conflict stays marked, and each reads back as its 
       continue;
     }
     checked++;
-    if (markerCount(text) !== conflicts.length - 1) {
-      problems.push(`${c.scenario} ${c.path}: ${markerCount(text)} marked, ${conflicts.length - 1} still open`);
+    // A conflict git merged on its own (outside its markers: the engine's
+    // blocks are finer than git's hunks) stays as git wrote it while the
+    // Result leaves it alone — nothing of either side is lost there.
+    const seed = seedFromWorking(p, c.working);
+    const gitMerged = seed.kind === "markers" ? seed.keep.filter((k) => !k.blockIds.includes(first.id)) : [];
+    const open = conflicts.slice(1).filter((b) => !gitMerged.some((k) => k.blockIds.includes(b.id)));
+    for (const k of gitMerged) {
+      if (!normalizeEol(text).includes(k.lines.join("\n"))) problems.push(`${c.scenario} ${c.path}: git's own merge was not kept`);
+    }
+    if (markerCount(text) !== open.length) {
+      problems.push(`${c.scenario} ${c.path}: ${markerCount(text)} marked, ${open.length} still open`);
       continue;
     }
     // Reading the markers back gives every open conflict's own sides, in git's
     // order (stage 2 first): nothing was flattened to base.
     const labels = markerLabelsFor(c.payload);
     const blocks = normalizeEol(text).split(/^<{7} .*\n/m).slice(1);
-    conflicts.slice(1).forEach((b, i) => {
+    open.forEach((b, i) => {
       const m = /^([\s\S]*?)\|{7} .*\n([\s\S]*?)={7}\n([\s\S]*?)>{7} /m.exec(blocks[i] ?? "");
       const yours = side(p, b, "left").join("\n");
       const theirs = side(p, b, "right").join("\n");
       const [firstWant, secondWant] = labels.firstIsYours ? [yours, theirs] : [theirs, yours];
       const got = (s: string | undefined) => (s ?? "").replace(/\n$/, "");
       if (!m || got(m[1]) !== firstWant || got(m[3]) !== secondWant) {
-        problems.push(`${c.scenario} ${c.path}: conflict ${i + 2} does not read back as its sides`);
+        problems.push(`${c.scenario} ${c.path}: open conflict ${i + 1} does not read back as its sides`);
       }
     });
   }
   assert.ok(checked > 300, `only ${checked} files had a conflict to accept`);
+  assert.deepEqual(problems.slice(0, 20), []);
+});
+
+/** The marker blocks in `text`, in order, as [first section, second section]. */
+function markedSides(text: string): Array<[string, string] | undefined> {
+  return normalizeEol(text)
+    .split(/^<{7} .*\n/m)
+    .slice(1)
+    .map((chunk) => {
+      const m = /^([\s\S]*?)\|{7} .*\n[\s\S]*?={7}\n([\s\S]*?)>{7} /m.exec(chunk);
+      return m ? [m[1].replace(/\n$/, ""), m[2].replace(/\n$/, "")] : undefined;
+    });
+}
+
+test("a hand edit to a common line beside a conflict leaves every conflict marked, and keeps the edit", () => {
+  // The Result pane is editable, and a line no block owns — the one just
+  // before or after a conflict — is the likeliest place to type. Nothing is
+  // settled here, so every conflict must reach the document marked, reading
+  // back as its own two sides; the edit itself must reach it too.
+  const problems: string[] = [];
+  let checked = 0;
+  for (const c of cases) {
+    const p = prepared(c.payload);
+    if (p.baseEmpty) continue;
+    const blocks = [...p.model.blocks].sort((x, y) => x.baseSpan.start - y.baseSpan.start);
+    const conflicts = blocks.filter((b) => b.kind === "conflict");
+    if (conflicts.length === 0) continue;
+    const owned = new Set<number>();
+    for (const b of blocks) for (let i = b.baseSpan.start - 1; i < b.baseSpan.endExclusive - 1; i++) owned.add(i);
+    const labels = markerLabelsFor(c.payload);
+    const want = conflicts.map((b) => {
+      const yours = side(p, b, "left").join("\n");
+      const theirs = side(p, b, "right").join("\n");
+      return labels.firstIsYours ? [yours, theirs] : [theirs, yours];
+    });
+    // The load fixture has hundreds of conflicts: its first three and last one are enough.
+    const probe = conflicts.length > 4 ? [...conflicts.slice(0, 3), conflicts[conflicts.length - 1]] : conflicts;
+    for (const b of probe) {
+      for (const [where, at] of [
+        ["before", b.baseSpan.start - 2],
+        ["after", b.baseSpan.endExclusive - 1],
+      ] as const) {
+        if (at < 0 || at >= p.base.length || owned.has(at)) continue;
+        for (const how of ["edited", "deleted"] as const) {
+          const lines = [...p.base];
+          if (how === "edited") lines[at] = `${lines[at]} (edited by hand)`;
+          else lines.splice(at, 1);
+          const text = lines.join("\n");
+          const result = p.model.eol === "LF" ? text : text.replace(/\n/g, eolChars(p.model.eol));
+          // The engine's rule itself (the mirror also keeps what git merged on
+          // its own outside its markers — see the test above).
+          const out = markUnsettled(p, result, labels)?.text;
+          const name = `${c.scenario} ${c.path} (common line ${where} line ${b.baseSpan.start} ${how})`;
+          checked++;
+          if (out === undefined) {
+            problems.push(`${name}: nothing written`);
+            continue;
+          }
+          const got = markedSides(out);
+          if (got.length !== conflicts.length) {
+            problems.push(`${name}: ${got.length} of ${conflicts.length} conflicts marked`);
+            continue;
+          }
+          got.forEach((g, i) => {
+            if (!g || g[0] !== want[i][0] || g[1] !== want[i][1]) problems.push(`${name}: conflict ${i + 1} does not read back`);
+          });
+          if (how === "edited" && !normalizeEol(out).includes(`${p.base[at]} (edited by hand)`)) {
+            problems.push(`${name}: the edit was lost`);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(checked > 1000, `only ${checked} hand edits were tried`);
+  assert.deepEqual(problems.slice(0, 20), []);
+});
+
+test("a conflict resolved by hand before the editor opened survives an accept anywhere else", () => {
+  // git's file with its first (then its last) marker block settled in a text
+  // editor, the rest still marked. The Result starts from the conflict, so
+  // the first accept mirrored that region back as markers and the hand
+  // resolution was gone. It stays until the Result settles that region itself.
+  const problems: string[] = [];
+  let checked = 0;
+  for (const c of cases) {
+    const git = normalizeEol(c.working);
+    const found = [...git.matchAll(/^<{7}[^\n]*\n[\s\S]*?^>{7}[^\n]*\n?/gm)];
+    if (found.length < 2) continue;
+    for (const [which, m] of [
+      ["first", found[0]],
+      ["last", found[found.length - 1]],
+    ] as const) {
+      const handLf = git.slice(0, m.index) + "RESOLVED BY HAND\n" + git.slice(m.index! + m[0].length);
+      const hand = /\r\n/.test(c.working) ? handLf.replace(/\n/g, "\r\n") : handLf;
+      const payload = { ...c.payload, result: hand };
+      const p = prepared(payload);
+      const seed = seedFromWorking(p, hand);
+      const kept = seed.kind === "markers" ? seed.keep.find((k) => k.lines.includes("RESOLVED BY HAND")) : undefined;
+      const name = `${c.scenario} ${c.path} (${which} block by hand)`;
+      if (!kept) {
+        problems.push(`${name}: the hand resolution is not seen (${seed.kind})`);
+        continue;
+      }
+      const elsewhere = p.model.blocks.filter((b) => b.kind === "conflict" && !kept.blockIds.includes(b.id));
+      if (elsewhere.length === 0) continue;
+      const target = which === "first" ? elsewhere[elsewhere.length - 1] : elsewhere[0];
+      const mirror = new ResultMirror();
+      mirror.init(payload);
+      const out = mirror.documentText(resultWith(p, (b) => (b === target ? side(p, b, "left") : undefined)));
+      checked++;
+      if (out === undefined) problems.push(`${name}: the accept was not written`);
+      else if (!out.includes("RESOLVED BY HAND")) problems.push(`${name}: the hand resolution was written over`);
+    }
+  }
+  assert.ok(checked > 150, `only ${checked} partly-resolved files were tried`);
   assert.deepEqual(problems.slice(0, 20), []);
 });
 

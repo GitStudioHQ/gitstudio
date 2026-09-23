@@ -154,3 +154,86 @@ test("seed: git's own conflicted file keeps nothing; a conflict settled by hand 
   assert.equal(seed.kind, "markers");
   assert.deepEqual(seed.kind === "markers" ? seed.keep.map((k) => k.lines) : [], [["B1 by hand"]]);
 });
+
+// A hand edit to a COMMON line (one no block owns) says nothing about the
+// conflicts beside it: each one whose base text is still intact is still
+// open, and stays marked. The diff fallback read the whole region between two
+// surviving common lines as "settled by hand", so editing the line next to a
+// conflict wrote the conflict's BASE into the file with no markers.
+test("a common line edited or deleted beside open conflicts: every one stays marked, and the edit is kept", () => {
+  const p = prepareMerge({ base: BASE, ours: YOURS, theirs: THEIRS });
+  const edited = markUnsettled(p, lines("a", "b1", "c", "d edited", "e2", "f"), MERGE)!;
+  assert.equal(count(edited.text), 2, "both conflicts still marked");
+  assert.equal(edited.marked, 2);
+  assert.match(edited.text, /^d edited\n<<<<<<< Yours \(main\)\nE2-yours\n/m, "the edit is kept, beside the markers");
+  const deleted = markUnsettled(p, lines("a", "b1", "c", "e2", "f"), MERGE)!;
+  assert.equal(count(deleted.text), 2);
+  assert.doesNotMatch(deleted.text, /^d$/m, "the deletion is kept");
+  const parsed = parseConflictMarkers(deleted.text);
+  assert.equal(parsed.ours, lines("a", "B1-yours", "c", "E2-yours", "f"));
+  assert.equal(parsed.theirs, lines("a", "B1-theirs", "c", "E2-theirs", "f"));
+});
+
+test("a region the file had settled outside its markers stays as the file had it, until the Result settles it", () => {
+  const p = prepareMerge({ base: BASE, ours: YOURS, theirs: THEIRS });
+  const partly = lines(
+    "a",
+    "B1 by hand",
+    "c",
+    "d",
+    "<<<<<<< HEAD", "E2-yours", "||||||| base", "e2", "=======", "E2-theirs", ">>>>>>> feature",
+    "f",
+  );
+  const seed = seedFromWorking(p, partly);
+  assert.equal(seed.kind, "markers");
+  const keep = seed.kind === "markers" ? seed.keep : [];
+  const accepted = markUnsettled(p, lines("a", "b1", "c", "d", "E2-yours", "f"), MERGE, keep)!;
+  assert.equal(accepted.text, lines("a", "B1 by hand", "c", "d", "E2-yours", "f"));
+  assert.equal(accepted.marked, 0);
+  const untouched = markUnsettled(p, BASE, MERGE, keep)!;
+  assert.equal(count(untouched.text), 1, "the other conflict is still marked");
+  assert.match(untouched.text, /^B1 by hand$/m);
+  const settled = markUnsettled(p, lines("a", "B1-theirs", "c", "d", "E2-yours", "f"), MERGE, keep)!;
+  assert.equal(settled.text, lines("a", "B1-theirs", "c", "d", "E2-yours", "f"), "the Result settled it: the Result wins");
+});
+
+test("a line edited far from every block is a change to write, with every conflict still marked", () => {
+  // The host writes nothing until markUnsettled reports a change; an edit
+  // between two common lines, in no block's region, reported none.
+  const base = lines("a", "b1", "c", "d", "x", "y", "e2", "f");
+  const p = prepareMerge({
+    base,
+    ours: lines("a", "B1-yours", "c", "d", "x", "y", "E2-yours", "f"),
+    theirs: lines("a", "B1-theirs", "c", "d", "x", "y", "E2-theirs", "f"),
+  });
+  const out = markUnsettled(p, lines("a", "b1", "c", "d", "x edited", "y", "e2", "f"), MERGE)!;
+  assert.ok(out.changes > 0, "the edit is a change");
+  assert.equal(count(out.text), 2);
+  assert.match(out.text, /^x edited$/m);
+});
+
+test("a blank common line deleted between open conflicts is not found again further down", () => {
+  // The walk looked for the deleted chunk ("") again, found the NEXT blank
+  // line, and read everything up to it as the first conflict's region.
+  const base = lines("x", "one", "", "two", "", "three", "", "end");
+  const yours = lines("x", "ONE-y", "", "TWO-y", "", "THREE-y", "", "end");
+  const theirs = lines("x", "ONE-t", "", "TWO-t", "", "THREE-t", "", "end");
+  const p = prepareMerge({ base, ours: yours, theirs });
+  assert.equal(p.model.blocks.filter((b) => b.kind === "conflict").length, 3);
+  const out = markUnsettled(p, lines("x", "one", "two", "", "three", "", "end"), MERGE)!;
+  assert.equal(count(out.text), 3, "all three still marked");
+  const parsed = parseConflictMarkers(out.text);
+  assert.equal(parsed.ours, lines("x", "ONE-y", "TWO-y", "", "THREE-y", "", "end"));
+});
+
+test("a conflict with no base lines (both sides inserted at one spot) stays marked beside a line typed there", () => {
+  const base = lines("a", "b", "c");
+  const p = prepareMerge({ base, ours: lines("a", "b", "Y1", "c"), theirs: lines("a", "b", "T1", "c") });
+  assert.equal(p.model.blocks.length, 1);
+  const out = markUnsettled(p, lines("a", "b", "typed", "c"), MERGE)!;
+  assert.equal(count(out.text), 1, "typing at the spot is not taking a side");
+  assert.match(out.text, /^typed$/m);
+  // Taking a side there, then typing beside it, settles it.
+  const taken = markUnsettled(p, lines("a", "b", "Y1", "typed", "c"), MERGE)!;
+  assert.equal(count(taken.text), 0);
+});

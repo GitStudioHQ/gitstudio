@@ -181,6 +181,33 @@ test("A1.2: a file already resolved by hand is not written over by a Result that
   assert.match(outcome.text, /keeps the resolution/);
 });
 
+test("A1.2: a file resolved PARTLY by hand keeps that resolution when the editor writes the rest", async () => {
+  // One conflict settled in a text editor before the merge editor opened, one
+  // still marked. The Result starts from the conflict, so the first accept
+  // mirrored the hand-settled region back as markers: the resolution existed
+  // nowhere else, and it was gone.
+  const partly = L(
+    "a",
+    "B1 by hand",
+    "c",
+    "d",
+    "<<<<<<< HEAD", "E2-yours", "||||||| base", "e2", "=======", "E2-theirs", ">>>>>>> feature",
+    "f",
+  );
+  const r = rig(partly);
+  await open(r);
+  stub.panels[0].receive({ type: "resultChanged", text: L("a", "b1", "c", "d", "E2-theirs", "f") });
+  await settle();
+  const written = lastWrite(r);
+  assert.ok(written !== undefined, "the accept reached the document");
+  assert.match(written!, /^B1 by hand$/m, "the hand resolution is still in the file");
+  assert.equal(markerBlocks(written!), 0, "and the accepted conflict is settled");
+  // Once the Result settles that conflict itself, the Result wins.
+  stub.panels[0].receive({ type: "resultChanged", text: L("a", "B1-theirs", "c", "d", "E2-theirs", "f") });
+  await settle();
+  assert.equal(lastWrite(r), L("a", "B1-theirs", "c", "d", "E2-theirs", "f"));
+});
+
 test("A1.3: an edit made outside the merge editor is not written over without asking — and No keeps it", async () => {
   const r = rig(GIT_FILE);
   await open(r);
@@ -230,4 +257,31 @@ test("Apply in the merge editor raises no toast over its own Apply / Continue co
     "said once, as a status-bar line (an info with no action — an Undo button made it a toast)",
   );
   assert.equal(stub.messages.length, 0, "no notification toast");
+});
+
+test("after an Apply the Result IS the file: a late resultChanged never writes markers back over it", async () => {
+  // "Apply with 1 unresolved" saves the Result as shown — the open conflict as
+  // its original text, by the user's choice — and stages it. The shell's
+  // debounced resultChanged can land after that Apply, and any edit after it
+  // posts one: the rule for an UNFINISHED merge put the conflict's markers
+  // back into the document, and autosave wrote them over the file just staged.
+  const r = rig(GIT_FILE);
+  await open(r);
+  const applied = L("a", "B1-yours", "c", "d", "e2", "f");
+  stub.panels[0].receive({ type: "apply", text: applied });
+  await settle();
+  assert.equal(r.saved.length, 1, "applied");
+  lastWrite(r);
+  const before = stub.applied.length;
+  stub.panels[0].receive({ type: "resultChanged", text: applied });
+  await settle();
+  if (stub.applied.length > before) lastWrite(r);
+  assert.equal(markerBlocks(r.document.getText()), 0, "no markers over the applied file");
+  assert.equal(r.document.getText(), applied);
+  // An edit made after the Apply reaches the file as typed.
+  const edited = L("a", "B1-yours", "c", "d edited", "e2", "f");
+  stub.panels[0].receive({ type: "resultChanged", text: edited });
+  await settle();
+  lastWrite(r);
+  assert.equal(r.document.getText(), edited);
 });

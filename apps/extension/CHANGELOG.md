@@ -92,11 +92,14 @@ does, the other does. (merge-studio#12)
   every conflict not yet touched, with no markers, so `git add` or a later
   Continue could commit half a merge. Every conflict still open is written
   with its markers, named after the two sides; *Apply* writes the finished
-  result. Opening the merge editor writes nothing.
+  result. Opening the merge editor writes nothing, typing in the result
+  beside a conflict keeps that conflict's markers, and once *Apply* has
+  staged the file its markers never come back.
 - **A file already resolved is not overwritten when the merge editor opens.**
   With no conflict markers left in it (fixed by hand, or by git rerere), the
   merge editor leaves the file alone, says so, and asks before *Apply*
-  replaces it.
+  replaces it. A conflict you fixed by hand before opening the merge editor
+  stays as you left it until you settle it there.
 - **Edits made outside the merge editor are not written over without
   asking**: a second tab on the same file, a formatter, a checkout in the
   terminal.

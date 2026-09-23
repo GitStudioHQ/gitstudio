@@ -18,6 +18,14 @@
 // the Result has not taken yet is written as git wrote it (the side's text),
 // never as base. Apply still writes the plain Result.
 //
+// Typing does not settle a conflict — only taking a side (or both, or the
+// wand) does. A line edited, deleted or typed BESIDE an open conflict (the
+// Result pane is editable, and the common lines around a conflict are where
+// people type) leaves that conflict marked; it once read the whole region as
+// "settled by hand" and wrote the conflict's base with no markers (byBlock).
+// A region the file had already settled outside its markers when the editor
+// opened keeps the file's lines until the Result settles it (KeptRegion).
+//
 // seedFromWorking: the Result was always seeded from base, so opening the
 // merge editor on a file resolved by hand or by git rerere (no markers left)
 // showed the conflict from the start, and the next write put base back over
@@ -92,39 +100,55 @@ export interface MarkedDocument {
 }
 
 /**
+ * A region of the file that was already settled OUTSIDE the conflict markers
+ * when the merge editor opened: by hand, by git rerere, or by git's own merge
+ * where the engine sees a conflict (seedFromWorking's `keep`).
+ */
+export interface KeptRegion {
+  blockIds: number[];
+  baseSpan: LineSpan;
+  lines: string[];
+}
+
+/**
  * The document text for a Result that may still hold unsettled conflicts
  * (see the file comment). Undefined when the result could not be mapped onto
  * the merge (the diff gave up) — write nothing then.
+ *
+ * `keep`: regions the file had already settled when the editor opened. While
+ * the Result leaves one untouched (still base, the whole span), the document
+ * keeps the file's own lines there — a resolution made by hand in a text
+ * editor before the merge editor opened existed nowhere else, and the first
+ * accept wrote it back as markers. Once the Result settles it, the Result wins.
  */
 export function markUnsettled(
   prepared: PreparedMerge,
   result: string,
   labels: MarkerLabels,
+  keep: readonly KeptRegion[] = [],
 ): MarkedDocument | undefined {
   const { model } = prepared;
   if (model.blocks.length === 0) return { text: result, marked: 0, changes: 0 };
   const doc = splitLines(normalizeEol(result));
-  const groups = mapGroups(prepared, doc);
+  const groups = mapGroups(prepared, doc, true);
   if (!groups) return undefined;
 
-  const out: string[] = [];
-  let at = 0; // next doc line (0-based) not yet copied
-  let marked = 0;
+  // What each group puts in the document, in doc order.
+  const parts: Part[] = [];
   let changes = 0;
   for (const g of groups) {
-    out.push(...doc.slice(at, g.docFrom));
-    at = g.docTo;
     const region = doc.slice(g.docFrom, g.docTo);
     const baseRegion = prepared.base.slice(g.baseFrom, g.baseTo);
     const conflicts = g.blocks.filter((b) => b.kind === "conflict").length;
-    const pending = (): string[] => {
-      marked += conflicts;
-      return render(prepared, g, (b) => (b.kind === "conflict" ? markers(prepared, b, labels) : natural(prepared, b)));
+    const part = (lines: string[], marked: number, open = false): void => {
+      parts.push({ g, docFrom: g.docFrom, docTo: g.docTo, lines, marked, open });
     };
+    const pending = (): string[] =>
+      render(prepared, g, (b) => (b.kind === "conflict" ? markers(prepared, b, labels) : natural(prepared, b)));
     if (same(region, baseRegion)) {
       // Nothing settled here: conflicts keep their markers, and a change only
       // one side made (or both made alike) stays as git merged it.
-      out.push(...pending());
+      part(pending(), conflicts, true);
       continue;
     }
     if (g.blocks.length === 1) {
@@ -133,7 +157,7 @@ export function markUnsettled(
       const post = prepared.base.slice(b.baseSpan.endExclusive - 1, g.baseTo);
       const settledAs = candidates(prepared, b).find((c) => same(region, [...pre, ...c.lines, ...post]));
       if (settledAs) {
-        out.push(...region);
+        part(region, 0);
         if (!settledAs.natural) changes++;
         continue;
       }
@@ -141,26 +165,109 @@ export function markUnsettled(
       // still intact next to them. Keep them, and keep the markers.
       if (baseRegion.length > 0 && !(prepared.baseEmpty && baseRegion.length === 1 && baseRegion[0] === "")) {
         if (endsWith(region, baseRegion)) {
-          out.push(...region.slice(0, region.length - baseRegion.length), ...pending());
+          part([...region.slice(0, region.length - baseRegion.length), ...pending()], conflicts);
           changes++;
           continue;
         }
         if (startsWith(region, baseRegion)) {
-          out.push(...pending(), ...region.slice(baseRegion.length));
+          part([...pending(), ...region.slice(baseRegion.length)], conflicts);
           changes++;
           continue;
         }
       }
     }
-    // Settled here — by an accept, the wand, or by hand. The Result is the answer.
-    out.push(...region);
+    // Changed here in a way the blocks do not explain as a whole: an accept,
+    // the wand or a hand edit — often to a COMMON line beside them, which
+    // settles nothing. Decide block by block (byBlock).
+    const settled = byBlock(prepared, g, region, labels);
+    if (!settled) return undefined;
+    part(settled.lines, settled.marked);
     changes++;
+  }
+
+  // A line typed far from every block sits between groups, not in one: it is
+  // a change to write all the same.
+  let docAt = 0;
+  let baseAt = 0;
+  for (const p of [...parts, undefined]) {
+    const docTo = p ? p.docFrom : doc.length;
+    const baseTo = p ? p.g!.baseFrom : prepared.base.length;
+    if (!same(doc.slice(docAt, docTo), prepared.base.slice(baseAt, baseTo))) {
+      changes++;
+      break;
+    }
+    if (p) {
+      docAt = p.docTo;
+      baseAt = p.g!.baseTo;
+    }
+  }
+
+  for (const k of keep) keepRegion(prepared, doc, parts, k);
+
+  const out: string[] = [];
+  let at = 0; // next doc line (0-based) not yet copied
+  let marked = 0;
+  for (const p of parts) {
+    out.push(...doc.slice(at, p.docFrom), ...p.lines);
+    at = p.docTo;
+    marked += p.marked;
   }
   out.push(...doc.slice(at));
 
   // Always the rendered text, even with nothing to report: a one-sided change
   // the Result has not taken is written as git wrote it, never as base.
   return { text: withEol(out.join("\n"), result, model), marked, changes };
+}
+
+/** What one group (or a kept region, which has none) puts in the document: doc lines [docFrom, docTo) → `lines`. */
+interface Part {
+  g?: Group;
+  docFrom: number;
+  docTo: number;
+  lines: string[];
+  /** Conflicts written as markers here. */
+  marked: number;
+  /** The Result left every block here untouched (still base). */
+  open: boolean;
+}
+
+/**
+ * Put a kept region's own lines in place of the parts it covers — only when
+ * every block it holds is still untouched in the Result (its groups all open,
+ * nothing else in between) and the Result reads as base across the whole
+ * span, so nothing the user did in the merge editor is overruled.
+ */
+function keepRegion(
+  prepared: PreparedMerge,
+  doc: readonly string[],
+  parts: Part[],
+  k: KeptRegion,
+): void {
+  const from = k.baseSpan.start - 1;
+  const to = k.baseSpan.endExclusive - 1;
+  const ids = new Set(k.blockIds);
+  const covered = parts.filter((p) => p.g && p.g.blocks.some((b) => ids.has(b.id)));
+  if (covered.length === 0) return;
+  const seen = new Set<number>();
+  for (const p of covered) {
+    const g = p.g!;
+    if (!p.open || g.baseFrom < from || g.baseTo > to) return;
+    for (const b of g.blocks) {
+      if (!ids.has(b.id)) return;
+      seen.add(b.id);
+    }
+  }
+  if (seen.size !== ids.size) return;
+  const first = covered[0];
+  const last = covered[covered.length - 1];
+  const docFrom = first.docFrom - (first.g!.baseFrom - from);
+  const docTo = last.docTo + (to - last.g!.baseTo);
+  if (docFrom < 0 || docTo > doc.length || !same(doc.slice(docFrom, docTo), prepared.base.slice(from, to))) return;
+  const i = parts.indexOf(first);
+  const j = parts.indexOf(last);
+  if (parts.slice(i, j + 1).some((p) => !covered.includes(p))) return;
+  if ((i > 0 && parts[i - 1].docTo > docFrom) || (j + 1 < parts.length && parts[j + 1].docFrom < docTo)) return;
+  parts.splice(i, j - i + 1, { docFrom, docTo, lines: [...k.lines], marked: 0, open: false });
 }
 
 /** What the Result should start from, given the file as it is on disk. */
@@ -254,17 +361,25 @@ interface Group {
  * after it can be matched one line early, and the region slides. Only when a
  * hand edit changed a common chunk itself does the walk fail, and the diff's
  * anchors (mapByDiff) decide. Undefined when neither can place the blocks.
+ *
+ * `strict` (markUnsettled): a region edited by hand ends only where the diff
+ * finds the next chunk too (see mapByChunks). The seed reads the conflicted
+ * file itself, whose diff3 markers repeat base lines the diff pairs with, so
+ * it walks as before.
  */
-function mapGroups(prepared: PreparedMerge, doc: readonly string[]): Group[] | undefined {
-  return mapByChunks(prepared, doc) ?? mapByDiff(prepared, doc);
+function mapGroups(prepared: PreparedMerge, doc: readonly string[], strict = false): Group[] | undefined {
+  return mapByChunks(prepared, doc, strict) ?? mapByDiff(prepared, doc);
 }
 
-function mapByChunks(prepared: PreparedMerge, doc: readonly string[]): Group[] | undefined {
+function mapByChunks(prepared: PreparedMerge, doc: readonly string[], strict: boolean): Group[] | undefined {
   const base = prepared.base;
   const blocks = sortedBlocks(prepared);
   // chunk[i] = the common lines before blocks[i]; chunk[n] = after the last one.
+  const chunkFrom = (i: number): number => (i === 0 ? 0 : blocks[i - 1].baseSpan.endExclusive - 1);
   const chunk = (i: number): readonly string[] =>
-    base.slice(i === 0 ? 0 : blocks[i - 1].baseSpan.endExclusive - 1, i === blocks.length ? base.length : blocks[i].baseSpan.start - 1);
+    base.slice(chunkFrom(i), i === blocks.length ? base.length : blocks[i].baseSpan.start - 1);
+  // The diff's match for each base line, computed only if a region was edited by hand.
+  let matched: Int32Array | null | undefined;
   const first = chunk(0);
   if (!matchAt(doc, 0, first)) return undefined;
   let pos = first.length;
@@ -283,9 +398,19 @@ function mapByChunks(prepared: PreparedMerge, doc: readonly string[]): Group[] |
       }
     }
     if (len === undefined) {
-      // Edited by hand: the region runs to where the next common chunk starts.
+      // Edited by hand: the region runs to where the next common chunk starts —
+      // where the DIFF finds that chunk too. A chunk that was itself edited (a
+      // common line beside a conflict) turns up again only by chance, further
+      // down (a blank line, a lone brace), and a region stretched to it would
+      // swallow the blocks in between: the diff's anchors decide then. So does
+      // an empty chunk, which marks no place at all.
+      if (strict && next.length === 0 && !last) return undefined;
       const q = last ? doc.length - next.length : indexOfRun(doc, next, pos);
       if (q < pos || !fits(q - pos)) return undefined;
+      if (strict && next.length > 0) {
+        if (matched === undefined) matched = matchLines(base, doc) ?? null;
+        if (!matched || matched[chunkFrom(i + 1)] !== q) return undefined;
+      }
       len = q - pos;
     }
     groups.push({
@@ -325,28 +450,48 @@ function indexOfRun(doc: readonly string[], run: readonly string[], from: number
  * blocks between two consecutive anchors are one group, and the document lines
  * between the anchors' matches are its region. Undefined when the diff timed out.
  */
+/**
+ * For each line of `from` (0-based), the line of `to` the diff matched it to,
+ * or -1. Undefined when the diff timed out.
+ */
+function matchLines(from: readonly string[], to: readonly string[]): Int32Array | undefined {
+  const at = new Int32Array(from.length).fill(-1);
+  // The diff wants a line on each side (a text model always has one).
+  if (from.length === 0 || to.length === 0) return at;
+  let diff: ReturnType<ReturnType<typeof linesDiffComputers.getDefault>["computeDiff"]>;
+  try {
+    diff = linesDiffComputers.getDefault().computeDiff(from as string[], to as string[], {
+      ignoreTrimWhitespace: false,
+      maxComputationTimeMs: 5000,
+      computeMoves: false,
+    });
+  } catch {
+    return undefined;
+  }
+  const { changes, hitTimeout } = diff;
+  if (hitTimeout) return undefined;
+  let f = 0;
+  let t = 0;
+  const equalUntil = (fEnd: number, tEnd: number): void => {
+    while (f < fEnd && t < tEnd) at[f++] = t++;
+  };
+  for (const c of changes) {
+    equalUntil(c.original.startLineNumber - 1, c.modified.startLineNumber - 1);
+    f = c.original.endLineNumberExclusive - 1;
+    t = c.modified.endLineNumberExclusive - 1;
+  }
+  equalUntil(from.length, to.length);
+  return at;
+}
+
 function mapByDiff(prepared: PreparedMerge, doc: readonly string[]): Group[] | undefined {
   const base = prepared.base;
   const n = base.length;
-  const { changes, hitTimeout } = linesDiffComputers.getDefault().computeDiff(base as string[], doc as string[], {
-    ignoreTrimWhitespace: false,
-    maxComputationTimeMs: 5000,
-    computeMoves: false,
-  });
-  if (hitTimeout) return undefined;
+  const matched = matchLines(base, doc);
+  if (!matched) return undefined;
   // docOf[i] = the document line (1-based) base line i (1-based) is matched to, or 0.
   const docOf = new Int32Array(n + 2);
-  let b = 1;
-  let d = 1;
-  const equalUntil = (bEnd: number, dEnd: number): void => {
-    while (b < bEnd && d < dEnd) docOf[b++] = d++;
-  };
-  for (const c of changes) {
-    equalUntil(c.original.startLineNumber, c.modified.startLineNumber);
-    b = c.original.endLineNumberExclusive;
-    d = c.modified.endLineNumberExclusive;
-  }
-  equalUntil(n + 1, doc.length + 1);
+  for (let i = 0; i < n; i++) docOf[i + 1] = matched[i] + 1;
 
   const owned = new Uint8Array(n + 2);
   for (const block of prepared.model.blocks) {
@@ -379,6 +524,89 @@ function mapByDiff(prepared: PreparedMerge, doc: readonly string[]): Group[] | u
     groups.push({ blocks: [block], baseFrom: a, baseTo: z - 1, docFrom: docAt[k], docTo: docAt[k + 1] - 1 });
   }
   return groups;
+}
+
+/**
+ * A group's region the blocks do not explain as a whole, block by block.
+ * Typing does not settle a conflict — only taking a side (or both, or the
+ * wand) does — so the region's lines stand except where a block was plainly
+ * left alone:
+ *
+ * - a block with base lines is left alone when the diff finds all of them,
+ *   in a row, in the region: a conflict is written as markers there, a
+ *   one-sided change as git merged it;
+ * - a block with none (both sides inserted at one spot) is left alone unless
+ *   one of the ways to settle it sits at that spot, between the base lines
+ *   found on either side of it. A conflict is marked there, beside anything
+ *   typed; a one-sided insertion is written as git merged it only when
+ *   nothing at all was typed there.
+ *
+ * Undefined when the diff timed out.
+ */
+function byBlock(
+  p: PreparedMerge,
+  g: Group,
+  region: readonly string[],
+  labels: MarkerLabels,
+): { lines: string[]; marked: number } | undefined {
+  // Base as the view holds it: an empty base has no lines at all.
+  const baseRegion = p.baseEmpty ? [] : p.base.slice(g.baseFrom, g.baseTo);
+  const found = matchLines(baseRegion, region);
+  if (!found) return undefined;
+  const edits: Array<{ from: number; to: number; lines: string[] }> = [];
+  let marked = 0;
+  for (const b of g.blocks) {
+    const s = p.baseEmpty ? 0 : b.baseSpan.start - 1 - g.baseFrom;
+    const e = p.baseEmpty ? 0 : b.baseSpan.endExclusive - 1 - g.baseFrom;
+    const open = (): string[] => {
+      if (b.kind !== "conflict") return natural(p, b);
+      marked++;
+      return markers(p, b, labels);
+    };
+    if (e > s) {
+      const at = found[s];
+      let intact = at >= 0;
+      for (let k = s + 1; k < e && intact; k++) intact = found[k] === at + (k - s);
+      if (intact) edits.push({ from: at, to: at + (e - s), lines: open() });
+      continue;
+    }
+    // No base lines: what sits between the base lines found on either side?
+    let l = s - 1;
+    while (l >= 0 && found[l] < 0) l--;
+    let r = s;
+    while (r < baseRegion.length && found[r] < 0) r++;
+    const gapFrom = l >= 0 ? found[l] + 1 : 0;
+    let gapTo = r < baseRegion.length ? found[r] : region.length;
+    // An empty base's region ends with the file's last line break, not a line.
+    if (p.baseEmpty && gapTo > gapFrom && region[gapTo - 1] === "") gapTo--;
+    const gap = region.slice(gapFrom, gapTo);
+    const taken = candidates(p, b).some((c) => {
+      const lines = p.baseEmpty && c.lines[c.lines.length - 1] === "" ? c.lines.slice(0, -1) : c.lines;
+      return lines.length > 0 && containsRun(gap, lines);
+    });
+    if (taken || (b.kind !== "conflict" && gap.length > 0)) continue;
+    // Right after the base line before it when only the line after it was
+    // edited; otherwise right before the line after it — so after anything
+    // typed at the spot itself.
+    const before = s > 0 ? found[s - 1] : -1;
+    const afterIntact = s < baseRegion.length && found[s] >= 0;
+    const place = before >= 0 && !afterIntact ? before + 1 : gapTo;
+    edits.push({ from: place, to: place, lines: open() });
+  }
+  const out: string[] = [];
+  let at = 0;
+  for (const edit of edits.sort((x, y) => x.from - y.from || x.to - y.to)) {
+    if (edit.from < at) return undefined; // overlapping reads: never guess
+    out.push(...region.slice(at, edit.from), ...edit.lines);
+    at = edit.to;
+  }
+  out.push(...region.slice(at));
+  return { lines: out, marked };
+}
+
+/** Whether `run` (non-empty) occurs in `lines`, in a row. */
+function containsRun(lines: readonly string[], run: readonly string[]): boolean {
+  return indexOfRun(lines, run, 0) >= 0;
 }
 
 /** For each document line, whether it lies inside a conflict (markers included). */
