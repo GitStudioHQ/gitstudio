@@ -1,0 +1,44 @@
+packages/git-service/test/pullStopped.test.ts
+  s_26f5e669d3043c::t_7daaad9c860f96 33-39
+  s_26f5e669d3043c::t_a1b169930f3b73 435-479
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_eaec6abd754c20 3
+  s_26f5e669d3043c::t_6a4b6ff7215957 252-256
+  s_26f5e669d3043c::t_b98da417f27d16 272-277,283
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_6b591ca415035f 1599-1600
+  s_26f5e669d3043c::t_5a2567da5eed35 4
+  s_26f5e669d3043c::t_85d549c5780d93 1597-1598
+apps/extension/src/git/pullMode.ts
+  s_26f5e669d3043c::t_3cc0d48eab8ec2 45-72
+  s_26f5e669d3043c::t_fb8e6a84ebfecd 3
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_bec64f1ca29dbb 148-152
+  s_26f5e669d3043c::t_9697c9626ebebe 578-584
+  s_26f5e669d3043c::t_c3dbfae292c4ee 126-131
+  s_26f5e669d3043c::t_8dcfb90a671884 125
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_01d88cc1af0e4c 27
+  s_26f5e669d3043c::t_e70359ac1c30d2 1842-1846
+apps/extension/test/pullDivergedCallSites.test.ts
+  s_26f5e669d3043c::t_2ada35b57a70ba 195-234,236-248
+  s_26f5e669d3043c::t_aa61ebe7f2b3ce 235
+apps/desktop/test/reportingVerdicts.test.ts
+  s_26f5e669d3043c::t_853312f061108e 330-344
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e5201c443fbfbd9abef014158eb85b9ee7a8a87e",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
