@@ -22,7 +22,14 @@ import { whileSameRepo } from "./repoEpoch";
 import { resolvedOutsideMerge } from "@gitstudio/engine/conflict/documentText";
 import { el, span, glyph } from "./ui";
 import { didUndoable, registerMergeHistory } from "./undo";
-import { DesktopMergeAdapter, detectJetBrains, loadMergeSettings, mergePayload } from "./mergeParity";
+import {
+  DesktopMergeAdapter,
+  conflictSignature,
+  conflictStop,
+  detectJetBrains,
+  loadMergeSettings,
+  mergePayload,
+} from "./mergeParity";
 
 /** What the Changes view does when the merge shell resolves, exits, or moves the operation. */
 export interface ConflictHandlers {
@@ -105,6 +112,17 @@ export class DiffPanel {
   private shownTag?: string;
   /** The conflict the shell is showing, for keeping it across a repaint. */
   private shownConflict?: string;
+  /** The same, without the file's own text: which stop of which conflict (`conflictStop`). */
+  private shownStop?: string;
+  /** The merge bar above the shell, where a change on disk is said. */
+  private mergeBar?: HTMLElement;
+  /**
+   * The conflicted file was written from outside while the shell was open
+   * (another editor, a formatter, a command in a terminal): the newest
+   * version seen, whether the user chose to keep their merge over it, and the
+   * notice saying so. Cleared when the shell goes.
+   */
+  private disk?: { model: ConflictModel; kept: boolean; el?: HTMLElement };
   /** The handlers the live shell reports to — replaced when a repaint re-asks. */
   private conflictHandlers: ConflictHandlers = {};
   private disposed = false;
@@ -580,15 +598,36 @@ export class DiffPanel {
     // moment anything on disk moved (memory: refresh-closing-dialogs).
     const sig = conflictSignature(model);
     this.conflictHandlers = handlers;
-    if (this.shell && this.shownConflict === sig) return;
+    if (this.shell && this.shownConflict === sig) {
+      // The file is back to the text the editor opened with (a formatter
+      // undone, a checkout of the same content): nothing left to say.
+      this.clearDiskNotice();
+      return;
+    }
+    // The SAME conflict at the same stop, and only the file's own text moved:
+    // it was written from outside while the editor was open. Rebuilding here
+    // threw away every accept and edit not applied yet, without a word, on
+    // the watcher's next tick. The editor and its work stay; the merge bar
+    // says what happened and asks what to do about it.
+    if (this.shell && this.shownStop === conflictStop(model)) {
+      this.fileChangedOnDisk(model);
+      return;
+    }
+    this.mountConflict(model, !!handlers.focusOnMount);
+  }
+
+  /** Build the merge editor for `model`, replacing whatever the panel shows. */
+  private mountConflict(model: ConflictModel, focusOnMount: boolean): void {
     this.teardown();
-    this.shownConflict = sig;
+    this.shownConflict = conflictSignature(model);
+    this.shownStop = conflictStop(model);
     const gen = ++this.mountGen;
 
     const wrap = el("div", "merge-wrap");
     // The path, as the diff view shows it. The extension names the file on its
     // editor tab; a pane in the middle of the Changes view has no tab.
     const bar = el("div", "merge-bar");
+    this.mergeBar = bar;
     const title = el("div", "merge-bar-title");
     const path = span("", "merge-bar-path");
     path.appendChild(span(model.path, "merge-bar-path-text"));
@@ -658,8 +697,112 @@ export class DiffPanel {
       // Only if the keyboard is still nowhere: a user who has moved on while
       // the editor loaded keeps their place.
       const active = document.activeElement;
-      if (handlers.focusOnMount && (!active || active === document.body)) live.focus();
+      if (focusOnMount && (!active || active === document.body)) live.focus();
     });
+  }
+
+  /**
+   * Say, in the merge bar, that the open file changed on disk — once per
+   * version of it — and offer the two answers: Reload from disk (start over
+   * from the file as it is now, discarding the editor's work after a
+   * confirm) or Keep my merge (carry on; Apply re-reads the file and asks
+   * before replacing it, DesktopMergeAdapter.overwriteRefusal).
+   */
+  private fileChangedOnDisk(model: ConflictModel): void {
+    // The same text again (every watcher tick re-reads the file): already
+    // said, and possibly already answered.
+    if (this.disk && this.disk.model.result === model.result) {
+      this.disk.model = model;
+      return;
+    }
+    // New, or changed AGAIN after a Keep: that answer was about other text.
+    this.disk = { model, kept: false, el: this.disk?.el };
+    this.renderDiskNotice();
+  }
+
+  private renderDiskNotice(): void {
+    const disk = this.disk;
+    const bar = this.mergeBar;
+    if (!disk || !bar) return;
+    const name = baseName(disk.model.path);
+    const box = el("div", "merge-disk");
+    if (disk.kept) {
+      box.classList.add("is-kept");
+      box.setAttribute("role", "status");
+      box.append(
+        glyph("info"),
+        span(`${name} changed on disk. Your merge is kept: Apply asks before replacing the file.`, "merge-disk-text"),
+      );
+    } else {
+      // Asked, not announced in passing: the user owes it an answer before the
+      // work in the editor and the file on disk can agree again.
+      box.setAttribute("role", "alert");
+      const actions = el("div", "merge-disk-actions");
+      const reload = el("button", "mini-btn") as HTMLButtonElement;
+      reload.type = "button";
+      reload.append(glyph("refresh"), span("Reload from disk"));
+      reload.title = `Open ${name} again as it is on disk now. The work in this editor is discarded (you are asked first).`;
+      reload.addEventListener("click", () => void this.reloadFromDisk());
+      const keep = el("button", "mini-btn") as HTMLButtonElement;
+      keep.type = "button";
+      keep.append(span("Keep my merge"));
+      keep.title = "Carry on with the merge here. Apply asks before replacing what is on disk.";
+      keep.addEventListener("click", () => this.keepMyMerge());
+      actions.append(reload, keep);
+      box.append(
+        glyph("warning"),
+        span(`${name} changed on disk while the merge editor was open.`, "merge-disk-text"),
+        actions,
+      );
+    }
+    if (disk.el?.isConnected) disk.el.replaceWith(box);
+    else bar.append(box);
+    disk.el = box;
+    bar.classList.add("has-disk");
+  }
+
+  /** Keep my merge: the question is answered; the bar keeps one quiet line. */
+  private keepMyMerge(): void {
+    if (!this.disk) return;
+    const hadKeyboard = !!this.disk.el?.contains(document.activeElement);
+    this.disk.kept = true;
+    this.renderDiskNotice();
+    // The button that had the keyboard is gone: hand it back to the editor.
+    if (hadKeyboard || document.activeElement === document.body) this.shell?.focus();
+  }
+
+  /**
+   * Reload from disk: start the merge over from the file as it is now. With
+   * work in the editor that is not applied yet, that throws it away — so it
+   * asks first, and the question outlives the watcher's refresh.
+   */
+  private async reloadFromDisk(): Promise<void> {
+    const live = this.shell;
+    const disk = this.disk;
+    if (!live || !disk) return;
+    if (live.view?.canUndo()) {
+      const name = baseName(disk.model.path);
+      const ok = await confirmDialog({
+        title: `Reload ${name} from disk?`,
+        message:
+          `The work in the merge editor that is not applied yet is discarded, and ${name} opens again ` +
+          `from the file as it is on disk now.`,
+        confirmLabel: "Discard and reload",
+        danger: true,
+        holdWhile: whileSameRepo(),
+      });
+      if (!ok) return;
+    }
+    // Asked while something else moved on (the file resolved, another opened).
+    if (this.shell !== live || !this.disk) return;
+    // The newest version seen — it may have changed again while asking.
+    this.mountConflict(this.disk.model, true);
+  }
+
+  private clearDiskNotice(): void {
+    this.disk?.el?.remove();
+    this.disk = undefined;
+    this.mergeBar?.classList.remove("has-disk");
   }
 
   /** The 1-based line numbers currently selected in the working (right) editor —
@@ -811,26 +954,14 @@ export class DiffPanel {
     this.disposeEditors();
     this.shownTag = undefined;
     this.shownConflict = undefined;
+    this.shownStop = undefined;
+    this.mergeBar = undefined;
+    this.disk = undefined;
     this.container.replaceChildren();
   }
 }
 
-/**
- * What identifies a conflict as "the same one": the file, the stop it belongs
- * to, and the three texts and titles. A Continue that stopped on the next
- * commit, or a file changed by hand, is a different conflict and rebuilds.
- */
-function conflictSignature(m: ConflictModel): string {
-  return JSON.stringify([
-    m.path,
-    m.op?.episode ?? "",
-    m.shape ?? "",
-    m.missingRole ?? "",
-    m.oursLabel,
-    m.theirsLabel,
-    m.base,
-    m.ours,
-    m.theirs,
-    m.result,
-  ]);
+/** The file name as a sentence names it. */
+function baseName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
 }

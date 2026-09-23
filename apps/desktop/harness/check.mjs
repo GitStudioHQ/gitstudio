@@ -385,6 +385,9 @@ const CASES = [
   ["the-dashboards-questions-outlive-the-watchers-refresh", "changes", { extra: "op=cherry-pick&conflicts=1", arg: "skip" }],
   ["the-dashboards-questions-outlive-the-watchers-refresh", "changes", { extra: "opctx=reporter&willdrop=1", arg: "drop" }],
   ["the-merge-editor-and-its-questions-outlive-the-watchers-refresh", "changes", { extra: "opctx=reporter" }],
+  // …nor the work in it when the conflicted file itself is written from outside.
+  ["the-merge-editor-keeps-its-work-when-the-file-changes-on-disk", "changes", { extra: "opctx=reporter", arg: "keep" }],
+  ["the-merge-editor-keeps-its-work-when-the-file-changes-on-disk", "changes", { extra: "opctx=reporter", arg: "reload" }],
   ["the-ide-hand-off-is-not-repeated-by-a-refresh", "changes", { extra: "opctx=reporter&resolver=jetbrains" }],
   ["the-rebase-views-questions-outlive-the-watchers-refresh", "rebase", { extra: "rebasing=1&op=rebase&willdrop=1" }],
   ["a-rebase-question-does-not-follow-you-to-another-repository", "rebase", { extra: "rebasing=1&op=rebase" }],

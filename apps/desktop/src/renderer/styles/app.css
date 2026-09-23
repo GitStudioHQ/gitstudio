@@ -9228,6 +9228,36 @@ body.vscode-light .gh-label-chip {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The file changed on disk while the merge editor was open (diffPanel.ts
+   fileChangedOnDisk): a line of its own under the path, with its two answers.
+   The bar wraps only while it carries one. */
+.merge-bar.has-disk {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.merge-disk {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--status-warn) 12%, transparent);
+  font-size: var(--text-sm);
+  color: var(--vscode-foreground);
+}
+.merge-disk > .codicon { flex: 0 0 auto; font-size: 15px; color: var(--status-warn); }
+.merge-disk.is-kept { background: none; padding: 0; }
+.merge-disk.is-kept > .codicon { color: var(--app-muted); }
+.merge-disk-text { flex: 1 1 12em; min-width: 0; }
+.merge-disk-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  margin-left: auto;
+}
 .merge-surface {
   flex: 1 1 auto;
   min-height: 0; /* CRITICAL — gives the Monaco merge editor real height */

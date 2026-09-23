@@ -4759,6 +4759,105 @@
     },
 
     /**
+     * The conflicted file is written from OUTSIDE while the merge editor has
+     * work in it that is not applied yet — another editor saving it, a
+     * formatter, a command in a terminal. The watcher's repaint rebuilt the
+     * editor from the new file (what it keeps is keyed on the file's text as
+     * well as the conflict), and the accepts were gone without a word.
+     *
+     * The editor and its work stay; the merge bar says the file changed on
+     * disk and asks: Reload from disk (which confirms, since it discards the
+     * work) or Keep my merge (Apply then asks before replacing the file, as
+     * the extensions do). arg "keep" / "reload" is the answer given.
+     */
+    "the-merge-editor-keeps-its-work-when-the-file-changes-on-disk": async (f) => {
+      const c = check(f);
+      const answer = window.__GS_ARG === "reload" ? "reload" : "keep";
+      const resolves = () => window.__GS_INVOKED.filter((r) => r.channel === "conflict:resolve").length;
+      await settle(600);
+      $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
+      await settle(1200);
+      const shell0 = $(".ms-shell");
+      c.ok(!!shell0, "the merge editor is open");
+      if (!shell0) return;
+      const counter = () => text(".ms-shell .jb-counter");
+      const done = "All changes have been processed";
+      $(".ms-accept-yours")?.click();
+      await settle(200);
+      c.eq(counter(), done, "work in the editor: Accept Yours settled the changes");
+      c.eq(resolves(), 0, "precondition: none of it is applied yet");
+      c.ok(
+        // `echo five >> file.txt` in a terminal: the conflict's markers stay.
+        typeof window.__gsWriteFile === "function" &&
+          window.__gsWriteFile(
+            "file.txt",
+            "one\ntwo\n<<<<<<< HEAD\nthree-master\n||||||| base\nthree\n=======\nthree-test\n>>>>>>> 1a2b3c4 (test change)\nfour\nfive\n",
+          ),
+        "precondition: file.txt is written outside the app",
+      );
+      const notice = () => $(".merge-bar .merge-disk");
+      const button = (label) => $$(".merge-disk button").find((b) => text(b) === label);
+      for (const gitDir of [false, true]) {
+        c.ok(window.__gsEmit("repo:filesChanged", { gitDir }) > 0, "precondition: the app listens for the watcher");
+        await settle(1500);
+        const where = gitDir ? "git-dir" : "working-tree";
+        c.ok($(".ms-shell") === shell0, `the SAME merge editor is on screen after a ${where} refresh`);
+        c.eq(counter(), done, `with the work in it (${where})`);
+        c.ok(!!notice() && !notice().closest("[hidden]"), `the merge bar says the file changed (${where})`);
+        c.match(text(notice()), /file\.txt changed on disk/, "in plain words, naming the file");
+        c.ok(!!button("Reload from disk") && !!button("Keep my merge"), "and asks: Reload from disk, or Keep my merge");
+        c.eq($$(".merge-disk").length, 1, "once, however many refreshes");
+      }
+      if (answer === "keep") {
+        button("Keep my merge")?.click();
+        await settle(300);
+        c.ok(!button("Reload from disk") && !button("Keep my merge"), "Keep my merge answers the question");
+        c.ok($(".ms-shell") === shell0 && counter() === done, "and the merge stays as it was");
+        c.match(text(notice()), /Apply asks/, "the bar still says Apply will ask before replacing the file");
+        c.ok(!!document.activeElement && shell0.contains(document.activeElement), "the keyboard goes back into the merge editor");
+        window.__gsEmit("repo:filesChanged", { gitDir: false });
+        await settle(1500);
+        c.ok(!button("Keep my merge"), "the same change on disk is not asked about again");
+        c.ok($(".ms-shell") === shell0 && counter() === done, "and the work is still there");
+        $(".ms-apply")?.click();
+        await settle(600);
+        c.match(text(".modal-title"), /file\.txt changed outside the merge editor/, "Apply asks before replacing what is on disk");
+        c.eq(resolves(), 0, "and writes nothing until it is answered");
+        $(".modal-ok")?.click();
+        await settle(900);
+        c.eq(resolves(), 1, "the answer writes the merge: one conflict:resolve");
+        return;
+      }
+      button("Reload from disk")?.click();
+      await settle(400);
+      c.match(text(".modal-title"), /Reload file\.txt from disk\?/, "Reload asks first: it discards the merge");
+      window.__gsEmit("repo:filesChanged", { gitDir: true });
+      await settle(1500);
+      c.match(text(".modal-title"), /Reload file\.txt from disk\?/, "and the question outlives the watcher's refresh");
+      $$(".modal-actions button").find((b) => text(b) === "Cancel")?.click();
+      await settle(400);
+      c.ok($(".ms-shell") === shell0 && counter() === done, "Cancel keeps the merge");
+      c.ok(!!button("Reload from disk"), "and the choice stays on offer");
+      button("Reload from disk")?.click();
+      await settle(400);
+      $(".modal-ok")?.click();
+      await settle(1500);
+      const shell1 = $(".ms-shell");
+      c.ok(!!shell1 && shell1 !== shell0, "Reload opens the file again");
+      c.ok(counter() !== done, "without the discarded work");
+      c.ok(!notice(), "and nothing is left to say about the disk");
+      c.ok(!!document.activeElement && !!shell1 && shell1.contains(document.activeElement), "the keyboard is in the reloaded editor");
+      // The reloaded editor holds what is on disk now: its Apply has no
+      // outside edit to ask about.
+      $(".ms-accept-yours")?.click();
+      await settle(200);
+      $(".ms-apply")?.click();
+      await settle(900);
+      c.ok(!$(".modal-title"), "Apply after a reload asks nothing about an outside edit");
+      c.eq(resolves(), 1, "and writes the merge");
+    },
+
+    /**
      * With Settings ▸ Merge resolving in the IDE, the file is handed over once
      * — not again on every repaint of the Changes view. Each repaint used to
      * relaunch the IDE, and the main process removed the previous window's

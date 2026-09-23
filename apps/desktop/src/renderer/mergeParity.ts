@@ -84,6 +84,37 @@ export function conflictShape(model: ConflictModel): ConflictShape {
 }
 
 /**
+ * Which conflict this is, leaving out the file's own text: the file, the stop
+ * it belongs to, and the three sides git holds for it (and their titles). A
+ * Continue that stopped on the next commit is a different stop, and the merge
+ * editor is rebuilt for it; a write to the file from outside (another editor,
+ * a formatter, a terminal) is the SAME stop, and the editor — with the work
+ * in it — stays (DiffPanel.showConflict).
+ */
+export function conflictStop(m: ConflictModel): string {
+  return JSON.stringify([
+    m.path,
+    m.op?.episode ?? "",
+    m.shape ?? "",
+    m.missingRole ?? "",
+    m.oursLabel,
+    m.theirsLabel,
+    m.base,
+    m.ours,
+    m.theirs,
+  ]);
+}
+
+/**
+ * Exactly "the same conflict": its stop and the file's text. The same
+ * signature again is a repaint with nothing new in it; the same stop with
+ * other text is the file changed on disk.
+ */
+export function conflictSignature(m: ConflictModel): string {
+  return JSON.stringify([conflictStop(m), m.result]);
+}
+
+/**
  * The ROLE with no version of the file. `missingSide` is in STAGE terms
  * ("ours" = stage 2), and which role stage 2 is depends on the operation —
  * during a rebase it is Theirs. Mapped through the one stage→role helper.
