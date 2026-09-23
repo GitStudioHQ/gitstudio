@@ -89,8 +89,8 @@ but they share the same engine, so most Git behaviour lands in both at once.
   pulling with rebase — Pull showed git's *"Your local changes to the following
   files would be overwritten by merge"* (or *"cannot pull with rebase"*) in
   red, after the fetch's own lines, and sent a crash report. It now says which
-  files are in the way and offers **Stash & Retry** — stash just those files,
-  pull, and put them back — or **Cancel**.
+  files are in the way and offers **Stash & Retry** — stash them, pull, and put
+  them back — or **Cancel**.
 - **Revert, cherry-pick, checkout, merge, rebase and stash apply over your
   changes showed git's refusal and sent a crash report.** Reverting a commit
   while you had an edit to a file it touches showed *"Your local changes to the
