@@ -422,6 +422,13 @@
   //   &willdrop=1                              the resolution emptied the commit
   //   &noide=1                                 no JetBrains IDE on this machine
   //   &resolver=jetbrains                      Settings ▸ Merge resolves in the IDE
+  //
+  // Or a REAL stopped repository: scripts/merge-e2e/render.ts loads a script
+  // before this one that sets window.__GS_MERGE_FIXTURE = { op, files, models }
+  // — the operation as OperationProvider.view() named it, the dashboard rows
+  // as ConflictOps.snapshot() listed them, and each file's ConflictModel as
+  // GitBridge.conflictModel built it. Then those replace every fixture here.
+  const FIX = window.__GS_MERGE_FIXTURE;
   const mp = (() => {
     const opParam = params.get("op") || "";
     const ctx = params.get("opctx") || "";
@@ -494,7 +501,9 @@
         verbs: VERBS.am, episode: "am:2",
       }),
     };
-    const kind = ctx === "reporter" || ctx === "three" ? "rebase" : ctx === "merge" ? "merge" : ctx === "am" ? "am" : opParam;
+    const kind = FIX
+      ? FIX.op.kind
+      : ctx === "reporter" || ctx === "three" ? "rebase" : ctx === "merge" ? "merge" : ctx === "am" ? "am" : opParam;
     const POOL = ["src/app.ts", "src/util.ts", "README.md", "package.json", "src/cli.ts"];
     const filesFor = () => {
       if (ctx === "reporter") return [{ path: "file.txt", shape: "text" }];
@@ -512,8 +521,8 @@
     };
     const state = {
       step: 1,
-      op: kind && (views[kind] || ctx) ? (ctx === "three" ? rebaseStep(1, 3) : views[kind]()) : NONE,
-      files: kind ? filesFor().map((f) => ({ ...f, status: "pending" })) : [],
+      op: FIX ? FIX.op : kind && (views[kind] || ctx) ? (ctx === "three" ? rebaseStep(1, 3) : views[kind]()) : NONE,
+      files: FIX ? FIX.files.map((f) => ({ ...f, status: "pending" })) : kind ? filesFor().map((f) => ({ ...f, status: "pending" })) : [],
       settings: {
         autoApplyNonConflicting: false,
         conflictResolver: params.get("resolver") === "jetbrains" ? "jetbrains" : "embedded",
@@ -527,8 +536,9 @@
       if (op.kind === "none") return { ...op, title: pending() ? "Unmerged files on main" : "" };
       const p = pending();
       const canContinue = p === 0 && !emptied && !!op.verbs.continue;
-      const canSkip =
-        op.kind === "cherry-pick" || op.kind === "revert" || op.kind === "am"
+      const canSkip = FIX
+        ? FIX.op.canSkip
+        : op.kind === "cherry-pick" || op.kind === "revert" || op.kind === "am"
           ? true
           : op.kind === "rebase" && apply && emptied;
       const out = { ...op, canContinue, canSkip };
@@ -558,7 +568,7 @@
       if (f.status === "resolved") {
         changedFiles.push({ path: f.path, status: f.choice === "deleted" ? "D" : "M", staged: true, fromMp: true });
       } else {
-        const code = f.shape === "modify-delete" ? "UD" : f.shape === "both-deleted" ? "DD" : f.shape === "added-one-side" ? "AU" : "UU";
+        const code = f.xy || (f.shape === "modify-delete" ? "UD" : f.shape === "both-deleted" ? "DD" : f.shape === "added-one-side" ? "AU" : "UU");
         changedFiles.push({ path: f.path, status: "U", staged: false, conflicted: true, conflictKind: code, fromMp: true });
       }
     }
@@ -2465,6 +2475,7 @@
   dynamic["conflict:model"] = (path) => {
     const f = mp.file(path);
     if (!f) return undefined;
+    if (FIX) return FIX.models[path];
     const op = mp.view();
     const base = {
       path, hasBase: f.shape !== "added-one-side" && f.shape !== "added-both",
