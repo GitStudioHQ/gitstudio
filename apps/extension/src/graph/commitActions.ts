@@ -320,10 +320,23 @@ async function checkout(
     if (picked === DETACH_CHOICE) {
       return detachAt(ctx, commit, undo);
     }
-    // Choosing a name IS the confirmation — do not ask twice.
-    return withUndo(undo, `Checkout ${picked}`, () =>
-      runGit(ctx, ["checkout", picked], `Switched to ${picked}`),
-    );
+    // Choosing a name IS the confirmation — do not ask twice. The switch goes
+    // through the ref arm, by the branch's FULL name, never `git checkout
+    // <picked>` bare: a branch called "-f" (update-ref and a fetch make one;
+    // porcelain never would) made that `git checkout -f`, which threw away
+    // every uncommitted change, stayed put, and toasted "Switched to -f". The
+    // arm refuses an option-like name, says why and offers the rename, and
+    // plans every other branch exactly as this did (`git checkout <name>`).
+    const fullName = commit.refs?.find(
+      (r) => r.kind === "head" && r.fullName === `refs/heads/${picked}`,
+    )?.fullName;
+    if (!fullName) {
+      void vscode.window.showErrorMessage(
+        `GitStudio: ${picked} is not a branch on this commit any more — refresh and try again.`,
+      );
+      return false;
+    }
+    return checkoutRef(fullName, ctx, undo);
   }
 
   return detachHere(ctx, commit, undo);
