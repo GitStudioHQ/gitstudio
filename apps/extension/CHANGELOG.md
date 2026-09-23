@@ -26,6 +26,20 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   their own group. Sync no longer tries to push after a pull that stopped.
 - **Pull asked "Merge or Rebase?" when it could not reach the remote.** It now
   shows the connection error instead.
+- **Sync could force push over someone else's commits.** On a branch where a
+  colleague had pushed while you committed, the status bar's **Sync** said
+  *"This branch was rewritten"* and offered **Force push**, promising the lease
+  would refuse if someone else had pushed. Sync had just fetched, so it would
+  not have — their commits would have been deleted from the remote. Sync now
+  offers the force only when the commits it replaces are ones you rewrote (an
+  amend or a rebase); any other divergence gets the **Merge / Rebase**
+  question. The branch menu's **Push** and the push dialog follow the same
+  rule.
+- **Pull over a merge or rebase in progress showed git's advice.** Pull, Sync
+  or Update pressed while conflicts were still being resolved now say what is
+  in progress and reveal the Changes view, instead of git's *"Pulling is not
+  possible because you have unmerged files"* — or, from Update, the
+  Merge / Rebase question all over again.
 
 ## [1.13.0] - 2026-09-21
 

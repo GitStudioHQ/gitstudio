@@ -35,6 +35,23 @@ but they share the same engine, so most Git behaviour lands in both at once.
 - **Pull asked "Merge or Rebase?" when it could not reach the remote.** Offline,
   or with the remote gone, Pull could ask how to combine commits it had never
   been able to fetch. It now shows the connection error.
+- **Pull over a merge or rebase in progress showed git's advice in red.**
+  Pressing Pull while conflicts were still being resolved put *"Pulling is not
+  possible because you have unmerged files… git add/rm"* in a red error (and
+  sent a crash report). It now says what is in progress and how many files are
+  still conflicted, and takes you to Changes to finish or abort it.
+- **"Commit & Push" could offer to force push over someone else's commits.**
+  When the push was refused because a colleague had pushed — and their commits
+  had already been fetched — the app offered **Force push**, promising the
+  lease would refuse if anyone else had pushed. It would not have, and their
+  commits would have been deleted from the remote. Force push is now only done
+  when the commits it replaces are ones you rewrote (an amend or a rebase);
+  otherwise it explains that the remote's commits need pulling in first.
+- **Renaming a published branch answered its own question.** "Rename it on
+  origin too?" closed itself a moment after it appeared, as if you had picked
+  **Keep tracking**. It now waits for your answer.
+- **Projects with a token that lacks the Projects scope** no longer sends a
+  crash report; GitHub's message naming the missing scope is shown instead.
 - **Agent Access could never work in a downloaded build.** Settings ▸ Agent
   Access offered **Add** for Claude Desktop, Cursor, VS Code and Windsurf, but
   the MCP server was not included in the app — every build said *"Run `npm run
