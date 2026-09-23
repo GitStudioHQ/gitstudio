@@ -1,0 +1,29 @@
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_3f37114770eeaf 4
+packages/git-service/test/stashLiteralPaths.test.ts
+  s_26f5e669d3043c::t_c7ee0f861c4dd2 1-168
+packages/git-service/src/StashProvider.ts
+  s_26f5e669d3043c::t_7ddd677b42da97 30-34
+  s_26f5e669d3043c::t_ba39f98197d708 286
+  s_26f5e669d3043c::t_7218074c38e7bc 344-347
+  s_26f5e669d3043c::t_8a38142af55364 253
+  s_26f5e669d3043c::t_16392292e29662 195-197
+  s_26f5e669d3043c::t_300cdcc8a84d9f 337-343,348-356
+  s_26f5e669d3043c::t_f2325be6963575 357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "803892a6434f586218924a8090e953aab2a41e0d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
