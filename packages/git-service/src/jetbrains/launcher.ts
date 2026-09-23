@@ -1,16 +1,20 @@
+import { spawn } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, extname, join } from "node:path";
 import type { JetBrainsIdeInfo } from "@gitstudio/host-bridge/conflictsProtocol";
 
 /**
  * Launches a JetBrains IDE's merge or diff window, detached (PLAN §3.5 W5).
  * Host UI (notifications, "Mark Resolved & Stage") stays in the hosts.
  *
- * S0 contract seed: the request / result shapes are the contract; the bodies
- * are STUBS that refuse without spawning anything. P2 ports Merge Studio's
- * launcher (src/jetbrains/launcher.ts:54-193):
- * `<ide> merge LOCAL REMOTE [BASE] <output>` with LOCAL = the YOURS content and
- * REMOTE = the THEIRS content (already mapped through `byRole` by the caller,
- * or the swap reappears inside the IDE), BASE only when a base exists; temp
- * files in one mkdtemp dir that `dispose()` removes.
+ * A port of Merge Studio's launcher (src/jetbrains/launcher.ts):
+ * `<ide> merge LOCAL REMOTE [BASE] <output>`, with LOCAL = the YOURS content
+ * and REMOTE = the THEIRS content — already mapped through `byRole` by the
+ * caller, or the rebase swap reappears inside the IDE — and BASE only when a
+ * base exists. The temp files live in one mkdtemp directory that `dispose()`
+ * removes; the hosts call it after "Mark Resolved & Stage" (or on cancel),
+ * because the IDE reads the files after this returns.
  */
 
 export interface JetBrainsMergeRequest {
@@ -46,20 +50,107 @@ export interface JetBrainsLaunch {
   dispose(): Promise<void>;
 }
 
-/** S0 STUB — P2: refuses without spawning. */
+/** Open the file's conflict in the IDE's three-way merge window. */
 export async function launchJetBrainsMerge(req: JetBrainsMergeRequest): Promise<JetBrainsLaunch> {
-  return notYet(req.ide);
+  let dir: string | undefined;
+  try {
+    dir = await mkdtemp(join(tmpdir(), "gitstudio-jbmerge-"));
+    const ext = extname(req.outputPath);
+    const stem = basename(req.outputPath, ext) || "file";
+    const local = join(dir, `${stem}.LOCAL${ext}`);
+    const remote = join(dir, `${stem}.REMOTE${ext}`);
+    await writeFile(local, req.yours);
+    await writeFile(remote, req.theirs);
+    const args = ["merge", local, remote];
+    if (req.base !== undefined) {
+      const basePath = join(dir, `${stem}.BASE${ext}`);
+      await writeFile(basePath, req.base);
+      args.push(basePath);
+    }
+    args.push(req.outputPath);
+    return await launch(req.ide, args, dir);
+  } catch (err) {
+    if (dir) await removeDir(dir);
+    return refused(req.ide, err);
+  }
 }
 
-/** S0 STUB — P2: refuses without spawning. */
+/** Open two sides in the IDE's diff window (HEAD vs the working copy, or two files). */
 export async function launchJetBrainsDiff(req: JetBrainsDiffRequest): Promise<JetBrainsLaunch> {
-  return notYet(req.ide);
+  let dir: string | undefined;
+  try {
+    const sidePath = async (s: JetBrainsDiffSide): Promise<string> => {
+      if ("path" in s) return s.path;
+      dir ??= await mkdtemp(join(tmpdir(), "gitstudio-jbdiff-"));
+      const p = join(dir, basename(s.name) || "side");
+      await writeFile(p, s.text);
+      return p;
+    };
+    const left = await sidePath(req.left);
+    const right = await sidePath(req.right);
+    return await launch(req.ide, ["diff", left, right], dir);
+  } catch (err) {
+    if (dir) await removeDir(dir);
+    return refused(req.ide, err);
+  }
 }
 
-function notYet(ide: JetBrainsIdeInfo): JetBrainsLaunch {
-  return {
-    ok: false,
-    message: `Opening ${ide.name} is not available yet.`,
-    dispose: async () => {},
-  };
+/**
+ * Spawn detached and settle on the first of `spawn` / `error` — a missing or
+ * non-executable launcher is reported asynchronously, and "launched" must mean
+ * the process really started.
+ */
+function launch(ide: JetBrainsIdeInfo, args: string[], dir: string | undefined): Promise<JetBrainsLaunch> {
+  const dispose = once(async () => {
+    if (dir) await removeDir(dir);
+  });
+  // Toolbox's Windows launchers are .cmd scripts, which need a shell — and a
+  // shell splits unquoted arguments at spaces, so quote every one.
+  const script = process.platform === "win32" && /\.(cmd|bat)$/i.test(ide.command);
+  const argv = script ? args.map((a) => `"${a.replace(/"/g, '""')}"`) : args;
+  return new Promise((resolveLaunch) => {
+    let settled = false;
+    const settle = (value: JetBrainsLaunch): void => {
+      if (settled) return;
+      settled = true;
+      resolveLaunch(value);
+    };
+    try {
+      const child = spawn(script ? `"${ide.command}"` : ide.command, argv, {
+        detached: true,
+        stdio: "ignore",
+        shell: script,
+        windowsHide: true,
+      });
+      child.once("error", (err) => {
+        void dispose();
+        settle({ ok: false, message: `Couldn't launch ${ide.name} — ${err.message}`, dispose });
+      });
+      child.once("spawn", () => {
+        child.unref();
+        settle({ ok: true, ...(dir ? { tempDir: dir } : {}), dispose });
+      });
+    } catch (err) {
+      void dispose();
+      settle({ ...refused(ide, err), dispose });
+    }
+  });
+}
+
+function refused(ide: JetBrainsIdeInfo, err: unknown): JetBrainsLaunch {
+  const why = err instanceof Error ? err.message : String(err);
+  return { ok: false, message: `Couldn't launch ${ide.name} — ${why}`, dispose: async () => {} };
+}
+
+function once(fn: () => Promise<void>): () => Promise<void> {
+  let p: Promise<void> | undefined;
+  return () => (p ??= fn());
+}
+
+async function removeDir(dir: string): Promise<void> {
+  try {
+    await rm(dir, { recursive: true, force: true });
+  } catch {
+    /* best effort — a temp dir the OS reclaims */
+  }
 }
