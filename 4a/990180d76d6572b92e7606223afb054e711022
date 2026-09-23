@@ -1,0 +1,28 @@
+apps/extension/test/rebaseAbort.test.ts
+  s_26f5e669d3043c::t_25b2452bd82d61 1-3,5-94
+  s_26f5e669d3043c::t_5a9b9395083ce6 95-114
+  s_26f5e669d3043c::t_d3854a703b6fd4 4
+apps/extension/src/rebase/rebaseCommands.ts
+  s_26f5e669d3043c::t_3aeb6f7ea08bc2 9,76-81,88-93,95,100
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_383c85c9a9cfdb 10
+  s_26f5e669d3043c::t_3aeb6f7ea08bc2 177-182,185,187-188
+apps/extension/src/rebase/rebaseAbort.ts
+  s_26f5e669d3043c::t_f4ac4781f9df44 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4a990180d76d6572b92e7606223afb054e711022",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
