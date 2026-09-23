@@ -34,14 +34,14 @@ interface Rig {
   provider: MergeEditorProvider;
   document: vscode.TextDocument & { set(text: string): void };
   asked: string[];
-  notes: { kind: string; text: string }[];
+  notes: { kind: string; text: string; actions: string[] }[];
   saved: string[];
   answer: { value: boolean };
 }
 
 function rig(working: string): Rig {
   const asked: string[] = [];
-  const notes: { kind: string; text: string }[] = [];
+  const notes: { kind: string; text: string; actions: string[] }[] = [];
   const saved: string[] = [];
   const answer = { value: false };
   const repo = {
@@ -97,8 +97,10 @@ function rig(working: string): Rig {
       jetbrainsPath: "",
     }),
     defers: () => false,
-    notify: async (kind: string, text: string) => {
-      notes.push({ kind, text });
+    // host.notify: an info WITH an action is a notification toast; without
+    // one it is a status-bar line (host.ts).
+    notify: async (kind: string, text: string, ...actions: string[]) => {
+      notes.push({ kind, text, actions });
       return undefined;
     },
     changed: () => {},
@@ -223,9 +225,9 @@ test("Apply in the merge editor raises no toast over its own Apply / Continue co
   await settle();
   assert.equal(r.saved.length, 1, "applied");
   assert.deepEqual(
-    r.notes.filter((n) => /saved and staged/.test(n.text)).map((n) => n.kind),
-    ["info"],
-    "said once, as a status-bar line (an info with no action)",
+    r.notes.filter((n) => /saved and staged/.test(n.text)).map((n) => [n.kind, n.actions.length]),
+    [["info", 0]],
+    "said once, as a status-bar line (an info with no action — an Undo button made it a toast)",
   );
   assert.equal(stub.messages.length, 0, "no notification toast");
 });
