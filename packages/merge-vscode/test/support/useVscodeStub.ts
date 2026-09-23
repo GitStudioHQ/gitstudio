@@ -55,6 +55,8 @@ export interface VscodeStub {
   tabGroupsAll: { tabs: unknown[] }[];
   /** Every WorkspaceEdit handed to workspace.applyEdit, in order. */
   applied: { edits: { text?: string; newEol?: number }[] }[];
+  /** workspace.onDidChangeTextDocument's emitter: fire({ document, contentChanges }). */
+  onDidChangeTextDocument: { fire(event: unknown): void };
   reset(): void;
 }
 

@@ -9219,6 +9219,15 @@ body.vscode-light .gh-label-chip {
 /* The same bidi isolate as the diff's path: the box ellipsises on the left,
    the characters stay in the order they were written. */
 .merge-bar-path-text { direction: ltr; unicode-bidi: isolate; }
+.merge-bar-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .merge-surface {
   flex: 1 1 auto;
   min-height: 0; /* CRITICAL — gives the Monaco merge editor real height */

@@ -26,6 +26,7 @@ import {
   type SideRole,
 } from "@gitstudio/host-bridge/conflictsProtocol";
 import { roleOfStage } from "@gitstudio/engine/conflict/sides";
+import { resolvedOutsideMerge } from "@gitstudio/engine/conflict/documentText";
 import { conflictTypeFor } from "@gitstudio/engine/conflict/conflictType";
 import {
   continueBlockedText,
@@ -262,6 +263,17 @@ export interface MergeAdapterDeps {
   onHandedToIde?(): boolean;
   undoable: Undoable;
   notify: Notify;
+  /**
+   * Ask before an Apply writes over something the merge editor did not make
+   * (a resolution already in the file, an edit made since it opened). A host
+   * without one writes, as before.
+   */
+  confirm?(spec: { title: string; message: string; confirmLabel: string; danger?: boolean }): Promise<boolean>;
+}
+
+/** The file name as a sentence names it. */
+function fileName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
 }
 
 /**
@@ -292,6 +304,11 @@ export class DesktopMergeAdapter {
     try {
       switch (message.type) {
         case "apply": {
+          const refusal = await this.overwriteRefusal();
+          if (refusal) {
+            deliver({ type: "outcome", kind: "failed", text: refusal });
+            return;
+          }
           const r = await exclusive(() => invoke("conflict:resolve", { path, content: message.text }));
           if (!r) return;
           if (!r.ok) {
@@ -390,6 +407,50 @@ export class DesktopMergeAdapter {
         this.deps.notify(text, "error");
       }
     }
+  }
+
+  /**
+   * Apply writes the Result over the file. Two things there are not the
+   * merge editor's to throw away without asking (POLISH A1.2, A1.3):
+   *
+   * - a resolution the file already had when the editor opened — no markers
+   *   left, by hand or by git rerere — which the Result, starting over from
+   *   the conflict, does not show;
+   * - an edit made to the file since it opened (another editor, a checkout in
+   *   a terminal): the watcher's refresh usually reloads the editor first,
+   *   but an Apply inside that window wrote the stale Result over it.
+   *
+   * The reason nothing was written, or undefined to go ahead.
+   */
+  private async overwriteRefusal(): Promise<string | undefined> {
+    const ask = this.deps.confirm;
+    if (!ask) return undefined;
+    const model = this.model;
+    const name = fileName(model.path);
+    if (resolvedOutsideMerge(model.result, model.base)) {
+      const go = await ask({
+        title: `Replace the resolution already in ${name}?`,
+        message:
+          `${name} had no conflict markers left when the merge editor opened: it was already resolved, by hand or ` +
+          `by git rerere. Apply replaces that with the Result shown here, and stages it.`,
+        confirmLabel: "Replace and stage",
+        danger: true,
+      });
+      if (!go) return `Nothing was written. ${name} keeps the resolution it had.`;
+    }
+    const now = await this.deps.invoke("conflict:model", model.path).catch(() => undefined);
+    if (now && now.result !== model.result) {
+      const go = await ask({
+        title: `${name} changed outside the merge editor`,
+        message:
+          `It was edited in another editor or on disk since the merge editor opened it. Apply replaces that edit ` +
+          `with the Result shown here, and stages it.`,
+        confirmLabel: "Replace and stage",
+        danger: true,
+      });
+      if (!go) return `Nothing was written. ${name} keeps the edit made outside the merge editor.`;
+    }
+    return undefined;
   }
 
   private async markResolvedInIde(): Promise<void> {

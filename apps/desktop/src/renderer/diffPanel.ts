@@ -17,7 +17,9 @@ import type { DiffInitPayload, MergeInitPayload } from "@gitstudio/host-bridge/p
 import type { ConflictModel, FileDiff } from "../shared/ipc";
 import { bootMonaco } from "./monacoBoot";
 import { host } from "./bridge";
-import { toast } from "./dialogs";
+import { confirmDialog, toast } from "./dialogs";
+import { whileSameRepo } from "./repoEpoch";
+import { resolvedOutsideMerge } from "@gitstudio/engine/conflict/documentText";
 import { el, span, glyph } from "./ui";
 import { didUndoable, registerMergeHistory } from "./undo";
 import { DesktopMergeAdapter, detectJetBrains, loadMergeSettings, mergePayload } from "./mergeParity";
@@ -593,6 +595,18 @@ export class DiffPanel {
     path.title = model.path;
     title.append(glyph("git-merge"), path);
     bar.append(title);
+    // The Result starts over from the conflict (POLISH A1.2: seeding it from
+    // the file is the merge view's), so a file resolved before it opened —
+    // by hand, or by git rerere — says so where the file is named, and Apply
+    // asks before replacing that resolution.
+    if (resolvedOutsideMerge(model.result, model.base) && (model.shape ?? "text") === "text") {
+      bar.append(
+        span(
+          "Already resolved in the file: no conflict markers are left. The Result below starts from the conflict; Apply asks before replacing your resolution.",
+          "merge-bar-note",
+        ),
+      );
+    }
     const surface = el("div", "merge-surface");
     wrap.append(bar, surface);
     this.container.replaceChildren(wrap);
@@ -616,6 +630,9 @@ export class DiffPanel {
         },
         undoable: didUndoable,
         notify: (message, kind, action) => toast(message, kind, action ? 8000 : undefined, action),
+        // Asked mid-merge: a watcher refresh must not answer it (memory:
+        // refresh-closing-dialogs).
+        confirm: (spec) => confirmDialog({ ...spec, holdWhile: whileSameRepo() }),
       });
       shell = new MergeShell(surface, mergePayload(model, settings, ide), {
         adapter,

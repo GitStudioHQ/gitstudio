@@ -212,6 +212,9 @@ for (const [label, docEol, resultText] of [
     const doc = documentWith(docEol, docEol === 2 ? "<<<<<<< HEAD\r\na\r\n" : "<<<<<<< HEAD\na\n");
     const panel = vscode.window.createWebviewPanel("test.mergeEditor", "w.txt", vscode.ViewColumn.Active, {});
     await provider.resolveCustomTextEditor(doc as unknown as vscode.TextDocument, panel, {} as vscode.CancellationToken);
+    // The page posts results only after the sides it merges have arrived.
+    stub.panels[0].receive({ type: "ready" });
+    await settle();
     stub.panels[0].receive({ type: "resultChanged", text: resultText });
     await settle();
     assert.equal(stub.applied.length, 1, "one edit");

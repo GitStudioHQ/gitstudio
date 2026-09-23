@@ -212,6 +212,59 @@ test("an undo git REFUSES as expected (the operation already finished) is news, 
   assert.equal(await broken.undos[0].undo(), "index.lock exists", "a real failure stays an error");
 });
 
+// POLISH A1.2 / A1.3: Apply writes the Result over the file, so it asks first
+// when the file holds something the merge editor did not make.
+const GIT_FILE = "<<<<<<< HEAD\no\n||||||| base\nb\n=======\nt\n>>>>>>> 1a2b3c4 (test)\n";
+
+function askingRig(m: ConflictModel, onDisk: string, answer: boolean) {
+  const asked: string[] = [];
+  const host = fakeHost({
+    "conflict:resolve": OK,
+    "conflict:model": { ...m, result: onDisk },
+    "conflict:state": snapshot(),
+  });
+  const delivered: HostMessage[] = [];
+  const adapter = new DesktopMergeAdapter(m, {
+    invoke: host.invoke,
+    deliver: (msg) => delivered.push(msg),
+    onResolved: () => {},
+    onExit: () => {},
+    onOperationChanged: () => {},
+    undoable: () => {},
+    notify: () => {},
+    confirm: async (spec) => {
+      asked.push(spec.title);
+      return answer;
+    },
+  });
+  return { ...host, adapter, delivered, asked };
+}
+
+test("A1.2: Apply over a file already resolved (no markers left) asks — and No writes nothing", async () => {
+  const hand = "resolved by hand\n";
+  const no = askingRig(model({ op: REBASE, result: hand }), hand, false);
+  await no.adapter.handle({ type: "apply", text: "merged\n" });
+  assert.deepEqual(no.asked, ["Replace the resolution already in app.ts?"]);
+  assert.equal(no.sent("conflict:resolve").length, 0, "nothing written");
+  assert.deepEqual(no.delivered, [{ type: "outcome", kind: "failed", text: "Nothing was written. app.ts keeps the resolution it had." }]);
+  const yes = askingRig(model({ op: REBASE, result: hand }), hand, true);
+  await yes.adapter.handle({ type: "apply", text: "merged\n" });
+  assert.equal(yes.sent("conflict:resolve").length, 1, "a yes writes");
+});
+
+test("A1.3: Apply over a file edited since the editor opened asks — and No writes nothing", async () => {
+  const no = askingRig(model({ op: REBASE, result: GIT_FILE }), GIT_FILE + "typed elsewhere\n", false);
+  await no.adapter.handle({ type: "apply", text: "merged\n" });
+  assert.deepEqual(no.asked, ["app.ts changed outside the merge editor"]);
+  assert.equal(no.sent("conflict:resolve").length, 0);
+  assert.match((no.delivered[0] as { text: string }).text, /keeps the edit made outside/);
+  // The file as git left it: nothing to ask.
+  const same = askingRig(model({ op: REBASE, result: GIT_FILE }), GIT_FILE, false);
+  await same.adapter.handle({ type: "apply", text: "merged\n" });
+  assert.deepEqual(same.asked, []);
+  assert.equal(same.sent("conflict:resolve").length, 1);
+});
+
 test("a failed write is said, never reported as staged", async () => {
   const r = adapterRig({ "conflict:resolve": { ok: false, changed: false, message: "index.lock exists" } });
   await r.adapter.handle({ type: "apply", text: "x" });
