@@ -13,9 +13,12 @@
 //                           opChanged; when git stops on the next commit and
 //                           THIS file conflicts again, a fresh init follows
 //   cancel{mode:"abort"}  → OperationProvider.abort, then outcome and opChanged
+//                           (older pages; the shell's bottom bar no longer
+//                           ends the operation — its Close only closes, and
+//                           the conflicts dashboard holds Abort)
 //
-// The shell asks its own inline confirm before posting an abort; nothing here
-// asks again.
+// Whoever posts an abort has asked its own confirm first; nothing here asks
+// again.
 
 import type { ConflictOpResult } from "@gitstudio/git-service/ConflictOps";
 import type {
@@ -197,7 +200,7 @@ export class MergeSession {
     await this.drive("continue", (git) => git.operation.continue({ confirmDrop }));
   }
 
-  /** "Cancel <operation>…" — posted only after the shell's inline confirm. */
+  /** End the whole operation — posted only after a confirm (older pages; the dashboard has its own route). */
   async abortOperation(): Promise<void> {
     await this.drive("abort", async (git) => {
       await this.deps.beforeAbort?.();

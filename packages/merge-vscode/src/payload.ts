@@ -51,7 +51,7 @@ export const GENERIC_LABELS = { yours: "Yours", theirs: "Theirs" } as const;
  * Builds the payload from the role-mapped sides. `op` is included when an
  * operation is stopped, or when the file really is unmerged (git stages were
  * read); a file opened with "Reopen With" that has nothing to resolve gets no
- * operation strip, no Continue and no "Cancel <operation>".
+ * operation strip, no Continue and no link to a conflicts list.
  */
 export function buildMergePayload(sides: MergeSides, input: PayloadInput): MergeInitPayload {
   const op: OperationView | undefined =
