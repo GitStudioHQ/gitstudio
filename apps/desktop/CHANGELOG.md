@@ -50,8 +50,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   behaviour back.
 - **Apply with changes still unresolved asks once instead of refusing.** The
   merge used to stay locked until every block was settled; now the first press
-  says how many are unresolved and that they keep the original text, and a
-  second press saves.
+  says how many are unresolved and what each will be saved as — the original
+  text, or, for a conflict with one side already taken, what the Result shows
+  — and a second press saves.
 - The whole-file buttons read **Accept Yours / Accept Theirs**, not "Take
   (side name)", and during a rebase Yours is your commit — on the left.
 - ⌘Z with the merge editor focused undoes the last merge action (not text, and
@@ -89,6 +90,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   the shared one git writes the operation's state to.
 - A conflicted file git could not read (a locked index, a killed git) says so
   in the pane, instead of leaving the previous file on screen.
+- **Taking a side of a submodule conflict recorded the wrong commit.** It
+  staged whatever commit the submodule happened to have checked out — often
+  the other side's — and said it had kept the side you chose. It now records
+  that side's commit (the submodule's own checkout is left for you to update).
+  Holding **Hold to undo** on a submodule or a symbolic-link conflict brings
+  it back too; it used to fail, or write the conflict markers as the link's
+  target.
 
 ## [2.0.2] - 2026-09-21
 
