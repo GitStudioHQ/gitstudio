@@ -309,6 +309,14 @@
     if (m) { m.merged = true; m.aheadDefault = 0; m.behindDefault = 0; }
   }
 
+  // ?dashbranch=1 → a branch named "-f", which porcelain never makes but
+  // `git update-ref refs/heads/-f` does. Its checkout is refused (git would
+  // read "-f" as an option) — and the refusal has to say THAT, and offer the
+  // rename, rather than "That value isn't a valid git reference".
+  if (params.get("dashbranch")) {
+    branches.push({ name: "-f", current: false, aheadDefault: 1, behindDefault: 0, upstream: undefined, ahead: 0, behind: 0, subject: "made by update-ref", date: S(3) });
+  }
+
   const workflows = [
     { id: 1, name: "Desktop CI", path: ".github/workflows/desktop.yml", state: "active", htmlUrl: "" },
     { id: 2, name: "Extension CI", path: ".github/workflows/extension.yml", state: "active", htmlUrl: "" },
@@ -1353,7 +1361,11 @@
     // Branch delete returns the tip it deleted, which is the whole reason the
     // delete can be undone — `?nowas=1` is the case where the tip could not be
     // read and no undo may be offered.
-    "branch:delete": ({ name }) => {
+    // Branch ops take the branch by its FULL name (issue #30's follow-up), as
+    // the main process does — and refuse one without it, as it does.
+    "branch:delete": ({ fullName }) => {
+      const name = typeof fullName === "string" && fullName.startsWith("refs/heads/") ? fullName.slice(11) : undefined;
+      if (!name) return { ok: false, changed: false, message: "Couldn't tell which branch to delete — refresh and try again." };
       const hit = branches.find((b) => b.name === name);
       if (!hit) return { ok: false, changed: false, message: "no such branch" };
       deletedBranches.set(name, hit);
@@ -1377,7 +1389,9 @@
     },
     // A rename carries the tracking over UNCHANGED, exactly as `git branch -m`
     // does — which is the whole reason the reconcile question exists.
-    "branch:rename": ({ from, to }) => {
+    "branch:rename": ({ fullName, to }) => {
+      const from = typeof fullName === "string" && fullName.startsWith("refs/heads/") ? fullName.slice(11) : undefined;
+      if (!from) return { ok: false, changed: false, message: "Couldn't tell which branch to rename — refresh and try again." };
       const hit = branches.find((b) => b.name === from);
       if (!hit) return { ok: false, changed: false, message: "no such branch" };
       if (branches.some((b) => b.name === to)) {
@@ -1393,7 +1407,27 @@
       branches = branches.map((b) => (b.name === name ? { ...b, upstream: `${remote}/${name}` } : b));
       return { ok: true, changed: true };
     },
-    "branch:setUpstream": ({ name, upstream }) => {
+    // Merge / rebase / push / pull: nothing to model beyond the contract —
+    // a full name is taken, anything else is refused as main refuses it.
+    "branch:merge": ({ fullName }) =>
+      typeof fullName === "string" && /^refs\/(heads|remotes)\/./.test(fullName)
+        ? { ok: true, changed: true }
+        : { ok: false, changed: false, message: "Couldn't tell which branch to merge — refresh and try again." },
+    "branch:rebase": ({ fullName }) =>
+      typeof fullName === "string" && /^refs\/(heads|remotes|tags)\/./.test(fullName)
+        ? { ok: true, changed: true }
+        : { ok: false, changed: false, message: "Couldn't tell which branch to rebase onto — refresh and try again." },
+    "branch:push": ({ fullName }) =>
+      typeof fullName === "string" && fullName.startsWith("refs/heads/")
+        ? { ok: true, changed: true }
+        : { ok: false, changed: false, message: "Couldn't tell which branch to push — refresh and try again." },
+    "branch:pullFf": ({ fullName }) =>
+      typeof fullName === "string" && fullName.startsWith("refs/heads/")
+        ? { ok: true, changed: true }
+        : { ok: false, changed: false, message: "Couldn't tell which branch to pull into — refresh and try again." },
+    "branch:setUpstream": ({ fullName, upstream }) => {
+      const name = typeof fullName === "string" && fullName.startsWith("refs/heads/") ? fullName.slice(11) : undefined;
+      if (!name) return { ok: false, changed: false, message: "Couldn't tell which branch to set the upstream of — refresh and try again." };
       branches = branches.map((b) => (b.name === name ? { ...b, upstream } : b));
       return { ok: true, changed: true };
     },
@@ -1816,11 +1850,21 @@
     // the missing-channel path and returned undefined, so the caller's
     // `result.ok` threw and the click looked inert — which is exactly how the
     // branch switcher's checkout hid while it was being tested.
-    "commit:action": (req) => ({
-      ok: true,
-      changed: true,
-      message: `${req?.action ?? "action"} ok`,
-    }),
+    "commit:action": (req) => {
+      // What the main process answers for a branch named like an option
+      // (gitBridge.checkoutRef, via git-service's optionLikeCheckout).
+      if (req?.action === "checkout-ref" && typeof req.fullName === "string" && /^refs\/heads\/-/.test(req.fullName)) {
+        const name = req.fullName.slice(11);
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: `Git can't safely check out a branch whose name starts with "-": "${name}" would be read as an option. Rename it, then check it out.`,
+          optionLike: { fullName: req.fullName, name, local: true },
+        };
+      }
+      return { ok: true, changed: true, message: `${req?.action ?? "action"} ok` };
+    },
     "pr:fileDiff": (req) => (/\.(png|jpe?g|gif|ico|pdf|zip|dmg|vsix|woff2?)$/i.test(req.path)
       ? {
           // A binary in a pull request used to come back as the SAME

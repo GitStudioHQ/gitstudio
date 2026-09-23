@@ -54,6 +54,9 @@ const CASES = [
   ["a-rename-refuses-a-name-git-would-refuse", "branches"],
   ["renaming-a-published-branch-offers-to-rename-it-on-the-remote", "branches"],
   ["renaming-an-unpublished-branch-asks-nothing", "branches"],
+  // Branch ops by FULL name, and a branch named like an option (issue #30's follow-up).
+  ["branch-actions-go-by-full-name", "branches"],
+  ["a-branch-named-like-an-option-says-why-and-offers-the-rename", "branches", { extra: "dashbranch=1" }],
   ["a-prompt-that-does-not-validate-still-submits", "actions"],
   // Reading a repository — yours or anyone's.
   ["the-code-page-opens-its-commits", "code"],

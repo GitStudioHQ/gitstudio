@@ -19,7 +19,8 @@ import type { LineRange, Hunk } from "@gitstudio/engine/staging/applyLineChanges
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
-import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { branchNameOf } from "@gitstudio/git-service/BranchOps";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
@@ -119,6 +120,31 @@ const UNSAFE_REF_RESULT: CommitActionResult = {
   changed: false,
   message: "That value isn't a valid git reference.",
 };
+
+/**
+ * A FULL ref name in one of `namespaces` — what every branch op now requires
+ * (see branchMerge). Full names start with "refs/", so they can never be read
+ * as an option; a NUL is the only other hazard on argv.
+ */
+export function isFullRef(v: unknown, namespaces: readonly string[]): v is string {
+  if (typeof v !== "string" || v.includes("\0")) return false;
+  return namespaces.some((ns) => v.startsWith(`refs/${ns}/`) && v.length > `refs/${ns}/`.length);
+}
+
+/** The name `git branch` takes for the local branch `fullName` (the part
+ *  under refs/heads/), or undefined when `fullName` is not one. */
+export function localBranchOf(fullName: unknown): string | undefined {
+  return isFullRef(fullName, ["heads"]) ? branchNameOf(fullName) : undefined;
+}
+
+/** A branch op that arrived without a full name — refused, not guessed at. */
+function notABranch(what: string): CommitActionResult {
+  return {
+    ok: false,
+    changed: false,
+    message: `Couldn't tell which branch to ${what} — refresh and try again.`,
+  };
+}
 
 /** Standard rejection for an unusable path reaching a mutation. */
 const UNSAFE_PATH_RESULT: CommitActionResult = {
@@ -1781,23 +1807,29 @@ export class GitBridge {
    *  out: `git fetch <remote> <remoteBranch>:<localBranch>`. Git itself refuses
    *  a non-fast-forward and the currently checked-out branch, so the worktree
    *  is never touched. */
-  async branchPullFf(name: string): Promise<CommitActionResult> {
-    if (!safeArg(name)) return UNSAFE_REF_RESULT;
+  async branchPullFf(fullName: string): Promise<CommitActionResult> {
+    // By FULL name: "heads/release" (the short name beside a tag "release")
+    // made this `fetch origin release:heads/release` — which CREATES a branch
+    // called heads/release and leaves the real one where it was.
+    const name = localBranchOf(fullName);
+    if (!name) return notABranch("pull into");
     return this.staged(async (ctx) => {
       const up = await ctx.process.run([
         "for-each-ref",
         "--format=%(upstream:short)",
-        `refs/heads/${name}`,
+        fullName,
       ]);
       const upstream = up.stdout.trim();
       const slash = upstream.indexOf("/");
       if (up.code !== 0 || slash <= 0) {
         return { ok: false, stderr: `'${name}' has no upstream to pull from.` };
       }
+      // Both sides qualified: the source is a branch ON the remote, and a
+      // bare destination is created under refs/heads/ whatever it is called.
       return ctx.process.run([
         "fetch",
         upstream.slice(0, slash),
-        `${upstream.slice(slash + 1)}:${name}`,
+        `refs/heads/${upstream.slice(slash + 1)}:${fullName}`,
       ]);
     });
   }
@@ -1825,13 +1857,16 @@ export class GitBridge {
     );
   }
 
-  async branchPush(name: string): Promise<CommitActionResult> {
-    if (!safeArg(name)) return UNSAFE_REF_RESULT;
+  async branchPush(fullName: string): Promise<CommitActionResult> {
+    // By FULL name: SyncOps qualifies the name it is handed as refs/heads/<name>,
+    // and the short "heads/release" became refs/heads/heads/release — nothing.
+    const name = localBranchOf(fullName);
+    if (!name) return notABranch("push");
     return this.staged(async (ctx) => {
       const up = await ctx.process.run([
         "for-each-ref",
         "--format=%(upstream:short)",
-        `refs/heads/${name}`,
+        fullName,
       ]);
       const upstream = up.code === 0 ? up.stdout.trim() : "";
       const slash = upstream.indexOf("/");
@@ -2152,9 +2187,12 @@ export class GitBridge {
   }
 
   async branchDelete(
-    req: { name: string; force?: boolean },
+    req: { fullName: string; force?: boolean },
   ): Promise<CommitActionResult & { was?: string; upstream?: string }> {
-    if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
+    // By FULL name — see the branch ops below. `git branch -d heads/release`
+    // (the short name beside a tag "release") finds no branch at all.
+    const name = localBranchOf(req.fullName);
+    if (!name) return notABranch("delete");
     // Read the tip and the tracking config FIRST. After the delete both are
     // gone, and an undo that re-creates the branch at HEAD instead of where it
     // was is not an undo — it is a new branch wearing the old name.
@@ -2162,12 +2200,12 @@ export class GitBridge {
     let was: string | undefined;
     let upstream: string | undefined;
     if (ctx) {
-      const tip = await ctx.process.run(["rev-parse", "--verify", `refs/heads/${req.name}`]);
+      const tip = await ctx.process.run(["rev-parse", "--verify", req.fullName]);
       if (tip.code === 0) was = tip.stdout.trim() || undefined;
-      const up = await ctx.branches.upstreamOf(req.name);
+      const up = await ctx.branches.upstreamOf(name);
       if (up) upstream = `${up.remote}/${up.branch}`;
     }
-    const r = await this.staged((c) => c.branches.delete(req.name, { force: req.force }));
+    const r = await this.staged((c) => c.branches.delete(name, { force: req.force }));
     return r.ok ? { ...r, was, upstream } : r;
   }
 
@@ -2203,6 +2241,21 @@ export class GitBridge {
     req: CommitActionRequest,
   ): Promise<CommitActionResult> {
     const name = req.name;
+    // A branch whose NAME starts with "-" is refused — git would read it as an
+    // option, and `git checkout -f` throws away every uncommitted change. It
+    // was refused as "That value isn't a valid git reference", about a branch
+    // the list had just shown. Say what is true, and hand the renderer what it
+    // needs to offer the rename (by the FULL name) that fixes it.
+    const refusal = req.fullName !== undefined && safePath(req.fullName) ? optionLikeCheckout(req.fullName) : undefined;
+    if (refusal && req.fullName) {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message: refusal.message,
+        optionLike: { fullName: req.fullName, name: refusal.name, local: refusal.local },
+      };
+    }
     if (!name || !safeArg(name)) {
       return UNSAFE_REF_RESULT;
     }
@@ -2419,24 +2472,41 @@ export class GitBridge {
 
   // ── Branch ops (merge / rebase / rename / upstream) ─────────────────────────
 
-  async branchMerge(req: { name: string; noFf?: boolean }): Promise<CommitActionResult> {
-    if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.merge(req.name, { noFf: req.noFf }));
+  // Every branch op below takes the branch by its FULL name (issue #30's
+  // follow-up), and refuses a request without one — the same contract as
+  // checkout-ref: a door that forgets it fails loudly instead of acting on
+  // the wrong ref. The renderer used to send `%(refname:short)`, which beside
+  // a tag of the same name is "heads/release": `git branch -m/-d` find no
+  // such branch, `git merge` recorded "Merge branch 'heads/release'", and a
+  // bare "release" would have been the TAG.
+
+  async branchMerge(req: { fullName: string; noFf?: boolean }): Promise<CommitActionResult> {
+    if (!isFullRef(req.fullName, ["heads", "remotes"])) return notABranch("merge");
+    // BranchOps records "Merge branch 'release'" for a full name.
+    return this.staged((ctx) => ctx.branches.merge(req.fullName, { noFf: req.noFf }));
   }
 
-  async branchRebase(req: { onto: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.onto)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.rebaseOnto(req.onto));
+  async branchRebase(req: { fullName: string }): Promise<CommitActionResult> {
+    if (!isFullRef(req.fullName, ["heads", "remotes", "tags"])) return notABranch("rebase onto");
+    return this.staged((ctx) => ctx.branches.rebaseOnto(req.fullName));
   }
 
-  async branchRename(req: { from: string; to: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.from) || !safeArg(req.to)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.rename(req.from, req.to));
+  async branchRename(req: { fullName: string; to: string }): Promise<CommitActionResult> {
+    const from = localBranchOf(req.fullName);
+    if (!from) return notABranch("rename");
+    // `to` is a NEW name, typed: one that starts with "-" is still refused.
+    // `from` may be one (a branch update-ref made) — BranchOps puts it after
+    // `--`, and renaming such a branch away is exactly what a refused
+    // checkout offers (see checkoutRef).
+    if (!safeArg(req.to)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.rename(from, req.to));
   }
 
-  async branchSetUpstream(req: { name: string; upstream: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.name) || !safeArg(req.upstream)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.setUpstream(req.name, req.upstream));
+  async branchSetUpstream(req: { fullName: string; upstream: string }): Promise<CommitActionResult> {
+    const name = localBranchOf(req.fullName);
+    if (!name) return notABranch("set the upstream of");
+    if (!safeArg(req.upstream)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.setUpstream(name, req.upstream));
   }
 
   async branchDeleteRemote(

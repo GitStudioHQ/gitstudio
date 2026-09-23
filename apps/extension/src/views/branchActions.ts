@@ -3,7 +3,10 @@ import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { pausedForUser, type OperationMarker } from "../git/pausedForUser";
-import { planListedRefCheckout } from "./refCheckout";
+import { listedRefCheckout, resolveListedRef } from "./refCheckout";
+import { explainOptionLikeCheckout } from "./optionLikeBranch";
+import { refShortName } from "@gitstudio/git-service/checkoutRef";
+import { branchNameOf, remoteBranchOf } from "@gitstudio/git-service/BranchOps";
 import {
   promptConfirm,
   promptInput,
@@ -115,15 +118,61 @@ export async function checkoutBranch(
  * in the ref list, never rebuilt (refCheckout.ts).
  */
 async function runRefCheckout(a: RepoEntry, ref: GitRef, refresh: () => void): Promise<void> {
-  const plan = await planListedRefCheckout(a.ctx, ref);
-  if (!plan) {
+  const c = await listedRefCheckout(a.ctx, ref);
+  if (c.kind === "optionLike") {
+    // The branch IS here — its name starts with "-", which git would read as
+    // an option. Refreshing would change nothing; say so, offer the rename.
+    await explainOptionLikeCheckout(a.ctx, c.refusal, c.fullName, refresh);
+    return;
+  }
+  if (c.kind === "missing") {
     void vscode.window.showErrorMessage(
       `GitStudio: ${ref.name} is not in this repository any more — refresh and try again.`,
     );
     return;
   }
-  const result = await a.ctx.process.run(plan.args);
-  report({ ok: result.code === 0, stderr: result.stderr }, plan.success, refresh);
+  const result = await a.ctx.process.run(c.plan.args);
+  report({ ok: result.code === 0, stderr: result.stderr }, c.plan.success, refresh);
+}
+
+/**
+ * The ref an action was invoked on, AS GIT LISTS IT — with the full name every
+ * branch action now hands git (issue #30's follow-up). A tree node carries its
+ * full name already; the Changes view's branch menu sends a name and a type
+ * only, and the full name is looked up in the ref list by both (refCheckout.ts)
+ * — never rebuilt from the short name, which is "heads/release" beside a tag
+ * "release" and names nothing under refs/heads/. Says so and resolves
+ * undefined when the list has no such ref.
+ */
+async function listedRef(a: RepoEntry, ref: GitRef): Promise<GitRef & { fullName: string } | undefined> {
+  const hit = await resolveListedRef(a.ctx, ref);
+  if (!hit) {
+    void vscode.window.showErrorMessage(
+      `GitStudio: ${ref.name} is not in this repository any more — refresh and try again.`,
+    );
+    return undefined;
+  }
+  return { ...ref, ...hit, fullName: hit.fullName };
+}
+
+/** How a ref is NAMED to a person: its full name shorn of the namespace —
+ *  "release", not git's disambiguated "heads/release". */
+function shown(ref: { fullName: string }): string {
+  return refShortName(ref.fullName);
+}
+
+/** The name `git tag -d` / a refs/tags/ refspec takes: the part under refs/tags/. */
+function tagNameOf(fullName: string): string | undefined {
+  return fullName.startsWith("refs/tags/") ? fullName.slice("refs/tags/".length) || undefined : undefined;
+}
+
+/** The name `git branch` takes for a listed local branch (see branchNameOf). */
+function localName(ref: { fullName: string; name: string }): string | undefined {
+  const name = branchNameOf(ref.fullName);
+  if (!name) {
+    void vscode.window.showErrorMessage(`GitStudio: ${ref.name} is not a local branch.`);
+  }
+  return name;
 }
 
 export async function mergeBranchIntoCurrent(
@@ -132,12 +181,17 @@ export async function mergeBranchIntoCurrent(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  const arg0 = refOf(arg);
+  if (!a || !arg0) {
     return;
   }
+  const ref = await listedRef(a, arg0);
+  if (!ref) {
+    return;
+  }
+  const name = shown(ref);
   const ok = await promptConfirm({
-    title: `Merge ${ref.name} into the current branch?`,
+    title: `Merge ${name} into the current branch?`,
     message:
       "Its commits join your history. If the two sides touched the same lines you'll get conflicts to resolve, and Undo can take you back either way.",
     confirmLabel: "Merge",
@@ -145,12 +199,16 @@ export async function mergeBranchIntoCurrent(
   if (!ok) {
     return;
   }
-  await withUndo(repos, a, `Merge ${ref.name}`, async () => {
-    const result = await a.ctx.branches.merge(ref.name);
+  await withUndo(repos, a, `Merge ${name}`, async () => {
+    // By its FULL name: the bare "release" is the TAG beside a tag of that
+    // name, and git's "heads/release" merged the branch under the words
+    // "Merge branch 'heads/release'". BranchOps.merge records "Merge branch
+    // 'release'" for a full name, the way git would for an unambiguous one.
+    const result = await a.ctx.branches.merge(ref.fullName);
     await reportMergeLike(
       a.ctx,
       result,
-      `Merged ${ref.name}`,
+      `Merged ${name}`,
       "Merge",
       "MERGE_HEAD",
       refresh,
@@ -164,24 +222,30 @@ export async function rebaseCurrentOnto(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  const arg0 = refOf(arg);
+  if (!a || !arg0) {
     return;
   }
+  const ref = await listedRef(a, arg0);
+  if (!ref) {
+    return;
+  }
+  const name = shown(ref);
   const ok = await promptConfirm({
-    title: `Rebase the current branch onto ${ref.name}?`,
-    message: `Your local commits are rewritten on top of ${ref.name}, so they get new shas. If you have already pushed them, the next push needs a force. Undo can take you back.`,
+    title: `Rebase the current branch onto ${name}?`,
+    message: `Your local commits are rewritten on top of ${name}, so they get new shas. If you have already pushed them, the next push needs a force. Undo can take you back.`,
     confirmLabel: "Rebase",
   });
   if (!ok) {
     return;
   }
-  await withUndo(repos, a, `Rebase onto ${ref.name}`, async () => {
-    const result = await a.ctx.branches.rebaseOnto(ref.name);
+  await withUndo(repos, a, `Rebase onto ${name}`, async () => {
+    // By its full name — the bare one is the tag's, beside a tag of that name.
+    const result = await a.ctx.branches.rebaseOnto(ref.fullName);
     await reportMergeLike(
       a.ctx,
       result,
-      `Rebased onto ${ref.name}`,
+      `Rebased onto ${name}`,
       "Rebase",
       "REBASE_HEAD",
       refresh,
@@ -195,26 +259,34 @@ export async function renameBranch(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  const arg0 = refOf(arg);
+  if (!a || !arg0) {
     return;
   }
+  const ref = await listedRef(a, arg0);
+  const old = ref && localName(ref);
+  if (!ref || !old) {
+    return;
+  }
+  // The name under refs/heads/: `git branch -m heads/release …` beside a tag
+  // "release" is "fatal: no branch named 'heads/release'", and the box
+  // offered that as the name to edit.
   const neu = await promptInput({
-    title: `Rename branch ${ref.name}`,
+    title: `Rename branch ${old}`,
     hint: "Only the local name changes — the commits and the remote branch stay where they are.",
-    value: ref.name,
+    value: old,
     confirmLabel: "Rename",
     validate: "refName",
   });
-  if (!neu || neu === ref.name) {
+  if (!neu || neu === old) {
     return;
   }
-  const result = await a.ctx.branches.rename(ref.name, neu);
+  const result = await a.ctx.branches.rename(old, neu);
   if (!result.ok) {
     report(result, `Renamed to ${neu}`, refresh);
     return;
   }
-  await reconcileUpstreamAfterRename(a, ref.name, neu, refresh);
+  await reconcileUpstreamAfterRename(a, old, neu, refresh);
   report(result, `Renamed to ${neu}`, refresh);
 }
 
@@ -321,32 +393,38 @@ export async function deleteBranch(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  const arg0 = refOf(arg);
+  if (!a || !arg0) {
+    return;
+  }
+  const ref = await listedRef(a, arg0);
+  const name = ref && localName(ref);
+  if (!ref || !name) {
     return;
   }
   const ok = await confirm(
-    `Delete branch ${ref.name}?`,
+    `Delete branch ${name}?`,
     "The branch label is removed. Its commits stay reachable from anywhere else that points at them, and GitStudio's Undo can put the branch back.",
     "Delete",
   );
   if (!ok) {
     return;
   }
-  await withUndo(repos, a, `Delete branch ${ref.name}`, async () => {
-    let result = await a.ctx.branches.delete(ref.name);
+  await withUndo(repos, a, `Delete branch ${name}`, async () => {
+    // The name under refs/heads/ — git's "heads/release" names no branch.
+    let result = await a.ctx.branches.delete(name);
     if (!result.ok && /not fully merged/i.test(result.stderr)) {
       const force = await confirm(
-        `${ref.name} is not fully merged`,
+        `${name} is not fully merged`,
         "Some of its commits are not on any other branch, so deleting it may leave them unreachable. Undo can still recover them.",
         "Force Delete",
       );
       if (!force) {
         return;
       }
-      result = await a.ctx.branches.delete(ref.name, { force: true });
+      result = await a.ctx.branches.delete(name, { force: true });
     }
-    report(result, `Deleted ${ref.name}`, refresh);
+    report(result, `Deleted ${name}`, refresh);
   });
 }
 
@@ -356,8 +434,15 @@ export async function pushBranch(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  const arg0 = refOf(arg);
+  if (!a || !arg0) {
+    return;
+  }
+  // The LISTED ref: the Changes view's menu sends a name and a type, with no
+  // upstream — and read off that, every tracked branch looked unpublished.
+  const ref = await listedRef(a, arg0);
+  const name = ref && localName(ref);
+  if (!ref || !name) {
     return;
   }
   // If no upstream, offer to publish (set-upstream).
@@ -369,13 +454,14 @@ export async function pushBranch(
       return;
     }
     // push-force-reviewed: publish with --set-upstream; nothing on the
-    // remote yet.
+    // remote yet. By the name under refs/heads/ — SyncOps qualifies it, and
+    // "heads/release" qualified is refs/heads/heads/release, which is nothing.
     const result = await a.ctx.sync.push({
       remote,
-      branch: ref.name,
+      branch: name,
       setUpstream: true,
     });
-    report(result, `Published ${ref.name} to ${remote}`, refresh);
+    report(result, `Published ${name} to ${remote}`, refresh);
     return;
   }
   // Push the ref we were invoked ON, not whatever happens to be checked out.
@@ -387,9 +473,9 @@ export async function pushBranch(
     // push-force-reviewed: pushes ANOTHER branch, not the checked-out one,
     // so an amend of HEAD cannot put it in a diverged state. A force here
     // would need its own ahead/behind check against that branch's upstream.
-    ? await a.ctx.sync.push({ remote, branch: ref.name })
+    ? await a.ctx.sync.push({ remote, branch: name })
     : await a.ctx.sync.push();
-  report(result, `Pushed ${ref.name}`, refresh);
+  report(result, `Pushed ${name}`, refresh);
 }
 
 export async function setUpstream(
@@ -401,14 +487,16 @@ export async function setUpstream(
   if (!a) {
     return;
   }
-  const ref = await refOrPick(
+  const picked = await refOrPick(
     a,
     arg,
     "head",
     "Set the upstream for which branch?",
     "git-branch",
   );
-  if (!ref) {
+  const ref = picked && (await listedRef(a, picked));
+  const name = ref && localName(ref);
+  if (!ref || !name) {
     return;
   }
   let refs: GitRef[] = [];
@@ -417,13 +505,17 @@ export async function setUpstream(
   } catch {
     /* ignore */
   }
-  const remoteBranches = refs.filter((r) => r.type === "remote");
+  // A remote's HEAD pointer is not a branch to track.
+  const remoteBranches = refs.filter((r) => r.type === "remote" && !r.symref);
+  // Picked by FULL name, handed to git as one: `--set-upstream-to` resolves a
+  // bare name like any revision, and a local branch or tag sharing a
+  // remote-tracking branch's short name would answer first.
   const upstream = await promptPick({
-    title: `Set upstream for ${ref.name}`,
+    title: `Set upstream for ${name}`,
     hint: "The remote-tracking branch this branch pushes to and compares against.",
     choices: remoteBranches.map((r) => ({
-      id: r.name,
-      label: r.name,
+      id: r.fullName,
+      label: refShortName(r.fullName),
       icon: "cloud",
       detail: r.sha.slice(0, 7),
     })),
@@ -431,8 +523,8 @@ export async function setUpstream(
   if (!upstream) {
     return;
   }
-  const result = await a.ctx.branches.setUpstream(ref.name, upstream);
-  report(result, `Set upstream of ${ref.name} → ${upstream}`, refresh);
+  const result = await a.ctx.branches.setUpstream(name, upstream);
+  report(result, `Set upstream of ${name} → ${refShortName(upstream)}`, refresh);
 }
 
 export async function newBranchFrom(
@@ -441,15 +533,24 @@ export async function newBranchFrom(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
+  const arg0 = refOf(arg);
   if (!a) {
     return;
   }
-  const startPoint = ref?.name;
+  // The start point by its FULL name: a bare "release" beside a tag of that
+  // name starts the branch at the TAG. (git's "heads/release" happened to
+  // resolve — but it is the same short form every other door has stopped
+  // handing git, and the prompt read it out.)
+  const ref = arg0 ? await listedRef(a, arg0) : undefined;
+  if (arg0 && !ref) {
+    return;
+  }
+  const startPoint = ref?.fullName;
+  const from = ref ? shown(ref) : undefined;
   const name = await promptInput({
-    title: startPoint ? `New branch from ${startPoint}` : "New branch",
-    hint: startPoint
-      ? `The branch starts at ${startPoint}.`
+    title: from ? `New branch from ${from}` : "New branch",
+    hint: from
+      ? `The branch starts at ${from}.`
       : "The branch starts at HEAD.",
     placeholder: "feature/my-branch",
     confirmLabel: "Continue",
@@ -539,23 +640,26 @@ export async function deleteRemoteBranch(
   if (!a) {
     return;
   }
-  const ref = await refOrPick(
+  const picked = await refOrPick(
     a,
     arg,
     "remote",
     "Delete which remote branch?",
     "cloud",
   );
+  const ref = picked && (await listedRef(a, picked));
   if (!ref) {
     return;
   }
-  // origin/feature → remote "origin", branch "feature".
-  const slash = ref.name.indexOf("/");
-  if (slash < 0) {
+  // refs/remotes/origin/feature → remote "origin", branch "feature" — from
+  // the full name: the short one is "remotes/origin/feature" beside a local
+  // branch called "origin/feature", and split at its first slash that named
+  // a remote called "remotes".
+  const pair = remoteBranchOf(ref.fullName);
+  if (!pair) {
     return;
   }
-  const remote = ref.name.slice(0, slash);
-  const branch = ref.name.slice(slash + 1);
+  const { remote, branch } = pair;
   const ok = await confirm(
     `Delete ${branch} on ${remote}?`,
     `This removes the branch from the remote for everyone, not just from your copy. Your local ${branch} (if you have one) is untouched.`,
@@ -606,20 +710,24 @@ export async function deleteTag(
   if (!a) {
     return;
   }
-  const ref = await refOrPick(a, arg, "tag", "Select a tag to delete", "tag");
-  if (!ref) {
+  const picked = await refOrPick(a, arg, "tag", "Select a tag to delete", "tag");
+  const ref = picked && (await listedRef(a, picked));
+  const name = ref && tagNameOf(ref.fullName);
+  if (!ref || !name) {
     return;
   }
   const ok = await confirm(
-    `Delete tag ${ref.name}?`,
+    `Delete tag ${name}?`,
     "This deletes the tag locally. If it was already pushed, it stays on the remote until you delete it there too.",
     "Delete",
   );
   if (!ok) {
     return;
   }
-  const result = await a.ctx.tags.delete(ref.name);
-  report(result, `Deleted tag ${ref.name}`, refresh);
+  // The name under refs/tags/: beside a branch "release" the tag lists as
+  // "tags/release", and `git tag -d tags/release` finds no such tag.
+  const result = await a.ctx.tags.delete(name);
+  report(result, `Deleted tag ${name}`, refresh);
 }
 
 export async function pushTag(
@@ -631,17 +739,21 @@ export async function pushTag(
   if (!a) {
     return;
   }
-  const ref = await refOrPick(a, arg, "tag", "Select a tag to push", "tag");
-  if (!ref) {
+  const picked = await refOrPick(a, arg, "tag", "Select a tag to push", "tag");
+  const ref = picked && (await listedRef(a, picked));
+  const name = ref && tagNameOf(ref.fullName);
+  if (!ref || !name) {
     return;
   }
   const remotes = await a.ctx.remotes.list();
-  const remote = await pickRemote(remotes, `Push ${ref.name} to which remote?`);
+  const remote = await pickRemote(remotes, `Push ${name} to which remote?`);
   if (!remote) {
     return;
   }
-  const result = await a.ctx.tags.push(remote, ref.name);
-  report(result, `Pushed tag ${ref.name} to ${remote}`, refresh);
+  // TagOps qualifies it as refs/tags/<name>; "tags/release" would have been
+  // refs/tags/tags/release, which is nothing.
+  const result = await a.ctx.tags.push(remote, name);
+  report(result, `Pushed tag ${name} to ${remote}`, refresh);
 }
 
 // ── Title actions ────────────────────────────────────────────────────────────

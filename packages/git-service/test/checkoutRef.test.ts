@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { planRefCheckout, refShortName } from "../src/checkoutRef";
+import { optionLikeCheckout, planRefCheckout, refShortName, renameArgs, suggestedRename } from "../src/checkoutRef";
 import { removeTempRepo } from "./tmpRepo";
 
 // "Checkout <ref>" from the graph — the row's commit menu and the chip's own
@@ -206,4 +206,44 @@ test("refShortName strips exactly one namespace", () => {
   assert.equal(refShortName("refs/remotes/origin/release/1.5"), "origin/release/1.5");
   assert.equal(refShortName("refs/tags/v1"), "v1");
   assert.equal(refShortName("refs/heads/heads/release"), "heads/release", "a real branch called heads/release keeps its name");
+});
+
+test("an option-like branch is refused with the TRUE reason, and a local one can be renamed where it stands", async () => {
+  // The refusal used to reach the user as "not in this repository any more —
+  // refresh and try again" (Branches view) or as nothing at all (the graph's
+  // menus). The branch IS there; the reason is its name.
+  const { dir, upstream } = collidingRepo();
+  try {
+    git(dir, "update-ref", "refs/heads/-f", "HEAD");
+    git(dir, "update-ref", "refs/remotes/origin/-f", "HEAD");
+    const local = optionLikeCheckout("refs/heads/-f");
+    assert.equal(local?.name, "-f");
+    assert.equal(local?.local, true);
+    assert.match(local!.message, /can't safely check out a branch whose name starts with "-"/);
+    assert.match(local!.message, /Rename it/);
+    const remote = optionLikeCheckout("refs/remotes/origin/-f");
+    assert.equal(remote?.name, "-f", "the name git would be handed is the local one it would make");
+    assert.equal(remote?.local, false, "a remote's branch is not ours to rename");
+    assert.doesNotMatch(remote!.message, /Rename it/);
+    // Nothing else is option-like: tags detach by full name, ordinary names pass.
+    for (const f of ["refs/tags/-f", "refs/heads/release", "refs/heads/team/-wip", "release", "refs/stash"]) {
+      assert.equal(optionLikeCheckout(f), undefined, f);
+    }
+    // The rename it offers, by FULL name, run for real.
+    const args = renameArgs("refs/heads/-f", "fixed-f");
+    assert.deepEqual(args, ["branch", "-m", "--", "-f", "fixed-f"]);
+    assert.equal(git(dir, ...args!).code, 0);
+    assert.equal(git(dir, "rev-parse", "--verify", "--quiet", "refs/heads/fixed-f").code, 0, "renamed");
+    assert.equal(git(dir, "rev-parse", "--verify", "--quiet", "refs/heads/-f").code, 1, "and the old name is gone");
+    const p = await plan(dir, "refs/heads/fixed-f");
+    assert.deepEqual(p?.args, ["checkout", "fixed-f"], "and it checks out like any branch");
+    assert.equal(renameArgs("refs/remotes/origin/-f", "x"), undefined, "never a remote-tracking ref");
+    assert.equal(renameArgs("refs/heads/-f", ""), undefined);
+    assert.equal(suggestedRename("-f"), "f");
+    assert.equal(suggestedRename("--all"), "all");
+    assert.equal(suggestedRename("-"), "renamed");
+  } finally {
+    removeTempRepo(dir);
+    removeTempRepo(upstream);
+  }
 });

@@ -74,7 +74,7 @@ test("pushing a renamed branch updates the branch it tracks, not a new one", asy
     const repos = new RepoStore([]);
     await repos.open(work);
     const bridge = new GitBridge(repos);
-    const r = await bridge.branchPush("feature-local-rename");
+    const r = await bridge.branchPush("refs/heads/feature-local-rename");
     assert.equal(r.ok, true, `push succeeds (${r.message ?? ""})`);
 
     assert.deepEqual(
@@ -110,7 +110,7 @@ test("pushing an ordinary tracked branch still pushes it", async () => {
     const repos = new RepoStore([]);
     await repos.open(work);
     const bridge = new GitBridge(repos);
-    const r = await bridge.branchPush("topic");
+    const r = await bridge.branchPush("refs/heads/topic");
     assert.equal(r.ok, true, `push succeeds (${r.message ?? ""})`);
     assert.equal(
       execFileSync("git", ["log", "-1", "--format=%s", "refs/heads/topic"], { cwd: remote })
@@ -148,7 +148,7 @@ test("pushing a branch whose name is also a tag still works", async () => {
     const repos = new RepoStore([]);
     await repos.open(work);
     const bridge = new GitBridge(repos);
-    const r = await bridge.branchPush("release");
+    const r = await bridge.branchPush("refs/heads/release");
     assert.equal(r.ok, true, `push succeeds despite the tag (${r.message ?? ""})`);
     assert.equal(
       execFileSync("git", ["log", "-1", "--format=%s", "refs/heads/release"], { cwd: remote })
@@ -181,7 +181,7 @@ test("publishing a branch whose name is also a tag works", async () => {
 
     const repos = new RepoStore([]);
     await repos.open(work);
-    const r = await new GitBridge(repos).branchPush("v2");
+    const r = await new GitBridge(repos).branchPush("refs/heads/v2");
     assert.equal(r.ok, true, `publish succeeds despite the tag (${r.message ?? ""})`);
     assert.ok(heads(remote).includes("refs/heads/v2"), "the BRANCH reached the remote");
     assert.equal(
@@ -207,7 +207,7 @@ test("pushing an unpublished branch publishes it and sets upstream", async () =>
     const repos = new RepoStore([]);
     await repos.open(work);
     const bridge = new GitBridge(repos);
-    const r = await bridge.branchPush("brand-new");
+    const r = await bridge.branchPush("refs/heads/brand-new");
     assert.equal(r.ok, true, `publish succeeds (${r.message ?? ""})`);
     assert.ok(heads(remote).includes("refs/heads/brand-new"), "it reached the remote");
     assert.equal(

@@ -333,6 +333,13 @@ export interface CommitActionResult {
    * paths (see main/expectedError.ts).
    */
   expected?: boolean;
+  /**
+   * A checkout-ref refused because the branch's NAME reads as an option
+   * ("-f": `git checkout -f` would discard every uncommitted change). `message`
+   * says so; this is what a door needs to offer the fix — a rename by
+   * `fullName` (branch:rename), which only a LOCAL branch can take.
+   */
+  optionLike?: { fullName: string; name: string; local: boolean };
 }
 
 /** One tickable change within a file (see hunks:list). */
@@ -1792,8 +1799,9 @@ export interface IpcChannels {
   "sync:fetch": [{ prune?: boolean } | void, CommitActionResult];
   "sync:pull": [void, CommitActionResult];
   "sync:push": [{ setUpstream?: boolean; force?: boolean } | void, CommitActionResult];
-  /** Push (or publish) ONE named branch, not just the checked-out one. */
-  "branch:push": [{ name: string }, CommitActionResult];
+  /** Push (or publish) ONE named branch, not just the checked-out one — by
+   *  its FULL name (see the branch ops below). */
+  "branch:push": [{ fullName: string }, CommitActionResult];
   /**
    * Publish a branch UNDER ITS OWN NAME and track it.
    *
@@ -1831,12 +1839,12 @@ export interface IpcChannels {
    *  it tracked, both read BEFORE the delete — git prints the sha and throws
    *  the tracking config away, and undo needs both. */
   "branch:delete": [
-    { name: string; force?: boolean },
+    { fullName: string; force?: boolean },
     CommitActionResult & { was?: string; upstream?: string },
   ];
   /** Fast-forward a local branch straight from its upstream WITHOUT checking
-   *  it out (`git fetch <remote> <remoteBranch>:<localBranch>`). */
-  "branch:pullFf": [{ name: string }, CommitActionResult];
+   *  it out (`git fetch <remote> <remoteBranch>:<localBranch>`) — by FULL name. */
+  "branch:pullFf": [{ fullName: string }, CommitActionResult];
   // ── Compare (base…head) ──
   "compare:refs": [{ base: string; head: string; mode?: CompareMode }, CompareResult | undefined];
   /**
@@ -2170,10 +2178,16 @@ export interface IpcChannels {
     CommitActionResult & { indexText?: string },
   ];
   // ── Branch ops (engine-backed: merge / rebase / rename / upstream) ──
-  "branch:merge": [{ name: string; noFf?: boolean }, CommitActionResult];
-  "branch:rebase": [{ onto: string }, CommitActionResult];
-  "branch:rename": [{ from: string; to: string }, CommitActionResult];
-  "branch:setUpstream": [{ name: string; upstream: string }, CommitActionResult];
+  // Every one takes the branch by its FULL name (BranchInfo.fullName,
+  // "refs/heads/release") and the main process REFUSES one without it —
+  // `%(refname:short)` is "heads/release" beside a tag "release", which
+  // `git branch -m/-d` do not find, `git merge` records verbatim, and whose
+  // bare form "release" is the TAG. Build them with branchRequests.ts.
+  "branch:merge": [{ fullName: string; noFf?: boolean }, CommitActionResult];
+  "branch:rebase": [{ fullName: string }, CommitActionResult];
+  /** Rename the local branch `fullName` to the NEW name `to` (a plain name). */
+  "branch:rename": [{ fullName: string; to: string }, CommitActionResult];
+  "branch:setUpstream": [{ fullName: string; upstream: string }, CommitActionResult];
   /** Delete a branch ON the remote. `was` is the commit the remote-tracking
    *  ref named just before, which is the only thing that makes this reversible
    *  — the push that deletes it also removes the local copy of that ref. */

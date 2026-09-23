@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GitContext } from "@gitstudio/git-service/GitContext";
-import { planListedRefCheckout, resolveListedRef } from "../src/views/refCheckout";
+import { listedRefCheckout, planListedRefCheckout, resolveListedRef } from "../src/views/refCheckout";
 
 // The Branches view's and the Changes view's branch-menu "Checkout" (issue
 // #30's follow-up). They handed git `%(refname:short)`, and with a branch and a
@@ -162,7 +162,78 @@ test("every checkout door in the Branches view goes through the full-name planne
     const fn = end > 0 ? body.slice(0, end) : body;
     assert.match(fn, /await runRefCheckout\(a, ref, refresh\);/, `${door} checks out through runRefCheckout`);
   }
-  assert.match(src, /const plan = await planListedRefCheckout\(a\.ctx, ref\);/, "runRefCheckout plans from the listed full name");
+  assert.match(src, /const c = await listedRefCheckout\(a\.ctx, ref\);/, "runRefCheckout plans from the listed full name");
   assert.doesNotMatch(src, /branches\.checkout\(ref\.name/, "no door hands git the short name");
   assert.doesNotMatch(src, /planRemoteCheckout\(a\.ctx\.process, ref\.name\)/, "…not even the remote one");
+});
+
+test("a branch named like an option is refused for THAT reason — the ref is found, not 'missing'", async () => {
+  // planListedRefCheckout answered undefined for it, and the Branches view
+  // read undefined as "not in this repository any more — refresh and try
+  // again". The branch is right there; refreshing changes nothing.
+  git(repo, "checkout", "-q", "main");
+  git(repo, "update-ref", "refs/heads/-f", "HEAD");
+  try {
+    const node = (await ctx.refs.listRefs()).find((r) => r.fullName === "refs/heads/-f")!;
+    assert.ok(node, "git lists it");
+    const c = await listedRefCheckout(ctx, node);
+    assert.equal(c.kind, "optionLike");
+    assert.equal(c.kind === "optionLike" && c.fullName, "refs/heads/-f");
+    assert.equal(c.kind === "optionLike" && c.refusal.local, true, "a local branch — the rename is offered");
+    // By name + type as the Changes view's menu sends it, too.
+    const viaMenu = await listedRefCheckout(ctx, { name: node.name, type: "head" });
+    assert.equal(viaMenu.kind, "optionLike");
+    // Missing stays missing.
+    assert.equal((await listedRefCheckout(ctx, { name: "ghost", type: "head" })).kind, "missing");
+    // And an ordinary branch still plans.
+    const ok = await listedRefCheckout(ctx, { name: "heads/release", type: "head" });
+    assert.equal(ok.kind, "plan");
+  } finally {
+    git(repo, "update-ref", "-d", "refs/heads/-f");
+  }
+});
+
+test("both extension checkout doors SAY why an option-like branch is refused, and offer the rename", () => {
+  // Pinned at source level: both import vscode. What they call is exercised
+  // above (listedRefCheckout) and in git-service (optionLikeCheckout,
+  // renameArgs, run against real git).
+  const branches = readFileSync(fileURLToPath(new URL("../src/views/branchActions.ts", import.meta.url)), "utf8");
+  const run = branches.slice(branches.indexOf("async function runRefCheckout("), branches.indexOf("async function listedRef("));
+  assert.match(run, /if \(c\.kind === "optionLike"\) \{[\s\S]*?await explainOptionLikeCheckout\(a\.ctx, c\.refusal, c\.fullName, refresh\);[\s\S]*?return;/,
+    "the Branches view explains an option-like branch");
+  assert.ok(run.indexOf('c.kind === "optionLike"') < run.indexOf("not in this repository any more"),
+    "…before, and apart from, the 'refresh and try again' a MISSING ref gets");
+  const graph = readFileSync(fileURLToPath(new URL("../src/graph/commitActions.ts", import.meta.url)), "utf8");
+  const arm = graph.slice(graph.indexOf("async function checkoutRef("), graph.indexOf("async function checkout("));
+  assert.match(arm, /const refusal = optionLikeCheckout\(fullName\);\s*if \(refusal\) \{\s*return explainOptionLikeCheckout\(ctx, refusal, fullName, /,
+    "the graph's menus (row and chip) explain it too, instead of returning in silence");
+  const glue = readFileSync(fileURLToPath(new URL("../src/views/optionLikeBranch.ts", import.meta.url)), "utf8");
+  assert.match(glue, /const args = renameArgs\(fullName, neu\);/, "the rename goes by the FULL name");
+});
+
+test("every branch action hands git a name derived from the FULL name, never ref.name", () => {
+  const src = readFileSync(fileURLToPath(new URL("../src/views/branchActions.ts", import.meta.url)), "utf8");
+  const body = (fn: string): string => {
+    const at = src.indexOf(`export async function ${fn}(`);
+    assert.ok(at >= 0, fn);
+    const rest = src.slice(at);
+    const end = rest.indexOf("\nexport async function ", 10);
+    return end > 0 ? rest.slice(0, end) : rest;
+  };
+  assert.match(body("mergeBranchIntoCurrent"), /branches\.merge\(ref\.fullName\)/);
+  assert.match(body("rebaseCurrentOnto"), /branches\.rebaseOnto\(ref\.fullName\)/);
+  assert.match(body("renameBranch"), /const old = ref && localName\(ref\);[\s\S]*branches\.rename\(old, neu\)/);
+  assert.match(body("deleteBranch"), /const name = ref && localName\(ref\);[\s\S]*branches\.delete\(name\)[\s\S]*branches\.delete\(name, \{ force: true \}\)/);
+  assert.match(body("pushBranch"), /branch: name,/);
+  assert.match(body("setUpstream"), /branches\.setUpstream\(name, upstream\)/);
+  assert.match(body("newBranchFrom"), /const startPoint = ref\?\.fullName;/);
+  assert.match(body("deleteRemoteBranch"), /remoteBranchOf\(ref\.fullName\)/);
+  assert.match(body("deleteTag"), /tags\.delete\(name\)/);
+  assert.match(body("pushTag"), /tags\.push\(remote, name\)/);
+  // …and none of them reaches git with the short name.
+  for (const call of ["merge", "rebaseOnto", "rename", "delete", "setUpstream", "checkoutNew", "create"]) {
+    assert.doesNotMatch(src, new RegExp(`branches\\.${call}\\(ref\\.name`), `branches.${call}(ref.name…)`);
+  }
+  assert.doesNotMatch(src, /tags\.(delete|push)\([^)]*ref\.name/);
+  assert.doesNotMatch(src, /branch: ref\.name/);
 });

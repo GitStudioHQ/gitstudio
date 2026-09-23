@@ -4,7 +4,8 @@ import type { GraphMenuItem } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
 import { pausedForUser } from "../git/pausedForUser";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
-import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { explainOptionLikeCheckout } from "../views/optionLikeBranch";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 import { ellipsizeMiddle, resolveCheckoutTarget, type MenuRef } from "./checkoutTarget";
 
@@ -230,6 +231,13 @@ async function checkoutRef(
   ctx: GitContext,
   undo?: UndoRunner,
 ): Promise<boolean> {
+  // A branch whose name starts with "-" is refused by the planner — git
+  // would read it as an option — and this arm used to return in SILENCE,
+  // from both the row's menu and the chip's. Say why, and offer the rename.
+  const refusal = optionLikeCheckout(fullName);
+  if (refusal) {
+    return explainOptionLikeCheckout(ctx, refusal, fullName, () => undefined);
+  }
   const plan = await planRefCheckout(ctx.process, fullName);
   if (!plan) {
     return false;

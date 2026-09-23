@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { BranchInfo } from "../src/shared/ipc";
+import { branchName } from "../src/renderer/branchRequests";
 
 /**
  * The predicate as the view applies it. Kept beside the source assertion below
@@ -24,16 +25,30 @@ import type { BranchInfo } from "../src/shared/ipc";
  */
 function finishedSet(locals: BranchInfo[], defaultBranch?: string): string[] {
   return locals
-    .filter((b) => !b.current && b.name !== defaultBranch && (b.merged || b.gone))
-    .map((b) => b.name);
+    .filter((b) => !b.current && branchName(b) !== defaultBranch && (b.merged || b.gone))
+    .map((b) => branchName(b));
 }
 
 const b = (name: string, o: Partial<BranchInfo> = {}): BranchInfo => ({
   name,
+  fullName: `refs/heads/${name}`,
   current: false,
   ahead: 0,
   behind: 0,
   ...o,
+});
+
+test("the default branch is protected by its OWN name, even beside a tag of that name", () => {
+  // With a tag "main" in the repository, git lists the branch as
+  // "heads/main" — and `"heads/main" !== "main"` let the sweep offer the
+  // default branch for deletion. It is compared by the name under
+  // refs/heads/ (branchName), which the default branch's name is.
+  const locals = [
+    b("heads/main", { fullName: "refs/heads/main", merged: true }),
+    b("heads/done", { fullName: "refs/heads/done", merged: true }),
+    b("wip", { current: true }),
+  ];
+  assert.deepEqual(finishedSet(locals, "main"), ["done"], "listed by its own name, and main not at all");
 });
 
 test("the default branch is never finished, however merged it looks", () => {
@@ -83,7 +98,7 @@ const renderer = readFileSync(join(here, "..", "src", "renderer", "renderer.ts")
 test("the view's filter excludes the default branch", () => {
   assert.match(
     renderer,
-    /\.filter\(\(b\) => !b\.current && b\.name !== defaultBranch && \(b\.merged \|\| b\.gone\)\)/,
+    /\.filter\(\(b\) => !b\.current && branchName\(b\) !== defaultBranch && \(b\.merged \|\| b\.gone\)\)/,
     "the sweep's candidate list no longer excludes the default branch by name",
   );
 });
@@ -105,7 +120,7 @@ test("and the sweep itself refuses them a second time", () => {
   const body = renderer.slice(renderer.indexOf("private async sweepFinishedBranches"));
   assert.match(
     body.slice(0, 1200),
-    /finished = finished\.filter\(\(b\) => !b\.current && b\.name !== defaultBranch\)/,
+    /finished = finished\.filter\(\(b\) => !b\.current && branchName\(b\) !== defaultBranch\)/,
     "sweepFinishedBranches deletes whatever it is handed",
   );
 });

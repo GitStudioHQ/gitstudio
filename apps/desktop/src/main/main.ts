@@ -792,7 +792,7 @@ function registerIpc(): void {
   // push-force-reviewed: pure forwarder — the renderer decides about force
   // and it rides through in opts.
   handle("sync:push", (opts) => bridge.syncPush(opts || undefined));
-  handle("branch:push", (a) => bridge.branchPush(a.name));
+  handle("branch:push", (a) => bridge.branchPush(a.fullName));
   handle("branch:publish", (req) => bridge.branchPublishAs(req));
 
   // Branch management.
@@ -804,7 +804,7 @@ function registerIpc(): void {
   handle("branch:create", (req) => bridge.branchCreate(req));
   handle("branch:delete", (req) => bridge.branchDelete(req));
   handle("branches:people", () => bridge.branchesPeople());
-  handle("branch:pullFf", (req) => bridge.branchPullFf(req.name));
+  handle("branch:pullFf", (req) => bridge.branchPullFf(req.fullName));
 
   // Compare (base…head).
   handle("compare:refs", (req) => bridge.compareRefs(req));

@@ -100,7 +100,17 @@ function mutations(): Array<{ name: string; body: string }> {
 function guards(body: string): boolean {
   // safePath is the pathspec form: it allows a leading dash (legal after `--`)
   // and refuses the two things that actually break a path — empty, and a NUL.
-  return body.includes("safeArg(") || body.includes("safePath(") || body.includes('startsWith("-")');
+  // isFullRef / localBranchOf are the branch ops' form (issue #30's
+  // follow-up): they accept only a FULL ref name, which starts with "refs/"
+  // and so can never be read as an option; the name derived from one goes
+  // after `--` (BranchOps) or into a refs/heads/ refspec.
+  return (
+    body.includes("safeArg(") ||
+    body.includes("safePath(") ||
+    body.includes('startsWith("-")') ||
+    body.includes("isFullRef(") ||
+    body.includes("localBranchOf(")
+  );
 }
 
 test("the bridge exposes the mutations we think it does", () => {

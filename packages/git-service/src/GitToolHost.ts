@@ -20,7 +20,8 @@ import type {
   ToolWriteResult,
 } from "@gitstudio/ai/gitTools";
 import type { GitContext } from "./GitContext";
-import { planRefCheckout } from "./checkoutRef";
+import { optionLikeCheckout, planRefCheckout } from "./checkoutRef";
+import { branchNameOf } from "./BranchOps";
 import { commitBlockerMessage } from "./StagingProvider";
 import { stashBlockerMessage } from "./StashProvider";
 
@@ -302,6 +303,14 @@ class GitContextToolHost implements GitToolHost {
     // other checkout door plans it. Anything else — a sha, a tag's short
     // name, a remote-tracking name — is git's to resolve, as it always was.
     const fullName = ref.startsWith("refs/") ? ref : await this.localBranchFullName(ref);
+    // "refs/heads/-f" passes the argv guard above (it starts with "refs/"),
+    // the planner refuses it — and the fall-through below would have handed
+    // git the full name as a REVISION: a detached HEAD at the branch tip,
+    // reported as success. Say why instead.
+    const optionLike = fullName ? optionLikeCheckout(fullName) : undefined;
+    if (optionLike) {
+      return { ok: false, message: optionLike.message };
+    }
     const plan = fullName ? await planRefCheckout(this.ctx.process, fullName) : undefined;
     if (plan) {
       const r = await this.ctx.process.run(plan.args);
@@ -366,7 +375,13 @@ class GitContextToolHost implements GitToolHost {
     if (!safe(name)) {
       return UNSAFE;
     }
-    return w(await this.ctx.branches.delete(name, { force }));
+    // The same round trip as checkout: git_branches said "heads/release"
+    // beside a tag "release", and `git branch -d heads/release` finds no
+    // branch of that name. Delete by the name under refs/heads/ of the branch
+    // the agent was TOLD about; a name no branch reports is git's to refuse.
+    const fullName = name.startsWith("refs/") ? name : await this.localBranchFullName(name);
+    const branch = fullName ? branchNameOf(fullName) : undefined;
+    return w(await this.ctx.branches.delete(branch ?? name, { force }));
   }
 
   async reset(mode: "soft" | "mixed" | "hard", ref: string): Promise<ToolWriteResult> {

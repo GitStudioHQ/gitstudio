@@ -84,6 +84,8 @@ import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
 import { refCheckoutRequest, refDisplay, type RowRef } from "./refMenuItems";
+import { branchName, tagName } from "./branchRequests";
+import { explainRefusedCheckout } from "./optionLikeRename";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
 import { refreshHighlightTheme } from "./highlight";
@@ -1898,7 +1900,7 @@ class App {
       // facet grouping it with the branches whose work is done, says something
       // false about the branch everything else is measured from. It is judged
       // on its own upstream instead, like any other branch with one.
-      if (b.merged && b.name !== defaultBranch) return "merged";
+      if (b.merged && branchName(b) !== defaultBranch) return "merged";
       if (!b.upstream) return "unpublished";
       if (b.ahead && b.behind) return "diverged";
       if (b.ahead) return "ahead";
@@ -2089,7 +2091,7 @@ class App {
       const finished = locals
         .filter((b) => hit(b.name, b.upstream, b.subject))
         .filter((b) => bar.passes(b))
-        .filter((b) => !b.current && b.name !== defaultBranch && (b.merged || b.gone));
+        .filter((b) => !b.current && branchName(b) !== defaultBranch && (b.merged || b.gone));
       sweep.replaceChildren(glyph("trash"), span(`Delete ${finished.length} finished…`));
       sweep.title = q
         ? `Of the branches matching “${q}”: those already in ${defaultBranch ?? "the default branch"}, or whose upstream is gone`
@@ -2576,7 +2578,9 @@ class App {
     push.textContent = "Push";
     push.setAttribute("aria-label", `Push tag ${r.name} to the remote`);
     push.title = `Publish ${r.name} to the remote`;
-    push.addEventListener("click", () => void this.pushTagLive(r.name, push));
+    // The name under refs/tags/: beside a branch of the same name the short
+    // name is "tags/v1", and refs/tags/tags/v1 is no tag at all.
+    push.addEventListener("click", () => void this.pushTagLive(tagName(r), push));
     actions.push(push);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
     more.setAttribute("aria-label", `More actions for ${r.name}`);
@@ -2593,7 +2597,7 @@ class App {
           label: "Delete tag…",
           icon: "trash",
           danger: true,
-          onClick: () => void this.deleteTagLive(r.name),
+          onClick: () => void this.deleteTagLive(tagName(r)),
         },
       ]);
     more.addEventListener("click", menu);
@@ -2847,9 +2851,14 @@ class App {
     // caller already excludes the default branch and the current one, and this
     // refuses to delete them anyway. A bulk delete is the wrong place to trust
     // that a filter upstream still says what it said when it was written.
-    finished = finished.filter((b) => !b.current && b.name !== defaultBranch);
+    //
+    // By branchName, never b.name: beside a tag "main" git lists the default
+    // branch as "heads/main", which is not "main", and the sweep offered it.
+    // Each is then deleted by its FULL name and restored under branchName —
+    // the short "heads/x" came back as a branch literally called that.
+    finished = finished.filter((b) => !b.current && branchName(b) !== defaultBranch);
     if (!finished.length) return;
-    const names = finished.map((b) => b.name);
+    const names = finished.map((b) => branchName(b));
     const ok = await confirmDialog({
       title: `Delete ${finished.length} finished ${finished.length === 1 ? "branch" : "branches"}?`,
       message:
@@ -2868,10 +2877,10 @@ class App {
     for (const b of finished) {
       let r;
       try {
-        r = await host.invoke("branch:delete", { name: b.name, force: false });
+        r = await host.invoke("branch:delete", { fullName: b.fullName, force: false });
       } catch (e) {
         toast(
-          `Deleted ${done.length} of ${finished.length}, then ${b.name} failed: ${cleanErr(e) || "git error"}.`,
+          `Deleted ${done.length} of ${finished.length}, then ${branchName(b)} failed: ${cleanErr(e) || "git error"}.`,
           "error",
         );
         break;
@@ -2879,14 +2888,14 @@ class App {
       if (!r?.ok) {
         toast(
           done.length
-            ? `Deleted ${done.join(", ")}. Stopped at ${b.name}: ${r?.message ?? "git refused."}`
-            : `${b.name} was not deleted: ${r?.message ?? "git refused."}`,
+            ? `Deleted ${done.join(", ")}. Stopped at ${branchName(b)}: ${r?.message ?? "git refused."}`
+            : `${branchName(b)} was not deleted: ${r?.message ?? "git refused."}`,
           "error",
         );
         break;
       }
-      done.push(b.name);
-      if (r.was) restorable.push({ name: b.name, was: r.was, upstream: r.upstream });
+      done.push(branchName(b));
+      if (r.was) restorable.push({ name: branchName(b), was: r.was, upstream: r.upstream });
     }
     if (done.length === finished.length) {
       const msg = `Deleted ${done.length} finished ${done.length === 1 ? "branch" : "branches"}.`;
@@ -2990,7 +2999,8 @@ class App {
       const prefix = `${head!.name}/`;
       return symref.startsWith(prefix) ? symref.slice(prefix.length) : symref;
     }
-    return locals.find((b) => b.current)?.name;
+    const cur = locals.find((b) => b.current);
+    return cur ? branchName(cur) : undefined;
   }
 
   /** Which orders the segment on screen can honour. */
@@ -3158,14 +3168,14 @@ class App {
   /** Push a branch that has never been pushed, and set its upstream. */
   private async publishBranchLive(b: BranchInfo, btn: HTMLButtonElement): Promise<void> {
     await this.refreshInPlace(btn, async () => {
-      const r = await host.invoke("branch:push", { name: b.name });
+      const r = await host.invoke("branch:push", { fullName: b.fullName });
       if (!r.ok) {
-        toast(r.message ?? `Couldn't publish ${b.name}.`, r.expected ? "info" : "error");
+        toast(r.message ?? `Couldn't publish ${branchName(b)}.`, r.expected ? "info" : "error");
         return;
       }
       bust("branches");
       await this.refreshBranchesSoft();
-      toast(`Published ${b.name}.`, "success");
+      toast(`Published ${branchName(b)}.`, "success");
     });
   }
 
@@ -3338,7 +3348,7 @@ class App {
           `${b.upstream ?? "Its upstream"} no longer exists — this branch is probably finished with.`,
         ),
       );
-    } else if (b.merged && !b.current && b.name !== defaultBranch) {
+    } else if (b.merged && !b.current && branchName(b) !== defaultBranch) {
       pills.push(
         pill(
           "merged",
@@ -3500,7 +3510,7 @@ class App {
       b.name,
       b.subject,
       // The divergence the bar used to draw, said in words.
-      b.aheadDefault !== undefined && b.behindDefault !== undefined && b.name !== defaultBranch
+      b.aheadDefault !== undefined && b.behindDefault !== undefined && branchName(b) !== defaultBranch
         ? `${b.aheadDefault} ahead of and ${b.behindDefault} behind ${defaultBranch ?? "the default branch"}`
         : "",
       b.upstream && conventionalUpstream ? `tracking ${b.upstream}` : "",
@@ -3519,6 +3529,10 @@ class App {
   /** The per-branch action menu: merge / rebase / rename / set-upstream / tag /
    *  delete-remote — the depth that makes Branches a real manager, not a list. */
   private openBranchActions(b: BranchInfo, anchor: HTMLElement): void {
+    // Every op below reaches git by b.fullName (the main process refuses one
+    // without it); every label names the branch by the part under refs/heads/
+    // — git's short "heads/x" beside a tag "x" is neither (branchRequests.ts).
+    const bn = branchName(b);
     const refresh = async (): Promise<void> => {
       bust();
       await this.refreshRefs();
@@ -3562,14 +3576,14 @@ class App {
       icon: b.upstream ? "arrow-up" : "cloud-upload",
       onClick: () =>
         void run(
-          b.upstream ? `push ${b.name}` : `publish ${b.name}`,
-          host.invoke("branch:push", { name: b.name }),
+          b.upstream ? `push ${bn}` : `publish ${bn}`,
+          host.invoke("branch:push", { fullName: b.fullName }),
         ),
     });
     items.push({ separator: true });
     if (!b.current) {
       items.push({
-        label: `Checkout ${b.name}`,
+        label: `Checkout ${bn}`,
         icon: "check",
         onClick: () => void this.checkoutRef(b.fullName),
       });
@@ -3579,7 +3593,7 @@ class App {
     // branch gets a real pull instead, shown only when it's actually behind.
     if (b.upstream && !b.current) {
       items.push({
-        label: b.behind ? `Pull ${b.behind} into ${b.name}` : `Pull latest into ${b.name}`,
+        label: b.behind ? `Pull ${b.behind} into ${bn}` : `Pull latest into ${bn}`,
         sub: "fast-forward — no checkout",
         icon: "arrow-down",
         onClick: () => void this.pullBranchLive(b),
@@ -3595,12 +3609,13 @@ class App {
     if (!b.current || b.behind) items.push({ separator: true });
     if (!b.current) {
       items.push({
-        label: `Merge ${b.name} into current`,
+        label: `Merge ${bn} into current`,
         icon: "git-merge",
-        onClick: () => void run(`merge ${b.name}`, host.invoke("branch:merge", { name: b.name })),
+        // By FULL name, and recorded as "Merge branch '<bn>'" (BranchOps).
+        onClick: () => void run(`merge ${bn}`, host.invoke("branch:merge", { fullName: b.fullName })),
       });
       items.push({
-        label: `Rebase current onto ${b.name}…`,
+        label: `Rebase current onto ${bn}…`,
         icon: "git-pull-request",
         // ASKED FIRST. Every other item in this menu is additive or reversible;
         // this one rewrites the current branch's history, and it sat one
@@ -3610,15 +3625,15 @@ class App {
           void (async () => {
             const current = this.currentBranchName() ?? "the current branch";
             const ok = await confirmDialog({
-              title: `Rebase ${current} onto ${b.name}?`,
+              title: `Rebase ${current} onto ${bn}?`,
               message:
-                `Every commit on ${current} that is not on ${b.name} is rewritten with a new ` +
+                `Every commit on ${current} that is not on ${bn} is rewritten with a new ` +
                 `identity. If you have already pushed ${current}, the next push needs a force.`,
               confirmLabel: "Rebase",
               danger: true,
             });
             if (!ok) return;
-            await run(`rebase onto ${b.name}`, host.invoke("branch:rebase", { onto: b.name }));
+            await run(`rebase onto ${bn}`, host.invoke("branch:rebase", { fullName: b.fullName }));
           })(),
       });
       items.push({ separator: true });
@@ -3626,7 +3641,7 @@ class App {
     items.push({
       label: "Copy branch name",
       icon: "copy",
-      onClick: () => void copyText(b.name, `Copied “${b.name}”.`),
+      onClick: () => void copyText(bn, `Copied “${bn}”.`),
     });
     items.push({
       label: "Rename…",
@@ -3634,15 +3649,17 @@ class App {
       onClick: () => void this.renameBranchFlow(b),
     });
     items.push({
-      label: `New branch from ${b.name}…`,
+      label: `New branch from ${bn}…`,
       icon: "add",
       onClick: () =>
         void createBranchFlow(
           {
             kind: "branch",
-            ref: b.name,
-            label: b.name,
-            sha: this.refs.find((r) => r.type === "head" && r.name === b.name)?.sha?.slice(0, 7),
+            // The start point by FULL name: a bare "release" beside a tag of
+            // that name is the TAG.
+            ref: b.fullName,
+            label: bn,
+            sha: this.refs.find((r) => r.fullName === b.fullName)?.sha?.slice(0, 7),
             current: this.currentBranchName(),
           },
           { refs: this.refs, after: () => this.refreshAfterBranchChange() },
@@ -3653,9 +3670,9 @@ class App {
       icon: "cloud",
       onClick: () => {
         void (async (): Promise<void> => {
-          const up = await promptInline("Set upstream", "origin/" + b.name, b.upstream ?? "", "Set upstream");
+          const up = await promptInline("Set upstream", "origin/" + bn, b.upstream ?? "", "Set upstream");
           if (up && up.trim())
-            await run("set upstream", host.invoke("branch:setUpstream", { name: b.name, upstream: up.trim() }));
+            await run("set upstream", host.invoke("branch:setUpstream", { fullName: b.fullName, upstream: up.trim() }));
         })();
       },
     });
@@ -3679,7 +3696,7 @@ class App {
             true,
           );
           if (msg === null) return;
-          await run("create tag", host.invoke("tag:create", { name: name.trim(), ref: b.name, message: msg.trim() || undefined }));
+          await run("create tag", host.invoke("tag:create", { name: name.trim(), ref: b.fullName, message: msg.trim() || undefined }));
         })();
       },
     });
@@ -3737,11 +3754,11 @@ class App {
     if (!b.current) {
       items.push({ separator: true });
       items.push({
-        label: `Delete ${b.name}`,
+        label: `Delete ${bn}`,
         icon: "trash",
         danger: true,
-        title: `Delete the local branch ${b.name}`,
-        onClick: () => void this.deleteBranch(b.name),
+        title: `Delete the local branch ${bn}`,
+        onClick: () => void this.deleteBranch(b),
       });
     }
     openMenu(anchor, items);
@@ -3765,7 +3782,7 @@ class App {
       await this.refreshBranchesSoft();
       if (b) {
         const fresh = (await gget("branches:list", undefined)).find(
-          (x) => x.name === b.name,
+          (x) => x.fullName === b.fullName,
         );
         const pullLabel = itemEl
           ?.closest(".dropdown")
@@ -3775,8 +3792,8 @@ class App {
           pullLabel.textContent = fresh.current
             ? `Pull ${fresh.behind} commit${fresh.behind === 1 ? "" : "s"}`
             : fresh.behind
-              ? `Pull ${fresh.behind} into ${fresh.name}`
-              : `Pull latest into ${fresh.name}`;
+              ? `Pull ${fresh.behind} into ${branchName(fresh)}`
+              : `Pull latest into ${branchName(fresh)}`;
         }
       }
     } catch (e) {
@@ -3801,21 +3818,22 @@ class App {
       g?.classList.add("codicon-sync", "spin");
       if (lbl) lbl.textContent = "Pulling…";
     }
+    const bn = branchName(b);
     try {
       const r = b.current
         ? await host.invoke("sync:pull", undefined)
-        : await host.invoke("branch:pullFf", { name: b.name });
+        : await host.invoke("branch:pullFf", { fullName: b.fullName });
       if (!r.ok) {
-        toast(r.message || `Couldn't pull ${b.name}.`, "error");
+        toast(r.message || `Couldn't pull ${bn}.`, "error");
         return;
       }
-      toast(b.current ? "Pulled successfully." : `Fast-forwarded ${b.name}.`, "success");
+      toast(b.current ? "Pulled successfully." : `Fast-forwarded ${bn}.`, "success");
       bust();
       await this.updateSync();
       if (b.current) await this.refreshAll();
       await this.refreshBranchesSoft();
     } catch (e) {
-      toast(cleanErr(e) || `Couldn't pull ${b.name}.`, "error");
+      toast(cleanErr(e) || `Couldn't pull ${bn}.`, "error");
     } finally {
       // On success the live reload rebuilt the row (and this button); only a
       // still-connected button — the failure path — needs restoring.
@@ -3831,7 +3849,8 @@ class App {
 
   /** The branch you are standing on, for a "you are still on X" sentence. */
   private currentBranchName(): string | undefined {
-    return this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
+    const cur = this.refs.find((r) => r.type === "head" && r.isCurrent);
+    return cur ? branchName(cur) : undefined;
   }
 
   /** Whatever was showing the branch state, redrawn. Shared by every branch
@@ -3865,28 +3884,32 @@ class App {
    * would fire a second toast alongside the undo one below.
    */
   private async renameBranchFlow(b: BranchInfo): Promise<void> {
-    const to = await promptInline(`Rename ${b.name}`, "new-name", b.name, "Rename", false, {
+    // The name under refs/heads/ — to show, to edit, and to rename back to.
+    // git's short "heads/release" (beside a tag "release") is none of those:
+    // `git branch -m heads/release …` finds no such branch.
+    const old = branchName(b);
+    const to = await promptInline(`Rename ${old}`, "new-name", old, "Rename", false, {
       hint: "Only the local name changes — the commits, and the branch on the remote, stay where they are.",
       validate: "refName",
       extra: (v) =>
-        v !== b.name && this.refs.some((r) => r.type === "head" && r.name === v)
+        v !== old && this.refs.some((r) => r.fullName === `refs/heads/${v}`)
           ? `A branch called ${v} already exists.`
           : null,
     });
-    if (!to || to === b.name) return;
+    if (!to || to === old) return;
 
-    const r = await host.invoke("branch:rename", { from: b.name, to });
+    const r = await host.invoke("branch:rename", { fullName: b.fullName, to });
     if (!r.ok) {
-      toast(cleanErr(r.message) || `Couldn't rename ${b.name}.`, r.expected ? "info" : "error");
+      toast(cleanErr(r.message) || `Couldn't rename ${old}.`, r.expected ? "info" : "error");
       return; // nothing changed — don't refresh as if it had
     }
 
     const fixed = await this.reconcileUpstreamAfterRename(b, to);
-    const back = { from: to, to: b.name };
+    const back = { fullName: `refs/heads/${to}`, to: old };
     const after = (): Promise<void> => this.refreshAfterBranchChange();
     if (!fixed) {
-      didUndoable(`Renamed ${b.name} → ${to}.`, {
-        label: `Rename ${to} back to ${b.name}`,
+      didUndoable(`Renamed ${old} → ${to}.`, {
+        label: `Rename ${to} back to ${old}`,
         undo: async () => {
           const u = await host.invoke("branch:rename", back);
           if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
@@ -3896,22 +3919,22 @@ class App {
         after,
       });
     } else if (fixed.done === "publish") {
-      didUndoable(`Renamed ${b.name} → ${to}, and published it to ${fixed.remote}.`, {
+      didUndoable(`Renamed ${old} → ${to}, and published it to ${fixed.remote}.`, {
         // `${fixed.remote}/${to}` is deliberately left standing: creating a
         // remote branch is not destructive, and deleting one other people may
         // already have fetched is not an undo.
-        label: `Rename ${to} back to ${b.name}`,
+        label: `Rename ${to} back to ${old}`,
         undo: async () => {
           const u = await host.invoke("branch:rename", back);
           if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
-          if (b.upstream) await host.invoke("branch:setUpstream", { name: b.name, upstream: b.upstream });
+          if (b.upstream) await host.invoke("branch:setUpstream", { fullName: b.fullName, upstream: b.upstream });
           bust();
           return undefined;
         },
         after,
       });
     } else {
-      didUndoable(`Renamed ${b.name} → ${to}, on ${fixed.remote} too.`, {
+      didUndoable(`Renamed ${old} → ${to}, on ${fixed.remote} too.`, {
         label: `Put ${b.upstream} back`,
         undo: async () => {
           // The remote half is the destructive one and the only half that can
@@ -3922,7 +3945,7 @@ class App {
           if (fixed.was) {
             const put = await host.invoke("branch:restoreRemote", {
               remote: fixed.remote,
-              name: b.name,
+              name: old,
               sha: fixed.was,
             });
             if (!put.ok) return cleanErr(put.message) || `Couldn't put ${b.upstream} back.`;
@@ -3960,8 +3983,12 @@ class App {
     if (!up) return null; // unpublished
     const slash = up.indexOf("/");
     if (slash <= 0) return null;
-    if (up.slice(slash + 1) !== b.name) return null; // deliberately tracking something else
-    return this.reconcileUpstream(to, up, b.name);
+    // Against the name under refs/heads/: "origin/release" never equals the
+    // short "heads/release", so a branch beside a tag of its name was never
+    // offered the remote rename.
+    const old = branchName(b);
+    if (up.slice(slash + 1) !== old) return null; // deliberately tracking something else
+    return this.reconcileUpstream(to, up, old);
   }
 
   /** Offer to make the remote agree with `local`, which tracks `upstream`
@@ -4022,7 +4049,11 @@ class App {
     return { done: "rename", remote, was: gone.was };
   }
 
-  private async deleteBranch(name: string): Promise<void> {
+  private async deleteBranch(b: BranchInfo): Promise<void> {
+    // Deleted by FULL name; named — and restored — by the name under
+    // refs/heads/. The short "heads/x" (beside a tag "x") names no branch to
+    // delete, and restored as a branch literally called "heads/x".
+    const name = branchName(b);
     // Confirm FIRST. This sits a few pixels from Checkout in a hover-revealed
     // row cluster, and every other destructive action in the app asks before
     // acting — deleting a branch outright was the one that did not. The
@@ -4041,7 +4072,7 @@ class App {
     if (!ok) {
       return;
     }
-    let r = await host.invoke("branch:delete", { name });
+    let r = await host.invoke("branch:delete", { fullName: b.fullName });
     if (!r.ok && r.message && /not fully merged/i.test(r.message)) {
       const force = await confirmDialog({
         title: "Force-delete branch?",
@@ -4050,7 +4081,7 @@ class App {
         danger: true,
       });
       if (!force) return;
-      r = await host.invoke("branch:delete", { name, force: true });
+      r = await host.invoke("branch:delete", { fullName: b.fullName, force: true });
     }
     if (!r.ok) {
       toast(r.message || `Couldn't delete branch '${name}'.`, "error");
@@ -4147,6 +4178,8 @@ class App {
     // reading `.ok` off it threw inside an async handler — no toast, no error,
     // the click simply did nothing.
     if (!result?.ok) {
+      // A branch named like an option: say why, and offer the rename.
+      if (explainRefusedCheckout(result, () => this.refreshAfterBranchChange())) return;
       toast(result.message || "Couldn't check out — you may have uncommitted changes.", "error");
       return;
     }
@@ -9686,6 +9719,12 @@ class App {
     try {
       const result = await host.invoke("commit:action", req);
       if (!result.ok) {
+        // The graph's menus (the row's and the chip's): a branch named like an
+        // option says why, and offers the rename — the same words as Branches.
+        if (explainRefusedCheckout(result, async () => {
+          bust();
+          await this.refreshAll();
+        })) return;
         toast(
           result.message ?? `Couldn't ${req.action.replace(/-/g, " ")}.`,
           result.expected ? "info" : "error",

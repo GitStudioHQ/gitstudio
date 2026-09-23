@@ -15,6 +15,8 @@ import { detailPage, commitList, type SectionTarget, type SectionNav } from "./c
 import { setPageLabel } from "../navStack";
 import type { CompareCommit, RefInfo, StashInfo } from "../../shared/ipc";
 import { refCheckoutRequest } from "../refMenuItems";
+import { tagName } from "../branchRequests";
+import { explainRefusedCheckout } from "../optionLikeRename";
 
 /** Which kind of ref this page is showing — it arrives on `target.id`. */
 type RefKind = "head" | "remote" | "tag" | "stash";
@@ -257,6 +259,8 @@ export async function renderRefDetail(
     // and reading `.ok` off it throws inside an async handler — no toast, no
     // error, the click simply doing nothing.
     if (!r?.ok) {
+      // A branch named like an option says so, and offers the rename.
+      if (explainRefusedCheckout(r, () => nav("branches", { list: true }))) return;
       toast(r?.message || "Couldn't check out — you may have uncommitted changes.", "error");
       return;
     }
@@ -264,8 +268,12 @@ export async function renderRefDetail(
     nav("branches", { list: true });
   }
 
+  // The name under refs/tags/ — beside a branch of the same name the page's
+  // own name is git's short "tags/v1", which names no tag to push or delete.
+  const tag = ref ? tagName(ref) : name!;
+
   async function pushTag(): Promise<void> {
-    const r = await host.invoke("tag:push", { name: name! });
+    const r = await host.invoke("tag:push", { name: tag });
     toast(r.ok ? `Pushed ${name}.` : (r.message ?? "Couldn't push the tag."), r.ok ? "success" : "error");
   }
 
@@ -279,7 +287,7 @@ export async function renderRefDetail(
       danger: true,
     });
     if (!ok) return;
-    const r = await host.invoke("tag:delete", name!);
+    const r = await host.invoke("tag:delete", tag);
     if (!r.ok) {
       toast(r.message ?? "Couldn't delete the tag.", r.expected ? "info" : "error");
       return;

@@ -44,6 +44,65 @@ export function refShortName(fullName: string): string {
 }
 
 /**
+ * Why planRefCheckout refuses `fullName`, when the reason is its NAME: the
+ * branch a checkout would put on argv starts with "-", so git would read it as
+ * an option (see planRefCheckout). Undefined for every other ref — a tag, an
+ * ordinary branch, a name outside the namespaces.
+ *
+ * Refusing is right; refusing in silence, or with "not in this repository any
+ * more — refresh and try again", is not: the branch IS there, and refreshing
+ * changes nothing. The doors say what is true instead (`message`), and a
+ * LOCAL branch can be fixed where it stands — `renameArgs` renames it by its
+ * full name, with `--` so the old name is never read as an option either.
+ */
+export interface OptionLikeRef {
+  /** The name git would have been handed: "-f" for refs/heads/-f and for
+   *  refs/remotes/origin/-f alike. */
+  name: string;
+  /** A local branch — the one kind a rename can fix here. A remote-tracking
+   *  branch's name belongs to the remote. */
+  local: boolean;
+  /** What a door says instead of checking out. */
+  message: string;
+}
+
+export function optionLikeCheckout(fullName: string): OptionLikeRef | undefined {
+  const name = refShortName(fullName);
+  if (!name || name === fullName || fullName.startsWith("refs/tags/")) return undefined;
+  const local = fullName.startsWith("refs/heads/");
+  const onArgv = local ? name : localNameFor(name);
+  if (!onArgv.startsWith("-")) return undefined;
+  const whose = local ? "" : ` (from ${name})`;
+  return {
+    name: onArgv,
+    local,
+    message:
+      `Git can't safely check out a branch whose name starts with "-": "${onArgv}"${whose} would be read as an option. ` +
+      (local ? "Rename it, then check it out." : "Create a branch from it under another name instead."),
+  };
+}
+
+/**
+ * `git branch -m -- <old> <new>` for the local branch `fullName` — the rename
+ * a refused option-like branch is offered. By its FULL name: the old name is
+ * the one under refs/heads/, never a short form, and `--` ends option parsing
+ * so "-f" is a name (git renames it with "renamed a misnamed branch '-f'
+ * away"). Undefined for anything that is not a local branch.
+ */
+export function renameArgs(fullName: string, newName: string): string[] | undefined {
+  if (!fullName.startsWith("refs/heads/")) return undefined;
+  const old = fullName.slice("refs/heads/".length);
+  if (!old || !newName) return undefined;
+  return ["branch", "-m", "--", old, newName];
+}
+
+/** A name to offer in the rename box: the old one without its leading dashes. */
+export function suggestedRename(name: string): string {
+  const bare = name.replace(/^-+/, "");
+  return bare || "renamed";
+}
+
+/**
  * The plan for `fullName`, or undefined for a name outside the three
  * namespaces (a stash, HEAD, or a short name that reached here by mistake —
  * refusing it is safer than guessing a namespace for it).
@@ -61,9 +120,9 @@ export async function planRefCheckout(
   // does not and a fetch can bring one in under refs/remotes/ — and planned
   // bare, "Checkout -f" ran `git checkout -f`, discarding every uncommitted
   // change. Refused, as a name git itself would not create. (A tag detaches
-  // by its full name, which cannot be read as an option.)
-  const onArgv = fullName.startsWith("refs/remotes/") ? localNameFor(name) : name;
-  if (!fullName.startsWith("refs/tags/") && onArgv.startsWith("-")) {
+  // by its full name, which cannot be read as an option.) The doors ask
+  // optionLikeCheckout why, and say so.
+  if (optionLikeCheckout(fullName)) {
     return undefined;
   }
   if (fullName.startsWith("refs/heads/")) {

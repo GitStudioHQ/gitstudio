@@ -12,7 +12,12 @@
 // heads/release". A tag's "tags/release" happened to work; the branch did not.
 
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
-import { planRefCheckout, type RefCheckoutPlan } from "@gitstudio/git-service/checkoutRef";
+import {
+  optionLikeCheckout,
+  planRefCheckout,
+  type OptionLikeRef,
+  type RefCheckoutPlan,
+} from "@gitstudio/git-service/checkoutRef";
 import type { GitRunner } from "@gitstudio/git-service/checkoutRemote";
 
 /** What these helpers need from a GitContext. */
@@ -60,7 +65,33 @@ export async function planListedRefCheckout(
   ctx: RefCheckoutContext,
   ref: RefLikeArg,
 ): Promise<RefCheckoutPlan | undefined> {
+  const c = await listedRefCheckout(ctx, ref);
+  return c.kind === "plan" ? c.plan : undefined;
+}
+
+/**
+ * The checkout for `ref`, or WHY there is none — the two refusals are not the
+ * same thing and a door must not say the same words for both:
+ *
+ *   missing     the ref list has no such ref (deleted since the menu was drawn,
+ *               or the listing failed): refreshing is the right advice.
+ *   optionLike  the ref is RIGHT THERE, and its name starts with "-", which git
+ *               would read as an option (planRefCheckout refuses it). Refreshing
+ *               changes nothing; the door says so and offers the rename.
+ */
+export type ListedRefCheckout =
+  | { kind: "plan"; plan: RefCheckoutPlan; fullName: string }
+  | { kind: "optionLike"; refusal: OptionLikeRef; fullName: string }
+  | { kind: "missing" };
+
+export async function listedRefCheckout(
+  ctx: RefCheckoutContext,
+  ref: RefLikeArg,
+): Promise<ListedRefCheckout> {
   const listed = await resolveListedRef(ctx, ref);
-  if (!listed) return undefined;
-  return planRefCheckout(ctx.process, listed.fullName);
+  if (!listed) return { kind: "missing" };
+  const refusal = optionLikeCheckout(listed.fullName);
+  if (refusal) return { kind: "optionLike", refusal, fullName: listed.fullName };
+  const plan = await planRefCheckout(ctx.process, listed.fullName);
+  return plan ? { kind: "plan", plan, fullName: listed.fullName } : { kind: "missing" };
 }

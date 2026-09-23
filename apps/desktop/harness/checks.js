@@ -12424,6 +12424,80 @@
         "each option explains what will actually happen",
       );
     },
+    /**
+     * A branch named "-f" (update-ref makes one; porcelain never would) is
+     * refused at checkout — git would read it as an option. The refusal used
+     * to read "That value isn't a valid git reference", about a branch the
+     * list had just shown. It says what is true now, and its "Rename…" renames
+     * the branch by its FULL name.
+     */
+    "a-branch-named-like-an-option-says-why-and-offers-the-rename": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const kebab = $$(".lv-menu-btn").find((b) => (b.getAttribute("aria-label") || "") === "More actions for -f");
+      c.ok(!!kebab, "the -f branch is listed with its menu");
+      if (!kebab) return;
+      kebab.click();
+      await settle(350);
+      const co = $$(".dropdown-item").find((r) => /^Checkout -f$/.test((text(r) || "").trim()));
+      c.ok(!!co, "its menu offers Checkout -f");
+      if (!co) return;
+      co.click();
+      await settle(600);
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action").at(-1);
+      c.eq(sent?.payload?.fullName, "refs/heads/-f", "the checkout goes out by full name");
+      const msg = text("#toast-stack") || "";
+      c.match(msg, /can't safely check out a branch whose name starts with "-"/, "the toast says WHY");
+      c.ok(!/isn't a valid git reference|not in this repository/i.test(msg), "…and not the untrue refusal");
+      const act = $$(".toast-action").find((b) => /^Rename/.test(text(b) || ""));
+      c.ok(!!act, "…and offers the rename");
+      if (!act) return;
+      act.click();
+      await settle(400);
+      const input = $(".modal-input");
+      const ok = $(".modal-ok");
+      c.ok(!!input && !!ok, "the rename asks for a name");
+      if (!input || !ok) return;
+      c.eq(input.value, "f", "…suggesting the name without its dash");
+      input.value = "fixed-f";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(200);
+      ok.click();
+      await settle(600);
+      const rn = (window.__GS_INVOKED || []).filter((r) => r.channel === "branch:rename").at(-1);
+      c.eq(rn?.payload?.fullName, "refs/heads/-f", "renamed by its FULL name");
+      c.eq(rn?.payload?.to, "fixed-f", "…to the name given");
+      c.match(text("#toast-stack") || "", /Renamed -f to fixed-f/, "and the rename is reported");
+    },
+    /**
+     * The branch row's own actions reach the main process by FULL name
+     * (issue #30's follow-up): %(refname:short) is "heads/x" beside a tag
+     * "x", which git's branch commands cannot find and `git merge` records.
+     */
+    "branch-actions-go-by-full-name": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const open = async (name) => {
+        const kebab = $$(".lv-menu-btn").find((b) => (b.getAttribute("aria-label") || "") === `More actions for ${name}`);
+        if (!kebab) return false;
+        kebab.click();
+        await settle(350);
+        return true;
+      };
+      const last = (ch) => (window.__GS_INVOKED || []).filter((r) => r.channel === ch).at(-1);
+      c.ok(await open("feat/line-staging"), "a branch's menu opens");
+      const merge = $$(".dropdown-item").find((r) => /^Merge feat\/line-staging into current/.test(text(r) || ""));
+      c.ok(!!merge, "it offers Merge");
+      merge?.click();
+      await settle(500);
+      c.eq(last("branch:merge")?.payload?.fullName, "refs/heads/feat/line-staging", "merge goes by full name");
+      c.eq(last("branch:merge")?.payload?.name, undefined, "…and never by the short one");
+      c.ok(await open("feat/line-staging"), "the menu opens again");
+      const push = $$(".dropdown-item").find((r) => /^Push/.test(text(r) || ""));
+      push?.click();
+      await settle(500);
+      c.eq(last("branch:push")?.payload?.fullName, "refs/heads/feat/line-staging", "push goes by full name");
+    },
     /** An unpublished branch has no remote to reconcile, so it must not ask. */
     "renaming-an-unpublished-branch-asks-nothing": async (f) => {
       const c = check(f);
