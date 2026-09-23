@@ -1,0 +1,40 @@
+apps/desktop/src/renderer/mergeParity.ts
+  s_26f5e669d3043c::t_dc01e5b0a75cc4 287-293
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_d3f03fa0e8c3dc 4899-4928,5013-5053
+  s_26f5e669d3043c::t_80feeac9431a1e 4929-4949
+  s_26f5e669d3043c::t_6c2b16b647a781 4898,4950-5012
+apps/desktop/test/mergeShellMount.test.ts
+  s_26f5e669d3043c::t_4f176ce588fff7 223-236
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_9c5cc91c62b833 395
+  s_26f5e669d3043c::t_00d89f6adc4d56 394,396-400
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_8157b6816f41da 234-235
+  s_26f5e669d3043c::t_03fdda25166db2 7018-7023
+  s_26f5e669d3043c::t_8b5aee93472c8c 6978,6983
+  s_26f5e669d3043c::t_3a7c3ac2237140 7101-7128
+  s_26f5e669d3043c::t_092e0628e7953a 43,49
+  s_26f5e669d3043c::t_fd17f13a0f7a7c 7075-7079
+  s_26f5e669d3043c::t_2341e4db695178 7185-7188
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_1e013b2387a373 525
+  s_26f5e669d3043c::t_47149acdb125c7 2442-2452
+  s_26f5e669d3043c::t_d292f54f0a37b3 401-405
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "31ad62058e6b8318b6c1c46992173d8cd0c23dc1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
