@@ -1,0 +1,49 @@
+packages/merge-vscode/src/mergeEditorProvider.ts
+  s_26f5e669d3043c::t_e822aeeb9fe2d2 14,52-72,81,85,89-96,100,132-135,152,159-174,176-201,204,252,265-294,314-318
+  s_26f5e669d3043c::t_c0a7fdfda91148 319-320
+packages/merge-vscode/test/mergeEditorProvider.test.ts
+  s_26f5e669d3043c::t_b257fadb100d69 215-217
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_07e5ae754218a0 9222-9230
+apps/desktop/src/renderer/mergeParity.ts
+  s_26f5e669d3043c::t_07e5ae754218a0 29,266-276,307-311,412-453
+  s_26f5e669d3043c::t_30ed5be159f61d 454-455
+packages/engine/test/documentText.test.ts
+  s_26f5e669d3043c::t_27d93b99c2847d 1-57,62-156
+  s_26f5e669d3043c::t_1e5728497ac215 58-61
+apps/desktop/src/renderer/diffPanel.ts
+  s_26f5e669d3043c::t_07e5ae754218a0 20-22,598-609,633-635
+packages/merge-vscode/test/support/useVscodeStub.ts
+  s_26f5e669d3043c::t_af7cb909d69335 58-59
+packages/merge-vscode/test/documentSync.test.ts
+  s_26f5e669d3043c::t_a1addfeb29d429 152
+  s_26f5e669d3043c::t_352a9a32a242f7 1-151,153-231
+packages/engine/src/conflict/documentText.ts
+  s_26f5e669d3043c::t_2887dd1931cef8 249-322,328,366
+  s_26f5e669d3043c::t_ffe0b680e9a3fb 1-160,163-205,211-219,231-248,323-327,329-365,367-482
+  s_26f5e669d3043c::t_8ee28a12ce91c2 220-230
+  s_26f5e669d3043c::t_2576a638adf68b 161-162
+  s_26f5e669d3043c::t_8eccb676655bf7 206-210
+scripts/merge-e2e/editorHosts.test.ts
+  s_26f5e669d3043c::t_5d2af7f6bdaeda 1-269
+apps/desktop/test/mergeShellMount.test.ts
+  s_26f5e669d3043c::t_eb855bafe5bfb1 215-267
+packages/merge-vscode/src/documentSync.ts
+  s_26f5e669d3043c::t_2e862a519e6036 1-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "57eefa51f3a7ab7be019a4d4a5d8823531763952",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
