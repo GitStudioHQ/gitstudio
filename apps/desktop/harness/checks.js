@@ -13107,6 +13107,11 @@
       merge.click();
       await settle(1500);
       c.match(text(".dc-opbanner"), /merge in progress/, "precondition: the merge stopped and Changes shows it");
+      // Wander off, as anyone does before coming back to Pull.
+      window.dispatchEvent(new CustomEvent("gs:go", { detail: { view: "branches" } }));
+      await settle(600);
+      const wandered = window.__GS_ROUTES || [];
+      c.eq((wandered[wandered.length - 1] || {}).view, "branches", "precondition: the user has left Changes");
       $$("#toast-stack .toast").forEach((t) => t.remove());
       window.__gsPulledWith = "untouched";
       const again = $(".topbar-sync .sync-main");
@@ -13122,7 +13127,7 @@
       c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `nothing is painted as a failure (${said})`);
       c.ok(!/git add\/rm|hint:|not possible/.test(said), "no git terminal advice");
       const routes = window.__GS_ROUTES || [];
-      c.eq((routes[routes.length - 1] || {}).view, "changes", "…and the user is where the merge is finished");
+      c.eq((routes[routes.length - 1] || {}).view, "changes", "…and the user is taken back to where the merge is finished");
     },
     /** Holding the question against a refresh must not hold it across a
      *  REPOSITORY switch: `sync:pull` acts on whatever repository is open, so
