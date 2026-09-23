@@ -22,18 +22,25 @@ does, the other does. (merge-studio#12)
   changes says what stopped and offers the next step. Continue is disabled —
   with the reason — until git can continue; Skip appears only where git
   offers it. The rebase workspace's stop banner gains Skip too.
-- **Every kind of change in its own colour.** The merge editor's legend names
-  each in words, with how many are left: **Conflicts** in red (both sides
-  changed the same lines, differently), **Same on both sides** in violet, and
-  **Changed**, **Added** or **Removed** on one side in blue, green or grey.
-  Each change is one band from its side into the result; a conflict with one
-  side taken looks half done, and a settled change goes quiet. Every change
-  has an arrow toward the result and a cross to leave it out, each saying
-  what it does ("Accept Yours (test) for this conflict"), from the mouse, the
-  keyboard or a screen reader. **Resolve simple** on the toolbar settles every
-  conflict whose two edits touch but don't overlap. It used to colour a
-  change by its side alone, so the same edit on both sides looked like a
-  one-sided one and nothing said which conflicts could be settled for you.
+- **Every change coloured by what it is.** The merge editor's legend names
+  the colours in words, with how many changes are left: **Conflicts** in red
+  (both sides changed the same lines, differently; you choose), and
+  **Changed**, **Added** or **Removed** in blue, green or grey for a change
+  that doesn't conflict. Coloured on one side, only that side made it;
+  coloured on both sides, it is the same change made on both, and either
+  arrow takes it. Each change is one band from its side into the result; a
+  conflict with one side taken looks half done, and a settled change keeps a
+  muted trace of what you took: the side you took stays joined to the
+  result, a side you left out keeps only its outline, and when you took
+  both, both stay joined. Every change has an arrow toward the result and a
+  cross to leave it out, each saying what it does ("Accept Yours (test) for
+  this conflict"), from the mouse, the keyboard or a screen reader.
+  **Resolve simple** on the toolbar settles every conflict whose two edits
+  touch but don't overlap. It used to colour a change by its side alone, so
+  nothing said which conflicts could be settled for you.
+- **Close** leaves the merge editor at any point without ending the
+  operation: the file keeps its conflict markers, git stays stopped where it
+  was, and the Conflicts dashboard opens the file again when you are ready.
 - **JetBrains IDE hand-off.** New settings `gitstudio.merge.conflictResolver`
   and `gitstudio.merge.diffTool` send merges and diffs to your installed
   JetBrains IDE (`gitstudio.merge.preferredIde`,
@@ -49,9 +56,9 @@ does, the other does. (merge-studio#12)
   Operation*.
 - **A sample merge that shows everything** (*Open Sample Merge*): a rebase
   stop on *Sample: authorizeRequest.ts* with every kind of change the
-  legend names in words — Conflicts, Same on both sides, and Changed, Added
-  or Removed on one side — both branch names, the step and the commit. It
-  touches no repository: *Apply* says what a real Apply does and *Cancel*
+  legend names — conflicts, changes only one side made, and changes both
+  sides made the same way — both branch names, the step and the commit. It
+  touches no repository: *Apply* says what a real Apply does and *Close*
   closes it.
 
 ### Changed
@@ -63,9 +70,9 @@ does, the other does. (merge-studio#12)
 - **`gitstudio.merge.autoOpen` has a new meaning.** It no longer opens every
   conflicted file as its own tab. When an operation stops it shows the
   Conflicts dashboard, opens a conflicted file in the resolver when you
-  switch to it, and takes over VS Code's built-in merge editor tab. Choosing
-  *Exit viewer* keeps a file out of the merge editor until its conflict is
-  gone.
+  switch to it, and takes over VS Code's built-in merge editor tab. A file
+  whose merge editor you closed does not reopen in it by itself until its
+  conflict is gone.
 - A conflicted file in the Changes view opens in the merge editor, not in a
   diff full of conflict markers.
 - The merge editor's title-bar actions show only on a file with merge

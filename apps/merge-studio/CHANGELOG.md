@@ -8,19 +8,20 @@ Merge Studio 1.0 is built on the same merge editor and Conflicts dashboard as Gi
 
 ### The colours
 
-Every kind of change has its own colour, and a legend above the panes names each one in words, with how many are left. Click an item to go to the next change of that kind; the question mark beside it explains every colour and line in words.
+Every change is coloured by what it is, and a legend above the panes names the colours in words, with how many changes are left. Click an item to go to the next change of that kind; the question mark beside it explains every colour and line in words.
 
 - **Conflicts**, in red: both sides changed the same lines, differently. You choose: accept one side, both, or edit the result. **Resolve simple** on the toolbar settles every conflict whose two edits touch but don't overlap, by applying both.
-- **Same on both sides**, in violet: both sides made the same change, so either side gives the same result.
-- **Changed** (blue), **Added** (green) or **Removed** (grey) on one side: a change only one side made, coloured by what it did. Safe to take.
+- **Changed** (blue), **Added** (green) or **Removed** (grey): a change that doesn't conflict, coloured by what it did. Coloured on one side only, it is a change only that side made. Safe to take.
+- A change coloured on both sides is the same change, made on both sides. Either arrow takes it, and it is settled on both sides at once.
 
-Each change is one continuous band, from its side through the gap between the panes into the result. A conflict with one side taken looks half done: the side you took goes quiet, the result turns pale, and the legend says "Yours taken, Theirs to decide". A change you have settled goes quiet everywhere. Lines where only whitespace changed have a dotted edge, and a point where lines were added or removed is a thin line. High contrast themes add a solid edge to every change still to decide, and the colours stay apart for the common kinds of colour blindness; the words in the legend and on every control say the same thing without colour.
+Each change is one continuous band, from its side through the gap between the panes into the result. A conflict with one side taken looks half done: the side you took goes quiet, the result turns pale, and the legend says "Yours taken, Theirs to decide". A change you have settled keeps a muted trace of what you took: the side you took stays faintly coloured and joined to the result, a side you left out keeps only its outline, and when you took both, both stay joined to it. Lines where only whitespace changed have a dotted edge, and a point where lines were added or removed is a thin line. High contrast themes add a solid edge to every change still to decide, and the colours stay apart for the common kinds of colour blindness; the words in the legend and on every control say the same thing without colour.
 
 Every change has the two controls JetBrains IDEs use: an arrow toward the result, and a cross to leave that side out. Each says what it does ("Accept Yours (test) for this conflict"; once the other side is in, "Add Theirs (master) after Yours (test)"), works from the keyboard, and is read the same way by a screen reader.
 
 ### Continue, Skip and Abort
 
 - **Continue, Skip and Abort for the whole operation**, for a merge, rebase, cherry-pick, revert and git am, named for it: Continue Rebase, Skip this commit, Abort Rebase. They are in the Conflicts dashboard, below the merge editor once the last file is resolved, and in the Command Palette (*Merge Studio: Continue / Skip / Abort Operation*).
+- **Close** leaves the merge editor at any point without ending the operation: the file keeps its conflict markers, git stays stopped where it was, and the Conflicts dashboard opens the file again when you are ready.
 - Continue stays disabled, with the reason in words, until git can continue. It asks before git drops a commit your resolution left empty.
 - Skip appears only where git offers it. Skip and Abort ask first, in place.
 - What happened is said in words: "Commit 2 of 3 skipped; the rest applied — rebase complete", "Last patch skipped. The series is finished, without it", "Rebase complete".
@@ -56,7 +57,7 @@ Every change has the two controls JetBrains IDEs use: an arrow toward the result
 - `jbMerge.autoApplyNonConflicting` applies every change only one side made, and every change both sides made the same way, when a file opens (off unless you turn it on). Conflicts are never applied automatically, and Reset returns to that starting point.
 - **Stage Changes with Ticks**: stage a changed file one change at a time.
 - **Merge Studio: Restore VS Code's Merge Editor** puts back what the first-conflict question turned off.
-- **A new sample merge** (*Merge Studio: Open Sample Merge*): a rebase stop on *Sample: authorizeRequest.ts* (commit 2 of 3 of feature/session-hardening onto main) with every kind of change the legend names, both branch names, the step and the commit. Apply says what a real Apply does; Cancel closes it; running it again starts it over. The sample diff gains a deleted line and a whitespace-only change.
+- **A new sample merge** (*Merge Studio: Open Sample Merge*): a rebase stop on *Sample: authorizeRequest.ts* (commit 2 of 3 of feature/session-hardening onto main) with every kind of change the legend names, both branch names, the step and the commit. Apply says what a real Apply does; Close closes it; running it again starts it over. The sample diff gains a deleted line and a whitespace-only change.
 - A new Get Started walkthrough.
 
 ### Changed since 0.3.4

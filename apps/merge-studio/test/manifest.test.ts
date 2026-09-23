@@ -232,7 +232,6 @@ test("the 1.0.0 entry says the colours in words, as the legend names them", () =
   assert.ok(colours, "a section on the colours");
   const pairs: Array<[string, string]> = [
     ["Conflicts", "red"],
-    ["Same on both sides", "violet"],
     ["Changed", "blue"],
     ["Added", "green"],
     ["Removed", "grey"],
@@ -240,6 +239,42 @@ test("the 1.0.0 entry says the colours in words, as the legend names them", () =
   for (const [name, colour] of pairs) {
     const line = colours.split("\n").find((l) => l.includes(`**${name}**`)) ?? "";
     assert.match(line, new RegExp(`\\b${colour}\\b`), `${name} is said to be ${colour}`);
+  }
+  // The owner's model (24 Sep 2026, "both are green"): the same change on both
+  // sides has no colour of its own. It wears the colour of what it did on BOTH
+  // sides, and either side's arrow takes it.
+  const both = colours.split("\n").find((l) => /coloured on both sides/i.test(l)) ?? "";
+  assert.match(both, /same change/i, "a change coloured on both sides is said to be the same change");
+  assert.match(both, /either arrow/i, "and either arrow takes it");
+  // A settled change keeps a trace of what was taken, not an empty grey line.
+  const settled = colours.split("\n").find((l) => /\btrace\b/i.test(l)) ?? "";
+  assert.match(settled, /\btook\b/i, "the trace says which side was taken");
+  assert.match(settled, /\bleft out\b/i, "…which was left out");
+  assert.match(settled, /\bboth\b/i, "…or that both went in");
+});
+
+test("the 1.0.0 entry says Close leaves the merge editor without ending the operation", () => {
+  const op = sectionsOf(entry100).find((s) => s.startsWith("Continue, Skip and Abort")) ?? "";
+  const close = op.split("\n").find((l) => l.includes("**Close**")) ?? "";
+  assert.match(close, /without (ending|cancelling)/i);
+  assert.match(close, /conflict markers/i, "and the file keeps its markers");
+});
+
+test("the listing never describes a colour of its own for the same change on both sides", () => {
+  // The research's violet "Same on both sides" was the owner's no: the listing,
+  // the walkthrough and the shot list describe what the editor shows.
+  const places: Array<[string, string]> = [
+    ["CHANGELOG 1.0.0", entry100],
+    ["README", readme],
+    ["SHOTS.md", shotList],
+  ];
+  for (const s of walkthrough!.steps) {
+    places.push([`walkthrough ${s.id}`, `${s.description}\n${s.media.altText ?? ""}`]);
+    if (s.media.svg) places.push([s.media.svg, read(s.media.svg)]);
+  }
+  for (const [where, text] of places) {
+    assert.doesNotMatch(text, /\b(violet|purple|lavender)\b/i, where);
+    assert.doesNotMatch(text, /Same on both sides \(|\*\*Same on both sides\*\*/, `${where}: "Same on both sides" named as a colour`);
   }
 });
 

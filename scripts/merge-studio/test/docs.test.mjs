@@ -107,6 +107,28 @@ test("every `npm run` in the docs names a script where it runs", () => {
   }
 });
 
+/** A changelog's first entry: Unreleased for GitStudio and the desktop app, 1.0.0 for Merge Studio. */
+function firstEntry(rel) {
+  const text = readFileSync(join(GITSTUDIO_ROOT, rel), "utf8");
+  return text.split(/\n## /)[1] ?? "";
+}
+
+test("the three changelogs say the merge editor's colours, its trace and Close the same way", () => {
+  // The owner's model (24 Sep 2026): the same change on both sides wears the
+  // colour of what it did on BOTH sides and either arrow takes it; a settled
+  // change keeps a muted trace of what was taken; Close leaves the editor and
+  // keeps the operation. The research's violet "Same on both sides" is gone.
+  for (const rel of ["apps/extension/CHANGELOG.md", "apps/desktop/CHANGELOG.md", "apps/merge-studio/CHANGELOG.md"]) {
+    const entry = firstEntry(rel).replace(/\s+/g, " ");
+    assert.doesNotMatch(entry, /\bviolet\b/i, `${rel}: no violet`);
+    assert.doesNotMatch(entry, /\*\*Same on both sides\*\*/, `${rel}: "Same on both sides" is not a colour of its own`);
+    assert.match(entry, /coloured on both sides, it is the same change|A change coloured on both sides is the same change/i, `${rel}: a change coloured on both sides is the same change`);
+    assert.match(entry, /either arrow takes it/i, `${rel}: either arrow takes it`);
+    assert.match(entry, /muted trace of what you took/i, `${rel}: a settled change keeps a trace`);
+    assert.match(entry, /\*\*Close\*\* leaves the (merge )?editor at any point without ending the operation/i, `${rel}: Close keeps the operation`);
+  }
+});
+
 test("the docs name the files the export writes and the ones it never touches, as layout.mjs has them", () => {
   const guide = readFileSync(join(GITSTUDIO_ROOT, "apps/merge-studio/CONTRIBUTING.md"), "utf8");
   for (const f of ["VENDORED_FROM.json", "package-lock.json", "tsconfig.json", ".github/workflows/ci.yml", "scripts/check-parity.mjs"]) {

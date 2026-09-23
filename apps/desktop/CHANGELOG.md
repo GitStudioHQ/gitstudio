@@ -30,20 +30,26 @@ but they share the same engine, so most Git behaviour lands in both at once.
   **Apply non-conflicting changes: Yours · All · Theirs**, **Resolve simple**,
   whitespace and highlight granularity, sync scrolling, reset — an operation
   strip naming
-  both sides, and **Accept Yours / Accept Theirs / Cancel / Apply** at the
-  bottom. **Cancel** offers **Exit viewer** (keep the conflict for later) or
-  ending the operation; after the last file, **Continue Rebase** appears right
-  there.
-- **Every kind of change in its own colour.** The merge editor's legend names
-  each in words, with how many are left: **Conflicts** in red (both sides
-  changed the same lines, differently), **Same on both sides** in violet, and
-  **Changed**, **Added** or **Removed** on one side in blue, green or grey.
-  Each change is one band from its side into the result; a conflict with one
-  side taken looks half done, and a settled change goes quiet. Every change
-  has an arrow toward the result and a cross to leave it out, each saying
-  what it does ("Accept Yours (test) for this conflict"), from the mouse, the
-  keyboard or a screen reader. **Resolve simple** on the toolbar settles every
-  conflict whose two edits touch but don't overlap.
+  both sides, and **Accept Yours / Accept Theirs / Apply** at the bottom.
+  **Close** leaves the editor at any point without ending the operation: the
+  file keeps its conflict markers, git stays stopped where it was, and
+  **Merge…** in the dashboard opens it again. After the last file,
+  **Continue Rebase** appears right there.
+- **Every change coloured by what it is.** The merge editor's legend names
+  the colours in words, with how many changes are left: **Conflicts** in red
+  (both sides changed the same lines, differently; you choose), and
+  **Changed**, **Added** or **Removed** in blue, green or grey for a change
+  that doesn't conflict. Coloured on one side, only that side made it;
+  coloured on both sides, it is the same change made on both, and either
+  arrow takes it. Each change is one band from its side into the result; a
+  conflict with one side taken looks half done, and a settled change keeps a
+  muted trace of what you took: the side you took stays joined to the
+  result, a side you left out keeps only its outline, and when you took
+  both, both stay joined. Every change has an arrow toward the result and a
+  cross to leave it out, each saying what it does ("Accept Yours (test) for
+  this conflict"), from the mouse, the keyboard or a screen reader.
+  **Resolve simple** on the toolbar settles every conflict whose two edits
+  touch but don't overlap.
 - **Settings ▸ Merge**: open merges with the non-conflicting changes already
   applied (off by default), resolve conflicts and show diffs with GitStudio or
   a JetBrains IDE, which IDE, and its launcher path (the launcher, or the
@@ -161,7 +167,7 @@ but they share the same engine, so most Git behaviour lands in both at once.
   passing notification. **Resolve here instead** now sticks: a refresh used to
   send the file back to the IDE and open another window.
 - **The keyboard follows the merge editor.** Merge… puts it in the editor, and
-  Exit viewer or Apply puts it back on that file's row; answering one of the
+  Close or Apply puts it back on that file's row; answering one of the
   editor's questions returns it to the button that asked. It was left on
   nothing, and Tab started again from the top bar.
 - **Apply asks before writing over a resolution the merge editor did not
