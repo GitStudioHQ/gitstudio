@@ -1,0 +1,29 @@
+packages/webview-ui/test/mergeColours.test.ts
+  s_26f5e669d3043c::t_18124c3a910bcf 521-604
+packages/webview-ui/src/mergeView.ts
+  s_26f5e669d3043c::t_5fc417f594d542 603-604,606-608,610-616,618-627
+  s_26f5e669d3043c::t_71b127bac29cd0 528,532-540,545-552
+  s_26f5e669d3043c::t_2a934df45580c5 719-724
+  s_26f5e669d3043c::t_1d3e72d792aa5e 956-961,964,972,975,977-978,980-985,988-1000,1004,1007-1011,1013-1036,1039-1042,1046,1050
+  s_26f5e669d3043c::t_8a1157f52043e6 690
+  s_26f5e669d3043c::t_72edebad0039a3 146-155
+  s_26f5e669d3043c::t_ae8aff4ce7eb46 651,658-661
+  s_26f5e669d3043c::t_2da86803226b05 1810
+  s_26f5e669d3043c::t_1f3111890d159f 735-737
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4968aacb4d24b96f57cf7403bceb58867cafd7a7",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
