@@ -72,6 +72,53 @@ test("every bare --gs-* the merge stylesheets use is declared by the shared toke
   assert.deepEqual(missing.sort(), [], `undeclared tokens: ${missing.join(", ")}`);
 });
 
+/** `--name: value;` pairs declared inside the first rule whose selector matches `selector`. */
+function declsIn(css: string, selector: RegExp): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!selector.test(m[1].trim())) continue;
+    for (const d of m[2].matchAll(/(--[a-zA-Z0-9-]+)\s*:\s*([^;]+);/g)) {
+      out.set(d[1], d[2].replace(/\s+/g, " ").trim());
+    }
+    break;
+  }
+  return out;
+}
+
+/**
+ * tokens.css derives its --gs-* colours on `:root` from --vscode-* names. The
+ * desktop declares those names on BODY, where a :root declaration cannot see
+ * them — so on the desktop every such token computed to nothing (the
+ * dashboard's conflict dot was transparent). The desktop re-derives them on
+ * the merge components' roots. This pins that every bare --gs-* the merge
+ * stylesheets use, whose shared definition leans on a --vscode-* name, is in
+ * that block — with tokens.css's own formula, so the two cannot drift.
+ */
+test("the desktop re-derives, on the merge roots, every host-derived token the merge stylesheets use", () => {
+  const root = declsIn(TOKENS, /^:root$/);
+  const desktop = declsIn(DESKTOP, /^\.ms-shell,\s*\.cd-dash$/);
+  // Tokens the desktop supplies itself with a literal (--gs-accent on :root,
+  // --gs-amber per theme) resolve anyway. Everything else must be re-derived.
+  const ownLiterals = new Set(
+    [...DESKTOP.replace(/\.ms-shell,\s*\.cd-dash\s*\{[^}]*\}/, "").matchAll(/(--gs-[a-zA-Z0-9-]+)\s*:\s*#/g)].map((m) => m[1]),
+  );
+  assert.ok(root.size > 10 && desktop.size > 0, "both blocks were found");
+  const missing: string[] = [];
+  const drifted: string[] = [];
+  for (const [file, css] of Object.entries(SHARED)) {
+    for (const name of bare(css, "--gs-")) {
+      const shared = root.get(name);
+      if (!shared || !/var\(--vscode-|var\(--gs-(fg|bg)\b/.test(shared)) continue;
+      if (!desktop.has(name) && !ownLiterals.has(name)) missing.push(`${file}: ${name}`);
+    }
+  }
+  for (const [name, value] of desktop) {
+    if (root.get(name) !== value) drifted.push(`${name}: desktop "${value}" vs tokens.css "${root.get(name)}"`);
+  }
+  assert.deepEqual(missing.sort(), [], `not re-derived on .ms-shell/.cd-dash:\n${missing.join("\n")}`);
+  assert.deepEqual(drifted, [], `re-derived differently from tokens.css:\n${drifted.join("\n")}`);
+});
+
 test("the census sees the stylesheets it claims to check", () => {
   // A check that matches nothing passes forever.
   for (const [file, css] of Object.entries(SHARED)) {

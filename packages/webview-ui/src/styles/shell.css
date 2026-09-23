@@ -27,6 +27,12 @@
   --ms-danger: var(--vscode-errorForeground, #f14c4c);
   --ms-warn: var(--vscode-editorWarning-foreground, var(--gs-amber));
   --ms-ok: var(--gs-status-added);
+  /* Secondary text, a step toward the foreground. The theme's own muted ink
+     sits right at the AA line on a white editor and falls under it on the
+     tinted grounds this chrome lives on (4.44:1 on a light widget background,
+     in VS Code's light themes as well as the desktop's). Mixing toward the
+     foreground darkens it in light and lightens it in dark. */
+  --ms-muted: color-mix(in srgb, var(--gs-fg-muted) 78%, var(--gs-fg));
   position: relative;
 }
 
@@ -74,7 +80,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: var(--gs-fg-muted);
+  color: var(--ms-muted);
   white-space: nowrap;
 }
 .ms-op-verb .codicon { font-size: 12px; }
@@ -130,7 +136,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--gs-fg-muted);
+  color: var(--ms-muted);
 }
 .ms-op-commit code {
   font-family: var(--gs-font-mono);
@@ -154,7 +160,7 @@
 .ms-notices { display: flex; flex-direction: column; flex: 0 0 auto; }
 .ms-notice.is-warn .codicon,
 .ms-outcome.is-stopped .codicon { color: var(--ms-warn); }
-.ms-notice.is-info .codicon { color: var(--gs-fg-muted); }
+.ms-notice.is-info .codicon { color: var(--ms-muted); }
 .ms-outcome.is-done { background: color-mix(in srgb, var(--ms-ok) 10%, transparent); }
 .ms-outcome.is-done .codicon { color: var(--ms-ok); }
 .ms-outcome.is-failed { background: color-mix(in srgb, var(--ms-danger) 10%, transparent); }
@@ -209,7 +215,7 @@
 }
 .ms-bottom-note > .ms-confirm-text { white-space: normal; }
 .ms-bottom-note.is-warn > .jb-svg .codicon { color: var(--ms-warn); }
-.ms-bottom-note.is-info > .jb-svg .codicon { color: var(--gs-fg-muted); }
+.ms-bottom-note.is-info > .jb-svg .codicon { color: var(--ms-muted); }
 .ms-bottom-note.ms-drop-confirm {
   padding: 3px 6px;
   border-radius: var(--gs-radius);
@@ -238,7 +244,7 @@
 }
 .ms-pop .jb-toolbar-btn { justify-content: flex-start; height: 28px; }
 .ms-pop-hint,
-.ms-pop-detail { color: var(--gs-fg-muted); line-height: 1.45; }
+.ms-pop-detail { color: var(--ms-muted); line-height: 1.45; }
 .ms-pop-question { font-weight: var(--gs-weight-emphasis); }
 .ms-pop-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
 .ms-pop-actions .jb-toolbar-btn { justify-content: center; }
@@ -266,7 +272,7 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  color: var(--gs-fg-muted);
+  color: var(--ms-muted);
   background: var(--gs-surface-2);
 }
 .ms-notext-badge .codicon { font-size: 22px; }
@@ -275,7 +281,7 @@
   max-width: 520px;
   font-size: var(--gs-text-secondary);
   line-height: 1.5;
-  color: var(--gs-fg-muted);
+  color: var(--ms-muted);
 }
 .ms-notext-actions { display: flex; gap: var(--gs-space-2); margin-top: var(--gs-space-2); flex-wrap: wrap; justify-content: center; }
 .ms-notext-actions .jb-toolbar-btn { height: 28px; }
@@ -293,4 +299,24 @@
   .ms-opstrip { padding: 3px 6px; }
   .ms-op-title { flex-basis: 140px; }
   .ms-pill { max-width: 200px; }
+}
+
+/* The toolbar collapses by the width of the SHELL, not of the window. diff.css
+   drops its "Apply non-conflicting changes:" caption at a viewport width, which
+   is right in an editor webview (the viewport is the panel) and wrong in the
+   desktop, where the shell is one pane of a wider window: there the toolbar ran
+   past its edge, and with its scrollbar hidden the counter was simply gone. */
+.ms-shell {
+  container-type: inline-size;
+  container-name: ms-shell;
+}
+@container ms-shell (max-width: 1180px) {
+  .jb-toolbar .jb-toolbar-label { display: none; }
+}
+@container ms-shell (max-width: 960px) {
+  .jb-toolbar { padding: 0 4px; gap: 1px; }
+  .jb-toolbar .jb-sep { margin: 0 2px; }
+  .jb-toolbar .jb-toolbar-btn { padding: 0 6px; }
+  .jb-toolbar .jb-toolbar-btn.jb-icon { padding: 0; }
+  .jb-bottom-bar { padding: 0 6px; }
 }

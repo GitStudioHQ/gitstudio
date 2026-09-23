@@ -4234,6 +4234,21 @@
       c.eq(text(badge), "1", "the Changes rail item carries the count");
       c.ok(!!$(".topbar-opchip") && !$(".topbar-opchip").hidden, "the top bar names the stopped operation");
       c.eq(text(".topbar-opchip"), "Rebasing · 1 conflict", "in words");
+      // PAINTED, not just present (memory: dead-css-class-names). The shared
+      // tokens are derived on :root from --vscode-* names the desktop declares
+      // on body, so here they resolved to nothing: the pending row's dot was
+      // transparent, the list had no border, the muted text had no colour.
+      const dot = $(".cd-dot");
+      const clear = (v) => !v || v === "rgba(0, 0, 0, 0)" || v === "transparent";
+      c.ok(!!dot && !clear(getComputedStyle(dot).backgroundColor), `the pending row's dot is painted (${dot && getComputedStyle(dot).backgroundColor})`);
+      const list = $(".cd-list");
+      c.ok(!!list && getComputedStyle(list).borderTopStyle === "solid" && !clear(getComputedStyle(list).borderTopColor), `the file list has its border (${list && getComputedStyle(list).borderTopColor})`);
+      const dash = $(".cd-dash");
+      for (const t of ["--gs-fg", "--gs-fg-muted", "--gs-border", "--gs-surface", "--gs-status-conflict"]) {
+        c.ok(getComputedStyle(dash).getPropertyValue(t).trim() !== "", `${t} resolves inside the dashboard`);
+      }
+      const shellTokens = getComputedStyle($(".cd-foot .cd-counter") || dash).color;
+      c.ok(shellTokens !== getComputedStyle(dash).color, `muted text is muted, not inherited body ink (${shellTokens})`);
     },
 
     /**
@@ -4370,6 +4385,18 @@
       const bar = shell.querySelector(".jb-bottom-bar");
       c.ok(getComputedStyle(bar).borderTopStyle !== "none" && getComputedStyle(bar).borderTopWidth !== "0px", "the bottom bar has its rule");
       c.ok(!!$(".merge-bar-path-text") && text(".merge-bar-path-text") === "src/app.ts", "the path is named above it");
+      // The toolbar scrolls sideways with its scrollbar hidden, so anything
+      // past its edge is simply gone — the counter first. It has to FIT the
+      // pane the desktop gives it, which is narrower than the window.
+      c.ok(
+        tb.scrollWidth <= tb.clientWidth + 1,
+        `the toolbar fits its pane (${tb.scrollWidth}px of content in ${tb.clientWidth}px)`,
+      );
+      const counter = shell.querySelector(".jb-counter");
+      c.ok(
+        !!counter && counter.getBoundingClientRect().right <= tb.getBoundingClientRect().right + 1,
+        "and the counter is on screen",
+      );
     },
 
     /** Exit viewer leaves the conflict in the file and goes back to the dashboard, running nothing in git. */

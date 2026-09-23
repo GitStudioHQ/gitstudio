@@ -12945,6 +12945,35 @@ body.vscode-light .cmp-seg-btn.active:hover {
   margin-left: 8px;
 }
 
+/* ── Merge parity: the shared tokens, derived where the desktop's vocabulary is ──
+   The merge shell and the conflicts dashboard paint from --gs-* tokens that the
+   shared tokens.css derives on :root from --vscode-* names. The desktop declares
+   those names on BODY (each theme redeclares them there), and a :root
+   declaration cannot see a body one: derived on :root they computed to
+   NOTHING here. The dashboard's conflict dot was transparent, the muted text was
+   body ink, the surfaces had no fill. The same formulas, declared on the two
+   component roots, resolve against the inherited body values — the extension,
+   whose editor supplies the names on the document, needs none of this.
+   Keep these in step with tokens.css; sharedCssTokens.test.ts compares them. */
+.ms-shell,
+.cd-dash {
+  --gs-font-ui: var(--vscode-font-family);
+  --gs-font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+  --gs-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --gs-fg: var(--vscode-foreground);
+  --gs-fg-muted: var(--vscode-descriptionForeground);
+  --gs-fg-subtle: color-mix(in srgb, var(--gs-fg) 50%, transparent);
+  --gs-surface: color-mix(in srgb, var(--gs-fg) 4%, var(--gs-bg));
+  --gs-surface-2: color-mix(in srgb, var(--gs-fg) 7%, var(--gs-bg));
+  --gs-border: color-mix(in srgb, var(--gs-fg) 13%, transparent);
+  --gs-border-soft: color-mix(in srgb, var(--gs-fg) 8%, transparent);
+  --gs-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--gs-fg) 7%, transparent));
+  --gs-status-added: var(--vscode-charts-green, #3fb950);
+  --gs-status-modified: var(--vscode-charts-blue, #58a6ff);
+  --gs-status-deleted: var(--vscode-charts-red, #f85149);
+  --gs-status-conflict: var(--vscode-gitDecoration-conflictingResourceForeground, var(--vscode-charts-red));
+}
+
 /* ── Merge parity: rail badge, top-bar chip, IDE hand-off, Settings ▸ Merge ── */
 /* A stopped operation is visible from every view: a count on the Changes rail
    item, and a chip in the top bar that goes straight there. */
