@@ -1,7 +1,7 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "@gitstudio/git-service/index";
@@ -39,7 +39,6 @@ beforeEach(() => {
 afterEach(() => {
   if (savedEnv.GIT_CONFIG_GLOBAL === undefined) delete process.env.GIT_CONFIG_GLOBAL;
   else process.env.GIT_CONFIG_GLOBAL = savedEnv.GIT_CONFIG_GLOBAL;
-  chmodSync(cfgDir, 0o755); // un-readonly so cleanup can delete it
   ctx?.dispose?.();
   removeTempRepo(repo);
   removeTempRepo(cfgDir);
@@ -55,9 +54,13 @@ test("setGitIdentity writes both values and gitIdentity reads them back", async 
 });
 
 test("a failing git config write reports the failure instead of success", async () => {
-  // git config rewrites via a lock file + rename, so the DIRECTORY must be
-  // read-only to make the write fail (a read-only file alone doesn't).
-  chmodSync(cfgDir, 0o555);
+  // git config rewrites via a lock file + rename, so the file itself being
+  // read-only does not stop it — and a read-only DIRECTORY does not stop it on
+  // Windows, where CI runs this too. A config path whose parent is a FILE
+  // fails the lock on every platform.
+  const notADir = join(cfgDir, "not-a-dir");
+  writeFileSync(notADir, "");
+  process.env.GIT_CONFIG_GLOBAL = join(notADir, "gitconfig");
   // BOTH fields: with one empty, the pair check refuses before git runs, and
   // this passed without ever reaching the write it is named for.
   const r = await bridge.setGitIdentity({ name: "Someone Else", email: "someone@example.com" });
