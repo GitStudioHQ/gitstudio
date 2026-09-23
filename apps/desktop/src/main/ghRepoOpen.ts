@@ -68,10 +68,15 @@ export async function openGitHubRepo(
 ): Promise<GhOpenResult> {
   const [owner, repo] = fullName.split("/", 2);
   if (!owner || !repo) {
+    // Nobody TYPES this name. Every door onto ghrepo:open passes the full name
+    // of a repository GitHub listed (a search hit, an org's or a user's repo
+    // row) or of the repo page it is on, whose route only parses owner/repo.
+    // So a name without both halves is a request our renderer built wrong —
+    // reported, never `expected` (see PAYLOAD_REFUSALS in
+    // test/expectedConditions.test.ts).
     return {
       ok: false,
       code: "bad-name",
-      expected: true,
       message: "That doesn't look like an owner/repo name.",
     };
   }

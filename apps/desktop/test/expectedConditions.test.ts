@@ -78,7 +78,7 @@ const GUARD_CLASSES: Array<{ name: string; re: RegExp }> = [
   },
   {
     name: "unusable input from the user",
-    re: /couldn't derive a (safe )?folder name|doesn't look like an owner\/repo name|couldn't be read as JSON/i,
+    re: /couldn't derive a (safe )?folder name|couldn't be read as JSON/i,
   },
 ];
 
@@ -124,6 +124,9 @@ const PAYLOAD_REFUSALS: Record<string, string> = {
   "Unknown client: ${req.client}.": "MCP client ids come from our own client list.",
   "No conflicted file was named to explain.":
     "every Explain door names the file it is showing; a request with no path is ours.",
+  "That doesn't look like an owner/repo name.":
+    "ghrepo:open's full name comes from a repository GitHub listed, or from a repo page whose route " +
+    "only parses owner/repo — nobody types it, so one without both halves is a request built wrong.",
   "Couldn't read the conflict.":
     "said only when the index still has the file unmerged (or cannot say) and git would not hand " +
     "over its sides — a read that failed, not the user resolving anything.",
