@@ -1,0 +1,31 @@
+apps/desktop/harness/profile.mjs
+  s_26f5e669d3043c::t_63c9bebb870f7b 1-21
+apps/desktop/harness/shot.sh
+  s_26f5e669d3043c::t_63c9bebb870f7b 24-27,29
+apps/desktop/harness/probe.mjs
+  s_26f5e669d3043c::t_63c9bebb870f7b 30,97,104,115
+apps/desktop/harness/validate.mjs
+  s_26f5e669d3043c::t_63c9bebb870f7b 22,87,90,93
+apps/desktop/harness/perf.mjs
+  s_26f5e669d3043c::t_63c9bebb870f7b 25,166,173,184
+packages/webview-ui/test/headless.ts
+  s_26f5e669d3043c::t_63c9bebb870f7b 14,105-108,119
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_63c9bebb870f7b 16,593,601,612
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4b201c24a82426fcd4a5506172a4e1f90e1dbef2",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
