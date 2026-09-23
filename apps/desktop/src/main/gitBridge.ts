@@ -16,7 +16,7 @@ import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
 import type { LineRange, Hunk } from "@gitstudio/engine/staging/applyLineChanges";
-import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
+import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
@@ -604,18 +604,12 @@ export class GitBridge {
     } catch {
       files = [];
     }
-    const refs: WireRef[] = (this.refsBySha.get(sha) ?? [])
-      .filter((r) => r.type !== "stash")
-      .map((r): WireRef => {
-        // The full name rides along (issue #30's follow-up): the pane labels
-        // its chips by it, and its chip menu resolves by it.
-        const fullName = r.fullName;
-        if (r.type === "tag") return { kind: "tag", name: r.name, fullName };
-        if (r.type === "remote") return { kind: "remoteHead", name: r.name, fullName };
-        return r.isCurrent
-          ? { kind: "currentHead", name: r.name, fullName }
-          : { kind: "head", name: r.name, fullName };
-      });
+    // The graph row's own chips (wireRefs), full names and all (issue #30's
+    // follow-up): the pane labels its chips by the full name, and its chip
+    // menu resolves them through the graph's ref list. A copy of that mapping
+    // kept refs/remotes/origin/HEAD, which the graph draws no chip for and the
+    // list leaves out — an "origin/HEAD" chip whose menu could never act.
+    const refs: WireRef[] = wireRefs(this.refsBySha.get(sha));
     const hasRemote = [...this.refsBySha.values()].some((list) =>
       list.some((r) => r.type === "remote"),
     );

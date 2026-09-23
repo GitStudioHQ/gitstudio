@@ -15,7 +15,7 @@ import type {
   CommitDetailsPayload,
   CommitFileChange,
 } from "@gitstudio/host-bridge/commitDetailsProtocol";
-import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
+import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import {
   chipRefsUnderFilter,
   filterWalk,
@@ -1396,20 +1396,15 @@ export class CommitGraphPanel {
     return undefined;
   }
 
-  /** Map the GitRefs at a sha to the webview's WireRef chips — with the
-   *  full name beside each, which is what the menus check a ref out by. */
+  /** The GitRefs at a sha as the webview's WireRef chips — the graph row's
+   *  own (wireRefs), with the full name beside each, which is what the menus
+   *  check a ref out by and the details pane's chip menu resolves by. A copy
+   *  of that mapping kept refs/remotes/origin/HEAD, which the graph draws no
+   *  chip for: the row menu offered "Checkout origin/HEAD" ("fatal: 'HEAD' is
+   *  not a valid branch name") and the pane an origin/HEAD chip whose menu
+   *  could never act. */
   private refsToWire(sha: string): MenuRef[] {
-    const refs = this.refsBySha.get(sha) ?? [];
-    return refs
-      .filter((r) => r.type !== "stash")
-      .map((r): MenuRef => {
-        const fullName = r.fullName;
-        if (r.type === "tag") return { kind: "tag", name: r.name, fullName };
-        if (r.type === "remote") return { kind: "remoteHead", name: r.name, fullName };
-        return r.isCurrent
-          ? { kind: "currentHead", name: r.name, fullName }
-          : { kind: "head", name: r.name, fullName };
-      });
+    return wireRefs(this.refsBySha.get(sha));
   }
 
   dispose(): void {
