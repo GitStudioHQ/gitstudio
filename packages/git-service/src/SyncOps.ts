@@ -913,8 +913,11 @@ export class SyncOps {
     if (!(rebasing && code === 128) && code !== 1 && code !== 2) {
       return null;
     }
+    // Renames off, so a staged rename is in the way under both of its names —
+    // a Stash & Retry of only the new one would leave the old one's deletion
+    // staged, and a rebasing pull refused all over again.
     const status = await this.proc.run(
-      ["status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=all"],
+      ["status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=all", "--no-renames"],
       { signal },
     );
     if (status.code !== 0) {

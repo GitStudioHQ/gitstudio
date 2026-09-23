@@ -211,6 +211,143 @@ test("a stash pop is refused over an untracked file it would restore", async () 
   assert.deepEqual(r.inTheWay, { kind: "stash", paths: ["d.txt"], untracked: ["d.txt"] });
 });
 
+// A stash made with -u does not refuse cleanly: git 2.49 restores its
+// untracked half even when it refuses the tracked half, and applies the
+// tracked half before it refuses over an untracked file of the user's. Read
+// afterwards, the stash's own files looked like the user's changes in its
+// way — "nothing ran" said over a half-applied stash. Asked before it runs.
+
+/** A stash made with -u: line 2 of a.txt, and an untracked d.txt. */
+function untrackedStash(dir: string): void {
+  writeFileSync(join(dir, "a.txt"), LINES("stashed", 2));
+  writeFileSync(join(dir, "d.txt"), "from the stash\n");
+  git(dir, "stash", "push", "-q", "-u", "-m", "with untracked");
+}
+
+const snapshot = (dir: string): string => git(dir, "status", "--porcelain=v1", "--untracked-files=all");
+
+test("a stash made with -u, over an edit its tracked half changes: said before git runs, and none of its untracked files appear", async () => {
+  for (const pop of [false, true]) {
+    const { dir, proc } = repo();
+    untrackedStash(dir);
+    writeFileSync(join(dir, "a.txt"), LINES("mine", 6));
+    const before = snapshot(dir);
+    const r = await runApplying(proc, { kind: "stash", stash: "stash@{0}", pop });
+    assert.deepEqual(r.inTheWay, { kind: "stash", paths: ["a.txt"], untracked: [] }, `pop: ${pop} — the user's edit, and nothing of the stash's`);
+    assert.equal(snapshot(dir), before, "nothing changed: d.txt was not restored");
+    assert.equal(readFileSync(join(dir, "a.txt"), "utf8"), LINES("mine", 6));
+    assert.equal(git(dir, "stash", "list").trim().split("\n").length, 1, "the stash is still there");
+  }
+});
+
+test("a stash made with -u, over an untracked file of the user's where one of its own goes: nothing of it is applied", async () => {
+  const { dir, proc } = repo();
+  untrackedStash(dir);
+  writeFileSync(join(dir, "d.txt"), "mine\n");
+  const before = snapshot(dir);
+  const r = await runApplying(proc, { kind: "stash", stash: "stash@{0}", pop: true });
+  assert.deepEqual(r.inTheWay, { kind: "stash", paths: ["d.txt"], untracked: ["d.txt"] }, "only the user's file");
+  assert.equal(snapshot(dir), before, "nothing changed: a.txt's half was not merged");
+  assert.equal(readFileSync(join(dir, "a.txt"), "utf8"), LINES("line 0", 0));
+
+  // …and Stash & Retry pops it, keeping the user's file safe in a stash of its own.
+  const out = await stashAndRetry(proc, { kind: "stash", stash: "stash@{0}", pop: true });
+  assert.equal(out.result.code, 0, out.result.stderr);
+  assert.equal(readFileSync(join(dir, "d.txt"), "utf8"), "from the stash\n", "the stash asked for is applied");
+  assert.equal(readFileSync(join(dir, "a.txt"), "utf8"), LINES("stashed", 2));
+  assert.equal(out.fate, "kept");
+  assert.equal(git(dir, "show", "stash@{0}^3:d.txt"), "mine\n", "the user's file, exactly, in its own stash");
+});
+
+test("a stash made with -u that fails over something else: what git half-applied is git's failure, never blamed on the user", async () => {
+  const { dir, proc } = repo();
+  untrackedStash(dir);
+  // d.txt now TRACKED and clean: not the user's uncommitted work, so not
+  // asked about — but git will not restore the stash's d.txt over it.
+  writeFileSync(join(dir, "d.txt"), "committed since\n");
+  git(dir, "add", "d.txt");
+  git(dir, "commit", "-q", "-m", "d is tracked now");
+  const r = await runApplying(proc, { kind: "stash", stash: "stash@{0}" });
+  assert.notEqual(r.result.code, 0, "git failed");
+  assert.equal(r.inTheWay, undefined, "a.txt changed under it — git's half, not the user's edit");
+});
+
+// ── the index's own shapes: a staged rename, and a staged deletion ───────────
+
+test("a staged rename is in the way under BOTH names, and Stash & Retry gives it back staged", async () => {
+  const { dir, proc } = repo();
+  git(dir, "mv", "b.txt", "renamed.txt");
+  const { inTheWay } = await runApplying(proc, pick(dir, "feature~1"));
+  assert.deepEqual(inTheWay?.paths, ["b.txt", "renamed.txt"], "the old name's deletion is staged too");
+  const before = head(dir);
+  const out = await stashAndRetry(proc, pick(dir, "feature~1"));
+  assert.equal(out.result.code, 0, out.result.stderr);
+  assert.notEqual(head(dir), before, "picked");
+  assert.equal(out.fate, "restored");
+  assert.equal(status(dir), "R  b.txt -> renamed.txt", "the rename, staged, as it was");
+  assert.equal(git(dir, "stash", "list").trim(), "", "no stash left behind");
+});
+
+test("a staged deletion — no path `git stash push` will take — is stashed, and staged again", async () => {
+  const { dir, proc } = repo();
+  git(dir, "rm", "-q", "a.txt");
+  const out = await stashAndRetry(proc, revert(dir, "HEAD"));
+  assert.equal(out.stashFailed, undefined, out.stashFailed);
+  assert.equal(out.result.code, 0, out.result.stderr);
+  assert.equal(git(dir, "log", "-1", "--format=%s").trim(), 'Revert "main changes b"');
+  assert.equal(out.fate, "restored");
+  assert.equal(status(dir), "D  a.txt", "deleted in the index, as it was");
+  assert.equal(git(dir, "stash", "list").trim(), "");
+});
+
+test("a staged edit in a checkout's way, beside a staged edit elsewhere: BOTH come back staged", async () => {
+  const { dir, proc } = repo();
+  // "side" differs from main in a.txt alone, so b.txt is carried, not in the way.
+  git(dir, "checkout", "-q", "-b", "side");
+  writeFileSync(join(dir, "a.txt"), LINES("side", 0));
+  git(dir, "commit", "-q", "-am", "side changes a");
+  git(dir, "checkout", "-q", "main");
+  const inWay = LINES("line 0", 0).replace("line 6\n", "staged, in the way\n");
+  const elsewhere = LINES("main", 0).replace("line 4\n", "staged elsewhere\n");
+  writeFileSync(join(dir, "a.txt"), inWay);
+  writeFileSync(join(dir, "b.txt"), elsewhere);
+  git(dir, "add", "a.txt", "b.txt");
+  assert.deepEqual((await runApplying(proc, checkout("side"))).inTheWay?.paths, ["a.txt"], "precondition: a.txt alone");
+  const out = await stashAndRetry(proc, checkout("side"));
+  assert.equal(out.result.code, 0, out.result.stderr);
+  assert.equal(out.fate, "restored");
+  assert.equal(git(dir, "symbolic-ref", "--short", "HEAD").trim(), "side");
+  // `stash pop --index` refuses while anything else is staged, and the plain
+  // pop it fell back to put the edit in the way back unstaged.
+  assert.equal(status(dir), "M  a.txt\nM  b.txt", "both staged, as they were");
+  assert.equal(git(dir, "show", ":a.txt"), LINES("side", 0).replace("line 6\n", "staged, in the way\n"));
+  assert.equal(git(dir, "show", ":b.txt"), elsewhere);
+  assert.equal(git(dir, "stash", "list").trim(), "");
+});
+
+test("a retry refused AGAIN over work the stash did not cover is said as work in the way, not as git failing", async () => {
+  const { dir } = repo();
+  writeFileSync(join(dir, "b.txt"), LINES("staged", 5));
+  git(dir, "add", "b.txt");
+  // An editor's autosave writes a file the pick touches the moment the stash
+  // is made — so the pick is refused again after it.
+  const real = new GitProcess({ cwd: dir });
+  const run = real.run.bind(real);
+  real.run = async (args, opts) => {
+    const r = await run(args, opts);
+    if (args[0] === "stash" && args[1] === "push" && r.code === 0) {
+      writeFileSync(join(dir, "a.txt"), LINES("line 0", 0).replace("line 7\n", "meanwhile\n"));
+    }
+    return r;
+  };
+  const out = await stashAndRetry(real, pick(dir, "feature~1"));
+  assert.notEqual(out.result.code, 0, "refused again");
+  assert.equal(out.fate, "restored", "what was stashed is back");
+  assert.equal(git(dir, "show", ":b.txt"), LINES("staged", 5), "b.txt staged again, as it was");
+  assert.deepEqual(out.inTheWay?.paths, ["a.txt", "b.txt"], "said as the user's work in the way");
+  assert.equal(git(dir, "stash", "list").trim(), "");
+});
+
 // ── what it must NOT be read as ───────────────────────────────────────────────
 
 test("a pick that STOPS on conflicts is a stop, not changes in the way", async () => {

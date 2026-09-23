@@ -115,6 +115,20 @@ test("a rebasing pull over a STAGED change: it comes back staged", async () => {
   assert.equal(stashes(clone), "");
 });
 
+test("a rebasing pull over a STAGED RENAME: in the way under both names, and it comes back a staged rename", async () => {
+  const { clone, ctx } = behind({ theirs: "theirs.txt", mine: true });
+  git(clone, ["mv", "shared.txt", "moved.txt"]);
+  const refused = await ctx.sync.pull({ mode: "rebase" });
+  assert.deepEqual(refused.dirty, { paths: ["moved.txt", "shared.txt"], rebase: true }, "the old name's deletion is staged too");
+
+  const out = await stashAndRetryPull(ctx.process, pullWith(ctx, "rebase"));
+  assert.equal(out.pulled.ok, true, out.pulled.stderr);
+  assert.equal(out.fate, "restored");
+  assert.equal(status(clone), "R  shared.txt -> moved.txt", "the rename, staged, as it was");
+  assert.equal(git(clone, ["log", "--format=%s", "-3"]).trim(), "mine\ntheirs\nbase", "rebased onto theirs");
+  assert.equal(stashes(clone), "");
+});
+
 test("an untracked file the pull would create is stashed with -u; it cannot come back over theirs, and is kept", async () => {
   const { clone, ctx } = behind({ theirs: "new.txt" });
   writeFileSync(join(clone, "new.txt"), "my own, untracked\n");
