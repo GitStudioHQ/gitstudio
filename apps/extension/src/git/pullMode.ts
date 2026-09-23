@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import {
   pullDetachedMessage,
   pullPauseMessage,
+  pushUnseenMessage,
   type PullBlock,
   type PullDirty,
   type PullDivergence,
@@ -49,6 +50,33 @@ export function settlePullStop(result: {
   }
   void vscode.window.showWarningMessage(`GitStudio: ${message}`);
   void vscode.commands.executeCommand("gitstudio.commit.focus");
+  return true;
+}
+
+const PULL = "Pull";
+
+/**
+ * A FORCE push the engine refused before it ran, because the remote branch's
+ * tip was never part of this branch (`PushResult.unseen`) — the same commit
+ * amended on another machine and fetched in the background, or somebody
+ * else's push. Nothing was pushed and nothing failed: said plainly, in the
+ * engine's words, as a warning with the way on — Pull, which asks how to
+ * combine them.
+ *
+ * Returns true when the result WAS that refusal, and the caller must then not
+ * report it as a failure. Shared by every extension force door (Sync, the
+ * status bar's Push, the Changes view's push pill and its push modal), as
+ * `settlePullStop` is by every pull door.
+ */
+export function settlePushUnseen(result: { unseen?: boolean }): boolean {
+  if (!result.unseen) {
+    return false;
+  }
+  void vscode.window
+    .showWarningMessage(`GitStudio: ${pushUnseenMessage()}`, PULL)
+    .then((pick) => {
+      if (pick === PULL) void vscode.commands.executeCommand("gitstudio.sync.pull");
+    });
   return true;
 }
 

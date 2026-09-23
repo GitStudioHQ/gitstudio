@@ -84,7 +84,8 @@ function mutations(): Array<{ name: string; body: string }> {
     // with one extra field. Matching the base name only silently dropped
     // `syncPull` out of this census the day it learned to answer a diverged
     // branch, i.e. the day it started taking a renderer-supplied string.
-    if (!/^\s*:\s*Promise<(?:Commit|Pull)ActionResult>/.test(after)) continue;
+    // PushActionResult likewise (`syncPush`, since it learned `pullFirst`).
+    if (!/^\s*:\s*Promise<(?:Commit|Pull|Push)ActionResult>/.test(after)) continue;
     const brace = SRC.indexOf("{", i);
     if (brace < 0) continue;
     let j = brace + 1;

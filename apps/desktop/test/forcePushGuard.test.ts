@@ -103,3 +103,64 @@ test("a force push after amending a pushed commit still goes through", async () 
     cleanup();
   }
 });
+
+// The rewrite test is passed by somebody else's version of the SAME commit:
+// amended on another machine (same author, same author date, committed
+// earlier) and pushed, then fetched here in the background — the editor's
+// autofetch, a terminal. Amend here, press Force push, and the lease — the
+// remote-tracking ref, which that fetch set — was satisfied: the other
+// amendment was deleted. The engine now refuses a force leased on a tip this
+// branch never had, and the bridge says it as the same state as a colleague's
+// commits: `expected`, with `pullFirst` so the renderer offers Pull.
+test("a same-author amend fetched in the background is not overwritten, and Pull is offered", async () => {
+  const { work, remote, cleanup } = setup();
+  const laptop = `${remote}-laptop`;
+  try {
+    execFileSync("git", ["clone", "-q", remote, laptop]);
+    for (const [k, v] of [
+      ["user.email", "me@example.com"],
+      ["user.name", "me"],
+      ["commit.gpgsign", "false"],
+    ]) {
+      execFileSync("git", ["config", k, v], { cwd: laptop });
+    }
+    const at = (committed: number) => ({
+      ...process.env,
+      GIT_AUTHOR_DATE: "1700000000 +0000",
+      GIT_COMMITTER_DATE: `${committed} +0000`,
+    });
+    execFileSync("git", ["commit", "-q", "--amend", "-m", "mine, fixed on the laptop"], { cwd: laptop, env: at(1700000050) });
+    execFileSync("git", ["push", "-q", "--force", "origin", "main"], { cwd: laptop });
+    execFileSync("git", ["fetch", "-q"], { cwd: work }); // in the background
+    execFileSync("git", ["commit", "-q", "--amend", "-m", "mine, reworded here"], { cwd: work, env: at(1700000100) });
+
+    const bridge = await bridgeOn(work);
+    const forced = await bridge.syncPush({ force: true });
+    assert.equal(forced.ok, false, "the force is refused");
+    assert.equal(forced.expected, true, "…as a state of the repository, not a crash");
+    assert.equal(reportableResultMessage(forced), undefined);
+    assert.equal(forced.pullFirst, true, "with the way on: pull it in");
+    assert.match(forced.message ?? "", /never had/);
+    assert.equal(log(remote), "mine, fixed on the laptop", "the other amendment is still on the remote");
+  } finally {
+    removeTempRepo(laptop);
+    cleanup();
+  }
+});
+
+test("a colleague's fetched commits are refused with Pull offered too", async () => {
+  const { work, other, cleanup } = setup();
+  try {
+    writeFileSync(`${other}/b.txt`, "b\n");
+    execFileSync("git", ["add", "."], { cwd: other });
+    execFileSync("git", ["commit", "-qm", "theirs"], { cwd: other });
+    execFileSync("git", ["push", "-q", "origin", "main"], { cwd: other });
+    execFileSync("git", ["commit", "-q", "--amend", "-m", "mine, reworded"], { cwd: work });
+    execFileSync("git", ["fetch", "-q"], { cwd: work });
+    const forced = await (await bridgeOn(work)).syncPush({ force: true });
+    assert.equal(forced.ok, false);
+    assert.equal(forced.pullFirst, true);
+  } finally {
+    cleanup();
+  }
+});

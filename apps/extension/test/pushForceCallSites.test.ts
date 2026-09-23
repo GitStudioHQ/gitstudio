@@ -98,7 +98,7 @@ test("a force push is offered only for a divergence we caused", async () => {
       // host assigns it, and that assignment is what must be gated.
       if (/data\.needsForce/.test(line)) return;
       seen++;
-      const statement = lines.slice(Math.max(0, i - 3), i + 3).join("\n");
+      const statement = lines.slice(Math.max(0, i - 7), i + 7).join("\n");
       if (/rewroteUpstream\(/.test(statement)) return;
       ungated.push(`${relative(ROOT, file)}:${i + 1} — ${line.trim()}`);
     });
@@ -150,4 +150,56 @@ test("Sync's force push is leased on the upstream tip read before its fetch", as
     new RegExp(`sync\\.push\\(\\{\\s*force:\\s*\\w+,\\s*lease:\\s*${name}\\b`),
     "and the push is leased on it",
   );
+});
+
+// …and the rewrite test is not enough on its own either. The same commit
+// amended on another machine, pushed, and fetched here in the BACKGROUND (the
+// editor's autofetch) keeps the author and author date, so it passes
+// rewroteUpstream() — and every lease the doors could hold is the tip that
+// fetch left, so the force deleted it (replayed; forceIfIncludes.test.ts in
+// git-service pins it against real git). The engine now refuses a force
+// leased on a tip this branch never had (`PushResult.unseen`); every door that
+// OFFERS one asks the same question first — `upstreamUnseen()`, in the same
+// condition — and every door that PUSHES one settles the refusal as the state
+// it is, with Pull offered, never as "push failed".
+test("a force push is offered only over a tip this branch has had", async () => {
+  const ungated: string[] = [];
+  let seen = 0;
+  for (const file of await tsFiles(join(ROOT, "apps/extension/src"))) {
+    const lines = (await readFile(file, "utf8")).split("\n");
+    lines.forEach((line, i) => {
+      if (/^\s*(?:\/\/|\*)/.test(line) || DECLARED.test(line)) return;
+      if (!FORCE_OFFER.test(line) || /data\.needsForce/.test(line)) return;
+      seen++;
+      const statement = lines.slice(Math.max(0, i - 7), i + 7).join("\n");
+      if (/upstreamUnseen\(/.test(statement)) return;
+      ungated.push(`${relative(ROOT, file)}:${i + 1} — ${line.trim()}`);
+    });
+  }
+  assert.ok(seen >= 3, `the scan found only ${seen} force offers — it broke`);
+  assert.equal(
+    ungated.join("\n"),
+    "",
+    "force-push offers not gated on upstreamUnseen() — an amendment fetched in " +
+      "the background would be offered for deletion:\n" + ungated.join("\n"),
+  );
+});
+
+test("every extension push that can force settles an unseen refusal", async () => {
+  const unsettled: string[] = [];
+  let seen = 0;
+  for (const file of await tsFiles(join(ROOT, "apps/extension/src"))) {
+    const lines = (await readFile(file, "utf8")).split("\n");
+    lines.forEach((line, i) => {
+      if (/^\s*(?:\/\/|\*)/.test(line) || !/\bsync\.push\(/.test(line)) return;
+      // Only the calls that can force: `force` among their own arguments.
+      if (!/force/.test(lines.slice(i, i + 2).join("\n"))) return;
+      seen++;
+      const below = lines.slice(i, i + 30).join("\n");
+      if (/settlePushUnseen\(/.test(below)) return;
+      unsettled.push(`${relative(ROOT, file)}:${i + 1} — ${line.trim()}`);
+    });
+  }
+  assert.ok(seen >= 4, `the scan found only ${seen} forcing pushes — it broke`);
+  assert.equal(unsettled.join("\n"), "", "forcing pushes that would call a refusal a failure:\n" + unsettled.join("\n"));
 });

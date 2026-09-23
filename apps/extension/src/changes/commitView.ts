@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
-import type { PullResult } from "@gitstudio/git-service/SyncOps";
-import { askPullMode, settlePullDetached, settlePullStop } from "../git/pullMode";
+import { pushUnseenMessage, type PullResult } from "@gitstudio/git-service/SyncOps";
+import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
@@ -1504,9 +1504,18 @@ export class CommitViewProvider
           // not a rewrite, and once their commits have been fetched the lease
           // no longer protects them (see SyncOps.rewroteUpstream). That push is
           // left to be refused, which loses nothing.
+          //
+          // And not when the tip it would replace was never on this branch —
+          // the same commit amended on another machine, fetched in the
+          // background, passes the rewrite test (same author, same author
+          // date). The engine refuses that force before it runs; not offering
+          // it leaves the plain push to be refused, as for any divergence.
           const ab = await entry.ctx.sync.aheadBehind();
           const force =
-            ab.ahead > 0 && ab.behind > 0 && (await entry.ctx.sync.rewroteUpstream())
+            ab.ahead > 0 &&
+            ab.behind > 0 &&
+            (await entry.ctx.sync.rewroteUpstream()) &&
+            !(await entry.ctx.sync.upstreamUnseen())
               ? await this.askRewritePush()
               : false;
           if (force === undefined) {
@@ -1519,7 +1528,14 @@ export class CommitViewProvider
             });
             return;
           }
-          result = await entry.ctx.sync.push(force ? { force: true } : undefined);
+          const pushed = await entry.ctx.sync.push(force ? { force: true } : undefined);
+          // Refused before it ran: said, with Pull offered, and not as a
+          // failure (the engine's check can still fire if a fetch landed
+          // between the question above and the push).
+          if (settlePushUnseen(pushed)) {
+            settled = true;
+          }
+          result = pushed;
           break;
         }
         case "fetch":
@@ -1728,9 +1744,16 @@ export class CommitViewProvider
     // But only a divergence WE caused (an amend, a rebase of pushed commits)
     // is settled by forcing. If somebody else pushed and we have fetched it,
     // the lease matches and a force push deletes their commits — so that case
-    // stays a plain Push with "N behind — pull first".
+    // stays a plain Push with "N behind — pull first". So does the same
+    // commit amended on another machine and fetched in the background: it
+    // passes the rewrite test, but the tip it would replace was never on this
+    // branch, and the engine refuses that force (`upstreamUnseen`).
     const needsForce =
-      !!upstream && ab.ahead > 0 && ab.behind > 0 && (await entry.ctx.sync.rewroteUpstream());
+      !!upstream &&
+      ab.ahead > 0 &&
+      ab.behind > 0 &&
+      (await entry.ctx.sync.rewroteUpstream()) &&
+      !(await entry.ctx.sync.upstreamUnseen());
     return {
       hasUpstream: !!upstream,
       target,
@@ -1855,7 +1878,7 @@ export class CommitViewProvider
     if (!entry) {
       return;
     }
-    let result: { ok: boolean; stderr: string };
+    let result: { ok: boolean; stderr: string; unseen?: true };
     try {
       const head = await entry.ctx.refs.getHead();
       const upstream = head.detached ? null : await entry.ctx.sync.currentUpstream();
@@ -1879,7 +1902,7 @@ export class CommitViewProvider
     }
     if (result.ok) {
       vscode.window.setStatusBarMessage("$(check) Pushed", 3000);
-    } else {
+    } else if (!settlePushUnseen(result)) {
       void vscode.window.showErrorMessage(
         `GitStudio: push failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
       );
@@ -1891,7 +1914,9 @@ export class CommitViewProvider
     void this.view?.webview.postMessage({
       type: "pushDone",
       ok: result.ok,
-      error: result.ok ? undefined : result.stderr.trim(),
+      // A refused force has no stderr — nothing ran — so the modal gets the
+      // engine's sentence rather than an empty error line.
+      error: result.ok ? undefined : result.unseen ? pushUnseenMessage() : result.stderr.trim(),
     });
   }
 

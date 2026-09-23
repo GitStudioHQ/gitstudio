@@ -29,6 +29,7 @@ import {
   pullDetachedMessage,
   pullDirtyMessage,
   pullStoppedMessage,
+  pushUnseenMessage,
 } from "@gitstudio/git-service/SyncOps";
 import { GitProcess } from "@gitstudio/git-service/GitProcess";
 import type {
@@ -62,6 +63,7 @@ import type {
   PullDivergence,
   PullMode,
   PullStopInfo,
+  PushActionResult,
   RefInfo,
   RepoFile,
   FileHunkWire,
@@ -1880,15 +1882,17 @@ export class GitBridge {
     return diverged ? { ...r, diverged } : r;
   }
   /**
-   * `force` becomes `--force-with-lease`, never a bare `--force` — the lease
-   * still refuses when the remote moved since the last fetch. Required after
-   * amending a commit that was already pushed, where a plain push can only ever
-   * be rejected non-fast-forward.
+   * `force` is never a bare `--force`: SyncOps.push leases it on the
+   * remote-tracking tip explicitly (`--force-with-lease=<ref>:<sha>`), adds
+   * `--force-if-includes` where git has it, and refuses before pushing a tip
+   * this branch never had. Required after amending a commit that was already
+   * pushed, where a plain push can only ever be rejected non-fast-forward.
    */
   async syncPush(
     opts: { setUpstream?: boolean; force?: boolean } | undefined,
-  ): Promise<CommitActionResult> {
-    return this.staged(async (ctx) => {
+  ): Promise<PushActionResult> {
+    let pullFirst = false;
+    const r = await this.staged(async (ctx) => {
       // A force push is offered for ONE situation: we rewrote commits the
       // remote already has (an amend, a rebase), so a plain push is refused.
       // The same refusal comes back when somebody ELSE pushed — and once their
@@ -1896,6 +1900,7 @@ export class GitBridge {
       // the remote, so --force-with-lease deletes them. "Commit & Push" offered
       // exactly that after any non-fast-forward. Refused here, for every door.
       if (opts?.force && !(await ctx.sync.rewroteUpstream())) {
+        pullFirst = true;
         return {
           ok: false,
           changed: false,
@@ -1905,8 +1910,19 @@ export class GitBridge {
             "(merge or rebase) and push again — a force push would delete them.",
         };
       }
-      return ctx.sync.push({ setUpstream: opts?.setUpstream, force: opts?.force });
+      const pushed = await ctx.sync.push({ setUpstream: opts?.setUpstream, force: opts?.force });
+      // …and a rewrite test passed by somebody else's version of the same
+      // commit: amended on another machine, fetched in the background, same
+      // author and author date. The engine refused it before it ran — the tip
+      // it would replace was never on this branch — and it is the same state
+      // as the refusal above, said the same way.
+      if (pushed.unseen) {
+        pullFirst = true;
+        return { ok: false, changed: false, expected: true, message: pushUnseenMessage() };
+      }
+      return pushed;
     });
+    return pullFirst ? { ...r, pullFirst: true } : r;
   }
 
   /** Fast-forward a local branch straight from its upstream WITHOUT checking it

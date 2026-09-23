@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
-import { askPullMode, settlePullDetached, settlePullStop } from "../git/pullMode";
+import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
 import { pruneOnFetch } from "../git/fetchOptions";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
@@ -231,18 +231,31 @@ export class SyncStatusItem implements vscode.Disposable {
         // has looked at; that is the merge-or-rebase question too. The lease
         // holds the push to `seen`, so a push landing after the fetch is
         // refused as well.
+        //
+        // And only when the tip being replaced is one this branch has HAD: a
+        // background fetch (the editor's autofetch) made before Sync was
+        // pressed leaves `seen` — and so `unmoved` — already on the other
+        // machine's amendment. The engine would refuse that force anyway
+        // (`upstreamUnseen` is its own test); asking first means the question
+        // is merge-or-rebase, not a Force push that cannot happen.
         const ab = await active.ctx.sync.aheadBehind();
         const unmoved = seen !== null && (await active.ctx.sync.upstreamTip()) === seen;
-        if (ab.ahead > 0 && ab.behind > 0 && unmoved && (await active.ctx.sync.rewroteUpstream())) {
+        if (
+          ab.ahead > 0 &&
+          ab.behind > 0 &&
+          unmoved &&
+          (await active.ctx.sync.rewroteUpstream()) &&
+          !(await active.ctx.sync.upstreamUnseen(seen ?? undefined))
+        ) {
           const forced = await this.askRewrite(ab);
           if (forced === undefined) {
             return;
           }
-          reportSync(
-            await active.ctx.sync.push({ force: forced, lease: seen ?? undefined }),
-            "Push",
-            "Pushed",
-          );
+          const pushed = await active.ctx.sync.push({ force: forced, lease: seen ?? undefined });
+          if (settlePushUnseen(pushed)) {
+            return;
+          }
+          reportSync(pushed, "Push", "Pushed");
           break;
         }
         let pull = await active.ctx.sync.pull();
@@ -326,7 +339,11 @@ export class SyncStatusItem implements vscode.Disposable {
         if (force === undefined) {
           return;
         }
-        reportSync(await active.ctx.sync.push({ force }), "Push", "Pushed");
+        const pushed = await active.ctx.sync.push({ force });
+        if (settlePushUnseen(pushed)) {
+          return;
+        }
+        reportSync(pushed, "Push", "Pushed");
         break;
       }
       case "publish": {

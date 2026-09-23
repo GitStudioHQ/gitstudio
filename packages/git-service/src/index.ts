@@ -82,11 +82,12 @@ export type {
   RemoteOpResult,
   RemoteFetchOptions,
 } from "./RemoteOps";
-export { SyncOps } from "./SyncOps";
+export { SyncOps, pushUnseenMessage } from "./SyncOps";
 export type {
   AheadBehind,
   SyncOpResult,
   PushOptions,
+  PushResult,
   PullOptions,
   FetchOptions,
 } from "./SyncOps";

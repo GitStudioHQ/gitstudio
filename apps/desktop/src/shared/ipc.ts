@@ -471,6 +471,17 @@ export interface PullActionResult extends CommitActionResult {
   dirty?: PullDirtyInfo;
 }
 
+/**
+ * `sync:push`. `pullFirst` marks a FORCE push the bridge refused because the
+ * remote branch has commits that are not this branch's to replace — somebody
+ * else's, or the same commit amended on another machine and fetched in the
+ * background. Nothing was pushed, and nothing failed: the way on is to pull
+ * them in, which is what the renderer offers. Always `expected`.
+ */
+export interface PushActionResult extends CommitActionResult {
+  pullFirst?: true;
+}
+
 /** A branch with remote-tracking context, for the Branches manager. */
 export interface BranchInfo {
   name: string;
@@ -1878,7 +1889,7 @@ export interface IpcChannels {
    * Calling again with `mode` passes the flag to git explicitly.
    */
   "sync:pull": [{ mode?: PullMode } | void, PullActionResult];
-  "sync:push": [{ setUpstream?: boolean; force?: boolean } | void, CommitActionResult];
+  "sync:push": [{ setUpstream?: boolean; force?: boolean } | void, PushActionResult];
   /** Push (or publish) ONE named branch, not just the checked-out one. */
   "branch:push": [{ name: string }, CommitActionResult];
   /**

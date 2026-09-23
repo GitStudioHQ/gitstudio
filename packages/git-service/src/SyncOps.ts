@@ -19,18 +19,59 @@ export interface PushOptions extends GitRunOptions {
   branch?: string;
   /** `--set-upstream` — publish + start tracking. */
   setUpstream?: boolean;
-  /** Force the push; we use `--force-with-lease` to stay safe. */
+  /**
+   * Force the push — never a bare `--force`. See `SyncOps.push`: the lease is
+   * explicit (`--force-with-lease=<ref>:<sha>`), `--force-if-includes` rides
+   * with it where git has it, and the push is refused before it runs when the
+   * sha it would replace was never part of this branch (`PushResult.unseen`).
+   */
   force?: boolean;
   /**
    * With `force`: the sha the remote branch must STILL be at — the upstream
    * tip the user last saw, read before any fetch this push follows. Without it
    * the lease is the remote-tracking ref as it is NOW, and a fetch just before
-   * the push has made that equal to the remote: the lease then protects
-   * nothing, whoever moved the branch. Ignored unless it is a full sha.
+   * the push has made that equal to the remote — which is why the push also
+   * refuses a tip this branch never had. Ignored unless it is a full sha.
    */
   lease?: string;
   /** `--tags` — also push tags. */
   tags?: boolean;
+}
+
+export interface PushResult extends SyncOpResult {
+  /**
+   * A FORCE push refused before it ran: the remote branch's tip — the lease
+   * the caller passed, or the remote-tracking ref as last fetched — was never
+   * part of this branch. A background fetch brings in the same commit amended
+   * on another machine, or a colleague's push, and a force leased on it would
+   * delete it: that is a divergence to pull in, not a rewrite to push over.
+   * Nothing was pushed. See `pushUnseenMessage`.
+   */
+  unseen?: true;
+}
+
+/** What to tell the user when a force push was refused as `PushResult.unseen`. */
+export function pushUnseenMessage(): string {
+  return (
+    "The remote branch has commits this branch has never had — fetched in the background, " +
+    "from another machine or someone else — and a force push would delete them. " +
+    "Pull them in first, then push."
+  );
+}
+
+/**
+ * Is this `git version` output 2.30 or later — the first git with
+ * `--force-if-includes`? Reads the numbers, not the words around them: Apple
+ * ("2.39.3 (Apple Git-146)") and Windows ("2.45.1.windows.1") builds say it
+ * differently. Anything unreadable is treated as older, which only loses the
+ * extra flag — the lease and the engine's own includes check stay.
+ */
+export function gitHasForceIfIncludes(versionOutput: string): boolean {
+  const m = /(\d+)\.(\d+)/.exec(versionOutput);
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  return major > 2 || (major === 2 && minor >= 30);
 }
 
 /**
@@ -351,7 +392,7 @@ export class SyncOps {
    *
    * Only applies when the caller did not name a remote/branch explicitly.
    */
-  async push(opts?: PushOptions): Promise<SyncOpResult> {
+  async push(opts?: PushOptions): Promise<PushResult> {
     let remote = opts?.remote;
     let branch = opts?.branch;
     let setUpstream = opts?.setUpstream ?? false;
@@ -418,16 +459,41 @@ export class SyncOps {
 
     const args = ["push"];
     if (opts?.force) {
-      // An explicit expected value when the caller has one: the lease is then
-      // the tip the user last SAW, not the remote-tracking ref as a fetch just
-      // left it. It names the ref on the REMOTE, which differs from the local
-      // name after a rename — the same pair the refspec above resolves.
-      const pair = opts.lease && FULL_SHA.test(opts.lease)
-        ? await this.upstreamPair(opts.signal, branch)
-        : null;
-      args.push(
-        pair ? `--force-with-lease=refs/heads/${pair.remoteBranch}:${opts.lease}` : "--force-with-lease",
-      );
+      // ALWAYS an explicit expected value: the tip the user last SAW — the
+      // caller's lease when it read one before a fetch, else the
+      // remote-tracking ref as last fetched. It names the ref on the REMOTE,
+      // which differs from the local name after a rename — the same pair the
+      // refspec above resolves.
+      //
+      // And never a tip this branch has not had. An explicit value is only as
+      // good as what the user saw, and a BACKGROUND fetch — the editor's, the
+      // app's, a terminal's — sets the remote-tracking ref to the same commit
+      // amended on another machine without anybody looking at it: leased on
+      // that, the force deletes it. `--force-if-includes` is git's answer, but
+      // git ignores it beside an explicit value (verified against git 2.49:
+      // `--force-with-lease=<ref>:<sha> --force-if-includes` overwrote exactly
+      // that amendment), so the includes check is made here, the way git makes
+      // it: the tip must be reachable from this branch's reflog. The flag is
+      // still passed where git knows it, for the no-value lease below.
+      const pair = await this.upstreamPair(opts.signal, branch);
+      const expect = opts.lease && FULL_SHA.test(opts.lease)
+        ? opts.lease
+        : pair
+          ? await this.trackingTip(pair.local, opts.signal)
+          : null;
+      if (pair && expect) {
+        if (!(await this.hasHad(pair.local, expect, opts.signal))) {
+          return { ok: false, stderr: "", unseen: true };
+        }
+        args.push(`--force-with-lease=refs/heads/${pair.remoteBranch}:${expect}`);
+      } else {
+        // Nothing tracked to lease on (a branch with no upstream, or one whose
+        // remote branch is gone): git's own lease, on whatever it tracks.
+        args.push("--force-with-lease");
+      }
+      if (await this.knowsForceIfIncludes()) {
+        args.push("--force-if-includes");
+      }
     }
     if (setUpstream) {
       args.push("--set-upstream");
@@ -885,6 +951,72 @@ export class SyncOps {
     const r = await this.proc.run(["rev-parse", "--verify", "--quiet", "@{upstream}"], { signal });
     const sha = r.stdout.trim();
     return r.code === 0 && FULL_SHA.test(sha) ? sha : null;
+  }
+
+  /**
+   * Would a force push of the current branch be refused as `unseen` right
+   * now — does the remote branch's tip (`lease`, or the remote-tracking ref as
+   * last fetched) carry commits this branch has never had? For a door that
+   * asks "Force push?" before pushing: a remote in that state is a divergence
+   * to pull in, and the question should be merge-or-rebase instead. False when
+   * there is nothing tracked to compare.
+   */
+  async upstreamUnseen(lease?: string, signal?: AbortSignal): Promise<boolean> {
+    const pair = await this.upstreamPair(signal);
+    if (!pair) return false;
+    const expect = lease && FULL_SHA.test(lease) ? lease : await this.trackingTip(pair.local, signal);
+    return expect ? !(await this.hasHad(pair.local, expect, signal)) : false;
+  }
+
+  /**
+   * The sha `refs/heads/<local>`'s upstream remote-tracking ref points at, or
+   * null. By the branch's FULL name through for-each-ref: `<name>@{upstream}`
+   * is resolved against tags too, and `refs/heads/<name>@{upstream}` is not a
+   * branch name git accepts.
+   */
+  private async trackingTip(local: string, signal?: AbortSignal): Promise<string | null> {
+    const up = await this.proc.run(["for-each-ref", "--format=%(upstream)", `refs/heads/${local}`], { signal });
+    const ref = up.stdout.trim();
+    if (up.code !== 0 || !ref.startsWith("refs/")) return null;
+    const r = await this.proc.run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { signal });
+    const sha = r.stdout.trim();
+    return r.code === 0 && FULL_SHA.test(sha) ? sha : null;
+  }
+
+  /**
+   * Has `refs/heads/<local>` ever had `sha` — is it reachable from the
+   * branch's tip or from any entry of its reflog? This is git's own
+   * `--force-if-includes` test: an amend replaced the old tip, but the reflog
+   * still remembers it, so a rewrite of your own pushed work passes; a commit
+   * that arrived only in the remote-tracking ref (a background fetch) was never
+   * here, and fails. A git that cannot answer is a no.
+   */
+  private async hasHad(local: string, sha: string, signal?: AbortSignal): Promise<boolean> {
+    const full = `refs/heads/${local}`;
+    const log = await this.proc.run(["reflog", "show", "--format=%H", full, "--"], { signal });
+    const seen = new Set<string>([full]);
+    if (log.code === 0) {
+      for (const line of log.stdout.split("\n")) {
+        const s = line.trim();
+        if (FULL_SHA.test(s)) seen.add(s);
+      }
+    }
+    // Everything reachable from `sha` and from none of them: empty exactly
+    // when one of them contains it. On stdin, so a long reflog is no argv.
+    const r = await this.proc.run(["rev-list", "--stdin", "--max-count=1"], {
+      signal,
+      input: [sha, ...[...seen].map((s) => `^${s}`)].join("\n") + "\n",
+    });
+    return r.code === 0 && r.stdout.trim() === "";
+  }
+
+  /** Does this git know `--force-if-includes` (2.30+)? Asked once. */
+  private forceIfIncludes?: Promise<boolean>;
+  private knowsForceIfIncludes(): Promise<boolean> {
+    this.forceIfIncludes ??= this.proc
+      .run(["version"])
+      .then((r) => r.code === 0 && gitHasForceIfIncludes(r.stdout), () => false);
+    return this.forceIfIncludes;
   }
 
   /**

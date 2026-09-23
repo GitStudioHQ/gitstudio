@@ -94,10 +94,14 @@ test("a lease on the tip seen before the fetch refuses an amendment pushed from 
   assert.equal(leased.ok, false, "refused: the remote is not where it was when last seen");
   assert.equal(remoteSubject(bare), "fixed on the laptop", "the other amendment is still on the remote");
 
-  // The bare lease is the one that deleted it — the behaviour this replaces.
-  const bareLease = await ctx.sync.push({ force: true });
-  assert.equal(bareLease.ok, true);
-  assert.equal(remoteSubject(bare), "reworded on the desktop");
+  // The bare lease is the one that deleted it — the behaviour this replaced.
+  // A force with no lease of its own is now leased on the remote-tracking ref
+  // and refused when that tip was never part of this branch (the fetch above
+  // brought it in; forceIfIncludes.test.ts), so it cannot delete it either.
+  const noLease = await ctx.sync.push({ force: true });
+  assert.equal(noLease.ok, false);
+  assert.equal(noLease.unseen, true);
+  assert.equal(remoteSubject(bare), "fixed on the laptop");
 });
 
 test("a colleague's amendment of MY commit is refused the same way", async () => {
@@ -142,6 +146,6 @@ test("a lease that is not a full sha is never put on the command line", async ()
   const { bare, desktop, ctx } = pushedTwice();
   git(desktop, ["commit", "-q", "--amend", "-m", "reworded"], 1700000100);
   const r = await ctx.sync.push({ force: true, lease: "main:HEAD --no-verify" });
-  assert.equal(r.ok, true, "falls back to the bare lease, which holds here");
+  assert.equal(r.ok, true, "falls back to the remote-tracking tip as the lease, which holds here");
   assert.equal(remoteSubject(bare), "reworded");
 });
