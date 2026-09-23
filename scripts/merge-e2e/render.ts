@@ -276,6 +276,25 @@ export const STEPS: Record<string, string> = {
     b.click();
     return true;
   })()`,
+  // Half handled everywhere on screen: Yours taken on every conflict (Theirs
+  // left pending), every Yours-only and identical change taken, every
+  // Theirs-only one ignored — each through its own gutter control.
+  half: `(() => {
+    const press = (b) => b.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    const pick = () =>
+      document.querySelector('.jb-gutter-a .jb-change-actions:not([data-category="theirs-only"]) .jb-btn-accept') ||
+      document.querySelector('.jb-gutter-b .jb-change-actions[data-category="theirs-only"] .jb-btn-ignore');
+    let n = 0;
+    for (let b = pick(); b && n < 200; b = pick()) { press(b); n++; }
+    return n > 0;
+  })()`,
+  // Everything resolved at once: the bottom bar's Accept Yours.
+  "resolve-yours": `(() => {
+    const b = document.querySelector(".ms-accept-yours");
+    if (!b || b.disabled) return false;
+    b.click();
+    return true;
+  })()`,
 };
 
 function pressFirst(group: string, button: string): string {

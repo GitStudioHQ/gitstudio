@@ -95,8 +95,15 @@ export class Page {
     }
   }
 
-  async screenshot(): Promise<Buffer> {
-    const r = await this.send<{ data: string }>("Page.captureScreenshot", { format: "png" });
+  /**
+   * A PNG of the page, or of `clip` (CSS px). The image is in DEVICE pixels:
+   * a clip whose edges sit on whole device pixels is copied, never resampled.
+   */
+  async screenshot(clip?: { x: number; y: number; width: number; height: number }): Promise<Buffer> {
+    const r = await this.send<{ data: string }>(
+      "Page.captureScreenshot",
+      clip ? { format: "png", clip: { ...clip, scale: 1 } } : { format: "png" },
+    );
     return Buffer.from(r.data, "base64");
   }
 }

@@ -14,10 +14,12 @@ npx tsx --test scripts/merge-e2e/matrix.test.ts            # completeness + stal
 export GS_CHROME=~/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell
 npx tsx scripts/merge-e2e/render.ts --scenario rebase.diff3 --file stress/userService.js \
     --host both --theme dark,light --out-dir /tmp/shots --steps accept-yours,ignore-theirs
+    # (steps: accept-yours | ignore-theirs | accept-theirs | ignore-yours | half | resolve-yours | legend-key)
 
 # every band edge of every block on one device row, in pane, ribbon and result
 npx tsx scripts/merge-e2e/alignment.ts --scenarios issue12-exact.diff3 --hosts ext --dpr 2
-npx tsx --test scripts/merge-e2e/alignment.test.ts            # the whole matrix, both hosts, 1x and 2x
+npx tsx --test scripts/merge-e2e/alignment.test.ts            # the whole matrix, both hosts, 1x, 1.5x and 2x
+# a slice of it (every case once, one operation per style) runs with packages/webview-ui's own tests
 ```
 
 ## Files
@@ -30,8 +32,9 @@ npx tsx --test scripts/merge-e2e/alignment.test.ts            # the whole matrix
 | `completeness.ts` | Holds an oracle to `cases.ts`, in both directions. |
 | `matrix.test.ts` | Builds the matrix, checks it, requires `oracle.json` to match, and proves the checker fails on a shrunken matrix. |
 | `render.ts`, `cdp.ts`, `themes.ts` | Headless render of the real merge view: the extension's webview (VS Code Dark+ / Light+ / HC dark / HC light token values) and the desktop renderer (dark / light). |
-| `alignment.ts` | Walks every file of every scenario in the real view, as it opens, half handled, and resolved, and measures what the browser PAINTS: every ribbon end must meet its pane's band on the same device row (±0 at 1x and 2x), on the pixel grid, with no gap. |
-| `alignment.test.ts` | Runs it over the whole matrix in both hosts at both scales, requires every block side of oracle.json to have been measured, and proves the check fails on the pre-fix build (562966a, the owner's offset dashed lines). |
+| `alignment.ts` | Walks every file of every scenario in the real view, as it opens, half handled, and resolved, and measures what the browser PAINTS: every ribbon end must meet its pane's band on the same device row (±0 at 1x and 2x), on the pixel grid the panes are snapped to, reaching into the pane; the result's colour must say whether a conflict is open or has one side in; a resolved change draws nothing across the gutters. Then it photographs the seams (text hidden) and reads the pixels: no column of another colour (the gutter's border) inside any band, and the same first and last rows in the gutter and the pane. |
+| `png.ts` | A PNG reader for Chrome's screenshots, so a check can read pixels without a dependency. |
+| `alignment.test.ts` | Runs it over the whole matrix in both hosts at 1x, 1.5x and 2x, requires every block side of oracle.json to have been measured, and proves the check fails on the builds that were rejected: 562966a (the owner's offset dashed lines) and 9f77171 (the critic's gutter-border hairline, a half-done conflict that looked open, and resolved changes still outlined across the gutters). |
 
 ## One convention
 
