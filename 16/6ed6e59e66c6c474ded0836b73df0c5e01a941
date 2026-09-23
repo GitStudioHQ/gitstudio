@@ -1,0 +1,64 @@
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_6fef81e76d95f8 408
+apps/extension/src/git/pauseNotice.ts
+  s_26f5e669d3043c::t_28265de9182ae1 1-28
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_fb61825ba32333 4,206,208-215,217-231,233-239,243,254,283
+apps/extension/src/git/pausedForUser.ts
+  s_26f5e669d3043c::t_d224080894c5a3 64-156
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_75babc0101bad9 5-6,223,229,243-250,497-502,507,516-518,520-523
+apps/extension/src/views/stashesView.ts
+  s_26f5e669d3043c::t_a06c537e9985d3 6-7,276,278,292,297,354-358,363,368-369
+  s_26f5e669d3043c::t_2019fc571ad543 370
+apps/extension/src/changes/operationBanner.ts
+  s_26f5e669d3043c::t_e64570a9590234 1-102
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_188e8c9d8a0b2b 6,892
+apps/extension/test/rebaseStopBanner.test.ts
+  s_26f5e669d3043c::t_50909d84c7ef8d 1-149
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_b091c51eebe6b2 39
+  s_26f5e669d3043c::t_cb3c766d26eaf6 704
+apps/extension/src/rebase/rebaseCommands.ts
+  s_26f5e669d3043c::t_1c16bce4142a74 7-8,43-45
+apps/extension/test/operationChecks.test.ts
+  s_26f5e669d3043c::t_2b9791898b45f5 72
+  s_26f5e669d3043c::t_814bd9b0fa18f3 70-71,73-88,90-93,96-100
+  s_26f5e669d3043c::t_cfee35ac98115c 1-69,89,94-95,101-166
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_188e8c9d8a0b2b 6,417,515
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_949b746d47b5b9 3805
+  s_26f5e669d3043c::t_775a148ba3ddb7 51,127-132,171-172,174-175,223-237,309-312,338-339,674-682,693-695,920-929,970-990,2175-2177,2217,2240,2248,2260-2262,2271
+  s_26f5e669d3043c::t_3f8631ad489df1 683-692,3778-3804,3806-3809,3840-3841,6915-6991,7049,7122-7124
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_32a33bca559c2b 242-270
+  s_26f5e669d3043c::t_d2c8fc5194f165 459-470
+  s_26f5e669d3043c::t_8015fcfd7c76c5 8-10,31-39,44-45,69-74,170-175,222-223
+  s_26f5e669d3043c::t_48a98e55c4a506 789-793,799-810,813,840-848
+  s_26f5e669d3043c::t_653be90da346c8 458
+apps/extension/test/changesOperationBanner.test.ts
+  s_26f5e669d3043c::t_6a1934873000a9 1-219
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_b3745cdacfd6d6 6-7,277-279,281
+apps/extension/src/merge/gitstudioMerge.ts
+  s_26f5e669d3043c::t_2c1e0b90d6002c 124,127-128,131-132,135,137-138
+  s_26f5e669d3043c::t_6fef81e76d95f8 4,32-36,41,73-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "166ed6e59e66c6c474ded0836b73df0c5e01a941",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
