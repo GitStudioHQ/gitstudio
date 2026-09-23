@@ -357,6 +357,44 @@ test("revert: conflicted, then resolved", async () => {
   }
 });
 
+test("a range of reverts whose current revert was committed by hand: still a revert, and the banner's Continue works", async () => {
+  // REVERT_HEAD is gone once the user commits by hand; the queue is not. Read
+  // as a cherry-pick, the banner routed Continue to `cherry-pick --continue`,
+  // which git refuses mid-revert ("cannot cherry-pick during a revert").
+  const r = repo("revert-range");
+  try {
+    writeFileSync(`${r.root}/f.txt`, "one\n");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "one");
+    writeFileSync(`${r.root}/f.txt`, "two\n");
+    r.git("commit", "-qam", "two");
+    const two = r.git("rev-parse", "HEAD").trim();
+    writeFileSync(`${r.root}/f.txt`, "three\n");
+    r.git("commit", "-qam", "three");
+    writeFileSync(`${r.root}/h.txt`, "h\n");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "add h");
+    const addH = r.git("rev-parse", "HEAD").trim();
+    r.tryGit("revert", "--no-edit", two, addH);
+    writeFileSync(`${r.root}/f.txt`, "reverted by hand\n");
+    r.git("add", "f.txt");
+    r.git("commit", "-qm", "revert two, by hand");
+    const b = await r.bridge();
+
+    const st = await b.opState();
+    assert.equal(st.kind, "revert");
+    assert.equal(st.reverting, false, "the raw REVERT_HEAD flag stays raw");
+    assert.equal(st.canContinue, true);
+    assert.equal(st.canSkip, false, "no current revert to skip");
+    const out = await b.revertContinue();
+    assert.equal(out.ok, true, out.message);
+    assert.equal((await b.opState()).kind, null);
+    assert.equal(r.git("log", "-1", "--format=%s").trim(), 'Revert "add h"');
+  } finally {
+    removeTempRepo(r.root);
+  }
+});
+
 test("am: a patch that will not apply is named, and can be skipped", async () => {
   const r = repo("am");
   try {
