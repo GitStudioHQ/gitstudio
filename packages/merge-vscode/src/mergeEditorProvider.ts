@@ -73,8 +73,9 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
         repo && host.product.runWithUndo
           ? <T>(label: string, fn: () => Promise<T>) => host.product.runWithUndo!(repo, label, fn)
           : undefined,
-      // A product without an undo envelope (Merge Studio) offers Undo on the
-      // toast instead: it puts the conflict back (checkout -m).
+      // An Apply that resolved a conflict offers Undo on its toast, in every
+      // product (the ledger cannot snapshot an unmerged index): it puts the
+      // conflict back (checkout -m) while git is still at that stop.
       offerUndo: (text, undo) => {
         void host.notify("info", text, "Undo").then((choice) => {
           if (choice === "Undo") {

@@ -364,7 +364,7 @@ test("no undo envelope (Merge Studio): Apply offers Undo, and Undo re-creates th
   const calls: string[] = [];
   let undo: (() => Promise<void>) | undefined;
   const h = harness(
-    fakeGit({ calls }),
+    fakeGit({ calls, stillConflicted: true }),
     {
       offerUndo: (text, fn) => {
         calls.push(`offer:${text}`);
@@ -384,18 +384,204 @@ test("no undo envelope (Merge Studio): Apply offers Undo, and Undo re-creates th
   assert.deepEqual(h.posts.map((p) => p.type), ["opChanged", "init"], "the shell is told, then shown the conflict again");
 });
 
-test("with an undo envelope (GitStudio's ledger) nothing extra is offered — the ledger's Undo covers it", async () => {
+test("an Apply on a file with NO conflict ('Reopen With…') runs in the product's envelope and offers nothing extra", async () => {
   const calls: string[] = [];
   const h = harness(
-    fakeGit({ calls }),
+    fakeGit({ calls, stillConflicted: false }),
     {
-      withUndo: async (_label, fn) => fn(),
+      withUndo: async (_label, fn) => {
+        calls.push("envelope");
+        return fn();
+      },
       offerUndo: () => {
         calls.push("offer");
       },
+      diskText: async () => "resolved\n",
     },
     calls,
   );
   await new MergeSession(h.deps).apply("resolved\n");
-  assert.ok(!calls.includes("offer"));
+  assert.ok(calls.includes("envelope"));
+  assert.ok(!calls.includes("offer"), "no conflict to bring back, so no conflict-restoring Undo");
+});
+
+test("an Apply that RESOLVES a conflict offers the conflict-restoring Undo in every product — the envelope is skipped", async () => {
+  // GitStudio's envelope is the UndoLedger, which snapshots with `git stash
+  // create`; git refuses that while any path is unmerged (see the REAL git
+  // test below), so wrapping a conflict resolution in it recorded nothing and
+  // GitStudio's Apply had no undo at all.
+  const calls: string[] = [];
+  const h = harness(
+    fakeGit({ calls, stillConflicted: true }),
+    {
+      withUndo: async (_label, fn) => {
+        calls.push("envelope");
+        return fn();
+      },
+      offerUndo: (text) => {
+        calls.push(`offer:${text}`);
+      },
+      diskText: async () => "resolved\n",
+    },
+    calls,
+  );
+  await new MergeSession(h.deps).apply("resolved\n");
+  assert.ok(!calls.includes("envelope"), calls.join(" | "));
+  assert.ok(calls.includes("offer:resolved file saved and staged."), calls.join(" | "));
+});
+
+test("REAL git: the ledger's snapshot cannot be taken while a path is unmerged (why a resolution is not wrapped in it)", async () => {
+  const r = mergeConflict();
+  const ctx = new GitContext({ root: r.repo });
+  try {
+    await assert.rejects(ctx.snapshot.capture("Apply merge resolution"), /stash create/);
+  } finally {
+    ctx.dispose();
+    removeTemp(r.dir);
+  }
+});
+
+/** A SessionGit whose stop, HEAD and restore the test moves by hand. */
+function movableGit(state: { episode: string; head: string; calls: string[] }): SessionGit {
+  const base = fakeGit({ calls: state.calls, stillConflicted: true });
+  return {
+    ...base,
+    operation: {
+      ...base.operation,
+      view: async () => view("merge", { episode: state.episode }),
+    },
+    process: {
+      run: async (args) => {
+        if (args[0] === "rev-parse") return { code: 0, stdout: `${state.head}\n`, stderr: "" };
+        state.calls.push(`git ${args.join(" ")}`);
+        return { code: 0, stderr: "" };
+      },
+    },
+  };
+}
+
+for (const [what, move] of [
+  ["git's stop moved on (the merge was concluded / the rebase went to the next commit)", (s: { episode: string }) => (s.episode = "none")],
+  ["HEAD moved (a commit was made; a stash stop keeps the same episode)", (s: { head: string }) => (s.head = "c0ffee2")],
+] as const) {
+  test(`a late Undo refuses when ${what}: nothing is restored`, async () => {
+    const state = { episode: "merge:abc", head: "c0ffee1", calls: [] as string[] };
+    let undo: (() => Promise<void>) | undefined;
+    const h = harness(movableGit(state), {
+      offerUndo: (_t, fn) => (undo = fn),
+      diskText: async () => "resolved\n",
+    });
+    const session = new MergeSession(h.deps);
+    await session.apply("resolved\n");
+    assert.ok(undo, "offered");
+    move(state as never);
+    h.posts.length = 0;
+    await undo!();
+    assert.ok(!state.calls.some((c) => c.startsWith("restore:")), state.calls.join(" | "));
+    assert.deepEqual(h.posts, [], "the editor is not re-initialised");
+    assert.ok(h.notes.some((n) => /moved on since that Apply/.test(n.text)), JSON.stringify(h.notes));
+  });
+}
+
+test("a late Undo refuses when the file changed after the Apply: those edits are not thrown away", async () => {
+  const state = { episode: "merge:abc", head: "c0ffee1", calls: [] as string[] };
+  let disk = "resolved\n";
+  let undo: (() => Promise<void>) | undefined;
+  const h = harness(movableGit(state), {
+    offerUndo: (_t, fn) => (undo = fn),
+    diskText: async () => disk,
+  });
+  await new MergeSession(h.deps).apply("resolved\n");
+  disk = "resolved\nand then some more work\n";
+  await undo!();
+  assert.ok(!state.calls.some((c) => c.startsWith("restore:")), state.calls.join(" | "));
+  assert.ok(h.notes.some((n) => /a\.txt changed after the Apply/.test(n.text)), JSON.stringify(h.notes));
+});
+
+/**
+ * A session on a REAL merge conflict whose operation view says what git says
+ * (merging while MERGE_HEAD exists) and whose restore is what P2's does for a
+ * both-sides text conflict: `git checkout -m -- <path>`.
+ */
+function realMergeSession(repo: string, ctx: GitContext, onUndo: (fn: () => Promise<void>) => void): MergeSession {
+  const file = join(repo, "a.txt");
+  const merging = async () => (await ctx.process.run(["rev-parse", "-q", "--verify", "MERGE_HEAD"])).code === 0;
+  const opView = async () => (await merging() ? view("merge", { episode: "merge:x" }) : view("none"));
+  const reader = new ConflictOps(ctx.process, repo, ctx.conflict, { view: opView });
+  return new MergeSession({
+    git: {
+      operation: {
+        view: opView,
+        detect: async () => ({ kind: "merge", unmerged: (await ctx.conflict.listConflicts()).length }),
+        continue: async () => outcome({}),
+        abort: async () => outcome({}),
+      },
+      conflictOps: {
+        readSides: (p, o) => reader.readSides(p, o),
+        noteChoice: () => {},
+        takeRole: async () => ({ ok: false, changed: false }),
+        deleteFile: async () => ({ ok: false, changed: false }),
+        restore: async (p) => {
+          const res = await ctx.process.run(["checkout", "-m", "--", p]);
+          return { ok: res.code === 0, changed: res.code === 0, message: res.stderr };
+        },
+      },
+      conflict: ctx.conflict,
+      process: ctx.process,
+    },
+    rel: "a.txt",
+    fileName: file,
+    workingText: () => readFileSync(file, "utf8"),
+    diskText: async () => readFileSync(file, "utf8"),
+    save: async (text) => writeFileSync(file, text),
+    post: () => {},
+    settings: () => ({ autoApplyNonConflicting: false }),
+    jetbrainsName: () => undefined,
+    offerUndo: (_t, fn) => onUndo(fn),
+    notify: () => {},
+  });
+}
+
+for (const [what, afterCommit] of [
+  ["the file untouched since", undefined],
+  ["the file edited after the commit", "one\ntwo\nthree-merged\nfour\nfive (written after the merge)\n"],
+] as const) {
+  test(`REAL git: an Undo clicked after the merge was committed (${what}) brings no conflict back`, async () => {
+    // The resolve-undo record `checkout -m` answers from outlives the merge
+    // commit (`ls-files --resolve-undo` still lists the path), so this click
+    // used to re-conflict a finished merge and rewrite the file.
+    const r = mergeConflict();
+    const ctx = new GitContext({ root: r.repo });
+    const file = join(r.repo, "a.txt");
+    let undo: (() => Promise<void>) | undefined;
+    const session = realMergeSession(r.repo, ctx, (fn) => (undo = fn));
+    try {
+      await session.apply("one\ntwo\nthree-merged\nfour\n");
+      assert.ok(undo, "an Undo was offered for the resolution");
+      git(r.repo, "commit", "--no-edit", "-q");
+      if (afterCommit) writeFileSync(file, afterCommit);
+      await undo!();
+      assert.equal(git(r.repo, "ls-files", "-u"), "", "no conflict was brought back into a finished merge");
+      assert.equal(readFileSync(file, "utf8"), afterCommit ?? "one\ntwo\nthree-merged\nfour\n");
+    } finally {
+      ctx.dispose();
+      removeTemp(r.dir);
+    }
+  });
+}
+
+test("REAL git: an Undo clicked while the merge is still stopped there brings the conflict back", async () => {
+  const r = mergeConflict();
+  const ctx = new GitContext({ root: r.repo });
+  let undo: (() => Promise<void>) | undefined;
+  const session = realMergeSession(r.repo, ctx, (fn) => (undo = fn));
+  try {
+    await session.apply("one\ntwo\nthree-merged\nfour\n");
+    await undo!();
+    assert.match(git(r.repo, "ls-files", "-u", "--", "a.txt"), /a\.txt/, "unmerged again");
+    assert.match(readFileSync(join(r.repo, "a.txt"), "utf8"), /^<<<<<<< /m);
+  } finally {
+    ctx.dispose();
+    removeTemp(r.dir);
+  }
 });

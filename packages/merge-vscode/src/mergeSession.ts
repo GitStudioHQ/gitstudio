@@ -73,12 +73,17 @@ export interface MergeSessionDeps {
   post(msg: HostMessage): void;
   settings(): { autoApplyNonConflicting: boolean };
   jetbrainsName(): string | undefined;
-  /** The product's undo envelope (GitStudio's UndoLedger). */
+  /**
+   * The product's undo envelope (GitStudio's UndoLedger), for an Apply on a
+   * file with no conflict. It cannot snapshot an unmerged index, so an Apply
+   * that resolves a conflict is undone through `offerUndo` instead.
+   */
   withUndo?<T>(label: string, fn: () => Promise<T>): Promise<T>;
   /**
-   * A product WITHOUT an undo envelope (Merge Studio) offers the one-step undo
-   * here instead: show `text` with an Undo action that runs `undo` (PLAN
-   * matrix row 22 — the Undo is re-creating the conflict, `git checkout -m`).
+   * The one-step undo of an Apply that resolved a conflict, in every product:
+   * show `text` with an Undo action that runs `undo` (PLAN matrix row 22 — the
+   * Undo re-creates the conflict, `git checkout -m`, and refuses once git has
+   * moved on or the file has changed since).
    */
   offerUndo?(text: string, undo: () => Promise<void>): void;
   notify(kind: "info" | "warn" | "error", text: string): void;
@@ -115,9 +120,20 @@ export class MergeSession {
     d.post({ type: "init", ...payload });
   }
 
-  /** Apply: save the result, stage it, and say truthfully whether it is staged. */
+  /**
+   * Apply: save the result, stage it, and say truthfully whether it is staged.
+   *
+   * When the file was CONFLICTED, the Apply is undone by bringing the conflict
+   * back (`checkout -m`), in every product: the product's own envelope
+   * (GitStudio's ledger) snapshots with `git stash create`, which git refuses
+   * while any path is unmerged ("Cannot save the current index state"), so
+   * around a conflict it records nothing and offers nothing. The envelope
+   * still wraps an Apply on a file with no conflict ("Reopen With…").
+   */
   async apply(text: string): Promise<void> {
     const d = this.deps;
+    const resolving =
+      d.git && d.rel !== undefined ? await d.git.conflict.isConflicted(d.rel).catch(() => false) : false;
     const run = async (): Promise<void> => {
       try {
         await d.save(text);
@@ -138,19 +154,23 @@ export class MergeSession {
       const staged = await stageResolvedPath(d.git.process, d.rel);
       if (staged.staged) {
         d.git.conflictOps.noteChoice(d.rel, "merged");
-        if (!d.withUndo && d.offerUndo) {
-          d.offerUndo("resolved file saved and staged.", () => this.undoApply());
-        } else {
-          d.notify("info", "resolved file saved and staged.");
-        }
       } else if (staged.message) {
         d.notify("warn", staged.message);
       }
       d.post({ type: "applied", staged: staged.staged, message: staged.message });
       d.changed?.();
-      await this.postOpChanged();
+      const op = await this.postOpChanged();
+      if (!staged.staged) {
+        return;
+      }
+      const token = resolving && d.offerUndo ? await this.undoToken(op) : undefined;
+      if (token && d.offerUndo) {
+        d.offerUndo("resolved file saved and staged.", () => this.undoApply(token));
+      } else {
+        d.notify("info", "resolved file saved and staged.");
+      }
     };
-    await (d.withUndo ? d.withUndo("Apply merge resolution", run) : run());
+    await (d.withUndo && !resolving ? d.withUndo("Apply merge resolution", run) : run());
   }
 
   /** The no-text panel's Accept Yours / Accept Theirs (or "Delete the file" for the missing role). */
@@ -181,14 +201,29 @@ export class MergeSession {
   }
 
   /**
-   * The Undo of an Apply, for a product with no undo envelope: put the conflict
-   * back (`checkout -m`, which rewrites the markers as ours/theirs) and show the
+   * The Undo of an Apply that resolved a conflict: put the conflict back
+   * (`checkout -m`, which rewrites the markers as ours/theirs) and show the
    * file's sides again.
+   *
+   * The Undo sits on a toast, and a toast's button still works from the
+   * notification centre long after. `checkout -m` answers from git's
+   * resolve-undo record, which outlives the commit that concluded the merge,
+   * so a late click would put conflict markers back into a finished merge and
+   * overwrite anything written to the file since. `token` is what the Apply
+   * left behind; the Undo runs only while git is still at that same stop,
+   * HEAD has not moved and the file is still exactly what the Apply wrote.
    */
-  async undoApply(): Promise<void> {
+  async undoApply(token?: ApplyUndoToken): Promise<void> {
     const d = this.deps;
     if (!d.git || d.rel === undefined) {
       return;
+    }
+    if (token) {
+      const refusal = await this.undoRefusal(token);
+      if (refusal) {
+        d.notify("info", refusal);
+        return;
+      }
     }
     const result = await d.git.conflictOps.restore(d.rel);
     if (!result.ok) {
@@ -201,18 +236,48 @@ export class MergeSession {
     await this.init(text);
   }
 
-  /** Re-read the operation and tell the shell how many conflicts remain. */
-  async postOpChanged(): Promise<void> {
+  /** Re-read the operation and tell the shell how many conflicts remain. The view, when git answered. */
+  async postOpChanged(): Promise<OperationView | undefined> {
     const git = this.deps.git;
     if (!git) {
-      return;
+      return undefined;
     }
     try {
       const [op, detected] = await Promise.all([git.operation.view(), git.operation.detect()]);
       this.deps.post({ type: "opChanged", op, remainingConflicts: detected.unmerged });
+      return op;
     } catch {
       // The shell keeps its last state; the next change re-reads.
+      return undefined;
     }
+  }
+
+  /** What an Undo must find unchanged; undefined when it cannot be pinned down (then no Undo is offered). */
+  private async undoToken(op: OperationView | undefined): Promise<ApplyUndoToken | undefined> {
+    const d = this.deps;
+    if (!op || !d.git || !d.diskText) {
+      return undefined;
+    }
+    const [head, text] = await Promise.all([headOf(d.git.process), d.diskText().catch(() => undefined)]);
+    return text === undefined ? undefined : { episode: op.episode, head, text };
+  }
+
+  /** Why an Undo may no longer run, in plain words; undefined when it may. */
+  private async undoRefusal(token: ApplyUndoToken): Promise<string | undefined> {
+    const d = this.deps;
+    const git = d.git!;
+    const [op, head, text] = await Promise.all([
+      git.operation.view().catch(() => undefined),
+      headOf(git.process),
+      d.diskText ? d.diskText().catch(() => undefined) : Promise.resolve(undefined),
+    ]);
+    if (!op || op.episode !== token.episode || head !== token.head) {
+      return "git has moved on since that Apply, so there is no conflict to bring back. Nothing was changed.";
+    }
+    if (text !== token.text) {
+      return `${baseName(d.fileName)} changed after the Apply — undoing it now would throw those edits away. Nothing was changed.`;
+    }
+    return undefined;
   }
 
   private async resolveWhole(
@@ -289,6 +354,29 @@ export class MergeSession {
       }
     }
   }
+}
+
+/** What an Apply's Undo checks before it brings the conflict back. */
+export interface ApplyUndoToken {
+  /** The operation's stop when the Apply landed (OperationView.episode). */
+  episode: string;
+  /** HEAD then (undefined on an unborn branch or when git would not say). */
+  head: string | undefined;
+  /** The file on disk right after the Apply (whatever the save wrote). */
+  text: string;
+}
+
+async function headOf(proc: GitRunner): Promise<string | undefined> {
+  try {
+    const r = await proc.run(["rev-parse", "--verify", "--quiet", "HEAD"]);
+    return r.code === 0 ? (r.stdout ?? "").trim() || undefined : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function baseName(path: string): string {
+  return path.split(/[\\/]/).pop() || path;
 }
 
 function reason(error: unknown): string {

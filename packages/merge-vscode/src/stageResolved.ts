@@ -9,7 +9,7 @@
 
 /** All this needs from a GitProcess. */
 export interface GitRunner {
-  run(args: string[]): Promise<{ code: number; stderr: string }>;
+  run(args: string[]): Promise<{ code: number; stdout?: string; stderr: string }>;
 }
 
 export interface StageResult {
