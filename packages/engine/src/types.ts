@@ -2,8 +2,43 @@
 // it can run in the webview, the worker, or headless tests.
 
 export type ChangeRole = "inserted" | "deleted" | "modified" | "conflict";
+/** What one side did to a region, relative to base. */
+export type ChangeType = Exclude<ChangeRole, "conflict">;
 export type BlockKind = "left-only" | "right-only" | "conflict" | "both-same";
 export type Side = "left" | "right";
+
+/**
+ * The colour category of a block — JetBrains' merge model, in the words the
+ * merge UI uses. Left is always Yours (the hosts map the stages before the
+ * payload is built), so "yours-only" is the engine's left-only.
+ * - "conflict": both sides changed the region differently;
+ * - "same": both sides made the same change (exactly, or up to whitespace);
+ * - "yours-only" / "theirs-only": one side changed it.
+ */
+export type MergeCategory = "conflict" | "same" | "yours-only" | "theirs-only";
+
+/**
+ * The paint of a block: a conflict and an identical change have their own
+ * colours; a one-sided change is coloured by what it did (green inserted,
+ * blue modified, grey deleted).
+ */
+export type BlockTone = ChangeType | "same" | "conflict";
+
+/** A line-ending style. */
+export type LineEnding = "LF" | "CRLF" | "CR";
+
+/**
+ * Yours and Theirs disagree about line endings. The merge runs on normalised
+ * text; the result is written back in `result` (Yours' dominant ending).
+ */
+export interface EolMismatch {
+  /** Dominant ending of Yours; "none" when it has no line break at all. */
+  yours: LineEnding | "none";
+  /** Dominant ending of Theirs; "none" when it has no line break at all. */
+  theirs: LineEnding | "none";
+  /** What the merged result is written with. */
+  result: LineEnding;
+}
 
 /** A 1-based, end-exclusive span of lines. Empty when start === endExclusive. */
 export interface LineSpan {
@@ -32,6 +67,13 @@ export interface SideChange {
   innerSide: InnerRange[];
   /** Character-level diffs within base. */
   innerBase: InnerRange[];
+  /**
+   * Only whitespace differs from base. Found when the merge ignores
+   * whitespace: the change is invisible to the whitespace-blind diff but the
+   * bytes differ, so it is kept (flagged) rather than silently dropped.
+   * No inner ranges — it is painted as a line tint only.
+   */
+  whitespaceOnly?: boolean;
 }
 
 /** A contiguous region of change, anchored on base/result coordinates. */
@@ -42,17 +84,54 @@ export interface ChangeBlock {
   baseSpan: LineSpan;
   left?: SideChange;
   right?: SideChange;
+  /**
+   * JetBrains' merge type for the block (MergeRangeUtil.getMergeType): what
+   * the change did when the sides agree or only one side changed, else
+   * "conflict". Judged on the block's full regions, and on the DOCUMENT for
+   * emptiness — so an add/add of identical files is "inserted", and both
+   * sides deleting the file is "deleted".
+   */
+  type: ChangeRole;
+  /** What Yours did to the block's region (only when Yours changed it). */
+  leftType?: ChangeType;
+  /** What Theirs did to the block's region (only when Theirs changed it). */
+  rightType?: ChangeType;
+  /**
+   * "both-same" only: the two regions are byte-identical (after line-ending
+   * normalisation). False means identical only up to whitespace (≈), so the
+   * pick decides whose whitespace wins.
+   */
+  exact?: boolean;
+  /** Every change in the block is whitespace-only. */
+  whitespaceOnly?: boolean;
+  /**
+   * "conflict" only: both regions are non-empty and no Yours edit overlaps a
+   * Theirs edit (touching is fine), so applying both is well defined — the
+   * magic wand writes `resolvedText`.
+   */
+  resolvable?: boolean;
+  /** Base region with both sides' edits applied in base order (resolvable only). */
+  resolvedText?: string;
 }
 
 export interface MergeCounts {
   total: number;
   conflicts: number;
+  /** Blocks that are not conflicts (identical + one-sided). */
   autoResolvable: number;
+  /** "both-same" blocks (exact or up to whitespace). */
+  identical: number;
+  /** Conflicts the wand can resolve. */
+  resolvableConflicts: number;
 }
 
 export interface MergeModel {
   blocks: ChangeBlock[];
   counts: MergeCounts;
+  /** The line ending the merged result is written with (Yours' dominant one). */
+  eol: LineEnding;
+  /** Set when Yours and Theirs use different line endings. */
+  eolMismatch?: EolMismatch;
 }
 
 /** One change in a 2-way diff (left = original, right = modified). */
@@ -101,10 +180,36 @@ export function sideBlockSpan(block: ChangeBlock, side: Side): LineSpan {
   };
 }
 
-/** The display role (color) for a block: conflicts are red, else the side's role. */
+/**
+ * The display role for a block: "conflict" for a conflict, else what the
+ * change did. Kept for callers that predate the categories; the merge view
+ * paints by `category` / `blockTone`.
+ */
 export function blockRole(block: ChangeBlock): ChangeRole {
+  return block.type;
+}
+
+/** The colour category of a block (see MergeCategory). */
+export function category(block: ChangeBlock): MergeCategory {
+  switch (block.kind) {
+    case "conflict":
+      return "conflict";
+    case "both-same":
+      return "same";
+    case "left-only":
+      return "yours-only";
+    case "right-only":
+      return "theirs-only";
+  }
+}
+
+/** The paint of a block (see BlockTone). */
+export function blockTone(block: ChangeBlock): BlockTone {
   if (block.kind === "conflict") {
     return "conflict";
   }
-  return block.left?.role ?? block.right?.role ?? "modified";
+  if (block.kind === "both-same") {
+    return "same";
+  }
+  return block.type === "conflict" ? "modified" : block.type;
 }

@@ -119,6 +119,29 @@ test("no cumulative drift across many mixed clustered blocks", () => {
   assert.equal(theirs.length + sum(zones.right), heightRes);
 });
 
+test("a touching-joined chunk is aligned as ONE block", () => {
+  // Yours rewrites b into two lines; Theirs rewrites c. The edits touch (base
+  // 2-3 and 3-4), so they are one conflict over base 2-4, and each pane's
+  // version of that region is padded to the tallest — Yours [B1,B2,c] = 3,
+  // result [b,c] = 2, Theirs [b,C] = 2. Aligning them as two separate blocks
+  // (the pre-join model) padded after line 2 instead, one row too high.
+  const model = buildMergeModel(
+    lines(["a", "b", "c", "d"]),
+    lines(["a", "B1", "B2", "c", "d"]),
+    lines(["a", "b", "C", "d"]),
+  );
+  assert.equal(model.blocks.length, 1);
+  assert.deepEqual(model.blocks[0].baseSpan, { start: 2, endExclusive: 4 });
+  const zones = computeAlignmentZones(model);
+  assert.deepEqual(zones.left, []);
+  assert.deepEqual(zones.result, [{ afterLineNumber: 3, lines: 1 }]);
+  assert.deepEqual(zones.right, [{ afterLineNumber: 3, lines: 1 }]);
+  // And nothing below it drifts: every pane ends at the same height.
+  const sum = (s: { lines: number }[]): number => s.reduce((t, z) => t + z.lines, 0);
+  assert.equal(5 + sum(zones.left), 4 + sum(zones.result));
+  assert.equal(4 + sum(zones.right), 4 + sum(zones.result));
+});
+
 test("diff: a right-side insertion pads the left pane at the gap", () => {
   const model = buildDiffModel(lines(["a", "b"]), lines(["a", "NEW", "b"]));
   const zones = computeDiffAlignment(model);

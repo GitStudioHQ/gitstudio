@@ -1,6 +1,14 @@
-/* JetBrains two-intensity diff palette — the genuine IntelliJ scheme colors.
- * Dark = Darcula, light = Classic. The whole changed line gets the muted "line"
- * color; the changed characters get the stronger "inner" color. */
+/* JetBrains-style change palette, one colour per merge category (PLAN §3.6,
+ * Appendix B): inserted green, modified blue, deleted grey (one-sided changes,
+ * by what they did), identical violet, conflict orange. The whole changed line
+ * gets the muted "line" tint; the changed characters get the "inner" tint;
+ * "edge" is the frame / dashed-outline / ruler colour.
+ *
+ * Measured, not eyeballed (packages/webview-ui/test/mergeContrast.test.ts):
+ * editor text on every line tint >= 4.5:1 in VS Code Dark+/Dark Modern/
+ * Light+/Light Modern and the desktop's dark and light themes; every edge
+ * >= 3:1 against the editor background; identical vs conflict far apart even
+ * under simulated deuteranopia and protanopia. */
 
 @import "./tokens.css";
 
@@ -38,55 +46,78 @@
 .codicon-redo::before { content: "\ebb0"; }
 .codicon-history::before { content: "\ea82"; }
 .codicon-link-external::before { content: "\eb14"; }
+.codicon-insert::before { content: "\ec11"; }
+.codicon-check::before { content: "\eab2"; }
+.codicon-sparkle::before { content: "\ec10"; }
+.codicon-question::before { content: "\eb32"; }
 
+/* ── Change colour tokens (Appendix B; byte-for-byte in both repos) ────────── */
 :root {
-  /* Dark theme: light pastel hues at low alpha — the wash tints the line and
-   * the inner marking tints the changed characters, but syntax colors keep
-   * their contrast. The gutter ribbons (same vars) blend the same way so the
-   * stripe still reads as continuous. */
-  --jb-line-inserted: rgba(125, 195, 135, 0.13);
-  --jb-inner-inserted: rgba(125, 195, 135, 0.27);
-  --jb-line-deleted: rgba(170, 178, 188, 0.10);
-  --jb-inner-deleted: rgba(170, 178, 188, 0.22);
-  --jb-line-modified: rgba(115, 165, 220, 0.13);
-  --jb-inner-modified: rgba(115, 165, 220, 0.27);
-  --jb-line-conflict: rgba(236, 134, 108, 0.12);
-  --jb-inner-conflict: rgba(236, 134, 108, 0.26);
-  /* Conflict boundary lines stay near-opaque so the frame reads crisply. */
-  --jb-edge-conflict: rgba(236, 134, 108, 0.8);
-  /* Already-processed (applied/ignored) changes in the side panes. */
-  --jb-line-resolved: rgba(128, 128, 128, 0.13);
-  --jb-edge-resolved: rgba(128, 128, 128, 0.35);
+  --jb-line-inserted: rgba(63,185,80,.14);   --jb-inner-inserted: rgba(63,185,80,.24);   --jb-edge-inserted: rgba(63,185,80,.90);
+  --jb-line-deleted:  rgba(139,148,158,.24); --jb-inner-deleted:  rgba(139,148,158,.22); --jb-edge-deleted:  rgba(139,148,158,.90);
+  --jb-line-modified: rgba(56,139,253,.24);  --jb-inner-modified: rgba(56,139,253,.24);  --jb-edge-modified: rgba(56,139,253,.90);
+  --jb-line-same:     rgba(163,113,247,.16); --jb-inner-same:     rgba(163,113,247,.24); --jb-edge-same:     rgba(163,113,247,.95);
+  --jb-line-conflict: rgba(255,123,58,.24);  --jb-inner-conflict: rgba(255,123,58,.20);  --jb-edge-conflict: rgba(255,123,58,.95);
+}
+body.vscode-light, body.vscode-high-contrast-light {
+  --jb-line-inserted: rgba(63,185,80,.16);   --jb-inner-inserted: rgba(63,185,80,.28);   --jb-edge-inserted: #1a7f37;
+  --jb-line-deleted:  rgba(139,148,158,.30); --jb-inner-deleted:  rgba(139,148,158,.28); --jb-edge-deleted:  #59636e;
+  --jb-line-modified: rgba(56,139,253,.30);  --jb-inner-modified: rgba(56,139,253,.28);  --jb-edge-modified: #0969da;
+  --jb-line-same:     rgba(163,113,247,.21); --jb-inner-same:     rgba(163,113,247,.28); --jb-edge-same:     #8250df;
+  --jb-line-conflict: rgba(255,123,58,.27);  --jb-inner-conflict: rgba(255,123,58,.28);  --jb-edge-conflict: #bc4c00;
 }
 
-body.vscode-light,
-body.vscode-high-contrast-light {
-  /* Light theme: darker pigments, even lower alpha — tints on white. */
-  --jb-line-inserted: rgba(64, 146, 75, 0.11);
-  --jb-inner-inserted: rgba(64, 146, 75, 0.25);
-  --jb-line-deleted: rgba(90, 98, 108, 0.09);
-  --jb-inner-deleted: rgba(90, 98, 108, 0.19);
-  --jb-line-modified: rgba(58, 112, 196, 0.10);
-  --jb-inner-modified: rgba(58, 112, 196, 0.23);
-  --jb-line-conflict: rgba(217, 80, 52, 0.10);
-  --jb-inner-conflict: rgba(217, 80, 52, 0.24);
-  --jb-edge-conflict: rgba(217, 80, 52, 0.75);
-  --jb-line-resolved: rgba(125, 125, 125, 0.2);
-  --jb-edge-resolved: rgba(95, 95, 95, 0.5);
+/* Whole-line tints (Monaco isWholeLine decorations). Each also names its edge
+ * colour, for the whitespace-only dotted edge below. */
+.jb-line-inserted { background-color: var(--jb-line-inserted); --jb-tone-edge: var(--jb-edge-inserted); }
+.jb-line-deleted { background-color: var(--jb-line-deleted); --jb-tone-edge: var(--jb-edge-deleted); }
+.jb-line-modified { background-color: var(--jb-line-modified); --jb-tone-edge: var(--jb-edge-modified); }
+.jb-line-same { background-color: var(--jb-line-same); --jb-tone-edge: var(--jb-edge-same); }
+.jb-line-conflict { background-color: var(--jb-line-conflict); --jb-tone-edge: var(--jb-edge-conflict); }
+
+/* Whitespace-only change: the line tint alone (no word tint) and a dotted
+ * left edge, so "only the spacing changed" reads without a colour. */
+.jb-ws {
+  box-sizing: border-box;
+  border-left: 2px dotted var(--jb-tone-edge, var(--vscode-foreground));
 }
 
-/* Whole-line washes (Monaco isWholeLine decorations). */
-.jb-line-inserted { background-color: var(--jb-line-inserted); }
-.jb-line-deleted { background-color: var(--jb-line-deleted); }
-.jb-line-modified { background-color: var(--jb-line-modified); }
-.jb-line-conflict { background-color: var(--jb-line-conflict); }
+/* Applied or ignored (any category): NO fill — a 1px dashed top and bottom
+ * edge in the category's colour, in every pane that showed the change, so what
+ * was taken stays readable as what it was. The view decorates the first and
+ * last line of the region (a whole-line decoration repeats per line). */
+.jb-applied-inserted,
+.jb-applied-deleted,
+.jb-applied-modified,
+.jb-applied-same,
+.jb-applied-conflict { box-sizing: border-box; background: none; }
+.jb-applied-inserted { border-top: 1px dashed var(--jb-edge-inserted); border-bottom: 1px dashed var(--jb-edge-inserted); }
+.jb-applied-deleted { border-top: 1px dashed var(--jb-edge-deleted); border-bottom: 1px dashed var(--jb-edge-deleted); }
+.jb-applied-modified { border-top: 1px dashed var(--jb-edge-modified); border-bottom: 1px dashed var(--jb-edge-modified); }
+.jb-applied-same { border-top: 1px dashed var(--jb-edge-same); border-bottom: 1px dashed var(--jb-edge-same); }
+.jb-applied-conflict { border-top: 1px dashed var(--jb-edge-conflict); border-bottom: 1px dashed var(--jb-edge-conflict); }
 
-/* Applied/ignored changes stay visible in the side panes, but muted —
- * IntelliJ's "already processed" look. */
-.jb-line-resolved {
-  background-color: var(--jb-line-resolved);
-  border-left: 2px solid var(--jb-edge-resolved);
-}
+/* High contrast: every PENDING block also gets solid 1px top and bottom
+ * edges, so a change's extent never rests on a tint alone. */
+body.vscode-high-contrast .jb-frame-inserted,
+body.vscode-high-contrast-light .jb-frame-inserted { border-top: 1px solid var(--jb-edge-inserted); border-bottom: 1px solid var(--jb-edge-inserted); }
+body.vscode-high-contrast .jb-frame-deleted,
+body.vscode-high-contrast-light .jb-frame-deleted { border-top: 1px solid var(--jb-edge-deleted); border-bottom: 1px solid var(--jb-edge-deleted); }
+body.vscode-high-contrast .jb-frame-modified,
+body.vscode-high-contrast-light .jb-frame-modified { border-top: 1px solid var(--jb-edge-modified); border-bottom: 1px solid var(--jb-edge-modified); }
+body.vscode-high-contrast .jb-frame-same,
+body.vscode-high-contrast-light .jb-frame-same { border-top: 1px solid var(--jb-edge-same); border-bottom: 1px solid var(--jb-edge-same); }
+body.vscode-high-contrast .jb-frame-conflict,
+body.vscode-high-contrast-light .jb-frame-conflict { border-top: 1px solid var(--jb-edge-conflict); border-bottom: 1px solid var(--jb-edge-conflict); }
+[class*="jb-frame-"] { box-sizing: border-box; }
+
+/* First / last line of a multi-line region keeps only its outer edge. These
+ * come after, and match as strongly as, the high-contrast rules above
+ * (body + two classes), so they win over both edge families. */
+body [class*="jb-applied-"].jb-edge-top,
+body [class*="jb-frame-"].jb-edge-top { border-bottom: none; }
+body [class*="jb-applied-"].jb-edge-bottom,
+body [class*="jb-frame-"].jb-edge-bottom { border-top: none; }
 
 /* Conflict frame lines are single SVG polylines drawn by the gutter ribbon
  * overlays, extended across the neighboring panes (see ribbons.ts) — one
@@ -96,24 +127,25 @@ body.vscode-high-contrast-light {
 .jb-inner-inserted { background-color: var(--jb-inner-inserted); border-radius: 2px; }
 .jb-inner-deleted { background-color: var(--jb-inner-deleted); border-radius: 2px; }
 .jb-inner-modified { background-color: var(--jb-inner-modified); border-radius: 2px; }
+.jb-inner-same { background-color: var(--jb-inner-same); border-radius: 2px; }
 .jb-inner-conflict { background-color: var(--jb-inner-conflict); border-radius: 2px; }
 
-/* Flat connector bands drawn in the gutter strips (below the action icons).
- * No outline: the band must read as a continuation of the line highlight. */
 /* One full-width drawing stage per merge/diff grid: bands, icon strips and
  * the conflict frame lines are all drawn here in absolute stage coordinates.
- * It spans the editor-row area only (top = the 28px pane-header row), so its
- * own viewport does the vertical clipping; z-index 1 paints above the panes'
- * content while the gutter button layers (z-index 2) stay above the lines. */
+ * It spans the editor-row area only (below the pane-header row), so its own
+ * viewport does the vertical clipping; z-index 1 paints above the panes'
+ * content while the gutter button layers (z-index 2) stay above the lines.
+ * Flat connector bands, no outline: a band must read as a continuation of
+ * the line highlight. */
 .jb-ribbon-stage {
   position: absolute;
-  top: 28px;
+  top: var(--jb-header-h, 28px);
   left: 0;
   /* Explicit size: SVG is a replaced element, so left/right insets alone
    * leave it at its 300x150 intrinsic size, silently clipping everything
    * beyond — set the real dimensions. */
   width: 100%;
-  height: calc(100% - 28px);
+  height: calc(100% - var(--jb-header-h, 28px));
   pointer-events: none;
   z-index: 1;
 }
@@ -121,6 +153,7 @@ body.vscode-high-contrast-light {
 .jb-ribbon-inserted { fill: var(--jb-line-inserted); }
 .jb-ribbon-deleted { fill: var(--jb-line-deleted); }
 .jb-ribbon-modified { fill: var(--jb-line-modified); }
+.jb-ribbon-same { fill: var(--jb-line-same); }
 .jb-ribbon-conflict { fill: var(--jb-line-conflict); }
 .jb-ribbon-edge {
   fill: none;
@@ -129,13 +162,33 @@ body.vscode-high-contrast-light {
   stroke-linejoin: round;
   stroke-linecap: round;
 }
+/* An applied / ignored side's band: its top and bottom edges, dashed. */
+.jb-ribbon-applied {
+  fill: none;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  stroke-linejoin: round;
+}
+.jb-ribbon-applied-inserted { stroke: var(--jb-edge-inserted); }
+.jb-ribbon-applied-deleted { stroke: var(--jb-edge-deleted); }
+.jb-ribbon-applied-modified { stroke: var(--jb-edge-modified); }
+.jb-ribbon-applied-same { stroke: var(--jb-edge-same); }
+.jb-ribbon-applied-conflict { stroke: var(--jb-edge-conflict); }
 
 /* Point markers for pure insertions/deletions (empty spans). */
 .jb-marker-inserted { border-top: 2px solid var(--jb-inner-inserted); }
 .jb-marker-deleted { border-top: 2px solid var(--jb-inner-deleted); }
 .jb-marker-modified { border-top: 2px solid var(--jb-inner-modified); }
+.jb-marker-same { border-top: 2px solid var(--jb-inner-same); }
 .jb-marker-conflict { border-top: 2px solid var(--jb-inner-conflict); }
-.jb-marker-resolved { border-top: 2px solid var(--jb-edge-resolved); }
+/* In the merge, a pending insertion or deletion POINT is a double line in the
+ * category's edge colour: a single hairline between two rows reads as a
+ * rendering seam, a double one as a mark. */
+.jb-merge-grid .jb-marker-inserted { border-top: 3px double var(--jb-edge-inserted); }
+.jb-merge-grid .jb-marker-deleted { border-top: 3px double var(--jb-edge-deleted); }
+.jb-merge-grid .jb-marker-modified { border-top: 3px double var(--jb-edge-modified); }
+.jb-merge-grid .jb-marker-same { border-top: 3px double var(--jb-edge-same); }
+.jb-merge-grid .jb-marker-conflict { border-top: 3px double var(--jb-edge-conflict); }
 
 /* ---- App shell + toolbar ---- */
 .jb-app {
@@ -189,54 +242,84 @@ body.vscode-high-contrast-light {
   font-weight: var(--gs-weight-emphasis);
 }
 
-/* ── Diff layout — the 2-pane grid the DiffView builds (`jb-diff-grid`) ────────
- * left pane | transfer gutter | right pane, with a header row + a body row the
- * Monaco editors fill. Without this the panes (which set grid-column/row inline)
- * collapse to stacked blocks and the editors get zero height → a blank diff. */
+/* ── Pane geometry — THE one definition, for every host ────────────────────────
+ * The extension's webview used to restate this grid in its own inline <style>
+ * (html.ts) with 64px gutters and a 28px header row, while this file said 40px
+ * and an auto (30px + border) header. The desktop, which only has this file,
+ * got the second: the SVG ribbon stage pinned 28px from the top sat 3px above
+ * the editors it draws for, and the 42px action row overflowed a 40px gutter
+ * onto the result pane. One grid now, used by all three products.
+ *
+ * Merge: ours | gutter | result | gutter | theirs. Each 64px gutter is a 46px
+ * rectangular icon strip hugging its side pane (MERGE_ICON_STRIP, ribbons.ts)
+ * plus an 18px slant zone. Diff: left | 44px transfer gutter | right.
+ * Without a grid the panes (which set grid-column/row inline) collapse to
+ * stacked blocks and the editors get zero height — a blank diff. */
+.jb-merge-grid,
 .jb-diff-grid {
+  --jb-header-h: 28px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: var(--jb-header-h) minmax(0, 1fr);
   height: 100%;
   width: 100%;
+  /* Anchors the full-width ribbon stage (.jb-ribbon-stage). */
+  position: relative;
   background: var(--vscode-editor-background);
   overflow: hidden;
 }
-/* The 3-pane merge: ours | gutter | result | gutter | theirs. */
 .jb-merge-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr) 40px minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-  height: 100%;
-  width: 100%;
-  background: var(--vscode-editor-background);
-  overflow: hidden;
+  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr) 64px minmax(0, 1fr);
 }
+.jb-diff-grid {
+  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+}
+/* Pane headers sit on the editor background, like IntelliJ's quiet
+ * "Your version / Result / Changes from server" captions. */
 .jb-pane-title {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
+  height: var(--jb-header-h, 28px);
   padding: 0 10px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-family: var(--gs-font-ui);
-  color: var(--vscode-descriptionForeground, #8b8b8b);
-  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background));
-  border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.2));
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.2)));
   white-space: nowrap;
   overflow: hidden;
 }
+.jb-title-result { justify-content: center; }
 .jb-pane-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jb-pane-title .jb-svg { flex: 0 0 auto; opacity: 0.7; }
+/* The header row is continuous across the gutter columns too. */
+.jb-merge-grid::before,
+.jb-merge-grid::after,
+.jb-diff-grid::before {
+  content: "";
+  grid-row: 1;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.2)));
+  background: var(--vscode-editor-background);
+}
+.jb-merge-grid::before { grid-column: 2; }
+.jb-merge-grid::after { grid-column: 4; }
+.jb-diff-grid::before { grid-column: 2; }
 .jb-pane-body {
   position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
+/* Gutter strips share the editor background so the change bands read as one
+ * continuous stripe from pane to pane. */
 .jb-gutter {
   position: relative;
+  grid-row: 2;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: var(--vscode-editor-background);
   border-left: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.16));
   border-right: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.16));
@@ -480,18 +563,164 @@ body.vscode-high-contrast-light {
   outline-offset: -1px;
   color: var(--vscode-editorLineNumber-activeForeground, var(--vscode-foreground));
 }
-/* Accept (the apply chevron): hover tints to the change's own role color so the
- * target reads as "this is the change you're taking". */
-.jb-btn-accept.jb-role-inserted:hover { background: var(--jb-inner-inserted); color: var(--vscode-foreground); }
-.jb-btn-accept.jb-role-deleted:hover { background: var(--jb-inner-deleted); color: var(--vscode-foreground); }
-.jb-btn-accept.jb-role-modified:hover { background: var(--jb-inner-modified); color: var(--vscode-foreground); }
-.jb-btn-accept.jb-role-conflict:hover { background: var(--jb-inner-conflict); color: var(--vscode-foreground); }
+/* Accept (the apply arrow, the identical ✓, the wand): hover tints to the
+ * change's own colour so the target reads as "this is the change you're
+ * taking". The merge names the tone (jb-tone-*); the 2-way diff's transfer
+ * arrow (diffView.ts) still names its role (jb-role-*) — both are live. */
+.jb-btn-accept.jb-role-inserted:hover,
+.jb-btn-accept.jb-tone-inserted:hover { background: var(--jb-inner-inserted); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-role-deleted:hover,
+.jb-btn-accept.jb-tone-deleted:hover { background: var(--jb-inner-deleted); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-role-modified:hover,
+.jb-btn-accept.jb-tone-modified:hover { background: var(--jb-inner-modified); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-tone-same:hover { background: var(--jb-inner-same); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-tone-conflict:hover,
+.jb-btn-wand.jb-tone-conflict:hover { background: var(--jb-inner-conflict); color: var(--vscode-foreground); }
 /* Ignore (the ✕): a dismiss action, so it picks up the deleted/red status tint
  * on hover — distinct from the directional accept control beside it. */
 .jb-btn-ignore:hover {
   color: var(--gs-status-deleted);
   background: color-mix(in srgb, var(--gs-status-deleted) 16%, transparent);
 }
+
+/* ── Result-margin controls (mergeView.rebuildButtons) ────────────────────────
+ * A layer over the result editor's glyph margin: the ONE control of an
+ * identical change (✓, with "keep base" ✕ beside it on hover or focus), the
+ * wand of a resolvable conflict, and the passive origin / kind badges. It
+ * sits above Monaco and the ribbon stage (z-index 3). */
+.jb-result-actions {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 18px;
+  z-index: 3;
+  pointer-events: none;
+}
+/* No gap between the buttons: the group takes no pointer events, so a gap is a
+ * strip where the pointer leaves the control — keep-base hides the moment it
+ * crosses it, and a hidden button cannot be hovered back into view. */
+.jb-result-group {
+  position: absolute;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  pointer-events: none;
+}
+.jb-result-group .jb-gutter-btn { width: 18px; }
+.jb-btn-keep-base {
+  visibility: hidden;
+  background: var(--vscode-editor-background);
+}
+.jb-result-group:hover .jb-btn-keep-base,
+.jb-result-group:focus-within .jb-btn-keep-base { visibility: visible; }
+/* Once one side of a conflict is in, the other side's arrow is an append. */
+.jb-btn-append { color: var(--jb-edge-conflict); }
+
+/* Passive, non-colour cues: = identical, ≈ identical except whitespace,
+ * ≠ conflict, ‹ / › which side a change came from. Drawn in the editor's own
+ * foreground: they sit on the change's tint, which keeps text >= 4.5:1. */
+.jb-mark {
+  position: absolute;
+  width: 18px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  font-family: var(--gs-font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--vscode-editor-foreground, var(--vscode-foreground));
+  user-select: none;
+  pointer-events: auto;
+  cursor: default;
+}
+.jb-result-actions .jb-mark { left: 0; }
+/* In a side gutter the "=" sits where the accept arrow would be — next to the
+ * result — so the strip reads the same for every category. */
+.jb-gutter-a .jb-mark { left: 24px; }
+.jb-gutter-b .jb-mark { right: 24px; }
+
+/* ── The category legend (mergeLegend.ts), mounted by the shell ───────────── */
+.jb-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  font-family: var(--gs-font-ui);
+  font-size: var(--gs-text-secondary, 12px);
+}
+.jb-legend-chip,
+.jb-legend-help {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--gs-radius, 4px);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  white-space: nowrap;
+}
+.jb-legend-chip:not([disabled]):hover,
+.jb-legend-help:hover { background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.16)); }
+.jb-legend-chip:focus-visible,
+.jb-legend-help:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+.jb-legend-chip[disabled] { cursor: default; opacity: 0.6; }
+.jb-legend-chip.jb-legend-none { display: none; }
+.jb-legend-glyph { font-weight: 700; min-width: 1ch; text-align: center; }
+.jb-legend-count { font-variant-numeric: tabular-nums; font-weight: 600; }
+.jb-legend-extra { display: inline-flex; align-items: center; gap: 2px; color: var(--vscode-descriptionForeground, var(--vscode-foreground)); }
+.jb-legend-extra[hidden] { display: none; }
+.jb-legend-extra .codicon { font-size: 12px; }
+.jb-legend-help { width: 22px; padding: 0; justify-content: center; }
+.jb-legend-swatch {
+  display: inline-block;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+}
+.jb-swatch-inserted { background: var(--jb-line-inserted); border-color: var(--jb-edge-inserted); }
+.jb-swatch-deleted { background: var(--jb-line-deleted); border-color: var(--jb-edge-deleted); }
+.jb-swatch-modified { background: var(--jb-line-modified); border-color: var(--jb-edge-modified); }
+.jb-swatch-same { background: var(--jb-line-same); border-color: var(--jb-edge-same); }
+.jb-swatch-conflict { background: var(--jb-line-conflict); border-color: var(--jb-edge-conflict); }
+.jb-swatch-framed { border-width: 1px 0; }
+.jb-swatch-applied { background: none; border: 1px dashed var(--vscode-foreground); border-width: 1px 0; }
+.jb-swatch-ws { background: var(--jb-line-modified); border: none; border-left: 2px dotted var(--jb-edge-modified); }
+.jb-legend-pop {
+  /* Fixed: the legend sits in a toolbar that scrolls sideways (overflow-x),
+   * which would clip an absolutely positioned popover. */
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 16px));
+  padding: 10px 12px;
+  border-radius: var(--gs-radius, 4px);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+  box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.35));
+  white-space: normal;
+}
+.jb-legend-pop[hidden] { display: none; }
+.jb-legend-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  line-height: 1.35;
+}
+.jb-legend-row > :first-child { justify-self: center; }
 
 /* ---- Responsive toolbar: collapse gracefully in narrow editor groups ---- */
 @media (max-width: 1000px) {
