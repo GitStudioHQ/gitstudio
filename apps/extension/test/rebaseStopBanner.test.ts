@@ -61,10 +61,22 @@ class Node {
   addEventListener(type: string, fn: () => void): void {
     this.listeners[type] = fn;
   }
+  focus(): void {
+    doc.activeElement = this;
+  }
+  contains(n: unknown): boolean {
+    return n === this || this.children.some((c) => c.contains(n));
+  }
 }
 
-function drive(text: string, stop: unknown): { banner: Node; posted: unknown[]; buttons: Node[] } {
-  const banner = new Node("div");
+/** The stub document's focus, shared by every Node (a webview has one). */
+const doc: { activeElement: unknown; body: Node } = { activeElement: undefined, body: new Node("body") };
+
+function drive(
+  text: string,
+  stop: unknown,
+  banner = new Node("div"),
+): { banner: Node; posted: unknown[]; buttons: Node[]; show: (t: string, s: unknown) => void } {
   const posted: unknown[] = [];
   const document = {
     createElement: (t: string) => new Node(t),
@@ -73,33 +85,54 @@ function drive(text: string, stop: unknown): { banner: Node; posted: unknown[]; 
       n.textContent = t;
       return n;
     },
+    get activeElement() {
+      return doc.activeElement;
+    },
+    body: doc.body,
   };
   const fn = new Function(
     "document",
     "$",
     "vscode",
     "setBusy",
-    `${extract("el")}\n${extract("textButton")}\n${extract("showStopBanner")}\nreturn showStopBanner;`,
+    `let lastVerb = "";\n${extract("el")}\n${extract("textButton")}\n${extract("showStopBanner")}\nreturn showStopBanner;`,
   )(document, () => banner, { postMessage: (m: unknown) => posted.push(m) }, () => {}) as (
     t: string,
     s: unknown,
   ) => void;
   fn(text, stop);
   const actions = banner.children.find((c) => c.className === "b-actions");
-  return { banner, posted, buttons: actions?.children ?? [] };
+  return { banner, posted, buttons: actions?.children ?? [], show: fn };
 }
 
 const labels = (b: Node[]) => b.map((n) => n.textContent);
 
+test("after a verb the banner is rebuilt, and the keyboard is back on that verb — not on the page", () => {
+  // Continue at a stop that stops again: the banner is rebuilt under the
+  // button, which dropped the keyboard to the page (the verifier's finding).
+  const first = drive("Rebase paused.", { canSkip: true, skipLabel: "Skip this commit", conflicts: 0 });
+  first.buttons[0].focus();
+  first.buttons[0].listeners.click();
+  doc.activeElement = doc.body; // the old button is gone
+  first.show("Rebase paused again.", { canSkip: true, skipLabel: "Skip this commit", conflicts: 0 });
+  const again = first.banner.children.find((c) => c.className === "b-actions")!.children;
+  assert.equal(doc.activeElement, again[0], "on the new Continue Rebase");
+  // A banner rebuilt while the keyboard is elsewhere leaves it there.
+  const elsewhere = new Node("input");
+  doc.activeElement = elsewhere;
+  first.show("x", { canSkip: false, conflicts: 0 });
+  assert.equal(doc.activeElement, elsewhere);
+});
+
 test("a conflict stop with nothing git would skip: Resolve Conflicts…, Continue, Abort — no Skip", () => {
   const { buttons, banner } = drive("Rebase paused on a conflict.", { canSkip: false, conflicts: 2 });
-  assert.deepEqual(labels(buttons), ["Resolve Conflicts…", "Continue", "Abort"]);
+  assert.deepEqual(labels(buttons), ["Resolve Conflicts…", "Continue Rebase", "Abort Rebase"]);
   assert.equal(banner.hidden, false);
 });
 
 test("where git names Skip as the way out, the banner offers it with git's own verb", () => {
   const { buttons, posted } = drive("Rebase paused.", { canSkip: true, skipLabel: "Skip this commit", conflicts: 0 });
-  assert.deepEqual(labels(buttons), ["Continue", "Skip this commit", "Abort"]);
+  assert.deepEqual(labels(buttons), ["Continue Rebase", "Skip this commit", "Abort Rebase"]);
   buttons[1].listeners.click();
   assert.deepEqual(posted, [{ type: "skip" }]);
 });
@@ -117,7 +150,7 @@ test("a host label is rendered as text, never as markup", () => {
 });
 
 test("no stop info (an older host message): Continue and Abort, as before", () => {
-  assert.deepEqual(labels(drive("x", undefined).buttons), ["Continue", "Abort"]);
+  assert.deepEqual(labels(drive("x", undefined).buttons), ["Continue Rebase", "Abort Rebase"]);
 });
 
 // toRebaseOutcome is TypeScript in the host half; transpile just that function.

@@ -798,10 +798,16 @@ function flashBanner(text, kind) {
 }
 // The stop banner. "stop" says what git allows at this stop (the host asks
 // OperationProvider): Skip only where git names it as the way out, and the
-// Conflicts dashboard while files are unmerged. Labels are set as TEXT.
+// Conflicts dashboard while files are unmerged. Labels are set as TEXT, in
+// the operation's own words (the dashboard's "Continue Rebase", not a bare
+// "Continue"). A verb rebuilds the banner under the button that ran it; the
+// keyboard goes back to that verb instead of falling to the page.
 function textButton(cls, label) { const n = el("button", cls); n.textContent = label; return n; }
+let lastVerb = "";
 function showStopBanner(text, stop) {
   const b = $("rb-banner");
+  const active = document.activeElement;
+  const keyboardHere = !active || active === document.body || (b.contains ? b.contains(active) : false);
   b.className = "rb-banner warn";
   b.innerHTML = '<i class="codicon codicon-debug-pause"></i>';
   b.appendChild(document.createTextNode(text));
@@ -810,15 +816,18 @@ function showStopBanner(text, stop) {
     const resolve = textButton("rb-btn secondary", "Resolve Conflicts…"); resolve.addEventListener("click", () => vscode.postMessage({ type: "resolveConflicts" }));
     acts.appendChild(resolve);
   }
-  const cont = textButton("rb-btn primary", "Continue"); cont.addEventListener("click", () => { setBusy(true); vscode.postMessage({ type: "continue" }); });
-  acts.appendChild(cont);
+  const verbs = {};
+  const cont = textButton("rb-btn primary", "Continue Rebase"); cont.addEventListener("click", () => { lastVerb = "continue"; setBusy(true); vscode.postMessage({ type: "continue" }); });
+  acts.appendChild(cont); verbs.continue = cont;
   if (stop && stop.canSkip) {
-    const skip = textButton("rb-btn secondary", stop.skipLabel || "Skip this commit"); skip.addEventListener("click", () => { setBusy(true); vscode.postMessage({ type: "skip" }); });
-    acts.appendChild(skip);
+    const skip = textButton("rb-btn secondary", stop.skipLabel || "Skip this commit"); skip.addEventListener("click", () => { lastVerb = "skip"; setBusy(true); vscode.postMessage({ type: "skip" }); });
+    acts.appendChild(skip); verbs.skip = skip;
   }
-  const abort = textButton("rb-btn secondary", "Abort"); abort.addEventListener("click", () => vscode.postMessage({ type: "abort" }));
-  acts.appendChild(abort); b.appendChild(acts);
+  const abort = textButton("rb-btn secondary", "Abort Rebase"); abort.addEventListener("click", () => { lastVerb = "abort"; vscode.postMessage({ type: "abort" }); });
+  acts.appendChild(abort); b.appendChild(acts); verbs.abort = abort;
   b.hidden = false;
+  const back = keyboardHere && lastVerb ? (verbs[lastVerb] || cont) : null;
+  if (back && back.focus) back.focus();
 }
 let lastStopText = "";
 
