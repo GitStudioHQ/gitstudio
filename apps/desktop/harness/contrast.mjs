@@ -18,6 +18,7 @@
 //
 // Exit code is 1 when anything fails, so it can gate a run.
 
+import { harnessChrome } from "./chrome.mjs";
 import { execFile } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -26,9 +27,9 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = resolve(HERE, "page/harness.html");
-// GS_CHROME first (as webview-ui's test/headless.ts): the machine's Chrome is
-// not always in /Applications, and a Chrome for Testing build works as well.
-const CHROME = process.env.GS_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// GS_CHROME, else Playwright's windowless chrome-headless-shell — never the
+// owner's own Chrome while a Playwright build exists (see chrome.mjs).
+const CHROME = harnessChrome();
 // A throwaway profile. Without --user-data-dir Chrome picks one relative to the
 // cwd and leaves a ~10MB profile tree inside the repo, unignored by git.
 const PROFILE = mkdtempSync(join(tmpdir(), "gs-audit-"));

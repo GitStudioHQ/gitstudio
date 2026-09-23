@@ -6,29 +6,22 @@
 // by an inline script, and reported the way the desktop harness reports —
 // the verdict JSON in `<title>`, read back from `--dump-dom`.
 //
-// Chrome is found through GS_CHROME, the desktop harness's path, or PATH; a
-// machine with none SKIPS these checks rather than failing them, and says so.
+// The browser is GS_CHROME, else Playwright's windowless chrome-headless-shell,
+// else its Chrome for Testing, and only then a system Chrome (the CI runners'):
+// test/findChrome.mjs holds that order for this package and the desktop
+// harness alike. A machine with none SKIPS these checks rather than failing
+// them, and says so.
 
 import { build } from "esbuild";
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-const CANDIDATES = [
-  process.env.GS_CHROME,
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/usr/bin/google-chrome",
-  "/usr/bin/google-chrome-stable",
-  "/usr/bin/chromium",
-  "/usr/bin/chromium-browser",
-  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-].filter((p): p is string => !!p);
+import { findChrome as discoverChrome } from "./findChrome.mjs";
 
 /** The Chrome binary to drive, or undefined when this machine has none. */
 export function findChrome(): string | undefined {
-  return CANDIDATES.find((p) => existsSync(p));
+  return discoverChrome();
 }
 
 export interface Verdict {
