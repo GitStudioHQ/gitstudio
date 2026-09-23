@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560" role="img" aria-label="Resolve a sample conflict">
-  <!-- Placeholder: replaced by a capture from the final 0.4.0 build (apps/merge-studio/SHOTS.md). -->
+  <!-- Placeholder: replaced by a capture from the final 1.0.0 build (apps/merge-studio/SHOTS.md). -->
   <rect x="1" y="1" width="898" height="558" rx="10" fill="var(--vscode-editor-background, #1e1e1e)" stroke="var(--vscode-editorWidget-border, #454545)" stroke-width="2" stroke-dasharray="8 6"/>
   <g font-family="var(--vscode-font-family, sans-serif)" text-anchor="middle">
     <rect x="150" y="180" width="180" height="200" rx="6" fill="none" stroke="var(--vscode-editorWidget-border, #454545)"/>
@@ -7,6 +7,6 @@
     <rect x="570" y="180" width="180" height="200" rx="6" fill="none" stroke="var(--vscode-editorWidget-border, #454545)"/>
     <text x="450" y="110" font-size="30" fill="var(--vscode-foreground, #cccccc)">Resolve a sample conflict</text>
     <text x="450" y="150" font-size="18" fill="var(--vscode-descriptionForeground, #9d9d9d)">yours · result · theirs</text>
-    <text x="450" y="440" font-size="16" fill="var(--vscode-descriptionForeground, #9d9d9d)">Screenshot pending: captured from the final 0.4.0 build</text>
+    <text x="450" y="440" font-size="16" fill="var(--vscode-descriptionForeground, #9d9d9d)">Screenshot pending: captured from the final 1.0.0 build</text>
   </g>
 </svg>

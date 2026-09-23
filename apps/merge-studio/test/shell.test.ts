@@ -24,7 +24,7 @@ import { decideWalkthrough, gitStudioFacts, legacySettingUpdates, legacyStateUpd
 // shared merge experience.
 
 const FACTS: EditorFacts = {
-  version: "0.4.0",
+  version: "1.0.0",
   appName: "Visual Studio Code",
   appVersion: "1.138.0",
   uriScheme: "vscode",
@@ -101,7 +101,7 @@ test("D4: Merge Studio stands down while a GitStudio with the shared merge exper
   assert.equal(shouldDeferToGitStudio(factsFor(GS_NEW, "yes")), true, "a non-boolean reads as unset (on)");
 });
 
-test("D4 under version skew (POLISH A5.1): Merge Studio 0.4 never stands down for GitStudio 1.13.0", () => {
+test("D4 under version skew (POLISH A5.1): Merge Studio 1.0 never stands down for GitStudio 1.13.0", () => {
   // 1.13.0 would open the conflict in its old editor, sides swapped in a
   // rebase and no dashboard: merge-studio#12 all over again.
   const facts = factsFor(GS_1_13_0, undefined);
@@ -165,7 +165,7 @@ test("Report a problem: a prefilled GitHub issue with the version and editor, UR
   const url = new URL(reportProblemUrl({ ...FACTS, appName: "Cursor", appVersion: "1.2.3 & more" }));
   assert.equal(url.origin + url.pathname, "https://github.com/GitStudioHQ/merge-studio/issues/new");
   const body = url.searchParams.get("body") ?? "";
-  assert.match(body, /^Merge Studio 0\.4\.0 · Cursor 1\.2\.3 & more · darwin arm64/);
+  assert.match(body, /^Merge Studio 1\.0\.0 · Cursor 1\.2\.3 & more · darwin arm64/);
   assert.ok(!reportProblemUrl(FACTS).includes(" "), "encoded");
   assert.equal(url.searchParams.get("labels"), "bug");
 });

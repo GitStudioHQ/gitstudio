@@ -1,7 +1,7 @@
-# Shots to capture for Merge Studio 0.4.0
+# Shots to capture for Merge Studio 1.0.0
 
 The README and the walkthrough reference these. None of them is captured yet:
-they are taken from the **final 0.4.0 build** (after the polish pass: the new
+they are taken from the **final 1.0.0 build** (after the polish pass: the new
 sample merge, the practice conflict, the colour defaults), never from an
 intermediate one, and never copied from 0.3.4's `media/screenshots/`, which
 show a UI this release replaces ("Accept Left/Right", no colours, no rebase,

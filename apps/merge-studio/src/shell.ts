@@ -106,7 +106,7 @@ export interface InspectedSetting {
 }
 
 /**
- * 0.3.4 called the embedded editor `"webview"`; 0.4 calls it `"embedded"`
+ * 0.3.4 called the embedded editor `"webview"`; 1.0 calls it `"embedded"`
  * (the shared settings contract). The old value still works — the shared
  * settings reader maps it — but the Settings editor would flag it as invalid,
  * so a USER-level `"webview"` is rewritten once. A workspace value is left
@@ -124,7 +124,7 @@ export function legacySettingUpdates(
  * 0.3.4 asked its question about VS Code's own merge editor once, at its first
  * activation, and wrote `jbMerge.coexistPromptShown`. Whatever the answer was
  * — "Disable built-ins", "Keep them", or the toast closed — that user WAS
- * asked, so 0.4 never asks them again ("nothing asks twice"): the old key
+ * asked, so 1.0 never asks them again ("nothing asks twice"): the old key
  * counts as an answer. (Someone who turned the built-ins off is not asked
  * anyway; everyone can switch with the settings or "Restore VS Code's Merge
  * Editor".) Fresh installs have no old key and are asked at their first

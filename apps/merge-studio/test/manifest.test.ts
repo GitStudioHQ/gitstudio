@@ -49,8 +49,10 @@ test("the extension id, publisher and repository are Merge Studio's", () => {
 });
 
 test("the committed version is the release version, never a test build's", () => {
-  // Test VSIXs are packaged as 0.4.9001 and package.json is restored after.
-  assert.equal(pkg.version, "0.4.0");
+  // The first release on the shared packages is 1.0.0 (the owner's call, not
+  // 0.4.0). Test VSIXs are packaged as 1.0.9001, 1.0.9002, … and package.json
+  // is restored after.
+  assert.equal(pkg.version, "1.0.0");
 });
 
 test("keywords: at most 30, and none that only name other editors (POLISH B1)", () => {
@@ -192,7 +194,7 @@ test("every README image is either in the package or on the shot list captured f
 
 test(
   "every README image exists",
-  { todo: "POLISH B3: the listing shots are captured from the final 0.4 build (SHOTS.md)" },
+  { todo: "POLISH B3: the listing shots are captured from the final 1.0 build (SHOTS.md)" },
   () => {
     for (const m of readme.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
       if (!/^https?:/.test(m[1])) assert.ok(existsSync(join(ROOT, m[1])), m[1]);
@@ -203,21 +205,52 @@ test(
 // ── CHANGELOG (POLISH B5) ───────────────────────────────────────────────────
 
 const changelog = read("CHANGELOG.md");
-const entry040 = changelog.split(/\n## /)[1] ?? "";
+const entry100 = changelog.split(/\n## /)[1] ?? "";
+const sectionsOf = (entry: string) => entry.split(/\n### /).slice(1);
 
-test("the 0.4.0 entry comes first and leads with the heads-up about Yours in a rebase", () => {
-  assert.match(entry040, /^0\.4\.0\b/);
-  const firstLine = entry040.split("\n").slice(1).find((l) => l.trim() !== "") ?? "";
+test("the 1.0.0 entry comes first and leads with the heads-up about Yours in a rebase", () => {
+  assert.match(entry100, /^1\.0\.0\b/);
+  const firstLine = entry100.split("\n").slice(1).find((l) => l.trim() !== "") ?? "";
   assert.match(firstLine, /^\*\*Heads-up: during a rebase, Yours is now your commit, on the left\.\*\*/);
 });
 
-test("the 0.4.0 entry is in the user's words (no renderer internals)", () => {
+test("the 1.0.0 entry is in the user's words (no internals, no invented symbols)", () => {
   // Code spans are what the user types or sees (a setting's value, a git
   // command), so they are not prose.
-  const prose = entry040.replace(/`[^`]*`/g, "");
-  for (const word of [/\bSVG\b/, /replaced element/, /\d+\s?px\b/, /\bwebview\b/i, /\besbuild\b/i]) {
+  const prose = entry100.replace(/`[^`]*`/g, "");
+  for (const word of [/\bSVG\b/, /replaced element/, /\d+\s?px\b/, /\bwebview\b/i, /\besbuild\b/i, /\bstage [123]\b/i, /\bPOLISH\b/, /\bD\d\b/]) {
     assert.ok(!word.test(prose), String(word));
   }
+  // The owner's rule for the merge editor holds for its changelog too: no
+  // glyphs of our own, and the old conflict colour is gone.
+  for (const glyph of ["≠", "≈", "‹", "›", "✨", "⚠"]) assert.ok(!prose.includes(glyph), glyph);
+  assert.doesNotMatch(prose, /\borange\b/i);
+});
+
+test("the 1.0.0 entry says the colours in words, as the legend names them", () => {
+  const colours = sectionsOf(entry100).find((s) => s.startsWith("The colours")) ?? "";
+  assert.ok(colours, "a section on the colours");
+  const pairs: Array<[string, string]> = [
+    ["Conflicts", "red"],
+    ["Same on both sides", "violet"],
+    ["Changed", "blue"],
+    ["Added", "green"],
+    ["Removed", "grey"],
+  ];
+  for (const [name, colour] of pairs) {
+    const line = colours.split("\n").find((l) => l.includes(`**${name}**`)) ?? "";
+    assert.match(line, new RegExp(`\\b${colour}\\b`), `${name} is said to be ${colour}`);
+  }
+});
+
+test("the 1.0.0 entry covers the operation, the dashboard, what keeps your work safe, and what changed since 0.3.4", () => {
+  const headings = sectionsOf(entry100).map((s) => s.split("\n")[0].trim());
+  const want = ["The colours", "Continue, Skip and Abort", "The Conflicts dashboard", "Your work is safe", "Changed since 0.3.4", "Fixed since 0.3.4"];
+  assert.deepEqual(
+    want.filter((h) => !headings.includes(h)),
+    [],
+    `headings: ${headings.join(" | ")}`,
+  );
 });
 
 test("the 0.3.4 history is kept below it", () => {

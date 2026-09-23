@@ -40,6 +40,11 @@ process.env.GIT_CONFIG_NOSYSTEM = "1";
 const JANE = "Jane Contributor <jane@example.com>";
 const MERGE_MODEL = "vendor/gitstudio/engine/src/mergeModel.ts";
 
+// The release a contributor's "Release x.y.z" bumps from, and to: whatever
+// Merge Studio's version is, never a number typed here.
+const SHELL_VERSION = JSON.parse(readFileSync(join(GITSTUDIO_ROOT, "apps/merge-studio/package.json"), "utf8")).version;
+const NEXT_VERSION = SHELL_VERSION.replace(/\d+$/, (patch) => String(Number(patch) + 1));
+
 const g = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).replace(/\n$/, "");
 
 function identity(repo) {
@@ -173,9 +178,9 @@ test("a contributor's branch comes back commit by commit, and exports to their e
       "README.md": (t) => t.replace(/\n$/, "\n\nContributed line.\n"),
       "test/contributed.test.ts": () => 'import { test } from "node:test";\ntest("contributed", () => {});\n',
     });
-    const release = contribute(ms, "Release 0.4.1", {
-      "package.json": (t) => t.replace(/"version": "[^"]+"/, '"version": "0.4.1"'),
-      "CHANGELOG.md": (t) => t.replace(/^(# [^\n]*\n)/, "$1\n## 0.4.1\n\n- A contributed fix.\n"),
+    const release = contribute(ms, `Release ${NEXT_VERSION}`, {
+      "package.json": (t) => t.replace(/"version": "[^"]+"/, `"version": "${NEXT_VERSION}"`),
+      "CHANGELOG.md": (t) => t.replace(/^(# [^\n]*\n)/, `$1\n## ${NEXT_VERSION}\n\n- A contributed fix.\n`),
     });
     // Only files the export generates: nothing of it is imported.
     const generated = contribute(ms, "Bump esbuild and regenerate", {
@@ -201,7 +206,7 @@ test("a contributor's branch comes back commit by commit, and exports to their e
     assert.deepEqual(log, [
       `${JANE}|2026-09-01T10:00:00+02:00|engine: keep the base side's blank line|GitStudioHQ/merge-studio#12 / ${engine}`,
       `${JANE}|${g(ms, "log", "-1", "--format=%aI", shell)}|Link the new docs page|GitStudioHQ/merge-studio#12 / ${shell}`,
-      `${JANE}|${g(ms, "log", "-1", "--format=%aI", release)}|Release 0.4.1|GitStudioHQ/merge-studio#12 / ${release}`,
+      `${JANE}|${g(ms, "log", "-1", "--format=%aI", release)}|Release ${NEXT_VERSION}|GitStudioHQ/merge-studio#12 / ${release}`,
     ]);
     assert.equal(g(gs, "log", "-1", "--format=%b", "HEAD~1").split("\n")[0], "The walkthrough's link was stale.", "the message body is kept");
     assert.equal(g(gs, "log", "-1", "--format=%cn", "HEAD"), "Maintainer", "the maintainer commits it");
@@ -219,11 +224,13 @@ test("a contributor's branch comes back commit by commit, and exports to their e
     ]);
     // package.json: the version bump is imported, the dependency block is not.
     const pkg = (rev) => JSON.parse(g(gs, "show", `${rev}:apps/merge-studio/package.json`));
-    assert.equal(pkg("HEAD").version, "0.4.1");
+    assert.equal(pkg("HEAD").version, NEXT_VERSION);
     assert.deepEqual(pkg("HEAD").devDependencies, pkg("main").devDependencies);
     assert.deepEqual({ ...pkg("HEAD"), version: "x" }, { ...pkg("main"), version: "x" }, "nothing but the version changed");
+    // From gitstudio's own lockfile, whose entry must already say the release
+    // package.json says: the import moves it from there, and nothing else.
     const lockDiff = g(gs, "diff", "-U0", "main", "HEAD", "--", "package-lock.json").split("\n").filter((l) => /^[-+] /.test(l));
-    assert.deepEqual(lockDiff, ['-      "version": "0.4.0",', '+      "version": "0.4.1",'], "gitstudio's lockfile entry follows the version");
+    assert.deepEqual(lockDiff, [`-      "version": "${SHELL_VERSION}",`, `+      "version": "${NEXT_VERSION}",`], "gitstudio's lockfile entry follows the version");
     const notes = g(gs, "log", "-1", "--format=%(trailers:key=Import-note,valueonly)", "HEAD");
     assert.match(notes, /package\.json version applied to apps\/merge-studio\/package\.json/);
     // The generated-only commit is reported, not imported.
@@ -373,9 +380,9 @@ test("a patch file: `gh pr diff --patch` keeps each commit and author; a plain `
   const files = mkdtempSync(join(tmpdir(), "ms-import-patch-"));
   try {
     const one = contribute(ms, "engine: one", { [MERGE_MODEL]: append("// one\n") }, "2026-09-02T09:30:00+03:00");
-    const two = contribute(ms, "Release 0.4.1", {
+    const two = contribute(ms, `Release ${NEXT_VERSION}`, {
       "src/links.ts": append("// two\n"),
-      "package.json": (t) => t.replace(/"version": "[^"]+"/, '"version": "0.4.1"'),
+      "package.json": (t) => t.replace(/"version": "[^"]+"/, `"version": "${NEXT_VERSION}"`),
     });
     const mbox = join(files, "pr.patch");
     writeFileSync(mbox, execFileSync("git", ["-C", ms, "format-patch", "--stdout", "main..contrib"]));
@@ -385,11 +392,11 @@ test("a patch file: `gh pr diff --patch` keeps each commit and author; a plain `
     const r = importPullRequest({ gitstudio: gs, patch: mbox, pr: "7" });
     assert.deepEqual(
       g(gs, "log", "--reverse", "--format=%an <%ae>|%s|%(trailers:key=Imported-from,valueonly,separator=)", "main..HEAD").split("\n"),
-      [`${JANE}|engine: one|GitStudioHQ/merge-studio#7 / ${one}`, `${JANE}|Release 0.4.1|GitStudioHQ/merge-studio#7 / ${two}`],
+      [`${JANE}|engine: one|GitStudioHQ/merge-studio#7 / ${one}`, `${JANE}|Release ${NEXT_VERSION}|GitStudioHQ/merge-studio#7 / ${two}`],
     );
     assert.equal(g(gs, "log", "-1", "--format=%aI", "HEAD~1"), "2026-09-02T09:30:00+03:00");
     assert.ok(r.roundTrip.every((x) => x.status === "identical"), JSON.stringify(r.roundTrip));
-    assert.equal(JSON.parse(g(gs, "show", "HEAD:apps/merge-studio/package.json")).version, "0.4.1");
+    assert.equal(JSON.parse(g(gs, "show", "HEAD:apps/merge-studio/package.json")).version, NEXT_VERSION);
 
     g(gs, "reset", "-q", "--hard", "main");
     assert.throws(() => importPullRequest({ gitstudio: gs, patch: plain, pr: "7" }), (e) => e instanceof ImportRefused && /--author "Name <email>"/.test(e.message));
