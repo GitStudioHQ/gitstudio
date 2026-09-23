@@ -182,7 +182,6 @@ function inTheWayAnswer(ctx: GitContext, v: ChangesInTheWay): CommitActionResult
   };
 }
 
-/** A checkout op for the argv a door already runs: its target is its last word. */
-export function checkoutOp(args: string[]): ApplyOp {
-  return { kind: "checkout", target: args[args.length - 1] ?? "HEAD", args };
-}
+/** A checkout op for the argv a door already runs — one definition, in
+ *  git-service, shared with the other host's doors and the AI tools. */
+export { checkoutOp } from "@gitstudio/git-service/changesInTheWay";

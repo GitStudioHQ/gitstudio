@@ -6,6 +6,7 @@ import { pausedForUser } from "../git/pausedForUser";
 import { notifyPaused } from "../git/pauseNotice";
 import { applyOrAsk, checkoutOp } from "../git/inTheWay";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
+import { stoppedIn } from "@gitstudio/git-service/stoppedOperation";
 import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { explainOptionLikeCheckout } from "../views/optionLikeBranch";
 import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
@@ -705,8 +706,10 @@ async function showGitError(
     unmerged = 0; // never let the probe turn a failure into a silent one
   }
   if (unmerged > 0) {
+    // In the stopped operation's own words: a rebase or a pick CONTINUES.
+    const stop = await stoppedIn(ctx.process).catch(() => null);
     void vscode.window.showWarningMessage(
-      `${title} — ${unresolvedConflictsMessage(unmerged)}`,
+      `${title} — ${unresolvedConflictsMessage(unmerged, stop)}`,
     );
     return;
   }

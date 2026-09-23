@@ -128,10 +128,18 @@ test("a clean repo reports nothing unmerged", async () => {
   assert.equal(await ctx.conflict.unmergedCount(), 0);
 });
 
-test("the message counts files and names the way out", () => {
-  assert.match(unresolvedConflictsMessage(1), /^1 file still has/);
-  assert.match(unresolvedConflictsMessage(3), /^3 files still have/);
-  for (const n of [1, 3]) {
-    assert.match(unresolvedConflictsMessage(n), /Resolve them and commit, or abort/);
-  }
+test("the message counts files and names the operation's own way out", () => {
+  assert.match(unresolvedConflictsMessage(1), /^1 file still has unresolved conflicts\. Resolve it,/);
+  assert.match(unresolvedConflictsMessage(3), /^3 files still have unresolved conflicts\. Resolve them,/);
+  // Without the stop the sentence names no verb it cannot vouch for.
+  assert.doesNotMatch(unresolvedConflictsMessage(3), /commit|continue/);
+  const stop = (operation?: "merge" | "rebase" | "cherry-pick" | "revert" | "am") => ({ operation, unmerged: 3 });
+  assert.match(unresolvedConflictsMessage(3, stop("merge")), /Resolve them and commit the merge, or abort it, then try again\.$/);
+  assert.match(unresolvedConflictsMessage(3, stop("rebase")), /Resolve them and continue the rebase, or abort it, then try again\.$/);
+  assert.match(unresolvedConflictsMessage(1, stop("cherry-pick")), /Resolve it and continue the cherry-pick, or abort it, then try again\.$/);
+  assert.match(unresolvedConflictsMessage(3, stop("revert")), /Resolve them and continue the revert, or abort it, then try again\.$/);
+  assert.match(unresolvedConflictsMessage(3, stop("am")), /Resolve them and continue, or abort it, then try again\.$/);
+  // A stash pop's conflicts: nothing to commit, continue or abort.
+  assert.match(unresolvedConflictsMessage(3, stop()), /Resolve them, then try again\.$/);
+  // (Over every stop of the conflict matrix: test/aiToolsOverAStop.test.ts.)
 });

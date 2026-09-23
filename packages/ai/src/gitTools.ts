@@ -422,7 +422,9 @@ export const GIT_TOOLS: readonly GitTool[] = [
   {
     name: "git_create_branch",
     title: "Create a branch",
-    description: "Create a new branch. Set `checkout: true` to switch to it after creating.",
+    description:
+      "Create a new branch at HEAD. Set `checkout: true` to switch to it after creating — refused while a merge, " +
+      "rebase, cherry-pick, revert or `git am` is stopped, since switching would end it or move HEAD out from under it.",
     parameters: {
       type: "object",
       properties: {
@@ -442,7 +444,8 @@ export const GIT_TOOLS: readonly GitTool[] = [
     name: "git_checkout",
     title: "Switch branch",
     description:
-      "Switch the working tree to a branch or ref. Fails (rather than discarding) when there are conflicting local changes.",
+      "Switch the working tree to a branch or ref. Fails (rather than discarding) when there are conflicting local changes, " +
+      "and is refused while a merge, rebase, cherry-pick, revert or `git am` is stopped — finish or abort that first.",
     parameters: {
       type: "object",
       properties: { ref: { type: "string", description: "Branch or ref to check out." } },

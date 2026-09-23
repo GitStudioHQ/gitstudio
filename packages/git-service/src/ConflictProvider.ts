@@ -1,6 +1,7 @@
 import type { GitProcess } from "./GitProcess";
 import { parseConflictMarkers } from "@gitstudio/engine/conflict/markers";
 import type { VersionsSource } from "@gitstudio/host-bridge/protocol";
+import { FINISH, type Stopped } from "./stoppedOperation";
 
 export interface ConflictVersions {
   /** Common ancestor (stage :1:), or "" when there is none. */
@@ -186,7 +187,17 @@ export function parseUnmergedPaths(porcelain: string): string[] {
  * that found the locale bug fixed in 1.5.2), so a marker-based test would have
  * silenced exactly the report we most wanted.
  */
-export function unresolvedConflictsMessage(count: number): string {
+export function unresolvedConflictsMessage(count: number, stop?: Stopped | null): string {
   const files = count === 1 ? "1 file" : `${count} files`;
-  return `${files} still ${count === 1 ? "has" : "have"} unresolved conflicts. Resolve them and commit, or abort, then try again.`;
+  const them = count === 1 ? "it" : "them";
+  const said = `${files} still ${count === 1 ? "has" : "have"} unresolved conflicts.`;
+  // The way on is the OPERATION's: "commit" is right for a merge and wrong
+  // for everything else — a rebase, a cherry-pick, a revert and an am
+  // continue, and a commit made in the middle of a rebase is one the rebase
+  // then replays on top of. Files a stash pop left unmerged have no operation
+  // to finish or abort at all. `stop` is what stoppedIn read; without it the
+  // sentence names no verb it cannot vouch for.
+  if (!stop) return `${said} Resolve ${them}, finish or abort what git is in the middle of, then try again.`;
+  if (!stop.operation) return `${said} Resolve ${them}, then try again.`;
+  return `${said} Resolve ${them} and ${FINISH[stop.operation]}, or abort it, then try again.`;
 }
