@@ -1,0 +1,23 @@
+apps/desktop/test/mergeShellMount.test.ts
+  s_26f5e669d3043c::t_0dfc0bcb6b9802 359-374
+  s_26f5e669d3043c::t_5729d02fd4a209 350-358,375-447
+apps/desktop/src/renderer/mergeParity.ts
+  s_26f5e669d3043c::t_0d0f4d24bf9124 513-526,528
+  s_26f5e669d3043c::t_0c6b0cca104c22 545-569,575-588,593-597
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d7c1b717ac6cfe448b342244e362817113d61260",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
