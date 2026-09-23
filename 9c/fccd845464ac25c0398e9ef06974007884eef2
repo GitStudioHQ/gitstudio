@@ -1,0 +1,27 @@
+apps/desktop/test/reportingVerdicts.test.ts
+  s_26f5e669d3043c::t_afd36cd57acf36 217-226
+  s_26f5e669d3043c::t_f195a6367ac16f 22,55,172-176,178
+  s_26f5e669d3043c::t_e4d91602f7d197 1-21,24-25,27-54,56-135,152-171,177,179-216,227-392,395,397
+  s_26f5e669d3043c::t_898d2cca72c36a 23,26
+  s_26f5e669d3043c::t_dd02ff67ca2dd5 136-151
+  s_26f5e669d3043c::t_f759264393c8d4 393-394,396
+apps/desktop/test/identityIpc.test.ts
+  s_26f5e669d3043c::t_f96a98d0d975ae 4
+  s_26f5e669d3043c::t_f195a6367ac16f 57-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9cfccd845464ac25c0398e9ef06974007884eef2",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
