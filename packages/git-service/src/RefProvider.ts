@@ -228,7 +228,7 @@ export class RefProvider {
   async containingBranches(
     sha: string,
     opts?: { limit?: number; signal?: AbortSignal },
-  ): Promise<{ branches: string[]; truncated: boolean }> {
+  ): Promise<{ branches: string[]; refs: string[]; truncated: boolean }> {
     const limit = opts?.limit ?? CONTAINS_LIMIT;
     // FULL refnames, not %(refname:short). The short form is ambiguous here:
     // a local "feature/x" and a remote "origin/x" are both "a/b", so splitting
@@ -242,7 +242,7 @@ export class RefProvider {
     if (result.code !== 0) {
       // Unknown sha, or a repo with no branches — report "none" rather than
       // surfacing a git error for what is an optional, informational query.
-      return { branches: [], truncated: false };
+      return { branches: [], refs: [], truncated: false };
     }
     const seen = new Set<string>();
     const locals: string[] = [];
@@ -274,8 +274,13 @@ export class RefProvider {
     locals.sort();
     remotes.sort();
     const all = [...locals, ...remotes];
+    // The same list by FULL name, in the same order — what a caller maps
+    // through a ref list (the graph's "Add <branch> to the filter"). Each is
+    // the prefix this loop stripped, put back: exact, not a guess.
+    const full = [...locals.map((n) => `refs/heads/${n}`), ...remotes.map((n) => `refs/remotes/${n}`)];
     return {
       branches: all.slice(0, limit),
+      refs: full.slice(0, limit),
       truncated: all.length > limit,
     };
   }

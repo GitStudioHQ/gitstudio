@@ -38,7 +38,8 @@ import { aiModelsCard, agentAccessCard } from "./aiSettings";
 import { openInButton } from "./openIn";
 import { editorsCard } from "./views/editorsCard";
 import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled } from "./aiAssist";
-import { toast, confirmDialog, promptInline, promptChoice, openModal } from "./dialogs";
+import { toast, confirmDialog, promptInline, promptChoice, openModal, type ToastAction } from "./dialogs";
+import { refLabel, revealCandidate, storedFilterOf, withRef } from "@gitstudio/host-bridge/graphRefFilter";
 import { createBranchFlow } from "./branchCreate";
 import type { BranchStart } from "../shared/branchStart";
 import { TerminalDock } from "./terminalDock";
@@ -9126,13 +9127,43 @@ class App {
           deeper();
           return;
         }
-        toast(`${short} is hidden by the branch filter — its details are below.`, "info", undefined, {
-          label: "Show all branches",
-          onClick: () => void graph.setRefFilter(null).then(() => this.revealWhenReady(sha)),
-        });
+        void this.offerHiddenCommit(graph, sha, short);
       },
       deeper,
     );
+  }
+
+  /**
+   * The branch filter hides `sha`: say so, and offer the way in — FIRST, to
+   * add a branch that contains it, keeping the rest of the selection. "Show
+   * all branches" (second) throws the whole selection away to see one commit.
+   *
+   * The branch comes from `refs:contains` by FULL name, mapped through the
+   * graph's own ref list (revealCandidate), and is added to the filter as it
+   * is STORED — a preset stays its symbol, so "Current branch" + the added
+   * branch still follows a checkout (storedFilterOf / withRef; resolveRefFilter
+   * reads the mix). Either way the reveal replays once the new rows land.
+   */
+  private async offerHiddenCommit(graph: GraphMount, sha: string, short: string): Promise<void> {
+    const contains = await host.invoke("refs:contains", { sha }).catch(() => undefined);
+    // Answered later than asked: the view may have moved on.
+    if (this.currentView !== "graph" || this.graph !== graph) return;
+    const add = revealCandidate(contains?.refs ?? [], graph.refList);
+    const actions: ToastAction[] = [];
+    if (add) {
+      actions.push({
+        label: `Add ${refLabel(add.fullName)} to the filter`,
+        onClick: () =>
+          void graph
+            .setRefFilter(withRef(storedFilterOf(graph.refFilter, graph.refPreset), add.fullName))
+            .then(() => this.revealWhenReady(sha)),
+      });
+    }
+    actions.push({
+      label: "Show all branches",
+      onClick: () => void graph.setRefFilter(null).then(() => this.revealWhenReady(sha)),
+    });
+    toast(`${short} is hidden by the branch filter — its details are below.`, "info", undefined, actions);
   }
 
   /** Scroll to + select a commit once the freshly-mounted graph has rows. The

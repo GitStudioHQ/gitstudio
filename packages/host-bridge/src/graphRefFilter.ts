@@ -226,6 +226,55 @@ export function headInWalk(
   return !!headSha && loaded.has(headSha);
 }
 
+// ── A commit the filter hides (issue #30's follow-up) ──────────────────────
+//
+// A reveal (a Branches-view click, a PR link, a parent chip) can land on a
+// commit the ticked refs do not reach. The way out used to be "Show all
+// branches" alone — which throws the whole selection away to see one commit.
+// The first offer now is to ADD a branch that contains it.
+
+/**
+ * The branch to offer adding, from the FULL names of the branches that contain
+ * the commit (RefProvider.containingBranches' `refs`, locals then remotes),
+ * mapped through the picker's list — so it is a ref the list has, under the
+ * full name the filter stores: the current branch when it contains the
+ * commit, else the first local branch, else the first remote one. Undefined
+ * when no listed branch contains it (a commit only a tag or a stash reaches).
+ */
+export function revealCandidate(
+  containing: readonly string[],
+  list: readonly GraphRefEntry[],
+): GraphRefEntry | undefined {
+  const listed = containing
+    .map((f) => list.find((r) => r.fullName === f))
+    .filter((r): r is GraphRefEntry => !!r && r.kind !== "tag");
+  return (
+    listed.find((r) => r.kind === "head" && r.isCurrent) ??
+    listed.find((r) => r.kind === "head") ??
+    listed.find((r) => r.kind === "remoteHead")
+  );
+}
+
+/**
+ * A STORED filter with `fullName` added — kept as stored, so a preset stays
+ * the symbol it is ("@current" + "refs/heads/x" is a mix resolveRefFilter
+ * already reads: the current branch as it moves, plus x). Null (All) takes
+ * the ref alone, though a commit All hides does not arise.
+ */
+export function withRef(stored: GraphRefFilter, fullName: string): GraphRefFilter {
+  const base = stored ?? [];
+  return base.includes(fullName) ? [...base] : [...base, fullName];
+}
+
+/**
+ * The stored form of a filter, for a surface that holds only what a graphInit
+ * carries — the RESOLVED refs and the preset they came from (the desktop's
+ * renderer). A preset is stored as its symbol, anything else as the refs.
+ */
+export function storedFilterOf(resolved: GraphRefFilter, preset?: RefPreset): GraphRefFilter {
+  return preset && preset !== "all" ? presetRefs(preset) : resolved;
+}
+
 /**
  * A stored selection, made safe against the refs that exist NOW.
  *

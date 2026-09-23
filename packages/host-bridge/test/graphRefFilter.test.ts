@@ -17,7 +17,10 @@ import {
   refLabel,
   refListSignature,
   resolveRefFilter,
+  revealCandidate,
   sameRefFilter,
+  storedFilterOf,
+  withRef,
   type PickerRefLike,
 } from "../src/graphRefFilter";
 import type { GraphRefEntry } from "../src/graphProtocol";
@@ -237,6 +240,40 @@ test("chipRefs resolves only what the list has: an unknown chip is nothing, an u
   // A twin the list does not have is left out, never guessed; the chip's own
   // ref stays first, because a checkout takes refs[0].
   assert.deepEqual(chipRefs(list, "refs/heads/main", ["refs/remotes/origin/main", "refs/remotes/upstream/main"]), ["refs/heads/main"]);
+});
+
+test("revealCandidate: the branch to ADD for a commit the filter hides — current, else local, else remote, always a listed one", () => {
+  const list = refEntries([
+    ref("head", "main", { isCurrent: true }),
+    ref("head", "heads/release", { fullName: "refs/heads/release" }),
+    ref("head", "feature/x"),
+    ref("remote", "origin/feature/x"),
+    ref("remote", "origin/only"),
+    ref("tag", "tags/release", { fullName: "refs/tags/release" }),
+  ]);
+  const pick = (refs: string[]) => revealCandidate(refs, list)?.fullName;
+  // containingBranches' order: locals, then remotes, each sorted.
+  assert.equal(pick(["refs/heads/feature/x", "refs/heads/main", "refs/remotes/origin/feature/x"]), "refs/heads/main", "the branch you are on first");
+  assert.equal(pick(["refs/heads/feature/x", "refs/remotes/origin/feature/x"]), "refs/heads/feature/x", "else a local branch");
+  assert.equal(pick(["refs/remotes/origin/only"]), "refs/remotes/origin/only", "else a remote one");
+  // Mapped through the list by FULL name: a branch listed as "heads/release"
+  // is found, and offered by the name the filter stores.
+  assert.equal(pick(["refs/heads/release"]), "refs/heads/release");
+  assert.equal(pick(["refs/heads/gone", "refs/remotes/origin/gone"]), undefined, "nothing the list lacks is offered");
+  assert.equal(pick([]), undefined);
+});
+
+test("withRef adds to the filter AS STORED — a preset stays its symbol; storedFilterOf rebuilds that form", () => {
+  assert.deepEqual(withRef([CURRENT_BRANCH], "refs/heads/x"), [CURRENT_BRANCH, "refs/heads/x"], "a mix resolveRefFilter reads");
+  assert.deepEqual(withRef(["refs/heads/a"], "refs/heads/a"), ["refs/heads/a"], "never twice");
+  assert.deepEqual(withRef(null, "refs/heads/x"), ["refs/heads/x"]);
+  const list = refEntries([ref("head", "main", { isCurrent: true }), ref("head", "x")]);
+  assert.deepEqual(resolveRefFilter(withRef([CURRENT_BRANCH], "refs/heads/x"), list), ["refs/heads/main", "refs/heads/x"]);
+  // What a surface holding only the RESOLVED filter and its preset stores.
+  assert.deepEqual(storedFilterOf(["refs/heads/main"], "current"), [CURRENT_BRANCH]);
+  assert.deepEqual(storedFilterOf(["refs/heads/main", "refs/remotes/origin/main"], "currentUpstream"), [CURRENT_BRANCH, CURRENT_UPSTREAM]);
+  assert.deepEqual(storedFilterOf(["refs/heads/a"], undefined), ["refs/heads/a"]);
+  assert.equal(storedFilterOf(null, "all"), null);
 });
 
 test("refLabel names a ref by its full name shorn — never git's disambiguated short form", () => {

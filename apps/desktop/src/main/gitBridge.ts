@@ -488,15 +488,15 @@ export class GitBridge {
   /** Branches containing `sha`. Best-effort: never throws at the renderer. */
   async refsContains(
     sha: string,
-  ): Promise<{ branches: string[]; truncated: boolean }> {
+  ): Promise<{ branches: string[]; refs: string[]; truncated: boolean }> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { branches: [], truncated: false };
+      return { branches: [], refs: [], truncated: false };
     }
     try {
       return await ctx.refs.containingBranches(sha);
     } catch {
-      return { branches: [], truncated: false };
+      return { branches: [], refs: [], truncated: false };
     }
   }
 

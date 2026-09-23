@@ -176,10 +176,16 @@ test("a reveal into a filtered graph asks git before paging, and says so when th
   assert.match(unloaded, /this\.offerAllBranches\(sha, active\.root\);/, "the hidden case is said out loud");
   const offer = unloaded.slice(unloaded.indexOf("private offerAllBranches("));
   assert.match(offer, /"Show all branches"/);
+  // Issue #30's follow-up: FIRST offer to add a branch that contains the
+  // commit — found by full name through the ref list — keeping the rest of
+  // the selection AS STORED (a preset stays its symbol); "Show all branches"
+  // second. Both go through the store's one reload path and replay the reveal.
+  assert.match(offer, /const contains = active \? await active\.ctx\.refs\.containingBranches\(sha\) : undefined;\s*add = revealCandidate\(contains\?\.refs \?\? \[\], this\.refList\);/);
+  assert.match(offer, /showInformationMessage\(\s*`GitStudio: \$\{sha\.slice\(0, 7\)\} is hidden by the branch filter\.`,\s*\.\.\.\(ADD \? \[ADD\] : \[\]\),\s*ALL,\s*\)/, "add first, all second");
   assert.match(
     offer,
-    /this\.pendingReveal = sha;\s*void this\.setRefFilter\(null\);/,
-    "taking it forgets the filter through the store's one reload path, and the reveal is replayed after the reload",
+    /this\.pendingReveal = sha;\s*void this\.setRefFilter\(pick === ADD && add \? withRef\(this\.refFilter, add\.fullName\) : null\);/,
+    "the stored filter plus the branch, or every branch — then the reveal is replayed after the reload",
   );
 });
 

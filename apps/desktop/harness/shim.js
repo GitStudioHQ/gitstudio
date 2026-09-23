@@ -2208,14 +2208,17 @@
     // the same commits as 20-char prefixes.
     const sha = String((req && req.sha) || "").slice(0, 20);
     const only = reachOnly[sha];
-    if (only) return { branches: only.map((f) => f.replace(/^refs\/remotes\//, "")), truncated: false };
-    if (!graphBase.rows.some((r) => r.sha === sha)) return { branches: [], truncated: false };
+    // `refs`: the same branches by full name, as RefProvider answers.
+    if (only) return { branches: only.map((f) => f.replace(/^refs\/(heads|remotes)\//, "")), refs: [...only], truncated: false };
+    if (!graphBase.rows.some((r) => r.sha === sha)) return { branches: [], refs: [], truncated: false };
     const onLane = featureLane.has(sha);
+    const branches = [
+      "main", ...(onLane ? ["redesign/issues-detail"] : []),
+      "origin/main", ...(onLane ? ["origin/redesign/issues-detail"] : []),
+    ];
     return {
-      branches: [
-        "main", ...(onLane ? ["redesign/issues-detail"] : []),
-        "origin/main", ...(onLane ? ["origin/redesign/issues-detail"] : []),
-      ],
+      branches,
+      refs: branches.map((b) => (b.startsWith("origin/") ? "refs/remotes/" : "refs/heads/") + b),
       truncated: false,
     };
   };

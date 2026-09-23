@@ -8113,8 +8113,35 @@
       const msg = text(lastToast()?.querySelector(".toast-msg"));
       c.match(msg, /hidden by the branch filter/, `…and names the filter ("${msg}")`);
       c.ok(!/further back/.test(msg), "…not the history's depth, which is not the reason");
-      const action = lastToast()?.querySelector(".toast-action");
-      c.eq(text(action), "Show all branches", "…and offers the way out");
+      // Two ways in, the one that KEEPS the selection first (issue #30's
+      // follow-up): add the branch that contains the commit — found by full
+      // name through the ref list — and only then "Show all branches".
+      const labels = [...(lastToast()?.querySelectorAll(".toast-action") ?? [])].map((b) => text(b));
+      c.eq(labels.join(" | "), "Add origin/chore/dependabot-bump to the filter | Show all branches", "…and offers the way in, add first");
+
+      // ── Adding keeps the preset (as its symbol) and adds the one branch ──
+      lastToast()?.querySelector(".toast-action")?.click();
+      await settle(900);
+      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["@current", "refs/remotes/origin/chore/dependabot-bump"]),
+        "the filter is the preset PLUS the branch — a mix that still follows a checkout");
+      c.ok(hasRow(REMOTE_ONLY), "the hidden row is shown");
+      c.ok(text(sr.querySelector(".gh-branches .lbl")) !== "All branches", "…and the graph is still filtered, not every branch");
+      c.eq(sr.querySelector(".row.selected")?.dataset.sha, REMOTE_ONLY, "and it is the selected row — the reveal was replayed");
+
+      // ── Narrow again; this time take "Show all branches" ──
+      sr.querySelector(".gh-branches")?.click();
+      await settle(300);
+      sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.click();
+      await settle(700);
+      const f2 = sr.activeElement || document.activeElement;
+      f2.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+      await settle(200);
+      c.ok(!hasRow(REMOTE_ONLY), "narrowed again, the row is gone");
+      rows().find((r) => r.dataset.sha === DETAILED)?.click();
+      for (let i = 0; i < 40 && !$(".graph-details gitstudio-commit-details"); i++) await settle(100);
+      await reveal(REMOTE_ONLY);
+      const action = [...(lastToast()?.querySelectorAll(".toast-action") ?? [])].find((b) => text(b) === "Show all branches");
+      c.ok(!!action, "Show all branches is still offered");
 
       // ── Taking it rebuilds the graph around every branch and lands on the commit ──
       action?.click();

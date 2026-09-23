@@ -24,7 +24,10 @@ import {
   normalizeRefFilter,
   RefListCourier,
   refEntries,
+  refLabel,
+  revealCandidate,
   sameRefFilter,
+  withRef,
 } from "@gitstudio/host-bridge/graphRefFilter";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
@@ -1022,23 +1025,42 @@ export class CommitGraphPanel {
 
   /**
    * The branch filter hides the commit that was asked for: say so, and offer
-   * the way out. Taking it forgets the filter for this repository — every
-   * surface showing it reloads through the store — and the reveal is replayed
-   * once the unfiltered first page lands (see loadInitial's pendingReveal).
+   * the way in. FIRST, to add a branch that contains it — the rest of the
+   * selection stays; "Show all branches" (second) throws the whole selection
+   * away to see one commit.
+   *
+   * The branch comes from containingBranches by FULL name, mapped through the
+   * picker's list (revealCandidate), and is added to the filter as STORED
+   * (withRef) — a preset stays its symbol, so "Current branch" + the added
+   * branch still follows a checkout; resolveRefFilter reads the mix. Either
+   * pick goes through the store — every surface showing the repository
+   * reloads — and the reveal is replayed once the new first page lands (see
+   * loadInitial's pendingReveal).
    */
   private offerAllBranches(sha: string, root: string): void {
-    void vscode.window
-      .showInformationMessage(
+    void (async () => {
+      const active = this.repos.getActive();
+      let add: GraphRefEntry | undefined;
+      try {
+        const contains = active ? await active.ctx.refs.containingBranches(sha) : undefined;
+        add = revealCandidate(contains?.refs ?? [], this.refList);
+      } catch {
+        add = undefined; // the offer below still has its way out
+      }
+      if (root !== this.repoRoot) return;
+      const ADD = add ? `Add ${refLabel(add.fullName)} to the filter` : undefined;
+      const ALL = "Show all branches";
+      const pick = await vscode.window.showInformationMessage(
         `GitStudio: ${sha.slice(0, 7)} is hidden by the branch filter.`,
-        "Show all branches",
-      )
-      .then((pick) => {
-        if (pick !== "Show all branches" || root !== this.repoRoot) {
-          return;
-        }
-        this.pendingReveal = sha;
-        void this.setRefFilter(null);
-      });
+        ...(ADD ? [ADD] : []),
+        ALL,
+      );
+      if (!pick || root !== this.repoRoot) {
+        return;
+      }
+      this.pendingReveal = sha;
+      void this.setRefFilter(pick === ADD && add ? withRef(this.refFilter, add.fullName) : null);
+    })();
   }
 
   /** Page in more history until `sha` is loaded (bounded so a sha that isn't

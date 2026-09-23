@@ -8,7 +8,7 @@
 import "@gitstudio/webview-ui/graph/commit-graph";
 import type { CommitGraph, GraphAction } from "@gitstudio/webview-ui/graph/commit-graph";
 import { applyGraphInitRefs } from "@gitstudio/webview-ui/graph/graphInit";
-import type { GraphRefFilter, WireRef } from "@gitstudio/host-bridge/graphProtocol";
+import type { GraphRefEntry, GraphRefFilter, RefPreset, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { GraphHostAdapter, host } from "./bridge";
 
 export interface GraphCallbacks {
@@ -226,6 +226,16 @@ export class GraphMount {
   /** The branch filter the loaded rows were built under; null for all. */
   get refFilter(): GraphRefFilter {
     return this.element.refFilter;
+  }
+
+  /** The preset that filter IS, when it is one (a page's refPreset). */
+  get refPreset(): RefPreset | undefined {
+    return this.element.refPreset;
+  }
+
+  /** The picker's list: every branch and tag, by full name. */
+  get refList(): readonly GraphRefEntry[] {
+    return this.element.refList;
   }
 
   /**

@@ -241,6 +241,21 @@ test("deleting a remote branch deletes the BRANCH on the remote, beside a tag of
   }
 });
 
+test("containingBranches answers by FULL name too — the graph's 'Add <branch> to the filter' maps those", async () => {
+  const { dir, upstream, releaseTip } = collidingRepo();
+  try {
+    const ctx = new GitContext({ root: dir });
+    const c = await ctx.refs.containingBranches(releaseTip);
+    assert.deepEqual(c.branches, ["release", "origin/release"]);
+    assert.deepEqual(c.refs, ["refs/heads/release", "refs/remotes/origin/release"], "same order, full names — the branch beside the tag included");
+    const none = await ctx.refs.containingBranches("0".repeat(40));
+    assert.deepEqual(none.refs, []);
+  } finally {
+    removeTempRepo(dir);
+    removeTempRepo(upstream);
+  }
+});
+
 test("branchNameOf and remoteBranchOf read only their own namespace", () => {
   assert.equal(branchNameOf("refs/heads/heads/x"), "heads/x", "a branch really called heads/x keeps it");
   assert.equal(branchNameOf("refs/remotes/origin/x"), undefined);

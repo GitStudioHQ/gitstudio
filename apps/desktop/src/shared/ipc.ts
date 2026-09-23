@@ -1711,7 +1711,9 @@ export interface IpcChannels {
   "refs:list": [void, RefInfo[]];
   /** Branches CONTAINING a commit (reachability), for the details pane's
    *  "in N branches" row. Lazy — it walks history. */
-  "refs:contains": [{ sha: string }, { branches: string[]; truncated: boolean }];
+  /** `refs` is `branches` by full name, same order — what the graph maps
+   *  through its ref list to offer "Add <branch> to the filter". */
+  "refs:contains": [{ sha: string }, { branches: string[]; refs: string[]; truncated: boolean }];
   "head:get": [void, HeadInfo | undefined];
   "status": [void, ChangedFile[]];
   "commit:details": [string, CommitDetailsPayload | undefined];

@@ -41,7 +41,10 @@ export function toast(
   message: string,
   kind: ToastKind = "info",
   timeoutMs?: number,
-  action?: ToastAction,
+  /** One action, or several in the order offered — the first is the one
+   *  the toast recommends (a hidden commit: "Add <branch> to the filter",
+   *  then "Show all branches"). */
+  action?: ToastAction | ToastAction[],
 ): void {
   let stack = document.getElementById("toast-stack");
   if (!stack) {
@@ -59,14 +62,15 @@ export function toast(
   close.setAttribute("aria-label", "Dismiss");
   close.appendChild(gl("close"));
   t.append(icon, msg);
-  if (action) {
+  const actions = action === undefined ? [] : Array.isArray(action) ? action : [action];
+  for (const a of actions) {
     const act = mk("button", "toast-action");
-    act.textContent = action.label;
+    act.textContent = a.label;
     act.addEventListener("click", () => {
       // Dismiss FIRST: the handler re-renders, and a toast still on screen
       // afterwards reads as though the undo had not happened.
       dismiss();
-      action.onClick();
+      a.onClick();
     });
     t.appendChild(act);
   }
@@ -88,7 +92,7 @@ export function toast(
   // to read a sentence and decide you did not mean it.
   timer = window.setTimeout(
     dismiss,
-    timeoutMs ?? (kind === "error" ? 7000 : action ? 10000 : 4000),
+    timeoutMs ?? (kind === "error" ? 7000 : actions.length ? 10000 : 4000),
   );
 }
 
