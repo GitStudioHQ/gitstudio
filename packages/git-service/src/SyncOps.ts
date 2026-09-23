@@ -21,6 +21,14 @@ export interface PushOptions extends GitRunOptions {
   setUpstream?: boolean;
   /** Force the push; we use `--force-with-lease` to stay safe. */
   force?: boolean;
+  /**
+   * With `force`: the sha the remote branch must STILL be at — the upstream
+   * tip the user last saw, read before any fetch this push follows. Without it
+   * the lease is the remote-tracking ref as it is NOW, and a fetch just before
+   * the push has made that equal to the remote: the lease then protects
+   * nothing, whoever moved the branch. Ignored unless it is a full sha.
+   */
+  lease?: string;
   /** `--tags` — also push tags. */
   tags?: boolean;
 }
@@ -241,6 +249,9 @@ const FLAG_FOR_MODE: Record<PullMode, string> = {
  */
 const GIT_PULL_STOPPED_OR_FETCH_FAILED = 1;
 
+/** A full object name (SHA-1 or SHA-256) — all a push lease may carry. */
+const FULL_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
 /**
  * The work in progress `git status --porcelain=v2 -z` shows: tracked files
  * with staged or unstaged changes, and untracked files — the two kinds a pull
@@ -407,7 +418,16 @@ export class SyncOps {
 
     const args = ["push"];
     if (opts?.force) {
-      args.push("--force-with-lease");
+      // An explicit expected value when the caller has one: the lease is then
+      // the tip the user last SAW, not the remote-tracking ref as a fetch just
+      // left it. It names the ref on the REMOTE, which differs from the local
+      // name after a rename — the same pair the refspec above resolves.
+      const pair = opts.lease && FULL_SHA.test(opts.lease)
+        ? await this.upstreamPair(opts.signal, branch)
+        : null;
+      args.push(
+        pair ? `--force-with-lease=refs/heads/${pair.remoteBranch}:${opts.lease}` : "--force-with-lease",
+      );
     }
     if (setUpstream) {
       args.push("--set-upstream");
@@ -856,6 +876,16 @@ export class SyncOps {
     return paths.length > 0 ? { paths } : null;
   }
 
+  /**
+   * The sha the current branch's upstream points at, or null when it has none.
+   * Read BEFORE a fetch, it is the remote tip the user last saw — the lease a
+   * force push after that fetch must hold the remote to (see `PushOptions`).
+   */
+  async upstreamTip(signal?: AbortSignal): Promise<string | null> {
+    const r = await this.proc.run(["rev-parse", "--verify", "--quiet", "@{upstream}"], { signal });
+    const sha = r.stdout.trim();
+    return r.code === 0 && FULL_SHA.test(sha) ? sha : null;
+  }
 
   /**
    * Has the user already told git how to reconcile a pull? `pull.rebase` and

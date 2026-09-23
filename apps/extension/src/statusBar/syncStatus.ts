@@ -194,6 +194,11 @@ export class SyncStatusItem implements vscode.Disposable {
         // git reports the useless "your configuration specifies to merge with
         // the ref 'refs/heads/X' ... but no such ref was fetched" instead of the
         // actual failure. Doing it in two steps surfaces the real error.
+        //
+        // The upstream tip BEFORE that fetch is the remote the user last saw,
+        // and the only lease a force push after it can hold the remote to —
+        // the remote-tracking ref after the fetch is whatever is there now.
+        const seen = await active.ctx.sync.upstreamTip();
         const fetched = await active.ctx.sync.fetch({ prune: pruneOnFetch() });
         if (!fetched.ok) {
           reportSync(fetched, "Fetch");
@@ -217,14 +222,24 @@ export class SyncStatusItem implements vscode.Disposable {
         // replaced theirs (same author, same author date — what an amend and a
         // rebase keep). Anything else falls through to the pull below, which
         // asks merge-or-rebase about a divergence.
+        //
+        // And only when the fetch brought nothing new: author and author date
+        // are kept by ANY amend, so the same commit amended on another machine
+        // and pushed — or a colleague's amend of one of your commits — passes
+        // that test while being somebody else's version (replayed: the force
+        // deleted it). A remote that moved since `seen` has work nobody here
+        // has looked at; that is the merge-or-rebase question too. The lease
+        // holds the push to `seen`, so a push landing after the fetch is
+        // refused as well.
         const ab = await active.ctx.sync.aheadBehind();
-        if (ab.ahead > 0 && ab.behind > 0 && (await active.ctx.sync.rewroteUpstream())) {
+        const unmoved = seen !== null && (await active.ctx.sync.upstreamTip()) === seen;
+        if (ab.ahead > 0 && ab.behind > 0 && unmoved && (await active.ctx.sync.rewroteUpstream())) {
           const forced = await this.askRewrite(ab);
           if (forced === undefined) {
             return;
           }
           reportSync(
-            await active.ctx.sync.push({ force: forced }),
+            await active.ctx.sync.push({ force: forced, lease: seen ?? undefined }),
             "Push",
             "Pushed",
           );

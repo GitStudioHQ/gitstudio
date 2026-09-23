@@ -111,3 +111,43 @@ test("a force push is offered only for a divergence we caused", async () => {
       "commits would be deleted:\n" + ungated.join("\n"),
   );
 });
+
+// …and where the door FETCHES before it decides, the rewrite test is not enough
+// on its own, and neither is the bare lease.
+//
+// Sync fetches, then asks rewroteUpstream(). Author and author date are kept by
+// ANY amend — so the same commit amended on another machine and pushed, or a
+// colleague's amend of one of your commits, passes that test while being
+// somebody else's version. And the bare --force-with-lease is the
+// remote-tracking ref, which the fetch has just set to the remote: replayed
+// through the real Sync door, accepting "Force push" deleted the other
+// amendment. The tip read BEFORE the fetch is what the user last saw: the force
+// is offered only if the fetch left it where it was, and the push is leased on
+// it (SyncOps.push `lease`; pushLease.test.ts pins the refusal against real
+// git).
+test("Sync's force push is leased on the upstream tip read before its fetch", async () => {
+  const src = await readFile(join(ROOT, "apps/extension/src/statusBar/syncStatus.ts"), "utf8");
+  const start = src.indexOf('case "sync": {');
+  assert.ok(start >= 0, "the Sync arm");
+  const code = src
+    .slice(start, src.indexOf('case "pull": {', start))
+    .split("\n")
+    .filter((l) => !/^\s*(?:\/\/|\*)/.test(l))
+    .join("\n");
+  const seen = /const\s+(\w+)\s*=\s*await\s+active\.ctx\.sync\.upstreamTip\(\)/.exec(code);
+  assert.ok(seen, "the tip is read into a variable");
+  const fetchAt = code.search(/\.fetch\(/);
+  assert.ok(seen.index < fetchAt, "…BEFORE the fetch");
+  const name = seen[1];
+  const offerAt = code.search(/askRewrite\(/);
+  assert.match(
+    code.slice(fetchAt, offerAt),
+    new RegExp(`upstreamTip\\(\\)\\)?\\s*===\\s*${name}\\b`),
+    "the force is offered only when the fetch left the tip where it was seen",
+  );
+  assert.match(
+    code.slice(offerAt),
+    new RegExp(`sync\\.push\\(\\{\\s*force:\\s*\\w+,\\s*lease:\\s*${name}\\b`),
+    "and the push is leased on it",
+  );
+});
