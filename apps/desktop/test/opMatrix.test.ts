@@ -512,32 +512,38 @@ test("am: op:abort runs `am --abort` — never `rebase --abort`, which git refus
 });
 
 test("a rebase stopped inside a merge step: op:abort ends the REBASE", async () => {
+  // Stops ON the `merge -C` todo line (MERGE_HEAD and rebase-merge/ at once):
+  // feat and side both edit line 2 and were merged by hand; replaying that
+  // merge onto a moved trunk conflicts again.
   const r = repo("mergestep-abort");
   try {
-    writeFileSync(`${r.root}/f.txt`, "base\n");
+    writeFileSync(`${r.root}/f.txt`, "one\ntwo\nthree\nfour\nfive\n");
     r.git("add", "-A");
     r.git("commit", "-qm", "base");
     const main = r.git("rev-parse", "--abbrev-ref", "HEAD").trim();
-    r.git("branch", "trunk");
-    r.git("checkout", "-qb", "topic");
-    writeFileSync(`${r.root}/f.txt`, "topic\n");
-    r.git("commit", "-qam", "topic change");
+    r.git("checkout", "-qb", "feat");
+    r.git("checkout", "-qb", "side");
+    writeFileSync(`${r.root}/f.txt`, "one\ntwo-side\nthree\nfour\nfive\n");
+    r.git("commit", "-qam", "side: line 2");
+    r.git("checkout", "-q", "feat");
+    writeFileSync(`${r.root}/f.txt`, "one\ntwo-feat\nthree\nfour\nfive\n");
+    r.git("commit", "-qam", "feat: line 2");
+    r.tryGit("merge", "side");
+    writeFileSync(`${r.root}/f.txt`, "one\ntwo-merged\nthree\nfour\nfive\n");
+    r.git("add", "f.txt");
+    r.git("-c", "core.editor=true", "commit", "-q", "--no-edit");
     r.git("checkout", "-q", main);
-    writeFileSync(`${r.root}/g.txt`, "mainline\n");
-    r.git("add", "-A");
-    r.git("commit", "-qm", "mainline change");
-    r.git("merge", "-q", "--no-ff", "-m", "merge topic", "topic");
-    r.git("checkout", "-q", "trunk");
-    writeFileSync(`${r.root}/f.txt`, "trunk moved\n");
-    r.git("commit", "-qam", "trunk moves");
-    r.git("checkout", "-q", main);
+    writeFileSync(`${r.root}/f.txt`, "one\ntwo\nthree\nfour\nfive-main\n");
+    r.git("commit", "-qam", "main: line 5");
+    r.git("checkout", "-q", "feat");
     const tip = r.git("rev-parse", "HEAD").trim();
-    r.tryGit("rebase", "--rebase-merges", "trunk");
+    r.tryGit("rebase", "--rebase-merges", main);
 
     const b = await r.bridge();
     const snap = await b.conflictState();
-    assert.notEqual(snap.op.kind, "none", "the fixture stops");
-    assert.equal((await b.opState()).kind, "rebase", "a rebase, whatever else is set");
+    assert.equal(snap.op.kind, "rebase-merge-step", "the fixture stops on the merge step itself");
+    assert.equal(existsSync(`${r.root}/.git/MERGE_HEAD`), true);
+    assert.equal((await b.opState()).kind, "rebase", "a rebase, even with MERGE_HEAD set");
     const out = await b.opAbort();
     assert.equal(out.ok, true, out.message);
     assert.equal(existsSync(`${r.root}/.git/rebase-merge`), false);
