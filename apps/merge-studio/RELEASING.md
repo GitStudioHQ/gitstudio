@@ -13,6 +13,11 @@ owner's choice (PLAN §1, D6):
   vendored the packages (see "Option B" below). `check-parity.mjs` fails its
   CI if a vendored file is edited there.
 
+The owner chose B (23 Sep 2026): gitstudio is the parent of the merge code,
+merge-studio is exported from it and stays a complete repository of its own,
+and pull requests opened on merge-studio are imported back into gitstudio (see
+"Pull requests on merge-studio" below).
+
 Nothing in this file is active. The workflow is text: no file under
 `.github/` in the gitstudio repository was added or changed for it.
 
@@ -188,7 +193,8 @@ extension, runs `jbMerge.openDemo` and asserts the custom editor resolved.
    gitstudio builds with.
 2. In merge-studio: `npm ci && npm run check-parity && npm run check-types && npm test`,
    then open a PR. Its CI runs the same, and `check-parity` fails on any edit
-   to `vendor/**` — fix it in gitstudio and export again.
+   to `vendor/**`: make the change in gitstudio and export again. When the
+   edit is a contributor's pull request, import it (next section).
 3. Tag `vX.Y.Z` on merge-studio's `main` as before. Its `release.yml` guards
    the tag against `package.json`, refuses a manual run from anything but a
    `v*` tag or `main`, and runs `check-parity` before packaging.
@@ -197,6 +203,90 @@ extension, runs `jbMerge.openDemo` and asserts the custom editor resolved.
 
 Keep `media/screenshots/*` of 0.3.4 on merge-studio's `main` until 0.4.0 is
 live on both stores: the published 0.3.4 README loads them from `raw/HEAD`.
+
+## Pull requests on merge-studio
+
+Contributors open pull requests on GitStudioHQ/merge-studio and may change
+anything there, `vendor/gitstudio/` included. The `check-parity` step fails on
+a vendored edit, and its message tells them that is expected. Their change is
+kept by importing it into gitstudio and exporting again. In a gitstudio
+checkout:
+
+1. **Get the pull request.** Into a merge-studio checkout:
+   `git -C ../merge-studio fetch origin pull/<n>/head:pr-<n>`. Or as a file:
+   `gh pr diff <n> --repo GitStudioHQ/merge-studio --patch > pr.patch` keeps
+   every commit and its author; plain
+   `gh pr diff <n> --repo GitStudioHQ/merge-studio > pr.patch` is one
+   squashed diff with no author, so it needs `--author "Name <email>"`.
+2. **Import it, on a branch.**
+
+   ```bash
+   git switch -c merge-studio/pr-<n>
+   node scripts/merge-studio/import.mjs --from ../merge-studio --range origin/main..pr-<n> --pr <n> --dry-run
+   node scripts/merge-studio/import.mjs --from ../merge-studio --range origin/main..pr-<n> --pr <n>
+   # or, from a file:
+   node scripts/merge-studio/import.mjs --patch pr.patch --pr <n>
+   ```
+
+   `--dry-run` shows where every file goes and changes nothing. The import
+   makes one gitstudio commit for each commit of the pull request, with the
+   contributor as author, their date and message, and an
+   `Imported-from: GitStudioHQ/merge-studio#<n> / <sha>` trailer. It maps
+   paths by `scripts/merge-studio/layout.mjs`, the same table the export
+   writes by: `vendor/gitstudio/<pkg>/src/**` → `packages/<pkg>/src/**`,
+   the shell's files at the root → `apps/merge-studio/**`.
+3. **Read what it says.**
+   - *Not imported*: the files the export writes itself (`VENDORED_FROM.json`,
+     `package-lock.json`, `tsconfig.json`, and in `package.json` the
+     dependency block and the `check-types`, `test` and `check-parity`
+     scripts). The rest of a `package.json` change, a version bump for one,
+     goes into `apps/merge-studio/package.json`, and gitstudio's lockfile
+     entry follows the version. A dependency change is made by hand in
+     gitstudio (`npm install` in the workspace that needs it). Each commit
+     lists what was left out in `Import-note:` trailers.
+   - *Refused*, with nothing changed: a path that is not gitstudio's, such as
+     merge-studio's own `.github/`, `docs/` or `SECURITY.md`, or a new file
+     outside the shell's folders. Merge that part in merge-studio directly
+     and run the import again with `--exclude <path>`. Merge commits in the
+     range (ask for a rebase, or import the squashed diff), `main`, and
+     uncommitted changes are refused too.
+   - *Stopped on a conflict*: gitstudio changed the same lines since the
+     export. The conflict markers are in the files, and the message gives the
+     `git add` and `git commit --author=…` lines that finish that commit, and
+     the `--range` for the rest.
+   - *Round trip*: the import exports the result to a scratch folder and
+     compares every file the contributor changed with their branch.
+     "identical" is the usual answer. "merged" means gitstudio had changed
+     that file too since the export, so the next export carries both. A
+     "DIFFERENT" fails the import (exit 1): the next export would not write
+     what the contributor wrote, so check those commits before keeping them.
+4. **Review and test it like any gitstudio branch**
+   (`npm run check-types && npm test`), then merge it.
+5. **Export, and close the loop on merge-studio** (Option B, step 1). If the
+   contributor allowed edits by maintainers, push the export commit onto
+   their pull request's branch: `check-parity` passes, and merging the pull
+   request keeps their commits in merge-studio's history as well. Otherwise
+   merge the export on its own, and close the pull request with a link to the
+   gitstudio commits.
+
+merge-studio's `ci.yml` runs `check-parity` before `npm ci`, so a pull request
+that edits `vendor/gitstudio/` stops there and never gets type-check or test
+results. That workflow is merge-studio's own (the export does not write it).
+Giving the check its own job lets the build job run anyway:
+
+```yaml
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # A contributor's edit to vendor/gitstudio fails here by design; the
+      # build job still type-checks and tests it.
+      - run: node scripts/check-parity.mjs
+```
+
+and the "Vendored GitStudio code is unedited" step comes out of the build job.
+`release.yml` keeps its own `check-parity` step: a release must match
+gitstudio exactly.
 
 ## Marketplace credentials: act before 2026-12-01
 
@@ -228,8 +318,8 @@ Until then, `vsce publish -p "$VSCE_PAT"` keeps working with a PAT scoped to
 
 ## Checklist for 0.4.0
 
-- [ ] The owner's decisions are settled (architecture A or B, licence, engine
-      floor, auto-apply default, coexistence question).
+- [ ] The owner's decisions are settled (architecture: B, chosen 23 Sep 2026;
+      licence, engine floor, auto-apply default, coexistence question).
 - [ ] Listing shots captured from the final build per SHOTS.md; the
       walkthrough's placeholder SVGs replaced.
 - [ ] `npm run check-types && npm test` green; `vsce ls` shows no
