@@ -317,6 +317,24 @@
     branches.push({ name: "-f", current: false, aheadDefault: 1, behindDefault: 0, upstream: undefined, ahead: 0, behind: 0, subject: "made by update-ref", date: S(3) });
   }
 
+  // ?collide=1 → git's SHORT names stop being names (issue #30's follow-up),
+  // with the values git really prints: a tag "main" beside the default branch
+  // (listed "heads/main"), a branch and a tag "release" ("heads/release" /
+  // "tags/release"), and a LOCAL branch "origin/sl" beside the remote-tracking
+  // origin/sl ("heads/origin/sl" / "remotes/origin/sl"), which a local "sl"
+  // tracks. HEAD is on a feature branch, so main is the default and not the
+  // current one. Every label must still be the ref's own name.
+  if (params.get("collide")) {
+    for (const b of branches) b.current = b.name === "redesign/issues-detail";
+    const m = branches.find((b) => b.name === "main");
+    if (m) Object.assign(m, { name: "heads/main", fullName: "refs/heads/main", upstreamRef: "refs/remotes/origin/main" });
+    branches.push(
+      { name: "heads/release", fullName: "refs/heads/release", current: false, aheadDefault: 1, behindDefault: 0, upstream: "origin/release", upstreamRef: "refs/remotes/origin/release", ahead: 0, behind: 0, subject: "release work", date: S(5) },
+      { name: "sl", fullName: "refs/heads/sl", current: false, aheadDefault: 1, behindDefault: 0, upstream: "remotes/origin/sl", upstreamRef: "refs/remotes/origin/sl", ahead: 0, behind: 1, subject: "sl one", date: S(6) },
+      { name: "heads/origin/sl", fullName: "refs/heads/origin/sl", current: false, aheadDefault: 2, behindDefault: 0, upstream: undefined, ahead: 0, behind: 0, subject: "a branch named like a remote one", date: S(7) },
+    );
+  }
+
   const workflows = [
     { id: 1, name: "Desktop CI", path: ".github/workflows/desktop.yml", state: "active", htmlUrl: "" },
     { id: 2, name: "Extension CI", path: ".github/workflows/extension.yml", state: "active", htmlUrl: "" },
@@ -424,7 +442,9 @@
       ...branches.map((b) => ({
         type: "head",
         name: b.name,
-        fullName: "refs/heads/" + b.name,
+        // A branch git lists under a disambiguated short name (?collide=1)
+        // carries its own full name; every other one is refs/heads/<name>.
+        fullName: b.fullName ?? "refs/heads/" + b.name,
         sha: "abc123",
         isCurrent: b.current,
         upstream: b.upstream,
@@ -661,6 +681,18 @@
     "ssh:keys": [],
     // (the real fixture is above — an empty array here shadowed it)
   };
+
+  // ?collide=1 (see the branches above): the refs git lists beside them, under
+  // the short names git gives them — the tags "main" and "release", the
+  // remote-tracking origin/release, and origin/sl beside a LOCAL "origin/sl".
+  if (params.get("collide")) {
+    fixtures["refs:list"].push(
+      { type: "remote", name: "origin/release", fullName: "refs/remotes/origin/release", sha: "b1c2d3e", isCurrent: false, date: S(5), subject: "release work" },
+      { type: "remote", name: "remotes/origin/sl", fullName: "refs/remotes/origin/sl", sha: "c2d3e4f", isCurrent: false, date: S(6), subject: "sl two" },
+      { type: "tag", name: "tags/release", fullName: "refs/tags/release", sha: "9f8e7d6", isCurrent: false, objectType: "commit", date: S(50), subject: "an old release" },
+      { type: "tag", name: "tags/main", fullName: "refs/tags/main", sha: "9f8e7d6", isCurrent: false, objectType: "commit", date: S(60), subject: "a tag named like the default branch" },
+    );
+  }
 
   // E1: mutable settings so the Repositories card + destination sheet are
   // exercisable in the harness (Change… picks a canned folder).

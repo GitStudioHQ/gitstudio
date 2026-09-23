@@ -20,7 +20,7 @@ import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
-import { branchNameOf } from "@gitstudio/git-service/BranchOps";
+import { branchNameOf, remoteBranchOf } from "@gitstudio/git-service/BranchOps";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
@@ -1820,23 +1820,17 @@ export class GitBridge {
     const name = localBranchOf(fullName);
     if (!name) return notABranch("pull into");
     return this.staged(async (ctx) => {
-      const up = await ctx.process.run([
-        "for-each-ref",
-        "--format=%(upstream:short)",
-        fullName,
-      ]);
-      const upstream = up.stdout.trim();
-      const slash = upstream.indexOf("/");
-      if (up.code !== 0 || slash <= 0) {
+      // The upstream by its FULL name, split there. `%(upstream:short)` is
+      // "remotes/origin/x" beside a local branch called "origin/x", and split
+      // at its first slash that named a remote called "remotes".
+      const up = await ctx.process.run(["for-each-ref", "--format=%(upstream)", fullName]);
+      const pair = up.code === 0 ? remoteBranchOf(up.stdout.trim()) : undefined;
+      if (!pair) {
         return { ok: false, stderr: `'${name}' has no upstream to pull from.` };
       }
       // Both sides qualified: the source is a branch ON the remote, and a
       // bare destination is created under refs/heads/ whatever it is called.
-      return ctx.process.run([
-        "fetch",
-        upstream.slice(0, slash),
-        `refs/heads/${upstream.slice(slash + 1)}:${fullName}`,
-      ]);
+      return ctx.process.run(["fetch", pair.remote, `refs/heads/${pair.branch}:${fullName}`]);
     });
   }
 
@@ -1869,18 +1863,15 @@ export class GitBridge {
     const name = localBranchOf(fullName);
     if (!name) return notABranch("push");
     return this.staged(async (ctx) => {
-      const up = await ctx.process.run([
-        "for-each-ref",
-        "--format=%(upstream:short)",
-        fullName,
-      ]);
-      const upstream = up.code === 0 ? up.stdout.trim() : "";
-      const slash = upstream.indexOf("/");
-      if (slash > 0) {
+      // The upstream by its FULL name, as branchPullFf reads it: the short one
+      // is "remotes/origin/x" beside a local branch called "origin/x".
+      const up = await ctx.process.run(["for-each-ref", "--format=%(upstream)", fullName]);
+      const tracked = up.code === 0 ? remoteBranchOf(up.stdout.trim()) : undefined;
+      if (tracked) {
         // Tracked: push it to the remote it already tracks.
         // push-force-reviewed: a named OTHER branch, not the checked-out
         // one; see the extension's branchActions for the same reasoning.
-        return ctx.sync.push({ remote: upstream.slice(0, slash), branch: name });
+        return ctx.sync.push({ remote: tracked.remote, branch: name });
       }
       // Unpublished: pick a remote and set upstream. Prefer origin, else the
       // only remote; with several non-origin remotes there is no safe guess.
@@ -1942,15 +1933,17 @@ export class GitBridge {
       /* fall through */
     }
     try {
-      const h = await ctx.refs.getHead();
-      return h.detached ? undefined : h.branch;
+      // The name under refs/heads/ — git's `--short` is "heads/x" beside a
+      // tag "x", and this is compared with names and qualified as refs/heads/.
+      return headBranchName(await ctx.refs.getHead());
     } catch {
       return undefined;
     }
   }
 
   /**
-   * How far each local branch is ahead of and behind `base`.
+   * How far each local branch is ahead of and behind the local branch `base`
+   * (a name under refs/heads/), keyed by each branch's FULL name.
    *
    * Asked for in its own `for-each-ref` because `%(ahead-behind:)` needs git
    * >= 2.41: an older git does not recognise the atom and fails the WHOLE read,
@@ -1970,9 +1963,13 @@ export class GitBridge {
       // spawn THROW — a throw this function's catch would swallow whole. The
       // repo's scan flags that shape by name, and it is right to.
       const US = "\x1f";
+      // Measured against the BRANCH, by its full name, and keyed by each
+      // branch's full name. A bare "main" is a revision, and git resolves a
+      // revision to refs/tags/ before refs/heads/: beside a tag called
+      // "main" every branch's "merged" was measured against the TAG.
       const r = await ctx.process.run([
         "for-each-ref",
-        `--format=%(refname:short)${US}%(ahead-behind:${base})`,
+        `--format=%(refname)${US}%(ahead-behind:refs/heads/${base})`,
         "refs/heads",
       ]);
       if (r.code !== 0) return out;
@@ -2013,8 +2010,12 @@ export class GitBridge {
     // and it is "heads/release" the moment a tag shares the name — so a
     // checkout (or anything else that writes) goes by the full one. First, so
     // the free-text subject stays the last field.
+    // %(upstream) beside %(upstream:short) for the same reason: the short one
+    // is "remotes/origin/x" beside a local branch called "origin/x", and
+    // everything that SPLITS an upstream into remote and branch goes by the
+    // full one (upstreamRef).
     const fmt =
-      `%(refname)${SEP}%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}` +
+      `%(refname)${SEP}%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}%(upstream)${SEP}` +
       `%(upstream:track)${SEP}%(committerdate:unix)${SEP}%(authorname)${SEP}%(authoremail)${SEP}%(contents:subject)`;
     // No catch-and-return-[]: `for-each-ref` exits 0 with no output in a repo
     // that genuinely has no branches, so a non-zero exit means the read FAILED
@@ -2030,16 +2031,20 @@ export class GitBridge {
     const branches: BranchInfo[] = [];
     for (const line of out.split("\n")) {
       if (!line.trim()) continue;
-      const [fullName, name, head, upstream, track, date, authorName, authorEmail, subject] = line.split(SEP);
+      const [fullName, name, head, upstream, upstreamRef, track, date, authorName, authorEmail, subject] =
+        line.split(SEP);
       const { ahead, behind, gone } = parseTrack(track ?? "");
-      const vs = base ? divergence.get(name) : undefined;
+      const vs = base ? divergence.get(fullName) : undefined;
       branches.push({
         ...(vs ? { aheadDefault: vs.ahead, behindDefault: vs.behind, merged: vs.ahead === 0 } : {}),
-        ...(base && name === base ? { isDefault: true } : {}),
+        // By the name under refs/heads/: beside a tag "main" git lists the
+        // default branch as "heads/main", which never equalled "main".
+        ...(base && branchNameOf(fullName) === base ? { isDefault: true } : {}),
         name,
         fullName,
         current: head === "*",
         upstream: upstream || undefined,
+        ...(upstreamRef ? { upstreamRef } : {}),
         ahead,
         behind,
         ...(gone ? { gone: true } : {}),
@@ -2165,7 +2170,10 @@ export class GitBridge {
             "--reverse",
             `--format=%aN${US}%aE`,
             "--max-count=200",
-            `${base}..${name}`,
+            // The base BRANCH by its full name — a bare "main" is the tag
+            // beside a tag of that name (see divergenceFrom). `name` is
+            // %(refname:short), unambiguous by construction.
+            `refs/heads/${base}..${name}`,
             "--",
           ]);
           if (r.code !== 0) return;

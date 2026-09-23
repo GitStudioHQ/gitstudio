@@ -427,7 +427,12 @@ export interface BranchInfo {
    *  (planRefCheckout), because the short name then names a revision. */
   fullName: string;
   current: boolean;
+  /** `%(upstream:short)` — for reading. "remotes/origin/x" beside a local
+   *  branch called "origin/x". */
   upstream?: string;
+  /** `%(upstream)`, e.g. "refs/remotes/origin/x" — what an upstream is SPLIT
+   *  into remote and branch by (upstreamParts), never the short one. */
+  upstreamRef?: string;
   ahead: number;
   behind: number;
   /**

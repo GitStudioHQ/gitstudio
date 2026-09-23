@@ -12525,6 +12525,79 @@
       await settle(500);
       c.eq(last("branch:push")?.payload?.fullName, "refs/heads/feat/line-staging", "push goes by full name");
     },
+    /**
+     * The Branches view names every ref by its OWN name when git's short names
+     * are ambiguous (issue #30's follow-up; ?collide=1). git lists a branch
+     * beside a tag of its name as "heads/release", the default branch beside a
+     * tag "main" as "heads/main", and a remote-tracking branch beside a LOCAL
+     * "origin/sl" as "remotes/origin/sl". The rows printed those, the default
+     * branch lost its pill, origin/release said "no local copy" of a branch
+     * that was right there, and "Delete remote branch" split
+     * "remotes/origin/sl" into a remote called "remotes".
+     */
+    "the-branch-list-names-refs-by-their-own-names": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const row = (ref) => $(`.sec-row[data-ref="${ref}"]`);
+      const title = (ref) => text(row(ref)?.querySelector(".sec-row-title")) || "";
+      c.eq(title("heads/release"), "release", "a branch beside a tag of its name reads as itself");
+      c.eq(title("heads/main"), "main", "…and so does the default branch beside a tag \"main\"");
+      c.ok(!!row("heads/main")?.querySelector(".ab-pill.default"), "which is still marked the default branch");
+      c.eq(title("heads/origin/sl"), "origin/sl", "a local branch named like a remote one keeps its name");
+      c.ok(
+        !$$(".sec-row .sec-row-title").some((t) => /^(heads|tags|remotes)\//.test(text(t) || "")),
+        "no row reads as git's disambiguated short form",
+      );
+      c.ok(
+        !!$$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for release"),
+        "the row's controls name it the same way",
+      );
+
+      // Remotes: origin/release HAS a local copy; origin/sl is on "origin".
+      $$(".gh-seg-btn")[1]?.click();
+      await settle(500);
+      const rel = row("origin/release");
+      c.ok(!!rel, "origin/release is listed");
+      c.ok(!rel?.querySelector(".ab-pill.unpublished"), "…and not as having no local copy");
+      c.ok(
+        $$(".row-btn", rel || document.createElement("div")).some((b) => text(b) === "Checkout"),
+        `…its button checks out the local one (${$$(".row-btn", rel || document.createElement("div")).map((b) => text(b)).join(", ")})`,
+      );
+      const sl = row("remotes/origin/sl");
+      c.eq(text(sl?.querySelector(".sec-row-title")), "sl", "origin/sl reads as sl");
+      c.eq(text(sl?.querySelector(".br-remote")), "origin", "…on origin, not on a remote called \"remotes\"");
+
+      // Tags: the tag "release" reads as itself too.
+      $$(".gh-seg-btn")[2]?.click();
+      await settle(500);
+      c.eq(title("tags/release"), "release", "a tag beside a branch of its name reads as itself");
+
+      // "Delete remote branch" on sl splits its upstream by the FULL name.
+      $$(".gh-seg-btn")[0]?.click();
+      await settle(500);
+      const kebab = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for sl");
+      c.ok(!!kebab, "sl has its menu");
+      kebab?.click();
+      await settle(350);
+      const del = $$(".dropdown-item").find((i) => /^Delete remote branch/.test(text(i) || ""));
+      c.match(text(del) || "", /\(origin\/sl\)/, "the item names the upstream as origin/sl");
+      del?.click();
+      await settle(400);
+      $$("button").find((b) => /delete remote branch/i.test(text(b) || "") && b.closest(".modal-card"))?.click();
+      await settle(700);
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "branch:deleteRemote").at(-1)?.payload;
+      c.eq(sent?.remote, "origin", "the delete goes to origin");
+      c.eq(sent?.name, "sl", "…for the branch sl");
+    },
+    /** The branch switcher names refs by their own names too (?collide=1). */
+    "the-branch-switcher-names-refs-by-their-own-names": async (f) => {
+      const c = check(f);
+      const items = $$(".dropdown-item").map((i) => text(i.querySelector(".dropdown-label") || i) || "");
+      c.ok(items.length > 5, `the switcher opened (${items.length} rows)`);
+      c.ok(items.some((t) => /^release\b/.test(t)), `the branch release is listed as "release" (${items.join(" | ")})`);
+      c.ok(items.some((t) => /^origin\/sl\b/.test(t)), "the remote origin/sl is listed as \"origin/sl\"");
+      c.ok(!items.some((t) => /^(heads|tags|remotes)\//.test(t)), "no row reads as git's disambiguated short form");
+    },
     /** An unpublished branch has no remote to reconcile, so it must not ask. */
     "renaming-an-unpublished-branch-asks-nothing": async (f) => {
       const c = check(f);

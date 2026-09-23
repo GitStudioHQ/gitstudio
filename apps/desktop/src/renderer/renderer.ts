@@ -85,7 +85,7 @@ import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
 import { refCheckoutRequest, refDisplay, type RowRef } from "./refMenuItems";
-import { branchName, tagName } from "./branchRequests";
+import { branchName, remoteRefParts, tagName, upstreamLabel, upstreamParts } from "./branchRequests";
 import { explainRefusedCheckout } from "./optionLikeRename";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
@@ -2002,11 +2002,14 @@ class App {
                   key: "remote",
                   label: "Remote",
                   icon: "cloud",
-                  options: [...new Set(remotes.map((r) => r.name.split("/")[0]))].map((v) => ({
+                  // By the full name (remoteRefParts): the short one is
+                  // "remotes/origin/x" beside a local "origin/x" — a remote
+                  // called "remotes" in this facet.
+                  options: [...new Set(remotes.map((r) => remoteRefParts(r).remote))].map((v) => ({
                     value: v,
                     label: v,
                   })),
-                  predicate: (item: unknown, v: string) => (item as RefInfo).name.split("/")[0] === v,
+                  predicate: (item: unknown, v: string) => remoteRefParts(item as RefInfo).remote === v,
                 },
                 {
                   key: "local",
@@ -2017,8 +2020,10 @@ class App {
                     { value: "no", label: "None" },
                   ],
                   predicate: (item: unknown, v: string) => {
-                    const short = (item as RefInfo).name.split("/").slice(1).join("/");
-                    const have = locals.some((b) => b.name === short);
+                    // Both sides by name under the namespace — a local
+                    // "release" beside a tag lists as "heads/release".
+                    const short = remoteRefParts(item as RefInfo).branch;
+                    const have = locals.some((b) => branchName(b) === short);
                     return v === "yes" ? have : !have;
                   },
                 },
@@ -2198,7 +2203,7 @@ class App {
           )
           .sort((a, b) =>
             order === "name"
-              ? byName(a.name, b.name)
+              ? byName(branchName(a), branchName(b))
               : order === "ahead"
                 ? (b.ahead ?? 0) - (a.ahead ?? 0) || byDate(a.date, b.date)
                 : order === "stale"
@@ -2230,13 +2235,15 @@ class App {
           .filter((r) => bar.passes(r))
           .sort((a, b) =>
             order === "name"
-              ? byName(a.name, b.name)
+              ? byName(remoteRefParts(a).remote + "/" + remoteRefParts(a).branch, remoteRefParts(b).remote + "/" + remoteRefParts(b).branch)
               : order === "stale"
                 ? (a.date ?? 0) - (b.date ?? 0)
                 : byDate(a.date, b.date),
           );
         shown = rows.length;
-        const haveLocal = new Set(locals.map((b) => b.name));
+        // By the name under refs/heads/: a local "release" beside a tag lists
+        // as "heads/release", and origin/release read "no local copy".
+        const haveLocal = new Set(locals.map((b) => branchName(b)));
         for (const r of rows) body.appendChild(this.remoteRefRow(r, haveLocal));
         fillPeople();
       } else if (this.branchTab === "tags") {
@@ -2248,7 +2255,7 @@ class App {
           // v1.9.0, which is wrong about every version scheme anyone uses.
           .sort((a, b) =>
             order === "name"
-              ? byName(a.name, b.name)
+              ? byName(tagName(a), tagName(b))
               : order === "stale"
                 ? (a.date ?? 0) - (b.date ?? 0)
                 : byDate(a.date, b.date),
@@ -2490,17 +2497,18 @@ class App {
    */
   private remoteRefRow(r: RefInfo, haveLocal: Set<string>): HTMLElement {
     // "origin/feat/x" reads as "feat/x on origin" — the remote is a column, not
-    // a prefix repeated down every title.
-    const short = r.name.split("/").slice(1).join("/") || r.name;
-    const remote = r.name.split("/")[0];
+    // a prefix repeated down every title. Split from the FULL name: the short
+    // one is "remotes/origin/x" beside a local branch "origin/x".
+    const { remote, branch: short } = remoteRefParts(r);
     const mine = haveLocal.has(short);
+    const said = `${remote}/${short}`;
 
     const actions: HTMLElement[] = [];
     const primary = el("button", "row-btn") as HTMLButtonElement;
     primary.textContent = mine ? "Checkout" : "Check out here";
     primary.title = mine
       ? `Check out your local ${short}`
-      : `Create ${short} from ${r.name} and check it out`;
+      : `Create ${short} from ${said} and check it out`;
     primary.setAttribute("aria-label", primary.title);
     // By the REMOTE's full name either way: the planner switches to a local
     // branch of that name when one exists (planRemoteCheckout) and creates it
@@ -2509,7 +2517,7 @@ class App {
     primary.addEventListener("click", () => void this.checkoutRef(r.fullName, primary));
     actions.push(primary);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    more.setAttribute("aria-label", `More actions for ${r.name}`);
+    more.setAttribute("aria-label", `More actions for ${said}`);
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
     const menu = (): void =>
@@ -2556,7 +2564,7 @@ class App {
     });
     row.classList.add("ref-row");
     row.dataset.ref = r.name;
-    row.title = [r.name, r.subject].filter(Boolean).join("\n");
+    row.title = [said, r.subject].filter(Boolean).join("\n");
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       menu();
@@ -2574,17 +2582,20 @@ class App {
    */
   private tagRefRow(r: RefInfo): HTMLElement {
     const annotated = r.objectType === "tag";
+    // Named by the part under refs/tags/ (tagName): beside a branch of the
+    // same name the short form is "tags/v1".
+    const said = tagName(r);
     const actions: HTMLElement[] = [];
     const push = el("button", "row-btn") as HTMLButtonElement;
     push.textContent = "Push";
-    push.setAttribute("aria-label", `Push tag ${r.name} to the remote`);
-    push.title = `Publish ${r.name} to the remote`;
+    push.setAttribute("aria-label", `Push tag ${said} to the remote`);
+    push.title = `Publish ${said} to the remote`;
     // The name under refs/tags/: beside a branch of the same name the short
     // name is "tags/v1", and refs/tags/tags/v1 is no tag at all.
     push.addEventListener("click", () => void this.pushTagLive(tagName(r), push));
     actions.push(push);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    more.setAttribute("aria-label", `More actions for ${r.name}`);
+    more.setAttribute("aria-label", `More actions for ${said}`);
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
     const menu = (): void =>
@@ -2606,7 +2617,7 @@ class App {
 
     const row = secRow({
       lead: glyph("tag"),
-      title: r.name,
+      title: said,
       meta: [
         // No "annotated"/"lightweight" pill: git's own jargon for "carries a
         // message and a tagger" vs "bare pointer" explained nothing on a row
@@ -2632,11 +2643,11 @@ class App {
       timeTitle: r.date ? absTime(r.date) : undefined,
       actions,
       onOpen: () => this.routeView("refdetail", false, { ref: r.name, id: "tag" }),
-      ariaLabel: `${r.name}, ${annotated ? "tag with its own message" : "tag"}${r.who ? `, by ${r.who.name}` : ""}${r.date ? `, ${relTime(r.date)}` : ""}`,
+      ariaLabel: `${said}, ${annotated ? "tag with its own message" : "tag"}${r.who ? `, by ${r.who.name}` : ""}${r.date ? `, ${relTime(r.date)}` : ""}`,
     });
     row.classList.add("ref-row");
     row.dataset.ref = r.name;
-    row.title = [r.name, r.subject].filter(Boolean).join("\n");
+    row.title = [said, r.subject].filter(Boolean).join("\n");
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       menu();
@@ -3330,6 +3341,13 @@ class App {
    * keyboard or touch at all. One primary verb and the menu render at rest.
    */
   private localBranchRow(b: BranchInfo, defaultBranch?: string): HTMLElement {
+    // Named — on the row, in its labels, and against the default branch — by
+    // the part under refs/heads/ (branchName), never b.name: git's short form
+    // is "heads/release" beside a tag "release", which the row printed, and
+    // "heads/main" beside a tag "main", which lost the default pill. Its
+    // upstream the same way: "origin/x", never "remotes/origin/x".
+    const bn = branchName(b);
+    const up = upstreamLabel(b);
     const pills: HTMLElement[] = [];
     const pill = (text: string, cls: string, title: string): HTMLElement => {
       const p = span(text, `ab-pill ${cls}`);
@@ -3337,7 +3355,7 @@ class App {
       return p;
     };
     if (b.current) pills.push(pill("current", "current", "This is the checked-out branch"));
-    else if (b.name === defaultBranch) pills.push(pill("default", "default", "The repository's default branch"));
+    else if (bn === defaultBranch) pills.push(pill("default", "default", "The repository's default branch"));
     if (b.gone) {
       // Without this the row reads "0 ahead, 0 behind" — the same shape as
       // perfectly in sync — about a remote that no longer exists, which is what
@@ -3346,10 +3364,10 @@ class App {
         pill(
           "upstream gone",
           "gone",
-          `${b.upstream ?? "Its upstream"} no longer exists — this branch is probably finished with.`,
+          `${up ?? "Its upstream"} no longer exists — this branch is probably finished with.`,
         ),
       );
-    } else if (b.merged && !b.current && branchName(b) !== defaultBranch) {
+    } else if (b.merged && !b.current && bn !== defaultBranch) {
       pills.push(
         pill(
           "merged",
@@ -3409,12 +3427,12 @@ class App {
     // from main" but "what will Push and Pull do".
     if (b.ahead) {
       const p = span(`↑ ${b.ahead}`, "ab-pill ahead");
-      p.title = `${plural(b.ahead, "commit")} to push to ${b.upstream ?? "upstream"}`;
+      p.title = `${plural(b.ahead, "commit")} to push to ${up ?? "upstream"}`;
       track.appendChild(p);
     }
     if (b.behind) {
       const p = span(`↓ ${b.behind}`, "ab-pill behind");
-      p.title = `${plural(b.behind, "commit")} to pull from ${b.upstream ?? "upstream"}`;
+      p.title = `${plural(b.behind, "commit")} to pull from ${up ?? "upstream"}`;
       track.appendChild(p);
     }
     // Only when it HAS a count. The slot is a fixed 78px so the pairs line up
@@ -3435,16 +3453,16 @@ class App {
     //
     // A branch tracking a DIFFERENTLY named upstream is a real and surprising
     // fact, so that still shows.
-    const conventionalUpstream = !!b.upstream && b.upstream.endsWith("/" + b.name);
+    const conventionalUpstream = !!b.upstream && upstreamParts(b)?.branch === bn;
     if (b.upstream && !conventionalUpstream) {
       // INSIDE the subject column, not a slot of its own. A fixed 160px column
       // that only SOME rows carry pushed that one row's faces, counts and time
       // 172px left of every neighbour's — one surprising branch broke the
       // table for the whole list. The surprising fact rides where the context
       // lives; the subject makes room.
-      const up = span(`↪ ${b.upstream}`, "br-upstream sec-mono");
-      up.title = `Tracks ${b.upstream} — a differently named upstream`;
-      subjectCol.append(up);
+      const upEl = span(`↪ ${up}`, "br-upstream sec-mono");
+      upEl.title = `Tracks ${up} — a differently named upstream`;
+      subjectCol.append(upEl);
     }
 
     // ONE contextual primary verb, plus the menu. Delete deliberately does NOT
@@ -3453,37 +3471,37 @@ class App {
     if (b.behind) {
       const pull = el("button", "row-btn") as HTMLButtonElement;
       pull.textContent = "Pull";
-      pull.setAttribute("aria-label", `Pull ${b.name}`);
+      pull.setAttribute("aria-label", `Pull ${bn}`);
       pull.title = b.current
-        ? `Pull ${plural(b.behind, "commit")} from ${b.upstream ?? "upstream"}`
-        : `Pull ${plural(b.behind, "commit")} into ${b.name} — fast-forward, no checkout`;
+        ? `Pull ${plural(b.behind, "commit")} from ${up ?? "upstream"}`
+        : `Pull ${plural(b.behind, "commit")} into ${bn} — fast-forward, no checkout`;
       pull.addEventListener("click", () => void this.pullBranchLive(b, pull));
       actions.push(pull);
     } else if (!b.upstream) {
       const pub = el("button", "row-btn") as HTMLButtonElement;
       pub.textContent = "Publish";
-      pub.setAttribute("aria-label", `Publish ${b.name}`);
-      pub.title = `Push ${b.name} and set its upstream`;
+      pub.setAttribute("aria-label", `Publish ${bn}`);
+      pub.title = `Push ${bn} and set its upstream`;
       pub.addEventListener("click", () => void this.publishBranchLive(b, pub));
       actions.push(pub);
     } else if (!b.current) {
       const co = el("button", "row-btn") as HTMLButtonElement;
       co.textContent = "Checkout";
-      co.setAttribute("aria-label", `Check out ${b.name}`);
-      co.title = `Check out ${b.name}`;
+      co.setAttribute("aria-label", `Check out ${bn}`);
+      co.title = `Check out ${bn}`;
       co.addEventListener("click", () => void this.checkoutRef(b.fullName, co));
       actions.push(co);
     }
     const moreBtn = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    moreBtn.setAttribute("aria-label", `More actions for ${b.name}`);
+    moreBtn.setAttribute("aria-label", `More actions for ${bn}`);
     moreBtn.setAttribute("aria-haspopup", "menu");
     moreBtn.appendChild(glyph("ellipsis"));
     moreBtn.addEventListener("click", () => this.openBranchActions(b, moreBtn));
     actions.push(moreBtn);
 
     const row = secRow({
-      lead: glyph(b.current ? "check" : b.name === defaultBranch ? "home" : "git-branch"),
-      title: b.name,
+      lead: glyph(b.current ? "check" : bn === defaultBranch ? "home" : "git-branch"),
+      title: bn,
       meta,
       time: b.date ? relTime(b.date) : "",
       timeTitle: b.date ? absTime(b.date) : undefined,
@@ -3492,7 +3510,7 @@ class App {
       onOpen: () => this.routeView("refdetail", false, { ref: b.name, id: "head" }),
       // What the row says out loud, rather than "Inspect branch main".
       ariaLabel: [
-        b.name,
+        bn,
         b.current ? "current branch" : "",
         b.gone ? "upstream gone" : b.merged ? "merged" : "",
         // The divergence as a FACT, not as the verbs the row's own buttons
@@ -3508,13 +3526,13 @@ class App {
     row.classList.add("branch-row");
     row.dataset.ref = b.name;
     row.title = [
-      b.name,
+      bn,
       b.subject,
       // The divergence the bar used to draw, said in words.
-      b.aheadDefault !== undefined && b.behindDefault !== undefined && branchName(b) !== defaultBranch
+      b.aheadDefault !== undefined && b.behindDefault !== undefined && bn !== defaultBranch
         ? `${b.aheadDefault} ahead of and ${b.behindDefault} behind ${defaultBranch ?? "the default branch"}`
         : "",
-      b.upstream && conventionalUpstream ? `tracking ${b.upstream}` : "",
+      b.upstream && conventionalUpstream ? `tracking ${up}` : "",
       b.date ? absTime(b.date) : "",
     ]
       .filter(Boolean)
@@ -3701,20 +3719,23 @@ class App {
         })();
       },
     });
-    if (b.upstream && b.upstream.includes("/")) {
-      const slash = b.upstream.indexOf("/");
-      const remote = b.upstream.slice(0, slash);
-      const rname = b.upstream.slice(slash + 1);
+    // Split from the upstream's FULL name (upstreamParts): the short one is
+    // "remotes/origin/x" beside a local branch called "origin/x", which named
+    // a remote called "remotes" and failed the delete.
+    const upParts = upstreamParts(b);
+    if (upParts) {
+      const { remote, branch: rname } = upParts;
+      const upName = `${remote}/${rname}`;
       items.push({ separator: true });
       items.push({
-        label: `Delete remote branch (${b.upstream})`,
+        label: `Delete remote branch (${upName})`,
         icon: "trash",
         onClick: () => {
           void (async (): Promise<void> => {
             const ok = await confirmDialog({
               title: "Delete remote branch",
               message:
-                `Delete ${b.upstream} from ${remote}? This affects everyone. You can push it ` +
+                `Delete ${upName} from ${remote}? This affects everyone. You can push it ` +
                 `back straight afterwards, as long as nobody has re-made it.`,
               confirmLabel: "Delete remote branch",
               danger: true,
@@ -3722,7 +3743,7 @@ class App {
             if (!ok) return;
             const gone = await host.invoke("branch:deleteRemote", { remote, name: rname });
             if (!gone.ok) {
-              toast(gone.message ?? `Couldn't delete ${b.upstream}.`, gone.expected ? "info" : "error");
+              toast(gone.message ?? `Couldn't delete ${upName}.`, gone.expected ? "info" : "error");
               return;
             }
             bust("branches");
@@ -3731,7 +3752,7 @@ class App {
             // it reports whatever the remote says rather than claiming success.
             if (gone.was) {
               const sha = gone.was;
-              didUndoable(`Deleted ${b.upstream} from ${remote}.`, {
+              didUndoable(`Deleted ${upName} from ${remote}.`, {
                 label: `Push ${rname} back to ${remote}`,
                 undo: async () => {
                   const back = await host.invoke("branch:restoreRemote", { remote, name: rname, sha });
@@ -3742,7 +3763,7 @@ class App {
                 after: () => this.refreshBranchesSoft(),
               });
             } else {
-              toast(`Deleted ${b.upstream} from ${remote}.`, "success");
+              toast(`Deleted ${upName} from ${remote}.`, "success");
             }
           })();
         },
@@ -3980,16 +4001,16 @@ class App {
     b: BranchInfo,
     to: string,
   ): Promise<{ done: "rename" | "publish"; remote: string; was?: string } | null> {
-    const up = b.upstream;
-    if (!up) return null; // unpublished
-    const slash = up.indexOf("/");
-    if (slash <= 0) return null;
+    // Split from the upstream's FULL name (upstreamParts), not the short one
+    // ("remotes/origin/x" beside a local branch "origin/x").
+    const parts = upstreamParts(b);
+    if (!parts) return null; // unpublished, or tracking a local branch
     // Against the name under refs/heads/: "origin/release" never equals the
     // short "heads/release", so a branch beside a tag of its name was never
     // offered the remote rename.
     const old = branchName(b);
-    if (up.slice(slash + 1) !== old) return null; // deliberately tracking something else
-    return this.reconcileUpstream(to, up, old);
+    if (parts.branch !== old) return null; // deliberately tracking something else
+    return this.reconcileUpstream(to, `${parts.remote}/${parts.branch}`, old);
   }
 
   /** Offer to make the remote agree with `local`, which tracks `upstream`
@@ -9216,15 +9237,20 @@ class App {
     const remotes = this.refs.filter((r) => r.type === "remote");
     const tags = this.refs.filter((r) => r.type === "tag");
     const items: MenuItem[] = [];
+    // Every entry is NAMED by its full name under the namespace — "release",
+    // "origin/x", "v1" — never git's short form, which is "heads/release" /
+    // "tags/release" beside a tag and a branch of that name, and
+    // "remotes/origin/x" beside a local branch "origin/x". Each still checks
+    // out by its full name.
     if (locals.length) {
       items.push({ separator: true, label: "Branches" });
       for (const b of locals) {
         items.push({
-          label: b.name,
+          label: branchName(b),
           icon: "git-branch",
           current: b.isCurrent,
           sub: b.isCurrent ? "current" : undefined,
-          title: b.isCurrent ? `Already on ${b.name}` : `Check out ${b.name}`,
+          title: b.isCurrent ? `Already on ${branchName(b)}` : `Check out ${branchName(b)}`,
           onClick: () => {
             if (b.isCurrent) {
               this.revealInGraph(b.sha);
@@ -9242,9 +9268,9 @@ class App {
       // past the 16th was unreachable by any means, including search.
       for (const b of remotes) {
         items.push({
-          label: b.name,
+          label: refDisplay(b.fullName),
           icon: "cloud",
-          title: `Check out ${b.name} as a local branch`,
+          title: `Check out ${refDisplay(b.fullName)} as a local branch`,
           onClick: () => void this.checkoutRef(b.fullName),
         });
       }
@@ -9255,13 +9281,13 @@ class App {
       // and meant the old 16-item cap kept the oldest tags. Numeric-aware
       // descending, matching the extension's branch dialog.
       const tagsSorted = [...tags].sort((a, b) =>
-        b.name.localeCompare(a.name, undefined, { numeric: true }),
+        tagName(b).localeCompare(tagName(a), undefined, { numeric: true }),
       );
       for (const t of tagsSorted) {
         items.push({
-          label: t.name,
+          label: tagName(t),
           icon: "tag",
-          title: `Show ${t.name} in Commits`,
+          title: `Show ${tagName(t)} in Commits`,
           onClick: () => this.revealInGraph(t.sha),
         });
       }

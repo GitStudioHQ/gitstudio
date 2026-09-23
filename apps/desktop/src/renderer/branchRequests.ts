@@ -23,6 +23,37 @@ export function tagName(r: { fullName: string; name: string }): string {
   return r.fullName.startsWith("refs/tags/") ? r.fullName.slice("refs/tags/".length) || r.name : r.name;
 }
 
+/** A remote-tracking ref's remote and branch, from its FULL name:
+ *  refs/remotes/<remote>/<branch>, the remote the first segment (a branch may
+ *  contain slashes). Not from the short name, which is "remotes/origin/x"
+ *  beside a local branch called "origin/x" and split at its first slash named
+ *  a remote called "remotes". Falls back to the short name without a full one. */
+export function remoteRefParts(r: { fullName?: string; name: string }): { remote: string; branch: string } {
+  const path = r.fullName?.startsWith("refs/remotes/") ? r.fullName.slice("refs/remotes/".length) : r.name;
+  const slash = path.indexOf("/");
+  return slash > 0 ? { remote: path.slice(0, slash), branch: path.slice(slash + 1) } : { remote: path, branch: path };
+}
+
+/** A local branch's upstream as the remote and the branch on it — from
+ *  `upstreamRef` (%(upstream), full), else the short `upstream` for a payload
+ *  without one. Undefined when it tracks nothing, or a local branch. */
+export function upstreamParts(b: { upstreamRef?: string; upstream?: string }): { remote: string; branch: string } | undefined {
+  if (b.upstreamRef) {
+    if (!b.upstreamRef.startsWith("refs/remotes/")) return undefined;
+    const p = remoteRefParts({ fullName: b.upstreamRef, name: "" });
+    return p.branch && p.branch !== p.remote ? p : undefined;
+  }
+  const slash = b.upstream?.indexOf("/") ?? -1;
+  return b.upstream && slash > 0 ? { remote: b.upstream.slice(0, slash), branch: b.upstream.slice(slash + 1) } : undefined;
+}
+
+/** How an upstream is NAMED to a person: "origin/x", never git's
+ *  "remotes/origin/x" (see upstreamParts). */
+export function upstreamLabel(b: { upstreamRef?: string; upstream?: string }): string | undefined {
+  const p = upstreamParts(b);
+  return p ? `${p.remote}/${p.branch}` : b.upstream;
+}
+
 /** A name that starts with "-" — git would read it as an option (and
  *  refuses to create one; update-ref does not). The rename box offers it
  *  without its leading dashes. */
