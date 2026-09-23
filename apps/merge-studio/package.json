@@ -92,11 +92,8 @@
       "description": "Merge Studio requires a local git repository on disk."
     },
     "untrustedWorkspaces": {
-      "supported": "limited",
-      "restrictedConfigurations": [
-        "jbMerge.jetbrainsPath"
-      ],
-      "description": "In Restricted Mode the workspace cannot set the JetBrains IDE launcher path (jbMerge.jetbrainsPath); everything else works."
+      "supported": false,
+      "description": "Merge Studio works through VS Code's built-in Git extension, which Restricted Mode turns off. Trust this folder to use Merge Studio."
     }
   },
   "contributes": {
@@ -107,7 +104,7 @@
           "type": "boolean",
           "default": true,
           "order": 1,
-          "markdownDescription": "Open conflicted files in Merge Studio and show the conflicts dashboard when a merge, rebase, cherry-pick or revert stops. If GitStudio is installed with `#gitstudio.merge.autoOpen#` on, GitStudio does this instead."
+          "markdownDescription": "Open conflicted files in Merge Studio and show the conflicts dashboard when a merge, rebase, cherry-pick or revert stops. If a GitStudio with the same Conflicts dashboard is installed with `#gitstudio.merge.autoOpen#` on, GitStudio does this instead."
         },
         "jbMerge.autoApplyNonConflicting": {
           "type": "boolean",

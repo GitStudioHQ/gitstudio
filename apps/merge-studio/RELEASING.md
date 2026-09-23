@@ -190,7 +190,8 @@ extension, runs `jbMerge.openDemo` and asserts the custom editor resolved.
    then open a PR. Its CI runs the same, and `check-parity` fails on any edit
    to `vendor/**` — fix it in gitstudio and export again.
 3. Tag `vX.Y.Z` on merge-studio's `main` as before. Its `release.yml` guards
-   the tag against `package.json` and runs `check-parity` before packaging.
+   the tag against `package.json`, refuses a manual run from anything but a
+   `v*` tag or `main`, and runs `check-parity` before packaging.
    The merge-studio repository has no desktop app, so `--latest` does not
    matter there.
 

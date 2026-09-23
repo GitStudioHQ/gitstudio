@@ -78,12 +78,27 @@ test("the JetBrains commands stay out of the palette without an IDE", () => {
   }
 });
 
-test("the launcher path is user-only and protected in Restricted Mode", () => {
+test("the launcher path is user-only: a workspace can never set the program Merge Studio launches", () => {
   const props = configurationProperties(pkg.contributes.configuration) as Record<string, { scope?: string }>;
   assert.equal(props["jbMerge.jetbrainsPath"].scope, "machine");
-  const caps = (pkg as unknown as { capabilities: { untrustedWorkspaces: { restrictedConfigurations: string[] } } })
-    .capabilities;
-  assert.deepEqual(caps.untrustedWorkspaces.restrictedConfigurations, ["jbMerge.jetbrainsPath"]);
+});
+
+test("Restricted Mode is declared as it is: Merge Studio needs VS Code's Git extension, which Restricted Mode turns off", () => {
+  // Verified in an isolated VS Code 1.138 (review r0923b): in an untrusted
+  // folder vscode.git (untrustedWorkspaces.supported: false) is off, so Merge
+  // Studio, which depends on it, never activates — its commands are not even
+  // in the palette. 0.3.4's "limited … everything else works" was untrue.
+  const pkgFull = pkg as unknown as {
+    extensionDependencies: string[];
+    capabilities: { untrustedWorkspaces: { supported: unknown; description: string; restrictedConfigurations?: unknown } };
+  };
+  assert.deepEqual(pkgFull.extensionDependencies, ["vscode.git"]);
+  const trust = pkgFull.capabilities.untrustedWorkspaces;
+  assert.equal(trust.supported, false);
+  assert.equal(trust.restrictedConfigurations, undefined, "only meaningful with limited support");
+  assert.match(trust.description, /Git extension/);
+  assert.doesNotMatch(trust.description, /everything else works/);
+  assert.ok(!readme.includes("In Restricted Mode a workspace cannot set"), "the README says the same");
 });
 
 // ── The walkthrough (POLISH B2) ─────────────────────────────────────────────
@@ -136,6 +151,18 @@ test("walkthrough text renders as written: no backticks, every media file presen
     assert.ok(s.media.altText && s.media.altText.length > 10, `${s.id} has no alt text`);
   }
 });
+
+test(
+  "the walkthrough shows captures from the final build, never a placeholder",
+  { todo: "POLISH B3: the eight media/walkthrough/*.svg still read 'Screenshot pending' (SHOTS.md); a release gate" },
+  () => {
+    for (const s of walkthrough!.steps) {
+      for (const f of [s.media.svg, ...(typeof s.media.image === "string" ? [s.media.image] : Object.values(s.media.image ?? {}))]) {
+        if (typeof f === "string") assert.doesNotMatch(read(f), /Screenshot pending|Placeholder/, `${s.id}: ${f}`);
+      }
+    }
+  },
+);
 
 // ── README (POLISH B4) ──────────────────────────────────────────────────────
 
@@ -211,4 +238,17 @@ test("the shell is MIT; the bundled GitStudio packages' Apache-2.0 text and NOTI
   for (const f of ["LICENSE", "LICENSE-APACHE", "NOTICE"]) {
     assert.ok(!new RegExp(`^${f}$`, "m").test(ignore), `${f} must ship`);
   }
+});
+
+test("NOTICE reproduces the bundled GitStudio packages' own attribution notice (Apache-2.0 section 4(d))", () => {
+  // GitStudio's NOTICE: the monorepo root, or its vendored copy in merge-studio.
+  const gsNotice = [join(ROOT, "vendor/gitstudio/NOTICE"), resolve(ROOT, "../../NOTICE")].find((p) => existsSync(p));
+  assert.ok(gsNotice, "GitStudio's NOTICE is not where the build can see it");
+  const flat = (s: string) => s.replace(/\s+/g, " ").trim();
+  const ours = flat(read("NOTICE"));
+  // Its attribution paragraphs: the name and copyright, and "This product includes …".
+  const paragraphs = readFileSync(gsNotice, "utf8").split(/\n\s*\n/).map(flat).filter(Boolean);
+  const attribution = paragraphs.filter((p, i) => i === 0 || /^This product includes/.test(p));
+  assert.equal(attribution.length, 2, JSON.stringify(paragraphs));
+  for (const p of attribution) assert.ok(ours.includes(p), `NOTICE lacks GitStudio's "${p}"`);
 });

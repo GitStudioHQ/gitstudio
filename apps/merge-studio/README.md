@@ -84,7 +84,7 @@ Run **Merge Studio: Open Sample Merge** from the Command Palette. A ready-made c
 
 ## Using GitStudio too?
 
-[GitStudio](https://marketplace.visualstudio.com/items?itemName=gitstudio.gitstudio), the full Git GUI for VS Code and Cursor, ships this same merge editor and Conflicts dashboard. With both installed, GitStudio opens conflicts automatically and Merge Studio stays quiet. Its commands (Resolve Conflicts…, Open Sample Merge, Compare) still work and open the same screens. To let Merge Studio do it instead, set `gitstudio.merge.autoOpen` to `false`.
+[GitStudio](https://marketplace.visualstudio.com/items?itemName=gitstudio.gitstudio), the full Git GUI for VS Code and Cursor, ships this same merge editor and Conflicts dashboard. With both installed, GitStudio opens conflicts automatically and Merge Studio stays quiet, and says so the first time. Its commands (Resolve Conflicts…, Open Sample Merge, Compare) still work and open the same screens. To let Merge Studio do it instead, set `gitstudio.merge.autoOpen` to `false`. An older GitStudio without the Conflicts dashboard changes nothing: Merge Studio keeps opening conflicts itself.
 
 Want only a merge tool? Use Merge Studio. Want the commit graph, blame, staging and interactive rebase too? Use GitStudio.
 
@@ -112,7 +112,7 @@ Requires VS Code 1.82 (August 2023) or newer, **git**, and VS Code's built-in Gi
 
 **Which side is mine in a rebase?** Yours, on the left: the commit being replayed from your branch. See [Rebases: which side is yours?](#rebases-which-side-is-yours)
 
-**VS Code's own merge editor still opens.** At your first conflict Merge Studio offers to turn off VS Code's merge editor and its conflict highlights. You can do it later from **Settings** (`git.mergeEditor`, `merge-conflict.codeLens.enabled`, `merge-conflict.decorators.enabled`), and put them back with **Merge Studio: Restore VS Code's Merge Editor**.
+**VS Code's own merge editor still opens.** At your first conflict Merge Studio offers to turn off VS Code's merge editor and its conflict highlights (once: if an earlier Merge Studio already asked you, it doesn't ask again). You can do it later from **Settings** (`git.mergeEditor`, `merge-conflict.codeLens.enabled`, `merge-conflict.decorators.enabled`), and put them back with **Merge Studio: Restore VS Code's Merge Editor**.
 
 **How do I stop files opening by themselves?** Set `jbMerge.autoOpen` to `false`. **Merge Studio: Resolve Conflicts…** still opens the dashboard when you want it.
 
@@ -123,7 +123,7 @@ Requires VS Code 1.82 (August 2023) or newer, **git**, and VS Code's built-in Gi
 ## Known limitations
 
 - Merge Studio needs a local repository on disk; virtual workspaces are not supported.
-- In Restricted Mode a workspace cannot set `jbMerge.jetbrainsPath`.
+- Merge Studio is off in Restricted Mode: it works through VS Code's built-in Git extension, which Restricted Mode turns off. Trust the folder to use it.
 - One Conflicts dashboard at a time: with conflicts in two repositories, it shows the active one.
 
 ## Feedback and support

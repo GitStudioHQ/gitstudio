@@ -19,8 +19,9 @@
 ### Changed
 
 - Merge Studio now shares its merge editor and Conflicts dashboard with GitStudio, so a fix in one reaches both. Your `jbMerge.*` settings and commands keep working.
-- With GitStudio installed, GitStudio opens conflicts automatically and Merge Studio stays quiet; Merge Studio's commands still work and open the same screens.
-- The question about VS Code's own merge editor now comes at your first conflict, as a notification, and is remembered only once you answer it. It used to be asked once at install, where it was easy to miss.
+- With GitStudio installed, GitStudio opens conflicts automatically and Merge Studio stays quiet, and says so the first time; Merge Studio's commands still work and open the same screens. An older GitStudio without the Conflicts dashboard changes nothing.
+- The question about VS Code's own merge editor now comes at your first conflict, as a notification, and is remembered only once you answer it. It used to be asked once at install, where it was easy to miss. If Merge Studio 0.3 already asked you, you're not asked again.
+- In Restricted Mode the Extensions view now says why Merge Studio is off: it works through VS Code's built-in Git extension, which Restricted Mode turns off. Trust the folder to use it.
 - Changing the whitespace mode keeps your picks, and asks first when it can't.
 - Works in git worktrees: the dashboard follows the worktree's own git directory.
 - The dashboard's file list starts over at each step of a rebase.
@@ -29,7 +30,7 @@
 - `jbMerge.conflictResolver`'s `webview` value is now called `embedded`; a user setting is updated for you.
 - `jbMerge.jetbrainsPath` can be set in user settings only, never by a workspace.
 - JetBrains IDEs are found in their usual install folders on Windows and Linux too, including JetBrains Toolbox.
-- The dashboard's links: Report a problem (with your Merge Studio and editor versions filled in), Rate Merge Studio, Sponsor.
+- The dashboard's links: Report a problem (with your Merge Studio and editor versions filled in) while you work, and Rate Merge Studio and Sponsor only once everything is resolved.
 - A new Get Started walkthrough.
 - Requires VS Code 1.82 (August 2023) or newer. Cursor, Windsurf and VSCodium already meet this.
 

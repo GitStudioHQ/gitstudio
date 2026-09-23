@@ -14,6 +14,15 @@ VENDORED_FROM.json for the exact GitStudio commit and file hashes). Portions
 of those packages originate from Merge Studio itself, contributed under MIT
 and redistributed by GitStudio under Apache-2.0.
 
+The GitStudio packages' own NOTICE, reproduced as the Apache License
+(section 4(d)) asks:
+
+    GitStudio
+    Copyright 2026 GitStudio
+
+    This product includes software developed for the GitStudio project
+    (https://gitstudio.dev).
+
 This product also bundles third-party software, including:
 - Monaco Editor (MIT), Microsoft Corporation
 - vscode-diff (MIT)
