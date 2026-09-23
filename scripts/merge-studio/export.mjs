@@ -47,6 +47,12 @@ export const PARITY_INPUTS = [
 /** Paths in the target the shell replaces; removed before writing. */
 export const REPLACED = ["src", "webview", "test", "test-harness", VENDOR_DIR, "scripts/check-parity.mjs", "scripts/test/checkParity.test.mjs"];
 
+/** vendor/gitstudio/.gitattributes: the hashed bytes are stored and checked out as they are. */
+export const VENDOR_GITATTRIBUTES =
+  "# Written by gitstudio's scripts/merge-studio/export.mjs. check-parity hashes these\n" +
+  "# files, so git must not convert their line endings on any platform.\n" +
+  "* -text\n";
+
 /** Shell files that are not copied as they are (regenerated) or never (build output). */
 const SHELL_SKIP = [/^node_modules(\/|$)/, /^dist(\/|$)/, /\.vsix$/, /^package\.json$/, /^tsconfig\.json$/, /(^|\/)\.DS_Store$/];
 
@@ -230,6 +236,9 @@ export function exportTo({ into, allowDirty = false, lock = true }) {
   }
   cpSync(join(GITSTUDIO_ROOT, "LICENSE"), join(target, VENDOR_DIR, "LICENSE"));
   cpSync(join(GITSTUDIO_ROOT, "NOTICE"), join(target, VENDOR_DIR, "NOTICE"));
+  // Vendored bytes are hashed, so git must never rewrite them: no line-ending
+  // conversion on a Windows checkout (core.autocrlf), in either repository.
+  writeFileSync(join(target, VENDOR_DIR, ".gitattributes"), VENDOR_GITATTRIBUTES);
   for (const [from, to] of PARITY_INPUTS) {
     mkdirSync(dirname(join(target, to)), { recursive: true });
     cpSync(join(GITSTUDIO_ROOT, from), join(target, to));

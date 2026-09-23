@@ -17,6 +17,7 @@ import {
   resolveInLock,
   standalonePackageJson,
   standaloneTsconfig,
+  VENDOR_GITATTRIBUTES,
   VENDORED_PACKAGES,
 } from "../export.mjs";
 
@@ -140,6 +141,9 @@ test("a real export: replaces the old layout, vendors the packages, and passes c
     for (const p of VENDORED_PACKAGES) assert.ok(existsSync(join(into, "vendor/gitstudio", p, "src")), p);
     assert.ok(existsSync(join(into, "vendor/gitstudio/extension/src/merge/mergeIds.ts")));
     assert.ok(existsSync(join(into, "vendor/gitstudio/LICENSE")));
+    // A Windows checkout must not rewrite the hashed bytes (core.autocrlf).
+    assert.equal(readFileSync(join(into, "vendor/gitstudio/.gitattributes"), "utf8"), VENDOR_GITATTRIBUTES);
+    assert.match(VENDOR_GITATTRIBUTES, /^\* -text$/m);
 
     const pkg = JSON.parse(readFileSync(join(into, "package.json"), "utf8"));
     assert.equal(pkg.name, "merge-studio");
