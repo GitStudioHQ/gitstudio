@@ -9,7 +9,10 @@
 // - a vendored file edited in merge-studio ("modified");
 // - one deleted ("missing");
 // - one added that GitStudio never had ("added").
-// The fix is always the same: change the code in gitstudio, then export again.
+// The fix is always the same: the change goes into gitstudio (made there, or a
+// contributor's pull request imported with scripts/merge-studio/import.mjs),
+// then gitstudio is exported again. The failure message says so in plain words
+// for a contributor, whose pull request is welcome and fails here by design.
 //
 // The shell files the export writes at the repository root (src/, test/,
 // package.json, …) are reported as warnings when they differ from the export
@@ -32,6 +35,19 @@ import { fileURLToPath } from "node:url";
 
 export const MANIFEST_FILE = "VENDORED_FROM.json";
 export const VENDOR_DIR = "vendor/gitstudio";
+
+/** What a failure tells the reader: most often a contributor, whose pull request is welcome. */
+export const FAILURE_HELP = [
+  `${VENDOR_DIR}/ is a copy of GitStudio's shared code (https://github.com/GitStudioHQ/gitstudio), where it is kept.`,
+  "",
+  "Contributing a change? Keep it and open your pull request anyway: this check stays red on it, and",
+  "that is expected. Check the change itself with `npm run check-types && npm test`. A maintainer brings",
+  "the pull request into GitStudio (scripts/merge-studio/import.mjs there), with you as the author of",
+  "every commit, and the next export brings it back here. CONTRIBUTING.md has the details.",
+  "",
+  "Maintaining? Import the pull request into gitstudio with scripts/merge-studio/import.mjs, or make the",
+  "change in gitstudio, then run scripts/merge-studio/export.mjs again.",
+].join("\n");
 
 /** Finder litter is never drift. */
 const IGNORED_NAMES = new Set([".DS_Store"]);
@@ -157,7 +173,7 @@ function main() {
   if (!result.ok) {
     console.error(`check-parity: FAILED — ${result.problems.length} problem(s) in ${VENDOR_DIR} against ${MANIFEST_FILE}:`);
     for (const p of result.problems) console.error(`  ${p}`);
-    console.error("Vendored code is GitStudio's. Change it in gitstudio, then run scripts/merge-studio/export.mjs again.");
+    console.error(`\n${FAILURE_HELP}`);
     process.exitCode = 1;
     return;
   }
