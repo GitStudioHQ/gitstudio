@@ -613,6 +613,7 @@ const CASES = [
   ["a-list-github-could-not-fully-return-says-so", "projects", { extra: "partial=1", theme: "light" }],
   ["a-list-github-could-not-fully-return-says-so", "projects"],
   ["a-review-thread-github-could-not-return-is-said", "prs~open106~text:Files", { extra: "partial=1" }],
+  ["a-folder-that-will-not-open-is-not-painted-as-a-failure", "code"],
 ];
 
 function run(scene, checkId, opts = {}) {

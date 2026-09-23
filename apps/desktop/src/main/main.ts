@@ -22,6 +22,7 @@ import { join, basename, extname, dirname, resolve as resolvePath } from "node:p
 import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "node:fs/promises";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore } from "./repoStore";
+import { cannotOpenNotice } from "./repoNotice";
 import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
 import { RebaseBridge } from "./rebaseBridge";
@@ -466,10 +467,10 @@ async function openRepoPath(path: string): Promise<RepoInfo | undefined> {
     // In-app, not a native alert. This is the most likely first-run failure
     // (open the wrong folder) and dialogs.ts is explicit that native dialogs
     // read as jarring — an OS modal was the worst possible first impression.
-    send("app:notice", {
-      kind: "warn",
-      message: `${path} is not inside a Git repository.`,
-    });
+    // And not "not inside a Git repository" about a repository this account
+    // cannot read: git says the same sentence for both, so the notice asks
+    // the filesystem which one it is (see cannotOpenNotice).
+    send("app:notice", cannotOpenNotice(path));
   }
   buildMenu();
   void saveState();

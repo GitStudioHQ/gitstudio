@@ -13170,6 +13170,26 @@
       // The picker still offers every project that DID come back.
       c.ok($$(".gh-card").length > 0, "the readable cards are still on the board");
     },
+    /** A folder that does not open — no repository, or one this account cannot
+     *  read — arrives as a `warn` notice. It used to be painted red, as if the
+     *  app had failed; only an `error` notice is. */
+    "a-folder-that-will-not-open-is-not-painted-as-a-failure": async (f) => {
+      const c = check(f);
+      await settle(400);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const said = "/work/project is a Git repository, but you don't have permission to read it.";
+      c.ok(window.__gsEmit("app:notice", { kind: "warn", message: said }) > 0, "precondition: the app listens for notices");
+      await settle(300);
+      const t = $$("#toast-stack .toast").find((x) => text(x).includes("don't have permission"));
+      c.ok(!!t, "the notice is shown");
+      if (!t) return;
+      c.ok(!t.classList.contains("toast-error"), "…in the neutral tone, not as a failure");
+      $$("#toast-stack .toast").forEach((x) => x.remove());
+      window.__gsEmit("app:notice", { kind: "error", message: "Something did fail." });
+      await settle(300);
+      const e = $$("#toast-stack .toast").find((x) => text(x).includes("Something did fail"));
+      c.ok(!!e && e.classList.contains("toast-error"), "an error notice is still red");
+    },
     /** The PR's review threads: one GitHub could not return has no file to hang
      *  on, so every file's panel says it — "No comments on this file" is not a
      *  claim the panel can make about a thread nobody could read. */

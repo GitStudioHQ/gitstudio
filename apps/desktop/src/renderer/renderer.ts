@@ -8757,7 +8757,10 @@ class App {
       }
     });
     host.on("app:notice", (n) => {
-      toast(n.message, n.kind === "error" ? "error" : n.kind === "warn" ? "error" : "info");
+      // A warning is a state the user is in — a folder that is not a
+      // repository, a repository this account cannot read — not a failure of
+      // the app, so it is not painted as one. Only `error` is red.
+      toast(n.message, n.kind === "error" ? "error" : "info");
     });
     // Something changed on disk (issue #17). Already debounced in main.
     host.on("repo:filesChanged", (info) => {
