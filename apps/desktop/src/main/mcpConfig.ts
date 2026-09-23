@@ -126,6 +126,39 @@ const TRANSLOCATED_MESSAGE =
   "add it again.";
 
 /**
+ * Is this executable running straight from a mounted disk image?
+ *
+ * The same vanishing path as translocation, by another road. An app that was
+ * never quarantined — fetched with curl, or with the attribute cleared — is not
+ * translocated when it is opened from its disk image: it runs from
+ * /Volumes/<image>/GitStudio.app itself, and a config naming that works until
+ * the image is ejected. A disk image puts the app at the ROOT of its volume,
+ * which is what this matches; an app kept in an Applications folder on another
+ * drive is where its owner chose to install it, and is left alone.
+ */
+export function isOnDiskImage(execPath: string): boolean {
+  return /^\/Volumes\/[^/]+\/[^/]+\.app\/Contents\//.test(execPath);
+}
+
+/** Why Agent Access will not write a disk-image path, and what to do. */
+const DISK_IMAGE_MESSAGE =
+  "GitStudio is running straight from its disk image, and that path goes away when the image " +
+  "is ejected — an agent set up now would stop working. Move GitStudio to Applications first, " +
+  "open it from there, then add it again.";
+
+/**
+ * Why the path Add would write will not outlive this run of the app — a
+ * translocated copy, or a disk image — or undefined when it will. The one
+ * answer both the card and Add give, so neither can offer what the other
+ * refuses.
+ */
+function vanishingLocation(execPath: string): string | undefined {
+  if (isTranslocated(execPath)) return TRANSLOCATED_MESSAGE;
+  if (isOnDiskImage(execPath)) return DISK_IMAGE_MESSAGE;
+  return undefined;
+}
+
+/**
  * What a client runs to start the server: the app's OWN executable as Node
  * (`ELECTRON_RUN_AS_NODE=1`), never a bare `node`.
  *
@@ -331,8 +364,8 @@ export function mcpInfo(repoRoot: string | undefined, rt: McpRuntime = currentRu
     };
   });
   // Nothing to offer when the server is missing — or when the path Add would
-  // write is a translocated copy that vanishes on quit.
-  const unavailable = isTranslocated(rt.execPath) ? TRANSLOCATED_MESSAGE : missingServer(rt, binPath)?.message;
+  // write vanishes: a translocated copy on quit, a disk image on eject.
+  const unavailable = vanishingLocation(rt.execPath) ?? missingServer(rt, binPath)?.message;
   return {
     binPath,
     command,
@@ -359,10 +392,12 @@ export function installMcp(
     return { ok: false, message: `Unknown client: ${req.client}.` };
   }
   // Refused, not written: the path would name a copy of the app that is gone
-  // the moment it quits. Where the app runs from is the user's state, and the
-  // way on is theirs to take — so `expected`, with the way on in the message.
-  if (isTranslocated(rt.execPath)) {
-    return { ok: false, expected: true, message: TRANSLOCATED_MESSAGE };
+  // the moment it quits, or a disk image that is gone the moment it is
+  // ejected. Where the app runs from is the user's state, and the way on is
+  // theirs to take — so `expected`, with the way on in the message.
+  const vanishing = vanishingLocation(rt.execPath);
+  if (vanishing) {
+    return { ok: false, expected: true, message: vanishing };
   }
   const binPath = stableServerPath(rt);
   const missing = missingServer(rt, binPath);

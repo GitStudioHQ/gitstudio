@@ -539,7 +539,7 @@ export function agentAccessCard(): HTMLElement {
     body.append(clients);
 
     // Manual config snippet (copy) — only when it could work. With no server,
-    // or from a translocated copy whose path vanishes on quit, it names a
+    // or from a translocated copy or a disk image whose path vanishes, it names a
     // command no client could run, and copying it is Add without the refusal.
     if (!info.available) return;
     const snippet = buildSnippet(info, permission);

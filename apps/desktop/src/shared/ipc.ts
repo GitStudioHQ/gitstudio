@@ -2778,7 +2778,8 @@ export interface McpInfo {
   clients: McpClientInfo[];
   repoRoot?: string;
   /** Whether Add can work: the bundled server exists, and the app is not
-   *  running from a translocated copy whose path vanishes on quit. */
+   *  running from a translocated copy whose path vanishes on quit, or from a
+   *  disk image whose path vanishes on eject. */
   available: boolean;
   /** When it cannot: why, in words for whoever can act on it. */
   missing?: string;

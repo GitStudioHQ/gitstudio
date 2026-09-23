@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { installMcp, isTranslocated, mcpInfo, type McpRuntime } from "../src/main/mcpConfig";
+import { installMcp, isOnDiskImage, isTranslocated, mcpInfo, type McpRuntime } from "../src/main/mcpConfig";
 import { reportableResultMessage } from "../src/main/expectedError";
 import { removeTempRepo } from "./tmpRepo";
 
@@ -89,6 +89,55 @@ test("Add refuses to write a translocated path, says why and what to do, and fil
     const info = mcpInfo(undefined, rt);
     assert.equal(info.available, false, "the card does not offer an Add that would be refused");
     assert.match(info.missing ?? "", /Applications/);
+  } finally {
+    restore();
+  }
+});
+
+// The same vanishing path by another road: an app that was never quarantined
+// (fetched with curl, or with the attribute cleared) is not translocated when
+// it is opened from its disk image — it runs straight from
+// /Volumes/<image>/GitStudio.app, and that path is gone the moment the image
+// is ejected. A disk image puts the app at the ROOT of its volume; an app
+// installed into an Applications folder on another drive is where its owner
+// chose to keep it, and is left alone.
+const ON_DISK_IMAGE = "/Volumes/GitStudio 2.0.1-arm64/GitStudio.app/Contents/MacOS/GitStudio";
+
+test("an app run straight from a mounted disk image is recognised by its path", () => {
+  assert.equal(isOnDiskImage(ON_DISK_IMAGE), true);
+  assert.equal(isOnDiskImage("/Volumes/GitStudio/GitStudio.app/Contents/MacOS/GitStudio"), true);
+  assert.equal(isOnDiskImage("/Applications/GitStudio.app/Contents/MacOS/GitStudio"), false);
+  assert.equal(
+    isOnDiskImage("/Volumes/Work SSD/Applications/GitStudio.app/Contents/MacOS/GitStudio"),
+    false,
+    "installed on another drive, in its Applications folder",
+  );
+  assert.equal(isOnDiskImage(TRANSLOCATED), false, "translocation has its own sentence");
+  assert.equal(isOnDiskImage("C:\\Users\\someone\\AppData\\Local\\Programs\\GitStudio\\GitStudio.exe"), false);
+});
+
+test("Add refuses to write a disk-image path, says move GitStudio to Applications first, and files nothing", () => {
+  const home = join(scratch, "home-dmg");
+  const restore = pointHomeAt(home);
+  try {
+    const rt = { ...packagedAt(join(scratch, "dmg")), execPath: ON_DISK_IMAGE };
+    const r = installMcp(undefined, { client: "cursor", write: false, destructive: false }, rt);
+    assert.equal(r.ok, false);
+    assert.equal(r.expected, true, "where the app runs from is the user's state, not our defect");
+    assert.equal(reportableResultMessage(r), undefined);
+    assert.match(r.message, /move GitStudio to Applications first/i);
+    assert.match(r.message, /eject/i, "and why: the path goes away with the disk image");
+    let wrote = true;
+    try {
+      readFileSync(join(home, ".cursor", "mcp.json"), "utf8");
+    } catch {
+      wrote = false;
+    }
+    assert.equal(wrote, false, "no config written that names a path on a disk image");
+
+    const info = mcpInfo(undefined, rt);
+    assert.equal(info.available, false, "the card does not offer an Add that would be refused");
+    assert.match(info.missing ?? "", /move GitStudio to Applications first/i);
   } finally {
     restore();
   }
