@@ -54,7 +54,6 @@ const REVIEWED: Record<string, string> = {
   cherryPickContinue: "no arguments",
   revertAbort: "no arguments",
   revertContinue: "no arguments",
-  rebaseAbort: "no arguments",
   rebaseContinue: "no arguments",
   rebaseSkip: "no arguments",
 };

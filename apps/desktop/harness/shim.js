@@ -3031,6 +3031,22 @@
       result: "export function render(list) {\n  return list.map(row);\n}\n\nexport const limit = 10;\n",
     };
   };
+  // A conflicted file written from OUTSIDE the app — another editor, a
+  // formatter, a command in a terminal. The index keeps its three stages; only
+  // the working copy (the model's `result`) moves, as it does on disk. A check
+  // calls window.__gsWriteFile(path, text), then fires `repo:filesChanged`
+  // itself, the way the watcher reports the write.
+  const writtenOutside = new Map();
+  const modelFromIndex = dynamic["conflict:model"];
+  dynamic["conflict:model"] = (path) => {
+    const m = modelFromIndex(path);
+    return m && writtenOutside.has(path) ? { ...m, result: writtenOutside.get(path) } : m;
+  };
+  window.__gsWriteFile = (path, text) => {
+    if (!mp.file(path)) return false;
+    writtenOutside.set(path, text);
+    return true;
+  };
   const plainFileDiff = dynamic["file:diff"];
   dynamic["file:diff"] = (req) => {
     const path = req && req.path;

@@ -57,7 +57,7 @@ test("a quiet verb asks first, runs, and leaves the reporting to its caller", as
 test("without quiet, the command reports the outcome once", async () => {
   const toasts: string[] = [];
   await driveVerb(hostRecording(toasts), repoSkipping(), skippable, "skip");
-  assert.deepEqual(toasts, ["Last commit skipped — the rebase is complete, without it."]);
+  assert.deepEqual(toasts, ["Last commit skipped. Rebase complete, without it."]);
 });
 
 test("the rebase workspace's Skip asks the command to be quiet", () => {

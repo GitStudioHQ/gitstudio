@@ -78,6 +78,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   changes and then saving a file elsewhere, or running `git add` in a
   terminal, rebuilt the merge editor from scratch. The editor, its changes and
   its questions now survive the refresh.
+- **Writing the conflicted file itself from outside threw the merge away.**
+  With the merge editor open and changes accepted but not applied, a save in
+  another editor, a formatter or a command in a terminal rebuilt the editor
+  from the new file, silently. The editor and its work now stay, and the bar
+  above it says the file changed on disk, with **Reload from disk** (asks
+  first, since it discards the work in the editor) or **Keep my merge**
+  (Apply then asks before replacing what is on disk).
 - **With Settings ▸ Merge resolving in a JetBrains IDE, every refresh opened
   another merge window** — and removed the files the previous one was editing.
   The file is handed over once.

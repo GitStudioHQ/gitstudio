@@ -8,7 +8,7 @@
 
 import { readFile, readdir, writeFile, lstat, readlink } from "node:fs/promises";
 import { rmSync } from "node:fs";
-import { continueRebase, skipRebase, abortRebase } from "@gitstudio/git-service/RebaseRunner";
+import { continueRebase, skipRebase } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { textWriteSafe } from "@gitstudio/git-service/ConflictOps";
 import { noneOperationView } from "@gitstudio/git-service/OperationProvider";
@@ -3103,22 +3103,6 @@ export class GitBridge {
   }
   revertContinue(): Promise<CommitActionResult> {
     return this.runResult(["revert", "--continue", "--no-edit"], { alwaysExpected: true });
-  }
-  /**
-   * Abort through the RUNNER, which also forgets the reword queue.
-   *
-   * `runResult(["rebase","--abort"])` left it in `.git`. Keying by sha makes a
-   * stale queue inert against a FOREIGN rebase — but an abort restores the
-   * ORIGINAL shas, so an abandoned draft matched perfectly the next time that
-   * branch was rebased, and renamed a commit the user never asked to reword.
-   * Measured: "FINAL log: ABANDONED-DRAFT | m2 | m1".
-   */
-  rebaseAbort(): Promise<CommitActionResult> {
-    return this.resumeRebase(async (root, o) => {
-      // The runner's message form: a failed abort says WHY — a locked index,
-      // an unmerged path git will not discard — instead of a canned sentence.
-      return await abortRebase(root, o);
-    });
   }
   /**
    * Continue / skip through the RUNNER, not `-c core.editor=true`.

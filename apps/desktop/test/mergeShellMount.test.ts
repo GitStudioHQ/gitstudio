@@ -16,6 +16,8 @@ import {
   DesktopConflicts,
   DesktopMergeAdapter,
   conflictShape,
+  conflictSignature,
+  conflictStop,
   mergePayload,
   missingRoleOf,
   opIndicator,
@@ -118,6 +120,21 @@ test("a model's shape is read from the main process, else from the legacy flags"
   assert.equal(conflictShape(model({ missingSide: "theirs", hasBase: false })), "added-one-side");
   assert.equal(conflictShape(model({ hasBase: false })), "added-both", "no base, both present: add/add, still text");
   assert.equal(conflictShape(model()), "text");
+});
+
+test("a write to the file from outside is the SAME conflict stop, so the open merge editor keeps its work", () => {
+  // DiffPanel.showConflict keeps the live editor for an equal signature, and
+  // for an equal STOP says "changed on disk" instead of rebuilding — which
+  // threw away every accept not applied yet on the watcher's next tick.
+  const open = model({ op: REBASE });
+  const written = model({ op: REBASE, result: "r\nfive\n" });
+  assert.equal(conflictStop(written), conflictStop(open), "the same stop: the editor and its work stay");
+  assert.notEqual(conflictSignature(written), conflictSignature(open), "but other text: the merge bar says so");
+  assert.equal(conflictSignature(model({ op: REBASE })), conflictSignature(open), "a repaint with nothing new is nothing new");
+  const next = model({ op: { ...REBASE, episode: "rebase:2b3c4d5" }, ours: "o2\n" });
+  assert.notEqual(conflictStop(next), conflictStop(open), "a Continue that stopped again is another conflict");
+  assert.notEqual(conflictStop(model({ op: REBASE, theirs: "t2\n" })), conflictStop(open), "so is one whose sides git changed");
+  assert.notEqual(conflictStop(model({ op: REBASE, shape: "binary" })), conflictStop(open), "and one of another shape");
 });
 
 test("the side with no file is a ROLE, mapped through the operation — during a rebase stage 2 is Theirs", () => {
@@ -387,6 +404,26 @@ test("a host that can show the hand-off gets it, instead of a toast that disappe
   });
   await failing.handle({ type: "openInJetBrains" });
   assert.deepEqual(handed2, [], "nothing was handed over when the IDE did not open");
+});
+
+test("a Skip that ended the operation says which one it left out, and whether the rest applied", () => {
+  // The main process says it (OperationProvider); these are the words when it
+  // does not, and they must not claim "last" of commit 2 of 3.
+  const done = { ok: true, view: NONE, remainingConflicts: 0 } as OperationOutcome;
+  assert.equal(
+    outcomeLine(done, { ...REBASE, step: { n: 2, m: 3, unit: "commit" } }, "skip").text,
+    "Commit 2 of 3 skipped; the rest applied — rebase complete.",
+  );
+  assert.equal(outcomeLine(done, REBASE, "skip").text, "Last commit skipped. Rebase complete, without it.");
+  assert.equal(
+    outcomeLine(done, { ...REBASE, kind: "am", step: { n: 5, m: 5, unit: "patch" } }, "skip").text,
+    "Last patch skipped. The series is finished, without it.",
+  );
+  assert.equal(
+    outcomeLine({ ...done, message: "Commit 2 of 3 skipped; the rest applied — rebase complete" }, REBASE, "skip").text,
+    "Commit 2 of 3 skipped; the rest applied — rebase complete",
+    "the main process's own words win",
+  );
 });
 
 test("outcomes: done, stopped, and the reasons a refusal gives", () => {

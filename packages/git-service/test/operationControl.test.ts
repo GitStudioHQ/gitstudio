@@ -394,6 +394,7 @@ test("cherry-pick range × conflicted then continued: queued count, next stop, t
     assert.equal(out.view.queued, undefined, "nothing after the last one");
     const skipped = await ctx.operation.skip();
     assert.equal(skipped.ok, true, skipped.message);
+    assert.equal(skipped.message, "Last commit skipped. Cherry-pick complete, without it", "T3 was the last one");
     assert.equal(r.exists(".git/sequencer"), false);
   }));
 
@@ -764,6 +765,75 @@ test("pause × edit with an unstaged change: Continue is blocked with the real r
     const v = await ctx.operation.view();
     assert.equal(v.canContinue, false);
     assert.match(v.continueBlocked ?? "", /^f\.txt has changes that aren't staged/);
+  }));
+
+// ── a Skip that ENDS the operation says what it left out ─────────────────────
+//
+// "Last commit skipped" was said of every Skip that finished the operation —
+// also when the skipped commit was the MIDDLE one and git went on to apply the
+// rest. The outcome now says which one was skipped, and that the rest applied.
+
+test("skip × a middle commit of a rebase, the rest applies: says which, and that the rest applied", () =>
+  withStop(S.rebaseApplyMiddleStop, async ({ r }) => {
+    const ctx = r.ctx();
+    assert.deepEqual((await ctx.operation.view()).step, { n: 2, m: 3, unit: "commit" });
+    await ctx.conflictOps.takeStage("f.txt", 2);
+    const out = await ctx.operation.skip();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(out.message, "Commit 2 of 3 skipped; the rest applied — rebase complete");
+    assert.equal(r.exists(".git/rebase-apply"), false, "the rebase is over");
+    assert.deepEqual(
+      r.git("log", "--format=%s", "master..test").trim().split("\n"),
+      ["test: add h", "test: add g"],
+      "commit 3 was applied after the skipped one",
+    );
+  }));
+
+test("skip × the last commit of a rebase: says it finished without it", () =>
+  withStop(S.rebaseApplyStop, async ({ r }) => {
+    const ctx = r.ctx();
+    await ctx.conflictOps.takeStage("f.txt", 2);
+    const first = await ctx.operation.skip();
+    assert.equal(first.stopped, true, first.message);
+    assert.deepEqual(first.view.step, { n: 3, m: 3, unit: "commit" }, "commit 3 conflicts next");
+    await ctx.conflictOps.takeStage("f.txt", 2);
+    const out = await ctx.operation.skip();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(out.message, "Last commit skipped. Rebase complete, without it");
+    assert.equal(r.exists(".git/rebase-apply"), false);
+  }));
+
+test("skip × a middle patch of a series, the rest applies: says which, and that the rest applied", () =>
+  withStop(S.amMiddleStop, async ({ r }) => {
+    const ctx = r.ctx();
+    const v = await ctx.operation.view();
+    assert.equal(v.kind, "am");
+    assert.deepEqual(v.step, { n: 2, m: 3, unit: "patch" });
+    await ctx.conflictOps.takeStage("f.txt", 2);
+    const out = await ctx.operation.skip();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(out.message, "Patch 2 of 3 skipped; the rest applied — the series is finished");
+    assert.equal(r.exists(".git/rebase-apply"), false, "the am session is over");
+    assert.deepEqual(
+      r.git("log", "--format=%s", "-2").trim().split("\n"),
+      ["test: add h", "test: add g"],
+      "patch 3 was applied after the skipped one",
+    );
+  }));
+
+test("skip × a picked commit with more queued, the rest applies: names it, and says the rest applied", () =>
+  withStop(S.cherryPickMiddleStop, async ({ r, sha }) => {
+    const ctx = r.ctx();
+    const v = await ctx.operation.view();
+    assert.equal(v.kind, "cherry-pick");
+    assert.equal(v.commit?.sha, sha.t2);
+    assert.equal(v.queued, 1);
+    await ctx.conflictOps.takeStage("f.txt", 2);
+    const out = await ctx.operation.skip();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(out.message, `Commit ${sha.t2.slice(0, 7)} skipped; the rest applied — cherry-pick complete`);
+    assert.equal(r.exists(".git/sequencer"), false);
+    assert.equal(r.git("log", "-1", "--format=%s").trim(), "test: add h", "the queued commit was picked");
   }));
 
 // ── Locale-freedom: the conflicted column again, under a German git ─────────

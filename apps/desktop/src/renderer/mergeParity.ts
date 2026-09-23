@@ -25,7 +25,7 @@ import {
   type OperationView,
   type SideRole,
 } from "@gitstudio/host-bridge/conflictsProtocol";
-import { roleOfStage } from "@gitstudio/engine/conflict/sides";
+import { roleOfStage, skipEndedText } from "@gitstudio/engine/conflict/sides";
 import { resolvedOutsideMerge } from "@gitstudio/engine/conflict/documentText";
 import { conflictTypeFor } from "@gitstudio/engine/conflict/conflictType";
 import {
@@ -81,6 +81,37 @@ export function conflictShape(model: ConflictModel): ConflictShape {
   if (model.bothDeleted) return "both-deleted";
   if (model.missingSide) return model.hasBase ? "modify-delete" : "added-one-side";
   return model.hasBase ? "text" : "added-both";
+}
+
+/**
+ * Which conflict this is, leaving out the file's own text: the file, the stop
+ * it belongs to, and the three sides git holds for it (and their titles). A
+ * Continue that stopped on the next commit is a different stop, and the merge
+ * editor is rebuilt for it; a write to the file from outside (another editor,
+ * a formatter, a terminal) is the SAME stop, and the editor — with the work
+ * in it — stays (DiffPanel.showConflict).
+ */
+export function conflictStop(m: ConflictModel): string {
+  return JSON.stringify([
+    m.path,
+    m.op?.episode ?? "",
+    m.shape ?? "",
+    m.missingRole ?? "",
+    m.oursLabel,
+    m.theirsLabel,
+    m.base,
+    m.ours,
+    m.theirs,
+  ]);
+}
+
+/**
+ * Exactly "the same conflict": its stop and the file's text. The same
+ * signature again is a repaint with nothing new in it; the same stop with
+ * other text is the file changed on disk.
+ */
+export function conflictSignature(m: ConflictModel): string {
+  return JSON.stringify([conflictStop(m), m.result]);
 }
 
 /**
@@ -187,7 +218,8 @@ export function outcomeLine(
         (verb === "abort"
           ? `${cap} ended. The repository is back where it was before it started.`
           : verb === "skip"
-            ? `Last ${before.kind === "am" ? "patch" : "commit"} skipped. The ${noun} is complete, without it.`
+            ? // Which one it left out, and whether git applied the rest after it.
+              `${skipEndedText(before)}.`
             : `${cap} complete.`),
     };
   }

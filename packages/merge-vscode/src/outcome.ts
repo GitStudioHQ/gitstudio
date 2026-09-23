@@ -9,6 +9,7 @@ import type {
   OperationOutcome,
   OperationView,
 } from "@gitstudio/host-bridge/conflictsProtocol";
+import { skipEndedText } from "@gitstudio/engine/conflict/sides";
 import { abortConfirm, opNoun, skipConfirm } from "@gitstudio/webview-ui/conflicts/opText";
 
 export type OperationVerb = "continue" | "skip" | "abort";
@@ -51,10 +52,10 @@ export function operationNoun(kind: OperationKind): string {
 export function outcomeLine(
   outcome: OperationOutcome,
   verb: OperationVerb,
-  before: Pick<OperationView, "kind">,
+  before: Pick<OperationView, "kind"> & Partial<Pick<OperationView, "step" | "queued" | "commit">>,
 ): OutcomeLine {
   if (outcome.ok) {
-    return { kind: "done", text: outcome.message || doneText(before.kind, verb) };
+    return { kind: "done", text: outcome.message || doneText(before, verb) };
   }
   if (outcome.stopped) {
     return { kind: "stopped", text: outcome.message || stoppedText(outcome.view) };
@@ -85,13 +86,18 @@ export function continueRefusal(view: OperationView): string | undefined {
 }
 
 /** A finished verb, said per operation (never "the applying patches"). */
-function doneText(kind: OperationKind, verb: OperationVerb): string {
+function doneText(
+  before: Pick<OperationView, "kind"> & Partial<Pick<OperationView, "step" | "queued" | "commit">>,
+  verb: OperationVerb,
+): string {
+  const kind = before.kind;
+  // A Skip that ended it says which commit or patch it left out, and whether
+  // git went on to apply the rest — the words git-service's outcome uses.
+  if (verb === "skip") return `${skipEndedText(before)}.`;
   if (kind === "am") {
     return verb === "continue"
       ? "All patches applied."
-      : verb === "skip"
-        ? "Last patch skipped — the series is finished, without it."
-        : "Patch series abandoned — the branch is back where it was before it started.";
+      : "Patch series abandoned — the branch is back where it was before it started.";
   }
   if (kind === "stash") {
     return "Stash apply cancelled — the files are back as they were, and the stash is still in your list.";
@@ -100,11 +106,7 @@ function doneText(kind: OperationKind, verb: OperationVerb): string {
     return "The conflicted files are back to their last committed versions.";
   }
   const noun = operationNoun(kind);
-  return verb === "abort"
-    ? `${noun} cancelled — the repository is back where it was before.`
-    : verb === "skip"
-      ? `Last commit skipped — the ${opNoun(kind)} is complete, without it.`
-      : `${noun} complete.`;
+  return verb === "abort" ? `${noun} cancelled — the repository is back where it was before.` : `${noun} complete.`;
 }
 
 function stoppedText(view: OperationView): string {
