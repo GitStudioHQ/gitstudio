@@ -26,7 +26,9 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = resolve(HERE, "page/harness.html");
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// GS_CHROME first (as webview-ui's test/headless.ts): the machine's Chrome is
+// not always in /Applications, and a Chrome for Testing build works as well.
+const CHROME = process.env.GS_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 // A throwaway profile. Without --user-data-dir Chrome picks one relative to the
 // cwd and leaves a ~10MB profile tree inside the repo, unignored by git.
 const PROFILE = mkdtempSync(join(tmpdir(), "gs-audit-"));

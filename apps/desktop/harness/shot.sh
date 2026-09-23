@@ -21,7 +21,9 @@ OUT="${2:-$HARNESS/out/$SCENE.png}"
 THEME="${3:-dark}"
 EXTRA="${4:-}"
 mkdir -p "$(dirname "$OUT")"
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+# GS_CHROME first (as webview-ui's test/headless.ts), then the usual install.
+CHROME="${GS_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+"$CHROME" \
   --headless --disable-gpu --hide-scrollbars \
   --window-size=1600,1000 --force-device-scale-factor=2 \
   --virtual-time-budget=9000 \

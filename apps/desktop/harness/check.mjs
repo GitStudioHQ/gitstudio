@@ -21,7 +21,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = process.env.GS_HARNESS_PAGE
   ? resolve(process.env.GS_HARNESS_PAGE, "harness.html")
   : resolve(HERE, "page/harness.html");
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// GS_CHROME first (as webview-ui's test/headless.ts): the machine's Chrome is
+// not always in /Applications, and a Chrome for Testing build works as well.
+const CHROME = process.env.GS_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 /** id → the scene that sets up the state the assertion needs. */
 const CASES = [

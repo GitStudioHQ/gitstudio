@@ -26,7 +26,9 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE_DIR = process.env.GS_HARNESS_PAGE ? resolve(process.env.GS_HARNESS_PAGE) : resolve(HERE, "page");
 const PAGE = resolve(PAGE_DIR, "harness.html");
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// GS_CHROME first (as webview-ui's test/headless.ts): the machine's Chrome is
+// not always in /Applications, and a Chrome for Testing build works as well.
+const CHROME = process.env.GS_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 const argv = process.argv.slice(2);
 const asJson = argv.includes("--json");
