@@ -1,0 +1,99 @@
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_1895bb63820615 13294-13431,13462-13498,13500-13593
+  s_26f5e669d3043c::t_6b8e750c3105e2 13499
+  s_26f5e669d3043c::t_2a579c3a82acd9 13432-13461
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_126bbbd964f25b 2047-2049,2051
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_41cd62779ee888 2486-2488,2500
+  s_26f5e669d3043c::t_23555567ee2913 2577-2594,2605,2612,2615
+  s_26f5e669d3043c::t_a2a6ce9447b3f8 13
+  s_26f5e669d3043c::t_d2fd3ee6fde2ad 2513-2514
+  s_26f5e669d3043c::t_e64e8ea560bff9 2542
+  s_26f5e669d3043c::t_1a5aa1b5d44d84 2401-2407,2409,2414,2421
+  s_26f5e669d3043c::t_4b893325f4570d 1824
+  s_26f5e669d3043c::t_eaed38d54cb7cb 1840-1851,1859
+  s_26f5e669d3043c::t_16689213827a1f 1874,1880,1882-1886,1888,1899
+  s_26f5e669d3043c::t_b440e52fda6b02 1229,1231-1233,1236,1239
+  s_26f5e669d3043c::t_7b52667a07a5be 1222-1228,1235,1238,1240
+  s_26f5e669d3043c::t_c248dd46441e94 2203,2208-2216,2220
+  s_26f5e669d3043c::t_a0a4d8df76b1cf 2217-2219
+  s_26f5e669d3043c::t_a0ab2eed6cd6a6 2624-2631,2633-2637,2640,2642-2646
+  s_26f5e669d3043c::t_9e304cbde1465c 14
+  s_26f5e669d3043c::t_090dff00404bf5 3625-3669
+apps/desktop/test/inTheWayDoors.test.ts
+  s_26f5e669d3043c::t_365edba6a6debd 1-356
+apps/desktop/src/main/inTheWay.ts
+  s_26f5e669d3043c::t_1ffec662d90a96 154
+  s_26f5e669d3043c::t_ace35d57d884f9 1-2,4-11,24-26,28-29,31-32,34-36,38-54,57-58,60-70,155-169
+  s_26f5e669d3043c::t_d802b2b8c4edb6 3,12-23,27,30,33,37,55-56,59,71-153
+apps/desktop/src/renderer/inTheWayAsk.ts
+  s_26f5e669d3043c::t_b6d6c9f9ffe7ca 9-25,28,48,53-63
+  s_26f5e669d3043c::t_4d6978e5094ba3 1-8,26-27,29-47,49-52,64
+apps/desktop/test/inTheWayCensus.test.ts
+  s_26f5e669d3043c::t_1273b524a650af 229-242,251-253
+  s_26f5e669d3043c::t_2b24e57a3373f8 136,187
+  s_26f5e669d3043c::t_36827194def26b 1-135,137-186,188-228,243-250,254-337
+apps/desktop/src/renderer/branchCreate.ts
+  s_26f5e669d3043c::t_ce60391c2bcd3a 76-79,81-85
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_4bb006b7031702 2802-2804
+  s_26f5e669d3043c::t_41ffc29cbad293 3617
+  s_26f5e669d3043c::t_3854142bf61db6 3639
+  s_26f5e669d3043c::t_0b47b0d175fe24 9822-9824
+  s_26f5e669d3043c::t_e2bfb70ed79eec 8050-8051
+  s_26f5e669d3043c::t_6599f9856e8cd9 4098-4099
+  s_26f5e669d3043c::t_cf53898b6986fb 4177-4183,4190
+  s_26f5e669d3043c::t_c91bab3f7e8bb7 3540,3544-3551
+  s_26f5e669d3043c::t_52cb8c5c175bf3 2910-2911
+  s_26f5e669d3043c::t_84092a26131be5 87
+  s_26f5e669d3043c::t_089ab908032eb9 472-475
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_bf508999f548e1 1065-1124
+  s_26f5e669d3043c::t_87f78aa34c2b10 1173-1187
+  s_26f5e669d3043c::t_d105071d206bfb 2149-2158
+  s_26f5e669d3043c::t_e46ed96c655792 1679-1690,1692-1694,1696-1705
+  s_26f5e669d3043c::t_84349f248746a2 1272-1275
+apps/desktop/src/renderer/pullFlow.ts
+  s_26f5e669d3043c::t_6edf60f2ac3192 145-149
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_d2f56a966501b8 328-344,346-349
+  s_26f5e669d3043c::t_7ac81f20343959 302-313
+  s_26f5e669d3043c::t_ca1cc348db5a18 1923-1925,1927
+  s_26f5e669d3043c::t_2673b39e7f74b9 1883-1884,1961,2093,2309-2310
+  s_26f5e669d3043c::t_d37565f48c75fc 345
+apps/desktop/test/reportingVerdicts.test.ts
+  s_26f5e669d3043c::t_b50799f0ada8dd 372-374
+  s_26f5e669d3043c::t_308c7e90ccb0d5 22,375
+apps/desktop/src/renderer/views/refDetail.ts
+  s_26f5e669d3043c::t_ab0399063760a9 254-256,259-260,262
+  s_26f5e669d3043c::t_456aaaad3396e5 249
+  s_26f5e669d3043c::t_c5e501419aae3a 325-327
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_6646d260c1e97d 632-641,643-648
+  s_26f5e669d3043c::t_0e84013fcbe43f 642
+apps/desktop/src/renderer/bridge.ts
+  s_26f5e669d3043c::t_9a271b55af9660 13,23-38,60-62,73-77,81-94
+  s_26f5e669d3043c::t_873aacf18e59a1 39-59,63-72,78-80
+apps/desktop/src/main/githubBridge.ts
+  s_26f5e669d3043c::t_6355ad34c955d3 386,391-396,402-410,412-413
+  s_26f5e669d3043c::t_fa32facb30ed6e 25
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_f2cca3357e8d42 92-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "67d2363b60f553bb802a5432eac12ab65104c498",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
