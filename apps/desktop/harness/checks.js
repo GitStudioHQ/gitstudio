@@ -8363,9 +8363,11 @@
       // and `getComputedStyle` on an element that is not in the rendered tree
       // answers with an empty declaration — every colour reads "" and every
       // assertion fails, saying nothing about colour. Under a loaded machine
-      // the pane existed but had not rendered yet, so this failed roughly one
-      // run in five and passed every time it was run alone: the worst kind of
-      // check, because a real regression here would be dismissed as the flake.
+      // this failed roughly one run in five and passed every time it was run
+      // alone: the worst kind of check, because a real regression here would
+      // be dismissed as the flake. Waiting for the paint was half of it; the
+      // other half — the probes being REMOVED by a repaint while the check
+      // waited — is below, where they are read.
       let win = $(".log-window");
       for (let i = 0; i < 40 && (!win || !win.isConnected || !$$(".log-line").length); i++) {
         await settle(100);
@@ -8392,7 +8394,14 @@
       const spans = pairs.map(([cls]) => mk(cls));
       // Bright backgrounds, which had no rules at all.
       const brights = [8, 9, 12, 15].map((n) => mk(`log-bg-${n}`));
-      await settle(200);
+      // Read in the SAME task that made them — no `await` from here to the last
+      // assertion. The probes live in the pane's virtual window, which the pane
+      // repaints with `replaceChildren()` whenever its ResizeObserver fires, and
+      // that is delivered with a frame: headless Chrome makes frames on the real
+      // clock, so on a loaded machine one landed inside the 200ms this used to
+      // wait, the probes were removed, and a detached element's computed style
+      // is "" for everything. Style resolution is synchronous; nothing can run
+      // between an append and a `getComputedStyle` in one task.
 
       // Not "the two differ" — light mapped bright-white to #24292f and black to
       // #3b4048, which DO differ and are still 1.34:1, a solid block you cannot
@@ -8922,6 +8931,9 @@
      */
     "a-long-log-line-scrolls-the-log-not-the-page": async (f) => {
       const c = check(f);
+      // A log that has PAINTED, the way log-colours-survive-both-themes waits:
+      // on a condition, not on a longer timeout.
+      for (let i = 0; i < 40 && !$$(".log-window .log-line").length; i++) await settle(100);
       const win = $(".log-window");
       const sc = $(".log-scroll");
       const pane = $(".log-pane");
@@ -8933,10 +8945,17 @@
       wide.className = "log-line";
       wide.textContent = "E".repeat(400);
       win.appendChild(wide);
-      // 600, not 200: under virtual time the appended line's layout sometimes
-      // lands after a 200ms read, and the check then reports "1092 in 1092" —
-      // a flake, not a finding. The assertions below are unchanged.
-      await settle(600);
+      // Measured in the SAME task that appended it — no `await` from here on.
+      // This used to wait 200ms, then 600 ("the layout sometimes lands after a
+      // 200ms read"), and waiting longer made it worse: the line is not laid out
+      // late, it is REMOVED. It sits in the pane's virtual window, which the
+      // pane repaints with `replaceChildren()` when its ResizeObserver fires,
+      // and that is delivered with a frame — which headless Chrome makes on the
+      // real clock, so the more loaded the machine, the likelier one lands in
+      // the wait. Then "1092 in 1092": the scroller measured without the line.
+      // Layout is synchronous — reading a box forces it — and nothing can run
+      // between the append and the reads below.
+      c.ok(wide.isConnected, "the long line is in the log while it is measured");
       c.eq(Math.round(R(pane).right), rightBefore, "the pane does not grow past where it was");
       c.ok(
         R(pane).right <= window.innerWidth + 1,

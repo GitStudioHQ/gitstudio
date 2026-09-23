@@ -538,6 +538,11 @@ const CASES = [
   ["a-label-picker-batches-and-escape-discards", "prs~open106"],
   ["log-colours-survive-both-themes", "actions~open9097~click:.gh-job-log"],
   ["log-colours-survive-both-themes", "actions~open9097~click:.gh-job-log", { theme: "light" }],
+  // …and with the log repainting under the check the way it does on a loaded
+  // machine (see `repaints` in shim.js): these two failed about one parallel
+  // run in forty, and never alone, because a frame landed inside their wait.
+  ["log-colours-survive-both-themes", "actions~open9097~click:.gh-job-log", { extra: "repaints=1" }],
+  ["log-colours-survive-both-themes", "actions~open9097~click:.gh-job-log", { theme: "light", extra: "repaints=1" }],
   ["an-emptied-branch-list-blames-the-right-thing", "branches"],
   ["the-branch-control-bar-stays-on-screen", "branches", { width: 820 }],
   ["the-branch-control-bar-stays-on-screen", "branches", { width: 1000 }],
@@ -553,6 +558,8 @@ const CASES = [
   ["growing-the-log-pane-fills-it", "actions~open9097~click:.gh-job-log"],
   ["the-sort-offers-only-what-the-segment-can-do", "branches"],
   ["a-long-log-line-scrolls-the-log-not-the-page", "actions~open9097~click:.gh-job-log"],
+  ["a-long-log-line-scrolls-the-log-not-the-page", "actions~open9097~click:.gh-job-log", { extra: "repaints=1" }],
+  ["a-long-log-can-be-navigated-by-eye", "actions~open9097~click:.gh-job-log", { extra: "repaints=1" }],
   ["finished-branches-can-be-swept", "branches", { extra: "onfeature=1" }],
   [
     "the-commit-page-actually-runs-its-verbs",

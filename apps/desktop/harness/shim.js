@@ -2699,6 +2699,21 @@
         return;
       }
       const fails = [];
+      // `repaints=1`: the frames a LOADED machine delivers, on demand.
+      //
+      // Headless Chrome runs the page on a virtual clock but produces frames on
+      // the real one, and a frame is when ResizeObserver callbacks are
+      // delivered. Idle, a whole check finishes between two frames; under load
+      // one lands inside a check's `settle()`, and the log pane's observer
+      // repaints its virtual window (`win.replaceChildren()`) — removing any
+      // row the check had put there. Two Actions-log checks failed that way
+      // about one run in forty under parallel load and never alone. A `resize`
+      // on the window runs the same repaint, so firing it every 40ms makes the
+      // loaded machine's worst case the ordinary one: a check that races a
+      // repaint fails every time here instead of once in a while in CI.
+      const repaints = params.get("repaints") === "1"
+        ? setInterval(() => window.dispatchEvent(new Event("resize")), 40)
+        : 0;
       try {
         // A check may return a promise: some assertions have to CLICK something
         // and wait, and several of the views re-render behind an await (a
@@ -2708,6 +2723,7 @@
       } catch (e) {
         fails.push("threw: " + (e && e.message ? e.message : String(e)));
       }
+      if (repaints) clearInterval(repaints);
       // Report the channels this scene asked for and the shim could not answer.
       // NOT as failures — most are legitimately absent — but as a note the
       // runner prints once at the end. A read with no fixture returns undefined
