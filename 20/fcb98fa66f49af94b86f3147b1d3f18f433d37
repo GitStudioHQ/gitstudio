@@ -1,0 +1,114 @@
+packages/merge-vscode/test/driveVerb.test.ts
+  s_26f5e669d3043c::t_cb1a4749824807 67
+  s_26f5e669d3043c::t_c5259244c04d2b 1-66,68
+packages/merge-vscode/src/outcome.ts
+  s_26f5e669d3043c::t_7b06a547e6aba7 57
+  s_26f5e669d3043c::t_5cf497cca25eed 71-74,77-78,80,84,108-109
+  s_26f5e669d3043c::t_dde8cb37ebd09c 65-70,75-76,79,81-83,85-107
+  s_26f5e669d3043c::t_d2b66b9c61f4b6 12
+  s_26f5e669d3043c::t_ed3a79356ccdb3 21-25
+packages/webview-ui/test/opText.test.ts
+  s_26f5e669d3043c::t_fab60fdab21b7a 1-39
+packages/webview-ui/src/conflicts/opText.ts
+  s_26f5e669d3043c::t_92fa7bec754e78 135-138,142-145
+apps/extension/test/changesOperationBanner.test.ts
+  s_26f5e669d3043c::t_b750439f907f53 70,87,92
+  s_26f5e669d3043c::t_358769a987fc0f 95-117
+  s_26f5e669d3043c::t_2eb5e8c3dc303b 6-11,26,28-29
+  s_26f5e669d3043c::t_dd248d777d926a 93-94
+packages/merge-vscode/test/outcome.test.ts
+  s_26f5e669d3043c::t_b984957e163ee8 42-103
+  s_26f5e669d3043c::t_68e1aa0e20bc8e 4
+packages/merge-vscode/src/register.ts
+  s_26f5e669d3043c::t_53e839196e32e4 201
+  s_26f5e669d3043c::t_c9abee46016c6a 267
+  s_26f5e669d3043c::t_521eb4269fefc2 139-140,158-161,164,242
+  s_26f5e669d3043c::t_4c5d15c4f36de0 28
+  s_26f5e669d3043c::t_e04d86adf06a2f 278-283
+  s_26f5e669d3043c::t_a73aa563dfc889 20,199-200
+  s_26f5e669d3043c::t_f3007ec8dc4c20 305,315-317
+  s_26f5e669d3043c::t_c03564b166a12e 17-18,74-92
+  s_26f5e669d3043c::t_5b3c8c0af022b1 35-39,130,234-235,237,272,328-330
+packages/merge-vscode/package.json
+  s_26f5e669d3043c::t_812a40162bd1f9 17-18
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_5b3c8c0af022b1 266-268
+package-lock.json
+  s_47d5d755319a1f::t_9552793250f061 6247-6248
+apps/extension/src/changes/operationBanner.ts
+  s_26f5e669d3043c::t_21f2c67852df02 53
+  s_26f5e669d3043c::t_b9ad2c5a9ef575 69-71,81-82,87-90
+  s_26f5e669d3043c::t_5b1280e55a1810 7-21
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_aaa66af6d5d611 53-71,83-88
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_5af68fa073ca0c 297-308,438-440,446-454
+apps/extension/src/merge/gitstudioMerge.ts
+  s_26f5e669d3043c::t_b9afb7bf636aa9 52-53
+apps/extension/src/merge/mergeIds.ts
+  s_26f5e669d3043c::t_ed66d53011bb6e 23
+packages/merge-vscode/src/autoRoute.ts
+  s_26f5e669d3043c::t_e7a399e077fb15 152-169
+packages/merge-vscode/src/contract.ts
+  s_26f5e669d3043c::t_ab705b775aac74 30,66-71,84,207,221-223
+packages/merge-vscode/src/jetbrainsUi.ts
+  s_26f5e669d3043c::t_d1272ba22562ac 112,124-140,152
+packages/merge-vscode/src/product.ts
+  s_26f5e669d3043c::t_53f6967ed1932e 49-50,121-123,125
+packages/merge-vscode/test/autoRoute.test.ts
+  s_26f5e669d3043c::t_8060812b571d68 3-4,7,101-122
+packages/merge-vscode/test/coexistence.test.ts
+  s_26f5e669d3043c::t_948418e7177eca 1-145
+packages/merge-vscode/test/dashboardPage.test.ts
+  s_26f5e669d3043c::t_c0fd2e0dee04f8 1-40
+packages/merge-vscode/test/support/vscodeStub.cjs
+  s_26f5e669d3043c::t_6582d942873887 242-248
+apps/extension/package.json
+  s_01e40e5c989aa2::t_061d0d9e7f31a3 344-349,1127-1128
+apps/extension/test/activationOrder.test.ts
+  s_47d5d755319a1f::t_d02dd26465446a 1-26
+apps/extension/test/mergeManifest.test.ts
+  s_47d5d755319a1f::t_0cc15967819340 62-81
+packages/merge-vscode/src/coexistence.ts
+  s_47d5d755319a1f::t_7672f68fea86d7 1,5-21,27-37,41-42,44,51,54-70,73-82,88-130
+packages/merge-vscode/src/mergeEditorProvider.ts
+  s_47d5d755319a1f::t_fbadcdf5bdd313 160,162-193,197
+packages/merge-vscode/test/contract.test.ts
+  s_01e40e5c989aa2::t_701359c38e1afe 34-37,48-55
+packages/merge-vscode/test/jetbrainsUi.test.ts
+  s_01e40e5c989aa2::t_053ebf6ae88c1f 1-103
+packages/merge-vscode/test/mergeEditorProvider.test.ts
+  s_47d5d755319a1f::t_dbcd5f288aae69 51-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "20fcb98fa66f49af94b86f3147b1d3f18f433d37",
+  "prompts": {},
+  "sessions": {
+    "s_01e40e5c989aa2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a34d9c5dfb3e98b54",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_47d5d755319a1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a35c2b5d219e91bae",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
