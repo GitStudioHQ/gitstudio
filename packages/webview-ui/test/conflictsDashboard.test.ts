@@ -236,6 +236,32 @@ test("hold-to-undo fires at the hold time, not before — by pointer and by keyb
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
+test("a host re-sending the same state does not cancel a hold in progress; a changed one still does", { skip }, async () => {
+  // Every host re-sends the full state after any repository event — in VS
+  // Code a click that focuses the window sets off vscode.git's refresh, and
+  // the panel posts again. Each post repainted, and a repaint cancels every
+  // hold: the user held, the fill reset, and nothing came back.
+  const v = await run(`
+    const d = mount();
+    const files = [row("src/a.ts", { status: "resolved", choice: "yours" }), row("src/b.ts")];
+    d.render(state(OPS.merge, files));
+    $(".cd-undo-hold").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    clock.advance(400);
+    d.render(state(OPS.merge, files));
+    clock.advance(350);
+    expect(JSON.stringify(last()) === JSON.stringify({ type: "restore", path: "src/a.ts" }), "the hold survives an identical state (" + JSON.stringify(last()) + ")");
+
+    d.render(state(OPS.merge, files));
+    $(".cd-undo-hold").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    clock.advance(400);
+    d.render(state(OPS.merge, [row("src/a.ts"), row("src/b.ts")]));
+    clock.advance(1000);
+    expect(posted.filter((a) => a.type === "restore").length === 1, "a state where the row changed still cancels it");
+    expect(clock.armed() === 0, "and leaves no timer armed");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
 test("names are text: markup in a branch, a path or a subject stays a string", { skip }, async () => {
   const v = await run(`
     const d = mount();
