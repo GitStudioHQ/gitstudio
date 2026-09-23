@@ -274,6 +274,60 @@ test("the block is described in the app's words: what is paused, and the two way
   }
 });
 
+// REBASE_HEAD is NOT a "rebase in progress" marker: git leaves it behind when a
+// rebase FINISHES — by --continue, by --skip to the end, and by --quit (checked
+// against git 2.49). Only the state directory (rebase-merge / rebase-apply) has
+// exactly the rebase's lifetime (see RebaseRunner.rebaseStateDir). Any repo
+// that has ever finished a stopped rebase therefore carries one.
+
+/** A clone that stopped on a rebase, and then FINISHED it. */
+async function afterAFinishedRebase(): Promise<{ clone: string; bare: string; ctx: GitContext }> {
+  const made = collidingClone();
+  assert.ok((await made.ctx.sync.pull({ mode: "rebase" })).stopped, "precondition: the rebase stopped");
+  writeFileSync(join(made.clone, "shared.txt"), "one\nBOTH\nthree\n");
+  gitIn(made.clone, ["add", "shared.txt"]);
+  execFileSync("git", ["rebase", "--continue"], {
+    cwd: made.clone,
+    env: { ...process.env, GIT_EDITOR: "true", GIT_OPTIONAL_LOCKS: "0" },
+    stdio: "ignore",
+  });
+  assert.ok(gitOk(made.clone, ["symbolic-ref", "-q", "HEAD"]), "precondition: the rebase finished, back on the branch");
+  assert.ok(
+    gitOk(made.clone, ["rev-parse", "--verify", "--quiet", "REBASE_HEAD"]),
+    "precondition: …and git left REBASE_HEAD behind",
+  );
+  return made;
+}
+
+test("a finished rebase's leftover REBASE_HEAD does not blame a later failure on a rebase", async () => {
+  const { clone, ctx } = await afterAFinishedRebase();
+  const gone = join(tmpdir(), `gitstudio-stop-gone-rh-${process.pid}-${Date.now()}.git`);
+  gitIn(clone, ["remote", "set-url", "origin", gone]);
+  const r = await ctx.sync.pull({ mode: "merge" });
+  assert.equal(r.ok, false);
+  assert.equal(r.blocked, undefined, "no rebase is in progress — the remote is gone");
+  assert.match(r.stderr, /does not appear to be a git repository|Could not read from remote/i);
+});
+
+test("a merge that stops after an earlier, finished rebase is named a merge", async () => {
+  const { clone, bare, ctx } = await afterAFinishedRebase();
+  gitIn(clone, ["push", "-q", "origin", "main"]);
+  // A second round of colliding work, reconciled by MERGE this time.
+  const seed2 = mkdtempSync(join(tmpdir(), "gitstudio-stop-seed2-"));
+  execFileSync("git", ["clone", "-q", bare, seed2]);
+  trash.push(seed2);
+  identify(seed2);
+  commitIn(seed2, "shared.txt", "one\nTHEIRS AGAIN\nthree\n", "theirs again");
+  gitIn(seed2, ["push", "-q", "origin", "main"]);
+  commitIn(clone, "shared.txt", "one\nMINE AGAIN\nthree\n", "mine again");
+  const r = await ctx.sync.pull({ mode: "merge" });
+  assert.deepEqual(r.stopped, { operation: "merge", conflicted: ["shared.txt"] }, "not 'continue the rebase'");
+  assert.match(pullStoppedMessage(r.stopped!), /commit the merge/);
+  // …and pulling again over it names the merge too.
+  const again = await ctx.sync.pull();
+  assert.deepEqual(again.blocked, { operation: "merge", conflicted: 1 });
+});
+
 test("the extension's settler has a sentence for both faces of a stop, and for nothing else", () => {
   const stop = { operation: "rebase" as const, conflicted: ["a.ts"] };
   const block: PullBlock = { operation: "rebase", conflicted: 1 };

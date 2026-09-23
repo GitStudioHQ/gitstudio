@@ -1,3 +1,5 @@
+import { existsSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { parseUnmergedPaths } from "./ConflictProvider";
 
@@ -582,9 +584,13 @@ export class SyncOps {
    * The conflicts a pull that exited 1 left behind, and what is paused over
    * them — or null when nothing is unmerged (the exit was the fetch failing).
    *
-   * The operation is read from git's own marker refs, spelled the same in every
-   * locale. With neither present — unconfigured shapes this has not met — it
-   * falls back to what was asked for, which is what git was running.
+   * The operation is read from git's own state — the rebase state directory,
+   * MERGE_HEAD — spelled the same in every locale. NOT from REBASE_HEAD, which
+   * git leaves behind when a rebase finishes: in any repository that had ever
+   * finished a stopped rebase, a MERGE stopping on conflicts was announced as
+   * "continue the rebase". With neither present — unconfigured shapes this has
+   * not met — it falls back to what was asked for, which is what git was
+   * running.
    */
   private async stoppedOnConflicts(
     mode: PullMode | undefined,
@@ -600,7 +606,7 @@ export class SyncOps {
     }
     const has = async (ref: string): Promise<boolean> =>
       (await this.proc.run(["rev-parse", "--verify", "--quiet", ref], { signal })).code === 0;
-    const operation: PullStop["operation"] = (await has("REBASE_HEAD"))
+    const operation: PullStop["operation"] = (await this.rebaseInProgress(signal))
       ? "rebase"
       : (await has("MERGE_HEAD"))
         ? "merge"
@@ -615,7 +621,8 @@ export class SyncOps {
    *
    * Mirrors what actually stops git's pull, and nothing more: an unmerged index
    * and MERGE_HEAD are refused up front (builtin/pull.c), and a rebase that is
-   * still paused (REBASE_HEAD) leaves HEAD detached, which fails every pull.
+   * still paused (its state directory — see rebaseInProgress) leaves HEAD
+   * detached, which fails every pull.
    * A CHERRY_PICK_HEAD or REVERT_HEAD with nothing unmerged does NOT stop git
    * pull, so on its own it is never blamed — a failure then is some other
    * failure, and keeps its own message (and keeps reporting). Those two only
@@ -626,7 +633,7 @@ export class SyncOps {
     const conflicted = status.code === 0 ? parseUnmergedPaths(status.stdout).length : 0;
     const has = async (ref: string): Promise<boolean> =>
       (await this.proc.run(["rev-parse", "--verify", "--quiet", ref], { signal })).code === 0;
-    if (await has("REBASE_HEAD")) {
+    if (await this.rebaseInProgress(signal)) {
       return { operation: "rebase", conflicted };
     }
     if (await has("MERGE_HEAD")) {
@@ -642,6 +649,41 @@ export class SyncOps {
       return { operation: "revert", conflicted };
     }
     return { conflicted };
+  }
+
+  /**
+   * Is a rebase in progress — paused on a conflict, an `edit`, or a `break`?
+   *
+   * Answered by git's state directory (`rebase-merge`, or `rebase-apply` without
+   * the `applying` marker that makes it a `git am`), which git creates when a
+   * rebase starts and deletes when it ends, however it ends. REBASE_HEAD cannot
+   * answer it: git leaves that ref behind after --continue, --skip and --quit
+   * (checked against git 2.49), so every repository that ever finished a
+   * stopped rebase carries one. The same rule RebaseRunner's rebaseStateDir
+   * uses.
+   */
+  private async rebaseInProgress(signal?: AbortSignal): Promise<boolean> {
+    for (const dir of ["rebase-merge", "rebase-apply"]) {
+      const r = await this.proc.run(["rev-parse", "--git-path", dir], { signal });
+      if (r.code !== 0) {
+        continue;
+      }
+      // resolve(), not join(): inside a linked worktree git answers with an
+      // ABSOLUTE path, and a relative one is relative to the repository root.
+      const at = resolve(this.proc.cwd, r.stdout.trim());
+      try {
+        if (!statSync(at).isDirectory()) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+      if (dir === "rebase-apply" && existsSync(join(at, "applying"))) {
+        continue; // a `git am`, not a rebase
+      }
+      return true;
+    }
+    return false;
   }
 
   /**
