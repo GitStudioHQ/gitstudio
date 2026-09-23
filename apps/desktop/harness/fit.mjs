@@ -8,6 +8,12 @@
 //
 //   node harness/fit.mjs <scene> [--widths=900,1280,2560] [--theme=dark]
 //   node harness/fit.mjs --sweep
+//   node harness/fit.mjs graph --expect-shadow=gitstudio-graph
+//
+// Elements inside SHADOW roots are laid out and checked too (the graph, the
+// rail, the commit details and the rebase view are Lit elements), with the
+// motion killed in each root; every scene prints how many it reached per
+// component, and --expect-shadow fails the run when one was not reached.
 //
 // Reports, per width:
 //   sideways   the page itself scrolls horizontally (never acceptable)
@@ -72,11 +78,32 @@ const SCENES = [
 ];
 
 const AUDIT = `
+// Motion off — in the document AND in every shadow root, which a document
+// stylesheet does not reach (the graph's popovers and rows animate in there):
+// a layout measured mid-entrance is a layout nobody sees at rest. The same
+// rule contrast.mjs and affordance.mjs follow.
+var KILL = "*,*::before,*::after{animation:none!important;transition:none!important}";
 var _kill = document.createElement("style");
-_kill.textContent = "*,*::before,*::after{animation:none!important;transition:none!important}";
+_kill.textContent = KILL;
 document.head.appendChild(_kill);
+(function killInShadows(root) {
+  var kids = root.querySelectorAll("*");
+  for (var k = 0; k < kids.length; k++) {
+    var sr = kids[k].shadowRoot;
+    if (!sr) continue;
+    var st = document.createElement("style");
+    st.textContent = KILL;
+    sr.appendChild(st);
+    killInShadows(sr);
+  }
+})(document);
 void document.body.offsetHeight;
 
+/** The shadow host an element lives under, or null in the document. */
+function hostOf(el) {
+  var root = el.getRootNode && el.getRootNode();
+  return root && root.host ? root.host : null;
+}
 function pathOf(el) {
   var parts = [], n = el, hops = 0;
   while (n && hops < 3) {
@@ -86,8 +113,26 @@ function pathOf(el) {
     if (cls.length) s += "." + cls.join(".");
     parts.unshift(s); n = n.parentElement; hops++;
   }
-  return parts.join(" > ");
+  var host = hostOf(el);
+  return (host ? host.tagName.toLowerCase() + " ▸ " : "") + parts.join(" > ");
 }
+/** Every element under root, and inside every shadow root — which
+ *  querySelectorAll does not enter. */
+function collectAll(root, acc) {
+  var kids = root.querySelectorAll("*");
+  for (var q = 0; q < kids.length; q++) {
+    acc.push(kids[q]);
+    if (kids[q].shadowRoot) collectAll(kids[q].shadowRoot, acc);
+  }
+  return acc;
+}
+/** One step up the tree, out through a shadow boundary to its host. */
+function up(n) {
+  return n.parentElement || (n.parentNode && n.parentNode.host) || null;
+}
+var coverage = {};
+var EXPECT = __EXPECT__;
+var expectHits = EXPECT.map(function () { return 0; });
 function vis(el) {
   var r = el.getBoundingClientRect();
   if (r.width < 2 || r.height < 2) return false;
@@ -112,10 +157,18 @@ if (de.scrollWidth > de.clientWidth + 1) {
 // 2. Text clipped with nothing to recover it. Ellipsis is fine when the full
 //    string is available on hover or to a screen reader; it is a defect when
 //    the only copy of the text is the truncated one.
-var all = document.querySelectorAll("body *");
+var all = collectAll(document.body, []);
 for (var i = 0; i < all.length; i++) {
   var el = all[i];
   if (!vis(el)) continue;
+  var elHost = hostOf(el);
+  if (elHost) {
+    var hn = elHost.tagName.toLowerCase();
+    coverage[hn] = (coverage[hn] || 0) + 1;
+    for (var x = 0; x < EXPECT.length; x++) {
+      if (EXPECT[x][0] === hn && (!EXPECT[x][1] || el.closest(EXPECT[x][1]))) expectHits[x]++;
+    }
+  }
   if (el.children.length) continue;
   var txt = (el.textContent || "").trim();
   if (txt.length < 4) continue;
@@ -123,9 +176,15 @@ for (var i = 0; i < all.length; i++) {
   if (cs.overflow === "visible" && cs.textOverflow !== "ellipsis") continue;
   var over = el.scrollWidth - el.clientWidth;
   if (over <= 1) continue;
-  var rec = el.title || el.getAttribute("aria-label");
+  // The recovery: a title or an accessible name on it or just above it —
+  // or a data-more / data-text the component's own hover card reads (the
+  // graph's chips and subjects open refTip's card from those).
+  var rec = el.title || el.getAttribute("aria-label") || el.getAttribute("data-more") || el.getAttribute("data-text");
   var n = el, hops = 0;
-  while (!rec && n && hops < 3) { rec = n.title || n.getAttribute("aria-label"); n = n.parentElement; hops++; }
+  while (!rec && n && hops < 3) {
+    rec = n.title || (n.getAttribute && (n.getAttribute("aria-label") || n.getAttribute("data-more") || n.getAttribute("data-text")));
+    n = up(n); hops++;
+  }
   if (rec) continue;
   add("clipped", pathOf(el), Math.round(over) + "px cut, no title or aria-label — \\"" + txt.slice(0, 30) + "\\"");
 }
@@ -163,11 +222,31 @@ if (window.innerWidth >= 2000) {
     }
   }
 }
-return JSON.stringify(out.slice(0, 40));
+return JSON.stringify({
+  rows: out.slice(0, 40),
+  coverage: coverage,
+  expect: EXPECT.map(function (e, i) { return { host: e[0], within: e[1] || "", count: expectHits[i] }; }),
+});
 `;
 
+/**
+ * `--expect-shadow=<host>[@<selector>]` (repeatable, comma-separated): FAIL
+ * unless the audit laid out at least one element inside that component's
+ * shadow root — inside `selector` when given. The proof that a component is
+ * audited at all: "body *" never entered one, and a clean report over
+ * nothing reads as a pass.
+ */
+const EXPECT = String(flags["expect-shadow"] ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((s) => {
+    const at = s.indexOf("@");
+    return at < 0 ? [s, ""] : [s.slice(0, at), s.slice(at + 1)];
+  });
+
 function run(scene, width) {
-  const probe = encodeURIComponent(AUDIT);
+  const probe = encodeURIComponent(AUDIT.replace("__EXPECT__", JSON.stringify(EXPECT)));
   const url = `file://${PAGE}?scene=${encodeURIComponent(scene)}&theme=${theme}&probe=${probe}`;
   return new Promise((done) => {
     execFile(
@@ -177,15 +256,19 @@ function run(scene, width) {
       { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
       (err, stdout) => {
         const m = /<title>PROBE ([\s\S]*?)<\/title>/.exec(stdout || "");
-        if (!m) return done([]);
+        // A scene that measured nothing has not passed: say so.
+        if (!m) return done({ error: "no probe output" });
         const decode = (t) =>
           t.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&lt;/g, "<")
             .replace(/&gt;/g, ">").replace(/&amp;/g, "&");
         try {
           let v = JSON.parse(decode(m[1]));
           if (typeof v === "string") v = JSON.parse(v);
-          done(v || []);
-        } catch { done([]); }
+          // The page reports a probe that THREW as { error } — which used to
+          // parse as "no rows" and pass.
+          if (!v || v.error || !Array.isArray(v.rows)) return done({ error: String((v && v.error) || "no result").slice(0, 200) });
+          done({ rows: v.rows, coverage: v.coverage || {}, expect: v.expect || [] });
+        } catch (e) { done({ error: String(e).slice(0, 140) }); }
       },
     );
   });
@@ -197,8 +280,21 @@ const tally = {};
 for (const scene of scenes) {
   const lines = [];
   for (const w of widths) {
-    const rows = await run(scene, w);
-    for (const r of rows) {
+    const res = await run(scene, w);
+    if (res.error) {
+      tally.error = (tally.error || 0) + 1;
+      lines.push(`      \x1b[31merror    \x1b[0m @${w}  ${res.error}`);
+      continue;
+    }
+    // Which components were reached, so a clean report is not silence.
+    const reached = Object.entries(res.coverage).map(([h, n]) => `${h} ${n}`).join(", ");
+    console.log(`     ${scene} @${w}: elements laid out inside shadow roots — ${reached || "none"}`);
+    for (const e of res.expect) {
+      if (e.count > 0) continue;
+      tally.shadow = (tally.shadow || 0) + 1;
+      lines.push(`      \x1b[31mshadow   \x1b[0m @${w}  nothing measured inside ${e.host}${e.within ? ` (${e.within})` : ""} — the audit did not reach it`);
+    }
+    for (const r of res.rows) {
       tally[r.kind] = (tally[r.kind] || 0) + 1;
       lines.push(`      \x1b[33m${r.kind.padEnd(9)}\x1b[0m @${w}  ${r.sel}\n         ${r.detail}`);
     }

@@ -22,6 +22,21 @@ export const hostTokens = css`
     --gs-fg: var(--vscode-foreground);
     --gs-fg-muted: var(--vscode-descriptionForeground);
     --gs-fg-subtle: color-mix(in srgb, var(--gs-fg) 50%, transparent);
+    /* Muted text ON A MENU or popover — a heading, the "current" tag, a
+       footnote. Not --gs-fg-subtle: that mixes toward TRANSPARENT, which dims
+       over a dark ground and washes out over a light one (the rail's popovers
+       read 2.17:1 in VS Code Light+, 3.49:1 in Dark+). And not a fixed mix
+       into the editor background: the graph's 70% read at AA on the desktop's
+       ink and 3.18:1 on Light+'s #616161, whose ink leaves no room to fade.
+       The theme's own secondary-text colour, firmed a fifth of the way toward
+       the menu's ink, is AA on every ground these sit on — measured in
+       test/popoverContrast.test.ts (VS Code Light+/Dark+) and by the
+       desktop's contrast.mjs (its own light and dark). */
+    --gs-menu-muted: color-mix(
+      in srgb,
+      var(--vscode-descriptionForeground) 80%,
+      var(--vscode-menu-foreground, var(--vscode-foreground))
+    );
     --gs-accent: var(--vscode-focusBorder);
     --gs-accent-text: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
     --gs-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));

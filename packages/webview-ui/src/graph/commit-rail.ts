@@ -756,12 +756,15 @@ export class CommitRail extends LitElement {
         color: var(--vscode-menu-foreground, var(--gs-fg));
         box-shadow: var(--gs-shadow-2);
       }
+      /* The popovers' muted text (.hd, .cur, .hint): --gs-menu-muted, AA on
+         the menu's own ground in Light+ and Dark+ (popoverContrast.test.ts).
+         It was --gs-fg-subtle — 50% toward transparent — at 2.17:1 in Light+. */
       .pop .hd {
         padding: 3px 8px 5px;
         font-size: 10px;
         letter-spacing: 0.4px;
         text-transform: uppercase;
-        color: var(--gs-fg-subtle);
+        color: var(--gs-menu-muted);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -873,13 +876,17 @@ export class CommitRail extends LitElement {
         font-size: 9.5px;
         letter-spacing: 0.4px;
         text-transform: uppercase;
-        color: var(--gs-fg-subtle);
+        color: var(--gs-menu-muted);
       }
+      /* On the selection wash the item takes the selection's ink; "current"
+         follows it rather than sitting grey on blue. */
+      .pop .mi:hover .cur,
+      .pop .mi:focus-visible .cur { color: inherit; opacity: 0.85; }
       .pop .mi .cur + .check { margin-left: 4px; }
       .pop .hint {
         padding: 3px 8px 4px;
         font-size: 10.5px;
-        color: var(--gs-fg-subtle);
+        color: var(--gs-menu-muted);
         white-space: normal;
       }
     `,

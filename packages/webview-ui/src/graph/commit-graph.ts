@@ -519,13 +519,12 @@ export class CommitGraph extends LitElement {
       font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      /* Mixed into the BACKGROUND, not into transparent. Mixing toward
-         transparent dims correctly over a dark ground and washes out over a
-         light one: the same 50% measured 4.11:1 in dark and 2.93:1 in light.
-         Against the background it composites the same way in both. 66% was
-         4.56:1 on the editor background; the menu's own ground is a 6% wash
-         of it, where that read 4.10:1 in light. 70% is 4.61:1 there. */
-      color: color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-editor-background));
+      /* Not mixed toward transparent (4.11:1 dark, 2.93:1 light), and no
+         longer a fixed 70% into the editor background either: that read
+         4.61:1 on the desktop's ink and 3.18:1 in VS Code Light+, whose
+         #616161 leaves no room to fade. --gs-menu-muted (hostTokens) is AA
+         on both — measured in popoverContrast.test.ts and contrast.mjs. */
+      color: var(--gs-menu-muted);
       user-select: none;
     }
     .gh-menuitem {
@@ -572,7 +571,7 @@ export class CommitGraph extends LitElement {
     .gh-pop-hint {
       padding: 3px 8px 4px;
       font-size: 10.5px;
-      color: color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-editor-background));
+      color: var(--gs-menu-muted);
     }
 
     /* ── Search scope trigger (segmented-style button inside the search box) ── */
@@ -701,14 +700,13 @@ export class CommitGraph extends LitElement {
       min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     /* "current", set beside the pinned branch in the muted title colour —
-       the title's mix, for the title's reason (see .gh-pop-title): 66% was
-       4.10:1 on the light menu's own ground. */
+       the title's token, for the title's reason (see .gh-pop-title). */
     .gh-menuitem .gh-ref-cur {
       flex: 0 0 auto;
       font-size: 10px;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      color: color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-editor-background));
+      color: var(--gs-menu-muted);
     }
     .gh-menuitem:hover .gh-ref-cur,
     .gh-menuitem:focus-visible .gh-ref-cur { color: inherit; opacity: 0.8; }

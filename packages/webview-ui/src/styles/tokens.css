@@ -58,6 +58,9 @@
   --gs-fg: var(--vscode-foreground);
   --gs-fg-muted: var(--vscode-descriptionForeground);
   --gs-fg-subtle: color-mix(in srgb, var(--gs-fg) 50%, transparent);
+  /* Muted text ON A MENU or popover (headings, "current", footnotes) — kept in
+     lockstep with hostTokens.ts, where the reasoning and the measurements live. */
+  --gs-menu-muted: color-mix(in srgb, var(--vscode-descriptionForeground) 80%, var(--vscode-menu-foreground, var(--vscode-foreground)));
   /* Theme-native elevation: lift a surface off the base in light AND dark by
      mixing in a little foreground — keeps panels readable on any theme. */
   --gs-surface: color-mix(in srgb, var(--gs-fg) 4%, var(--gs-bg));

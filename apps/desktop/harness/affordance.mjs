@@ -12,6 +12,13 @@
 //
 //   node harness/affordance.mjs <scene> [--theme=dark] [--width=1600]
 //   node harness/affordance.mjs --sweep
+//   node harness/affordance.mjs graph --expect-shadow=gitstudio-graph
+//
+// Controls inside SHADOW roots are audited too (the graph, the rail, the
+// commit details and the rebase view are Lit elements), with the motion
+// killed in each root and each root's own :hover/:focus rules; every scene
+// prints how many it reached per component, and --expect-shadow fails the
+// run when a component was not reached at all.
 //
 // Checks, per interactive element:
 //   cursor     a click target that does not say "pointer"
@@ -102,6 +109,29 @@ const SCENES = [
 ];
 
 const AUDIT = `
+// Headless Chrome's virtual clock leaves a view mid-entrance: a fading popover
+// sits near opacity 0, which vis() below reads as "not there", and a control
+// caught mid-transition reports the wrong hover snapshot. Remove the motion
+// first — in the document AND in every shadow root, which a document
+// stylesheet does not reach (the graph's popovers animate in there). The same
+// rule contrast.mjs and fit.mjs follow.
+var KILL = "*,*::before,*::after{animation:none!important;transition:none!important}";
+var _kill = document.createElement("style");
+_kill.textContent = KILL;
+document.head.appendChild(_kill);
+(function killInShadows(root) {
+  var kids = root.querySelectorAll("*");
+  for (var k = 0; k < kids.length; k++) {
+    var sr = kids[k].shadowRoot;
+    if (!sr) continue;
+    var st = document.createElement("style");
+    st.textContent = KILL;
+    sr.appendChild(st);
+    killInShadows(sr);
+  }
+})(document);
+void document.body.offsetHeight;
+
 function vis(el) {
   var r = el.getBoundingClientRect();
   if (r.width < 2 || r.height < 2) return false;
@@ -109,6 +139,11 @@ function vis(el) {
   if (cs.visibility === "hidden" || cs.display === "none") return false;
   if (parseFloat(cs.opacity) < 0.05) return false;
   return true;
+}
+/** The shadow host an element lives under, or null in the document. */
+function hostOf(el) {
+  var root = el.getRootNode && el.getRootNode();
+  return root && root.host ? root.host : null;
 }
 function pathOf(el) {
   var parts = [], n = el, hops = 0;
@@ -119,13 +154,33 @@ function pathOf(el) {
     if (cls.length) s += "." + cls.join(".");
     parts.unshift(s); n = n.parentElement; hops++;
   }
-  return parts.join(" > ");
+  // Inside a component, say which one: the graph's ".gh-menuitem" is not the
+  // document's.
+  var host = hostOf(el);
+  return (host ? host.tagName.toLowerCase() + " ▸ " : "") + parts.join(" > ");
+}
+/** Every element matching sel under root — and inside every shadow root,
+ *  which querySelectorAll does not enter. The graph, the rail, the commit
+ *  details and the rebase view are all Lit elements. */
+function collectAll(root, sel, acc) {
+  var hits = root.querySelectorAll(sel);
+  for (var h = 0; h < hits.length; h++) acc.push(hits[h]);
+  var kids = root.querySelectorAll("*");
+  for (var q = 0; q < kids.length; q++) {
+    if (kids[q].shadowRoot) collectAll(kids[q].shadowRoot, sel, acc);
+  }
+  return acc;
 }
 function accName(el) {
   var a = el.getAttribute("aria-label");
   if (a && a.trim()) return a.trim();
   var lb = el.getAttribute("aria-labelledby");
-  if (lb) { var t = document.getElementById(lb); if (t && t.textContent.trim()) return t.textContent.trim(); }
+  if (lb) {
+    // An id resolves in the element's own tree — a shadow root, for a component.
+    var scope = el.getRootNode && el.getRootNode().getElementById ? el.getRootNode() : document;
+    var t = scope.getElementById(lb);
+    if (t && t.textContent.trim()) return t.textContent.trim();
+  }
   if (el.title && el.title.trim()) return el.title.trim();
   var txt = (el.textContent || "").trim();
   if (txt) return txt;
@@ -142,10 +197,22 @@ function snap(el) {
 var CLICKABLE = 'button, a[href], [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="option"], [role="switch"], [role="checkbox"], input, select, textarea, summary, [tabindex]:not([tabindex="-1"]), .is-clickable, [onclick]';
 var out = [];
 var seen = {};
-var els = [].slice.call(document.querySelectorAll(CLICKABLE));
-for (var i = 0; i < els.length && i < 400; i++) {
+var els = collectAll(document, CLICKABLE, []);
+/** What was measured inside each component — the proof the audit reached it. */
+var coverage = {};
+var EXPECT = __EXPECT__;
+var expectHits = EXPECT.map(function () { return 0; });
+for (var i = 0; i < els.length && i < 600; i++) {
   var el = els[i];
   if (!vis(el)) continue;
+  var elHost = hostOf(el);
+  if (elHost) {
+    var hn = elHost.tagName.toLowerCase();
+    coverage[hn] = (coverage[hn] || 0) + 1;
+    for (var x = 0; x < EXPECT.length; x++) {
+      if (EXPECT[x][0] === hn && (!EXPECT[x][1] || el.closest(EXPECT[x][1]))) expectHits[x]++;
+    }
+  }
   // Monaco owns its own accessibility and paints its own widgets; auditing its
   // internals reports its hidden IME textarea as an unlabelled field on every
   // scene that shows a diff, which is noise, not a finding.
@@ -203,6 +270,44 @@ for (var i = 0; i < els.length && i < 400; i++) {
 // all and reported every control in the top bar as having neither state.
 var HOVER_SELS = __HOVER__;
 var FOCUS_SELS = __FOCUS__;
+/**
+ * The :hover / :focus selectors for the tree an element lives in. The
+ * document's come from node (above). A component's live in its shadow root's
+ * constructed stylesheets — readable from the page, unlike a file:// sheet —
+ * so they are read here, once per root. Without them every control inside
+ * the graph reported "nothing changes on hover" against the app's CSS.
+ */
+function selectorsFor(el) {
+  var root = el.getRootNode ? el.getRootNode() : document;
+  if (!root || !root.host) return { hover: HOVER_SELS, focus: FOCUS_SELS };
+  if (root.__gsStateSels) return root.__gsStateSels;
+  var hover = [], focus = [];
+  var sheets = [].slice.call(root.adoptedStyleSheets || []);
+  var styles = root.querySelectorAll("style");
+  for (var si = 0; si < styles.length; si++) if (styles[si].sheet) sheets.push(styles[si].sheet);
+  var walk = function (rules) {
+    for (var ri = 0; ri < rules.length; ri++) {
+      var rule = rules[ri];
+      if (rule.selectorText) {
+        var parts = rule.selectorText.split(",");
+        for (var pi = 0; pi < parts.length; pi++) {
+          var sel = parts[pi].trim();
+          if (sel.indexOf(":hover") >= 0) hover.push(sel.replace(/:hover/g, "").trim());
+          if (sel.indexOf(":focus") >= 0) {
+            focus.push(sel.replace(/:focus-visible/g, "").replace(/:focus-within/g, "").replace(/:focus/g, "").trim());
+          }
+        }
+      } else if (rule.cssRules) {
+        walk(rule.cssRules); // @media, @supports
+      }
+    }
+  };
+  for (var sh = 0; sh < sheets.length; sh++) {
+    try { walk(sheets[sh].cssRules); } catch (e) {}
+  }
+  root.__gsStateSels = { hover: hover.filter(Boolean), focus: focus.filter(Boolean) };
+  return root.__gsStateSels;
+}
 function anyMatch(el, sels) {
   for (var q = 0; q < sels.length; q++) {
     try { if (el.matches(sels[q])) return true; } catch (e) {}
@@ -226,28 +331,54 @@ for (var j2 = 0; j2 < els.length; j2++) {
   if (e2.disabled) continue;
   var k = (e2.className && e2.className.toString ? e2.className.toString() : e2.tagName).trim();
   if (!k) k = e2.tagName;
+  // Per tree: the graph's ".gh-menuitem" and a document ".gh-menuitem" are
+  // styled by different sheets.
+  var h2 = hostOf(e2);
+  if (h2) k = h2.tagName + "|" + k;
   if (!byClass[k]) byClass[k] = e2;
 }
-var keys = Object.keys(byClass).slice(0, 80);
+var keys = Object.keys(byClass).slice(0, 120);
 for (var m = 0; m < keys.length; m++) {
-  var el2 = byClass[m] || byClass[keys[m]];
+  var el2 = byClass[keys[m]];
   var sel2 = pathOf(el2);
-  if (!anyMatch(el2, HOVER_SELS)) {
+  var sels2 = selectorsFor(el2);
+  if (!anyMatch(el2, sels2.hover)) {
     var kh = sel2 + "|hover";
     if (!seen[kh]) { seen[kh] = 1; out.push({ kind: "hover", sel: sel2, name: accName(el2).slice(0,32), detail: "nothing changes on hover" }); }
   }
-  if (!anyMatch(el2, FOCUS_SELS)) {
+  if (!anyMatch(el2, sels2.focus)) {
     var kf = sel2 + "|focus";
     if (!seen[kf]) { seen[kf] = 1; out.push({ kind: "focus", sel: sel2, name: accName(el2).slice(0,32), detail: "no focus ring when the keyboard reaches it" }); }
   }
 }
-return JSON.stringify(out.slice(0, 120));
+return JSON.stringify({
+  rows: out.slice(0, 120),
+  coverage: coverage,
+  expect: EXPECT.map(function (e, i) { return { host: e[0], within: e[1] || "", count: expectHits[i] }; }),
+});
 `;
+
+/**
+ * `--expect-shadow=<host>[@<selector>]` (repeatable, comma-separated): FAIL
+ * unless the audit measured at least one control inside that component's
+ * shadow root — inside `selector` when given (an open popover, say). The
+ * proof that a component is audited at all; querySelectorAll alone never
+ * entered one, and a clean report over nothing reads as a pass.
+ */
+const EXPECT = String(flags["expect-shadow"] ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((s) => {
+    const at = s.indexOf("@");
+    return at < 0 ? [s, ""] : [s.slice(0, at), s.slice(at + 1)];
+  });
 
 function run(scene) {
   const body = AUDIT
     .replace("__HOVER__", JSON.stringify(STATE.hover))
-    .replace("__FOCUS__", JSON.stringify(STATE.focus));
+    .replace("__FOCUS__", JSON.stringify(STATE.focus))
+    .replace("__EXPECT__", JSON.stringify(EXPECT));
   const probe = encodeURIComponent(body);
   const url = `file://${PAGE}?scene=${encodeURIComponent(scene)}&theme=${theme}&probe=${probe}`;
   return new Promise((done) => {
@@ -266,7 +397,9 @@ function run(scene) {
         try {
           let v = JSON.parse(decode(m[1]));
           if (typeof v === "string") v = JSON.parse(v);
-          done({ scene, rows: v || [] });
+          // The page reports a probe that THREW as { error }: not a pass.
+          if (!v || v.error || !Array.isArray(v.rows)) return done({ scene, error: String((v && v.error) || "no result").slice(0, 200) });
+          done({ scene, rows: v.rows, coverage: v.coverage || {}, expect: v.expect || [] });
         } catch (e) {
           done({ scene, error: String(e).slice(0, 140) });
         }
@@ -280,10 +413,19 @@ let total = 0;
 const tally = {};
 for (const scene of scenes) {
   const res = await run(scene);
-  if (res.error) { console.log(`\n${scene}: ${res.error}`); continue; }
+  if (res.error) { total++; console.log(`\n${scene}: ${res.error}`); continue; }
+  // Which components were reached, so a clean report is not silence.
+  const reached = Object.entries(res.coverage).map(([h, n]) => `${h} ${n}`).join(", ");
+  console.log(`\n     ${scene}: controls measured inside shadow roots — ${reached || "none"}`);
+  for (const e of res.expect) {
+    if (e.count > 0) continue;
+    total++;
+    tally.shadow = (tally.shadow || 0) + 1;
+    console.log(`\x1b[31m  shadow\x1b[0m  nothing measured inside ${e.host}${e.within ? ` (${e.within})` : ""} — the audit did not reach it`);
+  }
   const rows = only ? res.rows.filter((r) => only.includes(r.kind)) : res.rows;
   for (const r of rows) tally[r.kind] = (tally[r.kind] || 0) + 1;
-  if (!rows.length) { console.log(`\n\x1b[32mOK\x1b[0m   ${scene}`); continue; }
+  if (!rows.length) { console.log(`\x1b[32mOK\x1b[0m   ${scene}`); continue; }
   total += rows.length;
   console.log(`\n\x1b[31m${String(rows.length).padStart(3)}\x1b[0m  ${scene}`);
   for (const r of rows.slice(0, 14)) {

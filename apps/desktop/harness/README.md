@@ -51,6 +51,21 @@ and `document.styleSheets[].cssRules` throws on a `file://` page, which is why
 `affordance.mjs` reads the built stylesheet in node and passes the selectors in
 rather than scanning it from inside the page.
 
+All three also measure INSIDE shadow roots — the graph, the rail, the commit
+details and the rebase view are Lit elements that `querySelectorAll` never
+enters — and inject their animation-off style into every root, since a
+document stylesheet does not reach one either. `affordance.mjs` reads a
+component's own `:hover`/`:focus` rules from its constructed stylesheets (those
+are readable from the page). `affordance.mjs` and `fit.mjs` print how many
+elements they reached per component and take `--expect-shadow=<host>[@<sel>]`,
+which fails the run when nothing was measured in that component (inside `sel`,
+an open popover say): a clean report over nothing is not a pass.
+
+```sh
+node harness/affordance.mjs 'graph~click:.gh-branches' --expect-shadow=gitstudio-graph@.gh-branches-pop
+node harness/fit.mjs 'graph~click:.gh-branches' --expect-shadow=gitstudio-graph@.gh-branches-pop
+```
+
 Each gives Chrome a throwaway `--user-data-dir` so runs cannot share state, and
 removes it on the way out — on a clean finish, on Ctrl-C, and on the `pkill` a
 stalled sweep gets. Without that they accumulate: one night of sweeps left 380
