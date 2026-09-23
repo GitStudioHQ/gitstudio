@@ -5074,6 +5074,25 @@
     },
 
     /**
+     * The strip's "Show conflicts" is the other way back to the dashboard: it
+     * hides itself as the dashboard comes up — with the keyboard on it.
+     */
+    "show-conflicts-takes-the-keyboard-to-the-dashboard": async (f) => {
+      const c = check(f);
+      await settle(700);
+      $('[data-key="merge:src/app.ts"]')?.click();
+      await settle(1500);
+      const back = $(".dc-opstrip-back");
+      c.ok(!!back && !$(".dc-opstrip").hidden, "precondition: a file covers the dashboard and the strip leads back");
+      back?.focus();
+      back?.click();
+      await settle(1200);
+      c.ok(!!$(".cd-dash"), "Show conflicts brings the dashboard back");
+      const a = document.activeElement;
+      c.eq(a && a.dataset && a.dataset.key, "merge:src/app.ts", `and the keyboard to the file that was open (${a === document.body ? "BODY" : a && (a.dataset.key || a.className)})`);
+    },
+
+    /**
      * …and going IN: Merge… is a dashboard button, and the merge editor takes
      * the dashboard's place — with the button in it. The keyboard was left on
      * <body>, so F7 went nowhere and Tab started over from the top bar.

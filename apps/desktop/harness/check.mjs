@@ -397,6 +397,7 @@ const CASES = [
   ["the-ide-button-hands-the-file-over-like-the-setting-does", "changes", { extra: "opctx=merge" }],
   ["the-keyboard-comes-back-to-the-dashboard-after-the-merge-editor", "changes", { extra: "opctx=merge" }],
   ["the-keyboard-follows-merge-into-the-editor", "changes", { extra: "opctx=merge" }],
+  ["show-conflicts-takes-the-keyboard-to-the-dashboard", "changes", { extra: "opctx=merge" }],
   // A 1000px window: the merge editor and the dashboard are one 443px pane.
   ["the-merge-editors-actions-stay-on-screen-in-a-narrow-window", "changes", { width: 1000, extra: "opctx=merge" }],
   ["the-merge-editors-actions-stay-on-screen-in-a-narrow-window", "changes", { width: 1000, extra: "opctx=merge", theme: "light" }],

@@ -7174,7 +7174,15 @@ class App {
     const want = this.changesDashFocus;
     if (!want) return;
     const active = document.activeElement as HTMLElement | null;
-    const lost = !active || active === document.body || dash.element.contains(active);
+    // Lost: nowhere, or on something no longer on screen (a button that hid
+    // itself as the dashboard came up still holds focus until the browser's
+    // next rendering update notices).
+    const lost =
+      !active ||
+      active === document.body ||
+      !active.isConnected ||
+      active.getClientRects().length === 0 ||
+      dash.element.contains(active);
     if (Date.now() - want.at > 5000 || !lost) {
       this.changesDashFocus = undefined;
       return;
@@ -7271,7 +7279,15 @@ class App {
       this.changesDash = dash;
       strip.hidden = true;
     };
-    back.addEventListener("click", show);
+    back.addEventListener("click", () => {
+      // The strip hides itself as the dashboard comes up, with the keyboard
+      // on its button: send it to the row of the file that was open.
+      const open = this.changesOpenKey;
+      if (open && document.activeElement === back) {
+        this.changesDashFocus = { path: parseRowKey(open).path, at: Date.now() };
+      }
+      show();
+    });
     this.changesShowConflicts = show;
     this.changesOpenMerge = hooks.openMerge;
     if (this.changesOpenKey === undefined) show();
