@@ -190,7 +190,9 @@ extension, runs `jbMerge.openDemo` and asserts the custom editor resolved.
    under `vendor/gitstudio/`, writes `VENDORED_FROM.json` (the gitstudio sha
    and a sha256 per vendored file), a standalone `tsconfig.json` and
    `package.json`, and a `package-lock.json` pinned to the exact versions
-   gitstudio builds with.
+   gitstudio builds with. A shell file the previous export wrote (its
+   `VENDORED_FROM.json` lists them) that `apps/merge-studio` no longer has
+   is removed; merge-studio's own files are never touched.
 2. In merge-studio: `npm ci && npm run check-parity && npm run check-types && npm test`,
    then open a PR. Its CI runs the same, and `check-parity` fails on any edit
    to `vendor/**`: make the change in gitstudio and export again. When the
@@ -249,13 +251,23 @@ checkout:
      outside the shell's folders. Merge that part in merge-studio directly
      and run the import again with `--exclude <path>`. Merge commits in the
      range (ask for a rebase, or import the squashed diff), `main`, and
-     uncommitted changes are refused too.
+     uncommitted changes are refused too. So is a pull request on an older
+     export that changes a file gitstudio has since deleted or moved (the
+     message names the gitstudio commit, and where the file went), and a
+     commit that is merge-studio's own export, which a pull request picks up
+     by merging main: replaying it could bring back what gitstudio reverted
+     since. Import the squashed diff instead, or a range that starts after it.
+   - *Skipped*: a commit that changes only generated files, or whose changes
+     gitstudio already has. The rest of the pull request is still imported.
    - *Stopped on a conflict*: gitstudio changed the same lines since the
      export. The conflict markers are in the files, and the message gives the
      `git add` and `git commit --author=…` lines that finish that commit, and
-     the `--range` for the rest.
-   - *Round trip*: the import exports the result to a scratch folder and
-     compares every file the contributor changed with their branch.
+     the `--range` for the rest. A binary file (an image) has no markers: the
+     message gives the `git checkout --theirs` line that takes the
+     contributor's version.
+   - *Round trip*: the import exports the result over the export it started
+     from, as the next export will go over merge-studio, and compares every
+     file the contributor changed, deleted or moved with their branch.
      "identical" is the usual answer. "merged" means gitstudio had changed
      that file too since the export, so the next export carries both. A
      "DIFFERENT" fails the import (exit 1): the next export would not write

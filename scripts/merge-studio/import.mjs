@@ -24,21 +24,27 @@
 //    "Imported-from: GitStudioHQ/merge-studio#<n> / <sha>" trailer. A
 //    conflict with a gitstudio change stops there, with the markers in the
 //    files and the commands to finish.
-// 4. Proves the round trip: exports the result to a scratch folder and checks
-//    that every file the contributor changed comes out as their branch has it
-//    (or, where gitstudio changed the same file since the export, as the merge
-//    of both).
+// 4. Proves the round trip: exports the result over a scratch export of where
+//    it started (as the next export goes over merge-studio) and checks that
+//    every file the contributor changed, deleted or moved comes out as their
+//    branch has it (or, where gitstudio changed the same file since the
+//    export, as the merge of both).
+//
+// A commit whose changes gitstudio already has is skipped. Refused before
+// anything changes, besides unmappable paths: a file gitstudio has deleted or
+// moved since the export the pull request is based on, and a commit that is
+// merge-studio's own export (a pull request that merged main carries one).
 //
 // It commits on the current branch (never main) and pushes nothing.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exportTo, GENERATED_PACKAGE_FIELDS, GITSTUDIO_ROOT, standaloneFrom } from "./export.mjs";
-import { SHELL_DIR, shellFiles, toGitstudio } from "./layout.mjs";
+import { MANIFEST_FILE, SHELL_DIR, shellFiles, toGitstudio } from "./layout.mjs";
 
 export const DEFAULT_REPO = "GitStudioHQ/merge-studio";
 
@@ -232,6 +238,9 @@ export function parsePatch(text) {
       const l = lines[i];
       let m;
       if (l.startsWith("diff --git ") || l.startsWith("@@") || l === "GIT binary patch" || l.startsWith("Binary files ")) break;
+      // A mail's signature ("-- " and git's version) right after a section with
+      // no hunks: a pure rename, a mode change, an empty new file.
+      if (l === "-- " || l === "--") break;
       if ((m = /^--- (.*)$/.exec(l))) {
         oldPath = pathField(m[1], "a/");
         sawOld = true;
@@ -403,15 +412,21 @@ export function readPatchFile(file, { author, message, gitstudio = GITSTUDIO_ROO
   const bytes = readFileSync(file);
   const text = bytes.toString("latin1");
   if (/^From [0-9a-f]{40} /.test(text)) {
-    const shas = [...text.matchAll(/^From ([0-9a-f]{40}) Mon Sep 17 00:00:00 2001$/gm)].map((mm) => mm[1]);
+    const shas = [...text.matchAll(/^From ([0-9a-f]{40}) Mon Sep 17 00:00:00 2001\r?$/gm)].map((mm) => mm[1]);
     const dir = mkdtempSync(join(tmpdir(), "ms-import-mail-"));
     try {
-      git(gitstudio, "mailsplit", `-o${dir}`, resolve(file));
+      // mailsplit drops the \r of every \r\n line by default, which rewrites a
+      // CRLF file's lines in the patch: keep them, unless the whole file was
+      // saved with CRLF line endings (then its own headers end in \r too).
+      const keepCr = !/^From [0-9a-f]{40} [^\n]*\r\n/.test(text);
+      git(gitstudio, "mailsplit", ...(keepCr ? ["--keep-cr"] : []), `-o${dir}`, resolve(file));
       const mails = readdirSync(dir).filter((n) => /^\d+$/.test(n)).sort();
       return mails.map((name, k) => {
         const msgFile = join(dir, `${name}.msg`);
         const patchFile = join(dir, `${name}.patch`);
-        const info = run(gitstudio, ["mailinfo", msgFile, patchFile], { input: readFileSync(join(dir, name)) }).stdout;
+        // -b: strip only "[PATCH …]" from the subject, not "[engine] …" the contributor wrote;
+        // --no-scissors: a "-- >8 --" line in a message is text, whatever mailinfo.scissors says.
+        const info = run(gitstudio, ["mailinfo", "-b", "--no-scissors", msgFile, patchFile], { input: readFileSync(join(dir, name)) }).stdout;
         const field = (key) => (new RegExp(`^${key}: (.*)$`, "m").exec(info) ?? [])[1] ?? "";
         const body = readFileSync(msgFile, "utf8").replace(/\s+$/, "");
         const who = author ? parseAuthor(author) : { name: field("Author"), email: field("Email") };
@@ -442,12 +457,48 @@ export function readPatchFile(file, { author, message, gitstudio = GITSTUDIO_ROO
 const excluded = (path, excludes) =>
   path !== undefined && excludes.some((e) => path === e.replace(/\/$/, "") || path.startsWith(e.endsWith("/") ? e : `${e}/`));
 
+/** gitstudio's files at HEAD; undefined on an unborn branch. */
+function trackedFiles(gitstudio) {
+  const r = run(gitstudio, ["ls-tree", "-r", "-z", "--name-only", "HEAD"], { allowFail: true });
+  return r.status === 0 ? new Set(r.stdout.split("\0").filter(Boolean)) : undefined;
+}
+
+/**
+ * What became of a gitstudio file that is not there any more: the commit that
+ * deleted or moved it, in words for the refusal. Undefined when gitstudio's
+ * history never had it.
+ */
+function goneFromGitstudio(gitstudio, gsPath) {
+  const del = run(gitstudio, ["log", "-1", "--format=%H", "--diff-filter=D", "HEAD", "--", gsPath], { allowFail: true }).stdout.trim();
+  if (!del) return undefined;
+  const subject = git(gitstudio, "log", "-1", "--format=%s", del);
+  const fields = run(gitstudio, ["diff-tree", "-r", "-M", "-z", "--name-status", `${del}^`, del], { allowFail: true }).stdout.split("\0");
+  let movedTo;
+  for (let i = 0; i + 1 < fields.length; ) {
+    const status = fields[i];
+    if (/^[RC]/.test(status)) {
+      if (status.startsWith("R") && fields[i + 1] === gsPath) movedTo = fields[i + 2];
+      i += 3;
+    } else {
+      i += 2;
+    }
+  }
+  return (
+    `gitstudio ${movedTo ? `moved ${gsPath} to ${movedTo}` : `deleted ${gsPath}`} in ${del.slice(0, 7)} "${subject}", ` +
+    "after the export this pull request is based on: ask the contributor to rebase onto merge-studio's latest export, or leave it out with --exclude"
+  );
+}
+
 /**
  * Where each file of each commit goes. Nothing is changed.
  * @returns {{ commits: object[], unmapped: Array<{ commit: object, path: string, why: string }> }}
  */
 export function planImport({ gitstudio, commits, excludes = [] }) {
   const shell = new Set(shellFiles(gitstudio));
+  // The files gitstudio has, as each planned commit leaves them: a pull
+  // request based on an older export can change a file gitstudio has since
+  // deleted or moved, and that is refused here rather than by git apply.
+  const tracked = trackedFiles(gitstudio);
   const unmapped = [];
   const planned = commits.map((commit) => {
     const sections = parsePatch(commit.patch).map((file) => {
@@ -455,8 +506,14 @@ export function planImport({ gitstudio, commits, excludes = [] }) {
       const paths = [file.oldPath, file.newPath].filter((p) => p !== undefined);
       if (paths.some((p) => excluded(p, excludes))) return { kind: "excluded", msPath, file };
       const created = file.isNew || file.renamed || file.copied;
-      const oldMap = file.oldPath === undefined ? undefined : toGitstudio(file.oldPath, { shell });
+      let oldMap = file.oldPath === undefined ? undefined : toGitstudio(file.oldPath, { shell });
       const newMap = file.newPath === undefined ? undefined : toGitstudio(file.newPath, { shell, isNew: created });
+      if (oldMap?.kind === "unmapped" && tracked) {
+        // A shell file at the root that gitstudio has since deleted looks like
+        // merge-studio's own to the table; its history says otherwise.
+        const gone = goneFromGitstudio(gitstudio, `${SHELL_DIR}/${file.oldPath}`);
+        if (gone) oldMap = { kind: "unmapped", why: gone };
+      }
       const maps = [oldMap, newMap].filter(Boolean);
       const bad = maps.find((mm) => mm.kind === "unmapped");
       if (bad) {
@@ -471,12 +528,45 @@ export function planImport({ gitstudio, commits, excludes = [] }) {
         unmapped.push({ commit, path: msPath, why });
         return { kind: "unmapped", msPath, why, file };
       }
+      if (tracked && oldMap && !tracked.has(oldMap.gitstudio)) {
+        // Deleted on both sides: nothing to do, and the round trip still checks it is gone.
+        if (file.isDeleted) return { kind: "done", msPath, file, oldGs: oldMap.gitstudio, why: `gitstudio has already deleted ${oldMap.gitstudio}` };
+        const why = goneFromGitstudio(gitstudio, oldMap.gitstudio) ?? `gitstudio has no ${oldMap.gitstudio}`;
+        unmapped.push({ commit, path: file.oldPath, why });
+        return { kind: "unmapped", msPath: file.oldPath, why, file };
+      }
+      if (tracked && oldMap && (file.isDeleted || file.renamed)) tracked.delete(oldMap.gitstudio);
+      if (tracked && newMap) tracked.add(newMap.gitstudio);
       if (newMap?.shell && created) shell.add(file.newPath);
       return { kind: "copied", msPath, file, oldGs: oldMap?.gitstudio, newGs: newMap?.gitstudio };
     });
+    const exported = exportedSha(sections);
+    if (exported) {
+      unmapped.push({
+        commit,
+        path: MANIFEST_FILE,
+        why:
+          `this commit is merge-studio's export of gitstudio ${exported.slice(0, 7)} (it moves ${MANIFEST_FILE}'s gitstudio sha), picked up by merging or rebasing on merge-studio's main. ` +
+          "Its changes came from gitstudio, and replaying them could bring back what gitstudio has changed or reverted since. " +
+          "Import only the contributor's commits: a --range that starts after it, or the squashed diff (gh pr diff <n> without --patch, with --author)",
+      });
+    }
     return { ...commit, sections };
   });
   return { commits: planned, unmapped };
+}
+
+/** The gitstudio sha a commit's VENDORED_FROM.json change moves to: the commit is an export. */
+function exportedSha(sections) {
+  // Whatever --exclude says: leaving the manifest out would replay the export's other files.
+  const manifest = sections.find((s) => s.msPath === MANIFEST_FILE);
+  if (!manifest) return undefined;
+  const shas = { "-": undefined, "+": undefined };
+  for (const line of manifest.file.body) {
+    const m = /^([-+])\s*"sha": "([0-9a-f]{40})"/.exec(line);
+    if (m) shas[m[1]] = m[2];
+  }
+  return shas["+"] && shas["+"] !== shas["-"] ? shas["+"] : undefined;
 }
 
 // ---------------------------------------------------------------- package.json
@@ -638,6 +728,34 @@ function describe(commit) {
   return `${commit.sha ? commit.sha.slice(0, 7) : "patch"} "${subject}" by ${commit.author.name} <${commit.author.email}>`;
 }
 
+/**
+ * One word for a POSIX shell, for the commands a stop prints to copy and paste.
+ * The author's name, the date and the paths come from the pull request, so
+ * nothing in them may be read by the shell ("$(…)", quotes, spaces).
+ */
+export function shellQuote(word) {
+  const s = String(word);
+  return /^[A-Za-z0-9_./:=@%+,-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+/** Note, for the round trip, what a commit's files should be once exported: the first base and the last head of each. */
+function recordCompare(compare, copied) {
+  for (const s of copied) {
+    for (const [p, side] of [
+      [s.file.oldPath, "old"],
+      [s.file.newPath, "new"],
+    ]) {
+      if (p === undefined) continue;
+      const entry = compare.get(p) ?? { baseId: side === "old" ? s.file.oldId : "0" };
+      entry.headId = side === "new" ? s.file.newId : "0";
+      // A pure rename from a patch file carries no blob ids: the file must come
+      // out as the renamed file's bytes were.
+      entry.sameAs = side === "new" && s.file.renamed && s.file.newId === "" ? s.file.oldPath : undefined;
+      compare.set(p, entry);
+    }
+  }
+}
+
 // ---------------------------------------------------------------- the round trip
 
 function readMaybe(file) {
@@ -684,6 +802,10 @@ function roundTrip(beforeDir, afterDir, paths) {
       lost = view(a) === view(b) && view(want.baseText) !== view(want.headText);
     } else {
       identical = idMatches(after, want.headId);
+      if (identical === undefined && want.sameAs !== undefined) {
+        const renamed = readMaybe(join(beforeDir, want.sameAs));
+        if (renamed !== undefined) identical = after !== undefined && after.equals(renamed);
+      }
       moved = idMatches(before, want.baseId) === false;
       lost = (after === undefined ? before === undefined : before !== undefined && after.equals(before)) && want.baseId !== want.headId;
     }
@@ -727,7 +849,7 @@ export function importPullRequest({
   if (plan.unmapped.length) {
     const lines = plan.unmapped.map((u) => `  ${u.path}${u.commit.sha ? ` (${u.commit.sha.slice(0, 7)})` : ""}: ${u.why}`);
     throw new ImportRefused(
-      `import: refused, nothing was changed. ${plan.unmapped.length} path(s) do not map to gitstudio:\n${lines.join("\n")}\n` +
+      `import: refused, nothing was changed. ${plan.unmapped.length} path(s) cannot be imported into gitstudio:\n${lines.join("\n")}\n` +
         "Leave a path out on purpose with --exclude <path> (and merge that part in merge-studio directly).",
     );
   }
@@ -740,6 +862,8 @@ export function importPullRequest({
       if (s.kind === "copied") {
         const pair = s.file.oldPath !== undefined && s.file.newPath !== undefined && s.file.oldPath !== s.file.newPath;
         log(`  ${pair ? `${s.file.oldPath} → ${s.file.newPath}` : s.msPath}  →  ${s.newGs ?? s.oldGs}${s.file.isNew ? " (new)" : s.file.isDeleted ? " (deleted)" : ""}`);
+      } else if (s.kind === "done") {
+        log(`  ${s.msPath}  nothing to do: ${s.why}`);
       } else if (s.kind === "excluded") {
         log(`  ${s.msPath}  left out (--exclude)`);
         excludedList.push({ commit: c.sha, path: s.msPath });
@@ -772,7 +896,9 @@ export function importPullRequest({
     for (const [k, c] of plan.commits.entries()) {
       const label = `${k + 1}/${plan.commits.length} ${describe(c)}`;
       const copied = c.sections.filter((s) => s.kind === "copied");
-      const notes = [];
+      const done = c.sections.filter((s) => s.kind === "done");
+      const notes = done.map((s) => `${s.msPath}: ${s.why}`);
+      recordCompare(compare, done);
       const pkgSection = c.sections.find((s) => s.kind === "generated" && s.msPath === "package.json");
       const pkg = pkgSection ? planPackageJson(top, c, pkgSection) : undefined;
       if (pkg?.conflicts.length) {
@@ -824,19 +950,38 @@ export function importPullRequest({
           const extra = writePackageJson(top, pkg, notes);
           const msgFile = git(top, "rev-parse", "--git-path", "MERGE_STUDIO_IMPORT_MSG");
           writeFileSync(resolve(top, msgFile), commitMessage(top, c.message, trailers(notes, { repo, pr, sha: c.sha })));
-          const date = c.date ? ` --date="${c.date}"` : "";
+          const date = c.date ? ` --date=${shellQuote(c.date)}` : "";
+          // A binary file gets no markers: git leaves gitstudio's version in place.
+          const binaries = new Set(copied.filter((s) => s.file.binary).map((s) => s.newGs ?? s.oldGs));
+          const binary = unmerged.filter((u) => binaries.has(u));
+          const text = unmerged.filter((u) => !binaries.has(u));
           throw new ImportStopped(
-            `import: stopped at ${label}: git apply --3way left conflicts in\n${unmerged.map((u) => `  ${u}`).join("\n")}\n` +
-              "gitstudio changed the same lines since merge-studio's export. The conflict markers are in the file(s).\n" +
-              `${soFar()}. To finish this one, resolve the markers, then:\n` +
-              `  git add ${unmerged.join(" ")}\n` +
-              `  git commit --author="${c.author.name} <${c.author.email}>"${date} --cleanup=whitespace -F ${msgFile}\n` +
-              (k + 1 < plan.commits.length && c.sha ? `and import the rest with --range ${c.sha}..<head>.\n` : "") +
+            `import: stopped at ${label}: git apply --3way left conflicts in\n${unmerged.map((u) => `  ${u}${binaries.has(u) ? " (binary)" : ""}`).join("\n")}\n` +
+              (text.length ? "gitstudio changed the same lines since merge-studio's export. The conflict markers are in the file(s).\n" : "") +
+              (binary.length
+                ? "gitstudio changed the same binary file since merge-studio's export. It has no markers: the file is gitstudio's version.\n" +
+                  `Keep it, or take the contributor's with: git checkout --theirs -- ${binary.map(shellQuote).join(" ")}\n`
+                : "") +
+              `${soFar()}. To finish this one, ${text.length ? "resolve the markers" : "choose a version"}, then:\n` +
+              `  git add -- ${unmerged.map(shellQuote).join(" ")}\n` +
+              `  git commit --author=${shellQuote(`${c.author.name} <${c.author.email}>`)}${date} --cleanup=whitespace -F ${shellQuote(msgFile)}\n` +
+              (k + 1 < plan.commits.length && c.sha
+                ? `and import the rest with ${range ? "" : "--from <merge-studio checkout> "}--range ${c.sha}..<head>${range ? "" : " (fetch the pull request first: see --help)"}.\n`
+                : "") +
               `To drop this commit's changes instead: git reset --merge${extra.length ? ` (it also restores ${extra.join(" and ")})` : ""}`,
           );
         }
       }
       writePackageJson(top, pkg, notes);
+      // Everything it changes, gitstudio already has (the same fix made there).
+      const staged = run(top, ["diff", "--cached", "--quiet"], { allowFail: true }).status !== 0;
+      if (!staged) {
+        notes.push("gitstudio already has every change it makes");
+        log(`skipped ${label}: nothing to import (gitstudio already has every change it makes)`);
+        results.push({ upstream: c.sha, skipped: true, notes });
+        recordCompare(compare, copied);
+        continue;
+      }
       for (const s of copied) {
         const target = s.newGs;
         if (!target || !/(^|\/)package\.json$/.test(target)) continue;
@@ -858,22 +1003,14 @@ export function importPullRequest({
       const sha = git(top, "rev-parse", "HEAD");
       log(`imported ${label} as ${sha.slice(0, 7)}${notes.length ? `\n  note: ${notes.join("\n  note: ")}` : ""}`);
       results.push({ upstream: c.sha, sha, notes });
-
-      for (const s of copied) {
-        for (const [p, side] of [
-          [s.file.oldPath, "old"],
-          [s.file.newPath, "new"],
-        ]) {
-          if (p === undefined) continue;
-          const entry = compare.get(p) ?? { baseId: side === "old" ? s.file.oldId : "0" };
-          entry.headId = side === "new" ? s.file.newId : "0";
-          compare.set(p, entry);
-        }
-      }
+      recordCompare(compare, copied);
     }
     if (compare.get("package.json")?.imported === false) compare.delete("package.json");
 
     try {
+      // The next export goes over the previous one, as it will in merge-studio:
+      // a shell file the pull request deletes must go there too.
+      cpSync(beforeDir, afterDir, { recursive: true });
       exportTo({ into: afterDir, gitstudio: top, allowDirty: true, lock: false });
     } catch (e) {
       throw new ImportStopped(
@@ -965,6 +1102,10 @@ function main(argv) {
     }
     if (r.excluded.length) console.log(`left out with --exclude: ${[...new Set(r.excluded.map((e) => e.path))].join(", ")}`);
     const failed = r.roundTrip.filter((x) => x.status === "FAILED");
+    if (r.roundTrip.length === 0) {
+      console.log("round trip: nothing was imported, so there is nothing to check.");
+      return 0;
+    }
     console.log(`round trip (export.mjs run again on the result, compared with the contributor's files):`);
     for (const x of r.roundTrip) {
       const what = {

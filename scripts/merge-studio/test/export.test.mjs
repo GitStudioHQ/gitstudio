@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkParity, sha256 } from "../check-parity.mjs";
@@ -177,6 +177,52 @@ test("a real export: replaces the old layout, vendors the packages, and passes c
     assert.equal(checkParity(into).ok, true);
   } finally {
     rmSync(into, { recursive: true, force: true });
+  }
+});
+
+test("a shell file the previous export wrote and gitstudio no longer has is removed; nothing else is, whatever the manifest says", () => {
+  const outside = mkdtempSync(join(tmpdir(), "ms-export-outside-"));
+  const into = join(outside, "merge-studio");
+  mkdirSync(into);
+  try {
+    const files = {
+      "media/old-shot.png": "gone from gitstudio",
+      "docs/walkthrough/old.md": "gone from gitstudio, and its folder with it",
+      "OLD.md": "gone from gitstudio",
+      "SECURITY.md": "merge-studio's own: never listed",
+      "package-lock.json": "generated: an export without --no-lock writes it",
+      ".git/config": "never",
+      "escape/kept.txt": "through a symbolic link",
+    };
+    mkdirSync(join(outside, "elsewhere"));
+    for (const [rel, text] of Object.entries(files)) {
+      const at = rel.startsWith("escape/") ? join(outside, "elsewhere", "kept.txt") : join(into, rel);
+      mkdirSync(join(at, ".."), { recursive: true });
+      writeFileSync(at, text);
+    }
+    symlinkSync(join(outside, "elsewhere"), join(into, "escape"));
+    writeFileSync(join(outside, "outside.txt"), "outside the checkout");
+    // What a previous export recorded, plus what a pull request could add to it.
+    const listed = ["media/old-shot.png", "docs/walkthrough/old.md", "OLD.md", "package-lock.json", "README.md", "../outside.txt", ".git/config", "escape/kept.txt", "vendor/gitstudio/LICENSE", "/etc/hosts"];
+    writeFileSync(join(into, "VENDORED_FROM.json"), JSON.stringify({ schema: 1, files: {}, shell: Object.fromEntries(listed.map((p) => [p, "0"])) }));
+
+    const r = exportTo({ into, allowDirty: true, lock: false });
+    assert.deepEqual(r.stale.sort(), ["OLD.md", "docs/walkthrough/old.md", "media/old-shot.png"]);
+    for (const rel of r.stale) assert.equal(existsSync(join(into, rel)), false, rel);
+    assert.equal(existsSync(join(into, "docs")), false, "a folder left empty goes too");
+    assert.ok(existsSync(join(into, "media/icon.png")), "the shell's own media stay");
+    assert.ok(existsSync(join(into, "README.md")), "written by this export too");
+    assert.ok(existsSync(join(into, "vendor/gitstudio/LICENSE")), "the vendored copy is never removed");
+    assert.equal(readFileSync(join(into, "SECURITY.md"), "utf8"), files["SECURITY.md"]);
+    assert.equal(readFileSync(join(into, "package-lock.json"), "utf8"), files["package-lock.json"], "generated: --no-lock leaves it be");
+    assert.equal(readFileSync(join(into, ".git/config"), "utf8"), files[".git/config"]);
+    assert.ok(existsSync(join(outside, "outside.txt")));
+    assert.ok(existsSync(join(outside, "elsewhere", "kept.txt")), "never through a symbolic link");
+    // The new manifest lists what this export wrote, so the next one removes by it.
+    const shell = Object.keys(JSON.parse(readFileSync(join(into, "VENDORED_FROM.json"), "utf8")).shell);
+    assert.ok(shell.includes("README.md") && !shell.includes("OLD.md"));
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
   }
 });
 

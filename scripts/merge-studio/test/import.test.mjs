@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,20 +87,57 @@ function scratchMergeStudio(gs) {
   return root;
 }
 
-/** One contributor commit: each edit maps a path to a function of its old text (null deletes it). */
-function contribute(ms, subject, edits, date) {
+/**
+ * One contributor commit: each edit maps a path to a function of its old text,
+ * null (delete it), { renameTo, edit? } (move it, and change its text), or
+ * { bytes } (a function of its old bytes, for a binary file).
+ */
+function contribute(ms, subject, edits, date, author = JANE) {
   for (const [rel, fn] of Object.entries(edits)) {
     const file = join(ms, rel);
     if (fn === null) {
       unlinkSync(file);
       continue;
     }
+    if (fn.renameTo) {
+      const to = join(ms, fn.renameTo);
+      mkdirSync(dirname(to), { recursive: true });
+      renameSync(file, to);
+      if (fn.edit) writeFileSync(to, fn.edit(readFileSync(to, "utf8")));
+      continue;
+    }
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, fn(existsSync(file) ? readFileSync(file, "utf8") : ""));
+    if (fn.bytes) writeFileSync(file, fn.bytes(existsSync(file) ? readFileSync(file) : Buffer.alloc(0)));
+    else writeFileSync(file, fn(existsSync(file) ? readFileSync(file, "utf8") : ""));
   }
   g(ms, "add", "-A");
-  g(ms, "commit", "-q", "-m", subject, `--author=${JANE}`, ...(date ? [`--date=${date}`] : []));
+  g(ms, "commit", "-q", "-m", subject, `--author=${author}`, ...(date ? [`--date=${date}`] : []));
   return g(ms, "rev-parse", "HEAD");
+}
+
+/** `gh pr diff --patch`: one mail per commit, as `git format-patch` writes them. */
+function mbox(ms, range, dir) {
+  const file = join(dir, "pr.patch");
+  writeFileSync(file, execFileSync("git", ["-C", ms, "format-patch", "--stdout", range]));
+  return file;
+}
+
+/**
+ * The next export as it really runs: over merge-studio's main, where the pull
+ * request was never merged. Returns how that tree differs from the
+ * contributor's `head` (the manifest, which records the gitstudio sha, aside).
+ */
+function exportOverMain(ms, gs, head) {
+  const wt = join(mkdtempSync(join(tmpdir(), "ms-import-main-")), "wt");
+  g(ms, "worktree", "add", "-q", "--detach", wt, "main");
+  try {
+    exportTo({ into: wt, gitstudio: gs, allowDirty: true });
+    g(wt, "add", "-A");
+    return g(wt, "diff", "--cached", "--name-status", head, "--", ".", ":!VENDORED_FROM.json");
+  } finally {
+    g(ms, "worktree", "remove", "--force", wt);
+    rmSync(dirname(wt), { recursive: true, force: true });
+  }
 }
 
 /** Change line `n` (0-based) of a file's text. */
@@ -294,7 +331,7 @@ test("a change to lines gitstudio also changed is a 3-way conflict with markers,
       },
     );
     assert.match(stopped.message, /git apply --3way left conflicts in\n {2}packages\/engine\/src\/mergeModel\.ts\n/);
-    assert.match(stopped.message, /git commit --author="Jane Contributor <jane@example\.com>"/);
+    assert.match(stopped.message, /git commit --author='Jane Contributor <jane@example\.com>'/);
     assert.match(stopped.message, /stopped at 2\/3 /);
     assert.match(stopped.message, /1 earlier commit\(s\) are imported\./);
     assert.ok(stopped.message.includes(`import the rest with --range ${sha}..<head>`));
@@ -441,6 +478,243 @@ test("the CLI: usage without a change, and --dry-run shows the mapping and chang
   }
 });
 
+// ---------------------------------------------------------------- what a pull request can hold
+
+test("renames, deletions and a binary file come back from a range and from `gh pr diff --patch`, and the next export over main writes the contributor's tree", () => {
+  const gs = scratchGitstudio();
+  const ms = scratchMergeStudio(gs);
+  const files = mkdtempSync(join(tmpdir(), "ms-import-files-"));
+  try {
+    const vendored = g(ms, "ls-files", "vendor/gitstudio/engine/src").split("\n").filter((p) => p.endsWith(".ts") && p !== MERGE_MODEL);
+    const [moved, gone] = vendored;
+    const head = [
+      // A pure rename is a header-only section: in a mail, the signature follows it.
+      contribute(ms, "Rename a vendored file", { [moved]: { renameTo: moved.replace(/\.ts$/, "Renamed.ts") } }),
+      contribute(ms, "[shell] Rename and edit links.ts", { "src/links.ts": { renameTo: "src/linksRenamed.ts", edit: append("// edited\n") } }),
+      contribute(ms, "Delete files", { [gone]: null, "media/banner.svg": null, "SHOTS.md": null }),
+      contribute(ms, "Sharper icon", {
+        "media/icon.png": { bytes: (b) => Buffer.concat([b.subarray(0, 64), Buffer.from([0, 255, 0, 255, 7]), b.subarray(64)]) },
+        "media/walkthrough/new-shot.png": { bytes: () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 9, 1, 2, 3]) },
+      }),
+    ].at(-1);
+    const expected = [
+      `R100\tpackages/engine/src/${moved.slice("vendor/gitstudio/engine/src/".length)}\tpackages/engine/src/${moved.slice("vendor/gitstudio/engine/src/".length).replace(/\.ts$/, "Renamed.ts")}`,
+      `D\tpackages/engine/src/${gone.slice("vendor/gitstudio/engine/src/".length)}`,
+      "D\tapps/merge-studio/SHOTS.md",
+      "D\tapps/merge-studio/media/banner.svg",
+      "M\tapps/merge-studio/media/icon.png",
+      "A\tapps/merge-studio/media/walkthrough/new-shot.png",
+    ];
+    for (const how of ["range", "patch"]) {
+      g(gs, "reset", "-q", "--hard", "main");
+      const r =
+        how === "range"
+          ? importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib", pr: "21" })
+          : importPullRequest({ gitstudio: gs, patch: mbox(ms, "main..contrib", files), pr: "21" });
+      assert.equal(r.commits.filter((c) => c.sha).length, 4, how);
+      assert.deepEqual(r.roundTrip.filter((x) => x.status !== "identical"), [], `${how}: every file round-trips`);
+      const diff = g(gs, "diff", "--name-status", "-M", "main", "HEAD").split("\n");
+      for (const line of expected) assert.ok(diff.includes(line), `${how}: ${line}\n${diff.join("\n")}`);
+      assert.ok(diff.some((l) => /^R\d+\tapps\/merge-studio\/src\/links\.ts\tapps\/merge-studio\/src\/linksRenamed\.ts$/.test(l)), how);
+      assert.equal(g(gs, "log", "-1", "--format=%s", "HEAD~2"), "[shell] Rename and edit links.ts", `${how}: the contributor's own [bracket] stays`);
+      assert.ok(
+        readFileSync(join(gs, "apps/merge-studio/media/icon.png")).equals(execFileSync("git", ["-C", ms, "show", `${head}:media/icon.png`])),
+        `${how}: the png's bytes`,
+      );
+      // The deleted and moved shell files must not stay behind in merge-studio.
+      assert.equal(exportOverMain(ms, gs, head), "", `${how}: the next export writes the contributor's tree`);
+    }
+  } finally {
+    cleanup(gs, ms, files);
+  }
+});
+
+test("CRLF lines survive a range, `gh pr diff --patch` and a plain diff", () => {
+  const gs = scratchGitstudio();
+  writeFileSync(join(gs, "packages/engine/src/crlf.ts"), "export const a = 1;\r\nexport const b = 2;\r\nexport const c = 3;\r\n");
+  g(gs, "add", "-A");
+  g(gs, "commit", "-qm", "a CRLF file");
+  g(gs, "branch", "-qf", "main");
+  const ms = scratchMergeStudio(gs);
+  const files = mkdtempSync(join(tmpdir(), "ms-import-files-"));
+  try {
+    const head = contribute(ms, "Edit a CRLF file, and turn an LF one into CRLF", {
+      "vendor/gitstudio/engine/src/crlf.ts": (t) => t.replace("export const b = 2;\r\n", "export const b = 22;\r\n"),
+      "src/links.ts": (t) => `${t.replace(/\n/g, "\r\n")}// trailing\r\n`,
+    });
+    const plain = join(files, "pr.diff");
+    writeFileSync(plain, execFileSync("git", ["-C", ms, "diff", "main", "contrib"]));
+    for (const how of ["range", "patch", "plain"]) {
+      g(gs, "reset", "-q", "--hard", "main");
+      const r = {
+        range: () => importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib" }),
+        patch: () => importPullRequest({ gitstudio: gs, patch: mbox(ms, "main..contrib", files) }),
+        plain: () => importPullRequest({ gitstudio: gs, patch: plain, author: JANE }),
+      }[how]();
+      assert.deepEqual(r.roundTrip.filter((x) => x.status !== "identical"), [], how);
+      for (const [gsPath, msPath] of [
+        ["packages/engine/src/crlf.ts", "vendor/gitstudio/engine/src/crlf.ts"],
+        ["apps/merge-studio/src/links.ts", "src/links.ts"],
+      ]) {
+        const committed = execFileSync("git", ["-C", gs, "show", `HEAD:${gsPath}`]);
+        assert.ok(committed.equals(execFileSync("git", ["-C", ms, "show", `${head}:${msPath}`])), `${how}: ${gsPath} is the contributor's bytes`);
+      }
+    }
+  } finally {
+    cleanup(gs, ms, files);
+  }
+});
+
+test("a pull request on an older export: a file gitstudio has since deleted or moved is refused, saying where it went", () => {
+  const gs = scratchGitstudio();
+  const ms = scratchMergeStudio(gs);
+  const files = mkdtempSync(join(tmpdir(), "ms-import-files-"));
+  try {
+    const engine = g(gs, "ls-files", "packages/engine/src").split("\n").filter((p) => p.endsWith(".ts") && !p.endsWith("mergeModel.ts"));
+    const [deleted, moved, bothDeleted] = engine;
+    const msOf = (p) => p.replace(/^packages\//, "vendor/gitstudio/");
+    // gitstudio moves on after the export the contributor works from.
+    unlinkSync(join(gs, deleted));
+    unlinkSync(join(gs, bothDeleted));
+    renameSync(join(gs, moved), join(gs, moved.replace(/\.ts$/, "Moved.ts")));
+    unlinkSync(join(gs, "apps/merge-studio/SHOTS.md"));
+    g(gs, "add", "-A");
+    g(gs, "commit", "-qm", "gitstudio tidies up");
+    const tidy = g(gs, "rev-parse", "--short=7", "HEAD");
+    contribute(ms, "A file that is new here, then changed", { "vendor/gitstudio/engine/src/brandNew.ts": () => "export {};\n" });
+    contribute(ms, "Edits on the older export", {
+      "vendor/gitstudio/engine/src/brandNew.ts": append("// changed\n"),
+      [msOf(deleted)]: append("// edited\n"),
+      [msOf(moved)]: append("// edited\n"),
+      "SHOTS.md": append("Edited.\n"),
+      [msOf(bothDeleted)]: null,
+    });
+    const head = g(gs, "rev-parse", "HEAD");
+    for (const how of ["range", "patch"]) {
+      let refused;
+      assert.throws(
+        () =>
+          how === "range"
+            ? importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib" })
+            : importPullRequest({ gitstudio: gs, patch: mbox(ms, "main..contrib", files) }),
+        (e) => {
+          refused = e;
+          return e instanceof ImportRefused;
+        },
+      );
+      const line = (p) => refused.message.split("\n").find((l) => l.startsWith(`  ${p} (`)) ?? "";
+      assert.match(line(msOf(deleted)), new RegExp(`gitstudio deleted ${deleted} in ${tidy} "gitstudio tidies up"`), how);
+      assert.match(line(msOf(moved)), new RegExp(`gitstudio moved ${moved} to ${moved.replace(/\.ts$/, "Moved.ts")} in ${tidy}`), how);
+      assert.match(line("SHOTS.md"), /gitstudio deleted apps\/merge-studio\/SHOTS\.md in /, `${how}: not "merge-studio's own"`);
+      assert.match(line("SHOTS.md"), /rebase onto merge-studio's latest export/);
+      assert.equal(line("vendor/gitstudio/engine/src/brandNew.ts"), "", `${how}: made by an earlier commit of the same pull request`);
+      assert.equal(line(msOf(bothDeleted)), "", `${how}: deleted on both sides is no conflict`);
+      assert.equal(g(gs, "rev-parse", "HEAD"), head);
+      assert.equal(g(gs, "status", "--porcelain"), "");
+    }
+    // Left out on purpose, the rest comes in, and a file deleted on both sides stays deleted.
+    const r = importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib", excludes: [msOf(deleted), msOf(moved), "SHOTS.md"] });
+    assert.equal(r.commits.filter((c) => c.sha).length, 2);
+    assert.match(r.commits[1].notes.join("\n"), new RegExp(`gitstudio has already deleted ${bothDeleted}`));
+    assert.deepEqual(r.roundTrip.map((x) => [x.path, x.status]).sort(), [
+      [msOf(bothDeleted), "identical"],
+      ["vendor/gitstudio/engine/src/brandNew.ts", "identical"],
+    ]);
+  } finally {
+    cleanup(gs, ms, files);
+  }
+});
+
+test("a commit gitstudio already has is skipped; merge-studio's own export, carried by a pull request, is refused", () => {
+  const gs = scratchGitstudio();
+  const ms = scratchMergeStudio(gs);
+  const files = mkdtempSync(join(tmpdir(), "ms-import-files-"));
+  try {
+    const base = g(ms, "rev-parse", "main");
+    // The maintainer made the same fix in gitstudio first.
+    const gsFile = join(gs, "packages/engine/src/mergeModel.ts");
+    const original = readFileSync(gsFile, "utf8");
+    writeFileSync(gsFile, `${original}// the same fix\n`);
+    g(gs, "commit", "-qam", "the maintainer's fix");
+    const same = contribute(ms, "The same fix", { [MERGE_MODEL]: append("// the same fix\n") });
+    contribute(ms, "Another", { "src/links.ts": append("// another\n") });
+    const r = importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib" });
+    assert.deepEqual(
+      r.commits.map((c) => [c.upstream, Boolean(c.sha), Boolean(c.skipped)]),
+      [
+        [same, false, true],
+        [g(ms, "rev-parse", "contrib"), true, false],
+      ],
+    );
+    assert.match(r.commits[0].notes.join("\n"), /already has every change/);
+    assert.deepEqual(r.roundTrip.filter((x) => x.status !== "identical"), []);
+
+    // Later, gitstudio exports a change, reverts it, and the contributor merges main (with that export) into the pull request.
+    g(gs, "reset", "-q", "--hard", "main");
+    writeFileSync(gsFile, lineEdit(1, (l) => `${l} // later reverted`)(original));
+    g(gs, "commit", "-qam", "a change");
+    g(ms, "switch", "-q", "main");
+    exportTo({ into: ms, gitstudio: gs });
+    g(ms, "add", "-A");
+    g(ms, "commit", "-qm", "Export again");
+    const exported = g(ms, "rev-parse", "HEAD");
+    g(ms, "switch", "-q", "contrib");
+    g(ms, "merge", "-q", "--no-edit", "main");
+    writeFileSync(gsFile, original);
+    g(gs, "commit", "-qam", "revert the change");
+    const head = g(gs, "rev-parse", "HEAD");
+    const patch = mbox(ms, `${base}..contrib`, files);
+    for (const excludes of [[], ["VENDORED_FROM.json"]]) {
+      assert.throws(
+        () => importPullRequest({ gitstudio: gs, patch, excludes }),
+        (e) =>
+          e instanceof ImportRefused &&
+          e.message.includes(`  VENDORED_FROM.json (${exported.slice(0, 7)}): this commit is merge-studio's export of gitstudio`) &&
+          /gh pr diff <n> without --patch/.test(e.message),
+      );
+    }
+    assert.equal(g(gs, "rev-parse", "HEAD"), head);
+    assert.doesNotMatch(readFileSync(gsFile, "utf8"), /later reverted/, "the reverted change is not replayed");
+  } finally {
+    cleanup(gs, ms, files);
+  }
+});
+
+test("a binary conflict says there are no markers, and the printed commands finish it for any author name", () => {
+  const gs = scratchGitstudio();
+  const ms = scratchMergeStudio(gs);
+  const probe = mkdtempSync(join(tmpdir(), "ms-import-probe-"));
+  try {
+    const icon = join(gs, "apps/merge-studio/media/icon.png");
+    writeFileSync(icon, Buffer.concat([readFileSync(icon), Buffer.from([1, 2, 3])]));
+    g(gs, "commit", "-qam", "gitstudio's icon");
+    // Everything in a name reaches a shell when the maintainer pastes the command.
+    const author = `Jane "JJ" O'Brien $(touch ${join(probe, "pwned")}) <jane@example.com>`;
+    const theirs = contribute(ms, "Contributor's icon", { "media/icon.png": { bytes: (b) => Buffer.concat([b, Buffer.from([9, 9])]) } }, undefined, author);
+    let stopped;
+    assert.throws(
+      () => importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib" }),
+      (e) => {
+        stopped = e;
+        return e instanceof ImportStopped;
+      },
+    );
+    assert.match(stopped.message, /\n {2}apps\/merge-studio\/media\/icon\.png \(binary\)\n/);
+    assert.doesNotMatch(stopped.message, /conflict markers are in/);
+    const commands = stopped.message.split("\n").filter((l) => /^ {2}git (add|commit) /.test(l) || /^Keep it, or take/.test(l));
+    const checkout = /git checkout --theirs -- .*$/m.exec(stopped.message)[0];
+    for (const cmd of [checkout, ...commands.filter((l) => l.startsWith("  git ")).map((l) => l.trim())]) {
+      execFileSync("sh", ["-c", cmd], { cwd: gs, stdio: "pipe" });
+    }
+    assert.equal(existsSync(join(probe, "pwned")), false, "nothing in the author's name ran");
+    assert.equal(g(gs, "log", "-1", "--format=%an <%ae>"), `Jane "JJ" O'Brien $(touch ${join(probe, "pwned")}) <jane@example.com>`);
+    assert.ok(readFileSync(icon).equals(execFileSync("git", ["-C", ms, "show", `${theirs}:media/icon.png`])), "the contributor's bytes");
+    assert.equal(g(gs, "status", "--porcelain"), "");
+  } finally {
+    cleanup(gs, ms, probe);
+  }
+});
+
 // ---------------------------------------------------------------- the table
 
 test("every file a real export writes maps back to the gitstudio file it came from, or is generated", () => {
@@ -544,6 +818,16 @@ test("parsePatch reads paths, ids, renames, binary data and quoting, and renderF
   assert.match(moved, /^diff --git a\/packages\/engine\/src\/a\.ts b\/packages\/engine\/src\/a\.ts\nindex 1111111\.\.2222222 100644\n--- a\/packages\/engine\/src\/a\.ts\n\+\+\+ b\/packages\/engine\/src\/a\.ts\n@@/);
   assert.match(renderFile(files[1], "apps/merge-studio/src/old name.ts", "apps/merge-studio/src/new name.ts"), /\nrename from apps\/merge-studio\/src\/old name\.ts\nrename to apps\/merge-studio\/src\/new name\.ts\n/);
   assert.match(renderFile(files[2], undefined, "apps/merge-studio/media/café.png"), /^diff --git "a\/apps\/merge-studio\/media\/caf\\303\\251\.png" "b\/apps/);
+});
+
+test("parsePatch: a mail's signature after a section with no hunks ends it", () => {
+  const mail = (section) => ["Subject: [PATCH] x", "", "---", " 1 file changed", "", ...section, "-- ", "2.49.0", "", ""].join("\n");
+  const rename = parsePatch(mail(["diff --git a/src/a.ts b/src/b.ts", "similarity index 100%", "rename from src/a.ts", "rename to src/b.ts"]));
+  assert.deepEqual(rename.map((f) => [f.oldPath, f.newPath, f.renamed, f.body.length]), [["src/a.ts", "src/b.ts", true, 0]]);
+  const mode = parsePatch(mail(["diff --git a/esbuild.js b/esbuild.js", "old mode 100644", "new mode 100755"]));
+  assert.deepEqual(mode.map((f) => [f.oldPath, f.newPath, f.header]), [["esbuild.js", "esbuild.js", ["old mode 100644", "new mode 100755"]]]);
+  const empty = parsePatch(mail(["diff --git a/src/empty.ts b/src/empty.ts", "new file mode 100644", "index 0000000..e69de29"]));
+  assert.deepEqual(empty.map((f) => [f.oldPath, f.newPath, f.isNew]), [[undefined, "src/empty.ts", true]]);
 });
 
 test("applyHunks applies at an offset and refuses context that is not there", () => {

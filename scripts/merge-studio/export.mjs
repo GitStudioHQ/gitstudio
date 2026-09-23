@@ -6,7 +6,10 @@
 // packages/{engine,git-service,host-bridge,webview-ui,merge-vscode} are the
 // shared code. The export
 // 1. removes what the shell replaces in the target (the old src/, webview/,
-//    test/ and test-harness/, and the previous vendor/gitstudio/);
+//    test/ and test-harness/, and the previous vendor/gitstudio/), and any
+//    other file the previous export wrote (its VENDORED_FROM.json lists them)
+//    that apps/merge-studio no longer has, so a deleted or moved shell file
+//    does not stay behind in merge-studio;
 // 2. vendors the packages' source (src/** and their package.json) under
 //    vendor/gitstudio/<pkg>/, with GitStudio's LICENSE and NOTICE, plus the two
 //    GitStudio files the parity test compares against (apps/extension's
@@ -31,11 +34,11 @@
 // usage: node scripts/merge-studio/export.mjs --into <merge-studio checkout> [--allow-dirty] [--no-lock] [--gitstudio <checkout>]
 
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, posix, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hashFiles, listFiles, MANIFEST_FILE, VENDOR_DIR } from "./check-parity.mjs";
-import { COPIED, copiedFiles, REPLACED, SHELL_DIR, sourcePaths, VENDORED_PACKAGES } from "./layout.mjs";
+import { COPIED, copiedFiles, GENERATED, REPLACED, SHELL_DIR, sourcePaths, VENDORED_PACKAGES } from "./layout.mjs";
 
 export { REPLACED, SHELL_DIR, sourcePaths, VENDORED_PACKAGES };
 
@@ -198,6 +201,42 @@ export function standaloneTsconfig(base) {
   };
 }
 
+/** The shell files the previous export recorded in the target's manifest (none when it has no readable one). */
+export function previousShellFiles(target) {
+  try {
+    const shell = JSON.parse(readFileSync(join(target, MANIFEST_FILE), "utf8")).shell;
+    return shell && typeof shell === "object" && !Array.isArray(shell) ? Object.keys(shell) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Remove the file `rel` from `target`, and any folder that leaves empty.
+ * `rel` comes from the target's own manifest, which a pull request can edit,
+ * so only a plain relative path whose folder really is inside `target` (no
+ * "..", no symbolic link out, never .git) is touched. Returns whether it was
+ * removed.
+ */
+export function removeInside(target, rel) {
+  if (typeof rel !== "string" || !rel || /[\\\0]/.test(rel) || posix.isAbsolute(rel) || posix.normalize(rel) !== rel) return false;
+  if (rel.split("/").some((part) => part === ".." || part === ".git")) return false;
+  const file = join(target, rel);
+  let root;
+  let folder;
+  try {
+    root = realpathSync(target);
+    folder = realpathSync(dirname(file));
+    if (lstatSync(file).isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  if (folder !== root && !folder.startsWith(`${root}${sep}`)) return false;
+  rmSync(file, { force: true });
+  for (let dir = dirname(file); dir.startsWith(`${target}${sep}`) && readdirSync(dir).length === 0; dir = dirname(dir)) rmdirSync(dir);
+  return true;
+}
+
 /**
  * Export the gitstudio checkout at `gitstudio` (this one by default) into
  * `into`. Returns what was written.
@@ -217,6 +256,10 @@ export function exportTo({ into, allowDirty = false, lock = true, gitstudio = GI
   if (dirty && !allowDirty) {
     throw new Error(`gitstudio has uncommitted changes in the exported paths (pass --allow-dirty to export anyway):\n${dirtyLines}`);
   }
+  // The shell files the previous export wrote (its manifest says which): one
+  // that gitstudio has since deleted or moved is removed below, or it would
+  // stay in merge-studio for good.
+  const previousShell = previousShellFiles(target);
 
   // 1. What the shell replaces.
   const removed = [];
@@ -253,6 +296,11 @@ export function exportTo({ into, allowDirty = false, lock = true, gitstudio = GI
     "tsconfig.json",
     ...(lock ? ["package-lock.json"] : []),
   ].sort();
+  const writtenNow = new Set(shellWritten);
+  const generated = new Set(GENERATED.map((g) => g.mergeStudio));
+  const stale = previousShell.filter(
+    (rel) => !writtenNow.has(rel) && !generated.has(rel) && !rel.startsWith(`${VENDOR_DIR}/`) && removeInside(target, rel),
+  );
   const manifest = {
     schema: 1,
     note:
@@ -266,7 +314,7 @@ export function exportTo({ into, allowDirty = false, lock = true, gitstudio = GI
     shell: hashFiles(target, shellWritten),
   };
   writeJson(join(target, MANIFEST_FILE), manifest);
-  return { sha, dirty, removed, vendored: vendored.length, shell: shellWritten.length, target };
+  return { sha, dirty, removed, stale, vendored: vendored.length, shell: shellWritten.length, target };
 }
 
 function parseArgs(argv) {
@@ -293,6 +341,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       const r = exportTo(args);
       console.log(`exported gitstudio ${r.sha.slice(0, 7)}${r.dirty ? " (dirty)" : ""} into ${r.target}`);
       console.log(`  removed: ${r.removed.join(", ") || "nothing"}`);
+      if (r.stale.length) console.log(`  removed, as gitstudio no longer has them: ${r.stale.join(", ")}`);
       console.log(`  vendored files: ${r.vendored}; shell files: ${r.shell}; manifest: ${MANIFEST_FILE}`);
     }
   } catch (e) {
