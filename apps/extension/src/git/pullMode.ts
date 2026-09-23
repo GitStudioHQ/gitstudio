@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import {
+  pullBlockedMessage,
   pullStoppedMessage,
+  type PullBlocked,
   type PullDivergence,
   type PullMode,
   type PullStop,
@@ -25,11 +27,23 @@ import { promptPick } from "../ui/dialogs";
  * `askPullMode` is: an answer settled inside one door is an answer the next
  * door gets wrong.
  */
-export function settlePullStop(result: { stopped?: PullStop }): boolean {
-  if (!result.stopped) {
+export function settlePullStop(result: { stopped?: PullStop; blocked?: PullBlocked }): boolean {
+  // `blocked` is the same place reached from the other side: Pull pressed
+  // again while the merge or rebase an earlier pull stopped in is still under
+  // way. git refuses before running anything, and the way on is identical —
+  // finish or abort it in the Changes view. Settled here so no door can treat
+  // git's "Pulling is not possible because you have unmerged files" as a
+  // failure, or (the branch still counts one ahead and one behind) ask "merge
+  // or rebase?" about a merge already in progress.
+  const message = result.stopped
+    ? pullStoppedMessage(result.stopped)
+    : result.blocked
+      ? pullBlockedMessage(result.blocked)
+      : undefined;
+  if (!message) {
     return false;
   }
-  void vscode.window.showWarningMessage(`GitStudio: ${pullStoppedMessage(result.stopped)}`);
+  void vscode.window.showWarningMessage(`GitStudio: ${message}`);
   void vscode.commands.executeCommand("gitstudio.commit.focus");
   return true;
 }

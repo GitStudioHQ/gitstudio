@@ -156,3 +156,26 @@ test("every pull call site has decided about a pull that stops on conflicts", as
       unhandled.join("\n"),
   );
 });
+
+// The settler every extension door hands its result to must settle BOTH ways a
+// pull ends up in front of a merge or rebase under way: stopping in one, and
+// being refused over one an earlier pull stopped in (`blocked`). The second is
+// the next click after the first — Pull is still on screen, still counting one
+// behind — and a settler that knew only `stopped` let it through to the doors'
+// failure arms: git's "Pulling is not possible because you have unmerged files"
+// as an error, or, from Update (pull), "merge or rebase?" asked about a merge
+// already in progress. The extension test runner cannot load `vscode`, so this
+// reads the settler's own body rather than calling it.
+test("the shared pull settler settles a pull refused over a stop, not only the stop", async () => {
+  const src = await readFile(join(ROOT, "apps/extension/src/git/pullMode.ts"), "utf8");
+  const start = src.indexOf("export function settlePullStop(");
+  assert.ok(start >= 0, "settlePullStop is where every extension pull door settles");
+  const code = src
+    .slice(start, src.indexOf("\n}\n", start))
+    .split("\n")
+    .filter((l) => !COMMENT.test(l))
+    .join("\n");
+  assert.match(code, /\.stopped\b/, "it settles a stop");
+  assert.match(code, /\.blocked\b/, "…and a pull git refused over one already under way");
+  assert.match(code, /pullBlockedMessage\(/, "in the engine's words, shared with the desktop");
+});

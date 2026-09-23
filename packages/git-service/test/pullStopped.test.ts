@@ -30,7 +30,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
 import { GitContext } from "../src/GitContext";
-import { pullStoppedMessage } from "../src/SyncOps";
+import { pullBlockedMessage, pullStoppedMessage } from "../src/SyncOps";
 
 const trash: string[] = [];
 const contexts: GitContext[] = [];
@@ -146,6 +146,89 @@ test("a pull git REFUSES over conflicts it already had is not a new stop", async
   const again = await ctx.sync.pull({ mode: "merge" });
   assert.equal(again.ok, false);
   assert.equal(again.stopped, undefined);
+});
+
+// …but it is not a failure either. The stop lands the user in Changes while
+// every Pull door is still on screen, still counting "1 behind" — HEAD has not
+// moved. Pressing one again is the most ordinary next click there is, and git
+// refuses it before doing anything. That refusal used to fall through to the
+// divergence check (a mid-merge branch IS still one ahead and one behind), so
+// the app asked "merge or rebase?" over a merge already under way; either
+// answer then failed with git's terminal hint, and the desktop filed it as a
+// crash. It is its own answer: `blocked`, naming what is under way.
+
+test("a pull pressed over a merge still stopped on conflicts is blocked, not diverged", async () => {
+  const { ctx } = collidingClone({ alsoClean: true });
+  assert.ok((await ctx.sync.pull({ mode: "merge" })).stopped, "precondition: stopped");
+
+  const again = await ctx.sync.pull();
+  assert.equal(again.ok, false);
+  assert.equal(again.diverged, undefined, "no reconcile question over a merge already under way");
+  assert.equal(again.stopped, undefined, "this press stopped nothing");
+  assert.deepEqual(again.blocked, { operation: "merge", conflicted: ["shared.txt"] });
+
+  for (const mode of ["merge", "rebase"] as const) {
+    const withMode = await ctx.sync.pull({ mode });
+    assert.deepEqual(withMode.blocked, { operation: "merge", conflicted: ["shared.txt"] }, mode);
+  }
+});
+
+test("a merge resolved but not yet committed still blocks a pull, with nothing conflicted", async () => {
+  const { clone, ctx } = collidingClone();
+  assert.ok((await ctx.sync.pull({ mode: "merge" })).stopped, "precondition: stopped");
+  writeFileSync(join(clone, "shared.txt"), "one\nBOTH\nthree\n");
+  gitIn(clone, ["add", "shared.txt"]);
+
+  const again = await ctx.sync.pull();
+  assert.equal(again.diverged, undefined);
+  assert.deepEqual(again.blocked, { operation: "merge", conflicted: [] });
+});
+
+test("a rebase still stopped blocks a pull — conflicted, and resolved but not continued", async () => {
+  const { clone, ctx } = collidingClone();
+  assert.ok((await ctx.sync.pull({ mode: "rebase" })).stopped, "precondition: stopped");
+
+  const conflicted = await ctx.sync.pull();
+  assert.deepEqual(conflicted.blocked, { operation: "rebase", conflicted: ["shared.txt"] });
+
+  // Staged, `rebase --continue` not run: HEAD is detached and git's pull exits
+  // 1 — the same code as a stop — having found no branch to merge into.
+  writeFileSync(join(clone, "shared.txt"), "one\nBOTH\nthree\n");
+  gitIn(clone, ["add", "shared.txt"]);
+  const resolved = await ctx.sync.pull();
+  assert.equal(resolved.stopped, undefined, "nothing new stopped");
+  assert.deepEqual(resolved.blocked, { operation: "rebase", conflicted: [] });
+});
+
+test("a pull refused over the user's uncommitted edits is neither blocked nor a stop", async () => {
+  // Behind only, with a local edit to the very file the upstream changed: git
+  // refuses to overwrite it. Nothing is under way — the user has work in
+  // progress, which is a different conversation.
+  const { clone, ctx } = collidingClone();
+  gitIn(clone, ["reset", "-q", "--hard", "HEAD~1"]);
+  writeFileSync(join(clone, "shared.txt"), "one\nEDITING\nthree\n");
+  const r = await ctx.sync.pull();
+  assert.equal(r.ok, false);
+  assert.equal(r.blocked, undefined);
+  assert.equal(r.stopped, undefined);
+  assert.equal(r.diverged, undefined);
+});
+
+test("what is under way is described in the app's words, with the way out", () => {
+  const merge = pullBlockedMessage({ operation: "merge", conflicted: ["a.ts", "b.ts"] });
+  assert.match(merge, /merge is already in progress/i);
+  assert.match(merge, /\b2 files\b/);
+  const rebase = pullBlockedMessage({ operation: "rebase", conflicted: [] });
+  assert.match(rebase, /rebase is already in progress/i);
+  assert.match(rebase, /continue/i);
+  const bare = pullBlockedMessage({ conflicted: ["a.ts"] });
+  assert.match(bare, /\b1 file\b/);
+  for (const m of [merge, rebase, bare]) {
+    assert.doesNotMatch(m, /git (add|rm|rebase|commit|merge)|--continue|hint:|Pulling is not possible/i);
+    assert.match(m, /pull again/i);
+  }
+  assert.match(merge, /abort/i);
+  assert.match(rebase, /abort/i);
 });
 
 test("the stop is described in the app's words, with the count and the next step", () => {

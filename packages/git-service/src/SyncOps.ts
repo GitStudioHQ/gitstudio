@@ -58,6 +58,28 @@ export interface PullStop {
   conflicted: string[];
 }
 
+/**
+ * An operation the repository was ALREADY in the middle of when a pull was
+ * asked for — most often the merge or rebase a previous pull stopped in.
+ *
+ * git refuses to pull over one before it fetches anything ("Pulling is not
+ * possible because you have unmerged files", "You have not concluded your
+ * merge", or — a rebase resolved but not continued — "You are not currently on
+ * a branch"). None of that is a failure, and none of it is a divergence to ask
+ * about, although a mid-merge branch still counts as one ahead and one behind.
+ * It is a state of the user's repository, and the way on is to finish what is
+ * under way, or abort it.
+ */
+export interface PullBlocked {
+  /** What is under way, read from git's own marker refs — or undefined when
+   *  only the index says something is (files left unmerged by, say, a stash
+   *  that did not apply cleanly). */
+  operation?: "merge" | "rebase" | "cherry-pick" | "revert";
+  /** Repo-relative paths still conflicted. Empty once they are resolved but
+   *  the operation has not been concluded. */
+  conflicted: string[];
+}
+
 export interface PullResult extends SyncOpResult {
   /**
    * Set when the pull stopped because the branch and its upstream have
@@ -67,6 +89,8 @@ export interface PullResult extends SyncOpResult {
   diverged?: PullDivergence;
   /** Set when the merge or rebase the pull ran stopped on conflicts. */
   stopped?: PullStop;
+  /** Set when git refused the pull over an operation already under way. */
+  blocked?: PullBlocked;
   /**
    * git's stdout on failure. A merge that conflicts explains itself HERE
    * ("CONFLICT (content): …") and writes nothing to stderr, so a caller that
@@ -91,6 +115,27 @@ export function pullStoppedMessage(stop: PullStop): string {
     `The pull stopped on conflicts in ${files}. Resolve ${n === 1 ? "it" : "them"}, ` +
     `then ${next} — or abort to go back to where you were.`
   );
+}
+
+/**
+ * What to tell the user when a pull was refused over an operation already
+ * under way — the same discipline as `pullStoppedMessage`: the app's words,
+ * the count, the way on, and nothing a terminal would say.
+ */
+export function pullBlockedMessage(b: PullBlocked): string {
+  const n = b.conflicted.length;
+  const files = n === 1 ? "1 file" : `${n} files`;
+  if (!b.operation) {
+    return `${files} ${n === 1 ? "is" : "are"} still conflicted. Resolve ${n === 1 ? "it" : "them"}, then pull again.`;
+  }
+  const what = b.operation;
+  // A merge is finished by committing it; everything else here by continuing.
+  const finish = what === "merge" ? "commit" : "continue";
+  const lead = `A ${what} is already in progress`;
+  return n
+    ? `${lead}, with conflicts in ${files}. Resolve ${n === 1 ? "it" : "them"} and ${finish} ` +
+        `the ${what} — or abort it — then pull again.`
+    : `${lead}. ${finish === "commit" ? "Commit" : "Continue"} it — or abort it — then pull again.`;
 }
 
 export interface PullOptions extends GitRunOptions {
@@ -488,7 +533,21 @@ export class SyncOps {
       // Either the merge/rebase stopped for the user, or the fetch never got
       // through. Files left unmerged tell the two apart.
       const stopped = await this.stoppedOnConflicts(mode, signal);
-      return stopped ? { ...failed, stopped } : failed;
+      if (stopped) {
+        return { ...failed, stopped };
+      }
+    }
+    // Refused over something ALREADY under way — the merge or rebase an earlier
+    // pull stopped in, most often. Asked before the divergence below, because a
+    // mid-merge branch still counts one ahead and one behind, and "merge or
+    // rebase?" over a merge already in progress is a question whose every
+    // answer git refuses in the same words.
+    const blocked = await this.alreadyUnderway(signal);
+    if (blocked) {
+      return { ...failed, blocked };
+    }
+    if (r.code === GIT_PULL_STOPPED_OR_FETCH_FAILED) {
+      return failed;
     }
     if (auto) {
       // The fetch half of `pull --ff-only` already ran — and succeeded, or the
@@ -501,6 +560,34 @@ export class SyncOps {
       }
     }
     return failed;
+  }
+
+  /**
+   * What the repository is already in the middle of, when a pull fails without
+   * having stopped anything itself — or null when nothing is under way.
+   *
+   * Facts only, the same in every locale: the marker ref each operation leaves
+   * (a rebase's first, since `rebase --rebase-merges` stopping inside a merge
+   * step leaves MERGE_HEAD too, and it is still a rebase), then the index.
+   */
+  private async alreadyUnderway(signal?: AbortSignal): Promise<PullBlocked | null> {
+    const status = await this.proc.run(["status", "--porcelain=v2", "-z"], { signal });
+    const conflicted = status.code === 0 ? parseUnmergedPaths(status.stdout) : [];
+    const has = async (ref: string): Promise<boolean> =>
+      (await this.proc.run(["rev-parse", "--verify", "--quiet", ref], { signal })).code === 0;
+    const operation: PullBlocked["operation"] = (await has("REBASE_HEAD"))
+      ? "rebase"
+      : (await has("CHERRY_PICK_HEAD"))
+        ? "cherry-pick"
+        : (await has("REVERT_HEAD"))
+          ? "revert"
+          : (await has("MERGE_HEAD"))
+            ? "merge"
+            : undefined;
+    if (!operation && conflicted.length === 0) {
+      return null;
+    }
+    return operation ? { operation, conflicted } : { conflicted };
   }
 
   /**

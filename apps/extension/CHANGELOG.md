@@ -24,6 +24,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Every pull — the branch menu's and the status bar's Sync and Pull — now says
   how many files conflict and reveals the Changes view, where they wait in
   their own group. Sync no longer tries to push after a pull that stopped.
+- **Pulling again before finishing that merge asked "Merge or Rebase?"** about
+  a merge already in progress, and then showed git's *"Pulling is not possible
+  because you have unmerged files"* as an error. Every pull now says a merge
+  (or rebase) is already in progress and reveals the Changes view to finish
+  or abort it.
 - **Pull asked "Merge or Rebase?" when it could not reach the remote.** It now
   shows the connection error instead.
 

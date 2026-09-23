@@ -439,11 +439,24 @@ export interface PullStopInfo {
   conflicts: number;
 }
 
+/**
+ * A pull git refused because the repository was ALREADY mid-merge, mid-rebase,
+ * or mid-cherry-pick — usually the stop an earlier pull left. Nothing ran;
+ * the way on is to finish or abort what is under way, in Changes.
+ */
+export interface PullBlockedInfo {
+  /** Undefined when only unmerged files say something is under way. */
+  operation?: "merge" | "rebase" | "cherry-pick" | "revert";
+  /** Files still conflicted; 0 once resolved but not yet concluded. */
+  conflicts: number;
+}
+
 /** `sync:pull`'s answer — a CommitActionResult that can ask a question back,
- *  or say that it stopped for the user to resolve conflicts. */
+ *  or say that it stopped (or could not start) over conflicts to resolve. */
 export interface PullActionResult extends CommitActionResult {
   diverged?: PullDivergence;
   stopped?: PullStopInfo;
+  blocked?: PullBlockedInfo;
 }
 
 /** A branch with remote-tracking context, for the Branches manager. */

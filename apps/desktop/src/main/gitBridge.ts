@@ -24,7 +24,7 @@ import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
-import { pullStoppedMessage } from "@gitstudio/git-service/SyncOps";
+import { pullBlockedMessage, pullStoppedMessage } from "@gitstudio/git-service/SyncOps";
 import type {
   CommitRecord,
   GitContext,
@@ -51,6 +51,7 @@ import type {
   HeadCommit,
   HeadInfo,
   PullActionResult,
+  PullBlockedInfo,
   PullDivergence,
   PullMode,
   PullStopInfo,
@@ -1772,6 +1773,7 @@ export class GitBridge {
     }
     let diverged: PullDivergence | undefined;
     let stopped: PullStopInfo | undefined;
+    let blocked: PullBlockedInfo | undefined;
     const r = await this.staged(async (ctx) => {
       const out = await ctx.sync.pull({ mode: opts?.mode });
       if (out.stopped) {
@@ -1781,6 +1783,20 @@ export class GitBridge {
           changed: true,
           expected: true,
           message: pullStoppedMessage(out.stopped),
+        };
+      }
+      // Pressed again over the merge or rebase a pull stopped in — the Pull
+      // button is still on screen, still counting what is behind. git refuses
+      // before running anything. A state of the repository, not a defect, and
+      // not a divergence to ask about: it used to be both, so the question was
+      // asked and its answer filed git's "Pulling is not possible…" as a crash.
+      if (out.blocked) {
+        blocked = { operation: out.blocked.operation, conflicts: out.blocked.conflicted.length };
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: pullBlockedMessage(out.blocked),
         };
       }
       if (!out.diverged) {
@@ -1798,6 +1814,7 @@ export class GitBridge {
       };
     });
     if (stopped) return { ...r, stopped };
+    if (blocked) return { ...r, blocked };
     return diverged ? { ...r, diverged } : r;
   }
   /**

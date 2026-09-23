@@ -29,6 +29,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   takes you to **Changes**, where the in-progress banner (Abort / Continue)
   and the merge editor are waiting — from the top bar and from the Branches
   list alike.
+- **Pressing Pull again before finishing that merge asked a question that
+  could not be answered.** The top bar still said *Pull 1*, and pressing it
+  asked *"Merge or Rebase?"* about a merge already in progress — then showed
+  git's *"Pulling is not possible because you have unmerged files"* in red
+  whichever you picked (and sent a crash report). Pull now says a merge (or
+  rebase) is already in progress, how many files are still conflicted, and
+  takes you back to **Changes** to finish or abort it.
 - **Cancelling the Merge / Rebase question left stale counts.** The pull had
   already fetched, so the ↓ counts on the top bar and in Branches described a
   remote that had moved on. They refresh now.

@@ -117,6 +117,11 @@ export type PullVerdict =
    * what was asked up to the point where a person has to choose. Said plainly,
    * with the count, in a neutral tone, and then the door takes the user to
    * Changes, where the paused-operation banner and the merge editor live.
+   *
+   * Also where a pull that could not START goes, because a merge or rebase was
+   * already under way (`blocked`) — the same place, for the same reason: what
+   * is left to do is finish or abort that operation, and Changes is where both
+   * buttons are.
    */
   | { kind: "stopped"; message: string }
   | { kind: "failed"; message: string; tone: "info" | "error" }
@@ -132,6 +137,12 @@ export function pullVerdict(out: PullOutcome, fallback: string): PullVerdict {
       message:
         r.message ||
         `The pull stopped on conflicts in ${n === 1 ? "1 file" : `${n} files`}. Resolve them in Changes.`,
+    };
+  }
+  if (r.blocked) {
+    return {
+      kind: "stopped",
+      message: r.message || "Finish or abort what is in progress in Changes, then pull again.",
     };
   }
   if (!r.ok) {

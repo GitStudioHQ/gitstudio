@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
-import type { PullResult, PullStop } from "@gitstudio/git-service/SyncOps";
+import type { PullBlocked, PullResult, PullStop } from "@gitstudio/git-service/SyncOps";
 import { askPullMode, settlePullStop } from "../git/pullMode";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
@@ -1452,9 +1452,12 @@ export class CommitViewProvider
     }
     // `diverged` is how SyncOps.pull answers "both sides moved and nobody said
     // how to reconcile them" — a question to ask, not a failure to report —
-    // and `stopped` how it answers "the merge or rebase stopped on conflicts",
-    // an outcome that runPull has already told the user about.
-    let result: { ok: boolean; stderr?: string; stopped?: PullStop } = { ok: true };
+    // and `stopped` how it answers "the merge or rebase stopped on conflicts"
+    // (`blocked`: "…and is still stopped"), outcomes that runPull has already
+    // told the user about.
+    let result: { ok: boolean; stderr?: string; stopped?: PullStop; blocked?: PullBlocked } = {
+      ok: true,
+    };
     /** The divergence question was asked and dismissed: nothing merged. */
     let cancelled = false;
     try {
@@ -1527,9 +1530,10 @@ export class CommitViewProvider
     } catch (err) {
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
     }
-    if (cancelled || result.stopped) {
-      // Nothing to report: a dismissed question ran nothing, and a stop was
-      // already said, plainly and with its count, by settlePullStop.
+    if (cancelled || result.stopped || result.blocked) {
+      // Nothing to report: a dismissed question ran nothing, and a stop — or a
+      // pull refused over one still under way — was already said, plainly and
+      // with its count, by settlePullStop.
     } else if (!result.ok) {
       void vscode.window.showErrorMessage(
         `GitStudio: ${msg.action} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
