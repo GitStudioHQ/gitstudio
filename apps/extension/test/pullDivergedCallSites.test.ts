@@ -238,14 +238,46 @@ test("the detached-HEAD settler says it plainly and offers to check out a branch
   assert.doesNotMatch(code, /showErrorMessage/, "nothing failed");
 });
 
-test("the status bar's Pull asks nothing before it knows there is a branch", async () => {
-  // "Merge or rebase?" about a detached HEAD is a question whose every answer
-  // ends in the same refusal. The Pull verb asks first, so it looks first.
+/** The status bar's Pull arm, as code: from its `case` to the next one. */
+async function statusBarPullArm(): Promise<string> {
   const src = await readFile(join(ROOT, "apps/extension/src/statusBar/syncStatus.ts"), "utf8");
   const start = src.indexOf('case "pull": {');
-  assert.ok(start >= 0);
-  const arm = src.slice(start, src.indexOf("askRebase()", start));
-  assert.match(arm, /\.detached\b/, "the HEAD is checked before the question");
+  assert.ok(start >= 0, "the status bar has a Pull arm");
+  return src
+    .slice(start, src.indexOf('case "push": {', start))
+    .split("\n")
+    .filter((l) => !COMMENT.test(l))
+    .join("\n");
+}
+
+test("the status bar's Pull asks nothing before it knows there is a branch", async () => {
+  // A pull on a detached HEAD has no branch to pull into, and git says so in
+  // advice for a terminal. The HEAD is looked at before anything is pulled.
+  const code = await statusBarPullArm();
+  const firstPull = code.search(/\bsync\.pull\(/);
+  assert.ok(firstPull >= 0, "the arm pulls");
+  assert.match(code.slice(0, firstPull), /\.detached\b/, "the HEAD is checked before the pull");
+});
+
+test("the status bar's Pull asks how to combine only when the branch has diverged", async () => {
+  // It asked "Pull: how should your local commits be integrated?" before EVERY
+  // pull — up to date, or only behind, where merge and rebase are the same
+  // fast-forward and the question means nothing. A mode-less pull
+  // fast-forwards on its own and comes back `diverged`, with nothing changed,
+  // exactly when both sides have moved; the question belongs after that.
+  const code = await statusBarPullArm();
+  const pulls = [...code.matchAll(/\bsync\.pull\(([^)]*)\)/g)];
+  assert.ok(pulls.length >= 1, "the arm pulls");
+  const first = pulls[0];
+  assert.equal(first[1].trim(), "", "the first pull names no reconciliation — git fast-forwards, or says it cannot");
+  const before = code.slice(0, first.index);
+  assert.doesNotMatch(before, /promptPick\(|askPullMode\(|askRebase\(/, "nothing is asked before it");
+  const after = code.slice(first.index);
+  const diverged = after.search(/\.diverged\b/);
+  const asked = after.search(/askPullMode\(/);
+  assert.ok(diverged >= 0, "the answer is read for a divergence");
+  assert.ok(asked > diverged, "and the merge-or-rebase question is asked only about one");
+  assert.match(after.slice(asked), /sync\.pull\(\{\s*mode\s*\}\)/, "whose answer goes to git as the one pull's flag");
 });
 
 test("the status bar's Pull asks about a paused operation BEFORE the detached HEAD", async () => {
@@ -255,13 +287,8 @@ test("the status bar's Pull asks about a paused operation BEFORE the detached HE
   // the rebase (replayed through the real door). And over a paused merge it
   // asked "merge or rebase?", every answer of which git refuses. The engine's
   // own order is the paused operation first (SyncOps.pull); the door's must be.
-  const src = await readFile(join(ROOT, "apps/extension/src/statusBar/syncStatus.ts"), "utf8");
-  const start = src.indexOf('case "pull": {');
-  const code = src
-    .slice(start, src.indexOf("askRebase()", start))
-    .split("\n")
-    .filter((l) => !COMMENT.test(l))
-    .join("\n");
+  const arm = await statusBarPullArm();
+  const code = arm.slice(0, arm.search(/\bsync\.pull\(/));
   const paused = code.search(/\.pausedOperation\(\)/);
   const detached = code.search(/\.detached\b/);
   assert.ok(paused >= 0, "the paused operation is asked about before the question");

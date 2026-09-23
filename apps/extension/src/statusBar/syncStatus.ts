@@ -298,11 +298,23 @@ export class SyncStatusItem implements vscode.Disposable {
         if (settlePullDetached({ detached: head.detached }, this.openBranchUi)) {
           return;
         }
-        const rebase = await this.askRebase();
-        if (rebase === undefined) {
-          return;
+        // Pull FIRST, and ask how to combine only when there is something to
+        // combine. This asked "how should your local commits be integrated?"
+        // before every pull — over a branch that was up to date, or only
+        // behind, where either answer is the same fast-forward and the question
+        // has no meaning. A mode-less pull fast-forwards on its own (or does
+        // what the user's own pull.rebase / pull.ff says), and comes back
+        // `diverged`, with nothing changed, exactly when both sides have moved
+        // — the one state the question is about. Sync has always asked this
+        // way; this is the same question from the same place.
+        let pulled = await active.ctx.sync.pull();
+        if (pulled.diverged) {
+          const mode = await askPullMode(pulled.diverged);
+          if (mode === undefined) {
+            return; // backed out — nothing ran, so there is nothing to report
+          }
+          pulled = await active.ctx.sync.pull({ mode });
         }
-        const pulled = await active.ctx.sync.pull({ rebase });
         if (settlePullStop(pulled) || settlePullDetached(pulled, this.openBranchUi)) {
           return;
         }
@@ -418,27 +430,6 @@ export class SyncStatusItem implements vscode.Disposable {
     // Dismissed — the user has been told what is wrong; don't also throw git's
     // version of the same thing at them.
     return true;
-  }
-
-  private async askRebase(): Promise<boolean | undefined> {
-    const choice = await promptPick({
-      title: "Pull: how should your local commits be integrated?",
-      choices: [
-        {
-          id: "merge",
-          label: "Merge",
-          icon: "git-merge",
-          description: "Keep history as it is; add a merge commit if the branches diverged.",
-        },
-        {
-          id: "rebase",
-          label: "Rebase",
-          icon: "git-pull-request",
-          description: "Replay your local commits on top of the incoming ones. Linear history, new shas.",
-        },
-      ],
-    });
-    return choice === undefined ? undefined : choice === "rebase";
   }
 
   /**
