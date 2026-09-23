@@ -1,0 +1,47 @@
+apps/desktop/src/main/mergeSettings.ts
+  s_26f5e669d3043c::t_cf4b04da0813d1 52-57,60-64
+  s_26f5e669d3043c::t_8365bac772bda0 24
+  s_26f5e669d3043c::t_52427b68a85874 8-11
+apps/desktop/test/conflictWriteSafety.test.ts
+  s_26f5e669d3043c::t_3940066a0e59d0 92
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_1130584b625d49 49
+  s_26f5e669d3043c::t_37c1ae6a5706a0 357-366
+  s_26f5e669d3043c::t_ceaa983414faa6 1297-1310
+  s_26f5e669d3043c::t_4d9d84253295ca 1385-1387
+apps/desktop/test/opContext.test.ts
+  s_26f5e669d3043c::t_37b59cfa920da9 287-288,296,299
+  s_26f5e669d3043c::t_22590b4d1833a0 318-334
+  s_26f5e669d3043c::t_66c5617c63347b 120-128
+  s_26f5e669d3043c::t_d3c5bf442edb79 129-165,337-338,508-509
+  s_26f5e669d3043c::t_7c0fd3db15ad05 335,479-507
+  s_26f5e669d3043c::t_e657505ae630c6 336,339
+packages/git-service/src/jetbrains/locator.ts
+  s_26f5e669d3043c::t_a81bbf751259e7 120-141
+  s_26f5e669d3043c::t_e4ce110fa73c72 119
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_2626d70f4ba909 240-244,246,3104-3128,3131-3133,3135-3136,3138-3139,3171,3182,3227
+  s_26f5e669d3043c::t_9a40ccd52a943a 2239-2250
+  s_26f5e669d3043c::t_8e0cd01c84542d 10
+  s_26f5e669d3043c::t_8f94e36884d776 3010,3098,3129-3130,3134,3137
+  s_26f5e669d3043c::t_3940066a0e59d0 2947
+  s_26f5e669d3043c::t_66dc6acd56e712 101-107
+  s_26f5e669d3043c::t_4f2f152441dc1b 3007-3009,3011-3014,3097,3099
+  s_26f5e669d3043c::t_d5d4279f9204c4 2979-2996,3001-3006,3015
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c22604289d4d8a6d4a48c463bc554ac8ab3bd055",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
