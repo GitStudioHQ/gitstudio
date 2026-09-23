@@ -29,17 +29,19 @@ but they share the same engine, so most Git behaviour lands in both at once.
   takes you to **Changes**, where the in-progress banner (Abort / Continue)
   and the merge editor are waiting — from the top bar and from the Branches
   list alike.
+- **Pressing Pull again before finishing that merge asked a question that
+  could not be answered.** The top bar still said *Pull 1*, and pressing it
+  asked *"Merge or Rebase?"* about a merge already in progress — then showed
+  git's *"Pulling is not possible because you have unmerged files"* in red
+  whichever you picked (and sent a crash report). Pull now says a merge (or
+  rebase) is still in progress, how many files are still conflicted, and
+  takes you back to **Changes** to finish or abort it.
 - **Cancelling the Merge / Rebase question left stale counts.** The pull had
   already fetched, so the ↓ counts on the top bar and in Branches described a
   remote that had moved on. They refresh now.
 - **Pull asked "Merge or Rebase?" when it could not reach the remote.** Offline,
   or with the remote gone, Pull could ask how to combine commits it had never
   been able to fetch. It now shows the connection error.
-- **Pull over a merge or rebase in progress showed git's advice in red.**
-  Pressing Pull while conflicts were still being resolved put *"Pulling is not
-  possible because you have unmerged files… git add/rm"* in a red error (and
-  sent a crash report). It now says what is in progress and how many files are
-  still conflicted, and takes you to Changes to finish or abort it.
 - **"Commit & Push" could offer to force push over someone else's commits.**
   When the push was refused because a colleague had pushed — and their commits
   had already been fetched — the app offered **Force push**, promising the
@@ -58,6 +60,11 @@ but they share the same engine, so most Git behaviour lands in both at once.
   build` in apps/mcp"*. The server now ships with the app, and the config it
   writes starts it with GitStudio itself, so no separate Node install is
   needed.
+- **Settings ▸ Git Identity needed a repository open.** Your git name and
+  email are global — they belong to you, not to a repository — but with no
+  repository open the card showed two empty fields and **Save identity**
+  answered *"No repository open."*, which is exactly when a new install sets
+  them. The card now reads and saves your global identity either way.
 - **An empty GitHub repository still read as broken in two places.** **Go to
   file** showed its "This repository is empty" note as a red error, and the
   branch switcher failed with a red toast instead of saying there are no

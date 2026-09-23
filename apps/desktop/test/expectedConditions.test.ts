@@ -34,6 +34,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { reportableResultMessage } from "../src/main/expectedError";
 
 const ROOT = fileURLToPath(new URL("../src/main", import.meta.url));
@@ -78,7 +79,7 @@ const GUARD_CLASSES: Array<{ name: string; re: RegExp }> = [
   },
   {
     name: "unusable input from the user",
-    re: /couldn't derive a (safe )?folder name|doesn't look like an owner\/repo name|couldn't be read as JSON/i,
+    re: /couldn't derive a (safe )?folder name|couldn't be read as JSON/i,
   },
 ];
 
@@ -124,6 +125,9 @@ const PAYLOAD_REFUSALS: Record<string, string> = {
   "Unknown client: ${req.client}.": "MCP client ids come from our own client list.",
   "No conflicted file was named to explain.":
     "every Explain door names the file it is showing; a request with no path is ours.",
+  "That doesn't look like an owner/repo name.":
+    "ghrepo:open's full name comes from a repository GitHub listed, or from a repo page whose route " +
+    "only parses owner/repo — nobody types it, so one without both halves is a request built wrong.",
   "Couldn't read the conflict.":
     "said only when the index still has the file unmerged (or cannot say) and git would not hand " +
     "over its sides — a read that failed, not the user resolving anything.",
@@ -139,287 +143,176 @@ async function tsFiles(dir: string): Promise<string[]> {
   return out;
 }
 
-/**
- * Index every `{ … }` in a TypeScript source, skipping the braces inside
- * strings, template literals and comments.
- *
- * Line windows are not good enough here: an `ok:false` object and its `message`
- * are often five lines apart, and the next refusal starts two lines after that.
- * Matching the actual literal is what makes "this object carries `expected`"
- * a question with one answer.
- */
-function braceSpans(src: string): Array<{ open: number; close: number }> {
-  const spans: Array<{ open: number; close: number }> = [];
-  const stack: number[] = [];
-  // Inside a template literal, `${` re-enters code; remember how deep the brace
-  // stack was when each template opened so its closing `}` is matched right.
-  const templates: number[] = [];
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i];
-    const next = src[i + 1];
-    if (c === "/" && next === "/") {
-      i = src.indexOf("\n", i);
-      if (i < 0) break;
-      continue;
-    }
-    if (c === "/" && next === "*") {
-      const end = src.indexOf("*/", i + 2);
-      i = end < 0 ? src.length : end + 2;
-      continue;
-    }
-    if (c === '"' || c === "'") {
-      i++;
-      while (i < src.length && src[i] !== c) i += src[i] === "\\" ? 2 : 1;
-      i++;
-      continue;
-    }
-    if (c === "`") {
-      templates.push(stack.length);
-      i++;
-      while (i < src.length) {
-        if (src[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (src[i] === "`") {
-          templates.pop();
-          i++;
-          break;
-        }
-        if (src[i] === "$" && src[i + 1] === "{") {
-          // Hand the expression back to the main loop.
-          stack.push(i + 1);
-          i += 2;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-    if (c === "{") {
-      stack.push(i);
-      i++;
-      continue;
-    }
-    if (c === "}") {
-      const open = stack.pop();
-      if (open !== undefined) spans.push({ open, close: i });
-      i++;
-      // Closing a `${` puts us back inside the template it interrupted.
-      if (templates.length && templates[templates.length - 1] === stack.length) {
-        while (i < src.length) {
-          if (src[i] === "\\") {
-            i += 2;
-            continue;
-          }
-          if (src[i] === "`") {
-            templates.pop();
-            i++;
-            break;
-          }
-          if (src[i] === "$" && src[i + 1] === "{") {
-            stack.push(i + 1);
-            i += 2;
-            break;
-          }
-          i++;
-        }
-      }
-      continue;
-    }
-    i++;
-  }
-  return spans;
-}
-
 interface Site {
   file: string;
   line: number;
+  /** The message as text — quotes dropped, a `+` chain joined, a same-file
+   *  `const` followed — or its source when it is computed (`err.message`). */
   message: string;
   expected: boolean;
 }
 
 /**
- * `src` with every comment blanked to spaces — same length, same newlines, so
- * offsets and line numbers still point into the real file.
+ * Every object literal in `src` that says `ok: false`, with its message and
+ * whether it carries `expected` — read from the TypeScript PARSER, not the text.
  *
- * Prose ABOUT a result is not a result. A doc comment reading "answers
- * `{ ok: false, diverged }`" used to be counted as a site: its innermost
- * enclosing braces are the whole class body, so the census judged the class —
- * its first `message:` anywhere, and whether the word "expected" appeared
- * anywhere in it.
+ * This used to be a hand-written scanner over the characters: brace matching,
+ * comment blanking, string skipping. It had no idea what a regex literal was,
+ * so the first `/"[^"]*"|\S+/g` in a file opened a "string" at its quote and
+ * everything after it was misread. editors.ts has exactly that regex above its
+ * three refusals, and the census was blind to all three — "That editor isn't
+ * installed any more" could lose its `expected` and the census stayed green.
+ * The parser also answers, with one rule each, the shapes the scanner could
+ * only approximate: comments (not in the tree at all), casts, spreads of an
+ * object literal, shorthand `message`, a message kept in a `const`, a `+`
+ * chain that mixes quote styles, and `expected: undefined`.
  */
-function blankComments(src: string): string {
-  const out = src.split("");
-  const blank = (from: number, to: number): void => {
-    for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
-  };
-  let i = 0;
-  const skipQuoted = (q: string): void => {
-    i++;
-    while (i < src.length && src[i] !== q) i += src[i] === "\\" ? 2 : 1;
-    i++;
-  };
-  const code = (stopAtClose: boolean): void => {
-    let depth = 0;
-    while (i < src.length) {
-      const c = src[i];
-      const n = src[i + 1];
-      if (c === "/" && n === "/") {
-        const e = src.indexOf("\n", i);
-        const end = e < 0 ? src.length : e;
-        blank(i, end);
-        i = end;
-      } else if (c === "/" && n === "*") {
-        const e = src.indexOf("*/", i + 2);
-        const end = e < 0 ? src.length : e + 2;
-        blank(i, end);
-        i = end;
-      } else if (c === '"' || c === "'") {
-        skipQuoted(c);
-      } else if (c === "`") {
-        // A template's text is not code, but each `${…}` inside it is.
-        i++;
-        while (i < src.length && src[i] !== "`") {
-          if (src[i] === "\\") i += 2;
-          else if (src[i] === "$" && src[i + 1] === "{") {
-            i += 2;
-            code(true);
-            i++;
-          } else i++;
-        }
-        i++;
-      } else {
-        if (c === "{") depth++;
-        else if (c === "}") {
-          if (stopAtClose && depth === 0) return;
-          depth--;
-        }
-        i++;
-      }
-    }
-  };
-  code(false);
-  return out.join("");
-}
-
-/** Every object literal in `src` that says `ok: false`, with its message. */
 function okFalseSites(rel: string, src: string): Site[] {
-  const spans = braceSpans(src);
+  const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true);
+  // Same-file constants, so `message: NO_REPO` reads as what NO_REPO says.
+  const consts = new Map<string, ts.Expression>();
+  const collect = (n: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(n) &&
+      ts.isIdentifier(n.name) &&
+      n.initializer &&
+      ts.isVariableDeclarationList(n.parent) &&
+      (n.parent.flags & ts.NodeFlags.Const) !== 0
+    ) {
+      consts.set(n.name.text, n.initializer);
+    }
+    ts.forEachChild(n, collect);
+  };
+  collect(sf);
+
   const sites: Site[] = [];
-  for (const m of blankComments(src).matchAll(/\bok:\s*false\b/g)) {
-    const at = m.index;
-    // The innermost literal containing this `ok: false`.
-    let best: { open: number; close: number } | undefined;
-    for (const s of spans) {
-      if (s.open < at && at < s.close && (!best || s.open > best.open)) best = s;
-    }
-    if (!best) continue;
-    const body = src.slice(best.open, best.close + 1);
-    const key = /(^|[\s,{(])message:\s*/.exec(body);
-    let message = "";
-    if (key) {
-      // The message expression runs to the comma or brace that ends this
-      // property — at the literal's own depth, so a template's `${…}` and a
-      // nested object stay part of it. Quotes and backticks are skipped whole:
-      // half these messages contain a comma ("Found a clone at ${root}, but…"),
-      // and stopping at it silently truncated the text the phrases match on.
-      const start = key.index + key[0].length;
-      let depth = 0;
-      let j = start;
-      for (; j < body.length; j++) {
-        const ch = body[j];
-        if (ch === '"' || ch === "'" || ch === "`") {
-          j++;
-          while (j < body.length && body[j] !== ch) j += body[j] === "\\" ? 2 : 1;
-          continue;
-        }
-        if (ch === "(" || ch === "[" || ch === "{") depth++;
-        else if (ch === ")" || ch === "]" || ch === "}") {
-          if (depth === 0) break;
-          depth--;
-        } else if (ch === "," && depth === 0) break;
+  const visit = (n: ts.Node): void => {
+    if (ts.isObjectLiteralExpression(n)) {
+      const own = ownProperties(n);
+      const ok = own.get("ok");
+      if (ok && literalValue(ok.value) === false) {
+        const message = own.get("message");
+        sites.push({
+          file: rel,
+          line: sf.getLineAndCharacterOfPosition(ok.at.getStart(sf)).line + 1,
+          message: message ? textOf(message.value, sf, consts) : "",
+          expected: marksExpected(own.get("expected")?.value),
+        });
       }
-      message = body.slice(start, j).trim();
     }
-    sites.push({
-      file: rel,
-      line: src.slice(0, at).split("\n").length,
-      message,
-      expected: marksExpected(body),
-    });
-  }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
   return sites;
 }
 
-/**
- * Whether an object literal (its source, braces included) really carries the
- * `expected` flag — as one of its OWN properties, with a value that is not
- * `false`.
- *
- * The census used to ask only whether the word "expected" appeared anywhere
- * in the literal, so it could be satisfied by things that leave the result
- * reportable at runtime: a comment (`/* not expected *\/`), `expected: false`,
- * a type in a cast (`...({} as { expected: true })`), or the word inside the
- * message itself. Each of those put report #15 straight back while the census
- * stayed green. A conditional (`expected: out.status === "stopped"`) is a
- * decision the site made, so it counts.
- */
-function marksExpected(body: string): boolean {
-  return topLevelProps(body).some((p) => /^expected\s*:\s*(?!false\b)\S/.test(p));
-}
-
-/** An object literal's own top-level properties, with comments dropped and
- *  nested literals, calls, casts and strings kept whole inside theirs. */
-function topLevelProps(body: string): string[] {
-  const inner = body.slice(1, -1);
-  const props: string[] = [];
-  let depth = 0;
-  let cur = "";
-  for (let j = 0; j < inner.length; j++) {
-    const ch = inner[j];
-    const next = inner[j + 1];
-    if (ch === "/" && next === "/") {
-      const end = inner.indexOf("\n", j);
-      j = end < 0 ? inner.length : end;
-      cur += " ";
-      continue;
-    }
-    if (ch === "/" && next === "*") {
-      const end = inner.indexOf("*/", j + 2);
-      j = end < 0 ? inner.length : end + 1;
-      cur += " ";
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === "`") {
-      let k = j + 1;
-      while (k < inner.length && inner[k] !== ch) k += inner[k] === "\\" ? 2 : 1;
-      cur += inner.slice(j, k + 1);
-      j = k;
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (ch === ")" || ch === "]" || ch === "}") depth--;
-    else if (ch === "," && depth === 0) {
-      props.push(cur.trim());
-      cur = "";
-      continue;
-    }
-    cur += ch;
+/** Strip the wrappers that do not change a value: parentheses, `as`, `satisfies`, `!`. */
+function unwrap(e: ts.Expression): ts.Expression {
+  let cur = e;
+  while (
+    ts.isParenthesizedExpression(cur) ||
+    ts.isAsExpression(cur) ||
+    ts.isSatisfiesExpression(cur) ||
+    ts.isNonNullExpression(cur) ||
+    ts.isTypeAssertionExpression(cur)
+  ) {
+    cur = cur.expression;
   }
-  if (cur.trim()) props.push(cur.trim());
-  return props;
+  return cur;
 }
 
-/** Strip the quotes/backticks off a message expression, for matching + REVIEWED. */
+/**
+ * An object literal's OWN properties, as the runtime sees them: in order, a
+ * later one replacing an earlier one, and a spread of another object LITERAL
+ * contributing its properties in place. A spread of anything else (a call, a
+ * variable, a conditional) is opaque and contributes nothing the census can
+ * vouch for — so it can never be what marks a result `expected`.
+ */
+function ownProperties(
+  obj: ts.ObjectLiteralExpression,
+): Map<string, { value: ts.Expression; at: ts.Node }> {
+  const out = new Map<string, { value: ts.Expression; at: ts.Node }>();
+  for (const p of obj.properties) {
+    if (ts.isSpreadAssignment(p)) {
+      const inner = unwrap(p.expression);
+      if (ts.isObjectLiteralExpression(inner)) {
+        for (const [k, v] of ownProperties(inner)) out.set(k, v);
+      }
+      continue;
+    }
+    const name =
+      p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNoSubstitutionTemplateLiteral(p.name))
+        ? p.name.text
+        : undefined;
+    if (!name) continue;
+    if (ts.isPropertyAssignment(p)) out.set(name, { value: p.initializer, at: p });
+    else if (ts.isShorthandPropertyAssignment(p)) out.set(name, { value: p.name, at: p });
+  }
+  return out;
+}
+
+/**
+ * The value of an expression when it is a literal (or `!` of one, or
+ * `undefined` / `void 0`) — `undefined` when it is computed at runtime.
+ */
+function literalValue(e: ts.Expression): unknown {
+  const x = unwrap(e);
+  switch (x.kind) {
+    case ts.SyntaxKind.TrueKeyword:
+      return true;
+    case ts.SyntaxKind.FalseKeyword:
+      return false;
+    case ts.SyntaxKind.NullKeyword:
+      return null;
+  }
+  if (ts.isIdentifier(x) && x.text === "undefined") return undefined;
+  if (ts.isVoidExpression(x)) return undefined;
+  if (ts.isNumericLiteral(x)) return Number(x.text);
+  if (ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) return x.text;
+  if (ts.isPrefixUnaryExpression(x) && x.operator === ts.SyntaxKind.ExclamationToken) {
+    const v = literalValue(x.operand);
+    return v === COMPUTED ? COMPUTED : !v;
+  }
+  return COMPUTED;
+}
+const COMPUTED = Symbol("computed");
+
+/**
+ * Whether a result really carries the `expected` flag: the wrapper tests
+ * `expected === true`, so a literal counts only when it IS `true`. A literal
+ * that is anything else (`false`, `undefined`, `(false)`, `!1`, `"true"`)
+ * leaves the result reportable. A computed value (`out.status === "stopped"`)
+ * is a decision the site made, and counts.
+ */
+function marksExpected(value: ts.Expression | undefined): boolean {
+  if (!value) return false;
+  const v = literalValue(value);
+  return v === COMPUTED || v === true;
+}
+
+/**
+ * The message as the user reads it, for matching against the phrase list and
+ * REVIEWED / PAYLOAD_REFUSALS: a string's text, a template with its `${…}`
+ * spelled as written, a `+` chain joined, and a same-file constant followed.
+ * Anything else — `err.message`, a conditional — is its source text.
+ */
+function textOf(e: ts.Expression, sf: ts.SourceFile, consts: Map<string, ts.Expression>, depth = 0): string {
+  const x = unwrap(e);
+  if (ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) return x.text;
+  if (ts.isTemplateExpression(x)) return x.getText(sf).slice(1, -1);
+  if (ts.isBinaryExpression(x) && x.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    return textOf(x.left, sf, consts, depth + 1) + textOf(x.right, sf, consts, depth + 1);
+  }
+  if (ts.isIdentifier(x) && depth < 5) {
+    const init = consts.get(x.text);
+    if (init) return textOf(init, sf, consts, depth + 1);
+  }
+  return x.getText(sf);
+}
+
+/** Whitespace-normalised message text, for matching + REVIEWED. */
 function plain(message: string): string {
-  return message
-    .replace(/^[`"']|[`"']$/g, "")
-    .replace(/`\s*\+\s*\n?\s*`/g, "")
-    .replace(/"\s*\+\s*\n?\s*"/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return message.replace(/\s+/g, " ").trim();
 }
 
 async function allSites(): Promise<Site[]> {
@@ -465,9 +358,12 @@ test("the census actually sees the results it claims to check", async () => {
   // the census of exactly the cases it was written for.
   const marked = sites.filter((s) => s.expected).map((s) => plain(s.message));
   assert.ok(
-    // 13, not 12: twelve in gitBridge and one in githubBridge's prCheckout,
-    // which the first pass of this sweep missed and this census found.
-    marked.filter((m) => /^No repository open\.$/.test(m)).length >= 13,
+    // Twelve: eleven in gitBridge and one in githubBridge's prCheckout, which
+    // the first pass of this sweep missed and this census found. There were
+    // thirteen until the identity card stopped needing a repository at all —
+    // #15 was filed from THAT site, and the fix there was to make the request
+    // work, not to keep refusing it quietly (see reportingVerdicts.test.ts).
+    marked.filter((m) => /^No repository open\.$/.test(m)).length >= 12,
     "report #15's message is no longer marked expected at every site",
   );
   assert.ok(
@@ -488,6 +384,11 @@ test("only a real `expected` property satisfies the census — not a comment, a 
     "expected: false": `const r = { ok: false, expected: false, message: ${guard} };`,
     "a type in a cast": `const r = { ok: false, ...({} as { expected: true }), message: ${guard} };`,
     "the word in the message": `const r = { ok: false, message: "Not expected: no repository open." };`,
+    // The wrapper tests `=== true`: a literal that is not `true` never is.
+    "expected: undefined": `const r = { ok: false, expected: undefined, message: ${guard} };`,
+    "expected: (false)": `const r = { ok: false, expected: (false), message: ${guard} };`,
+    "expected: !1": `const r = { ok: false, expected: !1, message: ${guard} };`,
+    "a later spread that unmarks it": `const r = { ok: false, expected: true, message: ${guard}, ...{ expected: false } };`,
   };
   for (const [how, src] of Object.entries(notMarked)) {
     const [site] = okFalseSites("probe.ts", src);
@@ -515,6 +416,38 @@ test("only a real `expected` property satisfies the census — not a comment, a 
     "  }\n" +
     "}\n";
   assert.deepEqual(okFalseSites("probe.ts", prose), [], "a comment mentioning ok: false is not a site");
+});
+
+test("the census reads what the parser reads — regexes, shorthand, constants, `+` chains", () => {
+  // The census used to scan characters, and a regex literal with a quote in it
+  // opened a "string" that swallowed the rest of the file. editors.ts has one
+  // (`/"[^"]*"|\S+/g`) above its three refusals, and all three were invisible:
+  // "That editor isn't installed any more" could lose `expected` with the
+  // census still green. Each shape below compiles, and each hid a message.
+  const seen: Record<string, string> = {
+    "after a regex with a quote": `const re = /"[^"]*"|\\S+/g;\nconst r = { ok: false, message: "No repository open." };`,
+    "after a regex with slash-star": `const re = /a\\/*/;\nconst r = { ok: false, message: "No repository open." };`,
+    "shorthand message": `const message = "No repository open.";\nconst r = { ok: false, message };`,
+    "a message kept in a const": `const NO_REPO = "No repository open.";\nconst r = { ok: false, message: NO_REPO };`,
+    "a + chain mixing quotes": 'const r = { ok: false, message: "No repository " + `open.` };',
+    "a quoted key": `const r = { ok: false, "message": "No repository open." };`,
+  };
+  for (const [how, src] of Object.entries(seen)) {
+    const [site] = okFalseSites("probe.ts", src);
+    assert.ok(site, `${how}: the census must see this ok:false`);
+    assert.equal(plain(site.message), "No repository open.", `${how}: and read its words`);
+    assert.equal(site.expected, false, how);
+  }
+});
+
+test("the census sees every refusal in the files it has been blind to", async () => {
+  // Pinned by name: if a file's refusals drop out of the census again, the
+  // phrase check above passes over them in silence.
+  const editors = (await allSites()).filter((s) => s.file === "editors.ts").map((s) => plain(s.message));
+  assert.ok(
+    editors.some((m) => /That editor isn't installed any more/.test(m)),
+    `editors.ts's refusals are missing from the census: ${JSON.stringify(editors)}`,
+  );
 });
 
 test("a genuine git failure still reports", async () => {

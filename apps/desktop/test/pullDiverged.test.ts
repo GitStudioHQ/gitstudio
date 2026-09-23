@@ -270,6 +270,40 @@ test("a pull blocked by a paused operation settles like a stop — neutral, then
   assert.match(v.kind === "blocked" ? v.message : "", /still in progress/);
 });
 
+// A stop lands the user in Changes, but every Pull door is still on screen —
+// the top bar still says "Pull 1", because HEAD has not moved. Pressing it runs
+// a pull git refuses before doing anything, and that refusal used to be read as
+// a divergence (a mid-merge branch IS one ahead and one behind): the dialog
+// asked "merge or rebase?", and whichever the user picked came back as git's
+// "Pulling is not possible because you have unmerged files" in red — filed as
+// a crash report.
+test("pressing Pull again over the stop asks nothing, reports nothing, and goes back to Changes", async () => {
+  const { work, cleanup } = divergedRepo({ collide: true });
+  try {
+    const bridge = await bridgeOn(work);
+    assert.ok((await bridge.syncPull({ mode: "merge" })).stopped, "precondition: stopped");
+
+    let asked = 0;
+    const out = await pullWithChoice({
+      pull: (o) => bridge.syncPull(o ?? undefined),
+      ask: async () => {
+        asked++;
+        return "merge";
+      },
+    });
+    assert.equal(asked, 0, "no merge-or-rebase question over a merge already in progress");
+    assert.deepEqual(out.result.blocked, { operation: "merge", conflicts: 1 });
+    assert.equal(reportableResultMessage(out.result), undefined, "not crash-report material");
+    assert.match(out.result.message ?? "", /merge is still in progress/);
+    assert.doesNotMatch(out.result.message ?? "", /hint:|Pulling is not possible|git add/);
+
+    const v = pullVerdict(out, "Pull failed.");
+    assert.equal(v.kind, "blocked", "the door takes the user to Changes, not a red toast");
+  } finally {
+    cleanup();
+  }
+});
+
 // The pull fixtures above depend on git's configuration: SyncOps.pull honours a
 // user's own pull.rebase / pull.ff, which on a developer machine with
 // `pull.rebase=true` turned "it asks" into "it rebased" and failed three of
@@ -361,6 +395,19 @@ test("a pull that stopped on conflicts is its own verdict — not a failure", ()
   const v = pullVerdict({ result: stopped, cancelled: false, mode: "merge" }, "Pull failed.");
   assert.equal(v.kind, "stopped", "never the 'failed' arm, which toasts red");
   assert.match(v.kind === "stopped" ? v.message : "", /2 files/);
+});
+
+test("a pull refused over an operation already under way settles like a stop", () => {
+  const blocked: PullActionResult = {
+    ok: false,
+    changed: false,
+    expected: true,
+    message: "A rebase is still in progress. Continue it — or abort it — before pulling again.",
+    blocked: { operation: "rebase", conflicts: 0 },
+  };
+  const v = pullVerdict({ result: blocked, cancelled: false }, "Pull failed.");
+  assert.equal(v.kind, "blocked", "Changes has the Continue and Abort buttons; a toast alone does not");
+  assert.match(v.kind === "blocked" ? v.message : "", /rebase is still in progress/);
 });
 
 test("cancelling is its own verdict, so the door can refresh what the fetch moved", () => {
