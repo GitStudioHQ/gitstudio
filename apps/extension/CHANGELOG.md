@@ -34,7 +34,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   offers the force only when the commits it replaces are ones you rewrote (an
   amend or a rebase); any other divergence gets the **Merge / Rebase**
   question. The branch menu's **Push** and the push dialog follow the same
-  rule.
+  rule. And Sync forces only when the remote is still where you last saw it,
+  holding the push to that — so the same commit amended on another machine, or
+  a colleague's amend of one of yours, is not overwritten either.
 - **Pull over a merge or rebase in progress showed git's advice.** Pull, Sync
   or Update pressed while conflicts were still being resolved now say what is
   in progress and reveal the Changes view, instead of git's *"Pulling is not
@@ -49,9 +51,23 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   **Pull** (and the branch menu's pulls) said *"You are not currently on a
   branch… git pull &lt;remote&gt; &lt;branch&gt;"*. They now say there is no
   branch to pull into and offer **Check Out a Branch…**; **Pull** no longer
-  asks *Merge or Rebase?* first.
+  asks *Merge or Rebase?* first — and in the middle of a rebase (or over a
+  merge in progress) it says that, rather than calling it a detached HEAD.
 - **Start Rebase over uncommitted changes** in the rebase panel now says to
-  commit or stash them first, before anything is written.
+  commit or stash them first, before anything is written. With
+  `rebase.autoStash` set, git still stashes them and the rebase runs, as
+  before.
+- **Pull over uncommitted changes showed git's refusal as an error.** When your
+  edits were in the pull's way — a file the incoming commits change, or any
+  edit when pulling with rebase — every pull door showed git's *"Your local
+  changes to the following files would be overwritten by merge"* (or *"cannot
+  pull with rebase"*). It now says which files are in the way and to commit or
+  stash them, and reveals the Changes view.
+- **With `pull.ff only` in your git config, a diverged branch got git's
+  advice.** That setting is one git's own advice suggests, and Sync and Update
+  then showed *"Diverging branches can't be fast-forwarded"* and its hints as
+  an error. They now ask **Merge** or **Rebase** like any other divergence —
+  for that pull only; your setting is left as it is.
 
 ## [1.13.0] - 2026-09-21
 

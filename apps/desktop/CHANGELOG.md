@@ -82,7 +82,20 @@ but they share the same engine, so most Git behaviour lands in both at once.
   error either.
 - **Start rebase over uncommitted changes showed git's refusal.** The Rebase
   view now says you have uncommitted changes to commit or stash first, before
-  anything is written.
+  anything is written. With `rebase.autoStash` set, git still stashes them and
+  the rebase runs, as before.
+- **Pull over uncommitted changes looked like a failure.** When your edits were
+  in the pull's way — a file the incoming commits change, or any edit when
+  pulling with rebase — Pull showed git's *"Your local changes to the following
+  files would be overwritten by merge"* (or *"cannot pull with rebase"*) in
+  red, after the fetch's own lines, and sent a crash report. It now says which
+  files are in the way and to commit or stash them, and takes you to
+  **Changes**.
+- **With `pull.ff only` in your git config, a diverged branch got git's
+  advice.** That setting is one git's own advice suggests, and Pull then showed
+  *"Diverging branches can't be fast-forwarded"* and its hints in red, and sent
+  a crash report. It now asks **Merge** or **Rebase** like any other
+  divergence — for that pull only; your setting is left as it is.
 - **Agent Access could point an agent at a copy of GitStudio that disappears.**
   Opened straight from Downloads or the disk image, macOS runs GitStudio from a
   temporary copy, and an agent set up from it stopped working once GitStudio
