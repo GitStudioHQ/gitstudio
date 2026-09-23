@@ -260,6 +260,9 @@ checkout:
      that file too since the export, so the next export carries both. A
      "DIFFERENT" fails the import (exit 1): the next export would not write
      what the contributor wrote, so check those commits before keeping them.
+     A pull request that adds a dependency to a vendored `package.json` is
+     imported, but the export cannot run until that dependency is installed
+     in gitstudio; the import says so after making the commits.
 4. **Review and test it like any gitstudio branch**
    (`npm run check-types && npm test`), then merge it.
 5. **Export, and close the loop on merge-studio** (Option B, step 1). If the

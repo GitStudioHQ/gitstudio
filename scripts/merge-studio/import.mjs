@@ -438,7 +438,9 @@ export function readPatchFile(file, { author, message, gitstudio = GITSTUDIO_ROO
 
 // ---------------------------------------------------------------- the plan
 
-const excluded = (path, excludes) => path !== undefined && excludes.some((e) => (e.endsWith("/") ? path.startsWith(e) : path === e));
+/** --exclude takes a file, or a folder with or without its trailing slash. */
+const excluded = (path, excludes) =>
+  path !== undefined && excludes.some((e) => path === e.replace(/\/$/, "") || path.startsWith(e.endsWith("/") ? e : `${e}/`));
 
 /**
  * Where each file of each commit goes. Nothing is changed.
@@ -761,6 +763,11 @@ export function importPullRequest({
   try {
     exportTo({ into: beforeDir, gitstudio: top, allowDirty: true, lock: false });
     const results = [];
+    const soFar = () => {
+      const made = results.filter((x) => x.sha).length;
+      const skipped = results.length - made;
+      return `${made} earlier commit(s) are imported${skipped ? ` (${skipped} more had nothing to import)` : ""}`;
+    };
     const compare = new Map(); // merge-studio path → what the round trip checks
     for (const [k, c] of plan.commits.entries()) {
       const label = `${k + 1}/${plan.commits.length} ${describe(c)}`;
@@ -772,7 +779,7 @@ export function importPullRequest({
         const lines = pkg.conflicts.map((x) => `  ${x.path.length ? dotted(x.path) : "package.json"}: ${x.before !== undefined || x.after !== undefined ? `${JSON.stringify(x.before)} → ${JSON.stringify(x.after)}; ` : ""}${x.why}`);
         throw new ImportStopped(
           `import: stopped at ${label}, before changing anything for it: its package.json change conflicts with gitstudio:\n${lines.join("\n")}\n` +
-            `${results.length} earlier commit(s) are imported. Make that change by hand, or re-run with --exclude package.json.`,
+            `${soFar()}. Make that change by hand, or re-run with --exclude package.json.`,
         );
       }
       for (const s of c.sections.filter((x) => x.kind === "generated")) {
@@ -811,7 +818,7 @@ export function importPullRequest({
           if (unmerged.length === 0) {
             throw new ImportStopped(
               `import: stopped at ${label}: git apply could not apply it, and nothing of it was changed:\n${String(applied.stderr).trim()}\n` +
-                `${results.length} earlier commit(s) are imported.`,
+                `${soFar()}.`,
             );
           }
           const extra = writePackageJson(top, pkg, notes);
@@ -821,7 +828,7 @@ export function importPullRequest({
           throw new ImportStopped(
             `import: stopped at ${label}: git apply --3way left conflicts in\n${unmerged.map((u) => `  ${u}`).join("\n")}\n` +
               "gitstudio changed the same lines since merge-studio's export. The conflict markers are in the file(s).\n" +
-              `${results.length} earlier commit(s) are imported. To finish this one, resolve the markers, then:\n` +
+              `${soFar()}. To finish this one, resolve the markers, then:\n` +
               `  git add ${unmerged.join(" ")}\n` +
               `  git commit --author="${c.author.name} <${c.author.email}>"${date} --cleanup=whitespace -F ${msgFile}\n` +
               (k + 1 < plan.commits.length && c.sha ? `and import the rest with --range ${c.sha}..<head>.\n` : "") +
@@ -830,6 +837,18 @@ export function importPullRequest({
         }
       }
       writePackageJson(top, pkg, notes);
+      for (const s of copied) {
+        const target = s.newGs;
+        if (!target || !/(^|\/)package\.json$/.test(target)) continue;
+        const deps = (text) => {
+          const j = text ? JSON.parse(text) : {};
+          return JSON.stringify(["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"].map((key) => j[key] ?? null));
+        };
+        const was = run(top, ["show", `HEAD:${target}`], { allowFail: true });
+        if (deps(was.status === 0 ? was.stdout : "") !== deps(readFileSync(join(top, target), "utf8"))) {
+          notes.push(`${target} changes its dependencies: run npm install in gitstudio so package-lock.json follows`);
+        }
+      }
 
       const msgPath = join(scratch, `${k + 1}.msg`);
       writeFileSync(msgPath, commitMessage(top, c.message, trailers(notes, { repo, pr, sha: c.sha })));
@@ -854,7 +873,14 @@ export function importPullRequest({
     }
     if (compare.get("package.json")?.imported === false) compare.delete("package.json");
 
-    exportTo({ into: afterDir, gitstudio: top, allowDirty: true, lock: false });
+    try {
+      exportTo({ into: afterDir, gitstudio: top, allowDirty: true, lock: false });
+    } catch (e) {
+      throw new ImportStopped(
+        `import: ${soFar().replace("earlier ", "")}, but export.mjs cannot run on the result, so the round trip is not proven:\n  ${e.message}\n` +
+          "A dependency the pull request adds has to be installed in gitstudio first (npm install in the workspace that needs it); then run the export.",
+      );
+    }
     const checked = roundTrip(beforeDir, afterDir, compare);
     return { commits: results, roundTrip: checked, notImported, excluded: excludedList };
   } finally {
@@ -935,7 +961,7 @@ function main(argv) {
     if (r.notImported.length) {
       console.log("not imported, because the export generates them:");
       for (const n of r.notImported) console.log(`  ${n.path}${n.keys ? ` (${n.keys.join(", ")})` : ""}`);
-      console.log("  A dependency change is made in gitstudio (npm install in the workspace that needs it), then exported.");
+      console.log("  If the pull request changes a dependency, make that change in gitstudio (npm install in the workspace that needs it).");
     }
     if (r.excluded.length) console.log(`left out with --exclude: ${[...new Set(r.excluded.map((e) => e.path))].join(", ")}`);
     const failed = r.roundTrip.filter((x) => x.status === "FAILED");

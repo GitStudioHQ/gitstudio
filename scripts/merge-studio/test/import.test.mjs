@@ -260,7 +260,7 @@ test("a path outside the mapping is refused before anything changes, and --exclu
       gitstudio: gs,
       from: ms,
       range: "main..contrib",
-      excludes: [".github/", "docs/", "NEWS.md", "vendor/gitstudio/extra/", "scripts/release.mjs", "media/screenshots/"],
+      excludes: [".github/", "docs", "NEWS.md", "vendor/gitstudio/extra/", "scripts/release.mjs", "media/screenshots/"],
     });
     assert.equal(r.commits.length, 1);
     assert.deepEqual(g(gs, "diff", "--name-only", "main", "HEAD").split("\n"), ["packages/engine/src/mergeModel.ts"]);
@@ -278,10 +278,12 @@ test("a change to lines gitstudio also changed is a 3-way conflict with markers,
     writeFileSync(gsFile, lineEdit(5, () => "// gitstudio's own change")(readFileSync(gsFile, "utf8")));
     g(gs, "commit", "-qam", "gitstudio moves on");
     const head = g(gs, "rev-parse", "HEAD");
+    contribute(ms, "A clean change first", { "README.md": append("A clean line.\n") });
     const sha = contribute(ms, "The contributor's change", {
       [MERGE_MODEL]: lineEdit(5, () => "// the contributor's change"),
       "src/links.ts": append("// fine\n"),
     });
+    contribute(ms, "One more after it", { "CHANGELOG.md": append("- More.\n") });
 
     let stopped;
     assert.throws(
@@ -293,7 +295,11 @@ test("a change to lines gitstudio also changed is a 3-way conflict with markers,
     );
     assert.match(stopped.message, /git apply --3way left conflicts in\n {2}packages\/engine\/src\/mergeModel\.ts\n/);
     assert.match(stopped.message, /git commit --author="Jane Contributor <jane@example\.com>"/);
-    assert.equal(g(gs, "rev-parse", "HEAD"), head, "nothing was committed");
+    assert.match(stopped.message, /stopped at 2\/3 /);
+    assert.match(stopped.message, /1 earlier commit\(s\) are imported\./);
+    assert.ok(stopped.message.includes(`import the rest with --range ${sha}..<head>`));
+    assert.equal(g(gs, "rev-parse", "HEAD~1"), head, "the clean commit before it is imported, and nothing after");
+    assert.equal(g(gs, "log", "-1", "--format=%s"), "A clean change first");
     const text = readFileSync(gsFile, "utf8");
     assert.match(text, /<<<<<<< ours\n\/\/ gitstudio's own change\n=======\n\/\/ the contributor's change\n>>>>>>> theirs\n/);
     assert.match(g(gs, "ls-files", "-u"), /\tpackages\/engine\/src\/mergeModel\.ts$/m, "unmerged in the index");
@@ -362,6 +368,28 @@ test("a patch file: `gh pr diff --patch` keeps each commit and author; a plain `
     ]);
   } finally {
     cleanup(gs, ms, files);
+  }
+});
+
+test("a dependency added to a vendored package.json is imported with a note, and the round trip says why it cannot run yet", () => {
+  const gs = scratchGitstudio();
+  const ms = scratchMergeStudio(gs);
+  try {
+    contribute(ms, "engine: use left-pad", {
+      "vendor/gitstudio/engine/package.json": (t) => {
+        const pkg = JSON.parse(t);
+        pkg.dependencies = { ...pkg.dependencies, "left-pad": "^1.3.0" };
+        return `${JSON.stringify(pkg, null, 2)}\n`;
+      },
+    });
+    assert.throws(
+      () => importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib" }),
+      (e) => e instanceof ImportStopped && /1 commit\(s\) are imported, but export\.mjs cannot run on the result/.test(e.message) && /left-pad/.test(e.message) && /npm install/.test(e.message),
+    );
+    assert.equal(JSON.parse(g(gs, "show", "HEAD:packages/engine/package.json")).dependencies["left-pad"], "^1.3.0");
+    assert.match(g(gs, "log", "-1", "--format=%(trailers:key=Import-note,valueonly)"), /packages\/engine\/package\.json changes its dependencies: run npm install/);
+  } finally {
+    cleanup(gs, ms);
   }
 });
 
