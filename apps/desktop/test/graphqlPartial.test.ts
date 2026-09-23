@@ -178,6 +178,41 @@ test("a repository the remote no longer resolves to is NOT reported, from the sa
   }
 });
 
+test("a token without the Projects scope is a state of the account, not a crash", async () => {
+  // GitHub's REAL answer (captured with a read-only `gh api graphql` against a
+  // token that lacks `read:project`): a 200 with no `data`, and the type is
+  // INSUFFICIENT_SCOPES — not FORBIDDEN, which is the only permission type the
+  // classifier knew. So a pasted token without the scope (sign-in by token is
+  // supported; the device flow asks for `project`) filed a crash report from
+  // ipc:project:list — the channel #14/#17 came from — every time Projects
+  // was opened.
+  const { client, restore } = servingGraphql({
+    errors: [
+      {
+        type: "INSUFFICIENT_SCOPES",
+        locations: [{ line: 1, column: 75 }],
+        message:
+          "Your token has not been granted the required scopes to execute this query. The " +
+          "'projectsV2' field requires one of the following scopes: ['read:project'], but your " +
+          "token has only been granted the: ['admin:public_key', 'gist', 'read:org', 'repo'] " +
+          "scopes. Please modify your token's scopes at: https://github.com/settings/tokens.",
+      },
+    ],
+  });
+  try {
+    await assert.rejects(
+      () => listProjects(client, "acme-private", "billing-pipeline"),
+      (e: unknown) => {
+        assert.equal(isExpectedError(e), true, "not crash-report material");
+        assert.match((e as Error).message, /read:project/, "…and it still says which scope is missing");
+        return true;
+      },
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("a project list with one unreadable repository still renders the readable ones", async () => {
   // The partial answer has to survive the READ the renderer calls, not just the
   // client primitive: listProjects maps and filters after it.

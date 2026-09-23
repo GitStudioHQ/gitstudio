@@ -162,7 +162,11 @@ export function graphqlError(err: GraphqlFailure): Error {
         )
       : new Error(message);
   }
-  return err.type === "RATE_LIMITED" || err.type === "FORBIDDEN"
+  // A permission the account has not granted comes back as FORBIDDEN or — for
+  // a token missing an OAuth scope, e.g. `read:project` for Projects —
+  // INSUFFICIENT_SCOPES. Both are the account's state, and GitHub's sentence
+  // names the missing scope, which is the useful part.
+  return err.type === "RATE_LIMITED" || err.type === "FORBIDDEN" || err.type === "INSUFFICIENT_SCOPES"
     ? new ExpectedError(message)
     : new Error(message);
 }
