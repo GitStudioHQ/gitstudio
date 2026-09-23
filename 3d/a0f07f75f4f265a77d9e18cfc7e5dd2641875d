@@ -1,0 +1,25 @@
+packages/webview-ui/src/styles/diff.css
+  s_26f5e669d3043c::t_2ef57a273004ed 568-572,574
+packages/webview-ui/test/mergeColours.test.ts
+  s_26f5e669d3043c::t_c91c8bf1ff4e05 461,463
+  s_26f5e669d3043c::t_3363e87a050c3d 442-460,462,464-466
+packages/webview-ui/test/mergeContrast.test.ts
+  s_26f5e669d3043c::t_a83ee95dd84a46 79,81-83
+  s_26f5e669d3043c::t_6c3d9c66101c69 58-60,62-78,80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3da0f07f75f4f265a77d9e18cfc7e5dd2641875d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
