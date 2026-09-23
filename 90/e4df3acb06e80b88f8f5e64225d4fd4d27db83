@@ -1,0 +1,75 @@
+packages/git-service/src/stoppedOperation.ts
+  s_26f5e669d3043c::t_33196ea29d2310 44-49,54,63-71
+  s_26f5e669d3043c::t_6b441343433441 1-43,50-53,55-62,72-147
+apps/desktop/src/main/inTheWay.ts
+  s_26f5e669d3043c::t_1161ff10e2e007 60-62,72-73,77-87
+  s_26f5e669d3043c::t_0a6aae2a7fce24 30,38
+  s_26f5e669d3043c::t_b45b8b3e21e34c 88-89
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_5e74813e14c2cf 541
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_2eca4df37c5934 231-243
+apps/extension/test/operationInTheWayTable.test.ts
+  s_26f5e669d3043c::t_45b4959b1330f1 1-315,317-326,336-340
+  s_26f5e669d3043c::t_76b4253f236bcd 327-335
+  s_26f5e669d3043c::t_4ce02b401308a8 316
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_91f758378afd0d 144-157,163,166-167,170-171,175-178,183-186
+  s_26f5e669d3043c::t_689ab1653a0181 208,211,213-215,226-227,229-242
+  s_26f5e669d3043c::t_c7cc2ebc5fcb40 209-210,212,216-225
+  s_26f5e669d3043c::t_3900e23ecddebc 5
+  s_26f5e669d3043c::t_b9c6af961965ca 491-492
+  s_26f5e669d3043c::t_d00c4816107023 168-169,179-182
+  s_26f5e669d3043c::t_a9d3efae4f567e 207,228,243-248
+  s_26f5e669d3043c::t_078f8058b685c8 172-174
+  s_26f5e669d3043c::t_02391f5d5e64c0 543-544,546-548
+  s_26f5e669d3043c::t_384c17ffdb9323 325-326,328
+  s_26f5e669d3043c::t_e9d02bfc417e52 8-12
+  s_26f5e669d3043c::t_87292b86c2ea5e 13
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_73dcb0054b79d9 207-220
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_b56586b8f54902 125
+  s_26f5e669d3043c::t_0386183f47a712 808-813,825-830,837
+  s_26f5e669d3043c::t_cd6a3f66066b45 814-815,817-823
+  s_26f5e669d3043c::t_7936be100cf72d 824,833-834
+  s_26f5e669d3043c::t_1e0a5f78988c55 678-686
+  s_26f5e669d3043c::t_a71fe0a4a7222b 170-177
+  s_26f5e669d3043c::t_bbe1ac13fa9951 5
+apps/extension/src/git/inTheWay.ts
+  s_26f5e669d3043c::t_cb644a3cb6f534 7,14,17
+  s_26f5e669d3043c::t_bc74e33f0277fd 132-151
+  s_26f5e669d3043c::t_1ae99f0ed7a8c2 42-44
+  s_26f5e669d3043c::t_99f602ffe1025b 50-52,60-62
+packages/git-service/test/pullStopped.test.ts
+  s_26f5e669d3043c::t_17054b7b83dedb 332-341,349-354
+packages/git-service/test/operationInTheWay.test.ts
+  s_26f5e669d3043c::t_84e45dd00c6150 1-17,23,28-192,195-210,214,216,219-222,226,228-251,294-343,365-367,381-382,384-389,392-402,404-413
+  s_26f5e669d3043c::t_69872ce9429116 18-22,24-27
+  s_26f5e669d3043c::t_446cc05cfae15b 211-213,215,217-218
+  s_26f5e669d3043c::t_65af361d924352 193-194
+  s_26f5e669d3043c::t_68c8065120c990 223-225,227
+  s_26f5e669d3043c::t_d74028daab0cd4 252-271,273,275,278-279,281,283,292-293
+  s_26f5e669d3043c::t_aa8562fa0bccaf 272,274,276-277,280,282,284-291
+  s_26f5e669d3043c::t_8abf41f8c23b55 344-364,369,378,383,390-391
+  s_26f5e669d3043c::t_a3e3e13ec0e4a6 368,370-377,379-380
+  s_26f5e669d3043c::t_f34237a81afddb 403
+apps/desktop/test/operationInTheWayTable.test.ts
+  s_26f5e669d3043c::t_208dee8e5e62d3 1-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "90e4df3acb06e80b88f8f5e64225d4fd4d27db83",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
