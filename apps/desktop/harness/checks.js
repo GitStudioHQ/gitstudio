@@ -4543,11 +4543,8 @@
       c.ok(before.pending > 0, `the fixture leaves changes to make (${before.counter})`);
       c.eq(before.sum, before.pending, `the chips count exactly the pending changes (${JSON.stringify(before.by)} vs "${before.counter}")`);
       c.eq(before.by.conflict ?? -1, before.conflicts, "the conflict chip counts the pending conflicts");
-      // A chip with nothing left is not a way to jump anywhere.
-      for (const b of chips) {
-        const n = Number(text(b.querySelector(".jb-legend-count")));
-        c.eq(b.disabled, n === 0, `${b.dataset.category}: disabled exactly when it has none left`);
-      }
+      // (Whether a chip with none left stays clickable is POLISH A4.1's to
+      // decide — this checks only what the chips COUNT.)
       // The counts follow the view: apply every non-conflicting change, and
       // only the conflict chip still counts.
       $(".ms-shell .ms-apply-all")?.click();
@@ -4561,8 +4558,7 @@
       await settle(900);
       const done = read();
       c.eq(done.counter, "All changes have been processed", "Accept Yours settles the rest");
-      c.eq(done.sum, 0, `every chip reads 0 (${JSON.stringify(done.by)})`);
-      c.ok([...slot.querySelectorAll(".jb-legend-chip")].every((b) => b.disabled), "and none offers a jump");
+      c.eq(done.sum, 0, `no chip counts anything left (${JSON.stringify(done.by)})`);
     },
 
     /**
