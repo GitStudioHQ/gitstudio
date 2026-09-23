@@ -3,6 +3,7 @@ import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { pausedForUser, type OperationMarker } from "../git/pausedForUser";
+import { applyOrAsk, checkoutOp, type Applied } from "../git/inTheWay";
 import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
 import {
   promptConfirm,
@@ -103,8 +104,11 @@ export async function checkoutBranch(
   if (!a || !ref) {
     return;
   }
-  const result = await a.ctx.branches.checkout(ref.name);
-  report(result, `Checked out ${ref.name}`, refresh);
+  await reportApplied(
+    await applyOrAsk(a.ctx, checkoutOp(["checkout", ref.name])),
+    `Checked out ${ref.name}`,
+    refresh,
+  );
 }
 
 export async function mergeBranchIntoCurrent(
@@ -127,7 +131,14 @@ export async function mergeBranchIntoCurrent(
     return;
   }
   await withUndo(repos, a, `Merge ${ref.name}`, async () => {
-    const result = await a.ctx.branches.merge(ref.name);
+    // The same argv BranchOps.merge runs, through the shared door: uncommitted
+    // work in the merge's way is said, with Stash & Retry.
+    const applied = await applyOrAsk(a.ctx, { kind: "merge", target: ref.name, args: ["merge", ref.name] });
+    if (applied.cancelled || applied.settled) {
+      if (applied.settled) refresh();
+      return;
+    }
+    const result = { ok: applied.result.code === 0, code: applied.result.code, stderr: applied.result.stderr };
     await reportMergeLike(
       a.ctx,
       result,
@@ -158,7 +169,15 @@ export async function rebaseCurrentOnto(
     return;
   }
   await withUndo(repos, a, `Rebase onto ${ref.name}`, async () => {
-    const result = await a.ctx.branches.rebaseOnto(ref.name);
+    // A rebase needs a clean tree: a refusal over the user's work is said,
+    // with Stash & Retry, instead of git's "cannot rebase: You have unstaged
+    // changes" in red.
+    const applied = await applyOrAsk(a.ctx, { kind: "rebase", onto: ref.name, args: ["rebase", ref.name] });
+    if (applied.cancelled || applied.settled) {
+      if (applied.settled) refresh();
+      return;
+    }
+    const result = { ok: applied.result.code === 0, code: applied.result.code, stderr: applied.result.stderr };
     await reportMergeLike(
       a.ctx,
       result,
@@ -460,10 +479,17 @@ export async function newBranchFrom(
   if (checkout === undefined) {
     return;
   }
-  const result = checkout === "switch"
-    ? await a.ctx.branches.checkoutNew(name, startPoint)
-    : await a.ctx.branches.create(name, startPoint);
-  report(result, `Created ${name}`, refresh);
+  if (checkout === "switch") {
+    // Switching to a branch that starts somewhere else is a checkout, and is
+    // refused the same way over uncommitted work in its way.
+    await reportApplied(
+      await applyOrAsk(a.ctx, checkoutOp(["checkout", "-b", name, ...(startPoint ? [startPoint] : [])])),
+      `Created ${name}`,
+      refresh,
+    );
+    return;
+  }
+  report(await a.ctx.branches.create(name, startPoint), `Created ${name}`, refresh);
 }
 
 /** "Create worktree for this branch" — pick a folder, add a worktree on `ref`.
@@ -507,12 +533,7 @@ export async function checkoutRemoteBranch(
   // can do afterwards, and "New Branch From Here…" already covers landing on a
   // different name in one step.
   const plan = await planRemoteCheckout(a.ctx.process, ref.name);
-  const result = await a.ctx.process.run(plan.args);
-  report(
-    { ok: result.code === 0, stderr: result.stderr },
-    plan.success,
-    refresh,
-  );
+  await reportApplied(await applyOrAsk(a.ctx, checkoutOp(plan.args)), plan.success, refresh);
 }
 
 export async function deleteRemoteBranch(
@@ -577,8 +598,11 @@ export async function checkoutTag(
   if (!ok) {
     return;
   }
-  const result = await a.ctx.branches.checkout(ref.name, { detach: true });
-  report(result, `Checked out ${ref.name}`, refresh);
+  await reportApplied(
+    await applyOrAsk(a.ctx, checkoutOp(["checkout", "--detach", ref.name])),
+    `Checked out ${ref.name}`,
+    refresh,
+  );
 }
 
 export async function deleteTag(
@@ -843,6 +867,23 @@ async function withUndo(
   } else {
     await fn();
   }
+}
+
+/**
+ * `report` for a command run through the shared door (git/inTheWay.ts): a
+ * question the user cancelled says nothing, a refusal already said there says
+ * nothing more, and a stash-and-retry that went through refreshes like any
+ * success.
+ */
+async function reportApplied(applied: Applied, success: string, refresh: () => void): Promise<void> {
+  if (applied.cancelled) {
+    return;
+  }
+  if (applied.settled) {
+    refresh();
+    return;
+  }
+  report({ ok: applied.result.code === 0, stderr: applied.result.stderr }, success, refresh);
 }
 
 function report(

@@ -393,6 +393,23 @@
   /** Serial for the PTY ids `terminal:create` hands out. */
   let ptySeq = 0;
 
+  /**
+   * What ?diverged=1's pulls have done so far — read by `sync:pull`,
+   * `sync:status`, `branches:list` and `git:opState`, which all describe the
+   * same repository and must move together.
+   */
+  const pullState = {
+    /** The first pull fetched: the remote is further ahead than the badge said. */
+    fetched: false,
+    /** A pull with a mode completed. */
+    done: false,
+    /** A pull with a mode stopped on conflicts (?pullconflict=1). */
+    stopped: null,
+    behind() {
+      return this.fetched ? 5 : 3;
+    },
+  };
+
   const fixtures = {
     // ?norepo=1 → NO repository open, which is the welcome screen: the first
     // thing anyone sees, the only screen shown after closing a repo, and
@@ -408,7 +425,9 @@
     // `github:status` is DYNAMIC below, not here: a fixture that never changes
     // cannot express signing out, which is why nothing could see that the
     // top-bar chip kept naming the account you had just left.
-    "sync:status": { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, noUpstream: false },
+    // `sync:status` is DYNAMIC below: with ?diverged=1 the pull itself moves
+    // it (its fetch finds more of the remote), and a value captured here could
+    // not show a badge going stale.
     // Every KIND of ref, because the Branches view has one screen per kind and
     // the fixture used to hold local heads ONLY — so the remote, tag and stash
     // row shapes were never once rendered, screenshotted or checked.
@@ -576,7 +595,9 @@
     "release:tags": [ { name: "ext-v1.11.1", sha: "e5f6a7b" }, { name: "desktop-v1.5.1", sha: "d4e5f6a" } ],
     "orgs:list": orgs,
     "gist:list": gists,
-    "project:list": projects,
+    // `?partial=1`: GitHub named one more project than it could return (one in
+    // a repository the account can no longer see) — the list says so.
+    "project:list": { projects, unreadable: params.get("partial") ? 1 : 0 },
     "git:identity": { name: "Anton Arnaudov", email: "anton@gitstudio.dev" },
     // NOTE: {scope:"all"} is answered by the dynamic handler below — the
     // cross-repo answer carries `repo` on every item and includes two items
@@ -1026,6 +1047,81 @@
     { fullName: "acme-corp/platform", name: "platform", owner: "acme-corp", ownerType: "Organization", mine: false, description: "Every PDF is just material. Reshape it \u2014 a local-first PDF editor for macOS, Windows and Linux", private: true, fork: false, cloneUrl: "https://github.com/acme-corp/platform.git", sshUrl: "git@github.com:acme-corp/platform.git", defaultBranch: "main", stars: 3, language: "Go", updatedAt: ISO(12) },
   ];
 
+  // ?emptyrepo=1 — a GitHub repository nobody has pushed to yet.
+  //
+  // This state is UNREACHABLE by answering an empty list: GitHub fails every
+  // read of an empty repository instead (the contents API 404s, /commits and
+  // /git/trees 409), all saying "This repository is empty.", which the main
+  // process normalises to that one sentence. So the fixture has to THROW, and
+  // until it did, the surfaces that meet an empty repository had never been
+  // rendered by anything — which is how crash report #13 came to be filed for
+  // a page that simply had nothing to show.
+  const emptyRepo = params.get("emptyrepo") === "1";
+  const ifEmpty = (fn) => (req) => {
+    if (emptyRepo) throw new Error("This repository is empty.");
+    return fn(req);
+  };
+
+  // ── Uncommitted work in a command's way (crash report #18) ──────────────
+  // ?intheway=1 → every door that applies commits — commit:action's checkout,
+  // checkout-ref, cherry-pick and revert; stash:apply / stash:pop;
+  // branch:merge / branch:rebase; branch:create with a switch from elsewhere;
+  // pr:checkout; sync:pull — answers its FIRST request as the bridge answers a
+  // refusal over the user's uncommitted work (main/inTheWay.ts): ok:false,
+  // expected, the engine's sentence, and `inTheWay` naming the file and the
+  // repository. The renderer then asks Stash & Retry or Cancel (bridge.ts),
+  // and the retry comes back carrying `stashFirst`, answered as the door's
+  // success. Without these the doors had no fixture at all (stash:apply,
+  // branch:merge and pr:checkout fell through to the mutation fallback's
+  // {ok:true}), so no refusal could happen in a scene.
+  //   intheway=note  → the retry succeeds, and says where the stashed changes
+  //                    are (they could not simply come back)
+  //   intheway=still → the retry is STILL refused over uncommitted work
+  //                    (something the stash could not cover)
+  //   intheway=fail  → the first request fails for a reason that is NOT the
+  //                    user's work — a genuine failure, which stays red
+  const inTheWayScene = params.get("intheway");
+  const WAY_FILE = "docs/notes.md";
+  const THE_WAY = {
+    revert: "the revert",
+    "cherry-pick": "the cherry-pick",
+    merge: "the merge",
+    rebase: "the rebase",
+    checkout: "switching to it",
+    stash: "applying the stash",
+    pull: "the pull",
+  };
+  function throughTheDoor(req, kind, succeed) {
+    if (!inTheWayScene) return succeed(req);
+    const retry = !!(req && typeof req === "object" && typeof req.stashFirst === "string");
+    if (inTheWayScene === "fail" && !retry) {
+      return { ok: false, changed: false, message: "fatal: unable to read tree 1a2b3c4d5e6f" };
+    }
+    if (!retry || inTheWayScene === "still") {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          kind === "rebase"
+            ? `A rebase needs a clean working tree, and your uncommitted changes to ${WAY_FILE} are in the way. ` +
+              "Stash it and try again, or commit it first."
+            : `Your uncommitted changes to ${WAY_FILE} are in the way of ${THE_WAY[kind]} — git won't overwrite them. ` +
+              "Stash it and try again, or commit it first.",
+        inTheWay: { kind, files: [WAY_FILE], root: (fixtures["repo:current"] || {}).root },
+      };
+    }
+    const done = succeed(req);
+    return inTheWayScene === "note"
+      ? {
+          ...done,
+          stashNote:
+            `Your changes to ${WAY_FILE} are kept in the stash "GitStudio: before ${kind === "pull" ? "pulling" : kind}" — ` +
+            "git won't put them back over the changes that just came in. Apply it when you're ready.",
+        }
+      : done;
+  }
+
   const dynamic = {
     // A READ that the fallback used to answer with a mutation shape. Present so
     // the AI-gating path is exercised instead of silently failing open.
@@ -1045,6 +1141,163 @@
     // That report's whole value is that it only lists real gaps; one entry on
     // every line trains you to skip it.
     "terminal:resize": () => undefined,
+    // Pull. A MUTATION, so the fallback answered {ok:true} and the diverged
+    // branch — git's "you have divergent branches" refusal, report #12 — could
+    // not happen in a scene at all. With ?diverged=1 the first (mode-less) call
+    // answers the way the bridge does: ok:false, expected, nothing changed, and
+    // a `diverged` fact to ask about. Naming a mode succeeds, and the mode that
+    // was asked for is readable as `window.__gsPulledWith` so a check can prove
+    // the pick reached the REQUEST, not merely that the dialog closed.
+    //
+    // Every git pull FETCHES first, so the first call moves the remote: the
+    // badge was painted from an older fetch (3 behind) and the pull finds 5.
+    // That gap is the only way a check can tell a badge refreshed after the
+    // question was dismissed from one still showing the count before it.
+    //
+    // ?pullconflict=1 → the merge or rebase the user then picks STOPS on
+    // conflicts, answered the way the bridge answers it: ok:false, changed,
+    // expected, and a `stopped` fact with the count. From then on `git:opState`
+    // reports the paused operation, as the real repository would.
+    //
+    // And every one of those pulls WRITES REFS — the fetch moves
+    // refs/remotes/origin/main, a merge or rebase moves the branch — which the
+    // real app's repository watcher reports DEBOUNCE_MS (250 ms) later as
+    // `repo:filesChanged {gitDir: true}`. That refresh re-routes the view, and
+    // a re-route tears every floating layer down. The fixture used to leave it
+    // out, so the divergence question could be answered here at leisure while
+    // in the real app the watcher answered "Cancel" for the user ~200 ms after
+    // the question appeared. Modelled here so no pull check can pass without it.
+    "sync:pull": (opts) => {
+      const mode = (opts && opts.mode) || null;
+      window.__gsPulledWith = mode;
+      // ?intheway=1 → a branch that is only behind, with an edit to a file the
+      // incoming commits change: refused over it (see throughTheDoor). The
+      // pull FETCHED before it was refused, so the watcher reports the moved
+      // remote-tracking ref 250 ms later — while the question is on screen.
+      if (inTheWayScene) {
+        const answer = throughTheDoor(opts, "pull", () => {
+          pullState.done = true;
+          return { ok: true, changed: true };
+        });
+        if (!(opts && opts.stashFirst)) {
+          pullState.fetched = true;
+          setTimeout(() => window.__gsEmit("repo:filesChanged", { gitDir: true }), 250);
+        }
+        return answer.inTheWay ? { ...answer, dirty: { files: answer.inTheWay.files.length } } : answer;
+      }
+      if (!params.get("diverged")) return { ok: true, changed: true };
+      // Pull pressed AGAIN over the merge or rebase that stopped: the branch is
+      // still ahead and behind, so Pull is still on offer, and git refuses it
+      // before running anything — answered as the bridge answers it. Nothing
+      // is written, so nothing wakes the watcher.
+      if (pullState.stopped) {
+        const op = pullState.stopped.operation;
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message:
+            `A ${op} is still in progress, with 2 files still conflicted. Resolve them and ` +
+            `${op === "rebase" ? "continue" : "commit"} the ${op} — or abort it — before pulling again.`,
+          blocked: { operation: op, conflicts: 2 },
+        };
+      }
+      setTimeout(() => window.__gsEmit("repo:filesChanged", { gitDir: true }), 250);
+      pullState.fetched = true;
+      if (mode && params.get("pullconflict")) {
+        pullState.stopped = { operation: mode, conflicts: 2 };
+        return {
+          ok: false,
+          changed: true,
+          expected: true,
+          message:
+            "The pull stopped on conflicts in 2 files. Resolve them, then " +
+            (mode === "rebase" ? "continue the rebase" : "commit the merge") +
+            " — or abort to go back to where you were.",
+          stopped: pullState.stopped,
+        };
+      }
+      if (mode) {
+        pullState.done = true;
+        return { ok: true, changed: true };
+      }
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          `'main' and origin/main have both moved on — 2 commits here, ${pullState.behind()} commits there. ` +
+          "Choose how to combine them.",
+        diverged: { branch: "main", upstream: "origin/main", ahead: 2, behind: pullState.behind() },
+      };
+    },
+    // A commit, answered as the bridge answers one that worked. There was no
+    // fixture, so `host.invoke("commit")` answered undefined and every Commit
+    // press in a scene ended in the catch's "Commit failed." — nothing after
+    // a commit (the push, what Commit & Push says) could be reached.
+    "commit": () => ({ ok: true, changed: true }),
+    // Push. A MUTATION, so the fallback answered {ok:true} and no refusal could
+    // happen in a scene. ?forcerefused=1 → the branch was rewritten while the
+    // remote has somebody else's version too: a plain push is refused
+    // non-fast-forward (git's words, as the bridge passes them on), and the
+    // force the app then offers is refused by the bridge — `expected`, with
+    // `pullFirst` — as it refuses one that would delete commits this branch
+    // never had. The request is readable as `window.__gsPushedWith`.
+    "sync:push": (opts) => {
+      window.__gsPushedWith = (window.__gsPushedWith || []).concat([opts || null]);
+      if (!params.get("forcerefused")) return { ok: true, changed: true };
+      if (!(opts && opts.force)) {
+        return {
+          ok: false,
+          changed: false,
+          message: " ! [rejected]        main -> main (non-fast-forward)\nerror: failed to push some refs",
+        };
+      }
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        pullFirst: true,
+        message:
+          "The remote branch has commits this branch has never had — fetched in the background, " +
+          "from another machine or someone else — and a force push would delete them. " +
+          "Pull them in first, then push.",
+      };
+    },
+    // ?diverged=1 → the branch and its upstream have BOTH moved, which is the
+    // one sync state the widget could not be driven into: with behind: 0 the
+    // top-bar action is Push, so Pull — and the question it now asks — was
+    // unreachable from every scene.
+    "sync:status": () =>
+      // ?intheway=1 → only behind, so the top bar's action is Pull.
+      inTheWayScene
+        ? { branch: "main", upstream: "origin/main", ahead: 0, behind: pullState.done ? 0 : 3, noUpstream: false }
+        : params.get("diverged")
+        ? {
+            branch: "main",
+            upstream: "origin/main",
+            ahead: pullState.done ? 3 : 2,
+            behind: pullState.done ? 0 : pullState.behind(),
+            noUpstream: false,
+          }
+        : { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, noUpstream: false },
+    // The paused operation a stopped pull leaves behind, so landing in Changes
+    // shows the banner the real app would; otherwise the ?op= fixture.
+    "git:opState": () =>
+      pullState.stopped
+        ? {
+            merging: pullState.stopped.operation === "merge",
+            rebasing: pullState.stopped.operation === "rebase",
+            amApplying: false,
+            cherryPicking: false,
+            reverting: false,
+            conflicts: pullState.stopped.conflicts,
+            kind: pullState.stopped.operation,
+            canContinue: false,
+            canSkip: false,
+            nothingToCommit: false,
+          }
+        : fixtures["git:opState"],
     "appearance:dockIcon": () => undefined,
     // A REAL gap: the run page's Artifacts section read undefined and rendered
     // whatever that produced, unchecked, for as long as this harness has run.
@@ -1193,18 +1446,68 @@
       return { ok: true, root, cloned: true };
     },
     // E4: entity pages — remote tree/file/readme at a ref, branches, paths.
-    "ghrepo:commits": ({ ref }) =>
+    "ghrepo:commits": ifEmpty(({ ref }) =>
       [
         { sha: "9f8e7d6c5b4a39281706", shortSha: "9f8e7d6", subject: "release: extension 1.11.1", author: "Anton Arnaudov", login: "antonarnaudov", date: ISO(1) },
         { sha: "18c9d0e7f6a5b4c3d2e1", shortSha: "18c9d0e", subject: "engine: hunk splitting groundwork", author: "Mira Holt", login: "mira-holt", date: ISO(3) },
         { sha: "c3d4e5f60718293a4b5c", shortSha: "c3d4e5f", subject: `actions: stream job logs (${ref ?? "default"})`, author: "Sora Ohta", date: ISO(8) },
-      ],
-    "ghrepo:branches": () => [
-      { name: "main", sha: "9f8e7d6", protected: true },
-      { name: "redesign/issues-detail", sha: "a1b2c3d", protected: false },
-      { name: "fix/log-stream", sha: "b2c3d4e", protected: false },
-    ],
-    "ghrepo:paths": () => ({
+      ]),
+    // Settings ▸ Agent Access. Missing entirely: twelve checks rendered
+    // Settings over a card whose read answered undefined and threw, so the one
+    // card that installs something into another app had never been looked at.
+    // The shape is main/mcpConfig.ts's — the launch is the app's own executable
+    // as Node — and ?mcpmissing=1 is a shipped build without its server.
+    "ai:mcpInfo": () => {
+      const bin = "/Applications/GitStudio.app/Contents/Resources/mcp/gitstudio-mcp.js";
+      const command = "/Applications/GitStudio.app/Contents/MacOS/GitStudio";
+      const env = { ELECTRON_RUN_AS_NODE: "1" };
+      const repoRoot = "/Users/anton/Developer/GitStudioHQ/gitstudio";
+      const args = [bin, "--repo", repoRoot];
+      // ?mcptransloc=1: the app is running from a Gatekeeper-translocated copy,
+      // whose path vanishes on quit. ?mcpmoved=1: Cursor was set up with a
+      // GitStudio that has since been moved.
+      const transloc = params.get("mcptransloc") === "1";
+      const moved = params.get("mcpmoved") === "1";
+      const missing = params.get("mcpmissing") === "1" || transloc;
+      const unavailable = transloc
+        ? "GitStudio is running from a temporary copy macOS made because the app hasn't been moved to Applications yet, and that copy disappears when GitStudio quits — an agent set up now would stop working. Move GitStudio to your Applications folder, open it from there, then add it again."
+        : "This build of GitStudio is missing its MCP server, so Agent Access can't be set up. Reinstalling the app restores it.";
+      return {
+        binPath: bin,
+        command,
+        args,
+        env,
+        configSnippet: JSON.stringify({ mcpServers: { gitstudio: { command, args, env } } }, null, 2),
+        clients: [
+          { id: "claude", label: "Claude Desktop", installed: false, configPath: "~/Library/Application Support/Claude/claude_desktop_config.json" },
+          { id: "cursor", label: "Cursor", installed: true, configPath: "~/.cursor/mcp.json",
+            ...(moved ? { stale: true, staleReason: "The GitStudio this was set up with is no longer at /Users/anton/Downloads/GitStudio.app/Contents/MacOS/GitStudio." } : {}) },
+          { id: "windsurf", label: "Windsurf", installed: false, configPath: "~/.codeium/windsurf/mcp_config.json" },
+          { id: "vscode", label: "VS Code (Copilot)", installed: false, configPath: "~/Library/Application Support/Code/User/mcp.json" },
+        ],
+        repoRoot,
+        available: !missing,
+        ...(missing ? { missing: unavailable } : {}),
+      };
+    },
+    // Add / Update / Re-add, answered as installMcp answers a success.
+    "ai:mcpInstall": (req) => ({
+      ok: true,
+      message: `Added GitStudio (read-only) to ${req && req.client}. Restart it to pick it up.`,
+    }),
+    // NOT ifEmpty: GitHub's `/branches` answers an empty repository with an
+    // empty LIST (200, `[]`) — only the content endpoints refuse. Throwing here
+    // made the ref switcher reachable only as a failure toast, so a check of
+    // it could pass over the throw instead of the state it was written for.
+    "ghrepo:branches": () =>
+      emptyRepo
+        ? []
+        : [
+            { name: "main", sha: "9f8e7d6", protected: true },
+            { name: "redesign/issues-detail", sha: "a1b2c3d", protected: false },
+            { name: "fix/log-stream", sha: "b2c3d4e", protected: false },
+          ],
+    "ghrepo:paths": ifEmpty(() => ({
       paths: [
         "README.md",
         "package.json",
@@ -1216,8 +1519,8 @@
       ],
       truncated: false,
       total: 7,
-    }),
-    "ghrepo:tree": (req) => {
+    })),
+    "ghrepo:tree": ifEmpty((req) => {
       if (!req.path) {
         return [
           { name: "apps", path: "apps", type: "dir" },
@@ -1229,15 +1532,15 @@
       }
       if (req.path === "apps") return [{ name: "desktop", path: "apps/desktop", type: "dir" }];
       return [{ name: "index.ts", path: req.path + "/index.ts", type: "file", size: 420 }];
-    },
-    "ghrepo:file": (req) => ({
+    }),
+    "ghrepo:file": ifEmpty((req) => ({
       path: req.path,
       text: "export function createLogPane(o: LogPaneOpts): LogPane {\n  const el = document.createElement(\"div\");\n  el.className = \"log-pane\";\n  return { el, append, reset, finish };\n}\n",
       truncated: false,
       binary: false,
       size: 420,
-    }),
-    "ghrepo:readme": () => ({
+    })),
+    "ghrepo:readme": () => (emptyRepo ? undefined : {
       name: "README.md",
       // The shapes a real README carries: a RELATIVE image (must be rewritten
       // to raw.githubusercontent.com or it 404s against the app's own origin)
@@ -1314,7 +1617,20 @@
     // The folders the Repositories view groups by. The clone folder leads and
     // cannot be untracked; ~/Code is the "I keep work here too" case; the last
     // is the one that has gone missing, which the row has to say out loud.
-    "branches:list": () => branches,
+    // ?diverged=1 → main's row carries the same counts as the top bar, and
+    // moves with them when a pull's fetch finds more (see `sync:pull`).
+    "branches:list": () =>
+      params.get("diverged")
+        ? branches.map((b) =>
+            b.current
+              ? {
+                  ...b,
+                  ahead: pullState.done ? 3 : 2,
+                  behind: pullState.done ? 0 : pullState.behind(),
+                }
+              : b,
+          )
+        : branches,
     // The per-branch log walk's answer. feat/line-staging is the interesting
     // one: created by one person, carried by three — a number-only "last
     // commit by" could never say that.
@@ -1360,19 +1676,33 @@
         ? { ok: true, changed: true }
         : { ok: true, changed: true, was: "b1a5ded", upstream: hit.upstream };
     },
-    "branch:create": ({ name, startPoint }) => {
-      const was = deletedBranches.get(name);
-      if (was && startPoint) {
-        deletedBranches.delete(name);
-        branches = [...branches, was];
+    "branch:create": (req) => {
+      const create = ({ name, startPoint }) => {
+        const was = deletedBranches.get(name);
+        if (was && startPoint) {
+          deletedBranches.delete(name);
+          branches = [...branches, was];
+          return { ok: true, changed: true };
+        }
+        if (branches.some((b) => b.name === name)) {
+          return { ok: false, changed: false, message: "a branch of that name already exists" };
+        }
+        branches = [...branches, { name, current: false, ahead: 0, behind: 0, subject: "new", date: S(0) }];
         return { ok: true, changed: true };
-      }
-      if (branches.some((b) => b.name === name)) {
-        return { ok: false, changed: false, message: "a branch of that name already exists" };
-      }
-      branches = [...branches, { name, current: false, ahead: 0, behind: 0, subject: "new", date: S(0) }];
-      return { ok: true, changed: true };
+      };
+      // Create AND switch from somewhere else is a checkout — through the door.
+      return req && req.checkout && req.startPoint ? throughTheDoor(req, "checkout", create) : create(req);
     },
+    // A merge or a rebase from the Branches view. MUTATIONS with no fixture,
+    // so both answered the fallback's {ok:true} and no refusal could happen.
+    "branch:merge": (req) => throughTheDoor(req, "merge", () => ({ ok: true, changed: true })),
+    "branch:rebase": (req) => throughTheDoor(req, "rebase", () => ({ ok: true, changed: true })),
+    // Apply / pop from the stash list or a stash's page: the ref, or — sent
+    // again after Stash & Retry — `{ ref, stashFirst }`.
+    "stash:apply": (req) => throughTheDoor(req, "stash", () => ({ ok: true, changed: true })),
+    "stash:pop": (req) => throughTheDoor(req, "stash", () => ({ ok: true, changed: true })),
+    // A pull request fetched and checked out: the number, or `{ number, stashFirst }`.
+    "pr:checkout": (req) => throughTheDoor(req, "checkout", () => ({ ok: true, changed: true })),
     // A rename carries the tracking over UNCHANGED, exactly as `git branch -m`
     // does — which is the whole reason the reconcile question exists.
     "branch:rename": ({ from, to }) => {
@@ -1732,7 +2062,8 @@
     "orgs:repos": () => orgRepos,
     "orgs:teams": () => [ { name: "Core", slug: "core", description: "Maintainers", privacy: "closed", htmlUrl: "" } ],
     "orgs:members": () => [u(me), u("mira-holt"), u("s-ohta"), u("dkovachev"), u("jparks")].map((p) => ({ ...p, htmlUrl: "" })),
-    "project:board": () => board,
+    // Spread, not copied: a move mutates `board.items`, and this must see it.
+    "project:board": () => ({ ...board, unreadable: params.get("partial") ? 1 : 0 }),
     // HONOURS maxCount, as `refLog` does (it clamps to 1..100). Ignoring it hid
     // the fact that a stash's page asked for the whole ancestry of stash@{0} —
     // git's internal "index on …" commit included — under a heading reading
@@ -1757,7 +2088,8 @@
       name: `Release ${req.tagName}`,
       body: `## What's Changed\n* Reorder commits by dragging in the graph by @antonarnaudov in #18\n* Carry other branches through a rebase by @mira-holt in #21\n\n**Full Changelog**: https://github.com/GitStudioHQ/gitstudio/compare/ext-v1.11.1...${req.tagName}`,
     }),
-    "pr:reviewThreads": () => [
+    // `{threads, unreadable}` — `?partial=1` names one thread GitHub could not return.
+    "pr:reviewThreads": () => ({ threads: [
       { id: "t1", path: "apps/desktop/src/renderer/views/issues.ts", line: 42, isResolved: false, isOutdated: false,
         comments: [
           { id: "c1", author: u("mira-holt"), body: "Could this reuse `secRow` from common.ts instead of building the row by hand?", createdAt: ISO(1.4) },
@@ -1765,7 +2097,7 @@
         ] },
       { id: "t2", path: "apps/desktop/src/renderer/views/issues.ts", line: 118, isResolved: true, isOutdated: false,
         comments: [ { id: "c3", author: u("s-ohta"), body: "This `replaceChildren` runs twice on refresh.", createdAt: ISO(2) } ] },
-    ],
+    ], unreadable: params.get("partial") ? 1 : 0 }),
     "actions:jobLogChunk": (req) => {
       const TS = "2026-08-25T10:00:42.1234567Z ";
       const lines = [];
@@ -1814,11 +2146,16 @@
     // the missing-channel path and returned undefined, so the caller's
     // `result.ok` threw and the click looked inert — which is exactly how the
     // branch switcher's checkout hid while it was being tested.
-    "commit:action": (req) => ({
-      ok: true,
-      changed: true,
-      message: `${req?.action ?? "action"} ok`,
-    }),
+    //
+    // A checkout, a cherry-pick or a revert goes through the door (see
+    // throughTheDoor): ?intheway=1 refuses it over uncommitted work first.
+    "commit:action": (req) => {
+      const done = () => ({ ok: true, changed: true, message: `${req?.action ?? "action"} ok` });
+      const kind = { checkout: "checkout", "checkout-ref": "checkout", "cherry-pick": "cherry-pick", revert: "revert" }[
+        req?.action
+      ];
+      return kind ? throughTheDoor(req, kind, done) : done();
+    },
     "pr:fileDiff": (req) => (/\.(png|jpe?g|gif|ico|pdf|zip|dmg|vsix|woff2?)$/i.test(req.path)
       ? {
           // A binary in a pull request used to come back as the SAME
@@ -2492,6 +2829,21 @@
         return;
       }
       const fails = [];
+      // `repaints=1`: the frames a LOADED machine delivers, on demand.
+      //
+      // Headless Chrome runs the page on a virtual clock but produces frames on
+      // the real one, and a frame is when ResizeObserver callbacks are
+      // delivered. Idle, a whole check finishes between two frames; under load
+      // one lands inside a check's `settle()`, and the log pane's observer
+      // repaints its virtual window (`win.replaceChildren()`) — removing any
+      // row the check had put there. Two Actions-log checks failed that way
+      // about one run in forty under parallel load and never alone. A `resize`
+      // on the window runs the same repaint, so firing it every 40ms makes the
+      // loaded machine's worst case the ordinary one: a check that races a
+      // repaint fails every time here instead of once in a while in CI.
+      const repaints = params.get("repaints") === "1"
+        ? setInterval(() => window.dispatchEvent(new Event("resize")), 40)
+        : 0;
       try {
         // A check may return a promise: some assertions have to CLICK something
         // and wait, and several of the views re-render behind an await (a
@@ -2501,6 +2853,7 @@
       } catch (e) {
         fails.push("threw: " + (e && e.message ? e.message : String(e)));
       }
+      if (repaints) clearInterval(repaints);
       // Report the channels this scene asked for and the shim could not answer.
       // NOT as failures — most are legitimately absent — but as a note the
       // runner prints once at the end. A read with no fixture returns undefined

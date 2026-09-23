@@ -241,6 +241,32 @@ test("a bare token anywhere is redacted", () => {
   }
 });
 
+test("an API that NAMES a repository does not carry it off the machine", () => {
+  // Crash reports #14 and #17 were GitHub GraphQL answers, and both titles in
+  // the maintainer tracker read "Could not resolve to a Repository with the
+  // name '<a private org>/<its repo>'." Every rule in scrub() redacted org and
+  // repo inside a URL — the spelling PRIVACY.md had in mind — and none of them
+  // touched the API simply saying the name out loud.
+  const out = scrub("Could not resolve to a Repository with the name 'acme-private/billing-pipeline'.");
+  assert.equal(out.includes("acme-private"), false, "the organization must not survive");
+  assert.equal(out.includes("billing-pipeline"), false, "nor the repository");
+  assert.match(out, /^Could not resolve to a Repository with the name '<path>'\.$/, out);
+});
+
+test("quoted identifiers with a slash go, quoted words stay", () => {
+  for (const [input, expected] of [
+    [`fatal: couldn't find remote ref 'feature/acme-migration'`, `fatal: couldn't find remote ref '<ref>'`],
+    [`pathspec "src/billing/secret.ts" did not match`, `pathspec "<ref>" did not match`],
+    // A quoted word with no slash is diagnosis, not identity — and the
+    // apostrophe in "doesn't" must not open a span that eats the sentence.
+    [`Field 'nope' doesn't exist on type 'Repository'`, `Field 'nope' doesn't exist on type 'Repository'`],
+  ] as const) {
+    const out = scrub(input);
+    const want = expected.replace(/<ref>/g, "<path>");
+    assert.equal(out, want, `scrub(${JSON.stringify(input)})`);
+  }
+});
+
 test("an ordinary command is left completely alone", () => {
   for (const cmd of [
     "git status --porcelain=v1 -z",

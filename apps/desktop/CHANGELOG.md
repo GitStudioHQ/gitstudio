@@ -9,6 +9,114 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Fixed
+- **Pull failed with git's advice instead of doing something about it.** When
+  your branch and its upstream had both moved on and nothing in your git
+  config said how to reconcile them, Pull came back with git's own note for a
+  terminal — *"You have divergent branches and need to specify how to reconcile
+  them"*, followed by three `git config` commands to run. Pull now says what
+  has happened, in commits ("*'main' and origin/main have both moved on — 2
+  commits here, 3 commits there*"), and offers the choice git is asking for:
+  **Merge**, **Rebase**, or cancel. Each option says what it will do to your
+  history. Nothing is changed while the question is open, and picking one
+  applies to **that pull only** — your `pull.rebase` setting is never written.
+- **A pull that stopped on conflicts looked like a failure.** A merge that
+  conflicted said *"The operation failed."*; a rebase that conflicted showed
+  git's *"Resolve all conflicts manually… git rebase --continue"* in a red
+  error (and sent a crash report). Pull now says how many files conflict and
+  takes you to **Changes**, where the in-progress banner (Abort / Continue)
+  and the merge editor are waiting — from the top bar and from the Branches
+  list alike.
+- **Pressing Pull again before finishing that merge asked a question that
+  could not be answered.** The top bar still said *Pull 1*, and pressing it
+  asked *"Merge or Rebase?"* about a merge already in progress — then showed
+  git's *"Pulling is not possible because you have unmerged files"* in red
+  whichever you picked (and sent a crash report). Pull now says a merge (or
+  rebase) is still in progress, how many files are still conflicted, and
+  takes you back to **Changes** to finish or abort it.
+- **Cancelling the Merge / Rebase question left stale counts.** The pull had
+  already fetched, so the ↓ counts on the top bar and in Branches described a
+  remote that had moved on. They refresh now.
+- **Pull asked "Merge or Rebase?" when it could not reach the remote.** Offline,
+  or with the remote gone, Pull could ask how to combine commits it had never
+  been able to fetch. It now shows the connection error.
+- **"Commit & Push" could offer to force push over someone else's commits.**
+  When the push was refused because a colleague had pushed — and their commits
+  had already been fetched — the app offered **Force push**, promising the
+  lease would refuse if anyone else had pushed. It would not have, and their
+  commits would have been deleted from the remote. Force push is now only done
+  when the commits it replaces are ones you rewrote (an amend or a rebase);
+  otherwise it explains that the remote's commits need pulling in first.
+- **Renaming a published branch answered its own question.** "Rename it on
+  origin too?" closed itself a moment after it appeared, as if you had picked
+  **Keep tracking**. It now waits for your answer.
+- **Projects with a token that lacks the Projects scope** no longer sends a
+  crash report; GitHub's message naming the missing scope is shown instead.
+- **Agent Access could never work in a downloaded build.** Settings ▸ Agent
+  Access offered **Add** for Claude Desktop, Cursor, VS Code and Windsurf, but
+  the MCP server was not included in the app — every build said *"Run `npm run
+  build` in apps/mcp"*. The server now ships with the app, and the config it
+  writes starts it with GitStudio itself, so no separate Node install is
+  needed.
+- **Settings ▸ Git Identity needed a repository open.** Your git name and
+  email are global — they belong to you, not to a repository — but with no
+  repository open the card showed two empty fields and **Save identity**
+  answered *"No repository open."*, which is exactly when a new install sets
+  them. The card now reads and saves your global identity either way.
+- **An empty GitHub repository still read as broken in two places.** **Go to
+  file** showed its "This repository is empty" note as a red error, and the
+  branch switcher failed with a red toast instead of saying there are no
+  branches yet.
+- **Projects could look complete while missing an entry.** When GitHub listed
+  a project, a card or a pull request's review thread it could not return —
+  usually one in a repository your account can no longer see — the rest showed
+  as if it were everything. The Projects list, the board and the review panel
+  now say how many could not be read.
+- **A repository you can't read said it wasn't a repository.** Opening one
+  whose `.git` folder you don't have permission to read said *"… is not inside
+  a Git repository."* in red. It now says it is a Git repository you don't have
+  permission to read (or one that belongs to another account, or may be
+  damaged). Opening a folder that isn't a repository is no longer shown as an
+  error either.
+- **Start rebase over uncommitted changes showed git's refusal.** The Rebase
+  view now says you have uncommitted changes to commit or stash first, before
+  anything is written. With `rebase.autoStash` set, git still stashes them and
+  the rebase runs, as before.
+- **Pull over uncommitted changes looked like a failure.** When your edits were
+  in the pull's way — a file the incoming commits change, or any edit when
+  pulling with rebase — Pull showed git's *"Your local changes to the following
+  files would be overwritten by merge"* (or *"cannot pull with rebase"*) in
+  red, after the fetch's own lines, and sent a crash report. It now says which
+  files are in the way and offers **Stash & Retry** — stash them, pull, and put
+  them back — or **Cancel**.
+- **Revert, cherry-pick, checkout, merge, rebase and stash apply over your
+  changes showed git's refusal and sent a crash report.** Reverting a commit
+  while you had an edit to a file it touches showed *"Your local changes to the
+  following files would be overwritten by merge … fatal: revert failed"* in
+  red, as if the app had failed. Every command that applies commits — Revert,
+  Cherry-pick and Check out (from the commit page, the Commits list and the
+  Branches view), Merge, Rebase onto, Create and switch, a stash's Apply and
+  Pop, and a pull request's Checkout — now says which of your changes are in
+  the way (*"Your uncommitted changes to notes.md are in the way of the
+  revert"*) and offers **Stash & Retry** or **Cancel**. Stash & Retry puts your
+  changes back exactly as they were, staged ones staged; when they can't simply
+  come back (they conflict with what came in, or the command stopped on
+  conflicts of its own) it says which stash they are in. Nothing is sent as a
+  crash report — and a command that fails for any other reason still is.
+- **With `pull.ff only` in your git config, a diverged branch got git's
+  advice.** That setting is one git's own advice suggests, and Pull then showed
+  *"Diverging branches can't be fast-forwarded"* and its hints in red, and sent
+  a crash report. It now asks **Merge** or **Rebase** like any other
+  divergence — for that pull only; your setting is left as it is.
+- **Agent Access could point an agent at a copy of GitStudio that disappears.**
+  Opened straight from Downloads or the disk image, macOS runs GitStudio from a
+  temporary copy, and an agent set up from it stopped working once GitStudio
+  quit. Agent Access now asks you to move GitStudio to Applications first. And
+  when GitStudio has moved since an agent was set up, the card shows it as
+  **Moved** with a **Re-add** button, instead of **Connected**.
+
 ## [2.0.2] - 2026-09-21
 
 ### Added

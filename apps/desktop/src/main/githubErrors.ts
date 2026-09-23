@@ -24,11 +24,22 @@
  * message, so the noise from a genuinely invisible repo is one issue, not a
  * stream. Reported, on purpose. Revisit if real reports say otherwise.
  *
+ * Two conditions are classified by what GitHub SAYS rather than by its status,
+ * because the status alone is not the same twice:
+ *
+ *   - a repository with no commits ("This repository is empty.") — 404 from the
+ *     contents API, 409 from `/commits` and `/git/trees`;
+ *   - a GraphQL NOT_FOUND, which arrives inside a 200 and names the object it
+ *     could not resolve.
+ *
+ * Both were filed as crashes (reports #13, #14, #17) and neither is a defect.
+ *
  * Nothing here changes what the user sees: an ExpectedError carries the same
  * message and reaches the renderer as the same rejection. Only the reporter
  * treats it differently.
  */
 
+import { EMPTY_REPO_MESSAGE, isEmptyRepoResponse } from "../shared/githubStates";
 import { ExpectedError, isExpectedError } from "./expectedError";
 
 /**
@@ -53,6 +64,16 @@ export async function githubHttpError(res: Response): Promise<Error> {
   } catch {
     /* non-JSON body */
   }
+  // An empty repository, before any status branch can disagree about it.
+  // GitHub answers 404 here from the contents API and 409 from `/commits` and
+  // `/git/trees`, so the sentence is what identifies it — within those two
+  // statuses only (see isEmptyRepoResponse). Under the 404 rule this read as
+  // "a path we built wrong" and was crash-reported (#13) for somebody browsing
+  // a repository they had just created. Normalised to one wording so the
+  // renderer can recognise it across IPC, where an error is its message.
+  if (isEmptyRepoResponse(res.status, detail)) {
+    return new ExpectedError(EMPTY_REPO_MESSAGE);
+  }
   // Our own wording, not GitHub's "Bad credentials" — which reads as an
   // accusation rather than "sign in again".
   if (res.status === 401) {
@@ -75,22 +96,166 @@ export async function githubHttpError(res: Response): Promise<Error> {
       detail || `GitHub is having trouble right now (HTTP ${res.status}).`,
     );
   }
+  // 409 is GitHub's answer for "I understood you, and the repository is not in
+  // a state where that can happen": an empty repository (handled above), a
+  // merge that conflicts, a ref that moved under a request. None of them is a
+  // request we built wrong.
+  if (res.status === 409) {
+    return new ExpectedError(detail || "GitHub couldn't apply that to the repository as it stands.");
+  }
   if (res.status === 404) {
     return new Error(detail || "Not found on GitHub.");
   }
   return new Error(detail || `GitHub request failed (HTTP ${res.status}).`);
 }
 
+/** One entry of a GraphQL response's `errors` array, as GitHub sends it. */
+export interface GraphqlFailure {
+  message: string;
+  type?: string;
+  /** The field this error is about — `["repository"]`, `["node", "items"]`. */
+  path?: (string | number)[];
+}
+
+/** `Could not resolve to a Repository with the name 'owner/name'.` → owner/name. */
+function unresolvedName(message: string): string | undefined {
+  return /^Could not resolve to an? \w+ with the name '(.+)'\.?$/.exec(message)?.[1];
+}
+
 /**
  * GraphQL puts its failures in a 200 body, so `githubHttpError` never sees
- * them. Two of the machine-readable `type`s are the same expected conditions —
- * the rate limiter, and a permission the user has not granted.
+ * them. Three of the machine-readable `type`s are expected conditions — the
+ * rate limiter, a permission the user has not granted, and NOT_FOUND.
+ *
+ * NOT_FOUND is the interesting one, because the REST policy above deliberately
+ * REPORTS a 404. Which of the two a GraphQL NOT_FOUND is depends on WHAT it
+ * could not resolve, and GitHub says so in the sentence:
+ *
+ *   "Could not resolve to a Repository with the name 'owner/name'."
+ *       — an object named by the USER's world: the owner/name behind a git
+ *         remote. Renamed, deleted, or moved into an org this account cannot
+ *         see are all states a user is allowed to be in. Reports #14 and #17
+ *         were exactly this, and they also read as GitHub jargon, so the
+ *         wording is replaced with something that says what it might mean.
+ *
+ *   "Could not resolve to a node with the global id of '…'."
+ *       — an id WE put in the request. A project item id, a review thread id,
+ *         a pull request id: every one of them travels from a read, through
+ *         the renderer, into a mutation payload, and building that payload
+ *         wrong is this app's most-repeated defect (issues #12/#19, and three
+ *         more found in one sweep). That is precisely the bug a crash report
+ *         is best at catching, and it is the same judgement the REST 404 rule
+ *         above makes about a path we built. Reported, as it was before the
+ *         #14/#17 fix — which never set out to change this case.
+ *
+ * So: expected only when the message NAMES the object. Anything else keeps
+ * GitHub's own wording and keeps reporting.
  */
-export function graphqlError(err: { message: string; type?: string }): Error {
+export function graphqlError(err: GraphqlFailure): Error {
   const message = err.message || "GitHub's GraphQL API returned an error.";
-  return err.type === "RATE_LIMITED" || err.type === "FORBIDDEN"
+  if (err.type === "NOT_FOUND") {
+    const name = unresolvedName(message);
+    return name
+      ? new ExpectedError(
+          `GitHub couldn't find ${name}. It may have been renamed or deleted, ` +
+            `or this account may not have access to it.`,
+        )
+      : new Error(message);
+  }
+  // A permission the account has not granted comes back as FORBIDDEN or — for
+  // a token missing an OAuth scope, e.g. `read:project` for Projects —
+  // INSUFFICIENT_SCOPES. Both are the account's state, and GitHub's sentence
+  // names the missing scope, which is the useful part.
+  return err.type === "RATE_LIMITED" || err.type === "FORBIDDEN" || err.type === "INSUFFICIENT_SCOPES"
     ? new ExpectedError(message)
     : new Error(message);
+}
+
+/**
+ * Whether a GraphQL 200 that carries BOTH `data` and `errors` should keep its
+ * data instead of throwing.
+ *
+ * GraphQL resolves every field it can and reports the rest, so an `errors`
+ * array is not the same thing as a failed request — and treating it as one
+ * threw away everything that *did* resolve. One unreadable repository named in
+ * a query took the whole answer down with it.
+ *
+ * The rule is deliberately narrow, because the opposite mistake is worse:
+ * laundering a read failure into a confident empty list. Only NOT_FOUND
+ * survives — it means the object genuinely is not there, which is an answer —
+ * and only when something non-null actually came back. A rate limit or a denied
+ * scope means the answer is INCOMPLETE for a reason that would look exactly
+ * like "empty" downstream, so those keep throwing.
+ *
+ * Note the asymmetry with `graphqlError`, which only treats a NOT_FOUND as a
+ * condition when it NAMES its object. This rule is looser on purpose: keeping
+ * partial data is about not discarding what resolved, not about classifying
+ * what did not, and `opts.onPartial` hands the caller every error it kept.
+ *
+ * "Something non-null came back" is NOT enough on its own, and was the first
+ * version of this rule. A single-root query still has nested objects, and a
+ * NOT_FOUND on one of them leaves the root standing:
+ *
+ *     repository(owner, name) { pullRequest(number: 999) { reviewThreads … } }
+ *       → data: { repository: { pullRequest: null } }, errors: [NOT_FOUND at
+ *         ["repository", "pullRequest"]]
+ *
+ * Keeping that hands the caller `pullRequest: null`, and the caller — which
+ * reads `data?.repository?.pullRequest?.reviewThreads?.nodes ?? []` — says
+ * "no review threads" about a pull request that does not exist. That is the
+ * confident empty answer this rule exists to prevent, and it silenced a
+ * failure the old client reported. So an error only counts as partial when
+ * what it removed is ONE OF SEVERAL:
+ *
+ *   - an element of a list (its path runs through an index) — the other
+ *     cards on a board, the other projects in a list, are still the answer;
+ *   - a whole root field, when another root of the same query resolved.
+ *
+ * A NOT_FOUND anywhere else is the object the query was reading, and it throws.
+ */
+export function keepsPartialData(data: unknown, errors: GraphqlFailure[]): boolean {
+  if (!errors.length || !errors.every((e) => e.type === "NOT_FOUND")) return false;
+  if (typeof data !== "object" || data === null) return false;
+  const roots = data as Record<string, unknown>;
+  return errors.every((e) => {
+    const path = e.path ?? [];
+    if (path.some((segment) => typeof segment === "number")) return true;
+    if (path.length === 1) {
+      return Object.entries(roots).some(([key, v]) => key !== path[0] && v !== null && v !== undefined);
+    }
+    return false;
+  });
+}
+
+/**
+ * How many entries of the list at `listPath` a partial answer could not give
+ * back — the count a read hands its view, so a list missing an entry says so
+ * instead of passing itself off as complete.
+ *
+ * An entry counts once, whether it came back null (`dropped` says which shape
+ * the read discards — a null project, a card whose content is null) or came
+ * back but with a kept error naming something inside it. Both are "GitHub
+ * named it and could not return it"; `keepsPartialData` only ever keeps errors
+ * like these, so every kept error lands in this count or in no list at all.
+ */
+export function unreadableEntries(
+  nodes: readonly unknown[] | null | undefined,
+  listPath: readonly (string | number)[],
+  errors: readonly GraphqlFailure[],
+  dropped: (node: unknown) => boolean = (n) => n === null || n === undefined,
+): number {
+  const missing = new Set<number>();
+  (nodes ?? []).forEach((n, i) => {
+    if (dropped(n)) missing.add(i);
+  });
+  for (const e of errors) {
+    const path = e.path ?? [];
+    const index = path[listPath.length];
+    if (typeof index === "number" && listPath.every((seg, i) => path[i] === seg)) {
+      missing.add(index);
+    }
+  }
+  return missing.size;
 }
 
 /**

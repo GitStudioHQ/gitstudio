@@ -10,8 +10,10 @@ import { readFile, readdir, writeFile, stat, lstat, readlink, realpath } from "n
 import { continueRebase, skipRebase, abortRebase } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { ExpectedError } from "./expectedError";
+import { applyForDoor, checkoutOp, pullForDoor, type DoorApplied } from "./inTheWay";
+import type { ApplyOp } from "@gitstudio/git-service/changesInTheWay";
 import { join, resolve, sep, dirname } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
@@ -24,6 +26,13 @@ import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
+import {
+  pullBlockedMessage,
+  pullDetachedMessage,
+  pullStoppedMessage,
+  pushUnseenMessage,
+} from "@gitstudio/git-service/SyncOps";
+import { GitProcess } from "@gitstudio/git-service/GitProcess";
 import type {
   CommitRecord,
   GitContext,
@@ -49,6 +58,13 @@ import type {
   GraphRefFilter,
   HeadCommit,
   HeadInfo,
+  PullActionResult,
+  PullBlockInfo,
+  PullDirtyInfo,
+  PullDivergence,
+  PullMode,
+  PullStopInfo,
+  PushActionResult,
   RefInfo,
   RepoFile,
   FileHunkWire,
@@ -59,6 +75,7 @@ import type {
   TreeEntry,
   WorktreeInfo,
   CommitBranches,
+  OkResult,
 } from "../shared/ipc";
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import {
@@ -111,6 +128,24 @@ export function safePath(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && !v.includes("\0");
 }
 
+/** "1 commit" / "3 commits" — the main process has no renderer helpers. */
+function commits(n: number): string {
+  return `${n} commit${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * The only three reconciliations `sync:pull` accepts.
+ *
+ * `mode` is typed `PullMode` on the channel, but a type is not a check: what
+ * arrives is whatever the renderer sent, and it ends up choosing a command-line
+ * flag. Checking it against this set here — at the boundary, before it can
+ * become an argument — is the same discipline `safeArg` applies to a ref.
+ */
+const PULL_MODES: readonly PullMode[] = ["merge", "rebase", "ff-only"];
+function safePullMode(v: unknown): v is PullMode | undefined {
+  return v === undefined || PULL_MODES.includes(v as PullMode);
+}
+
 /** Standard rejection for an unsafe ref/name reaching a mutation. */
 const UNSAFE_REF_RESULT: CommitActionResult = {
   ok: false,
@@ -124,6 +159,27 @@ const UNSAFE_PATH_RESULT: CommitActionResult = {
   changed: false,
   message: "That isn't a usable file path.",
 };
+
+/**
+ * Did a failed git command DECLINE — explain itself on stdout alone — rather
+ * than fail?
+ *
+ * The one rule staged(), commitAction and checkoutRef share for a failure that
+ * wrote nothing to stderr. git declining on stdout ("nothing to commit, working
+ * tree clean" from a revert already made, a merge's CONFLICT report) is a state
+ * of the user's repository, so it is `expected`: shown, not crash-reported.
+ *
+ * Silence on BOTH streams is not. git speaks when it refuses — a hook that
+ * rejects a merge, a rebase or a ref update still gets "ref updates aborted by
+ * hook" or "The pre-rebase hook refused to rebase." (checked against real git)
+ * — so a failure with nothing on either stream is a process that died, a git
+ * that is not git, or something we did. All three sites used to mark it
+ * expected, which silenced the one report that could tell us, and painted
+ * "The operation failed." in the neutral tone of a state the user is in.
+ */
+function declinedOnStdout(stdout: string, stderr: string): boolean {
+  return stderr.trim() === "" && stdout.trim() !== "";
+}
 
 /**
  * Resolves a renderer-supplied repo-relative path and REFUSES anything that
@@ -702,7 +758,7 @@ export class GitBridge {
   }): Promise<CommitActionResult & { indexText?: string }> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     const abs = containedPath(ctx.root, req.path);
     if (!abs) {
@@ -897,12 +953,16 @@ export class GitBridge {
    * have restored the file AND staged it, quietly turning an undo into a
    * staging change.
    */
-  async discardUndo(req: { sha: string; paths: string[] }): Promise<{ ok: boolean; message?: string }> {
+  async discardUndo(req: { sha: string; paths: string[] }): Promise<OkResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, message: "No repository is open." };
+    // Having no repo open, and having nothing to put back, are states the user
+    // can simply be in — `expected` keeps them out of the crash reporter (see
+    // main/expectedError.ts). An unusable restore point is NOT one of them: the
+    // sha comes from a snapshot this app made, so a refusal here is our bug.
+    if (!ctx) return { ok: false, expected: true, message: "No repository is open." };
     if (!safeArg(req.sha)) return { ok: false, message: "That restore point is not usable." };
     const paths = req.paths.filter((p) => p);
-    if (!paths.length) return { ok: false, message: "Nothing to restore." };
+    if (!paths.length) return { ok: false, expected: true, message: "Nothing to restore." };
     const r = await ctx.process.run([
       "restore",
       `--source=${req.sha}`,
@@ -1068,10 +1128,10 @@ export class GitBridge {
   async commit(req: { message: string; amend?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     if (!req.message.trim() && !req.amend) {
-      return { ok: false, changed: false, message: "A commit message is required." };
+      return { ok: false, changed: false, expected: true, message: "A commit message is required." };
     }
     // A plain commit does NOT finish a `git am`, it derails it: the session
     // stays open on disk, the remaining patches are never applied, and the
@@ -1159,13 +1219,25 @@ export class GitBridge {
       return [];
     }
   }
-  async stashApply(ref: string): Promise<CommitActionResult> {
+  /**
+   * Apply / pop, through the one door for commit-applying commands: refused
+   * over uncommitted work in the stash's way, they say which files and the
+   * renderer offers Stash & Retry. The request is the ref, or — sent again
+   * after Stash & Retry — `{ ref, stashFirst }`.
+   */
+  async stashApply(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
+    const { ref, stashFirst } = stashRequest(req);
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => ctx.stashes.apply(ref));
+    return this.staged(async (ctx) =>
+      stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: false }, stashFirst)),
+    );
   }
-  async stashPop(ref: string): Promise<CommitActionResult> {
+  async stashPop(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
+    const { ref, stashFirst } = stashRequest(req);
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => ctx.stashes.pop(ref));
+    return this.staged(async (ctx) =>
+      stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: true }, stashFirst)),
+    );
   }
   async stashDrop(ref: string): Promise<CommitActionResult> {
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
@@ -1229,7 +1301,7 @@ export class GitBridge {
   async hunksStage(req: { path: string; index: number }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     const abs = containedPath(ctx.root, req.path);
     if (!abs) {
@@ -1266,7 +1338,7 @@ export class GitBridge {
   }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     // Every path is proved to be inside the repository before it reaches git,
     // like every other mutating handler here. A stash pathspec is a write.
@@ -1579,15 +1651,36 @@ export class GitBridge {
 
   // ── Settings: git identity + local SSH keys ─────────────────────────────────
 
+  /**
+   * Where a `git config --global` runs: the open repository when there is one,
+   * and a repository-less git otherwise.
+   *
+   * The identity is the USER's, not the open repository's. This card used to
+   * need a repository anyway: with none open it showed two blank fields over a
+   * perfectly good ~/.gitconfig, and Save answered "No repository open." —
+   * which is report #15, filed from Settings on a machine with no repository
+   * open yet (the very moment a new user sets their name). Marking that answer
+   * `expected` silenced the report and kept the defect; this removes the need
+   * for the answer. The open repository still wins when there is one, so an
+   * `includeIf "gitdir:…"` in the global file reads as it always has.
+   */
+  private globalConfigGit(): Pick<GitProcess, "run"> {
+    const ctx = this.ctx();
+    if (ctx) return ctx.process;
+    // The OS temp dir, not the home dir: a home directory that is itself a
+    // git work tree (dotfiles) would otherwise be discovered, and its own
+    // config or ownership could get in the way of a global read or write.
+    this.globalGit ??= new GitProcess({ cwd: tmpdir(), ...this.repos.runnerOptions?.() });
+    return this.globalGit;
+  }
+  private globalGit: GitProcess | undefined;
+
   /** The global git author identity (`git config --global user.name/email`). */
   async gitIdentity(): Promise<GitIdentity> {
-    const ctx = this.ctx();
-    if (!ctx) {
-      return { name: "", email: "" };
-    }
+    const git = this.globalConfigGit();
     const read = async (key: string): Promise<string> => {
       try {
-        const r = await ctx.process.run(["config", "--global", key]);
+        const r = await git.run(["config", "--global", key]);
         return r.code === 0 ? r.stdout.trim() : "";
       } catch {
         return "";
@@ -1596,17 +1689,19 @@ export class GitBridge {
     return { name: await read("user.name"), email: await read("user.email") };
   }
 
-  /** Set the global git author identity. */
+  /** Set the global git author identity — with or without a repository open. */
   async setGitIdentity(req: GitIdentity): Promise<CommitActionResult> {
-    const ctx = this.ctx();
-    if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
-    }
+    const git = this.globalConfigGit();
     const name = req.name.trim();
     const email = req.email.trim();
+    // The three refusals below are all about what is in the two text fields:
+    // the user is mid-edit, or has typed something git cannot record. None is a
+    // defect, so none is crash-reported (see main/expectedError.ts). A `git
+    // config` that then fails IS reported — that one is news.
+    //
     // A value starting with "-" would be read by `git config` as an option.
     if ((name && name.startsWith("-")) || (email && email.startsWith("-"))) {
-      return { ok: false, changed: false, message: "Name and email can't start with “-”." };
+      return { ok: false, changed: false, expected: true, message: "Name and email can't start with “-”." };
     }
     // An identity is a PAIR. git refuses to commit without both
     // ("Please tell me who you are"), so a half-filled card is not a saveable
@@ -1614,12 +1709,13 @@ export class GitBridge {
     // clearing one and pressing Save reported "Identity updated" while leaving
     // the old value in ~/.gitconfig, untouched and unmentioned.
     if (!name && !email) {
-      return { ok: false, changed: false, message: "Enter a name and an email to save." };
+      return { ok: false, changed: false, expected: true, message: "Enter a name and an email to save." };
     }
     if (!name || !email) {
       return {
         ok: false,
         changed: false,
+        expected: true,
         message: `Git needs both a name and an email to record a commit. ${
           name ? "Add an email" : "Add a name"
         } to save, or leave the card as it is — nothing has been changed.`,
@@ -1631,7 +1727,7 @@ export class GitBridge {
         ["user.email", email],
       ];
       for (const [key, value] of writes) {
-        const r = await ctx.process.run(["config", "--global", key, value]);
+        const r = await git.run(["config", "--global", key, value]);
         // `git config` exits non-zero WITHOUT throwing (run() resolves with the
         // code) — e.g. a read-only or locked ~/.gitconfig, or a broken include.
         // This used to fall through to "updated ✓" while writing nothing.
@@ -1700,46 +1796,171 @@ export class GitBridge {
   async syncFetch(opts?: { prune?: boolean }): Promise<CommitActionResult> {
     return this.staged((ctx) => ctx.sync.fetch({ prune: opts?.prune }));
   }
-  async syncPull(): Promise<CommitActionResult> {
-    return this.staged((ctx) => ctx.sync.pull());
+  /**
+   * Pull — and when git cannot reconcile on its own, ASK rather than fail.
+   *
+   * With no `mode`, a diverged branch comes back as `{ ok: false, diverged }`
+   * with nothing changed: `SyncOps.pull` refuses as `--ff-only`, which aborts
+   * before touching the worktree. `expected: true` keeps that out of the crash
+   * reporter — a branch that diverged is a state of the user's repo, not a
+   * defect — and it is the same flag the renderer reads to show the message as
+   * information rather than as a red error.
+   *
+   * Report #12: what reached the user instead was git's own terminal advice,
+   * "You have divergent branches and need to specify how to reconcile them",
+   * followed by three `git config` lines. The mode is passed as a flag on the
+   * one command; the user's config is never written.
+   *
+   * The answer to that question is a merge or a rebase, and either can STOP on
+   * conflicts — the commonest outcome a diverged branch has. That comes back as
+   * `stopped`, with the count, `changed: true` (the repository is now mid-merge
+   * or mid-rebase) and `expected: true`: the user is at a choice point, not
+   * looking at a defect. Before this, a merge that conflicted said "The
+   * operation failed." (git writes CONFLICT to stdout, and only stderr came
+   * back), and a rebase that conflicted put git's "Resolve all conflicts
+   * manually… git rebase --continue" hint in a red toast and a crash report —
+   * report #12's symptom, reached through the door built to close it.
+   */
+  async syncPull(opts?: { mode?: PullMode; stashFirst?: string }): Promise<PullActionResult> {
+    if (!safePullMode(opts?.mode)) {
+      // Only a malformed renderer request can get here: the mode comes from two
+      // buttons in one dialog. That is our defect, so it REPORTS — marking it
+      // expected would hide the one signal that a door is sending garbage.
+      return {
+        ok: false,
+        changed: false,
+        message: "That isn't a way to reconcile a pull.",
+      };
+    }
+    let diverged: PullDivergence | undefined;
+    let stopped: PullStopInfo | undefined;
+    let blocked: PullBlockInfo | undefined;
+    let dirty: PullDirtyInfo | undefined;
+    const r = await this.staged(async (ctx) => {
+      // Through the one door for commands that apply commits (main/inTheWay.ts):
+      // the user's uncommitted work in the pull's way answers which files,
+      // `expected`, and the renderer offers Stash & Retry — which sends this
+      // request again with `stashFirst`. It used to be said as "commit or stash
+      // them, then pull again", with nothing to do it.
+      const door = await pullForDoor(ctx, opts?.mode, opts?.stashFirst);
+      if ("answer" in door) {
+        if (door.answer.inTheWay) dirty = { files: door.answer.inTheWay.files.length };
+        return door.answer;
+      }
+      const out = door.pulled;
+      const note = door.stashNote ? { stashNote: door.stashNote } : {};
+      if (out.stopped) {
+        stopped = { operation: out.stopped.operation, conflicts: out.stopped.conflicted.length };
+        return {
+          ok: false,
+          changed: true,
+          expected: true,
+          message: pullStoppedMessage(out.stopped),
+          ...note,
+        };
+      }
+      // A merge or rebase still paused — the one a stop above lands the user
+      // in, with Pull still on offer because the branch is still ahead and
+      // behind. git refused before running anything. Pressing Pull again from
+      // there used to ask "merge or rebase?" all over again, and then show
+      // git's "git add/rm" hint in red and file it as a crash.
+      if (out.blocked) {
+        blocked = { operation: out.blocked.operation, conflicts: out.blocked.conflicted };
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: pullBlockedMessage(out.blocked),
+          ...note,
+        };
+      }
+      // A commit or a tag checked out: no branch to pull into. The user's
+      // state, in the app's words rather than git's terminal advice.
+      if (out.detached) {
+        return { ok: false, changed: false, expected: true, message: pullDetachedMessage(), ...note };
+      }
+      // The user's uncommitted work in the way (a rebase needs a clean tree, a
+      // merge will not overwrite an edit it brings changes to) never gets
+      // here: the door answered it above, naming the files — it used to be
+      // git's "error: Your local changes to the following files would be
+      // overwritten by merge" wall, in red, and a crash report.
+      if (!out.diverged) {
+        return { ...out, ...note };
+      }
+      diverged = out.diverged;
+      const { branch, upstream, ahead, behind } = out.diverged;
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          `'${branch}' and ${upstream} have both moved on — ${commits(ahead)} here, ` +
+          `${commits(behind)} there. Choose how to combine them.`,
+        ...note,
+      };
+    });
+    if (stopped) return { ...r, stopped };
+    if (blocked) return { ...r, blocked };
+    if (dirty) return { ...r, dirty };
+    return diverged ? { ...r, diverged } : r;
   }
   /**
-   * `force` becomes `--force-with-lease`, never a bare `--force` — the lease
-   * still refuses when the remote moved since the last fetch. Required after
-   * amending a commit that was already pushed, where a plain push can only ever
-   * be rejected non-fast-forward.
+   * `force` is never a bare `--force`: SyncOps.push leases it on the
+   * remote-tracking tip explicitly (`--force-with-lease=<ref>:<sha>`), adds
+   * `--force-if-includes` where git has it, and refuses before pushing a tip
+   * this branch never had. Required after amending a commit that was already
+   * pushed, where a plain push can only ever be rejected non-fast-forward.
    */
   async syncPush(
     opts: { setUpstream?: boolean; force?: boolean } | undefined,
-  ): Promise<CommitActionResult> {
-    return this.staged((ctx) =>
-      ctx.sync.push({ setUpstream: opts?.setUpstream, force: opts?.force }),
-    );
+  ): Promise<PushActionResult> {
+    let pullFirst = false;
+    const r = await this.staged(async (ctx) => {
+      // A force push is offered for ONE situation: we rewrote commits the
+      // remote already has (an amend, a rebase), so a plain push is refused.
+      // The same refusal comes back when somebody ELSE pushed — and once their
+      // commits have been fetched, the lease (the remote-tracking ref) matches
+      // the remote, so --force-with-lease deletes them. "Commit & Push" offered
+      // exactly that after any non-fast-forward. Refused here, for every door.
+      if (opts?.force && !(await ctx.sync.rewroteUpstream())) {
+        pullFirst = true;
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message:
+            "The remote branch has commits that are not yours to replace. Pull them in " +
+            "(merge or rebase) and push again — a force push would delete them.",
+        };
+      }
+      const pushed = await ctx.sync.push({ setUpstream: opts?.setUpstream, force: opts?.force });
+      // …and a rewrite test passed by somebody else's version of the same
+      // commit: amended on another machine, fetched in the background, same
+      // author and author date. The engine refused it before it ran — the tip
+      // it would replace was never on this branch — and it is the same state
+      // as the refusal above, said the same way.
+      if (pushed.unseen) {
+        pullFirst = true;
+        return { ok: false, changed: false, expected: true, message: pushUnseenMessage() };
+      }
+      return pushed;
+    });
+    return pullFirst ? { ...r, pullFirst: true } : r;
   }
 
   /** Fast-forward a local branch straight from its upstream WITHOUT checking it
    *  out: `git fetch <remote> <remoteBranch>:<localBranch>`. Git itself refuses
    *  a non-fast-forward and the currently checked-out branch, so the worktree
-   *  is never touched. */
+   *  is never touched.
+   *
+   *  Delegates to `SyncOps.pullFastForward`, which is the SAME op the extension
+   *  calls. This arm used to spell it out again and split `%(upstream:short)`
+   *  on its first slash — so a remote named with one ("team/eu") was read as a
+   *  remote called "team", which does not exist. That bug was fixed in
+   *  git-service and left standing here, forty lines from its own call site. */
   async branchPullFf(name: string): Promise<CommitActionResult> {
     if (!safeArg(name)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => {
-      const up = await ctx.process.run([
-        "for-each-ref",
-        "--format=%(upstream:short)",
-        `refs/heads/${name}`,
-      ]);
-      const upstream = up.stdout.trim();
-      const slash = upstream.indexOf("/");
-      if (up.code !== 0 || slash <= 0) {
-        return { ok: false, stderr: `'${name}' has no upstream to pull from.` };
-      }
-      return ctx.process.run([
-        "fetch",
-        upstream.slice(0, slash),
-        `${upstream.slice(slash + 1)}:${name}`,
-      ]);
-    });
+    return this.staged((ctx) => ctx.sync.pullFastForward(name));
   }
 
   /**
@@ -1979,14 +2200,24 @@ export class GitBridge {
     checkout?: boolean;
     startPoint?: string;
     upstream?: string;
+    stashFirst?: string;
   }): Promise<CommitActionResult> {
     if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
     if (req.startPoint && !safeArg(req.startPoint)) return UNSAFE_REF_RESULT;
     if (req.upstream && !safeArg(req.upstream)) return UNSAFE_REF_RESULT;
-    const made = await this.staged((ctx) =>
-      req.checkout
-        ? ctx.branches.checkoutNew(req.name, req.startPoint)
-        : ctx.branches.create(req.name, req.startPoint),
+    const made = await this.staged(async (ctx) =>
+      // Switching to a new branch that starts somewhere else is a checkout,
+      // refused like one over uncommitted work in its way — so it goes through
+      // the same door (main/inTheWay.ts). At HEAD it changes no file.
+      req.checkout && req.startPoint
+        ? stagedFrom(
+            await applyForDoor(ctx, checkoutOp(["checkout", "-b", req.name, req.startPoint]), req.stashFirst),
+          )
+        : req.checkout
+          ? // in-the-way-reviewed: a new branch AT HEAD changes no file, so
+            // nothing of the user's can be in its way.
+            ctx.branches.checkoutNew(req.name)
+          : ctx.branches.create(req.name, req.startPoint),
     );
     // Best-effort: a branch that exists again but tracks nothing is still the
     // branch back, and failing the whole call over the tracking config would
@@ -2167,20 +2398,27 @@ export class GitBridge {
                 ["checkout", "--detach", name]
               : ["checkout", name];
       }
-      const r = await ctx.process.run(args);
+      // Through the one door for commit-applying commands: a switch refused
+      // over uncommitted work in its way answers which files, `expected`, and
+      // the renderer offers Stash & Retry.
+      const applied = await applyForDoor(ctx, checkoutOp(args), req.stashFirst);
+      if ("answer" in applied) return applied.answer;
+      const r = applied.result;
+      const withNote = applied.stashNote ? { stashNote: applied.stashNote } : {};
       if (r.code === 0) {
-        return { ok: true, changed: true };
+        return { ok: true, changed: true, ...withNote };
       }
       const stderr = r.stderr.trim();
       const conflicts = await this.conflictExplains(ctx);
       if (conflicts) {
-        return { ok: false, changed: false, expected: true, message: conflicts };
+        return { ok: false, changed: false, expected: true, message: conflicts, ...withNote };
       }
       return {
         ok: false,
         changed: false,
         message: stderr || r.stdout.trim() || "The checkout failed.",
-        ...(stderr ? {} : { expected: true }),
+        ...(declinedOnStdout(r.stdout, stderr) ? { expected: true } : {}),
+        ...withNote,
       };
     });
   }
@@ -2229,7 +2467,9 @@ export class GitBridge {
    * git DECLINING to do something, not GitStudio failing at it — a state of the
    * user's repo. Without this, teaching these paths to speak would have turned
    * every "nothing to do" into a crash report, which is exactly the trap the
-   * commit fix fell into first.
+   * commit fix fell into first. A failure with NOTHING on either stream is not
+   * that — git always says why it declines — so it is reported, under the plain
+   * "The operation failed." (see declinedOnStdout).
    */
   private async staged(
     op: (
@@ -2243,18 +2483,21 @@ export class GitBridge {
       message?: string;
       changed?: boolean;
       expected?: boolean;
+      /** Carried through untouched — see applyForDoor. */
+      inTheWay?: CommitActionResult["inTheWay"];
+      stashNote?: string;
     }>,
   ): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     return this.serialize(async () => {
       try {
         const r = await op(ctx);
         const ok = r.ok ?? r.code === 0;
         if (ok) {
-          return { ok, changed: true };
+          return { ok, changed: true, ...(r.stashNote ? { stashNote: r.stashNote } : {}) };
         }
         const stderr = r.stderr?.trim() ?? "";
         const stdout = r.stdout?.trim() ?? "";
@@ -2267,6 +2510,8 @@ export class GitBridge {
             changed: r.changed ?? false,
             message: r.message,
             ...(r.expected ? { expected: true } : {}),
+            ...(r.inTheWay ? { inTheWay: r.inTheWay } : {}),
+            ...(r.stashNote ? { stashNote: r.stashNote } : {}),
           };
         }
         const both = `${stdout}\n${stderr}`;
@@ -2293,7 +2538,8 @@ export class GitBridge {
           // stderr and the file it stopped on, plus what to do next, on stdout
           // — and showing only stderr threw away the half that helps.
           message: [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") || "The operation failed.",
-          ...(stderr && !ordinary ? {} : { expected: true }),
+          ...(ordinary || declinedOnStdout(stdout, stderr) ? { expected: true } : {}),
+          ...(r.stashNote ? { stashNote: r.stashNote } : {}),
         };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
@@ -2310,7 +2556,7 @@ export class GitBridge {
   async commitAction(req: CommitActionRequest): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     if (req.action !== "copy-sha" && !safeArg(req.sha)) {
       return UNSAFE_REF_RESULT;
@@ -2328,26 +2574,45 @@ export class GitBridge {
     }
     return this.serialize(async () => {
       try {
-        const result = await ctx.process.run(args);
+        // Checkout, cherry-pick and revert go through the one door for
+        // commit-applying commands (main/inTheWay.ts). Report #18 was a revert
+        // refused over the user's uncommitted edit, filed as a crash with git's
+        // "would be overwritten by merge" text; refused like that, these now
+        // answer which files are in the way, `expected`, and the renderer
+        // offers Stash & Retry. The rest (branch, tag, reset) run as before.
+        const op = applyOpFor(req, args);
+        let note: string | undefined;
+        let result: { code: number; stdout: string; stderr: string };
+        if (op) {
+          const applied = await applyForDoor(ctx, op, req.stashFirst);
+          if ("answer" in applied) return applied.answer;
+          result = applied.result;
+          note = applied.stashNote;
+        } else {
+          result = await ctx.process.run(args);
+        }
+        const withNote = note ? { stashNote: note } : {};
         if (result.code !== 0) {
           // Same stdout fallback and same `expected` rule as staged(): reverting
           // a commit that is already reverted exits non-zero with stderr EMPTY
           // and "nothing to commit, working tree clean" on stdout, which used to
-          // arrive as a blank toast. It is git declining, not us failing.
+          // arrive as a blank toast. It is git declining, not us failing — but
+          // only when stdout says so; silence on both is reported.
           const stderr = result.stderr.trim();
           const stdout = result.stdout.trim();
           const conflicts = await this.conflictExplains(ctx);
           if (conflicts) {
-            return { ok: false, changed: false, expected: true, message: conflicts };
+            return { ok: false, changed: !!note, expected: true, message: conflicts, ...withNote };
           }
           return {
             ok: false,
             changed: false,
             message: stderr || stdout || "The operation failed.",
-            ...(stderr ? {} : { expected: true }),
+            ...(declinedOnStdout(stdout, stderr) ? { expected: true } : {}),
+            ...withNote,
           };
         }
-        return { ok: true, changed: true };
+        return { ok: true, changed: true, ...withNote };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
       }
@@ -2356,14 +2621,29 @@ export class GitBridge {
 
   // ── Branch ops (merge / rebase / rename / upstream) ─────────────────────────
 
-  async branchMerge(req: { name: string; noFf?: boolean }): Promise<CommitActionResult> {
+  /**
+   * Merge and rebase run through the one door for commit-applying commands
+   * (main/inTheWay.ts): refused over the user's uncommitted work, they answer
+   * which files are in the way, `expected`, and the renderer offers Stash &
+   * Retry — they used to answer git's "would be overwritten by merge" /
+   * "cannot rebase: You have unstaged changes" in red, and file it.
+   */
+  async branchMerge(req: { name: string; noFf?: boolean; stashFirst?: string }): Promise<CommitActionResult> {
     if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.merge(req.name, { noFf: req.noFf }));
+    // The argv BranchOps.merge runs.
+    const args = ["merge", ...(req.noFf ? ["--no-ff"] : []), req.name];
+    return this.staged(async (ctx) =>
+      stagedFrom(await applyForDoor(ctx, { kind: "merge", target: req.name, noFf: req.noFf, args }, req.stashFirst)),
+    );
   }
 
-  async branchRebase(req: { onto: string }): Promise<CommitActionResult> {
+  async branchRebase(req: { onto: string; stashFirst?: string }): Promise<CommitActionResult> {
     if (!safeArg(req.onto)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.rebaseOnto(req.onto));
+    return this.staged(async (ctx) =>
+      stagedFrom(
+        await applyForDoor(ctx, { kind: "rebase", onto: req.onto, args: ["rebase", req.onto] }, req.stashFirst),
+      ),
+    );
   }
 
   async branchRename(req: { from: string; to: string }): Promise<CommitActionResult> {
@@ -2645,7 +2925,7 @@ export class GitBridge {
   }
   async amAbort(): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     const r = await ctx.process.run(["am", "--abort"]);
     if (r.code !== 0) {
       return { ok: false, changed: false, message: r.stderr.trim() || `git am --abort failed (${r.code}).` };
@@ -2736,7 +3016,7 @@ export class GitBridge {
     run: (root: string, opts: ReturnType<RepoStore["runnerOptions"]>) => Promise<RebaseOutcome>,
   ): Promise<CommitActionResult> {
     const root = this.repos.current()?.root;
-    if (!root) return { ok: false, changed: false, message: "No repository open." };
+    if (!root) return { ok: false, changed: false, expected: true, message: "No repository open." };
     return this.serialize(async () => {
       try {
         // The runner spawns git itself, so it has to be told which git and
@@ -2848,7 +3128,7 @@ export class GitBridge {
 
   async stageLines(req: { path: string; lines: number[]; reverse?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     // Every other mutating path here proves the path stays inside the repo
     // before touching it (hunksStage, hunksList, conflictResolve). This one
     // wrote to the index from a renderer-supplied path without doing so.
@@ -2859,7 +3139,8 @@ export class GitBridge {
       try {
         const rel = req.path;
         const ranges = linesToRanges(req.lines);
-        if (!ranges.length) return { ok: false, changed: false, message: "No lines selected." };
+        if (!ranges.length)
+          return { ok: false, changed: false, expected: true, message: "No lines selected." };
         // Before reading anything: this path round-trips the file through a
         // string, which destroys a binary and follows a symlink.
         const safe = await lineStageable(ctx, rel);
@@ -2961,7 +3242,7 @@ export class GitBridge {
 
   async conflictResolve(req: { path: string; content: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
     return this.serialize(async () => {
       try {
@@ -3036,7 +3317,7 @@ export class GitBridge {
 
   async conflictTakeSide(req: { path: string; side: "ours" | "theirs" }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
     const stage = req.side === "ours" ? "2" : "3";
     return this.serialize(async () => {
@@ -3339,6 +3620,51 @@ function rangesOverlap(a: LineRange, b: LineRange): boolean {
   const aEnd = a.end < a.start ? a.start : a.end;
   const bEnd = b.end < b.start ? b.start : b.end;
   return a.start <= bEnd && b.start <= aEnd;
+}
+
+/**
+ * A door's applied command (applyForDoor) in the shape `staged` maps: the
+ * door's own answer as it is — changes in the way, said and answerable — or
+ * git's run, with a Stash & Retry's note carried along.
+ */
+function stagedFrom(applied: DoorApplied): {
+  ok?: boolean;
+  code?: number;
+  stdout?: string;
+  stderr?: string;
+  message?: string;
+  changed?: boolean;
+  expected?: boolean;
+  inTheWay?: CommitActionResult["inTheWay"];
+  stashNote?: string;
+} {
+  if ("answer" in applied) return applied.answer;
+  const { code, stdout, stderr } = applied.result;
+  return { code, stdout, stderr, ...(applied.stashNote ? { stashNote: applied.stashNote } : {}) };
+}
+
+/** stash:apply / stash:pop take the ref, or `{ ref, stashFirst }` when sent again after Stash & Retry. */
+function stashRequest(req: unknown): { ref: unknown; stashFirst?: unknown } {
+  if (typeof req === "string") return { ref: req };
+  if (req && typeof req === "object") {
+    const r = req as { ref?: unknown; stashFirst?: unknown };
+    return { ref: r.ref, stashFirst: r.stashFirst };
+  }
+  return { ref: undefined };
+}
+
+/** The commit-applying actions of commit:action, as the one door runs them. */
+function applyOpFor(req: CommitActionRequest, args: string[]): ApplyOp | undefined {
+  switch (req.action) {
+    case "checkout":
+      return checkoutOp(args);
+    case "cherry-pick":
+      return { kind: "cherry-pick", commit: req.sha, args };
+    case "revert":
+      return { kind: "revert", commit: req.sha, args };
+    default:
+      return undefined;
+  }
 }
 
 /** The git argv for a commit action, or undefined for renderer-only actions. */

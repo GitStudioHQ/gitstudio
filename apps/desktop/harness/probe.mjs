@@ -35,7 +35,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = process.env.GS_HARNESS_PAGE
   ? resolve(process.env.GS_HARNESS_PAGE, "harness.html")
   : resolve(HERE, "page/harness.html");
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// GS_CHROME points the harness at another Chrome (a Chrome for Testing build,
+// when there is no /Applications copy); the app bundle is the default.
+const CHROME = process.env.GS_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 const argv = process.argv.slice(2);
 const flags = Object.fromEntries(

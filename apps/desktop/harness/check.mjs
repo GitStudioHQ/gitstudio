@@ -21,7 +21,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = process.env.GS_HARNESS_PAGE
   ? resolve(process.env.GS_HARNESS_PAGE, "harness.html")
   : resolve(HERE, "page/harness.html");
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// GS_CHROME points the harness at another Chrome (a Chrome for Testing build,
+// when there is no /Applications copy); the app bundle is the default.
+const CHROME = process.env.GS_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 /** id → the scene that sets up the state the assertion needs. */
 const CASES = [
@@ -53,6 +55,7 @@ const CASES = [
   ["a-branch-name-git-would-refuse-is-caught-before-git", "branches"],
   ["a-rename-refuses-a-name-git-would-refuse", "branches"],
   ["renaming-a-published-branch-offers-to-rename-it-on-the-remote", "branches"],
+  ["the-rename-question-outlives-the-refresh-the-rename-causes", "branches"],
   ["renaming-an-unpublished-branch-asks-nothing", "branches"],
   ["a-prompt-that-does-not-validate-still-submits", "actions"],
   // Reading a repository — yours or anyone's.
@@ -201,6 +204,22 @@ const CASES = [
   ["explore-numbers-formatted", "explore~type:git~key:Enter"],
   ["explore-repo-page", "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio"],
   ["readme-images-are-anchored-at-their-repository", "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio"],
+  [
+    "an-empty-repository-reads-as-empty-not-broken",
+    "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio",
+    { extra: "emptyrepo=1" },
+  ],
+  [
+    "go-to-file-on-an-empty-repository-is-empty-not-broken",
+    "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio",
+    { extra: "emptyrepo=1" },
+  ],
+  [
+    "the-ref-switcher-on-an-empty-repository-says-there-are-no-branches",
+    "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio",
+    { extra: "emptyrepo=1" },
+  ],
+  ["browsing-an-empty-repository-in-the-peek-is-empty-not-broken", "orgs", { extra: "emptyrepo=1" }],
   ["orgs-cards-not-clipped", "orgs"],
   ["orgs-header-order", "orgs"],
   ["actions-segment-does-not-slide", "actions"],
@@ -521,6 +540,11 @@ const CASES = [
   ["a-label-picker-batches-and-escape-discards", "prs~open106"],
   ["log-colours-survive-both-themes", "actions~open9097~click:.gh-job-log"],
   ["log-colours-survive-both-themes", "actions~open9097~click:.gh-job-log", { theme: "light" }],
+  // …and with the log repainting under the check the way it does on a loaded
+  // machine (see `repaints` in shim.js): these two failed about one parallel
+  // run in forty, and never alone, because a frame landed inside their wait.
+  ["log-colours-survive-both-themes", "actions~open9097~click:.gh-job-log", { extra: "repaints=1" }],
+  ["log-colours-survive-both-themes", "actions~open9097~click:.gh-job-log", { theme: "light", extra: "repaints=1" }],
   ["an-emptied-branch-list-blames-the-right-thing", "branches"],
   ["the-branch-control-bar-stays-on-screen", "branches", { width: 820 }],
   ["the-branch-control-bar-stays-on-screen", "branches", { width: 1000 }],
@@ -536,6 +560,8 @@ const CASES = [
   ["growing-the-log-pane-fills-it", "actions~open9097~click:.gh-job-log"],
   ["the-sort-offers-only-what-the-segment-can-do", "branches"],
   ["a-long-log-line-scrolls-the-log-not-the-page", "actions~open9097~click:.gh-job-log"],
+  ["a-long-log-line-scrolls-the-log-not-the-page", "actions~open9097~click:.gh-job-log", { extra: "repaints=1" }],
+  ["a-long-log-can-be-navigated-by-eye", "actions~open9097~click:.gh-job-log", { extra: "repaints=1" }],
   ["finished-branches-can-be-swept", "branches", { extra: "onfeature=1" }],
   [
     "the-commit-page-actually-runs-its-verbs",
@@ -555,6 +581,11 @@ const CASES = [
   ["home-offers-your-editor", "dashboard"],
   ["a-repository-row-opens-in-an-editor", "repositories"],
   ["editors-are-configurable-in-settings", "settings"],
+  ["agent-access-offers-an-add-that-works", "settings"],
+  ["agent-access-without-a-server-offers-no-dead-button", "settings", { extra: "mcpmissing=1" }],
+  ["agent-access-refuses-a-translocated-app", "settings", { extra: "mcptransloc=1" }],
+  ["agent-access-notices-a-moved-app", "settings", { extra: "mcpmoved=1" }],
+  ["agent-access-notices-a-moved-app", "settings", { extra: "mcpmoved=1", theme: "light" }],
   // The composer is one field with the action in its corner.
   ["the-send-button-lives-inside-the-composer-field", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["an-empty-composer-does-not-offer-a-lit-send", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
@@ -575,6 +606,46 @@ const CASES = [
   ["a-live-turn-shows-its-steps", "assistant~click:.topbar-assistant~click:.assistant-chip", { extra: "ai=1&chat=live" }],
   ["jump-to-latest-appears-when-you-scroll-up", "assistant~click:.topbar-assistant~click:.assistant-chip", { extra: "ai=1&chat=live" }],
   ["a-failed-turn-offers-a-retry", "assistant~click:.topbar-assistant", { extra: "ai=1&fail=ai:chatSend" }],
+  // Pull on a branch that has diverged from its upstream (report #12).
+  ["a-diverged-pull-asks-instead-of-quoting-git", "code", { extra: "diverged=1" }],
+  ["picking-how-to-reconcile-actually-pulls-that-way", "code", { extra: "diverged=1" }],
+  ["cancelling-the-question-pulls-nothing-and-reports-nothing", "code", { extra: "diverged=1" }],
+  // …and the answer to that question stopping on conflicts, from both doors.
+  ["a-pull-that-stops-on-conflicts-lands-in-changes", "code", { extra: "diverged=1&pullconflict=1" }],
+  ["the-branches-pull-pill-asks-and-refreshes-on-cancel", "branches", { extra: "diverged=1" }],
+  ["the-branches-pull-pill-lands-in-changes-when-it-stops", "branches", { extra: "diverged=1&pullconflict=1" }],
+  // …and the question survives the watcher refresh its own fetch sets off.
+  ["the-pull-question-outlives-the-refresh-its-own-fetch-causes", "code", { extra: "diverged=1" }],
+  ["the-branches-pull-question-outlives-the-refresh-its-own-fetch-causes", "branches", { extra: "diverged=1" }],
+  ["the-pull-question-does-not-follow-you-to-another-repository", "code", { extra: "diverged=1" }],
+  ["pulling-again-over-the-stopped-merge-says-what-is-paused", "code", { extra: "diverged=1&pullconflict=1" }],
+  // A list GitHub named more of than it could return says so, in both themes;
+  // a complete one says nothing.
+  ["a-list-github-could-not-fully-return-says-so", "projects", { extra: "partial=1" }],
+  ["a-list-github-could-not-fully-return-says-so", "projects", { extra: "partial=1", theme: "light" }],
+  ["a-list-github-could-not-fully-return-says-so", "projects"],
+  ["a-review-thread-github-could-not-return-is-said", "prs~open106~text:Files", { extra: "partial=1" }],
+  ["a-folder-that-will-not-open-is-not-painted-as-a-failure", "code"],
+  // Commit & Push whose force the bridge refuses: the neutral tone, and Pull.
+  ["a-refused-force-push-after-commit-says-so-and-offers-pull", "changes", { extra: "forcerefused=1" }],
+  ["a-refused-force-push-after-commit-says-so-and-offers-pull", "changes", { extra: "forcerefused=1", theme: "light" }],
+  // Uncommitted work in a command's way (crash report #18): every door asks
+  // Stash & Retry or Cancel, from one place, and the question survives the
+  // watcher's refresh. ?intheway= refuses each door's first request.
+  ["a-revert-over-your-changes-asks-and-outlives-the-refresh", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "intheway=1" }],
+  ["a-revert-over-your-changes-asks-and-outlives-the-refresh", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "intheway=1", theme: "light" }],
+  ["cancelling-the-stash-question-runs-nothing-and-says-nothing", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "intheway=1" }],
+  ["a-pull-over-your-changes-asks-and-outlives-its-own-fetch", "code", { extra: "intheway=1" }],
+  ["a-pull-over-your-changes-asks-and-outlives-its-own-fetch", "code", { extra: "intheway=1", theme: "light" }],
+  ["the-stash-question-does-not-follow-you-to-another-repository", "code", { extra: "intheway=1" }],
+  ["a-merge-over-your-changes-asks-too", "branches", { extra: "intheway=1" }],
+  ["a-rebase-cancelled-at-the-stash-question-says-nothing", "branches", { extra: "intheway=1" }],
+  ["a-stash-apply-over-your-changes-asks-too", "branches~click:.gh-seg-btn:nth-child(4)", { extra: "intheway=1" }],
+  ["a-pull-request-checkout-over-your-changes-asks-too", "prs~open106", { extra: "intheway=1" }],
+  ["what-a-stash-and-retry-could-not-put-back-is-said", "code", { extra: "intheway=note" }],
+  ["what-a-stash-and-retry-could-not-put-back-is-said", "code", { extra: "intheway=note", theme: "light" }],
+  ["still-in-the-way-after-the-stash-is-said-not-asked-again", "code", { extra: "intheway=still" }],
+  ["a-genuine-failure-asks-nothing-and-stays-red", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "intheway=fail" }],
 ];
 
 function run(scene, checkId, opts = {}) {

@@ -1674,6 +1674,25 @@ export function capNotice(
   return note;
 }
 
+/**
+ * The note for a list GitHub could not fully return; null when nothing is
+ * missing.
+ *
+ * GitHub's GraphQL answers what it can and names the rest, and the reads keep
+ * what came back (see keepsPartialData) — a project, a card, a review thread in
+ * a repository the account can no longer see. Kept silently, the short list
+ * read as the whole list. `one` is the singular noun ("project", "card").
+ */
+export function unreadableNotice(n: number, one: string, many = `${one}s`): HTMLElement | null {
+  if (!n) return null;
+  const note = el("div", "sec-cap-note gh-unreadable-note");
+  note.append(glyph("warning"), span(`${n} ${n === 1 ? one : many} could not be read from GitHub.`));
+  note.title =
+    `GitHub listed ${n === 1 ? "it" : "them"} but did not return ${n === 1 ? "it" : "them"} — ` +
+    "usually because it lives in a repository your account can no longer see.";
+  return note;
+}
+
 // ── Facets: one filter vocabulary for every section ──────────────────────────
 
 /** Keep an element's SPACE while hiding its ink. Row meta packs right-to-left,

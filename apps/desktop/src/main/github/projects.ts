@@ -13,8 +13,8 @@
 // guards the not-connected / not-on-github.com cases before we are reached.
 
 import { GitHubClient } from "../githubClient";
-import { errorFields } from "../githubErrors";
-import type { CommitActionResult, ProjectBoard, ProjectInfo } from "../../shared/ipc";
+import { errorFields, unreadableEntries, type GraphqlFailure } from "../githubErrors";
+import type { CommitActionResult, ProjectBoard, ProjectList } from "../../shared/ipc";
 
 // ── Raw GraphQL shapes (this module owns its own Raw* interfaces + mappers) ────
 
@@ -75,7 +75,11 @@ export async function listProjects(
   client: GitHubClient,
   owner: string,
   repo: string,
-): Promise<ProjectInfo[]> {
+): Promise<ProjectList> {
+  // GitHub answers what it can and reports the rest; the client keeps the
+  // answer (keepsPartialData) and hands the rest here. Counted, so the view
+  // can say a project is missing instead of showing a short list as the list.
+  let partial: GraphqlFailure[] = [];
   const data = await client.graphql<RawProjectsData>(
     `query($owner:String!,$repo:String!){
       repository(owner:$owner,name:$repo){
@@ -85,9 +89,11 @@ export async function listProjects(
       }
     }`,
     { owner, repo },
+    { onPartial: (errors) => (partial = errors) },
   );
   const nodes = data?.repository?.projectsV2?.nodes ?? [];
-  return nodes
+  const unreadable = unreadableEntries(nodes, ["repository", "projectsV2", "nodes"], partial);
+  const projects = nodes
     .filter((p): p is NonNullable<typeof p> => !!p)
     .map((p) => ({
       id: p.id,
@@ -99,6 +105,7 @@ export async function listProjects(
       closed: p.closed,
       updatedAt: p.updatedAt ?? "",
     }));
+  return { projects, unreadable };
 }
 
 /**
@@ -117,6 +124,7 @@ export async function getProjectBoard(
   _repo: string,
   projectId: string,
 ): Promise<ProjectBoard> {
+  let partial: GraphqlFailure[] = [];
   const data = await client.graphql<RawBoardData>(
     `query($id:ID!){
       node(id:$id){
@@ -144,6 +152,7 @@ export async function getProjectBoard(
       }
     }`,
     { id: projectId },
+    { onPartial: (errors) => (partial = errors) },
   );
   const proj = data?.node;
   const rawField = proj?.field;
@@ -156,8 +165,16 @@ export async function getProjectBoard(
           .map((o) => ({ id: o.id, name: o.name, color: o.color ?? "" })),
       }
     : null;
-  const items = (proj?.items?.nodes ?? [])
-    .filter((n): n is RawBoardItem => !!n && !!n.content)
+  const nodes = proj?.items?.nodes ?? [];
+  // A card is dropped when it or its content came back null — an issue in a
+  // repository the account can no longer see (GitHub reports it, or redacts
+  // it). Counted, so the board says a card is missing rather than looking whole.
+  const readable = (n: RawBoardItem | null): n is RawBoardItem => !!n && !!n.content;
+  const unreadable = unreadableEntries(nodes, ["node", "items", "nodes"], partial, (n) =>
+    !readable(n as RawBoardItem | null),
+  );
+  const items = nodes
+    .filter(readable)
     .map((n) => {
       const c = n.content as RawBoardContent;
       return {
@@ -173,7 +190,7 @@ export async function getProjectBoard(
         updatedAt: n.updatedAt ?? "",
       };
     });
-  return { field, items };
+  return { field, items, unreadable };
 }
 
 // ── Mutations (return { ok, changed, message }) ───────────────────────────────

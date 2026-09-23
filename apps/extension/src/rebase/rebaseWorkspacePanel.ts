@@ -10,6 +10,7 @@ import {
   runRebasePlan,
   continueRebase,
   abortRebaseAt,
+  reportRebaseFailure,
   type RebaseOutcome,
 } from "./rebaseRunner";
 // Shared design tokens, inlined by esbuild — matches every other GitStudio surface.
@@ -175,7 +176,15 @@ export class RebaseWorkspacePanel {
     // is silent — the rebase would report success with the history rearranged.
     const built = buildRebasePlan(rows);
     if (!built.ok) {
-      this.post({ type: "result", outcome: { status: "failed", message: built.message } });
+      // Dropping every commit is a plan the user composed (`expected`); rows
+      // with an action or a sha no UI offers are a request built wrong.
+      const refused: RebaseOutcome = {
+        status: "failed",
+        message: built.message,
+        ...(built.expected ? { expected: true as const } : {}),
+      };
+      reportRebaseFailure("Interactive rebase plan refused", refused);
+      this.post({ type: "result", outcome: refused });
       return;
     }
     const { todo, rewords } = built;
@@ -763,7 +772,7 @@ window.addEventListener("message", (e) => {
     if (o.status === "done") { setBusy(true, "Done"); return; }
     setBusy(false, "Start Rebase");
     if (o.status === "stopped") showStopBanner((o.reason === "conflict" ? "Rebase paused on a conflict — resolve the files, then Continue. " : o.reason === "edit" ? "Rebase paused to edit a commit — amend in your working tree, then Continue. " : "Rebase paused. ") + (o.message || ""));
-    else flashBanner(o.message || "Rebase failed.", "err");
+    else flashBanner(o.message || "Rebase failed.", o.expected ? "warn" : "err");
   } else if (msg.type === "aborted") {
     if (!msg.ok) flashBanner("Couldn't abort the rebase.", "err");
   }

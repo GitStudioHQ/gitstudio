@@ -83,6 +83,8 @@ import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
+import { askPullMode, pullWithChoice, pullVerdict, type PullOutcome, type PullVerdict } from "./pullFlow";
+import { installInTheWayAsker } from "./inTheWayAsk";
 import type { RowRef } from "./refMenuItems";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
@@ -128,6 +130,7 @@ import type {
   StashInfo,
   WorktreeInfo,
   SyncStatus,
+  CommitActionResult,
 } from "../shared/ipc";
 
 
@@ -466,6 +469,10 @@ class App {
   private terminalHeight = 280;
 
   async start(): Promise<void> {
+    // Before anything can invoke a commit-applying command: the one place that
+    // asks Stash & Retry or Cancel for all of them (bridge.ts). It holds its
+    // question while this repository stays open — see whileThisRepo.
+    installInTheWayAsker(() => this.currentRepo?.root);
     // Views can pop the history from here on. Before this the only way back
     // from a detail page was a forward navigation dressed as a back button.
     this.installNav();
@@ -2792,6 +2799,9 @@ class App {
         action === "apply" ? "stash:apply" : action === "pop" ? "stash:pop" : "stash:drop",
         st.ref,
       );
+      // Uncommitted changes in the stash's way were asked about (Stash &
+      // Retry or Cancel — bridge.ts), and the user cancelled: nothing ran.
+      if (r.cancelled) return;
       if (!r.ok) {
         toast(r.message ?? `Couldn't ${action} ${st.ref}.`, r.expected ? "info" : "error");
         return;
@@ -2897,6 +2907,8 @@ class App {
           undo: async () => {
             const failed: string[] = [];
             for (const b of restorable) {
+              // in-the-way-reviewed: a restore never switches, so it changes no
+              // file and is never refused over uncommitted work.
               const back = await host.invoke("branch:create", {
                 name: b.name,
                 startPoint: b.was,
@@ -3525,11 +3537,18 @@ class App {
     };
     const run = async (
       label: string,
-      p: Promise<{ ok: boolean; message?: string }>,
+      p: Promise<{ ok: boolean; message?: string; expected?: boolean; cancelled?: true }>,
     ): Promise<void> => {
       try {
         const r = await p;
-        if (!r.ok) toast(cleanErr(r.message) || `Couldn't ${label}.`, "error");
+        // A merge or rebase over uncommitted changes in its way asks Stash &
+        // Retry or Cancel (bridge.ts); cancelled, nothing ran and nothing is
+        // said. A refusal that is the user's state — the changes still in the
+        // way, a merge that stopped on conflicts — is said in the neutral
+        // tone, not as a failure.
+        if (r.cancelled) {
+          // nothing to say
+        } else if (!r.ok) toast(cleanErr(r.message) || `Couldn't ${label}.`, r.expected ? "info" : "error");
         else toast(`${label} ✓`, "success");
       } catch (e) {
         toast(cleanErr(e) || `Couldn't ${label}.`, "error");
@@ -3595,6 +3614,7 @@ class App {
       items.push({
         label: `Merge ${b.name} into current`,
         icon: "git-merge",
+        // in-the-way-reviewed: run() above says nothing on `cancelled`.
         onClick: () => void run(`merge ${b.name}`, host.invoke("branch:merge", { name: b.name })),
       });
       items.push({
@@ -3616,6 +3636,7 @@ class App {
               danger: true,
             });
             if (!ok) return;
+            // in-the-way-reviewed: run() above says nothing on `cancelled`.
             await run(`rebase onto ${b.name}`, host.invoke("branch:rebase", { onto: b.name }));
           })(),
       });
@@ -3800,14 +3821,23 @@ class App {
       if (lbl) lbl.textContent = "Pulling…";
     }
     try {
-      const r = b.current
-        ? await host.invoke("sync:pull", undefined)
-        : await host.invoke("branch:pullFf", { name: b.name });
-      if (!r.ok) {
-        toast(r.message || `Couldn't pull ${b.name}.`, "error");
+      // The current branch is a real pull, so it can hit the divergence
+      // question — the same one the top bar's Pull asks, through the same
+      // helper. A branch you are NOT standing on fast-forwards or refuses;
+      // there is nothing to reconcile without a worktree to reconcile it in.
+      const out = b.current
+        ? await this.pullAsking()
+        : {
+            result: await host.invoke("branch:pullFf", { name: b.name }),
+            cancelled: false,
+            mode: undefined,
+          };
+      const v = pullVerdict(out, `Couldn't pull ${b.name}.`);
+      if (v.kind !== "pulled") {
+        await this.settleUnpulled(v);
         return;
       }
-      toast(b.current ? "Pulled successfully." : `Fast-forwarded ${b.name}.`, "success");
+      toast(b.current ? v.message : `Fast-forwarded ${b.name}.`, "success");
       bust();
       await this.updateSync();
       if (b.current) await this.refreshAll();
@@ -3997,6 +4027,7 @@ class App {
       hint: `${local} still tracks ${upstream} — renaming it here doesn't rename it on the remote.`,
       choices: ways,
       cancelId: "keep",
+      holdWhile: this.whileThisRepo(), // asked right after a ref moved — see promptChoice
     });
     if (choice === "keep") return null;
 
@@ -4064,6 +4095,8 @@ class App {
       didUndoable(`Deleted ${name}.`, {
         label: `Restore ${name}`,
         undo: async () => {
+          // in-the-way-reviewed: a restore never switches, so it changes no
+          // file and is never refused over uncommitted work.
           const back = await host.invoke("branch:create", {
             name,
             startPoint: restore,
@@ -4141,16 +4174,20 @@ class App {
       return;
     }
     restore();
-    // On failure (e.g. uncommitted changes block the switch) HEAD didn't move —
-    // surface the error and DON'T refresh as if it succeeded (which made the UI
-    // look like the branch was checked out when it wasn't).
+    // Uncommitted changes in the switch's way were asked about (Stash & Retry
+    // or Cancel — bridge.ts), and the user cancelled: nothing ran.
+    if (result?.cancelled) return;
+    // On failure HEAD didn't move — surface the reason and DON'T refresh as if
+    // it succeeded (which made the UI look like the branch was checked out
+    // when it wasn't). A refusal that is the user's state (`expected`) is said
+    // in the neutral tone.
     //
     // `result` is typed non-nullable but arrives over IPC: a channel that
     // failed to register, or a main-process throw, hands back undefined, and
     // reading `.ok` off it threw inside an async handler — no toast, no error,
     // the click simply did nothing.
     if (!result?.ok) {
-      toast(result.message || "Couldn't check out — you may have uncommitted changes.", "error");
+      toast(result?.message || "Couldn't check out.", result?.expected ? "info" : "error");
       return;
     }
     toast(`Checked out ${ref}.`, "success");
@@ -7663,8 +7700,8 @@ class App {
             title: "Force push?",
             message:
               "The remote still has the version of this commit you rewrote, so a "
-              + "normal push was refused. Force pushing uses --force-with-lease, "
-              + "which still refuses if someone else has pushed.",
+              + "normal push was refused. Force pushing replaces only commits you "
+              + "rewrote — if anyone else's are there, it is refused.",
             confirmLabel: "Force push",
             danger: true,
           });
@@ -7673,7 +7710,22 @@ class App {
           }
         }
         // The commit already happened — be explicit if only the push failed.
-        if (!p.ok) {
+        //
+        // …and do not call it a failure when it was not one. A force push the
+        // bridge REFUSED (the remote has commits that are not this branch's to
+        // replace — somebody else's, or the same commit amended on another
+        // machine) is the repository's state, marked `expected`: the commit is
+        // made, nothing was pushed, and the way on is to pull those commits
+        // in. It used to arrive as "Committed, but push failed: …" in red,
+        // for a refusal that was the app doing its job.
+        if (!p.ok && p.expected) {
+          toast(
+            `Committed, not pushed. ${p.message ?? ""}`.trim(),
+            "info",
+            undefined,
+            p.pullFirst ? { label: "Pull", onClick: () => void this.doSync("pull") } : undefined,
+          );
+        } else if (!p.ok) {
           toast(`Committed, but push failed: ${p.message ?? "unknown error"}`, "error");
         } else {
           toast("Committed and pushed.", "success");
@@ -7987,6 +8039,77 @@ class App {
     this.renderSyncWidget?.(this.syncStatus);
   }
 
+  /**
+   * Pull the checked-out branch, asking how to reconcile if it diverged — the
+   * one pull behind both doors (the top bar's Pull and the Branches list's ↓
+   * pill), so the question and how it is held cannot differ between them.
+   */
+  private pullAsking(): Promise<PullOutcome> {
+    // pull-stop-reviewed: a forwarder. Both doors that call it hand its outcome
+    // to pullVerdict, which settles a stop and a block.
+    // in-the-way-reviewed: …and a Cancel at the Stash & Retry question, which
+    // pullVerdict reads as `cancelled`.
+    return pullWithChoice({
+      pull: (o) => host.invoke("sync:pull", o),
+      ask: (d) => askPullMode(d, this.whileThisRepo()),
+    });
+  }
+
+  /**
+   * "Is the repository that was open when this was asked still the open one?"
+   *
+   * The hold for a question asked after a git write (see promptChoice's
+   * `holdWhile`): it outlives the watcher's refresh of this repository, but not
+   * a switch to another, because its answer acts on whichever one is open.
+   */
+  private whileThisRepo(): () => boolean {
+    const root = this.currentRepo?.root;
+    return () => root !== undefined && this.currentRepo?.root === root;
+  }
+
+  /**
+   * Every pull outcome that is NOT "it pulled", settled the same way at both
+   * doors — the top bar's Pull and the Branches list's ↓ pill. The caller has
+   * nothing left to do afterwards.
+   */
+  private async settleUnpulled(v: Exclude<PullVerdict, { kind: "pulled" }>): Promise<void> {
+    switch (v.kind) {
+      case "failed":
+        toast(v.message, v.tone);
+        return;
+      case "cancelled":
+        // Nothing was merged, but the first pull already FETCHED: the remote-
+        // tracking ref moved, so the badge and the row counts describe a remote
+        // that is no longer there. Settle it the way Fetch does. Returning bare
+        // left "Pull 3" on screen over a branch that was now 5 behind.
+        bust();
+        await this.updateSync();
+        await this.refreshAll();
+        await this.refreshBranchesSoft();
+        return;
+      case "stopped":
+      case "blocked":
+        // A pull that stopped on conflicts has done its part; the rest is the
+        // user's, and it happens in Changes — the paused-operation banner
+        // (Abort / Continue) and the merge editor are there. Neutral, not red:
+        // nothing failed. A pull BLOCKED by that same paused operation (Pull
+        // pressed again from it) goes to the same place, for the same reason.
+        toast(v.message, "info");
+        await this.landOnConflicts();
+        return;
+    }
+  }
+
+  /** Take the user to Changes after an operation stopped on conflicts, with
+   *  every other view marked stale (the repository is mid-merge now). */
+  private async landOnConflicts(): Promise<void> {
+    bust();
+    this.invalidateKeptViews();
+    await this.refreshRefs();
+    await this.updateSync();
+    this.routeView("changes", true);
+  }
+
   private async doSync(action: "fetch" | "pull" | "push" | "publish"): Promise<void> {
     if (this.syncing) return; // lock the trigger against double-invocation
     this.syncing = true;
@@ -8009,21 +8132,32 @@ class App {
       main.disabled = true;
     }
     try {
-      const r =
-        action === "fetch"
-          ? await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref })
-          : action === "pull"
-            ? await host.invoke("sync:pull", undefined)
+      // Pull goes through the shared flow: a diverged branch comes back as a
+      // question (merge / rebase / cancel), never as git's config advice — and
+      // its answer is settled by the same verdict the Branches ↓ pill uses.
+      if (action === "pull") {
+        const out = await this.pullAsking();
+        const v = pullVerdict(out, "Pull failed.");
+        if (v.kind !== "pulled") {
+          await this.settleUnpulled(v);
+          return;
+        }
+        toast(v.message, "success");
+      } else {
+        const r: CommitActionResult =
+          action === "fetch"
+            ? await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref })
             : action === "push"
               ? await host.invoke("sync:push", undefined)
               : await host.invoke("sync:push", { setUpstream: true });
-      if (!r.ok) {
-        toast(r.message ?? `${action} failed.`, r.expected ? "info" : "error");
-        return;
+        if (!r.ok) {
+          toast(r.message ?? `${action} failed.`, r.expected ? "info" : "error");
+          return;
+        }
+        const verb =
+          action === "fetch" ? "Fetched" : action === "publish" ? "Published branch" : "Pushed";
+        toast(`${verb} successfully.`, "success");
       }
-      const verb =
-        action === "fetch" ? "Fetched" : action === "pull" ? "Pulled" : action === "publish" ? "Published branch" : "Pushed";
-      toast(`${verb} successfully.`, "success");
       bust(); // a fetch/pull/push changes sync/refs/branches/graph
       await this.updateSync();
       // refreshAll() already re-routes — and it does so WITH the current
@@ -8665,7 +8799,10 @@ class App {
       }
     });
     host.on("app:notice", (n) => {
-      toast(n.message, n.kind === "error" ? "error" : n.kind === "warn" ? "error" : "info");
+      // A warning is a state the user is in — a folder that is not a
+      // repository, a repository this account cannot read — not a failure of
+      // the app, so it is not painted as one. Only `error` is red.
+      toast(n.message, n.kind === "error" ? "error" : "info");
     });
     // Something changed on disk (issue #17). Already debounced in main.
     host.on("repo:filesChanged", (info) => {
@@ -8925,6 +9062,17 @@ class App {
     }
   }
 
+  /** Drop every kept-alive view but a parked Assistant, and mark a parked graph
+   *  dirty — see refreshAll for why each half is what it is. */
+  private invalidateKeptViews(): void {
+    const parkedChat = this.viewCache.get("assistant");
+    this.viewCache.clear();
+    if (parkedChat) this.viewCache.set("assistant", parkedChat);
+    // A parked (kept-alive) graph is now stale too — mark it before ANY early
+    // return in refreshAll, so returning to Commits always re-syncs in place.
+    if (this.graph && this.currentView !== "graph") this.graphDirty = true;
+  }
+
   private async refreshAll(): Promise<void> {
     if (!this.currentRepo) {
       return;
@@ -8943,12 +9091,7 @@ class App {
     // go and read an issue, and the agent's own commit — or any file the build
     // touched — deleted the transcript and the Stop button out from under a run
     // that kept going. Held by identity, so nothing is refetched or rebuilt.
-    const parkedChat = this.viewCache.get("assistant");
-    this.viewCache.clear();
-    if (parkedChat) this.viewCache.set("assistant", parkedChat);
-    // A parked (kept-alive) graph is now stale too — mark it before ANY early
-    // return below, so returning to Commits always re-syncs in place.
-    if (this.graph && this.currentView !== "graph") this.graphDirty = true;
+    this.invalidateKeptViews();
     await this.refreshRefs();
     // Settings shows NOTHING derived from the repo's disk state — and this runs
     // on every window FOCUS. Rebuilding it here destroyed the GitHub device-flow
@@ -9676,6 +9819,9 @@ class App {
     }
     try {
       const result = await host.invoke("commit:action", req);
+      // Asked "Stash & Retry or Cancel?" over the user's changes in the way
+      // (bridge.ts), and cancelled: nothing ran, nothing failed.
+      if (result.cancelled) return;
       if (!result.ok) {
         toast(
           result.message ?? `Couldn't ${req.action.replace(/-/g, " ")}.`,
@@ -9817,7 +9963,6 @@ function savePrefs(p: Record<string, unknown>): void {
     /* storage may be unavailable; prefs are non-essential */
   }
 }
-
 
 new App().start().catch((err) => {
   // eslint-disable-next-line no-console

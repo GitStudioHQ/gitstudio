@@ -21,7 +21,7 @@ import { homedir } from "node:os";
 import { delimiter, join, posix, win32 } from "node:path";
 import { promisify } from "node:util";
 import { app, nativeImage, shell } from "electron";
-import type { EditorView } from "../shared/ipc";
+import type { EditorView, OkResult } from "../shared/ipc";
 
 export interface EditorSpec {
   id: string;
@@ -427,7 +427,7 @@ export async function openEditor(
   id: string,
   root: string,
   prefs: EditorPrefs,
-): Promise<{ ok: boolean; message?: string }> {
+): Promise<OkResult> {
   const custom = prefs.custom.find((c) => c.id === id);
   let cmd: string;
   let args: string[];
@@ -436,7 +436,16 @@ export async function openEditor(
     ({ cmd, args } = customCommandFor(custom.command, root));
   } else {
     const hit = listDetected().find((d) => d.id === id) ?? listDetected(true).find((d) => d.id === id);
-    if (!hit) return { ok: false, message: "That editor isn't installed any more — check Settings ▸ Editors." };
+    // An editor that has been uninstalled since it was detected is a state of
+    // the machine, not a defect — `expected` keeps it out of the crash reporter
+    // (see main/expectedError.ts). A spawn that FAILS still reports: that is the
+    // case where we did find the editor and could not start it.
+    if (!hit)
+      return {
+        ok: false,
+        expected: true,
+        message: "That editor isn't installed any more — check Settings ▸ Editors.",
+      };
     ({ cmd, args, shell: useShell } = commandFor(hit, root, process.platform));
   }
   return new Promise((resolve) => {

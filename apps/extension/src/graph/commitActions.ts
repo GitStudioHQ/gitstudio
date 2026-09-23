@@ -3,6 +3,7 @@ import type { GitContext } from "@gitstudio/git-service/index";
 import type { GraphMenuItem } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
 import { pausedForUser } from "../git/pausedForUser";
+import { applyOrAsk, checkoutOp } from "../git/inTheWay";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
@@ -246,7 +247,7 @@ async function checkoutRef(
     }
   }
   return withUndo(undo, plan.undoLabel, () =>
-    runGit(ctx, plan.args, plan.success),
+    runCheckout(ctx, plan.args, plan.success),
   );
 }
 
@@ -311,7 +312,7 @@ async function checkout(
     }
     // Choosing a name IS the confirmation — do not ask twice.
     return withUndo(undo, `Checkout ${picked}`, () =>
-      runGit(ctx, ["checkout", picked], `Switched to ${picked}`),
+      runCheckout(ctx, ["checkout", picked], `Switched to ${picked}`),
     );
   }
 
@@ -354,7 +355,7 @@ function detachAt(
   undo?: UndoRunner,
 ): Promise<boolean> {
   return withUndo(undo, `Checkout ${short(commit.sha)}`, () =>
-    runGit(ctx, ["checkout", "--detach", commit.sha], "Checked out"),
+    runCheckout(ctx, ["checkout", "--detach", commit.sha], "Checked out"),
   );
 }
 
@@ -398,7 +399,17 @@ async function cherryPick(
   undo?: UndoRunner,
 ): Promise<boolean> {
   return withUndo(undo, `Cherry-pick ${short(commit.sha)}`, async () => {
-    const result = await ctx.process.run(["cherry-pick", commit.sha]);
+    // Through the one door every commit-applying action shares: uncommitted
+    // work in the pick's way is said, with Stash & Retry, and never filed.
+    const applied = await applyOrAsk(ctx, {
+      kind: "cherry-pick",
+      commit: commit.sha,
+      args: ["cherry-pick", commit.sha],
+    });
+    if (applied.cancelled || applied.settled) {
+      return !applied.cancelled;
+    }
+    const result = applied.result;
     if (result.code === 0) {
       flash(`Cherry-picked ${short(commit.sha)}`);
       return true;
@@ -502,7 +513,14 @@ async function revert(
       args.push("-m", String(mainline));
     }
     args.push(commit.sha);
-    const result = await ctx.process.run(args);
+    // Report #18: a revert over an edit to a file it touches was filed as a
+    // crash with git's "would be overwritten by merge" text. The shared door
+    // says which changes are in the way and offers Stash & Retry instead.
+    const applied = await applyOrAsk(ctx, { kind: "revert", commit: commit.sha, mainline, args });
+    if (applied.cancelled || applied.settled) {
+      return !applied.cancelled;
+    }
+    const result = applied.result;
     if (result.code === 0) {
       flash(`Reverted ${short(commit.sha)}`);
       return true;
@@ -595,6 +613,28 @@ async function resetTo(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * A checkout, through the door every commit-applying action shares: a switch
+ * refused over uncommitted work in its way is said, with Stash & Retry, rather
+ * than shown as git's "would be overwritten by checkout" in red and filed.
+ */
+async function runCheckout(
+  ctx: GitContext,
+  args: string[],
+  successMessage: string,
+): Promise<boolean> {
+  const applied = await applyOrAsk(ctx, checkoutOp(args));
+  if (applied.cancelled || applied.settled) {
+    return !applied.cancelled;
+  }
+  if (applied.result.code === 0) {
+    flash(successMessage);
+    return true;
+  }
+  await showGitError(ctx, `git ${args[0]} failed`, applied.result.stderr.trim());
+  return true;
+}
 
 async function runGit(
   ctx: GitContext,

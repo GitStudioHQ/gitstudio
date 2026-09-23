@@ -26,9 +26,9 @@ import {
 import { peek as cachePeek, gget, bust } from "../cache";
 import { toast } from "../dialogs";
 import { holdBackground, registerLayer } from "../overlays";
-import { ghGate, ghHeader, headerPicker, type SectionRender, type SectionNav } from "./common";
+import { ghGate, ghHeader, headerPicker, unreadableNotice, type SectionRender, type SectionNav } from "./common";
 import { renderIssueDetailInto } from "./issues";
-import type { ProjectBoard, ProjectInfo, ProjectItem } from "../../shared/ipc";
+import type { ProjectBoard, ProjectInfo, ProjectItem, ProjectList } from "../../shared/ipc";
 
 // Which project the user last opened. Survives a re-render so a move (or refresh)
 // re-selects it and reloads its board in place. `undefined` = nothing opened yet.
@@ -54,28 +54,38 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
   view.appendChild(board);
   wrap.replaceChildren(view);
 
-  let projects: ProjectInfo[] | undefined = cachePeek("project:list", undefined);
-  if (!projects) board.replaceChildren(loadingState());
+  let list: ProjectList | undefined = cachePeek("project:list", undefined);
+  if (!list) board.replaceChildren(loadingState());
   try {
-    projects = await gget("project:list", undefined, 30000);
+    list = await gget("project:list", undefined, 30000);
   } catch (e) {
     if (!view.isConnected) return;
-    if (!projects) {
+    if (!list) {
       board.replaceChildren(
         errorState("Couldn't load projects", cleanErr(e) || "GitHub request failed.", refresh),
       );
       return;
     }
   }
-  if (!view.isConnected || !projects) return;
+  if (!view.isConnected || !list) return;
+  const projects = list.projects;
   header.setCount?.(projects.length);
+  // A project GitHub named but could not return is SAID, above the board —
+  // kept silently, two projects read as "this repository has two projects".
+  const missing = unreadableNotice(list.unreadable, "project");
+  if (missing) view.insertBefore(missing, board);
 
   if (projects.length === 0) {
     selectedProjectId = undefined;
+    // "None are linked" is only true when GitHub named none.
     board.replaceChildren(
-      emptyState("No projects", "No GitHub Projects (v2) are linked to this repository.", {
-        icon: "project",
-      }),
+      emptyState(
+        list.unreadable ? "No readable projects" : "No projects",
+        list.unreadable
+          ? "GitHub lists projects for this repository, but could not return any of them."
+          : "No GitHub Projects (v2) are linked to this repository.",
+        { icon: "project" },
+      ),
     );
     return;
   }
@@ -174,6 +184,9 @@ async function showProjectBoard(
   actions.appendChild(openBtn);
   head.append(h, meta, actions);
   detail.appendChild(head);
+  // Cards GitHub named but could not return — said, not hidden.
+  const missingCards = unreadableNotice(b.unreadable ?? 0, "card");
+  if (missingCards) detail.appendChild(missingCards);
 
   // Columns = Status options, with a leading "No Status" bucket. With no Status
   // field, a single "All items" column holds everything.

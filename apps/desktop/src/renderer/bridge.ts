@@ -10,7 +10,7 @@
 // bridges the two — it pages via IPC and feeds the element host messages — so
 // the component itself needs no desktop-specific code.
 
-import type { GitStudioBridge, GraphRefFilter } from "../shared/ipc";
+import type { GitStudioBridge, GraphRefFilter, InTheWayInfo } from "../shared/ipc";
 import type { GraphInitMessage, GraphAppendMessage } from "@gitstudio/host-bridge/graphProtocol";
 import { nextGraphMessage } from "../shared/graphAdapterCore";
 
@@ -20,7 +20,78 @@ declare global {
   }
 }
 
-export const host: GitStudioBridge = window.gitstudio;
+const raw: GitStudioBridge = window.gitstudio;
+
+/**
+ * Asks the user about uncommitted work in a command's way; true for Stash &
+ * Retry. Installed at boot (inTheWayAsk.ts) rather than imported, because the
+ * dialogs module already imports this one through ui.ts.
+ */
+type InTheWayAsker = (way: InTheWayInfo, message: string | undefined) => Promise<boolean>;
+let askInTheWay: InTheWayAsker | undefined;
+let sayStashNote: ((note: string) => void) | undefined;
+
+export function answerInTheWayWith(ask: InTheWayAsker, note: (note: string) => void): void {
+  askInTheWay = ask;
+  sayStashNote = note;
+}
+
+/** An object request, again, carrying `stashFirst`. */
+const withStashFirst = (payload: unknown, root: string): unknown =>
+  payload && typeof payload === "object" ? { ...(payload as object), stashFirst: root } : undefined;
+
+/**
+ * The channels whose answer can carry `inTheWay` — every bridge method that
+ * runs its command through main/inTheWay.ts — and how each request is sent
+ * again with `stashFirst`. Two take a bare value, and a pull may take nothing.
+ * test/inTheWayCensus.test.ts holds this list and main's doors to each other.
+ */
+export const STASH_AND_RETRY: Readonly<Record<string, (payload: unknown, root: string) => unknown>> = {
+  "commit:action": withStashFirst,
+  "branch:create": withStashFirst,
+  "branch:merge": withStashFirst,
+  "branch:rebase": withStashFirst,
+  "stash:apply": (p, root) => (typeof p === "string" ? { ref: p, stashFirst: root } : withStashFirst(p, root)),
+  "stash:pop": (p, root) => (typeof p === "string" ? { ref: p, stashFirst: root } : withStashFirst(p, root)),
+  "pr:checkout": (p, root) => (typeof p === "number" ? { number: p, stashFirst: root } : withStashFirst(p, root)),
+  "sync:pull": (p, root) => (p === undefined || p === null ? { stashFirst: root } : withStashFirst(p, root)),
+};
+
+/**
+ * Every door that applies commits — a checkout, a revert, a cherry-pick, a
+ * merge, a rebase, a stash applied or popped, a branch created and switched
+ * to, a pull request checked out, a pull — answers `inTheWay` when git refuses
+ * it over the user's uncommitted work (main/inTheWay.ts). The question is
+ * asked HERE, once, for all of them: a door cannot forget it, and a new door
+ * gets it for free. Stash & Retry sends the SAME request again with
+ * `stashFirst` — the repository the refusal came from, which main checks —
+ * and hands the door that answer instead; Cancel hands it `cancelled`, which
+ * every door takes as "nothing ran, say nothing".
+ *
+ * Asked once per request: an answer to the retry that is STILL in the way
+ * (something the stash could not cover) goes to the door as it is, to be said.
+ */
+async function invokeAsking(channel: string, payload: unknown): Promise<unknown> {
+  const invoke = raw.invoke as (c: string, p: unknown) => Promise<unknown>;
+  const first = await invoke(channel, payload);
+  const way = (first as { inTheWay?: InTheWayInfo } | undefined)?.inTheWay;
+  const retry = Object.hasOwn(STASH_AND_RETRY, channel) ? STASH_AND_RETRY[channel] : undefined;
+  if (!way || !askInTheWay || !retry) return first;
+  const again = retry(payload, way.root);
+  if (again === undefined) return first;
+  if (!(await askInTheWay(way, (first as { message?: string }).message))) {
+    return { ok: false, changed: false, expected: true, cancelled: true };
+  }
+  const second = await invoke(channel, again);
+  const note = (second as { stashNote?: string } | undefined)?.stashNote;
+  if (note) sayStashNote?.(note);
+  return second;
+}
+
+export const host: GitStudioBridge = {
+  invoke: invokeAsking as GitStudioBridge["invoke"],
+  on: (event, listener) => raw.on(event, listener),
+};
 
 /**
  * Drives the `<gitstudio-graph>` element off the desktop `graph:load` IPC.

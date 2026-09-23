@@ -246,16 +246,20 @@ export async function renderRefDetail(
         sha: ref,
         name: ref,
         refKind,
-      } as never);
+      });
     } catch (e) {
       toast(cleanErr(e) || "Couldn't check out.", "error");
       return;
     }
+    // Uncommitted changes in the switch's way were asked about (Stash & Retry
+    // or Cancel — bridge.ts), and the user cancelled: nothing ran.
+    if (r?.cancelled) return;
     // Arrives over IPC: a channel that failed to register hands back undefined,
     // and reading `.ok` off it throws inside an async handler — no toast, no
-    // error, the click simply doing nothing.
+    // error, the click simply doing nothing. A refusal that is the user's state
+    // (`expected`) is said in the neutral tone.
     if (!r?.ok) {
-      toast(r?.message || "Couldn't check out — you may have uncommitted changes.", "error");
+      toast(r?.message || "Couldn't check out.", r?.expected ? "info" : "error");
       return;
     }
     toast(ok, "success");
@@ -318,6 +322,9 @@ export async function renderRefDetail(
       action === "apply" ? "stash:apply" : action === "pop" ? "stash:pop" : "stash:drop",
       name!,
     );
+    // Uncommitted changes in the stash's way were asked about (Stash & Retry
+    // or Cancel — bridge.ts), and the user cancelled: nothing ran.
+    if (r.cancelled) return;
     if (!r.ok) {
       toast(r.message ?? `Couldn't ${action} ${name}.`, r.expected ? "info" : "error");
       return;

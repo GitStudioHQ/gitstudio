@@ -561,6 +561,24 @@ export function promptChoice(opts: {
   hint?: string;
   choices: readonly ChoiceOption[];
   cancelId: string;
+  /**
+   * While this returns true, a route change the user did not make leaves the
+   * question on screen instead of answering it with `cancelId`.
+   *
+   * For a question asked straight AFTER a git write. The write moves a ref, the
+   * repository watcher reports it 250 ms later, and the refresh re-routes —
+   * which tears every floating layer down. So a pull's "Merge or Rebase?"
+   * (opened by the fetch that found the divergence) and a rename's "Rename on
+   * origin too?" (opened by the rename) were each answered "Cancel" by the
+   * watcher about a fifth of a second after they appeared, before anyone could
+   * read them. A question the user owes an answer is work in progress, and
+   * only the user may answer it — see ModalSpec.hasUnsavedWork.
+   *
+   * A predicate, not a flag, because some route changes SHOULD close it: the
+   * callers hold only while the same repository is open, since the answer acts
+   * on whichever repository that is.
+   */
+  holdWhile?: () => boolean;
 }): Promise<string> {
   return new Promise((resolve) => {
     let settled = false;
@@ -627,6 +645,7 @@ export function promptChoice(opts: {
         onClose: () => {
           if (!settled) resolve(opts.cancelId);
         },
+        hasUnsavedWork: () => opts.holdWhile?.() ?? false,
       };
     });
   });

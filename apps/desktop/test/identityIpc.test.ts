@@ -1,7 +1,7 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "@gitstudio/git-service/index";
@@ -39,7 +39,6 @@ beforeEach(() => {
 afterEach(() => {
   if (savedEnv.GIT_CONFIG_GLOBAL === undefined) delete process.env.GIT_CONFIG_GLOBAL;
   else process.env.GIT_CONFIG_GLOBAL = savedEnv.GIT_CONFIG_GLOBAL;
-  chmodSync(cfgDir, 0o755); // un-readonly so cleanup can delete it
   ctx?.dispose?.();
   removeTempRepo(repo);
   removeTempRepo(cfgDir);
@@ -55,12 +54,30 @@ test("setGitIdentity writes both values and gitIdentity reads them back", async 
 });
 
 test("a failing git config write reports the failure instead of success", async () => {
-  // git config rewrites via a lock file + rename, so the DIRECTORY must be
-  // read-only to make the write fail (a read-only file alone doesn't).
-  chmodSync(cfgDir, 0o555);
-  const r = await bridge.setGitIdentity({ name: "Someone Else", email: "" });
+  // git config rewrites via a lock file + rename, so the file itself being
+  // read-only does not stop it — and a read-only DIRECTORY does not stop it on
+  // Windows, where CI runs this too. A config path whose parent is a FILE
+  // fails the lock on every platform.
+  const notADir = join(cfgDir, "not-a-dir");
+  writeFileSync(notADir, "");
+  process.env.GIT_CONFIG_GLOBAL = join(notADir, "gitconfig");
+  // BOTH fields: with one empty, the pair check refuses before git runs, and
+  // this passed without ever reaching the write it is named for.
+  const r = await bridge.setGitIdentity({ name: "Someone Else", email: "someone@example.com" });
   assert.equal(r.ok, false, "a non-zero git exit must not report ok");
   assert.ok(r.message && r.message.length > 0, "the git stderr should be surfaced");
+  assert.doesNotMatch(r.message ?? "", /needs both/, "…from git config, not from the field check");
+  assert.notEqual(r.expected, true, "a write that failed is news, so it is crash-reported");
+});
+
+test("with no repository open, the card still reads and writes the global identity", async () => {
+  // The identity is the user's, not the repository's (report #15 was Save
+  // refused with "No repository open." on a machine with none open yet).
+  const none = new GitBridge({ getContext: () => undefined } as unknown as RepoStore);
+  const r = await none.setGitIdentity({ name: "Pat Example", email: "pat@example.com" });
+  assert.equal(r.ok, true, r.message);
+  assert.match(readFileSync(cfg, "utf8"), /name = Pat Example/);
+  assert.deepEqual(await none.gitIdentity(), { name: "Pat Example", email: "pat@example.com" });
 });
 
 test("saving with both fields empty is rejected, not silently 'updated'", async () => {

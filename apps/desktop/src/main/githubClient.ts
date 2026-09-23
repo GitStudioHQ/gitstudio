@@ -5,14 +5,19 @@
 // The token is supplied by the caller (GitHubBridge reads it from safeStorage).
 
 import { ExpectedError } from "./expectedError";
-import { githubHttpError, graphqlError, networkError } from "./githubErrors";
+import {
+  githubHttpError,
+  graphqlError,
+  keepsPartialData,
+  networkError,
+  type GraphqlFailure,
+} from "./githubErrors";
 import { nextPagePath, PAGE_CAPS } from "./githubPaging";
 import { mapIssue, mapPull, mapReactions, mapUser, type RawIssue, type RawPull, type RawUser } from "./github/maps";
 import type {
   CheckRun,
   GitHubUser,
   IssueInfo,
-  ProjectInfo,
   PrComment,
   PrCommitInfo,
   PrFile,
@@ -213,8 +218,19 @@ export class GitHubClient {
     }
   }
 
-  /** GraphQL call (Projects v2 etc.). Public for the per-section modules. */
-  async graphql<T>(query: string, variables: unknown): Promise<T> {
+  /**
+   * GraphQL call (Projects v2 etc.). Public for the per-section modules.
+   *
+   * `opts.onPartial` is called when the response answered some of the query and
+   * reported the rest — see the `errors` handling below. A caller that does not
+   * pass it gets the partial data silently, which is the same answer it would
+   * have built from those fields anyway.
+   */
+  async graphql<T>(
+    query: string,
+    variables: unknown,
+    opts?: { onPartial?: (errors: GraphqlFailure[]) => void },
+  ): Promise<T> {
     const token = this.getToken();
     if (!token) {
       throw new ExpectedError("Not connected to GitHub.");
@@ -238,12 +254,24 @@ export class GitHubClient {
     }
     const json = (await res.json()) as {
       data?: T;
-      errors?: { message: string; type?: string }[];
+      errors?: GraphqlFailure[];
     };
-    if (json.errors && json.errors.length) {
+    const errors = json.errors ?? [];
+    if (errors.length) {
       // GraphQL reports failure in a 200 body, so the status-code policy never
       // sees it — a rate limit or a missing scope arrives here instead.
-      throw graphqlError(json.errors[0]);
+      //
+      // But an `errors` array is NOT the same thing as a failed request. The
+      // server resolves every field it can and reports the rest, and throwing
+      // on errors[0] discarded everything that DID resolve: one repository the
+      // account can no longer see took the whole answer down. Keep what came
+      // back when it is safe to (see keepsPartialData), and tell the caller
+      // what was missing so it can say so rather than present a short list as
+      // the whole truth.
+      if (!keepsPartialData(json.data, errors)) {
+        throw graphqlError(errors[0]);
+      }
+      opts?.onPartial?.(errors);
     }
     return json.data as T;
   }
@@ -392,28 +420,11 @@ export class GitHubClient {
     return mapIssue(await this.request<RawIssue>("GET", `/repos/${enc(owner)}/${enc(repo)}/issues/${n}`));
   }
 
-  // ── Projects (v2, via GraphQL) ──
-  async listProjects(owner: string, repo: string): Promise<ProjectInfo[]> {
-    try {
-      const data = await this.graphql<RawProjectsData>(
-        `query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){projectsV2(first:20,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{id number title shortDescription url closed updatedAt items{totalCount}}}}}`,
-        { owner, repo },
-      );
-      const nodes = data?.repository?.projectsV2?.nodes ?? [];
-      return nodes.map((p) => ({
-        id: p.id ?? "",
-        number: p.number,
-        title: p.title,
-        shortDescription: p.shortDescription ?? "",
-        url: p.url,
-        itemCount: p.items?.totalCount ?? 0,
-        closed: p.closed,
-        updatedAt: p.updatedAt ?? "",
-      }));
-    } catch {
-      return [];
-    }
-  }
+  // Projects (v2, via GraphQL) live in ./github/projects.ts, which is what
+  // `project:list` calls. A second copy used to sit here, unreachable, and it
+  // answered every failure with `return []` — the laundering this whole file
+  // exists to prevent, kept alive beside the code that prevents it. Deleted
+  // rather than fixed twice.
 }
 
 export function enc(part: string): string {
@@ -472,21 +483,5 @@ interface RawCheck {
   status?: string;
   conclusion?: string;
   details_url?: string;
-}
-interface RawProjectsData {
-  repository?: {
-    projectsV2?: {
-      nodes?: {
-        id?: string;
-        number: number;
-        title: string;
-        shortDescription?: string;
-        url: string;
-        closed: boolean;
-        updatedAt?: string;
-        items?: { totalCount: number };
-      }[];
-    };
-  };
 }
 

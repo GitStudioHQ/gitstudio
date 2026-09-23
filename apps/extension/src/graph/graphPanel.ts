@@ -30,7 +30,7 @@ import type { MenuRef } from "./checkoutTarget";
 import { rowStatsReply } from "./rowStatsReply";
 import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
-import { runRebasePlan, isRebaseInProgress } from "../rebase/rebaseRunner";
+import { runRebasePlan, isRebaseInProgress, reportRebaseFailure } from "../rebase/rebaseRunner";
 import { promptPick } from "../ui/dialogs";
 import { openRevisionDiff } from "../history/revisionContentProvider";
 import { commitWebUrl } from "../util/remoteUrl";
@@ -680,6 +680,13 @@ export class CommitGraphPanel {
     }));
     const built = buildRebasePlan(rows, { updateRefs: carry });
     if (!built.ok) {
+      // A reorder is all picks, so no refusal here is a plan the user composed:
+      // it is a request this door built wrong, and filed as one.
+      reportRebaseFailure("Reorder plan refused", {
+        status: "failed",
+        message: built.message,
+        ...(built.expected ? { expected: true as const } : {}),
+      });
       void vscode.window.showErrorMessage(`GitStudio: ${built.message}`);
       return;
     }

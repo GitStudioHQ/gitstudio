@@ -36,6 +36,7 @@ import type {
   TimelineEvent,
   ReactionSummary,
   RepoLabel,
+  OkResult,
 } from "../../shared/ipc";
 
 // ── Raw GitHub payloads (only what we read) ──────────────────────────────────
@@ -499,10 +500,14 @@ export async function createIssue(
   owner: string,
   repo: string,
   req: { title: string; body?: string; labels?: string[]; assignees?: string[]; milestone?: number },
-): Promise<{ ok: boolean; number?: number; message?: string }> {
+): Promise<OkResult & { number?: number }> {
   const title = req.title.trim();
+  // An empty field is the user mid-compose, not a defect — `expected` keeps it
+  // out of the crash reporter (see main/expectedError.ts). Everything that
+  // reaches GitHub still reports through errorFields, which makes the same
+  // judgement per HTTP status.
   if (!title) {
-    return { ok: false, message: "An issue needs a title." };
+    return { ok: false, expected: true, message: "An issue needs a title." };
   }
   try {
     const created = await client.request<RawIssue>(
@@ -525,7 +530,7 @@ export async function commentIssue(
 ): Promise<CommitActionResult> {
   const body = req.body.trim();
   if (!body) {
-    return { ok: false, changed: false, message: "Write a comment first." };
+    return { ok: false, changed: false, expected: true, message: "Write a comment first." };
   }
   try {
     await client.requestBody(
@@ -631,10 +636,10 @@ export async function editIssue(
   if (typeof req.title === "string") fields.title = req.title.trim();
   if (typeof req.body === "string") fields.body = req.body;
   if (fields.title !== undefined && fields.title === "") {
-    return { ok: false, changed: false, message: "An issue needs a title." };
+    return { ok: false, changed: false, expected: true, message: "An issue needs a title." };
   }
   if (fields.title === undefined && fields.body === undefined) {
-    return { ok: false, changed: false, message: "Nothing to update." };
+    return { ok: false, changed: false, expected: true, message: "Nothing to update." };
   }
   try {
     await client.requestBody(

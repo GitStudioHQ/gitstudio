@@ -51,6 +51,7 @@ import { parseRepoRoute, repoRouteId, type RepoRoute } from "../exploreRoutes";
 import { detailPage, propSection, propAddBtn, whereChip, type SectionNav } from "./common";
 import { peek } from "../cache";
 import { findLocalCopy, localCopyIndex, middlePath, openLocalCopy } from "../localCopy";
+import { isEmptyRepoMessage } from "../../shared/githubStates";
 import type { GhRepoBranch, GhRepoEntry, GhRepoFile, LocalCopy, OrgRepoDetail } from "../../shared/ipc";
 
 // The routing vocabulary is pure and lives in ../exploreRoutes (node-tested);
@@ -425,6 +426,21 @@ async function mount(
     else await renderDir(content, fullName, path, ref, goto);
   } catch (e) {
     if (!content.isConnected) return;
+    // A repository with no commits is not a failed read — it is what the
+    // repository IS, and every endpoint this page uses says so rather than
+    // answering an empty list (see shared/githubStates). Painting "Couldn't
+    // read this repository" over it accused the app of a fault it did not have
+    // and sent people to github.com to find out we were wrong. Report #13.
+    if (isEmptyRepoMessage(cleanErr(e))) {
+      content.replaceChildren(
+        emptyState(
+          "This repository is empty",
+          `Nothing has been pushed to ${fullName} yet, so there is nothing to read here.`,
+          { icon: "repo" },
+        ),
+      );
+      return;
+    }
     content.replaceChildren(
       errorState(
         "Couldn't read this repository",
@@ -733,7 +749,24 @@ async function openRefMenu(
   try {
     branches = await gget("ghrepo:branches", fullName, 120_000);
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't list branches.", "error");
+    // An empty repository has no branches; that is the answer, not a failure.
+    if (!isEmptyRepoMessage(cleanErr(e))) {
+      toast(cleanErr(e) || "Couldn't list branches.", "error");
+      return;
+    }
+  }
+  // GitHub lists an empty repository's branches as `[]`. An empty menu reads
+  // as a control that did nothing; say what is true instead.
+  if (!branches.length) {
+    openMenu(anchor, [
+      {
+        label: "No branches yet",
+        sub: `nothing has been pushed to ${fullName}`,
+        icon: "info",
+        disabled: true,
+        onClick: () => {},
+      },
+    ]);
     return;
   }
   // The default branch is one of these branches, not a separate thing. Listing
@@ -820,8 +853,16 @@ async function openGoToFile(
       input.removeAttribute("aria-activedescendant");
       input.setAttribute("aria-expanded", "false");
       if (state === "failed") {
+        // The third door on to an empty repository, after the page body and
+        // the peek browser. "Couldn't list the files" blames the app for a
+        // repository that simply has none.
         listEl.appendChild(
-          errorState("Couldn't list the files", failure, () => void load()),
+          isEmptyRepoMessage(failure)
+            ? emptyState("This repository is empty", "There are no files to go to yet.", {
+                icon: "repo",
+                anchor: "inline",
+              })
+            : errorState("Couldn't list the files", failure, () => void load()),
         );
       }
       return;
@@ -878,9 +919,15 @@ async function openGoToFile(
       if (!card.isConnected) return;
       state = "failed";
       failure = cleanErr(e) || "GitHub couldn't list this repository's files.";
-      note.textContent = failure;
-      note.setAttribute("role", "alert");
-      note.classList.add("is-error");
+      if (isEmptyRepoMessage(failure)) {
+        // A state, said once in the list above — not an error to paint red and
+        // announce as an alert under it.
+        note.textContent = "0 files";
+      } else {
+        note.textContent = failure;
+        note.setAttribute("role", "alert");
+        note.classList.add("is-error");
+      }
     }
     render();
     input.focus();

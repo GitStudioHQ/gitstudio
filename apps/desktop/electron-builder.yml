@@ -19,7 +19,22 @@ npmRebuild: false
 files:
   - dist/**
   - "!dist/**/*.map"
+  # The MCP server ships OUTSIDE the asar (below), not twice.
+  - "!dist/mcp/**"
   - package.json
+
+# The MCP server (apps/mcp, bundled by esbuild.js into dist/mcp) that Settings ▸
+# Agent Access installs into Claude Desktop / Cursor / VS Code / Windsurf. It
+# must be a REAL file — an MCP client launches it by path, with the app's own
+# executable as Node — so it lands in resources/mcp/, where main/mcpConfig.ts
+# resolves it. Nothing shipped it before: every build offered an Add button
+# that could not work.
+extraResources:
+  - from: dist/mcp
+    to: mcp
+    filter:
+      - "**/*"
+      - "!**/*.map"
 
 # node-pty is a native module (the integrated terminal's PTY). Its prebuilt
 # `.node` binary CANNOT load from inside the asar, so unpack it.

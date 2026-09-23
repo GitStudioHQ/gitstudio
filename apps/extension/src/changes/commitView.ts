@@ -1,5 +1,8 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
+import { pushUnseenMessage, type PullResult } from "@gitstudio/git-service/SyncOps";
+import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
+import { applyOrAsk, checkoutOp, pullOrAsk } from "../git/inTheWay";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
@@ -1448,7 +1451,15 @@ export class CommitViewProvider
       vscode.window.setStatusBarMessage(`Copied “${ref}”`, 2000);
       return;
     }
+    // `diverged` is how SyncOps.pull answers "both sides moved and nobody said
+    // how to reconcile them" — a question to ask, not a failure to report —
+    // and `stopped` how it answers "the merge or rebase stopped on conflicts",
+    // an outcome that runPull has already told the user about.
     let result: { ok: boolean; stderr?: string } = { ok: true };
+    /** The divergence question was asked and dismissed: nothing merged. */
+    let cancelled = false;
+    /** A pull stop or block that runPull has already told the user about. */
+    let settled = false;
     try {
       // Checking out a branch is not an action here: the menu routes every
       // checkout through branchRefCommand (gitstudio.branch.checkout /
@@ -1461,6 +1472,8 @@ export class CommitViewProvider
         case "new": {
           const name = (msg.ref ?? "").trim();
           if (!name) return;
+          // in-the-way-reviewed: a new branch AT HEAD — the working tree does
+          // not change, so no uncommitted work can be in its way.
           result = await entry.ctx.branches.checkoutNew(name);
           if (result.ok) await this.noteRecentBranch(entry, name);
           break;
@@ -1468,21 +1481,56 @@ export class CommitViewProvider
         case "checkoutRef": {
           const r = (msg.ref ?? "").trim();
           if (!r) return;
-          result = await entry.ctx.branches.checkout(r, { detach: true });
+          // Through the shared door: uncommitted work in the checkout's way is
+          // said, with Stash & Retry, rather than as git's refusal in red.
+          const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", "--detach", r]));
+          if (applied.cancelled) {
+            cancelled = true;
+            break;
+          }
+          if (applied.settled) {
+            settled = true;
+          }
+          result = { ok: applied.result.code === 0, stderr: applied.result.stderr };
           break;
         }
         case "pull":
-          result = await entry.ctx.sync.pull();
+        case "pullMerge":
+        case "pullRebase": {
+          const pulled = await this.runPull(entry, msg.action);
+          if (pulled === undefined) {
+            // Asked and dismissed. Nothing merged — but the first pull already
+            // FETCHED, so fall through to the refresh below rather than
+            // returning bare: the ↓ pill would otherwise keep spinning, and
+            // then show the count from before the fetch.
+            cancelled = true;
+            break;
+          }
+          result = pulled.result;
+          settled = pulled.settled;
           break;
-        case "pullRebase":
-          result = await entry.ctx.sync.pull({ rebase: true });
-          break;
+        }
         case "push": {
-          // Same rule as the push modal: a branch that diverged both ways can
-          // only be pushed with the lease, so ask rather than fail.
+          // Same rule as the push modal: a branch whose pushed commits WE
+          // rewrote can only be pushed with the lease, so ask rather than fail.
+          // Only then — a branch that diverged because somebody else pushed is
+          // not a rewrite, and once their commits have been fetched the lease
+          // no longer protects them (see SyncOps.rewroteUpstream). That push is
+          // left to be refused, which loses nothing.
+          //
+          // And not when the tip it would replace was never on this branch —
+          // the same commit amended on another machine, fetched in the
+          // background, passes the rewrite test (same author, same author
+          // date). The engine refuses that force before it runs; not offering
+          // it leaves the plain push to be refused, as for any divergence.
           const ab = await entry.ctx.sync.aheadBehind();
           const force =
-            ab.ahead > 0 && ab.behind > 0 ? await this.askRewritePush() : false;
+            ab.ahead > 0 &&
+            ab.behind > 0 &&
+            (await entry.ctx.sync.rewroteUpstream()) &&
+            !(await entry.ctx.sync.upstreamUnseen())
+              ? await this.askRewritePush()
+              : false;
           if (force === undefined) {
             // Backing out must still tell the webview the op is over. A bare
             // return would skip the branchActionDone below and leave the ahead
@@ -1493,7 +1541,14 @@ export class CommitViewProvider
             });
             return;
           }
-          result = await entry.ctx.sync.push(force ? { force: true } : undefined);
+          const pushed = await entry.ctx.sync.push(force ? { force: true } : undefined);
+          // Refused before it ran: said, with Pull offered, and not as a
+          // failure (the engine's check can still fire if a fetch landed
+          // between the question above and the push).
+          if (settlePushUnseen(pushed)) {
+            settled = true;
+          }
+          result = pushed;
           break;
         }
         case "fetch":
@@ -1510,7 +1565,11 @@ export class CommitViewProvider
     } catch (err) {
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
     }
-    if (!result.ok) {
+    if (cancelled || settled) {
+      // Nothing to report: a dismissed question ran nothing, and a stop (or a
+      // pull blocked by the operation a stop left paused) was already said,
+      // plainly and with its count, by settlePullStop.
+    } else if (!result.ok) {
       void vscode.window.showErrorMessage(
         `GitStudio: ${msg.action} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
       );
@@ -1528,6 +1587,51 @@ export class CommitViewProvider
       type: "branchActionDone",
       action: msg.action,
     });
+  }
+
+  /**
+   * The branch view's three pull items, as one operation. `undefined` means
+   * a question was asked and dismissed — how to combine a divergence, or
+   * Stash & Retry over uncommitted work in the way — and nothing merged.
+   *
+   * A stop on conflicts — or a pull blocked by the operation a stop left
+   * paused — is settled HERE, by the shared settler; `settled` tells the caller
+   * not to call it a failure as well.
+   */
+  private async runPull(
+    entry: RepoEntry,
+    action: string,
+  ): Promise<{ result: PullResult; settled: boolean } | undefined> {
+    // Every pull through the shared door (git/inTheWay.ts): refused over the
+    // user's uncommitted work it asks Stash & Retry or Cancel, and `undefined`
+    // is a Cancel there — nothing ran, as for the divergence question.
+    let r: PullResult | undefined;
+    if (action === "pullMerge") {
+      // The menu item says "using Merge", so say it to git too. Leaving the
+      // flag off walked this item into the divergent-branches wall — in the one
+      // state where the user had already answered the question.
+      r = await pullOrAsk(entry.ctx, "merge");
+    } else if (action === "pullRebase") {
+      r = await pullOrAsk(entry.ctx, "rebase");
+    } else {
+      // "Update (pull)" names no reconciliation, so SyncOps decides. It hands
+      // back `diverged` rather than git's "you have divergent branches" advice
+      // when both sides have moved and nothing in the user's config settles it
+      // — and that is a question, so ask it.
+      r = await pullOrAsk(entry.ctx);
+      if (r?.diverged) {
+        const mode = await askPullMode(r.diverged);
+        if (mode === undefined) {
+          return undefined;
+        }
+        r = await pullOrAsk(entry.ctx, mode);
+      }
+    }
+    // A stop, a block, or a detached HEAD (no branch to pull into) — each said
+    // plainly by its settler, so the caller must not call it a failure too.
+    // (`undefined`: cancelled at the Stash & Retry question — nothing ran.)
+    const settled = !!r && (settlePullStop(r) || settlePullDetached(r, () => this.openBranchMenu()));
+    return r === undefined ? undefined : { result: r, settled };
   }
 
   /**
@@ -1654,7 +1758,20 @@ export class CommitViewProvider
     // Diverged in BOTH directions means our tip is not a descendant of the
     // upstream, which is exactly when git refuses a fast-forward. Derived from
     // the ahead/behind we already have — no fetch, no network.
-    const needsForce = !!upstream && ab.ahead > 0 && ab.behind > 0;
+    //
+    // But only a divergence WE caused (an amend, a rebase of pushed commits)
+    // is settled by forcing. If somebody else pushed and we have fetched it,
+    // the lease matches and a force push deletes their commits — so that case
+    // stays a plain Push with "N behind — pull first". So does the same
+    // commit amended on another machine and fetched in the background: it
+    // passes the rewrite test, but the tip it would replace was never on this
+    // branch, and the engine refuses that force (`upstreamUnseen`).
+    const needsForce =
+      !!upstream &&
+      ab.ahead > 0 &&
+      ab.behind > 0 &&
+      (await entry.ctx.sync.rewroteUpstream()) &&
+      !(await entry.ctx.sync.upstreamUnseen());
     return {
       hasUpstream: !!upstream,
       target,
@@ -1761,7 +1878,7 @@ export class CommitViewProvider
           icon: "repo-force-push",
           danger: true,
           description:
-            "Uses --force-with-lease, which still refuses if someone else pushed.",
+            "Replaces only the versions you rewrote — nobody else's commits are on the remote branch.",
         },
         {
           id: "cancel",
@@ -1779,7 +1896,7 @@ export class CommitViewProvider
     if (!entry) {
       return;
     }
-    let result: { ok: boolean; stderr: string };
+    let result: { ok: boolean; stderr: string; unseen?: true };
     try {
       const head = await entry.ctx.refs.getHead();
       const upstream = head.detached ? null : await entry.ctx.sync.currentUpstream();
@@ -1803,7 +1920,7 @@ export class CommitViewProvider
     }
     if (result.ok) {
       vscode.window.setStatusBarMessage("$(check) Pushed", 3000);
-    } else {
+    } else if (!settlePushUnseen(result)) {
       void vscode.window.showErrorMessage(
         `GitStudio: push failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
       );
@@ -1815,7 +1932,9 @@ export class CommitViewProvider
     void this.view?.webview.postMessage({
       type: "pushDone",
       ok: result.ok,
-      error: result.ok ? undefined : result.stderr.trim(),
+      // A refused force has no stderr — nothing ran — so the modal gets the
+      // engine's sentence rather than an empty error line.
+      error: result.ok ? undefined : result.unseen ? pushUnseenMessage() : result.stderr.trim(),
     });
   }
 
@@ -1931,6 +2050,8 @@ export class CommitViewProvider
     }
     let result: { ok: boolean; stderr: string };
     try {
+      // in-the-way-reviewed: a new branch AT HEAD — nothing in the working
+      // tree changes, so nothing of the user's can be in its way.
       result = await entry.ctx.branches.checkoutNew(name);
     } catch (err) {
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
@@ -4704,7 +4825,7 @@ export class CommitViewProvider
         const i = b.querySelector(".codicon");
         if (i) i.className = "codicon codicon-loading codicon-modifier-spin";
         b.querySelector("span").textContent = busyLabel;
-        if (action === "pull" || action === "pullRebase") { syncBusy = "pull"; applySyncBusy(); }
+        if (action === "pull" || action === "pullMerge" || action === "pullRebase") { syncBusy = "pull"; applySyncBusy(); }
         else if (action === "push") { syncBusy = "push"; applySyncBusy(); }
         vscode.postMessage({ type: "branchAction", action: action, ref: ref });
       });
@@ -4815,7 +4936,7 @@ export class CommitViewProvider
         subItem(list, "trash", "Delete Tag", () => subAct("gitstudio.tag.delete", name, "tag"), true);
       } else if (current) {
         subItemLive(list, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name);
-        subItemLive(list, "arrow-down", "Pull using Merge", "Pulling…", "pull", name);
+        subItemLive(list, "arrow-down", "Pull using Merge", "Pulling…", "pullMerge", name);
         // Push opens the review modal (see openPushModal) rather than pushing in
         // place, so every push route funnels through the same confirmation.
         subItem(list, "arrow-up", "Push…", () => {
@@ -5887,7 +6008,7 @@ export class CommitViewProvider
       if (data.needsForce) {
         pushB.title =
           "You rewrote a commit the remote already has, so a normal push is refused. "
-          + "This uses --force-with-lease, which still refuses if someone else pushed.";
+          + "This replaces only the versions you rewrote — nobody else's commits are on the remote branch.";
       }
       if (!data.canPush) { pushB.disabled = true; pushB.title = data.reason || "Cannot push"; }
       pushB.addEventListener("click", () => {
@@ -6887,7 +7008,7 @@ export class CommitViewProvider
       } else if (msg.type === "branchActionDone") {
         // A sync op finished — clear every in-flight face (the fresh counts
         // arrived via the state push the host sent just before this).
-        if (msg.action === "pull" || msg.action === "pullRebase" || msg.action === "push") {
+        if (msg.action === "pull" || msg.action === "pullMerge" || msg.action === "pullRebase" || msg.action === "push") {
           syncBusy = "";
           // Re-derive pill visibility from the last real counts — the busy
           // face force-showed the pill, which must not linger at count 0.

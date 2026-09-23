@@ -1539,6 +1539,114 @@
       const ref = $$(".explore-ref-btn").map((b) => b.textContent.trim())[0] ?? "";
       c.ok(!/default branch/i.test(ref), `the ref switcher should name the branch, got "${ref}"`);
     },
+    /**
+     * A repository with no commits is a STATE, not a broken read.
+     *
+     * GitHub does not answer an empty list for one — it fails every read with
+     * "This repository is empty." (404 from the contents API, 409 from the git
+     * endpoints), so the page's catch was the only thing that ever saw it and
+     * it painted "Couldn't read this repository" over a repository that was
+     * perfectly readable and simply had nothing in it. Crash report #13 is that
+     * error, filed automatically, for a user who had just created a repo.
+     *
+     * Unwritable until now: no fixture could produce a repository whose reads
+     * fail this way, so the whole empty-repository surface was unreachable from
+     * any scene. `?emptyrepo=1` is that switch.
+     */
+    "an-empty-repository-reads-as-empty-not-broken": (f) => {
+      const c = check(f);
+      const body = text(".explore-repo-content");
+      c.ok(!!$(".explore-repo-title"), "the page still stands around it");
+      c.ok(
+        !$(".explore-repo-content .list-error"),
+        "an empty repository must not render as an error state",
+      );
+      c.ok(
+        !/couldn't read|could not read|failed/i.test(body),
+        `it must not blame itself: ${JSON.stringify(body.slice(0, 120))}`,
+      );
+      c.match(text(".explore-repo-content .list-empty-title"), /empty/i, "it says so plainly");
+    },
+    /**
+     * The second door on to an empty repository: Go to file.
+     *
+     * `ghrepo:paths` is the git-trees endpoint, which answers an empty
+     * repository with a 409 "Git Repository is empty." The list already said
+     * so — but the note under it still carried the sentence as an ERROR, red
+     * and announced as an alert, over a repository with nothing wrong in it.
+     */
+    "go-to-file-on-an-empty-repository-is-empty-not-broken": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const btn = $$(".mini-btn").find((b) => /^Go to file$/.test(text(b)));
+      if (!btn) return c.ok(false, "the page offers Go to file");
+      const before = window.__gsSent(/^ghrepo:paths$/).length;
+      btn.click();
+      await settle(900);
+      c.ok(window.__gsSent(/^ghrepo:paths$/).length > before, "the file list was actually asked for");
+      c.ok(!!$(".gotofile-card"), "the picker opened");
+      c.match(text(".gotofile-list .list-empty-title"), /empty/i, "the list says the repository is empty");
+      c.ok(!$(".gotofile-list .list-error"), "…not that listing it failed");
+      const note = $(".gotofile-note");
+      c.ok(!!note && !note.classList.contains("is-error"), "the note under it is not painted as an error");
+      c.ok(!!note && note.getAttribute("role") !== "alert", "…nor announced as one");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(200);
+    },
+    /**
+     * The ref switcher on an empty repository. GitHub's `/branches` answers
+     * an empty LIST for one (200, `[]`) — only the content endpoints refuse —
+     * so the fixture answers exactly that. It used to THROW here too, which
+     * meant this menu could only ever be exercised as a failure toast.
+     */
+    "the-ref-switcher-on-an-empty-repository-says-there-are-no-branches": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const btn = $(".explore-ref-btn");
+      if (!btn) return c.ok(false, "the page offers a ref switcher");
+      const before = window.__gsSent(/^ghrepo:branches$/).length;
+      btn.click();
+      await settle(700);
+      c.ok(window.__gsSent(/^ghrepo:branches$/).length > before, "the branches were actually asked for");
+      c.eq(
+        $$("#toast-stack .toast-error").map((t) => text(t)).join(" | "),
+        "",
+        "no failure is toasted for a repository that simply has no branches",
+      );
+      const items = $$(".dropdown [role='menuitem'], .dropdown .dropdown-item");
+      const said = items.map((i) => text(i)).join(" | ");
+      c.ok(items.length > 0, "a menu opened rather than nothing at all");
+      c.match(said, /no branches yet/i, `it says there are no branches (${said})`);
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(200);
+    },
+    /**
+     * The third door: the peek browser (an org repository's Details ▸ Browse
+     * files). It reads the same contents endpoint, so on an empty repository it
+     * must say the same thing the page does — not "Couldn't read …".
+     */
+    "browsing-an-empty-repository-in-the-peek-is-empty-not-broken": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const more = $(".gh-org-repo .row-more");
+      if (!more) return c.ok(false, "an org repository row offers its menu");
+      more.click();
+      await settle(300);
+      const details = $$(".dropdown-item, .dropdown [role='menuitem']").find((i) => /^Details/.test(text(i)));
+      if (!details) return c.ok(false, "the menu offers Details");
+      details.click();
+      await settle(700);
+      const browse = $$(".peek-act").find((b) => /Browse files/.test(text(b)));
+      if (!browse) return c.ok(false, "the repository peek offers Browse files");
+      const before = window.__gsSent(/^ghrepo:tree$/).length;
+      browse.click();
+      await settle(900);
+      c.ok(window.__gsSent(/^ghrepo:tree$/).length > before, "the listing was actually asked for");
+      const body = text(".peek-body");
+      c.match(body, /is empty — nothing has been pushed/, "the peek says the repository is empty");
+      c.ok(!/couldn't read|failed/i.test(body), `…and does not blame itself: ${JSON.stringify(body.slice(0, 120))}`);
+      c.ok(!$(".peek-body .peek-empty .codicon-warning"), "no warning glyph over an empty repository");
+    },
 
     // ── Organizations ────────────────────────────────────────────────────────
     "orgs-cards-not-clipped": (f) => {
@@ -8255,9 +8363,11 @@
       // and `getComputedStyle` on an element that is not in the rendered tree
       // answers with an empty declaration — every colour reads "" and every
       // assertion fails, saying nothing about colour. Under a loaded machine
-      // the pane existed but had not rendered yet, so this failed roughly one
-      // run in five and passed every time it was run alone: the worst kind of
-      // check, because a real regression here would be dismissed as the flake.
+      // this failed roughly one run in five and passed every time it was run
+      // alone: the worst kind of check, because a real regression here would
+      // be dismissed as the flake. Waiting for the paint was half of it; the
+      // other half — the probes being REMOVED by a repaint while the check
+      // waited — is below, where they are read.
       let win = $(".log-window");
       for (let i = 0; i < 40 && (!win || !win.isConnected || !$$(".log-line").length); i++) {
         await settle(100);
@@ -8284,7 +8394,14 @@
       const spans = pairs.map(([cls]) => mk(cls));
       // Bright backgrounds, which had no rules at all.
       const brights = [8, 9, 12, 15].map((n) => mk(`log-bg-${n}`));
-      await settle(200);
+      // Read in the SAME task that made them — no `await` from here to the last
+      // assertion. The probes live in the pane's virtual window, which the pane
+      // repaints with `replaceChildren()` whenever its ResizeObserver fires, and
+      // that is delivered with a frame: headless Chrome makes frames on the real
+      // clock, so on a loaded machine one landed inside the 200ms this used to
+      // wait, the probes were removed, and a detached element's computed style
+      // is "" for everything. Style resolution is synchronous; nothing can run
+      // between an append and a `getComputedStyle` in one task.
 
       // Not "the two differ" — light mapped bright-white to #24292f and black to
       // #3b4048, which DO differ and are still 1.34:1, a solid block you cannot
@@ -8814,6 +8931,9 @@
      */
     "a-long-log-line-scrolls-the-log-not-the-page": async (f) => {
       const c = check(f);
+      // A log that has PAINTED, the way log-colours-survive-both-themes waits:
+      // on a condition, not on a longer timeout.
+      for (let i = 0; i < 40 && !$$(".log-window .log-line").length; i++) await settle(100);
       const win = $(".log-window");
       const sc = $(".log-scroll");
       const pane = $(".log-pane");
@@ -8825,10 +8945,17 @@
       wide.className = "log-line";
       wide.textContent = "E".repeat(400);
       win.appendChild(wide);
-      // 600, not 200: under virtual time the appended line's layout sometimes
-      // lands after a 200ms read, and the check then reports "1092 in 1092" —
-      // a flake, not a finding. The assertions below are unchanged.
-      await settle(600);
+      // Measured in the SAME task that appended it — no `await` from here on.
+      // This used to wait 200ms, then 600 ("the layout sometimes lands after a
+      // 200ms read"), and waiting longer made it worse: the line is not laid out
+      // late, it is REMOVED. It sits in the pane's virtual window, which the
+      // pane repaints with `replaceChildren()` when its ResizeObserver fires,
+      // and that is delivered with a frame — which headless Chrome makes on the
+      // real clock, so the more loaded the machine, the likelier one lands in
+      // the wait. Then "1092 in 1092": the scroller measured without the line.
+      // Layout is synchronous — reading a box forces it — and nothing can run
+      // between the append and the reads below.
+      c.ok(wide.isConnected, "the long line is in the log while it is measured");
       c.eq(Math.round(R(pane).right), rightBefore, "the pane does not grow past where it was");
       c.ok(
         R(pane).right <= window.innerWidth + 1,
@@ -11635,6 +11762,76 @@
      * from the menus and hands "default" to the next shown one; Make default
      * does; a custom editor can be added and removed.
      */
+    /**
+     * Agent Access offers only what can work.
+     *
+     * Every shipped build used to show an enabled "Add" beside "The MCP server
+     * isn't built yet. Run `npm run build` in apps/mcp." — the server was never
+     * packaged, and the snippet below launched it with `node`, a runtime a
+     * desktop user need not have. With the server shipped, Add is live and the
+     * snippet names the app's own executable with ELECTRON_RUN_AS_NODE.
+     */
+    "agent-access-offers-an-add-that-works": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      c.ok(window.__gsSent(/^ai:mcpInfo$/).length > 0, "the card asked for the server's details");
+      const adds = $$(".mcp-client .mini-btn", card);
+      c.eq(adds.length, 4, "one button per client");
+      c.ok(adds.every((b) => !b.disabled), "every Add / Update is live when the server ships");
+      c.ok(!$(".mcp-missing", card), "no 'missing server' line over a server that is there");
+      c.ok(!/npm run build|apps\/mcp/.test(text(card)), "no build instructions for a repository the user lacks");
+      const snippet = JSON.parse(text($(".mcp-snippet-code", card)) || "{}");
+      const entry = (snippet.mcpServers || {}).gitstudio || {};
+      c.ok(entry.command && entry.command !== "node", `the snippet does not launch a bare node (${entry.command})`);
+      c.eq((entry.env || {}).ELECTRON_RUN_AS_NODE, "1", "…it runs the app's own executable as Node");
+    },
+    /** And a build without its server says so, and offers nothing that cannot work. */
+    "agent-access-without-a-server-offers-no-dead-button": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      c.match(text($(".mcp-missing", card)), /missing its MCP server/, "it says what is wrong");
+      c.ok(!/npm run build|apps\/mcp/.test(text(card)), "…without build instructions for a repository the user lacks");
+      const adds = $$(".mcp-client .mini-btn", card);
+      c.ok(adds.length > 0 && adds.every((b) => b.disabled), "no Add that can only fail");
+    },
+    /** Running from a Gatekeeper-translocated copy: the path Add would write
+     *  vanishes on quit. The card says why and what to do, offers no Add, and
+     *  no snippet to paste that path by hand either. */
+    "agent-access-refuses-a-translocated-app": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      c.match(text($(".mcp-missing", card)), /Move GitStudio to your Applications folder/, "it says what to do");
+      const adds = $$(".mcp-client .mini-btn", card);
+      c.ok(adds.length > 0 && adds.every((b) => b.disabled), "no Add that would write a vanishing path");
+      c.ok(!$(".mcp-snippet", card), "…and no snippet that names it for pasting");
+    },
+    /** A client set up with a GitStudio that has since moved: not "Connected" —
+     *  it cannot start. The card says so and offers Re-add. */
+    "agent-access-notices-a-moved-app": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      // `$` takes one argument; a row-scoped lookup is the row's own querySelector.
+      const row = $$(".mcp-client", card).find((r) => /Cursor/.test(text(r.querySelector(".mcp-client-name"))));
+      c.ok(!!row, "the Cursor row is there");
+      if (!row) return;
+      c.ok(!/Connected/.test(text(row.querySelector(".mcp-client-name"))), "a client that cannot start is not called Connected");
+      c.match(text(row.querySelector(".mcp-client-stale")), /no longer at/, "it says why");
+      const btn = row.querySelector(".mini-btn");
+      c.match(text(btn), /^Re-add$/, "and the one button puts the current path back");
+      c.ok(btn && !btn.disabled, "…live");
+      btn && btn.click();
+      await settle(400);
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "ai:mcpInstall");
+      c.ok(sent.length > 0 && (sent[sent.length - 1].payload || {}).client === "cursor", "Re-add installs Cursor again");
+    },
     "editors-are-configurable-in-settings": async (f) => {
       const c = check(f);
       await settle(300);
@@ -12192,6 +12389,24 @@
         "each option explains what will actually happen",
       );
     },
+    /** The sibling of the pull question: this one is asked right after the
+     *  rename MOVED A REF, so the watcher's refresh (250 ms after the write,
+     *  emitted here as the real watcher would) lands while it is on screen —
+     *  and used to answer "Keep tracking" for the user. */
+    "the-rename-question-outlives-the-refresh-the-rename-causes": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const done = await renameFirstBranch("feat/line-staging", "feat/line-staging-v2");
+      c.ok(done, "the rename dialog was driven");
+      if (!done) return;
+      await settle(300);
+      c.ok(/on origin too\?$/.test(text(".modal-title")), "precondition: the remote question is up");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      c.ok(window.__gsEmit("repo:filesChanged", { gitDir: true }) > 0, "precondition: the app listens for the watcher");
+      await settle(900);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the refresh re-routed underneath");
+      c.ok(/on origin too\?$/.test(text(".modal-title")), "the question is still there after the refresh");
+    },
     /** An unpublished branch has no remote to reconcile, so it must not ask. */
     "renaming-an-unpublished-branch-asks-nothing": async (f) => {
       const c = check(f);
@@ -12712,6 +12927,681 @@
           `the list still fills its column, got flex "${getComputedStyle(list).flex}"`,
         );
       }
+    },
+
+    // ── Pull, when git will not decide on its own ───────────────────────────
+    // Report #12: a user pressed Pull on a diverged branch and what reached
+    // them was git's advice for a terminal — "You have divergent branches and
+    // need to specify how to reconcile them", plus three `git config` lines.
+    // These run on ?diverged=1, the only scene where the top bar's action is
+    // Pull and the pull comes back asking.
+    /** The wall becomes a question, in the app's own words. */
+    "a-diverged-pull-asks-instead-of-quoting-git": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      c.ok(!!main, "the top bar offers a sync action");
+      c.match(text(main), /^Pull 3$/, "…and it is Pull, because the branch is behind");
+      if (!main) return;
+      main.click();
+      await settle(700);
+
+      const card = $(".modal-card");
+      c.ok(!!card, "a diverged pull asks rather than failing");
+      if (!card) return;
+      c.match(text(".modal-title"), /have diverged/, "the title names the state");
+      c.match(text(".modal-title"), /main.*origin\/main/, "…and both refs by name");
+      const hint = text(".modal-message");
+      c.match(hint, /2 commits/, "the hint counts what is ours");
+      // 5, not the badge's 3: the question quotes what the pull's own fetch
+      // found, not the count painted from an older one.
+      c.match(hint, /5 commits/, "…and what is theirs, as of the fetch this pull just did");
+      c.match(hint, /this pull only/, "…and says the choice is not permanent");
+      // The thing the user was handed before, and must never be handed again.
+      const shown = text("#root") + text("#toast-stack");
+      c.ok(!/git config pull\./.test(shown), "no `git config` advice anywhere on screen");
+      c.ok(!/divergent branches/.test(shown), "…and no 'divergent branches' hint");
+
+      const labels = $$(".modal-choice-label").map((e) => text(e));
+      c.ok(labels.includes("Merge"), `merge is offered (${labels.join(" | ")})`);
+      c.ok(labels.includes("Rebase"), "rebase is offered");
+      c.ok(!!$$(".modal-actions button").find((b) => /^Cancel$/.test(text(b))), "…and cancelling");
+      c.ok(
+        $$(".modal-choice-sub").every((e) => (text(e) || "").length > 20),
+        "each option explains what it will do to history",
+      );
+    },
+    /** Picking must reach the REQUEST — a dialog that closes and pulls
+     *  nothing is the failure this whole flow exists to avoid. */
+    "picking-how-to-reconcile-actually-pulls-that-way": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(700);
+      const rebase = $$(".modal-choice").find((r) =>
+        /^Rebase$/.test(text($$(".modal-choice-label", r)[0])),
+      );
+      c.ok(!!rebase, "the rebase option is clickable");
+      if (!rebase) return;
+      rebase.click();
+      await settle(900);
+      c.eq(window.__gsPulledWith, "rebase", "the second pull carried the mode that was picked");
+      c.ok(!$(".modal-card"), "the question is gone");
+      c.match(text("#toast-stack"), /rebas/i, "…and the toast says what it actually did");
+    },
+    /** Backing out runs nothing and blames nobody. */
+    "cancelling-the-question-pulls-nothing-and-reports-nothing": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(700);
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b)));
+      c.ok(!!cancel, "the question can be declined");
+      if (!cancel) return;
+      cancel.click();
+      await settle(700);
+      c.eq(window.__gsPulledWith, null, "no second pull was sent");
+      c.ok(!$(".modal-card"), "the dialog closed");
+      // The bridge's message is for someone who has yet to choose. Showing it
+      // to someone who chose not to would read as an error they caused.
+      c.eq(text("#toast-stack"), "", "nothing is toasted at someone who cancelled");
+      // And the widget is usable again rather than stuck on "Pulling…".
+      const again = $(".topbar-sync .sync-main");
+      c.ok(!!again && !again.disabled, "the Pull button is live again");
+      // Nothing was merged — but the first pull FETCHED, and found the remote
+      // 5 ahead where the badge said 3. Returning bare left "Pull 3" over a
+      // branch that was now 5 behind until something else happened to refresh.
+      c.match(text(again), /^Pull 5$/, "…showing what the pull's fetch found, not the stale count");
+    },
+
+    // ── A pull that STOPS on conflicts (?diverged=1&pullconflict=1) ─────────
+    // The answer to the divergence question is a merge or a rebase, and either
+    // can stop on conflicts. From this door that used to be report #12 again:
+    // "The operation failed." for a merge, git's "Resolve all conflicts
+    // manually… git rebase --continue" hint in a red toast (and a crash report)
+    // for a rebase.
+    /** Said plainly, in a neutral tone, with the count — and the user is taken
+     *  to Changes, where the paused-operation banner is waiting. */
+    "a-pull-that-stops-on-conflicts-lands-in-changes": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(700);
+      const merge = $$(".modal-choice").find((r) =>
+        /^Merge$/.test(text($$(".modal-choice-label", r)[0])),
+      );
+      if (!merge) return c.ok(false, "no Merge option to pick");
+      merge.click();
+      await settle(1200);
+      c.eq(window.__gsPulledWith, "merge", "the merge was asked for");
+      const toasts = $$("#toast-stack .toast");
+      const said = toasts.map((t) => text(t)).join(" | ");
+      c.match(said, /stopped on conflicts in 2 files/, "the toast counts the conflicted files");
+      c.match(said, /commit the merge/, "…and names the next step");
+      c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `nothing is painted as a failure (${said})`);
+      const shown = text("#root") + said;
+      c.ok(!/The operation failed|hint:|git rebase --continue|git add\/rm/.test(shown), "no git terminal advice, no blank failure");
+      const routes = window.__GS_ROUTES || [];
+      c.eq((routes[routes.length - 1] || {}).view, "changes", "the user is taken to Changes");
+      c.match(text(".dc-opbanner"), /merge in progress — 2 files still conflicted/, "…where the paused merge is waiting");
+    },
+    /** The Branches list's ↓ pill is the SECOND door onto the same pull. It
+     *  asks the same question — and a cancel refreshes the row it was pressed
+     *  on, not just the top bar. */
+    "the-branches-pull-pill-asks-and-refreshes-on-cancel": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const pill = $('button[aria-label="Pull main"]');
+      if (!pill) return c.ok(false, "main's row offers no Pull (the fixture should make it 3 behind)");
+      const rowOf = (btn) => {
+        let n = btn;
+        for (let i = 0; i < 6 && n; i++, n = n.parentElement) {
+          if (n.querySelector && n.querySelector(".ab-pill.behind")) return n;
+        }
+        return null;
+      };
+      c.match(text(rowOf(pill) && rowOf(pill).querySelector(".ab-pill.behind")), /3/, "precondition: the row says 3 behind");
+      pill.click();
+      await settle(700);
+      c.ok(!!$(".modal-card"), "the pill asks the same question the top bar does");
+      c.match(text(".modal-message"), /5 commits/, "…with the counts the pull's fetch found");
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b)));
+      if (!cancel) return c.ok(false, "the question cannot be declined");
+      cancel.click();
+      await settle(1200);
+      c.eq(window.__gsPulledWith, null, "no second pull was sent");
+      c.eq(text("#toast-stack"), "", "nothing is toasted at someone who cancelled");
+      const fresh = $('button[aria-label="Pull main"]');
+      const pillCount = text(fresh && rowOf(fresh) && rowOf(fresh).querySelector(".ab-pill.behind"));
+      c.match(pillCount, /5/, `the row's behind count is the fetched one, not the stale 3 (got "${pillCount}")`);
+      c.match(text(".topbar-sync .sync-main"), /^Pull 5$/, "…and so is the top bar's");
+    },
+    /** And from the pill, a rebase that stops lands in Changes too. */
+    "the-branches-pull-pill-lands-in-changes-when-it-stops": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const pill = $('button[aria-label="Pull main"]');
+      if (!pill) return c.ok(false, "main's row offers no Pull");
+      pill.click();
+      await settle(700);
+      const rebase = $$(".modal-choice").find((r) =>
+        /^Rebase$/.test(text($$(".modal-choice-label", r)[0])),
+      );
+      if (!rebase) return c.ok(false, "no Rebase option to pick");
+      rebase.click();
+      await settle(1200);
+      const toasts = $$("#toast-stack .toast");
+      const said = toasts.map((t) => text(t)).join(" | ");
+      c.match(said, /stopped on conflicts in 2 files/, "the toast counts the conflicted files");
+      c.match(said, /continue the rebase/, "…and names the rebase's next step");
+      c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `nothing is painted as a failure (${said})`);
+      const routes = window.__GS_ROUTES || [];
+      c.eq((routes[routes.length - 1] || {}).view, "changes", "the user is taken to Changes");
+      c.match(text(".dc-opbanner"), /rebase in progress — 2 files still conflicted/, "…where the paused rebase is waiting");
+    },
+    /** The question is asked BECAUSE the pull's fetch moved a ref — and that
+     *  same write wakes the repository watcher 250 ms later, whose refresh
+     *  re-routes the view and tears floating layers down. In the real app the
+     *  question used to vanish ~200 ms after it appeared, answered "Cancel" by
+     *  nobody. It has to outlive that refresh, from both doors. */
+    "the-pull-question-outlives-the-refresh-its-own-fetch-causes": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(200);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      // Well past the watcher's debounce: the refresh has happened.
+      await settle(1500);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the watcher's refresh re-routed underneath");
+      c.ok(!!$(".modal-card"), "the question is still there after the refresh");
+      c.eq(window.__gsPulledWith, null, "…and nothing answered it on the user's behalf");
+      const merge = $$(".modal-choice").find((r) => /^Merge$/.test(text($$(".modal-choice-label", r)[0])));
+      if (!merge) return c.ok(false, "no Merge option to pick");
+      merge.click();
+      await settle(900);
+      c.eq(window.__gsPulledWith, "merge", "the user's answer is the one that reached git");
+    },
+    "the-branches-pull-question-outlives-the-refresh-its-own-fetch-causes": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const pill = $('button[aria-label="Pull main"]');
+      if (!pill) return c.ok(false, "main's row offers no Pull");
+      pill.click();
+      await settle(200);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      await settle(1500);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the watcher's refresh re-routed underneath");
+      c.ok(!!$(".modal-card"), "the question is still there after the refresh");
+      c.eq(window.__gsPulledWith, null, "…and nothing answered it on the user's behalf");
+    },
+    /** A stop lands the user in Changes with the branch still ahead and behind
+     *  — so the top bar still offers Pull. Pressing it there must not ask the
+     *  question again or paint git's refusal red: it says what is paused, and
+     *  stays in Changes, where that is finished or aborted. */
+    "pulling-again-over-the-stopped-merge-says-what-is-paused": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(500);
+      const merge = $$(".modal-choice").find((r) => /^Merge$/.test(text($$(".modal-choice-label", r)[0])));
+      if (!merge) return c.ok(false, "no Merge option to pick");
+      merge.click();
+      await settle(1500);
+      c.match(text(".dc-opbanner"), /merge in progress/, "precondition: the merge stopped and Changes shows it");
+      // Wander off, as anyone does before coming back to Pull.
+      window.dispatchEvent(new CustomEvent("gs:go", { detail: { view: "branches" } }));
+      await settle(600);
+      const wandered = window.__GS_ROUTES || [];
+      c.eq((wandered[wandered.length - 1] || {}).view, "branches", "precondition: the user has left Changes");
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      window.__gsPulledWith = "untouched";
+      const again = $(".topbar-sync .sync-main");
+      c.match(text(again), /^Pull \d+$/, "precondition: Pull is still on offer over the paused merge");
+      if (!again) return;
+      again.click();
+      await settle(1200);
+      c.eq(window.__gsPulledWith, null, "one mode-less pull was sent — and no second one");
+      c.ok(!$(".modal-card"), "no merge-or-rebase question over a merge that is already under way");
+      const toasts = $$("#toast-stack .toast");
+      const said = toasts.map((t) => text(t)).join(" | ");
+      c.match(said, /merge is still in progress/, "the toast says what is paused");
+      c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `nothing is painted as a failure (${said})`);
+      c.ok(!/git add\/rm|hint:|not possible/.test(said), "no git terminal advice");
+      const routes = window.__GS_ROUTES || [];
+      c.eq((routes[routes.length - 1] || {}).view, "changes", "…and the user is taken back to where the merge is finished");
+    },
+    /** Holding the question against a refresh must not hold it across a
+     *  REPOSITORY switch: `sync:pull` acts on whatever repository is open, so
+     *  an answer given after the switch would pull a repository the question
+     *  was never about. */
+    "the-pull-question-does-not-follow-you-to-another-repository": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(200);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
+      await settle(900);
+      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      c.eq(window.__gsPulledWith, null, "…and pulls nothing");
+    },
+    /** GitHub answers what it can and names the rest; the reads keep what came
+     *  back. `?partial=1` names one project and one card it could not return —
+     *  the view must SAY so, where the list is, instead of showing a short list
+     *  as the whole one. Without `partial`, the same view says nothing. */
+    "a-list-github-could-not-fully-return-says-so": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const partial = new URLSearchParams(location.search).get("partial");
+      const notes = $$(".gh-unreadable-note");
+      if (!partial) {
+        c.eq(notes.length, 0, "a complete answer carries no note");
+        return;
+      }
+      const said = notes.map((n) => text(n));
+      c.ok(said.some((t) => /^1 project could not be read from GitHub\.$/.test(t)), `the list says a project is missing (${said.join(" | ")})`);
+      c.ok(said.some((t) => /^1 card could not be read from GitHub\.$/.test(t)), "…and the board that a card is");
+      for (const n of notes) {
+        const r = n.getBoundingClientRect();
+        c.ok(n.offsetParent !== null && r.height > 0 && r.width > 0, `"${text(n)}" is on screen, not collapsed`);
+        c.ok(!!n.title, "it says why on hover");
+      }
+      // The picker still offers every project that DID come back.
+      c.ok($$(".gh-card").length > 0, "the readable cards are still on the board");
+    },
+    /** A folder that does not open — no repository, or one this account cannot
+     *  read — arrives as a `warn` notice. It used to be painted red, as if the
+     *  app had failed; only an `error` notice is. */
+    "a-folder-that-will-not-open-is-not-painted-as-a-failure": async (f) => {
+      const c = check(f);
+      await settle(400);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const said = "/work/project is a Git repository, but you don't have permission to read it.";
+      c.ok(window.__gsEmit("app:notice", { kind: "warn", message: said }) > 0, "precondition: the app listens for notices");
+      await settle(300);
+      const t = $$("#toast-stack .toast").find((x) => text(x).includes("don't have permission"));
+      c.ok(!!t, "the notice is shown");
+      if (!t) return;
+      c.ok(!t.classList.contains("toast-error"), "…in the neutral tone, not as a failure");
+      $$("#toast-stack .toast").forEach((x) => x.remove());
+      window.__gsEmit("app:notice", { kind: "error", message: "Something did fail." });
+      await settle(300);
+      const e = $$("#toast-stack .toast").find((x) => text(x).includes("Something did fail"));
+      c.ok(!!e && e.classList.contains("toast-error"), "an error notice is still red");
+    },
+    /**
+     * Commit & Push, where the force it offers is refused: said as what it is.
+     *
+     * A rewritten branch is pushed plainly, refused non-fast-forward, and the
+     * app offers a force. When the remote has commits that are not this
+     * branch's to replace — somebody else's, or the same commit amended on
+     * another machine and fetched in the background — the bridge refuses that
+     * force (`expected`, `pullFirst`). That arrived as "Committed, but push
+     * failed: …" in red: a refusal that was the app doing its job, read as a
+     * failure, with nothing offered. The commit is made and nothing was pushed;
+     * the toast says so in the neutral tone and offers the way on — Pull.
+     */
+    "a-refused-force-push-after-commit-says-so-and-offers-pull": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const ta = $(".dc-message");
+      const push = $(".dc-push");
+      c.ok(!!ta && !!push, "the composer offers Commit & Push");
+      if (!ta || !push) return;
+      ta.value = "fix: a thing";
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(300);
+      c.ok(!push.disabled, "Commit & Push is armed");
+      push.click();
+      await settle(700);
+      const ok = $(".modal-ok");
+      c.ok(!!ok && /force/i.test(text(ok)), "the refused plain push offers a force");
+      if (!ok) return;
+      ok.click();
+      await settle(700);
+      const pushes = window.__gsPushedWith || [];
+      c.eq(pushes.length, 2, "a plain push, then the forced one");
+      c.eq(!!(pushes[1] && pushes[1].force), true, "the second one is the force");
+      const t = $$("#toast-stack .toast").find((x) => /Committed/.test(text(x)));
+      c.ok(!!t, "the outcome is said");
+      if (!t) return;
+      c.ok(!t.classList.contains("toast-error"), `in the neutral tone, not as a failure (${t.className})`);
+      c.ok(!/push failed/i.test(text(t)), `and not called a failed push (${JSON.stringify(text(t))})`);
+      c.match(text(t), /not pushed/i, "it says the commit was made and nothing was pushed");
+      c.match(text(t), /Pull them in first/, "…and why, in the bridge's words");
+      const act = t.querySelector(".toast-action");
+      c.eq(text(act), "Pull", "the way on is offered");
+      if (!act) return;
+      act.click();
+      await settle(500);
+      const pulled = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
+      c.ok(pulled.length > 0, "and Pull pulls");
+    },
+
+    // ── Uncommitted work in a command's way (crash report #18) ─────────────
+    // A revert over an edit to a file it touches: git refused ("Your local
+    // changes to the following files would be overwritten by merge … fatal:
+    // revert failed"), and the door showed that in red and filed it as a crash.
+    // Every door that applies commits now answers such a refusal with the files
+    // in the way (main/inTheWay.ts), and bridge.ts asks — once, for every door
+    // — Stash & Retry or Cancel. These run on ?intheway=, where each door's
+    // FIRST request is refused as the bridge refuses it (see the shim).
+    /**
+     * Report #18's own door: the commit page's Revert. It asks, naming the
+     * file; the question outlives the watcher's refresh; Stash & Retry sends
+     * the same revert again, carrying the repository it was asked in.
+     */
+    "a-revert-over-your-changes-asks-and-outlives-the-refresh": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const sent = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "revert");
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      c.ok(!!more, "the commit page carries its actions menu");
+      if (!more) return;
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Revert this commit/.test(text(i) || ""));
+      c.ok(!!item, "it offers Revert");
+      if (!item) return;
+      item.click();
+      await settle(350);
+      const ok = $(".modal-ok");
+      c.ok(!!ok, "Revert confirms first, as it always has");
+      if (!ok) return;
+      ok.click();
+      await settle(700);
+      c.eq(sent().length, 1, "the revert was sent");
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "refused over the user's changes, it ASKS");
+      c.match(text(".modal-message"), /changes to docs\/notes\.md are in the way of the revert/, "…naming the file, and what it is in the way of");
+      const labels = $$(".modal-choice-label").map((e) => text(e));
+      c.ok(labels.includes("Stash & Retry"), `Stash & Retry is offered (${labels.join(" | ")})`);
+      c.ok(!!$$(".modal-actions button").find((b) => /^Cancel$/.test(text(b) || "")), "…and Cancel");
+      c.ok(!$(".toast-error"), "nothing is red: this is the user's state, not a failure");
+      c.ok(!/overwritten by merge|fatal:|Aborting/.test(text("#root") + text("#toast-stack")), "…and git's text is shown nowhere");
+      // A refused command can still refresh the index, and the watcher's
+      // refresh re-routes the view, which tears floating layers down — the
+      // pull's own question was answered "Cancel" that way, by nobody.
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      c.ok(window.__gsEmit("repo:filesChanged", { gitDir: true }) > 0, "precondition: the app listens for the watcher");
+      await settle(900);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the refresh re-routed underneath");
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "the question is still there after the refresh");
+      c.eq(sent().length, 1, "…and nothing was answered for the user");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return;
+      stash.click();
+      await settle(800);
+      c.eq(sent().length, 2, "Stash & Retry sends the revert again — once");
+      const [first, again] = sent().map((r) => r.payload);
+      c.eq(again?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…carrying the repository the refusal came from");
+      c.eq(again?.sha, first?.sha, "…for the same commit");
+      c.eq(first?.stashFirst, undefined, "the first request asked for nothing to be stashed");
+      c.ok(!$(".modal-card"), "the question is answered and gone");
+      const t = $$("#toast-stack .toast").find((x) => /Revert commit created/.test(text(x)));
+      c.ok(!!t && t.classList.contains("toast-success"), "…and the revert is reported done");
+      c.ok(!$(".toast-error"), "nothing red at any point");
+    },
+    /** Cancel runs nothing, says nothing, and files nothing. */
+    "cancelling-the-stash-question-runs-nothing-and-says-nothing": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const sent = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "cherry-pick");
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      if (!more) return c.ok(false, "no actions menu to press");
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Cherry-pick onto current branch/.test(text(i) || ""));
+      c.ok(!!item, "it offers Cherry-pick");
+      if (!item) return;
+      item.click();
+      await settle(700);
+      c.match(text(".modal-message"), /in the way of the cherry-pick/, "a cherry-pick asks the same question");
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b) || ""));
+      if (!cancel) return c.ok(false, "no Cancel to press");
+      cancel.click();
+      await settle(700);
+      c.ok(!$(".modal-card"), "the question closes");
+      c.eq(sent().length, 1, "nothing is sent again");
+      c.eq($$("#toast-stack .toast").length, 0, `and nothing is said (${text("#toast-stack")})`);
+    },
+    /**
+     * The top bar's Pull, over an edit to a file the pull changes. The pull
+     * FETCHED before git refused, so the watcher reports the moved ref while
+     * the question is up — and the question survives it; Stash & Retry pulls.
+     */
+    "a-pull-over-your-changes-asks-and-outlives-its-own-fetch": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const main = $(".topbar-sync .sync-main");
+      c.match(text(main), /^Pull 3$/, "the branch is behind, so the top bar offers Pull");
+      if (!main) return;
+      main.click();
+      await settle(200);
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "the refused pull asks");
+      c.match(text(".modal-message"), /changes to docs\/notes\.md are in the way of the pull/, "…naming the file");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      await settle(900); // the shim's watcher fires 250 ms after the fetch
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the fetch's refresh re-routed underneath");
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "the question outlives the refresh its own fetch caused");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull").map((r) => r.payload);
+      c.eq(pulls.length, 2, "the pull, then its retry");
+      c.eq(pulls[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "the retry stashes first, in this repository");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /Pulled/.test(text(t))), `and it pulled (${text("#toast-stack")})`);
+      c.ok(!$(".toast-error"), "nothing red");
+    },
+    /** Switching repository answers the question with Cancel: a Stash & Retry
+     *  there would stash and run in a repository nobody asked about. */
+    "the-stash-question-does-not-follow-you-to-another-repository": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(200);
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "precondition: the question is up");
+      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
+      await settle(900);
+      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
+      c.eq(pulls.length, 1, "…and nothing is stashed or pulled");
+      const failed = $$("#toast-stack .toast").filter((t) => /fail|couldn/i.test(text(t) || ""));
+      c.eq(failed.length, 0, `…and a cancelled question is not said as a failed pull (${text("#toast-stack")})`);
+    },
+    /** The Branches view's Rebase, cancelled at the question: nothing ran and
+     *  nothing is said — the menu's own reporter used to toast every ok:false. */
+    "a-rebase-cancelled-at-the-stash-question-says-nothing": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const kebab = $$("button").find((b) => /^More actions for (?!main$)/.test(b.getAttribute("aria-label") || ""));
+      if (!kebab) return c.ok(false, "no branch actions to open");
+      kebab.click();
+      await settle(350);
+      const rebase = $$(".dropdown-item").find((r) => /^Rebase current onto /.test(text(r) || ""));
+      c.ok(!!rebase, "it offers Rebase");
+      if (!rebase) return;
+      rebase.click();
+      await settle(350);
+      const ok = $(".modal-ok");
+      c.ok(!!ok, "a rebase confirms first, as it always has");
+      if (!ok) return;
+      ok.click();
+      await settle(700);
+      c.match(text(".modal-message"), /^A rebase needs a clean working tree/, "the refused rebase asks, in the rebase's own words");
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b) || ""));
+      if (!cancel) return c.ok(false, "no Cancel to press");
+      cancel.click();
+      await settle(900);
+      c.eq((window.__GS_INVOKED || []).filter((r) => r.channel === "branch:rebase").length, 1, "nothing is sent again");
+      c.eq($$("#toast-stack .toast").length, 0, `and nothing is said (${text("#toast-stack")})`);
+    },
+    /** The Branches view's Merge asks the same question, from the same place. */
+    "a-merge-over-your-changes-asks-too": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const kebab = $$("button").find((b) => /^More actions for (?!main$)/.test(b.getAttribute("aria-label") || ""));
+      c.ok(!!kebab, "a branch other than the current one offers its actions");
+      if (!kebab) return;
+      const name = (kebab.getAttribute("aria-label") || "").replace(/^More actions for /, "");
+      kebab.click();
+      await settle(350);
+      const merge = $$(".dropdown-item").find((r) => /^Merge .* into current/.test(text(r) || ""));
+      c.ok(!!merge, "it offers Merge");
+      if (!merge) return;
+      merge.click();
+      await settle(700);
+      c.match(text(".modal-message"), /in the way of the merge/, "the refused merge asks");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const merges = (window.__GS_INVOKED || []).filter((r) => r.channel === "branch:merge").map((r) => r.payload);
+      c.eq(merges.length, 2, "the merge, then its retry");
+      c.eq(merges[1]?.name, name, "…of the same branch");
+      c.eq(merges[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…stashing first");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /merge/.test(text(t))), `and the merge is reported (${text("#toast-stack")})`);
+    },
+    /** A stash applied from the stash list over changes in its way: the same
+     *  question, and the retry names the stash it was asked about. */
+    "a-stash-apply-over-your-changes-asks-too": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const row = $$(".sec-row")[0];
+      c.ok(!!row, "a stash is listed");
+      if (!row) return;
+      const apply = row.querySelector('button[aria-label^="Apply "]');
+      c.ok(!!apply, "the stash offers Apply");
+      if (!apply) return;
+      apply.click();
+      await settle(900);
+      c.match(text(".modal-message"), /in the way of applying the stash/, "the refused apply asks");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const applies = (window.__GS_INVOKED || []).filter((r) => r.channel === "stash:apply").map((r) => r.payload);
+      c.eq(applies.length, 2, "the apply, then its retry");
+      c.eq(typeof applies[0], "string", "the first request is the ref, as it always was");
+      c.eq(applies[1]?.ref, applies[0], "the retry names the same stash");
+      c.eq(applies[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…and stashes first");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /Applied/.test(text(t))), `and it is applied (${text("#toast-stack")})`);
+    },
+    /** A pull request checked out over changes in its way. */
+    "a-pull-request-checkout-over-your-changes-asks-too": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const btn = $$("button").find((b) => /^Checkout$/.test(text(b) || "") && /as pr\//.test(b.title || ""));
+      c.ok(!!btn, "the pull request offers Checkout");
+      if (!btn) return;
+      btn.click();
+      await settle(700);
+      c.match(text(".modal-message"), /in the way of switching to it/, "the refused checkout asks");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const outs = (window.__GS_INVOKED || []).filter((r) => r.channel === "pr:checkout").map((r) => r.payload);
+      c.eq(outs.length, 2, "the checkout, then its retry");
+      c.eq(outs[1]?.number, outs[0], "…of the same pull request");
+      c.eq(outs[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…stashing first");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /Checked out PR/.test(text(t))), `and it is checked out (${text("#toast-stack")})`);
+    },
+    /** When the stashed changes cannot simply come back, the retry says where
+     *  they are — in the neutral tone, with the stash's name. */
+    "what-a-stash-and-retry-could-not-put-back-is-said": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(300);
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const note = $$("#toast-stack .toast").find((t) => /kept in the stash "GitStudio: before pulling"/.test(text(t)));
+      c.ok(!!note, `where the changes are is said (${text("#toast-stack")})`);
+      c.ok(!!note && note.classList.contains("toast-info"), "…in the neutral tone");
+    },
+    /** Still in the way after the stash (something it could not cover): said
+     *  once, in the neutral tone — never asked a second time, never a loop. */
+    "still-in-the-way-after-the-stash-is-said-not-asked-again": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(300);
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      c.ok(!$(".modal-card"), "not asked a second time");
+      const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
+      c.eq(pulls.length, 2, "one pull and one retry — no loop");
+      c.ok(!!$$("#toast-stack .toast").find((t) => /in the way of the pull/.test(text(t))), `the refusal is said (${text("#toast-stack")})`);
+      c.ok(!$(".toast-error"), "…and not as a failure");
+    },
+    /** A failure that is NOT the user's work in the way asks nothing, and is
+     *  still said as a failure — the door must not swallow a real one. */
+    "a-genuine-failure-asks-nothing-and-stays-red": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      if (!more) return c.ok(false, "no actions menu to press");
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Cherry-pick onto current branch/.test(text(i) || ""));
+      if (!item) return c.ok(false, "no Cherry-pick to press");
+      item.click();
+      await settle(700);
+      c.ok(!$(".modal-card"), "nothing is asked");
+      const t = $$("#toast-stack .toast").find((x) => /unable to read tree/.test(text(x)));
+      c.ok(!!t && t.classList.contains("toast-error"), `the failure is said, in red (${text("#toast-stack")})`);
+    },
+    /** The PR's review threads: one GitHub could not return has no file to hang
+     *  on, so every file's panel says it — "No comments on this file" is not a
+     *  claim the panel can make about a thread nobody could read. */
+    "a-review-thread-github-could-not-return-is-said": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const note = $(".pr-threads .gh-unreadable-note");
+      c.ok(!!note, "the review panel carries the note");
+      if (!note) return;
+      c.match(text(note), /^1 review thread on this pull request could not be read from GitHub\.$/, "in plain words");
+      c.ok(!note.closest(".pr-threads-body"), "outside the folding body, so a folded panel still says it");
     },
   };
 })();
