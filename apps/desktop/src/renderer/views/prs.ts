@@ -71,6 +71,7 @@ import {
   subTabs,
   checkStateLabel,
   checkIcon,
+  unreadableNotice,
 } from "./common";
 import { wireProseNav } from "../proseNav";
 import { openPeek } from "../peek";
@@ -1480,9 +1481,10 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
    * nobody had reviewed, and the reader had no way to tell the difference or
    * to try again.
    */
-  const loadThreads = async (): Promise<{ threads: PrReviewThread[]; error?: unknown }> => {
+  const loadThreads = async (): Promise<LoadedThreads> => {
     try {
-      return { threads: await host.invoke("pr:reviewThreads", full.number) };
+      const got = await host.invoke("pr:reviewThreads", full.number);
+      return { threads: got.threads, unreadable: got.unreadable };
     } catch (e) {
       return { threads: [], error: e };
     }
@@ -1568,7 +1570,7 @@ async function showFileDiff(
   detail: HTMLElement,
   full: PullRequest,
   f: PrFile,
-  loadThreads: () => Promise<{ threads: PrReviewThread[]; error?: unknown }>,
+  loadThreads: () => Promise<LoadedThreads>,
 ): Promise<void> {
   const surface = el("div", "diff-surface pr-diff-surface");
   const threadsSlot = el("div", "pr-threads");
@@ -1591,7 +1593,7 @@ async function showFileDiff(
     threadsSlot.replaceChildren(loadingState("Refreshing comments…"));
     const next = await loadThreads();
     if (prDiffPanel !== panel) return;
-    renderThreadsPanel(threadsSlot, full, f, next.threads, () => void refreshThreads(), next.error);
+    renderThreadsPanel(threadsSlot, full, f, next.threads, () => void refreshThreads(), next.error, next.unreadable);
   };
 
   const threadsReady = loadThreads();
@@ -1615,7 +1617,15 @@ async function showFileDiff(
   const loaded = await threadsReady;
   const threads = loaded.threads;
   if (prDiffPanel !== panel) return;
-  renderThreadsPanel(threadsSlot, full, f, threads, () => void refreshThreads(), loaded.error);
+  renderThreadsPanel(threadsSlot, full, f, threads, () => void refreshThreads(), loaded.error, loaded.unreadable);
+}
+
+/** What `loadThreads` hands the panel: the threads, how many GitHub named but
+ *  could not return, or the failure that means the comments are unknown. */
+interface LoadedThreads {
+  threads: PrReviewThread[];
+  unreadable?: number;
+  error?: unknown;
 }
 
 /** The inline-review panel beneath a file's diff: existing threads (grouped by
@@ -1628,6 +1638,10 @@ function renderThreadsPanel(
   reloadFile: () => void,
   /** Set when the fetch FAILED, which is not the same as "there are none". */
   loadError?: unknown,
+  /** Threads on this pull request GitHub named but could not return. Their
+   *  file is unknown, so every file's panel says so — "No comments on this
+   *  file" is not a claim this panel can make about them. */
+  unreadable = 0,
 ): void {
   slot.replaceChildren();
   const mine = threads
@@ -1709,6 +1723,8 @@ function renderThreadsPanel(
   // comment used to be hidden inside a panel that is folded on precisely the
   // files that have no comments yet.
   headRow.appendChild(addBtn);
+  const missing = unreadableNotice(unreadable, "review thread on this pull request", "review threads on this pull request");
+  if (missing) slot.appendChild(missing);
 
   // The PENDING remarks on this file — visible, editable, deletable, and
   // clearly not posted yet. A queue you cannot see is a queue you double-post.

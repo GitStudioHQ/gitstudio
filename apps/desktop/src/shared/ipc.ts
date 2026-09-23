@@ -1083,6 +1083,20 @@ export interface ProjectItem {
 export interface ProjectBoard {
   field: ProjectStatusField | null;
   items: ProjectItem[];
+  /** Cards GitHub named but could not return — an issue in a repository the
+   *  account can no longer see. The board says so rather than looking whole. */
+  unreadable: number;
+}
+
+/**
+ * `project:list`'s answer: the projects GitHub returned, and how many more it
+ * named but could not return. GitHub answers what it can and reports the rest,
+ * and the list keeps what came back — so without the count, a list missing an
+ * entry looked complete.
+ */
+export interface ProjectList {
+  projects: ProjectInfo[];
+  unreadable: number;
 }
 
 // ── Gists ──
@@ -2102,7 +2116,7 @@ export interface IpcChannels {
     ExternalItemDetail | undefined,
   ];
   // Projects v2.
-  "project:list": [void, ProjectInfo[]];
+  "project:list": [void, ProjectList];
   "project:board": [string, ProjectBoard];
   "project:moveItem": [{ projectId: string; itemId: string; fieldId: string; optionId: string | null }, CommitActionResult];
   "project:addItem": [{ projectId: string; contentId: string }, CommitActionResult];
@@ -2281,7 +2295,7 @@ export interface IpcChannels {
   "tag:push": [{ name: string; remote?: string }, CommitActionResult];
   // ── PR review depth: per-file diffs + inline threads + metadata ──
   "pr:fileDiff": [{ number: number; path: string }, FileDiff | undefined];
-  "pr:reviewThreads": [number, PrReviewThread[]];
+  "pr:reviewThreads": [number, PrReviewThreadList];
   "pr:addReviewComment": [
     { number: number; path: string; line: number; side?: "LEFT" | "RIGHT"; body: string },
     CommitActionResult,
@@ -2505,6 +2519,13 @@ export interface PrReviewThread {
   isResolved: boolean;
   isOutdated: boolean;
   comments: PrReviewComment[];
+}
+
+/** `pr:reviewThreads`' answer — the threads, and how many GitHub named but
+ *  could not return (see ProjectList). */
+export interface PrReviewThreadList {
+  threads: PrReviewThread[];
+  unreadable: number;
 }
 
 /** Prefill for "Create PR from current branch" off the push/Changes flow. */

@@ -239,10 +239,14 @@ test("a project list with one unreadable repository still renders the readable o
   try {
     const list = await listProjects(client, "o", "r");
     assert.deepEqual(
-      list.map((p) => p.title),
+      list.projects.map((p) => p.title),
       ["Roadmap", "Bugs"],
       "one unreadable entry must not take the readable ones down with it",
     );
+    // …and the list must not pass itself off as complete. Without the count
+    // the view had no way to say that a project was missing, so two projects
+    // read as "this repository has two projects".
+    assert.equal(list.unreadable, 1, "the view is told how many it could not read");
   } finally {
     restore();
   }
@@ -311,6 +315,62 @@ test("a board with one card GitHub cannot resolve still shows the others", async
       board.items.map((i) => i.title),
       ["Readable one", "Readable two"],
     );
+    assert.equal(board.unreadable, 1, "…and says a card is missing rather than hiding it");
+  } finally {
+    restore();
+  }
+});
+
+test("a complete answer says nothing is missing", async () => {
+  const { client, restore } = servingGraphql({
+    data: {
+      repository: {
+        projectsV2: {
+          nodes: [{ id: "P_1", number: 1, title: "Roadmap", url: "u1", closed: false, items: { totalCount: 3 } }],
+        },
+      },
+    },
+  });
+  try {
+    assert.equal((await listProjects(client, "o", "r")).unreadable, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("a pull request with one review thread GitHub cannot resolve keeps the others, and says so", async () => {
+  // The third read that keeps partial data. Its mapper read `t.comments` off
+  // every node, so a null thread — exactly what a kept NOT_FOUND on one list
+  // element leaves — threw a TypeError out of the read: the whole panel failed
+  // (and filed a report) over one thread, the failure keepsPartialData exists
+  // to prevent.
+  const thread = (id: string, line: number) => ({
+    id,
+    path: "src/a.ts",
+    line,
+    isResolved: false,
+    isOutdated: false,
+    comments: { nodes: [{ id: `${id}-c`, author: { login: "a" }, body: "hi", createdAt: "2026-01-01T00:00:00Z" }] },
+  });
+  const { client, restore } = servingGraphql({
+    data: {
+      repository: { pullRequest: { reviewThreads: { nodes: [thread("T1", 3), null, thread("T3", 9)] } } },
+    },
+    errors: [
+      {
+        type: "NOT_FOUND",
+        path: ["repository", "pullRequest", "reviewThreads", "nodes", 1],
+        message: "Could not resolve to a node with the global id of 'PRRT_x'.",
+      },
+    ],
+  });
+  try {
+    const r = await reviewThreads(client, "acme", "widgets", 7);
+    assert.deepEqual(
+      r.threads.map((t) => t.id),
+      ["T1", "T3"],
+    );
+    assert.equal(r.unreadable, 1);
   } finally {
     restore();
   }

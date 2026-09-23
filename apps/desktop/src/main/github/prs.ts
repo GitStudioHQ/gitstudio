@@ -21,7 +21,7 @@
 import { GitHubClient, enc } from "../githubClient";
 import { mapPull, mapUser, type RawPull, type RawUser } from "./maps";
 import { PAGE_CAPS } from "../githubPaging";
-import { errorFields } from "../githubErrors";
+import { errorFields, unreadableEntries, type GraphqlFailure } from "../githubErrors";
 import type {
   BranchRef,
   CommitActionResult,
@@ -30,7 +30,7 @@ import type {
   PrPrefill,
   PrReviewComment,
   PrReviewRequest,
-  PrReviewThread,
+  PrReviewThreadList,
   PullRequest,
   RepoCollaborator,
   RepoLabel,
@@ -356,21 +356,23 @@ interface RawThreadsData {
   repository?: {
     pullRequest?: {
       reviewThreads?: {
-        nodes?: {
+        // An element is null when GitHub named a thread it could not return
+        // (a NOT_FOUND on one list element, which the client keeps).
+        nodes?: ({
           id: string;
           path: string | null;
           line: number | null;
           isResolved: boolean;
           isOutdated: boolean;
           comments?: {
-            nodes?: {
+            nodes?: ({
               id: string;
               author?: { login?: string; avatarUrl?: string; url?: string } | null;
               body: string;
               createdAt: string;
-            }[];
+            } | null)[];
           };
-        }[];
+        } | null)[];
       };
     };
   };
@@ -386,7 +388,11 @@ export async function reviewThreads(
   owner: string,
   repo: string,
   number: number,
-): Promise<PrReviewThread[]> {
+): Promise<PrReviewThreadList> {
+  // The third read that keeps a partial answer (see listProjects). Nulls are
+  // filtered here as well as counted: the mapper used to read `t.comments`
+  // off a null thread and throw, failing the whole panel over one thread.
+  let partial: GraphqlFailure[] = [];
   const data = await client.graphql<RawThreadsData>(
     `query($owner:String!,$repo:String!,$n:Int!){
       repository(owner:$owner,name:$repo){
@@ -401,24 +407,31 @@ export async function reviewThreads(
       }
     }`,
     { owner, repo, n: number },
+    { onPartial: (errors) => (partial = errors) },
   );
   const nodes = data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
-  return nodes.map((t) => {
-    const comments: PrReviewComment[] = (t.comments?.nodes ?? []).map((c) => ({
-      id: c.id,
-      author: { login: c.author?.login ?? "ghost", avatarUrl: c.author?.avatarUrl ?? null },
-      body: c.body ?? "",
-      createdAt: c.createdAt ?? "",
-    }));
-    return {
-      id: t.id,
-      path: t.path ?? "",
-      line: t.line ?? null,
-      isResolved: t.isResolved,
-      isOutdated: t.isOutdated,
-      comments,
-    };
-  });
+  const unreadable = unreadableEntries(nodes, ["repository", "pullRequest", "reviewThreads", "nodes"], partial);
+  const threads = nodes
+    .filter((t): t is NonNullable<typeof t> => !!t)
+    .map((t) => {
+      const comments: PrReviewComment[] = (t.comments?.nodes ?? [])
+        .filter((c): c is NonNullable<typeof c> => !!c)
+        .map((c) => ({
+          id: c.id,
+          author: { login: c.author?.login ?? "ghost", avatarUrl: c.author?.avatarUrl ?? null },
+          body: c.body ?? "",
+          createdAt: c.createdAt ?? "",
+        }));
+      return {
+        id: t.id,
+        path: t.path ?? "",
+        line: t.line ?? null,
+        isResolved: t.isResolved,
+        isOutdated: t.isOutdated,
+        comments,
+      };
+    });
+  return { threads, unreadable };
 }
 
 /**

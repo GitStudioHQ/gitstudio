@@ -13146,5 +13146,41 @@
       c.ok(!$(".modal-card"), "switching repository takes the question with it");
       c.eq(window.__gsPulledWith, null, "…and pulls nothing");
     },
+    /** GitHub answers what it can and names the rest; the reads keep what came
+     *  back. `?partial=1` names one project and one card it could not return —
+     *  the view must SAY so, where the list is, instead of showing a short list
+     *  as the whole one. Without `partial`, the same view says nothing. */
+    "a-list-github-could-not-fully-return-says-so": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const partial = new URLSearchParams(location.search).get("partial");
+      const notes = $$(".gh-unreadable-note");
+      if (!partial) {
+        c.eq(notes.length, 0, "a complete answer carries no note");
+        return;
+      }
+      const said = notes.map((n) => text(n));
+      c.ok(said.some((t) => /^1 project could not be read from GitHub\.$/.test(t)), `the list says a project is missing (${said.join(" | ")})`);
+      c.ok(said.some((t) => /^1 card could not be read from GitHub\.$/.test(t)), "…and the board that a card is");
+      for (const n of notes) {
+        const r = n.getBoundingClientRect();
+        c.ok(n.offsetParent !== null && r.height > 0 && r.width > 0, `"${text(n)}" is on screen, not collapsed`);
+        c.ok(!!n.title, "it says why on hover");
+      }
+      // The picker still offers every project that DID come back.
+      c.ok($$(".gh-card").length > 0, "the readable cards are still on the board");
+    },
+    /** The PR's review threads: one GitHub could not return has no file to hang
+     *  on, so every file's panel says it — "No comments on this file" is not a
+     *  claim the panel can make about a thread nobody could read. */
+    "a-review-thread-github-could-not-return-is-said": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const note = $(".pr-threads .gh-unreadable-note");
+      c.ok(!!note, "the review panel carries the note");
+      if (!note) return;
+      c.match(text(note), /^1 review thread on this pull request could not be read from GitHub\.$/, "in plain words");
+      c.ok(!note.closest(".pr-threads-body"), "outside the folding body, so a folded panel still says it");
+    },
   };
 })();

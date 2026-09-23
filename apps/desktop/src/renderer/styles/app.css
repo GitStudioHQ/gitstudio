@@ -11190,6 +11190,12 @@ body.vscode-light .log-pane {
 }
 .sec-cap-note .codicon { font-size: 13px; }
 
+/* The same quiet note, for a list GitHub could not fully return. It sits in
+   flex columns (the Projects view, the board pane), where it must not shrink. */
+.gh-unreadable-note {
+  flex: 0 0 auto;
+}
+
 /* A thread marked read while the "Unread only" filter is on. It keeps its slot
    so nothing moves under the pointer, and reads as spent rather than present. */
 .notif-row.notif-leaving {

@@ -607,6 +607,12 @@ const CASES = [
   ["the-branches-pull-question-outlives-the-refresh-its-own-fetch-causes", "branches", { extra: "diverged=1" }],
   ["the-pull-question-does-not-follow-you-to-another-repository", "code", { extra: "diverged=1" }],
   ["pulling-again-over-the-stopped-merge-says-what-is-paused", "code", { extra: "diverged=1&pullconflict=1" }],
+  // A list GitHub named more of than it could return says so, in both themes;
+  // a complete one says nothing.
+  ["a-list-github-could-not-fully-return-says-so", "projects", { extra: "partial=1" }],
+  ["a-list-github-could-not-fully-return-says-so", "projects", { extra: "partial=1", theme: "light" }],
+  ["a-list-github-could-not-fully-return-says-so", "projects"],
+  ["a-review-thread-github-could-not-return-is-said", "prs~open106~text:Files", { extra: "partial=1" }],
 ];
 
 function run(scene, checkId, opts = {}) {

@@ -228,6 +228,37 @@ export function keepsPartialData(data: unknown, errors: GraphqlFailure[]): boole
 }
 
 /**
+ * How many entries of the list at `listPath` a partial answer could not give
+ * back — the count a read hands its view, so a list missing an entry says so
+ * instead of passing itself off as complete.
+ *
+ * An entry counts once, whether it came back null (`dropped` says which shape
+ * the read discards — a null project, a card whose content is null) or came
+ * back but with a kept error naming something inside it. Both are "GitHub
+ * named it and could not return it"; `keepsPartialData` only ever keeps errors
+ * like these, so every kept error lands in this count or in no list at all.
+ */
+export function unreadableEntries(
+  nodes: readonly unknown[] | null | undefined,
+  listPath: readonly (string | number)[],
+  errors: readonly GraphqlFailure[],
+  dropped: (node: unknown) => boolean = (n) => n === null || n === undefined,
+): number {
+  const missing = new Set<number>();
+  (nodes ?? []).forEach((n, i) => {
+    if (dropped(n)) missing.add(i);
+  });
+  for (const e of errors) {
+    const path = e.path ?? [];
+    const index = path[listPath.length];
+    if (typeof index === "number" && listPath.every((seg, i) => path[i] === seg)) {
+      missing.add(index);
+    }
+  }
+  return missing.size;
+}
+
+/**
  * The `{ message, expected? }` half of an `ok:false` result, for the mutation
  * handlers that CATCH a thrown error and hand the renderer a result instead:
  *

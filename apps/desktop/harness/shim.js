@@ -595,7 +595,9 @@
     "release:tags": [ { name: "ext-v1.11.1", sha: "e5f6a7b" }, { name: "desktop-v1.5.1", sha: "d4e5f6a" } ],
     "orgs:list": orgs,
     "gist:list": gists,
-    "project:list": projects,
+    // `?partial=1`: GitHub named one more project than it could return (one in
+    // a repository the account can no longer see) — the list says so.
+    "project:list": { projects, unreadable: params.get("partial") ? 1 : 0 },
     "git:identity": { name: "Anton Arnaudov", email: "anton@gitstudio.dev" },
     // NOTE: {scope:"all"} is answered by the dynamic handler below — the
     // cross-repo answer carries `repo` on every item and includes two items
@@ -1923,7 +1925,8 @@
     "orgs:repos": () => orgRepos,
     "orgs:teams": () => [ { name: "Core", slug: "core", description: "Maintainers", privacy: "closed", htmlUrl: "" } ],
     "orgs:members": () => [u(me), u("mira-holt"), u("s-ohta"), u("dkovachev"), u("jparks")].map((p) => ({ ...p, htmlUrl: "" })),
-    "project:board": () => board,
+    // Spread, not copied: a move mutates `board.items`, and this must see it.
+    "project:board": () => ({ ...board, unreadable: params.get("partial") ? 1 : 0 }),
     // HONOURS maxCount, as `refLog` does (it clamps to 1..100). Ignoring it hid
     // the fact that a stash's page asked for the whole ancestry of stash@{0} —
     // git's internal "index on …" commit included — under a heading reading
@@ -1948,7 +1951,8 @@
       name: `Release ${req.tagName}`,
       body: `## What's Changed\n* Reorder commits by dragging in the graph by @antonarnaudov in #18\n* Carry other branches through a rebase by @mira-holt in #21\n\n**Full Changelog**: https://github.com/GitStudioHQ/gitstudio/compare/ext-v1.11.1...${req.tagName}`,
     }),
-    "pr:reviewThreads": () => [
+    // `{threads, unreadable}` — `?partial=1` names one thread GitHub could not return.
+    "pr:reviewThreads": () => ({ threads: [
       { id: "t1", path: "apps/desktop/src/renderer/views/issues.ts", line: 42, isResolved: false, isOutdated: false,
         comments: [
           { id: "c1", author: u("mira-holt"), body: "Could this reuse `secRow` from common.ts instead of building the row by hand?", createdAt: ISO(1.4) },
@@ -1956,7 +1960,7 @@
         ] },
       { id: "t2", path: "apps/desktop/src/renderer/views/issues.ts", line: 118, isResolved: true, isOutdated: false,
         comments: [ { id: "c3", author: u("s-ohta"), body: "This `replaceChildren` runs twice on refresh.", createdAt: ISO(2) } ] },
-    ],
+    ], unreadable: params.get("partial") ? 1 : 0 }),
     "actions:jobLogChunk": (req) => {
       const TS = "2026-08-25T10:00:42.1234567Z ";
       const lines = [];
