@@ -1,0 +1,22 @@
+apps/extension/test/pullDivergedCallSites.test.ts
+  s_26f5e669d3043c::t_e3bd895d127db7 241-242,245-280
+  s_26f5e669d3043c::t_4c7e9b8d8b0ab4 290-291
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_6ca368c3458c29 301-316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b9fbcbe1ecf46cf19b95698ae8f4fd78cfe52a99",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
