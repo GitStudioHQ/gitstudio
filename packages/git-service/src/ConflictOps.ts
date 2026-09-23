@@ -311,6 +311,18 @@ export class ConflictOps {
     const listing = await this.stageListing(opts?.signal);
     if (!listing) return refuse(`Couldn't read the conflict state for ${path}. Nothing was changed.`);
     if (listing.has(path)) return refuse(`${path} is still conflicted — there is nothing to undo.`);
+    if (listing.size === 0) {
+      // git keeps the resolve-undo record after the merge (or the rebase's
+      // last commit) is COMMITTED, and `checkout -m` then happily puts the
+      // conflict back into a finished repository: unmerged stages and markers
+      // over a committed file, with no operation left to continue or abort.
+      // Nothing conflicted and nothing stopped means the operation this
+      // resolution belonged to is over.
+      const op = opts?.op ?? (await this.operation.view({ signal: opts?.signal }));
+      if (op.kind === "none") {
+        return refuse(`The operation ${path} was resolved in has finished — its conflict can't be brought back.`);
+      }
+    }
     const undo = await this.git(["ls-files", "--resolve-undo", "-z"], opts?.signal, false);
     const stages = undo.code === 0 ? parseUnmergedStages(undo.stdout).get(path) : undefined;
     if (!stages) {

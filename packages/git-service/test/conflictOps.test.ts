@@ -525,6 +525,34 @@ test("restore refuses a path git holds no conflict for — and leaves its edits 
   }
 });
 
+test("restore refuses once the operation is over — a committed merge gets no conflict back", async () => {
+  // git keeps the resolve-undo record after the merge commit, and
+  // `checkout -m` then re-creates the conflict in a finished repository —
+  // what an Undo of "Apply" pressed after Continue would do.
+  const r = merged("restore-after-commit", (repo, side) =>
+    repo.write("f.txt", side === "base" ? FIVE : edit(FIVE, { three: `three-${side}` })),
+  );
+  try {
+    const ctx = r.ctx();
+    assert.equal((await ctx.conflictOps.takeRole("f.txt", "yours")).ok, true);
+    const before = await ctx.conflictOps.restore("f.txt");
+    assert.equal(before.ok, true, "while the merge is stopped, the undo works");
+    assert.equal((await ctx.conflictOps.takeRole("f.txt", "yours")).ok, true);
+    assert.equal((await ctx.operation.continue()).ok, true);
+    const committed = r.sha("HEAD");
+
+    const out = await ctx.conflictOps.restore("f.txt");
+    assert.equal(out.ok, false);
+    assert.equal(out.expected, true);
+    assert.match(out.message ?? "", /has finished/);
+    assert.equal(r.git("status", "--porcelain=v2").trim(), "", "no unmerged stages, no markers");
+    assert.equal(r.read("f.txt"), edit(FIVE, { three: "three-master" }));
+    assert.equal(r.sha("HEAD"), committed);
+  } finally {
+    r.cleanup();
+  }
+});
+
 // ── writeResolution (the Apply) ─────────────────────────────────────────────
 
 test("writeResolution saves and stages a hand merge, and the row remembers it", async () => {
