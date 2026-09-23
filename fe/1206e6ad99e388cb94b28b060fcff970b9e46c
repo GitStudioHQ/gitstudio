@@ -1,0 +1,21 @@
+apps/merge-studio/RELEASING.md
+  s_26f5e669d3043c::t_e1217ecee61b19 16-20,196-197,207-290,321-322
+apps/merge-studio/CONTRIBUTING.md
+  s_26f5e669d3043c::t_11838213a812f1 3-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fe1206e6ad99e388cb94b28b060fcff970b9e46c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
