@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { GitProcess } from "./GitProcess";
 import {
@@ -571,10 +571,17 @@ export class OperationProvider implements OperationSource, OperationControl {
     return { mergeHead, rebaseMerge, rebaseApply, applying, cherryPickHead, revertHead, sequencer, sequencerRevert };
   }
 
-  /** Distinct unmerged paths, `-z` so non-ASCII names are never C-quoted. */
+  /**
+   * Distinct unmerged paths, `-z` so non-ASCII names are never C-quoted.
+   * Throws when git could not answer: a listing that failed (a git killed
+   * mid-answer, a locked index) is not "nothing is unmerged", and reporting it
+   * as such offers Continue over files that are still conflicted.
+   */
   private async unmergedPaths(opts?: OperationReadOptions): Promise<string[]> {
     const r = await this.proc.run(["ls-files", "-u", "-z"], { signal: opts?.signal });
-    if (r.code !== 0) return [];
+    if (r.code !== 0) {
+      throw new Error(r.stderr.trim() || `git ls-files -u failed (${r.code}), so the unmerged files are unknown.`);
+    }
     const seen = new Set<string>();
     const out: string[] = [];
     for (const rec of r.stdout.split("\0")) {
@@ -886,8 +893,12 @@ export class OperationProvider implements OperationSource, OperationControl {
    * Continue forever with no way out (the desktop's stage() draws the same line).
    */
   async stagedMarkerFiles(signal?: AbortSignal): Promise<string[]> {
+    // A gate that could not run fails CLOSED: a check git never answered (a
+    // killed process, a locked index) is not "no markers are staged".
     const ru = await this.proc.run(["ls-files", "--resolve-undo", "-z"], { signal });
-    if (ru.code !== 0) return [];
+    if (ru.code !== 0) {
+      throw new Error(ru.stderr.trim() || `git ls-files --resolve-undo failed (${ru.code}).`);
+    }
     const resolved = new Set<string>();
     for (const rec of ru.stdout.split("\0")) {
       const m = /^\d{6} [0-9a-f]+ \d\t([\s\S]*)$/.exec(rec);
@@ -900,8 +911,12 @@ export class OperationProvider implements OperationSource, OperationControl {
     );
     // Exit 0 = clean. Exit 2 also covers whitespace errors, so keep only the
     // marker lines — "leftover conflict marker" is a diagnostic git never
-    // translates (verified under de_DE).
+    // translates (verified under de_DE). 128 and above is git failing (a fatal
+    // error, or killed by a signal) rather than reporting findings.
     if (r.code === 0) return [];
+    if (r.code >= 128) {
+      throw new Error(r.stderr.trim() || `git diff --cached --check failed (${r.code}).`);
+    }
     const files: string[] = [];
     for (const line of r.stdout.split("\n")) {
       const m = /^(.*):\d+: leftover conflict marker$/.exec(line.trim());
@@ -913,7 +928,10 @@ export class OperationProvider implements OperationSource, OperationControl {
   /** Tracked files with unstaged changes (what `rebase --continue` refuses on). */
   private async unstagedFiles(signal?: AbortSignal): Promise<string[]> {
     const r = await this.proc.run(["diff", "--name-only", "-z", "--ignore-submodules"], { signal });
-    if (r.code !== 0) return [];
+    if (r.code !== 0) {
+      // Fails closed like the marker gate: unknown is not "nothing unstaged".
+      throw new Error(r.stderr.trim() || `git diff --name-only failed (${r.code}).`);
+    }
     return r.stdout.split("\0").filter(Boolean);
   }
 
@@ -1224,12 +1242,30 @@ async function readText(p: string): Promise<string | undefined> {
   }
 }
 
-/** The first `max` bytes of a file as text, or undefined when unreadable. */
-async function readHead(p: string, max: number): Promise<string | undefined> {
+/**
+ * The first `max` bytes of a file as text, or undefined when unreadable.
+ *
+ * Reads ONLY those bytes. It used to `readFile` the whole thing and slice, so
+ * the stash probe — run on every opState refresh while files are unmerged —
+ * read up to 50 whole files each time, binaries included, and a file past
+ * Node's 2 GiB read limit answered "unreadable" instead of its first line.
+ * Exported for its test.
+ */
+export async function readHead(p: string, max: number): Promise<string | undefined> {
+  let fh: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    const buf = await readFile(p);
-    return buf.subarray(0, max).toString("utf8");
+    fh = await open(p, "r");
+    const buf = Buffer.alloc(max);
+    let got = 0;
+    while (got < max) {
+      const { bytesRead } = await fh.read(buf, got, max - got, got);
+      if (bytesRead === 0) break;
+      got += bytesRead;
+    }
+    return buf.subarray(0, got).toString("utf8");
   } catch {
     return undefined;
+  } finally {
+    await fh?.close().catch(() => undefined);
   }
 }

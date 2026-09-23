@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { constants as osConstants } from "node:os";
 import { auditSpawn } from "./spawnAudit";
 
 export interface GitProcessOptions {
@@ -71,6 +72,24 @@ function makeAbortError(): Error {
   const err = new Error("The operation was aborted");
   err.name = "AbortError";
   return err;
+}
+
+/**
+ * The exit code of a git that ended without one: killed by a signal (our own
+ * `dispose()`, the OS, a user's `kill`). Node reports `code === null` then, and
+ * reading that as 0 made every caller see a killed git as SUCCESS WITH NO
+ * OUTPUT — `rev-parse --git-path` answered "" (the repository root), `ls-files
+ * -u` answered "nothing is unmerged". 128 + the signal number is the shell's
+ * convention, and it can never be mistaken for a meaningful git status such as
+ * `diff --quiet`'s 1.
+ */
+function signalExitCode(signal: NodeJS.Signals | null): number {
+  const n = signal ? osConstants.signals[signal] : undefined;
+  return 128 + (typeof n === "number" ? n : 0);
+}
+
+function signalMessage(signal: NodeJS.Signals | null): string {
+  return `git was stopped by ${signal ?? "a signal"} before it finished.`;
 }
 
 /**
@@ -251,20 +270,23 @@ export class GitProcess {
           reject(err);
         });
 
-        spawned.on("close", (code) => {
+        spawned.on("close", (code, killedBy) => {
           if (settled) {
             return;
           }
           settled = true;
           cleanup();
-          this.report(
-            args, code ?? 0, (code ?? 0) !== 0, startedAt,
-            Buffer.concat(stderr).toString("utf8"),
-          );
+          // No exit code means a signal ended it: a failure, never a 0 (see
+          // signalExitCode). Still RESOLVED, not thrown — callers decide on
+          // the code, exactly as for any other non-zero exit.
+          const exit = code ?? signalExitCode(killedBy);
+          let err = Buffer.concat(stderr).toString("utf8");
+          if (code === null) err = err ? `${err.replace(/\s+$/, "")}\n${signalMessage(killedBy)}` : signalMessage(killedBy);
+          this.report(args, exit, exit !== 0, startedAt, err);
           resolve({
             stdout: Buffer.concat(stdout).toString("utf8"),
-            stderr: Buffer.concat(stderr).toString("utf8"),
-            code: code ?? 0,
+            stderr: err,
+            code: exit,
           });
         });
       });
@@ -340,11 +362,17 @@ export class GitProcess {
       wake();
     });
 
-    spawned.on("close", (code) => {
+    spawned.on("close", (code, killedBy) => {
       if (ended) {
         return;
       }
-      exitCode = code;
+      // Killed by a signal (not our abort, which set `ended` first): the
+      // stream stopped part-way, and ending quietly would hand the caller a
+      // truncated history as though it were the whole of it.
+      exitCode = code ?? signalExitCode(killedBy);
+      if (code === null) {
+        failure = new Error(`git ${args.join(" ")}: ${signalMessage(killedBy)}`);
+      }
       const tail = decoder.decode();
       if (tail) {
         queue.push(tail);

@@ -130,18 +130,21 @@ export class ConflictOps {
 
   // ── Read ────────────────────────────────────────────────────────────────────
 
-  /** Every unmerged path with its facts, in `ls-files -u` order. */
+  /**
+   * Every unmerged path with its facts, in `ls-files -u` order. Throws when
+   * git could not list them — an empty list would tell the dashboard that
+   * nothing is conflicted, and offer Continue.
+   */
   async conflictFiles(opts?: ConflictReadOpts): Promise<ConflictFileFacts[]> {
     const op = opts?.op ?? (await this.operation.view({ signal: opts?.signal }));
-    const listing = await this.stageListing(opts?.signal);
-    if (!listing) return [];
+    const listing = await this.readableListing(opts?.signal);
     return this.factsFor(listing, op, undefined, opts?.signal);
   }
 
-  /** One path's facts; undefined when it is not unmerged. */
+  /** One path's facts; undefined when it is not unmerged (throws when git could not say). */
   async fileFacts(path: string, opts?: ConflictReadOpts): Promise<ConflictFileFacts | undefined> {
-    const listing = await this.stageListing(opts?.signal);
-    if (!listing || !listing.has(path)) return undefined;
+    const listing = await this.readableListing(opts?.signal);
+    if (!listing.has(path)) return undefined;
     const op = opts?.op ?? (await this.operation.view({ signal: opts?.signal }));
     return (await this.factsFor(listing, op, new Set([path]), opts?.signal))[0];
   }
@@ -442,8 +445,23 @@ export class ConflictOps {
     return r.code === 0 ? parseUnmergedStages(r.stdout) : undefined;
   }
 
+  /**
+   * The listing for a READ, where "git could not answer" must not become "no
+   * conflicts". `--eol` rides along: for every stage git reports whether its
+   * blob looks like text (`i/lf`, `i/crlf`, …) or not (`i/-text`), so the
+   * binary question is answered for EVERY file by this one call, and only a
+   * file with a non-text stage is looked at again.
+   */
+  private async readableListing(signal?: AbortSignal): Promise<Listing> {
+    const r = await this.proc.run(["ls-files", "--eol", "-u", "-z"], { signal });
+    if (r.code !== 0) {
+      throw new Error(`Couldn't read the conflicted files: ${r.stderr.trim() || `git ls-files -u failed (${r.code})`}`);
+    }
+    return parseUnmergedStagesEol(r.stdout);
+  }
+
   private async factsFor(
-    listing: Map<string, StageMap>,
+    listing: Listing,
     op: OperationView,
     only: Set<string> | undefined,
     signal?: AbortSignal,
@@ -451,11 +469,18 @@ export class ConflictOps {
     const paths = [...listing.keys()].filter((p) => !only || only.has(p));
     // Sizes of every blob a text merge might read, in one call.
     const shas = new Set<string>();
+    const capable: string[] = [];
     for (const p of paths) {
       const st = listing.get(p)!;
-      if (textCapable(st)) for (const e of st.values()) shas.add(e.sha);
+      if (textCapable(st)) {
+        capable.push(p);
+        for (const e of st.values()) shas.add(e.sha);
+      }
     }
-    const sizes = await this.blobSizes([...shas], signal);
+    const [sizes, unmergeable] = await Promise.all([
+      this.blobSizes([...shas], signal),
+      this.declaredBinary(capable, signal),
+    ]);
     const out: ConflictFileFacts[] = [];
     for (const path of paths) {
       const stages = listing.get(path)!;
@@ -463,7 +488,11 @@ export class ConflictOps {
       let { shape, missing } = shapeOfStages(present);
       if (textCapable(stages)) {
         if (await this.tooLarge(path, stages, sizes)) shape = "too-large";
-        else if (await this.isBinary(stages, signal)) shape = "binary";
+        else if (isLinkOrGitlink(stages) || unmergeable.has(path)) shape = "binary";
+        // Only a file with a stage git calls non-text is asked again, with
+        // git's own merge-time test (a NUL in the head of the blob): `i/-text`
+        // is also what a CR-only text file gets, and that one merges fine.
+        else if (listing.nonText.has(path) && (await this.isBinary(stages, signal))) shape = "binary";
       }
       const xy = xyFromStages(present);
       out.push({
@@ -504,14 +533,41 @@ export class ConflictOps {
   }
 
   /**
-   * Binary by git's own classifier: `diff --numstat` between two different
-   * sides prints "-\t-" when either is binary. A symlink or a submodule is
-   * "take a side only" too — there is no line merge of a link target.
+   * The paths the repository declares unmergeable: `merge` UNSET, which is
+   * what the `binary` macro (-diff -merge -text) and a plain `-merge` say.
+   * git itself never line-merges those — it keeps one side and writes no
+   * markers — so offering a three-pane text merge would contradict it.
+   *
+   * `-diff` alone is NOT here: it hides a file's text diff (lock files,
+   * generated code) but git still merges it line by line and leaves markers,
+   * so the text merge is exactly what resolves it.
+   *
+   * One `check-attr --stdin` for every path; paths go through stdin, never a
+   * pathspec, so a name with glob characters is only ever itself.
+   */
+  private async declaredBinary(paths: string[], signal?: AbortSignal): Promise<Set<string>> {
+    const out = new Set<string>();
+    if (paths.length === 0) return out;
+    const r = await this.proc.run(["check-attr", "--stdin", "-z", "merge"], {
+      signal,
+      input: paths.join("\0") + "\0",
+    });
+    if (r.code !== 0) return out;
+    // path \0 attribute \0 value \0, repeated.
+    const f = r.stdout.split("\0");
+    for (let i = 0; i + 2 < f.length; i += 3) {
+      if (f[i + 1] === "merge" && f[i + 2] === "unset") out.add(f[i]);
+    }
+    return out;
+  }
+
+  /**
+   * Binary by git's own merge-time test: `diff --numstat` between two
+   * different sides prints "-\t-" when either holds a NUL in its head. Asked
+   * only about files `ls-files --eol` already called non-text.
    */
   private async isBinary(stages: StageMap, signal?: AbortSignal): Promise<boolean> {
-    for (const e of stages.values()) {
-      if (e.mode === "120000" || e.mode === "160000") return true;
-    }
+    if (isLinkOrGitlink(stages)) return true;
     const order: Stage[] = [2, 3, 1];
     const shas = order.map((s) => stages.get(s)?.sha).filter((x): x is string => !!x);
     const distinct = [...new Set(shas)];
@@ -618,6 +674,43 @@ export function parseUnmergedStages(out: string): Map<string, StageMap> {
     st.set(Number(m[3]) as Stage, { mode: m[1], sha: m[2] });
   }
   return map;
+}
+
+/** An unmerged listing plus the paths with a stage git's `--eol` calls non-text. */
+export interface Listing extends Map<string, StageMap> {
+  nonText: Set<string>;
+}
+
+/**
+ * `ls-files --eol -u -z`: `<mode> <sha> <stage>\ti/<eol> w/<eol> attr/<attrs>\t<path>`.
+ * `i/-text` marks a stage whose blob git's text heuristic rejects (a NUL, a
+ * lone CR, mostly control characters).
+ */
+export function parseUnmergedStagesEol(out: string): Listing {
+  const map = new Map<string, StageMap>() as Listing;
+  map.nonText = new Set();
+  for (const rec of out.split("\0")) {
+    // The attr column can hold spaces ("text eol=lf"), never a tab.
+    const m = /^(\d{6}) ([0-9a-f]+) ([123])\ti\/(\S*)\s+w\/\S*\s+attr\/[^\t]*\t([\s\S]*)$/.exec(rec);
+    if (!m) continue;
+    const path = m[5];
+    let st = map.get(path);
+    if (!st) {
+      st = new Map();
+      map.set(path, st);
+    }
+    st.set(Number(m[3]) as Stage, { mode: m[1], sha: m[2] });
+    if (m[4] === "-text") map.nonText.add(path);
+  }
+  return map;
+}
+
+/** A symlink or a submodule: "take a side only" — there is no line merge of a link target. */
+function isLinkOrGitlink(stages: StageMap): boolean {
+  for (const e of stages.values()) {
+    if (e.mode === "120000" || e.mode === "160000") return true;
+  }
+  return false;
 }
 
 /**
