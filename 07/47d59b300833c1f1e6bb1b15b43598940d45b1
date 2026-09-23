@@ -1,0 +1,23 @@
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_9d178ac4a2cf9c 681-692,695-697,701-722
+packages/git-service/test/rewroteUpstream.test.ts
+  s_26f5e669d3043c::t_e3e7e819841ba1 58-65,68,102-103,105-106,135-161
+  s_26f5e669d3043c::t_15c4428a2efabc 18-22
+  s_26f5e669d3043c::t_6685404e40810d 162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0747d59b300833c1f1e6bb1b15b43598940d45b1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
