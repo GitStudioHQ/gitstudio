@@ -1,0 +1,22 @@
+packages/webview-ui/test/mergeShell.test.ts
+  s_26f5e669d3043c::t_08fdde4265698f 456-470
+packages/webview-ui/src/mergeShell.ts
+  s_26f5e669d3043c::t_a64f86867e3922 929-932
+  s_26f5e669d3043c::t_1dc0dc2f8995fc 615-616,624
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c0153ef6e968daefaf442c5d5db9f15b9c1fb75a",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
