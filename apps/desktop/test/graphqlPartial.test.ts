@@ -73,7 +73,7 @@ test("when nothing resolved, it still throws — as an expected condition", asyn
       {
         type: "NOT_FOUND",
         path: ["repository"],
-        message: "Could not resolve to a Repository with the name 'contoso-internal/forms-package'.",
+        message: "Could not resolve to a Repository with the name 'contoso-internal/ledger-service'.",
       },
     ],
   });
@@ -82,7 +82,7 @@ test("when nothing resolved, it still throws — as an expected condition", asyn
       () => client.graphql("query{…}", {}),
       (e: unknown) => {
         assert.equal(isExpectedError(e), true, "must not reach the crash reporter");
-        assert.match((e as Error).message, /contoso-internal\/forms-package/);
+        assert.match((e as Error).message, /contoso-internal\/ledger-service/);
         return true;
       },
     );
