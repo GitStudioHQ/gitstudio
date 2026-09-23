@@ -406,3 +406,43 @@ test("support links: only the problem report mid-operation; rating and sponsorin
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+test("in a narrow pane every row keeps its file name, and its buttons stay in the row", { skip }, async () => {
+  // The desktop hosts the dashboard in ONE pane of its window: 443px wide at
+  // a 1000px window. The rows wrapped only under a 560px VIEWPORT, which the
+  // desktop never has, so a row with a badge and two or three buttons
+  // squeezed its file name to nothing — "deleted in yours (master) [Delete
+  // the file] [Accept Theirs]", about no file anyone could name — and its last
+  // button ran out of the row.
+  const v = await run(`
+    document.getElementById("root").style.width = "443px";
+    const d = mount({ closable: false });
+    d.render(state(OPS.merge, [
+      row("a.txt"),
+      row("logo.bin", { shape: "binary" }),
+      row("m.txt", { shape: "modify-delete", missingRole: "yours", badge: "deleted in yours (master)" }),
+      row("n.txt", { shape: "added-both", badge: "added in both" }),
+      row("renamed-feature.txt", { shape: "added-one-side", missingRole: "yours", badge: "added in theirs (feature/login)" }),
+      row("src/app.ts", { badge: "both modified" }),
+      // (A path so long that its folders crowd out the name is POLISH A3.4's.)
+    ]));
+    for (const r of $$(".cd-row")) {
+      const box = r.getBoundingClientRect();
+      // The name's own box is its full width however little of it shows; what
+      // SHOWS is the part inside the clipping .cd-file.
+      const name = r.querySelector(".cd-name").getBoundingClientRect();
+      const file = r.querySelector(".cd-file").getBoundingClientRect();
+      const seen = Math.max(0, Math.min(name.right, file.right) - Math.max(name.left, file.left));
+      expect(seen >= Math.min(name.width, 60) - 1, r.dataset.path + ": the file name is on screen (" + Math.round(seen) + " of " + Math.round(name.width) + "px)");
+      for (const b of r.querySelectorAll("button")) {
+        const bb = b.getBoundingClientRect();
+        expect(bb.left >= box.left - 1 && bb.right <= box.right + 1, r.dataset.path + ": " + b.textContent.trim() + " stays in its row (" + Math.round(bb.left) + "–" + Math.round(bb.right) + " in " + Math.round(box.left) + "–" + Math.round(box.right) + ")");
+      }
+      // …and together: a wrapped row put Accept Yours and Accept Theirs on
+      // one line and Merge… alone on the next, flush left.
+      const tops = new Set([...r.querySelectorAll("button")].map((b) => Math.round(b.getBoundingClientRect().top)));
+      expect(tops.size <= 1, r.dataset.path + ": its buttons share one line (" + [...tops].join(", ") + ")");
+    }
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});

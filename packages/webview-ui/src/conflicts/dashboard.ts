@@ -179,6 +179,27 @@ export class ConflictsDashboard {
     this.element.remove();
   }
 
+  /**
+   * Put the keyboard on a file's row — its Merge… while it is pending, its
+   * Hold to undo once resolved, else its first live button. For a host that
+   * brings the dashboard back after the merge editor closed: the editor took
+   * the focused button with it, and the keyboard should land where it left
+   * from, not on <body>. False when the row, or a live control in it, is not
+   * there (yet).
+   */
+  focusFile(path: string): boolean {
+    const row = [...this.element.querySelectorAll<HTMLElement>(".cd-row")].find((r) => r.dataset.path === path);
+    if (!row) return false;
+    const live = (b: HTMLButtonElement | null | undefined): b is HTMLButtonElement => !!b && !b.disabled;
+    const byKey = [`merge:${path}`, `restore:${path}`]
+      .map((k) => row.querySelector<HTMLButtonElement>(`[data-key="${cssEscape(k)}"]`))
+      .find(live);
+    const pick = byKey ?? [...row.querySelectorAll<HTMLButtonElement>("button")].find(live);
+    if (!pick) return false;
+    pick.focus();
+    return document.activeElement === pick;
+  }
+
   // ── painting ──
 
   private rerender(focusKey?: string): void {
@@ -394,6 +415,11 @@ export class ConflictsDashboard {
       if (word) row.appendChild(el("span", "cd-badge", word));
     }
 
+    // The row's buttons move as ONE group: when the row is too narrow for
+    // them beside the name, they wrap to a line of their own, right-aligned,
+    // instead of splitting across two lines.
+    const actions = el("span", "cd-actions");
+
     if (resolved) {
       const pill = el("span", "cd-choice", `✓ ${choiceText(f.choice)}`);
       const op = state.op;
@@ -405,11 +431,12 @@ export class ConflictsDashboard {
             : f.choice === "merged"
               ? "Resolved in the merge editor"
               : "Resolved (in an editor, or outside this app)";
-      row.append(pill, this.holdButton(f, state));
+      row.appendChild(pill);
+      actions.appendChild(this.holdButton(f, state));
     } else if (!busy) {
       const disabled = state.busy;
       if (f.shape === "both-deleted") {
-        row.appendChild(
+        actions.appendChild(
           this.button(
             "Delete the file",
             "Neither side has this file — delete it and stage the deletion",
@@ -427,7 +454,7 @@ export class ConflictsDashboard {
         for (const role of ["yours", "theirs"] as const) {
           const side = sideOf(state.op, role);
           const missing = f.missingRole === role;
-          row.appendChild(
+          actions.appendChild(
             this.button(
               missing ? "Delete the file" : `Accept ${roleWord(role)}`,
               missing
@@ -445,7 +472,7 @@ export class ConflictsDashboard {
           );
         }
         if (hasText(f.shape)) {
-          row.appendChild(
+          actions.appendChild(
             this.button(
               "Merge…",
               "Resolve it change by change in the merge editor",
@@ -458,6 +485,7 @@ export class ConflictsDashboard {
         }
       }
     }
+    if (actions.childElementCount) row.appendChild(actions);
     return row;
   }
 

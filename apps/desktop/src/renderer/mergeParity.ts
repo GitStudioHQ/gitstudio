@@ -249,6 +249,13 @@ export interface MergeAdapterDeps {
   onExit(): void;
   /** The operation moved (Continue / Abort): refresh refs, the branch, everything. */
   onOperationChanged(outcome: { kind: "done" | "stopped" | "failed"; text: string }): void;
+  /**
+   * The file went to the IDE (Open in <IDE>): the host puts the editor away
+   * and shows the hand-off — "Resolving in <IDE>", with Mark resolved — the
+   * way the Settings route does. False when it has nowhere to, and the
+   * adapter says it in a toast instead.
+   */
+  onHandedToIde?(): boolean;
   undoable: Undoable;
   notify: Notify;
 }
@@ -284,6 +291,13 @@ export class DesktopMergeAdapter {
           const r = await exclusive(() => invoke("conflict:resolve", { path, content: message.text }));
           if (!r) return;
           if (!r.ok) {
+            // `applied` means the result was WRITTEN (protocol.ts). A refusal
+            // (expected: no longer conflicted, not UTF-8 text, deleted on both
+            // sides) writes nothing — say it failed, and leave Apply live.
+            if (r.expected) {
+              deliver({ type: "outcome", kind: "failed", text: r.message || `Nothing was written to ${path}.` });
+              return;
+            }
             deliver({ type: "applied", staged: false, message: r.message || `Couldn't save the merge of ${path}.` });
             return;
           }
@@ -347,6 +361,10 @@ export class DesktopMergeAdapter {
             this.deps.notify(r.message || "Couldn't open the IDE.", "error");
             return;
           }
+          // The button says it closes this editor: the host shows the hand-off
+          // in its place. A toast is only for a host with nowhere to put it —
+          // it goes in seconds, and "Mark resolved" with it.
+          if (this.deps.onHandedToIde?.()) return;
           this.deps.notify(`Resolve ${path} in the IDE's merge window, then mark it resolved here.`, "info", {
             label: "Mark resolved",
             onClick: () => void this.markResolvedInIde(),

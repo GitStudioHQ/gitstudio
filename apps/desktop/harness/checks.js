@@ -4896,6 +4896,264 @@
     },
 
     /**
+     * …but a conflict with no TEXT is never handed to the IDE: the main process
+     * refuses (ConflictOps.externalMergeInput — the IDE merges lines), so with
+     * Settings resolving in the IDE, opening a binary put up an error toast —
+     * and another on every repaint the repository watcher set off, while the
+     * file stayed open. It goes straight to the panel that can resolve it.
+     */
+    "the-ide-route-leaves-a-conflict-with-no-text-to-the-panel": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const row = () => $$(".dc-file").find((r) => r.dataset.path === "assets/logo.png");
+      for (let i = 0; i < 20 && !row(); i++) await settle(150);
+      c.ok(!!row(), "precondition: the binary conflict is listed");
+      row()?.click();
+      await settle(1200);
+      const handed = () => window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length;
+      const errors = () => $$(".toast-msg").map((t) => text(t)).filter((t) => /no text to merge|Couldn't open/.test(t));
+      c.eq(handed(), 0, "the binary is not handed to the IDE");
+      c.ok(!!$(".ms-notext"), "it opens the panel that offers Accept Yours / Accept Theirs");
+      c.eq(errors().join(" | "), "", "with no error toast");
+      for (const gitDir of [false, true]) {
+        window.__gsEmit("repo:filesChanged", { gitDir });
+        await settle(1500);
+      }
+      c.eq(handed(), 0, "nor on any repaint after it");
+      c.eq(errors().join(" | "), "", "and no toast repeats with each refresh");
+      c.ok(!!$(".ms-notext"), "the panel is still there");
+      c.ok(!$(".ms-shell .jb-external") || $(".ms-shell .jb-external").hidden, "and it offers no Open in WebStorm either");
+    },
+
+    /**
+     * "Resolve here instead" is the user's answer for THIS conflict. The next
+     * repaint the repository watcher set off asked the IDE route again: it
+     * launched a second IDE window and put the hand-off pane back over the
+     * built-in editor — with whatever had been merged in it.
+     */
+    "resolve-here-instead-survives-the-watchers-refresh": async (f) => {
+      const c = check(f);
+      await settle(700);
+      $('[data-key="merge:src/app.ts"]')?.click();
+      await settle(1500);
+      const launches = () => window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length;
+      c.eq(launches(), 1, "precondition: Settings sends the file to the IDE");
+      $$(".diff-empty-actions button").find((b) => /Resolve here instead/.test(text(b)))?.click();
+      await settle(1500);
+      const shell = $(".ms-shell");
+      c.ok(!!shell, "Resolve here instead opens the built-in editor");
+      $(".ms-accept-yours")?.click();
+      await settle(200);
+      for (const gitDir of [false, true]) {
+        window.__gsEmit("repo:filesChanged", { gitDir });
+        await settle(1600);
+      }
+      c.eq(launches(), 1, "a repaint does not send it to the IDE again");
+      c.ok(!!$(".ms-shell") && $(".ms-shell") === shell, "the same editor is still there");
+      c.eq(text(".ms-shell .jb-counter"), "All changes have been processed", "with the work done in it");
+    },
+
+    /**
+     * The merge editor's own "Open in WebStorm" says it will "close this editor
+     * and resolve the conflict in the WebStorm merge window". On the desktop it
+     * left the editor open, stale, with Apply live over the IDE's work, and
+     * "Mark resolved" lived only in an 8-second toast.
+     */
+    "the-ide-button-hands-the-file-over-like-the-setting-does": async (f) => {
+      const c = check(f);
+      await settle(700);
+      $('[data-key="merge:src/app.ts"]')?.click();
+      await settle(1500);
+      const ide = $(".ms-shell .jb-external");
+      c.ok(!!ide && !ide.hidden, "the merge editor offers Open in WebStorm");
+      ide?.click();
+      await settle(1200);
+      const launches = () => window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:merge").length;
+      c.eq(launches(), 1, "the file goes to the IDE");
+      c.ok(!$(".ms-shell"), "and the editor closes, as its tooltip says");
+      c.match(text(".diff-empty"), /open in WebStorm/, "the pane says where it went");
+      for (const gitDir of [false, true]) {
+        window.__gsEmit("repo:filesChanged", { gitDir });
+        await settle(1600);
+      }
+      c.eq(launches(), 1, "not handed over again on a repaint");
+      c.ok(!$(".ms-shell"), "and the stale editor does not come back");
+      const mark = $$(".diff-empty-actions button").find((b) => text(b) === "Mark resolved");
+      c.ok(!!mark, "Mark resolved stays on screen, not only in a toast");
+      mark?.focus();
+      mark?.click();
+      await settle(1200);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:markResolved").length, 1, "and stages it");
+      c.ok(!!$('.cd-row.is-resolved[data-path="src/app.ts"]'), "the dashboard shows it resolved");
+      const a = document.activeElement;
+      c.eq(a && a.dataset && a.dataset.key, "restore:src/app.ts", "and the keyboard lands on that file's row, not on <body>");
+    },
+
+    /**
+     * The same rule for "Show diffs with: a JetBrains IDE". The main process
+     * hands the IDE HEAD's side as a decoded STRING, so a changed binary
+     * arrived as U+FFFD beside the real file — a diff of the damage.
+     */
+    "the-ide-diff-route-leaves-a-binary-to-the-built-in-pane": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const row = (p) => $$(".dc-file").find((r) => r.dataset.path === p);
+      for (let i = 0; i < 20 && !row("brand/logo.png"); i++) await settle(150);
+      c.ok(!!row("brand/logo.png"), "precondition: a changed binary is listed");
+      row("brand/logo.png")?.click();
+      await settle(1200);
+      const sent = () => window.__GS_INVOKED.filter((r) => r.channel === "jetbrains:diff").map((r) => r.payload && r.payload.path);
+      c.eq(sent().join(","), "", "the binary is not handed to the IDE");
+      c.eq(text(".diff-empty .list-empty-title"), "Binary file", "the built-in pane says what it is");
+      row("docs/redesign.md")?.click();
+      await settle(1200);
+      c.eq(sent().join(","), "docs/redesign.md", "a text file still goes to the IDE");
+    },
+
+    /**
+     * In a 1000px window the merge editor is one pane beside the file list —
+     * 443px — and its bottom bar did not wrap: Apply, the note saying what
+     * Apply would save, and Continue sat past the pane's edge, clipped, with
+     * no way to reach them. The editor's own actions must all be on screen.
+     */
+    "the-merge-editors-actions-stay-on-screen-in-a-narrow-window": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      $('[data-key="merge:src/app.ts"]')?.click();
+      await settle(1200);
+      const shell = $(".ms-shell");
+      c.ok(!!shell, "the merge editor opens");
+      if (!shell) return;
+      const out = (el) => {
+        if (!el) return "missing";
+        const s = shell.getBoundingClientRect();
+        const b = el.getBoundingClientRect();
+        const right = Math.min(s.right, window.innerWidth);
+        return b.width > 0 && b.left >= s.left - 1 && b.right <= right + 1 ? "" : `${Math.round(b.left)}–${Math.round(b.right)} outside ${Math.round(s.left)}–${Math.round(right)}`;
+      };
+      c.ok(shell.getBoundingClientRect().width < 600, `precondition: a narrow pane (${Math.round(shell.getBoundingClientRect().width)}px)`);
+      for (const sel of [".ms-accept-yours", ".ms-accept-theirs", ".ms-cancel", ".ms-apply"]) {
+        c.eq(out(shell.querySelector(sel)), "", `${sel} is on screen`);
+      }
+      $(".ms-apply")?.click();
+      await settle(200);
+      c.match(text(".ms-apply"), /Apply with \d+ unresolved/, "precondition: Apply asks first");
+      c.eq(out($(".ms-apply")), "", "the armed Apply is on screen");
+      const note = $(".ms-bottom-note");
+      c.ok(!!note && note.getBoundingClientRect().width > 120, `and its warning is readable (${note ? Math.round(note.getBoundingClientRect().width) : 0}px wide)`);
+      c.eq(out(note), "", "and on screen");
+      $(".ms-cancel")?.click();
+      await settle(200);
+      c.eq(out($(".ms-pop")), "", "the Cancel choices open inside the pane");
+    },
+
+    /**
+     * …and the conflicts dashboard in the same pane: its rows wrapped only
+     * under a 560px VIEWPORT, so a row with a badge and two buttons squeezed
+     * its file name to nothing — a "deleted in theirs" row about no file.
+     */
+    "the-dashboard-keeps-every-file-name-in-a-narrow-window": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(700);
+      const rows = $$(".cd-row");
+      c.ok(rows.length >= 3, `precondition: the merge's rows are listed (${rows.length})`);
+      c.ok(($(".cd-dash")?.getBoundingClientRect().width || 999) < 600, "precondition: a narrow pane");
+      for (const r of rows) {
+        const box = r.getBoundingClientRect();
+        const name = r.querySelector(".cd-name").getBoundingClientRect();
+        const file = r.querySelector(".cd-file").getBoundingClientRect();
+        const seen = Math.max(0, Math.min(name.right, file.right) - Math.max(name.left, file.left));
+        c.ok(seen >= Math.min(name.width, 60) - 1, `${r.dataset.path}: its name is on screen (${Math.round(seen)} of ${Math.round(name.width)}px)`);
+        for (const b of r.querySelectorAll("button")) {
+          const bb = b.getBoundingClientRect();
+          c.ok(bb.left >= box.left - 1 && bb.right <= box.right + 1, `${r.dataset.path}: ${text(b)} stays in its row`);
+        }
+      }
+    },
+
+    /**
+     * The strip's "Show conflicts" is the other way back to the dashboard: it
+     * hides itself as the dashboard comes up — with the keyboard on it.
+     */
+    "show-conflicts-takes-the-keyboard-to-the-dashboard": async (f) => {
+      const c = check(f);
+      await settle(700);
+      $('[data-key="merge:src/app.ts"]')?.click();
+      await settle(1500);
+      const back = $(".dc-opstrip-back");
+      c.ok(!!back && !$(".dc-opstrip").hidden, "precondition: a file covers the dashboard and the strip leads back");
+      back?.focus();
+      back?.click();
+      await settle(1200);
+      c.ok(!!$(".cd-dash"), "Show conflicts brings the dashboard back");
+      const a = document.activeElement;
+      c.eq(a && a.dataset && a.dataset.key, "merge:src/app.ts", `and the keyboard to the file that was open (${a === document.body ? "BODY" : a && (a.dataset.key || a.className)})`);
+    },
+
+    /**
+     * …and going IN: Merge… is a dashboard button, and the merge editor takes
+     * the dashboard's place — with the button in it. The keyboard was left on
+     * <body>, so F7 went nowhere and Tab started over from the top bar.
+     */
+    "the-keyboard-follows-merge-into-the-editor": async (f) => {
+      const c = check(f);
+      await settle(700);
+      const merge = $('[data-key="merge:src/app.ts"]');
+      c.ok(!!merge, "precondition: src/app.ts offers Merge…");
+      merge?.focus();
+      merge?.click();
+      await settle(1500);
+      c.ok(!!$(".ms-shell"), "the merge editor opens");
+      const a = document.activeElement;
+      c.ok(!!a && a !== document.body && !!a.closest(".ms-shell"), `the keyboard is in it (${a === document.body ? "BODY" : a && (a.title || a.className)})`);
+      c.eq(a && a.title, "Next change (F7)", "on Next change, one Enter from the first conflict");
+    },
+
+    /**
+     * Leaving the merge editor puts the keyboard back where it came from. Exit
+     * viewer, and Apply, take the editor away with the focused button in it,
+     * and the dashboard that comes back was not given focus — so the keyboard
+     * landed on <body> and a keyboard user started over from the top bar.
+     */
+    "the-keyboard-comes-back-to-the-dashboard-after-the-merge-editor": async (f) => {
+      const c = check(f);
+      await settle(700);
+      const where = () => {
+        const a = document.activeElement;
+        return !a || a === document.body ? "BODY" : `${a.closest(".cd-dash") ? "dashboard " : ""}${a.dataset.key || a.className || a.tagName}`;
+      };
+      const merge = $('.cd-row[data-path="src/app.ts"] [data-key="merge:src/app.ts"]');
+      c.ok(!!merge, "precondition: src/app.ts offers Merge…");
+      if (!merge) return;
+      merge.focus();
+      merge.click();
+      await settle(1200);
+      c.ok(!!$(".ms-shell"), "the merge editor opens");
+      $(".ms-cancel")?.focus();
+      $(".ms-cancel")?.click();
+      await settle(200);
+      c.eq(document.activeElement, $(".ms-exit"), "Cancel's choices have the keyboard");
+      $(".ms-exit")?.click();
+      await settle(1200);
+      c.ok(!!$(".cd-dash"), "Exit viewer brings the dashboard back");
+      c.eq(where(), "dashboard merge:src/app.ts", "and the keyboard to the Merge… it left from");
+      $('[data-key="merge:src/app.ts"]')?.click();
+      await settle(1200);
+      $(".ms-accept-yours")?.click();
+      await settle(200);
+      const apply = $(".ms-apply");
+      apply?.focus();
+      apply?.click();
+      await settle(300);
+      if (!window.__GS_INVOKED.some((r) => r.channel === "conflict:resolve")) $(".ms-apply")?.click();
+      await settle(1500);
+      c.ok(!!$(".cd-dash") && !!$('.cd-row.is-resolved[data-path="src/app.ts"]'), "Apply resolves it and brings the dashboard back");
+      c.eq(where(), "dashboard restore:src/app.ts", "with the keyboard on that file's row (its Hold to undo)");
+    },
+
+    /**
      * `showChangesView()` rebuilds the composer on every stage, unstage,
      * discard, Refresh and filesystem-watcher tick. The rebuilt textarea is a
      * NEW element, so focus fell to <body> and the caret to 0: type a paragraph

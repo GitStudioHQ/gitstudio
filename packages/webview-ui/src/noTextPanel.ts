@@ -44,9 +44,21 @@ export interface NoTextPanel {
   setResolved(text: string, ok: boolean): void;
 }
 
+/**
+ * The file as a sentence names it: its last segment. The hosts pass
+ * different things — the desktop a repository path, the extensions an
+ * ABSOLUTE one (Monaco's language detection reads it) — and the sentence
+ * printed all of it: "/Users/…/repo/assets/logo.png is binary". Each host
+ * already shows where the file is (the desktop's path bar, the editor tab).
+ */
+export function fileLabel(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
 /** Title and explanation for a shape, in the reader's words. */
 export function describeNoText(input: NoTextPanelInput): { title: string; detail: string } {
-  const { path, shape, op } = input;
+  const { shape, op } = input;
+  const path = fileLabel(input.path);
   const name = (role: SideRole): string =>
     sideName(op, role, role === "yours" ? input.yoursLabel : input.theirsLabel);
   switch (shape) {

@@ -220,6 +220,20 @@ test("a failed write is said, never reported as staged", async () => {
   assert.equal(r.undos.length, 0, "and no undo for a change that did not happen");
 });
 
+test("an Apply the main process refuses before writing anything is a failure, not an Apply", async () => {
+  // `applied` means "the result was written" (protocol.ts). A refusal — the
+  // file is no longer conflicted, isn't UTF-8 text, was deleted on both sides
+  // — writes nothing, and delivered as `applied{staged:false}` the shell
+  // said "Merge applied" above a note saying nothing was written, and spent
+  // its Apply button.
+  const why = "src/app.ts is no longer conflicted — nothing was written, so a resolution made elsewhere stays as it is.";
+  const r = adapterRig({ "conflict:resolve": { ok: false, changed: false, expected: true, message: why } });
+  await r.adapter.handle({ type: "apply", text: "x" });
+  assert.deepEqual(r.delivered, [{ type: "outcome", kind: "failed", text: why }]);
+  assert.deepEqual(r.log, [], "nothing to repaint");
+  assert.equal(r.undos.length, 0, "and no undo for a change that did not happen");
+});
+
 test("whole-file resolutions go by ROLE when the operation is known, by stage only when it is not", async () => {
   const withOp = adapterRig({ "conflict:takeRole": OK, "conflict:state": snapshot() });
   await withOp.adapter.handle({ type: "takeRole", role: "yours" });
@@ -278,6 +292,48 @@ test("Open in the IDE hands the file over and offers Mark resolved, which stages
   await new Promise((res) => setTimeout(res, 5));
   assert.deepEqual(r.sent("jetbrains:markResolved").map((c) => c.payload), [{ path: "src/app.ts" }]);
   assert.ok(r.log.includes("resolved"));
+});
+
+test("a host that can show the hand-off gets it, instead of a toast that disappears", async () => {
+  // The Changes view replaces the merge editor with the same "Resolving in
+  // <IDE>" pane the Settings route shows, whose Mark resolved stays on
+  // screen; only a host with nowhere to put it falls back to the toast.
+  const handed: string[] = [];
+  const host = fakeHost({ "jetbrains:merge": OK });
+  const notices: string[] = [];
+  const adapter = new DesktopMergeAdapter(model({ op: REBASE }), {
+    invoke: host.invoke,
+    deliver: () => {},
+    onResolved: () => {},
+    onExit: () => {},
+    onOperationChanged: () => {},
+    onHandedToIde: () => {
+      handed.push("pane");
+      return true;
+    },
+    undoable: () => {},
+    notify: (message) => notices.push(message),
+  });
+  await adapter.handle({ type: "openInJetBrains" });
+  assert.deepEqual(handed, ["pane"], "the host shows the hand-off");
+  assert.deepEqual(notices, [], "and no toast is needed");
+  const refused = fakeHost({ "jetbrains:merge": { ok: false, changed: false, message: "no IDE" } });
+  const handed2: string[] = [];
+  const failing = new DesktopMergeAdapter(model({ op: REBASE }), {
+    invoke: refused.invoke,
+    deliver: () => {},
+    onResolved: () => {},
+    onExit: () => {},
+    onOperationChanged: () => {},
+    onHandedToIde: () => {
+      handed2.push("pane");
+      return true;
+    },
+    undoable: () => {},
+    notify: () => {},
+  });
+  await failing.handle({ type: "openInJetBrains" });
+  assert.deepEqual(handed2, [], "nothing was handed over when the IDE did not open");
 });
 
 test("outcomes: done, stopped, and the reasons a refusal gives", () => {

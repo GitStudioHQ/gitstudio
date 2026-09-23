@@ -30,6 +30,14 @@ export interface ConflictHandlers {
   onExit?: () => void;
   /** Continue / Abort ran from the editor: refresh everything, say what happened. */
   onOperationChanged?: (outcome: { kind: "done" | "stopped" | "failed"; text: string }) => void;
+  /**
+   * Put the keyboard in the editor once it is up: it was opened from a
+   * button it now covers (the dashboard's Merge…), which would leave the
+   * keyboard on <body>.
+   */
+  focusOnMount?: boolean;
+  /** The editor's Open in <IDE> handed the file over: show the hand-off in its place. */
+  onHandedToIde?: () => void;
 }
 
 /** How the diff renders: unified single column, or the 2-pane split view. */
@@ -600,6 +608,12 @@ export class DiffPanel {
         onResolved: () => this.conflictHandlers.onResolved?.(),
         onExit: () => this.conflictHandlers.onExit?.(),
         onOperationChanged: (outcome) => this.conflictHandlers.onOperationChanged?.(outcome),
+        onHandedToIde: () => {
+          const show = this.conflictHandlers.onHandedToIde;
+          if (!show) return false;
+          show();
+          return true;
+        },
         undoable: didUndoable,
         notify: (message, kind, action) => toast(message, kind, action ? 8000 : undefined, action),
       });
@@ -624,6 +638,10 @@ export class DiffPanel {
       window.setTimeout(() => {
         if (this.shell === live) live.layout();
       }, 60);
+      // Only if the keyboard is still nowhere: a user who has moved on while
+      // the editor loaded keeps their place.
+      const active = document.activeElement;
+      if (handlers.focusOnMount && (!active || active === document.body)) live.focus();
     });
   }
 
