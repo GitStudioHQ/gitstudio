@@ -44,7 +44,7 @@ const withStashFirst = (payload: unknown, root: string): unknown =>
  * The channels whose answer can carry `inTheWay` — every bridge method that
  * runs its command through main/inTheWay.ts — and how each request is sent
  * again with `stashFirst`. Two take a bare value, and a pull may take nothing.
- * test/inTheWayDoors.test.ts holds this list and main's doors to each other.
+ * test/inTheWayCensus.test.ts holds this list and main's doors to each other.
  */
 export const STASH_AND_RETRY: Readonly<Record<string, (payload: unknown, root: string) => unknown>> = {
   "commit:action": withStashFirst,
