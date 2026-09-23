@@ -466,6 +466,10 @@ export async function setSecret(
   return {
     ok: false,
     changed: false,
+    // A capability this build does not have is not a failure of this build —
+    // it is the honest answer, and the same one every time. `expected` keeps it
+    // out of the crash reporter (see main/expectedError.ts).
+    expected: true,
     message:
       "Creating or updating secrets needs the libsodium encryption library, which isn't bundled in this build. You can still delete secrets here; to add one, use github.com for now.",
   };

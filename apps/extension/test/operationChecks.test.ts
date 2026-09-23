@@ -110,11 +110,22 @@ test("every door that runs a git verb which can stop on conflicts can say so thr
   // never asks whether git stopped reports the stop as a failure, with no way
   // through: the Changes view's branch-menu Pull did exactly that ("pull
   // failed — …") while its status-bar twin offered Resolve Conflicts….
+  //
+  // Those verbs reach git through the changes-in-the-way door now
+  // (git/inTheWay.ts): a pull as `pullOrAsk(`, a merge, rebase, cherry-pick,
+  // revert or stash apply as an `applyOrAsk(` op of that kind. A door that
+  // calls git only through them would be invisible to a census of the engine
+  // calls alone, so the door's words count as the verb. The door itself runs
+  // the verbs FOR its callers and hands every result back (the pull to
+  // settlePullStop, which says a stop through notifyPaused); what the result
+  // means is for the caller to say, and the caller is what this counts.
   const VERB =
-    /\bsync\.pull\(|\bbranches\.(?:merge|rebaseOnto)\(|\bstashes\.(?:apply|pop)\(|\[\s*"(?:cherry-pick|revert)"/;
+    /\bsync\.pull\(|\bbranches\.(?:merge|rebaseOnto)\(|\bstashes\.(?:apply|pop)\(|\[\s*"(?:cherry-pick|revert)"|\bpullOrAsk\(|\bkind:\s*"(?:merge|rebase|cherry-pick|revert|stash)"/;
+  const THE_DOOR = "git/inTheWay.ts";
   const silent: string[] = [];
   for (const file of await tsFiles(SRC)) {
     const rel = relative(SRC, file).split("\\").join("/");
+    if (rel === THE_DOOR) continue;
     const code = stripComments(await readFile(file, "utf8"));
     if (VERB.test(code) && !/\bnotifyPaused\(/.test(code)) {
       silent.push(rel);

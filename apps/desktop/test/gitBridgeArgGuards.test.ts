@@ -42,7 +42,6 @@ const REVIEWED: Record<string, string> = {
   stageAll: "no arguments",
   unstageAll: "no arguments",
   syncFetch: "boolean options only",
-  syncPull: "no arguments",
   syncPush: "boolean options only",
   mergeAbort: "no arguments",
   mergeContinue: "no arguments",
@@ -81,7 +80,12 @@ function mutations(): Array<{ name: string; body: string }> {
       i++;
     }
     const after = SRC.slice(i, i + 60);
-    if (!/^\s*:\s*Promise<CommitActionResult>/.test(after)) continue;
+    // PullActionResult EXTENDS CommitActionResult — it is the same mutation
+    // with one extra field. Matching the base name only silently dropped
+    // `syncPull` out of this census the day it learned to answer a diverged
+    // branch, i.e. the day it started taking a renderer-supplied string.
+    // PushActionResult likewise (`syncPush`, since it learned `pullFirst`).
+    if (!/^\s*:\s*Promise<(?:Commit|Pull|Push)ActionResult>/.test(after)) continue;
     const brace = SRC.indexOf("{", i);
     if (brace < 0) continue;
     let j = brace + 1;
@@ -96,11 +100,24 @@ function mutations(): Array<{ name: string; body: string }> {
   return out;
 }
 
-/** The two shapes of guard used in this file. */
+/** The shapes of guard used in this file. */
 function guards(body: string): boolean {
   // safePath is the pathspec form: it allows a leading dash (legal after `--`)
   // and refuses the two things that actually break a path — empty, and a NUL.
-  return body.includes("safeArg(") || body.includes("safePath(") || body.includes('startsWith("-")');
+  // safePullMode is the allowlist form: the value is not sanitised, it is
+  // checked against the only three things it is allowed to be.
+  // isFullRef / localBranchOf are the branch ops' form (issue #30's
+  // follow-up): they accept only a FULL ref name, which starts with "refs/"
+  // and so can never be read as an option; the name derived from one goes
+  // after `--` (BranchOps) or into a refs/heads/ refspec.
+  return (
+    body.includes("safeArg(") ||
+    body.includes("safePath(") ||
+    body.includes("safePullMode(") ||
+    body.includes('startsWith("-")') ||
+    body.includes("isFullRef(") ||
+    body.includes("localBranchOf(")
+  );
 }
 
 test("the bridge exposes the mutations we think it does", () => {

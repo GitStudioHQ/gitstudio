@@ -30,6 +30,7 @@ function page(over: Partial<GraphPage> = {}): GraphPage {
     nextSkip: 1,
     refFilter: null,
     refList: [],
+    refListSig: "0:0",
     ...over,
   };
 }
@@ -57,6 +58,16 @@ test("graphInit carries the branch filter and the picker's ref list", () => {
   }
   const more = nextGraphMessage(page({ refFilter: ["refs/heads/main"], refList }), false);
   assert.equal("refFilter" in more, false);
+});
+
+test("a page without a ref list makes a graphInit without one — never an empty list", () => {
+  // The main process leaves the list out when the renderer already holds it
+  // (issue #30). An empty list in its place would empty the picker, and a
+  // filtered-out ref could never be ticked back in.
+  const msg = nextGraphMessage(page({ refFilter: ["refs/heads/main"], refList: undefined }), true);
+  assert.equal(msg.type, "graphInit");
+  assert.equal("refList" in msg, false);
+  if (msg.type === "graphInit") assert.deepEqual(msg.refFilter, ["refs/heads/main"]);
 });
 
 test("nextGraphMessage produces graphAppend for later pages", () => {

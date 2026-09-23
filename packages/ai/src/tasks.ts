@@ -120,26 +120,6 @@ export function reviewDiff(provider: Provider, diff: string, ctx?: TaskContext):
   return oneShot(provider, [userMsg(prompt)], { model: "deep", maxTokens: 1500, ctx });
 }
 
-/**
- * Explain a merge conflict and suggest a resolution. `path` names the file; the
- * three sides (base/ours/theirs) are passed verbatim so the model can reason
- * about intent rather than guess from markers.
- */
-export function explainConflict(
-  provider: Provider,
-  conflict: { path: string; base?: string; ours: string; theirs: string },
-  ctx?: TaskContext,
-): Promise<string | null> {
-  const cap = (s: string | undefined) => truncateDiff(s ?? "", 2500);
-  const prompt =
-    `A merge conflict is open in \`${conflict.path}\`. Explain what each side changed and why they conflict, ` +
-    "then recommend how to resolve it (which side to take, or how to combine them). Keep it tight and practical. Use Markdown.\n\n" +
-    (conflict.base ? "BASE (common ancestor):\n```\n" + cap(conflict.base) + "\n```\n\n" : "") +
-    "OURS (current branch):\n```\n" + cap(conflict.ours) + "\n```\n\n" +
-    "THEIRS (incoming):\n```\n" + cap(conflict.theirs) + "\n```";
-  return oneShot(provider, [userMsg(prompt)], { model: "deep", maxTokens: 1200, ctx });
-}
-
 /** Generate release notes / a changelog from a list of commit subjects (Markdown). */
 export function generateChangelog(
   provider: Provider,

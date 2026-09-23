@@ -57,6 +57,14 @@ export function localNameFor(remoteRef: string): string {
 export async function planRemoteCheckout(
   proc: GitRunner,
   remoteRef: string,
+  /**
+   * The remote-tracking branch's FULL name ("refs/remotes/origin/x"), when the
+   * caller has it: what `--track` is handed. The short "origin/x" is resolved
+   * like any revision, and a LOCAL branch literally called "origin/x" makes it
+   * ambiguous — "fatal: ambiguous object name: 'origin/x'", no checkout.
+   * `remoteRef` stays the name the words and the local branch come from.
+   */
+  trackRef?: string,
 ): Promise<RemoteCheckoutPlan> {
   const local = localNameFor(remoteRef);
   const existing = await proc.run([
@@ -77,7 +85,7 @@ export async function planRemoteCheckout(
     local,
     // `--track` is explicit rather than implied, so the new branch gets its
     // upstream even where `branch.autoSetupMerge` has been turned off.
-    args: ["checkout", "-b", local, "--track", remoteRef],
+    args: ["checkout", "-b", local, "--track", trackRef ?? remoteRef],
     success: `Checked out ${local} (tracking ${remoteRef})`,
     undoLabel: `Checkout ${local}`,
   };

@@ -69,3 +69,137 @@ test("every push call site has decided about force-with-lease", async () => {
       unreviewed.join("\n"),
   );
 });
+
+// The other half of the same decision: WHEN to offer the force.
+//
+// Every ahead-and-behind branch used to be treated as "you rewrote it" — the
+// status bar's Sync, the branch view's Push and the push modal all offered
+// "Force push — uses --force-with-lease, which still refuses if someone else
+// pushed". It does not refuse once their commits have been FETCHED (Sync
+// fetches first; the ↓ pill means someone did): the lease is the
+// remote-tracking ref, and it matches. Replayed against a real repository, a
+// colleague's two commits were deleted from the remote.
+//
+// So a force may be offered only where the rewrite was established — by
+// `rewroteUpstream()` (same author, same author date: what an amend and a
+// rebase keep) — in the same condition that offers it.
+const FORCE_OFFER = /(?:\baskRewrite\w*\(|\bneedsForce\s*=)/;
+const DECLARED = /^\s*(?:private|public|protected)?\s*async\s+askRewrite/;
+
+test("a force push is offered only for a divergence we caused", async () => {
+  const ungated: string[] = [];
+  let seen = 0;
+  for (const file of await tsFiles(join(ROOT, "apps/extension/src"))) {
+    const lines = (await readFile(file, "utf8")).split("\n");
+    lines.forEach((line, i) => {
+      if (/^\s*(?:\/\/|\*)/.test(line) || DECLARED.test(line)) return;
+      if (!FORCE_OFFER.test(line)) return;
+      // Webview script (a template literal) READS `data.needsForce`; only the
+      // host assigns it, and that assignment is what must be gated.
+      if (/data\.needsForce/.test(line)) return;
+      seen++;
+      const statement = lines.slice(Math.max(0, i - 7), i + 7).join("\n");
+      if (/rewroteUpstream\(/.test(statement)) return;
+      ungated.push(`${relative(ROOT, file)}:${i + 1} — ${line.trim()}`);
+    });
+  }
+  assert.ok(seen >= 3, `the scan found only ${seen} force offers — it broke`);
+  assert.equal(
+    ungated.join("\n"),
+    "",
+    "force-push offers not gated on rewroteUpstream() — a colleague's fetched " +
+      "commits would be deleted:\n" + ungated.join("\n"),
+  );
+});
+
+// …and where the door FETCHES before it decides, the rewrite test is not enough
+// on its own, and neither is the bare lease.
+//
+// Sync fetches, then asks rewroteUpstream(). Author and author date are kept by
+// ANY amend — so the same commit amended on another machine and pushed, or a
+// colleague's amend of one of your commits, passes that test while being
+// somebody else's version. And the bare --force-with-lease is the
+// remote-tracking ref, which the fetch has just set to the remote: replayed
+// through the real Sync door, accepting "Force push" deleted the other
+// amendment. The tip read BEFORE the fetch is what the user last saw: the force
+// is offered only if the fetch left it where it was, and the push is leased on
+// it (SyncOps.push `lease`; pushLease.test.ts pins the refusal against real
+// git).
+test("Sync's force push is leased on the upstream tip read before its fetch", async () => {
+  const src = await readFile(join(ROOT, "apps/extension/src/statusBar/syncStatus.ts"), "utf8");
+  const start = src.indexOf('case "sync": {');
+  assert.ok(start >= 0, "the Sync arm");
+  const code = src
+    .slice(start, src.indexOf('case "pull": {', start))
+    .split("\n")
+    .filter((l) => !/^\s*(?:\/\/|\*)/.test(l))
+    .join("\n");
+  const seen = /const\s+(\w+)\s*=\s*await\s+active\.ctx\.sync\.upstreamTip\(\)/.exec(code);
+  assert.ok(seen, "the tip is read into a variable");
+  const fetchAt = code.search(/\.fetch\(/);
+  assert.ok(seen.index < fetchAt, "…BEFORE the fetch");
+  const name = seen[1];
+  const offerAt = code.search(/askRewrite\(/);
+  assert.match(
+    code.slice(fetchAt, offerAt),
+    new RegExp(`upstreamTip\\(\\)\\)?\\s*===\\s*${name}\\b`),
+    "the force is offered only when the fetch left the tip where it was seen",
+  );
+  assert.match(
+    code.slice(offerAt),
+    new RegExp(`sync\\.push\\(\\{\\s*force:\\s*\\w+,\\s*lease:\\s*${name}\\b`),
+    "and the push is leased on it",
+  );
+});
+
+// …and the rewrite test is not enough on its own either. The same commit
+// amended on another machine, pushed, and fetched here in the BACKGROUND (the
+// editor's autofetch) keeps the author and author date, so it passes
+// rewroteUpstream() — and every lease the doors could hold is the tip that
+// fetch left, so the force deleted it (replayed; forceIfIncludes.test.ts in
+// git-service pins it against real git). The engine now refuses a force
+// leased on a tip this branch never had (`PushResult.unseen`); every door that
+// OFFERS one asks the same question first — `upstreamUnseen()`, in the same
+// condition — and every door that PUSHES one settles the refusal as the state
+// it is, with Pull offered, never as "push failed".
+test("a force push is offered only over a tip this branch has had", async () => {
+  const ungated: string[] = [];
+  let seen = 0;
+  for (const file of await tsFiles(join(ROOT, "apps/extension/src"))) {
+    const lines = (await readFile(file, "utf8")).split("\n");
+    lines.forEach((line, i) => {
+      if (/^\s*(?:\/\/|\*)/.test(line) || DECLARED.test(line)) return;
+      if (!FORCE_OFFER.test(line) || /data\.needsForce/.test(line)) return;
+      seen++;
+      const statement = lines.slice(Math.max(0, i - 7), i + 7).join("\n");
+      if (/upstreamUnseen\(/.test(statement)) return;
+      ungated.push(`${relative(ROOT, file)}:${i + 1} — ${line.trim()}`);
+    });
+  }
+  assert.ok(seen >= 3, `the scan found only ${seen} force offers — it broke`);
+  assert.equal(
+    ungated.join("\n"),
+    "",
+    "force-push offers not gated on upstreamUnseen() — an amendment fetched in " +
+      "the background would be offered for deletion:\n" + ungated.join("\n"),
+  );
+});
+
+test("every extension push that can force settles an unseen refusal", async () => {
+  const unsettled: string[] = [];
+  let seen = 0;
+  for (const file of await tsFiles(join(ROOT, "apps/extension/src"))) {
+    const lines = (await readFile(file, "utf8")).split("\n");
+    lines.forEach((line, i) => {
+      if (/^\s*(?:\/\/|\*)/.test(line) || !/\bsync\.push\(/.test(line)) return;
+      // Only the calls that can force: `force` among their own arguments.
+      if (!/force/.test(lines.slice(i, i + 2).join("\n"))) return;
+      seen++;
+      const below = lines.slice(i, i + 30).join("\n");
+      if (/settlePushUnseen\(/.test(below)) return;
+      unsettled.push(`${relative(ROOT, file)}:${i + 1} — ${line.trim()}`);
+    });
+  }
+  assert.ok(seen >= 4, `the scan found only ${seen} forcing pushes — it broke`);
+  assert.equal(unsettled.join("\n"), "", "forcing pushes that would call a refusal a failure:\n" + unsettled.join("\n"));
+});

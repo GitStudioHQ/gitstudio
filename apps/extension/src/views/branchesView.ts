@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/host-bridge/git";
+import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import type { RepoManager } from "../git/repoManager";
 
 // The tree has two levels: fixed category roots (Local / Remotes / Tags) and
@@ -43,11 +44,23 @@ class CategoryNode extends vscode.TreeItem {
   }
 }
 
+/**
+ * How a row NAMES its ref: the full name under its namespace (refLabel) —
+ * "release", "origin/x", "v1" — as the graph's chips, its menus and the status
+ * item do. Never `ref.name`, git's %(refname:short): only shortest-unambiguous,
+ * it is "heads/release" / "tags/release" beside a tag and a branch of that
+ * name, and "remotes/origin/x" beside a local branch called "origin/x".
+ */
+function refNodeLabel(ref: GitRef): string {
+  const label = ref.fullName ? refLabel(ref.fullName) : "";
+  return label && label !== ref.fullName ? label : ref.name;
+}
+
 /** A single ref (branch / remote branch / tag). */
 class RefNode extends vscode.TreeItem {
   readonly kind = "ref" as const;
   constructor(readonly ref: GitRef) {
-    super(ref.name, vscode.TreeItemCollapsibleState.None);
+    super(refNodeLabel(ref), vscode.TreeItemCollapsibleState.None);
 
     const shortSha = ref.sha.slice(0, 7);
 
@@ -98,7 +111,7 @@ function buildRefTooltip(ref: GitRef): vscode.MarkdownString {
       : ref.type === "remote"
         ? "$(cloud)"
         : "$(tag)";
-  md.appendMarkdown(`${icon} **${escapeMarkdown(ref.name)}**`);
+  md.appendMarkdown(`${icon} **${escapeMarkdown(refNodeLabel(ref))}**`);
   if (ref.type === "head" && ref.isCurrent) {
     md.appendMarkdown(` · $(check) current`);
   }
@@ -175,7 +188,11 @@ export class RefsTreeProvider
       const refs = await active.ctx.refs.listRefs();
       for (const ref of refs) {
         const category = CATEGORY_OF_TYPE[ref.type];
-        if (category) {
+        // Not a remote's HEAD pointer (refs/remotes/origin/HEAD): it is a
+        // copy of the default branch listed right beside it, git shortens it
+        // to the bare remote name ("origin"), and its Checkout could only
+        // fail. The graph and the desktop's list leave it out too.
+        if (category && !(ref.type === "remote" && ref.symref)) {
           next[category].push(ref);
         }
       }

@@ -28,8 +28,10 @@ import type { CommitFileChange } from "@gitstudio/host-bridge/commitDetailsProto
 /** The App-owned operations a peek card can trigger. Every mutation funnels
  *  through here so cache-busting, toasts, and view refreshes stay centralized. */
 export interface GitPeekHost {
-  /** Check out a local branch / remote branch / tag (App resolves semantics). */
-  checkout(ref: string): void;
+  /** Check out a local branch / remote branch / tag by its FULL name
+   *  ("refs/heads/x") — the namespace decides what the checkout means, and a
+   *  short name beside a tag of the same name would detach. */
+  checkout(fullName: string): void;
   /** The existing per-branch ⋯ actions menu, anchored to a peek button. */
   branchMenu(b: BranchInfo, anchor: HTMLElement): void;
   /** Open the Compare view with the current branch as base and `head` as head. */

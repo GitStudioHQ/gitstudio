@@ -23,6 +23,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { CommitContextMenu } from "../src/renderer/contextMenu";
+import { refCheckoutRequest } from "../src/renderer/refMenuItems";
 import type { CommitActionRequest } from "../src/shared/ipc";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -101,20 +102,52 @@ test("no checkout in the renderer uses the detaching action on a ref name", () =
       false,
       `${f} still sends the detaching checkout action for a named ref`,
     );
+    // …and they build it with the one builder, which is where the ref
+    // checkout's action, kind and full name are decided.
     assert.ok(
-      /action:\s*"checkout-ref"/.test(text),
-      `${f} no longer sends a ref checkout at all — did the call site move?`,
+      /host\.invoke\("commit:action", refCheckoutRequest\(fullName\)\)/.test(text),
+      `${f} no longer sends its ref checkout through refCheckoutRequest — did the call site move?`,
     );
+    assert.equal(/action:\s*"checkout-ref"/.test(text), false, `${f} builds a checkout-ref by hand again`);
   }
 });
 
-test("the ref checkouts pass a kind through", () => {
-  for (const f of ["renderer/renderer.ts", "renderer/views/refDetail.ts"]) {
-    assert.ok(
-      /refKind/.test(src(f)),
-      `${f} sends checkout-ref without a kind, so every remote branch detaches`,
-    );
+test("refCheckoutRequest takes the kind from the namespace, and always carries the full name", () => {
+  // The kind is what makes a remote a real local tracking branch, and the
+  // full name is what keeps "heads/release" a branch: both come from the one
+  // string every door has, so no door can drop either.
+  assert.deepEqual(refCheckoutRequest("refs/heads/heads/release"), {
+    action: "checkout-ref",
+    sha: "refs/heads/heads/release",
+    name: "heads/release",
+    refKind: "head",
+    fullName: "refs/heads/heads/release",
+  });
+  assert.equal(refCheckoutRequest("refs/remotes/origin/fix/login").refKind, "remote");
+  assert.equal(refCheckoutRequest("refs/remotes/origin/fix/login").name, "origin/fix/login");
+  assert.equal(refCheckoutRequest("refs/tags/v1.2.0").refKind, "tag");
+  assert.equal(refCheckoutRequest("refs/heads/release").name, "release", "the words, for the toast: never fed back to git");
+});
+
+test("every checkout door in the renderer hands checkoutRef a FULL name", () => {
+  // The Branches list's row button and ⋯ menu, its remote rows, the branch
+  // switcher's locals and remotes, and the peek host: all sent
+  // `%(refname:short)`, which is "heads/release" beside a tag of that name —
+  // and `git checkout heads/release` detaches. The main process refuses a
+  // checkout-ref without a full name now; this is the census that no door
+  // reaches for the short one.
+  const text = src("renderer/renderer.ts");
+  const calls = [...text.matchAll(/this\.checkoutRef\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.ok(calls.length >= 6, `the doors are all found (${calls.length}): ${calls.join(" | ")}`);
+  for (const args of calls) {
+    assert.match(args, /^(\w+\.fullName|fullName)\b/, `checkoutRef(${args}) must be given a full name`);
   }
+  assert.match(text, /private async checkoutRef\(fullName: string, btn\?: HTMLElement\)/);
+  // The ref page checks out the ref it looked up by name AND kind.
+  const detail = src("renderer/views/refDetail.ts");
+  const doors = [...detail.matchAll(/void checkout\(([^,]+),/g)].map((m) => m[1]);
+  assert.ok(doors.length === 2, `the ref page's two doors are found (${doors.join(" | ")})`);
+  for (const d of doors) assert.equal(d, "ref.fullName", `the ref page checks out ${d}`);
 });
 
 test("the chip menu's checkout goes through the context menu's door, and is refused where its rows are", () => {
@@ -163,15 +196,18 @@ test("the chip menu's checkout carries the ref's FULL name when the chip resolve
 });
 
 test("a remote branch row asks for the remote treatment", () => {
-  // The Branches list decides the kind from whether you already have the local
-  // branch: yours attaches by name, theirs has to be created.
+  // By the REMOTE ref's full name, whether or not you already have the local
+  // branch: planRemoteCheckout switches to yours when it exists and creates
+  // it tracking the remote when not. It used to pass the local's SHORT name
+  // for "yours", which beside a tag of that name detached.
   const text = src("renderer/renderer.ts");
+  assert.match(text, /primary\.addEventListener\("click", \(\) => void this\.checkoutRef\(r\.fullName, primary\)\);/);
+  assert.equal(refCheckoutRequest("refs/remotes/origin/x").refKind, "remote");
+  // And the branch switcher's remote section, which promises "as a local
+  // branch" in its own tooltip — and names the ref by its full name shorn,
+  // never git's "remotes/origin/x" beside a local branch called "origin/x".
   assert.match(
     text,
-    /checkoutRef\(mine \? short : r\.name, primary, mine \? "head" : "remote"\)/,
-    "the remote row no longer distinguishes a local branch from a remote one",
+    /title: `Check out \$\{refDisplay\(b\.fullName\)\} as a local branch`,\s*onClick: \(\) => void this\.checkoutRef\(b\.fullName\),/,
   );
-  // And the branch switcher's remote section, which promises "as a local
-  // branch" in its own tooltip.
-  assert.match(text, /checkoutRef\(b\.name, undefined, "remote"\)/);
 });

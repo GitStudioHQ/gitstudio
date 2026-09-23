@@ -432,9 +432,13 @@ export function agentAccessCard(): HTMLElement {
       return;
     }
 
+    // The main process says WHY there is no server, and it depends on the
+    // build: a dev tree has not bundled it yet, a shipped build is broken. This
+    // line used to tell every shipped build's user to "Run `npm run build` in
+    // apps/mcp" — beside an Add button that could not work.
     if (!info.available) {
-      const warn = el("div", "settings-empty");
-      warn.textContent = "The MCP server isn't built yet. Run `npm run build` in apps/mcp.";
+      const warn = el("div", "settings-empty mcp-missing");
+      warn.textContent = info.missing ?? "The MCP server isn't available in this build.";
       body.append(warn);
     }
     if (!info.repoRoot) {
@@ -494,11 +498,28 @@ export function agentAccessCard(): HTMLElement {
       const m = el("div", "mcp-client-meta");
       const n = el("div", "mcp-client-name");
       n.append(span(cl.label));
-      if (cl.installed) n.append(pill("Connected", "is-ready"));
+      // Configured, but pointing at a GitStudio that is no longer there (the
+      // app was moved after Add): not "Connected" — it cannot start. Say why,
+      // and make the one button put the current path back.
+      if (cl.installed && cl.stale) n.append(pill("Moved", "is-warn"));
+      else if (cl.installed) n.append(pill("Connected", "is-ready"));
       m.append(n);
+      if (cl.stale && cl.staleReason) {
+        const why = el("div", "mcp-client-stale");
+        why.textContent = cl.staleReason;
+        m.append(why);
+      }
       r.append(m);
-      const btn = el("button", "mini-btn");
-      btn.append(glyph(cl.installed ? "sync" : "add"), span(cl.installed ? "Update" : "Add"));
+      const btn = el("button", "mini-btn") as HTMLButtonElement;
+      btn.append(
+        glyph(cl.stale ? "refresh" : cl.installed ? "sync" : "add"),
+        span(cl.stale ? "Re-add" : cl.installed ? "Update" : "Add"),
+      );
+      // No server, no install: a button that can only fail is not an offer.
+      if (!info.available) {
+        btn.disabled = true;
+        btn.title = info.missing ?? "The MCP server isn't available in this build.";
+      }
       btn.addEventListener("click", () => void runBusy(btn, async () => {
         try {
           const res = await host.invoke("ai:mcpInstall", {
@@ -506,7 +527,7 @@ export function agentAccessCard(): HTMLElement {
             write: permission !== "read",
             destructive: permission === "destructive",
           });
-          toast(res.message, res.ok ? "success" : "error");
+          toast(res.message, res.ok ? "success" : res.expected ? "info" : "error");
           if (res.ok) void render();
         } catch (e) {
           toast(cleanErr(e), "error");
@@ -517,7 +538,10 @@ export function agentAccessCard(): HTMLElement {
     }
     body.append(clients);
 
-    // Manual config snippet (copy).
+    // Manual config snippet (copy) — only when it could work. With no server,
+    // or from a translocated copy or a disk image whose path vanishes, it names a
+    // command no client could run, and copying it is Add without the refusal.
+    if (!info.available) return;
     const snippet = buildSnippet(info, permission);
     const codeWrap = el("div", "mcp-snippet");
     const codeHead = el("div", "mcp-snippet-head");
@@ -537,12 +561,24 @@ export function agentAccessCard(): HTMLElement {
   return card;
 }
 
+/**
+ * The paste-it-yourself config, for the permission picked here.
+ *
+ * The command and env come from the main process, the same values Add writes.
+ * This spelled its own `command: "node"` — the twin of the one the installer
+ * had — so fixing only the installer would have left the snippet launching a
+ * runtime the user may not have.
+ */
 function buildSnippet(info: McpInfo, permission: "read" | "write" | "destructive"): string {
   const args = [info.binPath];
   if (info.repoRoot) args.push("--repo", info.repoRoot);
   if (permission === "destructive") args.push("--allow-destructive");
   else if (permission === "write") args.push("--write");
-  return JSON.stringify({ mcpServers: { gitstudio: { command: "node", args } } }, null, 2);
+  return JSON.stringify(
+    { mcpServers: { gitstudio: { command: info.command, args, env: info.env } } },
+    null,
+    2,
+  );
 }
 
 // ── small helpers ──────────────────────────────────────────────────────────────

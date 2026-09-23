@@ -41,7 +41,10 @@ export function toast(
   message: string,
   kind: ToastKind = "info",
   timeoutMs?: number,
-  action?: ToastAction,
+  /** One action, or several in the order offered — the first is the one
+   *  the toast recommends (a hidden commit: "Add <branch> to the filter",
+   *  then "Show all branches"). */
+  action?: ToastAction | ToastAction[],
 ): void {
   let stack = document.getElementById("toast-stack");
   if (!stack) {
@@ -59,14 +62,15 @@ export function toast(
   close.setAttribute("aria-label", "Dismiss");
   close.appendChild(gl("close"));
   t.append(icon, msg);
-  if (action) {
+  const actions = action === undefined ? [] : Array.isArray(action) ? action : [action];
+  for (const a of actions) {
     const act = mk("button", "toast-action");
-    act.textContent = action.label;
+    act.textContent = a.label;
     act.addEventListener("click", () => {
       // Dismiss FIRST: the handler re-renders, and a toast still on screen
       // afterwards reads as though the undo had not happened.
       dismiss();
-      action.onClick();
+      a.onClick();
     });
     t.appendChild(act);
   }
@@ -88,7 +92,7 @@ export function toast(
   // to read a sentence and decide you did not mean it.
   timer = window.setTimeout(
     dismiss,
-    timeoutMs ?? (kind === "error" ? 7000 : action ? 10000 : 4000),
+    timeoutMs ?? (kind === "error" ? 7000 : actions.length ? 10000 : 4000),
   );
 }
 
@@ -575,6 +579,24 @@ export function promptChoice(opts: {
   hint?: string;
   choices: readonly ChoiceOption[];
   cancelId: string;
+  /**
+   * While this returns true, a route change the user did not make leaves the
+   * question on screen instead of answering it with `cancelId`.
+   *
+   * For a question asked straight AFTER a git write. The write moves a ref, the
+   * repository watcher reports it 250 ms later, and the refresh re-routes —
+   * which tears every floating layer down. So a pull's "Merge or Rebase?"
+   * (opened by the fetch that found the divergence) and a rename's "Rename on
+   * origin too?" (opened by the rename) were each answered "Cancel" by the
+   * watcher about a fifth of a second after they appeared, before anyone could
+   * read them. A question the user owes an answer is work in progress, and
+   * only the user may answer it — see ModalSpec.hasUnsavedWork.
+   *
+   * A predicate, not a flag, because some route changes SHOULD close it: the
+   * callers hold only while the same repository is open, since the answer acts
+   * on whichever repository that is.
+   */
+  holdWhile?: () => boolean;
 }): Promise<string> {
   return new Promise((resolve) => {
     let settled = false;
@@ -641,6 +663,7 @@ export function promptChoice(opts: {
         onClose: () => {
           if (!settled) resolve(opts.cancelId);
         },
+        hasUnsavedWork: () => opts.holdWhile?.() ?? false,
       };
     });
   });

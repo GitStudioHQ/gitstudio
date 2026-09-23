@@ -10,6 +10,7 @@ import type {
   RowStat,
   GraphRefEntry,
   GraphRefFilter,
+  RefPreset,
 } from "@gitstudio/host-bridge/graphProtocol";
 import type { CommitDetailsPayload } from "@gitstudio/host-bridge/commitDetailsProtocol";
 import type {
@@ -80,16 +81,34 @@ export interface GraphPage {
   hasMore: boolean;
   /** Skip cursor for the next page request. */
   nextSkip: number;
-  /** The branch filter these rows were walked with (issue #30); null = all. */
+  /** The branch filter these rows were walked with (issue #30), resolved to
+   *  full names — what the picker ticks; null = all. */
   refFilter: GraphRefFilter;
-  /** Every ref the Branches picker can offer, filtered-out ones included. */
-  refList: GraphRefEntry[];
+  /** The preset the stored filter is ("current", …), when it is one. */
+  refPreset?: RefPreset;
+  /**
+   * Every ref the Branches picker can offer, filtered-out ones included —
+   * present only when it differs from the list the request said it holds
+   * (`refListSig`). Absent means "yours is current": it is every branch and
+   * tag, a megabyte on a repository with ten thousand tags, and it used to
+   * cross IPC with every page.
+   */
+  refList?: GraphRefEntry[];
+  /** refListSignature() of the list the main process has now — what the
+   *  caller sends back as `refListSig` once it has delivered `refList`. */
+  refListSig: string;
 }
 
 /** A `graph:load` request. */
 export interface GraphLoadRequest {
   skip?: number;
   maxCount?: number;
+  /**
+   * refListSignature() of the ref list the caller already holds (the one it
+   * last handed the graph element). The page leaves `refList` out when the
+   * main process's list still has this signature. Omitted: send it.
+   */
+  refListSig?: string;
   /**
    * The branch filter to apply from now on. Omitted (undefined) means "the one
    * remembered for this repository"; null or a list SETS it — remembered per
@@ -324,13 +343,26 @@ export interface CommitActionRequest {
   /** For checkout-ref: what kind of ref `name` is. */
   refKind?: "head" | "remote" | "tag";
   /**
-   * For checkout-ref: the ref's FULL name, when the door knows it (the graph
-   * does — its rows and its ref list carry it). The main process checks out
-   * by this and not by `name`, which is `%(refname:short)`: with a tag and a
-   * branch both called "release" the branch's short name is "heads/release",
-   * and `git checkout heads/release` detaches HEAD at the branch tip.
+   * For checkout-ref: the ref's FULL name — REQUIRED; the main process
+   * refuses a checkout-ref without one. It checks out by this and not by
+   * `name`, which is `%(refname:short)`: with a tag and a branch both called
+   * "release" the branch's short name is "heads/release", and
+   * `git checkout heads/release` detaches HEAD at the branch tip. Build the
+   * request with refCheckoutRequest (renderer/refMenuItems.ts) where you can.
    */
   fullName?: string;
+  /** See StashFirst: this request again, after the user chose Stash & Retry. */
+  stashFirst?: string;
+}
+
+/**
+ * Carried by a commit-applying request sent AGAIN after the user chose Stash &
+ * Retry (see CommitActionResult.inTheWay): the root of the repository the
+ * refusal came from. The main process stashes the changes in the way, runs
+ * the same request, and puts them back — and refuses in any other repository.
+ */
+export interface StashFirst {
+  stashFirst?: string;
 }
 
 export interface CommitActionResult {
@@ -344,6 +376,50 @@ export interface CommitActionResult {
    * the reporter treats it differently. Mirrors ExpectedError for the throwing
    * paths (see main/expectedError.ts).
    */
+  expected?: boolean;
+  /**
+   * A command that applies commits was refused because the user's uncommitted
+   * work is in its way (main/inTheWay.ts). Always with `expected` and the
+   * engine's sentence in `message`. The renderer asks Stash & Retry or Cancel,
+   * and a Stash & Retry sends the same request again with `stashFirst: root`.
+   */
+  inTheWay?: InTheWayInfo;
+  /** After a Stash & Retry: what became of the stashed changes, when it is
+   *  anything but "back where they were". Said in the neutral tone. */
+  stashNote?: string;
+  /** The renderer asked about changes in the way and the user cancelled:
+   *  nothing ran, nothing failed, nothing to say. Never sent by main. */
+  cancelled?: true;
+  /**
+   * A checkout-ref refused because the branch's NAME reads as an option
+   * ("-f": `git checkout -f` would discard every uncommitted change). `message`
+   * says so; this is what a door needs to offer the fix — a rename by
+   * `fullName` (branch:rename), which only a LOCAL branch can take.
+   */
+  optionLike?: { fullName: string; name: string; local: boolean };
+}
+
+/** See CommitActionResult.inTheWay. */
+export interface InTheWayInfo {
+  kind: "cherry-pick" | "revert" | "merge" | "rebase" | "checkout" | "stash" | "pull";
+  /** The user's files in the way, repo-relative. Never empty. */
+  files: string[];
+  /** The repository the refusal came from; a retry is refused in any other. */
+  root: string;
+}
+
+/**
+ * The plain `{ ok, message }` answer many channels give — plus the `expected`
+ * marker, which every result shape that can be `ok:false` needs.
+ *
+ * The IPC wrapper in main.ts files a crash report for any `ok:false` result
+ * carrying a message, so a shape with nowhere to put `expected` is a shape that
+ * cannot describe an ordinary condition. See CommitActionResult.expected.
+ */
+export interface OkResult {
+  ok: boolean;
+  message?: string;
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
   expected?: boolean;
 }
 
@@ -424,11 +500,95 @@ export interface SyncStatus {
   noUpstream: boolean;
 }
 
+/**
+ * How a pull reconciles the commits it brings in with the ones you already
+ * have. Mirrors `PullMode` in git-service, and is passed to git as a flag —
+ * picking one here never writes `pull.rebase` into the user's config.
+ */
+export type PullMode = "merge" | "rebase" | "ff-only";
+
+/**
+ * A pull that stopped because the branch and its upstream have BOTH moved.
+ *
+ * git refuses this outright with a wall of `git config` advice (report #12).
+ * The bridge turns that refusal into a question instead: nothing was changed,
+ * and the renderer asks for a `PullMode` and calls `sync:pull` again with it.
+ */
+export interface PullDivergence {
+  branch: string;
+  upstream: string;
+  ahead: number;
+  behind: number;
+}
+
+/**
+ * A pull whose merge or rebase STOPPED on conflicts — an outcome, not a
+ * failure. The repository is now mid-merge or mid-rebase, which is exactly what
+ * the Changes view's conflicts dashboard and the merge editor are for.
+ */
+export interface PullStopInfo {
+  operation: "merge" | "rebase";
+  /** How many files were left conflicted. Always at least one. */
+  conflicts: number;
+}
+
+/**
+ * A pull that could not START because an operation is still paused — most
+ * often the merge or rebase an earlier pull stopped on, since the branch is
+ * still ahead and behind and Pull is still offered. Nothing ran.
+ */
+export interface PullBlockInfo {
+  operation?: "merge" | "rebase" | "cherry-pick" | "revert";
+  /** Files still conflicted; 0 when resolved but not yet committed/continued. */
+  conflicts: number;
+}
+
+/**
+ * A pull git refused because the user's uncommitted work was in its way — a
+ * rebase needs a clean tree; a merge will not overwrite an edited or untracked
+ * file it changes. Nothing ran.
+ */
+export interface PullDirtyInfo {
+  /** How many files are in the way. */
+  files: number;
+}
+
+/** `sync:pull`'s answer — a CommitActionResult that can ask a question back,
+ *  say that it stopped for the user to resolve conflicts, or say that an
+ *  operation already paused — or the user's uncommitted work — kept it from
+ *  starting. */
+export interface PullActionResult extends CommitActionResult {
+  diverged?: PullDivergence;
+  stopped?: PullStopInfo;
+  blocked?: PullBlockInfo;
+  dirty?: PullDirtyInfo;
+}
+
+/**
+ * `sync:push`. `pullFirst` marks a FORCE push the bridge refused because the
+ * remote branch has commits that are not this branch's to replace — somebody
+ * else's, or the same commit amended on another machine and fetched in the
+ * background. Nothing was pushed, and nothing failed: the way on is to pull
+ * them in, which is what the renderer offers. Always `expected`.
+ */
+export interface PushActionResult extends CommitActionResult {
+  pullFirst?: true;
+}
+
 /** A branch with remote-tracking context, for the Branches manager. */
 export interface BranchInfo {
+  /** `%(refname:short)` — for reading. "heads/release" when a tag shares the name. */
   name: string;
+  /** `%(refname)`, e.g. "refs/heads/release" — what a checkout is planned from
+   *  (planRefCheckout), because the short name then names a revision. */
+  fullName: string;
   current: boolean;
+  /** `%(upstream:short)` — for reading. "remotes/origin/x" beside a local
+   *  branch called "origin/x". */
   upstream?: string;
+  /** `%(upstream)`, e.g. "refs/remotes/origin/x" — what an upstream is SPLIT
+   *  into remote and branch by (upstreamParts), never the short one. */
+  upstreamRef?: string;
   ahead: number;
   behind: number;
   /**
@@ -1048,6 +1208,20 @@ export interface ProjectItem {
 export interface ProjectBoard {
   field: ProjectStatusField | null;
   items: ProjectItem[];
+  /** Cards GitHub named but could not return — an issue in a repository the
+   *  account can no longer see. The board says so rather than looking whole. */
+  unreadable: number;
+}
+
+/**
+ * `project:list`'s answer: the projects GitHub returned, and how many more it
+ * named but could not return. GitHub answers what it can and reports the rest,
+ * and the list keeps what came back — so without the count, a list missing an
+ * entry looked complete.
+ */
+export interface ProjectList {
+  projects: ProjectInfo[];
+  unreadable: number;
 }
 
 // ── Gists ──
@@ -1502,6 +1676,8 @@ export interface CloneResult {
   message?: string;
   /** Machine-readable failure mode (the dialog focuses the right field). */
   code?: "dest-exists" | "bad-name";
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
 }
 
 /** A commit in a PR's Commits tab. */
@@ -1629,6 +1805,8 @@ export interface RebasePlanState {
   updateRefs?: boolean;
   /** Why the plan couldn't be loaded (ok === false). */
   message?: string;
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
   /** The base the rebase runs onto, exclusive (or "--root"). */
   base: string;
   branch: string;
@@ -1689,6 +1867,14 @@ export interface RebaseOutcomeWire {
   status: "done" | "stopped" | "failed";
   reason?: "conflict" | "edit" | "unknown";
   message?: string;
+  /**
+   * Set on every `failed` outcome, so the IPC wrapper's report rule
+   * (`reportableResultMessage`) judges a failed rebase like any other failed
+   * result. Without it a genuine failure was never filed.
+   */
+  ok?: false;
+  /** A failure that is a state of the user's repository — shown, not filed. */
+  expected?: true;
 }
 
 /**
@@ -1712,7 +1898,9 @@ export interface IpcChannels {
   "refs:list": [void, RefInfo[]];
   /** Branches CONTAINING a commit (reachability), for the details pane's
    *  "in N branches" row. Lazy — it walks history. */
-  "refs:contains": [{ sha: string }, { branches: string[]; truncated: boolean }];
+  /** `refs` is `branches` by full name, same order — what the graph maps
+   *  through its ref list to offer "Add <branch> to the filter". */
+  "refs:contains": [{ sha: string }, { branches: string[]; refs: string[]; truncated: boolean }];
   "head:get": [void, HeadInfo | undefined];
   "status": [void, ChangedFile[]];
   "commit:details": [string, CommitDetailsPayload | undefined];
@@ -1752,7 +1940,7 @@ export interface IpcChannels {
   "discard:snapshot": [void, { sha?: string }];
   /** Put the named paths back to how they were in a snapshot's tree. Restores
    *  the WORKING TREE only: what was staged stays staged. */
-  "discard:undo": [{ sha: string; paths: string[] }, { ok: boolean; message?: string }];
+  "discard:undo": [{ sha: string; paths: string[] }, OkResult];
   "stageAll": [void, CommitActionResult];
   "unstageAll": [void, CommitActionResult];
   /** The still-unstaged changes within one file, for per-hunk ticks (#20). */
@@ -1762,8 +1950,8 @@ export interface IpcChannels {
   "commit": [{ message: string; amend?: boolean }, CommitActionResult];
   // ── Stashes ──
   "stash:list": [void, StashInfo[]];
-  "stash:apply": [string, CommitActionResult];
-  "stash:pop": [string, CommitActionResult];
+  "stash:apply": [string | ({ ref: string } & StashFirst), CommitActionResult];
+  "stash:pop": [string | ({ ref: string } & StashFirst), CommitActionResult];
   "stash:drop": [string, CommitActionResult];
   /**
    * Put a dropped stash back — `git stash store <sha>`.
@@ -1798,10 +1986,19 @@ export interface IpcChannels {
   // ── Sync (control remote changes) ──
   "sync:status": [void, SyncStatus];
   "sync:fetch": [{ prune?: boolean } | void, CommitActionResult];
-  "sync:pull": [void, CommitActionResult];
-  "sync:push": [{ setUpstream?: boolean; force?: boolean } | void, CommitActionResult];
-  /** Push (or publish) ONE named branch, not just the checked-out one. */
-  "branch:push": [{ name: string }, CommitActionResult];
+  /**
+   * Pull. With no `mode` the bridge decides — and when the branch has diverged
+   * with nothing in the user's config to settle it, it changes NOTHING and
+   * answers `{ ok: false, expected: true, diverged }` so the caller can ask.
+   * Calling again with `mode` passes the flag to git explicitly. Refused over
+   * the user's uncommitted work it answers `inTheWay` (and `dirty`), and sent
+   * again with `stashFirst` it stashes them, pulls, and puts them back.
+   */
+  "sync:pull": [({ mode?: PullMode } & StashFirst) | void, PullActionResult];
+  "sync:push": [{ setUpstream?: boolean; force?: boolean } | void, PushActionResult];
+  /** Push (or publish) ONE named branch, not just the checked-out one — by
+   *  its FULL name (see the branch ops below). */
+  "branch:push": [{ fullName: string }, CommitActionResult];
   /**
    * Publish a branch UNDER ITS OWN NAME and track it.
    *
@@ -1832,19 +2029,19 @@ export interface IpcChannels {
    *  `upstream` ("origin/foo") re-establishes the tracking a delete took with
    *  it, so the restored branch is ahead/behind the same thing it was. */
   "branch:create": [
-    { name: string; checkout?: boolean; startPoint?: string; upstream?: string },
+    { name: string; checkout?: boolean; startPoint?: string; upstream?: string } & StashFirst,
     CommitActionResult,
   ];
   /** Delete a local branch. `was` is the tip it pointed at and `upstream` what
    *  it tracked, both read BEFORE the delete — git prints the sha and throws
    *  the tracking config away, and undo needs both. */
   "branch:delete": [
-    { name: string; force?: boolean },
+    { fullName: string; force?: boolean },
     CommitActionResult & { was?: string; upstream?: string },
   ];
   /** Fast-forward a local branch straight from its upstream WITHOUT checking
-   *  it out (`git fetch <remote> <remoteBranch>:<localBranch>`). */
-  "branch:pullFf": [{ name: string }, CommitActionResult];
+   *  it out (`git fetch <remote> <remoteBranch>:<localBranch>`) — by FULL name. */
+  "branch:pullFf": [{ fullName: string }, CommitActionResult];
   // ── Compare (base…head) ──
   "compare:refs": [{ base: string; head: string; mode?: CompareMode }, CompareResult | undefined];
   /**
@@ -1865,7 +2062,7 @@ export interface IpcChannels {
   "repo:headCommit": [{ count?: boolean } | void, HeadCommit | undefined];
   // ── GitHub (PRs / Issues / Projects) ──
   "github:status": [void, GitHubStatus];
-  "github:connect": [string, { ok: boolean; login?: string; message?: string }];
+  "github:connect": [string, OkResult & { login?: string }];
   "github:disconnect": [void, void];
   // OAuth Device Flow (the "Sign in with GitHub" path).
   "github:deviceStart": [void, DeviceCodeInfo];
@@ -1883,7 +2080,7 @@ export interface IpcChannels {
   /** Detect again (after installing an editor mid-session). */
   "editors:refresh": [void, EditorsView];
   /** Open a folder (the current repository when `root` is absent). */
-  "editors:open": [{ id: string; root?: string }, { ok: boolean; message?: string }];
+  "editors:open": [{ id: string; root?: string }, OkResult];
   "editors:setShown": [{ id: string; shown: boolean }, EditorsView];
   "editors:setDefault": [{ id: string | null }, EditorsView];
   "editors:addCustom": [{ name: string; command: string }, EditorsView];
@@ -1945,26 +2142,26 @@ export interface IpcChannels {
   "repos:trash": [string, CommitActionResult & { trashed?: string }];
   /** Move a trashed folder back where it came from — the undo of the line
    *  above. Refuses if anything now occupies the destination. */
-  "repos:untrash": [{ from: string; to: string }, { ok: boolean; message?: string }];
+  "repos:untrash": [{ from: string; to: string }, OkResult];
   /** Delete a directory that is EMPTY — nothing else. This exists for exactly
    *  one thing: the clone folder the app made in your home directory and then
    *  gave you no way to get rid of. A non-empty folder is refused, so the
    *  worst case is a folder that stays. */
-  "repos:deleteEmptyFolder": [string, { ok: boolean; message?: string }];
+  "repos:deleteEmptyFolder": [string, OkResult];
   // ── App info + updates ──
   "app:info": [void, { version: string; platform: string }];
   /** Poll the release feed now (the Settings "Check for updates" button). */
   "update:check": [void, UpdateCheckResult];
   /** Start the user-confirmed download; completion arrives as update:ready. */
-  "update:download": [void, { ok: boolean; message?: string }];
+  "update:download": [void, OkResult];
   /** Apply a ready update: restart into it, or open the macOS installer. */
-  "update:install": [void, { ok: boolean; message?: string }];
+  "update:install": [void, OkResult];
   "ssh:keys": [void, SshKey[]];
   /** `state` mirrors GitHub's open|closed|all. Merged PRs come back under
    *  `closed` (they carry `mergedAt`), so the renderer narrows those locally. */
   "pr:list": [{ state?: "open" | "closed" | "all" } | void, PullRequest[]];
   "pr:detail": [number, PrDetail | undefined];
-  "pr:checkout": [number, CommitActionResult];
+  "pr:checkout": [number | ({ number: number } & StashFirst), CommitActionResult];
   "pr:merge": [{ number: number; method: MergeMethod }, CommitActionResult];
   "pr:commits": [number, PrCommitInfo[]];
   "pr:conversation": [number, PrComment[]];
@@ -1993,7 +2190,7 @@ export interface IpcChannels {
   "issue:detail": [number, IssueDetail | undefined];
   "issue:create": [
     { title: string; body?: string; labels?: string[]; assignees?: string[]; milestone?: number },
-    { ok: boolean; number?: number; message?: string },
+    OkResult & { number?: number },
   ];
   "issue:comment": [{ number: number; body: string }, CommitActionResult];
   /** Close or reopen. `reason` is GitHub's `state_reason` and only means
@@ -2049,7 +2246,7 @@ export interface IpcChannels {
     ExternalItemDetail | undefined,
   ];
   // Projects v2.
-  "project:list": [void, ProjectInfo[]];
+  "project:list": [void, ProjectList];
   "project:board": [string, ProjectBoard];
   "project:moveItem": [{ projectId: string; itemId: string; fieldId: string; optionId: string | null }, CommitActionResult];
   "project:addItem": [{ projectId: string; contentId: string }, CommitActionResult];
@@ -2114,6 +2311,8 @@ export interface IpcChannels {
       cloned?: boolean;
       message?: string;
       code?: "collision" | "clone-failed" | "open-failed" | "bad-name";
+      /** See CommitActionResult.expected — a condition, not a defect to report. */
+      expected?: boolean;
     },
   ];
   // Gists.
@@ -2151,7 +2350,7 @@ export interface IpcChannels {
   "ai:cancel": [{ requestId: string }, void];
   // MCP "Agent Access": the bundled server's config + one-click install into a client.
   "ai:mcpInfo": [void, McpInfo];
-  "ai:mcpInstall": [McpInstallRequest, { ok: boolean; message: string }];
+  "ai:mcpInstall": [McpInstallRequest, OkResult & { message: string }];
   // ── Assistant chats (persisted; survive refresh + restart) ──
   "ai:chatList": [void, ChatSummary[]];
   "ai:chatCurrent": [void, ChatView | undefined];
@@ -2178,10 +2377,18 @@ export interface IpcChannels {
     CommitActionResult & { indexText?: string },
   ];
   // ── Branch ops (engine-backed: merge / rebase / rename / upstream) ──
-  "branch:merge": [{ name: string; noFf?: boolean }, CommitActionResult];
-  "branch:rebase": [{ onto: string }, CommitActionResult];
-  "branch:rename": [{ from: string; to: string }, CommitActionResult];
-  "branch:setUpstream": [{ name: string; upstream: string }, CommitActionResult];
+  // Every one takes the branch by its FULL name (BranchInfo.fullName,
+  // "refs/heads/release") and the main process REFUSES one without it —
+  // `%(refname:short)` is "heads/release" beside a tag "release", which
+  // `git branch -m/-d` do not find, `git merge` records verbatim, and whose
+  // bare form "release" is the TAG. Build them with branchRequests.ts.
+  // Merge and rebase go through the changes-in-the-way door: sent again with
+  // `stashFirst` after a Stash & Retry.
+  "branch:merge": [{ fullName: string; noFf?: boolean } & StashFirst, CommitActionResult];
+  "branch:rebase": [{ fullName: string } & StashFirst, CommitActionResult];
+  /** Rename the local branch `fullName` to the NEW name `to` (a plain name). */
+  "branch:rename": [{ fullName: string; to: string }, CommitActionResult];
+  "branch:setUpstream": [{ fullName: string; upstream: string }, CommitActionResult];
   /** Delete a branch ON the remote. `was` is the commit the remote-tracking
    *  ref named just before, which is the only thing that makes this reversible
    *  — the push that deletes it also removes the local copy of that ref. */
@@ -2253,7 +2460,7 @@ export interface IpcChannels {
   "tag:push": [{ name: string; remote?: string }, CommitActionResult];
   // ── PR review depth: per-file diffs + inline threads + metadata ──
   "pr:fileDiff": [{ number: number; path: string }, FileDiff | undefined];
-  "pr:reviewThreads": [number, PrReviewThread[]];
+  "pr:reviewThreads": [number, PrReviewThreadList];
   "pr:addReviewComment": [
     { number: number; path: string; line: number; side?: "LEFT" | "RIGHT"; body: string },
     CommitActionResult,
@@ -2482,6 +2689,13 @@ export interface PrReviewThread {
   comments: PrReviewComment[];
 }
 
+/** `pr:reviewThreads`' answer — the threads, and how many GitHub named but
+ *  could not return (see ProjectList). */
+export interface PrReviewThreadList {
+  threads: PrReviewThread[];
+  unreadable: number;
+}
+
 /** Prefill for "Create PR from current branch" off the push/Changes flow. */
 export interface PrPrefill {
   /** The pushed branch name to use as head; absent when nothing to PR. */
@@ -2541,7 +2755,6 @@ export type AiTaskName =
   | "summarizeChanges"
   | "prDescription"
   | "reviewDiff"
-  | "explainConflict"
   | "changelog"
   | "branchName"
   | "assist";
@@ -2618,6 +2831,8 @@ export interface AiTestResult {
   message: string;
   /** The model that answered, on success. */
   model?: string;
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
 }
 
 /** The input for a one-shot AI task (only the relevant fields are set per task). */
@@ -2630,7 +2845,6 @@ export interface AiTaskInput {
   head?: string;
   description?: string;
   commits?: string[];
-  conflict?: { path: string; base?: string; ours: string; theirs: string };
   /** Override the connection for this call (else the default/per-task default). */
   connectionId?: string;
 }
@@ -2645,6 +2859,8 @@ export interface AiDone {
   ok: boolean;
   text?: string;
   message?: string;
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
 }
 
 export interface AgentRunRequest {
@@ -2695,20 +2911,34 @@ export interface McpClientInfo {
   installed: boolean;
   /** Absolute path of the client's config file (for display). */
   configPath?: string;
+  /** Installed, but the GitStudio its entry names is no longer there (the app
+   *  was moved or reinstalled elsewhere) — the card offers Re-add. */
+  stale?: boolean;
+  /** Said beside the Re-add, in plain words. */
+  staleReason?: string;
 }
 
 export interface McpInfo {
   /** Absolute path to the bundled gitstudio-mcp entry. */
   binPath: string;
-  /** The command + args to launch it (for a config snippet). */
+  /**
+   * The command + args + env to launch it. The command is the app's OWN
+   * executable run as Node (`env.ELECTRON_RUN_AS_NODE`), never a bare `node`
+   * the user may not have — so every snippet must carry `env` too.
+   */
   command: string;
   args: string[];
+  env: Record<string, string>;
   /** A ready-to-paste JSON snippet for a generic MCP client. */
   configSnippet: string;
   clients: McpClientInfo[];
   repoRoot?: string;
-  /** Whether the bundled server file exists (built) yet. */
+  /** Whether Add can work: the bundled server exists, and the app is not
+   *  running from a translocated copy whose path vanishes on quit, or from a
+   *  disk image whose path vanishes on eject. */
   available: boolean;
+  /** When it cannot: why, in words for whoever can act on it. */
+  missing?: string;
 }
 
 export interface McpInstallRequest {

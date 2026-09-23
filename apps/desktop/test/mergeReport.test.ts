@@ -47,7 +47,7 @@ test("a conflicted merge reports git's own conflict text, not 'The operation fai
     const repos = new RepoStore([]);
     await repos.open(root);
     const bridge = new GitBridge(repos);
-    const r = await bridge.branchMerge({ name: "other" });
+    const r = await bridge.branchMerge({ fullName: "refs/heads/other" });
 
     assert.equal(r.ok, false, "the merge did not succeed");
     const msg = r.message ?? "";
@@ -69,7 +69,7 @@ test("a merge that cannot start still reports git's refusal", async () => {
     const repos = new RepoStore([]);
     await repos.open(root);
     const bridge = new GitBridge(repos);
-    const r = await bridge.branchMerge({ name: "other" });
+    const r = await bridge.branchMerge({ fullName: "refs/heads/other" });
     assert.equal(r.ok, false);
     assert.notEqual(r.message ?? "", "The operation failed.", "neither channel is dropped");
     assert.ok((r.message ?? "").length > 10, `git's own words survive (got: ${r.message})`);
@@ -97,7 +97,7 @@ test("a clean merge still just succeeds", async () => {
     const repos = new RepoStore([]);
     await repos.open(root);
     const bridge = new GitBridge(repos);
-    const r = await bridge.branchMerge({ name: "side" });
+    const r = await bridge.branchMerge({ fullName: "refs/heads/side" });
     assert.equal(r.ok, true, `a clean merge succeeds (${r.message ?? ""})`);
   } finally {
     removeTempRepo(root);

@@ -55,7 +55,8 @@ import { aiModelsCard, agentAccessCard } from "./aiSettings";
 import { openInButton } from "./openIn";
 import { editorsCard } from "./views/editorsCard";
 import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled } from "./aiAssist";
-import { toast, confirmDialog, promptInline, promptChoice, openModal } from "./dialogs";
+import { toast, confirmDialog, promptInline, promptChoice, openModal, type ToastAction } from "./dialogs";
+import { refLabel, revealCandidate, storedFilterOf, withRef } from "@gitstudio/host-bridge/graphRefFilter";
 import { createBranchFlow } from "./branchCreate";
 import type { BranchStart } from "../shared/branchStart";
 import { TerminalDock } from "./terminalDock";
@@ -100,7 +101,11 @@ import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
-import type { RowRef } from "./refMenuItems";
+import { askPullMode, pullWithChoice, pullVerdict, type PullOutcome, type PullVerdict } from "./pullFlow";
+import { installInTheWayAsker } from "./inTheWayAsk";
+import { refCheckoutRequest, refDisplay, type RowRef } from "./refMenuItems";
+import { branchName, remoteRefParts, tagName, upstreamLabel, upstreamParts } from "./branchRequests";
+import { explainRefusedCheckout } from "./optionLikeRename";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
 import { refreshHighlightTheme } from "./highlight";
@@ -122,7 +127,7 @@ import { renderGists } from "./views/gists";
 import { renderRepositories } from "./views/repositories";
 import { renderDashboard } from "./views/dashboard";
 import { renderRebase } from "./views/rebase";
-import type { CommitDetails as CommitDetailsEl } from "@gitstudio/webview-ui/commit-details";
+import type { CommitDetails as CommitDetailsEl, RefMenuRequest } from "@gitstudio/webview-ui/commit-details";
 import type {
   BranchInfo,
   ChangedFile,
@@ -148,6 +153,7 @@ import type {
   ConflictModel,
   FileDiff,
   GitOpState,
+  CommitActionResult,
 } from "../shared/ipc";
 
 
@@ -528,6 +534,10 @@ class App {
   private terminalHeight = 280;
 
   async start(): Promise<void> {
+    // Before anything can invoke a commit-applying command: the one place that
+    // asks Stash & Retry or Cancel for all of them (bridge.ts). It holds its
+    // question while this repository stays open — see whileThisRepo.
+    installInTheWayAsker(() => this.currentRepo?.root);
     // Views can pop the history from here on. Before this the only way back
     // from a detail page was a forward navigation dressed as a back button.
     this.installNav();
@@ -1966,7 +1976,7 @@ class App {
       // facet grouping it with the branches whose work is done, says something
       // false about the branch everything else is measured from. It is judged
       // on its own upstream instead, like any other branch with one.
-      if (b.merged && b.name !== defaultBranch) return "merged";
+      if (b.merged && branchName(b) !== defaultBranch) return "merged";
       if (!b.upstream) return "unpublished";
       if (b.ahead && b.behind) return "diverged";
       if (b.ahead) return "ahead";
@@ -2067,11 +2077,14 @@ class App {
                   key: "remote",
                   label: "Remote",
                   icon: "cloud",
-                  options: [...new Set(remotes.map((r) => r.name.split("/")[0]))].map((v) => ({
+                  // By the full name (remoteRefParts): the short one is
+                  // "remotes/origin/x" beside a local "origin/x" — a remote
+                  // called "remotes" in this facet.
+                  options: [...new Set(remotes.map((r) => remoteRefParts(r).remote))].map((v) => ({
                     value: v,
                     label: v,
                   })),
-                  predicate: (item: unknown, v: string) => (item as RefInfo).name.split("/")[0] === v,
+                  predicate: (item: unknown, v: string) => remoteRefParts(item as RefInfo).remote === v,
                 },
                 {
                   key: "local",
@@ -2082,8 +2095,10 @@ class App {
                     { value: "no", label: "None" },
                   ],
                   predicate: (item: unknown, v: string) => {
-                    const short = (item as RefInfo).name.split("/").slice(1).join("/");
-                    const have = locals.some((b) => b.name === short);
+                    // Both sides by name under the namespace — a local
+                    // "release" beside a tag lists as "heads/release".
+                    const short = remoteRefParts(item as RefInfo).branch;
+                    const have = locals.some((b) => branchName(b) === short);
                     return v === "yes" ? have : !have;
                   },
                 },
@@ -2157,7 +2172,7 @@ class App {
       const finished = locals
         .filter((b) => hit(b.name, b.upstream, b.subject))
         .filter((b) => bar.passes(b))
-        .filter((b) => !b.current && b.name !== defaultBranch && (b.merged || b.gone));
+        .filter((b) => !b.current && branchName(b) !== defaultBranch && (b.merged || b.gone));
       sweep.replaceChildren(glyph("trash"), span(`Delete ${finished.length} finished…`));
       sweep.title = q
         ? `Of the branches matching “${q}”: those already in ${defaultBranch ?? "the default branch"}, or whose upstream is gone`
@@ -2263,7 +2278,7 @@ class App {
           )
           .sort((a, b) =>
             order === "name"
-              ? byName(a.name, b.name)
+              ? byName(branchName(a), branchName(b))
               : order === "ahead"
                 ? (b.ahead ?? 0) - (a.ahead ?? 0) || byDate(a.date, b.date)
                 : order === "stale"
@@ -2295,13 +2310,15 @@ class App {
           .filter((r) => bar.passes(r))
           .sort((a, b) =>
             order === "name"
-              ? byName(a.name, b.name)
+              ? byName(remoteRefParts(a).remote + "/" + remoteRefParts(a).branch, remoteRefParts(b).remote + "/" + remoteRefParts(b).branch)
               : order === "stale"
                 ? (a.date ?? 0) - (b.date ?? 0)
                 : byDate(a.date, b.date),
           );
         shown = rows.length;
-        const haveLocal = new Set(locals.map((b) => b.name));
+        // By the name under refs/heads/: a local "release" beside a tag lists
+        // as "heads/release", and origin/release read "no local copy".
+        const haveLocal = new Set(locals.map((b) => branchName(b)));
         for (const r of rows) body.appendChild(this.remoteRefRow(r, haveLocal));
         fillPeople();
       } else if (this.branchTab === "tags") {
@@ -2313,7 +2330,7 @@ class App {
           // v1.9.0, which is wrong about every version scheme anyone uses.
           .sort((a, b) =>
             order === "name"
-              ? byName(a.name, b.name)
+              ? byName(tagName(a), tagName(b))
               : order === "stale"
                 ? (a.date ?? 0) - (b.date ?? 0)
                 : byDate(a.date, b.date),
@@ -2494,7 +2511,7 @@ class App {
    *  cache busting, and refreshes behave identically everywhere. */
   private peekHost(): GitPeekHost {
     return {
-      checkout: (ref) => void this.checkoutRef(ref),
+      checkout: (fullName) => void this.checkoutRef(fullName),
       branchMenu: (b, anchor) => this.openBranchActions(b, anchor),
       compareWith: (head) => {
         const current = this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
@@ -2555,24 +2572,27 @@ class App {
    */
   private remoteRefRow(r: RefInfo, haveLocal: Set<string>): HTMLElement {
     // "origin/feat/x" reads as "feat/x on origin" — the remote is a column, not
-    // a prefix repeated down every title.
-    const short = r.name.split("/").slice(1).join("/") || r.name;
-    const remote = r.name.split("/")[0];
+    // a prefix repeated down every title. Split from the FULL name: the short
+    // one is "remotes/origin/x" beside a local branch "origin/x".
+    const { remote, branch: short } = remoteRefParts(r);
     const mine = haveLocal.has(short);
+    const said = `${remote}/${short}`;
 
     const actions: HTMLElement[] = [];
     const primary = el("button", "row-btn") as HTMLButtonElement;
     primary.textContent = mine ? "Checkout" : "Check out here";
     primary.title = mine
       ? `Check out your local ${short}`
-      : `Create ${short} from ${r.name} and check it out`;
+      : `Create ${short} from ${said} and check it out`;
     primary.setAttribute("aria-label", primary.title);
-    primary.addEventListener("click", () =>
-      void this.checkoutRef(mine ? short : r.name, primary, mine ? "head" : "remote"),
-    );
+    // By the REMOTE's full name either way: the planner switches to a local
+    // branch of that name when one exists (planRemoteCheckout) and creates it
+    // tracking the remote when not — which is what `mine` only labels. The
+    // local's short name here was the bug: beside a tag it names a revision.
+    primary.addEventListener("click", () => void this.checkoutRef(r.fullName, primary));
     actions.push(primary);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    more.setAttribute("aria-label", `More actions for ${r.name}`);
+    more.setAttribute("aria-label", `More actions for ${said}`);
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
     const menu = (): void =>
@@ -2619,7 +2639,7 @@ class App {
     });
     row.classList.add("ref-row");
     row.dataset.ref = r.name;
-    row.title = [r.name, r.subject].filter(Boolean).join("\n");
+    row.title = [said, r.subject].filter(Boolean).join("\n");
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       menu();
@@ -2637,15 +2657,20 @@ class App {
    */
   private tagRefRow(r: RefInfo): HTMLElement {
     const annotated = r.objectType === "tag";
+    // Named by the part under refs/tags/ (tagName): beside a branch of the
+    // same name the short form is "tags/v1".
+    const said = tagName(r);
     const actions: HTMLElement[] = [];
     const push = el("button", "row-btn") as HTMLButtonElement;
     push.textContent = "Push";
-    push.setAttribute("aria-label", `Push tag ${r.name} to the remote`);
-    push.title = `Publish ${r.name} to the remote`;
-    push.addEventListener("click", () => void this.pushTagLive(r.name, push));
+    push.setAttribute("aria-label", `Push tag ${said} to the remote`);
+    push.title = `Publish ${said} to the remote`;
+    // The name under refs/tags/: beside a branch of the same name the short
+    // name is "tags/v1", and refs/tags/tags/v1 is no tag at all.
+    push.addEventListener("click", () => void this.pushTagLive(tagName(r), push));
     actions.push(push);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    more.setAttribute("aria-label", `More actions for ${r.name}`);
+    more.setAttribute("aria-label", `More actions for ${said}`);
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
     const menu = (): void =>
@@ -2659,7 +2684,7 @@ class App {
           label: "Delete tag…",
           icon: "trash",
           danger: true,
-          onClick: () => void this.deleteTagLive(r.name),
+          onClick: () => void this.deleteTagLive(tagName(r)),
         },
       ]);
     more.addEventListener("click", menu);
@@ -2667,7 +2692,7 @@ class App {
 
     const row = secRow({
       lead: glyph("tag"),
-      title: r.name,
+      title: said,
       meta: [
         // No "annotated"/"lightweight" pill: git's own jargon for "carries a
         // message and a tagger" vs "bare pointer" explained nothing on a row
@@ -2693,11 +2718,11 @@ class App {
       timeTitle: r.date ? absTime(r.date) : undefined,
       actions,
       onOpen: () => this.routeView("refdetail", false, { ref: r.name, id: "tag" }),
-      ariaLabel: `${r.name}, ${annotated ? "tag with its own message" : "tag"}${r.who ? `, by ${r.who.name}` : ""}${r.date ? `, ${relTime(r.date)}` : ""}`,
+      ariaLabel: `${said}, ${annotated ? "tag with its own message" : "tag"}${r.who ? `, by ${r.who.name}` : ""}${r.date ? `, ${relTime(r.date)}` : ""}`,
     });
     row.classList.add("ref-row");
     row.dataset.ref = r.name;
-    row.title = [r.name, r.subject].filter(Boolean).join("\n");
+    row.title = [said, r.subject].filter(Boolean).join("\n");
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       menu();
@@ -2860,6 +2885,9 @@ class App {
         action === "apply" ? "stash:apply" : action === "pop" ? "stash:pop" : "stash:drop",
         st.ref,
       );
+      // Uncommitted changes in the stash's way were asked about (Stash &
+      // Retry or Cancel — bridge.ts), and the user cancelled: nothing ran.
+      if (r.cancelled) return;
       if (!r.ok) {
         toast(r.message ?? `Couldn't ${action} ${st.ref}.`, r.expected ? "info" : "error");
         return;
@@ -2913,9 +2941,14 @@ class App {
     // caller already excludes the default branch and the current one, and this
     // refuses to delete them anyway. A bulk delete is the wrong place to trust
     // that a filter upstream still says what it said when it was written.
-    finished = finished.filter((b) => !b.current && b.name !== defaultBranch);
+    //
+    // By branchName, never b.name: beside a tag "main" git lists the default
+    // branch as "heads/main", which is not "main", and the sweep offered it.
+    // Each is then deleted by its FULL name and restored under branchName —
+    // the short "heads/x" came back as a branch literally called that.
+    finished = finished.filter((b) => !b.current && branchName(b) !== defaultBranch);
     if (!finished.length) return;
-    const names = finished.map((b) => b.name);
+    const names = finished.map((b) => branchName(b));
     const ok = await confirmDialog({
       title: `Delete ${finished.length} finished ${finished.length === 1 ? "branch" : "branches"}?`,
       message:
@@ -2934,10 +2967,10 @@ class App {
     for (const b of finished) {
       let r;
       try {
-        r = await host.invoke("branch:delete", { name: b.name, force: false });
+        r = await host.invoke("branch:delete", { fullName: b.fullName, force: false });
       } catch (e) {
         toast(
-          `Deleted ${done.length} of ${finished.length}, then ${b.name} failed: ${cleanErr(e) || "git error"}.`,
+          `Deleted ${done.length} of ${finished.length}, then ${branchName(b)} failed: ${cleanErr(e) || "git error"}.`,
           "error",
         );
         break;
@@ -2945,14 +2978,14 @@ class App {
       if (!r?.ok) {
         toast(
           done.length
-            ? `Deleted ${done.join(", ")}. Stopped at ${b.name}: ${r?.message ?? "git refused."}`
-            : `${b.name} was not deleted: ${r?.message ?? "git refused."}`,
+            ? `Deleted ${done.join(", ")}. Stopped at ${branchName(b)}: ${r?.message ?? "git refused."}`
+            : `${branchName(b)} was not deleted: ${r?.message ?? "git refused."}`,
           "error",
         );
         break;
       }
-      done.push(b.name);
-      if (r.was) restorable.push({ name: b.name, was: r.was, upstream: r.upstream });
+      done.push(branchName(b));
+      if (r.was) restorable.push({ name: branchName(b), was: r.was, upstream: r.upstream });
     }
     if (done.length === finished.length) {
       const msg = `Deleted ${done.length} finished ${done.length === 1 ? "branch" : "branches"}.`;
@@ -2965,6 +2998,8 @@ class App {
           undo: async () => {
             const failed: string[] = [];
             for (const b of restorable) {
+              // in-the-way-reviewed: a restore never switches, so it changes no
+              // file and is never refused over uncommitted work.
               const back = await host.invoke("branch:create", {
                 name: b.name,
                 startPoint: b.was,
@@ -3056,7 +3091,8 @@ class App {
       const prefix = `${head!.name}/`;
       return symref.startsWith(prefix) ? symref.slice(prefix.length) : symref;
     }
-    return locals.find((b) => b.current)?.name;
+    const cur = locals.find((b) => b.current);
+    return cur ? branchName(cur) : undefined;
   }
 
   /** Which orders the segment on screen can honour. */
@@ -3224,14 +3260,14 @@ class App {
   /** Push a branch that has never been pushed, and set its upstream. */
   private async publishBranchLive(b: BranchInfo, btn: HTMLButtonElement): Promise<void> {
     await this.refreshInPlace(btn, async () => {
-      const r = await host.invoke("branch:push", { name: b.name });
+      const r = await host.invoke("branch:push", { fullName: b.fullName });
       if (!r.ok) {
-        toast(r.message ?? `Couldn't publish ${b.name}.`, r.expected ? "info" : "error");
+        toast(r.message ?? `Couldn't publish ${branchName(b)}.`, r.expected ? "info" : "error");
         return;
       }
       bust("branches");
       await this.refreshBranchesSoft();
-      toast(`Published ${b.name}.`, "success");
+      toast(`Published ${branchName(b)}.`, "success");
     });
   }
 
@@ -3385,6 +3421,13 @@ class App {
    * keyboard or touch at all. One primary verb and the menu render at rest.
    */
   private localBranchRow(b: BranchInfo, defaultBranch?: string): HTMLElement {
+    // Named — on the row, in its labels, and against the default branch — by
+    // the part under refs/heads/ (branchName), never b.name: git's short form
+    // is "heads/release" beside a tag "release", which the row printed, and
+    // "heads/main" beside a tag "main", which lost the default pill. Its
+    // upstream the same way: "origin/x", never "remotes/origin/x".
+    const bn = branchName(b);
+    const up = upstreamLabel(b);
     const pills: HTMLElement[] = [];
     const pill = (text: string, cls: string, title: string): HTMLElement => {
       const p = span(text, `ab-pill ${cls}`);
@@ -3392,7 +3435,7 @@ class App {
       return p;
     };
     if (b.current) pills.push(pill("current", "current", "This is the checked-out branch"));
-    else if (b.name === defaultBranch) pills.push(pill("default", "default", "The repository's default branch"));
+    else if (bn === defaultBranch) pills.push(pill("default", "default", "The repository's default branch"));
     if (b.gone) {
       // Without this the row reads "0 ahead, 0 behind" — the same shape as
       // perfectly in sync — about a remote that no longer exists, which is what
@@ -3401,10 +3444,10 @@ class App {
         pill(
           "upstream gone",
           "gone",
-          `${b.upstream ?? "Its upstream"} no longer exists — this branch is probably finished with.`,
+          `${up ?? "Its upstream"} no longer exists — this branch is probably finished with.`,
         ),
       );
-    } else if (b.merged && !b.current && b.name !== defaultBranch) {
+    } else if (b.merged && !b.current && bn !== defaultBranch) {
       pills.push(
         pill(
           "merged",
@@ -3464,12 +3507,12 @@ class App {
     // from main" but "what will Push and Pull do".
     if (b.ahead) {
       const p = span(`↑ ${b.ahead}`, "ab-pill ahead");
-      p.title = `${plural(b.ahead, "commit")} to push to ${b.upstream ?? "upstream"}`;
+      p.title = `${plural(b.ahead, "commit")} to push to ${up ?? "upstream"}`;
       track.appendChild(p);
     }
     if (b.behind) {
       const p = span(`↓ ${b.behind}`, "ab-pill behind");
-      p.title = `${plural(b.behind, "commit")} to pull from ${b.upstream ?? "upstream"}`;
+      p.title = `${plural(b.behind, "commit")} to pull from ${up ?? "upstream"}`;
       track.appendChild(p);
     }
     // Only when it HAS a count. The slot is a fixed 78px so the pairs line up
@@ -3490,16 +3533,16 @@ class App {
     //
     // A branch tracking a DIFFERENTLY named upstream is a real and surprising
     // fact, so that still shows.
-    const conventionalUpstream = !!b.upstream && b.upstream.endsWith("/" + b.name);
+    const conventionalUpstream = !!b.upstream && upstreamParts(b)?.branch === bn;
     if (b.upstream && !conventionalUpstream) {
       // INSIDE the subject column, not a slot of its own. A fixed 160px column
       // that only SOME rows carry pushed that one row's faces, counts and time
       // 172px left of every neighbour's — one surprising branch broke the
       // table for the whole list. The surprising fact rides where the context
       // lives; the subject makes room.
-      const up = span(`↪ ${b.upstream}`, "br-upstream sec-mono");
-      up.title = `Tracks ${b.upstream} — a differently named upstream`;
-      subjectCol.append(up);
+      const upEl = span(`↪ ${up}`, "br-upstream sec-mono");
+      upEl.title = `Tracks ${up} — a differently named upstream`;
+      subjectCol.append(upEl);
     }
 
     // ONE contextual primary verb, plus the menu. Delete deliberately does NOT
@@ -3508,37 +3551,37 @@ class App {
     if (b.behind) {
       const pull = el("button", "row-btn") as HTMLButtonElement;
       pull.textContent = "Pull";
-      pull.setAttribute("aria-label", `Pull ${b.name}`);
+      pull.setAttribute("aria-label", `Pull ${bn}`);
       pull.title = b.current
-        ? `Pull ${plural(b.behind, "commit")} from ${b.upstream ?? "upstream"}`
-        : `Pull ${plural(b.behind, "commit")} into ${b.name} — fast-forward, no checkout`;
+        ? `Pull ${plural(b.behind, "commit")} from ${up ?? "upstream"}`
+        : `Pull ${plural(b.behind, "commit")} into ${bn} — fast-forward, no checkout`;
       pull.addEventListener("click", () => void this.pullBranchLive(b, pull));
       actions.push(pull);
     } else if (!b.upstream) {
       const pub = el("button", "row-btn") as HTMLButtonElement;
       pub.textContent = "Publish";
-      pub.setAttribute("aria-label", `Publish ${b.name}`);
-      pub.title = `Push ${b.name} and set its upstream`;
+      pub.setAttribute("aria-label", `Publish ${bn}`);
+      pub.title = `Push ${bn} and set its upstream`;
       pub.addEventListener("click", () => void this.publishBranchLive(b, pub));
       actions.push(pub);
     } else if (!b.current) {
       const co = el("button", "row-btn") as HTMLButtonElement;
       co.textContent = "Checkout";
-      co.setAttribute("aria-label", `Check out ${b.name}`);
-      co.title = `Check out ${b.name}`;
-      co.addEventListener("click", () => void this.checkoutRef(b.name, co));
+      co.setAttribute("aria-label", `Check out ${bn}`);
+      co.title = `Check out ${bn}`;
+      co.addEventListener("click", () => void this.checkoutRef(b.fullName, co));
       actions.push(co);
     }
     const moreBtn = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    moreBtn.setAttribute("aria-label", `More actions for ${b.name}`);
+    moreBtn.setAttribute("aria-label", `More actions for ${bn}`);
     moreBtn.setAttribute("aria-haspopup", "menu");
     moreBtn.appendChild(glyph("ellipsis"));
     moreBtn.addEventListener("click", () => this.openBranchActions(b, moreBtn));
     actions.push(moreBtn);
 
     const row = secRow({
-      lead: glyph(b.current ? "check" : b.name === defaultBranch ? "home" : "git-branch"),
-      title: b.name,
+      lead: glyph(b.current ? "check" : bn === defaultBranch ? "home" : "git-branch"),
+      title: bn,
       meta,
       time: b.date ? relTime(b.date) : "",
       timeTitle: b.date ? absTime(b.date) : undefined,
@@ -3547,7 +3590,7 @@ class App {
       onOpen: () => this.routeView("refdetail", false, { ref: b.name, id: "head" }),
       // What the row says out loud, rather than "Inspect branch main".
       ariaLabel: [
-        b.name,
+        bn,
         b.current ? "current branch" : "",
         b.gone ? "upstream gone" : b.merged ? "merged" : "",
         // The divergence as a FACT, not as the verbs the row's own buttons
@@ -3563,13 +3606,13 @@ class App {
     row.classList.add("branch-row");
     row.dataset.ref = b.name;
     row.title = [
-      b.name,
+      bn,
       b.subject,
       // The divergence the bar used to draw, said in words.
-      b.aheadDefault !== undefined && b.behindDefault !== undefined && b.name !== defaultBranch
+      b.aheadDefault !== undefined && b.behindDefault !== undefined && bn !== defaultBranch
         ? `${b.aheadDefault} ahead of and ${b.behindDefault} behind ${defaultBranch ?? "the default branch"}`
         : "",
-      b.upstream && conventionalUpstream ? `tracking ${b.upstream}` : "",
+      b.upstream && conventionalUpstream ? `tracking ${up}` : "",
       b.date ? absTime(b.date) : "",
     ]
       .filter(Boolean)
@@ -3585,6 +3628,10 @@ class App {
   /** The per-branch action menu: merge / rebase / rename / set-upstream / tag /
    *  delete-remote — the depth that makes Branches a real manager, not a list. */
   private openBranchActions(b: BranchInfo, anchor: HTMLElement): void {
+    // Every op below reaches git by b.fullName (the main process refuses one
+    // without it); every label names the branch by the part under refs/heads/
+    // — git's short "heads/x" beside a tag "x" is neither (branchRequests.ts).
+    const bn = branchName(b);
     const refresh = async (): Promise<void> => {
       bust();
       await this.refreshRefs();
@@ -3593,11 +3640,18 @@ class App {
     };
     const run = async (
       label: string,
-      p: Promise<{ ok: boolean; message?: string }>,
+      p: Promise<{ ok: boolean; message?: string; expected?: boolean; cancelled?: true }>,
     ): Promise<void> => {
       try {
         const r = await p;
-        if (!r.ok) toast(cleanErr(r.message) || `Couldn't ${label}.`, "error");
+        // A merge or rebase over uncommitted changes in its way asks Stash &
+        // Retry or Cancel (bridge.ts); cancelled, nothing ran and nothing is
+        // said. A refusal that is the user's state — the changes still in the
+        // way, a merge that stopped on conflicts — is said in the neutral
+        // tone, not as a failure.
+        if (r.cancelled) {
+          // nothing to say
+        } else if (!r.ok) toast(cleanErr(r.message) || `Couldn't ${label}.`, r.expected ? "info" : "error");
         else toast(`${label} ✓`, "success");
       } catch (e) {
         toast(cleanErr(e) || `Couldn't ${label}.`, "error");
@@ -3628,16 +3682,16 @@ class App {
       icon: b.upstream ? "arrow-up" : "cloud-upload",
       onClick: () =>
         void run(
-          b.upstream ? `push ${b.name}` : `publish ${b.name}`,
-          host.invoke("branch:push", { name: b.name }),
+          b.upstream ? `push ${bn}` : `publish ${bn}`,
+          host.invoke("branch:push", { fullName: b.fullName }),
         ),
     });
     items.push({ separator: true });
     if (!b.current) {
       items.push({
-        label: `Checkout ${b.name}`,
+        label: `Checkout ${bn}`,
         icon: "check",
-        onClick: () => void this.checkoutRef(b.name),
+        onClick: () => void this.checkoutRef(b.fullName),
       });
     }
     // Always offered while an upstream exists (a fetch from this very menu can
@@ -3645,7 +3699,7 @@ class App {
     // branch gets a real pull instead, shown only when it's actually behind.
     if (b.upstream && !b.current) {
       items.push({
-        label: b.behind ? `Pull ${b.behind} into ${b.name}` : `Pull latest into ${b.name}`,
+        label: b.behind ? `Pull ${b.behind} into ${bn}` : `Pull latest into ${bn}`,
         sub: "fast-forward — no checkout",
         icon: "arrow-down",
         onClick: () => void this.pullBranchLive(b),
@@ -3661,12 +3715,14 @@ class App {
     if (!b.current || b.behind) items.push({ separator: true });
     if (!b.current) {
       items.push({
-        label: `Merge ${b.name} into current`,
+        label: `Merge ${bn} into current`,
         icon: "git-merge",
-        onClick: () => void run(`merge ${b.name}`, host.invoke("branch:merge", { name: b.name })),
+        // in-the-way-reviewed: run() above says nothing on `cancelled`.
+        // By FULL name, and recorded as "Merge branch '<bn>'" (BranchOps).
+        onClick: () => void run(`merge ${bn}`, host.invoke("branch:merge", { fullName: b.fullName })),
       });
       items.push({
-        label: `Rebase current onto ${b.name}…`,
+        label: `Rebase current onto ${bn}…`,
         icon: "git-pull-request",
         // ASKED FIRST. Every other item in this menu is additive or reversible;
         // this one rewrites the current branch's history, and it sat one
@@ -3676,15 +3732,16 @@ class App {
           void (async () => {
             const current = this.currentBranchName() ?? "the current branch";
             const ok = await confirmDialog({
-              title: `Rebase ${current} onto ${b.name}?`,
+              title: `Rebase ${current} onto ${bn}?`,
               message:
-                `Every commit on ${current} that is not on ${b.name} is rewritten with a new ` +
+                `Every commit on ${current} that is not on ${bn} is rewritten with a new ` +
                 `identity. If you have already pushed ${current}, the next push needs a force.`,
               confirmLabel: "Rebase",
               danger: true,
             });
             if (!ok) return;
-            await run(`rebase onto ${b.name}`, host.invoke("branch:rebase", { onto: b.name }));
+            // in-the-way-reviewed: run() above says nothing on `cancelled`.
+            await run(`rebase onto ${bn}`, host.invoke("branch:rebase", { fullName: b.fullName }));
           })(),
       });
       items.push({ separator: true });
@@ -3692,7 +3749,7 @@ class App {
     items.push({
       label: "Copy branch name",
       icon: "copy",
-      onClick: () => void copyText(b.name, `Copied “${b.name}”.`),
+      onClick: () => void copyText(bn, `Copied “${bn}”.`),
     });
     items.push({
       label: "Rename…",
@@ -3700,15 +3757,17 @@ class App {
       onClick: () => void this.renameBranchFlow(b),
     });
     items.push({
-      label: `New branch from ${b.name}…`,
+      label: `New branch from ${bn}…`,
       icon: "add",
       onClick: () =>
         void createBranchFlow(
           {
             kind: "branch",
-            ref: b.name,
-            label: b.name,
-            sha: this.refs.find((r) => r.type === "head" && r.name === b.name)?.sha?.slice(0, 7),
+            // The start point by FULL name: a bare "release" beside a tag of
+            // that name is the TAG.
+            ref: b.fullName,
+            label: bn,
+            sha: this.refs.find((r) => r.fullName === b.fullName)?.sha?.slice(0, 7),
             current: this.currentBranchName(),
           },
           { refs: this.refs, after: () => this.refreshAfterBranchChange() },
@@ -3719,9 +3778,9 @@ class App {
       icon: "cloud",
       onClick: () => {
         void (async (): Promise<void> => {
-          const up = await promptInline("Set upstream", "origin/" + b.name, b.upstream ?? "", "Set upstream");
+          const up = await promptInline("Set upstream", "origin/" + bn, b.upstream ?? "", "Set upstream");
           if (up && up.trim())
-            await run("set upstream", host.invoke("branch:setUpstream", { name: b.name, upstream: up.trim() }));
+            await run("set upstream", host.invoke("branch:setUpstream", { fullName: b.fullName, upstream: up.trim() }));
         })();
       },
     });
@@ -3745,24 +3804,27 @@ class App {
             true,
           );
           if (msg === null) return;
-          await run("create tag", host.invoke("tag:create", { name: name.trim(), ref: b.name, message: msg.trim() || undefined }));
+          await run("create tag", host.invoke("tag:create", { name: name.trim(), ref: b.fullName, message: msg.trim() || undefined }));
         })();
       },
     });
-    if (b.upstream && b.upstream.includes("/")) {
-      const slash = b.upstream.indexOf("/");
-      const remote = b.upstream.slice(0, slash);
-      const rname = b.upstream.slice(slash + 1);
+    // Split from the upstream's FULL name (upstreamParts): the short one is
+    // "remotes/origin/x" beside a local branch called "origin/x", which named
+    // a remote called "remotes" and failed the delete.
+    const upParts = upstreamParts(b);
+    if (upParts) {
+      const { remote, branch: rname } = upParts;
+      const upName = `${remote}/${rname}`;
       items.push({ separator: true });
       items.push({
-        label: `Delete remote branch (${b.upstream})`,
+        label: `Delete remote branch (${upName})`,
         icon: "trash",
         onClick: () => {
           void (async (): Promise<void> => {
             const ok = await confirmDialog({
               title: "Delete remote branch",
               message:
-                `Delete ${b.upstream} from ${remote}? This affects everyone. You can push it ` +
+                `Delete ${upName} from ${remote}? This affects everyone. You can push it ` +
                 `back straight afterwards, as long as nobody has re-made it.`,
               confirmLabel: "Delete remote branch",
               danger: true,
@@ -3770,7 +3832,7 @@ class App {
             if (!ok) return;
             const gone = await host.invoke("branch:deleteRemote", { remote, name: rname });
             if (!gone.ok) {
-              toast(gone.message ?? `Couldn't delete ${b.upstream}.`, gone.expected ? "info" : "error");
+              toast(gone.message ?? `Couldn't delete ${upName}.`, gone.expected ? "info" : "error");
               return;
             }
             bust("branches");
@@ -3779,7 +3841,7 @@ class App {
             // it reports whatever the remote says rather than claiming success.
             if (gone.was) {
               const sha = gone.was;
-              didUndoable(`Deleted ${b.upstream} from ${remote}.`, {
+              didUndoable(`Deleted ${upName} from ${remote}.`, {
                 label: `Push ${rname} back to ${remote}`,
                 undo: async () => {
                   const back = await host.invoke("branch:restoreRemote", { remote, name: rname, sha });
@@ -3790,7 +3852,7 @@ class App {
                 after: () => this.refreshBranchesSoft(),
               });
             } else {
-              toast(`Deleted ${b.upstream} from ${remote}.`, "success");
+              toast(`Deleted ${upName} from ${remote}.`, "success");
             }
           })();
         },
@@ -3803,11 +3865,11 @@ class App {
     if (!b.current) {
       items.push({ separator: true });
       items.push({
-        label: `Delete ${b.name}`,
+        label: `Delete ${bn}`,
         icon: "trash",
         danger: true,
-        title: `Delete the local branch ${b.name}`,
-        onClick: () => void this.deleteBranch(b.name),
+        title: `Delete the local branch ${bn}`,
+        onClick: () => void this.deleteBranch(b),
       });
     }
     openMenu(anchor, items);
@@ -3831,7 +3893,7 @@ class App {
       await this.refreshBranchesSoft();
       if (b) {
         const fresh = (await gget("branches:list", undefined)).find(
-          (x) => x.name === b.name,
+          (x) => x.fullName === b.fullName,
         );
         const pullLabel = itemEl
           ?.closest(".dropdown")
@@ -3841,8 +3903,8 @@ class App {
           pullLabel.textContent = fresh.current
             ? `Pull ${fresh.behind} commit${fresh.behind === 1 ? "" : "s"}`
             : fresh.behind
-              ? `Pull ${fresh.behind} into ${fresh.name}`
-              : `Pull latest into ${fresh.name}`;
+              ? `Pull ${fresh.behind} into ${branchName(fresh)}`
+              : `Pull latest into ${branchName(fresh)}`;
         }
       }
     } catch (e) {
@@ -3867,21 +3929,32 @@ class App {
       g?.classList.add("codicon-sync", "spin");
       if (lbl) lbl.textContent = "Pulling…";
     }
+    const bn = branchName(b);
     try {
-      const r = b.current
-        ? await host.invoke("sync:pull", undefined)
-        : await host.invoke("branch:pullFf", { name: b.name });
-      if (!r.ok) {
-        toast(r.message || `Couldn't pull ${b.name}.`, "error");
+      // The current branch is a real pull, so it can hit the divergence
+      // question — the same one the top bar's Pull asks, through the same
+      // helper. A branch you are NOT standing on fast-forwards or refuses —
+      // by its FULL name; there is nothing to reconcile without a worktree
+      // to reconcile it in.
+      const out = b.current
+        ? await this.pullAsking()
+        : {
+            result: await host.invoke("branch:pullFf", { fullName: b.fullName }),
+            cancelled: false,
+            mode: undefined,
+          };
+      const v = pullVerdict(out, `Couldn't pull ${bn}.`);
+      if (v.kind !== "pulled") {
+        await this.settleUnpulled(v);
         return;
       }
-      toast(b.current ? "Pulled successfully." : `Fast-forwarded ${b.name}.`, "success");
+      toast(b.current ? v.message : `Fast-forwarded ${bn}.`, "success");
       bust();
       await this.updateSync();
       if (b.current) await this.refreshAll();
       await this.refreshBranchesSoft();
     } catch (e) {
-      toast(cleanErr(e) || `Couldn't pull ${b.name}.`, "error");
+      toast(cleanErr(e) || `Couldn't pull ${bn}.`, "error");
     } finally {
       // On success the live reload rebuilt the row (and this button); only a
       // still-connected button — the failure path — needs restoring.
@@ -3897,7 +3970,8 @@ class App {
 
   /** The branch you are standing on, for a "you are still on X" sentence. */
   private currentBranchName(): string | undefined {
-    return this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
+    const cur = this.refs.find((r) => r.type === "head" && r.isCurrent);
+    return cur ? branchName(cur) : undefined;
   }
 
   /** Whatever was showing the branch state, redrawn. Shared by every branch
@@ -3931,28 +4005,32 @@ class App {
    * would fire a second toast alongside the undo one below.
    */
   private async renameBranchFlow(b: BranchInfo): Promise<void> {
-    const to = await promptInline(`Rename ${b.name}`, "new-name", b.name, "Rename", false, {
+    // The name under refs/heads/ — to show, to edit, and to rename back to.
+    // git's short "heads/release" (beside a tag "release") is none of those:
+    // `git branch -m heads/release …` finds no such branch.
+    const old = branchName(b);
+    const to = await promptInline(`Rename ${old}`, "new-name", old, "Rename", false, {
       hint: "Only the local name changes — the commits, and the branch on the remote, stay where they are.",
       validate: "refName",
       extra: (v) =>
-        v !== b.name && this.refs.some((r) => r.type === "head" && r.name === v)
+        v !== old && this.refs.some((r) => r.fullName === `refs/heads/${v}`)
           ? `A branch called ${v} already exists.`
           : null,
     });
-    if (!to || to === b.name) return;
+    if (!to || to === old) return;
 
-    const r = await host.invoke("branch:rename", { from: b.name, to });
+    const r = await host.invoke("branch:rename", { fullName: b.fullName, to });
     if (!r.ok) {
-      toast(cleanErr(r.message) || `Couldn't rename ${b.name}.`, r.expected ? "info" : "error");
+      toast(cleanErr(r.message) || `Couldn't rename ${old}.`, r.expected ? "info" : "error");
       return; // nothing changed — don't refresh as if it had
     }
 
     const fixed = await this.reconcileUpstreamAfterRename(b, to);
-    const back = { from: to, to: b.name };
+    const back = { fullName: `refs/heads/${to}`, to: old };
     const after = (): Promise<void> => this.refreshAfterBranchChange();
     if (!fixed) {
-      didUndoable(`Renamed ${b.name} → ${to}.`, {
-        label: `Rename ${to} back to ${b.name}`,
+      didUndoable(`Renamed ${old} → ${to}.`, {
+        label: `Rename ${to} back to ${old}`,
         undo: async () => {
           const u = await host.invoke("branch:rename", back);
           if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
@@ -3962,22 +4040,22 @@ class App {
         after,
       });
     } else if (fixed.done === "publish") {
-      didUndoable(`Renamed ${b.name} → ${to}, and published it to ${fixed.remote}.`, {
+      didUndoable(`Renamed ${old} → ${to}, and published it to ${fixed.remote}.`, {
         // `${fixed.remote}/${to}` is deliberately left standing: creating a
         // remote branch is not destructive, and deleting one other people may
         // already have fetched is not an undo.
-        label: `Rename ${to} back to ${b.name}`,
+        label: `Rename ${to} back to ${old}`,
         undo: async () => {
           const u = await host.invoke("branch:rename", back);
           if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
-          if (b.upstream) await host.invoke("branch:setUpstream", { name: b.name, upstream: b.upstream });
+          if (b.upstream) await host.invoke("branch:setUpstream", { fullName: b.fullName, upstream: b.upstream });
           bust();
           return undefined;
         },
         after,
       });
     } else {
-      didUndoable(`Renamed ${b.name} → ${to}, on ${fixed.remote} too.`, {
+      didUndoable(`Renamed ${old} → ${to}, on ${fixed.remote} too.`, {
         label: `Put ${b.upstream} back`,
         undo: async () => {
           // The remote half is the destructive one and the only half that can
@@ -3988,7 +4066,7 @@ class App {
           if (fixed.was) {
             const put = await host.invoke("branch:restoreRemote", {
               remote: fixed.remote,
-              name: b.name,
+              name: old,
               sha: fixed.was,
             });
             if (!put.ok) return cleanErr(put.message) || `Couldn't put ${b.upstream} back.`;
@@ -4022,12 +4100,16 @@ class App {
     b: BranchInfo,
     to: string,
   ): Promise<{ done: "rename" | "publish"; remote: string; was?: string } | null> {
-    const up = b.upstream;
-    if (!up) return null; // unpublished
-    const slash = up.indexOf("/");
-    if (slash <= 0) return null;
-    if (up.slice(slash + 1) !== b.name) return null; // deliberately tracking something else
-    return this.reconcileUpstream(to, up, b.name);
+    // Split from the upstream's FULL name (upstreamParts), not the short one
+    // ("remotes/origin/x" beside a local branch "origin/x").
+    const parts = upstreamParts(b);
+    if (!parts) return null; // unpublished, or tracking a local branch
+    // Against the name under refs/heads/: "origin/release" never equals the
+    // short "heads/release", so a branch beside a tag of its name was never
+    // offered the remote rename.
+    const old = branchName(b);
+    if (parts.branch !== old) return null; // deliberately tracking something else
+    return this.reconcileUpstream(to, `${parts.remote}/${parts.branch}`, old);
   }
 
   /** Offer to make the remote agree with `local`, which tracks `upstream`
@@ -4065,6 +4147,7 @@ class App {
       hint: `${local} still tracks ${upstream} — renaming it here doesn't rename it on the remote.`,
       choices: ways,
       cancelId: "keep",
+      holdWhile: this.whileThisRepo(), // asked right after a ref moved — see promptChoice
     });
     if (choice === "keep") return null;
 
@@ -4088,7 +4171,11 @@ class App {
     return { done: "rename", remote, was: gone.was };
   }
 
-  private async deleteBranch(name: string): Promise<void> {
+  private async deleteBranch(b: BranchInfo): Promise<void> {
+    // Deleted by FULL name; named — and restored — by the name under
+    // refs/heads/. The short "heads/x" (beside a tag "x") names no branch to
+    // delete, and restored as a branch literally called "heads/x".
+    const name = branchName(b);
     // Confirm FIRST. This sits a few pixels from Checkout in a hover-revealed
     // row cluster, and every other destructive action in the app asks before
     // acting — deleting a branch outright was the one that did not. The
@@ -4107,7 +4194,7 @@ class App {
     if (!ok) {
       return;
     }
-    let r = await host.invoke("branch:delete", { name });
+    let r = await host.invoke("branch:delete", { fullName: b.fullName });
     if (!r.ok && r.message && /not fully merged/i.test(r.message)) {
       const force = await confirmDialog({
         title: "Force-delete branch?",
@@ -4116,7 +4203,7 @@ class App {
         danger: true,
       });
       if (!force) return;
-      r = await host.invoke("branch:delete", { name, force: true });
+      r = await host.invoke("branch:delete", { fullName: b.fullName, force: true });
     }
     if (!r.ok) {
       toast(r.message || `Couldn't delete branch '${name}'.`, "error");
@@ -4132,6 +4219,8 @@ class App {
       didUndoable(`Deleted ${name}.`, {
         label: `Restore ${name}`,
         undo: async () => {
+          // in-the-way-reviewed: a restore never switches, so it changes no
+          // file and is never refused over uncommitted work.
           const back = await host.invoke("branch:create", {
             name,
             startPoint: restore,
@@ -4161,21 +4250,23 @@ class App {
   }
 
   /**
-   * Check out a ref by name, then refresh refs + the view.
+   * Check out a ref by its FULL name, then refresh refs + the view.
    *
-   * `kind` is not decoration: it decides what checking out MEANS. A local head
-   * attaches by name; a remote branch has to create a local tracking branch
-   * (issues #12/#19); a tag genuinely detaches. Sending a name down the plain
-   * `checkout` action instead runs `git checkout origin/foo`, which detaches
-   * HEAD onto the remote-tracking ref — no branch, no upstream, and the next
-   * commit lands where nothing points at it, under a toast saying "Checked out
-   * foo."
+   * The namespace is not decoration: it decides what checking out MEANS. A
+   * local head attaches by name; a remote branch has to create a local
+   * tracking branch (issues #12/#19); a tag genuinely detaches. Sending a name
+   * down the plain `checkout` action instead runs `git checkout origin/foo`,
+   * which detaches HEAD onto the remote-tracking ref — no branch, no upstream,
+   * and the next commit lands where nothing points at it, under a toast
+   * saying "Checked out foo."
+   *
+   * And it is the FULL name (issue #30's follow-up), never `%(refname:short)`:
+   * with a tag of the same name the branch "release" is "heads/release", and
+   * `git checkout heads/release` detached HEAD here too. The request is built
+   * by refCheckoutRequest, the one builder every door uses.
    */
-  private async checkoutRef(
-    ref: string,
-    btn?: HTMLElement,
-    kind: "head" | "remote" | "tag" = "head",
-  ): Promise<void> {
+  private async checkoutRef(fullName: string, btn?: HTMLElement): Promise<void> {
+    const ref = refDisplay(fullName);
     // Checking out is the slowest thing this list does — it rewrites the working
     // tree — and it used to show nothing at all while it ran, so the row looked
     // like it had ignored the click.
@@ -4195,30 +4286,29 @@ class App {
     };
     let result;
     try {
-      result = await host.invoke("commit:action", {
-        action: "checkout-ref",
-        // `sha` is required by the request shape but unused on this path; the
-        // ref travels in `name`, where the kind can be applied to it.
-        sha: ref,
-        name: ref,
-        refKind: kind,
-      } as Parameters<App["runAction"]>[0]);
+      result = await host.invoke("commit:action", refCheckoutRequest(fullName));
     } catch (e) {
       restore();
       toast(cleanErr(e) || "Couldn't check out.", "error");
       return;
     }
     restore();
-    // On failure (e.g. uncommitted changes block the switch) HEAD didn't move —
-    // surface the error and DON'T refresh as if it succeeded (which made the UI
-    // look like the branch was checked out when it wasn't).
+    // Uncommitted changes in the switch's way were asked about (Stash & Retry
+    // or Cancel — bridge.ts), and the user cancelled: nothing ran.
+    if (result?.cancelled) return;
+    // On failure HEAD didn't move — surface the reason and DON'T refresh as if
+    // it succeeded (which made the UI look like the branch was checked out
+    // when it wasn't). A refusal that is the user's state (`expected`) is said
+    // in the neutral tone.
     //
     // `result` is typed non-nullable but arrives over IPC: a channel that
     // failed to register, or a main-process throw, hands back undefined, and
     // reading `.ok` off it threw inside an async handler — no toast, no error,
     // the click simply did nothing.
     if (!result?.ok) {
-      toast(result.message || "Couldn't check out — you may have uncommitted changes.", "error");
+      // A branch named like an option: say why, and offer the rename.
+      if (explainRefusedCheckout(result, () => this.refreshAfterBranchChange())) return;
+      toast(result?.message || "Couldn't check out.", result?.expected ? "info" : "error");
       return;
     }
     toast(`Checked out ${ref}.`, "success");
@@ -7978,8 +8068,8 @@ class App {
             title: "Force push?",
             message:
               "The remote still has the version of this commit you rewrote, so a "
-              + "normal push was refused. Force pushing uses --force-with-lease, "
-              + "which still refuses if someone else has pushed.",
+              + "normal push was refused. Force pushing replaces only commits you "
+              + "rewrote — if anyone else's are there, it is refused.",
             confirmLabel: "Force push",
             danger: true,
           });
@@ -7988,7 +8078,22 @@ class App {
           }
         }
         // The commit already happened — be explicit if only the push failed.
-        if (!p.ok) {
+        //
+        // …and do not call it a failure when it was not one. A force push the
+        // bridge REFUSED (the remote has commits that are not this branch's to
+        // replace — somebody else's, or the same commit amended on another
+        // machine) is the repository's state, marked `expected`: the commit is
+        // made, nothing was pushed, and the way on is to pull those commits
+        // in. It used to arrive as "Committed, but push failed: …" in red,
+        // for a refusal that was the app doing its job.
+        if (!p.ok && p.expected) {
+          toast(
+            `Committed, not pushed. ${p.message ?? ""}`.trim(),
+            "info",
+            undefined,
+            p.pullFirst ? { label: "Pull", onClick: () => void this.doSync("pull") } : undefined,
+          );
+        } else if (!p.ok) {
           toast(`Committed, but push failed: ${p.message ?? "unknown error"}`, "error");
         } else {
           toast("Committed and pushed.", "success");
@@ -8317,6 +8422,77 @@ class App {
     this.renderSyncWidget?.(this.syncStatus);
   }
 
+  /**
+   * Pull the checked-out branch, asking how to reconcile if it diverged — the
+   * one pull behind both doors (the top bar's Pull and the Branches list's ↓
+   * pill), so the question and how it is held cannot differ between them.
+   */
+  private pullAsking(): Promise<PullOutcome> {
+    // pull-stop-reviewed: a forwarder. Both doors that call it hand its outcome
+    // to pullVerdict, which settles a stop and a block.
+    // in-the-way-reviewed: …and a Cancel at the Stash & Retry question, which
+    // pullVerdict reads as `cancelled`.
+    return pullWithChoice({
+      pull: (o) => host.invoke("sync:pull", o),
+      ask: (d) => askPullMode(d, this.whileThisRepo()),
+    });
+  }
+
+  /**
+   * "Is the repository that was open when this was asked still the open one?"
+   *
+   * The hold for a question asked after a git write (see promptChoice's
+   * `holdWhile`): it outlives the watcher's refresh of this repository, but not
+   * a switch to another, because its answer acts on whichever one is open.
+   */
+  private whileThisRepo(): () => boolean {
+    const root = this.currentRepo?.root;
+    return () => root !== undefined && this.currentRepo?.root === root;
+  }
+
+  /**
+   * Every pull outcome that is NOT "it pulled", settled the same way at both
+   * doors — the top bar's Pull and the Branches list's ↓ pill. The caller has
+   * nothing left to do afterwards.
+   */
+  private async settleUnpulled(v: Exclude<PullVerdict, { kind: "pulled" }>): Promise<void> {
+    switch (v.kind) {
+      case "failed":
+        toast(v.message, v.tone);
+        return;
+      case "cancelled":
+        // Nothing was merged, but the first pull already FETCHED: the remote-
+        // tracking ref moved, so the badge and the row counts describe a remote
+        // that is no longer there. Settle it the way Fetch does. Returning bare
+        // left "Pull 3" on screen over a branch that was now 5 behind.
+        bust();
+        await this.updateSync();
+        await this.refreshAll();
+        await this.refreshBranchesSoft();
+        return;
+      case "stopped":
+      case "blocked":
+        // A pull that stopped on conflicts has done its part; the rest is the
+        // user's, and it happens in Changes — the conflicts dashboard
+        // (Continue / Abort) and the merge editor are there. Neutral, not red:
+        // nothing failed. A pull BLOCKED by that same paused operation (Pull
+        // pressed again from it) goes to the same place, for the same reason.
+        toast(v.message, "info");
+        await this.landOnConflicts();
+        return;
+    }
+  }
+
+  /** Take the user to Changes after an operation stopped on conflicts, with
+   *  every other view marked stale (the repository is mid-merge now). */
+  private async landOnConflicts(): Promise<void> {
+    bust();
+    this.invalidateKeptViews();
+    await this.refreshRefs();
+    await this.updateSync();
+    this.routeView("changes", true);
+  }
+
   private async doSync(action: "fetch" | "pull" | "push" | "publish"): Promise<void> {
     if (this.syncing) return; // lock the trigger against double-invocation
     this.syncing = true;
@@ -8339,21 +8515,32 @@ class App {
       main.disabled = true;
     }
     try {
-      const r =
-        action === "fetch"
-          ? await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref })
-          : action === "pull"
-            ? await host.invoke("sync:pull", undefined)
+      // Pull goes through the shared flow: a diverged branch comes back as a
+      // question (merge / rebase / cancel), never as git's config advice — and
+      // its answer is settled by the same verdict the Branches ↓ pill uses.
+      if (action === "pull") {
+        const out = await this.pullAsking();
+        const v = pullVerdict(out, "Pull failed.");
+        if (v.kind !== "pulled") {
+          await this.settleUnpulled(v);
+          return;
+        }
+        toast(v.message, "success");
+      } else {
+        const r: CommitActionResult =
+          action === "fetch"
+            ? await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref })
             : action === "push"
               ? await host.invoke("sync:push", undefined)
               : await host.invoke("sync:push", { setUpstream: true });
-      if (!r.ok) {
-        toast(r.message ?? `${action} failed.`, r.expected ? "info" : "error");
-        return;
+        if (!r.ok) {
+          toast(r.message ?? `${action} failed.`, r.expected ? "info" : "error");
+          return;
+        }
+        const verb =
+          action === "fetch" ? "Fetched" : action === "publish" ? "Published branch" : "Pushed";
+        toast(`${verb} successfully.`, "success");
       }
-      const verb =
-        action === "fetch" ? "Fetched" : action === "pull" ? "Pulled" : action === "publish" ? "Published branch" : "Pushed";
-      toast(`${verb} successfully.`, "success");
       bust(); // a fetch/pull/push changes sync/refs/branches/graph
       await this.updateSync();
       // refreshAll() already re-routes — and it does so WITH the current
@@ -9007,7 +9194,10 @@ class App {
       }
     });
     host.on("app:notice", (n) => {
-      toast(n.message, n.kind === "error" ? "error" : n.kind === "warn" ? "error" : "info");
+      // A warning is a state the user is in — a folder that is not a
+      // repository, a repository this account cannot read — not a failure of
+      // the app, so it is not painted as one. Only `error` is red.
+      toast(n.message, n.kind === "error" ? "error" : "info");
     });
     // Something changed on disk (issue #17). Already debounced in main.
     host.on("repo:filesChanged", (info) => {
@@ -9268,6 +9458,17 @@ class App {
     }
   }
 
+  /** Drop every kept-alive view but a parked Assistant, and mark a parked graph
+   *  dirty — see refreshAll for why each half is what it is. */
+  private invalidateKeptViews(): void {
+    const parkedChat = this.viewCache.get("assistant");
+    this.viewCache.clear();
+    if (parkedChat) this.viewCache.set("assistant", parkedChat);
+    // A parked (kept-alive) graph is now stale too — mark it before ANY early
+    // return in refreshAll, so returning to Commits always re-syncs in place.
+    if (this.graph && this.currentView !== "graph") this.graphDirty = true;
+  }
+
   private async refreshAll(): Promise<void> {
     if (!this.currentRepo) {
       return;
@@ -9286,12 +9487,7 @@ class App {
     // go and read an issue, and the agent's own commit — or any file the build
     // touched — deleted the transcript and the Stop button out from under a run
     // that kept going. Held by identity, so nothing is refetched or rebuilt.
-    const parkedChat = this.viewCache.get("assistant");
-    this.viewCache.clear();
-    if (parkedChat) this.viewCache.set("assistant", parkedChat);
-    // A parked (kept-alive) graph is now stale too — mark it before ANY early
-    // return below, so returning to Commits always re-syncs in place.
-    if (this.graph && this.currentView !== "graph") this.graphDirty = true;
+    this.invalidateKeptViews();
     await this.refreshRefs();
     // Settings shows NOTHING derived from the repo's disk state — and this runs
     // on every window FOCUS. Rebuilding it here destroyed the GitHub device-flow
@@ -9439,13 +9635,43 @@ class App {
           deeper();
           return;
         }
-        toast(`${short} is hidden by the branch filter — its details are below.`, "info", undefined, {
-          label: "Show all branches",
-          onClick: () => void graph.setRefFilter(null).then(() => this.revealWhenReady(sha)),
-        });
+        void this.offerHiddenCommit(graph, sha, short);
       },
       deeper,
     );
+  }
+
+  /**
+   * The branch filter hides `sha`: say so, and offer the way in — FIRST, to
+   * add a branch that contains it, keeping the rest of the selection. "Show
+   * all branches" (second) throws the whole selection away to see one commit.
+   *
+   * The branch comes from `refs:contains` by FULL name, mapped through the
+   * graph's own ref list (revealCandidate), and is added to the filter as it
+   * is STORED — a preset stays its symbol, so "Current branch" + the added
+   * branch still follows a checkout (storedFilterOf / withRef; resolveRefFilter
+   * reads the mix). Either way the reveal replays once the new rows land.
+   */
+  private async offerHiddenCommit(graph: GraphMount, sha: string, short: string): Promise<void> {
+    const contains = await host.invoke("refs:contains", { sha }).catch(() => undefined);
+    // Answered later than asked: the view may have moved on.
+    if (this.currentView !== "graph" || this.graph !== graph) return;
+    const add = revealCandidate(contains?.refs ?? [], graph.refList);
+    const actions: ToastAction[] = [];
+    if (add) {
+      actions.push({
+        label: `Add ${refLabel(add.fullName)} to the filter`,
+        onClick: () =>
+          void graph
+            .setRefFilter(withRef(storedFilterOf(graph.refFilter, graph.refPreset), add.fullName))
+            .then(() => this.revealWhenReady(sha)),
+      });
+    }
+    actions.push({
+      label: "Show all branches",
+      onClick: () => void graph.setRefFilter(null).then(() => this.revealWhenReady(sha)),
+    });
+    toast(`${short} is hidden by the branch filter — its details are below.`, "info", undefined, actions);
   }
 
   /** Scroll to + select a commit once the freshly-mounted graph has rows. The
@@ -9498,21 +9724,26 @@ class App {
     const remotes = this.refs.filter((r) => r.type === "remote");
     const tags = this.refs.filter((r) => r.type === "tag");
     const items: MenuItem[] = [];
+    // Every entry is NAMED by its full name under the namespace — "release",
+    // "origin/x", "v1" — never git's short form, which is "heads/release" /
+    // "tags/release" beside a tag and a branch of that name, and
+    // "remotes/origin/x" beside a local branch "origin/x". Each still checks
+    // out by its full name.
     if (locals.length) {
       items.push({ separator: true, label: "Branches" });
       for (const b of locals) {
         items.push({
-          label: b.name,
+          label: branchName(b),
           icon: "git-branch",
           current: b.isCurrent,
           sub: b.isCurrent ? "current" : undefined,
-          title: b.isCurrent ? `Already on ${b.name}` : `Check out ${b.name}`,
+          title: b.isCurrent ? `Already on ${branchName(b)}` : `Check out ${branchName(b)}`,
           onClick: () => {
             if (b.isCurrent) {
               this.revealInGraph(b.sha);
               return;
             }
-            void this.checkoutRef(b.name);
+            void this.checkoutRef(b.fullName);
           },
         });
       }
@@ -9524,10 +9755,10 @@ class App {
       // past the 16th was unreachable by any means, including search.
       for (const b of remotes) {
         items.push({
-          label: b.name,
+          label: refDisplay(b.fullName),
           icon: "cloud",
-          title: `Check out ${b.name} as a local branch`,
-          onClick: () => void this.checkoutRef(b.name, undefined, "remote"),
+          title: `Check out ${refDisplay(b.fullName)} as a local branch`,
+          onClick: () => void this.checkoutRef(b.fullName),
         });
       }
     }
@@ -9537,13 +9768,13 @@ class App {
       // and meant the old 16-item cap kept the oldest tags. Numeric-aware
       // descending, matching the extension's branch dialog.
       const tagsSorted = [...tags].sort((a, b) =>
-        b.name.localeCompare(a.name, undefined, { numeric: true }),
+        tagName(b).localeCompare(tagName(a), undefined, { numeric: true }),
       );
       for (const t of tagsSorted) {
         items.push({
-          label: t.name,
+          label: tagName(t),
           icon: "tag",
-          title: `Show ${t.name} in Commits`,
+          title: `Show ${tagName(t)} in Commits`,
           onClick: () => this.revealInGraph(t.sha),
         });
       }
@@ -9694,6 +9925,18 @@ class App {
       }
       this.graph?.reveal(detail.sha);
       void this.selectCommit(detail.sha);
+    });
+    // A ref chip in the pane is the same shortcut it is in the graph's rows
+    // (issue #30): its menu is the graph's own — the graph owns the filter and
+    // the ref list the chip is resolved through. Only while there IS a graph
+    // to answer; otherwise the chips stay labels.
+    panel.refMenu = !!this.graph;
+    panel.addEventListener("gs-ref-menu", (e) => {
+      const d = (e as CustomEvent<RefMenuRequest>).detail;
+      this.graph?.openRefMenu({ name: d.name, fullName: d.fullName, kind: d.kind }, d.x, d.y, d.sha, {
+        opener: d.opener,
+        keyboard: d.keyboard,
+      });
     });
     // "in N branches" — the same lazy containment query the extension runs.
     // Without this the control would spin forever on desktop.
@@ -10015,7 +10258,16 @@ class App {
     }
     try {
       const result = await host.invoke("commit:action", req);
+      // Asked "Stash & Retry or Cancel?" over the user's changes in the way
+      // (bridge.ts), and cancelled: nothing ran, nothing failed.
+      if (result.cancelled) return;
       if (!result.ok) {
+        // The graph's menus (the row's and the chip's): a branch named like an
+        // option says why, and offers the rename — the same words as Branches.
+        if (explainRefusedCheckout(result, async () => {
+          bust();
+          await this.refreshAll();
+        })) return;
         toast(
           result.message ?? `Couldn't ${req.action.replace(/-/g, " ")}.`,
           result.expected ? "info" : "error",
@@ -10156,7 +10408,6 @@ function savePrefs(p: Record<string, unknown>): void {
     /* storage may be unavailable; prefs are non-essential */
   }
 }
-
 
 new App().start().catch((err) => {
   // eslint-disable-next-line no-console

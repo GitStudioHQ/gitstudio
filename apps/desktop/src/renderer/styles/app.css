@@ -8338,6 +8338,14 @@ body.vscode-light .gh-label-chip {
 .mcp-client > .glyph .codicon, .mcp-client > .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 .mcp-client-meta { flex: 1 1 auto; min-width: 0; }
 .mcp-client-name { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--vscode-foreground); }
+
+/* Why a configured client cannot start the server any more (the app moved). */
+.mcp-client-stale {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  overflow-wrap: anywhere;
+}
 .mcp-client > .mini-btn { flex: 0 0 auto; }
 .mcp-snippet { border: 1px solid var(--app-border); border-radius: 10px; overflow: hidden; }
 .mcp-snippet-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 11px; background: var(--app-elevated); font-size: 11.5px; color: var(--app-muted); border-bottom: 1px solid var(--app-border); }
@@ -11245,6 +11253,12 @@ body.vscode-light .log-pane {
   font-size: var(--text-xs);
 }
 .sec-cap-note .codicon { font-size: 13px; }
+
+/* The same quiet note, for a list GitHub could not fully return. It sits in
+   flex columns (the Projects view, the board pane), where it must not shrink. */
+.gh-unreadable-note {
+  flex: 0 0 auto;
+}
 
 /* A thread marked read while the "Unread only" filter is on. It keeps its slot
    so nothing moves under the pointer, and reads as spent rather than present. */

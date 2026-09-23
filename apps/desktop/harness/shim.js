@@ -318,6 +318,32 @@
     if (m) { m.merged = true; m.aheadDefault = 0; m.behindDefault = 0; }
   }
 
+  // ?dashbranch=1 → a branch named "-f", which porcelain never makes but
+  // `git update-ref refs/heads/-f` does. Its checkout is refused (git would
+  // read "-f" as an option) — and the refusal has to say THAT, and offer the
+  // rename, rather than "That value isn't a valid git reference".
+  if (params.get("dashbranch")) {
+    branches.push({ name: "-f", current: false, aheadDefault: 1, behindDefault: 0, upstream: undefined, ahead: 0, behind: 0, subject: "made by update-ref", date: S(3) });
+  }
+
+  // ?collide=1 → git's SHORT names stop being names (issue #30's follow-up),
+  // with the values git really prints: a tag "main" beside the default branch
+  // (listed "heads/main"), a branch and a tag "release" ("heads/release" /
+  // "tags/release"), and a LOCAL branch "origin/sl" beside the remote-tracking
+  // origin/sl ("heads/origin/sl" / "remotes/origin/sl"), which a local "sl"
+  // tracks. HEAD is on a feature branch, so main is the default and not the
+  // current one. Every label must still be the ref's own name.
+  if (params.get("collide")) {
+    for (const b of branches) b.current = b.name === "redesign/issues-detail";
+    const m = branches.find((b) => b.name === "main");
+    if (m) Object.assign(m, { name: "heads/main", fullName: "refs/heads/main", upstreamRef: "refs/remotes/origin/main" });
+    branches.push(
+      { name: "heads/release", fullName: "refs/heads/release", current: false, aheadDefault: 1, behindDefault: 0, upstream: "origin/release", upstreamRef: "refs/remotes/origin/release", ahead: 0, behind: 0, subject: "release work", date: S(5) },
+      { name: "sl", fullName: "refs/heads/sl", current: false, aheadDefault: 1, behindDefault: 0, upstream: "remotes/origin/sl", upstreamRef: "refs/remotes/origin/sl", ahead: 0, behind: 1, subject: "sl one", date: S(6) },
+      { name: "heads/origin/sl", fullName: "refs/heads/origin/sl", current: false, aheadDefault: 2, behindDefault: 0, upstream: undefined, ahead: 0, behind: 0, subject: "a branch named like a remote one", date: S(7) },
+    );
+  }
+
   const workflows = [
     { id: 1, name: "Desktop CI", path: ".github/workflows/desktop.yml", state: "active", htmlUrl: "" },
     { id: 2, name: "Extension CI", path: ".github/workflows/extension.yml", state: "active", htmlUrl: "" },
@@ -554,8 +580,39 @@
       return out;
     };
     const conflictedPaths = () => new Set(state.files.filter((f) => f.status !== "resolved").map((f) => f.path));
+    /**
+     * What a PULL that stopped on conflicts leaves behind (?pullconflict=1):
+     * the merge of origin/main into main — or main's commit rebased onto it —
+     * with two files conflicted. Set here, in the one state every repository
+     * channel reads (git:opState, conflict:state, the Changes rows), so landing
+     * in Changes shows the conflicts dashboard the real app would.
+     */
+    const stopForPull = (operation) => {
+      state.step = 1;
+      state.op = operation === "rebase"
+        ? {
+            kind: "rebase", backend: "merge",
+            title: `Rebasing main onto origin/main · commit 1 of 1: ${SHA.t1.slice(0, 7)} ${SUBJECTS[0]}`,
+            direction: { from: "yours", verb: "onto", to: "theirs" },
+            step: { n: 1, m: 1, unit: "commit" },
+            commit: { sha: SHA.t1, subject: SUBJECTS[0], author: "Kittymeow" },
+            yours: side("yours", 3, "main", `Rebasing ${SHA.t1.slice(0, 7)} from main`,
+              `Your commit ${SHA.t1.slice(0, 7)} “${SUBJECTS[0]}” from main`),
+            theirs: side("theirs", 2, "origin/main", "Already rebased commits and commits from origin/main",
+              "origin/main, with the commits already rebased onto it"),
+            verbs: VERBS.rebase, episode: `rebase:${SHA.t1.slice(0, 7)}`,
+          }
+        : {
+            kind: "merge", title: "Merging origin/main into main",
+            direction: { from: "theirs", verb: "into", to: "yours" },
+            yours: side("yours", 2, "main", "Changes from main", "main — the branch you are on"),
+            theirs: side("theirs", 3, "origin/main", "Changes from origin/main", "origin/main — the upstream being pulled in"),
+            verbs: VERBS.merge, episode: "merge:pull",
+          };
+      state.files = POOL.slice(0, 2).map((path) => ({ path, shape: "text", status: "pending" }));
+    };
     return {
-      state, view, pending, NONE, rebaseStep, conflictedPaths,
+      state, view, pending, NONE, rebaseStep, conflictedPaths, stopForPull,
       file: (path) => state.files.find((f) => f.path === path),
       isConflicted: (path) => conflictedPaths().has(path),
       opKind: () => {
@@ -583,6 +640,23 @@
   /** Serial for the PTY ids `terminal:create` hands out. */
   let ptySeq = 0;
 
+  /**
+   * What ?diverged=1's pulls have done so far — read by `sync:pull`,
+   * `sync:status`, `branches:list` and `git:opState`, which all describe the
+   * same repository and must move together.
+   */
+  const pullState = {
+    /** The first pull fetched: the remote is further ahead than the badge said. */
+    fetched: false,
+    /** A pull with a mode completed. */
+    done: false,
+    /** A pull with a mode stopped on conflicts (?pullconflict=1). */
+    stopped: null,
+    behind() {
+      return this.fetched ? 5 : 3;
+    },
+  };
+
   const fixtures = {
     // ?norepo=1 → NO repository open, which is the welcome screen: the first
     // thing anyone sees, the only screen shown after closing a repo, and
@@ -598,7 +672,9 @@
     // `github:status` is DYNAMIC below, not here: a fixture that never changes
     // cannot express signing out, which is why nothing could see that the
     // top-bar chip kept naming the account you had just left.
-    "sync:status": { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, noUpstream: false },
+    // `sync:status` is DYNAMIC below: with ?diverged=1 the pull itself moves
+    // it (its fetch finds more of the remote), and a value captured here could
+    // not show a badge going stale.
     // Every KIND of ref, because the Branches view has one screen per kind and
     // the fixture used to hold local heads ONLY — so the remote, tag and stash
     // row shapes were never once rendered, screenshotted or checked.
@@ -606,7 +682,9 @@
       ...branches.map((b) => ({
         type: "head",
         name: b.name,
-        fullName: "refs/heads/" + b.name,
+        // A branch git lists under a disambiguated short name (?collide=1)
+        // carries its own full name; every other one is refs/heads/<name>.
+        fullName: b.fullName ?? "refs/heads/" + b.name,
         sha: "abc123",
         isCurrent: b.current,
         upstream: b.upstream,
@@ -740,7 +818,9 @@
     "release:tags": [ { name: "ext-v1.11.1", sha: "e5f6a7b" }, { name: "desktop-v1.5.1", sha: "d4e5f6a" } ],
     "orgs:list": orgs,
     "gist:list": gists,
-    "project:list": projects,
+    // `?partial=1`: GitHub named one more project than it could return (one in
+    // a repository the account can no longer see) — the list says so.
+    "project:list": { projects, unreadable: params.get("partial") ? 1 : 0 },
     "git:identity": { name: "Anton Arnaudov", email: "anton@gitstudio.dev" },
     // NOTE: {scope:"all"} is answered by the dynamic handler below — the
     // cross-repo answer carries `repo` on every item and includes two items
@@ -764,7 +844,12 @@
     // second lane still open, ref chips on the tips, and a tagged release.
     "graph:load": (() => {
       const seg = (from, to, color) => ({ fromColumn: from, toColumn: to, color });
-      const ref = (name, kind) => ({ name, kind });
+      // As wireRefs sends them: git's short name AND the full name.
+      const ref = (name, kind) => ({
+        name,
+        kind,
+        fullName: kind === "tag" ? "refs/tags/" + name : kind === "remoteHead" ? "refs/remotes/" + name : "refs/heads/" + name,
+      });
       const row = (o) => ({
         sha: o.sha,
         shortSha: o.sha.slice(0, 7),
@@ -812,6 +897,18 @@
     "ssh:keys": [],
     // (the real fixture is above — an empty array here shadowed it)
   };
+
+  // ?collide=1 (see the branches above): the refs git lists beside them, under
+  // the short names git gives them — the tags "main" and "release", the
+  // remote-tracking origin/release, and origin/sl beside a LOCAL "origin/sl".
+  if (params.get("collide")) {
+    fixtures["refs:list"].push(
+      { type: "remote", name: "origin/release", fullName: "refs/remotes/origin/release", sha: "b1c2d3e", isCurrent: false, date: S(5), subject: "release work" },
+      { type: "remote", name: "remotes/origin/sl", fullName: "refs/remotes/origin/sl", sha: "c2d3e4f", isCurrent: false, date: S(6), subject: "sl two" },
+      { type: "tag", name: "tags/release", fullName: "refs/tags/release", sha: "9f8e7d6", isCurrent: false, objectType: "commit", date: S(50), subject: "an old release" },
+      { type: "tag", name: "tags/main", fullName: "refs/tags/main", sha: "9f8e7d6", isCurrent: false, objectType: "commit", date: S(60), subject: "a tag named like the default branch" },
+    );
+  }
 
   // E1: mutable settings so the Repositories card + destination sheet are
   // exercisable in the harness (Change… picks a canned folder).
@@ -1190,6 +1287,81 @@
     { fullName: "acme-corp/platform", name: "platform", owner: "acme-corp", ownerType: "Organization", mine: false, description: "Every PDF is just material. Reshape it \u2014 a local-first PDF editor for macOS, Windows and Linux", private: true, fork: false, cloneUrl: "https://github.com/acme-corp/platform.git", sshUrl: "git@github.com:acme-corp/platform.git", defaultBranch: "main", stars: 3, language: "Go", updatedAt: ISO(12) },
   ];
 
+  // ?emptyrepo=1 — a GitHub repository nobody has pushed to yet.
+  //
+  // This state is UNREACHABLE by answering an empty list: GitHub fails every
+  // read of an empty repository instead (the contents API 404s, /commits and
+  // /git/trees 409), all saying "This repository is empty.", which the main
+  // process normalises to that one sentence. So the fixture has to THROW, and
+  // until it did, the surfaces that meet an empty repository had never been
+  // rendered by anything — which is how crash report #13 came to be filed for
+  // a page that simply had nothing to show.
+  const emptyRepo = params.get("emptyrepo") === "1";
+  const ifEmpty = (fn) => (req) => {
+    if (emptyRepo) throw new Error("This repository is empty.");
+    return fn(req);
+  };
+
+  // ── Uncommitted work in a command's way (crash report #18) ──────────────
+  // ?intheway=1 → every door that applies commits — commit:action's checkout,
+  // checkout-ref, cherry-pick and revert; stash:apply / stash:pop;
+  // branch:merge / branch:rebase; branch:create with a switch from elsewhere;
+  // pr:checkout; sync:pull — answers its FIRST request as the bridge answers a
+  // refusal over the user's uncommitted work (main/inTheWay.ts): ok:false,
+  // expected, the engine's sentence, and `inTheWay` naming the file and the
+  // repository. The renderer then asks Stash & Retry or Cancel (bridge.ts),
+  // and the retry comes back carrying `stashFirst`, answered as the door's
+  // success. Without these the doors had no fixture at all (stash:apply,
+  // branch:merge and pr:checkout fell through to the mutation fallback's
+  // {ok:true}), so no refusal could happen in a scene.
+  //   intheway=note  → the retry succeeds, and says where the stashed changes
+  //                    are (they could not simply come back)
+  //   intheway=still → the retry is STILL refused over uncommitted work
+  //                    (something the stash could not cover)
+  //   intheway=fail  → the first request fails for a reason that is NOT the
+  //                    user's work — a genuine failure, which stays red
+  const inTheWayScene = params.get("intheway");
+  const WAY_FILE = "docs/notes.md";
+  const THE_WAY = {
+    revert: "the revert",
+    "cherry-pick": "the cherry-pick",
+    merge: "the merge",
+    rebase: "the rebase",
+    checkout: "switching to it",
+    stash: "applying the stash",
+    pull: "the pull",
+  };
+  function throughTheDoor(req, kind, succeed) {
+    if (!inTheWayScene) return succeed(req);
+    const retry = !!(req && typeof req === "object" && typeof req.stashFirst === "string");
+    if (inTheWayScene === "fail" && !retry) {
+      return { ok: false, changed: false, message: "fatal: unable to read tree 1a2b3c4d5e6f" };
+    }
+    if (!retry || inTheWayScene === "still") {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          kind === "rebase"
+            ? `A rebase needs a clean working tree, and your uncommitted changes to ${WAY_FILE} are in the way. ` +
+              "Stash it and try again, or commit it first."
+            : `Your uncommitted changes to ${WAY_FILE} are in the way of ${THE_WAY[kind]} — git won't overwrite them. ` +
+              "Stash it and try again, or commit it first.",
+        inTheWay: { kind, files: [WAY_FILE], root: (fixtures["repo:current"] || {}).root },
+      };
+    }
+    const done = succeed(req);
+    return inTheWayScene === "note"
+      ? {
+          ...done,
+          stashNote:
+            `Your changes to ${WAY_FILE} are kept in the stash "GitStudio: before ${kind === "pull" ? "pulling" : kind}" — ` +
+            "git won't put them back over the changes that just came in. Apply it when you're ready.",
+        }
+      : done;
+  }
+
   const dynamic = {
     // A READ that the fallback used to answer with a mutation shape. Present so
     // the AI-gating path is exercised instead of silently failing open.
@@ -1209,6 +1381,152 @@
     // That report's whole value is that it only lists real gaps; one entry on
     // every line trains you to skip it.
     "terminal:resize": () => undefined,
+    // Pull. A MUTATION, so the fallback answered {ok:true} and the diverged
+    // branch — git's "you have divergent branches" refusal, report #12 — could
+    // not happen in a scene at all. With ?diverged=1 the first (mode-less) call
+    // answers the way the bridge does: ok:false, expected, nothing changed, and
+    // a `diverged` fact to ask about. Naming a mode succeeds, and the mode that
+    // was asked for is readable as `window.__gsPulledWith` so a check can prove
+    // the pick reached the REQUEST, not merely that the dialog closed.
+    //
+    // Every git pull FETCHES first, so the first call moves the remote: the
+    // badge was painted from an older fetch (3 behind) and the pull finds 5.
+    // That gap is the only way a check can tell a badge refreshed after the
+    // question was dismissed from one still showing the count before it.
+    //
+    // ?pullconflict=1 → the merge or rebase the user then picks STOPS on
+    // conflicts, answered the way the bridge answers it: ok:false, changed,
+    // expected, and a `stopped` fact with the count. From then on `git:opState`
+    // reports the paused operation, as the real repository would.
+    //
+    // And every one of those pulls WRITES REFS — the fetch moves
+    // refs/remotes/origin/main, a merge or rebase moves the branch — which the
+    // real app's repository watcher reports DEBOUNCE_MS (250 ms) later as
+    // `repo:filesChanged {gitDir: true}`. That refresh re-routes the view, and
+    // a re-route tears every floating layer down. The fixture used to leave it
+    // out, so the divergence question could be answered here at leisure while
+    // in the real app the watcher answered "Cancel" for the user ~200 ms after
+    // the question appeared. Modelled here so no pull check can pass without it.
+    "sync:pull": (opts) => {
+      const mode = (opts && opts.mode) || null;
+      window.__gsPulledWith = mode;
+      // ?intheway=1 → a branch that is only behind, with an edit to a file the
+      // incoming commits change: refused over it (see throughTheDoor). The
+      // pull FETCHED before it was refused, so the watcher reports the moved
+      // remote-tracking ref 250 ms later — while the question is on screen.
+      if (inTheWayScene) {
+        const answer = throughTheDoor(opts, "pull", () => {
+          pullState.done = true;
+          return { ok: true, changed: true };
+        });
+        if (!(opts && opts.stashFirst)) {
+          pullState.fetched = true;
+          setTimeout(() => window.__gsEmit("repo:filesChanged", { gitDir: true }), 250);
+        }
+        return answer.inTheWay ? { ...answer, dirty: { files: answer.inTheWay.files.length } } : answer;
+      }
+      if (!params.get("diverged")) return { ok: true, changed: true };
+      // Pull pressed AGAIN over the merge or rebase that stopped: the branch is
+      // still ahead and behind, so Pull is still on offer, and git refuses it
+      // before running anything — answered as the bridge answers it. Nothing
+      // is written, so nothing wakes the watcher.
+      if (pullState.stopped) {
+        const op = pullState.stopped.operation;
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message:
+            `A ${op} is still in progress, with 2 files still conflicted. Resolve them and ` +
+            `${op === "rebase" ? "continue" : "commit"} the ${op} — or abort it — before pulling again.`,
+          blocked: { operation: op, conflicts: 2 },
+        };
+      }
+      setTimeout(() => window.__gsEmit("repo:filesChanged", { gitDir: true }), 250);
+      pullState.fetched = true;
+      if (mode && params.get("pullconflict")) {
+        pullState.stopped = { operation: mode, conflicts: 2 };
+        // The repository is mid-merge (or mid-rebase) now: git:opState, the
+        // conflicts dashboard and the Changes rows all read it from `mp`.
+        mp.stopForPull(mode);
+        syncConflictRows();
+        return {
+          ok: false,
+          changed: true,
+          expected: true,
+          message:
+            "The pull stopped on conflicts in 2 files. Resolve them, then " +
+            (mode === "rebase" ? "continue the rebase" : "commit the merge") +
+            " — or abort to go back to where you were.",
+          stopped: pullState.stopped,
+        };
+      }
+      if (mode) {
+        pullState.done = true;
+        return { ok: true, changed: true };
+      }
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          `'main' and origin/main have both moved on — 2 commits here, ${pullState.behind()} commits there. ` +
+          "Choose how to combine them.",
+        diverged: { branch: "main", upstream: "origin/main", ahead: 2, behind: pullState.behind() },
+      };
+    },
+    // A commit, answered as the bridge answers one that worked. There was no
+    // fixture, so `host.invoke("commit")` answered undefined and every Commit
+    // press in a scene ended in the catch's "Commit failed." — nothing after
+    // a commit (the push, what Commit & Push says) could be reached.
+    "commit": () => ({ ok: true, changed: true }),
+    // Push. A MUTATION, so the fallback answered {ok:true} and no refusal could
+    // happen in a scene. ?forcerefused=1 → the branch was rewritten while the
+    // remote has somebody else's version too: a plain push is refused
+    // non-fast-forward (git's words, as the bridge passes them on), and the
+    // force the app then offers is refused by the bridge — `expected`, with
+    // `pullFirst` — as it refuses one that would delete commits this branch
+    // never had. The request is readable as `window.__gsPushedWith`.
+    "sync:push": (opts) => {
+      window.__gsPushedWith = (window.__gsPushedWith || []).concat([opts || null]);
+      if (!params.get("forcerefused")) return { ok: true, changed: true };
+      if (!(opts && opts.force)) {
+        return {
+          ok: false,
+          changed: false,
+          message: " ! [rejected]        main -> main (non-fast-forward)\nerror: failed to push some refs",
+        };
+      }
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        pullFirst: true,
+        message:
+          "The remote branch has commits this branch has never had — fetched in the background, " +
+          "from another machine or someone else — and a force push would delete them. " +
+          "Pull them in first, then push.",
+      };
+    },
+    // ?diverged=1 → the branch and its upstream have BOTH moved, which is the
+    // one sync state the widget could not be driven into: with behind: 0 the
+    // top-bar action is Push, so Pull — and the question it now asks — was
+    // unreachable from every scene.
+    "sync:status": () =>
+      // ?intheway=1 → only behind, so the top bar's action is Pull.
+      inTheWayScene
+        ? { branch: "main", upstream: "origin/main", ahead: 0, behind: pullState.done ? 0 : 3, noUpstream: false }
+        : params.get("diverged")
+        ? {
+            branch: "main",
+            upstream: "origin/main",
+            ahead: pullState.done ? 3 : 2,
+            behind: pullState.done ? 0 : pullState.behind(),
+            noUpstream: false,
+          }
+        : { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, noUpstream: false },
+    // (git:opState — the paused operation a stopped pull leaves behind — is
+    // read from `mp` below, which sync:pull's stop moves: mp.stopForPull.)
     "appearance:dockIcon": () => undefined,
     // A REAL gap: the run page's Artifacts section read undefined and rendered
     // whatever that produced, unchecked, for as long as this harness has run.
@@ -1357,18 +1675,68 @@
       return { ok: true, root, cloned: true };
     },
     // E4: entity pages — remote tree/file/readme at a ref, branches, paths.
-    "ghrepo:commits": ({ ref }) =>
+    "ghrepo:commits": ifEmpty(({ ref }) =>
       [
         { sha: "9f8e7d6c5b4a39281706", shortSha: "9f8e7d6", subject: "release: extension 1.11.1", author: "Anton Arnaudov", login: "antonarnaudov", date: ISO(1) },
         { sha: "18c9d0e7f6a5b4c3d2e1", shortSha: "18c9d0e", subject: "engine: hunk splitting groundwork", author: "Mira Holt", login: "mira-holt", date: ISO(3) },
         { sha: "c3d4e5f60718293a4b5c", shortSha: "c3d4e5f", subject: `actions: stream job logs (${ref ?? "default"})`, author: "Sora Ohta", date: ISO(8) },
-      ],
-    "ghrepo:branches": () => [
-      { name: "main", sha: "9f8e7d6", protected: true },
-      { name: "redesign/issues-detail", sha: "a1b2c3d", protected: false },
-      { name: "fix/log-stream", sha: "b2c3d4e", protected: false },
-    ],
-    "ghrepo:paths": () => ({
+      ]),
+    // Settings ▸ Agent Access. Missing entirely: twelve checks rendered
+    // Settings over a card whose read answered undefined and threw, so the one
+    // card that installs something into another app had never been looked at.
+    // The shape is main/mcpConfig.ts's — the launch is the app's own executable
+    // as Node — and ?mcpmissing=1 is a shipped build without its server.
+    "ai:mcpInfo": () => {
+      const bin = "/Applications/GitStudio.app/Contents/Resources/mcp/gitstudio-mcp.js";
+      const command = "/Applications/GitStudio.app/Contents/MacOS/GitStudio";
+      const env = { ELECTRON_RUN_AS_NODE: "1" };
+      const repoRoot = "/Users/anton/Developer/GitStudioHQ/gitstudio";
+      const args = [bin, "--repo", repoRoot];
+      // ?mcptransloc=1: the app is running from a Gatekeeper-translocated copy,
+      // whose path vanishes on quit. ?mcpmoved=1: Cursor was set up with a
+      // GitStudio that has since been moved.
+      const transloc = params.get("mcptransloc") === "1";
+      const moved = params.get("mcpmoved") === "1";
+      const missing = params.get("mcpmissing") === "1" || transloc;
+      const unavailable = transloc
+        ? "GitStudio is running from a temporary copy macOS made because the app hasn't been moved to Applications yet, and that copy disappears when GitStudio quits — an agent set up now would stop working. Move GitStudio to your Applications folder, open it from there, then add it again."
+        : "This build of GitStudio is missing its MCP server, so Agent Access can't be set up. Reinstalling the app restores it.";
+      return {
+        binPath: bin,
+        command,
+        args,
+        env,
+        configSnippet: JSON.stringify({ mcpServers: { gitstudio: { command, args, env } } }, null, 2),
+        clients: [
+          { id: "claude", label: "Claude Desktop", installed: false, configPath: "~/Library/Application Support/Claude/claude_desktop_config.json" },
+          { id: "cursor", label: "Cursor", installed: true, configPath: "~/.cursor/mcp.json",
+            ...(moved ? { stale: true, staleReason: "The GitStudio this was set up with is no longer at /Users/anton/Downloads/GitStudio.app/Contents/MacOS/GitStudio." } : {}) },
+          { id: "windsurf", label: "Windsurf", installed: false, configPath: "~/.codeium/windsurf/mcp_config.json" },
+          { id: "vscode", label: "VS Code (Copilot)", installed: false, configPath: "~/Library/Application Support/Code/User/mcp.json" },
+        ],
+        repoRoot,
+        available: !missing,
+        ...(missing ? { missing: unavailable } : {}),
+      };
+    },
+    // Add / Update / Re-add, answered as installMcp answers a success.
+    "ai:mcpInstall": (req) => ({
+      ok: true,
+      message: `Added GitStudio (read-only) to ${req && req.client}. Restart it to pick it up.`,
+    }),
+    // NOT ifEmpty: GitHub's `/branches` answers an empty repository with an
+    // empty LIST (200, `[]`) — only the content endpoints refuse. Throwing here
+    // made the ref switcher reachable only as a failure toast, so a check of
+    // it could pass over the throw instead of the state it was written for.
+    "ghrepo:branches": () =>
+      emptyRepo
+        ? []
+        : [
+            { name: "main", sha: "9f8e7d6", protected: true },
+            { name: "redesign/issues-detail", sha: "a1b2c3d", protected: false },
+            { name: "fix/log-stream", sha: "b2c3d4e", protected: false },
+          ],
+    "ghrepo:paths": ifEmpty(() => ({
       paths: [
         "README.md",
         "package.json",
@@ -1380,8 +1748,8 @@
       ],
       truncated: false,
       total: 7,
-    }),
-    "ghrepo:tree": (req) => {
+    })),
+    "ghrepo:tree": ifEmpty((req) => {
       if (!req.path) {
         return [
           { name: "apps", path: "apps", type: "dir" },
@@ -1393,15 +1761,15 @@
       }
       if (req.path === "apps") return [{ name: "desktop", path: "apps/desktop", type: "dir" }];
       return [{ name: "index.ts", path: req.path + "/index.ts", type: "file", size: 420 }];
-    },
-    "ghrepo:file": (req) => ({
+    }),
+    "ghrepo:file": ifEmpty((req) => ({
       path: req.path,
       text: "export function createLogPane(o: LogPaneOpts): LogPane {\n  const el = document.createElement(\"div\");\n  el.className = \"log-pane\";\n  return { el, append, reset, finish };\n}\n",
       truncated: false,
       binary: false,
       size: 420,
-    }),
-    "ghrepo:readme": () => ({
+    })),
+    "ghrepo:readme": () => (emptyRepo ? undefined : {
       name: "README.md",
       // The shapes a real README carries: a RELATIVE image (must be rewritten
       // to raw.githubusercontent.com or it 404s against the app's own origin)
@@ -1478,7 +1846,22 @@
     // The folders the Repositories view groups by. The clone folder leads and
     // cannot be untracked; ~/Code is the "I keep work here too" case; the last
     // is the one that has gone missing, which the row has to say out loud.
-    "branches:list": () => branches,
+    // With the full name the real read carries (%(refname)): every checkout
+    // door goes by it, and the main process refuses a checkout without one.
+    // ?diverged=1 → main's row carries the same counts as the top bar, and
+    // moves with them when a pull's fetch finds more (see `sync:pull`).
+    "branches:list": () =>
+      branches
+        .map((b) => ({ fullName: "refs/heads/" + b.name, ...b }))
+        .map((b) =>
+          params.get("diverged") && b.current
+            ? {
+                ...b,
+                ahead: pullState.done ? 3 : 2,
+                behind: pullState.done ? 0 : pullState.behind(),
+              }
+            : b,
+        ),
     // The per-branch log walk's answer. feat/line-staging is the interesting
     // one: created by one person, carried by three — a number-only "last
     // commit by" could never say that.
@@ -1515,7 +1898,11 @@
     // Branch delete returns the tip it deleted, which is the whole reason the
     // delete can be undone — `?nowas=1` is the case where the tip could not be
     // read and no undo may be offered.
-    "branch:delete": ({ name }) => {
+    // Branch ops take the branch by its FULL name (issue #30's follow-up), as
+    // the main process does — and refuse one without it, as it does.
+    "branch:delete": ({ fullName }) => {
+      const name = typeof fullName === "string" && fullName.startsWith("refs/heads/") ? fullName.slice(11) : undefined;
+      if (!name) return { ok: false, changed: false, message: "Couldn't tell which branch to delete — refresh and try again." };
       const hit = branches.find((b) => b.name === name);
       if (!hit) return { ok: false, changed: false, message: "no such branch" };
       deletedBranches.set(name, hit);
@@ -1524,22 +1911,46 @@
         ? { ok: true, changed: true }
         : { ok: true, changed: true, was: "b1a5ded", upstream: hit.upstream };
     },
-    "branch:create": ({ name, startPoint }) => {
-      const was = deletedBranches.get(name);
-      if (was && startPoint) {
-        deletedBranches.delete(name);
-        branches = [...branches, was];
+    "branch:create": (req) => {
+      const create = ({ name, startPoint }) => {
+        const was = deletedBranches.get(name);
+        if (was && startPoint) {
+          deletedBranches.delete(name);
+          branches = [...branches, was];
+          return { ok: true, changed: true };
+        }
+        if (branches.some((b) => b.name === name)) {
+          return { ok: false, changed: false, message: "a branch of that name already exists" };
+        }
+        branches = [...branches, { name, current: false, ahead: 0, behind: 0, subject: "new", date: S(0) }];
         return { ok: true, changed: true };
-      }
-      if (branches.some((b) => b.name === name)) {
-        return { ok: false, changed: false, message: "a branch of that name already exists" };
-      }
-      branches = [...branches, { name, current: false, ahead: 0, behind: 0, subject: "new", date: S(0) }];
-      return { ok: true, changed: true };
+      };
+      // Create AND switch from somewhere else is a checkout — through the door.
+      return req && req.checkout && req.startPoint ? throughTheDoor(req, "checkout", create) : create(req);
     },
+    // A merge or a rebase from the Branches view. MUTATIONS with no fixture,
+    // so both answered the fallback's {ok:true} and no refusal could happen.
+    // By FULL name, as main takes them — anything else is refused as main
+    // refuses it — and through the door.
+    "branch:merge": (req) =>
+      typeof req?.fullName === "string" && /^refs\/(heads|remotes)\/./.test(req.fullName)
+        ? throughTheDoor(req, "merge", () => ({ ok: true, changed: true }))
+        : { ok: false, changed: false, message: "Couldn't tell which branch to merge — refresh and try again." },
+    "branch:rebase": (req) =>
+      typeof req?.fullName === "string" && /^refs\/(heads|remotes|tags)\/./.test(req.fullName)
+        ? throughTheDoor(req, "rebase", () => ({ ok: true, changed: true }))
+        : { ok: false, changed: false, message: "Couldn't tell which branch to rebase onto — refresh and try again." },
+    // Apply / pop from the stash list or a stash's page: the ref, or — sent
+    // again after Stash & Retry — `{ ref, stashFirst }`.
+    "stash:apply": (req) => throughTheDoor(req, "stash", () => ({ ok: true, changed: true })),
+    "stash:pop": (req) => throughTheDoor(req, "stash", () => ({ ok: true, changed: true })),
+    // A pull request fetched and checked out: the number, or `{ number, stashFirst }`.
+    "pr:checkout": (req) => throughTheDoor(req, "checkout", () => ({ ok: true, changed: true })),
     // A rename carries the tracking over UNCHANGED, exactly as `git branch -m`
     // does — which is the whole reason the reconcile question exists.
-    "branch:rename": ({ from, to }) => {
+    "branch:rename": ({ fullName, to }) => {
+      const from = typeof fullName === "string" && fullName.startsWith("refs/heads/") ? fullName.slice(11) : undefined;
+      if (!from) return { ok: false, changed: false, message: "Couldn't tell which branch to rename — refresh and try again." };
       const hit = branches.find((b) => b.name === from);
       if (!hit) return { ok: false, changed: false, message: "no such branch" };
       if (branches.some((b) => b.name === to)) {
@@ -1555,7 +1966,20 @@
       branches = branches.map((b) => (b.name === name ? { ...b, upstream: `${remote}/${name}` } : b));
       return { ok: true, changed: true };
     },
-    "branch:setUpstream": ({ name, upstream }) => {
+    // Push / pull (merge and rebase are above, at the door): nothing to model
+    // beyond the contract — a full name is taken, anything else is refused as
+    // main refuses it.
+    "branch:push": ({ fullName }) =>
+      typeof fullName === "string" && fullName.startsWith("refs/heads/")
+        ? { ok: true, changed: true }
+        : { ok: false, changed: false, message: "Couldn't tell which branch to push — refresh and try again." },
+    "branch:pullFf": ({ fullName }) =>
+      typeof fullName === "string" && fullName.startsWith("refs/heads/")
+        ? { ok: true, changed: true }
+        : { ok: false, changed: false, message: "Couldn't tell which branch to pull into — refresh and try again." },
+    "branch:setUpstream": ({ fullName, upstream }) => {
+      const name = typeof fullName === "string" && fullName.startsWith("refs/heads/") ? fullName.slice(11) : undefined;
+      if (!name) return { ok: false, changed: false, message: "Couldn't tell which branch to set the upstream of — refresh and try again." };
       branches = branches.map((b) => (b.name === name ? { ...b, upstream } : b));
       return { ok: true, changed: true };
     },
@@ -1896,7 +2320,8 @@
     "orgs:repos": () => orgRepos,
     "orgs:teams": () => [ { name: "Core", slug: "core", description: "Maintainers", privacy: "closed", htmlUrl: "" } ],
     "orgs:members": () => [u(me), u("mira-holt"), u("s-ohta"), u("dkovachev"), u("jparks")].map((p) => ({ ...p, htmlUrl: "" })),
-    "project:board": () => board,
+    // Spread, not copied: a move mutates `board.items`, and this must see it.
+    "project:board": () => ({ ...board, unreadable: params.get("partial") ? 1 : 0 }),
     // HONOURS maxCount, as `refLog` does (it clamps to 1..100). Ignoring it hid
     // the fact that a stash's page asked for the whole ancestry of stash@{0} —
     // git's internal "index on …" commit included — under a heading reading
@@ -1921,7 +2346,8 @@
       name: `Release ${req.tagName}`,
       body: `## What's Changed\n* Reorder commits by dragging in the graph by @antonarnaudov in #18\n* Carry other branches through a rebase by @mira-holt in #21\n\n**Full Changelog**: https://github.com/GitStudioHQ/gitstudio/compare/ext-v1.11.1...${req.tagName}`,
     }),
-    "pr:reviewThreads": () => [
+    // `{threads, unreadable}` — `?partial=1` names one thread GitHub could not return.
+    "pr:reviewThreads": () => ({ threads: [
       { id: "t1", path: "apps/desktop/src/renderer/views/issues.ts", line: 42, isResolved: false, isOutdated: false,
         comments: [
           { id: "c1", author: u("mira-holt"), body: "Could this reuse `secRow` from common.ts instead of building the row by hand?", createdAt: ISO(1.4) },
@@ -1929,7 +2355,7 @@
         ] },
       { id: "t2", path: "apps/desktop/src/renderer/views/issues.ts", line: 118, isResolved: true, isOutdated: false,
         comments: [ { id: "c3", author: u("s-ohta"), body: "This `replaceChildren` runs twice on refresh.", createdAt: ISO(2) } ] },
-    ],
+    ], unreadable: params.get("partial") ? 1 : 0 }),
     "actions:jobLogChunk": (req) => {
       const TS = "2026-08-25T10:00:42.1234567Z ";
       const lines = [];
@@ -1978,11 +2404,29 @@
     // the missing-channel path and returned undefined, so the caller's
     // `result.ok` threw and the click looked inert — which is exactly how the
     // branch switcher's checkout hid while it was being tested.
-    "commit:action": (req) => ({
-      ok: true,
-      changed: true,
-      message: `${req?.action ?? "action"} ok`,
-    }),
+    //
+    // A checkout, a cherry-pick or a revert goes through the door (see
+    // throughTheDoor): ?intheway=1 refuses it over uncommitted work first.
+    "commit:action": (req) => {
+      // What the main process answers for a branch named like an option
+      // (gitBridge.checkoutRef, via git-service's optionLikeCheckout) — before
+      // anything runs, so before the door too.
+      if (req?.action === "checkout-ref" && typeof req.fullName === "string" && /^refs\/heads\/-/.test(req.fullName)) {
+        const name = req.fullName.slice(11);
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: `Git can't safely check out a branch whose name starts with "-": "${name}" would be read as an option. Rename it, then check it out.`,
+          optionLike: { fullName: req.fullName, name, local: true },
+        };
+      }
+      const done = () => ({ ok: true, changed: true, message: `${req?.action ?? "action"} ok` });
+      const kind = { checkout: "checkout", "checkout-ref": "checkout", "cherry-pick": "cherry-pick", revert: "revert" }[
+        req?.action
+      ];
+      return kind ? throughTheDoor(req, kind, done) : done();
+    },
     "pr:fileDiff": (req) => (/\.(png|jpe?g|gif|ico|pdf|zip|dmg|vsix|woff2?)$/i.test(req.path)
       ? {
           // A binary in a pull request used to come back as the SAME
@@ -2120,7 +2564,7 @@
       body:
         "The split view could not show a body, a timeline and a rail at once on\n" +
         "a 13\" screen, so all three were cropped.\n\nCloses #31.",
-      refs: [{ name: "redesign/wave-2", kind: "currentHead" }],
+      refs: [{ name: "redesign/wave-2", fullName: "refs/heads/redesign/wave-2", kind: "currentHead" }],
       files: commitFiles([
         ["M", "apps/desktop/src/renderer/views/issues.ts", 402, 260],
         ["A", "apps/desktop/src/renderer/views/common.ts", 188, 0],
@@ -2150,9 +2594,9 @@
       subject: "Merge branch 'main' into redesign/wave-2",
       body: "",
       refs: [
-        { name: "main", kind: "head" },
-        { name: "origin/main", kind: "remoteHead" },
-        { name: "desktop-v1.6.0", kind: "tag" },
+        { name: "main", fullName: "refs/heads/main", kind: "head" },
+        { name: "origin/main", fullName: "refs/remotes/origin/main", kind: "remoteHead" },
+        { name: "desktop-v1.6.0", fullName: "refs/tags/desktop-v1.6.0", kind: "tag" },
       ],
       files: commitFiles([["M", "apps/desktop/src/renderer/renderer.ts", 14, 2]]),
       hasRemote: true,
@@ -2193,17 +2637,51 @@
   };
 
   // The graph's branch filter (issue #30). `graph:load` takes `refs` — the
-  // fully-qualified refs to build the graph around, null for all, omitted for
-  // "whatever is remembered" — and answers with the filter it applied plus the
-  // FULL ref list, filtered-out refs included, or the picker could never tick
-  // one back in. The walk itself is what git does with `git log <refs> HEAD`:
-  // a row that only an unticked ref reaches is gone, and chips follow the
-  // filter (the current branch always keeps its chip). Without this the
-  // picker was a control with no fixture behind it: every tick would have
-  // answered the same ten rows and a check could pass over a dead filter.
+  // fully-qualified refs to build the graph around, or a preset's symbols
+  // ("@current" …, which follow HEAD), null for all, omitted for "whatever is
+  // remembered" — and answers with the filter it applied RESOLVED to full
+  // names, the preset it is (refPreset), plus the FULL ref list, filtered-out
+  // refs included, or the picker could never tick one back in. The walk is
+  // what git does with `git log --stdin <refs>`: HEAD joins only when detached
+  // (it is attached here, on main), a row no ticked ref reaches is gone, and
+  // chips follow exactly the ticked refs — the current branch's included.
+  // Without this the picker was a control with no fixture behind it: every
+  // tick would have answered the same ten rows and a check could pass over a
+  // dead filter.
   const graphBase = fixtures["graph:load"];
-  /** sha → the refs that ALONE reach it; every other row is reachable from HEAD. */
+  /** sha → the refs that ALONE reach it; every other row is on main's line. */
   const reachOnly = { "77aa88b9c0d1e2f3a4b5": ["refs/remotes/origin/chore/dependabot-bump"] };
+  const mainLine = new Set(graphBase.rows.map((r) => r.sha).filter((sha) => !reachOnly[sha]));
+  /** What a ref reaches when it is not on main's line: the unmerged remote
+   *  reaches its own commit and the one it forked from; the feature branch its
+   *  lane and the trunk below its fork (featureLane, below). */
+  const reachOf = (full) =>
+    full === "refs/remotes/origin/chore/dependabot-bump"
+      ? new Set(["77aa88b9c0d1e2f3a4b5", "29d0e1f2837495b2c3d4"])
+      : full === "refs/heads/redesign/issues-detail" || full === "refs/remotes/origin/redesign/issues-detail"
+        ? featureLane
+        : mainLine;
+  const PRESETS = { current: ["@current"], currentUpstream: ["@current", "@upstream"], local: ["@local"] };
+  const SYMBOLS = new Set(["@current", "@upstream", "@local"]);
+  /** host-bridge's resolveRefFilter, over the picker's list. */
+  const resolveFilter = (filter, list) => {
+    if (!filter) return null;
+    const cur = list.find((e) => e.kind === "head" && e.isCurrent);
+    const out = [];
+    const add = (f) => { if (f && !out.includes(f)) out.push(f); };
+    for (const f of filter) {
+      if (f === "@current") add(cur && cur.fullName);
+      else if (f === "@upstream") add(cur && cur.upstream);
+      else if (f === "@local") list.filter((e) => e.kind === "head").forEach((e) => add(e.fullName));
+      else add(f);
+    }
+    return out;
+  };
+  const presetOf = (filter) => {
+    if (!filter) return undefined;
+    const key = [...filter].sort().join(",");
+    return Object.keys(PRESETS).find((id) => [...PRESETS[id]].sort().join(",") === key);
+  };
   const chipFullName = (chip) =>
     chip.kind === "tag" ? "refs/tags/" + chip.name
     : chip.kind === "remoteHead" ? "refs/remotes/" + chip.name
@@ -2220,34 +2698,56 @@
         return e;
       });
   };
-  /** Remembered for the session, like the app's per-repo setting. */
+  /** Remembered for the session, like the app's per-repo setting — as
+   *  STORED: a preset stays its symbols, and is resolved per load. */
   let graphRefFilter = null;
+  /** The walk of the last load (resolved), which graph:reaches answers from. */
+  let graphWalk = null;
   window.__GS_GRAPH_LOADS = [];
   dynamic["graph:load"] = (req) => {
     const list = graphRefList();
     const known = new Set(list.map((e) => e.fullName));
     if (req && req.refs !== undefined) {
-      const kept = Array.isArray(req.refs) ? req.refs.filter((r) => known.has(r)) : [];
+      const kept = Array.isArray(req.refs) ? req.refs.filter((r) => known.has(r) || SYMBOLS.has(r)) : [];
       graphRefFilter = kept.length ? kept : null;
     }
-    window.__GS_GRAPH_LOADS.push({ skip: req && req.skip, refs: req && req.refs, applied: graphRefFilter });
-    const filter = graphRefFilter;
-    const ticked = new Set(filter || []);
+    const walk = resolveFilter(graphRefFilter, list);
+    graphWalk = walk;
+    const refPreset = presetOf(graphRefFilter);
+    // The list rides along only when the caller does not already hold it, the
+    // way the main process does it (refListFor): the renderer says which list
+    // it has in `refListSig`. Any stable fingerprint will do here — the real
+    // one is refListSignature's hash; what matters is the comparison.
+    const sig = "shim:" + JSON.stringify(list);
+    const sendList = !req || req.refListSig !== sig;
+    window.__GS_GRAPH_LOADS.push({
+      skip: req && req.skip,
+      refs: req && req.refs,
+      applied: graphRefFilter,
+      walked: walk,
+      sentRefList: sendList,
+    });
+    const ticked = new Set(walk || []);
+    const reached = new Set();
+    for (const f of walk || []) for (const sha of reachOf(f)) reached.add(sha);
     const rows = graphBase.rows
-      .filter((r) => !filter || !reachOnly[r.sha] || reachOnly[r.sha].some((f) => ticked.has(f)))
+      .filter((r) => !walk || reached.has(r.sha))
       .map((r) => ({
         ...r,
-        refs: filter ? r.refs.filter((c) => c.kind === "currentHead" || ticked.has(chipFullName(c))) : r.refs,
+        refs: walk ? r.refs.filter((c) => ticked.has(chipFullName(c))) : r.refs,
       }));
-    return { ...graphBase, rows, nextSkip: rows.length, refFilter: filter, refList: list };
+    const out = { ...graphBase, rows, nextSkip: rows.length, refFilter: walk, refListSig: sig };
+    if (refPreset) out.refPreset = refPreset;
+    if (sendList) out.refList = list;
+    else delete out.refList;
+    return out;
   };
   // A reveal that finds no row under a filter asks whether the walk reaches
   // the commit at all, before saying why (issue #30) — the same reach model
   // as graph:load above, so the two cannot disagree about a row.
   dynamic["graph:reaches"] = (req) => {
-    const only = reachOnly[req && req.sha];
-    const ticked = new Set(graphRefFilter || []);
-    return { reached: !graphRefFilter || !only || only.some((f) => ticked.has(f)) };
+    if (!graphWalk) return { reached: true };
+    return { reached: graphWalk.some((f) => reachOf(f).has(req && req.sha)) };
   };
   // The details pane's "in N branches" row — the same reach model again, so
   // the row cannot disagree with the graph it sits beside. A row only the
@@ -2265,14 +2765,17 @@
     // the same commits as 20-char prefixes.
     const sha = String((req && req.sha) || "").slice(0, 20);
     const only = reachOnly[sha];
-    if (only) return { branches: only.map((f) => f.replace(/^refs\/remotes\//, "")), truncated: false };
-    if (!graphBase.rows.some((r) => r.sha === sha)) return { branches: [], truncated: false };
+    // `refs`: the same branches by full name, as RefProvider answers.
+    if (only) return { branches: only.map((f) => f.replace(/^refs\/(heads|remotes)\//, "")), refs: [...only], truncated: false };
+    if (!graphBase.rows.some((r) => r.sha === sha)) return { branches: [], refs: [], truncated: false };
     const onLane = featureLane.has(sha);
+    const branches = [
+      "main", ...(onLane ? ["redesign/issues-detail"] : []),
+      "origin/main", ...(onLane ? ["origin/redesign/issues-detail"] : []),
+    ];
     return {
-      branches: [
-        "main", ...(onLane ? ["redesign/issues-detail"] : []),
-        "origin/main", ...(onLane ? ["origin/redesign/issues-detail"] : []),
-      ],
+      branches,
+      refs: branches.map((b) => (b.startsWith("origin/") ? "refs/remotes/" : "refs/heads/") + b),
       truncated: false,
     };
   };
@@ -2422,6 +2925,7 @@
     const noun = { merge: "Merge", rebase: "Rebase", "cherry-pick": "Cherry-pick", revert: "Revert", am: "Patch series" }[st.op.kind] || "Merge";
     st.op = mp.NONE;
     st.files = [];
+    pullState.stopped = null; // a pull's stop, if that is what this was, is over
     syncConflictRows();
     return { ok: true, view: mp.view(), remainingConflicts: 0, message: verb === "skip" ? "Skipped. Nothing else was left." : `${noun} complete.` };
   };
@@ -2444,6 +2948,7 @@
   dynamic["op:abort"] = () => {
     mp.state.op = mp.NONE;
     mp.state.files = [];
+    pullState.stopped = null;
     syncConflictRows();
     return { ok: true, view: mp.view(), remainingConflicts: 0 };
   };
@@ -2835,6 +3340,21 @@
         return;
       }
       const fails = [];
+      // `repaints=1`: the frames a LOADED machine delivers, on demand.
+      //
+      // Headless Chrome runs the page on a virtual clock but produces frames on
+      // the real one, and a frame is when ResizeObserver callbacks are
+      // delivered. Idle, a whole check finishes between two frames; under load
+      // one lands inside a check's `settle()`, and the log pane's observer
+      // repaints its virtual window (`win.replaceChildren()`) — removing any
+      // row the check had put there. Two Actions-log checks failed that way
+      // about one run in forty under parallel load and never alone. A `resize`
+      // on the window runs the same repaint, so firing it every 40ms makes the
+      // loaded machine's worst case the ordinary one: a check that races a
+      // repaint fails every time here instead of once in a while in CI.
+      const repaints = params.get("repaints") === "1"
+        ? setInterval(() => window.dispatchEvent(new Event("resize")), 40)
+        : 0;
       try {
         // A check may return a promise: some assertions have to CLICK something
         // and wait, and several of the views re-render behind an await (a
@@ -2844,6 +3364,7 @@
       } catch (e) {
         fails.push("threw: " + (e && e.message ? e.message : String(e)));
       }
+      if (repaints) clearInterval(repaints);
       // Report the channels this scene asked for and the shim could not answer.
       // NOT as failures — most are legitimately absent — but as a note the
       // runner prints once at the end. A read with no fixture returns undefined

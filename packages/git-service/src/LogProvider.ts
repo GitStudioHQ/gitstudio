@@ -29,11 +29,25 @@ export interface StreamCommitsOptions {
    * FULLY-QUALIFIED names — refs/heads/x, refs/remotes/origin/x, refs/tags/t.
    * A short name is ambiguous the moment a tag shares it with a branch, and
    * git resolves the ambiguity by its own precedence, not the user's tick.
-   * When non-empty these replace the branches/tags/remotes expansion; HEAD is
-   * always added, so a detached head can never filter itself out of the graph.
-   * Ignored unless `revRange` is "--all".
+   * Present (even empty) these replace the branches/tags/remotes expansion;
+   * absent is the whole graph. HEAD joins them only as `head` says. They
+   * reach git on stdin, never argv, so their number is unbounded; an entry
+   * that is not a plain refs/… name is dropped (see revisionLines). Ignored
+   * unless `revRange` is "--all".
    */
   refs?: string[];
+  /**
+   * Walk HEAD beside `refs` (default true).
+   *
+   * A DETACHED head is on no branch the user can tick, so it has to be walked
+   * explicitly or the commit you are sitting on filters itself out of the
+   * graph. An ATTACHED head is a branch in the picker like any other, and
+   * walking it anyway meant "Show only origin/x" showed origin/x plus the whole
+   * of the current branch's history (on a busy main, 372 of 463 rows were not
+   * on the ticked branch), under a trigger naming origin/x alone. Hosts pass
+   * whether HEAD is detached; a caller that cannot tell keeps the default.
+   */
+  head?: boolean;
   maxCount?: number;
   skip?: number;
   paths?: string[];
@@ -57,6 +71,8 @@ export class LogProvider {
     }
 
     const revRange = opts?.revRange ?? "HEAD";
+    /** stdin for `git log --stdin`, when the revisions travel that way. */
+    let input: string | undefined;
     if (revRange === "--all") {
       // NOT `--all`, which means every ref under refs/ — including refs/notes/*
       // and refs/stash. Those are not history, and putting them in the graph is
@@ -77,28 +93,30 @@ export class LogProvider {
       // tools, AI assistants. HEAD is listed explicitly because --branches does
       // not cover a DETACHED head, and dropping the commit you are sitting on
       // would be a worse bug than the one being fixed.
-      if (opts?.refs && opts.refs.length > 0) {
-        // The branch filter: exactly the ticked refs, plus HEAD for the same
-        // reason as above. `--ignore-missing` because the selection is stored
+      if (opts?.refs !== undefined) {
+        // The branch filter: exactly the ticked refs, plus HEAD when it is
+        // detached (see `head`). `--ignore-missing` because the selection is stored
         // per repository and a branch in it can be deleted between the ref
         // listing and this spawn (or by another tool while the app was closed);
         // git would otherwise refuse the whole log over one gone ref. A missing
-        // ref contributes nothing, which is what "gone" should mean here.
+        // ref contributes nothing, which is what "gone" should mean here. It
+        // must come BEFORE --stdin: git reads stdin the moment it meets that
+        // flag, with whatever options it has seen so far.
         //
-        // `--end-of-options` because the refs are DATA — a selection read back
-        // from storage — spliced into an argv. Both hosts prune it against the
-        // live ref list first, so nothing option-shaped can reach here today;
-        // but a literal "--all" that did would silently widen the walk to the
-        // notes and stash this branch exists to keep out. Past the marker git
-        // reads it as a revision, and --ignore-missing makes a revision that
-        // does not exist contribute nothing. (git ≥ 2.24, 2019.)
-        //
-        // The refs ride on argv rather than `--stdin`: GitProcess.stream has no
-        // stdin — only run() takes an input — and a stdin path is a change to
-        // that primitive, not to this one. The cost is a ceiling on Windows,
-        // whose 32k-character command line gives out around a thousand refs
-        // on "Local only"; not a shape of repository that has been seen yet.
-        args.push("--ignore-missing", "--end-of-options", ...opts.refs, "HEAD");
+        // The refs go on STDIN, not argv. Windows caps a command line at
+        // 32,767 characters, and "Local only" on a repository with ~800
+        // branches (at ~40 characters a name) is already past it — the spawn
+        // fails and the graph shows an error instead of history. stdin has no
+        // ceiling, and the argv below is the same length for 3 refs or 30,000.
+        args.push("--ignore-missing", "--stdin");
+        input = revisionLines(opts.refs, "", opts.head ?? true);
+        if (input === "") {
+          // Nothing to walk: every entry was dropped, or the filter resolved
+          // to no ref at all with HEAD attached. Not a spawn with empty stdin —
+          // `git log --stdin` handed no revision falls back to HEAD, and would
+          // show the current branch under a filter that names nothing of it.
+          return;
+        }
       } else {
         args.push("--branches", "--tags", "--remotes", "HEAD");
       }
@@ -111,7 +129,7 @@ export class LogProvider {
     }
 
     let buffer = "";
-    for await (const chunk of this.proc.stream(args, { signal: opts?.signal })) {
+    for await (const chunk of this.proc.stream(args, { signal: opts?.signal, input })) {
       buffer += chunk;
       let sep = buffer.indexOf(RECORD_SEP);
       while (sep !== -1) {
@@ -133,9 +151,9 @@ export class LogProvider {
   }
 
   /**
-   * Whether the walk `streamCommits({ revRange: "--all", refs })` makes
-   * would reach `sha` at all — reachable from one of the ticked refs or from
-   * HEAD — without walking it.
+   * Whether the walk `streamCommits({ revRange: "--all", refs, head })` makes
+   * would reach `sha` at all — reachable from one of the ticked refs, or from
+   * HEAD when `head` walks it too (default true, as there) — without walking it.
    *
    * A reveal into a filtered graph (a Branches-view click, a PR link, a
    * parent chip) lands on a commit the ticked refs need not reach as a matter
@@ -148,8 +166,14 @@ export class LogProvider {
   async walkReaches(
     sha: string,
     refs: readonly string[],
-    opts?: { signal?: AbortSignal },
+    opts?: { signal?: AbortSignal; head?: boolean },
   ): Promise<boolean> {
+    const input = revisionLines(refs, "^", opts?.head ?? true);
+    if (input === "") {
+      // The walk is empty (see streamCommits), so it reaches nothing. Asked
+      // anyway, rev-list would list `sha` — the same answer, one spawn later.
+      return false;
+    }
     const r = await this.proc.run(
       [
         "rev-list",
@@ -157,18 +181,53 @@ export class LogProvider {
         // A ticked ref can be gone by now (see streamCommits); a gone ref
         // reaches nothing, which is what its absence should mean here.
         "--ignore-missing",
+        // The negated refs go on stdin for the reason streamCommits' do: a
+        // ticked set is as long as the user made it, and Windows' command line
+        // is not. `^` is revision syntax, so it reads the same on stdin.
+        "--stdin",
+        // The sha stays on argv, past the marker: it comes from a click, and
+        // on argv behind --end-of-options it can only ever be a revision.
         "--end-of-options",
         sha,
-        ...refs.map((ref) => `^${ref}`),
-        "^HEAD",
       ],
-      opts,
+      { signal: opts?.signal, input },
     );
     if (r.code !== 0) {
       return true;
     }
     return r.stdout.trim() === "";
   }
+}
+
+/**
+ * A plain, fully-qualified ref name — the only thing the branch filter hands
+ * git. Git itself refuses to create anything else under refs/ (no control
+ * characters or spaces, none of ~ ^ : ? * [ \, no "..", no "@{"), so a
+ * selection entry that fails this names no ref that can exist, and dropping it
+ * loses nothing.
+ */
+const PLAIN_REF = /^refs\/(?!.*\.\.)(?!.*@\{)[^\x00-\x20\x7f~^:?*[\\]+$/;
+
+/**
+ * The `--stdin` payload for a set of refs: one revision per line, HEAD last
+ * when `head` walks it, each optionally negated with `prefix`. Empty — not a
+ * lone newline — when nothing is left to walk, so a caller can tell.
+ *
+ * The refs are DATA — a selection read back from storage — and on stdin a line
+ * is not only a revision. A line starting with "-" is a pseudo-option to git ≥
+ * 2.42 (a literal "--all" would silently widen the walk to the notes and stash
+ * the "--all" expansion exists to keep out) and a fatal "options not supported
+ * in --stdin mode" to anything older; "a..b" is a range; a newline smuggles in
+ * a second line. `--end-of-options` cannot be sent to disarm the first, since
+ * older git dies on it too. So only a plain fully-qualified ref name gets a
+ * line of its own: PLAIN_REF admits exactly the names git allows under refs/.
+ * Both hosts prune the selection against the live ref list before it gets
+ * here, so in practice nothing is dropped; this is the floor under that.
+ */
+export function revisionLines(refs: readonly string[], prefix = "", head = true): string {
+  const lines = refs.filter((ref) => PLAIN_REF.test(ref)).map((ref) => prefix + ref);
+  if (head) lines.push(`${prefix}HEAD`);
+  return lines.length > 0 ? lines.join("\n") + "\n" : "";
 }
 
 function parseRecord(raw: string): CommitRecord | undefined {

@@ -77,6 +77,11 @@ const SCENES = [
   // rebase-view, the Assistant, and a GitHub repository browsed in place.
   "rebase", "assistant~click:.topbar-assistant",
   "explore~type:git~key:Enter~text:libgit2/libgit2",
+  // The graph's Branches picker, OPEN (issue #30) — its presets, its list and
+  // its "current" label only exist while it is. Once with no filter (the All
+  // preset active), once with one (a preset active, the trigger scoped).
+  "graph~click:.gh-branches",
+  "graph~click:.gh-branches~click:.gh-preset%5Bdata-preset%3Dlocal%5D",
 ];
 
 // Runs inside the page. Kept as a string because it is injected, and written
@@ -103,6 +108,40 @@ function parseColor(c) {
   if (s) {
     var sa = s[4] === undefined ? 1 : s[4].slice(-1) === "%" ? parseFloat(s[4]) / 100 : parseFloat(s[4]);
     return { r: parseFloat(s[1]) * 255, g: parseFloat(s[2]) * 255, b: parseFloat(s[3]) * 255, a: sa };
+  }
+  // The same hole, one colour space over: some mixes COMPUTE to oklab()/
+  // oklch() — the graph's Branches trigger's ground reads
+  // "oklab(0.304 -0.002 -0.014 / 0.08)". Unparsed, that ground dropped out of
+  // the walk and the trigger's ink was scored against the header behind it,
+  // passing a label that sits on a darker tint than the one measured.
+  var ok = c.match(/^okl(ab|ch)\\(\\s*([-\\d.]+%?)\\s+([-\\d.]+%?)\\s+([-\\d.]+)(?:deg)?(?:\\s*\\/\\s*([\\d.]+%?))?\\s*\\)/);
+  if (ok) {
+    var num = function (v, pctOf) { return v.slice(-1) === "%" ? (parseFloat(v) / 100) * pctOf : parseFloat(v); };
+    var L = num(ok[2], 1);
+    var A, B;
+    if (ok[1] === "ab") {
+      A = num(ok[3], 0.4);
+      B = num(ok[4], 0.4);
+    } else {
+      var C = num(ok[3], 0.4), h = (parseFloat(ok[4]) * Math.PI) / 180;
+      A = C * Math.cos(h);
+      B = C * Math.sin(h);
+    }
+    var l_ = L + 0.3963377774 * A + 0.2158037573 * B;
+    var m_ = L - 0.1055613458 * A - 0.0638541728 * B;
+    var s_ = L - 0.0894841775 * A - 1.2914855480 * B;
+    var l3 = l_ * l_ * l_, m3 = m_ * m_ * m_, s3 = s_ * s_ * s_;
+    var lin = [
+      4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3,
+      -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3,
+      -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3,
+    ];
+    var enc = function (v) {
+      v = Math.max(0, Math.min(1, v));
+      return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+    };
+    var oa = ok[5] === undefined ? 1 : ok[5].slice(-1) === "%" ? parseFloat(ok[5]) / 100 : parseFloat(ok[5]);
+    return { r: enc(lin[0]), g: enc(lin[1]), b: enc(lin[2]), a: oa };
   }
   return null;
 }
@@ -194,9 +233,26 @@ function pathOf(el) {
 // first sweep read as 1.51:1 "failures" that are really one animation frame.
 // Remove the animation rather than wait for it; the audit wants the resting
 // state, not the journey. Same rule the geometry checks already follow.
+var KILL = "*,*::before,*::after{animation:none!important;transition:none!important}";
 var _kill = document.createElement("style");
-_kill.textContent = "*,*::before,*::after{animation:none!important;transition:none!important}";
+_kill.textContent = KILL;
 document.head.appendChild(_kill);
+// …and into every SHADOW root, which a document stylesheet does not reach.
+// The graph's popovers fade in (gh-pop-in, from opacity 0), so an audit that
+// landed mid-fade skipped the whole open Branches picker as invisible and
+// reported the scene clean — about one run in two, which is how its two
+// light-theme failures read as "flaky" rather than as failures.
+(function killInShadows(root) {
+  var kids = root.querySelectorAll("*");
+  for (var k = 0; k < kids.length; k++) {
+    var sr = kids[k].shadowRoot;
+    if (!sr) continue;
+    var st = document.createElement("style");
+    st.textContent = KILL;
+    sr.appendChild(st);
+    killInShadows(sr);
+  }
+})(document);
 void document.body.offsetHeight;
 
 var out = [];
@@ -303,7 +359,10 @@ let failures = 0;
 for (const scene of scenes) {
   const res = await run(scene);
   if (res.error) {
-    console.log(`\n${scene}: ${res.error}`);
+    // A scene that measured nothing has not passed. Counted, so a gate over
+    // it cannot go green on a page that never rendered.
+    failures++;
+    console.log(`\n\x1b[31mERR\x1b[0m  ${scene}: ${res.error}`);
     continue;
   }
   const rows = res.rows.filter((r) => flags.all || r.ratio < r.need);

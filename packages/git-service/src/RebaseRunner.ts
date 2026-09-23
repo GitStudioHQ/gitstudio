@@ -68,7 +68,32 @@ export type RebaseOutcome =
   | { status: "done" }
   /** git stopped mid-rebase — a conflict, or an `edit` row. Needs the user. */
   | { status: "stopped"; reason: "conflict" | "edit" | "unknown"; message: string }
-  | { status: "failed"; message: string };
+  /**
+   * Nothing (more) was rebased. `expected` when the refusal is a state of the
+   * user's repository — a rebase already under way, uncommitted changes — and
+   * so is shown and never crash-reported. Every other failure is ours to hear
+   * about: see `reportableRebaseFailure`.
+   */
+  | { status: "failed"; message: string; expected?: true };
+
+/**
+ * The message a rebase outcome should be crash-reported with, or undefined when
+ * it should not be reported at all — the rule both hosts apply to every rebase
+ * the workspace runs, the same one `reportableResultMessage` applies to an IPC
+ * result.
+ *
+ * A `failed` outcome used to be reported by neither: the desktop's
+ * `rebase:apply` answers `{status}`, which the IPC wrapper never reads, and the
+ * extension's rebase panel and drag-to-reorder showed it and stopped. So the
+ * runner's editor shim not starting, or a base that does not exist, went
+ * unheard. A stop is the user's to resolve and a success is a success.
+ */
+export function reportableRebaseFailure(outcome: RebaseOutcome): string | undefined {
+  if (outcome.status !== "failed" || outcome.expected) {
+    return undefined;
+  }
+  return outcome.message || "Rebase failed.";
+}
 
 const SEQ_INSTALLER = `const fs=require("fs");fs.writeFileSync(process.argv[process.argv.length-1],fs.readFileSync(process.env.GS_REBASE_TODO,"utf8"));`;
 
@@ -351,7 +376,20 @@ export async function runRebasePlan(
   if (await rebaseInProgress(root, { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, opts)) {
     return {
       status: "failed",
+      expected: true,
       message: "A rebase is already in progress — continue or abort it before starting another.",
+    };
+  }
+  // Uncommitted changes to tracked files: git refuses those too ("cannot
+  // rebase: You have unstaged changes"), but only AFTER the reword queue below
+  // is written, and in a terminal's words. Asked of `git status`, not of git's
+  // English, and matching git's own check — untracked files do not stop a
+  // rebase, and neither does a submodule's dirt.
+  if (await hasTrackedChanges(root, { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, opts)) {
+    return {
+      status: "failed",
+      expected: true,
+      message: "You have uncommitted changes. Commit or stash them, then start the rebase.",
     };
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gitstudio-rebase-"));
@@ -590,6 +628,37 @@ async function rebaseInProgress(
   const gitDir = stdout.trim();
   if (code !== 0 || !gitDir) return false;
   return rebaseStateDir(gitDir) !== undefined;
+}
+
+/**
+ * Would git refuse to START a rebase over this working tree?
+ *
+ * git's `require_clean_work_tree` refuses on any staged or unstaged change to
+ * a tracked file, ignoring submodules; untracked files are fine. The same
+ * question, asked of porcelain status so no locale can change the answer. A
+ * status that cannot be read answers "no": git's own refusal then still stands,
+ * and a failure nobody explained is reported rather than excused.
+ *
+ * And "no" when the user has `rebase.autoStash` set: git then stashes the
+ * changes, rebases and puts them back, so there is nothing to refuse — the run
+ * worked for those users before this check existed, and must still.
+ */
+async function hasTrackedChanges(
+  root: string,
+  env: NodeJS.ProcessEnv,
+  opts: RebaseRunOptions,
+): Promise<boolean> {
+  const autoStash = await spawnGit(["config", "--bool", "--get", "rebase.autoStash"], root, env, opts);
+  if (autoStash.code === 0 && autoStash.stdout.trim() === "true") {
+    return false;
+  }
+  const { code, stdout } = await spawnGit(
+    ["status", "--porcelain=v1", "-z", "--untracked-files=no", "--ignore-submodules=all"],
+    root,
+    env,
+    opts,
+  );
+  return code === 0 && stdout.length > 0;
 }
 
 /**

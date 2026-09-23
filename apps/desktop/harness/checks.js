@@ -1554,6 +1554,114 @@
       const ref = $$(".explore-ref-btn").map((b) => b.textContent.trim())[0] ?? "";
       c.ok(!/default branch/i.test(ref), `the ref switcher should name the branch, got "${ref}"`);
     },
+    /**
+     * A repository with no commits is a STATE, not a broken read.
+     *
+     * GitHub does not answer an empty list for one — it fails every read with
+     * "This repository is empty." (404 from the contents API, 409 from the git
+     * endpoints), so the page's catch was the only thing that ever saw it and
+     * it painted "Couldn't read this repository" over a repository that was
+     * perfectly readable and simply had nothing in it. Crash report #13 is that
+     * error, filed automatically, for a user who had just created a repo.
+     *
+     * Unwritable until now: no fixture could produce a repository whose reads
+     * fail this way, so the whole empty-repository surface was unreachable from
+     * any scene. `?emptyrepo=1` is that switch.
+     */
+    "an-empty-repository-reads-as-empty-not-broken": (f) => {
+      const c = check(f);
+      const body = text(".explore-repo-content");
+      c.ok(!!$(".explore-repo-title"), "the page still stands around it");
+      c.ok(
+        !$(".explore-repo-content .list-error"),
+        "an empty repository must not render as an error state",
+      );
+      c.ok(
+        !/couldn't read|could not read|failed/i.test(body),
+        `it must not blame itself: ${JSON.stringify(body.slice(0, 120))}`,
+      );
+      c.match(text(".explore-repo-content .list-empty-title"), /empty/i, "it says so plainly");
+    },
+    /**
+     * The second door on to an empty repository: Go to file.
+     *
+     * `ghrepo:paths` is the git-trees endpoint, which answers an empty
+     * repository with a 409 "Git Repository is empty." The list already said
+     * so — but the note under it still carried the sentence as an ERROR, red
+     * and announced as an alert, over a repository with nothing wrong in it.
+     */
+    "go-to-file-on-an-empty-repository-is-empty-not-broken": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const btn = $$(".mini-btn").find((b) => /^Go to file$/.test(text(b)));
+      if (!btn) return c.ok(false, "the page offers Go to file");
+      const before = window.__gsSent(/^ghrepo:paths$/).length;
+      btn.click();
+      await settle(900);
+      c.ok(window.__gsSent(/^ghrepo:paths$/).length > before, "the file list was actually asked for");
+      c.ok(!!$(".gotofile-card"), "the picker opened");
+      c.match(text(".gotofile-list .list-empty-title"), /empty/i, "the list says the repository is empty");
+      c.ok(!$(".gotofile-list .list-error"), "…not that listing it failed");
+      const note = $(".gotofile-note");
+      c.ok(!!note && !note.classList.contains("is-error"), "the note under it is not painted as an error");
+      c.ok(!!note && note.getAttribute("role") !== "alert", "…nor announced as one");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(200);
+    },
+    /**
+     * The ref switcher on an empty repository. GitHub's `/branches` answers
+     * an empty LIST for one (200, `[]`) — only the content endpoints refuse —
+     * so the fixture answers exactly that. It used to THROW here too, which
+     * meant this menu could only ever be exercised as a failure toast.
+     */
+    "the-ref-switcher-on-an-empty-repository-says-there-are-no-branches": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const btn = $(".explore-ref-btn");
+      if (!btn) return c.ok(false, "the page offers a ref switcher");
+      const before = window.__gsSent(/^ghrepo:branches$/).length;
+      btn.click();
+      await settle(700);
+      c.ok(window.__gsSent(/^ghrepo:branches$/).length > before, "the branches were actually asked for");
+      c.eq(
+        $$("#toast-stack .toast-error").map((t) => text(t)).join(" | "),
+        "",
+        "no failure is toasted for a repository that simply has no branches",
+      );
+      const items = $$(".dropdown [role='menuitem'], .dropdown .dropdown-item");
+      const said = items.map((i) => text(i)).join(" | ");
+      c.ok(items.length > 0, "a menu opened rather than nothing at all");
+      c.match(said, /no branches yet/i, `it says there are no branches (${said})`);
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(200);
+    },
+    /**
+     * The third door: the peek browser (an org repository's Details ▸ Browse
+     * files). It reads the same contents endpoint, so on an empty repository it
+     * must say the same thing the page does — not "Couldn't read …".
+     */
+    "browsing-an-empty-repository-in-the-peek-is-empty-not-broken": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const more = $(".gh-org-repo .row-more");
+      if (!more) return c.ok(false, "an org repository row offers its menu");
+      more.click();
+      await settle(300);
+      const details = $$(".dropdown-item, .dropdown [role='menuitem']").find((i) => /^Details/.test(text(i)));
+      if (!details) return c.ok(false, "the menu offers Details");
+      details.click();
+      await settle(700);
+      const browse = $$(".peek-act").find((b) => /Browse files/.test(text(b)));
+      if (!browse) return c.ok(false, "the repository peek offers Browse files");
+      const before = window.__gsSent(/^ghrepo:tree$/).length;
+      browse.click();
+      await settle(900);
+      c.ok(window.__gsSent(/^ghrepo:tree$/).length > before, "the listing was actually asked for");
+      const body = text(".peek-body");
+      c.match(body, /is empty — nothing has been pushed/, "the peek says the repository is empty");
+      c.ok(!/couldn't read|failed/i.test(body), `…and does not blame itself: ${JSON.stringify(body.slice(0, 120))}`);
+      c.ok(!$(".peek-body .peek-empty .codicon-warning"), "no warning glyph over an empty repository");
+    },
 
     // ── Organizations ────────────────────────────────────────────────────────
     "orgs-cards-not-clipped": (f) => {
@@ -2651,6 +2759,11 @@
         activeBefore,
         "and does not navigate you somewhere else while doing it",
       );
+      // By the FULL name: the switcher's rows used to send the short one,
+      // which is "heads/<name>" beside a tag of that name — and checking THAT
+      // out detaches.
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action").at(-1)?.payload;
+      c.eq(sent?.fullName, "refs/heads/fix/log-stream", "the switcher checks out by the branch's full name");
     },
 
     // ── staging keeps your place ────────────────────────────────────────────
@@ -8594,10 +8707,13 @@
      * Search with scope Branch+Tag dims the rows that do not carry a chip, and
      * the gutter hover focuses one lane while the pointer is on it — neither is
      * "show me only these branches". The picker is: tick refs and the host
-     * rebuilds the graph from page 0 around exactly those refs plus HEAD, and
-     * the chips follow (an unticked ref draws none; the current branch always
-     * does). Presets tick what they say, All restores everything, Escape hands
-     * focus back to the trigger, and a chip's own menu narrows to that chip.
+     * rebuilds the graph from page 0 around exactly those refs — HEAD only
+     * when detached, so "Show only" another branch is that branch alone (the
+     * released 1.13.0 walked the current branch beside it) — and the chips
+     * follow (an unticked ref draws none, the current branch included).
+     * Presets are sent as what they MEAN ("@current") and come back resolved
+     * and lit, All restores everything, Escape hands focus back to the
+     * trigger, and a chip's own menu narrows to that chip.
      *
      * The fixture carries one row that only an unmerged remote branch reaches,
      * so a filter has a ROW to drop and not just chips — without it the check
@@ -8647,27 +8763,32 @@
       // The filter box is where typing goes, and it takes focus on open.
       c.ok(sr.activeElement?.matches(".gh-pop-filter input"), "the filter box has focus");
 
-      // ── Current branch: the graph is REBUILT around main + HEAD ──
+      // ── Current branch: the graph is REBUILT around the branch HEAD is on ──
       sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.click();
       await settle(700);
-      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["refs/heads/main"]), "the host was asked for exactly main, fully qualified");
+      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["@current"]), "the host was asked for the PRESET — stored as what it means, so it follows a checkout");
+      c.eq(JSON.stringify(lastLoad().walked), JSON.stringify(["refs/heads/main"]), "…which it resolved to main, fully qualified");
       c.eq(lastLoad().skip, 0, "and from page 0 — the accumulated pages belonged to the old history");
       c.eq(rows().length, all - 1, "the row only the unticked remote reaches is gone");
       c.ok(!hasRow(REMOTE_ONLY), "(that one)");
-      c.ok(!!chip("main"), "the current branch keeps its chip");
+      c.ok(!!chip("main"), "the current branch has its chip — it is what the preset ticks");
       c.ok(!chip("main")?.dataset.remotes, "without its folded origin/main — that ref is not ticked");
       c.ok(!chip("desktop-v1.5.1") && !sr.querySelector(".chip-tag"), "an unticked tag draws no chip");
       c.ok(!sr.querySelector(".chip-overflow"), "and nothing is left to fold behind a +N pill");
       c.ok(!chip("redesign/issues-detail"), "nor does an unticked local branch");
-      c.eq(label(), "main", "the trigger names the filter");
+      c.eq(label(), "main (current)", "the trigger names the preset and the branch it means now");
       c.ok(!!pop(), "and the picker stays open for the next tick");
+      c.ok(
+        sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.classList.contains("active"),
+        "Current branch reads lit after the host's answer",
+      );
       c.eq(
         sr.querySelector(".gh-branches-pop .gh-menuitem[data-ref='refs/heads/main']")?.getAttribute("aria-checked"),
         "true",
         "main reads ticked",
       );
 
-      // ── A tick ADDS: main + a tag ──
+      // ── A tick ADDS: main + a tag (and the preset gives way to the list) ──
       sr.querySelector(".gh-branches-pop .gh-menuitem[data-ref='refs/tags/desktop-v1.5.1']")?.click();
       await settle(700);
       c.eq(
@@ -8675,6 +8796,7 @@
         JSON.stringify(["refs/heads/main", "refs/tags/desktop-v1.5.1"]),
         "ticking a second ref adds it",
       );
+      c.ok(!sr.querySelector(".gh-branches-pop .gh-preset.active"), "a hand-picked selection lights no preset");
       c.ok(!!chip("desktop-v1.5.1"), "and its chip comes back");
       c.eq(label(), "main, desktop-v1.5.1", "two names fit the trigger");
 
@@ -8714,8 +8836,10 @@
         "Show only this branch narrows to it",
       );
       c.ok(!sr.querySelector(".gh-chip-menu"), "and the menu closes");
-      c.ok(!hasRow(REMOTE_ONLY) && !!chip("redesign/issues-detail") && !!chip("main") && !chip("desktop-v1.5.1"),
-        "the graph is that branch plus HEAD, chips included");
+      c.ok(!hasRow(REMOTE_ONLY) && !!chip("redesign/issues-detail") && !chip("desktop-v1.5.1"),
+        "the graph is that branch, chips included");
+      c.ok(!hasRow("9f8e7d6c5b4a39281706") && !chip("main"),
+        "and not the current branch beside it: main's tip is not on it, and main is not ticked");
       c.eq(label(), "redesign/issues-detail", "the trigger names it");
 
       // ── A chip's own menu: Checkout, by the ref's FULL name ──
@@ -8743,6 +8867,222 @@
       c.eq(sent?.payload?.action, "checkout-ref", "the checkout goes out as a ref checkout");
       c.eq(sent?.payload?.refKind, "remote", "…as a remote");
       c.eq(sent?.payload?.fullName, "refs/remotes/origin/chore/dependabot-bump", "…by its full name, never the chip's short one");
+    },
+
+    /**
+     * The commit-details pane's ref chips are the graph's chip shortcut too
+     * (issue #30: "clicking a ref chip could also be a shortcut: show only
+     * this branch / add this branch to the filter"). The pane has no ref list
+     * and no filter — the graph owns both — so a chip asks the graph, which
+     * opens its OWN menu at the pointer, over the details column, resolved
+     * through the ref list by name and kind.
+     *
+     * And the reload that "Show only" causes is the one the ref list does not
+     * ride on (the renderer says which list it holds; main leaves an unchanged
+     * one on its side of IPC), while the picker still offers every ref.
+     */
+    "a-details-chip-opens-the-graphs-chip-menu": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const loads = () => window.__GS_GRAPH_LOADS || [];
+      const lastLoad = () => loads()[loads().length - 1] || {};
+      // The merge commit's details carry main, origin/main and a tag the ref
+      // list does not have (desktop-v1.6.0).
+      const row = sr.querySelector('.row[data-sha="b2c3d4e5f6a71829304b"]');
+      c.ok(!!row, "a row whose details carry refs");
+      if (!row) return;
+      row.click();
+      await settle(900);
+      const pane = $(".graph-details gitstudio-commit-details");
+      const pr = pane?.shadowRoot;
+      c.ok(!!pr, "the details pane is up");
+      if (!pr) return;
+      const dchip = (name) => pr.querySelector(`.chip[data-ref-menu][data-ref="${name}"]`);
+      const main = dchip("main");
+      c.ok(!!main, "the pane's branch chip is a menu chip — the graph is there to answer it");
+      if (!main) return;
+      c.eq(main.getAttribute("role"), "button", "and a control, focusable");
+      const b = main.getBoundingClientRect();
+      const px = b.left + 6;
+      const py = b.top + 6;
+      main.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, clientX: px, clientY: py }));
+      await settle(300);
+      const menu = sr.querySelector(".gh-chip-menu");
+      c.ok(!!menu, "clicking it opens the GRAPH's chip menu");
+      if (!menu) return;
+      const mb = menu.getBoundingClientRect();
+      const paneBox = pane.getBoundingClientRect();
+      c.ok(mb.left >= paneBox.left - 1, `the menu opens over the details column, at the pointer (${Math.round(mb.left)} vs pane ${Math.round(paneBox.left)})`);
+      c.ok(Math.abs(mb.left - Math.min(px, window.innerWidth - mb.width - 6)) <= 2, `…its left edge at the pointer (${Math.round(mb.left)} vs ${Math.round(px)})`);
+      const hit = document.elementFromPoint(mb.left + mb.width / 2, mb.top + mb.height / 2);
+      c.ok(hit === host, `…and paints ABOVE the pane: the pointer there hits the graph (${hit?.tagName})`);
+      const loadsBefore = loads().length;
+      menu.querySelector("[data-chip-action=only]")?.click();
+      await settle(800);
+      c.ok(loads().length > loadsBefore, "Show only reloaded the graph");
+      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["refs/heads/main"]), "…around refs/heads/main, the ref the list names");
+      c.eq(lastLoad().sentRefList, false, "the unchanged ref list stayed on main's side of IPC");
+      sr.querySelector(".gh-branches")?.click();
+      await settle(400);
+      const listed = [...sr.querySelectorAll(".gh-branches-pop .gh-menuitem")].map((x) => x.dataset.ref);
+      c.ok(listed.includes("refs/remotes/origin/chore/dependabot-bump"), `the picker still lists a ref the filter hides (${listed.length} listed)`);
+      const focused = sr.activeElement || document.activeElement;
+      focused.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+      await settle(300);
+
+      // A chip the list does not have: the menu opens, and acts on nothing —
+      // no full name is guessed for it.
+      const tag = $(".graph-details gitstudio-commit-details")?.shadowRoot?.querySelector('.chip[data-ref-menu][data-ref="desktop-v1.6.0"]');
+      c.ok(!!tag, "a tag chip the ref list does not name");
+      if (!tag) return;
+      const tb = tag.getBoundingClientRect();
+      tag.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: tb.left + 6, clientY: tb.top + 6 }));
+      await settle(300);
+      const only = sr.querySelector(".gh-chip-menu [data-chip-action=only]");
+      c.ok(!!only && only.disabled, "its Show only is disabled");
+      c.ok(!sr.querySelector(".gh-chip-menu [data-chip-action=checkout]"), "and it offers no checkout of a ref it cannot name");
+    },
+
+    /**
+     * The OPEN Branches picker reads at AA in light (issue #30). Its active
+     * preset wore the accent's link-blue on the accent's violet wash (3.34:1),
+     * the "current" label a 66% mix meant for white on the menu's grey
+     * (4.10:1), and the scoped trigger link-blue on its wash (4.00:1).
+     * contrast.mjs sweeps these scenes too; this pins the three pairs where
+     * every run of check.mjs sees them — with the popover's fade-in killed
+     * INSIDE the shadow root (a document stylesheet does not reach it, and a
+     * mid-fade popover is what let the sweep call the scene clean).
+     */
+    "the-open-branch-picker-reads-at-aa": async (f) => {
+      const c = check(f);
+      await settle(400);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const kill = document.createElement("style");
+      kill.textContent = "*,*::before,*::after{animation:none!important;transition:none!important}";
+      sr.appendChild(kill);
+      void host.offsetHeight;
+      c.ok(!!sr.querySelector(".gh-branches-pop"), "the picker is open");
+      const parse = (v) => {
+        const s = String(v);
+        let m = s.match(/^rgba?\(([^)]+)\)/);
+        if (m) {
+          const p = m[1].split(",").map(parseFloat);
+          return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+        }
+        m = s.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/);
+        if (m) return { r: m[1] * 255, g: m[2] * 255, b: m[3] * 255, a: m[4] === undefined ? 1 : +m[4] };
+        m = s.match(/^oklab\(\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)(?:\s*\/\s*([\d.]+))?\s*\)/);
+        if (m) {
+          const [L, A, B] = [+m[1], +m[2], +m[3]];
+          const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+          const mm = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+          const s3 = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
+          const enc = (x) => 255 * (x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(Math.max(0, Math.min(1, x)), 1 / 2.4) - 0.055);
+          return {
+            r: enc(4.0767416621 * l - 3.3077115913 * mm + 0.2309699292 * s3),
+            g: enc(-1.2684380046 * l + 2.6097574011 * mm - 0.3413193965 * s3),
+            b: enc(-0.0041960863 * l - 0.7034186147 * mm + 1.707614701 * s3),
+            a: m[4] === undefined ? 1 : +m[4],
+          };
+        }
+        return null;
+      };
+      const over = (fg, bg) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a), a: 1 });
+      /** What is actually painted behind `el`: every translucent ground up to the page, composited. */
+      const ground = (el) => {
+        const stack = [];
+        for (let n = el; n && n !== document.documentElement; n = n.parentElement || n.parentNode?.host) {
+          const bg = parse(getComputedStyle(n).backgroundColor);
+          if (bg && bg.a > 0) stack.push(bg);
+          if (bg && bg.a >= 1) break;
+        }
+        let acc = parse(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255, a: 1 };
+        for (let i = stack.length - 1; i >= 0; i--) acc = over(stack[i], acc);
+        return acc;
+      };
+      const lum = (x) => {
+        const f2 = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+        return 0.2126 * f2(x.r) + 0.7152 * f2(x.g) + 0.0722 * f2(x.b);
+      };
+      const ratioOf = (el) => {
+        const g = ground(el);
+        const ink = over(parse(getComputedStyle(el).color), g);
+        const [l1, l2] = [lum(ink), lum(g)];
+        return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      };
+      const measure = (sel, what) => {
+        const el = sr.querySelector(sel);
+        c.ok(!!el, `${what} is on screen`);
+        if (!el) return;
+        const r = ratioOf(el);
+        c.ok(r >= 4.5, `${what} reads at AA (${r.toFixed(2)}:1)`);
+      };
+      measure(".gh-branches-pop .gh-preset.active", "the active preset");
+      measure(".gh-branches-pop .gh-ref-cur", "the current branch's “current” label");
+      if (sr.querySelector(".gh-branches.scoped")) measure(".gh-branches.scoped .lbl", "the scoped trigger's label");
+    },
+
+    /**
+     * Every "check out this branch" door in the Branches view sends the
+     * ref's FULL name. They sent `%(refname:short)` alone, and with a branch
+     * and a tag both called "release" the branch's is "heads/release" —
+     * `git checkout heads/release` DETACHES at the branch tip while reporting
+     * success. The main process now refuses a checkout without a full name, so
+     * a door that forgot it would fail loudly; this pins that none does.
+     */
+    "every-branch-checkout-door-sends-the-full-name": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const lastCheckout = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "checkout-ref").at(-1)?.payload;
+      // ── a local row's own Checkout ──
+      const btn = $$(".row-btn").find((x) => x.textContent.trim() === "Checkout");
+      c.ok(!!btn, "a local branch row offers Checkout");
+      if (!btn) return;
+      const name = (btn.getAttribute("aria-label") || "").replace(/^Check out /, "");
+      btn.click();
+      await settle(700);
+      let p = lastCheckout();
+      c.eq(p?.fullName, `refs/heads/${name}`, "the row's Checkout goes out by the branch's full name");
+      c.eq(p?.refKind, "head", "…as a local branch");
+
+      // ── the row menu's "Checkout <name>" ──
+      const more = $$(".lv-menu-btn").find((x) => /More actions for /.test(x.getAttribute("aria-label") || "") && !/main$/.test(x.getAttribute("aria-label") || ""));
+      c.ok(!!more, "a row's ⋯ menu");
+      if (!more) return;
+      const menuFor = (more.getAttribute("aria-label") || "").replace(/^More actions for /, "");
+      more.click();
+      await settle(400);
+      const item = $$(".dropdown-item").find((x) => (x.textContent || "").includes(`Checkout ${menuFor}`));
+      c.ok(!!item, `the menu offers Checkout ${menuFor}`);
+      if (!item) return;
+      item.click();
+      await settle(700);
+      p = lastCheckout();
+      c.eq(p?.fullName, `refs/heads/${menuFor}`, "the menu's Checkout goes by the full name too");
+
+      // ── the remote tab's rows ──
+      const tab = $$("button, [role=tab]").find((x) => /^Remote/.test((x.textContent || "").trim()));
+      c.ok(!!tab, "a Remote tab");
+      if (!tab) return;
+      tab.click();
+      await settle(700);
+      const remoteBtn = $$(".row-btn").find((x) => /^Check(out| out here)$/.test(x.textContent.trim()) && /origin\//.test(x.title || ""));
+      c.ok(!!remoteBtn, "a remote row offers a checkout");
+      if (!remoteBtn) return;
+      const remoteName = (remoteBtn.title.match(/(origin\/\S+)/) || [])[1] || "";
+      remoteBtn.click();
+      await settle(700);
+      p = lastCheckout();
+      c.ok(!!remoteName && p?.fullName === `refs/remotes/${remoteName}`, `the remote row goes by the REMOTE's full name (${p?.fullName} for ${remoteName})`);
+      c.eq(p?.refKind, "remote", "…so the main process creates or switches to the local branch");
     },
 
     /**
@@ -8875,8 +9215,35 @@
       const msg = text(lastToast()?.querySelector(".toast-msg"));
       c.match(msg, /hidden by the branch filter/, `…and names the filter ("${msg}")`);
       c.ok(!/further back/.test(msg), "…not the history's depth, which is not the reason");
-      const action = lastToast()?.querySelector(".toast-action");
-      c.eq(text(action), "Show all branches", "…and offers the way out");
+      // Two ways in, the one that KEEPS the selection first (issue #30's
+      // follow-up): add the branch that contains the commit — found by full
+      // name through the ref list — and only then "Show all branches".
+      const labels = [...(lastToast()?.querySelectorAll(".toast-action") ?? [])].map((b) => text(b));
+      c.eq(labels.join(" | "), "Add origin/chore/dependabot-bump to the filter | Show all branches", "…and offers the way in, add first");
+
+      // ── Adding keeps the preset (as its symbol) and adds the one branch ──
+      lastToast()?.querySelector(".toast-action")?.click();
+      await settle(900);
+      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["@current", "refs/remotes/origin/chore/dependabot-bump"]),
+        "the filter is the preset PLUS the branch — a mix that still follows a checkout");
+      c.ok(hasRow(REMOTE_ONLY), "the hidden row is shown");
+      c.ok(text(sr.querySelector(".gh-branches .lbl")) !== "All branches", "…and the graph is still filtered, not every branch");
+      c.eq(sr.querySelector(".row.selected")?.dataset.sha, REMOTE_ONLY, "and it is the selected row — the reveal was replayed");
+
+      // ── Narrow again; this time take "Show all branches" ──
+      sr.querySelector(".gh-branches")?.click();
+      await settle(300);
+      sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.click();
+      await settle(700);
+      const f2 = sr.activeElement || document.activeElement;
+      f2.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+      await settle(200);
+      c.ok(!hasRow(REMOTE_ONLY), "narrowed again, the row is gone");
+      rows().find((r) => r.dataset.sha === DETAILED)?.click();
+      for (let i = 0; i < 40 && !$(".graph-details gitstudio-commit-details"); i++) await settle(100);
+      await reveal(REMOTE_ONLY);
+      const action = [...(lastToast()?.querySelectorAll(".toast-action") ?? [])].find((b) => text(b) === "Show all branches");
+      c.ok(!!action, "Show all branches is still offered");
 
       // ── Taking it rebuilds the graph around every branch and lands on the commit ──
       action?.click();
@@ -9249,9 +9616,11 @@
       // and `getComputedStyle` on an element that is not in the rendered tree
       // answers with an empty declaration — every colour reads "" and every
       // assertion fails, saying nothing about colour. Under a loaded machine
-      // the pane existed but had not rendered yet, so this failed roughly one
-      // run in five and passed every time it was run alone: the worst kind of
-      // check, because a real regression here would be dismissed as the flake.
+      // this failed roughly one run in five and passed every time it was run
+      // alone: the worst kind of check, because a real regression here would
+      // be dismissed as the flake. Waiting for the paint was half of it; the
+      // other half — the probes being REMOVED by a repaint while the check
+      // waited — is below, where they are read.
       let win = $(".log-window");
       for (let i = 0; i < 40 && (!win || !win.isConnected || !$$(".log-line").length); i++) {
         await settle(100);
@@ -9278,7 +9647,14 @@
       const spans = pairs.map(([cls]) => mk(cls));
       // Bright backgrounds, which had no rules at all.
       const brights = [8, 9, 12, 15].map((n) => mk(`log-bg-${n}`));
-      await settle(200);
+      // Read in the SAME task that made them — no `await` from here to the last
+      // assertion. The probes live in the pane's virtual window, which the pane
+      // repaints with `replaceChildren()` whenever its ResizeObserver fires, and
+      // that is delivered with a frame: headless Chrome makes frames on the real
+      // clock, so on a loaded machine one landed inside the 200ms this used to
+      // wait, the probes were removed, and a detached element's computed style
+      // is "" for everything. Style resolution is synchronous; nothing can run
+      // between an append and a `getComputedStyle` in one task.
 
       // Not "the two differ" — light mapped bright-white to #24292f and black to
       // #3b4048, which DO differ and are still 1.34:1, a solid block you cannot
@@ -9808,6 +10184,9 @@
      */
     "a-long-log-line-scrolls-the-log-not-the-page": async (f) => {
       const c = check(f);
+      // A log that has PAINTED, the way log-colours-survive-both-themes waits:
+      // on a condition, not on a longer timeout.
+      for (let i = 0; i < 40 && !$$(".log-window .log-line").length; i++) await settle(100);
       const win = $(".log-window");
       const sc = $(".log-scroll");
       const pane = $(".log-pane");
@@ -9819,10 +10198,17 @@
       wide.className = "log-line";
       wide.textContent = "E".repeat(400);
       win.appendChild(wide);
-      // 600, not 200: under virtual time the appended line's layout sometimes
-      // lands after a 200ms read, and the check then reports "1092 in 1092" —
-      // a flake, not a finding. The assertions below are unchanged.
-      await settle(600);
+      // Measured in the SAME task that appended it — no `await` from here on.
+      // This used to wait 200ms, then 600 ("the layout sometimes lands after a
+      // 200ms read"), and waiting longer made it worse: the line is not laid out
+      // late, it is REMOVED. It sits in the pane's virtual window, which the
+      // pane repaints with `replaceChildren()` when its ResizeObserver fires,
+      // and that is delivered with a frame — which headless Chrome makes on the
+      // real clock, so the more loaded the machine, the likelier one lands in
+      // the wait. Then "1092 in 1092": the scroller measured without the line.
+      // Layout is synchronous — reading a box forces it — and nothing can run
+      // between the append and the reads below.
+      c.ok(wide.isConnected, "the long line is in the log while it is measured");
       c.eq(Math.round(R(pane).right), rightBefore, "the pane does not grow past where it was");
       c.ok(
         R(pane).right <= window.innerWidth + 1,
@@ -12628,6 +13014,76 @@
      * from the menus and hands "default" to the next shown one; Make default
      * does; a custom editor can be added and removed.
      */
+    /**
+     * Agent Access offers only what can work.
+     *
+     * Every shipped build used to show an enabled "Add" beside "The MCP server
+     * isn't built yet. Run `npm run build` in apps/mcp." — the server was never
+     * packaged, and the snippet below launched it with `node`, a runtime a
+     * desktop user need not have. With the server shipped, Add is live and the
+     * snippet names the app's own executable with ELECTRON_RUN_AS_NODE.
+     */
+    "agent-access-offers-an-add-that-works": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      c.ok(window.__gsSent(/^ai:mcpInfo$/).length > 0, "the card asked for the server's details");
+      const adds = $$(".mcp-client .mini-btn", card);
+      c.eq(adds.length, 4, "one button per client");
+      c.ok(adds.every((b) => !b.disabled), "every Add / Update is live when the server ships");
+      c.ok(!$(".mcp-missing", card), "no 'missing server' line over a server that is there");
+      c.ok(!/npm run build|apps\/mcp/.test(text(card)), "no build instructions for a repository the user lacks");
+      const snippet = JSON.parse(text($(".mcp-snippet-code", card)) || "{}");
+      const entry = (snippet.mcpServers || {}).gitstudio || {};
+      c.ok(entry.command && entry.command !== "node", `the snippet does not launch a bare node (${entry.command})`);
+      c.eq((entry.env || {}).ELECTRON_RUN_AS_NODE, "1", "…it runs the app's own executable as Node");
+    },
+    /** And a build without its server says so, and offers nothing that cannot work. */
+    "agent-access-without-a-server-offers-no-dead-button": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      c.match(text($(".mcp-missing", card)), /missing its MCP server/, "it says what is wrong");
+      c.ok(!/npm run build|apps\/mcp/.test(text(card)), "…without build instructions for a repository the user lacks");
+      const adds = $$(".mcp-client .mini-btn", card);
+      c.ok(adds.length > 0 && adds.every((b) => b.disabled), "no Add that can only fail");
+    },
+    /** Running from a Gatekeeper-translocated copy: the path Add would write
+     *  vanishes on quit. The card says why and what to do, offers no Add, and
+     *  no snippet to paste that path by hand either. */
+    "agent-access-refuses-a-translocated-app": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      c.match(text($(".mcp-missing", card)), /Move GitStudio to your Applications folder/, "it says what to do");
+      const adds = $$(".mcp-client .mini-btn", card);
+      c.ok(adds.length > 0 && adds.every((b) => b.disabled), "no Add that would write a vanishing path");
+      c.ok(!$(".mcp-snippet", card), "…and no snippet that names it for pasting");
+    },
+    /** A client set up with a GitStudio that has since moved: not "Connected" —
+     *  it cannot start. The card says so and offers Re-add. */
+    "agent-access-notices-a-moved-app": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      // `$` takes one argument; a row-scoped lookup is the row's own querySelector.
+      const row = $$(".mcp-client", card).find((r) => /Cursor/.test(text(r.querySelector(".mcp-client-name"))));
+      c.ok(!!row, "the Cursor row is there");
+      if (!row) return;
+      c.ok(!/Connected/.test(text(row.querySelector(".mcp-client-name"))), "a client that cannot start is not called Connected");
+      c.match(text(row.querySelector(".mcp-client-stale")), /no longer at/, "it says why");
+      const btn = row.querySelector(".mini-btn");
+      c.match(text(btn), /^Re-add$/, "and the one button puts the current path back");
+      c.ok(btn && !btn.disabled, "…live");
+      btn && btn.click();
+      await settle(400);
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "ai:mcpInstall");
+      c.ok(sent.length > 0 && (sent[sent.length - 1].payload || {}).client === "cursor", "Re-add installs Cursor again");
+    },
     "editors-are-configurable-in-settings": async (f) => {
       const c = check(f);
       await settle(300);
@@ -13185,6 +13641,171 @@
         "each option explains what will actually happen",
       );
     },
+    /** The sibling of the pull question: this one is asked right after the
+     *  rename MOVED A REF, so the watcher's refresh (250 ms after the write,
+     *  emitted here as the real watcher would) lands while it is on screen —
+     *  and used to answer "Keep tracking" for the user. */
+    "the-rename-question-outlives-the-refresh-the-rename-causes": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const done = await renameFirstBranch("feat/line-staging", "feat/line-staging-v2");
+      c.ok(done, "the rename dialog was driven");
+      if (!done) return;
+      await settle(300);
+      c.ok(/on origin too\?$/.test(text(".modal-title")), "precondition: the remote question is up");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      c.ok(window.__gsEmit("repo:filesChanged", { gitDir: true }) > 0, "precondition: the app listens for the watcher");
+      await settle(900);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the refresh re-routed underneath");
+      c.ok(/on origin too\?$/.test(text(".modal-title")), "the question is still there after the refresh");
+    },
+    /**
+     * A branch named "-f" (update-ref makes one; porcelain never would) is
+     * refused at checkout — git would read it as an option. The refusal used
+     * to read "That value isn't a valid git reference", about a branch the
+     * list had just shown. It says what is true now, and its "Rename…" renames
+     * the branch by its FULL name.
+     */
+    "a-branch-named-like-an-option-says-why-and-offers-the-rename": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const kebab = $$(".lv-menu-btn").find((b) => (b.getAttribute("aria-label") || "") === "More actions for -f");
+      c.ok(!!kebab, "the -f branch is listed with its menu");
+      if (!kebab) return;
+      kebab.click();
+      await settle(350);
+      const co = $$(".dropdown-item").find((r) => /^Checkout -f$/.test((text(r) || "").trim()));
+      c.ok(!!co, "its menu offers Checkout -f");
+      if (!co) return;
+      co.click();
+      await settle(600);
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action").at(-1);
+      c.eq(sent?.payload?.fullName, "refs/heads/-f", "the checkout goes out by full name");
+      const msg = text("#toast-stack") || "";
+      c.match(msg, /can't safely check out a branch whose name starts with "-"/, "the toast says WHY");
+      c.ok(!/isn't a valid git reference|not in this repository/i.test(msg), "…and not the untrue refusal");
+      const act = $$(".toast-action").find((b) => /^Rename/.test(text(b) || ""));
+      c.ok(!!act, "…and offers the rename");
+      if (!act) return;
+      act.click();
+      await settle(400);
+      const input = $(".modal-input");
+      const ok = $(".modal-ok");
+      c.ok(!!input && !!ok, "the rename asks for a name");
+      if (!input || !ok) return;
+      c.eq(input.value, "f", "…suggesting the name without its dash");
+      input.value = "fixed-f";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(200);
+      ok.click();
+      await settle(600);
+      const rn = (window.__GS_INVOKED || []).filter((r) => r.channel === "branch:rename").at(-1);
+      c.eq(rn?.payload?.fullName, "refs/heads/-f", "renamed by its FULL name");
+      c.eq(rn?.payload?.to, "fixed-f", "…to the name given");
+      c.match(text("#toast-stack") || "", /Renamed -f to fixed-f/, "and the rename is reported");
+    },
+    /**
+     * The branch row's own actions reach the main process by FULL name
+     * (issue #30's follow-up): %(refname:short) is "heads/x" beside a tag
+     * "x", which git's branch commands cannot find and `git merge` records.
+     */
+    "branch-actions-go-by-full-name": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const open = async (name) => {
+        const kebab = $$(".lv-menu-btn").find((b) => (b.getAttribute("aria-label") || "") === `More actions for ${name}`);
+        if (!kebab) return false;
+        kebab.click();
+        await settle(350);
+        return true;
+      };
+      const last = (ch) => (window.__GS_INVOKED || []).filter((r) => r.channel === ch).at(-1);
+      c.ok(await open("feat/line-staging"), "a branch's menu opens");
+      const merge = $$(".dropdown-item").find((r) => /^Merge feat\/line-staging into current/.test(text(r) || ""));
+      c.ok(!!merge, "it offers Merge");
+      merge?.click();
+      await settle(500);
+      c.eq(last("branch:merge")?.payload?.fullName, "refs/heads/feat/line-staging", "merge goes by full name");
+      c.eq(last("branch:merge")?.payload?.name, undefined, "…and never by the short one");
+      c.ok(await open("feat/line-staging"), "the menu opens again");
+      const push = $$(".dropdown-item").find((r) => /^Push/.test(text(r) || ""));
+      push?.click();
+      await settle(500);
+      c.eq(last("branch:push")?.payload?.fullName, "refs/heads/feat/line-staging", "push goes by full name");
+    },
+    /**
+     * The Branches view names every ref by its OWN name when git's short names
+     * are ambiguous (issue #30's follow-up; ?collide=1). git lists a branch
+     * beside a tag of its name as "heads/release", the default branch beside a
+     * tag "main" as "heads/main", and a remote-tracking branch beside a LOCAL
+     * "origin/sl" as "remotes/origin/sl". The rows printed those, the default
+     * branch lost its pill, origin/release said "no local copy" of a branch
+     * that was right there, and "Delete remote branch" split
+     * "remotes/origin/sl" into a remote called "remotes".
+     */
+    "the-branch-list-names-refs-by-their-own-names": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const row = (ref) => $(`.sec-row[data-ref="${ref}"]`);
+      const title = (ref) => text(row(ref)?.querySelector(".sec-row-title")) || "";
+      c.eq(title("heads/release"), "release", "a branch beside a tag of its name reads as itself");
+      c.eq(title("heads/main"), "main", "…and so does the default branch beside a tag \"main\"");
+      c.ok(!!row("heads/main")?.querySelector(".ab-pill.default"), "which is still marked the default branch");
+      c.eq(title("heads/origin/sl"), "origin/sl", "a local branch named like a remote one keeps its name");
+      c.ok(
+        !$$(".sec-row .sec-row-title").some((t) => /^(heads|tags|remotes)\//.test(text(t) || "")),
+        "no row reads as git's disambiguated short form",
+      );
+      c.ok(
+        !!$$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for release"),
+        "the row's controls name it the same way",
+      );
+
+      // Remotes: origin/release HAS a local copy; origin/sl is on "origin".
+      $$(".gh-seg-btn")[1]?.click();
+      await settle(500);
+      const rel = row("origin/release");
+      c.ok(!!rel, "origin/release is listed");
+      c.ok(!rel?.querySelector(".ab-pill.unpublished"), "…and not as having no local copy");
+      c.ok(
+        $$(".row-btn", rel || document.createElement("div")).some((b) => text(b) === "Checkout"),
+        `…its button checks out the local one (${$$(".row-btn", rel || document.createElement("div")).map((b) => text(b)).join(", ")})`,
+      );
+      const sl = row("remotes/origin/sl");
+      c.eq(text(sl?.querySelector(".sec-row-title")), "sl", "origin/sl reads as sl");
+      c.eq(text(sl?.querySelector(".br-remote")), "origin", "…on origin, not on a remote called \"remotes\"");
+
+      // Tags: the tag "release" reads as itself too.
+      $$(".gh-seg-btn")[2]?.click();
+      await settle(500);
+      c.eq(title("tags/release"), "release", "a tag beside a branch of its name reads as itself");
+
+      // "Delete remote branch" on sl splits its upstream by the FULL name.
+      $$(".gh-seg-btn")[0]?.click();
+      await settle(500);
+      const kebab = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for sl");
+      c.ok(!!kebab, "sl has its menu");
+      kebab?.click();
+      await settle(350);
+      const del = $$(".dropdown-item").find((i) => /^Delete remote branch/.test(text(i) || ""));
+      c.match(text(del) || "", /\(origin\/sl\)/, "the item names the upstream as origin/sl");
+      del?.click();
+      await settle(400);
+      $$("button").find((b) => /delete remote branch/i.test(text(b) || "") && b.closest(".modal-card"))?.click();
+      await settle(700);
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "branch:deleteRemote").at(-1)?.payload;
+      c.eq(sent?.remote, "origin", "the delete goes to origin");
+      c.eq(sent?.name, "sl", "…for the branch sl");
+    },
+    /** The branch switcher names refs by their own names too (?collide=1). */
+    "the-branch-switcher-names-refs-by-their-own-names": async (f) => {
+      const c = check(f);
+      const items = $$(".dropdown-item").map((i) => text(i.querySelector(".dropdown-label") || i) || "");
+      c.ok(items.length > 5, `the switcher opened (${items.length} rows)`);
+      c.ok(items.some((t) => /^release\b/.test(t)), `the branch release is listed as "release" (${items.join(" | ")})`);
+      c.ok(items.some((t) => /^origin\/sl\b/.test(t)), "the remote origin/sl is listed as \"origin/sl\"");
+      c.ok(!items.some((t) => /^(heads|tags|remotes)\//.test(t)), "no row reads as git's disambiguated short form");
+    },
     /** An unpublished branch has no remote to reconcile, so it must not ask. */
     "renaming-an-unpublished-branch-asks-nothing": async (f) => {
       const c = check(f);
@@ -13705,6 +14326,693 @@
           `the list still fills its column, got flex "${getComputedStyle(list).flex}"`,
         );
       }
+    },
+
+    // ── Pull, when git will not decide on its own ───────────────────────────
+    // Report #12: a user pressed Pull on a diverged branch and what reached
+    // them was git's advice for a terminal — "You have divergent branches and
+    // need to specify how to reconcile them", plus three `git config` lines.
+    // These run on ?diverged=1, the only scene where the top bar's action is
+    // Pull and the pull comes back asking.
+    /** The wall becomes a question, in the app's own words. */
+    "a-diverged-pull-asks-instead-of-quoting-git": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      c.ok(!!main, "the top bar offers a sync action");
+      c.match(text(main), /^Pull 3$/, "…and it is Pull, because the branch is behind");
+      if (!main) return;
+      main.click();
+      await settle(700);
+
+      const card = $(".modal-card");
+      c.ok(!!card, "a diverged pull asks rather than failing");
+      if (!card) return;
+      c.match(text(".modal-title"), /have diverged/, "the title names the state");
+      c.match(text(".modal-title"), /main.*origin\/main/, "…and both refs by name");
+      const hint = text(".modal-message");
+      c.match(hint, /2 commits/, "the hint counts what is ours");
+      // 5, not the badge's 3: the question quotes what the pull's own fetch
+      // found, not the count painted from an older one.
+      c.match(hint, /5 commits/, "…and what is theirs, as of the fetch this pull just did");
+      c.match(hint, /this pull only/, "…and says the choice is not permanent");
+      // The thing the user was handed before, and must never be handed again.
+      const shown = text("#root") + text("#toast-stack");
+      c.ok(!/git config pull\./.test(shown), "no `git config` advice anywhere on screen");
+      c.ok(!/divergent branches/.test(shown), "…and no 'divergent branches' hint");
+
+      const labels = $$(".modal-choice-label").map((e) => text(e));
+      c.ok(labels.includes("Merge"), `merge is offered (${labels.join(" | ")})`);
+      c.ok(labels.includes("Rebase"), "rebase is offered");
+      c.ok(!!$$(".modal-actions button").find((b) => /^Cancel$/.test(text(b))), "…and cancelling");
+      c.ok(
+        $$(".modal-choice-sub").every((e) => (text(e) || "").length > 20),
+        "each option explains what it will do to history",
+      );
+    },
+    /** Picking must reach the REQUEST — a dialog that closes and pulls
+     *  nothing is the failure this whole flow exists to avoid. */
+    "picking-how-to-reconcile-actually-pulls-that-way": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(700);
+      const rebase = $$(".modal-choice").find((r) =>
+        /^Rebase$/.test(text($$(".modal-choice-label", r)[0])),
+      );
+      c.ok(!!rebase, "the rebase option is clickable");
+      if (!rebase) return;
+      rebase.click();
+      await settle(900);
+      c.eq(window.__gsPulledWith, "rebase", "the second pull carried the mode that was picked");
+      c.ok(!$(".modal-card"), "the question is gone");
+      c.match(text("#toast-stack"), /rebas/i, "…and the toast says what it actually did");
+    },
+    /** Backing out runs nothing and blames nobody. */
+    "cancelling-the-question-pulls-nothing-and-reports-nothing": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(700);
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b)));
+      c.ok(!!cancel, "the question can be declined");
+      if (!cancel) return;
+      cancel.click();
+      await settle(700);
+      c.eq(window.__gsPulledWith, null, "no second pull was sent");
+      c.ok(!$(".modal-card"), "the dialog closed");
+      // The bridge's message is for someone who has yet to choose. Showing it
+      // to someone who chose not to would read as an error they caused.
+      c.eq(text("#toast-stack"), "", "nothing is toasted at someone who cancelled");
+      // And the widget is usable again rather than stuck on "Pulling…".
+      const again = $(".topbar-sync .sync-main");
+      c.ok(!!again && !again.disabled, "the Pull button is live again");
+      // Nothing was merged — but the first pull FETCHED, and found the remote
+      // 5 ahead where the badge said 3. Returning bare left "Pull 3" over a
+      // branch that was now 5 behind until something else happened to refresh.
+      c.match(text(again), /^Pull 5$/, "…showing what the pull's fetch found, not the stale count");
+    },
+
+    // ── A pull that STOPS on conflicts (?diverged=1&pullconflict=1) ─────────
+    // The answer to the divergence question is a merge or a rebase, and either
+    // can stop on conflicts. From this door that used to be report #12 again:
+    // "The operation failed." for a merge, git's "Resolve all conflicts
+    // manually… git rebase --continue" hint in a red toast (and a crash report)
+    // for a rebase.
+    /** Said plainly, in a neutral tone, with the count — and the user is taken
+     *  to Changes, where the conflicts dashboard is waiting. */
+    "a-pull-that-stops-on-conflicts-lands-in-changes": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(700);
+      const merge = $$(".modal-choice").find((r) =>
+        /^Merge$/.test(text($$(".modal-choice-label", r)[0])),
+      );
+      if (!merge) return c.ok(false, "no Merge option to pick");
+      merge.click();
+      await settle(1200);
+      c.eq(window.__gsPulledWith, "merge", "the merge was asked for");
+      const toasts = $$("#toast-stack .toast");
+      const said = toasts.map((t) => text(t)).join(" | ");
+      c.match(said, /stopped on conflicts in 2 files/, "the toast counts the conflicted files");
+      c.match(said, /commit the merge/, "…and names the next step");
+      c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `nothing is painted as a failure (${said})`);
+      const shown = text("#root") + said;
+      c.ok(!/The operation failed|hint:|git rebase --continue|git add\/rm/.test(shown), "no git terminal advice, no blank failure");
+      const routes = window.__GS_ROUTES || [];
+      c.eq((routes[routes.length - 1] || {}).view, "changes", "the user is taken to Changes");
+      // Changes' paused-operation banner is the conflicts dashboard now (merge
+      // parity): the merge the pull stopped in, its files, and its way out.
+      c.ok(!!$(".cd-dash"), "…where the paused merge is waiting, in the conflicts dashboard");
+      c.match(text(".cd-optitle"), /^Merging origin\/main into main$/, "…named as the merge the pull stopped in");
+      c.match(text(".cd-progress-label"), /^0 of 2 resolved$/, "…with its 2 conflicted files");
+      c.ok($$(".cd-foot button").some((b) => text(b) === "Abort Merge"), "…and the merge's own way out");
+    },
+    /** The Branches list's ↓ pill is the SECOND door onto the same pull. It
+     *  asks the same question — and a cancel refreshes the row it was pressed
+     *  on, not just the top bar. */
+    "the-branches-pull-pill-asks-and-refreshes-on-cancel": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const pill = $('button[aria-label="Pull main"]');
+      if (!pill) return c.ok(false, "main's row offers no Pull (the fixture should make it 3 behind)");
+      const rowOf = (btn) => {
+        let n = btn;
+        for (let i = 0; i < 6 && n; i++, n = n.parentElement) {
+          if (n.querySelector && n.querySelector(".ab-pill.behind")) return n;
+        }
+        return null;
+      };
+      c.match(text(rowOf(pill) && rowOf(pill).querySelector(".ab-pill.behind")), /3/, "precondition: the row says 3 behind");
+      pill.click();
+      await settle(700);
+      c.ok(!!$(".modal-card"), "the pill asks the same question the top bar does");
+      c.match(text(".modal-message"), /5 commits/, "…with the counts the pull's fetch found");
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b)));
+      if (!cancel) return c.ok(false, "the question cannot be declined");
+      cancel.click();
+      await settle(1200);
+      c.eq(window.__gsPulledWith, null, "no second pull was sent");
+      c.eq(text("#toast-stack"), "", "nothing is toasted at someone who cancelled");
+      const fresh = $('button[aria-label="Pull main"]');
+      const pillCount = text(fresh && rowOf(fresh) && rowOf(fresh).querySelector(".ab-pill.behind"));
+      c.match(pillCount, /5/, `the row's behind count is the fetched one, not the stale 3 (got "${pillCount}")`);
+      c.match(text(".topbar-sync .sync-main"), /^Pull 5$/, "…and so is the top bar's");
+    },
+    /** And from the pill, a rebase that stops lands in Changes too. */
+    "the-branches-pull-pill-lands-in-changes-when-it-stops": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const pill = $('button[aria-label="Pull main"]');
+      if (!pill) return c.ok(false, "main's row offers no Pull");
+      pill.click();
+      await settle(700);
+      const rebase = $$(".modal-choice").find((r) =>
+        /^Rebase$/.test(text($$(".modal-choice-label", r)[0])),
+      );
+      if (!rebase) return c.ok(false, "no Rebase option to pick");
+      rebase.click();
+      await settle(1200);
+      const toasts = $$("#toast-stack .toast");
+      const said = toasts.map((t) => text(t)).join(" | ");
+      c.match(said, /stopped on conflicts in 2 files/, "the toast counts the conflicted files");
+      c.match(said, /continue the rebase/, "…and names the rebase's next step");
+      c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `nothing is painted as a failure (${said})`);
+      const routes = window.__GS_ROUTES || [];
+      c.eq((routes[routes.length - 1] || {}).view, "changes", "the user is taken to Changes");
+      c.ok(!!$(".cd-dash"), "…where the paused rebase is waiting, in the conflicts dashboard");
+      c.match(text(".cd-optitle"), /^Rebasing main onto origin\/main/, "…named as the rebase the pull stopped in");
+      c.match(text(".cd-progress-label"), /^0 of 2 resolved$/, "…with its 2 conflicted files");
+      c.ok($$(".cd-foot button").some((b) => text(b) === "Abort Rebase"), "…and the rebase's own way out");
+    },
+    /** The question is asked BECAUSE the pull's fetch moved a ref — and that
+     *  same write wakes the repository watcher 250 ms later, whose refresh
+     *  re-routes the view and tears floating layers down. In the real app the
+     *  question used to vanish ~200 ms after it appeared, answered "Cancel" by
+     *  nobody. It has to outlive that refresh, from both doors. */
+    "the-pull-question-outlives-the-refresh-its-own-fetch-causes": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(200);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      // Well past the watcher's debounce: the refresh has happened.
+      await settle(1500);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the watcher's refresh re-routed underneath");
+      c.ok(!!$(".modal-card"), "the question is still there after the refresh");
+      c.eq(window.__gsPulledWith, null, "…and nothing answered it on the user's behalf");
+      const merge = $$(".modal-choice").find((r) => /^Merge$/.test(text($$(".modal-choice-label", r)[0])));
+      if (!merge) return c.ok(false, "no Merge option to pick");
+      merge.click();
+      await settle(900);
+      c.eq(window.__gsPulledWith, "merge", "the user's answer is the one that reached git");
+    },
+    "the-branches-pull-question-outlives-the-refresh-its-own-fetch-causes": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const pill = $('button[aria-label="Pull main"]');
+      if (!pill) return c.ok(false, "main's row offers no Pull");
+      pill.click();
+      await settle(200);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      await settle(1500);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the watcher's refresh re-routed underneath");
+      c.ok(!!$(".modal-card"), "the question is still there after the refresh");
+      c.eq(window.__gsPulledWith, null, "…and nothing answered it on the user's behalf");
+    },
+    /** A stop lands the user in Changes with the branch still ahead and behind
+     *  — so the top bar still offers Pull. Pressing it there must not ask the
+     *  question again or paint git's refusal red: it says what is paused, and
+     *  stays in Changes, where that is finished or aborted. */
+    "pulling-again-over-the-stopped-merge-says-what-is-paused": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(500);
+      const merge = $$(".modal-choice").find((r) => /^Merge$/.test(text($$(".modal-choice-label", r)[0])));
+      if (!merge) return c.ok(false, "no Merge option to pick");
+      merge.click();
+      await settle(1500);
+      c.match(text(".cd-dash .cd-optitle"), /^Merging origin\/main into main$/, "precondition: the merge stopped and Changes shows it");
+      // Wander off, as anyone does before coming back to Pull.
+      window.dispatchEvent(new CustomEvent("gs:go", { detail: { view: "branches" } }));
+      await settle(600);
+      const wandered = window.__GS_ROUTES || [];
+      c.eq((wandered[wandered.length - 1] || {}).view, "branches", "precondition: the user has left Changes");
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      window.__gsPulledWith = "untouched";
+      const again = $(".topbar-sync .sync-main");
+      c.match(text(again), /^Pull \d+$/, "precondition: Pull is still on offer over the paused merge");
+      if (!again) return;
+      again.click();
+      await settle(1200);
+      c.eq(window.__gsPulledWith, null, "one mode-less pull was sent — and no second one");
+      c.ok(!$(".modal-card"), "no merge-or-rebase question over a merge that is already under way");
+      const toasts = $$("#toast-stack .toast");
+      const said = toasts.map((t) => text(t)).join(" | ");
+      c.match(said, /merge is still in progress/, "the toast says what is paused");
+      c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `nothing is painted as a failure (${said})`);
+      c.ok(!/git add\/rm|hint:|not possible/.test(said), "no git terminal advice");
+      const routes = window.__GS_ROUTES || [];
+      c.eq((routes[routes.length - 1] || {}).view, "changes", "…and the user is taken back to where the merge is finished");
+    },
+    /** Holding the question against a refresh must not hold it across a
+     *  REPOSITORY switch: `sync:pull` acts on whatever repository is open, so
+     *  an answer given after the switch would pull a repository the question
+     *  was never about. */
+    "the-pull-question-does-not-follow-you-to-another-repository": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(200);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
+      await settle(900);
+      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      c.eq(window.__gsPulledWith, null, "…and pulls nothing");
+    },
+    /** GitHub answers what it can and names the rest; the reads keep what came
+     *  back. `?partial=1` names one project and one card it could not return —
+     *  the view must SAY so, where the list is, instead of showing a short list
+     *  as the whole one. Without `partial`, the same view says nothing. */
+    "a-list-github-could-not-fully-return-says-so": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const partial = new URLSearchParams(location.search).get("partial");
+      const notes = $$(".gh-unreadable-note");
+      if (!partial) {
+        c.eq(notes.length, 0, "a complete answer carries no note");
+        return;
+      }
+      const said = notes.map((n) => text(n));
+      c.ok(said.some((t) => /^1 project could not be read from GitHub\.$/.test(t)), `the list says a project is missing (${said.join(" | ")})`);
+      c.ok(said.some((t) => /^1 card could not be read from GitHub\.$/.test(t)), "…and the board that a card is");
+      for (const n of notes) {
+        const r = n.getBoundingClientRect();
+        c.ok(n.offsetParent !== null && r.height > 0 && r.width > 0, `"${text(n)}" is on screen, not collapsed`);
+        c.ok(!!n.title, "it says why on hover");
+      }
+      // The picker still offers every project that DID come back.
+      c.ok($$(".gh-card").length > 0, "the readable cards are still on the board");
+    },
+    /** A folder that does not open — no repository, or one this account cannot
+     *  read — arrives as a `warn` notice. It used to be painted red, as if the
+     *  app had failed; only an `error` notice is. */
+    "a-folder-that-will-not-open-is-not-painted-as-a-failure": async (f) => {
+      const c = check(f);
+      await settle(400);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const said = "/work/project is a Git repository, but you don't have permission to read it.";
+      c.ok(window.__gsEmit("app:notice", { kind: "warn", message: said }) > 0, "precondition: the app listens for notices");
+      await settle(300);
+      const t = $$("#toast-stack .toast").find((x) => text(x).includes("don't have permission"));
+      c.ok(!!t, "the notice is shown");
+      if (!t) return;
+      c.ok(!t.classList.contains("toast-error"), "…in the neutral tone, not as a failure");
+      $$("#toast-stack .toast").forEach((x) => x.remove());
+      window.__gsEmit("app:notice", { kind: "error", message: "Something did fail." });
+      await settle(300);
+      const e = $$("#toast-stack .toast").find((x) => text(x).includes("Something did fail"));
+      c.ok(!!e && e.classList.contains("toast-error"), "an error notice is still red");
+    },
+    /**
+     * Commit & Push, where the force it offers is refused: said as what it is.
+     *
+     * A rewritten branch is pushed plainly, refused non-fast-forward, and the
+     * app offers a force. When the remote has commits that are not this
+     * branch's to replace — somebody else's, or the same commit amended on
+     * another machine and fetched in the background — the bridge refuses that
+     * force (`expected`, `pullFirst`). That arrived as "Committed, but push
+     * failed: …" in red: a refusal that was the app doing its job, read as a
+     * failure, with nothing offered. The commit is made and nothing was pushed;
+     * the toast says so in the neutral tone and offers the way on — Pull.
+     */
+    "a-refused-force-push-after-commit-says-so-and-offers-pull": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const ta = $(".dc-message");
+      const push = $(".dc-push");
+      c.ok(!!ta && !!push, "the composer offers Commit & Push");
+      if (!ta || !push) return;
+      ta.value = "fix: a thing";
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(300);
+      c.ok(!push.disabled, "Commit & Push is armed");
+      push.click();
+      await settle(700);
+      const ok = $(".modal-ok");
+      c.ok(!!ok && /force/i.test(text(ok)), "the refused plain push offers a force");
+      if (!ok) return;
+      ok.click();
+      await settle(700);
+      const pushes = window.__gsPushedWith || [];
+      c.eq(pushes.length, 2, "a plain push, then the forced one");
+      c.eq(!!(pushes[1] && pushes[1].force), true, "the second one is the force");
+      const t = $$("#toast-stack .toast").find((x) => /Committed/.test(text(x)));
+      c.ok(!!t, "the outcome is said");
+      if (!t) return;
+      c.ok(!t.classList.contains("toast-error"), `in the neutral tone, not as a failure (${t.className})`);
+      c.ok(!/push failed/i.test(text(t)), `and not called a failed push (${JSON.stringify(text(t))})`);
+      c.match(text(t), /not pushed/i, "it says the commit was made and nothing was pushed");
+      c.match(text(t), /Pull them in first/, "…and why, in the bridge's words");
+      const act = t.querySelector(".toast-action");
+      c.eq(text(act), "Pull", "the way on is offered");
+      if (!act) return;
+      act.click();
+      await settle(500);
+      const pulled = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
+      c.ok(pulled.length > 0, "and Pull pulls");
+    },
+
+    // ── Uncommitted work in a command's way (crash report #18) ─────────────
+    // A revert over an edit to a file it touches: git refused ("Your local
+    // changes to the following files would be overwritten by merge … fatal:
+    // revert failed"), and the door showed that in red and filed it as a crash.
+    // Every door that applies commits now answers such a refusal with the files
+    // in the way (main/inTheWay.ts), and bridge.ts asks — once, for every door
+    // — Stash & Retry or Cancel. These run on ?intheway=, where each door's
+    // FIRST request is refused as the bridge refuses it (see the shim).
+    /**
+     * Report #18's own door: the commit page's Revert. It asks, naming the
+     * file; the question outlives the watcher's refresh; Stash & Retry sends
+     * the same revert again, carrying the repository it was asked in.
+     */
+    "a-revert-over-your-changes-asks-and-outlives-the-refresh": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const sent = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "revert");
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      c.ok(!!more, "the commit page carries its actions menu");
+      if (!more) return;
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Revert this commit/.test(text(i) || ""));
+      c.ok(!!item, "it offers Revert");
+      if (!item) return;
+      item.click();
+      await settle(350);
+      const ok = $(".modal-ok");
+      c.ok(!!ok, "Revert confirms first, as it always has");
+      if (!ok) return;
+      ok.click();
+      await settle(700);
+      c.eq(sent().length, 1, "the revert was sent");
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "refused over the user's changes, it ASKS");
+      c.match(text(".modal-message"), /changes to docs\/notes\.md are in the way of the revert/, "…naming the file, and what it is in the way of");
+      const labels = $$(".modal-choice-label").map((e) => text(e));
+      c.ok(labels.includes("Stash & Retry"), `Stash & Retry is offered (${labels.join(" | ")})`);
+      c.ok(!!$$(".modal-actions button").find((b) => /^Cancel$/.test(text(b) || "")), "…and Cancel");
+      c.ok(!$(".toast-error"), "nothing is red: this is the user's state, not a failure");
+      c.ok(!/overwritten by merge|fatal:|Aborting/.test(text("#root") + text("#toast-stack")), "…and git's text is shown nowhere");
+      // A refused command can still refresh the index, and the watcher's
+      // refresh re-routes the view, which tears floating layers down — the
+      // pull's own question was answered "Cancel" that way, by nobody.
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      c.ok(window.__gsEmit("repo:filesChanged", { gitDir: true }) > 0, "precondition: the app listens for the watcher");
+      await settle(900);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the refresh re-routed underneath");
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "the question is still there after the refresh");
+      c.eq(sent().length, 1, "…and nothing was answered for the user");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return;
+      stash.click();
+      await settle(800);
+      c.eq(sent().length, 2, "Stash & Retry sends the revert again — once");
+      const [first, again] = sent().map((r) => r.payload);
+      c.eq(again?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…carrying the repository the refusal came from");
+      c.eq(again?.sha, first?.sha, "…for the same commit");
+      c.eq(first?.stashFirst, undefined, "the first request asked for nothing to be stashed");
+      c.ok(!$(".modal-card"), "the question is answered and gone");
+      const t = $$("#toast-stack .toast").find((x) => /Revert commit created/.test(text(x)));
+      c.ok(!!t && t.classList.contains("toast-success"), "…and the revert is reported done");
+      c.ok(!$(".toast-error"), "nothing red at any point");
+    },
+    /** Cancel runs nothing, says nothing, and files nothing. */
+    "cancelling-the-stash-question-runs-nothing-and-says-nothing": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const sent = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "cherry-pick");
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      if (!more) return c.ok(false, "no actions menu to press");
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Cherry-pick onto current branch/.test(text(i) || ""));
+      c.ok(!!item, "it offers Cherry-pick");
+      if (!item) return;
+      item.click();
+      await settle(700);
+      c.match(text(".modal-message"), /in the way of the cherry-pick/, "a cherry-pick asks the same question");
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b) || ""));
+      if (!cancel) return c.ok(false, "no Cancel to press");
+      cancel.click();
+      await settle(700);
+      c.ok(!$(".modal-card"), "the question closes");
+      c.eq(sent().length, 1, "nothing is sent again");
+      c.eq($$("#toast-stack .toast").length, 0, `and nothing is said (${text("#toast-stack")})`);
+    },
+    /**
+     * The top bar's Pull, over an edit to a file the pull changes. The pull
+     * FETCHED before git refused, so the watcher reports the moved ref while
+     * the question is up — and the question survives it; Stash & Retry pulls.
+     */
+    "a-pull-over-your-changes-asks-and-outlives-its-own-fetch": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const main = $(".topbar-sync .sync-main");
+      c.match(text(main), /^Pull 3$/, "the branch is behind, so the top bar offers Pull");
+      if (!main) return;
+      main.click();
+      await settle(200);
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "the refused pull asks");
+      c.match(text(".modal-message"), /changes to docs\/notes\.md are in the way of the pull/, "…naming the file");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      await settle(900); // the shim's watcher fires 250 ms after the fetch
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the fetch's refresh re-routed underneath");
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "the question outlives the refresh its own fetch caused");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull").map((r) => r.payload);
+      c.eq(pulls.length, 2, "the pull, then its retry");
+      c.eq(pulls[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "the retry stashes first, in this repository");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /Pulled/.test(text(t))), `and it pulled (${text("#toast-stack")})`);
+      c.ok(!$(".toast-error"), "nothing red");
+    },
+    /** Switching repository answers the question with Cancel: a Stash & Retry
+     *  there would stash and run in a repository nobody asked about. */
+    "the-stash-question-does-not-follow-you-to-another-repository": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(200);
+      c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "precondition: the question is up");
+      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
+      await settle(900);
+      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
+      c.eq(pulls.length, 1, "…and nothing is stashed or pulled");
+      const failed = $$("#toast-stack .toast").filter((t) => /fail|couldn/i.test(text(t) || ""));
+      c.eq(failed.length, 0, `…and a cancelled question is not said as a failed pull (${text("#toast-stack")})`);
+    },
+    /** The Branches view's Rebase, cancelled at the question: nothing ran and
+     *  nothing is said — the menu's own reporter used to toast every ok:false. */
+    "a-rebase-cancelled-at-the-stash-question-says-nothing": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const kebab = $$("button").find((b) => /^More actions for (?!main$)/.test(b.getAttribute("aria-label") || ""));
+      if (!kebab) return c.ok(false, "no branch actions to open");
+      kebab.click();
+      await settle(350);
+      const rebase = $$(".dropdown-item").find((r) => /^Rebase current onto /.test(text(r) || ""));
+      c.ok(!!rebase, "it offers Rebase");
+      if (!rebase) return;
+      rebase.click();
+      await settle(350);
+      const ok = $(".modal-ok");
+      c.ok(!!ok, "a rebase confirms first, as it always has");
+      if (!ok) return;
+      ok.click();
+      await settle(700);
+      c.match(text(".modal-message"), /^A rebase needs a clean working tree/, "the refused rebase asks, in the rebase's own words");
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b) || ""));
+      if (!cancel) return c.ok(false, "no Cancel to press");
+      cancel.click();
+      await settle(900);
+      c.eq((window.__GS_INVOKED || []).filter((r) => r.channel === "branch:rebase").length, 1, "nothing is sent again");
+      c.eq($$("#toast-stack .toast").length, 0, `and nothing is said (${text("#toast-stack")})`);
+    },
+    /** The Branches view's Merge asks the same question, from the same place. */
+    "a-merge-over-your-changes-asks-too": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const kebab = $$("button").find((b) => /^More actions for (?!main$)/.test(b.getAttribute("aria-label") || ""));
+      c.ok(!!kebab, "a branch other than the current one offers its actions");
+      if (!kebab) return;
+      const name = (kebab.getAttribute("aria-label") || "").replace(/^More actions for /, "");
+      kebab.click();
+      await settle(350);
+      const merge = $$(".dropdown-item").find((r) => /^Merge .* into current/.test(text(r) || ""));
+      c.ok(!!merge, "it offers Merge");
+      if (!merge) return;
+      merge.click();
+      await settle(700);
+      c.match(text(".modal-message"), /in the way of the merge/, "the refused merge asks");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const merges = (window.__GS_INVOKED || []).filter((r) => r.channel === "branch:merge").map((r) => r.payload);
+      c.eq(merges.length, 2, "the merge, then its retry");
+      // By FULL name, both times (issue #30's follow-up: the short name is
+      // "heads/x" beside a tag "x", which `git merge` records verbatim).
+      c.eq(merges[0]?.fullName, `refs/heads/${name}`, "the merge names the branch by its full name");
+      c.eq(merges[1]?.fullName, merges[0]?.fullName, "…and the retry is of the same branch");
+      c.eq(merges[1]?.name, undefined, "…never by the short one");
+      c.eq(merges[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…stashing first");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /merge/.test(text(t))), `and the merge is reported (${text("#toast-stack")})`);
+    },
+    /** A stash applied from the stash list over changes in its way: the same
+     *  question, and the retry names the stash it was asked about. */
+    "a-stash-apply-over-your-changes-asks-too": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const row = $$(".sec-row")[0];
+      c.ok(!!row, "a stash is listed");
+      if (!row) return;
+      const apply = row.querySelector('button[aria-label^="Apply "]');
+      c.ok(!!apply, "the stash offers Apply");
+      if (!apply) return;
+      apply.click();
+      await settle(900);
+      c.match(text(".modal-message"), /in the way of applying the stash/, "the refused apply asks");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const applies = (window.__GS_INVOKED || []).filter((r) => r.channel === "stash:apply").map((r) => r.payload);
+      c.eq(applies.length, 2, "the apply, then its retry");
+      c.eq(typeof applies[0], "string", "the first request is the ref, as it always was");
+      c.eq(applies[1]?.ref, applies[0], "the retry names the same stash");
+      c.eq(applies[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…and stashes first");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /Applied/.test(text(t))), `and it is applied (${text("#toast-stack")})`);
+    },
+    /** A pull request checked out over changes in its way. */
+    "a-pull-request-checkout-over-your-changes-asks-too": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const btn = $$("button").find((b) => /^Checkout$/.test(text(b) || "") && /as pr\//.test(b.title || ""));
+      c.ok(!!btn, "the pull request offers Checkout");
+      if (!btn) return;
+      btn.click();
+      await settle(700);
+      c.match(text(".modal-message"), /in the way of switching to it/, "the refused checkout asks");
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const outs = (window.__GS_INVOKED || []).filter((r) => r.channel === "pr:checkout").map((r) => r.payload);
+      c.eq(outs.length, 2, "the checkout, then its retry");
+      c.eq(outs[1]?.number, outs[0], "…of the same pull request");
+      c.eq(outs[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…stashing first");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /Checked out PR/.test(text(t))), `and it is checked out (${text("#toast-stack")})`);
+    },
+    /** When the stashed changes cannot simply come back, the retry says where
+     *  they are — in the neutral tone, with the stash's name. */
+    "what-a-stash-and-retry-could-not-put-back-is-said": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(300);
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      const note = $$("#toast-stack .toast").find((t) => /kept in the stash "GitStudio: before pulling"/.test(text(t)));
+      c.ok(!!note, `where the changes are is said (${text("#toast-stack")})`);
+      c.ok(!!note && note.classList.contains("toast-info"), "…in the neutral tone");
+    },
+    /** Still in the way after the stash (something it could not cover): said
+     *  once, in the neutral tone — never asked a second time, never a loop. */
+    "still-in-the-way-after-the-stash-is-said-not-asked-again": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(300);
+      const stash = $$(".modal-choice").find((r) => text($$(".modal-choice-label", r)[0]) === "Stash & Retry");
+      if (!stash) return c.ok(false, "no Stash & Retry to press");
+      stash.click();
+      await settle(900);
+      c.ok(!$(".modal-card"), "not asked a second time");
+      const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
+      c.eq(pulls.length, 2, "one pull and one retry — no loop");
+      c.ok(!!$$("#toast-stack .toast").find((t) => /in the way of the pull/.test(text(t))), `the refusal is said (${text("#toast-stack")})`);
+      c.ok(!$(".toast-error"), "…and not as a failure");
+    },
+    /** A failure that is NOT the user's work in the way asks nothing, and is
+     *  still said as a failure — the door must not swallow a real one. */
+    "a-genuine-failure-asks-nothing-and-stays-red": async (f) => {
+      const c = check(f);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      if (!more) return c.ok(false, "no actions menu to press");
+      more.click();
+      await settle(250);
+      const item = $$(".dropdown-item").find((i) => /^Cherry-pick onto current branch/.test(text(i) || ""));
+      if (!item) return c.ok(false, "no Cherry-pick to press");
+      item.click();
+      await settle(700);
+      c.ok(!$(".modal-card"), "nothing is asked");
+      const t = $$("#toast-stack .toast").find((x) => /unable to read tree/.test(text(x)));
+      c.ok(!!t && t.classList.contains("toast-error"), `the failure is said, in red (${text("#toast-stack")})`);
+    },
+    /** The PR's review threads: one GitHub could not return has no file to hang
+     *  on, so every file's panel says it — "No comments on this file" is not a
+     *  claim the panel can make about a thread nobody could read. */
+    "a-review-thread-github-could-not-return-is-said": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const note = $(".pr-threads .gh-unreadable-note");
+      c.ok(!!note, "the review panel carries the note");
+      if (!note) return;
+      c.match(text(note), /^1 review thread on this pull request could not be read from GitHub\.$/, "in plain words");
+      c.ok(!note.closest(".pr-threads-body"), "outside the folding body, so a folded panel still says it");
     },
   };
 })();

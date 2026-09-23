@@ -1,4 +1,5 @@
 import type { GitRef } from "@gitstudio/git-service/index";
+import { resolveListedRef, type RefCheckoutContext } from "./refCheckout";
 
 // Pure ref-name helpers for the worktree-create flow. Kept DOM- and vscode-free
 // so they're unit-testable, like the parser in git-service.
@@ -24,66 +25,56 @@ export function shortNameOf(startPoint: string): string | undefined {
 }
 
 /**
- * The bare short name for `ref`, with git's disambiguating type prefix removed.
- * When a local branch and a tag share a short name (git warns "refname 'v1.2'
- * is ambiguous"), `%(refname:short)` returns the name with the type prefixed —
- * "heads/v1.2" / "tags/v1.2" — and for remotes it can return "remotes/origin/x".
- * Checking a branch out by name or reconstructing `refs/<type>/<name>` needs the
- * prefix handled: an un-stripped "heads/v1.2" silently detaches, a double
- * prefix ("refs/tags/tags/v1.2") is a fatal.
+ * The ref the worktree flow works from: the one git LISTS for `ref` — its own
+ * GitRef when it carries a full name, else the listed ref of the same name AND
+ * type (the branch menu's webview sends name + type only). Undefined when the
+ * list has no such ref or cannot be read, and the flow then STOPS.
  *
- * Derived from `fullName` when present (authoritative, never false-strips): a
- * genuine branch named "heads/x" and a collision-prefixed name are string-
- * identical, so name-based stripping alone would corrupt one of them. Only when
- * `fullName` is absent (branch-menu webview, before worktreeFromRef re-resolves
- * it) do we fall back to stripping a single type prefix from the short name.
+ * It used to fall back to the webview's short name and guess: strip a "heads/"
+ * and rebuild refs/heads/<rest>. But git's collision-disambiguated "heads/v1.2"
+ * and a branch genuinely named "heads/v1.2" are the same string, so the guess
+ * is wrong for one of them — and a guessed full name is the bug every checkout
+ * door has stopped committing (issue #30's follow-up).
+ */
+export async function worktreeRefFor(
+  ctx: Pick<RefCheckoutContext, "refs">,
+  ref: GitRef,
+): Promise<(GitRef & { fullName: string }) | undefined> {
+  const hit = await resolveListedRef(ctx, ref);
+  return hit ? { ...ref, ...hit, fullName: hit.fullName } : undefined;
+}
+
+/**
+ * The bare name for `ref`, from its FULL name: "refs/heads/v1.2" → "v1.2",
+ * "refs/remotes/origin/x" → "origin/x". When a local branch and a tag share a
+ * short name, `%(refname:short)` returns "heads/v1.2" / "tags/v1.2"; the full
+ * name is authoritative and never false-strips a branch really called
+ * "heads/x". A ref with no full name has no bare name: "" (resolve it with
+ * worktreeRefFor first — nothing is guessed from the short one).
  */
 export function bareName(ref: GitRef): string {
-  if (ref.fullName) {
-    switch (ref.type) {
-      case "head":
-        return ref.fullName.slice("refs/heads/".length);
-      case "remote":
-        return ref.fullName.slice("refs/remotes/".length);
-      case "tag":
-        return ref.fullName.slice("refs/tags/".length);
-      default:
-        return ref.fullName;
-    }
+  if (!ref.fullName) {
+    return "";
   }
   switch (ref.type) {
     case "head":
-      return ref.name.replace(/^heads\//, "");
+      return ref.fullName.startsWith("refs/heads/") ? ref.fullName.slice("refs/heads/".length) : "";
     case "remote":
-      return ref.name.replace(/^remotes\//, "");
+      return ref.fullName.startsWith("refs/remotes/") ? ref.fullName.slice("refs/remotes/".length) : "";
     case "tag":
-      return ref.name.replace(/^tags\//, "");
+      return ref.fullName.startsWith("refs/tags/") ? ref.fullName.slice("refs/tags/".length) : "";
     default:
-      return ref.name;
+      return ref.fullName;
   }
 }
 
 /**
- * The fully-qualified ref to start a new branch from. The Worktrees view builds
- * its refs from `listRefs()`, so `fullName` is set; the branch menu's webview
- * only sends `name` + `type` (no `fullName`). Reconstruct the FQN here so both
- * create paths pass an identical start point — otherwise the branch-menu path
- * falls back to "from HEAD", silently skipping the upstream tracking that the
- * Worktrees-view path sets up for a remote start point.
+ * The fully-qualified ref to start a new branch from: the ref's own full name,
+ * or undefined when it has none — never one rebuilt from the short name.
  */
 export function startPointOf(ref: GitRef): string | undefined {
-  if (ref.fullName) {
-    return ref.fullName;
+  if (!ref.fullName || ref.type === "stash") {
+    return undefined;
   }
-  const name = bareName(ref);
-  switch (ref.type) {
-    case "head":
-      return `refs/heads/${name}`;
-    case "remote":
-      return `refs/remotes/${name}`;
-    case "tag":
-      return `refs/tags/${name}`;
-    default:
-      return undefined;
-  }
+  return ref.fullName;
 }

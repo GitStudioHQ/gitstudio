@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { planRefCheckout, refShortName } from "../src/checkoutRef";
+import { optionLikeCheckout, planRefCheckout, refShortName, renameArgs, suggestedRename } from "../src/checkoutRef";
 import { removeTempRepo } from "./tmpRepo";
 
 // "Checkout <ref>" from the graph — the row's commit menu and the chip's own
@@ -155,6 +155,35 @@ test("a remote branch goes through planRemoteCheckout by its remote-tracking nam
   }
 });
 
+test("a remote branch whose short name a LOCAL branch also has checks out the remote one, tracking it", async () => {
+  // A local branch literally called "origin/fix" (an easy slip: `git checkout
+  // -b origin/fix`) beside refs/remotes/origin/fix. git then shortens the
+  // remote one to "remotes/origin/fix", and a bare "origin/fix" on argv is
+  // ambiguous: `git checkout -b fix --track origin/fix` stopped with "fatal:
+  // ambiguous object name: 'origin/fix'" — from every remote-checkout door in
+  // both products.
+  const { dir, upstream } = collidingRepo();
+  try {
+    git(dir, "branch", "origin/fix", "main");
+    const remoteTip = git(dir, "rev-parse", "refs/remotes/origin/fix").out.trim();
+    assert.notEqual(git(dir, "rev-parse", "refs/heads/origin/fix").out.trim(), remoteTip, "two different commits");
+    const p = await plan(dir, "refs/remotes/origin/fix");
+    assert.ok(p);
+    assert.equal(git(dir, ...p.args).code, 0, `the planned argv must actually work: ${p.args.join(" ")}`);
+    assert.equal(symbolicHead(dir), "refs/heads/fix", "on a local branch named for the remote one");
+    assert.equal(headSha(dir), remoteTip, "at the REMOTE branch's tip, not the local origin/fix");
+    assert.equal(
+      git(dir, "rev-parse", "--symbolic-full-name", "fix@{upstream}").out.trim(),
+      "refs/remotes/origin/fix",
+      "tracking the remote-tracking branch, not the local one",
+    );
+    assert.equal(p.success, "Checked out fix (tracking origin/fix)", "the words stay the short ones");
+  } finally {
+    removeTempRepo(dir);
+    removeTempRepo(upstream);
+  }
+});
+
 test("a name outside the three namespaces is refused rather than guessed at", async () => {
   const proc = { run: async () => ({ code: 1 }) };
   // A short name reaching the planner is the bug this exists to end; giving it
@@ -166,9 +195,84 @@ test("a name outside the three namespaces is refused rather than guessed at", as
   assert.equal(await planRefCheckout(proc, ""), undefined);
 });
 
+test("a branch whose name starts with a dash is refused, never handed to git as an option", async () => {
+  // Porcelain forbids such names, but `git update-ref refs/heads/-f` does
+  // not, and a fetch can bring one in under refs/remotes/. Planned by its
+  // short name, "Checkout -f" ran `git checkout -f` — which throws away every
+  // uncommitted change and says nothing about a branch.
+  const { dir, upstream } = collidingRepo();
+  try {
+    git(dir, "update-ref", "refs/heads/-f", "HEAD");
+    git(dir, "update-ref", "refs/heads/--all", "HEAD");
+    git(dir, "update-ref", "refs/remotes/origin/-f", "HEAD");
+    writeFileSync(join(dir, "f.txt"), "uncommitted work\n");
+    for (const full of ["refs/heads/-f", "refs/heads/--all", "refs/remotes/origin/-f"]) {
+      const p = await plan(dir, full);
+      if (p) git(dir, ...p.args); // what the door would have run
+      assert.equal(p, undefined, `${full} is refused (${JSON.stringify(p?.args)})`);
+    }
+    assert.equal(
+      execFileSync("cat", [join(dir, "f.txt")], { encoding: "utf8" }),
+      "uncommitted work\n",
+      "the working tree is untouched",
+    );
+    assert.equal(symbolicHead(dir), "refs/heads/main", "and HEAD did not move");
+    // A tag of that shape detaches by its full name, which cannot be an option.
+    git(dir, "update-ref", "refs/tags/-f", "HEAD");
+    const t = await plan(dir, "refs/tags/-f");
+    assert.deepEqual(t?.args, ["checkout", "--detach", "refs/tags/-f"]);
+    // Only a LEADING dash: a branch with one further in is an ordinary name.
+    git(dir, "update-ref", "refs/heads/team/-wip", "HEAD");
+    assert.deepEqual((await plan(dir, "refs/heads/team/-wip"))?.args, ["checkout", "team/-wip"]);
+  } finally {
+    removeTempRepo(dir);
+    removeTempRepo(upstream);
+  }
+});
+
 test("refShortName strips exactly one namespace", () => {
   assert.equal(refShortName("refs/heads/release/1.5"), "release/1.5");
   assert.equal(refShortName("refs/remotes/origin/release/1.5"), "origin/release/1.5");
   assert.equal(refShortName("refs/tags/v1"), "v1");
   assert.equal(refShortName("refs/heads/heads/release"), "heads/release", "a real branch called heads/release keeps its name");
+});
+
+test("an option-like branch is refused with the TRUE reason, and a local one can be renamed where it stands", async () => {
+  // The refusal used to reach the user as "not in this repository any more —
+  // refresh and try again" (Branches view) or as nothing at all (the graph's
+  // menus). The branch IS there; the reason is its name.
+  const { dir, upstream } = collidingRepo();
+  try {
+    git(dir, "update-ref", "refs/heads/-f", "HEAD");
+    git(dir, "update-ref", "refs/remotes/origin/-f", "HEAD");
+    const local = optionLikeCheckout("refs/heads/-f");
+    assert.equal(local?.name, "-f");
+    assert.equal(local?.local, true);
+    assert.match(local!.message, /can't safely check out a branch whose name starts with "-"/);
+    assert.match(local!.message, /Rename it/);
+    const remote = optionLikeCheckout("refs/remotes/origin/-f");
+    assert.equal(remote?.name, "-f", "the name git would be handed is the local one it would make");
+    assert.equal(remote?.local, false, "a remote's branch is not ours to rename");
+    assert.doesNotMatch(remote!.message, /Rename it/);
+    // Nothing else is option-like: tags detach by full name, ordinary names pass.
+    for (const f of ["refs/tags/-f", "refs/heads/release", "refs/heads/team/-wip", "release", "refs/stash"]) {
+      assert.equal(optionLikeCheckout(f), undefined, f);
+    }
+    // The rename it offers, by FULL name, run for real.
+    const args = renameArgs("refs/heads/-f", "fixed-f");
+    assert.deepEqual(args, ["branch", "-m", "--", "-f", "fixed-f"]);
+    assert.equal(git(dir, ...args!).code, 0);
+    assert.equal(git(dir, "rev-parse", "--verify", "--quiet", "refs/heads/fixed-f").code, 0, "renamed");
+    assert.equal(git(dir, "rev-parse", "--verify", "--quiet", "refs/heads/-f").code, 1, "and the old name is gone");
+    const p = await plan(dir, "refs/heads/fixed-f");
+    assert.deepEqual(p?.args, ["checkout", "fixed-f"], "and it checks out like any branch");
+    assert.equal(renameArgs("refs/remotes/origin/-f", "x"), undefined, "never a remote-tracking ref");
+    assert.equal(renameArgs("refs/heads/-f", ""), undefined);
+    assert.equal(suggestedRename("-f"), "f");
+    assert.equal(suggestedRename("--all"), "all");
+    assert.equal(suggestedRename("-"), "renamed");
+  } finally {
+    removeTempRepo(dir);
+    removeTempRepo(upstream);
+  }
 });

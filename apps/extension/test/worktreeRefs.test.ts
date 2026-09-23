@@ -4,6 +4,7 @@ import {
   bareName,
   shortNameOf,
   startPointOf,
+  worktreeRefFor,
 } from "../src/views/worktreeRefs";
 import type { GitRef } from "@gitstudio/git-service/index";
 
@@ -40,12 +41,13 @@ test("bareName does NOT strip a genuine 'heads/' branch name", () => {
   assert.equal(bareName(ref("tag", "tags/v1.2", "refs/tags/tags/v1.2")), "tags/v1.2");
 });
 
-test("bareName falls back to stripping the short-name prefix when fullName is absent", () => {
-  assert.equal(bareName(ref("head", "heads/v1.2", undefined)), "v1.2");
-  assert.equal(bareName(ref("head", "v1.2", undefined)), "v1.2");
-  assert.equal(bareName(ref("remote", "remotes/origin/x", undefined)), "origin/x");
-  assert.equal(bareName(ref("remote", "origin/x", undefined)), "origin/x");
-  assert.equal(bareName(ref("tag", "tags/v1.2", undefined)), "v1.2");
+test("bareName guesses nothing from a short name: with no fullName there is no bare name", () => {
+  // It used to strip one "heads/" off the short name — which is also how a
+  // branch genuinely called heads/v1.2 starts, so the guess was wrong for one
+  // of them. The flow resolves the listed ref first (worktreeRefFor).
+  assert.equal(bareName(ref("head", "heads/v1.2", undefined)), "");
+  assert.equal(bareName(ref("remote", "remotes/origin/x", undefined)), "");
+  assert.equal(bareName(ref("tag", "tags/v1.2", undefined)), "");
 });
 
 // ── startPointOf ────────────────────────────────────────────────────────────
@@ -57,13 +59,46 @@ test("startPointOf returns the full name when present", () => {
   );
 });
 
-test("startPointOf reconstructs the full name when absent", () => {
-  assert.equal(startPointOf(ref("head", "main", undefined)), "refs/heads/main");
-  assert.equal(
-    startPointOf(ref("remote", "origin/main", undefined)),
-    "refs/remotes/origin/main",
-  );
-  assert.equal(startPointOf(ref("tag", "v1.2", undefined)), "refs/tags/v1.2");
+test("startPointOf never rebuilds a full name from a short one", () => {
+  // "refs/heads/" + "heads/v1.2" names a ref that does not exist.
+  assert.equal(startPointOf(ref("head", "heads/v1.2", undefined)), undefined);
+  assert.equal(startPointOf(ref("remote", "origin/main", undefined)), undefined);
+  assert.equal(startPointOf(ref("tag", "v1.2", undefined)), undefined);
+});
+
+// ── worktreeRefFor — the flow's one way to a full name ─────────────────────
+
+const LISTED: GitRef[] = [
+  ref("head", "heads/v1.2", "refs/heads/v1.2"),
+  ref("tag", "tags/v1.2", "refs/tags/v1.2"),
+  ref("head", "heads/x", "refs/heads/heads/x"),
+];
+const listing = (refs: GitRef[] | Error) => ({
+  refs: { listRefs: async () => (refs instanceof Error ? Promise.reject(refs) : refs) },
+});
+
+test("worktreeRefFor finds the branch menu's name + type in the ref list", async () => {
+  const hit = await worktreeRefFor(listing(LISTED), ref("head", "heads/v1.2", undefined));
+  assert.equal(hit?.fullName, "refs/heads/v1.2");
+  assert.equal(bareName(hit!), "v1.2");
+  const tag = await worktreeRefFor(listing(LISTED), ref("tag", "tags/v1.2", undefined));
+  assert.equal(startPointOf(tag!), "refs/tags/v1.2", "the TAG, not the branch of the same name");
+});
+
+test("worktreeRefFor STOPS when the listing fails or has no such ref — it never falls back to the short name", async () => {
+  // The fallback kept the webview's ref and let bareName/startPointOf strip
+  // "heads/" and rebuild refs/heads/<rest> — an invented full name.
+  assert.equal(await worktreeRefFor(listing(new Error("fatal: bad packed-refs")), ref("head", "heads/v1.2", undefined)), undefined);
+  assert.equal(await worktreeRefFor(listing(LISTED), ref("head", "heads/ghost", undefined)), undefined);
+  assert.equal(await worktreeRefFor(listing(LISTED), ref("tag", "heads/v1.2", undefined)), undefined, "the right name under the wrong type is no match");
+});
+
+test("a node that already carries its full name is not looked up again", async () => {
+  let asked = 0;
+  const counting = { refs: { listRefs: async () => (asked++, LISTED) } };
+  const hit = await worktreeRefFor(counting, ref("head", "heads/x", "refs/heads/heads/x"));
+  assert.equal(asked, 0);
+  assert.equal(bareName(hit!), "heads/x", "a branch really called heads/x keeps its name");
 });
 
 test("startPointOf returns undefined for an unknown type", () => {

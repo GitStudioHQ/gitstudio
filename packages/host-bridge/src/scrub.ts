@@ -76,6 +76,27 @@ export function scrub(input: string): string {
     .replace(/(<user>|<path>|~)((?: [^\s"':]+)+)/g, (_m, tag: string, rest: string) =>
       /[/\\]/.test(rest) ? `${tag}/<path>` : `${tag}${rest}`,
     )
+    // A QUOTED identifier containing a slash: 'owner/repo', "src/billing.ts",
+    // 'feature/acme-migration'.
+    //
+    // Every rule above redacts org and repo inside a URL, which is where they
+    // normally appear — and left them alone when an API simply NAMES the thing
+    // it could not find. GitHub's does: "Could not resolve to a Repository with
+    // the name 'acme-private/billing-pipeline'." Crash reports #14 and #17 carried a
+    // private org's repo name into the maintainer tracker that way. PRIVACY.md
+    // promises the org and the repo never leave the machine; until now that
+    // promise only held for the URL spelling of them.
+    //
+    // The opening quote must not follow a word character, or the apostrophe in
+    // "couldn't" opens a span that eats the rest of the sentence — the same
+    // trap scrubGitMessage documents. Requiring a slash INSIDE keeps ordinary
+    // quoted words ("Field 'nope' doesn't exist") readable.
+    //
+    // It also swallows an innocent quoted "application/json", and that is the
+    // right direction to err in a function whose job is to be the last line of
+    // defense: a report that loses a media type is still diagnosable, and one
+    // that carries a private repository's name is not retractable.
+    .replace(/(^|[\s(:=[])(['"])[^'"\s]*\/[^'"\s]*\2/g, "$1$2<path>$2")
     // IPv4 addresses
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "<ip>")
     // IPv6 — the full eight-group form, and the compressed form which must

@@ -41,6 +41,7 @@ import type {
   RowStat,
   GraphRefEntry,
   GraphRefFilter,
+  RefPreset,
 } from "@gitstudio/host-bridge/graphProtocol";
 import { renderRowGutterSVG, laneCenterX, lastDrawableLane } from "./gutter";
 import {
@@ -63,11 +64,14 @@ import {
   groupRefs,
   presetFilter,
   presetUnavailable,
+  refDisplayName,
+  refFilterHint,
   refFilterLabel,
   removeRefs,
+  scrollKey,
   toggleRef,
 } from "./refFilter";
-import { chipRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
+import { chipRefs, presetRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
 import { COLUMN_DROP_TAIL_AT, INLINE_LIST_BELOW } from "../limits";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
@@ -215,9 +219,24 @@ export type GraphAction =
   | { type: "open"; sha: string }
   | { type: "context"; sha: string; x: number; y: number }
   | { type: "menuAction"; sha: string; id: string }
-  /** A ref chip (branch / remote / tag label) was clicked — hosts navigate to
-   *  that ref instead of treating the click as a row selection. */
-  | { type: "refClick"; sha: string; name: string; kind: string }
+  /** A ref chip (branch / remote / tag label) was clicked — a host with a
+   *  page for the ref navigates there (the desktop's Branches view); one with
+   *  none opens the chip's own menu at (x, y) through openRefMenu (the
+   *  extension). `remotes` are the twins folded into the chip, `twins` their
+   *  full names; `name` is git's short form (what the desktop's Branches view
+   *  lists), `fullName` the ref's full name. Never a row selection. x/y are
+   *  absent from a "+N" card row: that card sits where the menu would. */
+  | {
+      type: "refClick";
+      sha: string;
+      name: string;
+      fullName: string;
+      kind: string;
+      x?: number;
+      y?: number;
+      remotes?: string[];
+      twins?: string[];
+    }
   | { type: "loadMore" }
   | { type: "refresh" }
   | { type: "requestStats"; shas: string[] }
@@ -257,6 +276,7 @@ export class CommitGraph extends LitElement {
     errorMessage: { attribute: false },
     head: { attribute: false },
     refFilter: { attribute: false },
+    refPreset: { attribute: false },
     refList: { attribute: false },
     palette: { state: true },
     selectedSha: { state: true },
@@ -499,13 +519,12 @@ export class CommitGraph extends LitElement {
       font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      /* Mixed into the BACKGROUND, not into transparent. Mixing toward
-         transparent dims correctly over a dark ground and washes out over a
-         light one: the same 50% measured 4.11:1 in dark and 2.93:1 in light.
-         Against the background it composites the same way in both. 66% was
-         4.56:1 on the editor background; the menu's own ground is a 6% wash
-         of it, where that read 4.10:1 in light. 70% is 4.61:1 there. */
-      color: color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-editor-background));
+      /* Not mixed toward transparent (4.11:1 dark, 2.93:1 light), and no
+         longer a fixed 70% into the editor background either: that read
+         4.61:1 on the desktop's ink and 3.18:1 in VS Code Light+, whose
+         #616161 leaves no room to fade. --gs-menu-muted (hostTokens) is AA
+         on both — measured in popoverContrast.test.ts and contrast.mjs. */
+      color: var(--gs-menu-muted);
       user-select: none;
     }
     .gh-menuitem {
@@ -552,7 +571,7 @@ export class CommitGraph extends LitElement {
     .gh-pop-hint {
       padding: 3px 8px 4px;
       font-size: 10.5px;
-      color: color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-editor-background));
+      color: var(--gs-menu-muted);
     }
 
     /* ── Search scope trigger (segmented-style button inside the search box) ── */
@@ -578,9 +597,10 @@ export class CommitGraph extends LitElement {
     .gh-scope:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
     .gh-scope .codicon-filter { font-size: 11px; opacity: 0.8; }
     .gh-scope .codicon-chevron-down { font-size: 11px; opacity: 0.7; margin-left: -1px; }
+    /* Scoped: the accent wash, and the button's own ink (--gs-fg, from
+       .gh-scope) on it. The accent's link-blue read 4.00:1 there in light. */
     .gh-scope.scoped {
       background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
-      color: var(--gs-accent-text);
     }
     .gh-scope-pop { min-width: 150px; }
     /* The scope popover anchors to the search box's scope button (left-ish). */
@@ -641,11 +661,13 @@ export class CommitGraph extends LitElement {
     }
     .gh-preset:hover { background: var(--gs-hover); }
     .gh-preset:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
-    /* The same wash the scoped trigger and the current-branch pill wear. */
+    /* The same wash the scoped trigger and the current-branch pill wear — and
+       the menu's own ink on it, not the accent's. Link-blue on a violet wash
+       read 3.34:1 in light (link-blue on the bare light menu is only 4.40:1);
+       the wash and its border say "active" on their own. */
     .gh-preset.active {
       background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
       border-color: color-mix(in srgb, var(--gs-accent) 30%, transparent);
-      color: var(--gs-accent-text);
     }
     .gh-preset[disabled] { opacity: 0.5; cursor: default; }
     .gh-preset[disabled]:hover { background: transparent; }
@@ -677,13 +699,14 @@ export class CommitGraph extends LitElement {
     .gh-menuitem .lbl.gh-ref-name {
       min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    /* "current", set beside the pinned branch in the muted title colour. */
+    /* "current", set beside the pinned branch in the muted title colour —
+       the title's token, for the title's reason (see .gh-pop-title). */
     .gh-menuitem .gh-ref-cur {
       flex: 0 0 auto;
       font-size: 10px;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      color: color-mix(in srgb, var(--vscode-foreground) 66%, var(--vscode-editor-background));
+      color: var(--gs-menu-muted);
     }
     .gh-menuitem:hover .gh-ref-cur,
     .gh-menuitem:focus-visible .gh-ref-cur { color: inherit; opacity: 0.8; }
@@ -1669,6 +1692,9 @@ export class CommitGraph extends LitElement {
   declare head: string;
   /** The branch filter the rows were built under (issue #30); null = all. */
   declare refFilter: GraphRefFilter;
+  /** The preset that filter IS, when the host says so (a graphInit's
+   *  refPreset): lit in the picker, named by the trigger. */
+  declare refPreset: RefPreset | undefined;
   /** Every ref the Branches picker offers — filtered-out ones included. */
   declare refList: GraphRefEntry[];
 
@@ -1695,16 +1721,27 @@ export class CommitGraph extends LitElement {
    * A ref chip's own menu (right-click or ⌥-click on a chip): the filter
    * shortcuts — show only this branch, add it, remove it — and the checkout
    * the row's commit menu used to offer for that click. `refs` is the chip's
-   * ref plus the remote twins folded into it, so the chip moves as one thing;
-   * `sha` is the row it sits on, for the checkout.
+   * ref plus the remote twins folded into it, so the chip moves as one thing
+   * (empty when the ref list has no entry for the chip — see chipRefs);
+   * `sha` is the row it sits on, for the checkout. A menu opened for a chip
+   * OUTSIDE this element (the commit-details pane's, via openRefMenu) keeps
+   * the chip in `opener`, so Escape hands focus back to it rather than to the
+   * list.
    */
   private declare chipMenu: {
+    /** git's short name, as the chip carries it — for the host's checkout
+     *  request, never for display (see fullName). */
     name: string;
+    /** The chip's full name: what it resolves by and is titled by. */
+    fullName: string;
     kind: WireRef["kind"];
     sha: string;
     refs: string[];
     x: number;
     y: number;
+    opener?: HTMLElement;
+    /** Opened from the keyboard: focus its first item once it renders. */
+    focusFirst?: boolean;
   } | null;
   /** Row indices matching the current search, and the cursor into them. */
   private searchMatches: number[] = [];
@@ -1815,6 +1852,8 @@ export class CommitGraph extends LitElement {
    *  same nothing, and re-asking on every repaint is a request storm. */
   private readonly statsUnavailable = new Set<string>();
   private loadMoreArmed = true;
+  /** scrollKey of the filter the current rows were built under (see updated). */
+  private rowsKey: string | undefined;
   /** lane color the pointer is hovering, for the focus-dim affordance. */
   private focusColor: number | undefined;
 
@@ -1827,6 +1866,7 @@ export class CommitGraph extends LitElement {
     this.errorMessage = "";
     this.head = "";
     this.refFilter = null;
+    this.refPreset = undefined;
     this.refList = [];
     this.palette = paletteForTheme();
     this.selectedSha = undefined;
@@ -1889,11 +1929,21 @@ export class CommitGraph extends LitElement {
     // An empty filter is All (issue #30): the protocol says a host never sends
     // one, but a host that did tinted the trigger "scoped" under a label
     // reading "All branches". Folded here, so every reader sees the same thing.
-    if (changed.has("refFilter") && this.refFilter?.length === 0) this.refFilter = null;
+    // …unless it is a preset's: "Current branch" on a detached HEAD ticks no
+    // branch and walks HEAD alone, which is not every branch.
+    if (changed.has("refFilter") && this.refFilter?.length === 0 && !this.refPreset) this.refFilter = null;
   }
 
   updated(changed: PropertyValues): void {
     if (changed.has("rows")) {
+      // Rows built under a DIFFERENT filter are a different history, not a
+      // refresh of this one: start at its top. Kept, the old offset opened
+      // the new graph part-way down (Sep 2 instead of HEAD) and, sitting near
+      // the new bottom, chain-loaded every page at once. A refresh under the
+      // same filter keeps its place, as it always has.
+      const key = scrollKey(this.refFilter, this.refPreset);
+      if (this.rowsKey !== undefined && key !== this.rowsKey) this.scrollToTop();
+      this.rowsKey = key;
       this.rebuildIndex();
       // New page arrived: re-arm the loader so the next near-bottom fires.
       this.loadMoreArmed = true;
@@ -1927,6 +1977,12 @@ export class CommitGraph extends LitElement {
     // refs, typing is how you find one, and the box is where typing goes.
     if (changed.has("branchesOpen") && this.branchesOpen) {
       (this.renderRoot.querySelector(".gh-pop-filter input") as HTMLInputElement | null)?.focus();
+    }
+    // A chip menu opened from the keyboard (a details-pane chip, Enter) takes
+    // focus, so the arrows walk it and Escape brings focus back to the chip.
+    if (changed.has("chipMenu") && this.chipMenu?.focusFirst) {
+      const menu = this.renderRoot.querySelector<HTMLElement>(".gh-chip-menu");
+      (menu?.querySelector<HTMLElement>(".gh-menuitem:not([disabled])") ?? menu)?.focus();
     }
     // …and on the side of its trigger that has the room — every update while
     // open, because a tick widens the trigger's label and moves its edges.
@@ -1981,6 +2037,19 @@ export class CommitGraph extends LitElement {
     this.virtualizer = v;
     this.cleanupVirtualizer = v._didMount();
     v._willUpdate();
+  }
+
+  /**
+   * Back to the first row, before the paint that follows. The virtualizer
+   * learns its offset from scroll events, which arrive a frame later (and
+   * never in an occluded webview) — it is told now, or it paints the old
+   * window over an empty top.
+   */
+  private scrollToTop(): void {
+    const s = this.boundScroller;
+    if (!s || s.scrollTop === 0) return;
+    s.scrollTop = 0;
+    s.dispatchEvent(new Event("scroll"));
   }
 
   private teardownVirtualizer(): void {
@@ -2603,10 +2672,24 @@ export class CommitGraph extends LitElement {
     // to happen here or nowhere. The item that had focus is about to be
     // removed with the popover; hand it back to the trigger that opened it,
     // or a keyboard user is dropped on <body>.
+    this.closeAndRefocus();
+  };
+
+  /** Close the open popover and give focus back to what opened it: the
+   *  trigger in this element, or — for a chip menu opened from outside it
+   *  (openRefMenu) — that chip. */
+  private closeAndRefocus(): void {
+    const opener = this.chipMenu?.opener;
     const sel = this.popoverTrigger();
     this.closePopovers();
-    if (sel) this.focusAfterUpdate(sel);
-  };
+    if (opener) {
+      void this.updateComplete.then(() => {
+        if (opener.isConnected) opener.focus();
+      });
+    } else if (sel) {
+      this.focusAfterUpdate(sel);
+    }
+  }
 
   /** Focus `sel` once the pending render has removed the popover — after the
    *  update, not a frame later, so nothing else can take focus in between. */
@@ -2659,11 +2742,9 @@ export class CommitGraph extends LitElement {
       e.stopPropagation();
       // Reached only when no document listener is attached (the trigger's own
       // keydown while its popover is closed); with one open, onDocKeyDown
-      // handles Escape and this never runs. Same outcome either way.
-      const sel = this.popoverTrigger();
-      this.closePopovers();
-      // Return focus to the trigger so keyboard users aren't stranded.
-      if (sel) this.focusAfterUpdate(sel);
+      // handles Escape and this never runs. Same outcome either way: focus
+      // goes back to the trigger so keyboard users aren't stranded.
+      this.closeAndRefocus();
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       // The picker's filter box takes its own arrow keys only when there is
       // nowhere to go; a caret in a one-line input has no use for them, so
@@ -2711,10 +2792,14 @@ export class CommitGraph extends LitElement {
    * what was actually applied (a ref that vanished is dropped there). The
    * picker stays open — one tick is rarely the whole selection.
    */
-  private applyRefFilter(refs: GraphRefFilter): void {
-    if (sameRefFilter(refs, this.refFilter)) return;
+  private applyRefFilter(refs: GraphRefFilter, preset?: RefPreset): void {
+    const p = preset && preset !== "all" ? preset : undefined;
+    if (sameRefFilter(refs, this.refFilter) && p === this.refPreset) return;
     this.refFilter = refs;
-    this.onAction({ type: "setRefFilter", refs });
+    this.refPreset = p;
+    // A preset goes to the host as what it MEANS (presetRefs), so it is stored
+    // that way and follows a checkout; the ticks above are what it means now.
+    this.onAction({ type: "setRefFilter", refs: p ? presetRefs(p) : refs });
   }
 
   private onBranchQueryInput = (e: Event): void => {
@@ -2727,16 +2812,53 @@ export class CommitGraph extends LitElement {
     if (!name) return;
     const kind = (chip.dataset.kind ?? "head") as WireRef["kind"];
     // The chip and the remote twins folded into it move as one thing — what
-    // you see is "main ☁", and "only this" means what you see. Resolved
-    // through the picker's list, not rebuilt from the short name: see chipRefs.
-    const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
-    const refs = chipRefs(this.refList, name, kind, remotes);
+    // you see is "main ☁", and "only this" means what you see. Both by FULL
+    // name, as the chip carries them (foldRefs).
+    const fullName = chip.dataset.full ?? "";
+    const twins = (chip.dataset.twins ?? "").split(",").filter(Boolean);
     const sha = (chip.closest(".row") as HTMLElement | null)?.dataset.sha ?? "";
+    this.showChipMenu({ name, fullName, kind, sha, x, y }, twins);
+  }
+
+  /**
+   * The same chip menu, for a ref chip that lives OUTSIDE the graph — the
+   * commit-details pane beside it (issue #30: "clicking a ref chip could also
+   * be a shortcut"). The pane has no ref list and no filter of its own; the
+   * graph owns both, so the pane asks the graph, and a pick goes through the
+   * one applyRefFilter every other tick goes through.
+   *
+   * `fullName` is the chip's ref as git named it in full (WireRef.fullName),
+   * resolved through the ref list like every chip (chipRefs); `name` is git's
+   * short form, carried for the host's checkout request only. `twins` are the
+   * full names of remote twins folded into the chip. `opener` gets focus back
+   * on Escape; `keyboard` focuses the first item, so a menu opened with Enter
+   * can be driven with the arrows.
+   */
+  openRefMenu(
+    ref: { name: string; fullName: string; kind: WireRef["kind"] },
+    x: number,
+    y: number,
+    sha: string,
+    opts: { opener?: HTMLElement; keyboard?: boolean; twins?: readonly string[] } = {},
+  ): void {
+    if (!ref.name && !ref.fullName) return;
+    this.showChipMenu(
+      { name: ref.name, fullName: ref.fullName, kind: ref.kind, sha, x, y, opener: opts.opener, focusFirst: opts.keyboard },
+      opts.twins ?? [],
+    );
+  }
+
+  private showChipMenu(
+    m: Omit<NonNullable<CommitGraph["chipMenu"]>, "refs">,
+    twins: readonly string[],
+  ): void {
+    // Resolved through the picker's list by FULL name: see chipRefs.
+    const refs = chipRefs(this.refList, m.fullName, twins);
     this.columnsOpen = false;
     this.scopeOpen = false;
     this.branchesOpen = false;
     this.commitMenu = null;
-    this.chipMenu = { name, kind, sha, refs, x, y };
+    this.chipMenu = { ...m, refs };
   }
 
   // ── Click-to-copy the full sha ─────────────────────────────────────────────
@@ -3058,7 +3180,7 @@ export class CommitGraph extends LitElement {
     const { shown, overflow: rest } = fitRefs(entries, this.refsBudget());
     let out = "";
     for (const entry of entries.slice(0, shown)) {
-      out += chipHtml(entry.ref, entry.remotes);
+      out += chipHtml(entry);
     }
     // The "+N" pill is UNCONDITIONAL whenever anything was dropped.
     //
@@ -3075,8 +3197,11 @@ export class CommitGraph extends LitElement {
       // affordance that reveals what the column could not fit.
       const hidden = rest.map((e) => ({
         name: e.ref.name,
+        label: e.label,
+        fullName: e.ref.fullName,
         kind: e.ref.kind,
         remotes: e.remotes,
+        twins: e.twins,
       }));
       out +=
         `<span class="chip chip-overflow" data-more="${esc(tipData(hidden))}"` +
@@ -3110,7 +3235,15 @@ export class CommitGraph extends LitElement {
     const sha = this.refTip.sha;
     if (!name || !sha) return;
     this.refTip.dismiss();
-    this.onAction({ type: "refClick", sha, name, kind: row.dataset.kind ?? "head" });
+    this.onAction({
+      type: "refClick",
+      sha,
+      name,
+      fullName: row.dataset.full ?? "",
+      kind: row.dataset.kind ?? "head",
+      remotes: (row.dataset.remotes ?? "").split(",").filter(Boolean),
+      twins: (row.dataset.twins ?? "").split(",").filter(Boolean),
+    });
   };
 
   private onClick = (e: MouseEvent): void => {
@@ -3166,7 +3299,12 @@ export class CommitGraph extends LitElement {
           type: "refClick",
           sha: row.dataset.sha,
           name,
+          fullName: chip.dataset.full ?? "",
           kind: chip.dataset.kind ?? "head",
+          x: e.clientX,
+          y: e.clientY,
+          remotes: (chip.dataset.remotes ?? "").split(",").filter(Boolean),
+          twins: (chip.dataset.twins ?? "").split(",").filter(Boolean),
         });
         return;
       }
@@ -3659,12 +3797,23 @@ export class CommitGraph extends LitElement {
     }
   }
 
-  /** Current branch name, derived from the HEAD row's currentHead ref. */
+  /**
+   * Current branch name: the ref list's current branch, else the HEAD row's
+   * currentHead chip.
+   *
+   * The list first. Under a filter that leaves the current branch out (issue
+   * #30) no row carries its chip — an attached HEAD is walked only when
+   * ticked — and a header read off the rows alone said "Detached HEAD" over a
+   * HEAD that was on main. And the list's full name reads "release" where the
+   * chip says git's "heads/release" beside a tag of that name.
+   */
   private currentBranchName(): string {
+    const cur = this.refList.find((r) => r.kind === "head" && r.isCurrent);
+    if (cur) return refDisplayName(cur.fullName);
     for (const row of this.rows) {
       const ref = row.refs.find((r) => r.kind === "currentHead");
       if (ref) {
-        return ref.name;
+        return ref.fullName ? refDisplayName(ref.fullName) : ref.name;
       }
     }
     return "";
@@ -3828,7 +3977,7 @@ export class CommitGraph extends LitElement {
    */
   private branchesControlHtml() {
     const refs = this.refList;
-    const label = refFilterLabel(this.refFilter, refs);
+    const label = refFilterLabel(this.refFilter, refs, this.refPreset);
     const filtered = this.refFilter !== null;
     return html`<span class="gh-anchor">
       <button
@@ -3851,16 +4000,12 @@ export class CommitGraph extends LitElement {
 
   private branchesPopHtml() {
     const refs = this.refList;
-    const active = activePreset(this.refFilter, refs);
+    const active = activePreset(this.refFilter, this.refPreset);
     const selected = new Set(this.refFilter ?? []);
     const groups = groupRefs(refs, this.branchQuery);
     const kindIcon = (k: GraphRefEntry["kind"]) =>
       k === "tag" ? "tag" : k === "remoteHead" ? "cloud" : "git-branch";
-    const hint = this.refFilter
-      ? `${this.refFilter.length} of ${refs.length} ticked · untick the last for all`
-      : refs.length
-        ? "Showing every branch and tag · tick one to narrow"
-        : "No branches or tags";
+    const hint = refFilterHint(this.refFilter, refs, this.refPreset);
     return html`<div
       class="gh-pop gh-branches-pop"
       role="menu"
@@ -3880,7 +4025,7 @@ export class CommitGraph extends LitElement {
             aria-pressed=${active === p.id ? "true" : "false"}
             @click=${() => {
               const f = presetFilter(p.id, refs);
-              if (f !== undefined) this.applyRefFilter(f);
+              if (f !== undefined) this.applyRefFilter(f, p.id);
             }}
           >
             ${p.label}
@@ -3911,7 +4056,7 @@ export class CommitGraph extends LitElement {
               >
                 <span class="codicon codicon-check" aria-hidden="true"></span>
                 <span class="codicon codicon-${kindIcon(r.kind)} gh-ref-kind" aria-hidden="true"></span>
-                <span class="lbl gh-ref-name">${r.name}</span>
+                <span class="lbl gh-ref-name">${refDisplayName(r.fullName)}</span>
                 ${r.isCurrent ? html`<span class="gh-ref-cur">current</span>` : nothing}
               </button>`,
             )}
@@ -3937,36 +4082,45 @@ export class CommitGraph extends LitElement {
     const H = 34 + 5 * 28;
     const left = Math.max(6, Math.min(m.x, window.innerWidth - W - 6));
     const top = Math.max(6, Math.min(m.y, window.innerHeight - H - 6));
-    const inFilter = !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
-    const isOnly = sameRefFilter(m.refs, this.refFilter);
+    // A chip the ref list has no entry for resolves to nothing (chipRefs):
+    // its menu says so and acts on nothing, rather than guess a full name.
+    const known = m.refs.length > 0;
+    const inFilter = known && !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
+    const isOnly = known && sameRefFilter(m.refs, this.refFilter);
     const pick = (refs: GraphRefFilter) => {
       this.chipMenu = null;
       this.applyRefFilter(refs);
     };
-    const checkout = chipCheckout(m);
+    // The ref's own name, not git's disambiguated short form ("heads/x"
+    // beside a tag "x") — the chip's full name, shorn, even when the list
+    // does not know it.
+    const title = refDisplayName(known ? m.refs[0] : m.fullName || m.name);
+    const checkout = known ? chipCheckout({ ...m, name: title }) : undefined;
     return html`<div
       class="gh-pop gh-ctx gh-chip-menu"
       role="menu"
-      aria-label=${`Filter by ${m.name}`}
+      tabindex="-1"
+      aria-label=${`Filter by ${title}`}
       style="left:${Math.round(left)}px;top:${Math.round(top)}px"
       @keydown=${this.onPopoverKeyDown}
     >
-      <div class="gh-pop-title">${m.name}</div>
+      <div class="gh-pop-title">${title}</div>
       <button
         class="gh-menuitem"
         role="menuitem"
         data-chip-action="only"
-        ?disabled=${isOnly}
+        ?disabled=${isOnly || !known}
         @click=${() => pick(m.refs)}
       >
         <span class="codicon codicon-filter" aria-hidden="true"></span>
-        <span class="lbl">Show only this branch</span>
+        <span class="lbl">${m.kind === "tag" ? "Show only this tag" : "Show only this branch"}</span>
       </button>
       ${this.refFilter
         ? html`<button
               class="gh-menuitem"
               role="menuitem"
               data-chip-action=${inFilter ? "remove" : "add"}
+              ?disabled=${!known}
               @click=${() =>
                 pick(inFilter ? removeRefs(this.refFilter, m.refs) : addRefs(this.refFilter, m.refs))}
             >
@@ -4001,6 +4155,10 @@ export class CommitGraph extends LitElement {
               <span class="lbl">${checkout.label}</span>
             </button>`
         : nothing}
+      ${known
+        ? nothing
+        : html`<div class="gh-pop-sep"></div>
+            <div class="gh-pop-hint">Not in the branch list yet — refresh the graph</div>`}
     </div>`;
   }
 
@@ -4248,17 +4406,17 @@ function tailHtml(remotes: string[]): string {
 }
 
 /** Chip label; a remote chip's "origin/" prefix is visually muted. */
-function refNameHtml(ref: WireRef): string {
+function refNameHtml(ref: WireRef, label: string): string {
   if (ref.kind === "remoteHead") {
-    const i = ref.name.indexOf("/");
+    const i = label.indexOf("/");
     if (i > 0) {
       return (
-        `<span class="nm"><span class="rp">${esc(ref.name.slice(0, i + 1))}</span>` +
-        `${esc(ref.name.slice(i + 1))}</span>`
+        `<span class="nm"><span class="rp">${esc(label.slice(0, i + 1))}</span>` +
+        `${esc(label.slice(i + 1))}</span>`
       );
     }
   }
-  return `<span class="nm">${esc(ref.name)}</span>`;
+  return `<span class="nm">${esc(label)}</span>`;
 }
 
 /**
@@ -4286,17 +4444,21 @@ function refNameHtml(ref: WireRef): string {
  * `aria-label` carries what the title used to say, so nothing is lost to
  * assistive tech.
  */
-function chipHtml(ref: WireRef, remotes: string[] = []): string {
-  const nm = refNameHtml(ref);
+function chipHtml(entry: ChipEntry): string {
+  const { ref, label, remotes, twins } = entry;
+  const nm = refNameHtml(ref, label);
   const tail = tailHtml(remotes);
   const also = remotes.length ? ` · also on ${esc(remotes.join(", "))}` : "";
-  const tip = esc(tipData([{ name: ref.name, kind: ref.kind, remotes }]));
-  // `data-remotes` carries the folded twins so the chip's filter menu (issue
-  // #30) can move "main ☁" as the one thing it looks like.
+  const tip = esc(tipData([{ name: ref.name, label, fullName: ref.fullName, kind: ref.kind, remotes, twins }]));
+  // `data-full` / `data-twins` are what the chip's filter menu (issue #30)
+  // resolves by: the chip's own full name and the folded twins', so "main ☁"
+  // moves as the one thing it looks like. `data-ref` stays git's short name —
+  // the name the desktop's Branches view lists the ref under — and the label
+  // is the full name shorn (never "heads/release").
   const attrs = (cls: string, what: string) =>
-    `class="${cls}" data-ref="${esc(ref.name)}" data-kind="${ref.kind}" ` +
-    (remotes.length ? `data-remotes="${esc(remotes.join(","))}" ` : "") +
-    `data-more="${tip}" role="button" aria-label="${esc(ref.name)} (${what}${also})"`;
+    `class="${cls}" data-ref="${esc(ref.name)}" data-full="${esc(ref.fullName ?? "")}" data-kind="${ref.kind}" ` +
+    (remotes.length ? `data-remotes="${esc(remotes.join(","))}" data-twins="${esc(twins.join(","))}" ` : "") +
+    `data-more="${tip}" role="button" aria-label="${esc(label)} (${what}${also})"`;
   switch (ref.kind) {
     case "currentHead":
       // No leading dot: the filled accent already marks the current branch, and

@@ -23,8 +23,12 @@ EXTRA="${4:-}"
 mkdir -p "$(dirname "$OUT")"
 # GS_CHROME first (as webview-ui's test/headless.ts), then the usual install.
 CHROME="${GS_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+# Its own throwaway profile: left to itself headless Chrome leaves a
+# .com.google.Chrome.* directory in $TMPDIR behind on every launch.
+PROFILE="$(mktemp -d "${TMPDIR:-/tmp}/gs-shot-XXXXXX")"
+trap 'rm -rf "$PROFILE"' EXIT
 "$CHROME" \
-  --headless --disable-gpu --hide-scrollbars \
+  --headless --disable-gpu --hide-scrollbars --user-data-dir="$PROFILE" \
   --window-size=1600,1000 --force-device-scale-factor=2 \
   --virtual-time-budget=9000 \
   --screenshot="$OUT" \

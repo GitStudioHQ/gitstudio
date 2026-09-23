@@ -21,20 +21,30 @@ import {
 import { DEFAULT_MERGE_SETTINGS } from "@gitstudio/host-bridge/conflictsProtocol";
 import { stageOf } from "@gitstudio/engine/conflict/sides";
 import { ExpectedError } from "./expectedError";
+import { applyForDoor, checkoutOp, pullForDoor, type DoorApplied } from "./inTheWay";
+import type { ApplyOp } from "@gitstudio/git-service/changesInTheWay";
 import { basename, extname, join, resolve, sep } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
 import type { LineRange, Hunk } from "@gitstudio/engine/staging/applyLineChanges";
-import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
+import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
-import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
-import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { branchNameOf, remoteBranchOf } from "@gitstudio/git-service/BranchOps";
+import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
+import {
+  pullBlockedMessage,
+  pullDetachedMessage,
+  pullStoppedMessage,
+  pushUnseenMessage,
+} from "@gitstudio/git-service/SyncOps";
+import { GitProcess } from "@gitstudio/git-service/GitProcess";
 import type {
   CommitRecord,
   GitContext,
@@ -60,6 +70,13 @@ import type {
   GraphRefFilter,
   HeadCommit,
   HeadInfo,
+  PullActionResult,
+  PullBlockInfo,
+  PullDirtyInfo,
+  PullDivergence,
+  PullMode,
+  PullStopInfo,
+  PushActionResult,
   RefInfo,
   RepoFile,
   FileHunkWire,
@@ -75,12 +92,16 @@ import type {
   MergeSettings,
   OperationOutcome,
   SideRole,
+  OkResult,
 } from "../shared/ipc";
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import {
   chipRefsUnderFilter,
+  filterWalk,
+  type FilterWalk,
   normalizeRefFilter,
   refEntries,
+  refListSignature,
   sameRefFilter,
 } from "@gitstudio/host-bridge/graphRefFilter";
 import type { CommitFileChange } from "@gitstudio/host-bridge/git";
@@ -134,12 +155,55 @@ export function safePath(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && !v.includes("\0");
 }
 
+/** "1 commit" / "3 commits" — the main process has no renderer helpers. */
+function commits(n: number): string {
+  return `${n} commit${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * The only three reconciliations `sync:pull` accepts.
+ *
+ * `mode` is typed `PullMode` on the channel, but a type is not a check: what
+ * arrives is whatever the renderer sent, and it ends up choosing a command-line
+ * flag. Checking it against this set here — at the boundary, before it can
+ * become an argument — is the same discipline `safeArg` applies to a ref.
+ */
+const PULL_MODES: readonly PullMode[] = ["merge", "rebase", "ff-only"];
+function safePullMode(v: unknown): v is PullMode | undefined {
+  return v === undefined || PULL_MODES.includes(v as PullMode);
+}
+
 /** Standard rejection for an unsafe ref/name reaching a mutation. */
 const UNSAFE_REF_RESULT: CommitActionResult = {
   ok: false,
   changed: false,
   message: "That value isn't a valid git reference.",
 };
+
+/**
+ * A FULL ref name in one of `namespaces` — what every branch op now requires
+ * (see branchMerge). Full names start with "refs/", so they can never be read
+ * as an option; a NUL is the only other hazard on argv.
+ */
+export function isFullRef(v: unknown, namespaces: readonly string[]): v is string {
+  if (typeof v !== "string" || v.includes("\0")) return false;
+  return namespaces.some((ns) => v.startsWith(`refs/${ns}/`) && v.length > `refs/${ns}/`.length);
+}
+
+/** The name `git branch` takes for the local branch `fullName` (the part
+ *  under refs/heads/), or undefined when `fullName` is not one. */
+export function localBranchOf(fullName: unknown): string | undefined {
+  return isFullRef(fullName, ["heads"]) ? branchNameOf(fullName) : undefined;
+}
+
+/** A branch op that arrived without a full name — refused, not guessed at. */
+function notABranch(what: string): CommitActionResult {
+  return {
+    ok: false,
+    changed: false,
+    message: `Couldn't tell which branch to ${what} — refresh and try again.`,
+  };
+}
 
 /** Standard rejection for an unusable path reaching a mutation. */
 const UNSAFE_PATH_RESULT: CommitActionResult = {
@@ -157,6 +221,27 @@ function noIde(): CommitActionResult {
     message:
       "No JetBrains IDE was found. Install one (WebStorm, PyCharm, IntelliJ IDEA…) or set its path in Settings ▸ Merge.",
   };
+}
+
+/**
+ * Did a failed git command DECLINE — explain itself on stdout alone — rather
+ * than fail?
+ *
+ * The one rule staged(), commitAction and checkoutRef share for a failure that
+ * wrote nothing to stderr. git declining on stdout ("nothing to commit, working
+ * tree clean" from a revert already made, a merge's CONFLICT report) is a state
+ * of the user's repository, so it is `expected`: shown, not crash-reported.
+ *
+ * Silence on BOTH streams is not. git speaks when it refuses — a hook that
+ * rejects a merge, a rebase or a ref update still gets "ref updates aborted by
+ * hook" or "The pre-rebase hook refused to rebase." (checked against real git)
+ * — so a failure with nothing on either stream is a process that died, a git
+ * that is not git, or something we did. All three sites used to mark it
+ * expected, which silenced the one report that could tell us, and painted
+ * "The operation failed." in the neutral tone of a state the user is in.
+ */
+function declinedOnStdout(stdout: string, stderr: string): boolean {
+  return stderr.trim() === "" && stdout.trim() !== "";
 }
 
 /**
@@ -223,13 +308,21 @@ export class GitBridge {
    *  repository's list, and must not prune a stored selection (see below). */
   private refsListed = false;
   private refList: GraphRefEntry[] = [];
+  /** refListSignature(refList), computed once per listing — a page request
+   *  compares against it (see graphPage). */
+  private refListSig = refListSignature([]);
   /**
    * The branch filter the accumulated pages were walked with (issue #30) —
    * pruned against the refs that existed at load time, null for everything.
    * A request that changes it is a fresh load: the pages so far belong to a
-   * different history.
+   * different history. Presets stay symbolic here ("Current branch" is
+   * CURRENT_BRANCH), so a request is compared with what was asked for.
    */
   private refFilter: GraphRefFilter = null;
+  /** What that filter walks for the accumulated pages — resolved against the
+   *  fresh load's listing, HEAD only when detached (filterWalk). Every page,
+   *  the chips and graph:reaches read this one value. */
+  private walk: FilterWalk = { refs: null, head: true };
   private currentHeadSha = "";
   private loadedRoot: string | undefined;
   /** Serializes graph:load so two pages never interleave in the accumulator. */
@@ -296,7 +389,17 @@ export class GitBridge {
   private async graphLoadInner(opts: GraphLoadRequest): Promise<GraphPage> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { rows: [], head: "", totalColumns: 1, hasMore: false, nextSkip: 0, refFilter: null, refList: [] };
+      const none = refListSignature([]);
+      return {
+        rows: [],
+        head: "",
+        totalColumns: 1,
+        hasMore: false,
+        nextSkip: 0,
+        refFilter: null,
+        ...(opts.refListSig === none ? {} : { refList: [] }),
+        refListSig: none,
+      };
     }
 
     const maxCount = opts.maxCount ?? PAGE_SIZE;
@@ -337,6 +440,9 @@ export class GitBridge {
           await this.refFilters?.set(ctx.root, this.refFilter);
         }
       }
+      // Resolved against the listing just read: a preset means the branch
+      // HEAD is on NOW, and an attached HEAD is walked only when ticked.
+      this.walk = filterWalk(this.refFilter, this.refList, this.refs);
     }
     const gen = this.graphGen;
 
@@ -350,8 +456,8 @@ export class GitBridge {
         totalColumns: 1,
         hasMore: false,
         nextSkip: this.loaded.length,
-        refFilter: this.refFilter,
-        refList: this.refList,
+        ...this.filterFields(),
+        ...this.refListFor(opts),
       };
     }
     const before = fresh ? 0 : this.loaded.length;
@@ -362,10 +468,10 @@ export class GitBridge {
     const allRows = buildWireRows({
       rows: layout.rows,
       records: this.records,
-      // Chips follow the filter: a ref the graph is not built around draws no
-      // chip (the current branch always does). commit:details keeps reading
-      // the full map — it describes the commit.
-      refsBySha: chipRefsUnderFilter(this.refsBySha, this.refFilter),
+      // Chips follow the filter: a ref the graph is not walked from draws no
+      // chip — the current branch included, unless it is ticked.
+      // commit:details keeps reading the full map — it describes the commit.
+      refsBySha: chipRefsUnderFilter(this.refsBySha, this.walk.refs),
     });
 
     return {
@@ -374,9 +480,32 @@ export class GitBridge {
       totalColumns: layout.totalColumns,
       hasMore,
       nextSkip: this.loaded.length,
-      refFilter: this.refFilter,
-      refList: this.refList,
+      ...this.filterFields(),
+      ...this.refListFor(opts),
     };
+  }
+
+  /** What a page says about the filter: the full names its rows were walked
+   *  from (the picker ticks these) and the preset they stand for, if any. */
+  private filterFields(): Pick<GraphPage, "refFilter" | "refPreset"> {
+    return {
+      refFilter: this.walk.refs,
+      ...(this.walk.preset ? { refPreset: this.walk.preset } : {}),
+    };
+  }
+
+  /**
+   * The picker's list for this page — only when the caller does not already
+   * hold it (issue #30). It is every branch and tag, about a megabyte on a
+   * repository with ten thousand tags, and it crossed IPC with every page of
+   * every load. The caller says which list it has (`refListSig`, what it last
+   * handed the graph element), so a reloaded renderer — which holds none —
+   * always gets one, whatever this process sent before.
+   */
+  private refListFor(opts: GraphLoadRequest): Pick<GraphPage, "refList" | "refListSig"> {
+    return opts.refListSig === this.refListSig
+      ? { refListSig: this.refListSig }
+      : { refList: this.refList, refListSig: this.refListSig };
   }
 
   /**
@@ -386,10 +515,11 @@ export class GitBridge {
    */
   async graphReaches(sha: string): Promise<{ reached: boolean }> {
     const ctx = this.ctx();
-    if (!ctx || !this.refFilter) {
+    const walk = this.walk;
+    if (!ctx || !walk.refs) {
       return { reached: true };
     }
-    return { reached: await ctx.log.walkReaches(sha, this.refFilter) };
+    return { reached: await ctx.log.walkReaches(sha, walk.refs, { head: walk.head }) };
   }
 
   private async readPage(
@@ -402,7 +532,8 @@ export class GitBridge {
       revRange: "--all",
       // The branch filter: every page of one load walks the same ticked set,
       // so skip-based paging stays consistent across the load.
-      refs: this.refFilter ?? undefined,
+      refs: this.walk.refs ?? undefined,
+      head: this.walk.head,
       maxCount,
       skip,
     })) {
@@ -424,6 +555,7 @@ export class GitBridge {
     this.refs = refs;
     this.refsListed = refs.length > 0;
     this.refList = refEntries(refs);
+    this.refListSig = refListSignature(this.refList);
     for (const ref of refs) {
       if (ref.type === "stash") {
         continue;
@@ -438,6 +570,17 @@ export class GitBridge {
         this.currentHeadSha = ref.sha;
       }
     }
+    if (!this.currentHeadSha) {
+      // No branch is current: HEAD is detached (or unborn). It still sits on
+      // a commit, and that is what a page's `head` means — the graph's "you
+      // are here" and its header's "Detached HEAD at …". The extension had
+      // the same gap (its header read "no commits yet" over the history).
+      try {
+        this.currentHeadSha = await ctx.refs.headCommit();
+      } catch {
+        /* no HEAD to point at */
+      }
+    }
   }
 
   // ── Refs / HEAD ────────────────────────────────────────────────────────────
@@ -445,15 +588,15 @@ export class GitBridge {
   /** Branches containing `sha`. Best-effort: never throws at the renderer. */
   async refsContains(
     sha: string,
-  ): Promise<{ branches: string[]; truncated: boolean }> {
+  ): Promise<{ branches: string[]; refs: string[]; truncated: boolean }> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { branches: [], truncated: false };
+      return { branches: [], refs: [], truncated: false };
     }
     try {
       return await ctx.refs.containingBranches(sha);
     } catch {
-      return { branches: [], truncated: false };
+      return { branches: [], refs: [], truncated: false };
     }
   }
 
@@ -495,9 +638,12 @@ export class GitBridge {
     }
     try {
       const h = await ctx.refs.getHead();
+      // The plain name ("release"), never git's "heads/release" beside a tag
+      // of that name: the top bar shows it, and the PR composer and the
+      // workflow dispatch hand it to GitHub, which has no "heads/" anything.
       return h.detached
         ? { detached: true, sha: h.sha }
-        : { detached: false, branch: h.branch, sha: h.sha };
+        : { detached: false, branch: headBranchName(h), sha: h.sha };
     } catch {
       return undefined;
     }
@@ -518,7 +664,10 @@ export class GitBridge {
     if (!ctx || !safeArg(sha)) return { branches: [], onCurrent: false };
     const [contains, head] = await Promise.all([
       ctx.process.run(["branch", "--contains", sha, "--format=%(refname)"]),
-      ctx.process.run(["symbolic-ref", "--quiet", "--short", "HEAD"]),
+      // FULL, like the list it is compared with: `--short` is "heads/release"
+      // beside a tag "release", which never equalled the list's "release", so
+      // the current branch was not recognised as containing the commit.
+      ctx.process.run(["symbolic-ref", "--quiet", "HEAD"]),
     ]);
     if (contains.code !== 0) return { branches: [], onCurrent: false };
     const branches = contains.stdout
@@ -526,7 +675,8 @@ export class GitBridge {
       .map((l) => l.trim())
       .filter((l) => l.startsWith("refs/heads/"))
       .map((l) => l.slice("refs/heads/".length));
-    const current = head.code === 0 ? head.stdout.trim() || undefined : undefined;
+    const headRef = head.code === 0 ? head.stdout.trim() : "";
+    const current = headRef.startsWith("refs/heads/") ? headRef.slice("refs/heads/".length) || undefined : undefined;
     const onCurrent = !!current && branches.includes(current);
     // HEAD's own branch first — it is the one the reader is oriented by.
     branches.sort((a, b) => (a === current ? -1 : b === current ? 1 : a.localeCompare(b)));
@@ -554,15 +704,12 @@ export class GitBridge {
     } catch {
       files = [];
     }
-    const refs: WireRef[] = (this.refsBySha.get(sha) ?? [])
-      .filter((r) => r.type !== "stash")
-      .map((r): WireRef => {
-        if (r.type === "tag") return { kind: "tag", name: r.name };
-        if (r.type === "remote") return { kind: "remoteHead", name: r.name };
-        return r.isCurrent
-          ? { kind: "currentHead", name: r.name }
-          : { kind: "head", name: r.name };
-      });
+    // The graph row's own chips (wireRefs), full names and all (issue #30's
+    // follow-up): the pane labels its chips by the full name, and its chip
+    // menu resolves them through the graph's ref list. A copy of that mapping
+    // kept refs/remotes/origin/HEAD, which the graph draws no chip for and the
+    // list leaves out — an "origin/HEAD" chip whose menu could never act.
+    const refs: WireRef[] = wireRefs(this.refsBySha.get(sha));
     const hasRemote = [...this.refsBySha.values()].some((list) =>
       list.some((r) => r.type === "remote"),
     );
@@ -746,7 +893,7 @@ export class GitBridge {
   }): Promise<CommitActionResult & { indexText?: string }> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     const abs = containedPath(ctx.root, req.path);
     if (!abs) {
@@ -930,12 +1077,16 @@ export class GitBridge {
    * have restored the file AND staged it, quietly turning an undo into a
    * staging change.
    */
-  async discardUndo(req: { sha: string; paths: string[] }): Promise<{ ok: boolean; message?: string }> {
+  async discardUndo(req: { sha: string; paths: string[] }): Promise<OkResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, message: "No repository is open." };
+    // Having no repo open, and having nothing to put back, are states the user
+    // can simply be in — `expected` keeps them out of the crash reporter (see
+    // main/expectedError.ts). An unusable restore point is NOT one of them: the
+    // sha comes from a snapshot this app made, so a refusal here is our bug.
+    if (!ctx) return { ok: false, expected: true, message: "No repository is open." };
     if (!safeArg(req.sha)) return { ok: false, message: "That restore point is not usable." };
     const paths = req.paths.filter((p) => p);
-    if (!paths.length) return { ok: false, message: "Nothing to restore." };
+    if (!paths.length) return { ok: false, expected: true, message: "Nothing to restore." };
     const r = await ctx.process.run([
       "restore",
       `--source=${req.sha}`,
@@ -1101,10 +1252,10 @@ export class GitBridge {
   async commit(req: { message: string; amend?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     if (!req.message.trim() && !req.amend) {
-      return { ok: false, changed: false, message: "A commit message is required." };
+      return { ok: false, changed: false, expected: true, message: "A commit message is required." };
     }
     // A plain commit does NOT finish a `git am`, it derails it: the session
     // stays open on disk, the remaining patches are never applied, and the
@@ -1192,13 +1343,25 @@ export class GitBridge {
       return [];
     }
   }
-  async stashApply(ref: string): Promise<CommitActionResult> {
+  /**
+   * Apply / pop, through the one door for commit-applying commands: refused
+   * over uncommitted work in the stash's way, they say which files and the
+   * renderer offers Stash & Retry. The request is the ref, or — sent again
+   * after Stash & Retry — `{ ref, stashFirst }`.
+   */
+  async stashApply(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
+    const { ref, stashFirst } = stashRequest(req);
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => ctx.stashes.apply(ref));
+    return this.staged(async (ctx) =>
+      stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: false }, stashFirst)),
+    );
   }
-  async stashPop(ref: string): Promise<CommitActionResult> {
+  async stashPop(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
+    const { ref, stashFirst } = stashRequest(req);
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => ctx.stashes.pop(ref));
+    return this.staged(async (ctx) =>
+      stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: true }, stashFirst)),
+    );
   }
   async stashDrop(ref: string): Promise<CommitActionResult> {
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
@@ -1262,7 +1425,7 @@ export class GitBridge {
   async hunksStage(req: { path: string; index: number }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     const abs = containedPath(ctx.root, req.path);
     if (!abs) {
@@ -1299,7 +1462,7 @@ export class GitBridge {
   }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     // Every path is proved to be inside the repository before it reaches git,
     // like every other mutating handler here. A stash pathspec is a write.
@@ -1612,15 +1775,36 @@ export class GitBridge {
 
   // ── Settings: git identity + local SSH keys ─────────────────────────────────
 
+  /**
+   * Where a `git config --global` runs: the open repository when there is one,
+   * and a repository-less git otherwise.
+   *
+   * The identity is the USER's, not the open repository's. This card used to
+   * need a repository anyway: with none open it showed two blank fields over a
+   * perfectly good ~/.gitconfig, and Save answered "No repository open." —
+   * which is report #15, filed from Settings on a machine with no repository
+   * open yet (the very moment a new user sets their name). Marking that answer
+   * `expected` silenced the report and kept the defect; this removes the need
+   * for the answer. The open repository still wins when there is one, so an
+   * `includeIf "gitdir:…"` in the global file reads as it always has.
+   */
+  private globalConfigGit(): Pick<GitProcess, "run"> {
+    const ctx = this.ctx();
+    if (ctx) return ctx.process;
+    // The OS temp dir, not the home dir: a home directory that is itself a
+    // git work tree (dotfiles) would otherwise be discovered, and its own
+    // config or ownership could get in the way of a global read or write.
+    this.globalGit ??= new GitProcess({ cwd: tmpdir(), ...this.repos.runnerOptions?.() });
+    return this.globalGit;
+  }
+  private globalGit: GitProcess | undefined;
+
   /** The global git author identity (`git config --global user.name/email`). */
   async gitIdentity(): Promise<GitIdentity> {
-    const ctx = this.ctx();
-    if (!ctx) {
-      return { name: "", email: "" };
-    }
+    const git = this.globalConfigGit();
     const read = async (key: string): Promise<string> => {
       try {
-        const r = await ctx.process.run(["config", "--global", key]);
+        const r = await git.run(["config", "--global", key]);
         return r.code === 0 ? r.stdout.trim() : "";
       } catch {
         return "";
@@ -1629,17 +1813,19 @@ export class GitBridge {
     return { name: await read("user.name"), email: await read("user.email") };
   }
 
-  /** Set the global git author identity. */
+  /** Set the global git author identity — with or without a repository open. */
   async setGitIdentity(req: GitIdentity): Promise<CommitActionResult> {
-    const ctx = this.ctx();
-    if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
-    }
+    const git = this.globalConfigGit();
     const name = req.name.trim();
     const email = req.email.trim();
+    // The three refusals below are all about what is in the two text fields:
+    // the user is mid-edit, or has typed something git cannot record. None is a
+    // defect, so none is crash-reported (see main/expectedError.ts). A `git
+    // config` that then fails IS reported — that one is news.
+    //
     // A value starting with "-" would be read by `git config` as an option.
     if ((name && name.startsWith("-")) || (email && email.startsWith("-"))) {
-      return { ok: false, changed: false, message: "Name and email can't start with “-”." };
+      return { ok: false, changed: false, expected: true, message: "Name and email can't start with “-”." };
     }
     // An identity is a PAIR. git refuses to commit without both
     // ("Please tell me who you are"), so a half-filled card is not a saveable
@@ -1647,12 +1833,13 @@ export class GitBridge {
     // clearing one and pressing Save reported "Identity updated" while leaving
     // the old value in ~/.gitconfig, untouched and unmentioned.
     if (!name && !email) {
-      return { ok: false, changed: false, message: "Enter a name and an email to save." };
+      return { ok: false, changed: false, expected: true, message: "Enter a name and an email to save." };
     }
     if (!name || !email) {
       return {
         ok: false,
         changed: false,
+        expected: true,
         message: `Git needs both a name and an email to record a commit. ${
           name ? "Add an email" : "Add a name"
         } to save, or leave the card as it is — nothing has been changed.`,
@@ -1664,7 +1851,7 @@ export class GitBridge {
         ["user.email", email],
       ];
       for (const [key, value] of writes) {
-        const r = await ctx.process.run(["config", "--global", key, value]);
+        const r = await git.run(["config", "--global", key, value]);
         // `git config` exits non-zero WITHOUT throwing (run() resolves with the
         // code) — e.g. a read-only or locked ~/.gitconfig, or a broken include.
         // This used to fall through to "updated ✓" while writing nothing.
@@ -1718,7 +1905,8 @@ export class GitBridge {
     let branch: string | undefined;
     try {
       const h = await ctx.refs.getHead();
-      branch = h.detached ? undefined : h.branch;
+      // Shown in the sync widget: the plain name, never "heads/release".
+      branch = headBranchName(h);
     } catch {
       branch = undefined;
     }
@@ -1733,46 +1921,178 @@ export class GitBridge {
   async syncFetch(opts?: { prune?: boolean }): Promise<CommitActionResult> {
     return this.staged((ctx) => ctx.sync.fetch({ prune: opts?.prune }));
   }
-  async syncPull(): Promise<CommitActionResult> {
-    return this.staged((ctx) => ctx.sync.pull());
+  /**
+   * Pull — and when git cannot reconcile on its own, ASK rather than fail.
+   *
+   * With no `mode`, a diverged branch comes back as `{ ok: false, diverged }`
+   * with nothing changed: `SyncOps.pull` refuses as `--ff-only`, which aborts
+   * before touching the worktree. `expected: true` keeps that out of the crash
+   * reporter — a branch that diverged is a state of the user's repo, not a
+   * defect — and it is the same flag the renderer reads to show the message as
+   * information rather than as a red error.
+   *
+   * Report #12: what reached the user instead was git's own terminal advice,
+   * "You have divergent branches and need to specify how to reconcile them",
+   * followed by three `git config` lines. The mode is passed as a flag on the
+   * one command; the user's config is never written.
+   *
+   * The answer to that question is a merge or a rebase, and either can STOP on
+   * conflicts — the commonest outcome a diverged branch has. That comes back as
+   * `stopped`, with the count, `changed: true` (the repository is now mid-merge
+   * or mid-rebase) and `expected: true`: the user is at a choice point, not
+   * looking at a defect. Before this, a merge that conflicted said "The
+   * operation failed." (git writes CONFLICT to stdout, and only stderr came
+   * back), and a rebase that conflicted put git's "Resolve all conflicts
+   * manually… git rebase --continue" hint in a red toast and a crash report —
+   * report #12's symptom, reached through the door built to close it.
+   */
+  async syncPull(opts?: { mode?: PullMode; stashFirst?: string }): Promise<PullActionResult> {
+    if (!safePullMode(opts?.mode)) {
+      // Only a malformed renderer request can get here: the mode comes from two
+      // buttons in one dialog. That is our defect, so it REPORTS — marking it
+      // expected would hide the one signal that a door is sending garbage.
+      return {
+        ok: false,
+        changed: false,
+        message: "That isn't a way to reconcile a pull.",
+      };
+    }
+    let diverged: PullDivergence | undefined;
+    let stopped: PullStopInfo | undefined;
+    let blocked: PullBlockInfo | undefined;
+    let dirty: PullDirtyInfo | undefined;
+    const r = await this.staged(async (ctx) => {
+      // Through the one door for commands that apply commits (main/inTheWay.ts):
+      // the user's uncommitted work in the pull's way answers which files,
+      // `expected`, and the renderer offers Stash & Retry — which sends this
+      // request again with `stashFirst`. It used to be said as "commit or stash
+      // them, then pull again", with nothing to do it.
+      const door = await pullForDoor(ctx, opts?.mode, opts?.stashFirst);
+      if ("answer" in door) {
+        if (door.answer.inTheWay) dirty = { files: door.answer.inTheWay.files.length };
+        return door.answer;
+      }
+      const out = door.pulled;
+      const note = door.stashNote ? { stashNote: door.stashNote } : {};
+      if (out.stopped) {
+        stopped = { operation: out.stopped.operation, conflicts: out.stopped.conflicted.length };
+        return {
+          ok: false,
+          changed: true,
+          expected: true,
+          message: pullStoppedMessage(out.stopped),
+          ...note,
+        };
+      }
+      // A merge or rebase still paused — the one a stop above lands the user
+      // in, with Pull still on offer because the branch is still ahead and
+      // behind. git refused before running anything. Pressing Pull again from
+      // there used to ask "merge or rebase?" all over again, and then show
+      // git's "git add/rm" hint in red and file it as a crash.
+      if (out.blocked) {
+        blocked = { operation: out.blocked.operation, conflicts: out.blocked.conflicted };
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: pullBlockedMessage(out.blocked),
+          ...note,
+        };
+      }
+      // A commit or a tag checked out: no branch to pull into. The user's
+      // state, in the app's words rather than git's terminal advice.
+      if (out.detached) {
+        return { ok: false, changed: false, expected: true, message: pullDetachedMessage(), ...note };
+      }
+      // The user's uncommitted work in the way (a rebase needs a clean tree, a
+      // merge will not overwrite an edit it brings changes to) never gets
+      // here: the door answered it above, naming the files — it used to be
+      // git's "error: Your local changes to the following files would be
+      // overwritten by merge" wall, in red, and a crash report.
+      if (!out.diverged) {
+        return { ...out, ...note };
+      }
+      diverged = out.diverged;
+      const { branch, upstream, ahead, behind } = out.diverged;
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          `'${branch}' and ${upstream} have both moved on — ${commits(ahead)} here, ` +
+          `${commits(behind)} there. Choose how to combine them.`,
+        ...note,
+      };
+    });
+    if (stopped) return { ...r, stopped };
+    if (blocked) return { ...r, blocked };
+    if (dirty) return { ...r, dirty };
+    return diverged ? { ...r, diverged } : r;
   }
   /**
-   * `force` becomes `--force-with-lease`, never a bare `--force` — the lease
-   * still refuses when the remote moved since the last fetch. Required after
-   * amending a commit that was already pushed, where a plain push can only ever
-   * be rejected non-fast-forward.
+   * `force` is never a bare `--force`: SyncOps.push leases it on the
+   * remote-tracking tip explicitly (`--force-with-lease=<ref>:<sha>`), adds
+   * `--force-if-includes` where git has it, and refuses before pushing a tip
+   * this branch never had. Required after amending a commit that was already
+   * pushed, where a plain push can only ever be rejected non-fast-forward.
    */
   async syncPush(
     opts: { setUpstream?: boolean; force?: boolean } | undefined,
-  ): Promise<CommitActionResult> {
-    return this.staged((ctx) =>
-      ctx.sync.push({ setUpstream: opts?.setUpstream, force: opts?.force }),
-    );
+  ): Promise<PushActionResult> {
+    let pullFirst = false;
+    const r = await this.staged(async (ctx) => {
+      // A force push is offered for ONE situation: we rewrote commits the
+      // remote already has (an amend, a rebase), so a plain push is refused.
+      // The same refusal comes back when somebody ELSE pushed — and once their
+      // commits have been fetched, the lease (the remote-tracking ref) matches
+      // the remote, so --force-with-lease deletes them. "Commit & Push" offered
+      // exactly that after any non-fast-forward. Refused here, for every door.
+      if (opts?.force && !(await ctx.sync.rewroteUpstream())) {
+        pullFirst = true;
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message:
+            "The remote branch has commits that are not yours to replace. Pull them in " +
+            "(merge or rebase) and push again — a force push would delete them.",
+        };
+      }
+      const pushed = await ctx.sync.push({ setUpstream: opts?.setUpstream, force: opts?.force });
+      // …and a rewrite test passed by somebody else's version of the same
+      // commit: amended on another machine, fetched in the background, same
+      // author and author date. The engine refused it before it ran — the tip
+      // it would replace was never on this branch — and it is the same state
+      // as the refusal above, said the same way.
+      if (pushed.unseen) {
+        pullFirst = true;
+        return { ok: false, changed: false, expected: true, message: pushUnseenMessage() };
+      }
+      return pushed;
+    });
+    return pullFirst ? { ...r, pullFirst: true } : r;
   }
 
   /** Fast-forward a local branch straight from its upstream WITHOUT checking it
    *  out: `git fetch <remote> <remoteBranch>:<localBranch>`. Git itself refuses
    *  a non-fast-forward and the currently checked-out branch, so the worktree
-   *  is never touched. */
-  async branchPullFf(name: string): Promise<CommitActionResult> {
-    if (!safeArg(name)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => {
-      const up = await ctx.process.run([
-        "for-each-ref",
-        "--format=%(upstream:short)",
-        `refs/heads/${name}`,
-      ]);
-      const upstream = up.stdout.trim();
-      const slash = upstream.indexOf("/");
-      if (up.code !== 0 || slash <= 0) {
-        return { ok: false, stderr: `'${name}' has no upstream to pull from.` };
-      }
-      return ctx.process.run([
-        "fetch",
-        upstream.slice(0, slash),
-        `${upstream.slice(slash + 1)}:${name}`,
-      ]);
-    });
+   *  is never touched.
+   *
+   *  By FULL name: "heads/release" (the short name beside a tag "release")
+   *  made this `fetch origin release:heads/release` — which CREATES a branch
+   *  called heads/release and leaves the real one where it was.
+   *
+   *  Delegates to `SyncOps.pullFastForward` with the name under refs/heads/,
+   *  which is the SAME op the extension calls. It reads the upstream through
+   *  for-each-ref's own remote atoms and writes both sides of the refspec
+   *  fully qualified — this arm used to spell it out again and split
+   *  `%(upstream:short)` on its first slash, so a remote named with one
+   *  ("team/eu") was read as a remote called "team", and "remotes/origin/x"
+   *  (beside a local branch "origin/x") as a remote called "remotes". */
+  async branchPullFf(fullName: string): Promise<CommitActionResult> {
+    const name = localBranchOf(fullName);
+    if (!name) return notABranch("pull into");
+    return this.staged((ctx) => ctx.sync.pullFastForward(name));
   }
 
   /**
@@ -1798,21 +2118,21 @@ export class GitBridge {
     );
   }
 
-  async branchPush(name: string): Promise<CommitActionResult> {
-    if (!safeArg(name)) return UNSAFE_REF_RESULT;
+  async branchPush(fullName: string): Promise<CommitActionResult> {
+    // By FULL name: SyncOps qualifies the name it is handed as refs/heads/<name>,
+    // and the short "heads/release" became refs/heads/heads/release — nothing.
+    const name = localBranchOf(fullName);
+    if (!name) return notABranch("push");
     return this.staged(async (ctx) => {
-      const up = await ctx.process.run([
-        "for-each-ref",
-        "--format=%(upstream:short)",
-        `refs/heads/${name}`,
-      ]);
-      const upstream = up.code === 0 ? up.stdout.trim() : "";
-      const slash = upstream.indexOf("/");
-      if (slash > 0) {
+      // The upstream by its FULL name, as branchPullFf reads it: the short one
+      // is "remotes/origin/x" beside a local branch called "origin/x".
+      const up = await ctx.process.run(["for-each-ref", "--format=%(upstream)", fullName]);
+      const tracked = up.code === 0 ? remoteBranchOf(up.stdout.trim()) : undefined;
+      if (tracked) {
         // Tracked: push it to the remote it already tracks.
         // push-force-reviewed: a named OTHER branch, not the checked-out
         // one; see the extension's branchActions for the same reasoning.
-        return ctx.sync.push({ remote: upstream.slice(0, slash), branch: name });
+        return ctx.sync.push({ remote: tracked.remote, branch: name });
       }
       // Unpublished: pick a remote and set upstream. Prefer origin, else the
       // only remote; with several non-origin remotes there is no safe guess.
@@ -1874,15 +2194,17 @@ export class GitBridge {
       /* fall through */
     }
     try {
-      const h = await ctx.refs.getHead();
-      return h.detached ? undefined : h.branch;
+      // The name under refs/heads/ — git's `--short` is "heads/x" beside a
+      // tag "x", and this is compared with names and qualified as refs/heads/.
+      return headBranchName(await ctx.refs.getHead());
     } catch {
       return undefined;
     }
   }
 
   /**
-   * How far each local branch is ahead of and behind `base`.
+   * How far each local branch is ahead of and behind the local branch `base`
+   * (a name under refs/heads/), keyed by each branch's FULL name.
    *
    * Asked for in its own `for-each-ref` because `%(ahead-behind:)` needs git
    * >= 2.41: an older git does not recognise the atom and fails the WHOLE read,
@@ -1902,9 +2224,13 @@ export class GitBridge {
       // spawn THROW — a throw this function's catch would swallow whole. The
       // repo's scan flags that shape by name, and it is right to.
       const US = "\x1f";
+      // Measured against the BRANCH, by its full name, and keyed by each
+      // branch's full name. A bare "main" is a revision, and git resolves a
+      // revision to refs/tags/ before refs/heads/: beside a tag called
+      // "main" every branch's "merged" was measured against the TAG.
       const r = await ctx.process.run([
         "for-each-ref",
-        `--format=%(refname:short)${US}%(ahead-behind:${base})`,
+        `--format=%(refname)${US}%(ahead-behind:refs/heads/${base})`,
         "refs/heads",
       ]);
       if (r.code !== 0) return out;
@@ -1941,8 +2267,16 @@ export class GitBridge {
     // blank column — which would take the branch list down with it — so it is
     // asked for separately and the result is optional.
     const base = await this.defaultBranch(ctx);
+    // %(refname) rides beside the short name: the short one is for reading,
+    // and it is "heads/release" the moment a tag shares the name — so a
+    // checkout (or anything else that writes) goes by the full one. First, so
+    // the free-text subject stays the last field.
+    // %(upstream) beside %(upstream:short) for the same reason: the short one
+    // is "remotes/origin/x" beside a local branch called "origin/x", and
+    // everything that SPLITS an upstream into remote and branch goes by the
+    // full one (upstreamRef).
     const fmt =
-      `%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}` +
+      `%(refname)${SEP}%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}%(upstream)${SEP}` +
       `%(upstream:track)${SEP}%(committerdate:unix)${SEP}%(authorname)${SEP}%(authoremail)${SEP}%(contents:subject)`;
     // No catch-and-return-[]: `for-each-ref` exits 0 with no output in a repo
     // that genuinely has no branches, so a non-zero exit means the read FAILED
@@ -1958,15 +2292,20 @@ export class GitBridge {
     const branches: BranchInfo[] = [];
     for (const line of out.split("\n")) {
       if (!line.trim()) continue;
-      const [name, head, upstream, track, date, authorName, authorEmail, subject] = line.split(SEP);
+      const [fullName, name, head, upstream, upstreamRef, track, date, authorName, authorEmail, subject] =
+        line.split(SEP);
       const { ahead, behind, gone } = parseTrack(track ?? "");
-      const vs = base ? divergence.get(name) : undefined;
+      const vs = base ? divergence.get(fullName) : undefined;
       branches.push({
         ...(vs ? { aheadDefault: vs.ahead, behindDefault: vs.behind, merged: vs.ahead === 0 } : {}),
-        ...(base && name === base ? { isDefault: true } : {}),
+        // By the name under refs/heads/: beside a tag "main" git lists the
+        // default branch as "heads/main", which never equalled "main".
+        ...(base && branchNameOf(fullName) === base ? { isDefault: true } : {}),
         name,
+        fullName,
         current: head === "*",
         upstream: upstream || undefined,
+        ...(upstreamRef ? { upstreamRef } : {}),
         ahead,
         behind,
         ...(gone ? { gone: true } : {}),
@@ -2012,14 +2351,24 @@ export class GitBridge {
     checkout?: boolean;
     startPoint?: string;
     upstream?: string;
+    stashFirst?: string;
   }): Promise<CommitActionResult> {
     if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
     if (req.startPoint && !safeArg(req.startPoint)) return UNSAFE_REF_RESULT;
     if (req.upstream && !safeArg(req.upstream)) return UNSAFE_REF_RESULT;
-    const made = await this.staged((ctx) =>
-      req.checkout
-        ? ctx.branches.checkoutNew(req.name, req.startPoint)
-        : ctx.branches.create(req.name, req.startPoint),
+    const made = await this.staged(async (ctx) =>
+      // Switching to a new branch that starts somewhere else is a checkout,
+      // refused like one over uncommitted work in its way — so it goes through
+      // the same door (main/inTheWay.ts). At HEAD it changes no file.
+      req.checkout && req.startPoint
+        ? stagedFrom(
+            await applyForDoor(ctx, checkoutOp(["checkout", "-b", req.name, req.startPoint]), req.stashFirst),
+          )
+        : req.checkout
+          ? // in-the-way-reviewed: a new branch AT HEAD changes no file, so
+            // nothing of the user's can be in its way.
+            ctx.branches.checkoutNew(req.name)
+          : ctx.branches.create(req.name, req.startPoint),
     );
     // Best-effort: a branch that exists again but tracks nothing is still the
     // branch back, and failing the whole call over the tracking config would
@@ -2092,7 +2441,10 @@ export class GitBridge {
             "--reverse",
             `--format=%aN${US}%aE`,
             "--max-count=200",
-            `${base}..${name}`,
+            // The base BRANCH by its full name — a bare "main" is the tag
+            // beside a tag of that name (see divergenceFrom). `name` is
+            // %(refname:short), unambiguous by construction.
+            `refs/heads/${base}..${name}`,
             "--",
           ]);
           if (r.code !== 0) return;
@@ -2120,9 +2472,12 @@ export class GitBridge {
   }
 
   async branchDelete(
-    req: { name: string; force?: boolean },
+    req: { fullName: string; force?: boolean },
   ): Promise<CommitActionResult & { was?: string; upstream?: string }> {
-    if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
+    // By FULL name — see the branch ops below. `git branch -d heads/release`
+    // (the short name beside a tag "release") finds no branch at all.
+    const name = localBranchOf(req.fullName);
+    if (!name) return notABranch("delete");
     // Read the tip and the tracking config FIRST. After the delete both are
     // gone, and an undo that re-creates the branch at HEAD instead of where it
     // was is not an undo — it is a new branch wearing the old name.
@@ -2130,12 +2485,12 @@ export class GitBridge {
     let was: string | undefined;
     let upstream: string | undefined;
     if (ctx) {
-      const tip = await ctx.process.run(["rev-parse", "--verify", `refs/heads/${req.name}`]);
+      const tip = await ctx.process.run(["rev-parse", "--verify", req.fullName]);
       if (tip.code === 0) was = tip.stdout.trim() || undefined;
-      const up = await ctx.branches.upstreamOf(req.name);
+      const up = await ctx.branches.upstreamOf(name);
       if (up) upstream = `${up.remote}/${up.branch}`;
     }
-    const r = await this.staged((c) => c.branches.delete(req.name, { force: req.force }));
+    const r = await this.staged((c) => c.branches.delete(name, { force: req.force }));
     return r.ok ? { ...r, was, upstream } : r;
   }
 
@@ -2171,49 +2526,69 @@ export class GitBridge {
     req: CommitActionRequest,
   ): Promise<CommitActionResult> {
     const name = req.name;
+    // A branch whose NAME starts with "-" is refused — git would read it as an
+    // option, and `git checkout -f` throws away every uncommitted change. It
+    // was refused as "That value isn't a valid git reference", about a branch
+    // the list had just shown. Say what is true, and hand the renderer what it
+    // needs to offer the rename (by the FULL name) that fixes it.
+    const refusal = req.fullName !== undefined && safePath(req.fullName) ? optionLikeCheckout(req.fullName) : undefined;
+    if (refusal && req.fullName) {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message: refusal.message,
+        optionLike: { fullName: req.fullName, name: refusal.name, local: refusal.local },
+      };
+    }
     if (!name || !safeArg(name)) {
       return UNSAFE_REF_RESULT;
     }
     if (req.fullName !== undefined && !safeArg(req.fullName)) {
       return UNSAFE_REF_RESULT;
     }
+    // By the FULL name, from every door. The planner reads the namespace and
+    // checks a branch out by its name under refs/heads/, where `name` — git's
+    // short form — is "heads/release" beside a tag of that name, and
+    // `git checkout heads/release` DETACHES at the branch tip while reporting
+    // success. The Branches view, the branch switcher and the ref page used to
+    // send the short name alone and take exactly that path; a request without
+    // a full name is refused now rather than guessed at, so a door that forgets
+    // it fails loudly instead of detaching quietly.
+    if (req.fullName === undefined) {
+      return {
+        ok: false,
+        changed: false,
+        message: `Couldn't tell which ${name} to check out — refresh and try again.`,
+      };
+    }
+    const fullName = req.fullName;
     return this.serialize(async () => {
-      // By the FULL name when the door sent one (the graph's menus do): the
-      // planner reads the namespace and checks a branch out by its name under
-      // refs/heads/, where `name` — git's short form — is "heads/release"
-      // beside a tag of that name, and `git checkout heads/release` detaches
-      // at the branch tip. The Branches view still sends the short name alone,
-      // and keeps the arms it always had.
-      let args: string[];
-      if (req.fullName !== undefined) {
-        const plan = await planRefCheckout(ctx.process, req.fullName);
-        if (!plan) {
-          return UNSAFE_REF_RESULT;
-        }
-        args = plan.args;
-      } else {
-        args =
-          req.refKind === "remote"
-            ? (await planRemoteCheckout(ctx.process, name)).args
-            : req.refKind === "tag"
-              ? // A tag is a fixed point, so this one really does detach.
-                ["checkout", "--detach", name]
-              : ["checkout", name];
+      const plan = await planRefCheckout(ctx.process, fullName);
+      if (!plan) {
+        return UNSAFE_REF_RESULT;
       }
-      const r = await ctx.process.run(args);
+      // Through the one door for commit-applying commands: a switch refused
+      // over uncommitted work in its way answers which files, `expected`, and
+      // the renderer offers Stash & Retry.
+      const applied = await applyForDoor(ctx, checkoutOp(plan.args), req.stashFirst);
+      if ("answer" in applied) return applied.answer;
+      const r = applied.result;
+      const withNote = applied.stashNote ? { stashNote: applied.stashNote } : {};
       if (r.code === 0) {
-        return { ok: true, changed: true };
+        return { ok: true, changed: true, ...withNote };
       }
       const stderr = r.stderr.trim();
       const conflicts = await this.conflictExplains(ctx);
       if (conflicts) {
-        return { ok: false, changed: false, expected: true, message: conflicts };
+        return { ok: false, changed: false, expected: true, message: conflicts, ...withNote };
       }
       return {
         ok: false,
         changed: false,
         message: stderr || r.stdout.trim() || "The checkout failed.",
-        ...(stderr ? {} : { expected: true }),
+        ...(declinedOnStdout(r.stdout, stderr) ? { expected: true } : {}),
+        ...withNote,
       };
     });
   }
@@ -2273,7 +2648,9 @@ export class GitBridge {
    * git DECLINING to do something, not GitStudio failing at it — a state of the
    * user's repo. Without this, teaching these paths to speak would have turned
    * every "nothing to do" into a crash report, which is exactly the trap the
-   * commit fix fell into first.
+   * commit fix fell into first. A failure with NOTHING on either stream is not
+   * that — git always says why it declines — so it is reported, under the plain
+   * "The operation failed." (see declinedOnStdout).
    */
   private async staged(
     op: (
@@ -2287,18 +2664,21 @@ export class GitBridge {
       message?: string;
       changed?: boolean;
       expected?: boolean;
+      /** Carried through untouched — see applyForDoor. */
+      inTheWay?: CommitActionResult["inTheWay"];
+      stashNote?: string;
     }>,
   ): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     return this.serialize(async () => {
       try {
         const r = await op(ctx);
         const ok = r.ok ?? r.code === 0;
         if (ok) {
-          return { ok, changed: true };
+          return { ok, changed: true, ...(r.stashNote ? { stashNote: r.stashNote } : {}) };
         }
         const stderr = r.stderr?.trim() ?? "";
         const stdout = r.stdout?.trim() ?? "";
@@ -2311,6 +2691,8 @@ export class GitBridge {
             changed: r.changed ?? false,
             message: r.message,
             ...(r.expected ? { expected: true } : {}),
+            ...(r.inTheWay ? { inTheWay: r.inTheWay } : {}),
+            ...(r.stashNote ? { stashNote: r.stashNote } : {}),
           };
         }
         const both = `${stdout}\n${stderr}`;
@@ -2337,7 +2719,8 @@ export class GitBridge {
           // stderr and the file it stopped on, plus what to do next, on stdout
           // — and showing only stderr threw away the half that helps.
           message: [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") || "The operation failed.",
-          ...(stderr && !ordinary ? {} : { expected: true }),
+          ...(ordinary || declinedOnStdout(stdout, stderr) ? { expected: true } : {}),
+          ...(r.stashNote ? { stashNote: r.stashNote } : {}),
         };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
@@ -2354,7 +2737,7 @@ export class GitBridge {
   async commitAction(req: CommitActionRequest): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     if (req.action !== "copy-sha" && !safeArg(req.sha)) {
       return UNSAFE_REF_RESULT;
@@ -2372,26 +2755,45 @@ export class GitBridge {
     }
     return this.serialize(async () => {
       try {
-        const result = await ctx.process.run(args);
+        // Checkout, cherry-pick and revert go through the one door for
+        // commit-applying commands (main/inTheWay.ts). Report #18 was a revert
+        // refused over the user's uncommitted edit, filed as a crash with git's
+        // "would be overwritten by merge" text; refused like that, these now
+        // answer which files are in the way, `expected`, and the renderer
+        // offers Stash & Retry. The rest (branch, tag, reset) run as before.
+        const op = applyOpFor(req, args);
+        let note: string | undefined;
+        let result: { code: number; stdout: string; stderr: string };
+        if (op) {
+          const applied = await applyForDoor(ctx, op, req.stashFirst);
+          if ("answer" in applied) return applied.answer;
+          result = applied.result;
+          note = applied.stashNote;
+        } else {
+          result = await ctx.process.run(args);
+        }
+        const withNote = note ? { stashNote: note } : {};
         if (result.code !== 0) {
           // Same stdout fallback and same `expected` rule as staged(): reverting
           // a commit that is already reverted exits non-zero with stderr EMPTY
           // and "nothing to commit, working tree clean" on stdout, which used to
-          // arrive as a blank toast. It is git declining, not us failing.
+          // arrive as a blank toast. It is git declining, not us failing — but
+          // only when stdout says so; silence on both is reported.
           const stderr = result.stderr.trim();
           const stdout = result.stdout.trim();
           const conflicts = await this.conflictExplains(ctx);
           if (conflicts) {
-            return { ok: false, changed: false, expected: true, message: conflicts };
+            return { ok: false, changed: !!note, expected: true, message: conflicts, ...withNote };
           }
           return {
             ok: false,
             changed: false,
             message: stderr || stdout || "The operation failed.",
-            ...(stderr ? {} : { expected: true }),
+            ...(declinedOnStdout(stdout, stderr) ? { expected: true } : {}),
+            ...withNote,
           };
         }
-        return { ok: true, changed: true };
+        return { ok: true, changed: true, ...withNote };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
       }
@@ -2400,24 +2802,58 @@ export class GitBridge {
 
   // ── Branch ops (merge / rebase / rename / upstream) ─────────────────────────
 
-  async branchMerge(req: { name: string; noFf?: boolean }): Promise<CommitActionResult> {
-    if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.merge(req.name, { noFf: req.noFf }));
+  // Every branch op below takes the branch by its FULL name (issue #30's
+  // follow-up), and refuses a request without one — the same contract as
+  // checkout-ref: a door that forgets it fails loudly instead of acting on
+  // the wrong ref. The renderer used to send `%(refname:short)`, which beside
+  // a tag of the same name is "heads/release": `git branch -m/-d` find no
+  // such branch, `git merge` recorded "Merge branch 'heads/release'", and a
+  // bare "release" would have been the TAG.
+  //
+  // Merge and rebase run through the one door for commit-applying commands
+  // (main/inTheWay.ts): refused over the user's uncommitted work, they answer
+  // which files are in the way, `expected`, and the renderer offers Stash &
+  // Retry — they used to answer git's "would be overwritten by merge" /
+  // "cannot rebase: You have unstaged changes" in red, and file it.
+
+  async branchMerge(req: { fullName: string; noFf?: boolean; stashFirst?: string }): Promise<CommitActionResult> {
+    if (!isFullRef(req.fullName, ["heads", "remotes"])) return notABranch("merge");
+    const fullName = req.fullName;
+    return this.staged(async (ctx) => {
+      // The argv BranchOps.merge runs — which records "Merge branch
+      // 'release'" for a full name.
+      const args = await ctx.branches.mergeArgs(fullName, { noFf: req.noFf });
+      return stagedFrom(
+        await applyForDoor(ctx, { kind: "merge", target: fullName, noFf: req.noFf, args }, req.stashFirst),
+      );
+    });
   }
 
-  async branchRebase(req: { onto: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.onto)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.rebaseOnto(req.onto));
+  async branchRebase(req: { fullName: string; stashFirst?: string }): Promise<CommitActionResult> {
+    if (!isFullRef(req.fullName, ["heads", "remotes", "tags"])) return notABranch("rebase onto");
+    const onto = req.fullName;
+    return this.staged(async (ctx) =>
+      // The argv BranchOps.rebaseOnto runs.
+      stagedFrom(await applyForDoor(ctx, { kind: "rebase", onto, args: ["rebase", onto] }, req.stashFirst)),
+    );
   }
 
-  async branchRename(req: { from: string; to: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.from) || !safeArg(req.to)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.rename(req.from, req.to));
+  async branchRename(req: { fullName: string; to: string }): Promise<CommitActionResult> {
+    const from = localBranchOf(req.fullName);
+    if (!from) return notABranch("rename");
+    // `to` is a NEW name, typed: one that starts with "-" is still refused.
+    // `from` may be one (a branch update-ref made) — BranchOps puts it after
+    // `--`, and renaming such a branch away is exactly what a refused
+    // checkout offers (see checkoutRef).
+    if (!safeArg(req.to)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.rename(from, req.to));
   }
 
-  async branchSetUpstream(req: { name: string; upstream: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.name) || !safeArg(req.upstream)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.setUpstream(req.name, req.upstream));
+  async branchSetUpstream(req: { fullName: string; upstream: string }): Promise<CommitActionResult> {
+    const name = localBranchOf(req.fullName);
+    if (!name) return notABranch("set the upstream of");
+    if (!safeArg(req.upstream)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.setUpstream(name, req.upstream));
   }
 
   async branchDeleteRemote(
@@ -2603,7 +3039,7 @@ export class GitBridge {
   }
   async amAbort(): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     const r = await ctx.process.run(["am", "--abort"]);
     if (r.code !== 0) {
       return { ok: false, changed: false, message: r.stderr.trim() || `git am --abort failed (${r.code}).` };
@@ -2701,7 +3137,7 @@ export class GitBridge {
     run: (root: string, opts: ReturnType<RepoStore["runnerOptions"]>) => Promise<RebaseOutcome>,
   ): Promise<CommitActionResult> {
     const root = this.repos.current()?.root;
-    if (!root) return { ok: false, changed: false, message: "No repository open." };
+    if (!root) return { ok: false, changed: false, expected: true, message: "No repository open." };
     return this.serialize(async () => {
       try {
         // The runner spawns git itself, so it has to be told which git and
@@ -2813,7 +3249,7 @@ export class GitBridge {
 
   async stageLines(req: { path: string; lines: number[]; reverse?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     // Every other mutating path here proves the path stays inside the repo
     // before touching it (hunksStage, hunksList, conflictResolve). This one
     // wrote to the index from a renderer-supplied path without doing so.
@@ -2824,7 +3260,8 @@ export class GitBridge {
       try {
         const rel = req.path;
         const ranges = linesToRanges(req.lines);
-        if (!ranges.length) return { ok: false, changed: false, message: "No lines selected." };
+        if (!ranges.length)
+          return { ok: false, changed: false, expected: true, message: "No lines selected." };
         // Before reading anything: this path round-trips the file through a
         // string, which destroys a binary and follows a symlink.
         const safe = await lineStageable(ctx, rel);
@@ -2937,7 +3374,7 @@ export class GitBridge {
    */
   async conflictResolve(req: { path: string; content: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
     if (typeof req.content !== "string") return { ok: false, changed: false, message: "Nothing to save." };
     return this.serialize(async () => {
@@ -2962,7 +3399,7 @@ export class GitBridge {
    */
   async conflictTakeSide(req: { path: string; side: "ours" | "theirs" }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
     if (req.side !== "ours" && req.side !== "theirs") return UNSAFE_PATH_RESULT;
     return this.serialize(async () => {
@@ -3018,7 +3455,7 @@ export class GitBridge {
   /** `conflict:takeRole` — Accept Yours / Accept Theirs (a role with no file deletes it). */
   async conflictTakeRole(req: { path: string; role: SideRole }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
     if (req.role !== "yours" && req.role !== "theirs") {
       return { ok: false, changed: false, message: "Choose Yours or Theirs." };
@@ -3035,7 +3472,7 @@ export class GitBridge {
   /** `conflict:restore` — hold-to-undo / undo of an Apply: the conflict comes back. */
   async conflictRestore(req: { path: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
     return this.serialize(async () => {
       try {
@@ -3049,7 +3486,7 @@ export class GitBridge {
   /** `conflict:delete` — the one resolution of a file deleted on both sides. */
   async conflictDelete(req: { path: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
     return this.serialize(async () => {
       try {
@@ -3155,7 +3592,7 @@ export class GitBridge {
    */
   async jetbrainsMerge(req: { path: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
     if (!containedPath(ctx.root, req.path)) return UNSAFE_PATH_RESULT;
     const ide = await this.jetbrainsDetect();
@@ -3190,7 +3627,7 @@ export class GitBridge {
   /** `jetbrains:diff` — HEAD against the working copy in the IDE's diff window. */
   async jetbrainsDiff(req: { path: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
     const abs = containedPath(ctx.root, req.path);
     if (!abs) return UNSAFE_PATH_RESULT;
@@ -3218,7 +3655,7 @@ export class GitBridge {
    */
   async jetbrainsMarkResolved(req: { path: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req?.path) || !containedPath(ctx.root, req.path)) return UNSAFE_PATH_RESULT;
     const out = await this.stage(req.path);
     if (out.ok) {
@@ -3391,6 +3828,51 @@ function rangesOverlap(a: LineRange, b: LineRange): boolean {
   const aEnd = a.end < a.start ? a.start : a.end;
   const bEnd = b.end < b.start ? b.start : b.end;
   return a.start <= bEnd && b.start <= aEnd;
+}
+
+/**
+ * A door's applied command (applyForDoor) in the shape `staged` maps: the
+ * door's own answer as it is — changes in the way, said and answerable — or
+ * git's run, with a Stash & Retry's note carried along.
+ */
+function stagedFrom(applied: DoorApplied): {
+  ok?: boolean;
+  code?: number;
+  stdout?: string;
+  stderr?: string;
+  message?: string;
+  changed?: boolean;
+  expected?: boolean;
+  inTheWay?: CommitActionResult["inTheWay"];
+  stashNote?: string;
+} {
+  if ("answer" in applied) return applied.answer;
+  const { code, stdout, stderr } = applied.result;
+  return { code, stdout, stderr, ...(applied.stashNote ? { stashNote: applied.stashNote } : {}) };
+}
+
+/** stash:apply / stash:pop take the ref, or `{ ref, stashFirst }` when sent again after Stash & Retry. */
+function stashRequest(req: unknown): { ref: unknown; stashFirst?: unknown } {
+  if (typeof req === "string") return { ref: req };
+  if (req && typeof req === "object") {
+    const r = req as { ref?: unknown; stashFirst?: unknown };
+    return { ref: r.ref, stashFirst: r.stashFirst };
+  }
+  return { ref: undefined };
+}
+
+/** The commit-applying actions of commit:action, as the one door runs them. */
+function applyOpFor(req: CommitActionRequest, args: string[]): ApplyOp | undefined {
+  switch (req.action) {
+    case "checkout":
+      return checkoutOp(args);
+    case "cherry-pick":
+      return { kind: "cherry-pick", commit: req.sha, args };
+    case "revert":
+      return { kind: "revert", commit: req.sha, args };
+    default:
+      return undefined;
+  }
 }
 
 /** The git argv for a commit action, or undefined for renderer-only actions. */

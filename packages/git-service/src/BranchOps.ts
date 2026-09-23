@@ -43,6 +43,36 @@ export interface MergeOptions extends GitRunOptions {
 }
 
 /**
+ * The name a branch command takes (`git branch -d/-m`, `--set-upstream-to`'s
+ * branch, `branch.<name>.*` config) for the local branch `fullName`: the part
+ * under refs/heads/. Undefined for anything else.
+ *
+ * Every branch action derives its name here, from the full name, and never
+ * from %(refname:short): beside a tag of the same name that is "heads/x",
+ * which `git branch` looks up as a branch literally called "heads/x" and does
+ * not find. The name under refs/heads/ is exact for these commands, which only
+ * ever look in that one namespace.
+ */
+export function branchNameOf(fullName: string): string | undefined {
+  if (!fullName.startsWith("refs/heads/")) return undefined;
+  const name = fullName.slice("refs/heads/".length);
+  return name || undefined;
+}
+
+/**
+ * `refs/remotes/origin/feature/x` → `{ remote: "origin", branch: "feature/x" }`
+ * — the pair `git push <remote> --delete <branch>` takes. The first segment is
+ * the remote (a branch may contain slashes). Undefined for anything else.
+ */
+export function remoteBranchOf(fullName: string): { remote: string; branch: string } | undefined {
+  if (!fullName.startsWith("refs/remotes/")) return undefined;
+  const rest = fullName.slice("refs/remotes/".length);
+  const slash = rest.indexOf("/");
+  if (slash <= 0 || slash === rest.length - 1) return undefined;
+  return { remote: rest.slice(0, slash), branch: rest.slice(slash + 1) };
+}
+
+/**
  * Branch-level operations, distinct from the read-only RefProvider listing:
  * create/checkout/rename/delete/merge/rebase/upstream. Pure git CLI — never
  * imports `vscode`.
@@ -110,7 +140,12 @@ export class BranchOps {
     neu: string,
     opts?: GitRunOptions,
   ): Promise<BranchOpResult> {
-    const r = await this.proc.run(["branch", "-m", old, neu], {
+    // `--`: the old name is a NAME, even one that starts with "-" (update-ref
+    // makes such a branch, porcelain never would, and `branch -m` renames it
+    // "away"). Callers hand the name under refs/heads/ — branchNameOf — and
+    // never %(refname:short), which is "heads/x" beside a tag "x" and names
+    // no branch at all here ("fatal: no branch named 'heads/x'").
+    const r = await this.proc.run(["branch", "-m", "--", old, neu], {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
@@ -156,14 +191,40 @@ export class BranchOps {
     opts?: DeleteBranchOptions,
   ): Promise<BranchOpResult> {
     const flag = opts?.force ? "-D" : "-d";
-    const r = await this.proc.run(["branch", flag, name], {
+    // The name under refs/heads/ (branchNameOf), after `--` — see rename.
+    const r = await this.proc.run(["branch", flag, "--", name], {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 
-  /** `git merge [--no-ff|--ff-only] <ref>` into the current branch. */
+  /**
+   * `git merge [--no-ff|--ff-only] <ref>` into the current branch.
+   *
+   * Hand it a FULL name (refs/heads/…, refs/remotes/…). A short one is
+   * ambiguous the moment a tag shares it: plain "release" merges the TAG
+   * ("warning: refname 'release' is ambiguous"), and git's disambiguated
+   * "heads/release" merges the branch but records "Merge branch
+   * 'heads/release'". The full name merges the right ref — and git would
+   * record THAT verbatim too ("Merge branch 'refs/heads/release'"), because a
+   * merge message names the ref exactly as it was typed. So for a full name
+   * the message is made the way git makes its own (fmt-merge-msg, which
+   * honours merge.log and merge.suppressDest) from the name under the
+   * namespace, and handed over with `--no-log` so a merge.log shortlog is
+   * written once, by fmt-merge-msg, under the right name.
+   */
   async merge(ref: string, opts?: MergeOptions): Promise<BranchOpResult> {
+    const args = await this.mergeArgs(ref, opts);
+    const r = await this.proc.run(args, { signal: opts?.signal });
+    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
+  }
+
+  /**
+   * The argv `merge` runs, message included — for a caller that runs it
+   * through a door of its own (the desktop's changes-in-the-way door) and
+   * must still record the merge under the name a person would use.
+   */
+  async mergeArgs(ref: string, opts?: MergeOptions): Promise<string[]> {
     const args = ["merge"];
     if (opts?.noFf) {
       args.push("--no-ff");
@@ -171,9 +232,41 @@ export class BranchOps {
     if (opts?.ffOnly) {
       args.push("--ff-only");
     }
+    const message = await this.mergeMessage(ref, opts?.signal);
+    if (message) {
+      args.push("--no-log", "-m", message);
+    }
     args.push(ref);
-    const r = await this.proc.run(args, { signal: opts?.signal });
-    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
+    return args;
+  }
+
+  /**
+   * git's own merge message for merging the full name `ref`, named the way a
+   * person would name it ("Merge branch 'release'", "Merge remote-tracking
+   * branch 'origin/release'", "… into feature" off the default branch). Undefined for anything
+   * else — a short name, a tag, a sha — which git names well enough itself,
+   * and when git cannot say (the merge then reports the real error).
+   */
+  private async mergeMessage(ref: string, signal?: AbortSignal): Promise<string | undefined> {
+    const kind = ref.startsWith("refs/heads/")
+      ? { prefix: "refs/heads/", what: "branch" }
+      : ref.startsWith("refs/remotes/")
+        ? { prefix: "refs/remotes/", what: "remote-tracking branch" }
+        : undefined;
+    if (!kind) return undefined;
+    const name = ref.slice(kind.prefix.length);
+    if (!name) return undefined;
+    const tip = await this.proc.run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { signal });
+    const sha = tip.stdout.trim();
+    if (tip.code !== 0 || !sha) return undefined;
+    // The line `git merge` itself feeds fmt-merge-msg (builtin/merge.c,
+    // merge_name): "<sha>\t\t<what> '<name>' of .".
+    const msg = await this.proc.run(["fmt-merge-msg"], {
+      signal,
+      input: `${sha}\t\t${kind.what} '${name}' of .\n`,
+    });
+    const text = msg.stdout.replace(/\s+$/, "");
+    return msg.code === 0 && text ? text : undefined;
   }
 
   /** `git rebase <upstream>` — rebase the current branch onto `upstream`. */
@@ -193,20 +286,27 @@ export class BranchOps {
     upstream: string,
     opts?: GitRunOptions,
   ): Promise<BranchOpResult> {
+    // `upstream` may be a full refs/remotes/ name (git maps it to its remote);
+    // `branch` is the name under refs/heads/, after `--` — see rename.
     const r = await this.proc.run(
-      ["branch", `--set-upstream-to=${upstream}`, branch],
+      ["branch", `--set-upstream-to=${upstream}`, "--", branch],
       { signal: opts?.signal },
     );
     return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 
-  /** `git push <remote> --delete <name>` — delete a branch on the remote. */
+  /**
+   * `git push <remote> --delete refs/heads/<name>` — delete a branch on the
+   * remote. Qualified: a bare name is matched against the remote's tags too,
+   * and beside a tag of that name git refuses ("dst refspec release matches
+   * more than one") — or, with only the tag there, deletes the TAG.
+   */
   async deleteRemoteBranch(
     remote: string,
     name: string,
     opts?: GitRunOptions,
   ): Promise<BranchOpResult> {
-    const r = await this.proc.run(["push", remote, "--delete", name], {
+    const r = await this.proc.run(["push", remote, "--delete", `refs/heads/${name}`], {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };

@@ -15,14 +15,46 @@ import {
 // silently loses a ref, and dragging it wider always shows you more. Both were
 // broken in ways that looked like styling and were actually data loss.
 
-const head = (name: string): WireRef => ({ name, kind: "head" });
-const remote = (name: string): WireRef => ({ name, kind: "remoteHead" });
-const tag = (name: string): WireRef => ({ name, kind: "tag" });
+const head = (name: string, fullName = `refs/heads/${name}`): WireRef => ({ name, fullName, kind: "head" });
+const remote = (name: string, fullName = `refs/remotes/${name}`): WireRef => ({ name, fullName, kind: "remoteHead" });
+const tag = (name: string, fullName = `refs/tags/${name}`): WireRef => ({ name, fullName, kind: "tag" });
 
 test("a remote twin folds into its local chip rather than doubling it", () => {
   const entries = foldRefs([head("main"), remote("origin/main")]);
   assert.equal(entries.length, 1);
   assert.deepEqual(entries[0].remotes, ["origin"]);
+  assert.deepEqual(entries[0].twins, ["refs/remotes/origin/main"], "the twin's full name rides with the chip");
+});
+
+test("beside a tag of its name, a branch is LABELLED by its own name and still folds its twin", () => {
+  // git lists the branch "heads/release" and the tag "tags/release". The
+  // chips said exactly that, and the fold — over short names — sought the
+  // branch's twin as "origin/heads/release", never found it, and drew two
+  // chips for one branch. By full name (issue #30's follow-up):
+  const entries = foldRefs([
+    head("heads/release", "refs/heads/release"),
+    remote("origin/release", "refs/remotes/origin/release"),
+    tag("tags/release", "refs/tags/release"),
+  ]);
+  assert.deepEqual(
+    entries.map((e) => [e.ref.kind, e.label]),
+    [
+      ["head", "release"],
+      ["tag", "release"],
+    ],
+    "two chips — the branch (with its twin) and the tag — each named release",
+  );
+  assert.deepEqual(entries[0].remotes, ["origin"]);
+  assert.deepEqual(entries[0].twins, ["refs/remotes/origin/release"]);
+  assert.equal(entries[0].ref.name, "heads/release", "git's short name is kept for the host, never shown");
+  // A branch really called heads/x keeps its name.
+  assert.equal(foldRefs([head("heads/x", "refs/heads/heads/x")])[0].label, "heads/x");
+});
+
+test("a chip's width is estimated from its LABEL, not from git's longer short name", () => {
+  const plain = foldRefs([head("release")])[0];
+  const colliding = foldRefs([head("heads/release", "refs/heads/release")])[0];
+  assert.equal(estimateChipWidth(colliding), estimateChipWidth(plain));
 });
 
 test("a remote with no local twin keeps its own chip", () => {

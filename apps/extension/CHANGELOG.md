@@ -121,8 +121,6 @@ does, the other does. (merge-studio#12)
   says the patch was skipped.
 - Delete and Abort buttons are readable in light themes (Light Modern's red
   was below the contrast they need).
-- *Pull* from the Changes view's branch menu reported a pull that stopped on
-  conflicts as a failure; it now says so and offers *Resolve Conflicts…*.
 - A file deleted on both sides opens the Conflicts dashboard (where *Delete the
   file* settles it) instead of a text editor on a file that does not exist.
 - *Skip* in the rebase workspace reported its outcome twice.
@@ -136,6 +134,81 @@ does, the other does. (merge-studio#12)
   conflicts" were never detected (they matched git's English messages); they
   now read the state git writes. A stash apply or pop that conflicts is no
   longer reported as an error.
+- **Pull failed with git's advice instead of doing something about it.** When
+  your branch and its upstream had both moved on and nothing in your git config
+  said how to reconcile them, Pull came back with git's own note for a terminal
+  — *"You have divergent branches and need to specify how to reconcile them"*,
+  followed by three `git config` commands to run. Pull now says what has
+  happened, in commits, and offers the choice git is asking for: **Merge**,
+  **Rebase**, or cancel. Nothing is changed while the question is open, and
+  picking one applies to **that pull only** — your `pull.rebase` setting is
+  never written. **Pull using Merge** in the branch menu also passes
+  `--no-rebase` explicitly, so the one item that had already asked you no
+  longer walks into the same wall.
+- **A pull that stopped on conflicts looked like a failure.** *Pull using
+  Rebase* showed git's *"Resolve all conflicts manually… git rebase
+  --continue"* as an error, and *Pull using Merge* a bare "pullMerge failed".
+  Every pull — the branch menu's and the status bar's Sync and Pull — now says
+  how many files conflict, offers *Resolve Conflicts…*, and reveals the Changes
+  view, where they wait in their own group. Sync no longer tries to push after
+  a pull that stopped.
+- **Pull asked "Merge or Rebase?" when it could not reach the remote.** It now
+  shows the connection error instead.
+- **Sync could force push over someone else's commits.** On a branch where a
+  colleague had pushed while you committed, the status bar's **Sync** said
+  *"This branch was rewritten"* and offered **Force push**, promising the lease
+  would refuse if someone else had pushed. Sync had just fetched, so it would
+  not have — their commits would have been deleted from the remote. Sync now
+  offers the force only when the commits it replaces are ones you rewrote (an
+  amend or a rebase); any other divergence gets the **Merge / Rebase**
+  question. The branch menu's **Push** and the push dialog follow the same
+  rule. And Sync forces only when the remote is still where you last saw it,
+  holding the push to that — so the same commit amended on another machine, or
+  a colleague's amend of one of yours, is not overwritten either.
+- **Pull over a merge or rebase in progress showed git's advice.** Pull, Sync
+  or Update pressed while conflicts were still being resolved now say what is
+  in progress and reveal the Changes view, instead of git's *"Pulling is not
+  possible because you have unmerged files"* — or, from Update, the
+  Merge / Rebase question all over again.
+- **"Rebase onto" over uncommitted changes said it had hit conflicts.** In any
+  repository where a rebase had once stopped and then been finished, a rebase
+  that git refused because of uncommitted changes was reported as *"Rebase hit
+  conflicts"*. It now says which of your changes are in the way, and offers
+  **Stash & Retry** (below).
+- **Sync and Pull on a detached HEAD showed git's terminal advice as an
+  error.** With a commit or a tag checked out, the status bar's **Sync** and
+  **Pull** (and the branch menu's pulls) said *"You are not currently on a
+  branch… git pull &lt;remote&gt; &lt;branch&gt;"*. They now say there is no
+  branch to pull into and offer **Check Out a Branch…**; **Pull** no longer
+  asks *Merge or Rebase?* first — and in the middle of a rebase (or over a
+  merge in progress) it says that, rather than calling it a detached HEAD.
+- **Start Rebase over uncommitted changes** in the rebase panel now says to
+  commit or stash them first, before anything is written. With
+  `rebase.autoStash` set, git still stashes them and the rebase runs, as
+  before.
+- **Pull over uncommitted changes showed git's refusal as an error.** When your
+  edits were in the pull's way — a file the incoming commits change, or any
+  edit when pulling with rebase — every pull door showed git's *"Your local
+  changes to the following files would be overwritten by merge"* (or *"cannot
+  pull with rebase"*). It now says which files are in the way and offers
+  **Stash & Retry** — stash them, pull, and put them back — or **Cancel**.
+- **Revert, cherry-pick, checkout, merge, rebase and stash apply over your
+  changes showed git's refusal as an error, and sent a crash report.**
+  Reverting a commit while you had an edit to a file it touches showed *"Your
+  local changes to the following files would be overwritten by merge … fatal:
+  revert failed"* in red. Every command that applies commits — the graph's
+  Cherry-Pick, Revert and Checkout, the Branches view's Checkout, Merge,
+  Rebase onto and Create and Switch, the Changes view's Checkout Revision, a
+  pull request's Checkout, and the Stashes view's Apply and Pop — now says
+  which of your changes are in the way and offers **Stash & Retry** or
+  **Cancel**. Stash & Retry puts your changes back as they were, staged ones
+  staged; when they can't simply come back, it says which stash they are in.
+  Nothing is sent as a crash report.
+- **With `pull.ff only` in your git config, a diverged branch got git's
+  advice.** That setting is one git's own advice suggests, and Sync and Update
+  then showed *"Diverging branches can't be fast-forwarded"* and its hints as
+  an error. They now ask **Merge** or **Rebase** like any other divergence —
+  for that pull only; your setting is left as it is.
 
 ## [1.13.0] - 2026-09-21
 

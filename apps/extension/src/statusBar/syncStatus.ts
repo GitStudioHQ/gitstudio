@@ -1,9 +1,13 @@
 import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
+import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
+import { pullOrAsk } from "../git/inTheWay";
 import { pruneOnFetch } from "../git/fetchOptions";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { stoppedByThisCommand } from "../git/pausedForUser";
 import { detectOperation, notifyPaused } from "../git/pauseNotice";
+import { headBranchName } from "@gitstudio/git-service/RefProvider";
+import { syncBranchLabel } from "./syncLabel";
 
 // A compact left status-bar segment for the active repo's sync state:
 //   $(git-branch) <branch> $(arrow-down)<behind> $(arrow-up)<ahead>
@@ -75,9 +79,8 @@ export class SyncStatusItem implements vscode.Disposable {
     }
     try {
       const head = await active.ctx.refs.getHead();
-      const branch = head.detached
-        ? `${head.sha.slice(0, 7)} (detached)`
-        : head.branch ?? `${head.sha.slice(0, 7)} (detached)`;
+      // The plain name ("release"), never git's "heads/release" — see syncLabel.
+      const branch = syncBranchLabel(head);
       const upstream = await active.ctx.sync.currentUpstream();
       const counts = await active.ctx.sync.aheadBehind();
 
@@ -195,6 +198,11 @@ export class SyncStatusItem implements vscode.Disposable {
         // git reports the useless "your configuration specifies to merge with
         // the ref 'refs/heads/X' ... but no such ref was fetched" instead of the
         // actual failure. Doing it in two steps surfaces the real error.
+        //
+        // The upstream tip BEFORE that fetch is the remote the user last saw,
+        // and the only lease a force push after it can hold the remote to —
+        // the remote-tracking ref after the fetch is whatever is there now.
+        const seen = await active.ctx.sync.upstreamTip();
         const fetched = await active.ctx.sync.fetch({ prune: pruneOnFetch() });
         if (!fetched.ok) {
           reportSync(fetched, "Fetch");
@@ -207,21 +215,88 @@ export class SyncStatusItem implements vscode.Disposable {
         // and without it you get a merge that puts the pre-amend commit back
         // beside the new one. Force-with-lease is the only correct move, and
         // the lease still refuses if the remote really did move.
+        //
+        // …except that it does NOT: the fetch above has just made the lease
+        // (the remote-tracking ref) equal to the remote, so it is satisfied
+        // whoever moved it. Every ahead-and-behind branch used to take this
+        // branch, and a colleague's push — a plain divergence — was offered as
+        // "This branch was rewritten" with a Force push that deleted their
+        // commits from the remote (replayed against a real repository). So the
+        // rewrite has to be established, not assumed: only when our commits
+        // replaced theirs (same author, same author date — what an amend and a
+        // rebase keep). Anything else falls through to the pull below, which
+        // asks merge-or-rebase about a divergence.
+        //
+        // And only when the fetch brought nothing new: author and author date
+        // are kept by ANY amend, so the same commit amended on another machine
+        // and pushed — or a colleague's amend of one of your commits — passes
+        // that test while being somebody else's version (replayed: the force
+        // deleted it). A remote that moved since `seen` has work nobody here
+        // has looked at; that is the merge-or-rebase question too. The lease
+        // holds the push to `seen`, so a push landing after the fetch is
+        // refused as well.
+        //
+        // And only when the tip being replaced is one this branch has HAD: a
+        // background fetch (the editor's autofetch) made before Sync was
+        // pressed leaves `seen` — and so `unmoved` — already on the other
+        // machine's amendment. The engine would refuse that force anyway
+        // (`upstreamUnseen` is its own test); asking first means the question
+        // is merge-or-rebase, not a Force push that cannot happen.
         const ab = await active.ctx.sync.aheadBehind();
-        if (ab.ahead > 0 && ab.behind > 0) {
+        const unmoved = seen !== null && (await active.ctx.sync.upstreamTip()) === seen;
+        if (
+          ab.ahead > 0 &&
+          ab.behind > 0 &&
+          unmoved &&
+          (await active.ctx.sync.rewroteUpstream()) &&
+          !(await active.ctx.sync.upstreamUnseen(seen ?? undefined))
+        ) {
           const forced = await this.askRewrite(ab);
           if (forced === undefined) {
             return;
           }
-          reportSync(
-            await active.ctx.sync.push({ force: forced }),
-            "Push",
-            "Pushed",
-          );
+          const pushed = await active.ctx.sync.push({ force: forced, lease: seen ?? undefined });
+          if (settlePushUnseen(pushed)) {
+            return;
+          }
+          reportSync(pushed, "Push", "Pushed");
           break;
         }
+        // What git had stopped on BEFORE this pull: a stop the engine does not
+        // name (`stopped` below) is still told from a failure by what changed
+        // (OperationProvider.detect, before and after) — never by stderr prose.
         const before = await detectOperation(active.ctx);
-        const pull = await active.ctx.sync.pull();
+        // Through the shared door (git/inTheWay.ts): uncommitted work in the
+        // pull's way is asked about — Stash & Retry or Cancel — and `undefined`
+        // is a Cancel, with nothing run and nothing pushed.
+        //
+        // A divergence that is not our own rewrite — somebody else pushed —
+        // comes back `diverged` rather than reconciled (as does one that
+        // appeared since the counts above were read). Ask the same question the
+        // branch view asks instead of reporting git's fast-forward refusal,
+        // which is advice for a terminal and no more use here than the wall
+        // report #12 was.
+        let pull = await pullOrAsk(active.ctx);
+        if (pull?.diverged) {
+          const mode = await askPullMode(pull.diverged);
+          if (mode === undefined) {
+            return; // backed out — nothing ran, so there is nothing to report
+          }
+          pull = await pullOrAsk(active.ctx, mode);
+        }
+        if (pull === undefined) {
+          return; // cancelled at Stash & Retry — nothing ran, nothing to push
+        }
+        // Stopped on conflicts: said plainly, Changes revealed — and NOTHING is
+        // pushed. The branch is mid-merge or mid-rebase until they are resolved.
+        if (settlePullStop(pull)) {
+          return;
+        }
+        // No branch to pull into (a commit or tag checked out): said plainly,
+        // with the branch UI offered, instead of git's terminal advice in red.
+        if (settlePullDetached(pull, this.openBranchUi)) {
+          return;
+        }
         if (!pull.ok) {
           if (await this.offerUpstreamRepair(active, pull.stderr)) {
             return;
@@ -229,19 +304,54 @@ export class SyncStatusItem implements vscode.Disposable {
           reportSync(pull, "Pull", undefined, stoppedByThisCommand(before, await detectOperation(active.ctx)));
           return;
         }
-        // push-force-reviewed: only reached once the pull above fast-forwarded
-        // us onto the remote tip, so this push is a fast-forward by
-        // construction. The rewrite case returned before ever getting here.
+        // push-force-reviewed: only reached once the pull SUCCEEDED, so the
+        // remote tip is an ancestor of HEAD — by fast-forward, by the merge
+        // commit, or by the rebase. Either way this push is a fast-forward by
+        // construction, and the rewrite case returned before getting here.
         reportSync(await active.ctx.sync.push(), "Push", "Synced");
         break;
       }
       case "pull": {
-        const rebase = await this.askRebase();
-        if (rebase === undefined) {
+        // Looked at BEFORE the question: "merge or rebase?" over a merge or
+        // rebase still in progress, or about a detached HEAD, is a question
+        // whose every answer ends in the same refusal. The paused operation
+        // FIRST: a paused rebase leaves HEAD detached too, and this used to
+        // tell a user in the middle of their rebase to go and check out a
+        // branch — what is left there is to finish or abort the rebase.
+        const paused = await active.ctx.sync.pausedOperation();
+        if (paused && settlePullStop({ blocked: paused })) {
           return;
         }
+        const head = await active.ctx.refs.getHead();
+        if (settlePullDetached({ detached: head.detached }, this.openBranchUi)) {
+          return;
+        }
+        // Pull FIRST, and ask how to combine only when there is something to
+        // combine. This asked "how should your local commits be integrated?"
+        // before every pull — over a branch that was up to date, or only
+        // behind, where either answer is the same fast-forward and the question
+        // has no meaning. A mode-less pull fast-forwards on its own (or does
+        // what the user's own pull.rebase / pull.ff says), and comes back
+        // `diverged`, with nothing changed, exactly when both sides have moved
+        // — the one state the question is about. Sync has always asked this
+        // way; this is the same question from the same place.
+        // Through the shared door, as Sync above: `undefined` is a Cancel at
+        // the Stash & Retry question — nothing ran.
         const before = await detectOperation(active.ctx);
-        const pulled = await active.ctx.sync.pull({ rebase });
+        let pulled = await pullOrAsk(active.ctx);
+        if (pulled?.diverged) {
+          const mode = await askPullMode(pulled.diverged);
+          if (mode === undefined) {
+            return; // backed out — nothing ran, so there is nothing to report
+          }
+          pulled = await pullOrAsk(active.ctx, mode);
+        }
+        if (pulled === undefined) {
+          return;
+        }
+        if (settlePullStop(pulled) || settlePullDetached(pulled, this.openBranchUi)) {
+          return;
+        }
         reportSync(
           pulled,
           "Pull",
@@ -255,7 +365,11 @@ export class SyncStatusItem implements vscode.Disposable {
         if (force === undefined) {
           return;
         }
-        reportSync(await active.ctx.sync.push({ force }), "Push", "Pushed");
+        const pushed = await active.ctx.sync.push({ force });
+        if (settlePushUnseen(pushed)) {
+          return;
+        }
+        reportSync(pushed, "Push", "Pushed");
         break;
       }
       case "publish": {
@@ -306,10 +420,12 @@ export class SyncStatusItem implements vscode.Disposable {
       return false;
     }
     const head = await active.ctx.refs.getHead();
-    if (head.detached || !head.branch) {
+    // The name under refs/heads/: it is shown, and republished as a
+    // refs/heads/<branch> refspec — "heads/release" was neither.
+    const branch = headBranchName(head);
+    if (!branch) {
       return false;
     }
-    const branch = head.branch;
     const upstream = (await active.ctx.sync.currentUpstream()) ?? "its upstream";
     const choice = await promptPick({
       title: `"${branch}" tracks ${upstream}, which no longer exists`,
@@ -361,27 +477,6 @@ export class SyncStatusItem implements vscode.Disposable {
     return true;
   }
 
-  private async askRebase(): Promise<boolean | undefined> {
-    const choice = await promptPick({
-      title: "Pull: how should your local commits be integrated?",
-      choices: [
-        {
-          id: "merge",
-          label: "Merge",
-          icon: "git-merge",
-          description: "Keep history as it is; add a merge commit if the branches diverged.",
-        },
-        {
-          id: "rebase",
-          label: "Rebase",
-          icon: "git-pull-request",
-          description: "Replay your local commits on top of the incoming ones. Linear history, new shas.",
-        },
-      ],
-    });
-    return choice === undefined ? undefined : choice === "rebase";
-  }
-
   /**
    * The branch diverged because WE rewrote its tip, not because the remote
    * moved on. Offering "pull" here would be actively wrong, so this asks the
@@ -404,8 +499,11 @@ export class SyncStatusItem implements vscode.Disposable {
           label: "Force push",
           icon: "repo-force-push",
           danger: true,
+          // Not "the lease refuses if someone else pushed": Sync has just
+          // fetched, so the lease cannot. What makes this safe is the check
+          // that routed here — every commit being replaced is one of yours.
           description:
-            "Uses --force-with-lease, which still refuses if someone else pushed.",
+            "Replaces only the versions you rewrote — nobody else's commits are on the remote branch.",
         },
         {
           id: "cancel",
@@ -456,7 +554,9 @@ export class SyncStatusItem implements vscode.Disposable {
       );
       return undefined;
     }
-    return head.branch;
+    // Published as refs/heads/<name>:refs/heads/<name> (SyncOps): the name
+    // under refs/heads/, never "heads/release".
+    return headBranchName(head);
   }
 
   private async pickRemote(active: RepoEntry): Promise<string | undefined> {

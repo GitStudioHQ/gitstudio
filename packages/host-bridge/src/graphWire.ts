@@ -31,6 +31,8 @@ export interface CommitMetaLike {
 export interface RefLike {
   type: "head" | "remote" | "tag" | "stash";
   name: string;
+  /** Fully-qualified name, "refs/heads/main" — carried onto the chip. */
+  fullName: string;
   isCurrent: boolean;
   /** Set only on `refs/remotes/<remote>/HEAD` — the remote's default branch. */
   symref?: string;
@@ -73,8 +75,12 @@ export function wireRefs(refs: readonly RefLike[] | undefined): WireRef[] {
   }
   const out: WireRef[] = [];
   for (const ref of refs) {
+    // The full name rides on every chip (issue #30's follow-up): the short
+    // one is "heads/release" beside a tag "release", which is no label, no
+    // key for folding a twin, and no way back to the ref.
+    const fullName = ref.fullName;
     if (ref.type === "head") {
-      out.push({ name: ref.name, kind: ref.isCurrent ? "currentHead" : "head" });
+      out.push({ name: ref.name, fullName, kind: ref.isCurrent ? "currentHead" : "head" });
     } else if (ref.type === "remote") {
       // `refs/remotes/<remote>/HEAD` shortens to the bare remote name, so this
       // drew a chip labelled "origin" that is not a branch and matches nothing
@@ -82,9 +88,9 @@ export function wireRefs(refs: readonly RefLike[] | undefined): WireRef[] {
       // real `origin/main` chip beside it. A symref is a POINTER; the thing it
       // points at is already here under its own name.
       if (ref.symref) continue;
-      out.push({ name: ref.name, kind: "remoteHead" });
+      out.push({ name: ref.name, fullName, kind: "remoteHead" });
     } else if (ref.type === "tag") {
-      out.push({ name: ref.name, kind: "tag" });
+      out.push({ name: ref.name, fullName, kind: "tag" });
     }
   }
   out.sort((a, b) => kindRank(a.kind) - kindRank(b.kind));

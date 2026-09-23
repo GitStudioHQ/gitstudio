@@ -16,6 +16,7 @@ import { openCloneDialog } from "./cloneDialog";
 import { resolveRelative, wireProseNav } from "./proseNav";
 import { openGhRepoInApp, openGhRepoChooseLocation } from "./ghOpen";
 import { highlightCode } from "./highlight";
+import { isEmptyRepoMessage } from "../shared/githubStates";
 import type { GhRepoEntry } from "../shared/ipc";
 
 /** Open the browser fresh (root of the repo). */
@@ -246,6 +247,17 @@ function codeBlock(text: string, fileName: string): HTMLElement {
 function browseError(fullName: string, e: unknown): HTMLElement {
   const msg = cleanErr(e);
   const wrap = el("div", "peek-empty");
+  // A repository with no commits answers every read with "This repository is
+  // empty." — a state, not a failure. The full-page browser says so too; both
+  // doors on to a remote repository have to, or one of them keeps calling an
+  // empty repository broken. Report #13.
+  if (isEmptyRepoMessage(msg)) {
+    wrap.appendChild(glyph("repo"));
+    const t = el("div");
+    t.textContent = `${fullName} is empty — nothing has been pushed to it yet.`;
+    wrap.appendChild(t);
+    return wrap;
+  }
   wrap.appendChild(glyph("warning"));
   const t = el("div");
   t.textContent = `Couldn't read ${fullName}: ${msg || "GitHub request failed."}`;

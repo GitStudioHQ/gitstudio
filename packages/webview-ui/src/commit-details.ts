@@ -15,6 +15,7 @@ import { codiconStyles } from "./styles/codicons";
 import { hostTokens } from "./styles/hostTokens";
 import { gravatarUrl, avatarHue, authorInitials } from "./graph/avatar";
 import { absTime } from "./graph/format";
+import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import type {
   CommitDetailsPayload,
   CommitDetailsActionId,
@@ -62,12 +63,39 @@ const WIP_ACTIONS: ActionDef[] = [
   { id: "discard-all", label: "Discard all", icon: "discard", danger: true },
 ];
 
+/**
+ * `gs-ref-menu`'s detail: a ref chip asked for its menu (issue #30). The
+ * host hands it to the graph beside the pane (CommitGraph.openRefMenu), which
+ * owns the filter and resolves the chip through its ref list — by `fullName`,
+ * the ref's full name as the host sent it (WireRef.fullName). `name` is git's
+ * short form, carried for the host's checkout request only. `opener` gets
+ * focus back when the menu is dismissed; `keyboard` says it was opened with a
+ * key, so the menu takes focus.
+ */
+export interface RefMenuRequest {
+  name: string;
+  fullName: string;
+  kind: WireRef["kind"];
+  sha: string;
+  x: number;
+  y: number;
+  keyboard: boolean;
+  opener: HTMLElement;
+}
+
 export class CommitDetails extends LitElement {
   static properties = {
     details: { attribute: false },
+    refMenu: { attribute: false },
   };
 
   declare details: CommitDetailsPayload | null;
+  /**
+   * Whether a graph beside the pane answers `gs-ref-menu` — only then are the
+   * ref chips a shortcut (and look and behave like controls). A host with no
+   * graph to filter leaves it off, and the chips stay labels.
+   */
+  declare refMenu: boolean;
 
   /** Containment ("in N branches") is per-commit and lazily fetched. */
   private containsState: "idle" | "loading" | "done" = "idle";
@@ -86,6 +114,7 @@ export class CommitDetails extends LitElement {
   constructor() {
     super();
     this.details = null;
+    this.refMenu = false;
   }
 
   /** Selecting a different commit invalidates the containment answer. */
@@ -529,6 +558,17 @@ export class CommitDetails extends LitElement {
         color: var(--gs-amber);
         background: color-mix(in srgb, var(--gs-amber) 13%, var(--gs-bg));
       }
+      /* A chip with a menu (a graph beside the pane owns the filter): it is a
+         control now, so it answers the pointer and shows focus. Drawn in the
+         chip's own ink — no new colour. */
+      .chip[data-ref-menu] { cursor: pointer; }
+      .chip[data-ref-menu]:hover {
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 45%, transparent);
+      }
+      .chip[data-ref-menu]:focus-visible {
+        outline: 1px solid var(--gs-accent);
+        outline-offset: 1px;
+      }
 
       /* ── Message ────────────────────────────────────────────────── */
       /* Plain prose, no boxed card — less chrome, reads like a message. */
@@ -897,9 +937,36 @@ export class CommitDetails extends LitElement {
         : "chip-head";
       const icon =
         r.kind === "tag" ? "tag" : r.kind === "remoteHead" ? "cloud" : "git-branch";
-      return html`<span class="chip ${cls}" title=${r.name}>
-        <span class="codicon codicon-${icon}"></span
-        ><span class="chip-name">${r.name}</span></span>`;
+      // Labelled by the full name shorn ("release"), never git's
+      // disambiguated short form ("heads/release" beside a tag "release").
+      const label = r.fullName ? refLabel(r.fullName) : r.name;
+      const body = html`<span class="codicon codicon-${icon}"></span
+        ><span class="chip-name">${label}</span>`;
+      if (!this.refMenu) {
+        return html`<span class="chip ${cls}" title=${label}>${body}</span>`;
+      }
+      // With a graph beside the pane, a chip is the same shortcut it is in
+      // the graph's rows (issue #30): its menu shows only this branch, adds it
+      // to or removes it from the filter, or checks it out. The graph owns
+      // the filter and the ref list, so the menu is the graph's — the pane
+      // only says which chip, where (see gs-ref-menu).
+      return html`<span
+        class="chip ${cls}"
+        data-ref-menu
+        data-ref=${r.name}
+        data-full=${r.fullName ?? ""}
+        data-kind=${r.kind}
+        role="button"
+        tabindex="0"
+        aria-haspopup="menu"
+        title=${`${label} — filter the graph by it, or check it out`}
+        @click=${(e: MouseEvent) => this.onRefChipClick(r, e)}
+        @contextmenu=${(e: MouseEvent) => {
+          e.preventDefault();
+          this.askRefMenu(r, e.currentTarget as HTMLElement, e.clientX, e.clientY, false);
+        }}
+        @keydown=${(e: KeyboardEvent) => this.onRefChipKey(r, e)}
+      >${body}</span>`;
     };
 
     const row = (label: string, body: unknown) =>
@@ -917,6 +984,43 @@ export class CommitDetails extends LitElement {
       ${tags.length ? row("tagged", tags.map(chip)) : nothing}
       ${this.containsHtml()}
     </div>`;
+  }
+
+  /** A click opens the chip's menu — unless it ended a text selection, which
+   *  is someone copying the name, not asking for a menu. */
+  private onRefChipClick(r: WireRef, e: MouseEvent): void {
+    // Chromium's ShadowRoot.getSelection (not in the DOM typings) sees a
+    // selection inside the shadow tree; the document's is the fallback.
+    const root = this.renderRoot as ShadowRoot & { getSelection?: () => Selection | null };
+    const sel = root.getSelection?.() ?? window.getSelection();
+    if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+    this.askRefMenu(r, e.currentTarget as HTMLElement, e.clientX, e.clientY, false);
+  }
+
+  /** Enter, Space, the Menu key and Shift+F10 open it from the keyboard. */
+  private onRefChipKey(r: WireRef, e: KeyboardEvent): void {
+    const opens =
+      e.key === "Enter" || e.key === " " || e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey);
+    if (!opens) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const chip = e.currentTarget as HTMLElement;
+    const box = chip.getBoundingClientRect();
+    this.askRefMenu(r, chip, box.left, box.bottom + 2, true);
+  }
+
+  /**
+   * Ask the host for this chip's menu — `gs-ref-menu`, answered by the graph
+   * (CommitGraph.openRefMenu), which resolves the chip through its ref list by
+   * the FULL name the host sent with it (WireRef.fullName). The short name is
+   * git's "heads/release" beside a tag of that name, which names nothing the
+   * list can be searched for.
+   */
+  private askRefMenu(r: WireRef, chip: HTMLElement, x: number, y: number, keyboard: boolean): void {
+    const sha = this.details?.sha;
+    if (!sha) return;
+    const detail: RefMenuRequest = { name: r.name, fullName: r.fullName ?? "", kind: r.kind, sha, x, y, keyboard, opener: chip };
+    this.emit("gs-ref-menu", detail);
   }
 
   /**

@@ -64,28 +64,44 @@ export async function startClone(
   req: CloneRequest,
   onProgress: (p: CloneProgress) => void,
 ): Promise<CloneResult> {
+  // Everything down to the spawn is a check on what the user typed into the
+  // clone sheet: a blank field, a URL that isn't one, a destination that is
+  // already occupied. The sheet shows each of these inline and the user fixes
+  // it — none is a defect, so `expected` keeps them out of the crash reporter
+  // (see main/expectedError.ts). From the spawn onwards the failures are real
+  // ones (mkdir refused, git could not start, the clone died) and still report.
   const url = req.url?.trim();
   if (!url) {
-    return { ok: false, message: "No repository URL was provided." };
+    return { ok: false, expected: true, message: "No repository URL was provided." };
   }
   const urlError = validateCloneUrl(url);
   if (urlError) {
-    return { ok: false, message: urlError };
+    return { ok: false, expected: true, message: urlError };
   }
   if (!req.parentDir) {
-    return { ok: false, message: "No destination folder was chosen." };
+    return { ok: false, expected: true, message: "No destination folder was chosen." };
   }
   const name = targetName(req);
   if (!name) {
-    return { ok: false, code: "bad-name", message: "Couldn't derive a folder name from the URL." };
+    return {
+      ok: false,
+      code: "bad-name",
+      expected: true,
+      message: "Couldn't derive a folder name from the URL.",
+    };
   }
   const nameProblem = validateTargetName(name);
   if (nameProblem) {
-    return { ok: false, code: "bad-name", message: nameProblem };
+    return { ok: false, code: "bad-name", expected: true, message: nameProblem };
   }
   // A target dir starting with "-" would be read by git as an option, not a path.
   if (name.startsWith("-")) {
-    return { ok: false, code: "bad-name", message: "Couldn't derive a safe folder name from the URL." };
+    return {
+      ok: false,
+      code: "bad-name",
+      expected: true,
+      message: "Couldn't derive a safe folder name from the URL.",
+    };
   }
   // The destination folder may simply not be there — the clone folder can be
   // deleted from the Repositories screen, and a folder somebody moved is the
@@ -106,6 +122,7 @@ export async function startClone(
     return {
       ok: false,
       code: "dest-exists",
+      expected: true,
       message: `${join(req.parentDir, name)} already exists — pick another folder name or destination.`,
     };
   }

@@ -8,10 +8,10 @@
 // there ticks add and remove; unticking the last one is All again, because a
 // graph of nothing is not a graph.
 
-import type { GraphRefEntry, GraphRefFilter, WireRef } from "@gitstudio/host-bridge/graphProtocol";
-import { sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
+import type { GraphRefEntry, GraphRefFilter, RefPreset, WireRef } from "@gitstudio/host-bridge/graphProtocol";
+import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 
-export type RefPreset = "current" | "currentUpstream" | "local" | "all";
+export type { RefPreset };
 
 export const REF_PRESETS: ReadonlyArray<{ id: RefPreset; label: string }> = [
   { id: "current", label: "Current branch" },
@@ -21,9 +21,13 @@ export const REF_PRESETS: ReadonlyArray<{ id: RefPreset; label: string }> = [
 ];
 
 /**
- * The filter a preset stands for, or undefined when the repository has
- * nothing for it: a detached HEAD has no current branch, a branch with no
- * upstream has nothing to add, a repo of only remotes has no locals.
+ * The refs a preset ticks TODAY, or undefined when the repository has nothing
+ * for it: a detached HEAD has no current branch, a branch with no upstream has
+ * nothing to add, a repo of only remotes has no locals.
+ *
+ * This is what the picker shows at once, under the pointer. What it SENDS is
+ * the preset itself (presetRefs, host-bridge), which the host stores and
+ * resolves again on every load — so "Current branch" follows a checkout.
  */
 export function presetFilter(
   id: RefPreset,
@@ -60,36 +64,77 @@ export function presetUnavailable(id: RefPreset, refs: readonly GraphRefEntry[])
   }
 }
 
-/** The preset the filter currently IS, if it is one — so the row can show it. */
-export function activePreset(
-  filter: GraphRefFilter,
-  refs: readonly GraphRefEntry[],
-): RefPreset | undefined {
-  for (const p of REF_PRESETS) {
-    const f = presetFilter(p.id, refs);
-    if (f !== undefined && sameRefFilter(f, filter)) return p.id;
-  }
-  return undefined;
-}
-
-/** A ref's display name: the listed short name, else the full name shorn of
- *  its namespace (a remembered ref the list no longer has still reads). */
-export function refDisplayName(fullName: string, refs: readonly GraphRefEntry[]): string {
-  const hit = refs.find((r) => r.fullName === fullName);
-  if (hit) return hit.name;
-  return fullName.replace(/^refs\/(heads|remotes|tags)\//, "");
+/**
+ * The preset the filter IS, so the row can show it: the one the host says the
+ * stored filter is (`preset`, a graphInit's refPreset), or All for no filter.
+ *
+ * Not worked out by comparing ticks. "Current branch" used to be recognised
+ * as "the ticks equal the current branch" — which a hand-picked [main] also
+ * is, while on main, and which stopped being true of the preset itself the
+ * moment the branch changed. The preset is a fact about what was stored.
+ */
+export function activePreset(filter: GraphRefFilter, preset?: RefPreset): RefPreset | undefined {
+  if (preset && preset !== "all") return preset;
+  return filter === null ? "all" : undefined;
 }
 
 /**
- * What the trigger says: "All branches", the names when there are one or two,
- * else a count — "3 branches", or "3 refs" once a tag is among them, because a
- * tag is not a branch and the label should not say it is.
+ * A ref's display name: its full name shorn of the namespace — "main",
+ * "origin/main", "v1.2.0". Not the listed short name: that is git's
+ * shortest UNAMBIGUOUS form, and a branch that shares its name with a tag is
+ * listed as "heads/release" — under a heading that already says Local.
  */
-export function refFilterLabel(filter: GraphRefFilter, refs: readonly GraphRefEntry[]): string {
+export function refDisplayName(fullName: string): string {
+  // One rule for every surface that names a ref — the chips, the picker, the
+  // trigger — so they cannot drift: host-bridge's refLabel.
+  return refLabel(fullName);
+}
+
+/**
+ * What the trigger says: "All branches"; a preset as what it stands for now,
+ * the branch first so a narrow trigger still shows it ("main (current)",
+ * "main + upstream", "Local branches"); the names when there are one or two,
+ * else a count — "3 branches", or "3 refs" once a tag is among them, because
+ * a tag is not a branch and the label should not say it is.
+ */
+export function refFilterLabel(
+  filter: GraphRefFilter,
+  refs: readonly GraphRefEntry[],
+  preset?: RefPreset,
+): string {
+  if (preset === "current" || preset === "currentUpstream") {
+    const cur = refs.find((r) => r.kind === "head" && r.isCurrent);
+    if (!cur) return "Detached HEAD";
+    const on = refDisplayName(cur.fullName);
+    return preset === "current" ? `${on} (current)` : `${on} + upstream`;
+  }
+  if (preset === "local") return "Local branches";
   if (!filter || filter.length === 0) return "All branches";
-  if (filter.length <= 2) return filter.map((f) => refDisplayName(f, refs)).join(", ");
+  if (filter.length <= 2) return filter.map((f) => refDisplayName(f)).join(", ");
   const anyTag = filter.some((f) => f.startsWith("refs/tags/"));
   return `${filter.length} ${anyTag ? "refs" : "branches"}`;
+}
+
+/**
+ * Whether two row sets are the same history for scrolling (see the lists'
+ * `updated`): the same filter, the same preset. A refresh keeps both; a new
+ * tick, a preset, or a checkout under "Current branch" (the ticks move) is a
+ * different history, and opens at its top.
+ */
+export function scrollKey(filter: GraphRefFilter, preset?: RefPreset): string {
+  return JSON.stringify([preset ?? "", filter === null ? null : [...filter].sort()]);
+}
+
+/** The picker's footnote: what the selection is, and the way back to All. */
+export function refFilterHint(
+  filter: GraphRefFilter,
+  refs: readonly GraphRefEntry[],
+  preset?: RefPreset,
+): string {
+  if (preset === "current" || preset === "currentUpstream") return "Follows the branch you are on · All for every branch";
+  if (preset === "local") return "Follows your local branches · All for every branch";
+  if (filter) return `${filter.length} of ${refs.length} ticked · untick the last for all`;
+  return refs.length ? "Showing every branch and tag · tick one to narrow" : "No branches or tags";
 }
 
 /** The selection after ticking `fullName`: null narrows to it alone; a list

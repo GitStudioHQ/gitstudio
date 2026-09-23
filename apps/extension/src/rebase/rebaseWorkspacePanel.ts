@@ -13,6 +13,7 @@ import { relativeTime } from "../util/relativeTime";
 import {
   runRebasePlan,
   continueRebase,
+  reportRebaseFailure,
   type RebaseOutcome,
 } from "./rebaseRunner";
 // Shared design tokens, inlined by esbuild — matches every other GitStudio surface.
@@ -203,7 +204,15 @@ export class RebaseWorkspacePanel {
     // is silent — the rebase would report success with the history rearranged.
     const built = buildRebasePlan(rows);
     if (!built.ok) {
-      this.post({ type: "result", outcome: { status: "failed", message: built.message } });
+      // Dropping every commit is a plan the user composed (`expected`); rows
+      // with an action or a sha no UI offers are a request built wrong.
+      const refused: RebaseOutcome = {
+        status: "failed",
+        message: built.message,
+        ...(built.expected ? { expected: true as const } : {}),
+      };
+      reportRebaseFailure("Interactive rebase plan refused", refused);
+      this.post({ type: "result", outcome: refused });
       return;
     }
     const { todo, rewords } = built;
@@ -865,7 +874,7 @@ window.addEventListener("message", (e) => {
       lastStopText = text;
       showStopBanner(text, msg.stop);
     }
-    else flashBanner(o.message || "Rebase failed.", "err");
+    else flashBanner(o.message || "Rebase failed.", o.expected ? "warn" : "err");
   } else if (msg.type === "aborted") {
     if (!msg.ok) flashBanner("Couldn't abort the rebase.", "err");
   }

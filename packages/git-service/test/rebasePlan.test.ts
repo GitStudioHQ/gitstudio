@@ -123,3 +123,29 @@ test("the input array is not mutated — the caller still owns display order", (
   buildRebasePlan(rows);
   assert.deepEqual(rows.map((r) => r.sha), ["cccccc", "bbbbbb", "aaaaaa"]);
 });
+
+// A refusal is either the plan the USER composed — a fold with nothing below
+// it, or every commit dropped; the extension's rebase panel lets you press
+// Start on the second — or a request a host BUILT wrong: no rows at all, an
+// action or a sha no UI offers. The first is shown, not crash-reported; the
+// second is exactly what the report is for. Both hosts read `expected` off the
+// refusal, so the line is drawn once, here.
+test("a plan the user composed and git cannot run is the user's state; a request built wrong is not", () => {
+  const composed = [
+    buildRebasePlan([row("bbbbbb", "second"), row("aaaaaa", "first", "squash")]),
+    buildRebasePlan([row("bbbbbb", "second", "drop"), row("aaaaaa", "first", "drop")]),
+  ];
+  for (const r of composed) {
+    assert.equal(r.ok, false);
+    assert.equal(!r.ok && r.expected, true, !r.ok ? r.message : "");
+  }
+  const builtWrong = [
+    buildRebasePlan([]),
+    buildRebasePlan([row("aaaaaa", "x", "exec")]),
+    buildRebasePlan([row("../../etc/passwd", "x")]),
+  ];
+  for (const r of builtWrong) {
+    assert.equal(r.ok, false);
+    assert.notEqual(!r.ok && r.expected, true, !r.ok ? r.message : "");
+  }
+});

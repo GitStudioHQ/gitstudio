@@ -73,11 +73,16 @@ export async function createBranchFlow(
         startPoint: start.ref,
         checkout: sw.checked,
       });
+      // A switch refused over uncommitted changes in its way was asked about
+      // (Stash & Retry or Cancel — bridge.ts), and the user cancelled: nothing
+      // was made, and nothing is said.
+      if (r.cancelled) return undefined;
       if (!r.ok) {
-        // The one failure worth naming: a dirty tree plus a start point that is
-        // not HEAD. git refuses the checkout, and the way out is one untick.
-        if (sw.checked && /would be overwritten|local changes/i.test(r.message ?? "")) {
-          return 'Your uncommitted changes would be overwritten by switching. Untick "Switch to it after creating" to make the branch and stay put.';
+        // Still in the way after the stash (something it could not cover): the
+        // way out is one untick. Read from the bridge's `inTheWay`, never from
+        // git's English — a localised git never says "would be overwritten".
+        if (sw.checked && r.inTheWay) {
+          return `${r.message ?? "Your uncommitted changes are in the way."} Or untick "Switch to it after creating" to make the branch and stay put.`;
         }
         return cleanErr(r.message) || `Couldn't create branch '${name}'.`;
       }

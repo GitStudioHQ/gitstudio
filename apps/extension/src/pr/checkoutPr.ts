@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { RepoEntry } from "../git/repoManager";
 import type { PullRequest } from "./githubApi";
+import { applyOrAsk, checkoutOp } from "../git/inTheWay";
 
 // Check out a pull request's branch locally. We fetch the universal
 // `pull/<n>/head` ref (which works for cross-fork PRs too) into a local
@@ -42,19 +43,18 @@ export async function checkoutPullRequest(
         return;
       }
 
-      // Check it out.
-      const checkout = await run(["checkout", local]);
-      if (checkout.code !== 0) {
-        const msg = firstLine(checkout.stderr);
-        if (/local changes|overwritten|would be overwritten/i.test(msg)) {
-          void vscode.window.showErrorMessage(
-            `Can't switch to PR #${pr.number}: you have uncommitted changes. Commit or stash them first.`,
-          );
-        } else {
-          void vscode.window.showErrorMessage(
-            `Couldn't check out PR #${pr.number}: ${msg}`,
-          );
-        }
+      // Check it out — through the shared door, which recognises uncommitted
+      // work in the way from git's state (this used to match git's English,
+      // "local changes|overwritten", which a localised git never says) and
+      // offers Stash & Retry.
+      const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", local]));
+      if (applied.cancelled || applied.settled) {
+        return;
+      }
+      if (applied.result.code !== 0) {
+        void vscode.window.showErrorMessage(
+          `Couldn't check out PR #${pr.number}: ${firstLine(applied.result.stderr)}`,
+        );
         return;
       }
 

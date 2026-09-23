@@ -37,21 +37,27 @@ export interface Verdict {
   notes?: Record<string, unknown>;
 }
 
-const bundles = new Map<string, Promise<string>>();
+const bundles = new Map<string, Promise<{ js: string; css: string }>>();
 
-/** One IIFE bundle per entry, built once per test run. */
-function bundle(entry: string): Promise<string> {
+/** One IIFE bundle per entry, built once per test run — with the stylesheet
+ *  an entry imports (a webview entry's graph.css), so the page is laid out
+ *  the way the webview is. */
+function bundle(entry: string): Promise<{ js: string; css: string }> {
   let b = bundles.get(entry);
   if (!b) {
     b = build({
       entryPoints: [entry],
       bundle: true,
       write: false,
+      outdir: "out",
       platform: "browser",
       format: "iife",
       loader: { ".ttf": "dataurl" },
       logLevel: "silent",
-    }).then((r) => r.outputFiles[0].text);
+    }).then((r) => ({
+      js: r.outputFiles.find((f) => f.path.endsWith(".js"))?.text ?? "",
+      css: r.outputFiles.find((f) => f.path.endsWith(".css"))?.text ?? "",
+    }));
     bundles.set(entry, b);
   }
   return b;
@@ -80,14 +86,25 @@ export async function runInChrome(
   chrome: string,
   entry: string,
   script: string,
-  opts: { width?: number; height?: number; css?: string } = {},
+  opts: {
+    width?: number;
+    height?: number;
+    css?: string;
+    /** Runs BEFORE the bundle — for an entry point that reads something at
+     *  import time, like a webview entry's acquireVsCodeApi(). */
+    prelude?: string;
+    /** Attributes for the #root element (a webview entry reads its layout off it). */
+    rootAttrs?: string;
+  } = {},
 ): Promise<Verdict> {
-  const js = await bundle(entry);
+  const { js, css } = await bundle(entry);
   const dir = mkdtempSync(join(tmpdir(), "gs-webview-"));
   const page = join(dir, "page.html");
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>PENDING</title>
+<style>${css}</style>
 <style>html,body{margin:0;height:100%;overflow:hidden}${opts.css ?? ""}</style></head>
-<body><div id="root"></div>
+<body><div id="root" ${opts.rootAttrs ?? ""}></div>
+<script>${opts.prelude ?? ""}</script>
 <script>${js}</script>
 <script>
 window.verdict = (v) => { document.title = "CHECK " + JSON.stringify(v); };
@@ -116,6 +133,10 @@ window.addEventListener("unhandledrejection", (e) => window.verdict({ fails: ["r
         "--disable-gpu",
         "--hide-scrollbars",
         "--no-sandbox",
+        // Our own profile inside the page's temp dir, removed with it below. Left
+        // to itself headless Chrome leaves a .com.google.Chrome.* profile in the
+        // temp directory on every launch; a night of runs filled the disk.
+        `--user-data-dir=${join(dir, "profile")}`,
         `--window-size=${width},${height}`,
         // Virtual time: Chrome fast-forwards timers, so a generous budget costs
         // nothing on a page that finishes early — and a paging test on a slow
@@ -128,7 +149,7 @@ window.addEventListener("unhandledrejection", (e) => window.verdict({ fails: ["r
       (err, stdout) => {
         // The page is read; its directory goes now, whatever the verdict. It
         // used to stay — hundreds a night in $TMPDIR on a nearly full disk.
-        rmSync(dir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
         if (err && !stdout) return res({ fails: [`chrome failed: ${err.message}`] });
         const m = /<title>CHECK ([\s\S]*?)<\/title>/.exec(stdout);
         if (!m) {

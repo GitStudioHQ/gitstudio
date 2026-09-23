@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import * as path from "node:path";
 import type { WorktreeEntry, GitRef } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
-import { bareName, shortNameOf, startPointOf } from "./worktreeRefs";
+import { bareName, shortNameOf, startPointOf, worktreeRefFor } from "./worktreeRefs";
 
 // The Worktrees pillar — also absent from free VS Code. Each row is a linked (or
 // the main) worktree; actions cover open / add / remove / lock / unlock / prune.
@@ -444,35 +444,40 @@ export async function worktreeFromRef(
   // checkout are exact even when git disambiguated the short name: a genuine
   // branch named "heads/x" and a collision-prefixed name are string-identical,
   // so name-based stripping alone would mis-strip one of them.
-  let resolved = ref;
-  if (!ref.fullName) {
-    try {
-      const refs = await a.ctx.refs.listRefs();
-      resolved =
-        refs.find((r) => r.type === ref.type && r.name === ref.name) ?? ref;
-    } catch {
-      // keep the webview ref
-    }
+  // The same lookup the checkout doors use (worktreeRefFor). Unresolved — the
+  // ref is gone, or the listing failed — the flow STOPS. It used to keep the
+  // webview's short name and let bareName/startPointOf guess from it: strip a
+  // "heads/" (which a branch genuinely called heads/x also starts with) and
+  // rebuild refs/heads/<rest>, i.e. invent a full name — the one thing every
+  // other door has stopped doing (issue #30's follow-up).
+  const resolved = await worktreeRefFor(a.ctx, ref);
+  if (!resolved) {
+    void vscode.window.showErrorMessage(
+      `GitStudio: couldn't find ${ref.name} in this repository's refs — refresh and try again.`,
+    );
+    return;
   }
 
   const isLocal = resolved.type === "head";
+  // Named as a person names it — "release", not git's "heads/release".
+  const label = bareName(resolved);
   const mode = await promptPick({
-    title: `Worktree from '${resolved.name}'`,
+    title: `Worktree from '${label}'`,
     hint: "Check it out directly, or as a new named branch?",
     choices: [
       {
         id: "direct",
-        label: isLocal ? resolved.name : `${resolved.name} (detached)`,
+        label: isLocal ? label : `${label} (detached)`,
         icon: isLocal ? "git-branch" : "git-commit",
         description: isLocal
-          ? `Check out the existing local branch ${resolved.name}.`
-          : `Check out ${resolved.name} as a detached HEAD.`,
+          ? `Check out the existing local branch ${label}.`
+          : `Check out ${label} as a detached HEAD.`,
       },
       {
         id: "new",
         label: "New branch…",
         icon: "add",
-        description: `Create a new local branch starting from ${resolved.name}.`,
+        description: `Create a new local branch starting from ${label}.`,
       },
     ],
   });
@@ -481,11 +486,10 @@ export async function worktreeFromRef(
   }
 
   if (mode === "direct") {
-    // Local branches attach via their short name; a full refs/heads/… would
-    // silently detach. Remote/tag refs must detach and need the full ref so a
-    // tag sharing a branch's short name can't resolve ambiguously — startPointOf
-    // also reconstructs the full ref for the branch-menu path, which only sends
-    // name + type. bareName strips git's collision disambiguator ("heads/x").
+    // Local branches attach via the name under refs/heads/; a full
+    // refs/heads/… would silently detach. Remote/tag refs must detach and need
+    // the full ref so a tag sharing a branch's short name can't resolve
+    // ambiguously. Both come from the listed full name (worktreeRefFor).
     const directRef =
       resolved.type === "head"
         ? bareName(resolved)
@@ -500,7 +504,7 @@ export async function worktreeFromRef(
 
   const name = await promptInput({
     title: "New worktree branch",
-    hint: `A new local branch is created from ${resolved.name} and checked out in the new worktree.`,
+    hint: `A new local branch is created from ${label} and checked out in the new worktree.`,
     placeholder: "feature/worktree",
     confirmLabel: "Continue",
     validate: "refName",

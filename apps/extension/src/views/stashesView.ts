@@ -2,8 +2,9 @@ import * as vscode from "vscode";
 import { describeStashScope, listForHint, type StashRequest } from "./stashScope";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
+import { applyOrAsk, type Applied } from "../git/inTheWay";
 import { promptConfirm, promptInput, promptPickMany } from "../ui/dialogs";
-import { stoppedByThisCommand } from "../git/pausedForUser";
+import { stoppedByThisCommand, type DetectedOperation } from "../git/pausedForUser";
 import { detectOperation, notifyPaused } from "../git/pauseNotice";
 
 // The Stashes pillar — genuinely absent from free VS Code, so GitStudio makes it
@@ -274,8 +275,9 @@ export async function applyStash(
     return;
   }
   const before = await detectOperation(a.ctx);
-  const result = await a.ctx.stashes.apply(ref);
-  reportStashOp(result, "Applied stash", refresh, !result.ok && stoppedByThisCommand(before, await detectOperation(a.ctx)));
+  // Through the shared door: uncommitted work in the stash's way is said, with
+  // Stash & Retry, instead of git's "would be overwritten by merge" in red.
+  await reportStashApplied(a, before, await applyOrAsk(a.ctx, { kind: "stash", stash: ref }), "Applied stash", refresh);
 }
 
 /** Apply then drop a stash (routed through Undo). */
@@ -290,11 +292,39 @@ export async function popStash(
   }
   const ledger = repos.getUndoLedger();
   const before = await detectOperation(a.ctx);
-  const run = () => a.ctx.stashes.pop(ref);
-  const result = ledger
+  const run = () => applyOrAsk(a.ctx, { kind: "stash", stash: ref, pop: true });
+  const applied = ledger
     ? await ledger.runWithUndo(a, `Pop ${ref}`, run)
     : await run();
-  reportStashOp(result, "Popped stash", refresh, !result.ok && stoppedByThisCommand(before, await detectOperation(a.ctx)));
+  await reportStashApplied(a, before, applied, "Popped stash", refresh);
+}
+
+/**
+ * reportStashOp for a stash applied through the shared door. `before` is what
+ * git had stopped on before the apply ran: a failed apply that LEFT git stopped
+ * on conflicts is a pause (the Conflicts dashboard), not a failure.
+ */
+async function reportStashApplied(
+  a: RepoEntry,
+  before: DetectedOperation,
+  applied: Applied,
+  success: string,
+  refresh: () => void,
+): Promise<void> {
+  if (applied.cancelled) {
+    return;
+  }
+  if (applied.settled) {
+    refresh();
+    return;
+  }
+  const ok = applied.result.code === 0;
+  reportStashOp(
+    { ok, stderr: applied.result.stderr },
+    success,
+    refresh,
+    !ok && stoppedByThisCommand(before, await detectOperation(a.ctx)),
+  );
 }
 
 /** Confirm + drop a stash (routed through Undo). */

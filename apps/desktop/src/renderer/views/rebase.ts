@@ -566,7 +566,10 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
           toast(outcome.message || "Rebase paused — resolve, then Continue.", "info", 6000);
           void mount(wrap, nav); // re-enters the in-progress card
         } else {
-          flashBanner(outcome.message || "Rebase failed.", "error");
+          // A refusal that is the user's state (uncommitted changes, a rebase
+          // already under way) is said in the warning tone, like every other
+          // `expected` result; anything else failed.
+          flashBanner(outcome.message || "Rebase failed.", outcome.expected ? "warn" : "error");
         }
       } catch (err) {
         flashBanner(cleanErr(err), "error");
