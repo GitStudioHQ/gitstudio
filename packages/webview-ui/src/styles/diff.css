@@ -565,10 +565,13 @@ body [class*="jb-frame-"].jb-edge-bottom { border-top: none; }
 }
 /* Accept (the apply arrow, the identical ✓, the wand): hover tints to the
  * change's own colour so the target reads as "this is the change you're
- * taking". */
-.jb-btn-accept.jb-tone-inserted:hover,
-.jb-btn-wand.jb-tone-inserted:hover { background: var(--jb-inner-inserted); color: var(--vscode-foreground); }
+ * taking". The merge names the tone (jb-tone-*); the 2-way diff's transfer
+ * arrow (diffView.ts) still names its role (jb-role-*) — both are live. */
+.jb-btn-accept.jb-role-inserted:hover,
+.jb-btn-accept.jb-tone-inserted:hover { background: var(--jb-inner-inserted); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-role-deleted:hover,
 .jb-btn-accept.jb-tone-deleted:hover { background: var(--jb-inner-deleted); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-role-modified:hover,
 .jb-btn-accept.jb-tone-modified:hover { background: var(--jb-inner-modified); color: var(--vscode-foreground); }
 .jb-btn-accept.jb-tone-same:hover { background: var(--jb-inner-same); color: var(--vscode-foreground); }
 .jb-btn-accept.jb-tone-conflict:hover,

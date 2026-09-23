@@ -439,6 +439,31 @@ test("line endings: the merge runs on normalised text, writes Yours' ending back
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
+test("the ribbons and controls repaint with NO animation frame at all (occluded window, Windows CI)", { skip }, async () => {
+  // macOS headless Chrome happens to service frames; the Windows runner and an
+  // occluded window serve none. Take frames away outright, so a repaint that
+  // waits on requestAnimationFrame alone is caught here, on every machine.
+  const v = await runMergePage(CHROME!, `
+    window.requestAnimationFrame = () => 0;
+    window.cancelAnimationFrame = () => {};
+    const view = mountView(gsMerge.payload());
+    await sleep(60);
+    const stage = document.querySelector(".jb-ribbon-stage");
+    const bands = stage.querySelectorAll("path.jb-ribbon").length;
+    expect(bands > 0, "the bands drew on the 32 ms timer (" + bands + " paths)");
+    // A scroll repositions the gutter controls through the same scheduler.
+    const before = document.querySelector('.jb-gutter-a .jb-change-actions[data-block="4"]').style.top;
+    view.left.setScrollTop(40);
+    view.result.setScrollTop(40);
+    view.right.setScrollTop(40);
+    await sleep(60);
+    const moved = document.querySelector('.jb-gutter-a .jb-change-actions[data-block="4"]');
+    expect(view.left.getScrollTop() === 40, "the panes did scroll (" + view.left.getScrollTop() + ")");
+    expect(moved && moved.style.top !== before, "the controls followed the scroll without a frame (" + before + " → " + (moved && moved.style.top) + ")");
+  `, { css: "#host{height:220px}" });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
 test("layout() re-measures the editors now — the desktop's resize nudge needs it", { skip }, async () => {
   const v = await runMergePage(CHROME!, `
     const view = mountView(gsMerge.payload());

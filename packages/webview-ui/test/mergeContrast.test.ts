@@ -55,10 +55,32 @@ test("diff.css carries the Appendix B tokens byte for byte, and no leftover 'res
   const css = readFileSync(DIFF_CSS, "utf8");
   assert.ok(css.includes(APPENDIX_B), "the token block is Appendix B exactly (it is identical in both repos)");
   assert.ok(!/--jb-(line|edge)-resolved/.test(css), "the grey 'resolved' wash is gone — applied changes are dashed");
+  // Every class the merge and diff views put on the page has a rule — a class
+  // with no rule fails silently (memory: dead CSS class names).
+  const selectors: string[] = [];
   for (const tone of TONES) {
-    for (const rule of [`.jb-line-${tone}`, `.jb-inner-${tone}`, `.jb-ribbon-${tone}`, `.jb-marker-${tone}`, `.jb-applied-${tone}`]) {
-      assert.ok(css.includes(rule + " ") || css.includes(rule + ","), `a rule for ${rule} exists`);
-    }
+    selectors.push(
+      `.jb-line-${tone}`, `.jb-inner-${tone}`, `.jb-ribbon-${tone}`, `.jb-marker-${tone}`,
+      `.jb-applied-${tone}`, `.jb-frame-${tone}`, `.jb-ribbon-applied-${tone}`,
+      `.jb-btn-accept.jb-tone-${tone}:hover`, `.jb-swatch-${tone}`,
+    );
+  }
+  // The 2-way diff's transfer arrow names its ROLE (diffView.ts).
+  for (const role of ["inserted", "deleted", "modified"]) {
+    selectors.push(`.jb-btn-accept.jb-role-${role}:hover`);
+  }
+  selectors.push(
+    ".jb-ws", ".jb-mark", ".jb-result-actions", ".jb-result-group", ".jb-btn-keep-base",
+    ".jb-btn-append", ".jb-btn-wand.jb-tone-conflict:hover", ".jb-legend", ".jb-legend-chip",
+    ".jb-legend-help", ".jb-legend-pop", ".jb-legend-row", ".jb-legend-count", ".jb-legend-extra",
+    ".jb-ribbon-applied", ".jb-edge-top", ".jb-edge-bottom", ".codicon-insert", ".codicon-check",
+    ".codicon-sparkle", ".codicon-question",
+  );
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const sel of selectors) {
+    // The selector itself, not a longer class that starts with it
+    // (".jb-mark" must not be satisfied by ".jb-marker-inserted").
+    assert.ok(new RegExp(`${escape(sel)}(?![\\w-])`).test(css), `a rule names ${sel}`);
   }
 });
 
