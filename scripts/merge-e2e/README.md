@@ -9,6 +9,7 @@ bash scripts/merge-e2e/fixtures.sh /tmp/matrix            # build it (~30 s, 33 
 npx tsx scripts/merge-e2e/oracle.ts                        # regenerate oracle.json (builds its own matrix)
 npx tsx scripts/merge-e2e/oracle.ts --check                # fail if oracle.json is stale
 npx tsx --test scripts/merge-e2e/matrix.test.ts            # completeness + staleness (~80 s)
+npx tsx --test scripts/merge-e2e/editorHosts.test.ts       # both hosts alike; what the editor writes before Apply (~2 min)
 
 # see any file of any scenario, in the real merge view
 export GS_CHROME=~/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell
@@ -25,6 +26,7 @@ npx tsx scripts/merge-e2e/render.ts --scenario rebase.diff3 --file stress/userSe
 | `oracle.ts` → `oracle.json` | What every later check expects of every file, read from git and the products' own code (never typed by hand). |
 | `completeness.ts` | Holds an oracle to `cases.ts`, in both directions. |
 | `matrix.test.ts` | Builds the matrix, checks it, requires `oracle.json` to match, and proves the checker fails on a shrunken matrix. |
+| `editorHosts.test.ts` | Over every conflict: the extensions and the desktop describe each file alike (shape, missing role, base, conflict type). Over every text conflict: what the merge editor writes to the file before Apply (every open conflict keeps its markers; opening writes nothing) and what it starts from (git's own file is never "already resolved"). |
 | `render.ts`, `cdp.ts`, `themes.ts` | Headless render of the real merge view: the extension's webview (VS Code Dark+ / Light+ / HC dark / HC light token values) and the desktop renderer (dark / light). |
 
 ## One convention
