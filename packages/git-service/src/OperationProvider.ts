@@ -337,6 +337,8 @@ export class OperationProvider implements OperationSource, OperationControl {
       ...(sides.direction ? { direction: sides.direction } : {}),
       ...(facts.step ? { step: facts.step } : {}),
       ...(facts.queued ? { queued: facts.queued } : {}),
+      // git keeps sequencer/ for a range only: a single pick never writes it.
+      ...((kind === "cherry-pick" || kind === "revert") && markers.sequencer ? { range: true as const } : {}),
       ...(facts.commit ? { commit: facts.commit } : {}),
       yours: sides.yours,
       theirs: sides.theirs,

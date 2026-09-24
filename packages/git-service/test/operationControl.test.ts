@@ -365,7 +365,9 @@ test("cherry-pick × resolved to stage 2: nothing to commit, so Skip", () =>
     assert.equal(refused.refused, "blocked", "refused before git ever said 'now empty'");
     const out = await ctx.operation.skip();
     assert.equal(out.ok, true, out.message);
-    assert.equal(out.message, "Last commit skipped. Cherry-pick complete, without it");
+    // The only pick there was: skipping it ENDS the cherry-pick, nothing applied.
+    assert.equal(v.range, undefined, "a single pick is no range");
+    assert.equal(out.message, `Commit ${v.commit!.sha.slice(0, 7)} skipped. The cherry-pick is over`);
     assert.equal(r.exists(".git/CHERRY_PICK_HEAD"), false);
     assert.equal(r.sha("HEAD"), sha.master);
   }));
@@ -392,6 +394,7 @@ test("cherry-pick range × conflicted then continued: queued count, next stop, t
     assert.equal(out.stopped, true, out.message);
     assert.equal(out.view.commit?.sha, sha.t3);
     assert.equal(out.view.queued, undefined, "nothing after the last one");
+    assert.equal(out.view.range, true, "…and still a range: the one before it is applied");
     const skipped = await ctx.operation.skip();
     assert.equal(skipped.ok, true, skipped.message);
     assert.equal(skipped.message, "Last commit skipped. Cherry-pick complete, without it", "T3 was the last one");

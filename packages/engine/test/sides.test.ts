@@ -198,5 +198,8 @@ test("a Skip that ended the operation says which one it left out, and whether th
   assert.equal(skipEndedText({ kind: "cherry-pick", commit }), "Commit 1a2b3c4 skipped. The cherry-pick is over");
   assert.equal(skipEndedText({ kind: "revert", commit }), "Commit 1a2b3c4 skipped. The revert is over");
   assert.equal(skipEndedText({ kind: "revert" }), "The current commit skipped. The revert is over");
+  // The LAST of a range is not a single pick: the ones before it are applied.
+  assert.equal(skipEndedText({ kind: "cherry-pick", range: true, commit }), "Last commit skipped. Cherry-pick complete, without it");
+  assert.equal(skipEndedText({ kind: "revert", range: true }), "Last commit skipped. Revert complete, without it");
   assert.equal(skipEndedText({ kind: "rebase" }), "Last commit skipped. Rebase complete, without it", "nothing known after it: the last");
 });

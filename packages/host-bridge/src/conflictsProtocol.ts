@@ -101,6 +101,13 @@ export interface OperationView {
   /** Cherry-pick / revert ranges: how many more are queued after this one ("k more queued"). */
   queued?: number;
   /**
+   * A cherry-pick / revert of SEVERAL commits (git's sequencer holds it) —
+   * also at its last stop, where nothing is queued any more: the ones before
+   * it are applied. Absent for a single pick or revert, whose Skip ends it
+   * with nothing applied.
+   */
+  range?: true;
+  /**
    * The commit (or patch) being replayed / picked / reverted / applied.
    * `sha` is the FULL object name (UIs shorten it to 7); "" for an am patch
    * that records no commit.

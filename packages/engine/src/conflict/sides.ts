@@ -134,7 +134,7 @@ export function pauseDetail(facts: Pick<OperationFacts, "pause" | "commit">): st
  *   Commit 2 of 3 skipped; the rest applied — rebase complete
  *   Last patch skipped. The series is finished, without it
  */
-export function skipEndedText(before: Pick<OperationView, "kind" | "step" | "queued" | "commit">): string {
+export function skipEndedText(before: Pick<OperationView, "kind" | "step" | "queued" | "commit" | "range">): string {
   const am = before.kind === "am";
   const noun = SKIP_NOUN[before.kind];
   // What came AFTER the skipped one: the rest of the sequence (rebase, am),
@@ -154,10 +154,12 @@ export function skipEndedText(before: Pick<OperationView, "kind" | "step" | "que
   if (am) {
     return "Last patch skipped. The series is finished, without it";
   }
-  if ((before.kind === "cherry-pick" || before.kind === "revert") && !before.step) {
-    // Nothing queued after it: skipping it ENDED the pick or revert. "Revert
-    // complete, without it" read as if something had been reverted, after
-    // skipping the only revert there was.
+  if ((before.kind === "cherry-pick" || before.kind === "revert") && !before.step && !before.range) {
+    // A single pick or revert: skipping it ENDED the operation with nothing
+    // applied. "Revert complete, without it" read as if something had been
+    // reverted, after skipping the only revert there was. The last of a
+    // RANGE is different — the ones before it are in — and keeps "Last
+    // commit skipped. … complete, without it".
     const which = before.commit?.sha ? `Commit ${sha7(before.commit.sha)}` : "The current commit";
     return `${which} skipped. The ${noun} is over`;
   }
