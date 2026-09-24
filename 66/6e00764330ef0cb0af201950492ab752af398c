@@ -1,0 +1,21 @@
+brand/rasterise.sh
+  s_26f5e669d3043c::t_5cbdc4a0de4990 8-13,16,19-27,35
+apps/desktop/test/harnessChrome.test.ts
+  s_26f5e669d3043c::t_1c2b3502d6bcee 83-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "666e00764330ef0cb0af201950492ab752af398c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
