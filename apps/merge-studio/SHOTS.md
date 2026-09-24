@@ -14,6 +14,10 @@ bar in frame. Dark shots in **Default Dark Modern**, light shots in
 Check each capture by DOM, not by eye: no "Accept Left", "Changes from
 server", "Your version" or "Screenshot pending" anywhere on screen.
 
+A hidden window paints no NEW frame, so open the window at the size the
+capture emulates (the media script's `winsize` before `launch`): with a
+viewport override of another size, `Page.captureScreenshot` waits forever.
+
 Content comes from the merge matrix (`scripts/merge-e2e/fixtures.sh` in
 gitstudio): `issue12.merge` and `issue12-exact.merge` (the #12 reporter's
 repository), plus the product's own Open Sample Merge and Open Sample Diff.
@@ -29,8 +33,8 @@ that tag. Window 1440×900.
 | `media/screenshots/hero.gif` | dark | 1200 px wide, under 8 s and 3 MB. A real rebase started in VS Code's terminal: the sample's three versions of `src/authorizeRequest.ts` as `feature/session-hardening` onto `main`, stopped at commit 2 of 3. The dashboard, Merge…, **All** (the changes only one side made), the wand (the simple conflict), then an arrow and a × on each of the other two conflicts, Apply, Continue Rebase, "Rebase complete". (The wand and one arrow alone leave conflicts open, and Apply then asks first.) |
 | `media/screenshots/merge-editor-dark.png` | dark | The sample merge (*Sample: authorizeRequest.ts*) with the legend in words: Conflicts in red, Changed / Added / Removed in blue, green and grey on one side, and on both sides for the change both sides made the same way. One conflict half taken and one change settled, so the half-done look and a settled change's trace are in the shot. |
 | `media/screenshots/merge-editor-light.png` | light | The same, in Light Modern (the README's colour section uses this one). |
-| `media/screenshots/dashboard-rebase.png` | dark | `issue12-exact`: the dashboard mid-rebase, YOURS test → onto → THEIRS master, "commit 1 of 1", the commit card, f.txt with Accept Yours / Accept Theirs / Merge…, Continue Rebase disabled with its reason. |
-| `media/screenshots/dashboard-done.png` | dark | `issue12-exact` after Accept Yours on f.txt: the success card, the row's pill and Hold to undo, Continue Rebase enabled. |
+| `media/screenshots/dashboard-rebase.png` | dark | `issue12-exact`: the dashboard mid-rebase, YOURS test → onto → THEIRS master, "commit 1 of 1", the commit card, f.txt with Accept Yours / Accept Theirs / Merge…, Continue Rebase disabled with its reason. A 1440×560 window: the dashboard fills its pane, footer pinned to the bottom, so a shorter window keeps Abort and Continue next to the list. |
+| `media/screenshots/dashboard-done.png` | dark | `issue12-exact` after Accept Yours on f.txt: the step's success card ("Last commit resolved"), the row's pill ("kept yours · test") and Hold to undo, Continue Rebase enabled. 1440×560, as above. |
 | `media/screenshots/legend.png` | dark | A tight crop of the legend, every colour named in words. |
 | `media/screenshots/no-text-panel.png` | dark | `issue12.merge`, `app/greeting.py` (edited in theirs, deleted in yours): the panel with **Delete the file** and **Accept Theirs**. |
 | `media/screenshots/diff.png` | dark | The side-by-side diff of the sample diff. |

@@ -203,6 +203,21 @@ test("every README image exists", () => {
   for (const src of local) assert.ok(existsSync(join(ROOT, src)), src);
 });
 
+test("the dashboard captures' words are the dashboard's own, as the 1.0 build says them", () => {
+  // Re-taken when the dashboard learned to name the step (r0923): its heading
+  // is the operation's ("Rebase conflicts"), a rebase's last commit resolved
+  // reads "Last commit resolved", and a row's pill names the side's branch.
+  const alt = (file: string) => readme.match(new RegExp(`<img src="media/screenshots/${file}" alt="([^"]+)"`))?.[1] ?? "";
+  const rebase = alt("dashboard-rebase.png");
+  const done = alt("dashboard-done.png");
+  assert.match(rebase, /Rebase conflicts/, rebase);
+  assert.match(done, /Last commit resolved/, done);
+  assert.match(done, /kept yours · test/, done);
+  assert.doesNotMatch(done, /All conflicts resolved/, "the card a rebase shows at its last commit");
+  const shots = read("SHOTS.md");
+  assert.match(shots, /"Last commit resolved"/, "SHOTS.md describes the capture that exists");
+});
+
 // ── CHANGELOG (POLISH B5) ───────────────────────────────────────────────────
 
 const changelog = read("CHANGELOG.md");

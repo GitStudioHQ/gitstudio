@@ -25,7 +25,7 @@
 
 During a rebase git swaps its own words: `--ours` is the branch you are rebasing onto, and `--theirs` is your commit. Merge Studio does not. **Yours** (left) is always your work, the commit being replayed, and **Theirs** (right) is the branch it is landing on. The header says which: *Rebasing test onto master · commit 1 of 3*.
 
-<p align="center"><img src="media/screenshots/dashboard-rebase.png" alt="The Conflicts dashboard mid-rebase: Rebasing test onto master, commit 1 of 1; YOURS test, onto, THEIRS master; the commit being replayed; f.txt with Accept Yours, Accept Theirs and Merge…; Abort Rebase, and Continue Rebase disabled because f.txt still has conflicts."></p>
+<p align="center"><img src="media/screenshots/dashboard-rebase.png" alt="The Conflicts dashboard mid-rebase, headed Rebase conflicts: Rebasing test onto master, commit 1 of 1; YOURS test, onto, THEIRS master; the commit being replayed; f.txt with Accept Yours, Accept Theirs and Merge…; Abort Rebase, and Continue Rebase disabled because f.txt still has conflicts."></p>
 
 ## Every change, colour-coded
 
@@ -54,7 +54,7 @@ dashboard opens it again.
 
 ## The Conflicts dashboard
 
-<p align="center"><img src="media/screenshots/dashboard-done.png" alt="The Conflicts dashboard with every file resolved: All conflicts resolved, f.txt marked kept yours with Hold to undo, and Continue Rebase ready."></p>
+<p align="center"><img src="media/screenshots/dashboard-done.png" alt="The Conflicts dashboard with every file resolved: Last commit resolved, Continue Rebase to finish; f.txt marked kept yours · test with Hold to undo; and Continue Rebase ready."></p>
 
 The dashboard opens the moment a merge, rebase, cherry-pick, revert, git am or stash pop stops on conflicts.
 
