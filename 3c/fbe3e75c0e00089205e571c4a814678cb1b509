@@ -1,0 +1,39 @@
+packages/webview-ui/src/conflicts/dashboard.ts
+  s_26f5e669d3043c::t_00b0cc47492ad4 297-301,304
+  s_26f5e669d3043c::t_96dbae6592d4c9 502-508
+  s_26f5e669d3043c::t_0b433b3483bad7 337-350
+  s_26f5e669d3043c::t_da9035aec93332 232
+  s_26f5e669d3043c::t_d9b02cc7bb200e 464-466
+  s_26f5e669d3043c::t_79180e5c44d44f 515-535
+  s_26f5e669d3043c::t_7d531c9615b2c9 570-577
+  s_26f5e669d3043c::t_39015bedd15a5d 188-191
+  s_26f5e669d3043c::t_b9642de33573cd 244-245
+  s_26f5e669d3043c::t_dd10e83c9f26f8 122-136
+  s_26f5e669d3043c::t_520476e869eaca 501
+  s_26f5e669d3043c::t_ead698bdcb6456 606-607,613-614
+packages/webview-ui/src/styles/conflicts.css
+  s_26f5e669d3043c::t_9652a423c06e0c 466-467,469-477,485-494,502,504,508,510,513-537,901,912
+  s_26f5e669d3043c::t_d34b0f063ce759 834-837
+  s_26f5e669d3043c::t_a9ae5587057406 131-135,138
+  s_26f5e669d3043c::t_d5aca985d76e9c 633
+  s_26f5e669d3043c::t_87e915fe037f31 625-627,653-655,658-659
+  s_26f5e669d3043c::t_e10a96cf21c23f 60-62,64-72
+  s_26f5e669d3043c::t_857f252cdb2f8c 222-235
+  s_26f5e669d3043c::t_a770eb8eeacfa7 886-892,895-900,907-911,913-920,937-939,941-942
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3cfbe3e75c0e00089205e571c4a814678cb1b509",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
