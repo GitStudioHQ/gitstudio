@@ -1,0 +1,49 @@
+packages/webview-ui/src/styles/shell.css
+  s_26f5e669d3043c::t_3b1d85958da1d9 388-392,394-396
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 869-876
+packages/webview-ui/test/conflictsDashboard.test.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 612-656
+apps/merge-studio/package.json
+  s_26f5e669d3043c::t_3b1d85958da1d9 212
+packages/webview-ui/test/diffViewEdges.test.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 27,37,41-81,84-94,98
+packages/webview-ui/test/filterFollowUp.test.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 122,128,289-303,319-325,334-368
+packages/webview-ui/src/styles/tokens.css
+  s_26f5e669d3043c::t_3b1d85958da1d9 172-187
+apps/merge-studio/README.md
+  s_26f5e669d3043c::t_3b1d85958da1d9 60
+packages/webview-ui/test/fixtures/shellEntry.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 9,172-174
+packages/webview-ui/test/mergeShell.test.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 65-66,860-864,867,889,897-929
+  s_26f5e669d3043c::t_d7caf99b2eb6ba 930
+packages/webview-ui/test/headlessHarness.test.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 33-52
+packages/webview-ui/src/diffView.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 6,20-32,305-313,568-577
+packages/webview-ui/src/conflicts/main.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 43-47,51
+packages/webview-ui/test/headless.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 86-98,109-110,119-126,132,139-143,158-168,170-171
+  s_26f5e669d3043c::t_c80b0be3e8faba 85
+packages/webview-ui/test/findChrome.test.ts
+  s_26f5e669d3043c::t_3b1d85958da1d9 7,139-141,176-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ac7c73f3a3aadd2e29cb1a8f828752189b85a36d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
