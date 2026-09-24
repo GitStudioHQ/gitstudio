@@ -1,0 +1,25 @@
+packages/webview-ui/src/ribbons.ts
+  s_26f5e669d3043c::t_57f45dd8051393 288-290
+  s_26f5e669d3043c::t_e5a074682a8246 415,419
+  s_26f5e669d3043c::t_75441aa8577ee6 173-181,183,185-188
+  s_26f5e669d3043c::t_e456a2fb4aff9e 323,325-326
+packages/webview-ui/test/mergeColours.test.ts
+  s_26f5e669d3043c::t_8ee906effcb20f 732-762,769-777
+  s_26f5e669d3043c::t_e460e627714fd9 763-768
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "47d6e95efb5af38ded8e32eeee194b705f9133ff",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
