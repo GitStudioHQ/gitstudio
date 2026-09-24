@@ -17,6 +17,9 @@ server", "Your version" or "Screenshot pending" anywhere on screen.
 A hidden window paints no NEW frame, so open the window at the size the
 capture emulates (the media script's `winsize` before `launch`): with a
 viewport override of another size, `Page.captureScreenshot` waits forever.
+A window launched hidden (`open -g -j`) has no screen to take 2× from: pass
+`--force-device-scale-factor=2`, since an emulated scale factor leaves the
+webviews at 1×, blurred.
 
 Content comes from the merge matrix (`scripts/merge-e2e/fixtures.sh` in
 gitstudio): `issue12.merge` and `issue12-exact.merge` (the #12 reporter's
@@ -33,22 +36,24 @@ that tag. Window 1440×900.
 | `media/screenshots/hero.gif` | dark | 1200 px wide, under 8 s and 3 MB. A real rebase started in VS Code's terminal: the sample's three versions of `src/authorizeRequest.ts` as `feature/session-hardening` onto `main`, stopped at commit 2 of 3. The dashboard, Merge…, **All** (the changes only one side made), the wand (the simple conflict), then an arrow and a × on each of the other two conflicts, Apply, Continue Rebase, "Rebase complete". (The wand and one arrow alone leave conflicts open, and Apply then asks first.) |
 | `media/screenshots/merge-editor-dark.png` | dark | The sample merge (*Sample: authorizeRequest.ts*) with the legend in words, one entry per colour: Conflict — you choose (orange), Same on both sides — either arrow takes it (green, on both sides), One side only — safe to take (blue), Removed lines (grey). Each open change with its line numbers and its link to the result in the full colour, its lines lighter. One conflict half taken and one change settled, so the half-done look and a settled change's trace are in the shot. |
 | `media/screenshots/merge-editor-light.png` | light | The same, in Light Modern (the README's colour section uses this one). |
-| `media/screenshots/dashboard-rebase.png` | dark | `issue12-exact`: the dashboard mid-rebase, YOURS test → onto → THEIRS master, "commit 1 of 1", the commit card, f.txt with Accept Yours / Accept Theirs / Merge…, Continue Rebase disabled with its reason. A 1440×560 window: the dashboard fills its pane, footer pinned to the bottom, so a shorter window keeps Abort and Continue next to the list. |
+| `media/screenshots/dashboard-rebase.png` | dark | `issue12-exact`: the dashboard mid-rebase, YOURS test → onto → THEIRS master, "commit 1 of 1", the commit card, f.txt with Accept Yours / Accept Theirs / Merge…, Continue Rebase disabled with its reason. A 1440×560 window; the footer (Abort, the reason, Continue) sits right under the list. |
 | `media/screenshots/dashboard-done.png` | dark | `issue12-exact` after Accept Yours on f.txt: the step's success card ("Last commit resolved"), the row's pill ("kept yours · test") and Hold to undo, Continue Rebase enabled. 1440×560, as above. |
-| `media/screenshots/legend.png` | dark | A tight crop of the legend: the four colours named in words, each with its count. |
+| `media/screenshots/legend.png` | dark | A tight crop of the legend of `issue12.merge`'s `stress/userService.js`: each colour the file has, named in words with its count (Conflict — you choose 6, Same on both sides — either arrow takes it 1, One side only — safe to take 5). The file removes no lines, so Removed lines is not shown; the README's alt text gives these three counts. |
 | `media/screenshots/no-text-panel.png` | dark | `issue12.merge`, `app/greeting.py` (edited in theirs, deleted in yours): the panel with **Delete the file** and **Accept Theirs**. |
 | `media/screenshots/diff.png` | dark | The side-by-side diff of the sample diff. |
 
 ## Walkthrough (`media/walkthrough/`, shipped in the VSIX)
 
-900×560 editor areas from a 948×617 window, a dark and a light PNG per step
+900×560 editor areas, side bar closed, from a 956×627 window (VS Code
+1.139's status bar is 28 px and its editor sits 4 px in; in 1.138 a 948×617
+window gave the same area), a dark and a light PNG per step
 (`{"dark", "light", "hc", "hcLight"}` in package.json; the high-contrast
 themes use the dark and light files).
 
 | Step | Files | Capture |
 | --- | --- | --- |
 | Resolve a sample conflict | `sample-merge-{dark,light}.png` | The sample merge, fresh (nothing resolved), toolbar and bottom bar in frame. |
-| Read the colours | `legend-{dark,light}.png` | The legend, in words, plus one block of each colour: a conflict (orange), the same change on both sides (green), a change on one side only (blue), removed lines (grey). |
+| Read the colours | `legend-{dark,light}.png` | The legend, in words, plus one block of each colour: a conflict (orange), the same change on both sides (green), a change on one side only (blue), removed lines (grey). The sample merge with one change taken from Theirs, so its lighter trace shows while every colour is still open (no matrix file has all four colours). |
 | Rebase without swapping sides | `rebase-sides-{dark,light}.png` | The op strip and pane titles mid-rebase: YOURS test on the left, THEIRS master on the right. |
 | Finish the whole operation from the dashboard | `dashboard-{dark,light}.png` | The dashboard's rows and footer mid-rebase: Abort Rebase, and Continue Rebase waiting until no file has conflicts. (A rebase offers no Skip at a conflicted stop; cherry-pick, revert and git am do.) |
 | Choose your merge editor | `choose-editor-{dark,light}.png` | The first-conflict notification with Turn them off / Not now / Don't ask again. |
