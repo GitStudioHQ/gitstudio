@@ -1,0 +1,35 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_8fee8fdac318ec 46-50
+  s_26f5e669d3043c::t_857efe083c23af 274-275,277-294
+  s_26f5e669d3043c::t_312a631a4268f7 295-296
+  s_26f5e669d3043c::t_2c09fa9a656218 19-26
+  s_26f5e669d3043c::t_1c66e2d0f17ff7 79-93
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_20f6a686e61448 193-195
+  s_26f5e669d3043c::t_189493623382e7 60-62
+  s_26f5e669d3043c::t_32e7201ef1b196 43-45
+  s_26f5e669d3043c::t_4158953cf01a06 301-329
+  s_26f5e669d3043c::t_36aecb229e30f4 27-33
+  s_26f5e669d3043c::t_e720eb481c575d 86-88
+apps/merge-studio/CHANGELOG.md
+  s_26f5e669d3043c::t_473330bf43ac87 13
+  s_26f5e669d3043c::t_486a52eba6d9f2 5,28,36,38-39,52,67-68
+scripts/merge-studio/test/docs.test.mjs
+  s_26f5e669d3043c::t_dde185236f61bf 151-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c1e9b70058e4d153ca8a8bf47d7accd1733b6c7d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
