@@ -14,7 +14,7 @@ import { locate } from "./args";
 import { sampleScheme } from "./demo";
 import { DEMO_MERGE, sampleAnswer } from "./demoContent";
 import { baseName, ForeignEdits, ResultMirror } from "./documentSync";
-import { closeMergeEditorTabs, fileUri, type MergeHostCore } from "./host";
+import { closeMergeEditorTabs, dismissSidesTip, fileUri, sidesTipFor, type MergeHostCore } from "./host";
 import type { JetBrainsUi } from "./jetbrainsUi";
 import { MergeSession } from "./mergeSession";
 import type { MergeRepo } from "./product";
@@ -161,6 +161,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       post: io.post,
       settings: () => host.settings(),
       jetbrainsName: () => this.jetbrains.cachedName(),
+      tip: (op) => sidesTipFor(host, op),
       withUndo:
         repo && host.product.runWithUndo
           ? <T>(label: string, fn: () => Promise<T>) => host.product.runWithUndo!(repo, label, fn)
@@ -267,6 +268,9 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       }
       case "showConflicts":
         await vscode.commands.executeCommand(this.host.product.commands.showConflicts);
+        break;
+      case "dismissTip":
+        await dismissSidesTip(this.host, message.id);
         break;
       case "takeRole":
         await session.takeRole(message.role);

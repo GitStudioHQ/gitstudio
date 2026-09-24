@@ -80,6 +80,7 @@ import {
   opNoun,
   roleWord,
   sha7,
+  shortName,
   stepText,
   willDropText,
 } from "./conflicts/opText";
@@ -251,12 +252,14 @@ export function eolText(info: EolMismatchInfo): string {
  */
 export function seedText(info: SeedInfo): string {
   const n = plural(info.changes, "change");
+  const one = info.changes === 1;
   return info.kind === "working"
     ? `This file was already resolved outside the merge editor (by hand, or by git rerere): the Result starts from it. ` +
-        `Its ${n} ${info.changes === 1 ? "is" : "are"} still marked so you can check each; Apply saves the Result as shown.`
-    : `${n} ${info.changes === 1 ? "was" : "were"} already settled in the file outside its conflict markers (by git's ` +
-        `own merge, or by hand): the Result keeps ${info.changes === 1 ? "it" : "them"}, still marked so you can check ` +
-        `each; Apply saves the Result as shown.`;
+        `Its ${n} ${one ? "is" : "are"} still marked so you can check each; Apply saves the Result as shown.`
+    : // One line, in plain words (the critic: "settled in the file outside its
+      // conflict markers" was jargon, and never said which change).
+      `${one ? "1 change in this file was" : `${n} in this file were`} already merged, outside the conflict markers. ` +
+        `${one ? "It's" : "They're"} in the Result, marked so you can check ${one ? "it" : "them"}.`;
 }
 
 /** The one-line note for a conflict with no common ancestor. */
@@ -319,6 +322,8 @@ export class MergeShell {
   private eolInfo?: EolMismatchInfo;
   /** The operation finished here (an outcome "done"): nothing is left to end. */
   private ended = false;
+  /** Tips the user pressed "Got it" on in this editor (the host remembers them for good). */
+  private readonly tipsDismissed = new Set<string>();
   /**
    * Apply disabled the button that had the keyboard (it is spent, or busy):
    * hand focus on to the next thing to press once the host has answered,
@@ -575,6 +580,7 @@ export class MergeShell {
       case "opChanged":
         this.op = message.op;
         this.remaining = message.remainingConflicts;
+        this.labelSides();
         this.renderStrip();
         this.syncBottom();
         this.passFocusOnFromApply();
@@ -777,6 +783,15 @@ export class MergeShell {
     const theirs = op?.theirs;
     const named = (role: "yours" | "theirs", name: string | undefined): string =>
       name ? `${role} (${name})` : role;
+    // POLISH A5.6 (the #12 reporter: "the labels should clearly correspond to
+    // the branches"): "Accept Yours · test" / "Accept Theirs · master", the
+    // name cut to 18 characters; the whole description stays in the tooltip.
+    // Plain labels where a side has no name of its own (a stash, nothing in
+    // progress).
+    const withName = (label: string, name: string | undefined): string =>
+      name && op && op.kind !== "stash" && op.kind !== "none" ? `${label} · ${shortName(name)}` : label;
+    this.acceptYoursBtn.textContent = withName("Accept Yours", yours?.name);
+    this.acceptTheirsBtn.textContent = withName("Accept Theirs", theirs?.name);
     this.acceptYoursBtn.title = yours?.description
       ? `Resolve every change with yours — ${yours.description}`
       : `Resolve every change with ${this.payload.oursLabel || "the left version"}`;
@@ -860,12 +875,41 @@ export class MergeShell {
 
   private renderNotices(): void {
     this.notices.replaceChildren();
+    const tip = this.payload.tip;
+    if (tip && !this.tipsDismissed.has(tip.id)) {
+      // POLISH A5.9: once, for an upgrader — which side is Yours changed.
+      const n = notice("info", tip.text, "ms-note-tip");
+      const got = toolbarButton("Got it", "bordered");
+      got.classList.add("ms-tip-dismiss");
+      got.title = "Don't show this again";
+      got.addEventListener("click", () => {
+        this.tipsDismissed.add(tip.id);
+        this.adapter.post({ type: "dismissTip", id: tip.id });
+        const hadKeyboard = this.notices.contains(document.activeElement);
+        this.renderNotices();
+        if (hadKeyboard) this.focus();
+      });
+      n.appendChild(got);
+      this.notices.appendChild(n);
+    }
     const text = hasText(this.payload.shape);
     // Without an operation strip the conflict-type note has nowhere else to go.
     const note = !this.op ? conflictTypeNote(this.payload) : "";
     if (note && text) this.notices.appendChild(notice("info", note, "ms-note-type"));
     if (this.outside && text) this.notices.appendChild(this.outsideNotice(this.outside));
-    if (this.seeded && text) this.notices.appendChild(notice("info", seedText(this.seeded), "ms-note-seed"));
+    if (this.seeded && text) {
+      const n = notice("info", seedText(this.seeded), "ms-note-seed");
+      if (this.seeded.kind === "markers" && this.viewApi?.revealSeeded) {
+        // Where it is: a link that scrolls the Result to it.
+        const show = document.createElement("button");
+        show.type = "button";
+        show.className = "ms-notice-link ms-seed-show";
+        show.textContent = this.seeded.changes === 1 ? "Show it" : "Show the first";
+        show.addEventListener("click", () => this.viewApi?.revealSeeded?.());
+        n.appendChild(show);
+      }
+      this.notices.appendChild(n);
+    }
     if (this.eolInfo && text) this.notices.appendChild(notice("warn", eolText(this.eolInfo), "ms-note-eol"));
     this.notices.hidden = this.notices.childElementCount === 0;
   }
@@ -1230,6 +1274,9 @@ export class MergeShell {
     const unsaved = !this.panel && this.counts.hasProgress && !this.applied;
     if (unsaved && !this.closeConfirming) {
       this.closeConfirming = true;
+      // One question at a time: an armed "Apply with N unresolved" sat just
+      // below the Close confirm and read as part of it.
+      this.disarmApply();
       this.syncBottom();
       // A question that throws work away starts on the safe answer.
       this.element.querySelector<HTMLButtonElement>(".ms-close-keep")?.focus();
@@ -1253,12 +1300,17 @@ export class MergeShell {
     note.setAttribute("role", "alert");
     const text = document.createElement("span");
     text.className = "ms-confirm-text";
-    const where = this.op && this.endable() ? ` The ${opNoun(this.op.kind)} stays paused` : "";
+    const name = displayPath(this.payload.fileName);
+    // True whether or not the file was saved in between: a File ▸ Save writes
+    // the settled changes (the rest keep their markers), and Close never
+    // reverts the saved file — "what you resolved here is not kept" said the
+    // opposite after a save.
+    const where = this.op && this.endable() ? `The ${opNoun(this.op.kind)} stays paused, and ` : "";
     text.append(
       glyphEl(warningIcon),
       document.createTextNode(
-        `Close without applying? What you resolved here is not kept.${where}${where ? " and" : ""} ` +
-          `${displayPath(this.payload.fileName)} keeps its conflict markers.`,
+        `Close without applying? ${where}${name} keeps its conflict markers; ` +
+          `anything settled here and not saved is not kept.`,
       ),
     );
     const keep = toolbarButton("Keep editing", "bordered");
@@ -1267,7 +1319,12 @@ export class MergeShell {
     const go = toolbarButton("Close without applying", "bordered");
     go.classList.add("ms-close-go", "ms-danger");
     go.addEventListener("click", () => this.clickClose());
-    note.append(text, keep, go);
+    // The two answers stay together at the end of the row; only the sentence
+    // wraps (they split to opposite corners in a 1000 px window).
+    const answers = document.createElement("span");
+    answers.className = "ms-confirm-answers";
+    answers.append(keep, go);
+    note.append(text, answers);
   }
 
   /** The Close button's words: "Close", or what the host calls closing (the sample's "Close sample"). */
@@ -1580,6 +1637,12 @@ function pill(role: "yours" | "theirs", name: string, description: string): HTML
 function notice(kind: "info" | "warn", text: string, cls: string): HTMLElement {
   const n = document.createElement("div");
   n.className = `ms-notice is-${kind} ${cls}`;
-  n.append(glyphEl(kind === "warn" ? warningIcon : infoIcon), document.createTextNode(text));
+  // The words in a span of their own that takes the room and wraps inside it:
+  // as a bare text node beside the icon, a long sentence wrapped as ONE flex
+  // item and left the icon alone on a row above it.
+  const words = document.createElement("span");
+  words.className = "ms-notice-text";
+  words.textContent = text;
+  n.append(glyphEl(kind === "warn" ? warningIcon : infoIcon), words);
   return n;
 }

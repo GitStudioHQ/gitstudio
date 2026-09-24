@@ -130,6 +130,10 @@ export class FakeMergeView implements MergeViewApi {
   getUnsettledText(): string {
     return this.unsettled ?? this.result;
   }
+  revealSeeded(): boolean {
+    this.note("revealSeeded");
+    return true;
+  }
   reset(): void {
     this.note("reset");
   }

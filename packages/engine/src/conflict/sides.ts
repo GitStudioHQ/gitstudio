@@ -151,9 +151,17 @@ export function skipEndedText(before: Pick<OperationView, "kind" | "step" | "que
       ? `${which} skipped; the rest applied — the series is finished`
       : `${which} skipped; the rest applied — ${noun} complete`;
   }
-  return am
-    ? "Last patch skipped. The series is finished, without it"
-    : `Last commit skipped. ${noun.charAt(0).toUpperCase()}${noun.slice(1)} complete, without it`;
+  if (am) {
+    return "Last patch skipped. The series is finished, without it";
+  }
+  if ((before.kind === "cherry-pick" || before.kind === "revert") && !before.step) {
+    // Nothing queued after it: skipping it ENDED the pick or revert. "Revert
+    // complete, without it" read as if something had been reverted, after
+    // skipping the only revert there was.
+    const which = before.commit?.sha ? `Commit ${sha7(before.commit.sha)}` : "The current commit";
+    return `${which} skipped. The ${noun} is over`;
+  }
+  return `Last commit skipped. ${noun.charAt(0).toUpperCase()}${noun.slice(1)} complete, without it`;
 }
 
 /** The operation as the end of a sentence names it ("… — rebase complete"). */

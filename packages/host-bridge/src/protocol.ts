@@ -75,6 +75,12 @@ export interface MergeInitPayload {
    * them.
    */
   commits?: { yours?: string; theirs?: string };
+  /**
+   * A one-time tip the shell shows in its notices until the user presses
+   * "Got it" (posting `dismissTip`): POLISH A5.9's note for upgraders that
+   * Yours during a rebase is now their own commit, on the left.
+   */
+  tip?: { id: string; text: string; why?: string };
 }
 
 export interface DiffInitPayload {
@@ -176,6 +182,8 @@ export type WebviewMessage =
   | { type: "cancel"; mode?: "exit" | "abort" }
   /** Open the conflicts list (dashboard): every conflicted file, and Continue / Abort. */
   | { type: "showConflicts" }
+  /** The tip's "Got it" (MergeInitPayload.tip): never show tip `id` again. */
+  | { type: "dismissTip"; id: string }
   // Hand this conflict to the real JetBrains merge window and close the panel.
   | { type: "openInJetBrains" }
   /**

@@ -4,7 +4,7 @@
 
 import * as vscode from "vscode";
 import type { MergeHostSettings, MergeProduct, MergeRepo } from "./product";
-import { normalizeMergeSettings, settingWithFallback } from "./product";
+import { normalizeMergeSettings, settingWithFallback, sidesTipText } from "./product";
 import type { ExitGuard } from "./exitGuard";
 
 export type NoticeKind = "info" | "warn" | "error";
@@ -132,6 +132,31 @@ export async function closeTextTabs(uri: vscode.Uri): Promise<void> {
     await vscode.window.tabGroups.close(tabs, true);
   } catch {
     // already gone
+  }
+}
+
+/**
+ * POLISH A5.9: the one-time tip for an upgrader at a stop whose sides changed
+ * meaning (a rebase, a stash apply) — until they press "Got it". Shown in the
+ * dashboard and the merge editor alike.
+ */
+export function sidesTipFor(
+  host: Pick<MergeHostCore, "context" | "product">,
+  op: { kind: string; yours: { name: string } } | undefined,
+): { id: string; text: string; why?: string } | undefined {
+  const facts = host.product.sidesTip;
+  if (!facts || !op || host.context.globalState.get<boolean>(facts.dismissedKey)) {
+    return undefined;
+  }
+  const text = sidesTipText(host.product, facts.version, op);
+  return text ? { id: facts.dismissedKey, text, ...(facts.why ? { why: facts.why } : {}) } : undefined;
+}
+
+/** "Got it": the tip is not shown again. */
+export async function dismissSidesTip(host: Pick<MergeHostCore, "context" | "product">, id: string): Promise<void> {
+  const facts = host.product.sidesTip;
+  if (facts && id === facts.dismissedKey) {
+    await host.context.globalState.update(facts.dismissedKey, true);
   }
 }
 

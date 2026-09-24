@@ -76,6 +76,8 @@ export interface MergeSessionDeps {
   post(msg: HostMessage): void;
   settings(): { autoApplyNonConflicting: boolean };
   jetbrainsName(): string | undefined;
+  /** The one-time tip for this stop (POLISH A5.9), if the product has one to show. */
+  tip?(op: OperationView | undefined): MergeInitPayload["tip"];
   /**
    * The product's undo envelope (GitStudio's UndoLedger), for an Apply on a
    * file with no conflict. It cannot snapshot an unmerged index, so an Apply
@@ -119,6 +121,10 @@ export class MergeSession {
     } catch (error) {
       d.notify("error", `couldn't read the conflict versions — ${reason(error)}`);
       return;
+    }
+    const tip = d.tip?.(payload.op);
+    if (tip) {
+      payload.tip = tip;
     }
     d.post({ type: "init", ...payload });
   }

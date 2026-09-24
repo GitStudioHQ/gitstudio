@@ -27,7 +27,9 @@ import {
   abortConfirm,
   abortLabel,
   appendName,
+  choicePill,
   continueBlockedText,
+  dashboardHeading,
   directionParts,
   directionText,
   hasText,
@@ -38,6 +40,7 @@ import {
   sideOf,
   skipConfirm,
   stepText,
+  successCard,
   willDropText,
 } from "./opText";
 
@@ -78,7 +81,7 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-/** What a resolved row's pill says. */
+/** A resolved row's choice in one or two words (the pill adds the side's name: choicePill). */
 export function choiceText(choice: ConflictFileView["choice"]): string {
   return choice === "yours"
     ? "kept yours"
@@ -237,14 +240,19 @@ export class ConflictsDashboard {
     if (state.brand.mark === "merge-studio") mark.innerHTML = MS_MARK;
     else mark.appendChild(codicon("git-merge"));
     mark.title = state.brand.name;
-    const title = el("h1", "cd-title", "Conflicts");
+    // Which operation's conflicts (POLISH A5.4). A finished stash apply keeps
+    // its own heading: git reports nothing in progress by then.
+    const heading = state.finished ? "Stash conflicts" : dashboardHeading(op);
+    const title = el("h1", "cd-title", heading);
+    root.setAttribute("aria-label", heading);
     head.append(mark, title);
     // Nothing in progress and nothing unmerged (our own Continue just ended the
     // operation, and the page stays to say "Rebase complete"): no chip. It used
-    // to read a red "UNMERGED FILES" over that, contradicting it. (Short of
-    // allDone, no file pending means no files at all.)
+    // to read a red "UNMERGED FILES" over that, contradicting it. With every
+    // file resolved and the operation still waiting for Continue, the chip
+    // stays: the rebase IS still in progress (it used to vanish there).
     const nothingLeft = op.kind === "none" && pending === 0;
-    if (!allDone && !nothingLeft) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
+    if (!nothingLeft && !state.finished) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
     if (state.repoName) head.appendChild(el("span", "cd-repo", state.repoName));
     root.appendChild(head);
 
@@ -299,6 +307,10 @@ export class ConflictsDashboard {
       root.appendChild(w);
     }
 
+    if (state.tip) {
+      root.appendChild(this.tipCard(state.tip));
+    }
+
     if (state.notice) {
       const n = el("div", `cd-notice is-${state.notice.kind}`);
       n.append(
@@ -324,17 +336,22 @@ export class ConflictsDashboard {
     }
 
     if (allDone) {
-      const done = el("div", "cd-done");
-      done.append(codicon("pass-filled", "cd-done-icon"), el("h2", "cd-done-title", "All conflicts resolved"));
-      done.appendChild(
-        el(
-          "span",
-          "cd-done-note",
-          op.verbs.continue
-            ? `Review below, then ${op.verbs.continue}. Hold Undo on a file to bring its conflict back.`
-            : "Review below. Hold Undo on a file to bring its conflict back.",
-        ),
-      );
+      // Every file of THIS stop resolved — but git may still refuse Continue
+      // (conflict markers staged, say): then the card says that, not "All
+      // conflicts resolved" over a disabled Continue.
+      const blocked = !state.finished && !!op.verbs.continue && !op.canContinue && !!op.continueBlocked;
+      const card = state.finished
+        ? { title: state.finished.title, note: state.finished.text }
+        : blocked
+          ? { title: "Not ready to continue yet", note: op.continueBlocked! }
+          : successCard(op);
+      const done = el("div", `cd-done${blocked ? " is-blocked" : ""}`);
+      const note = el("span", "cd-done-note", card.note);
+      note.id = "cd-done-note";
+      done.append(codicon(blocked ? "warning" : "pass-filled", "cd-done-icon"), el("h2", "cd-done-title", card.title), note);
+      if (!state.finished && !blocked) {
+        done.appendChild(el("span", "cd-done-hint", "Hold Undo on a file to bring its conflict back."));
+      }
       root.appendChild(done);
     }
 
@@ -353,6 +370,26 @@ export class ConflictsDashboard {
     for (const f of files) list.appendChild(this.row(f, state));
     if (list.childElementCount > 0) root.appendChild(list);
 
+    // POLISH A5.10: in the middle of an operation only the FIRST link (the
+    // product's problem report); the rest (a rating, sponsoring) wait until
+    // the work is done — every file resolved, or the operation finished. Small
+    // text links under the list: as buttons in the footer they sat between
+    // Abort and Continue with the same weight as both.
+    const finishedWork = allDone || !!state.finished || state.outcome?.kind === "done";
+    const links = finishedWork ? (state.supportLinks ?? []) : (state.supportLinks ?? []).slice(0, 1);
+    if (links.length) {
+      const support = el("div", "cd-support");
+      for (const link of links) {
+        const a = el("button", "cd-link", link.label);
+        a.type = "button";
+        a.title = link.url;
+        a.dataset.key = `link:${link.url}`;
+        a.addEventListener("click", () => this.post({ type: "openExternal", url: link.url }));
+        support.appendChild(a);
+      }
+      root.appendChild(support);
+    }
+
     if (state.outcome) {
       const o = el("div", `cd-outcome is-${state.outcome.kind}`);
       o.setAttribute("role", "status");
@@ -369,6 +406,28 @@ export class ConflictsDashboard {
       const again = root.querySelector<HTMLElement>(`[data-key="${cssEscape(focusKey)}"]`);
       if (again && !(again as HTMLButtonElement).disabled) again.focus({ preventScroll: true });
     }
+  }
+
+  /** The one-time tip (POLISH A5.9): its words, "Got it", and "Why?" when there is a page for it. */
+  private tipCard(tip: NonNullable<ConflictsState["tip"]>): HTMLElement {
+    const t = el("div", "cd-tip");
+    t.setAttribute("role", "note");
+    t.append(codicon("info"), el("span", "cd-tip-text", tip.text));
+    const actions = el("span", "cd-tip-actions");
+    if (tip.why) {
+      const why = tip.why;
+      const b = el("button", "cd-link", "Why?");
+      b.type = "button";
+      b.dataset.key = "tip-why";
+      b.title = why;
+      b.addEventListener("click", () => this.post({ type: "openExternal", url: why }));
+      actions.appendChild(b);
+    }
+    actions.appendChild(
+      this.button("Got it", "Don't show this again", "tip-dismiss", false, () => this.post({ type: "dismissTip", id: tip.id })),
+    );
+    t.appendChild(actions);
+    return t;
   }
 
   private branchPill(role: SideRole, name: string, description: string): HTMLElement {
@@ -421,18 +480,14 @@ export class ConflictsDashboard {
     const actions = el("span", "cd-actions");
 
     if (resolved) {
-      const pill = el("span", "cd-choice", `✓ ${choiceText(f.choice)}`);
-      const op = state.op;
-      pill.title =
-        f.choice === "yours"
-          ? `Resolved with yours — ${op.yours.description}`
-          : f.choice === "theirs"
-            ? `Resolved with theirs — ${op.theirs.description}`
-            : f.choice === "merged"
-              ? "Resolved in the merge editor"
-              : "Resolved (in an editor, or outside this app)";
+      // "kept yours · test" (P-53), "deleted" for a take of the side with no file.
+      const said = choicePill(f, state.op);
+      const pill = el("span", "cd-choice", `✓ ${said.text}`);
+      pill.title = said.title;
       row.appendChild(pill);
-      actions.appendChild(this.holdButton(f, state));
+      // A finished stash apply has nothing left to undo INTO (git keeps no
+      // operation for it), so no hold-to-undo there.
+      if (!state.finished) actions.appendChild(this.holdButton(f, state));
     } else if (!busy) {
       const disabled = state.busy;
       if (f.shape === "both-deleted") {
@@ -619,29 +674,18 @@ export class ConflictsDashboard {
       "cd-danger",
       "circle-slash",
     );
-    // Something to end: an operation, or unmerged files to reset.
-    if (op.kind !== "none" || state.total > 0) foot.appendChild(abort);
+    // Something to end: an operation, or unmerged files to reset. A finished
+    // stash apply, or unmerged files all resolved with no operation, has
+    // nothing left to abort.
+    if (!state.finished && (op.kind !== "none" || pending > 0)) foot.appendChild(abort);
 
     foot.appendChild(el("span", "cd-spacer"));
-    // POLISH A5.10: in the middle of an operation only the FIRST link (the
-    // product's problem report) sits beside Abort and Continue; the rest
-    // (a rating, sponsoring) wait until the work is done — every file
-    // resolved, or the operation finished.
-    const finished = allDone || state.outcome?.kind === "done";
-    const links = finished ? (state.supportLinks ?? []) : (state.supportLinks ?? []).slice(0, 1);
-    if (links.length) {
-      const support = el("div", "cd-support");
-      for (const link of links) {
-        support.appendChild(
-          this.button(link.label, link.url, `link:${link.url}`, false, () =>
-            this.post({ type: "openExternal", url: link.url }),
-          ),
-        );
-      }
-      foot.append(support, el("span", "cd-spacer"));
-    }
 
-    if (pending > 0) foot.appendChild(el("span", "cd-counter", plural(pending, "conflicting file")));
+    // The count, unless Continue's reason below already says it ("Resolve
+    // the 3 conflicted files first", "3 files still have conflicts"): the
+    // footer read "30 conflicting files  30 files still have conflicts".
+    const why = op.verbs.continue && !op.canContinue ? continueBlockedText(op, pending) : "";
+    if (pending > 0 && !why) foot.appendChild(el("span", "cd-counter", plural(pending, "conflicting file")));
 
     if (op.canSkip && op.verbs.skip) {
       foot.appendChild(
@@ -660,8 +704,7 @@ export class ConflictsDashboard {
       );
     }
 
-    if (op.verbs.continue) {
-      const why = op.canContinue ? "" : continueBlockedText(op, pending);
+    if (op.verbs.continue && !state.finished) {
       const cont = this.button(
         op.verbs.continue,
         why || op.title || op.verbs.continue,
@@ -678,7 +721,10 @@ export class ConflictsDashboard {
         "cd-primary",
         "debug-continue",
       );
-      if (why) {
+      if (why && allDone && op.continueBlocked) {
+        // The success card's place already says it, in full (is-blocked).
+        cont.setAttribute("aria-describedby", "cd-done-note");
+      } else if (why) {
         const reason = el("span", "cd-why", why);
         reason.id = "cd-why";
         cont.setAttribute("aria-describedby", reason.id);
@@ -687,7 +733,7 @@ export class ConflictsDashboard {
       foot.appendChild(cont);
     }
 
-    if (this.closable && allDone) {
+    if (this.closable && (allDone || state.finished)) {
       foot.appendChild(
         // Secondary: beside Continue there is ONE primary action (the verifier
         // found two identical primary buttons on the finished card).

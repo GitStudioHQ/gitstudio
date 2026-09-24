@@ -170,7 +170,8 @@ test("Continue is disabled with the reason in words, and enabled once git would 
     expect(text(".cd-why") === "Resolve the 2 conflicted files first.", "and says why, on screen (" + text(".cd-why") + ")");
     expect(c.getAttribute("aria-describedby") === "cd-why", "the reason is the button's description");
     d.render(state({ ...OPS.rebase, continueBlocked: "b.ts still has conflict markers staged" }, [row("a.ts", { status: "resolved", choice: "merged" })]));
-    expect(text(".cd-why") === "b.ts still has conflict markers staged", "git's own gate is said in its words (" + text(".cd-why") + ")");
+    // Every row resolved: the card, in the success card's place, says git's own gate in its words.
+    expect(text(".cd-done-note") === "b.ts still has conflict markers staged", "git's own gate is said in its words (" + text(".cd-done-note") + ")");
     // Nothing conflicted and still no Continue — an emptied cherry-pick, a
     // patch git could not apply: the reason is the stop's, not a conflict's.
     d.render(state({ ...OPS.cherry, canContinue: false }, []));
@@ -179,7 +180,7 @@ test("Continue is disabled with the reason in words, and enabled once git would 
     expect(/couldn't apply this patch/.test(text(".cd-why") || ""), "and git am says the patch did not apply (" + text(".cd-why") + ")");
     d.render(state({ ...OPS.rebase, canContinue: true }, [row("a.ts", { status: "resolved", choice: "theirs" })]));
     expect(!btn("Continue Rebase").disabled && !$(".cd-why"), "all resolved and allowed: enabled, no reason");
-    expect(text(".cd-done-title") === "All conflicts resolved", "the success card shows");
+    expect(text(".cd-done-title") === "Commit 1 of 3 resolved", "the success card shows, for THIS commit of three (" + text(".cd-done-title") + ")");
     btn("Continue Rebase").click();
     btn("Continue Rebase").click();
     expect(posted.filter((a) => a.type === "continue").length === 1, "a double press posts ONE continue (" + posted.filter((a) => a.type === "continue").length + ")");
@@ -221,7 +222,7 @@ test("hold-to-undo fires at the hold time, not before — by pointer and by keyb
     d.render(state(OPS.merge, files));
     expect(HOLD_TO_UNDO_MS === 750, "the contract's hold is 750 ms");
     let hold = $(".cd-undo-hold");
-    expect(text(".cd-choice") === "✓ kept yours", "the resolved row says how (" + text(".cd-choice") + ")");
+    expect(text(".cd-choice") === "✓ kept yours · main", "the resolved row says how, and which branch (" + text(".cd-choice") + ")");
     hold.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
     clock.advance(700);
     expect(!posted.some((a) => a.type === "restore"), "700 ms is not a hold");
@@ -515,6 +516,87 @@ test("in a narrow pane every row keeps its file name, and its buttons stay in th
       const tops = new Set([...r.querySelectorAll("button")].map((b) => Math.round(b.getBoundingClientRect().top)));
       expect(tops.size <= 1, r.dataset.path + ": its buttons share one line (" + [...tops].join(", ") + ")");
     }
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+// ── r0923 verification: the page as the end-to-end run and the critic found it ──
+
+test("the heading and the success card are the operation's and the step's (A5.4), and a blocked Continue is said in the card", { skip }, async () => {
+  const v = await run(`
+    const d = mount({ closable: true });
+    const done = (op) => d.render(state({ ...op, canContinue: true }, [row("a.ts", { status: "resolved", choice: "yours" })]));
+    done(OPS.merge);
+    expect(text(".cd-title") === "Merge conflicts", "merge heading (" + text(".cd-title") + ")");
+    expect(text(".cd-done-title") === "All conflicts resolved" && text(".cd-done-note") === "Review below, then Continue Merge to commit it.", "merge card: " + text(".cd-done"));
+    done(OPS.rebase);
+    expect(text(".cd-title") === "Rebase conflicts", "rebase heading (" + text(".cd-title") + ")");
+    expect(text(".cd-done-title") === "Commit 1 of 3 resolved", "not 'All conflicts resolved' at commit 1 of 3 (" + text(".cd-done-title") + ")");
+    expect(/replay the next commit\\. It stops again if that one conflicts\\./.test(text(".cd-done-note") || ""), "(" + text(".cd-done-note") + ")");
+    done({ ...OPS.rebase, step: { n: 3, m: 3, unit: "commit" } });
+    expect(text(".cd-done-title") === "Last commit resolved" && text(".cd-done-note") === "Continue Rebase to finish.", "the last commit (" + text(".cd-done") + ")");
+    expect(text(".cd-chip") === "Rebase in progress", "the chip stays while the rebase waits for Continue (" + text(".cd-chip") + ")");
+    done(OPS.am);
+    expect(text(".cd-title") === "Patch conflicts" && text(".cd-done-title") === "Patch 2 of 5 resolved", text(".cd-title") + " / " + text(".cd-done-title"));
+    // Every file resolved, and git still refuses (markers staged): the card says why, not "resolved".
+    d.render(state({ ...OPS.merge, canContinue: false, continueBlocked: "a.ts still has conflict markers staged" }, [row("a.ts", { status: "resolved", choice: "merged" })]));
+    expect(text(".cd-done-title") === "Not ready to continue yet", "a blocked Continue is not 'All conflicts resolved' (" + text(".cd-done-title") + ")");
+    expect(text(".cd-done-note") === "a.ts still has conflict markers staged", "(" + text(".cd-done-note") + ")");
+    expect($(".cd-done").classList.contains("is-blocked"), "in the warning look");
+    expect(btn("Continue Merge").disabled && btn("Continue Merge").getAttribute("aria-describedby") === "cd-done-note", "Continue is described by the card");
+    expect(!$(".cd-why"), "and the footer does not say it a second time");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("the footer says a count once, a finished stash apply keeps its page, and a tip is dismissed with Got it", { skip }, async () => {
+  const v = await run(`
+    const d = mount({ closable: true });
+    d.render(state({ ...OPS.rebase, canContinue: false, continueBlocked: "2 files still have conflicts" }, [row("a.ts"), row("b.ts")]));
+    const foot = text(".cd-foot") || "";
+    expect((foot.match(/2 /g) || []).length === 1, "the count is said once (" + foot + ")");
+    expect(!$(".cd-counter"), "no separate counter beside Continue's reason");
+    // Stash: the last file resolved, git reports nothing in progress; the host sends it finished.
+    const none = base({ kind: "none", title: "", verbs: { abort: "Cancel" }, episode: "none" });
+    d.render(state(none, [row("app/version.py", { status: "resolved", choice: "yours" }), row("b.py", { status: "resolved" })],
+      { finished: { title: "Stash applied", text: "Every conflict is resolved. The stash is still in your stash list." } }));
+    expect(text(".cd-title") === "Stash conflicts", "a finished stash apply keeps its heading (" + text(".cd-title") + ")");
+    expect(text(".cd-done-title") === "Stash applied" && /still in your stash list/.test(text(".cd-done-note") || ""), "its card: " + text(".cd-done"));
+    expect(!$(".cd-undo-hold"), "nothing to hold-to-undo into");
+    expect(!btn("Cancel the merge") && !btn("Cancel the stash apply"), "nothing to abort");
+    expect(!!btn("Close"), "and a way to close it");
+    expect($$(".cd-row").length === 2, "the rows stay");
+    // The one-time tip.
+    d.render(state(OPS.rebase, [row("a.ts")], { tip: { id: "sides-1.0", text: "New in 1.0: during a rebase, Yours is your commit (test), on the left.", why: "https://example.com/why" } }));
+    expect(/Yours is your commit \\(test\\)/.test(text(".cd-tip") || ""), "the tip is on the page (" + text(".cd-tip") + ")");
+    btn("Why?").click();
+    expect(JSON.stringify(last()) === JSON.stringify({ type: "openExternal", url: "https://example.com/why" }), "Why? opens its page");
+    btn("Got it").click();
+    expect(JSON.stringify(last()) === JSON.stringify({ type: "dismissTip", id: "sides-1.0" }), "Got it dismisses it (" + JSON.stringify(last()) + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("with thirty files the list scrolls and the footer stays on screen (a host that fills)", { skip }, async () => {
+  const v = await run(`
+    const root = document.getElementById("root");
+    root.style.height = "600px";
+    root.style.overflow = "hidden";
+    root.classList.add("cd-host-fill");
+    const d = mount();
+    const files = Array.from({ length: 30 }, (_, i) => row("src/file" + i + ".ts"));
+    d.render(state(OPS.rebase, files));
+    const box = root.getBoundingClientRect();
+    const foot = $(".cd-foot").getBoundingClientRect();
+    expect(foot.bottom <= box.bottom + 1 && foot.top >= box.top, "the footer is inside the 600px page (" + Math.round(foot.top) + "–" + Math.round(foot.bottom) + " in " + Math.round(box.top) + "–" + Math.round(box.bottom) + ")");
+    const list = $(".cd-list");
+    expect(list.scrollHeight > list.clientHeight + 10, "the list scrolls instead of the page (" + list.scrollHeight + " > " + list.clientHeight + ")");
+    expect(btn("Abort Rebase") && btn("Continue Rebase"), "Abort and Continue are there to press");
+    // Support links are quiet text links under the list, not buttons between Abort and Continue.
+    d.render(state(OPS.rebase, files, { supportLinks: [{ label: "Report a problem", url: "https://example.com/issues" }] }));
+    const link = $(".cd-support .cd-link");
+    expect(!!link && !link.closest(".cd-foot"), "the problem report is a link outside the footer's action row");
+    expect(!link.classList.contains("cd-btn"), "and not a button like Abort's");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });

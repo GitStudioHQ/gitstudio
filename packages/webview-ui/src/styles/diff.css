@@ -387,6 +387,21 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
 }
 .jb-title-result { justify-content: center; }
 .jb-pane-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A title split around the side's name (opText splitTitle): the words before
+   and after it give way (each with its own ellipsis), the name stays whole. */
+.jb-pane-label-split { display: flex; min-width: 0; }
+.jb-pane-pre,
+.jb-pane-post { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.jb-pane-post { flex-shrink: 4; }
+.jb-pane-name {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  font-weight: 600;
+  color: var(--vscode-foreground, var(--gs-fg));
+}
 .jb-pane-title .jb-svg { flex: 0 0 auto; opacity: 0.7; }
 /* The header row is continuous across the gutter columns too. */
 .jb-merge-grid::before,

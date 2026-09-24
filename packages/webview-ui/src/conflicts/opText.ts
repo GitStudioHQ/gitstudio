@@ -11,6 +11,7 @@
 // here reinterprets a side.
 
 import type {
+  ConflictFileView,
   ConflictShape,
   OperationKind,
   OperationView,
@@ -83,6 +84,143 @@ export function opChipLabel(op: OperationView): string {
     case "none":
       return "Unmerged files";
   }
+}
+
+/**
+ * The dashboard's heading (POLISH A5.4): which operation's conflicts these
+ * are. "Conflicts" alone said nothing a tab title did not.
+ */
+export function dashboardHeading(op: OperationView): string {
+  switch (op.kind) {
+    case "merge":
+      return "Merge conflicts";
+    case "rebase":
+    case "rebase-merge-step":
+      return "Rebase conflicts";
+    case "cherry-pick":
+      return "Cherry-pick conflicts";
+    case "revert":
+      return "Revert conflicts";
+    case "am":
+      return "Patch conflicts";
+    case "stash":
+      return "Stash conflicts";
+    case "none":
+      return "Conflicts";
+  }
+}
+
+/**
+ * The success card once every file of THIS stop is resolved (POLISH A5.4). In
+ * a sequence the stop is one step of several: "All conflicts resolved" at
+ * commit 2 of 3 promised an end that is two stops away.
+ *
+ * - Merge: "All conflicts resolved" / "Review below, then Continue Merge to commit it."
+ * - Rebase, n < m: "Commit 2 of 3 resolved" / "Continue Rebase to replay the next commit. It stops again if that one conflicts."
+ * - Rebase, the last: "Last commit resolved" / "Continue Rebase to finish."
+ * - A cherry-pick or revert range, git am: the same pattern, in their words.
+ */
+export function successCard(op: OperationView): { title: string; note: string } {
+  const verb = op.verbs.continue;
+  if (!verb) {
+    return { title: "All conflicts resolved", note: "Review below." };
+  }
+  if (op.step && op.step.m > 1) {
+    const unit = op.step.unit;
+    const Unit = unit.charAt(0).toUpperCase() + unit.slice(1);
+    if (op.step.n < op.step.m) {
+      const next = op.kind === "am" ? "apply the next patch" : unit === "step" ? "go on to the next step" : "replay the next commit";
+      return {
+        title: `${Unit} ${op.step.n} of ${op.step.m} resolved`,
+        note: `${verb} to ${next}. It stops again if that one conflicts.`,
+      };
+    }
+    return { title: `Last ${unit} resolved`, note: `${verb} to finish.` };
+  }
+  if ((op.kind === "cherry-pick" || op.kind === "revert") && op.queued && op.queued > 0) {
+    const noun = op.kind === "revert" ? "revert" : "pick";
+    const queued = op.queued === 1 ? "1 more is" : `${op.queued} more are`;
+    return {
+      title: "This commit resolved",
+      note: `${verb} to commit it and go on to the next ${noun} (${queued} queued). It stops again if one conflicts.`,
+    };
+  }
+  if (op.kind === "rebase" || op.kind === "rebase-merge-step" || op.kind === "am") {
+    // One of one: the step is also the last.
+    return { title: op.kind === "am" ? "Last patch resolved" : "Last commit resolved", note: `${verb} to finish.` };
+  }
+  return { title: "All conflicts resolved", note: `Review below, then ${verb} to commit it.` };
+}
+
+/**
+ * A name cut to `max` characters with an ellipsis in the MIDDLE, so both its
+ * start and its end — where a branch's own name and a sha's digits are — stay
+ * readable ("feature/…hardening"; the end gets the odd character). Shorter
+ * names are returned whole.
+ */
+export function shortName(name: string, max = 18): string {
+  const chars = [...name];
+  if (chars.length <= max) return name;
+  const head = Math.floor((max - 1) / 2);
+  const tail = Math.ceil((max - 1) / 2);
+  return `${chars.slice(0, head).join("")}…${chars.slice(chars.length - tail).join("")}`;
+}
+
+/**
+ * What a resolved row's pill says, and its tooltip (P-53): the side kept and
+ * its name ("kept yours · test"), "merged" for a hand merge, and "deleted"
+ * when the side taken had no file (a "Delete the file" resolution read "kept
+ * theirs", as if a file had been kept).
+ */
+export function choicePill(
+  f: Pick<ConflictFileView, "choice" | "missingRole" | "shape">,
+  op: OperationView,
+): { text: string; title: string } {
+  const choice = f.choice;
+  if ((choice === "yours" || choice === "theirs") && f.missingRole === choice) {
+    const side = sideOf(op, choice);
+    return {
+      text: "deleted",
+      title: `Resolved by deleting the file, as ${choice}${side.name ? ` (${side.name})` : ""} did`,
+    };
+  }
+  if (!choice && f.shape === "both-deleted") {
+    return { text: "deleted", title: "Resolved by deleting the file — both sides had deleted it" };
+  }
+  if (choice === "yours" || choice === "theirs") {
+    const side = sideOf(op, choice);
+    return {
+      text: side.name ? `kept ${choice} · ${shortName(side.name)}` : `kept ${choice}`,
+      title: `Resolved with ${choice}${side.description ? ` — ${side.description}` : side.name ? ` (${side.name})` : ""}`,
+    };
+  }
+  if (choice === "merged") return { text: "merged", title: "Resolved in the merge editor" };
+  return { text: "resolved", title: "Resolved (in an editor, or outside this app)" };
+}
+
+/**
+ * A pane title split around the side's own name, so a narrow pane can cut the
+ * words around it and keep the name ("Already rebased commits and commits
+ * from " + "master"; "" + "Undo of 23b9549" + " reset every case"). Matched as
+ * whole words, ignoring case (the revert side is named "undo of …", its title
+ * starts "Undo of …"); the title keeps its own spelling. Undefined when the
+ * name is not in the title as a whole word (then the title is shown as it is).
+ */
+export function splitTitle(
+  title: string,
+  name: string | undefined,
+): { pre: string; name: string; post: string } | undefined {
+  if (!name || !title) return undefined;
+  const lower = title.toLowerCase();
+  const needle = name.toLowerCase();
+  const isWord = (c: string | undefined): boolean => !!c && /[\p{L}\p{N}_-]/u.test(c);
+  // The LAST whole-word match: titles end with the branch they name.
+  for (let at = lower.lastIndexOf(needle); at >= 0; at = at === 0 ? -1 : lower.lastIndexOf(needle, at - 1)) {
+    const end = at + needle.length;
+    if (isWord(title[at - 1]) || isWord(title[end])) continue;
+    return { pre: title.slice(0, at), name: title.slice(at, end), post: title.slice(end) };
+  }
+  return undefined;
 }
 
 /** "commit 1 of 3", "patch 2 of 5", "step 1 of 2", plus "· 2 more queued". */
@@ -164,15 +302,28 @@ export function abortConfirm(op: OperationView): { question: string; detail: str
   };
 }
 
-/** Skip's confirm: it drops work, and says whose. */
+/** Skip's confirm: it drops work, and says whose — and whether anything comes after it. */
 export function skipConfirm(op: OperationView): { question: string; detail: string; confirm: string } {
   const label = op.verbs.skip ?? "Skip";
-  const what =
+  // What comes AFTER it: the rest of the sequence, or the picks queued behind
+  // it. With none, "the rest carries on" promised a rest that isn't there.
+  const rest = op.step ? op.step.m - op.step.n : (op.queued ?? 0);
+  const which =
     op.kind === "am"
-      ? "The patch git is stuck on is left out and the rest of the series carries on."
+      ? "The patch git is stuck on"
       : op.commit
-        ? `${sha7(op.commit.sha)} “${op.commit.subject}” is left out and the rest carries on.`
-        : "This commit is left out and the rest carries on.";
+        ? `${sha7(op.commit.sha)} “${op.commit.subject}”`
+        : "This commit";
+  let what: string;
+  if (rest > 0) {
+    what = op.kind === "am" ? `${which} is left out and the rest of the series carries on.` : `${which} is left out and the rest carries on.`;
+  } else if (op.kind === "am") {
+    what = `${which} is left out, and that ends the series.`;
+  } else if (op.kind === "cherry-pick" || op.kind === "revert") {
+    what = `${which} is left out, and that ends the ${opNoun(op.kind)}.`;
+  } else {
+    what = `${which} is left out, and the ${opNoun(op.kind)} finishes without it.`;
+  }
   return { question: `${label}?`, detail: `${what} This cannot be undone from here.`, confirm: label };
 }
 

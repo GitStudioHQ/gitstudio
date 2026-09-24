@@ -5,6 +5,7 @@ import {
   type MergeProduct,
   type MergeRepo,
   type RepoLocator,
+  type SidesTipFacts,
 } from "@gitstudio/merge-vscode/product";
 import { registerMergeExperience, type MergeExperience } from "@gitstudio/merge-vscode/register";
 import type { ChangesMergeHooks } from "../changes/commitView";
@@ -37,6 +38,8 @@ export interface GitStudioMergeHooks {
   openChangesNative(uri: vscode.Uri): Promise<void>;
   /** A resolution or an operation verb changed git state: refresh GitStudio's views. */
   refresh(): void;
+  /** POLISH A5.9: this activation is an upgrade from a version with a rebase's sides swapped. */
+  sidesTip?: SidesTipFacts;
 }
 
 /** The experience, plus the Changes view's doors into it. */
@@ -72,6 +75,7 @@ export function registerGitStudioMerge(
       outdatedNoticeKey: "gitstudio.merge.outdatedMergeStudioNotice",
     },
     settingsFallbackSection: MERGE_STUDIO_SETTINGS_SECTION,
+    ...(hooks.sidesTip ? { sidesTip: hooks.sidesTip } : {}),
     // D4 the other way round: after "Let Merge Studio open conflicts"
     // (gitstudio.merge.autoOpen false) with a Merge Studio 1.0 installed,
     // GitStudio's status item and dashboard stand down for Merge Studio's.

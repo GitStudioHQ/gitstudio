@@ -18,9 +18,13 @@ import * as vscode from "vscode";
 import { hasSharedMergeExperience, shouldDeferToGitStudio, type MergePeerApi } from "@gitstudio/merge-vscode/product";
 import { registerMergeExperience } from "@gitstudio/merge-vscode/register";
 import { VscodeGitLocator } from "@gitstudio/merge-vscode/vscodeGitLocator";
+import { setUpSidesTip, SIDES_WHY_URL } from "@gitstudio/merge-vscode/upgradeTip";
 import {
+  MS_034_COEXIST_KEY,
   MS_DEFERS_CONTEXT_KEY,
+  MS_LAST_VERSION_KEY,
   MS_SETTINGS_SECTION,
+  MS_SIDES_TIP_KEY,
   MS_WALKTHROUGH_COMMAND,
   MS_WALKTHROUGH_FULL_ID,
   MS_WALKTHROUGH_SHOWN_KEY,
@@ -61,6 +65,20 @@ export function activate(context: vscode.ExtensionContext): MergeStudioApi {
       }),
     );
 
+  // POLISH A5.9: an upgrade from 0.3.4 (a rebase's sides swapped) gets a
+  // one-time tip at its first rebase or stash conflict. 0.3.4 recorded no
+  // version; the keys it did write say it was installed.
+  const sidesTip = setUpSidesTip(context.globalState, {
+    version: String((context.extension.packageJSON as { version?: unknown }).version ?? ""),
+    lastVersionKey: MS_LAST_VERSION_KEY,
+    flippedAfter: "0.3.4",
+    priorInstall:
+      context.globalState.get(MS_WALKTHROUGH_SHOWN_KEY) !== undefined ||
+      context.globalState.get(MS_034_COEXIST_KEY) !== undefined,
+    dismissedKey: MS_SIDES_TIP_KEY,
+    why: SIDES_WHY_URL,
+  });
+
   // What 0.3.4 left in globalState, read before the experience's first scan
   // (a Memento update is visible to get() at once).
   for (const update of legacyStateUpdates((key) => context.globalState.get(key))) {
@@ -70,6 +88,7 @@ export function activate(context: vscode.ExtensionContext): MergeStudioApi {
   const MS_PRODUCT = buildMsProduct({
     locator,
     defersTo,
+    sidesTip,
     ask: modalAsk((message, options, ...items) => vscode.window.showWarningMessage(message, options, ...items)),
     supportLinks: supportLinks({
       version: String((context.extension.packageJSON as { version?: unknown }).version ?? ""),

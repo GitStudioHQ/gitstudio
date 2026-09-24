@@ -53,6 +53,7 @@ export function syncedKeys(product: MergeProduct): string[] {
       previousKey(product.coexistencePromptKey),
       ...(product.deferral ? [product.deferral.noticeKey] : []),
       ...(product.peer ? [product.peer.outdatedNoticeKey] : []),
+      ...(product.sidesTip ? [product.sidesTip.dismissedKey] : []),
     ]),
   ];
 }

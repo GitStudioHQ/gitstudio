@@ -87,3 +87,9 @@ export const MS_DEFERRAL_NOTICE_KEY = "jbMerge.deferralNoticeShown";
  * GitStudio (1.13.0 and before, no dashboard) also opens conflicts (POLISH A5.1).
  */
 export const MS_OUTDATED_GITSTUDIO_NOTICE_KEY = "jbMerge.outdatedGitStudioNotice";
+
+/** globalState: the version that ran last (POLISH A5.9's upgrade test; 0.3.4 wrote none). */
+export const MS_LAST_VERSION_KEY = "jbMerge.lastVersion";
+
+/** globalState: the upgrader's tip about which side is Yours was dismissed (POLISH A5.9). */
+export const MS_SIDES_TIP_KEY = "jbMerge.sidesTipDismissed";

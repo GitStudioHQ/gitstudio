@@ -194,6 +194,12 @@ export interface MergeViewApi {
    * the file before Apply (POLISH A1.1). Absent: the host uses the Result.
    */
   getUnsettledText?(): string;
+  /**
+   * Scroll the Result to the first change it was seeded with from the file
+   * (the one merged outside the markers), for the notice that says it is
+   * there. False when there is none. Optional: a view without it offers no link.
+   */
+  revealSeeded?(): boolean;
 
   /** Back to the baseline (the auto-applied one when that was on). Undoable. */
   reset(): void;

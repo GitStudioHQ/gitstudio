@@ -29,6 +29,7 @@ import { computeAlignmentZones, type Spacer } from "@gitstudio/engine/alignment"
 import { MERGE_ICON_STRIP, RibbonOverlay, lineTopY, scheduleFrame, spanY } from "./ribbons";
 import { OverviewMap } from "./overviewMap";
 import { preparedFrom, seedResult, type ResultSeed } from "./seedResult";
+import { splitTitle } from "./conflicts/opText";
 import { lineDocOf, planLineWrite } from "./lineEdits";
 import { LARGE_FILE_LINE_THRESHOLD } from "./limits";
 import { MergeLegend, type LegendDetail } from "./mergeLegend";
@@ -320,11 +321,11 @@ export class MergeView implements MergeViewApi {
     grid.className = "jb-merge-grid";
     this.container.replaceChildren(grid);
 
-    const leftBody = this.addPane(grid, 1, payload.oursLabel, true);
+    const leftBody = this.addPane(grid, 1, payload.oursLabel, true, payload.op?.yours.name);
     this.gutterA = this.addGutter(grid, 2, "a");
     const resultBody = this.addPane(grid, 3, "Result", false);
     this.gutterB = this.addGutter(grid, 4, "b");
-    const rightBody = this.addPane(grid, 5, payload.theirsLabel, true);
+    const rightBody = this.addPane(grid, 5, payload.theirsLabel, true, payload.op?.theirs.name);
 
     // The merge runs on text with "\n" breaks only (the engine normalises the
     // same way), so a side that just rewrote its line endings is not a
@@ -483,6 +484,24 @@ export class MergeView implements MergeViewApi {
     }
   }
 
+  /**
+   * Scroll to the first change the Result was seeded with from the file — the
+   * one git (or a hand edit) already merged outside the markers — so the
+   * notice that says it exists can show where it is. False when there is none.
+   */
+  public revealSeeded(): boolean {
+    const ids = new Set((this.seed?.regions ?? []).flatMap((r) => r.blockIds));
+    const first = this.model?.blocks.find((block) => ids.has(block.id));
+    if (!first || !this.result) {
+      return false;
+    }
+    const line = this.currentResultSpan(first).start;
+    this.result.revealLineInCenter(line);
+    this.result.setPosition({ lineNumber: line, column: 1 });
+    this.result.focus();
+    return true;
+  }
+
   /** Opens the merge scrolled to the first pending change, like IntelliJ. */
   private revealFirstPending(): void {
     const first = this.model?.blocks.find((block) => !this.isResolved(block));
@@ -501,6 +520,8 @@ export class MergeView implements MergeViewApi {
     column: number,
     titleText: string,
     readOnly: boolean,
+    /** The side's own name (a branch, a sha): kept on screen when the title is cut. */
+    name?: string,
   ): HTMLElement {
     const variant =
       column === 1 ? "jb-title-left" : column === 5 ? "jb-title-right" : "jb-title-result";
@@ -516,7 +537,26 @@ export class MergeView implements MergeViewApi {
     }
     const label = document.createElement("span");
     label.className = "jb-pane-label";
-    label.textContent = titleText;
+    // The words around the side's name give way first; the name itself stays
+    // (it was cut from the END — "Already rebased commits and commits from …"
+    // lost "master", the one word that says which side this is).
+    const parts = splitTitle(titleText, name);
+    if (parts) {
+      label.classList.add("jb-pane-label-split");
+      for (const [cls, text] of [
+        ["jb-pane-pre", parts.pre],
+        ["jb-pane-name", parts.name],
+        ["jb-pane-post", parts.post],
+      ] as const) {
+        if (!text) continue;
+        const s = document.createElement("span");
+        s.className = cls;
+        s.textContent = text;
+        label.appendChild(s);
+      }
+    } else {
+      label.textContent = titleText;
+    }
     title.appendChild(label);
 
     const body = document.createElement("div");

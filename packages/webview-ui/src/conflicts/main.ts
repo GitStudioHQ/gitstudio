@@ -36,6 +36,15 @@ const api = acquireVsCodeApi();
 const root = document.getElementById("root");
 
 if (root) {
+  // The page is the dashboard's whole height, so its list scrolls and its
+  // footer (Abort, Continue) stays on screen (.cd-host-fill). Set through the
+  // CSSOM: the page's CSP allows no inline style, and conflicts.css is also
+  // the desktop's, where a bare html/body rule would restyle the app.
+  for (const el of [document.documentElement, document.body]) {
+    el.style.height = "100%";
+    el.style.margin = "0";
+  }
+  root.classList.add("cd-host-fill");
   // Listen BEFORE the component announces itself: its constructor posts
   // `ready`, and a host that answers synchronously must not be missed.
   let dashboard: ConflictsDashboard | undefined;

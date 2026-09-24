@@ -15,7 +15,7 @@ import type {
 } from "@gitstudio/host-bridge/conflictsProtocol";
 import type { ConflictOpResult } from "@gitstudio/git-service/ConflictOps";
 import { DashboardController, dashboardTitle } from "./dashboardController";
-import { closeMergeEditorTabs, fileUri, type MergeHostCore } from "./host";
+import { closeMergeEditorTabs, dismissSidesTip, fileUri, sidesTipFor, type MergeHostCore } from "./host";
 import { saveConflictedDocuments, saveDocumentAt } from "./mergeEditorProvider";
 import { outcomeLine, type OperationVerb } from "./outcome";
 import type { MergeRepo } from "./product";
@@ -175,6 +175,7 @@ export class ConflictsDashboard implements vscode.Disposable {
     if (repo !== this.repo) {
       return; // rebound while reading
     }
+    controller.setTip(sidesTipFor(this.host, snapshot.op));
     const decision = controller.update(snapshot, {
       open: this.panel !== undefined,
       autoShow: auto && this.host.settings().autoOpen && !this.host.defers(),
@@ -226,10 +227,15 @@ export class ConflictsDashboard implements vscode.Disposable {
         this.disposePanel();
         return;
       case "openExternal":
-        // Only the brand's support links, and only ever web pages.
+        // Only the brand's support links (and the tip's Why?), and only ever web pages.
         if (/^https:\/\//i.test(action.url)) {
           void vscode.env.openExternal(vscode.Uri.parse(action.url));
         }
+        return;
+      case "dismissTip":
+        await dismissSidesTip(this.host, action.id);
+        controller.setTip(undefined);
+        this.post();
         return;
       case "merge":
         await this.openConflict(fileUri(repo, action.path));

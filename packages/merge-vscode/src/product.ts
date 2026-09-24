@@ -129,6 +129,61 @@ export interface MergePeerApi {
   walkthroughOpenedThisSession?(): boolean;
 }
 
+/** MergeProduct.sidesTip: an upgrader who saw the sides the other way round. */
+export interface SidesTipFacts {
+  /** This version, as the tip names it ("1.0"). */
+  readonly version: string;
+  /** globalState key: the tip was dismissed ("Got it"). */
+  readonly dismissedKey: string;
+  /** A page that explains it ("Why?"). */
+  readonly why?: string;
+}
+
+/** a ≤ b, comparing dotted numbers ("0.3.4" ≤ "1.0.0"; "1.13.9100" > "1.13.0"). Pre-release tags are ignored. */
+export function versionAtMost(a: string, b: string): boolean {
+  const parts = (v: string) => v.split("-")[0].split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const x = parts(a);
+  const y = parts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0);
+    if (d !== 0) return d < 0;
+  }
+  return true;
+}
+
+/**
+ * POLISH A5.9, as a pure rule: is this activation an upgrade from a version
+ * that showed a rebase's sides swapped? With a recorded last version, when it
+ * is at most `flippedAfter` (0.3.4 for Merge Studio, 1.13.0 for GitStudio).
+ * Without one — every version before this bookkeeping — when the extension
+ * had been installed before (a globalState key it always wrote); a fresh
+ * install has none, and is never told about a "before" it never saw.
+ */
+export function sidesFlipUpgrade(f: { lastVersion: unknown; priorInstall: boolean; flippedAfter: string }): boolean {
+  if (typeof f.lastVersion === "string" && f.lastVersion) {
+    return versionAtMost(f.lastVersion, f.flippedAfter);
+  }
+  return f.priorInstall;
+}
+
+/** The tip's words for this stop, or undefined when the stop is not one whose sides changed. */
+export function sidesTipText(
+  product: { displayName: string },
+  version: string,
+  op: { kind: string; yours: { name: string } },
+): string | undefined {
+  const lead = `New in ${product.displayName} ${version}:`;
+  const after = "Before this version the two sides were swapped.";
+  if (op.kind === "rebase" || op.kind === "rebase-merge-step") {
+    const name = op.yours.name ? ` (${op.yours.name})` : "";
+    return `${lead} during a rebase, Yours is your commit${name}, on the left. ${after}`;
+  }
+  if (op.kind === "stash") {
+    return `${lead} when a stash is applied, Yours is your stashed changes, on the left. ${after}`;
+  }
+  return undefined;
+}
+
 /** What a deferring product says when it stands down (see MergeProduct.deferral). */
 export interface DeferralNotice {
   /** The product that owns the automatic behaviour instead ("GitStudio"). */
@@ -199,6 +254,14 @@ export interface MergeProduct {
    * "jetbrains"` keeps working after GitStudio takes the automatic behaviour.
    */
   readonly settingsFallbackSection?: string;
+  /**
+   * POLISH A5.9: this activation is an UPGRADE from a version that showed a
+   * rebase's (and a stash apply's) sides the other way round — the left pane
+   * and "Accept Yours" mean the opposite now. The product works it out at
+   * activation (sidesFlipUpgrade), before anything it writes there could make
+   * a fresh install look like an old one. Undefined: nothing to tell.
+   */
+  readonly sidesTip?: SidesTipFacts;
   /**
    * The product's own globalState keys that follow the user to their other
    * machines (Settings Sync), besides the ones this package keeps. VS Code

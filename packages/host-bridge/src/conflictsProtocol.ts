@@ -270,6 +270,19 @@ export interface ConflictsState {
   /** The last Continue / Skip / Abort result ("Rebase complete", git's reason on failure). */
   outcome?: { kind: "done" | "stopped" | "failed"; text: string };
   /**
+   * The operation ENDED with every conflict resolved and nothing to continue —
+   * a stash apply or pop, which git keeps no operation for: the moment its
+   * last file is resolved git reports nothing in progress. The page stays to
+   * say so (the rows as they were, no undo, no Abort) until it is closed.
+   */
+  finished?: { title: string; text: string };
+  /**
+   * A one-time tip the user dismisses ("Got it"): POLISH A5.9's note for
+   * upgraders that Yours during a rebase is now their own commit, on the left.
+   * `why` is a web page explaining it.
+   */
+  tip?: { id: string; text: string; why?: string };
+  /**
    * Brand slot: Merge Studio's "Report a problem" / "Rate" / "Sponsor" links;
    * absent in GitStudio. The FIRST link is the only one shown mid-operation
    * (make it the problem report); the rest appear once the work is done.
@@ -301,7 +314,9 @@ export type ConflictsAction =
   | { type: "skip" }
   | { type: "abort" }
   | { type: "close" }
-  | { type: "openExternal"; url: string };
+  | { type: "openExternal"; url: string }
+  /** The tip's "Got it": never show tip `id` again. */
+  | { type: "dismissTip"; id: string };
 
 /** Host → dashboard. */
 export type ConflictsHostMessage = { type: "state"; state: ConflictsState };

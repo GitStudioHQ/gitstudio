@@ -139,3 +139,46 @@ test("state carries the brand, hold-to-undo and support links; the title counts 
   assert.equal(dashboardTitle(d.state), "Conflicts (1)");
   assert.equal(dashboardTitle({ files: [] }), "Conflicts");
 });
+
+test("a stash pop's last conflict resolved: the page stays, finished, instead of closing (r0923)", () => {
+  const stash = view("stash", { episode: "stash:h" });
+  const c = new DashboardController({ brand });
+  c.update(snap(stash, [["app/version.py", "pending"], ["b.py", "resolved"]]), auto);
+  // The last file staged: no markers, nothing unmerged — git says "none", and
+  // the page used to close within half a second.
+  const end = c.update(snap(none, []), { open: true, autoShow: true });
+  assert.equal(end.close, false, "the page stays");
+  assert.ok(end.state.finished, "it says the stash apply is done");
+  assert.match(end.state.finished!.text, /stash list/);
+  assert.deepEqual(
+    end.state.files.map((f) => [f.path, f.status]),
+    [
+      ["app/version.py", "resolved"],
+      ["b.py", "resolved"],
+    ],
+  );
+  assert.equal(end.state.total, 2);
+  assert.equal(end.state.resolved, 2);
+  // A re-read changes nothing; the user's close ends it.
+  assert.equal(c.update(snap(none, []), { open: true, autoShow: true }).close, false);
+  c.userClosed();
+  const after = c.update(snap(none, []), { open: false, autoShow: true });
+  assert.equal(after.state.finished, undefined);
+  assert.equal(after.show, false);
+});
+
+test("any other operation that ends elsewhere still closes the page (no finished card)", () => {
+  const c = new DashboardController({ brand });
+  c.update(snap(view("merge", { episode: "merge:x" }), [["a.txt", "pending"]]), auto);
+  const end = c.update(snap(none, []), { open: true, autoShow: true });
+  assert.equal(end.close, true);
+  assert.equal(end.state.finished, undefined);
+});
+
+test("the tip rides on the state until it is dismissed", () => {
+  const c = new DashboardController({ brand });
+  c.update(snap(step1, [["a.txt", "pending"]]), auto);
+  const tip = { id: "t", text: "New in 1.0: during a rebase, Yours is your commit (test), on the left." };
+  assert.deepEqual(c.setTip(tip).tip, tip);
+  assert.equal(c.setTip(undefined).tip, undefined);
+});

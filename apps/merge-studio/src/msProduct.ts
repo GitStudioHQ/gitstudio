@@ -14,6 +14,7 @@ import {
   type AskSpec,
   type MergeProduct,
   type RepoLocator,
+  type SidesTipFacts,
 } from "@gitstudio/merge-vscode/product";
 import {
   MS_COEXISTENCE_PROMPT_KEY,
@@ -33,6 +34,8 @@ export interface MsProductParts {
   /** D4: merge-vscode's shouldDeferToGitStudio over the current facts. */
   defersTo(): boolean;
   supportLinks: { label: string; url: string }[];
+  /** POLISH A5.9: this activation is an upgrade from 0.3.4 (setUpSidesTip). */
+  sidesTip?: SidesTipFacts;
 }
 
 export function buildMsProduct(parts: MsProductParts): MergeProduct {
@@ -52,6 +55,7 @@ export function buildMsProduct(parts: MsProductParts): MergeProduct {
     defersTo: parts.defersTo,
     // D4, said once: "GitStudio is installed, so GitStudio opens your conflicts…"
     deferral: GITSTUDIO_DEFERRAL,
+    ...(parts.sidesTip ? { sidesTip: parts.sidesTip } : {}),
     // GitStudio: its answer to the coexistence question counts here, and a
     // GitStudio 1.13.0 (no dashboard, rebase sides swapped) that races this
     // one is named once (POLISH A5.1, skew-a).

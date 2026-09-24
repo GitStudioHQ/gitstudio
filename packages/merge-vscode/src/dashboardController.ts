@@ -29,6 +29,7 @@ import type {
   ConflictsState,
 } from "@gitstudio/host-bridge/conflictsProtocol";
 import { HOLD_TO_UNDO_MS } from "@gitstudio/host-bridge/conflictsProtocol";
+import { StashEndTracker, type StashEnd } from "@gitstudio/engine/conflict/stashEnd";
 
 export interface DashboardOptions {
   brand: ConflictsState["brand"];
@@ -65,11 +66,18 @@ export class DashboardController {
   private lastEpisode: string | undefined;
   private lastPending: number | undefined;
   private hadConflicts = false;
+  private readonly stashEnds = new StashEndTracker();
+  /** A stash apply that just ended with every conflict resolved. */
+  private stashEnd: StashEnd | undefined;
+  private tip: ConflictsState["tip"];
 
   constructor(private readonly opts: DashboardOptions) {}
 
   /** Fold in a fresh git snapshot and decide what the panel should do. */
   update(snapshot: ConflictsSnapshot, ctx: UpdateContext): Decision {
+    // A stash apply's end reads as "nothing in progress" (git keeps no
+    // operation for it): keep its page, finished, instead of closing.
+    this.stashEnd = this.stashEnds.fold(snapshot);
     const episode = snapshot.op.episode;
     if (episode !== this.lastEpisode) {
       // A new stop (the next rebase commit, a new merge): the pending baseline
@@ -94,7 +102,7 @@ export class DashboardController {
     }
 
     const ended = snapshot.op.kind === "none" && pending === 0;
-    const close = ctx.open && ended && this.hadConflicts && !this.outcome;
+    const close = ctx.open && ended && this.hadConflicts && !this.outcome && !this.stashEnd;
     const reveal =
       ctx.open && !close && this.lastPending !== undefined && pending < this.lastPending;
     const show =
@@ -114,6 +122,14 @@ export class DashboardController {
     this.outcome = undefined;
     this.notice = undefined;
     this.lastPending = undefined;
+    this.stashEnds.clear();
+    this.stashEnd = undefined;
+  }
+
+  /** The one-time tip to show (POLISH A5.9), or none. */
+  setTip(tip: ConflictsState["tip"]): ConflictsState {
+    this.tip = tip;
+    return this.state();
   }
 
   /** The user asked for the dashboard (command, status item): it shows whatever the close said. */
@@ -156,7 +172,8 @@ export class DashboardController {
   /** The full state the dashboard renders. */
   state(): ConflictsState {
     const snap = this.snapshot;
-    const files: ConflictFileView[] = (snap?.files ?? []).map((f) =>
+    const ended = this.stashEnd;
+    const files: ConflictFileView[] = (ended ? ended.files : (snap?.files ?? [])).map((f) =>
       this.busyPath !== undefined && f.path === this.busyPath ? { ...f, status: "busy" } : f,
     );
     const state: ConflictsState = {
@@ -164,11 +181,17 @@ export class DashboardController {
       repoName: snap?.repoName ?? "",
       op: snap?.op ?? NO_OP,
       files,
-      total: snap?.total ?? files.length,
-      resolved: snap?.resolved ?? files.filter((f) => f.status === "resolved").length,
+      total: ended ? files.length : (snap?.total ?? files.length),
+      resolved: ended ? files.length : (snap?.resolved ?? files.filter((f) => f.status === "resolved").length),
       busy: this.busy,
       holdToUndoMs: this.opts.holdToUndoMs ?? HOLD_TO_UNDO_MS,
     };
+    if (ended) {
+      state.finished = ended.finished;
+    }
+    if (this.tip) {
+      state.tip = this.tip;
+    }
     if (this.notice) {
       state.notice = this.notice;
     }

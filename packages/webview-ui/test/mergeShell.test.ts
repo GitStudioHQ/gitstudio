@@ -102,7 +102,8 @@ test("the strip, the pills and the buttons are named from the operation", { skip
     expect(strip.includes("commit 1 of 3"), "the step is on screen (" + strip + ")");
     expect(strip.includes("1a2b3c4"), "the commit being replayed is on screen");
     expect((strip.match(/commit 1 of 3/g) || []).length === 1, "and said once, not twice (" + strip + ")");
-    expect(text(".ms-accept-yours") === "Accept Yours" && text(".ms-accept-theirs") === "Accept Theirs", "the bottom bar says Accept Yours / Accept Theirs");
+    // POLISH A5.6 (I-4, P-18): the branch names are on the buttons themselves.
+    expect(text(".ms-accept-yours") === "Accept Yours · test" && text(".ms-accept-theirs") === "Accept Theirs · master", "the bottom bar says Accept Yours · test / Accept Theirs · master (" + text(".ms-accept-yours") + " / " + text(".ms-accept-theirs") + ")");
     expect($(".ms-accept-yours").title.includes(OP.yours.description), "Accept Yours' tooltip names the side (" + $(".ms-accept-yours").title + ")");
     expect(text(".ms-apply-yours") === "Yours" && text(".ms-apply-all") === "All" && text(".ms-apply-theirs") === "Theirs", "Apply non-conflicting reads Yours · All · Theirs");
     expect($(".ms-apply-yours").title.includes("yours (test)"), "and names the branch behind Yours (" + $(".ms-apply-yours").title + ")");
@@ -122,6 +123,28 @@ test("with no operation there is no strip, no Continue and no link to a conflict
     click(".ms-close");
     expect(JSON.stringify(last()) === JSON.stringify({ type: "cancel", mode: "exit" }), "Close closes the editor (" + JSON.stringify(last()) + ")");
     expect($(".ms-accept-yours").title.includes("Current change"), "tooltips fall back to the pane labels");
+    expect(text(".ms-accept-yours") === "Accept Yours" && text(".ms-accept-theirs") === "Accept Theirs", "no names to add: plain labels (" + text(".ms-accept-yours") + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("the Accept buttons carry each side's name, cut to 18 characters, and plain labels for a stash (A5.6)", { skip }, async () => {
+  const v = await run(`
+    const long = { ...OP,
+      yours: side("yours", 3, "feature/session-hardening", "Rebasing 1a2b3c4 from feature/session-hardening", "Your commit"),
+      theirs: side("theirs", 2, "main", "Already rebased commits and commits from main", "main") };
+    const shell = mount(payload({ op: long }));
+    expect(text(".ms-accept-yours") === "Accept Yours · feature/…hardening", "a long name keeps its start and its end (" + text(".ms-accept-yours") + ")");
+    expect(text(".ms-accept-theirs") === "Accept Theirs · main", "(" + text(".ms-accept-theirs") + ")");
+    shell.handle({ type: "opChanged", op: { ...long, theirs: side("theirs", 2, "trunk", "t", "t") }, remainingConflicts: 1 });
+    expect(text(".ms-accept-theirs") === "Accept Theirs · trunk", "a new stop renames them (" + text(".ms-accept-theirs") + ")");
+    shell.dispose();
+    const stash = { ...OP, kind: "stash", direction: undefined, step: undefined, commit: undefined,
+      title: "Applying stashed changes on main",
+      yours: side("yours", 3, "stash", "Your stashed changes", "Your stashed changes"),
+      theirs: side("theirs", 2, "main", "Changes from main", "main"), verbs: { abort: "Cancel" } };
+    mount(payload({ op: stash }));
+    expect(text(".ms-accept-yours") === "Accept Yours" && text(".ms-accept-theirs") === "Accept Theirs", "a stash apply: plain (" + text(".ms-accept-yours") + ")");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
@@ -182,6 +205,41 @@ test("Close ONLY closes the merge editor: beside Apply, nothing to abort in the 
     expect(/Continue Rebase or Abort Rebase/.test($(".ms-op-list").title), "and says what is there (" + $(".ms-op-list").title + ")");
     click(".ms-op-list");
     expect(JSON.stringify(last()) === JSON.stringify({ type: "showConflicts" }), "it opens the list (" + JSON.stringify(last()) + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("an upgrader's one-time tip shows in the notices until Got it (A5.9)", { skip }, async () => {
+  const v = await run(`
+    const text1 = "New in Merge Studio 1.0: during a rebase, Yours is your commit (test), on the left. Before this version the two sides were swapped.";
+    const shell = mount(payload({ tip: { id: "ms.sidesTip", text: text1 } }));
+    expect(shown(".ms-note-tip") && text(".ms-note-tip").startsWith(text1), "the tip is in the editor (" + text(".ms-note-tip") + ")");
+    click(".ms-tip-dismiss");
+    expect(JSON.stringify(last()) === JSON.stringify({ type: "dismissTip", id: "ms.sidesTip" }), "Got it tells the host (" + JSON.stringify(last()) + ")");
+    expect(!$(".ms-note-tip"), "and the tip goes");
+    shell.handle({ type: "init", ...payload({ tip: { id: "ms.sidesTip", text: text1 } }) });
+    expect(!$(".ms-note-tip"), "a re-init before the host has caught up does not bring it back");
+    mount(payload());
+    expect(!$(".ms-note-tip"), "no tip, no notice");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("at 1000px the Close confirm keeps its two answers together, and an armed Apply is disarmed while it asks", { skip }, async () => {
+  const v = await run(`
+    document.getElementById("root").style.width = "1000px";
+    mount(payload());
+    fake.setCounts({ total: 3, pending: 2, conflictsPending: 2, hasProgress: true });
+    click(".ms-apply");
+    expect(/unresolved/.test(text(".ms-bottom-note") || ""), "Apply armed (" + text(".ms-bottom-note") + ")");
+    click(".ms-close");
+    expect(shown(".ms-close-confirm"), "Close asks");
+    expect(text(".ms-apply") === "Apply" && !$(".ms-apply").classList.contains("jb-warn"), "the armed Apply is put back while Close asks (" + text(".ms-apply") + ")");
+    const keep = $(".ms-close-keep").getBoundingClientRect();
+    const go = $(".ms-close-go").getBoundingClientRect();
+    expect(Math.abs(keep.top - go.top) < 2, "Keep editing and Close without applying share a row (" + Math.round(keep.top) + " / " + Math.round(go.top) + ")");
+    expect(go.left >= keep.right && go.left - keep.right < 24, "side by side (" + Math.round(keep.right) + " → " + Math.round(go.left) + ")");
+    expect(/anything settled here and not saved is not kept/.test(text(".ms-close-confirm")), "and it does not claim a saved resolution is lost (" + text(".ms-close-confirm") + ")");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
@@ -666,7 +724,19 @@ test("A1.2: a Result seeded from the file says so, in a plain strip, and a re-in
     fake.emitSeed({ kind: "working", changes: 4 });
     expect(shown(".ms-note-seed") && /already resolved outside the merge editor/.test(text(".ms-note-seed")), "a file resolved by hand: " + text(".ms-note-seed"));
     fake.emitSeed({ kind: "markers", changes: 2 });
-    expect(/2 changes were already settled in the file outside its conflict markers/.test(text(".ms-note-seed")), "partly: " + text(".ms-note-seed"));
+    expect(/^2 changes in this file were already merged, outside the conflict markers\\. They're in the Result, marked so you can check them\\./.test(text(".ms-note-seed")), "partly, in plain words: " + text(".ms-note-seed"));
+    fake.emitSeed({ kind: "markers", changes: 1 });
+    expect(/^1 change in this file was already merged/.test(text(".ms-note-seed")), "one: " + text(".ms-note-seed"));
+    // The critic's 1000px shots: the icon stood alone on a row above the sentence.
+    document.getElementById("root").style.width = "620px";
+    const icon = $(".ms-note-seed > .jb-svg").getBoundingClientRect();
+    const words = $(".ms-note-seed > .ms-notice-text").getBoundingClientRect();
+    expect(Math.abs(icon.top - words.top) < 6, "the icon sits beside the words, not above them (" + Math.round(icon.top) + " / " + Math.round(words.top) + ")");
+    const show = $(".ms-note-seed .ms-seed-show");
+    expect(!!show && show.textContent === "Show it", "a link to the change it means");
+    show.click();
+    expect(fake.count("revealSeeded") === 1, "which scrolls the Result to it");
+    document.getElementById("root").style.width = "1280px";
     fake.emitSeed(undefined);
     expect(!$(".ms-note-seed"), "gone when the view starts from base again");
     fake.emitSeed({ kind: "working", changes: 1 });

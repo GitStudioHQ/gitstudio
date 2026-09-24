@@ -192,6 +192,11 @@ test("a Skip that ended the operation says which one it left out, and whether th
     "Commit 1a2b3c4 skipped; the rest applied — cherry-pick complete",
   );
   assert.equal(skipEndedText({ kind: "revert", queued: 1, commit }), "Commit 1a2b3c4 skipped; the rest applied — revert complete");
-  assert.equal(skipEndedText({ kind: "cherry-pick", commit }), "Last commit skipped. Cherry-pick complete, without it");
+  // A cherry-pick or revert with nothing queued after it: skipping it ENDS it.
+  // "Revert complete, without it" read as if something had been reverted —
+  // after skipping the only revert, nothing was.
+  assert.equal(skipEndedText({ kind: "cherry-pick", commit }), "Commit 1a2b3c4 skipped. The cherry-pick is over");
+  assert.equal(skipEndedText({ kind: "revert", commit }), "Commit 1a2b3c4 skipped. The revert is over");
+  assert.equal(skipEndedText({ kind: "revert" }), "The current commit skipped. The revert is over");
   assert.equal(skipEndedText({ kind: "rebase" }), "Last commit skipped. Rebase complete, without it", "nothing known after it: the last");
 });

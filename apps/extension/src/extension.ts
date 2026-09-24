@@ -49,6 +49,7 @@ import { showReflog } from "./history/reflog";
 import { registerGitStudioMerge } from "./merge/gitstudioMerge";
 import { GITSTUDIO_COEXISTENCE_PROMPT_KEY } from "./merge/mergeIds";
 import type { MergePeerApi } from "@gitstudio/merge-vscode/product";
+import { setUpSidesTip, SIDES_WHY_URL } from "@gitstudio/merge-vscode/upgradeTip";
 import { StagedGutter } from "./changes/stagedGutter";
 import { CommitViewProvider } from "./changes/commitView";
 import {
@@ -121,6 +122,19 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       processAudit.show(),
     ),
   );
+
+  // POLISH A5.9: an upgrade from 1.13.0 or earlier, where a rebase's sides
+  // were swapped, gets a one-time tip at its first rebase or stash conflict.
+  // Read BEFORE the walkthrough key below is written: that key is how an
+  // install from before this bookkeeping is told from a fresh one.
+  const sidesTip = setUpSidesTip(context.globalState, {
+    version: String((context.extension?.packageJSON as { version?: unknown } | undefined)?.version ?? ""),
+    lastVersionKey: "gitstudio.lastVersion",
+    flippedAfter: "1.13.0",
+    priorInstall: context.globalState.get("gitstudio.walkthroughShown") !== undefined,
+    dismissedKey: "gitstudio.merge.sidesTipDismissed",
+    why: SIDES_WHY_URL,
+  });
 
   const WALKTHROUGH_ID = "gitstudio.gitstudio#gitstudio.gettingStarted";
   context.subscriptions.push(
@@ -335,6 +349,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     const merge = registerGitStudioMerge(context, repos, {
       openChangesNative: (uri) => navigator.openChanges(uri),
       refresh: () => stagingRefresh.refresh(),
+      sidesTip,
     });
     context.subscriptions.push(merge);
 
