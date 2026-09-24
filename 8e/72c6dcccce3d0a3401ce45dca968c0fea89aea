@@ -1,0 +1,158 @@
+packages/webview-ui/src/styles/shell.css
+  s_26f5e669d3043c::t_aedaf90bfcfaaa 185-188,191-203
+  s_26f5e669d3043c::t_4eddcdf9318cc0 282-291
+  s_26f5e669d3043c::t_f07d254c1d83d2 189-190
+packages/merge-vscode/src/host.ts
+  s_26f5e669d3043c::t_34b1469c4fde23 7
+  s_26f5e669d3043c::t_0b41c818ed4897 138-162
+packages/webview-ui/src/conflicts/opText.ts
+  s_26f5e669d3043c::t_2450869fd63f64 158-159,164-165
+  s_26f5e669d3043c::t_16186d2738a589 14
+  s_26f5e669d3043c::t_e4b877d5e2c6d3 142,145
+  s_26f5e669d3043c::t_d87d3089a28277 201-225
+  s_26f5e669d3043c::t_32286f59136783 305,308-311,313,315-326
+  s_26f5e669d3043c::t_123502bc717b08 89-141,143-144,146-157,160-163,166-200
+packages/webview-ui/src/conflicts/dashboard.ts
+  s_26f5e669d3043c::t_309fd96131a044 30,32,43
+  s_26f5e669d3043c::t_7df5153a6a3250 84
+  s_26f5e669d3043c::t_c3eb82d341bb4a 677-680,684-688
+  s_26f5e669d3043c::t_53e330fb4c502a 349-351
+  s_26f5e669d3043c::t_7e81817a075cd5 339-348,352-354
+  s_26f5e669d3043c::t_52824e8a946ba7 310-313
+  s_26f5e669d3043c::t_0541a7ed747e12 483-486,488-490
+  s_26f5e669d3043c::t_f98edbeeeda4f4 373-392
+  s_26f5e669d3043c::t_22c507df584214 707,724-727,736
+  s_26f5e669d3043c::t_b52935bc59de95 411-432
+  s_26f5e669d3043c::t_e54ec740bec0f1 243-247,251-253,255
+packages/host-bridge/src/conflictsProtocol.ts
+  s_26f5e669d3043c::t_5fca2120770fdb 317-319
+  s_26f5e669d3043c::t_cfec7c8e6b9159 272-284
+packages/webview-ui/src/mergeViewApi.ts
+  s_26f5e669d3043c::t_262bc94ada7f8f 197-202
+packages/merge-vscode/src/upgradeTip.ts
+  s_26f5e669d3043c::t_dcf0a6a0244915 32-37,39,46-49
+  s_26f5e669d3043c::t_71d31a1044ae13 1-31,38,40-45,50-61
+packages/webview-ui/test/fixtures/shellEntry.ts
+  s_26f5e669d3043c::t_b4236b4893ea63 133-136
+packages/webview-ui/src/conflicts/main.ts
+  s_26f5e669d3043c::t_55877474a8261e 39-47
+packages/merge-vscode/test/upgradeTip.test.ts
+  s_26f5e669d3043c::t_072360e86d64a7 1-66
+packages/merge-vscode/src/mergeSession.ts
+  s_26f5e669d3043c::t_f7e89395cf8478 79-80
+  s_26f5e669d3043c::t_7e5e74d8881e66 125-128
+packages/host-bridge/src/protocol.ts
+  s_26f5e669d3043c::t_1b66ba5044f1b8 185-186
+  s_26f5e669d3043c::t_674834de7da099 78-83
+packages/merge-vscode/src/conflictsPanel.ts
+  s_26f5e669d3043c::t_64b1d3dd3650f2 18
+  s_26f5e669d3043c::t_e0f2309d73a8fc 178
+  s_26f5e669d3043c::t_e0c62a5f8d7aff 230,235-238
+  s_59c0dd2af30db2::t_7b9fc5d5df75c8 239
+apps/merge-studio/src/ids.ts
+  s_26f5e669d3043c::t_26c63d5e9932c5 90-95
+apps/merge-studio/src/msProduct.ts
+  s_26f5e669d3043c::t_ed910781b44dc6 17
+  s_26f5e669d3043c::t_bf05f627c6e650 37-38
+  s_26f5e669d3043c::t_677cdb5d0a6d55 58
+packages/webview-ui/test/opTextPolish.test.ts
+  s_26f5e669d3043c::t_ab067db4fadd85 1-142
+packages/merge-vscode/src/mergeEditorProvider.ts
+  s_26f5e669d3043c::t_726d7955dc46a9 164
+  s_26f5e669d3043c::t_f555f2e436d418 17
+  s_26f5e669d3043c::t_1783e5e7b262ba 272-274
+packages/webview-ui/src/styles/diff.css
+  s_26f5e669d3043c::t_5db1850b123ea8 390-404
+packages/merge-vscode/src/dashboardController.ts
+  s_26f5e669d3043c::t_9e503000cb9ce2 105
+  s_26f5e669d3043c::t_54a8a679c62df1 69-72
+  s_26f5e669d3043c::t_0552aad6dcbbbe 78-80
+  s_26f5e669d3043c::t_89eb5f045f940a 125-132
+  s_26f5e669d3043c::t_db13f4170a06fc 175-176,184-185,189-194
+  s_26f5e669d3043c::t_7026b3c6e159e9 32
+packages/engine/test/sides.test.ts
+  s_26f5e669d3043c::t_3d75a600b4cbdc 195-200
+packages/webview-ui/src/mergeShell.ts
+  s_26f5e669d3043c::t_bd6e764d44d4b0 1303-1308,1313,1322-1327
+  s_26f5e669d3043c::t_0553173f897858 1640-1646
+  s_26f5e669d3043c::t_04a8082a48a22e 878-894
+  s_26f5e669d3043c::t_827146a247e4c3 583
+  s_26f5e669d3043c::t_9d77cb663d1978 1312
+  s_26f5e669d3043c::t_b66a2685988a86 1277-1279
+  s_26f5e669d3043c::t_566e367f74b664 900-912
+  s_26f5e669d3043c::t_785c6917289047 786-794
+  s_26f5e669d3043c::t_7056b4c6ee89fc 325-326
+  s_26f5e669d3043c::t_b13777650dac0e 83
+  s_26f5e669d3043c::t_278a0ca7b0ce6a 255,258-262
+packages/webview-ui/test/conflictsDashboard.test.ts
+  s_26f5e669d3043c::t_e98961efe49cb0 173-174
+  s_26f5e669d3043c::t_d299125650908d 522-602
+  s_26f5e669d3043c::t_a9cb0c35891402 225
+  s_26f5e669d3043c::t_b84fcdbad24d9e 183
+packages/engine/src/conflict/sides.ts
+  s_26f5e669d3043c::t_482cf7c4d7ee9f 154-164
+packages/webview-ui/src/mergeView.ts
+  s_26f5e669d3043c::t_447d69a4b2f953 487-504
+  s_26f5e669d3043c::t_7bae45b2cc4549 324,328
+  s_26f5e669d3043c::t_18559ce76a2951 32
+  s_26f5e669d3043c::t_76fcc36a4e3d17 523-524,540-559
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_af2d55f9db24bd 126-138
+  s_26f5e669d3043c::t_33f4a2f157b0ec 352
+  s_26f5e669d3043c::t_c0da18f9360901 52
+packages/merge-vscode/src/coexistence.ts
+  s_26f5e669d3043c::t_96f6b220658304 56
+packages/merge-vscode/src/product.ts
+  s_26f5e669d3043c::t_2efda11021920b 132-186
+  s_26f5e669d3043c::t_1ed90f9ccd6071 258-264
+  s_26f5e669d3043c::t_298fb430418b81 257
+apps/extension/src/merge/gitstudioMerge.ts
+  s_26f5e669d3043c::t_14c825ac97d348 78
+  s_26f5e669d3043c::t_6e610273031d5d 41-42
+  s_26f5e669d3043c::t_913d2a17305a9f 8
+packages/merge-vscode/test/dashboardController.test.ts
+  s_26f5e669d3043c::t_e65d9dd7060549 142-184
+packages/webview-ui/src/styles/conflicts.css
+  s_26f5e669d3043c::t_85a117ef4fc366 303-344
+  s_26f5e669d3043c::t_e3e5f0354f0e02 547-554
+  s_26f5e669d3043c::t_fa386f92788ca9 49-69
+  s_26f5e669d3043c::t_fd1f17e763b50a 445-447
+packages/engine/src/conflict/stashEnd.ts
+  s_26f5e669d3043c::t_95a4928c28aa11 1-79
+packages/webview-ui/test/mergeShell.test.ts
+  s_26f5e669d3043c::t_6798e3fb1e2b7e 212-227
+  s_26f5e669d3043c::t_cc50567d9459cc 228-246
+  s_26f5e669d3043c::t_15624b79faeafe 727-739
+  s_26f5e669d3043c::t_704c75b01bda2f 126-147
+  s_26f5e669d3043c::t_0e55fc6f3cbe0f 105-106
+apps/merge-studio/src/extension.ts
+  s_26f5e669d3043c::t_5818cbe35fca96 21,23,25,27
+  s_26f5e669d3043c::t_9d7a4261406caa 68-81
+  s_26f5e669d3043c::t_b0fae91a240c80 91
+packages/engine/test/stashEnd.test.ts
+  s_26f5e669d3043c::t_8d7b68028d8861 1-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8e72c6dcccce3d0a3401ce45dca968c0fea89aea",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_59c0dd2af30db2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54ca11b6-e37a-494e-95d0-c9e5a1baed9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
