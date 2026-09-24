@@ -17,10 +17,13 @@ import { findChrome, runMergePage } from "./fixtures/mergeViewPage";
  *   >= 3:1 against the editor background (WCAG 1.4.11, non-text); a handled
  *   change's outline and a ruler mark visible but quieter than an edge;
  * - every pair of line tints >= 10 apart (CIEDE2000) with normal vision;
- * - every CATEGORY pair >= 4 apart under simulated deuteranopia and
- *   protanopia (Machado et al. 2009, severity 1), and identical (violet) vs
- *   conflict (red) >= 15 — the pair whose confusion would mislead: "safe to
- *   take" read as "needs you".
+ * - every conflict vs one-sided pair >= 4 apart under simulated deuteranopia
+ *   and protanopia (Machado et al. 2009, severity 1). (A change made the same
+ *   on both sides has no colour of its own any more: it is painted by what it
+ *   did, on both sides — the owner's call.)
+ * - a settled change's TRACE (the muted tint a taken side, its ribbon and
+ *   the Result keep) readable, visibly quieter than the open band, and still
+ *   there against the background.
  *
  * Themes: VS Code Dark+, Dark Modern, Light+, Light Modern, High Contrast
  * dark and light, and the desktop app's own dark and light editor colours,
@@ -33,7 +36,7 @@ const APP_CSS = fileURLToPath(
   new URL("../../../apps/desktop/src/renderer/styles/app.css", import.meta.url),
 );
 
-const TONES = ["inserted", "deleted", "modified", "same", "conflict"] as const;
+const TONES = ["inserted", "deleted", "modified", "conflict"] as const;
 type Tone = (typeof TONES)[number];
 
 // ── The token block and the classes the views emit ────────────────────────────
@@ -48,20 +51,23 @@ test("diff.css declares every tone's tokens in both palettes; every class the vi
   for (const head of [":root {", "body.vscode-light, body.vscode-high-contrast-light {"]) {
     const b = block(head);
     for (const tone of TONES) {
-      for (const kind of ["line", "inner", "edge", "done", "ruler", "half"]) {
+      for (const kind of ["line", "inner", "edge", "done", "ruler", "muted", "point"]) {
         assert.ok(b.includes(`--jb-${kind}-${tone}:`), `${head} declares --jb-${kind}-${tone}`);
       }
     }
-    assert.ok(b.includes("--jb-settled:"), `${head} declares --jb-settled`);
   }
   assert.ok(!/--jb-(line|edge)-resolved/.test(css), "no grey 'resolved' wash");
+  // No violet, no neutral "settled" line: the owner's two rejections.
+  assert.ok(!/-same\b|--jb-settled|jb-settled/.test(css), "no colour of its own for the same change, no disconnected grey line");
   // Every class the merge and diff views put on the page has a rule — a class
   // with no rule fails silently (memory: dead CSS class names).
   const selectors: string[] = [];
   for (const tone of TONES) {
     selectors.push(
       `.jb-line-${tone}`, `.jb-inner-${tone}`, `.jb-ribbon-${tone}`, `.jb-point-${tone}`,
-      `.jb-done-${tone}`, `.jb-frame-${tone}`, `.jb-ribbon-done-${tone}`, `.jb-ribbon-frame-${tone}`,
+      `.jb-done-${tone}`, `.jb-frame-${tone}`, `.jb-ribbon-frame-${tone}`,
+      `.jb-trace-${tone}`, `.jb-trace-edge-${tone}`, `.jb-ribbon-trace-${tone}`, `.jb-ribbon-trace-edge-${tone}`,
+      `.jb-ribbon-cap-${tone}`, `.jb-ribbon-cap-trace-${tone}`,
       `.jb-btn-accept.jb-tone-${tone}:hover`, `.jb-dot-${tone}`,
     );
   }
@@ -71,11 +77,12 @@ test("diff.css declares every tone's tokens in both palettes; every class the vi
   }
   selectors.push(
     ".jb-ws", ".jb-done", ".jb-frame", ".jb-point", ".jb-point-after", ".jb-edge-top", ".jb-edge-bottom",
-    ".jb-half", ".jb-settled",
-    ".jb-ribbon-base", ".jb-ribbon-line-base", ".jb-ribbon-done", ".jb-ribbon-frame", ".jb-legend", ".jb-legend-chip",
+    ".jb-half", ".jb-trace", ".jb-trace-note",
+    ".jb-ribbon-base", ".jb-ribbon-trace", ".jb-ribbon-cap", ".jb-ribbon-frame", ".jb-legend", ".jb-legend-chip",
     ".jb-legend-help", ".jb-legend-pop", ".jb-legend-row", ".jb-legend-count", ".jb-legend-sep",
     ".jb-legend-dot", ".jb-legend-note", ".jb-legend-kind", ".jb-legend-sample",
-    ".jb-sample-half", ".jb-sample-done", ".jb-sample-settled", ".jb-sample-point", ".jb-sample-ws",
+    ".jb-sample-half", ".jb-sample-done", ".jb-sample-trace", ".jb-sample-point", ".jb-sample-ws",
+    ".jb-map", ".jb-map-canvas", ".jb-map-thumb", ".jb-map-view",
     ".codicon-arrow-right", ".codicon-arrow-left", ".codicon-close", ".codicon-wand", ".codicon-question",
   );
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -87,7 +94,7 @@ test("diff.css declares every tone's tokens in both palettes; every class the vi
   // What the owner rejected is gone for good: the invented marks, the per-change
   // wand and append icon, the dashed "applied" style.
   // And the legend's square swatches, which read as unticked checkboxes.
-  for (const gone of [".jb-mark", ".jb-result-actions", ".jb-btn-append", ".jb-btn-keep-base", ".jb-btn-wand", ".jb-legend-glyph", ".jb-legend-extra", ".codicon-insert", ".codicon-sparkle", ".jb-legend-swatch", ".jb-swatch-conflict", ".jb-swatch-one-sided"]) {
+  for (const gone of [".jb-settled", ".jb-sample-settled", ".jb-ribbon-done", ".jb-ribbon-line-base", ".jb-line-same", ".jb-dot-same", ".jb-mark", ".jb-result-actions", ".jb-btn-append", ".jb-btn-keep-base", ".jb-btn-wand", ".jb-legend-glyph", ".jb-legend-extra", ".codicon-insert", ".codicon-sparkle", ".jb-legend-swatch", ".jb-swatch-conflict", ".jb-swatch-one-sided"]) {
     assert.ok(!new RegExp(`${escape(gone)}(?![\\w-])`).test(css), `no rule for the retired ${gone}`);
   }
   assert.ok(!/jb-applied|dasharray|\bdashed\b/.test(css), "no dashed 'applied' style anywhere");
@@ -240,19 +247,17 @@ interface Measured {
   ruler: string;
   frame: string;
   half: string;
-  settled: string;
+  muted: string;
 }
 
 /**
- * The pairs that tell a CATEGORY apart — conflict, the same on both sides, a
- * one-sided change (whichever of its three tones) — must stay apart under
- * deuteranopia and protanopia too. Inserted / modified / deleted among
- * themselves only say what a one-sided change did; the words (legend,
- * tooltips) carry that for everyone.
+ * The pairs that tell "you choose" from "safe to take" — a conflict from a
+ * change (whichever of its three tones) — must stay apart under deuteranopia
+ * and protanopia too. Inserted / modified / deleted among themselves only say
+ * what a change did; the words (legend, tooltips) carry that for everyone.
  */
 const CATEGORY_PAIRS: Array<[Tone, Tone]> = [
-  ["conflict", "same"], ["conflict", "inserted"], ["conflict", "modified"], ["conflict", "deleted"],
-  ["same", "inserted"], ["same", "modified"], ["same", "deleted"],
+  ["conflict", "inserted"], ["conflict", "modified"], ["conflict", "deleted"],
 ];
 
 test("text on every tint, edges on every background, and the categories apart — in every theme", { skip: !CHROME && "no Chrome on this machine" }, async (t) => {
@@ -281,7 +286,7 @@ test("text on every tint, edges on every background, and the categories apart �
     for (const [key, cls] of Object.entries(CLASSES)) {
       document.body.className = cls;
       const tones = {};
-      for (const t of ["inserted", "deleted", "modified", "same", "conflict"]) {
+      for (const t of ["inserted", "deleted", "modified", "conflict"]) {
         tones[t] = {
           line: probe("jb-line-" + t).bg,
           inner: probe("jb-inner-" + t).bg,
@@ -291,7 +296,8 @@ test("text on every tint, edges on every background, and the categories apart �
           frame: probe("jb-frame jb-frame-" + t + " jb-edge-top").border,
           // The classes a half-done conflict's result carries.
           half: probe("jb-line-" + t + " jb-half").bg,
-          settled: probe("", "color:var(--jb-settled)").color,
+          // A settled change's trace: a taken side, and the Result that holds it.
+          muted: probe("jb-trace jb-trace-" + t).bg,
         };
       }
       out[key] = tones;
@@ -361,12 +367,19 @@ test("text on every tint, edges on every background, and the categories apart �
         if (contrast(fg, half) < 4.5) problems.push(`${theme.name}: text on the half-done conflict tint is ${contrast(fg, half).toFixed(2)}:1 (< 4.5)`);
         if (halfStep < 5) problems.push(`${theme.name}: a half-done conflict's result is only ΔE ${halfStep.toFixed(1)} from an open one (< 5)`);
         if (halfVsBg < 2) problems.push(`${theme.name}: a half-done conflict's result is only ΔE ${halfVsBg.toFixed(1)} from the background (< 2)`);
-        // A resolved change's line: faint, neutral, quieter than a handled side's.
-        const settled = over(parseColor(m.settled), bg);
-        const settledVsBg = contrast(settled, bg);
-        row.push(`settled ${settledVsBg.toFixed(2)}`);
-        if (settledVsBg < 1.3 || settledVsBg > doneVsBg) problems.push(`${theme.name}: the settled line is ${settledVsBg.toFixed(2)}:1 (want ≥ 1.3 and at most the handled outline's ${doneVsBg.toFixed(2)})`);
       }
+      // Every change, once settled, keeps a TRACE: the muted tint, readable,
+      // visibly quieter than its open band, and still there on the background
+      // (the owner: which side was taken must remain visible). The half-done
+      // Result wears the same tint, so the taken side's ribbon runs into it.
+      const muted = over(parseColor(m.muted), bg);
+      const mutedStep = deltaE2000(muted, line);
+      const mutedVsBg = deltaE2000(muted, bg);
+      row.push(`trace: text ${contrast(fg, muted).toFixed(2)} ΔE ${mutedStep.toFixed(1)} from open, ${mutedVsBg.toFixed(1)} from bg`);
+      if (contrast(fg, muted) < 4.5) problems.push(`${theme.name}: text on the ${tone} trace is ${contrast(fg, muted).toFixed(2)}:1 (< 4.5)`);
+      if (mutedStep < 3) problems.push(`${theme.name}: the ${tone} trace is only ΔE ${mutedStep.toFixed(1)} from its open band (< 3): not calmer`);
+      if (mutedVsBg < 1.5) problems.push(`${theme.name}: the ${tone} trace is only ΔE ${mutedVsBg.toFixed(1)} from the background (< 1.5): gone`);
+      if (m.half !== m.muted) problems.push(`${theme.name}: the half-done ${tone} Result (${m.half}) is not the trace's tint (${m.muted}), so the taken side's ribbon changes colour where it meets it`);
       const hc = theme.body === "hcDark" || theme.body === "hcLight";
       if (hc && m.frame !== "solid") problems.push(`${theme.name}: a pending ${tone} block has no solid frame edge (${m.frame})`);
       if (!hc && m.frame !== "none") problems.push(`${theme.name}: frame edges drawn outside high contrast (${m.frame})`);
@@ -383,12 +396,9 @@ test("text on every tint, edges on every background, and the categories apart �
       if (!lines[a] || !lines[b]) continue;
       for (const [kind, m] of Object.entries(CVD)) {
         const d = deltaE2000(simulate(lines[a], m), simulate(lines[b], m));
-        // Identical vs conflict is the pair whose confusion would mislead
-        // ("safe to take" read as "needs you"): far apart. Every other
-        // category pair: still visibly apart (JetBrains' own New UI palette
-        // measures 3.7 for inserted vs conflict under deuteranopia).
-        const floor = a === "conflict" && b === "same" ? 15 : 4;
-        if (a === "conflict" && b === "same") row.push(`same~conflict ${kind} ΔE ${d.toFixed(1)}`);
+        // Still visibly apart (JetBrains' own New UI palette measures 3.7
+        // for inserted vs conflict under deuteranopia).
+        const floor = 4;
         if (d < floor) problems.push(`${theme.name}: ${a} vs ${b} under ${kind} is ΔE ${d.toFixed(1)} (< ${floor})`);
       }
     }

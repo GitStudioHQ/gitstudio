@@ -4501,9 +4501,10 @@
       for (const [sel, words] of [
         [".ms-accept-yours", "Accept Yours"],
         [".ms-accept-theirs", "Accept Theirs"],
-        [".ms-cancel", "Cancel"],
+        [".ms-close", "Close"],
         [".ms-apply", "Apply"],
       ]) c.eq(text(shell.querySelector(sel)), words, `the bottom bar says ${words}`);
+      c.ok(!shell.querySelector(".ms-cancel, .ms-abort, .ms-pop"), "and no way to end the whole operation from it (the conflicts list has that)");
       c.ok(!!shell.querySelector(".ms-opstrip"), "and the operation strip");
       c.ok(!!shell.querySelector(".ms-legend-slot"), "and a slot for the legend");
       c.ok(!$(".merge-resolve") && !$(".merge-bar-actions"), "the desktop's own three-button bar is gone");
@@ -4527,7 +4528,11 @@
       );
     },
 
-    /** Exit viewer leaves the conflict in the file and goes back to the dashboard, running nothing in git. */
+    /**
+     * Close ONLY closes the merge editor (the owner): the conflict stays in the
+     * file, the operation stays paused, the dashboard comes back — and nothing
+     * runs in git. Ending the operation is the dashboard's, not the editor's.
+     */
     "exit-viewer-returns-to-the-dashboard": async (f) => {
       const c = check(f);
       await settle(600);
@@ -4536,14 +4541,12 @@
       c.ok(!!$(".ms-shell"), "the merge editor is open");
       c.ok(!!$(".dc-opstrip") && !$(".dc-opstrip").hidden, "the strip names the operation while a file covers the dashboard");
       const before = window.__GS_INVOKED.length;
-      $(".ms-cancel")?.click();
-      await settle(300);
-      const exit = $(".ms-exit");
-      c.ok(!!exit, "Cancel offers Exit viewer");
-      c.eq(text(".ms-abort"), "Abort Merge…", "and ending the merge, by name");
-      exit?.click();
+      c.ok(!$(".ms-abort") && !$(".ms-pop"), "the editor offers no Abort");
+      const close = $(".ms-close");
+      c.eq(text(close), "Close", "its bottom bar has Close");
+      close?.click();
       await settle(700);
-      c.ok(!!$(".cd-dash"), "Exit viewer brings the dashboard back");
+      c.ok(!!$(".cd-dash"), "Close brings the dashboard back");
       c.ok(!$(".dc-file.active"), "with no row left selected");
       c.ok($(".dc-opstrip")?.hidden !== false, "and the strip gives way to it");
       const git = window.__GS_INVOKED.slice(before).map((r) => r.channel).filter((ch) => /^(op|conflict):/.test(ch) && ch !== "conflict:state");
@@ -4695,8 +4698,8 @@
       if (!grid) return;
       const light = document.body.classList.contains("vscode-light");
       const want = light
-        ? { conflict: "rgba(240, 75, 70, 0.3)", half: "rgba(240, 75, 70, 0.1)", done: "rgba(207, 34, 46, 0.45)", settled: "rgba(0, 0, 0, 0.17)", edge: "rgb(26, 127, 55)", dot: "rgb(207, 34, 46)" }
-        : { conflict: "rgba(240, 105, 100, 0.24)", half: "rgba(240, 105, 100, 0.1)", done: "rgba(240, 104, 106, 0.5)", settled: "rgba(204, 204, 204, 0.24)", edge: "rgb(98, 179, 74)", dot: "rgb(240, 104, 106)" };
+        ? { conflict: "rgba(240, 75, 70, 0.3)", half: "rgba(240, 75, 70, 0.13)", done: "rgba(207, 34, 46, 0.45)", point: "rgba(26, 127, 55, 0.55)", dot: "rgb(207, 34, 46)" }
+        : { conflict: "rgba(240, 105, 100, 0.24)", half: "rgba(240, 105, 100, 0.12)", done: "rgba(240, 104, 106, 0.5)", point: "rgba(98, 179, 74, 0.62)", dot: "rgb(240, 104, 106)" };
       const body = grid.querySelector(".jb-pane-body");
       const probe = (cls) => {
         const el = document.createElement("div");
@@ -4709,12 +4712,14 @@
         return out;
       };
       c.eq(probe("jb-line-conflict").bg, want.conflict, "a conflict band is the red tint of this theme");
-      c.eq(probe("jb-line-conflict jb-half").bg, want.half, "a conflict with one side in: its result at under half strength — not the open conflict's look");
+      c.eq(probe("jb-line-conflict jb-half").bg, want.half, "a conflict with one side in: its result muted — not the open conflict's look");
       const done = probe("jb-done jb-done-conflict jb-edge-top jb-edge-bottom");
-      c.eq(`${done.bg} | ${done.bt} | ${done.bb}`, `rgba(0, 0, 0, 0) | solid 1px ${want.done} | solid 1px`, "a handled side: no fill, a faint 1px line top and bottom");
-      const settled = probe("jb-settled jb-edge-top jb-edge-bottom");
-      c.eq(`${settled.bg} | ${settled.bt} | ${settled.bb}`, `rgba(0, 0, 0, 0) | solid 1px ${want.settled} | solid 1px`, "a resolved change: one neutral faint line, no fill");
-      c.eq(probe("jb-point jb-point-inserted").bt, `solid 2px ${want.edge}`, "an insertion point is a 2px line in its edge colour");
+      c.eq(`${done.bg} | ${done.bt} | ${done.bb}`, `rgba(0, 0, 0, 0) | solid 1px ${want.done} | solid 1px`, "a discarded side: no fill, a faint 1px line top and bottom");
+      const trace = probe("jb-trace jb-trace-conflict");
+      c.eq(trace.bg, want.half, "a taken side, and a settled Result: the muted band");
+      c.ok(trace.bt.startsWith("none"), `…with no lines (${trace.bt})`);
+      c.ok(!probe("jb-settled jb-edge-top").bt.startsWith("solid"), "no neutral grey line of the old look");
+      c.eq(probe("jb-point jb-point-inserted").bt, `solid 1px ${want.point}`, "an insertion point is a 1px line in its point colour");
       c.eq(probe("jb-frame jb-frame-conflict jb-edge-top").bt.split(" ")[0], "none", "no frame lines outside high contrast");
       // The ribbons land on the 32 ms timer, which the virtual clock does serve.
       const band = grid.querySelector(".jb-ribbon-stage path.jb-ribbon-conflict");
@@ -4727,7 +4732,7 @@
       c.ok(!document.querySelector(".jb-mark, .jb-result-actions, .jb-btn-wand, .jb-btn-append"), "no invented marks, no per-change wand, no append icon");
       const buttons = $$(".jb-change-actions button");
       c.ok(buttons.length > 0, `the gutters carry controls (${buttons.length})`);
-      const odd = buttons.filter((b) => !/codicon-(arrow-right|arrow-left|close)\b/.test(b.innerHTML) || !/^(Accept|Ignore|Add|Discard) (Yours|Theirs)\b/.test(b.title) || !b.getAttribute("aria-label"));
+      const odd = buttons.filter((b) => !/codicon-(arrow-right|arrow-left|close)\b/.test(b.innerHTML) || !/^((Accept|Ignore|Add|Discard) (Yours|Theirs)\b|Same change on both sides — either arrow takes it|Discard this change on both sides)/.test(b.title) || !b.getAttribute("aria-label"));
       c.eq(odd.map((b) => b.title || b.innerHTML).join(" | "), "", "every control is an arrow or ×, with its action in words");
       const legend = $(".ms-legend-slot .jb-legend");
       c.ok(!!legend && /Conflicts/.test(legend.textContent) && /Changed/.test(legend.textContent) && !/[≠≈‹›✨]/.test(legend.textContent), `the legend is words (${legend && legend.textContent.replace(/\s+/g, " ").trim()})`);
@@ -4923,22 +4928,21 @@
         c.ok($(".ms-shell") === shell0, `the SAME merge editor is on screen after a ${gitDir ? "git-dir" : "working-tree"} refresh`);
         c.eq(counter(), "All changes have been processed", "with the work in it");
       }
-      // Cancel → Abort… → the inline question, through another refresh.
-      $(".ms-cancel")?.click();
+      // Close with work in the editor asks inline — and the question outlives another refresh.
+      $(".ms-close")?.click();
       await settle(300);
-      $(".ms-abort")?.click();
-      await settle(300);
-      const confirm = () => $(".ms-shell .ms-pop-question");
+      const confirm = () => $(".ms-shell .ms-close-confirm");
       const q = confirm();
-      c.ok(!!q && !q.closest("[hidden]"), "Abort… asks inline");
+      c.ok(!!q && !q.closest("[hidden]"), "Close asks inline, with work in the editor");
       const asked = text(q);
       window.__gsEmit("repo:filesChanged", { gitDir: true });
       await settle(1500);
       c.ok(!!confirm() && !confirm().closest("[hidden]") && text(confirm()) === asked, "and the question outlives the refresh");
-      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 0, "nothing answered it for the user");
-      $(".ms-shell .ms-abort-go")?.click();
+      c.ok($(".ms-shell") === shell0, "the editor is still there: nothing answered it for the user");
+      $(".ms-shell .ms-close-go")?.click();
       await settle(900);
-      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 1, "the user's answer reaches git: one op:abort");
+      c.ok(!!$(".cd-dash"), "the user's answer closes it: the dashboard is back");
+      c.eq(window.__GS_INVOKED.filter((r) => /^op:/.test(r.channel)).length, 0, "and nothing ran in git");
     },
 
     /**
@@ -5344,7 +5348,7 @@
         return b.width > 0 && b.left >= s.left - 1 && b.right <= right + 1 ? "" : `${Math.round(b.left)}–${Math.round(b.right)} outside ${Math.round(s.left)}–${Math.round(right)}`;
       };
       c.ok(shell.getBoundingClientRect().width < 600, `precondition: a narrow pane (${Math.round(shell.getBoundingClientRect().width)}px)`);
-      for (const sel of [".ms-accept-yours", ".ms-accept-theirs", ".ms-cancel", ".ms-apply"]) {
+      for (const sel of [".ms-accept-yours", ".ms-accept-theirs", ".ms-close", ".ms-apply"]) {
         c.eq(out(shell.querySelector(sel)), "", `${sel} is on screen`);
       }
       $(".ms-apply")?.click();
@@ -5354,9 +5358,14 @@
       const note = $(".ms-bottom-note");
       c.ok(!!note && note.getBoundingClientRect().width > 120, `and its warning is readable (${note ? Math.round(note.getBoundingClientRect().width) : 0}px wide)`);
       c.eq(out(note), "", "and on screen");
-      $(".ms-cancel")?.click();
+      // Close's question, with work in the editor, is on screen too.
+      $(".ms-accept-yours")?.click();
       await settle(200);
-      c.eq(out($(".ms-pop")), "", "the Cancel choices open inside the pane");
+      $(".ms-close")?.click();
+      await settle(200);
+      for (const sel of [".ms-close-confirm", ".ms-close-keep", ".ms-close-go"]) {
+        c.eq(out($(sel)), "", `Close's question is on screen: ${sel}`);
+      }
     },
 
     /**
@@ -5442,13 +5451,10 @@
       merge.click();
       await settle(1200);
       c.ok(!!$(".ms-shell"), "the merge editor opens");
-      $(".ms-cancel")?.focus();
-      $(".ms-cancel")?.click();
-      await settle(200);
-      c.eq(document.activeElement, $(".ms-exit"), "Cancel's choices have the keyboard");
-      $(".ms-exit")?.click();
+      $(".ms-close")?.focus();
+      $(".ms-close")?.click();
       await settle(1200);
-      c.ok(!!$(".cd-dash"), "Exit viewer brings the dashboard back");
+      c.ok(!!$(".cd-dash"), "Close brings the dashboard back");
       c.eq(where(), "dashboard merge:src/app.ts", "and the keyboard to the Merge… it left from");
       $('[data-key="merge:src/app.ts"]')?.click();
       await settle(1200);

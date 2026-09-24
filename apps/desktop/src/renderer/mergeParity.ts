@@ -127,11 +127,17 @@ export function missingRoleOf(model: ConflictModel): SideRole | undefined {
   return stage === 2 ? "yours" : "theirs";
 }
 
-/** The shell's init payload for a conflicted file. The texts arrive already mapped (op.yours on the left). */
+/**
+ * The shell's init payload for a conflicted file. The texts arrive already
+ * mapped (op.yours on the left). `commits`: a submodule's two commits, from
+ * the conflicts snapshot (the model does not carry them) — the panel names
+ * them.
+ */
 export function mergePayload(
   model: ConflictModel,
   settings: MergeSettings,
   ide?: JetBrainsIdeInfo,
+  commits?: { yours?: string; theirs?: string },
 ): MergeInitPayload {
   const shape = conflictShape(model);
   const missingRole = missingRoleOf(model);
@@ -155,7 +161,25 @@ export function mergePayload(
     autoApplyNonConflicting: settings.autoApplyNonConflicting,
     shape,
     missingRole,
+    ...(shape === "submodule" && commits ? { commits } : {}),
   };
+}
+
+/**
+ * A submodule's two commits, read from the conflicts snapshot (its row
+ * carries them); undefined for every other shape, or when it cannot be read.
+ */
+export async function submoduleCommits(
+  invoke: Invoke,
+  model: ConflictModel,
+): Promise<{ yours?: string; theirs?: string } | undefined> {
+  if (conflictShape(model) !== "submodule") return undefined;
+  try {
+    const s = await invoke("conflict:state", undefined);
+    return s?.files.find((f) => f.path === model.path)?.commits;
+  } catch {
+    return undefined;
+  }
 }
 
 // ── settings & IDE, cached for the session ───────────────────────────────────
@@ -316,8 +340,9 @@ function fileName(path: string): string {
  * - takeRole → conflict:takeRole (conflict:takeSide for a model with no op,
  *   where no role mapping is known and stage 2 is "yours"); deleteFile →
  *   conflict:delete;
- * - continueOperation → op:continue; cancel{abort} → op:abort — each an
- *   `outcome` then `opChanged`; cancel{exit} → back to the dashboard;
+ * - continueOperation → op:continue; cancel{abort} (older pages) → op:abort —
+ *   each an `outcome` then `opChanged`; cancel{exit} (Close) and
+ *   showConflicts → back to the dashboard, writing nothing;
  * - openInJetBrains → jetbrains:merge, with "Mark resolved" on the notice.
  */
 export class DesktopMergeAdapter {
@@ -336,7 +361,7 @@ export class DesktopMergeAdapter {
     try {
       switch (message.type) {
         case "apply": {
-          const refusal = await this.overwriteRefusal();
+          const refusal = await this.overwriteRefusal(message.text);
           if (refusal) {
             deliver({ type: "outcome", kind: "failed", text: refusal });
             return;
@@ -383,8 +408,16 @@ export class DesktopMergeAdapter {
           this.deps.onResolved();
           return;
         }
+        case "showConflicts":
+          // The conflicts list is what the desktop shows once the editor
+          // steps aside: leave the file as it is, and show it.
+          this.deps.onExit();
+          return;
         case "continueOperation":
         case "cancel": {
+          // Close: ONLY leave the merge view. Nothing is written (the desktop
+          // writes on Apply alone), the operation stays paused and the file
+          // keeps its markers.
           if (message.type === "cancel" && message.mode !== "abort") {
             this.deps.onExit();
             return;
@@ -452,14 +485,19 @@ export class DesktopMergeAdapter {
    *   a terminal): the watcher's refresh usually reloads the editor first,
    *   but an Apply inside that window wrote the stale Result over it.
    *
+   * The Result starts FROM a resolution already in the file (the view seeds
+   * it), so an Apply that writes it back unchanged replaces nothing and asks
+   * nothing.
+   *
    * The reason nothing was written, or undefined to go ahead.
    */
-  private async overwriteRefusal(): Promise<string | undefined> {
+  private async overwriteRefusal(text: string): Promise<string | undefined> {
     const ask = this.deps.confirm;
     if (!ask) return undefined;
     const model = this.model;
     const name = fileName(model.path);
-    if (resolvedOutsideMerge(model.result, model.base)) {
+    const same = (a: string, b: string): boolean => a.replace(/\r\n?/g, "\n") === b.replace(/\r\n?/g, "\n");
+    if (resolvedOutsideMerge(model.result, model.base) && !same(text, model.result)) {
       const go = await ask({
         title: `Replace the resolution already in ${name}?`,
         message:

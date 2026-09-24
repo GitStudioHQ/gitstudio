@@ -32,6 +32,10 @@ export const arrowRightIcon = codicon("arrow-right");
 export const binaryIcon = codicon("file-binary");
 /** A file that is gone on one side. */
 export const removedIcon = codicon("diff-removed");
+/** A file that is new on one side only. */
+export const newFileIcon = codicon("new-file");
+/** A symbolic link. */
+export const symlinkIcon = codicon("file-symlink-file");
 /** Close the viewer. */
 export const closeIcon = codicon("close");
 /** The commit being replayed. */

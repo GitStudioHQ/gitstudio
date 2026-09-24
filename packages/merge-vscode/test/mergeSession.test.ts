@@ -478,7 +478,10 @@ for (const [what, move] of [
     h.posts.length = 0;
     await undo!();
     assert.ok(!state.calls.some((c) => c.startsWith("restore:")), state.calls.join(" | "));
-    assert.deepEqual(h.posts, [], "the editor is not re-initialised");
+    // The editor is not re-initialised; its own Undo (beside Apply) is told
+    // why nothing happened, in place.
+    assert.deepEqual(h.posts.map((p) => p.type), ["outcome"], "the editor is not re-initialised");
+    assert.equal((h.posts[0] as Extract<HostMessage, { type: "outcome" }>).kind, "failed");
     assert.ok(h.notes.some((n) => /moved on since that Apply/.test(n.text)), JSON.stringify(h.notes));
   });
 }

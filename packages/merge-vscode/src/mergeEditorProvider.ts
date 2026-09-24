@@ -70,19 +70,21 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     let disposed = false;
     // What this editor writes into the document before Apply, and whether
     // something else has written to it since (documentSync.ts).
-    const sync: EditorSync = { mirror: new ResultMirror(), edits: new ForeignEdits(document.getText()), post: () => {} };
+    const sync: EditorSync = {
+      mirror: new ResultMirror(),
+      edits: new ForeignEdits(document.getText()),
+      post: () => {},
+      asked: false,
+    };
     const post = (message: HostMessage): void => {
       if (message.type === "init") {
         sync.mirror.init(message);
         // The document and the file git left are where this merge starts.
         sync.edits.reset(document.getText(), message.result);
-        if (sync.mirror.preserved) {
-          void host.notify(
-            "warn",
-            `${baseName(document.uri.fsPath)} has no conflict markers left: it was already resolved, by hand or by ` +
-              `git rerere. The merge editor starts from the conflict, and the file keeps your resolution unless you Apply.`,
-          );
-        }
+        sync.asked = false;
+        sync.undo = undefined;
+        // A file already resolved (by hand, or by git rerere) is not announced
+        // here: the Result starts from it, and the editor says so in place.
       }
       if (message.type === "applied" && message.staged) {
         sync.mirror.applied();
@@ -100,7 +102,14 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     // saves without staging.
     const sessionNow = (): MergeSession => {
       const target = locate(host.product.locator, document.uri);
-      return this.session(document, target?.repo, target?.rel, { post });
+      return this.session(document, target?.repo, target?.rel, {
+        post,
+        // An Apply's Undo is offered in the editor's own bottom bar, not in a
+        // toast over it: the page holds the button, this editor the undo.
+        offerUndo: (_text, undo) => {
+          sync.undo = undo;
+        },
+      });
     };
 
     const sub = webview.onDidReceiveMessage((raw: unknown) => {
@@ -110,10 +119,15 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     });
     // Rule 3 (documentSync.ts): every text the document takes that this editor
     // did not write — a second tab on the file, a formatter, a checkout that
-    // VS Code reloads — is noted, and the next write asks first.
+    // VS Code reloads — is noted, and asked about in the editor itself
+    // (inline, POLISH A1.3); nothing is written until it is answered.
     const changes = vscode.workspace.onDidChangeTextDocument((event) => {
       if (event.document === document && event.contentChanges.length > 0) {
         sync.edits.observe(document.getText());
+        if (sync.edits.changed && !sync.edits.keeping && !sync.asked) {
+          sync.asked = true;
+          post({ type: "fileChanged" });
+        }
       }
     });
     panel.onDidDispose(() => {
@@ -128,7 +142,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     repo: MergeRepo | undefined,
     rel: string | undefined,
-    io: { post(message: HostMessage): void },
+    io: { post(message: HostMessage): void; offerUndo?(text: string, undo: () => Promise<void>): void },
   ): MergeSession {
     const { host } = this;
     return new MergeSession({
@@ -153,8 +167,9 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
           : undefined,
       // No toast after an Apply here: VS Code puts it over the editor's
       // bottom-right corner — Apply and Continue — and the editor already says
-      // "Merge applied and staged" in place. The conflict comes back from the
-      // Conflicts dashboard, whose row holds Undo for exactly this.
+      // "Merge applied and staged" in place, with Undo beside Apply (offerUndo
+      // below). The Conflicts dashboard's row holds an Undo for it too.
+      offerUndo: io.offerUndo,
       notify: (kind, text) => void host.notify(kind, text),
       changed: () => {
         if (repo) {
@@ -180,25 +195,38 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
         break;
       case "resultChanged": {
         // The document follows the Result with every open conflict still
-        // marked (rule 1), never over a resolution made before the editor
-        // opened (rule 2), and not over another edit without asking (rule 3).
-        if (sync.edits.keeping) {
+        // marked (rule 1) — a conflict with only one side in is still open,
+        // which the page says in `unsettled` — never over a resolution made
+        // before the editor opened (rule 2), and not over another edit until
+        // the editor's own question about it is answered (rule 3).
+        if (sync.edits.keeping || sync.edits.changed) {
           break;
         }
-        const text = sync.mirror.documentText(message.text);
+        const text = sync.mirror.documentText(message.unsettled ?? message.text);
         if (text === undefined) {
-          break;
-        }
-        if (sync.edits.changed && !(await this.replaceOtherEdit(document, sync, "mirror"))) {
           break;
         }
         sync.edits.expect(text);
         await syncResult(document, text);
         break;
       }
+      case "outsideEdit": {
+        // The answer to the page's inline question (rule 3).
+        sync.asked = false;
+        if (message.answer === "keep") {
+          sync.edits.keep();
+          break;
+        }
+        // Start over from the file as it is now.
+        sync.edits.replace(document.getText());
+        await session.init(document.getText());
+        break;
+      }
       case "apply": {
         const name = baseName(document.uri.fsPath);
-        if (sync.mirror.appliedOverResolution()) {
+        // The Result starts from a resolution already in the file (it was
+        // seeded from it); only an Apply that CHANGES it asks first.
+        if (sync.mirror.appliedOverResolution(message.text)) {
           const go = await this.host.product.ask({
             title: `Replace the resolution already in ${name}?`,
             message:
@@ -212,18 +240,34 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
             break;
           }
         }
-        if (sync.edits.changed && !(await this.replaceOtherEdit(document, sync, "apply"))) {
+        // An edit made outside, still unanswered: the page holds Apply back
+        // until it is; an old page that did not is told why nothing happened.
+        if (sync.edits.changed && !sync.edits.keeping) {
           sync.post({
             type: "outcome",
             kind: "failed",
-            text: `Nothing was written. ${name} keeps the edit made outside the merge editor.`,
+            text: `Nothing was written. ${name} changed outside the merge editor: reload the merge, or keep that edit, first.`,
           });
           break;
         }
+        sync.edits.replace(document.getText());
         sync.edits.expect(message.text);
         await session.apply(message.text);
         break;
       }
+      case "undoApply": {
+        const undo = sync.undo;
+        sync.undo = undefined;
+        if (undo) {
+          await undo();
+        } else {
+          sync.post({ type: "outcome", kind: "failed", text: "There is no Apply to undo here any more." });
+        }
+        break;
+      }
+      case "showConflicts":
+        await vscode.commands.executeCommand(this.host.product.commands.showConflicts);
+        break;
       case "takeRole":
         await session.takeRole(message.role);
         break;
@@ -237,7 +281,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
         if (message.mode === "abort") {
           await session.abortOperation();
         } else {
-          await this.exitViewer(document, panel);
+          await this.closeEditor(document, panel, sync);
         }
         break;
       case "openInJetBrains": {
@@ -285,48 +329,39 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
   }
 
   /**
-   * Something other than this editor changed the file since it last wrote it
-   * (rule 3): ask before writing over it. Yes replaces it; No keeps it, and
-   * the editor stops mirroring the Result until an Apply.
+   * Close: ONLY close the merge editor (the owner, after using it). Nothing is
+   * written: the operation stays paused, the file keeps its markers, and the
+   * index is untouched. And no save prompt on the way out — the document is
+   * dirty whenever the editor mirrored work into it, and VS Code asks to save
+   * a dirty document whose last editor closes: that prompt could write half a
+   * merge. So a document this editor made dirty is REVERTED to the file as it
+   * is on disk as the tab closes (VS Code's own "Revert and Close", on this
+   * editor), never saved. A document someone else edited too (rule 3) is left
+   * to its owner: only the tab closes. Automatic routing does not send the
+   * file straight back here (the exit guard).
    */
-  private async replaceOtherEdit(
-    document: vscode.TextDocument,
-    sync: EditorSync,
-    why: "mirror" | "apply",
-  ): Promise<boolean> {
-    const name = baseName(document.uri.fsPath);
-    const go = await this.host.product.ask({
-      title: `${name} changed outside the merge editor`,
-      message:
-        `It was edited in another editor, by a formatter, or on disk since the merge editor last wrote it. ` +
-        (why === "apply"
-          ? `Apply replaces that edit with the Result shown here, and stages it.`
-          : `Replace that edit with the merge editor's Result? If you keep it, the merge editor stops writing to ` +
-            `the file until you Apply.`),
-      confirmLabel: why === "apply" ? "Replace and stage" : "Replace with the Result",
-      danger: true,
-    });
-    if (go) {
-      sync.edits.replace(document.getText());
-    } else {
-      sync.edits.keep();
-    }
-    return go;
-  }
-
-  /**
-   * "Exit viewer": close the merge editor, keep the conflict in the file, and
-   * keep automatic routing from sending it straight back (the exit guard).
-   */
-  private async exitViewer(document: vscode.TextDocument, panel: vscode.WebviewPanel): Promise<void> {
+  private async closeEditor(document: vscode.TextDocument, panel: vscode.WebviewPanel, sync: EditorSync): Promise<void> {
     this.host.exitGuard.suppress(document.uri.toString());
+    const ours = document.isDirty && !sync.edits.changed && !sync.edits.keeping;
     try {
-      await vscode.commands.executeCommand(
-        "vscode.openWith",
-        document.uri,
-        "default",
-        panel.viewColumn ?? vscode.ViewColumn.Active,
-      );
+      if (ours) {
+        // "Revert and Close" acts on the ACTIVE editor: this one — Close was
+        // pressed in it. Should it not be, it is brought forward; and should
+        // it still not be, another editor is NEVER reverted in its place: the
+        // document gets the file's own bytes back instead, so anything that
+        // saves it later writes the file exactly as it is.
+        if (panel.active === false) {
+          panel.reveal(panel.viewColumn, false);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        if (panel.active !== false) {
+          await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
+        } else {
+          const onDisk = new TextDecoder("utf-8").decode(await vscode.workspace.fs.readFile(document.uri));
+          sync.edits.expect(onDisk);
+          await syncDocument(document, onDisk);
+        }
+      }
     } finally {
       panel.dispose();
     }
@@ -338,6 +373,10 @@ interface EditorSync {
   mirror: ResultMirror;
   edits: ForeignEdits;
   post(message: HostMessage): void;
+  /** The page has been asked about an outside edit (`fileChanged`) and not answered yet. */
+  asked: boolean;
+  /** The last Apply's Undo (mergeSession offerUndo), until the next init. */
+  undo?: () => Promise<void>;
 }
 
 /** Mirror the webview's result into the backing TextDocument. */

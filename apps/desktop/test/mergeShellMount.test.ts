@@ -22,6 +22,7 @@ import {
   missingRoleOf,
   opIndicator,
   outcomeLine,
+  submoduleCommits,
   type Invoke,
 } from "../src/renderer/mergeParity";
 import type { ConflictModel, GitOpState } from "../src/shared/ipc";
@@ -267,6 +268,44 @@ test("A1.2: Apply over a file already resolved (no markers left) asks — and No
   const yes = askingRig(model({ op: REBASE, result: hand }), hand, true);
   await yes.adapter.handle({ type: "apply", text: "merged\n" });
   assert.equal(yes.sent("conflict:resolve").length, 1, "a yes writes");
+});
+
+test("A1.2: the Result starts FROM a resolution already in the file, so an Apply that writes it back unchanged asks nothing", async () => {
+  // "Apply with N unresolved" over a hand-resolved file writes the seeded
+  // Result — the file's own resolution — never base; there is nothing to
+  // replace, so nothing to ask (CRLF and LF are the same text).
+  const hand = "resolved by hand\r\n";
+  const r = askingRig(model({ op: REBASE, result: hand }), hand, false);
+  await r.adapter.handle({ type: "apply", text: "resolved by hand\n" });
+  assert.deepEqual(r.asked, [], "nothing asked");
+  assert.deepEqual(r.sent("conflict:resolve").map((c) => c.payload), [{ path: "src/app.ts", content: "resolved by hand\n" }]);
+});
+
+test("Close ONLY leaves the merge view: no IPC at all, the operation stays paused; the strip's list link does the same", async () => {
+  const r = adapterRig({});
+  await r.adapter.handle({ type: "cancel", mode: "exit" });
+  await r.adapter.handle({ type: "showConflicts" });
+  assert.deepEqual(r.calls, [], "nothing reaches the main process: no write, no git");
+  assert.deepEqual(r.log, ["exit", "exit"], "the dashboard shows instead");
+});
+
+test("a submodule's two commits come from the conflicts snapshot into the payload; no other shape reads them", async () => {
+  const commits = { yours: "1c34b25aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", theirs: "9d20bedbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" };
+  const host = fakeHost({
+    "conflict:state": snapshot({ files: [{ path: "vendor/lib", status: "pending", shape: "submodule", commits }] }),
+  });
+  const sub = model({ path: "vendor/lib", shape: "submodule", op: REBASE });
+  const got = await submoduleCommits(host.invoke, sub);
+  assert.deepEqual(got, commits);
+  assert.deepEqual(mergePayload(sub, DEFAULT_MERGE_SETTINGS, undefined, got).commits, commits, "the payload carries them");
+  assert.equal(await submoduleCommits(host.invoke, model({ op: REBASE })), undefined, "a text conflict reads nothing");
+  assert.equal(host.calls.length, 1, "one read, for the submodule only");
+  assert.equal(mergePayload(model({ op: REBASE }), DEFAULT_MERGE_SETTINGS, undefined, commits).commits, undefined, "and only a submodule's payload carries commits");
+});
+
+test("the merge bar no longer says the Result starts from the conflict: the shell's own strip says what it starts from", async () => {
+  const code = await readFile(fileURLToPath(new URL("../src/renderer/diffPanel.ts", import.meta.url)), "utf8");
+  assert.doesNotMatch(code, /starts from the conflict/, "that sentence became false once the Result is seeded from the file");
 });
 
 test("A1.3: Apply over a file edited since the editor opened asks — and No writes nothing", async () => {

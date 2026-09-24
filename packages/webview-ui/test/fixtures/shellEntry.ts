@@ -17,6 +17,7 @@ import {
   type MergeRenderInit,
   type MergeRenderOptions,
   type MergeViewApi,
+  type SeedInfo,
 } from "../../src/mergeViewApi";
 import type { MergeInitPayload } from "@gitstudio/host-bridge/protocol";
 import type { ChangeBlock, Side } from "@gitstudio/engine/types";
@@ -27,6 +28,9 @@ export class FakeMergeView implements MergeViewApi {
   onLargeFile?: (large: boolean) => void;
   onHistoryChanged?: () => void;
   onEolMismatch?: (info: EolMismatchInfo | undefined) => void;
+  onSeeded?: (info: SeedInfo | undefined) => void;
+  /** What getUnsettledText answers; undefined = the Result itself. */
+  unsettled?: string;
 
   /** Every call the shell made, by method name. */
   calls: Array<{ name: string; args: unknown[] }> = [];
@@ -63,6 +67,15 @@ export class FakeMergeView implements MergeViewApi {
 
   emitEol(info: EolMismatchInfo | undefined): void {
     this.onEolMismatch?.(info);
+  }
+
+  emitSeed(info: SeedInfo | undefined): void {
+    this.onSeeded?.(info);
+  }
+
+  /** The Result changed, the way the real view reports it. */
+  emitResult(): void {
+    this.onResultChanged?.();
   }
 
   render(payload: MergeInitPayload, init?: MergeRenderInit): void {
@@ -113,6 +126,9 @@ export class FakeMergeView implements MergeViewApi {
   }
   getResultText(): string {
     return this.result;
+  }
+  getUnsettledText(): string {
+    return this.unsettled ?? this.result;
   }
   reset(): void {
     this.note("reset");

@@ -68,6 +68,13 @@ export interface MergeInitPayload {
   shape?: ConflictShape;
   /** S0. modify-delete / added-one-side: the ROLE that has no version of the file. */
   missingRole?: SideRole;
+  /**
+   * A submodule: the commit each side points it at (full shas, by ROLE) —
+   * the choice the no-text panel names ("yours at 1c34b25, theirs at
+   * 9d20bed"). Absent for every other shape, or when the host could not read
+   * them.
+   */
+  commits?: { yours?: string; theirs?: string };
 }
 
 export interface DiffInitPayload {
@@ -101,7 +108,24 @@ export type HostMessage =
    * deleteFile). `staged` is true only when `git add` / `git rm` exited 0;
    * S0: `message` says why not (or any other plain-words warning).
    */
-  | { type: "applied"; staged: boolean; message?: string }
+  | {
+      type: "applied";
+      staged: boolean;
+      message?: string;
+      /**
+       * The host can bring the conflict back (`undoApply`): the shell offers
+       * Undo in its bottom bar, in place — until the next change in the editor.
+       */
+      undoable?: boolean;
+    }
+  /**
+   * Something other than the merge editor changed the file since it last
+   * wrote it (another tab, a formatter, a checkout — POLISH A1.3). The shell
+   * asks, inline: reload the merge from the file as it is now, or keep what
+   * the editor has (`outsideEdit`). The host writes nothing to the file
+   * meanwhile.
+   */
+  | { type: "fileChanged" }
   /**
    * S0. The operation was re-read — after every applied / takeRole / Continue.
    * The shell shows the primary "Continue <op>" (op.verbs.continue) once
@@ -129,16 +153,29 @@ export type HostMessage =
 /** Messages sent from the webview to the extension host. */
 export type WebviewMessage =
   | { type: "ready" }
-  | { type: "resultChanged"; text: string }
+  /**
+   * The Result changed (text, or which of its changes are settled).
+   * `unsettled`: the same text with every change the editor has NOT settled
+   * put back to base — a conflict with one side in and the other still to
+   * decide, a region seeded from the file and untouched since. What the host
+   * writes to the file before Apply is built from it (POLISH A1.1); absent
+   * when it is the Result itself.
+   */
+  | { type: "resultChanged"; text: string; unsettled?: string }
   | { type: "apply"; text: string }
   /**
-   * Close the merge editor without applying (the dialog's Cancel button).
-   * S0 `mode`: "exit" (the default when absent) closes the viewer and keeps
-   * the conflict in the file — the host's exit guard stops it re-opening;
-   * "abort" cancels the whole operation (OperationProvider.abort), posted only
-   * after the shell's own inline confirm — hosts never ask again.
+   * Close the merge editor without applying (the bottom bar's Close, or
+   * Escape). S0 `mode`: "exit" (the default when absent) ONLY closes the
+   * editor: nothing is written, the operation stays paused and the file keeps
+   * its markers — no save prompt that could write half a merge, and the
+   * host's exit guard stops automatic routing sending it straight back.
+   * "abort" cancels the whole operation (OperationProvider.abort); the shell
+   * no longer sends it (ending the operation lives in the conflicts list),
+   * and hosts keep answering it for older pages.
    */
   | { type: "cancel"; mode?: "exit" | "abort" }
+  /** Open the conflicts list (dashboard): every conflicted file, and Continue / Abort. */
+  | { type: "showConflicts" }
   // Hand this conflict to the real JetBrains merge window and close the panel.
   | { type: "openInJetBrains" }
   /**
@@ -157,6 +194,10 @@ export type WebviewMessage =
    * no role to take. Host answers `applied` then `opChanged`.
    */
   | { type: "deleteFile" }
+  /** The answer to `fileChanged`: start the merge over from the file, or keep the editor's work. */
+  | { type: "outsideEdit"; answer: "reload" | "keep" }
+  /** The bottom bar's Undo after an `applied{undoable}`: bring the conflict back. */
+  | { type: "undoApply" }
   | { type: "diffChanged"; text: string }
   /** The user toggled a staging tick; the host performs the git write. */
   | { type: "toggleTick"; block: StageBlockRef; staged: boolean };

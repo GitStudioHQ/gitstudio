@@ -8,11 +8,11 @@ import type {
   Side,
 } from "@gitstudio/engine/types";
 import {
-  blockTone,
   category,
   isEmptySpan,
   sideBlockSpan,
 } from "@gitstudio/engine/types";
+import { fateWords, paintTone, type SideFate } from "./paint";
 import { buildMergeModel } from "@gitstudio/engine/mergeModel";
 import { eolChars, normalizeEol, splitLines } from "@gitstudio/engine/lineDiff";
 import { languageForFile } from "./language";
@@ -26,7 +26,9 @@ import {
   lockIcon,
 } from "./icons";
 import { computeAlignmentZones, type Spacer } from "@gitstudio/engine/alignment";
-import { RibbonOverlay, lineTopY, scheduleFrame } from "./ribbons";
+import { MERGE_ICON_STRIP, RibbonOverlay, lineTopY, scheduleFrame, spanY } from "./ribbons";
+import { OverviewMap } from "./overviewMap";
+import { preparedFrom, seedResult, type ResultSeed } from "./seedResult";
 import { lineDocOf, planLineWrite } from "./lineEdits";
 import { LARGE_FILE_LINE_THRESHOLD } from "./limits";
 import { MergeLegend, type LegendDetail } from "./mergeLegend";
@@ -39,6 +41,7 @@ import {
   type MergeRenderInit,
   type MergeRenderOptions,
   type MergeViewApi,
+  type SeedInfo,
 } from "./mergeViewApi";
 
 // The public types live in the frozen API module; re-exported so existing
@@ -66,6 +69,17 @@ const CATEGORY_WORDS: Record<MergeCategory, string> = {
   "theirs-only": "this change",
 };
 
+/** How a screen reader names a block before its place in its category ("Conflict 2 of 5"). */
+const CATEGORY_NOUNS: Record<MergeCategory, string> = {
+  conflict: "Conflict",
+  same: "Change made the same on both sides",
+  "yours-only": "Change",
+  "theirs-only": "Change",
+};
+
+/** What a change made the same on both sides says on either of its arrows. */
+const SAME_ARROW_WORDS = "Same change on both sides — either arrow takes it";
+
 /**
  * Per-block runtime state. Each side of a block is processed (applied or
  * ignored) independently, like IntelliJ's merge gutter: a conflict stays
@@ -75,6 +89,14 @@ const CATEGORY_WORDS: Record<MergeCategory, string> = {
 interface BlockState {
   doneLeft: boolean;
   doneRight: boolean;
+  /**
+   * Which handled sides went INTO the Result (accepted, added after, the
+   * wand, a whole-file Accept) — the rest were discarded. What the traces
+   * show: a taken side keeps its muted band and ribbon, a discarded one an
+   * outline (paint.ts SideFate).
+   */
+  tookLeft: boolean;
+  tookRight: boolean;
   /** Whether some side's text has already been applied into the result. */
   applied: boolean;
 }
@@ -115,9 +137,12 @@ const SHARED_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
   smoothScrolling: false,
 };
 
-/** Side panes lean on sync-scroll; hiding their vertical bars keeps the
- * change bands visually continuous across the gutter strips. */
-const SIDE_PANE_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
+/** Every pane leans on sync-scroll; hiding their vertical bars keeps the
+ * change bands continuous across the gutter strips. The Result's too: its bar
+ * and overview ruler sat on the Result|gutter seam and cut every band there.
+ * The merge's scrollbar is its overview strip, at the view's right edge
+ * (overviewMap.ts). */
+const PANE_SCROLL_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
   scrollbar: { useShadows: false, vertical: "hidden", horizontal: "auto" },
 };
 
@@ -126,16 +151,18 @@ const SIDE_PANE_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
  * (Yours, read-only), Result (editable, seeded with base), Right (Theirs,
  * read-only), with gutter ribbons + accept/ignore controls.
  *
- * Blocks are painted by colour CATEGORY (PLAN §3.6): conflict (red), the same
- * change on both sides (violet), yours-only / theirs-only (green / blue / grey
- * by what the change did). Every change is one continuous band — side pane,
- * filled ribbon, result — and its controls are the ones JetBrains and VS Code
- * users already know: an arrow toward the result to accept a side, × to
- * ignore it, each with its action in words. Once one side of a conflict is in,
- * that side goes calm (a faint outline on the same rows), the result drops to a
- * paler tint between the same lines, and only the side still to decide keeps
- * its full band; a resolved change leaves the side panes and gutters, and the
- * result keeps one neutral faint line for it.
+ * Blocks are painted (paint.ts): a conflict red; every other change green /
+ * blue / grey by what it did — on one side, or on BOTH sides when both made
+ * the same change (either arrow takes that one, for both). Every change is one
+ * continuous band — side pane, filled ribbon, result — and its controls are
+ * the ones JetBrains and VS Code users already know: an arrow toward the
+ * result to accept a side, × to ignore it, each with its action in words.
+ * A handled side leaves a trace of what happened to it: a TAKEN side keeps its
+ * band and its ribbon to the Result, muted; a DISCARDED side keeps an outline
+ * and no ribbon. While a conflict's other side is still to decide, the Result
+ * is muted between two faint lines; once settled, the Result keeps a muted
+ * band in the colour of what went in — calm, and still saying where it came
+ * from ("Took Yours", "Discarded Theirs", "Took both", in words on hover).
  */
 export class MergeView implements MergeViewApi {
   private editors: Editor[] = [];
@@ -192,11 +219,8 @@ export class MergeView implements MergeViewApi {
   private gutterB?: HTMLElement;
   private buttonLayerA?: HTMLElement;
   private buttonLayerB?: HTMLElement;
-  /**
-   * Whether the result's overview ruler carries change marks: only while the
-   * document is taller than the pane (see DecorationOptions.rulerMarks).
-   */
-  private rulerMarks = false;
+  /** The overview strip at the view's right edge (overviewMap.ts). */
+  private map?: OverviewMap;
 
   public left?: Editor;
   public result?: Editor;
@@ -224,6 +248,10 @@ export class MergeView implements MergeViewApi {
   public onHistoryChanged?: () => void;
   /** Fired after EVERY (re)build: the line-ending mismatch, or undefined. */
   public onEolMismatch?: (info: EolMismatchInfo | undefined) => void;
+  /** Fired after EVERY (re)build: what the Result was seeded with from the file, or undefined. */
+  public onSeeded?: (info: SeedInfo | undefined) => void;
+  /** The file's own text the Result started from (seedResult.ts), when it did. */
+  private seed?: ResultSeed;
 
   constructor(private readonly container: HTMLElement) {}
 
@@ -311,7 +339,7 @@ export class MergeView implements MergeViewApi {
     // the user builds it by accepting sides — same as IntelliJ.
     this.left = monaco.editor.create(leftBody, {
       ...SHARED_OPTIONS,
-      ...SIDE_PANE_OPTIONS,
+      ...PANE_SCROLL_OPTIONS,
       ...font,
       theme,
       language,
@@ -321,19 +349,16 @@ export class MergeView implements MergeViewApi {
     });
     this.result = monaco.editor.create(resultBody, {
       ...SHARED_OPTIONS,
+      ...PANE_SCROLL_OPTIONS,
       ...font,
       theme,
       language,
       value: base,
       readOnly: false,
-      // IntelliJ's "error stripe": thin change marks in the right lane beside
-      // the scrollbar, clickable to jump anywhere in a long merge.
-      overviewRulerLanes: 3,
-      overviewRulerBorder: false,
     });
     this.right = monaco.editor.create(rightBody, {
       ...SHARED_OPTIONS,
-      ...SIDE_PANE_OPTIONS,
+      ...PANE_SCROLL_OPTIONS,
       ...font,
       theme,
       language,
@@ -364,7 +389,15 @@ export class MergeView implements MergeViewApi {
     });
     this.computeOrdinals();
     this.initBlockState();
-    this.installTrackers();
+    // POLISH A1.2: a file already resolved outside the editor — by hand, by
+    // git rerere, or by git's own merge outside its markers — seeds the
+    // Result with what it has there (seedResult.ts). Every change stays
+    // pending, holding the file's text the way a hand edit would.
+    this.seed = this.seedFromFile(payload, base, ours, theirs);
+    if (this.seed) {
+      this.result.getModel()?.setValue(this.seed.text);
+    }
+    this.installTrackers(this.seed?.spans);
 
     this.decorations = new DecorationManager({
       left: this.left,
@@ -385,8 +418,14 @@ export class MergeView implements MergeViewApi {
         resultSpanOf: (block) => this.currentResultSpan(block),
         isResolved: (block) => this.isResolved(block),
         isSideDone: (block, side) => this.isSideDone(block, side),
+        sideFate: (block, side) => this.sideFate(block, side),
       },
     );
+    // IntelliJ's "error stripe", at the view's right edge — never on a seam.
+    this.map = new OverviewMap(grid, 6, this.result, () => this.model, {
+      resultSpanOf: (block) => this.currentResultSpan(block),
+      isResolved: (block) => this.isResolved(block),
+    });
 
     this.installViewListeners();
     this.installNavigationKeys();
@@ -420,6 +459,28 @@ export class MergeView implements MergeViewApi {
     this.stableSnapshot = this.captureSnapshot("Edit result");
     this.onHistoryChanged?.();
     this.onEolMismatch?.(this.model?.eolMismatch);
+    this.onSeeded?.(this.seed ? { kind: this.seed.kind, changes: this.seed.changes } : undefined);
+  }
+
+  /**
+   * The seed for this build, or undefined to start from base: only a file git
+   * holds the three versions of (the stages), whose text says something
+   * base and git's markers do not.
+   */
+  private seedFromFile(payload: MergeInitPayload, base: string, ours: string, theirs: string): ResultSeed | undefined {
+    if (!this.model || payload.source !== "git-stages") {
+      return undefined;
+    }
+    const working = normalizeEol(payload.result ?? "");
+    if (working === "" || working === base) {
+      return undefined;
+    }
+    try {
+      return seedResult(preparedFrom(this.model, base, ours, theirs), working);
+    } catch {
+      // A file that cannot be read against the merge starts from base, as before.
+      return undefined;
+    }
   }
 
   /** Opens the merge scrolled to the first pending change, like IntelliJ. */
@@ -495,6 +556,8 @@ export class MergeView implements MergeViewApi {
       this.blockState.set(block.id, {
         doneLeft: !block.left,
         doneRight: !block.right,
+        tookLeft: false,
+        tookRight: false,
         applied: false,
       });
     }
@@ -516,14 +579,16 @@ export class MergeView implements MergeViewApi {
     }
   }
 
-  private installTrackers(): void {
+  /** One tracker per block, on its base span — or on `spans` (a seeded Result). */
+  private installTrackers(spans?: ReadonlyMap<number, LineSpan>): void {
     const model = this.result?.getModel();
     if (!model || !this.model) {
       return;
     }
+    const at = (block: ChangeBlock): LineSpan => spans?.get(block.id) ?? block.baseSpan;
     const specs: monaco.editor.IModelDeltaDecoration[] = this.model.blocks.map(
       (block) => ({
-        range: this.trackerRange(model, block.baseSpan),
+        range: this.trackerRange(model, at(block)),
         options: {
           stickiness:
             monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
@@ -533,7 +598,7 @@ export class MergeView implements MergeViewApi {
     const ids = model.deltaDecorations([], specs);
     this.model.blocks.forEach((block, index) => {
       this.trackers.set(block.id, ids[index]);
-      this.noteEof(block, block.baseSpan, model);
+      this.noteEof(block, at(block), model);
     });
   }
 
@@ -586,16 +651,49 @@ export class MergeView implements MergeViewApi {
     return side === "left" ? state.doneLeft : state.doneRight;
   }
 
-  /** Marks one side processed; "both-same" sides always resolve together. */
-  private markSideDone(state: BlockState, block: ChangeBlock, side: Side): void {
+  /**
+   * Marks one side processed — `took` when its text went into the Result,
+   * else discarded. A change made the same on both sides is ONE change: either
+   * side settles both, the same way (either arrow takes it, either × sets it
+   * aside).
+   */
+  private markSideDone(state: BlockState, block: ChangeBlock, side: Side, took: boolean): void {
     if (side === "left") {
       state.doneLeft = true;
+      state.tookLeft = took;
     } else {
       state.doneRight = true;
+      state.tookRight = took;
     }
     if (block.kind === "both-same") {
       state.doneLeft = state.doneRight = true;
+      state.tookLeft = state.tookRight = took;
     }
+  }
+
+  /** What became of one side: still to decide, taken into the Result, or discarded. */
+  private sideFate(block: ChangeBlock, side: Side): SideFate {
+    const state = this.blockState.get(block.id);
+    if (!state) {
+      return "pending";
+    }
+    const done = side === "left" ? state.doneLeft : state.doneRight;
+    if (!done) {
+      return "pending";
+    }
+    return (side === "left" ? state.tookLeft : state.tookRight) ? "took" : "discarded";
+  }
+
+  /** A handled block's traces in words: each side's, and the Result's once settled. */
+  private traceWords(block: ChangeBlock): { left?: string; right?: string; result?: string } {
+    return fateWords(
+      block,
+      {
+        left: block.left ? this.sideFate(block, "left") : undefined,
+        right: block.right ? this.sideFate(block, "right") : undefined,
+      },
+      { left: this.sideTitle("left"), right: this.sideTitle("right") },
+    );
   }
 
   /** The block's live span in the result document, tracked through edits. */
@@ -676,17 +774,18 @@ export class MergeView implements MergeViewApi {
     this.retrackBlock(block, this.replaceResultLines(span, lines));
 
     state.applied = true;
-    this.markSideDone(state, block, side);
+    this.markSideDone(state, block, side, true);
     // JetBrains (MergeConflictModel.replaceChange): taking one side of a
     // conflict resolves the whole conflict when the other side has no lines
-    // in it — there is nothing left to add after it.
+    // in it — there is nothing left to add after it (that side is discarded).
     const other: Side = side === "left" ? "right" : "left";
     if (
       category(block) === "conflict" &&
       (other === "left" ? block.left : block.right) &&
+      !this.isSideDone(block, other) &&
       isEmptySpan(sideBlockSpan(block, other))
     ) {
-      this.markSideDone(state, block, other);
+      this.markSideDone(state, block, other, false);
     }
     if (!this.batching) {
       this.refresh();
@@ -723,7 +822,7 @@ export class MergeView implements MergeViewApi {
       return;
     }
     this.pushHistory(`Ignore ${this.sideWords(side).role}, change ${block.id + 1}`);
-    this.markSideDone(state, block, side);
+    this.markSideDone(state, block, side, false);
     if (!this.batching) {
       this.refresh();
     }
@@ -768,6 +867,8 @@ export class MergeView implements MergeViewApi {
     this.retrackBlock(block, this.replaceResultLines(span, splitLines(block.resolvedText)));
     state.applied = true;
     state.doneLeft = state.doneRight = true;
+    // Both sides' edits went in.
+    state.tookLeft = state.tookRight = true;
     if (!this.batching) {
       this.refresh();
     }
@@ -918,8 +1019,9 @@ export class MergeView implements MergeViewApi {
           this.acceptSide(block, side, "replace");
         }
         // The bulk action settles the whole block: any other pending side is
-        // considered processed (accepted-side blocks already hold the chosen
-        // version; unchosen blocks keep base, i.e. the chosen side's text).
+        // considered processed — set aside (accepted-side blocks already hold
+        // the chosen version; unchosen blocks keep base, i.e. the chosen
+        // side's text).
         const state = this.blockState.get(block.id);
         if (state) {
           state.doneLeft = state.doneRight = true;
@@ -1081,30 +1183,21 @@ export class MergeView implements MergeViewApi {
     if (!this.model) {
       return;
     }
-    this.rulerMarks = this.documentOverflows();
     this.decorations?.apply(this.model, {
       resultSpanOf: (block) => this.currentResultSpan(block),
       isResolved: (block) => this.isResolved(block),
       isSideDone: (block, side) => this.isSideDone(block, side),
+      sideFate: (block, side) => this.sideFate(block, side),
+      traceWords: (block) => this.traceWords(block),
       isApplied: (block) => this.blockState.get(block.id)?.applied ?? false,
       showInner: this.renderOptions.showInner && !this.largeFile,
-      rulerMarks: this.rulerMarks,
     });
+    this.map?.scheduleDraw();
   }
 
-  /** Whether the result is taller than its pane — only then do ruler marks find anything. */
-  private documentOverflows(): boolean {
-    if (!this.result) {
-      return false;
-    }
-    return this.result.getContentHeight() > this.result.getLayoutInfo().height;
-  }
-
-  /** Re-decorates when the result starts or stops fitting its pane (typing, accepts, a resize). */
-  private syncRulerMarks(): void {
-    if (this.model && this.documentOverflows() !== this.rulerMarks) {
-      this.decorate();
-    }
+  /** The overview strip (tests read its marks). */
+  public get overview(): OverviewMap | undefined {
+    return this.map;
   }
 
   /** Coalesces button-layer rebuilds to one per frame (or 32 ms, when no frame comes). */
@@ -1163,22 +1256,70 @@ export class MergeView implements MergeViewApi {
     };
 
     for (const block of this.model.blocks) {
-      if (this.isResolved(block)) {
-        continue;
-      }
-      if (block.left && !this.isSideDone(block, "left")) {
-        const y = place(this.left, sideBlockSpan(block, "left"));
-        if (y !== undefined) {
-          this.buttonLayerA.appendChild(this.makeActions(block, "left", y));
+      const words = this.isResolved(block) || this.halfDone(block) ? this.traceWords(block) : undefined;
+      for (const [side, editor, layer] of [
+        ["left", this.left, this.buttonLayerA],
+        ["right", this.right, this.buttonLayerB],
+      ] as const) {
+        if (!(side === "left" ? block.left : block.right)) {
+          continue;
         }
-      }
-      if (block.right && !this.isSideDone(block, "right")) {
-        const y = place(this.right, sideBlockSpan(block, "right"));
-        if (y !== undefined) {
-          this.buttonLayerB.appendChild(this.makeActions(block, "right", y));
+        const span = sideBlockSpan(block, side);
+        if (!this.isSideDone(block, side)) {
+          const y = place(editor, span);
+          if (y !== undefined) {
+            layer.appendChild(this.makeActions(block, side, y));
+          }
+          continue;
+        }
+        // A handled side has no controls, only its trace — and the trace's
+        // words, for a pointer (a tooltip) and a screen reader.
+        const said = words?.[side];
+        if (said) {
+          const note = this.makeTraceNote(block, side, editor, span, lineHeight, height, said);
+          if (note) {
+            layer.appendChild(note);
+          }
         }
       }
     }
+  }
+
+  /**
+   * What a handled side says, where its controls were: a quiet element over
+   * its band in the gutter's icon strip, with the words as its tooltip and
+   * its accessible name ("Conflict 2 of 5: Took Yours (test)"). Nothing to
+   * see — the trace is the band itself — nothing to press.
+   */
+  private makeTraceNote(
+    block: ChangeBlock,
+    side: Side,
+    editor: Editor,
+    span: LineSpan,
+    lineHeight: number,
+    height: number,
+    words: string,
+  ): HTMLElement | undefined {
+    const [y0, y1] = spanY(editor, span, lineHeight);
+    const top = isEmptySpan(span) ? y0 - 3 : y0;
+    const bottom = isEmptySpan(span) ? y0 + 3 : y1;
+    if (bottom < 0 || top > height) {
+      return undefined;
+    }
+    const note = document.createElement("span");
+    note.className = `jb-trace-note jb-trace-note-${side}`;
+    note.dataset.block = String(block.id);
+    note.dataset.side = side;
+    note.dataset.fate = this.sideFate(block, side);
+    note.style.top = `${Math.round(top)}px`;
+    note.style.height = `${Math.max(6, Math.round(bottom - top))}px`;
+    note.style.width = `${MERGE_ICON_STRIP}px`;
+    const ordinal = this.ordinals.get(block.id);
+    const where = ordinal && ordinal.total > 1 ? ` ${ordinal.index} of ${ordinal.total}` : "";
+    note.title = words;
+    note.setAttribute("role", "img");
+    note.setAttribute("aria-label", `${CATEGORY_NOUNS[category(block)]}${where}: ${words}`);
+    return note;
   }
 
   /**
@@ -1223,7 +1364,7 @@ export class MergeView implements MergeViewApi {
     group.dataset.category = cat;
     group.dataset.side = side;
 
-    const tone = blockTone(block);
+    const tone = paintTone(block);
     const who = this.sideTitle(side);
     const other = this.sideTitle(side === "left" ? "right" : "left");
     const what = CATEGORY_WORDS[cat];
@@ -1235,18 +1376,21 @@ export class MergeView implements MergeViewApi {
     const state = this.blockState.get(block.id);
     const addAfter = cat === "conflict" && (state?.applied ?? false);
     const otherIn = cat === "conflict" && this.halfDone(block) !== undefined;
+    // The same change on both sides is one change, coloured on both sides:
+    // either arrow takes it, either × sets it aside — for both.
+    const same = cat === "same";
 
-    const acceptWords = addAfter ? `Add ${who} after ${other}` : `Accept ${who} for ${what}`;
+    const acceptWords = addAfter ? `Add ${who} after ${other}` : same ? SAME_ARROW_WORDS : `Accept ${who} for ${what}`;
     const accept = this.makeButton(
       `jb-gutter-btn jb-btn-accept jb-tone-${tone}`,
       side === "left" ? chevronDoubleRight : chevronDoubleLeft,
-      addAfter
+      addAfter || same
         ? acceptWords
         : `${acceptWords}\nCtrl/⌘-click: add it after what the result has`,
       `${acceptWords}${ordinal}`,
       (event) => {
         const mode: AcceptMode =
-          event.ctrlKey || event.metaKey ? "append" : "auto";
+          (event.ctrlKey || event.metaKey) && !same ? "append" : "auto";
         this.acceptSide(block, side, mode);
       },
     );
@@ -1255,7 +1399,9 @@ export class MergeView implements MergeViewApi {
       ? addAfter
         ? `Discard ${who}: keep ${other} as the result`
         : `Discard ${who} too: the result keeps what it has`
-      : `Ignore ${who} for ${what}`;
+      : same
+        ? "Discard this change on both sides"
+        : `Ignore ${who} for ${what}`;
     const ignore = this.makeButton(
       "jb-gutter-btn jb-btn-ignore",
       cross,
@@ -1359,6 +1505,8 @@ export class MergeView implements MergeViewApi {
         !was ||
         was.doneLeft !== state.doneLeft ||
         was.doneRight !== state.doneRight ||
+        was.tookLeft !== state.tookLeft ||
+        was.tookRight !== state.tookRight ||
         was.applied !== state.applied
       ) {
         return true;
@@ -1372,6 +1520,75 @@ export class MergeView implements MergeViewApi {
     const text =
       this.result?.getModel()?.getValue(monaco.editor.EndOfLinePreference.LF) ?? "";
     const eol = this.model?.eol ?? "LF";
+    return eol === "LF" ? text : text.replace(/\n/g, eolChars(eol));
+  }
+
+  /**
+   * The Result with every change the editor has NOT settled put back to its
+   * base lines (POLISH A1.1), in the model's line ending:
+   *
+   * - a conflict with one side taken, or one side ignored, and the other still
+   *   to decide. Its Result holds that side's text, which reads exactly like a
+   *   conflict settled as that side — and the host's document rule wrote it to
+   *   the file as settled, no markers, one accept after opening;
+   * - a region seeded from the file (seedResult.ts) that nothing has touched
+   *   since: the host keeps the file's own lines there.
+   *
+   * What the host writes to the file before Apply is built from THIS text
+   * (documentSync.ts); Apply still writes getResultText().
+   */
+  public getUnsettledText(): string {
+    const model = this.result?.getModel();
+    if (!model || !this.model) {
+      return this.getResultText();
+    }
+    const lines = model.getValue(monaco.editor.EndOfLinePreference.LF).split("\n");
+    const edits: Array<{ from: number; to: number; lines: string[] }> = [];
+    const covered = new Set<number>();
+    const byId = new Map(this.model.blocks.map((b) => [b.id, b]));
+    for (const region of this.seed?.regions ?? []) {
+      const blocks = region.blockIds.map((id) => byId.get(id)).filter((b): b is ChangeBlock => !!b);
+      if (blocks.length === 0 || blocks.some((b) => this.isResolved(b) || (this.blockState.get(b.id)?.applied ?? false))) {
+        continue;
+      }
+      const spans = blocks.map((b) => this.currentResultSpan(b));
+      const from = Math.min(...spans.map((s) => s.start)) - 1;
+      const to = Math.max(...spans.map((s) => s.endExclusive)) - 1;
+      const now = lines.slice(from, to);
+      if (now.length !== region.lines.length || now.some((l, i) => l !== region.lines[i])) {
+        continue;
+      }
+      edits.push({ from, to, lines: this.baseLines.slice(region.baseFrom, region.baseTo) });
+      for (const b of blocks) covered.add(b.id);
+    }
+    for (const block of this.model.blocks) {
+      if (covered.has(block.id) || category(block) !== "conflict" || this.isResolved(block)) {
+        continue;
+      }
+      const state = this.blockState.get(block.id);
+      if (!state || (!state.applied && !state.doneLeft && !state.doneRight)) {
+        continue;
+      }
+      if (state.applied || this.halfDone(block)) {
+        const span = this.currentResultSpan(block);
+        edits.push({
+          from: span.start - 1,
+          to: span.endExclusive - 1,
+          lines: this.baseLines.slice(block.baseSpan.start - 1, block.baseSpan.endExclusive - 1),
+        });
+      }
+    }
+    edits.sort((a, b) => b.from - a.from || b.to - a.to);
+    let lastFrom = Infinity;
+    for (const edit of edits) {
+      if (edit.to > lastFrom) {
+        continue; // overlapping: never guess
+      }
+      lines.splice(edit.from, edit.to - edit.from, ...edit.lines);
+      lastFrom = edit.from;
+    }
+    const text = lines.join("\n");
+    const eol = this.model.eol ?? "LF";
     return eol === "LF" ? text : text.replace(/\n/g, eolChars(eol));
   }
 
@@ -1596,6 +1813,8 @@ export class MergeView implements MergeViewApi {
         if (live && saved) {
           live.doneLeft = saved.doneLeft;
           live.doneRight = saved.doneRight;
+          live.tookLeft = saved.tookLeft;
+          live.tookRight = saved.tookRight;
           live.applied = saved.applied;
         }
       }
@@ -1696,11 +1915,7 @@ export class MergeView implements MergeViewApi {
     }
     this.viewSubs.push(
       this.result.onDidScrollChange(() => this.scheduleButtons()),
-      this.result.onDidLayoutChange(() => {
-        this.scheduleButtons();
-        this.syncRulerMarks();
-      }),
-      this.result.onDidContentSizeChange(() => this.syncRulerMarks()),
+      this.result.onDidLayoutChange(() => this.scheduleButtons()),
       this.result.onDidChangeModelContent(() => {
         if (!this.suppressHistory) {
           this.onUserEdit(); // manual typing — make it undoable
@@ -1713,6 +1928,7 @@ export class MergeView implements MergeViewApi {
           }
         }
         this.ribbons?.scheduleDraw();
+        this.map?.scheduleDraw();
         this.scheduleButtons();
         this.scheduleRealign();
         this.onResultChanged?.();
@@ -1733,8 +1949,10 @@ export class MergeView implements MergeViewApi {
   private observeTheme(): void {
     this.themeObserver = new MutationObserver(() => {
       monaco.editor.setTheme(ensureNativeTheme());
-      // The ruler colours are read from the live palette at decoration time.
+      // The map's colours are read from the live palette as it draws, and a
+      // high contrast theme draws points twice as thick (mergePointPx).
       this.decorate();
+      this.ribbons?.scheduleDraw();
     });
     this.themeObserver.observe(document.body, {
       attributes: true,
@@ -1767,6 +1985,8 @@ export class MergeView implements MergeViewApi {
     this.themeObserver = undefined;
     this.ribbons?.dispose();
     this.ribbons = undefined;
+    this.map?.dispose();
+    this.map = undefined;
     this.decorations?.clear();
     this.decorations = undefined;
     this.model = undefined;

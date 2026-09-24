@@ -18,12 +18,17 @@
 // Rules the shell owns for every host:
 // - Labels come from `payload.op` (PLAN §3.1): "Accept Yours" / "Accept Theirs",
 //   pills with real branch names, the direction, the step, the commit. With no
-//   `op` there is no strip, no Continue and no "Cancel <operation>".
+//   `op` there is no strip and no Continue.
 // - Apply with unresolved changes asks once, inline, and says what the
 //   unresolved changes will contain (D3). Auto-applying non-conflicting changes
 //   is the host's setting, passed to render() — default OFF (D3 override).
 // - "Continue <Op>" appears once the host reports no conflicts left and git
 //   would accept it; an emptied commit asks before it is dropped.
+// - Close ONLY closes the merge editor (the owner, after using it): the
+//   operation stays paused and the file keeps its markers — nothing is
+//   written. With work in the editor it asks first, inline, because that work
+//   is not kept. Escape is Close. Ending the whole operation is not in this
+//   bar at all: it lives in the conflicts list, which the strip links to.
 // - A whitespace change that would throw away resolutions asks first (D7).
 // - Anything but a text conflict shows the no-text panel, never the editor.
 
@@ -40,6 +45,7 @@ import {
   type MergeCountsView,
   type MergeViewApi,
   type MergeViewFactory,
+  type SeedInfo,
 } from "./mergeViewApi";
 import {
   arrowDown,
@@ -57,10 +63,8 @@ import {
   undoIcon,
 } from "./icons";
 import {
-  abortIcon,
   arrowRightIcon,
   checkIcon,
-  closeIcon,
   continueIcon,
   errorIcon,
   glyphEl,
@@ -69,12 +73,11 @@ import {
 } from "./shellIcons";
 import { buildNoTextPanel, type NoTextPanel } from "./noTextPanel";
 import {
-  abortConfirm,
-  abortLabel,
   appendName,
   continueBlockedText,
   directionParts,
   hasText,
+  opNoun,
   roleWord,
   sha7,
   stepText,
@@ -242,6 +245,20 @@ export function eolText(info: EolMismatchInfo): string {
   return `Yours ${says(info.yours)}, theirs ${theirs}: the result keeps ${info.result}.`;
 }
 
+/**
+ * The strip for a Result seeded from the file (POLISH A1.2): what it started
+ * from, and that every change is still marked for checking.
+ */
+export function seedText(info: SeedInfo): string {
+  const n = plural(info.changes, "change");
+  return info.kind === "working"
+    ? `This file was already resolved outside the merge editor (by hand, or by git rerere): the Result starts from it. ` +
+        `Its ${n} ${info.changes === 1 ? "is" : "are"} still marked so you can check each; Apply saves the Result as shown.`
+    : `${n} ${info.changes === 1 ? "was" : "were"} already settled in the file outside its conflict markers (by git's ` +
+        `own merge, or by hand): the Result keeps ${info.changes === 1 ? "it" : "them"}, still marked so you can check ` +
+        `each; Apply saves the Result as shown.`;
+}
+
 /** The one-line note for a conflict with no common ancestor. */
 function conflictTypeNote(payload: MergeInitPayload): string {
   if (payload.conflictType === "add-add" || payload.shape === "added-both") {
@@ -285,7 +302,21 @@ export class MergeShell {
   private keyHistoryAt = -Infinity;
   private menuHistoryAt = -Infinity;
   private dropConfirming = false;
+  /** Close asked, inline, whether to leave the work in the editor behind. */
+  private closeConfirming = false;
   private wsPending?: WhitespaceMode;
+  /** What the Result was seeded with from the file (A1.2), for the strip. */
+  private seeded?: SeedInfo;
+  /**
+   * The file changed outside the merge editor (A1.3): "asked" until the user
+   * answers, "kept" once they chose to keep that edit.
+   */
+  private outside?: "asked" | "kept";
+  /** The host can undo the last Apply (`applied{undoable}`): Undo shows beside Apply. */
+  private undoable = false;
+  /** The last Result posted, so a repeat is not sent twice. */
+  private lastPosted?: { text: string; unsettled?: string };
+  private eolInfo?: EolMismatchInfo;
   /** The operation finished here (an outcome "done"): nothing is left to end. */
   private ended = false;
   /**
@@ -327,9 +358,8 @@ export class MergeShell {
   private readonly acceptYoursBtn: HTMLButtonElement;
   private readonly acceptTheirsBtn: HTMLButtonElement;
   private readonly jetbrainsBtn: HTMLButtonElement;
-  private readonly cancelWrap: HTMLElement;
-  private readonly cancelBtn: HTMLButtonElement;
-  private readonly cancelPop: HTMLElement;
+  private readonly closeBtn: HTMLButtonElement;
+  private readonly undoApplyBtn: HTMLButtonElement;
   private readonly applyBtn: HTMLButtonElement;
   private readonly continueBtn: HTMLButtonElement;
 
@@ -378,13 +408,16 @@ export class MergeShell {
     this.applyTheirsBtn.classList.add("ms-apply-theirs");
     // The wand is JetBrains' own icon for this, but on its own it was the one
     // unexplained mark in a toolbar of words: it says what it does, like its
-    // neighbours.
-    this.wandBtn = toolbarIconTextButton(
-      magicWand,
-      "Resolve simple",
-      "Resolve simple conflicts (apply both sides where their edits don't overlap)",
-    );
+    // neighbours — where there is room (shell.css hides the words, never the
+    // name, in a narrow shell).
+    this.wandBtn = toolbarButton("");
     this.wandBtn.classList.add("ms-wand");
+    this.wandBtn.title = "Resolve simple conflicts (apply both sides where their edits don't overlap)";
+    this.wandBtn.setAttribute("aria-label", "Resolve simple conflicts");
+    const wandLabel = document.createElement("span");
+    wandLabel.className = "ms-wand-label";
+    wandLabel.textContent = "Resolve simple";
+    this.wandBtn.append(iconElement(magicWand), wandLabel);
     this.wandBtn.disabled = true;
 
     this.wsSelect = whitespaceSelect((mode) => this.requestWhitespace(mode));
@@ -471,15 +504,16 @@ export class MergeShell {
     this.jetbrainsBtn.classList.add("jb-external");
     this.jetbrainsBtn.hidden = true;
 
-    this.cancelWrap = document.createElement("span");
-    this.cancelWrap.className = "ms-cancel-wrap";
-    this.cancelBtn = toolbarButton("Cancel", "bordered");
-    this.cancelBtn.classList.add("ms-cancel");
-    this.cancelPop = document.createElement("div");
-    this.cancelPop.className = "ms-pop";
-    this.cancelPop.setAttribute("role", "dialog");
-    this.cancelPop.hidden = true;
-    this.cancelWrap.append(this.cancelBtn, this.cancelPop);
+    // Close: ONLY closes the merge editor. Nothing is written, and the
+    // operation stays paused; ending it is the conflicts list's to offer.
+    this.closeBtn = toolbarButton("Close", "bordered");
+    this.closeBtn.classList.add("ms-close");
+
+    // After an Apply the host can take back: the conflict comes back.
+    this.undoApplyBtn = toolbarButton("Undo", "bordered");
+    this.undoApplyBtn.classList.add("ms-undo-apply");
+    this.undoApplyBtn.title = "Undo the Apply: bring the conflict back into the file";
+    this.undoApplyBtn.hidden = true;
 
     this.applyBtn = toolbarButton("Apply", "primary");
     this.applyBtn.classList.add("ms-apply");
@@ -494,7 +528,8 @@ export class MergeShell {
       bottomSpacer,
       this.bottomNote,
       this.jetbrainsBtn,
-      this.cancelWrap,
+      this.closeBtn,
+      this.undoApplyBtn,
       this.applyBtn,
       this.continueBtn,
     );
@@ -528,7 +563,14 @@ export class MergeShell {
         this.load(message);
         break;
       case "applied":
-        this.onApplied(message.staged, message.message);
+        this.onApplied(message.staged, message.message, !!message.undoable);
+        break;
+      case "fileChanged":
+        // Asked again for another outside edit, even after a Keep: that
+        // answer was about other text.
+        this.outside = "asked";
+        this.renderNotices();
+        this.syncBottom();
         break;
       case "opChanged":
         this.op = message.op;
@@ -599,7 +641,14 @@ export class MergeShell {
     this.setBusy("");
     this.disarmApply();
     this.dropConfirming = false;
-    this.closeCancelPop();
+    this.closeConfirming = false;
+    this.undoable = false;
+    // A fresh init is the file as it is now: nothing outside left to ask about,
+    // and the view says again what (if anything) it seeded the Result with.
+    this.outside = undefined;
+    this.seeded = undefined;
+    this.eolInfo = undefined;
+    this.lastPosted = undefined;
     this.hideWsConfirm();
 
     // The JetBrains escape hatch, only when the host found an IDE — and only
@@ -614,7 +663,7 @@ export class MergeShell {
 
     this.labelSides();
     this.renderStrip();
-    this.renderNotices(undefined);
+    this.renderNotices();
 
     if (hasText(payload.shape)) {
       this.panel = undefined;
@@ -640,6 +689,7 @@ export class MergeShell {
           op: payload.op,
           yoursLabel: payload.oursLabel,
           theirsLabel: payload.theirsLabel,
+          commits: payload.commits,
         },
         {
           takeRole: (role) => {
@@ -668,21 +718,55 @@ export class MergeShell {
   }
 
   private wireView(view: MergeViewApi): void {
-    view.onCountsChanged = (next) => this.onCounts(next);
+    view.onCountsChanged = (next) => {
+      this.onCounts(next);
+      // Which changes are settled can move with no text changing at all (the
+      // other side of a conflict ignored): what the file gets moves with it.
+      // Not as the merge opens: opening writes nothing.
+      if (next.hasProgress || this.lastPosted) this.scheduleResultPost();
+    };
     view.onLargeFile = (large) => {
+      const words = large ? "Large file: word-level highlights disabled" : "";
       this.largeNote.hidden = !large;
-      this.largeNote.textContent = large ? "Large file: word-level highlights disabled" : "";
+      this.largeNote.textContent = words;
+      // The note gives way before the counter does (ellipsis); the whole of
+      // it is its tooltip.
+      this.largeNote.title = words;
     };
-    view.onEolMismatch = (info) => this.renderNotices(info);
-    view.onResultChanged = () => {
-      window.clearTimeout(this.syncTimer);
-      this.syncTimer = window.setTimeout(() => {
-        this.syncTimer = 0;
-        if (this.viewApi) this.adapter.post({ type: "resultChanged", text: this.viewApi.getResultText() });
-      }, 250);
+    view.onEolMismatch = (info) => {
+      this.eolInfo = info;
+      this.renderNotices();
     };
+    view.onSeeded = (info) => {
+      this.seeded = info;
+      this.renderNotices();
+    };
+    view.onResultChanged = () => this.scheduleResultPost();
     view.onHistoryChanged = () => this.refreshHistory();
     view.attachLegend(this.legendSlot);
+  }
+
+  /**
+   * Tell the host what the Result is now (debounced): the Result, and — when
+   * the view can say it and it differs — the same text with every change the
+   * editor has not settled put back to base (POLISH A1.1), which is what the
+   * host marks up for the file before Apply. A repeat of the last post is
+   * not sent again.
+   */
+  private scheduleResultPost(): void {
+    window.clearTimeout(this.syncTimer);
+    this.syncTimer = window.setTimeout(() => {
+      this.syncTimer = 0;
+      const view = this.viewApi;
+      if (!view) return;
+      const text = view.getResultText();
+      const open = view.getUnsettledText?.();
+      const unsettled = open !== undefined && open !== text ? open : undefined;
+      const last = this.lastPosted;
+      if (last && last.text === text && last.unsettled === unsettled) return;
+      this.lastPosted = { text, unsettled };
+      this.adapter.post(unsettled === undefined ? { type: "resultChanged", text } : { type: "resultChanged", text, unsettled });
+    }, 250);
   }
 
   // ── side names ──
@@ -760,15 +844,80 @@ export class MergeShell {
       n.textContent = note;
       this.strip.appendChild(n);
     }
+    // Ending the whole operation is not in the merge editor: it lives in the
+    // conflicts list, with every other file of it. The strip says where.
+    if (this.endable()) {
+      const list = document.createElement("button");
+      list.type = "button";
+      list.className = "ms-op-list";
+      list.textContent = "All conflicts";
+      const noun = opNoun(op.kind);
+      list.title = `The conflicts list: every conflicted file of this ${noun}, and ${op.verbs.continue ? `${op.verbs.continue} or ` : ""}${op.verbs.abort}`;
+      list.addEventListener("click", () => this.adapter.post({ type: "showConflicts" }));
+      this.strip.appendChild(list);
+    }
   }
 
-  private renderNotices(eol: EolMismatchInfo | undefined): void {
+  private renderNotices(): void {
     this.notices.replaceChildren();
+    const text = hasText(this.payload.shape);
     // Without an operation strip the conflict-type note has nowhere else to go.
     const note = !this.op ? conflictTypeNote(this.payload) : "";
-    if (note && hasText(this.payload.shape)) this.notices.appendChild(notice("info", note, "ms-note-type"));
-    if (eol) this.notices.appendChild(notice("warn", eolText(eol), "ms-note-eol"));
+    if (note && text) this.notices.appendChild(notice("info", note, "ms-note-type"));
+    if (this.outside && text) this.notices.appendChild(this.outsideNotice(this.outside));
+    if (this.seeded && text) this.notices.appendChild(notice("info", seedText(this.seeded), "ms-note-seed"));
+    if (this.eolInfo && text) this.notices.appendChild(notice("warn", eolText(this.eolInfo), "ms-note-eol"));
     this.notices.hidden = this.notices.childElementCount === 0;
+  }
+
+  /**
+   * The file changed outside the merge editor (POLISH A1.3): asked here,
+   * inline, rather than in a dialog over the editor — the host writes nothing
+   * to the file until it is answered. Reload the merge starts over from the
+   * file as it is now; Keep what's here leaves that edit alone until Apply.
+   */
+  private outsideNotice(state: "asked" | "kept"): HTMLElement {
+    const name = displayPath(this.payload.fileName);
+    if (state === "kept") {
+      return notice(
+        "info",
+        `${name} keeps the edit made outside the merge editor until you Apply. Apply replaces it with the Result.`,
+        "ms-note-outside",
+      );
+    }
+    const box = document.createElement("div");
+    box.className = "ms-notice is-warn ms-note-outside";
+    box.setAttribute("role", "alert");
+    const text = document.createElement("span");
+    text.className = "ms-confirm-text";
+    text.append(
+      glyphEl(warningIcon),
+      document.createTextNode(
+        `${name} changed outside the merge editor (in another editor, by a formatter, or on disk). ` +
+          `Nothing is written to it until you choose.`,
+      ),
+    );
+    const reload = toolbarButton("Reload the merge", "bordered");
+    reload.classList.add("ms-outside-reload");
+    reload.title = `Start the merge over from ${name} as it is now. The work in this editor is not kept.`;
+    reload.addEventListener("click", () => this.answerOutside("reload"));
+    const keep = toolbarButton("Keep what's here", "bordered");
+    keep.classList.add("ms-outside-keep");
+    keep.title = `Leave that edit in ${name}, and keep working here. Apply replaces it with the Result.`;
+    keep.addEventListener("click", () => this.answerOutside("keep"));
+    box.append(text, reload, keep);
+    return box;
+  }
+
+  private answerOutside(answer: "reload" | "keep"): void {
+    if (this.outside !== "asked") return;
+    const hadKeyboard = this.notices.contains(document.activeElement);
+    this.outside = answer === "keep" ? "kept" : undefined;
+    this.adapter.post({ type: "outsideEdit", answer });
+    this.renderNotices();
+    this.syncBottom();
+    // The button that had the keyboard is gone: back to the editor's controls.
+    if (hadKeyboard) this.focus();
   }
 
   // ── counts & toolbar state ──
@@ -796,11 +945,15 @@ export class MergeShell {
     this.applyTheirsBtn.disabled = theirsPending === 0;
     this.applyAllBtn.disabled = nonConflicting === 0 && yoursPending === 0 && theirsPending === 0;
     // New resolution activity (including Reset) re-arms Apply after a completed
-    // merge and clears a pending two-step confirmation.
+    // merge and clears a pending two-step confirmation — and takes away the
+    // Undo of that Apply: it would bring back a conflict over the new work.
     if (this.applied && !this.busy) {
       this.applied = false;
       this.appliedWarn = "";
     }
+    this.undoable = false;
+    // Work done since Close asked: ask again, about that work.
+    this.closeConfirming = false;
     this.disarmApply();
     this.syncBottom();
   }
@@ -953,7 +1106,7 @@ export class MergeShell {
   /**
    * After an Apply that had the keyboard: once the host has answered, hand it
    * to the next thing to press — Continue when it has appeared, else Apply
-   * again if it is live, else Cancel — instead of leaving it on <body>. Only
+   * again if it is live, else Close — instead of leaving it on <body>. Only
    * when the keyboard is still nowhere (or on the spent button): a user who
    * has moved on keeps their place.
    */
@@ -967,7 +1120,7 @@ export class MergeShell {
       this.applyHadFocus = false;
       return;
     }
-    const next = [this.continueBtn, this.applyBtn, this.cancelBtn].find(
+    const next = [this.continueBtn, this.applyBtn, this.closeBtn].find(
       (b) => b.isConnected && !b.hidden && !b.disabled && !b.closest("[hidden]"),
     );
     if (!next || next === active) return;
@@ -975,10 +1128,13 @@ export class MergeShell {
     next.focus();
   }
 
-  private onApplied(staged: boolean, message?: string): void {
+  private onApplied(staged: boolean, message?: string, undoable = false): void {
     this.setBusy("");
     this.applied = true;
     this.appliedWarn = staged ? "" : message || "The file was saved but could not be staged.";
+    // The host can take this Apply back: Undo waits beside Apply, in place,
+    // until the next change in the editor.
+    this.undoable = staged && undoable && !this.panel;
     if (this.panel) {
       const take = this.lastTake;
       const done =
@@ -1043,12 +1199,11 @@ export class MergeShell {
   }
 
   /**
-   * Is there still an operation for Cancel to end? Not once it has finished
-   * here (an outcome "done"), and not when the host reports no operation and
-   * no unmerged file left: "Cancel the merge" then runs `git reset --merge`
-   * over nothing — which still unstages whatever is staged. Unmerged files
-   * with no operation around them (kind "none" while any remain) ARE
-   * something to reset.
+   * Is there still an operation in progress that the conflicts list could
+   * continue or end? Not once it has finished here (an outcome "done"), and
+   * not when the host reports no operation and no unmerged file left (the
+   * walkthrough's sample among them). Unmerged files with no operation around
+   * them (kind "none" while any remain) are still something to settle there.
    */
   private endable(): boolean {
     const op = this.op;
@@ -1061,111 +1216,67 @@ export class MergeShell {
     this.outcomeLine.replaceChildren();
   }
 
-  private toggleCancelPop(): void {
-    const op = this.op;
-    // No operation known, or none left to end: Cancel means one thing, so it
-    // does it.
-    if (!op || !this.endable()) {
-      this.closeCancelPop();
-      this.adapter.post({ type: "cancel", mode: "exit" });
-      return;
-    }
-    if (!this.cancelPop.hidden) {
-      this.closeCancelPop();
-      return;
-    }
-    this.renderCancelChoices(op);
-    this.cancelPop.hidden = false;
-    this.placeCancelPop();
-    this.cancelBtn.setAttribute("aria-expanded", "true");
-    this.cancelPop.querySelector<HTMLButtonElement>("button")?.focus();
-  }
+  // ── Close ──
 
   /**
-   * Keep the Cancel choices inside the shell. They open above Cancel, aligned
-   * to its right edge — until the pane is narrow: once the bottom bar wraps,
-   * Cancel can sit anywhere along it, and a 300px popover pinned to either of
-   * its edges ran out of a 443px pane. Slide it along until it fits.
+   * Close: leave the merge editor, and nothing else. The operation stays
+   * paused and the file keeps its conflict markers — the host closes the
+   * editor without writing (and without a save prompt that could write half a
+   * merge). The work in the editor is not kept, so with any it asks first,
+   * inline; with none, or once Apply has saved it, it just closes.
    */
-  private placeCancelPop(): void {
-    const pop = this.cancelPop;
-    pop.style.left = "";
-    pop.style.right = "";
-    if (pop.hidden) return;
-    const shell = this.element.getBoundingClientRect();
-    const wrap = this.cancelWrap.getBoundingClientRect();
-    const box = pop.getBoundingClientRect();
-    const margin = 8;
-    const min = shell.left + margin;
-    const max = shell.right - margin - box.width;
-    if (box.left >= min && box.left <= max) return;
-    const left = Math.max(min, Math.min(max, box.left));
-    pop.style.right = "auto";
-    pop.style.left = `${Math.round(left - wrap.left)}px`;
-  }
-
-  private renderCancelChoices(op: OperationView): void {
-    this.cancelPop.replaceChildren();
-    const exit = toolbarButton("Exit viewer", "bordered");
-    exit.classList.add("ms-exit");
-    exit.prepend(glyphEl(closeIcon));
-    exit.title = "Close the merge editor and keep the conflict in the file, to resolve later";
-    exit.addEventListener("click", () => {
-      this.closeCancelPop();
-      this.adapter.post({ type: "cancel", mode: "exit" });
-    });
-    const end = toolbarButton(`${abortLabel(op)}…`, "bordered");
-    end.classList.add("ms-abort", "ms-danger");
-    end.prepend(glyphEl(abortIcon));
-    end.disabled = !!this.busy;
-    end.title = abortConfirm(op).detail;
-    end.addEventListener("click", () => this.renderAbortConfirm(op));
-    const hint = document.createElement("div");
-    hint.className = "ms-pop-hint";
-    hint.textContent = "Leave this file for later, or end the whole operation.";
-    this.cancelPop.append(hint, exit, end);
-  }
-
-  private renderAbortConfirm(op: OperationView): void {
-    const ask = abortConfirm(op);
-    this.cancelPop.replaceChildren();
-    const q = document.createElement("div");
-    q.className = "ms-pop-question";
-    q.textContent = ask.question;
-    const d = document.createElement("div");
-    d.className = "ms-pop-detail";
-    d.textContent = ask.detail;
-    const keep = toolbarButton("Keep resolving", "bordered");
-    keep.classList.add("ms-abort-keep");
-    keep.addEventListener("click", () => this.closeCancelPop(true));
-    const go = toolbarButton(ask.confirm, "bordered");
-    go.classList.add("ms-abort-go", "ms-danger");
-    go.addEventListener("click", () => {
-      if (this.busy) return;
-      this.closeCancelPop();
-      this.setBusy("abort");
-      this.clearOutcome();
+  private clickClose(): void {
+    if (this.busy) return;
+    const unsaved = !this.panel && this.counts.hasProgress && !this.applied;
+    if (unsaved && !this.closeConfirming) {
+      this.closeConfirming = true;
       this.syncBottom();
-      this.adapter.post({ type: "cancel", mode: "abort" });
-    });
-    const row = document.createElement("div");
-    row.className = "ms-pop-actions";
-    row.append(keep, go);
-    this.cancelPop.append(q, d, row);
-    this.placeCancelPop();
-    // A destructive question starts on the safe answer.
-    keep.focus();
+      // A question that throws work away starts on the safe answer.
+      this.element.querySelector<HTMLButtonElement>(".ms-close-keep")?.focus();
+      return;
+    }
+    this.closeConfirming = false;
+    this.syncBottom();
+    this.adapter.post({ type: "cancel", mode: "exit" });
   }
 
-  /** Close the Cancel choices; answered from inside, the keyboard goes back to Cancel. */
-  private closeCancelPop(returnFocus = false): void {
-    if (this.cancelPop.hidden) return;
-    this.cancelPop.hidden = true;
-    this.cancelPop.replaceChildren();
-    this.cancelPop.style.left = "";
-    this.cancelPop.style.right = "";
-    this.cancelBtn.setAttribute("aria-expanded", "false");
-    if (returnFocus) this.cancelBtn.focus();
+  /** Keep editing (or Escape): the question goes, the keyboard goes back to Close. */
+  private closeCloseConfirm(): void {
+    this.closeConfirming = false;
+    this.syncBottom();
+    if (!this.closeBtn.hidden && !this.closeBtn.disabled) this.closeBtn.focus();
+  }
+
+  private renderCloseConfirm(): void {
+    const note = this.bottomNote;
+    note.classList.add("is-warn", "ms-close-confirm");
+    note.setAttribute("role", "alert");
+    const text = document.createElement("span");
+    text.className = "ms-confirm-text";
+    const where = this.op && this.endable() ? ` The ${opNoun(this.op.kind)} stays paused` : "";
+    text.append(
+      glyphEl(warningIcon),
+      document.createTextNode(
+        `Close without applying? What you resolved here is not kept.${where}${where ? " and" : ""} ` +
+          `${displayPath(this.payload.fileName)} keeps its conflict markers.`,
+      ),
+    );
+    const keep = toolbarButton("Keep editing", "bordered");
+    keep.classList.add("ms-close-keep");
+    keep.addEventListener("click", () => this.closeCloseConfirm());
+    const go = toolbarButton("Close without applying", "bordered");
+    go.classList.add("ms-close-go", "ms-danger");
+    go.addEventListener("click", () => this.clickClose());
+    note.append(text, keep, go);
+  }
+
+  /** The Close button's words: "Close", or what the host calls closing (the sample's "Close sample"). */
+  private closeLabel(): string {
+    const op = this.op;
+    // The walkthrough's sample has no operation behind it (kind "none",
+    // nothing unmerged); its one verb is how it closes.
+    if (op && op.episode === "sample" && op.verbs.abort) return op.verbs.abort;
+    return "Close";
   }
 
   // ── bottom bar ──
@@ -1194,21 +1305,30 @@ export class MergeShell {
     this.acceptYoursBtn.hidden = noText;
     this.acceptTheirsBtn.hidden = noText;
     this.applyBtn.hidden = noText;
+    // The file changed outside the editor and nobody has said what to do about
+    // it yet: Apply would write over that edit, so it waits for the answer.
+    const outsideOpen = this.outside === "asked" && !noText;
     if (!noText) {
       const nothingPending = this.counts.pending === 0;
       this.acceptYoursBtn.disabled = nothingPending || busy;
       this.acceptTheirsBtn.disabled = nothingPending || busy;
-      this.applyBtn.disabled = busy || this.applied;
+      this.applyBtn.disabled = busy || this.applied || outsideOpen;
+      this.applyBtn.title = outsideOpen
+        ? "Answer the question above first: the file changed outside the merge editor"
+        : "Save the result and mark the conflict resolved";
     }
     // The IDE merges lines: never offered over a panel with no text, nor once
     // the operation is over and there is no conflict left to hand it.
     this.jetbrainsBtn.hidden = !this.payload.jetbrainsName || noText || (!!this.op && !this.endable());
-    this.cancelBtn.disabled = busy;
-    const endable = this.endable();
-    this.cancelBtn.title = endable
-      ? "Exit the viewer, or end the whole operation"
-      : "Close the merge editor and keep the conflict in the file";
-    this.cancelBtn.setAttribute("aria-haspopup", endable ? "dialog" : "false");
+    this.closeBtn.disabled = busy;
+    this.closeBtn.textContent = this.closeLabel();
+    const name = displayPath(this.payload.fileName);
+    this.closeBtn.title =
+      this.op && this.endable()
+        ? `Close the merge editor (Escape). Nothing is written: the ${opNoun(this.op.kind)} stays paused and ${name} keeps its conflict markers.`
+        : `Close the merge editor (Escape). Nothing is written.`;
+    this.undoApplyBtn.hidden = !this.undoable || noText;
+    this.undoApplyBtn.disabled = busy;
 
     const showContinue = this.continueVisible();
     this.continueBtn.hidden = !showContinue;
@@ -1229,8 +1349,15 @@ export class MergeShell {
     note.className = "ms-bottom-note";
     let text = "";
     let kind: "warn" | "info" | "" = "";
+    note.removeAttribute("role");
+    note.setAttribute("role", "status");
     if (this.dropConfirming && this.op?.willDrop) {
       this.renderDropConfirm(this.op);
+      note.hidden = false;
+      return;
+    }
+    if (this.closeConfirming) {
+      this.renderCloseConfirm();
       note.hidden = false;
       return;
     }
@@ -1352,40 +1479,53 @@ export class MergeShell {
       this.acceptTheirsBtn.classList.toggle("jb-confirmed", this.counts.pending === 0);
     });
     on(this.jetbrainsBtn, "click", () => this.adapter.post({ type: "openInJetBrains" }));
-    on(this.cancelBtn, "click", (event) => {
-      event.stopPropagation();
-      if (this.busy) return;
-      this.toggleCancelPop();
+    on(this.closeBtn, "click", () => this.clickClose());
+    on(this.undoApplyBtn, "click", () => {
+      if (this.busy || !this.undoable) return;
+      // Locked while the host brings the conflict back (it answers with a
+      // fresh init, or says why it could not).
+      this.setBusy("take");
+      this.clearOutcome();
+      this.syncBottom();
+      this.adapter.post({ type: "undoApply" });
     });
     on(this.applyBtn, "click", () => this.clickApply());
     on(this.continueBtn, "click", () => this.clickContinue());
 
-    // Popovers close on an outside click and on Escape. "Outside" is decided
-    // from the event's PATH, fixed when it was dispatched: a click that
-    // rebuilds the popover's own content (Abort → its confirm) has a detached
-    // target by the time it bubbles here, and `contains()` would call that
-    // click outside and close the question it had just asked.
+    // The history popover closes on an outside click and on Escape. "Outside"
+    // is decided from the event's PATH, fixed when it was dispatched: a click
+    // that rebuilds the popover's own content has a detached target by the
+    // time it bubbles here, and `contains()` would call it outside.
     document.addEventListener(
       "click",
       (event) => {
         const path = event.composedPath();
         if (!this.historyPop.hidden && !path.includes(this.historyWrap)) this.historyPop.hidden = true;
-        if (!this.cancelPop.hidden && !path.includes(this.cancelWrap)) this.closeCancelPop();
       },
       { signal },
     );
+    // Escape answers the question on screen the safe way; with none, it is
+    // Close. Not when something inside claimed the key first (Monaco's find
+    // widget, a suggestion list, a selection being cancelled).
     on(this.element, "keydown", (event) => {
-      if (event.key !== "Escape") return;
-      if (!this.cancelPop.hidden) {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (!this.historyPop.hidden) {
         event.stopPropagation();
-        this.closeCancelPop();
-        this.cancelBtn.focus();
+        this.historyPop.hidden = true;
+        this.historyBtn.focus();
       } else if (!this.wsConfirm.hidden) {
         event.stopPropagation();
         this.hideWsConfirm(true);
       } else if (this.dropConfirming) {
         event.stopPropagation();
         this.closeDropConfirm();
+      } else if (this.closeConfirming) {
+        event.stopPropagation();
+        this.closeCloseConfirm();
+      } else if (!this.busy && !event.repeat) {
+        event.stopPropagation();
+        event.preventDefault();
+        this.clickClose();
       }
     });
 
