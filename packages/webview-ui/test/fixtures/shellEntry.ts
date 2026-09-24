@@ -6,6 +6,7 @@
 // The page script reaches everything through `window.__shell`.
 
 import { MergeShell } from "../../src/mergeShell";
+import { MergeLegend } from "../../src/mergeLegend";
 import {
   emptyCategoryCounts,
   emptyMergeCounts,
@@ -168,4 +169,6 @@ export class FakeMergeView implements MergeViewApi {
   }
 }
 
-(window as unknown as { __shell: unknown }).__shell = { MergeShell, FakeMergeView, emptyMergeCounts };
+// MergeLegend is the real one: the view's legend, in the shell's slot, under
+// the shell's own container queries (shell.css).
+(window as unknown as { __shell: unknown }).__shell = { MergeShell, FakeMergeView, MergeLegend, emptyMergeCounts };

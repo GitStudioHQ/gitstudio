@@ -62,8 +62,8 @@ const PROLOGUE = `
   const last = () => posted[posted.length - 1];
 `;
 
-const run = (script: string) =>
-  runInChrome(CHROME!, ENTRY, PROLOGUE + script, { css: CSS, width: 1280, height: 700 });
+const run = (script: string, opts: { frame?: { width: number; height: number } } = {}) =>
+  runInChrome(CHROME!, ENTRY, PROLOGUE + script, { css: CSS, width: 1280, height: 700, frame: opts.frame });
 // VS Code's Light Modern: errorForeground #F85149 is 3.35:1 on its white
 // editor — under AA for the danger buttons' text (the verifier's finding).
 const LIGHT_MODERN = `
@@ -857,8 +857,14 @@ test("the no-text panel stays above the bottom bar: its Close is whole and takes
   // In VS Code the panel (height 100% plus its padding, content-box) ran past
   // the content area and painted over the bottom bar: the only way out of a
   // submodule, symlink or binary conflict showed as a sliver of its border.
+  //
+  // A click is tried at points on Close, so the whole 640px pane has to be in
+  // the view: a 1280x700 frame (runInChrome's `frame`). In a 700px WINDOW the
+  // CI runners' system Chrome, which keeps ~150px of it for its own toolbar,
+  // left a 557px view, and every point on Close — at y=604 — hit nothing.
   const v = await run(`
     const root = document.getElementById("root");
+    expect(innerHeight === 700, "the view is the frame's 700px (" + innerHeight + ")");
     const covered = () => {
       const close = $(".ms-close");
       const b = close.getBoundingClientRect();
@@ -880,12 +886,47 @@ test("the no-text panel stays above the bottom bar: its Close is whole and takes
     ]) {
       root.style.height = "640px";
       mount(payload(over));
+      expect(root.getBoundingClientRect().bottom <= innerHeight, over.shape + ": the pane is whole in the view (" + root.getBoundingClientRect().bottom + " of " + innerHeight + ")");
       expect(shown(".ms-close") && !covered(), over.shape + ": " + covered());
       root.style.height = "220px";
       const why = covered();
       const panel = $(".ms-notext");
       expect(!why, over.shape + " in a short pane: " + why);
       expect(panel.scrollHeight > panel.clientHeight + 1 ? getComputedStyle(panel).overflowY === "auto" : true, over.shape + ": what does not fit scrolls (" + getComputedStyle(panel).overflowY + ")");
+    }
+  `, { frame: { width: 1280, height: 700 } });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("a narrow shell's legend drops each colour's words with the dash before them, and the dots between items", { skip }, async () => {
+  // At 900px and under the shell hid what a colour asks of you and kept the
+  // dash that led into it: a real VS Code capture of the sample read
+  // "Conflict — 3 · Same on both sides — 2 · One side only — 2 · Removed
+  // lines 1". The legend is the view's own, in the shell's slot, as the
+  // merge view mounts it.
+  const v = await run(`
+    const { MergeLegend, emptyMergeCounts } = window.__shell;
+    const root = document.getElementById("root");
+    mount(payload());
+    const legend = new MergeLegend(() => {});
+    fake.legendSlot.appendChild(legend.element);
+    const tone = (n) => ({ total: n, pending: n, yours: 0, theirs: 0, both: 0 });
+    legend.update(emptyMergeCounts(), { halfDone: [], tones: { conflict: tone(3), same: tone(2), "one-sided": tone(2), removed: tone(1) } });
+    // What is on screen: innerText leaves out what is not displayed.
+    const read = (el) => el.innerText.replace(/\\s+/g, " ").trim();
+    const chips = () => [...legend.element.querySelectorAll(".jb-legend-chip")].map(read);
+    const dots = () => [...legend.element.querySelectorAll(".jb-legend-sep")].filter((s) => getComputedStyle(s).display !== "none").length;
+
+    root.style.width = "1280px";
+    expect(JSON.stringify(chips()) === JSON.stringify(["Conflict — you choose 3", "Same on both sides — either arrow takes it 2", "One side only — safe to take 2", "Removed lines 1"]),
+      "wide, each colour says what it asks of you, after a dash: " + JSON.stringify(chips()));
+    expect(dots() === 3, "…with a dot between each two items (" + dots() + ")");
+
+    for (const width of [860, 520]) {
+      root.style.width = width + "px";
+      expect(JSON.stringify(chips()) === JSON.stringify(["Conflict 3", "Same on both sides 2", "One side only 2", "Removed lines 1"]),
+        width + "px: each colour's name and its count, no dash left hanging: " + JSON.stringify(chips()));
+      expect(!/[—·]/.test(read(legend.element)), width + "px: no dash and no dot anywhere in the legend: " + JSON.stringify(read(legend.element)));
     }
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));

@@ -609,3 +609,48 @@ test("with thirty files the list scrolls and the footer stays on screen (a host 
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+// The page the extensions serve (the conflicts entry, src/conflicts/main.ts)
+// under VS Code's own webview stylesheet, which gives the body 20px of
+// padding each side and no background: what showed there was the browser's
+// canvas, drawn in the OS's scheme under tokens.css' `color-scheme: light
+// dark` — near-black bars beside a light theme's dashboard on a Mac in dark
+// mode. The page is the editor's ground now, and its scheme the theme's.
+const PAGE = fileURLToPath(new URL("../src/conflicts/main.ts", import.meta.url));
+const VSCODE_WEBVIEW_CSS = `body{background-color:transparent;margin:0;padding:0 20px}`;
+
+test("the dashboard's page is the theme's ground, in the theme's colour scheme rather than the OS's", { skip }, async () => {
+  const v = await runInChrome(
+    CHROME!,
+    PAGE,
+    `
+    const ground = (el) => getComputedStyle(el).backgroundColor;
+    // Solarized Light's editor: not the white a light canvas would be.
+    expect(ground(document.documentElement) === "rgb(253, 246, 227)" && ground(document.body) === "rgb(253, 246, 227)",
+      "html and body are the editor's background (" + ground(document.documentElement) + ", " + ground(document.body) + ")");
+    expect(getComputedStyle(document.body).paddingLeft === "20px", "under VS Code's 20px body padding (" + getComputedStyle(document.body).paddingLeft + ")");
+    const scheme = () => getComputedStyle(document.documentElement).colorScheme;
+    for (const [cls, want] of [
+      ["vscode-light", "light"],
+      ["vscode-dark", "dark"],
+      ["vscode-high-contrast", "dark"],
+      ["vscode-high-contrast vscode-high-contrast-light", "light"],
+      ["", "light dark"],
+    ]) {
+      document.body.className = cls;
+      expect(scheme() === want, "body." + (cls || "(no theme)") + ": the page's scheme is " + want + " (" + scheme() + ")");
+    }
+  `,
+    {
+      css: VSCODE_WEBVIEW_CSS,
+      prelude: `
+        document.documentElement.style.cssText = "--vscode-editor-background:#fdf6e3;--vscode-foreground:#586e75";
+        document.body.className = "vscode-light";
+        window.acquireVsCodeApi = () => ({ postMessage: () => {}, getState: () => undefined, setState: () => {} });
+      `,
+      width: 1000,
+      height: 700,
+    },
+  );
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});

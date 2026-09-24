@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, win32 } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromeCandidates, findChrome, SYSTEM_CHROMES } from "./findChrome.mjs";
 
 /**
@@ -136,7 +136,9 @@ test("headless.ts: GS_CHROME unset picks the newest Playwright headless shell", 
     );
     const headless = fileURLToPath(new URL("./headless.ts", import.meta.url));
     const probe = join(dir, "probe.mts");
-    writeFileSync(probe, `import { findChrome } from ${JSON.stringify(headless)};\nconsole.log(findChrome() ?? "(none)");\n`);
+    // A file URL, not the path: on Windows an absolute path (D:\a\…) reads
+    // to the ESM loader as a URL with the scheme "d:" and is refused.
+    writeFileSync(probe, `import { findChrome } from ${JSON.stringify(pathToFileURL(headless).href)};\nconsole.log(findChrome() ?? "(none)");\n`);
     const env: NodeJS.ProcessEnv = { ...process.env, PLAYWRIGHT_BROWSERS_PATH: dir };
     delete env.GS_CHROME;
     const out = execFileSync(process.execPath, ["--import", "tsx", probe], {
@@ -171,7 +173,9 @@ test("headless.ts: the desktop Chrome only on CI, even when GS_CHROME names it",
     const shell = put(`pw/chromium_headless_shell-1228/chrome-headless-shell-x/chrome-headless-shell${exe}`);
     const headless = fileURLToPath(new URL("./headless.ts", import.meta.url));
     const probe = join(dir, "probe.mts");
-    writeFileSync(probe, `import { findChrome } from ${JSON.stringify(headless)};\nconsole.log(findChrome() ?? "(none)");\n`);
+    // A file URL, not the path: on Windows an absolute path (D:\a\…) reads
+    // to the ESM loader as a URL with the scheme "d:" and is refused.
+    writeFileSync(probe, `import { findChrome } from ${JSON.stringify(pathToFileURL(headless).href)};\nconsole.log(findChrome() ?? "(none)");\n`);
     const run = (extra: Record<string, string | undefined>) => {
       const env: NodeJS.ProcessEnv = { ...process.env, GS_CHROME: desktop, ...extra };
       delete env.CI;

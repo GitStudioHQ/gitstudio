@@ -40,9 +40,15 @@ if (root) {
   // footer (Abort, Continue) stays on screen (.cd-host-fill). Set through the
   // CSSOM: the page's CSP allows no inline style, and conflicts.css is also
   // the desktop's, where a bare html/body rule would restyle the app.
+  //
+  // And the page's ground is the editor's, the dashboard's own: VS Code's
+  // webview stylesheet gives the body 20px of padding each side and no
+  // background, and what shows there was the browser's canvas — near-black
+  // beside a light theme's dashboard on a Mac in dark mode.
   for (const el of [document.documentElement, document.body]) {
     el.style.height = "100%";
     el.style.margin = "0";
+    el.style.backgroundColor = "var(--vscode-editor-background)";
   }
   root.classList.add("cd-host-fill");
   // Listen BEFORE the component announces itself: its constructor posts

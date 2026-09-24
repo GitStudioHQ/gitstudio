@@ -30,6 +30,26 @@ test("runInChrome leaves no page directory behind", { skip }, async () => {
   assert.equal(existsSync(dirname(fileURLToPath(href!))), false, "its directory is gone once the verdict is in");
 });
 
+// A check that depends on the size of its view asks for a frame: a window is
+// its whole view in the headless shell, but the CI runners' system Chrome
+// lays its own toolbar out inside it (a 327px window was a 184px view there).
+test("a frame's view is exactly the frame, and a click at its foot lands on what is there", { skip }, async () => {
+  const v = await runInChrome(
+    CHROME!,
+    ENTRY,
+    `
+    notes.view = [innerWidth, innerHeight];
+    const foot = document.createElement("div");
+    foot.style.cssText = "position:fixed;left:0;bottom:0;width:20px;height:6px";
+    document.body.appendChild(foot);
+    expect(document.elementFromPoint(10, 237) === foot, "a point in the frame's last pixels hits what is there");
+  `,
+    { frame: { width: 299, height: 240 } },
+  );
+  assert.deepEqual(v.fails, []);
+  assert.deepEqual((v.notes as { view?: number[] } | undefined)?.view, [299, 240]);
+});
+
 test("the merge page's verdict decodes the same way", { skip }, async () => {
   const v = await runMergePage(CHROME!, `notes.text = "&lt;";`);
   assert.deepEqual(v.fails, []);

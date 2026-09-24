@@ -24,6 +24,7 @@ const skip = !CHROME && "no Chrome on this machine";
 
 test("copying every change reproduces the left text exactly, at the edges of the file too", { skip }, async () => {
   const v = await runMergePage(CHROME!, `
+    const { EndOfLineSequence } = gsMerge.monaco.editor;
     const cases = [
       ["restore a deleted last line (unterminated)", "a\\nb\\nc", "a\\nb"],
       ["restore a deleted last line (terminated)", "a\\nb\\nc\\n", "a\\nb\\n"],
@@ -33,20 +34,68 @@ test("copying every change reproduces the left text exactly, at the edges of the
       ["undo a line added at the end (terminated)", "a\\nb\\n", "a\\nb\\nc\\n"],
       ["restore a deleted first line", "x\\na\\nb", "a\\nb"],
       ["restore the whole file into an empty one", "a\\nb", ""],
+      ["restore a deleted last line into a one-line file", "a\\nb", "a"],
       ["empty the file", "", "a\\nb\\n"],
       ["middle and end at once", "a\\nB\\nc\\nd", "a\\nb\\nc"],
     ];
-    for (const [name, left, right] of cases) {
+    // Every case three ways. As this platform makes the panes. With every
+    // pane that has no line break of its own made CRLF — what Monaco does on
+    // Windows, where a model with nothing to detect takes the platform's
+    // line ending; CI's windows job restored "a\\nb" into an empty file as
+    // "a\\r\\nb". And with both texts in CRLF, which the copy must keep
+    // (here, a pane with no line break is made LF).
+    const ways = [
+      ["", (t) => t, false],
+      ["panes made CRLF (Windows): ", (t) => t, true],
+      ["CRLF text: ", (t) => t.replace(/\\n/g, "\\r\\n"), false],
+    ];
+    for (const [way, as, windows] of ways) {
+      for (const [name, l, r] of cases) {
+        const left = as(l);
+        const right = as(r);
+        host.replaceChildren();
+        const dv = new gsMerge.DiffView(host);
+        dv.render({ leftLabel: "HEAD", rightLabel: "Working", leftText: left, rightText: right, fileName: "x.txt", rightEditable: true });
+        if (windows) {
+          for (const e of [dv.left, dv.right]) {
+            if (e.getModel().getLineCount() === 1) e.getModel().setEOL(EndOfLineSequence.CRLF);
+          }
+        }
+        for (const b of [...dv.model.blocks].reverse()) dv.transferBlock(b);
+        const got = dv.getRightText();
+        expect(got === left, way + name + ": got " + JSON.stringify(got) + ", want " + JSON.stringify(left));
+        dv.dispose && dv.dispose();
+      }
+    }
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("text the host pushes into a pane keeps its own line endings, whatever the pane was made with", { skip }, async () => {
+  // A pane made from text with no line break takes the PLATFORM's line
+  // ending (CRLF on Windows), and a refresh wrote its text in that one: a
+  // file that was empty when the diff opened and gained LF lines outside it
+  // read back CRLF from the pane that writes it back.
+  const v = await runMergePage(CHROME!, `
+    const { EndOfLineSequence } = gsMerge.monaco.editor;
+    for (const [made, eol] of [["CRLF", EndOfLineSequence.CRLF], ["LF", EndOfLineSequence.LF]]) {
       host.replaceChildren();
       const dv = new gsMerge.DiffView(host);
-      dv.render({ leftLabel: "HEAD", rightLabel: "Working", leftText: left, rightText: right, fileName: "x.txt", rightEditable: true });
-      for (const b of [...dv.model.blocks].reverse()) dv.transferBlock(b);
-      const got = dv.getRightText();
-      expect(got === left, name + ": got " + JSON.stringify(got) + ", want " + JSON.stringify(left));
+      const p = { leftLabel: "HEAD", rightLabel: "Working", leftText: "a\\nb", rightText: "", fileName: "x.txt", rightEditable: true };
+      dv.render(p);
+      dv.right.getModel().setEOL(eol);
+      // Setting it reads as the user's own edit; a refresh waits a second
+      // after one, so as not to overwrite typing.
+      await sleep(1100);
+      for (const right of ["p\\nq", "p\\r\\nq\\r\\n", "", "p\\nq\\n"]) {
+        dv.render({ ...p, rightText: right });
+        const got = dv.getRightText();
+        expect(got === right, "a pane made " + made + ", refreshed with " + JSON.stringify(right) + ": got " + JSON.stringify(got));
+      }
       dv.dispose && dv.dispose();
     }
   `);
-  assert.deepEqual(v.fails, []);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
 test("a copy leaves the NEIGHBOURING change where it was (no forced marker moves)", { skip }, async () => {

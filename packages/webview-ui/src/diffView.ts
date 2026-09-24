@@ -3,7 +3,7 @@ import type { DiffInitPayload } from "@gitstudio/host-bridge/protocol";
 import type { DiffBlock, DiffModel } from "@gitstudio/engine/types";
 import { buildDiffModel } from "@gitstudio/engine/diffModel";
 import type { WhitespaceMode } from "@gitstudio/engine/lineDiff";
-import { splitLines } from "@gitstudio/engine/lineDiff";
+import { detectEol, splitLines } from "@gitstudio/engine/lineDiff";
 import { languageForFile } from "./language";
 import { ensureNativeTheme, nativeFontOptions } from "./theme";
 import { DiffDecorationManager } from "./decorations";
@@ -16,6 +16,19 @@ import { StageTickLayer, type TickRow } from "./stageTicks";
 import { deriveTickStates } from "./tickState";
 
 type Editor = monaco.editor.IStandaloneCodeEditor;
+
+/**
+ * The line ending a text mostly uses, as a Monaco model's; undefined when it
+ * has no line break (nothing to keep) or only bare CRs (no model has those).
+ */
+function eolSequence(text: string): monaco.editor.EndOfLineSequence | undefined {
+  const eol = detectEol(text);
+  return eol === "CRLF"
+    ? monaco.editor.EndOfLineSequence.CRLF
+    : eol === "LF"
+      ? monaco.editor.EndOfLineSequence.LF
+      : undefined;
+}
 
 /** Numbers each DiffView's keybinding scope (installNavigationKeys). */
 let diffViewSerial = 0;
@@ -289,6 +302,15 @@ export class DiffView {
     const lastLine = model.getLineCount();
     this.applyingExternal = true;
     try {
+      // The text's own line ending, not the one the model was made with: an
+      // edit takes the model's, and a model made from text with no line break
+      // has the PLATFORM's (CRLF on Windows), so a file that was empty when
+      // the diff opened and gained lines outside it came back CRLF. Pushed,
+      // so it is undone with the text in one step.
+      const eol = eolSequence(text);
+      if (eol !== undefined && eol !== model.getEndOfLineSequence()) {
+        model.pushEOL(eol);
+      }
       model.pushEditOperations(
         [],
         [
@@ -543,6 +565,16 @@ export class DiffView {
     // dragged a neighbour's edge over the inserted lines.
     const plan = planLineWrite(lineDocOf(model), block.rightSpan, lines);
     if (!plan) return;
+    // The copy keeps the LEFT side's line endings. Written text takes the
+    // model's, and a right pane with no line break of its own has none to
+    // keep — Monaco made it with the platform's, CRLF on Windows, where
+    // restoring "a\nb" into an empty file wrote "a\r\nb". It takes the left
+    // text's (as the host sent it: the left model may be platform-made too),
+    // pushed so the copy's undo puts it back.
+    const leftEol = eolSequence(this.payload.leftText);
+    if (model.getLineCount() === 1 && leftEol !== undefined && leftEol !== model.getEndOfLineSequence()) {
+      model.pushEOL(leftEol);
+    }
     const r = plan.range;
     const range = new monaco.Range(r.startLine, r.startColumn, r.endLine, r.endColumn);
     editor.executeEdits("jbDiff", [{ range, text: plan.text }]);

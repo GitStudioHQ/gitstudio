@@ -385,9 +385,15 @@
   padding-bottom: 6px;
 }
 /* In a narrow shell the legend keeps its colours, names and counts, and
-   drops what each colour asks of you (the tooltip still says it). */
+   drops what each colour asks of you (the tooltip still says it) — with the
+   dash that led into it: left behind, it read "Conflict — 3". The dots
+   between the items go too. Each item starts with its colour's dot and ends
+   with its count, and once the legend wraps a dot is left at the end of a
+   line, separating nothing. */
 @container ms-shell (max-width: 900px) {
-  .jb-legend .jb-legend-note { display: none; }
+  .jb-legend .jb-legend-note,
+  .jb-legend .jb-legend-dash,
+  .jb-legend .jb-legend-sep { display: none; }
 }
 @container ms-shell (max-width: 960px) {
   .jb-toolbar { padding: 0 4px; gap: 1px; }

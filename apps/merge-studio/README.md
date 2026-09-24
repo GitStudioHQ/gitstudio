@@ -57,7 +57,7 @@ it.
 rebase: the file keeps its conflict markers, and **Merge…** in the Conflicts
 dashboard opens it again.
 
-<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The sample merge in a light theme: YOURS feature/session-hardening on the left, the result in the middle, THEIRS main on the right, the legend above. Conflicts in red, one with Yours already taken; changes made on one side only in blue; two changes made the same way on both sides, in green on both; and one change already taken from Theirs, kept as a faint blue trace joined to the result."></p>
+<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The sample merge in Light Modern: YOURS feature/session-hardening on the left, the result in the middle, THEIRS main on the right, the legend above. Conflicts in orange, one with Yours already taken; changes made on one side only in blue; two changes made the same way on both sides, in green on both; a line removed on one side, in grey; and one change already taken from Theirs, kept as a faint blue trace joined to the result."></p>
 
 ## The Conflicts dashboard
 
