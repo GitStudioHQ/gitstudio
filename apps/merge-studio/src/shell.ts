@@ -33,11 +33,17 @@ export function decideWalkthrough(facts: {
   openOnInstall: unknown;
   /** Any open repository has an operation in progress or unmerged files. */
   busy: boolean;
+  /**
+   * GitStudio opened ITS walkthrough in this session. VS Code has one Welcome
+   * editor, so opening ours replaced it: both were marked shown and GitStudio's
+   * was never seen. Ours waits for the next calm activation instead.
+   */
+  gitStudioWalkthroughOnScreen?: boolean;
 }): WalkthroughDecision {
   if (facts.shown || facts.openOnInstall === false) {
     return "skip";
   }
-  return facts.busy ? "later" : "open";
+  return facts.busy || facts.gitStudioWalkthroughOnScreen ? "later" : "open";
 }
 
 // ── Asking ──────────────────────────────────────────────────────────────────

@@ -134,10 +134,15 @@ const stub = {
   /** Called by tabGroups.close with the tabs, before they go. */
   onCloseTabs: undefined,
   tabGroupsAll: [],
+  /** tabGroups.activeTabGroup (its activeTab's input is what targetUri reads last). */
+  activeTabGroup: undefined,
+  /** Every status-bar item created, in order. */
+  statusItems: [],
   onDidChangeTabs: new EventEmitter(),
   onDidChangeActiveTextEditor: new EventEmitter(),
   onDidChangeConfiguration: new EventEmitter(),
   onDidChangeTextDocument: new EventEmitter(),
+  onDidChangeExtensions: new EventEmitter(),
   /** Every WorkspaceEdit handed to workspace.applyEdit, in order. */
   applied: [],
   reset() {
@@ -155,6 +160,8 @@ const stub = {
     this.answer = undefined;
     this.onCloseTabs = undefined;
     this.tabGroupsAll = [];
+    this.activeTabGroup = undefined;
+    this.statusItems.length = 0;
     workspace.textDocuments = [];
     window.activeTextEditor = undefined;
   },
@@ -222,22 +229,31 @@ const window = {
     stub.statusMessages.push(m);
     return new Disposable();
   },
-  createStatusBarItem: () => ({
-    text: "",
-    tooltip: "",
-    name: "",
-    visible: false,
-    show() {
-      this.visible = true;
-    },
-    hide() {
-      this.visible = false;
-    },
-    dispose() {},
-  }),
+  createStatusBarItem: (id) => {
+    const item = {
+      id,
+      text: "",
+      tooltip: "",
+      name: "",
+      visible: false,
+      backgroundColor: undefined,
+      show() {
+        this.visible = true;
+      },
+      hide() {
+        this.visible = false;
+      },
+      dispose() {},
+    };
+    stub.statusItems.push(item);
+    return item;
+  },
   tabGroups: {
     get all() {
       return stub.tabGroupsAll;
+    },
+    get activeTabGroup() {
+      return stub.activeTabGroup;
     },
     close: async (tabs) => {
       const list = Array.isArray(tabs) ? tabs : [tabs];
@@ -343,5 +359,6 @@ module.exports = {
   },
   extensions: {
     getExtension: (id) => stub.extensions[id],
+    onDidChange: stub.onDidChangeExtensions.event,
   },
 };

@@ -37,3 +37,10 @@ export const GITSTUDIO_IDE_CONTEXT_KEY = "gitstudio.merge.ideAvailable";
 
 /** The walkthrough (a brand slot, Merge Studio's is jbMerge.openWalkthrough). */
 export const GITSTUDIO_WALKTHROUGH_COMMAND = "gitstudio.openWalkthrough";
+
+/** globalState: the ANSWER to the question about VS Code's own merge UI (merge-vscode coexistence.ts). */
+export const GITSTUDIO_COEXISTENCE_PROMPT_KEY = "gitstudio.merge.coexistencePromptShown";
+
+/** The other product of the pair, and the section of its twin settings (read while ours are unset). */
+export const MERGE_STUDIO_EXTENSION_ID = "gitstudio.merge-studio";
+export const MERGE_STUDIO_SETTINGS_SECTION = "jbMerge";

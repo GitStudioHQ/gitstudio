@@ -60,6 +60,16 @@ export class ConflictsDashboard implements vscode.Disposable {
   }
 
   /**
+   * Another product just took the automatic behaviour (D4, either way round):
+   * it shows its own dashboard now, so this one goes — two "Conflicts (30)"
+   * tabs for one repository was the race D4 exists to prevent. Not a close by
+   * the user; asking for this dashboard (the command) still shows it.
+   */
+  standDown(): void {
+    this.disposePanel();
+  }
+
+  /**
    * Git state may have changed (the watcher). `repo` is where conflicts are,
    * when the dashboard is not already showing a repository.
    */

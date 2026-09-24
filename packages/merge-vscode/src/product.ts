@@ -102,6 +102,33 @@ export interface MergeHostSettings extends MergeSettings {
   autoOpen: boolean;
 }
 
+/** The other product of the pair, as MergeProduct.peer describes it. */
+export interface MergePeer {
+  /** Its extension id ("gitstudio.merge-studio"). */
+  readonly extensionId: string;
+  /** Its display name ("Merge Studio"). */
+  readonly displayName: string;
+  /**
+   * Whether an installed peer's manifest (its `packageJSON`, readable without
+   * activating it) carries THIS merge experience. False for Merge Studio 0.3.x
+   * and GitStudio 1.13.0 and older.
+   */
+  sharedMerge(packageJSON: unknown): boolean;
+  /** globalState key: the "update the peer" notice was said (holds the version it was said for). */
+  readonly outdatedNoticeKey: string;
+}
+
+/**
+ * What each extension's `activate` returns under `mergePeer`, for the other
+ * product of the pair to read (vscode.extensions.getExtension(id).exports).
+ */
+export interface MergePeerApi {
+  /** The question about VS Code's own merge UI was answered here (or asked by 0.3.4). */
+  coexistenceAnswered(): boolean;
+  /** This product opened its own walkthrough in this window's session. */
+  walkthroughOpenedThisSession?(): boolean;
+}
+
 /** What a deferring product says when it stands down (see MergeProduct.deferral). */
 export interface DeferralNotice {
   /** The product that owns the automatic behaviour instead ("GitStudio"). */
@@ -158,6 +185,20 @@ export interface MergeProduct {
    * Only a product that can defer has one (Merge Studio).
    */
   readonly deferral?: DeferralNotice;
+  /**
+   * The other product of the pair (GitStudio ↔ Merge Studio), when this one
+   * knows it. Its answer to the coexistence question counts as this one's
+   * (nothing asks twice); an installed peer WITHOUT this merge experience
+   * (Merge Studio 0.3.x beside a new GitStudio) races it for every conflict
+   * and still shows a rebase's sides swapped, so it is named once (POLISH A5.1).
+   */
+  readonly peer?: MergePeer;
+  /**
+   * The peer's settings section, read when this product's own twin is UNSET
+   * (POLISH A5.7): a Merge Studio user's `jbMerge.conflictResolver:
+   * "jetbrains"` keeps working after GitStudio takes the automatic behaviour.
+   */
+  readonly settingsFallbackSection?: string;
   /**
    * The product's own globalState keys that follow the user to their other
    * machines (Settings Sync), besides the ones this package keeps. VS Code
@@ -224,15 +265,125 @@ export function normalizeMergeSettings(
 export const GITSTUDIO_SHARED_MERGE_COMMAND = "gitstudio.showConflicts";
 
 /**
+ * The command only a Merge Studio that runs THIS shared merge experience
+ * contributes (Continue, new in 1.0.0). Merge Studio 0.3.x has a dashboard
+ * too, but no Continue, and shows a rebase's sides swapped.
+ */
+export const MERGE_STUDIO_SHARED_MERGE_COMMAND = "jbMerge.operation.continue";
+
+function manifestHasCommand(packageJSON: unknown, id: string): boolean {
+  const commands = (packageJSON as { contributes?: { commands?: unknown } } | undefined)?.contributes?.commands;
+  return Array.isArray(commands) && commands.some((c) => (c as { command?: unknown } | null)?.command === id);
+}
+
+/**
  * Whether an installed GitStudio's manifest (its `packageJSON`, readable
  * without activating it) carries the shared merge experience.
  */
 export function hasSharedMergeExperience(packageJSON: unknown): boolean {
-  const commands = (packageJSON as { contributes?: { commands?: unknown } } | undefined)?.contributes?.commands;
-  return (
-    Array.isArray(commands) &&
-    commands.some((c) => (c as { command?: unknown } | null)?.command === GITSTUDIO_SHARED_MERGE_COMMAND)
-  );
+  return manifestHasCommand(packageJSON, GITSTUDIO_SHARED_MERGE_COMMAND);
+}
+
+/** The same question about an installed Merge Studio (1.0.0 and later: yes; 0.3.x: no). */
+export function hasMergeStudioSharedExperience(packageJSON: unknown): boolean {
+  return manifestHasCommand(packageJSON, MERGE_STUDIO_SHARED_MERGE_COMMAND);
+}
+
+/**
+ * D4 the other way round: GitStudio stands down its automatic behaviour — the
+ * status item, the dashboard's auto-show, routing, the coexistence question —
+ * once the user has handed it to a Merge Studio with the same experience
+ * ("Let Merge Studio open conflicts", i.e. `gitstudio.merge.autoOpen` set to
+ * false). Without that, GitStudio kept its "Resolve Conflicts" item and
+ * dashboard beside Merge Studio's (P-11: one item even with both installed).
+ * With no Merge Studio, or an older one, GitStudio never stands down: its
+ * status item stays as the way to the dashboard.
+ */
+export function shouldDeferToMergeStudio(mergeStudio: {
+  installed: boolean;
+  /** hasMergeStudioSharedExperience of the installed Merge Studio's manifest. */
+  sharedMerge: boolean;
+  /** GitStudio's own `gitstudio.merge.autoOpen` (false = handed over). */
+  autoOpen: boolean;
+}): boolean {
+  return mergeStudio.installed && mergeStudio.sharedMerge && !mergeStudio.autoOpen;
+}
+
+/** What `WorkspaceConfiguration.inspect` reports, reduced to the scopes a person sets. */
+export interface InspectedValue {
+  globalValue?: unknown;
+  workspaceValue?: unknown;
+  workspaceFolderValue?: unknown;
+}
+
+/**
+ * One merge setting, read from the product's own section and, when that is
+ * UNSET in every scope, from the peer's (POLISH A5.7). Only an explicit peer
+ * value counts — never its default — and `autoOpen` never falls back: it is
+ * each product's own switch, and the one that hands the automatic behaviour
+ * from one to the other. `jetbrainsPath` falls back to a USER value only: a
+ * workspace must not choose the program GitStudio launches, and the peer's key
+ * carries no machine scope when the peer is not installed to declare it.
+ */
+export function settingWithFallback(
+  key: keyof MergeHostSettings,
+  own: InspectedValue | undefined,
+  fallback: InspectedValue | undefined,
+  ownValue: unknown,
+): unknown {
+  if (!fallback || key === "autoOpen") return ownValue;
+  const set = (i: InspectedValue | undefined): boolean =>
+    !!i && (i.globalValue !== undefined || i.workspaceValue !== undefined || i.workspaceFolderValue !== undefined);
+  if (set(own)) return ownValue;
+  if (key === "jetbrainsPath") return fallback.globalValue !== undefined ? fallback.globalValue : ownValue;
+  if (!set(fallback)) return ownValue;
+  return fallback.workspaceFolderValue ?? fallback.workspaceValue ?? fallback.globalValue;
+}
+
+/** What the status item shows, or undefined when it is hidden. */
+export interface StatusItemLook {
+  text: string;
+  tooltip: string;
+  /** The warning background: files still conflicted. */
+  warning: boolean;
+}
+
+/**
+ * The status item (PLAN matrix row 11; POLISH A5.3). While files are
+ * conflicted: "⚠ Resolve Conflicts". Once none are but the operation is still
+ * in progress, it stays, as the way back to Continue: "Continue Rebase" (a
+ * paused rebase: "Rebase paused"). Hidden with nothing in progress, and while
+ * another product owns the automatic behaviour (one item, not two).
+ */
+export function statusItemLook(s: {
+  unmerged: number;
+  defers: boolean;
+  /** The operation in progress with nothing conflicted: its Continue verb and pause, when known. */
+  op?: { continueVerb?: string; pause?: { detail: string } };
+}): StatusItemLook | undefined {
+  if (s.defers) return undefined;
+  if (s.unmerged > 0) {
+    return {
+      text: "$(warning) Resolve Conflicts",
+      tooltip: `${s.unmerged === 1 ? "1 conflicted file" : `${s.unmerged} conflicted files`} — open the Conflicts view`,
+      warning: true,
+    };
+  }
+  if (s.op?.pause) {
+    return {
+      text: "$(debug-pause) Rebase paused",
+      tooltip: `${s.op.pause.detail || "Paused"}. Open the Conflicts view to continue.`,
+      warning: false,
+    };
+  }
+  if (s.op?.continueVerb) {
+    return {
+      text: `$(debug-continue) ${s.op.continueVerb}`,
+      tooltip: "All conflicts are resolved. Open the Conflicts view to continue.",
+      warning: false,
+    };
+  }
+  return undefined;
 }
 
 /**

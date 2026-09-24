@@ -4,7 +4,7 @@
 
 import * as vscode from "vscode";
 import type { MergeHostSettings, MergeProduct, MergeRepo } from "./product";
-import { normalizeMergeSettings } from "./product";
+import { normalizeMergeSettings, settingWithFallback } from "./product";
 import type { ExitGuard } from "./exitGuard";
 
 export type NoticeKind = "info" | "warn" | "error";
@@ -35,7 +35,7 @@ export function createHostCore(
     context,
     product,
     exitGuard,
-    settings: () => readHostSettings(product.settingsSection),
+    settings: () => readHostSettings(product.settingsSection, product.settingsFallbackSection),
     defers: () => {
       try {
         return product.defersTo?.() ?? false;
@@ -68,10 +68,17 @@ export function createHostCore(
   };
 }
 
-/** MergeHostSettings from a configuration section, every value normalised. */
-export function readHostSettings(section: string): MergeHostSettings {
+/**
+ * MergeHostSettings from a configuration section, every value normalised. With
+ * a `fallback` section (the peer product's), a setting unset in `section` is
+ * read from an explicit value there (settingWithFallback, POLISH A5.7).
+ */
+export function readHostSettings(section: string, fallback?: string): MergeHostSettings {
   const cfg = vscode.workspace.getConfiguration(section);
-  return normalizeMergeSettings((key) => cfg.get(key));
+  const fb = fallback ? vscode.workspace.getConfiguration(fallback) : undefined;
+  return normalizeMergeSettings((key) =>
+    fb ? settingWithFallback(key, cfg.inspect(key), fb.inspect(key), cfg.get(key)) : cfg.get(key),
+  );
 }
 
 /** Close the product's merge-editor tabs — all of them, or just one file's. */
@@ -92,6 +99,37 @@ export async function closeMergeEditorTabs(viewType: string, matching?: vscode.U
   }
   try {
     await vscode.window.tabGroups.close(tabs);
+  } catch {
+    // already gone
+  }
+}
+
+/**
+ * Close the plain TEXT tabs of one file — the tab a routed file was opened
+ * in, once the merge editor has it (POLISH A1.3). A second text editor on the
+ * same file was a way to overwrite the merge (and clicking it bounced straight
+ * back to the merge editor). A tab with unsaved edits is left alone: closing
+ * it would ask, and those edits are the user's.
+ */
+export async function closeTextTabs(uri: vscode.Uri): Promise<void> {
+  const target = uri.toString();
+  const tabs = vscode.window.tabGroups.all
+    .flatMap((group) => group.tabs)
+    .filter((tab) => {
+      // Duck-typed TabInputText: a uri and nothing else (a custom editor has a
+      // viewType, a notebook a notebookType, a diff original/modified).
+      const input = tab.input as
+        | { uri?: vscode.Uri; viewType?: unknown; notebookType?: unknown; original?: unknown; modified?: unknown }
+        | undefined;
+      if (!input?.uri || input.viewType !== undefined || input.notebookType !== undefined) return false;
+      if (input.original !== undefined || input.modified !== undefined) return false;
+      return !tab.isDirty && input.uri.toString() === target;
+    });
+  if (tabs.length === 0) {
+    return;
+  }
+  try {
+    await vscode.window.tabGroups.close(tabs, true);
   } catch {
     // already gone
   }

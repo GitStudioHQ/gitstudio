@@ -81,3 +81,9 @@ export const MS_034_COEXIST_KEY = "jbMerge.coexistPromptShown";
 
 /** globalState: Merge Studio said, once, that it stands down for GitStudio (POLISH A5.8). */
 export const MS_DEFERRAL_NOTICE_KEY = "jbMerge.deferralNoticeShown";
+
+/**
+ * globalState: Merge Studio said, once per GitStudio version, that an OLDER
+ * GitStudio (1.13.0 and before, no dashboard) also opens conflicts (POLISH A5.1).
+ */
+export const MS_OUTDATED_GITSTUDIO_NOTICE_KEY = "jbMerge.outdatedGitStudioNotice";

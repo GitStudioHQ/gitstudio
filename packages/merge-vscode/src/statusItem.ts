@@ -1,10 +1,13 @@
-// "⚠ Resolve Conflicts" in the status bar while any open repository has
-// unmerged files (PLAN matrix row 11). It opens the conflicts dashboard.
-// Hidden while another product owns the automatic behaviour (D4), so two
-// installed extensions show one item, not two.
+// The status-bar item (PLAN matrix row 11; POLISH A5.3): "⚠ Resolve
+// Conflicts" while any open repository has unmerged files, and — once every
+// file is resolved but the operation is still in progress — "Continue Rebase"
+// (or "Rebase paused"), so there is always a visible way back to Continue. It
+// opens the conflicts dashboard. Hidden while another product owns the
+// automatic behaviour (D4), so two installed extensions show one item, not two.
+// What it says is product.ts's statusItemLook.
 
 import * as vscode from "vscode";
-import type { MergeProduct } from "./product";
+import type { MergeProduct, StatusItemLook } from "./product";
 
 export class ConflictStatusItem implements vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
@@ -18,18 +21,17 @@ export class ConflictStatusItem implements vscode.Disposable {
     this.item.name = `${product.displayName}: Conflicts`;
     this.item.text = "$(warning) Resolve Conflicts";
     this.item.command = product.commands.showConflicts;
-    this.item.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
   }
 
-  /** `unmerged`: conflicted files across the open repositories. */
-  update(unmerged: number, defers: boolean): void {
-    if (unmerged === 0 || defers) {
+  /** Show `look`, or hide the item when there is none. */
+  update(look: StatusItemLook | undefined): void {
+    if (!look) {
       this.item.hide();
       return;
     }
-    this.item.tooltip =
-      (unmerged === 1 ? "1 conflicted file" : `${unmerged} conflicted files`) +
-      " — open the conflicts dashboard";
+    this.item.text = look.text;
+    this.item.tooltip = look.tooltip;
+    this.item.backgroundColor = look.warning ? new vscode.ThemeColor("statusBarItem.warningBackground") : undefined;
     this.item.show();
   }
 

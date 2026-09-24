@@ -15,7 +15,7 @@
 // working. An older GitStudio, without the dashboard, is never deferred to.
 
 import * as vscode from "vscode";
-import { shouldDeferToGitStudio } from "@gitstudio/merge-vscode/product";
+import { hasSharedMergeExperience, shouldDeferToGitStudio, type MergePeerApi } from "@gitstudio/merge-vscode/product";
 import { registerMergeExperience } from "@gitstudio/merge-vscode/register";
 import { VscodeGitLocator } from "@gitstudio/merge-vscode/vscodeGitLocator";
 import {
@@ -31,6 +31,7 @@ import { buildMsProduct } from "./msProduct";
 import {
   decideWalkthrough,
   GITSTUDIO_AUTO_OPEN_SECTION,
+  GITSTUDIO_EXTENSION_ID,
   gitStudioFacts,
   legacySettingUpdates,
   legacyStateUpdates,
@@ -40,7 +41,15 @@ import {
 /** The longest a fresh window waits for its repositories before the walkthrough decides. */
 const WALKTHROUGH_SETTLE_MS = 5000;
 
-export function activate(context: vscode.ExtensionContext): void {
+/**
+ * What Merge Studio's `activate` returns: what GitStudio reads from it
+ * (vscode.extensions.getExtension("gitstudio.merge-studio").exports).
+ */
+export interface MergeStudioApi {
+  readonly mergePeer: MergePeerApi;
+}
+
+export function activate(context: vscode.ExtensionContext): MergeStudioApi {
   const locator = new LateLocator();
   context.subscriptions.push(locator);
 
@@ -70,7 +79,8 @@ export function activate(context: vscode.ExtensionContext): void {
       platform: `${process.platform} ${process.arch}`,
     }),
   });
-  context.subscriptions.push(registerMergeExperience(context, MS_PRODUCT));
+  const experience = registerMergeExperience(context, MS_PRODUCT);
+  context.subscriptions.push(experience);
 
   // Repositories arrive when VS Code's git extension is ready; until then the
   // experience runs over an empty locator (commands work, nothing to scan).
@@ -97,6 +107,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   registerWalkthrough(context, locator);
   void migrateLegacySettings();
+  // GitStudio reads this: a question answered here (or by 0.3.4, counted by
+  // legacyStateUpdates above) is not asked again when GitStudio owns it.
+  return { mergePeer: experience.peerApi };
 }
 
 export function deactivate(): void {
@@ -125,6 +138,7 @@ function registerWalkthrough(context: vscode.ExtensionContext, locator: LateLoca
       shown: Boolean(context.globalState.get<boolean>(MS_WALKTHROUGH_SHOWN_KEY)),
       openOnInstall: vscode.workspace.getConfiguration().get("workbench.welcomePage.walkthroughs.openOnInstall"),
       busy: await anyRepositoryBusy(locator),
+      gitStudioWalkthroughOnScreen: await gitStudioWalkthroughOpened(),
     });
     if (decision === "open" && !disposed) {
       await context.globalState.update(MS_WALKTHROUGH_SHOWN_KEY, true);
@@ -152,6 +166,20 @@ function whenRepositoriesSettle(locator: LateLocator, maxMs: number): Promise<vo
     });
     const timer = setTimeout(finish, maxMs);
   });
+}
+
+/** GitStudio (with this merge experience) opened its own walkthrough in this session. */
+async function gitStudioWalkthroughOpened(): Promise<boolean> {
+  const gs = vscode.extensions.getExtension(GITSTUDIO_EXTENSION_ID);
+  if (!gs || !hasSharedMergeExperience(gs.packageJSON)) {
+    return false;
+  }
+  try {
+    const api = (gs.isActive ? gs.exports : await gs.activate()) as { mergePeer?: MergePeerApi } | undefined;
+    return api?.mergePeer?.walkthroughOpenedThisSession?.() === true;
+  } catch {
+    return false;
+  }
 }
 
 /** An operation in progress or unmerged files in any open repository (then the dashboard has the stage). */

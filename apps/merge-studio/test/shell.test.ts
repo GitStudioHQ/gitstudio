@@ -143,6 +143,28 @@ test("walkthrough: never again once shown, and never when walkthroughs on instal
   assert.equal(decideWalkthrough({ shown: false, openOnInstall: false, busy: false }), "skip");
 });
 
+test("walkthrough: waits while GitStudio's is on screen — one Welcome editor, and ours used to replace it", () => {
+  // A fresh install of both: GitStudio opened its walkthrough in this session.
+  // Ours is not marked shown ("later"), so it opens at the next calm activation.
+  assert.equal(
+    decideWalkthrough({ shown: false, openOnInstall: undefined, busy: false, gitStudioWalkthroughOnScreen: true }),
+    "later",
+  );
+  assert.equal(
+    decideWalkthrough({ shown: false, openOnInstall: undefined, busy: false, gitStudioWalkthroughOnScreen: false }),
+    "open",
+  );
+});
+
+test("the pair: MS_PRODUCT knows GitStudio as its peer — a 1.13.0 is outdated, a GitStudio with the dashboard is not", () => {
+  const product = buildMsProduct({ locator: new LateLocator(), ask: async () => false, defersTo: () => false, supportLinks: [] });
+  assert.equal(product.peer?.extensionId, "gitstudio.gitstudio");
+  assert.equal(product.peer?.displayName, "GitStudio");
+  assert.equal(product.peer?.outdatedNoticeKey, "jbMerge.outdatedGitStudioNotice");
+  assert.equal(product.peer?.sharedMerge({ contributes: { commands: [{ command: "gitstudio.showConflicts" }] } }), true);
+  assert.equal(product.peer?.sharedMerge({ contributes: { commands: [{ command: "gitstudio.showGraph" }] } }), false);
+});
+
 // ── Asking ──────────────────────────────────────────────────────────────────
 
 test("a question is a modal with the confirm label as its one button; anything else is no", async () => {

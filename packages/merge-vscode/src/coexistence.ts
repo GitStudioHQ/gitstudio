@@ -23,7 +23,7 @@
 
 import * as vscode from "vscode";
 import type { MergeHostCore } from "./host";
-import { COMPETING_BUILT_INS, competingBuiltIns, type MergeProduct } from "./product";
+import { COMPETING_BUILT_INS, competingBuiltIns, type MergePeerApi, type MergeProduct } from "./product";
 
 const TURN_OFF = "Turn them off";
 const NOT_NOW = "Not now";
@@ -52,6 +52,7 @@ export function syncedKeys(product: MergeProduct): string[] {
       product.coexistencePromptKey,
       previousKey(product.coexistencePromptKey),
       ...(product.deferral ? [product.deferral.noticeKey] : []),
+      ...(product.peer ? [product.peer.outdatedNoticeKey] : []),
     ]),
   ];
 }
@@ -70,6 +71,14 @@ export async function maybeOfferCoexistence(host: MergeHostCore): Promise<void> 
     return;
   }
   onScreen.add(context);
+  // The other product of the pair asked the same question and was answered
+  // (a Merge Studio 0.3.4 user who said "Keep them" stays asked after the
+  // upgrade, when GitStudio owns the question): that answer is this one's.
+  if (await peerAnswered(product)) {
+    onScreen.delete(context);
+    await context.globalState.update(product.coexistencePromptKey, true);
+    return;
+  }
   let choice: string | undefined;
   try {
     choice = await host.notify(
@@ -109,6 +118,66 @@ export async function maybeOfferCoexistence(host: MergeHostCore): Promise<void> 
       void restoreBuiltIns(host);
     }
   });
+}
+
+/** The peer product's merge API, when it is installed with this same experience. */
+async function peerApi(product: MergeProduct): Promise<MergePeerApi | undefined> {
+  const peer = product.peer;
+  const ext = peer ? vscode.extensions.getExtension(peer.extensionId) : undefined;
+  if (!peer || !ext || !peer.sharedMerge(ext.packageJSON)) {
+    return undefined;
+  }
+  try {
+    const exports = (ext.isActive ? ext.exports : await ext.activate()) as { mergePeer?: MergePeerApi } | undefined;
+    return exports?.mergePeer;
+  } catch {
+    return undefined; // a peer that failed to activate answers nothing
+  }
+}
+
+/** Whether the peer product has the coexistence question answered (nothing asks twice). */
+export async function peerAnswered(product: MergeProduct): Promise<boolean> {
+  try {
+    return (await peerApi(product))?.coexistenceAnswered() === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * POLISH A5.1: the peer is installed WITHOUT this merge experience (Merge
+ * Studio 0.3.x beside a new GitStudio). It opens every conflict too — two
+ * status items, two dashboards — and still shows a rebase's sides swapped.
+ * Said once per peer version, as information (remembered as it is said, like
+ * the deferral notice), with a button to the peer's page to update it.
+ *
+ * @returns true when the notice was said now.
+ */
+export async function maybeSayPeerOutdated(host: MergeHostCore): Promise<boolean> {
+  const { context, product } = host;
+  const peer = product.peer;
+  const ext = peer ? vscode.extensions.getExtension(peer.extensionId) : undefined;
+  if (!peer || !ext || peer.sharedMerge(ext.packageJSON)) {
+    return false;
+  }
+  const version = String((ext.packageJSON as { version?: unknown } | undefined)?.version ?? "");
+  if (context.globalState.get<string>(peer.outdatedNoticeKey) === version) {
+    return false;
+  }
+  const remembered = context.globalState.update(peer.outdatedNoticeKey, version);
+  const show = `Show ${peer.displayName}`;
+  const choice = await host.notify(
+    "info",
+    `${peer.displayName}${version ? ` ${version}` : ""} is installed too. It also opens your conflicts, and it ` +
+      `still shows a rebase's sides the old way round. Update ${peer.displayName} to use one Conflicts view, ` +
+      "with the same sides.",
+    show,
+  );
+  await remembered;
+  if (choice === show) {
+    await vscode.commands.executeCommand("extension.open", peer.extensionId);
+  }
+  return true;
 }
 
 const OK = "OK";

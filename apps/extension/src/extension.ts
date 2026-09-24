@@ -47,6 +47,8 @@ import { showLineHistory } from "./history/lineHistory";
 import { RevisionNavigator } from "./history/revisionNavigation";
 import { showReflog } from "./history/reflog";
 import { registerGitStudioMerge } from "./merge/gitstudioMerge";
+import { GITSTUDIO_COEXISTENCE_PROMPT_KEY } from "./merge/mergeIds";
+import type { MergePeerApi } from "@gitstudio/merge-vscode/product";
 import { StagedGutter } from "./changes/stagedGutter";
 import { CommitViewProvider } from "./changes/commitView";
 import {
@@ -89,7 +91,15 @@ import { promptConfirm, registerDialogHost } from "./ui/dialogs";
 // off the activation path — the first commit/ref load happens when a view is
 // first resolved (TreeDataProvider.getChildren). Stable VS Code APIs only, so
 // the same build ships identically to the Marketplace and Open VSX (Cursor).
-export function activate(context: vscode.ExtensionContext): void {
+/**
+ * What GitStudio's `activate` returns: what Merge Studio reads from it
+ * (vscode.extensions.getExtension("gitstudio.gitstudio").exports).
+ */
+export interface GitStudioApi {
+  readonly mergePeer: MergePeerApi;
+}
+
+export function activate(context: vscode.ExtensionContext): GitStudioApi {
   const out = vscode.window.createOutputChannel("GitStudio");
   context.subscriptions.push(out);
   const log = (m: string): void =>
@@ -131,14 +141,25 @@ export function activate(context: vscode.ExtensionContext): void {
   // First-run nudge: auto-open the Getting Started walkthrough once, guarded by
   // globalState so it never reappears. Never blocks activation or git work.
   const SEEN_KEY = "gitstudio.walkthroughShown";
+  let walkthroughOpened = false;
   if (!context.globalState.get<boolean>(SEEN_KEY)) {
     void context.globalState.update(SEEN_KEY, true);
+    walkthroughOpened = true;
     void vscode.commands.executeCommand(
       "workbench.action.openWalkthrough",
       WALKTHROUGH_ID,
       false,
     );
   }
+  // Read by Merge Studio: it waits with its own walkthrough while GitStudio's
+  // is on screen (one Welcome editor — the second replaced the first), and
+  // does not ask the question about VS Code's merge editor a second time.
+  const api: GitStudioApi = {
+    mergePeer: {
+      coexistenceAnswered: () => context.globalState.get<boolean>(GITSTUDIO_COEXISTENCE_PROMPT_KEY) === true,
+      walkthroughOpenedThisSession: () => walkthroughOpened,
+    },
+  };
 
   // RepoManager.create activates vscode.git; do it off the activation path so a
   // slow git extension never blocks startup. The views attach as soon as it
@@ -766,6 +787,7 @@ export function activate(context: vscode.ExtensionContext): void {
     log("RepoManager.create() rejected — nothing registered: " + detail);
     out.show(true);
   });
+  return api;
 }
 
 export function deactivate(): void {

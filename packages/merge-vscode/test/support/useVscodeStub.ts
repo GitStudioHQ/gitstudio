@@ -53,6 +53,16 @@ export interface VscodeStub {
   answer?: (kind: string, message: string, actions: string[]) => string | undefined;
   onCloseTabs?: (tabs: unknown[]) => void | Promise<void>;
   tabGroupsAll: { tabs: unknown[] }[];
+  /** tabGroups.activeTabGroup. */
+  activeTabGroup?: { activeTab?: { input?: unknown } };
+  /** Every status-bar item created, in order. */
+  statusItems: { id: string; text: string; tooltip: string; visible: boolean; backgroundColor?: unknown }[];
+  /** workspace.onDidChangeConfiguration's emitter: fire({ affectsConfiguration(section) }). */
+  onDidChangeConfiguration: { fire(event: unknown): void };
+  /** extensions.onDidChange's emitter. */
+  onDidChangeExtensions: { fire(event?: unknown): void };
+  /** window.onDidChangeActiveTextEditor's emitter. */
+  onDidChangeActiveTextEditor: { fire(editor: unknown): void };
   /** Every WorkspaceEdit handed to workspace.applyEdit, in order. */
   applied: { edits: { text?: string; newEol?: number }[] }[];
   /** workspace.onDidChangeTextDocument's emitter: fire({ document, contentChanges }). */

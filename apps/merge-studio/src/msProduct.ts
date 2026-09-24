@@ -9,17 +9,23 @@
 // supplies the parts that touch the editor, so the product itself is
 // unit-tested.
 
-import type { AskSpec, MergeProduct, RepoLocator } from "@gitstudio/merge-vscode/product";
+import {
+  hasSharedMergeExperience,
+  type AskSpec,
+  type MergeProduct,
+  type RepoLocator,
+} from "@gitstudio/merge-vscode/product";
 import {
   MS_COEXISTENCE_PROMPT_KEY,
   MS_IDE_CONTEXT_KEY,
   MS_MERGE_COMMANDS,
   MS_MERGE_VIEW_TYPES,
+  MS_OUTDATED_GITSTUDIO_NOTICE_KEY,
   MS_SETTINGS_SECTION,
   MS_STATUS_ITEM_ID,
   MS_WALKTHROUGH_SHOWN_KEY,
 } from "./ids";
-import { GITSTUDIO_DEFERRAL } from "./shell";
+import { GITSTUDIO_DEFERRAL, GITSTUDIO_EXTENSION_ID } from "./shell";
 
 export interface MsProductParts {
   locator: RepoLocator;
@@ -46,6 +52,15 @@ export function buildMsProduct(parts: MsProductParts): MergeProduct {
     defersTo: parts.defersTo,
     // D4, said once: "GitStudio is installed, so GitStudio opens your conflicts…"
     deferral: GITSTUDIO_DEFERRAL,
+    // GitStudio: its answer to the coexistence question counts here, and a
+    // GitStudio 1.13.0 (no dashboard, rebase sides swapped) that races this
+    // one is named once (POLISH A5.1, skew-a).
+    peer: {
+      extensionId: GITSTUDIO_EXTENSION_ID,
+      displayName: "GitStudio",
+      sharedMerge: hasSharedMergeExperience,
+      outdatedNoticeKey: MS_OUTDATED_GITSTUDIO_NOTICE_KEY,
+    },
     // Follows the user to their other machines, with the shared answers
     // (merge-vscode sets the extension's one sync list).
     syncedStateKeys: [MS_WALKTHROUGH_SHOWN_KEY],

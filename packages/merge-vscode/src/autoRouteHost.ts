@@ -12,7 +12,7 @@ import {
   REROUTE_GUARD_MS,
   ROUTE_GUARD_MS,
 } from "./autoRoute";
-import type { MergeHostCore } from "./host";
+import { closeTextTabs, type MergeHostCore } from "./host";
 import type { JetBrainsUi } from "./jetbrainsUi";
 
 export function registerAutoRoute(
@@ -80,6 +80,10 @@ export function registerAutoRoute(
           jetbrains.notifyEmbeddedFallback();
         }
         await openEmbedded(uri);
+        // One tab per file: a text tab opened pinned (Quick Open) stayed
+        // beside the merge editor, as the built-in reroute below never lets
+        // it (POLISH A1.3).
+        await closeTextTabs(uri);
         return;
     }
   };

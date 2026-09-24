@@ -20,6 +20,7 @@ import { registerAutoRoute } from "./autoRouteHost";
 import {
   maybeOfferCoexistence,
   maybeSayDeferred,
+  maybeSayPeerOutdated,
   offerRestoreAfterAutoOpenOff,
   restoreBuiltIns,
   syncedKeys,
@@ -32,7 +33,7 @@ import { closeMergeEditorTabs, createHostCore, type MergeHostCore } from "./host
 import { JetBrainsUi } from "./jetbrainsUi";
 import { MergeEditorProvider, saveConflictedDocuments } from "./mergeEditorProvider";
 import { continueRefusal, outcomeLine, verbConfirm, type OperationVerb } from "./outcome";
-import type { MergeProduct, MergeRepo } from "./product";
+import { statusItemLook, type MergePeerApi, type MergeProduct, type MergeRepo } from "./product";
 import { ConflictStatusItem } from "./statusItem";
 
 export interface OperationVerbOptions {
@@ -56,6 +57,12 @@ export interface MergeExperience extends vscode.Disposable {
   runOperationVerb(verb: OperationVerb, opts?: OperationVerbOptions): Promise<OperationOutcome | undefined>;
   /** Re-read every repository now (after the product changed git state itself). */
   refresh(): void;
+  /**
+   * What the other product of the pair reads from this one (the extension's
+   * `activate` returns it as `mergePeer`): whether the coexistence question
+   * was answered here, so nothing asks twice.
+   */
+  readonly peerApi: MergePeerApi;
 }
 
 export function registerMergeExperience(
@@ -146,6 +153,8 @@ export function registerMergeExperience(
   let scanning = false;
   /** Whether the last scan saw conflicts (the coexistence question waits for new ones). */
   let hadConflicts = false;
+  /** Whether the last scan found this product standing down (D4). */
+  let deferred: boolean | undefined;
   let scanQueued = false;
   let scanTimer: ReturnType<typeof setTimeout> | undefined;
   const scan = async (): Promise<void> => {
@@ -163,17 +172,27 @@ export function registerMergeExperience(
         );
         const total = detections.reduce((n, d) => n + d.unmerged, 0);
         const defers = host.defers();
-        status.update(total, defers);
+        status.update(statusItemLook({ unmerged: total, defers, op: total === 0 && !defers ? await continueLook(repos, detections) : undefined }));
+        if (defers && deferred === false) {
+          // The other product took the automatic behaviour just now (the
+          // user's "Let … open conflicts", or autoOpen turned back on): it
+          // opens its own dashboard, so ours goes.
+          dashboard.standDown();
+        }
+        deferred = defers;
         // At the FIRST conflict of a run (conflicts appearing after none),
         // never at activation: the coexistence question in the product that
         // owns the automatic behaviour — a "Not now" is asked again at the
         // next run, not at every scan — and, in a product standing down (D4),
-        // the one notice that says so.
+        // the one notice that says so. An outdated peer racing this product
+        // (POLISH A5.1) is named first, and the question waits for the next run.
         if (total > 0 && !hadConflicts && host.settings().autoOpen) {
           if (defers) {
             void maybeSayDeferred(host).then((handedBack) => handedBack && scheduleScan());
           } else {
-            void maybeOfferCoexistence(host);
+            void maybeSayPeerOutdated(host).then((said) => {
+              if (!said) void maybeOfferCoexistence(host);
+            });
           }
         }
         hadConflicts = total > 0;
@@ -209,8 +228,19 @@ export function registerMergeExperience(
     status,
     registerAutoRoute(host, jetbrains, openEmbedded),
     product.locator.onDidChange(scheduleScan),
+    // The other product installed, updated or removed: who owns the automatic
+    // behaviour may have changed.
+    vscode.extensions.onDidChange(scheduleScan),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration(product.settingsSection)) {
+      const handBack = product.deferral?.handBack;
+      if (
+        event.affectsConfiguration(product.settingsSection) ||
+        (handBack && event.affectsConfiguration(`${handBack.section}.${handBack.key}`)) ||
+        (product.settingsFallbackSection && event.affectsConfiguration(product.settingsFallbackSection))
+      ) {
+        // Our settings, the owner's hand-back switch (Merge Studio's item
+        // stayed until the next repository event after GitStudio's autoOpen
+        // came back on), or the peer's settings we fall back to.
         scheduleScan();
       }
       if (event.affectsConfiguration(`${product.settingsSection}.autoOpen`)) {
@@ -268,6 +298,9 @@ export function registerMergeExperience(
     openConflict,
     runOperationVerb,
     refresh: scheduleScan,
+    peerApi: {
+      coexistenceAnswered: () => context.globalState.get<boolean>(product.coexistencePromptKey) === true,
+    },
     dispose: () => {
       for (const d of disposables.splice(0)) {
         d.dispose();
@@ -358,6 +391,34 @@ export async function driveVerb(
   }
   host.changed(repo);
   return outcome;
+}
+
+/**
+ * With nothing conflicted anywhere: the operation still in progress (the
+ * active repository's, else the first), as the status item's Continue verb —
+ * or its pause. A stash re-apply has no Continue (git keeps no operation for
+ * it), and "none" has nothing to continue.
+ */
+async function continueLook(
+  repos: readonly MergeRepo[],
+  detections: ReadonlyArray<{ kind: string }>,
+): Promise<{ continueVerb?: string; pause?: { detail: string } } | undefined> {
+  const busy = repos.filter((_, i) => detections[i].kind !== "none" && detections[i].kind !== "stash");
+  if (busy.length === 0) {
+    return undefined;
+  }
+  try {
+    const view = await busy[0].ctx.operation.view();
+    if (view.kind === "none" || view.kind === "stash") {
+      return undefined;
+    }
+    return {
+      ...(view.verbs.continue ? { continueVerb: view.verbs.continue } : {}),
+      ...(view.pause ? { pause: { detail: view.pause.detail } } : {}),
+    };
+  } catch {
+    return undefined; // a transient failure: the next change scans again
+  }
 }
 
 async function hasUnmerged(repo: MergeRepo): Promise<boolean> {

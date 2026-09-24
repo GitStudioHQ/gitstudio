@@ -35,9 +35,19 @@ export function collectUris(arg: unknown): vscode.Uri[] {
   return uris;
 }
 
-/** The clicked resource, else the active text editor's document. */
+/**
+ * The clicked resource, else the active text editor's document, else the file
+ * of the active tab — a custom editor (another merge editor on the file, the
+ * other product's included) is no text editor, and from the palette the
+ * command did nothing and said nothing.
+ */
 export function targetUri(arg: unknown): vscode.Uri | undefined {
-  return resolveUriArg(arg) ?? vscode.window.activeTextEditor?.document.uri;
+  return resolveUriArg(arg) ?? vscode.window.activeTextEditor?.document.uri ?? activeTabUri();
+}
+
+function activeTabUri(): vscode.Uri | undefined {
+  const input = vscode.window.tabGroups?.activeTabGroup?.activeTab?.input as { uri?: unknown } | undefined;
+  return input?.uri instanceof vscode.Uri ? input.uri : undefined;
 }
 
 /** The repository holding `uri` and the file's repo-relative, forward-slashed path. */
