@@ -256,6 +256,8 @@ export class ConflictsDashboard {
    * emptying it for the moment git takes.
    */
   private lastView = new Map<string, ConflictFileView>();
+  /** Every pending pill word this stop has shown (pillSizer): the pill column never narrows under a row. */
+  private pillWords = new Set<string>();
   /** Holds in progress (button → its cancel), so a state, a lock or dispose never leaves a timer armed. */
   private holds = new Map<HTMLButtonElement, () => void>();
   /**
@@ -359,6 +361,7 @@ export class ConflictsDashboard {
       this.freshEpisode = true;
       this.localBusy.clear();
       this.lastView.clear();
+      this.pillWords.clear();
     }
     // A row the reader pressed stays busy while the host is still at it and
     // the row has not moved yet; the host's answer (the row resolved, or the
@@ -632,6 +635,7 @@ export class ConflictsDashboard {
         ),
       );
     }
+    if (files.length > 0) list.appendChild(this.pillSizer(files, op));
     for (const f of files) list.appendChild(this.row(f, state));
     // How many rows: a host that fills gives the list a floor of a few of
     // them (conflicts.css), never more than it has.
@@ -758,6 +762,34 @@ export class ConflictsDashboard {
     );
     t.appendChild(actions);
     return t;
+  }
+
+  /**
+   * The pill column's width for the whole stop. The column is as wide as the
+   * widest pill in it (the list's subgrid), so resolving the row with the
+   * widest pill — "deleted in yours (test)" becoming "✓ deleted" — narrowed
+   * it, and every other row's pill jumped sideways: a flash of its own. This
+   * hidden row holds every pill a row of this stop can show, the pending
+   * words it has seen and each resolution ("✓ kept theirs · master", …), so
+   * the column is the widest of them from the start and stays that wide.
+   */
+  private pillSizer(files: readonly ConflictFileView[], op: OperationView): HTMLElement {
+    for (const f of files) {
+      const word = f.badge || shapeWord(f.shape);
+      if (word) this.pillWords.add(word);
+    }
+    const choices = (["yours", "theirs", "merged"] as const).map((choice) => `✓ ${choicePill({ choice, shape: "text" }, op).text}`);
+    choices.push("✓ deleted", "✓ resolved");
+    const sizer = el("div", "cd-sizer");
+    sizer.setAttribute("aria-hidden", "true");
+    const cell = el("span", "cd-sizer-cell");
+    for (const word of [...this.pillWords, ...choices]) {
+      const p = el("span", "cd-sizer-pill");
+      pillLabel(p, word);
+      cell.appendChild(p);
+    }
+    sizer.appendChild(cell);
+    return sizer;
   }
 
   private branchPill(role: SideRole, name: string, description: string): HTMLElement {

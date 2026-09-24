@@ -640,10 +640,38 @@
      cut, its words whole in its title. */
   max-width: 240px;
 }
+/* The pill column's width for the whole stop (dashboard.ts pillSizer): a
+   hidden, zero-height row of every pill a row can show — the pending words
+   and each resolution — so resolving the row with the widest pill never
+   narrows the column and moves the other rows' pills. */
+.cd-list > .cd-sizer {
+  height: 0;
+  /* A row's own side padding, which a subgrid adds to its edge columns. */
+  padding: 0 var(--cd-row-px);
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+.cd-sizer-cell {
+  display: grid;
+  justify-items: start;
+  min-width: 0;
+  max-width: 240px;
+}
+@supports (grid-template-columns: subgrid) {
+  .cd-list > .cd-sizer {
+    display: grid;
+    grid-template-columns: subgrid;
+  }
+  .cd-sizer > .cd-sizer-cell { grid-column: 3; }
+}
+.cd-sizer-pill { border: 1px solid transparent; }
 /* A fixed height: the check mark of "✓ kept yours" comes from a fallback
-   font whose taller line box made resolved rows a pixel taller. */
+   font whose taller line box made resolved rows a pixel taller. The sizer's
+   pills are the same box as the real ones. */
 .cd-badge,
-.cd-choice {
+.cd-choice,
+.cd-sizer-pill {
   position: relative;
   min-width: 0;
   max-width: 100%;
@@ -968,7 +996,8 @@
    in theirs"), so it is whole beside the file's name. */
 @container cd (max-width: 379px) {
   .cd-actions .cd-trim,
-  .cd-pillcell .cd-trim {
+  .cd-pillcell .cd-trim,
+  .cd-sizer-cell .cd-trim {
     position: absolute;
     width: 1px;
     height: 1px;

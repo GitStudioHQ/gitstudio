@@ -227,6 +227,40 @@ test("Delete the file, Hold to undo and a file resolved from a terminal each cha
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
+test("nothing on another row MOVES either: resolving the row with the widest pill keeps the pill column's width", { skip }, async () => {
+  // The frame capture found what a MutationObserver cannot: nothing was
+  // written to the other rows, but "deleted in yours (test)" becoming
+  // "✓ deleted" narrowed the pill column, and the next row's "binary" jumped
+  // 61px to the right. Measured at the wide, the narrow and the compact width,
+  // there and back (Hold to undo).
+  const v = await run(`
+    const geometry = (skip) => $$(".cd-row").filter((r) => r.dataset.path !== skip)
+      .flatMap((r) => [...r.querySelectorAll(".cd-badge, .cd-choice, button, .cd-name")]
+        .map((e) => { const b = e.getBoundingClientRect(); return r.dataset.path + " " + (e.dataset.key || e.className) + " " + Math.round(b.left * 2) / 2 + "," + Math.round(b.width * 2) / 2; }));
+    const P = "app/greeting.py";
+    // Every other row pending, as the desktop's capture had it: the widest
+    // pill on screen is the one about to go.
+    for (const p of ["README.md", "cases/whitespace.txt", "f.txt"]) set(p, { status: "pending", choice: undefined });
+    for (const w of [960, 640, 343]) {
+      root.style.width = w + "px";
+      set(P, { status: "pending", choice: undefined });
+      d.render(S(FILES));
+      const before = geometry(P);
+      set(P, { status: "resolved", choice: "yours" });
+      d.render(S(FILES));
+      expect(/deleted/.test(rowEl(P).querySelector(".cd-choice").textContent), w + "px: resolved (" + rowEl(P).querySelector(".cd-choice").textContent + ")");
+      const after = geometry(P);
+      const moved = before.filter((g, i) => g !== after[i]);
+      expect(moved.length === 0, w + "px: resolving it moved " + moved.length + " things on other rows: " + moved.slice(0, 3).join(" | ") + " -> " + after.filter((g, i) => g !== before[i]).slice(0, 3).join(" | "));
+      set(P, { status: "pending", choice: undefined });
+      d.render(S(FILES));
+      const back = geometry(P);
+      expect(back.every((g, i) => g === before[i]), w + "px: and undoing it moves nothing back");
+    }
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
 test("a hold in progress survives another file being resolved; the host locking it still ends it", { skip }, async () => {
   const v = await run(`
     const hold = key("restore:cases/whitespace.txt");
