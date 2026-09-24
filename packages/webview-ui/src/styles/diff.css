@@ -109,8 +109,8 @@
   --jb-line-same:      rgba(32,168,140,.13); --jb-inner-same:      rgba(32,168,140,.10); --jb-edge-same:      #209788;
   --jb-line-one-sided: rgba(75,110,245,.28); --jb-inner-one-sided: rgba(75,110,245,.18); --jb-edge-one-sided: #7a9cf7;
   --jb-done-conflict:  rgba(250,123,76,.72);  --jb-muted-conflict:  rgba(232,96,60,.12);  --jb-point-conflict:  rgba(232,96,60,.62);
-  --jb-done-same:      rgba(32,151,136,.72);  --jb-muted-same:      rgba(32,168,140,.043); --jb-point-same:      rgba(32,168,140,.62);
-  --jb-done-one-sided: rgba(122,156,247,.72); --jb-muted-one-sided: rgba(75,110,245,.13); --jb-point-one-sided: rgba(75,110,245,.62);
+  --jb-done-same:      rgba(32,151,136,.72);  --jb-muted-same:      rgba(32,168,140,.067); --jb-point-same:      rgba(32,168,140,.62);
+  --jb-done-one-sided: rgba(122,156,247,.72); --jb-muted-one-sided: rgba(75,110,245,.15); --jb-point-one-sided: rgba(75,110,245,.62);
   /* The 2-way diff (by what a change did). */
   --jb-line-modified: rgba(40,150,245,.23);  --jb-inner-modified: rgba(40,150,245,.14);  --jb-ruler-modified: rgba(74,159,245,.6);
   --jb-line-inserted: rgba(80,180,40,.13);   --jb-inner-inserted: rgba(80,180,40,.16);   --jb-ruler-inserted: rgba(98,179,74,.6);
@@ -121,8 +121,8 @@ body.vscode-light, body.vscode-high-contrast-light {
   --jb-line-same:      rgba(32,168,140,.14); --jb-inner-same:      rgba(32,168,140,.12); --jb-edge-same:      #138667;
   --jb-line-one-sided: rgba(56,139,253,.30); --jb-inner-one-sided: rgba(56,139,253,.18); --jb-edge-one-sided: #1d48e8;
   --jb-done-conflict:  rgba(184,50,26,.76);  --jb-muted-conflict:  rgba(232,96,60,.14);  --jb-point-conflict:  rgba(184,50,26,.55);
-  --jb-done-same:      rgba(19,134,103,.76); --jb-muted-same:      rgba(32,168,140,.06); --jb-point-same:      rgba(19,134,103,.55);
-  --jb-done-one-sided: rgba(29,72,232,.76);  --jb-muted-one-sided: rgba(56,139,253,.13); --jb-point-one-sided: rgba(29,72,232,.55);
+  --jb-done-same:      rgba(19,134,103,.76); --jb-muted-same:      rgba(32,168,140,.075); --jb-point-same:      rgba(19,134,103,.55);
+  --jb-done-one-sided: rgba(29,72,232,.76);  --jb-muted-one-sided: rgba(56,139,253,.15); --jb-point-one-sided: rgba(29,72,232,.55);
   --jb-line-modified: rgba(64,128,255,.28);  --jb-inner-modified: rgba(64,128,255,.18);  --jb-ruler-modified: rgba(9,105,218,.55);
   --jb-line-inserted: rgba(80,180,40,.15);   --jb-inner-inserted: rgba(80,180,40,.20);   --jb-ruler-inserted: rgba(26,127,55,.55);
   --jb-line-deleted:  rgba(110,118,129,.23); --jb-inner-deleted:  rgba(110,118,129,.20); --jb-ruler-deleted:  rgba(89,99,110,.55);
@@ -139,9 +139,9 @@ body.vscode-light, body.vscode-high-contrast-light {
  * leaves the room (the conflict and the same change keep their lightness gap
  * there, and the word tints their step over the band). */
 body.vscode-high-contrast:not(.vscode-high-contrast-light) {
-  --jb-line-conflict: rgba(232,96,60,.24);  --jb-inner-conflict: rgba(232,96,60,.20);  --jb-muted-conflict: rgba(232,96,60,.13);
-  --jb-line-same:     rgba(32,168,140,.14); --jb-inner-same:     rgba(32,168,140,.08); --jb-muted-same:     rgba(32,168,140,.055);
-  --jb-inner-one-sided: rgba(75,110,245,.24); --jb-muted-one-sided: rgba(75,110,245,.14);
+  --jb-line-conflict: rgba(232,96,60,.24);  --jb-inner-conflict: rgba(232,96,60,.20);  --jb-muted-conflict: rgba(232,96,60,.14);
+  --jb-line-same:     rgba(32,168,140,.14); --jb-inner-same:     rgba(32,168,140,.08); --jb-muted-same:     rgba(32,168,140,.08);
+  --jb-inner-one-sided: rgba(75,110,245,.24); --jb-muted-one-sided: rgba(75,110,245,.16);
   --jb-half-conflict: var(--jb-muted-conflict); --jb-half-same: var(--jb-muted-same); --jb-half-one-sided: var(--jb-muted-one-sided);
   --jb-line-inserted: rgba(80,180,40,.14); --jb-line-deleted: rgba(139,148,158,.22);
 }

@@ -458,7 +458,9 @@ test("text on every tint, edges on every background, and the three decisions apa
       const mutedVsBg = deltaE2000(muted, bg);
       if (contrast(fg, muted) < 4.5) problems.push(`${theme.name}: text on the ${tone} trace is ${contrast(fg, muted).toFixed(2)}:1 (< 4.5)`);
       if (mutedStep < 3) problems.push(`${theme.name}: the ${tone} trace is only ΔE ${mutedStep.toFixed(1)} from its open band (< 3): not calmer`);
-      if (mutedVsBg < 1.5) problems.push(`${theme.name}: the ${tone} trace is only ΔE ${mutedVsBg.toFixed(1)} from the background (< 1.5): gone`);
+      // Visible, not merely there: the round-1 screenshots showed a dark
+      // same-change trace at ΔE 4.3 as all but gone.
+      if (mutedVsBg < 4.5) problems.push(`${theme.name}: the ${tone} trace is only ΔE ${mutedVsBg.toFixed(1)} from the background (< 4.5): all but gone`);
       if (mutedVsBg >= deltaE2000(line, bg)) problems.push(`${theme.name}: the ${tone} trace stands further off the background than its open band`);
       if (m.half !== m.muted) problems.push(`${theme.name}: the half-done ${tone} Result (${m.half}) is not the trace's tint (${m.muted}), so the taken side's ribbon changes colour where it meets it`);
       if (hc && m.frame !== "solid") problems.push(`${theme.name}: a pending ${tone} block has no solid frame edge (${m.frame})`);

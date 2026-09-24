@@ -83,8 +83,8 @@ const MOUNT = `
   /** A settled change's trace — a taken side, its ribbon, the Result (and a half-done Result). */
   const MUTED = {
     conflict: "rgba(232, 96, 60, 0.12)",
-    same: "rgba(32, 168, 140, 0.043)",
-    "one-sided": "rgba(75, 110, 245, 0.13)",
+    same: "rgba(32, 168, 140, 0.067)",
+    "one-sided": "rgba(75, 110, 245, 0.15)",
   };
   const EDGE = {
     conflict: "rgb(250, 123, 76)",
