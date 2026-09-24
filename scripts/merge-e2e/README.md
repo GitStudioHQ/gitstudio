@@ -35,7 +35,10 @@ npx tsx scripts/merge-e2e/dashboardClicks.ts --vsix /tmp/vsix --repo <a reposito
 Code it drives is its own: a fresh `--user-data-dir` and `--extensions-dir`
 under `--out`, started with `open -g` (never brought to the front; nothing
 focuses or raises it) and quit, its profile deleted, when the run ends. The
-repository is CHANGED (files get resolved): pass a throwaway one.
+repository is CHANGED (files get resolved): pass a throwaway one. It is still
+a real window: if anyone's pointer, wheel or keys reach it while a press is
+recorded, the run stops as DISTURBED (exit 3, no verdict) — build a fresh
+repository and run again (`--only 3,4,5` reruns some scenarios).
 
 ## Files
 
