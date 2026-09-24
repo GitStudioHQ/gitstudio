@@ -4721,12 +4721,12 @@
       const light = document.body.classList.contains("vscode-light");
       // diff.css's values: the merge paints by DECISION — red a conflict,
       // green the same change on both sides, blue one side only, whatever the
-      // change did — the three balanced in OKLCH (equal weight, the text at
-      // 7:1 on each) and a handled outline at 3:1 (it carries a meaning in
-      // the legend).
+      // change did — designed in OKLCH (the green clearly LIGHTER than the
+      // red, the blue the soft one, the text at 7:1 on each) and a handled
+      // outline at 3:1 (it carries a meaning in the legend).
       const want = light
-        ? { conflict: "rgba(244, 134, 127, 0.4)", same: "rgba(141, 223, 130, 0.4)", oneSided: "rgba(121, 178, 253, 0.4)", half: "rgba(244, 134, 127, 0.2)", done: "rgba(158, 33, 44, 0.84)", point: "rgba(27, 101, 185, 0.55)", dot: "rgb(158, 33, 44)", dots: ["rgb(158, 33, 44)", "rgb(64, 147, 57)", "rgb(27, 101, 185)"] }
-        : { conflict: "rgba(130, 42, 41, 0.45)", same: "rgba(7, 65, 2, 0.55)", oneSided: "rgba(23, 74, 139, 0.45)", half: "rgba(130, 42, 41, 0.22)", done: "rgba(246, 132, 130, 0.72)", point: "rgba(116, 167, 232, 0.62)", dot: "rgb(246, 132, 130)", dots: ["rgb(246, 132, 130)", "rgb(91, 167, 84)", "rgb(116, 167, 232)"] };
+        ? { conflict: "rgba(244, 134, 123, 0.4)", same: "rgba(95, 254, 97, 0.4)", oneSided: "rgba(122, 178, 251, 0.4)", half: "rgba(244, 134, 123, 0.2)", done: "rgba(161, 38, 40, 0.84)", point: "rgba(27, 101, 185, 0.55)", dot: "rgb(161, 38, 40)", dots: ["rgb(161, 38, 40)", "rgb(41, 146, 54)", "rgb(27, 101, 185)"] }
+        : { conflict: "rgba(91, 4, 2, 0.55)", same: "rgba(0, 78, 9, 0.55)", oneSided: "rgba(2, 49, 108, 0.5)", half: "rgba(91, 4, 2, 0.3)", done: "rgba(223, 104, 98, 0.72)", point: "rgba(116, 167, 232, 0.62)", dot: "rgb(223, 104, 98)", dots: ["rgb(223, 104, 98)", "rgb(117, 208, 121)", "rgb(116, 167, 232)"] };
       const body = grid.querySelector(".jb-pane-body");
       const probe = (cls) => {
         const el = document.createElement("div");
@@ -4753,6 +4753,23 @@
       c.ok(!probe("jb-settled jb-edge-top").bt.startsWith("solid"), "no neutral grey line of the old look");
       c.eq(probe("jb-point jb-point-one-sided").bt, `solid 1px ${want.point}`, "an insertion point is a 1px line in its point colour");
       c.eq(probe("jb-frame jb-frame-conflict jb-edge-top").bt.split(" ")[0], "none", "no frame lines outside high contrast");
+      // An OPEN conflict's lines carry a solid bar beside the line numbers, in
+      // the conflict's own colour: the cue that needs no colour vision (red
+      // and green come close under deuteranopia). Its rule, and — where Monaco
+      // painted an open conflict's margin — the bar itself.
+      const barRule = (() => {
+        const el = document.createElement("div");
+        el.className = "jb-conflict-bar";
+        body.appendChild(el);
+        const cs = getComputedStyle(el);
+        const out = `${cs.borderLeftStyle} ${cs.borderLeftWidth} ${cs.borderLeftColor}`;
+        el.remove();
+        return out;
+      })();
+      c.eq(barRule, `solid 2px ${want.dot}`, "the open conflict's bar: solid, 2px, the conflict colour");
+      const openMargins = grid.querySelectorAll(".margin-view-overlays .jb-line-conflict:not(.jb-half)").length;
+      const bars = [...grid.querySelectorAll(".margin-view-overlays .jb-conflict-bar")];
+      if (openMargins > 0) c.ok(bars.length > 0, `an open conflict's painted lines carry the bar (${openMargins} open lines, ${bars.length} bars)`);
       // The ribbons land on the 32 ms timer, which the virtual clock does serve.
       const band = grid.querySelector(".jb-ribbon-stage path.jb-ribbon-conflict");
       c.ok(!!band, "the ribbons are drawn");
