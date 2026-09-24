@@ -4336,7 +4336,9 @@
       c.eq(window.__GS_INVOKED.filter((r) => r.channel === "conflict:takeRole").length, 2, "each Accept Yours resolved its file by role");
       c.ok(!!cont() && !cont().disabled, "with both resolved, Continue is enabled");
       c.ok(!$(".cd-why"), "and has nothing to explain");
-      c.eq(text(".cd-done-title"), "All conflicts resolved", "the success card shows");
+      // POLISH A5.4: the card is the step's, not "All conflicts resolved" (the
+      // rebase in this scene is at its only commit).
+      c.eq(text(".cd-done-title"), "Last commit resolved", "the success card shows, for this step");
     },
 
     /**
@@ -4375,8 +4377,10 @@
       for (const t of ["--gs-fg", "--gs-fg-muted", "--gs-border", "--gs-surface", "--gs-status-conflict"]) {
         c.ok(getComputedStyle(dash).getPropertyValue(t).trim() !== "", `${t} resolves inside the dashboard`);
       }
-      const shellTokens = getComputedStyle($(".cd-foot .cd-counter") || dash).color;
-      c.ok(shellTokens !== getComputedStyle(dash).color, `muted text is muted, not inherited body ink (${shellTokens})`);
+      // (The footer's own count gave way to Continue's reason, which says it.)
+      const muted = $(".cd-foot .cd-counter") || $(".cd-foot .cd-why") || $(".cd-repo");
+      const shellTokens = getComputedStyle(muted || dash).color;
+      c.ok(!!muted && shellTokens !== getComputedStyle(dash).color, `muted text is muted, not inherited body ink (${shellTokens})`);
     },
 
     /**
@@ -4498,12 +4502,24 @@
         ['button[title="Synchronized scrolling"]', "sync scrolling"],
         ['button[title^="Reset"]', "reset"],
       ]) c.ok(!!shell.querySelector(sel), `the toolbar has ${what}`);
+      // POLISH A5.6: the Accept buttons carry each side's branch.
       for (const [sel, words] of [
-        [".ms-accept-yours", "Accept Yours"],
-        [".ms-accept-theirs", "Accept Theirs"],
+        [".ms-accept-yours", "Accept Yours · main"],
+        [".ms-accept-theirs", "Accept Theirs · feature/login"],
         [".ms-close", "Close"],
         [".ms-apply", "Apply"],
       ]) c.eq(text(shell.querySelector(sel)), words, `the bottom bar says ${words}`);
+      // The critic, r0923: beside the commit composer, the file list and a
+      // banner, the three panes got ~194px each at 1280. The editor takes the
+      // whole Changes view while it is open.
+      const hidden = (sel) => { const n = $(sel); return !n || n.getClientRects().length === 0; };
+      for (const sel of [".dc-composer", ".dc-toolbar", ".dc-listcol", ".dc-opstrip"]) {
+        c.ok(hidden(sel), `${sel} gives the merge editor its room`);
+      }
+      const view = $(".changes-view").getBoundingClientRect();
+      const sh = shell.getBoundingClientRect();
+      c.ok(sh.width >= view.width - 24, `the merge editor is the view's full width (${Math.round(sh.width)} of ${Math.round(view.width)}px)`);
+      c.ok(sh.height >= view.height - 80, `and nearly its full height (${Math.round(sh.height)} of ${Math.round(view.height)}px)`);
       c.ok(!shell.querySelector(".ms-cancel, .ms-abort, .ms-pop"), "and no way to end the whole operation from it (the conflicts list has that)");
       c.ok(!!shell.querySelector(".ms-opstrip"), "and the operation strip");
       c.ok(!!shell.querySelector(".ms-legend-slot"), "and a slot for the legend");
@@ -4539,7 +4555,10 @@
       $$(".cd-row button").find((b) => text(b) === "Merge…")?.click();
       await settle(1200);
       c.ok(!!$(".ms-shell"), "the merge editor is open");
-      c.ok(!!$(".dc-opstrip") && !$(".dc-opstrip").hidden, "the strip names the operation while a file covers the dashboard");
+      // The Changes strip gives the editor its room; the editor's own strip
+      // names the operation (said once, not twice — the critic, r0923).
+      c.ok(!!$(".ms-shell .ms-opstrip") && $(".ms-shell .ms-opstrip").getClientRects().length > 0, "the editor's strip names the operation while it covers the dashboard");
+      c.ok(!$(".dc-opstrip") || $(".dc-opstrip").getClientRects().length === 0, "and the Changes banner does not say it again");
       const before = window.__GS_INVOKED.length;
       c.ok(!$(".ms-abort") && !$(".ms-pop"), "the editor offers no Abort");
       const close = $(".ms-close");
@@ -4621,7 +4640,10 @@
       window.__gsEmit("menu:command", { command: "undo" });
       await settle(300);
       c.eq(counter(), start, "(back to the start for the next step)");
-      $(".dc-message")?.focus();
+      // Outside the merge editor (the commit composer gives the editor its
+      // room while it is open, so: the top bar's search).
+      $(".topbar-cmdk")?.focus();
+      c.ok(document.activeElement === $(".topbar-cmdk"), "focus is outside the merge editor");
       await settle(500);
       window.__gsEmit("menu:command", { command: "undo" });
       await settle(300);
@@ -5347,7 +5369,9 @@
         const right = Math.min(s.right, window.innerWidth);
         return b.width > 0 && b.left >= s.left - 1 && b.right <= right + 1 ? "" : `${Math.round(b.left)}–${Math.round(b.right)} outside ${Math.round(s.left)}–${Math.round(right)}`;
       };
-      c.ok(shell.getBoundingClientRect().width < 600, `precondition: a narrow pane (${Math.round(shell.getBoundingClientRect().width)}px)`);
+      // The editor has the whole Changes view now (it had 443px of a 1000px
+      // window beside the file list): the window is what is narrow.
+      c.ok(window.innerWidth <= 1000 && shell.getBoundingClientRect().width < 900, `precondition: a narrow window (${window.innerWidth}px, the editor ${Math.round(shell.getBoundingClientRect().width)}px)`);
       for (const sel of [".ms-accept-yours", ".ms-accept-theirs", ".ms-close", ".ms-apply"]) {
         c.eq(out(shell.querySelector(sel)), "", `${sel} is on screen`);
       }
@@ -5394,16 +5418,17 @@
     },
 
     /**
-     * The strip's "Show conflicts" is the other way back to the dashboard: it
-     * hides itself as the dashboard comes up — with the keyboard on it.
+     * The merge editor's "All conflicts" is the other way back to the
+     * dashboard (the Changes strip gives the editor its room while it is
+     * open): it goes as the dashboard comes up — with the keyboard on it.
      */
     "show-conflicts-takes-the-keyboard-to-the-dashboard": async (f) => {
       const c = check(f);
       await settle(700);
       $('[data-key="merge:src/app.ts"]')?.click();
       await settle(1500);
-      const back = $(".dc-opstrip-back");
-      c.ok(!!back && !$(".dc-opstrip").hidden, "precondition: a file covers the dashboard and the strip leads back");
+      const back = $(".ms-shell .ms-op-list");
+      c.ok(!!back && back.getClientRects().length > 0, "precondition: the merge editor covers the dashboard and its strip leads back");
       back?.focus();
       back?.click();
       await settle(1200);
@@ -13707,6 +13732,47 @@
         c.ok(labelW > 1, `with room to spare the editor name is shown (${Math.round(labelW)}px)`);
       }
       c.ok(document.documentElement.scrollWidth <= innerWidth, "and the bar never scrolls the app sideways");
+    },
+
+    /**
+     * …and with a stopped operation's chip in it ("Rebasing · 30 conflicts"),
+     * the critic's r0923 sweep: the open-in button sat over the search box
+     * ("earch anything…") or the chip was cut ("Rebasing · 30 conflic") in
+     * one render in seven. The fit left the chip's words out of what the row
+     * needs, so a tight row measured as fitting and let everything back.
+     * Whatever state the row starts in, it settles where nothing overlaps.
+     */
+    "the-top-bar-fits-a-stopped-operation": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(1500);
+      const bar = $(".topbar");
+      const chip = $(".topbar-opchip");
+      c.ok(!!chip && !chip.hidden, "precondition: the operation's chip is on the bar");
+      if (!bar || !chip) return;
+      const verdict = (when) => {
+        const lbl = $(".topbar-opchip-label");
+        const shown = lbl ? lbl.getBoundingClientRect().width : 0;
+        c.ok(shown < 1 || lbl.scrollWidth <= lbl.clientWidth + 1, `${when}: the chip's words are whole or gone, never cut (${lbl && lbl.clientWidth} of ${lbl && lbl.scrollWidth}px)`);
+        const a = $(".topbar-openin")?.getBoundingClientRect();
+        const b = $(".topbar-cmdk")?.getBoundingClientRect();
+        c.ok(!!a && !!b && a.right <= b.left + 1, `${when}: the open-in button ends before the search box (${a && Math.round(a.right)} / ${b && Math.round(b.left)}; bar ${Math.round(bar.clientWidth)}px "${bar.className}")`);
+        const s = $(".topbar-cmdk-label");
+        c.ok(!s || s.getBoundingClientRect().width < 1 || s.scrollWidth <= s.clientWidth + 1, `${when}: the search box's words are whole or gone`);
+        c.ok(document.documentElement.scrollWidth <= innerWidth, `${when}: the bar never scrolls the app sideways`);
+      };
+      verdict("as it settled");
+      // From each starting state the fit can be in: everything shown, and
+      // everything collapsed. Both must settle the same, correct way.
+      for (const start of [[], ["is-tight", "is-tighter"]]) {
+        bar.classList.remove("is-tight", "is-tighter");
+        bar.classList.add(...start);
+        // Something on the bar changes length (the chip's count): the fit runs.
+        const label = $(".topbar-opchip-label");
+        if (label) label.textContent = label.textContent + "";
+        await settle(400);
+        verdict(start.length ? "from collapsed" : "from open");
+      }
     },
 
     // ── Creating and editing a branch ──────────────────────────────────────

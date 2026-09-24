@@ -9645,11 +9645,26 @@ body.vscode-light .gh-label-chip {
   color: var(--app-muted);
 }
 .dc-opstrip-back { flex: 0 0 auto; }
-/* The dashboard's own column scrolls inside the surface. */
+/* The dashboard's own column scrolls inside the surface; with .cd-host-fill
+   on it (renderer.ts) its LIST scrolls and Abort / Continue stay on screen. */
 .dc-conflicts {
   height: 100%;
   overflow: auto;
   background: var(--vscode-editor-background);
+}
+/* A conflicted file open in the merge editor takes the whole Changes view.
+   Beside the commit composer, its buttons, the file list and the operation
+   banner, three panes got about 194px each at the default 1280px window and
+   100px at 1000px. The editor's own strip names the operation and links back
+   to every conflicted file (All conflicts), so the banner above it only said
+   the same thing a second time. Closing the editor, or All conflicts, brings
+   the dashboard back and all of this with it. */
+.changes-view:has(> .dc-body > .diff-surface > .merge-wrap) > .dc-composer,
+.changes-view:has(> .dc-body > .diff-surface > .merge-wrap) > .dc-toolbar,
+.changes-view:has(> .dc-body > .diff-surface > .merge-wrap) > .dc-opstrip,
+.changes-view:has(> .dc-body > .diff-surface > .merge-wrap) > .dc-body > .dc-listcol,
+.changes-view:has(> .dc-body > .diff-surface > .merge-wrap) > .dc-body > .dc-vsplit {
+  display: none;
 }
 
 /* ── 7 · PR review depth — Files tab + inline threads (views/prs.ts) ─────────── */

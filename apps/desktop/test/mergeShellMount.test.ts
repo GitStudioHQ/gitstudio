@@ -652,6 +652,52 @@ test("the dashboard stays locked until it has read what the verb did — a secon
   assert.deepEqual(h.sent("conflict:takeRole").map((c) => c.payload), [{ path: "src/app.ts", role: "yours" }]);
 });
 
+test("a row's Accept registers its undo WITHOUT a toast when the host offers that (the critic's stacked toasts, r0923)", async () => {
+  const host = fakeHost({ "conflict:state": snapshot(), "conflict:takeRole": OK });
+  const log: string[] = [];
+  const pushed: string[] = [];
+  const ctl = new DesktopConflicts({
+    invoke: host.invoke,
+    openMerge: () => {},
+    onFileChanged: () => log.push("file"),
+    onOperationChanged: () => {},
+    notify: () => {},
+    undoable: () => log.push("toast"),
+    pushUndo: (a) => pushed.push(a.label),
+  });
+  ctl.attach(() => {});
+  await ctl.refresh();
+  await ctl.handle({ type: "accept", path: "src/app.ts", role: "yours" });
+  await ctl.handle({ type: "accept", path: "src/b.ts", role: "theirs" });
+  assert.deepEqual(log, ["file", "file"], "no toast per row");
+  assert.deepEqual(pushed, ["Bring back the conflict in src/app.ts", "Bring back the conflict in src/b.ts"], "⌘Z still undoes each");
+});
+
+test("a stash pop's last conflict resolved: the desktop dashboard shows it finished instead of 'Select a file'", async () => {
+  const stash: OperationView = { ...NONE, kind: "stash", title: "Applying stashed changes on main", episode: "stash:h" };
+  let done = false;
+  const r = controllerRig({
+    "conflict:state": () =>
+      done
+        ? snapshot({ op: NONE, files: [], total: 0, resolved: 0 })
+        : snapshot({ op: stash, files: [{ path: "app/version.py", status: "pending", shape: "text" }], total: 1, resolved: 0 }),
+  });
+  await r.ctl.refresh();
+  assert.equal(r.ctl.watchingStash(), true);
+  assert.equal(r.ctl.hasFinished(), false);
+  done = true; // resolved (here, or in a terminal)
+  await r.ctl.refresh();
+  assert.equal(r.ctl.hasFinished(), true, "the Changes view keeps the dashboard up");
+  const s = r.last();
+  assert.equal(s.finished?.title, "Stash applied");
+  assert.match(s.finished?.text ?? "", /stash list/);
+  assert.deepEqual(s.files.map((f) => [f.path, f.status]), [["app/version.py", "resolved"]]);
+  r.ctl.clearFinished();
+  await r.ctl.refresh();
+  assert.equal(r.ctl.hasFinished(), false, "once a file is opened it does not come back");
+  assert.equal(r.last().finished, undefined);
+});
+
 test("Merge… opens the file in the merge editor and runs nothing; restore and delete use their own channels", async () => {
   const r = controllerRig({ "conflict:state": snapshot(), "conflict:restore": OK, "conflict:delete": OK });
   await r.ctl.refresh();

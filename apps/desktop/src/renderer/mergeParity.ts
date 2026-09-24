@@ -27,6 +27,7 @@ import {
 } from "@gitstudio/host-bridge/conflictsProtocol";
 import { roleOfStage, skipEndedText } from "@gitstudio/engine/conflict/sides";
 import { resolvedOutsideMerge } from "@gitstudio/engine/conflict/documentText";
+import { StashEndTracker, type StashEnd } from "@gitstudio/engine/conflict/stashEnd";
 import { conflictTypeFor } from "@gitstudio/engine/conflict/conflictType";
 import {
   continueBlockedText,
@@ -566,6 +567,14 @@ export interface ConflictsControllerDeps {
   onOperationChanged(outcome: { kind: "done" | "stopped" | "failed"; text: string }): void;
   notify: Notify;
   undoable: Undoable;
+  /**
+   * Register an undo (⌘Z, Edit ▸ Undo) WITHOUT a toast. A dashboard row's
+   * Accept already says what happened in the row (its pill, Hold to undo); a
+   * toast per row stacked "Resolved …  Undo" over the right third of the
+   * window — exactly where the next rows' Accept buttons are. Absent: the
+   * toast is shown (`undoable`).
+   */
+  pushUndo?: (action: Parameters<Undoable>[1]) => void;
 }
 
 /**
@@ -588,6 +597,8 @@ export class DesktopConflicts {
    * reason a Continue or an Accept just gave.
    */
   private readError?: string;
+  private readonly stashEnds = new StashEndTracker();
+  private stashEnd?: StashEnd;
   private readonly deps: ConflictsControllerDeps;
 
   constructor(deps: ConflictsControllerDeps) {
@@ -616,11 +627,32 @@ export class DesktopConflicts {
     this.paint();
   }
 
+  /**
+   * A stash apply just ended with every conflict resolved: git reports nothing
+   * in progress, and the Changes view keeps the dashboard up to say so
+   * (engine stashEnd.ts — the extensions' controller folds the same way).
+   */
+  hasFinished(): boolean {
+    return !!this.stashEnd;
+  }
+
+  /** A conflicted stash apply was being shown: "nothing in progress" may be its end. */
+  watchingStash(): boolean {
+    return this.stashEnds.watching;
+  }
+
+  /** The user moved on (opened a file): the finished card is not brought back. */
+  clearFinished(): void {
+    this.stashEnds.clear();
+    this.stashEnd = undefined;
+  }
+
   async refresh(): Promise<ConflictsSnapshot | undefined> {
     try {
       const s = await this.deps.invoke("conflict:state", undefined);
       if (!s) throw new Error("The conflict state came back empty.");
       this.snapshot = s;
+      this.stashEnd = this.stashEnds.fold(s);
       this.readError = undefined;
       // An outcome describes the stop it happened at, plus the one it led
       // to. Two stops later it is history.
@@ -640,17 +672,19 @@ export class DesktopConflicts {
   state(): ConflictsState | undefined {
     const s = this.snapshot;
     if (!s) return undefined;
+    const ended = this.stashEnd;
     return {
       brand: { name: "GitStudio", mark: "gitstudio" },
       repoName: s.repoName,
       op: s.op,
-      files: s.files,
-      total: s.total,
-      resolved: s.resolved,
+      files: ended ? ended.files : s.files,
+      total: ended ? ended.files.length : s.total,
+      resolved: ended ? ended.files.length : s.resolved,
       busy: this.busy || verbInFlight,
       holdToUndoMs: HOLD_TO_UNDO_MS,
       notice: this.notice ?? (this.readError ? { kind: "error", text: this.readError } : undefined),
       outcome: this.outcome,
+      ...(ended ? { finished: ended.finished } : {}),
     };
   }
 
@@ -722,14 +756,16 @@ export class DesktopConflicts {
         if (!res.ok) {
           this.notice = { kind: "error", text: res.message || `Couldn't change ${path}.` };
         } else if (action.type !== "restore") {
-          this.deps.undoable(action.type === "delete" ? `Deleted ${path}.` : `Resolved ${path}.`, {
+          const undo = {
             label: `Bring back the conflict in ${path}`,
             undo: async () => restoreResult(await invoke("conflict:restore", { path }), path),
             after: () => {
               void this.refresh();
               this.deps.onFileChanged();
             },
-          });
+          };
+          if (this.deps.pushUndo) this.deps.pushUndo(undo);
+          else this.deps.undoable(action.type === "delete" ? `Deleted ${path}.` : `Resolved ${path}.`, undo);
         }
         await this.refresh();
       },

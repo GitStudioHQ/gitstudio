@@ -19,7 +19,7 @@ import { ConflictsDashboard } from "@gitstudio/webview-ui/conflicts/dashboard";
 import type { ConflictsState } from "@gitstudio/host-bridge/conflictsProtocol";
 import { clickIntent, parseRowKey, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import { installNavStack } from "./navStack";
-import { clearUndo, didUndoable, installUndoKey, redoOrText, undoOrText } from "./undo";
+import { clearUndo, didUndoable, installUndoKey, push as pushUndoable, redoOrText, undoOrText } from "./undo";
 import { repoChanged } from "./repoEpoch";
 import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
@@ -1281,30 +1281,48 @@ class App {
       const natural = (sel: string): number => bar.querySelector<HTMLElement>(sel)?.scrollWidth ?? 0;
       const editorLabel = natural(".topbar-openin .openin-label");
       const searchLabel = natural(".topbar-cmdk-label");
+      // A stopped operation's chip ("Rebasing · 30 conflicts") collapses to its
+      // icon with the editor's name (.is-tight). Its words were left out of
+      // the need, so a tight bar measured as fitting, let everything back, and
+      // the open-in button ended up over the search box ("earch anything…"),
+      // or the chip was cut ("Rebasing · 30 conflic") — in about one render in
+      // seven, whichever observer happened to fire last.
+      const chipLabel = natural(".topbar-opchip:not([hidden]) .topbar-opchip-label");
       // What the row would need with EVERYTHING shown, whatever state it is in
       // right now — a collapsed label still reports its full scrollWidth, which
       // is what stops this flip-flopping between the two states.
       const need =
         naturalWidth(left) +
         naturalWidth(right) +
-        (bar.classList.contains("is-tight") ? editorLabel : 0) +
+        (bar.classList.contains("is-tight") ? editorLabel + chipLabel : 0) +
         (bar.classList.contains("is-tighter") ? searchLabel : 0);
-      const have = bar.clientWidth - 24; // the bar's own padding, and a little slack
+      // The room between the bar's OWN padding — on macOS the left one keeps
+      // the traffic lights clear, ~80px that a flat 24px allowance counted as
+      // free — less the gap between the two clusters, and a little slack.
+      const cs = getComputedStyle(bar);
+      const have =
+        bar.clientWidth -
+        (parseFloat(cs.paddingLeft) || 0) -
+        (parseFloat(cs.paddingRight) || 0) -
+        (parseFloat(cs.columnGap) || 0) -
+        4;
       const tight = need > have;
       bar.classList.toggle("is-tight", tight);
-      bar.classList.toggle("is-tighter", tight && need - editorLabel > have);
+      bar.classList.toggle("is-tighter", tight && need - editorLabel - chipLabel > have);
     };
     this.fitTopbar = fit;
     const ro = new ResizeObserver(fit);
     ro.observe(bar);
-    const left = bar.querySelector(".topbar-left");
-    if (left) {
-      ro.observe(left);
+    // Both clusters: the right one changes width too (the account chip, the
+    // bell's badge, the Assistant launcher), and was never watched.
+    for (const cluster of [bar.querySelector(".topbar-left"), bar.querySelector(".topbar-right")]) {
+      if (!cluster) continue;
+      ro.observe(cluster);
       // A branch name changing does not change any BOX — the switch is capped —
       // so a ResizeObserver alone never hears about the one event that most
       // changes how much room this row wants. Attributes are deliberately not
       // watched: `fit` toggles classes, and watching those would loop.
-      new MutationObserver(fit).observe(left, { subtree: true, childList: true, characterData: true });
+      new MutationObserver(fit).observe(cluster, { subtree: true, childList: true, characterData: true });
     }
     fit();
   }
@@ -6624,11 +6642,27 @@ class App {
     let conflictsUi: { fileOpened(): void } | undefined;
     void host
       .invoke("git:opState", undefined)
-      .then((op) => {
+      .then(async (op) => {
         this.syncOpIndicators(op);
         if (this.currentView !== "changes" || !wrap.isConnected) return;
         // The host decides WHAT is in progress; nothing here re-derives it.
         if (!op || (!op.kind && op.conflicts === 0)) {
+          // A stash apply's last conflict just resolved: git keeps no
+          // operation for it, so "nothing stopped" is its end — the dashboard
+          // stays up to say so (the rows, "Stash applied", the stash still in
+          // the list), until a file is opened. Read once more to know: a
+          // resolution made in a terminal reached here without one.
+          if (this.conflictsCtl?.watchingStash() && this.changesOpenKey === undefined) {
+            await this.conflictsCtl.refresh();
+            if (this.currentView !== "changes" || !wrap.isConnected) return;
+          }
+          if (this.conflictsCtl?.hasFinished() && this.changesOpenKey === undefined) {
+            conflictsUi = this.mountChangesConflicts(wrap, diffPanel, {
+              openMerge: openConflictRow,
+              deselect: deselectRows,
+            });
+            return;
+          }
           this.changesShowConflicts = undefined;
           this.changesOpenMerge = undefined;
           // Nothing stopped any more: a dashboard kept in the surface from
@@ -7295,6 +7329,8 @@ class App {
       onOperationChanged: (outcome) => void this.afterOperationVerb(outcome),
       notify: (message, kind, action) => toast(message, kind, action ? 8000 : undefined, action),
       undoable: didUndoable,
+      // A row's Accept says what it did in the row itself; ⌘Z still undoes it.
+      pushUndo: pushUndoable,
     });
     return this.conflictsCtl;
   }
@@ -7363,6 +7399,9 @@ class App {
         return;
       }
       const hostEl = diffPanel.showHost("dc-conflicts");
+      // The pane is the dashboard's whole height: its list scrolls, and Abort
+      // and Continue stay on screen with thirty files in it (conflicts.css).
+      hostEl.classList.add("cd-host-fill");
       // The dashboard announces itself (`ready`); the controller answers with
       // the state, asynchronously, by which time `dash` is assigned.
       dash = new ConflictsDashboard(hostEl, { post: handle, closable: false });
@@ -7385,7 +7424,9 @@ class App {
     return {
       fileOpened: () => {
         // The file replaces the dashboard in the surface: the strip carries
-        // the operation until it comes back.
+        // the operation until it comes back. A finished stash apply's card
+        // has been seen: it does not come back.
+        ctl.clearFinished();
         window.setTimeout(paintStrip, 0);
       },
     };

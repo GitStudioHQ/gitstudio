@@ -71,6 +71,11 @@ export class StashEndTracker {
     return undefined;
   }
 
+  /** A conflicted stash apply was seen and has not been let go of (its end may be next). */
+  get watching(): boolean {
+    return !!this.rows || !!this.ended;
+  }
+
   /** The user closed the page (or the host moved on): forget it. */
   clear(): void {
     this.rows = undefined;

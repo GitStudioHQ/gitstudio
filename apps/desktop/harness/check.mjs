@@ -55,6 +55,9 @@ const CASES = [
   // …and with an operation stopped, when the bar carries one more chip.
   ["the-top-bar-never-sacrifices-the-branch", "code", { width: 820, extra: "op=rebase&conflicts=2" }],
   ["the-top-bar-never-sacrifices-the-branch", "code", { width: 1600, extra: "op=rebase&conflicts=2" }],
+  ["the-top-bar-fits-a-stopped-operation", "changes", { width: 1000, extra: "op=rebase&conflicts=30" }],
+  ["the-top-bar-fits-a-stopped-operation", "changes", { width: 1100, extra: "op=rebase&conflicts=30" }],
+  ["the-top-bar-fits-a-stopped-operation", "changes", { width: 1280, extra: "op=rebase&conflicts=30" }],
   // Creating and editing a branch.
   ["a-new-branch-says-where-it-starts", "branches"],
   ["a-branch-name-git-would-refuse-is-caught-before-git", "branches"],
