@@ -125,6 +125,23 @@ test("a shell file changed in merge-studio is a warning, and a failure with --st
   }
 });
 
+test("a shell file checked out with CRLF line endings (core.autocrlf, on Windows) is no change; a vendored one is", () => {
+  const root = tree();
+  const crlf = (rel, text = readFileSync(join(root, rel), "utf8")) => writeFileSync(join(root, rel), text.replace(/\n/g, "\r\n"));
+  try {
+    crlf("src/extension.ts");
+    const r = checkParity(root, { strict: true });
+    assert.deepEqual([r.problems, r.warnings], [[], []]);
+    crlf("src/extension.ts", "export function activate() { /* local fix */ }\n");
+    assert.match(checkParity(root).warnings.join("\n"), /shell modified: src\/extension\.ts/, "an edit is still one");
+    // vendor/gitstudio is stored byte for byte (its .gitattributes says -text): CRLF there is a change.
+    crlf(`${VENDOR_DIR}/engine/src/mergeModel.ts`);
+    assert.deepEqual(checkParity(root).problems, [`modified: ${VENDOR_DIR}/engine/src/mergeModel.ts`]);
+  } finally {
+    cleanup(root);
+  }
+});
+
 test("no manifest, or an empty one, fails", () => {
   const root = tree();
   try {

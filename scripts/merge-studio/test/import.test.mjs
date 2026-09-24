@@ -9,12 +9,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkParity } from "../check-parity.mjs";
-import { exportTo, GITSTUDIO_ROOT } from "../export.mjs";
+import { exportTo, gitBytes, GITSTUDIO_ROOT } from "../export.mjs";
 import {
   applyHunks,
   blobId,
@@ -26,11 +26,14 @@ import {
   parsePatch,
   renderFile,
   setLockVersion,
+  shellQuote,
 } from "../import.mjs";
 import { copiedFiles, GENERATED, shellFiles, sourcePaths, toGitstudio } from "../layout.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "import.mjs");
 
+// This checkout's git as it is configured, to read its files as it stores them.
+const CHECKOUT_ENV = { ...process.env };
 // Hermetic git: no user or system config (signing, hooks, default branch) leaks in.
 const EMPTY_CONFIG = join(mkdtempSync(join(tmpdir(), "ms-import-config-")), "gitconfig");
 writeFileSync(EMPTY_CONFIG, "");
@@ -52,17 +55,22 @@ function identity(repo) {
   g(repo, "config", "user.email", "maintainer@example.com");
 }
 
-/** A gitstudio repository holding what the export reads, copied from this checkout's working tree. */
+/**
+ * A gitstudio repository holding what the export reads, copied from this
+ * checkout's working tree with the bytes its git stores: a Windows checkout
+ * (core.autocrlf, from the system config the hermetic git above leaves out)
+ * has CRLF on disk where gitstudio has LF.
+ */
 function scratchGitstudio() {
   const root = mkdtempSync(join(tmpdir(), "ms-import-gs-"));
   const listed = execFileSync("git", ["-C", GITSTUDIO_ROOT, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...sourcePaths()], {
     encoding: "utf8",
   });
-  for (const rel of listed.split("\0").filter(Boolean)) {
-    if (!existsSync(join(GITSTUDIO_ROOT, rel))) continue;
-    mkdirSync(dirname(join(root, rel)), { recursive: true });
-    cpSync(join(GITSTUDIO_ROOT, rel), join(root, rel));
-  }
+  const rels = listed.split("\0").filter((rel) => rel && existsSync(join(GITSTUDIO_ROOT, rel)));
+  gitBytes(GITSTUDIO_ROOT, rels, { env: CHECKOUT_ENV }).forEach((bytes, i) => {
+    mkdirSync(dirname(join(root, rels[i])), { recursive: true });
+    writeFileSync(join(root, rels[i]), bytes);
+  });
   g(root, "init", "-q", "-b", "main");
   identity(root);
   g(root, "add", "-A");
@@ -592,6 +600,51 @@ test("CRLF lines survive a range, `gh pr diff --patch` and a plain diff", () => 
   }
 });
 
+test("a checkout with core.autocrlf (git for Windows' default): the export writes what git stores, and a release comes back into the CRLF package.json and lockfile", () => {
+  const gs = scratchGitstudio();
+  // A file gitstudio stores with CRLF, as a contributor's comes back (above): autocrlf leaves it be.
+  writeFileSync(join(gs, "packages/engine/src/crlf.ts"), "export const a = 1;\r\nexport const b = 2;\r\n");
+  g(gs, "add", "-A");
+  g(gs, "commit", "-qm", "a CRLF file");
+  g(gs, "branch", "-qf", "main");
+  // Every file checked out again as git for Windows does: LF in git, CRLF on disk.
+  g(gs, "config", "core.autocrlf", "true");
+  for (const name of readdirSync(gs)) if (name !== ".git") rmSync(join(gs, name), { recursive: true, force: true });
+  g(gs, "checkout", "--", ".");
+  assert.match(readFileSync(join(gs, "apps/merge-studio/package.json"), "utf8"), /^\{\r\n/, "precondition: CRLF on disk");
+  assert.equal(g(gs, "status", "--porcelain"), "", "precondition: git sees no change");
+  const ms = scratchMergeStudio(gs);
+  try {
+    const stored = (rel) => execFileSync("git", ["-C", gs, "cat-file", "blob", `HEAD:${rel}`]);
+    for (const [msPath, gsPath] of [
+      [MERGE_MODEL, "packages/engine/src/mergeModel.ts"],
+      ["vendor/gitstudio/engine/src/crlf.ts", "packages/engine/src/crlf.ts"],
+      [".github/workflows/ci.yml", "scripts/merge-studio/merge-studio-ci.yml"],
+      ["src/links.ts", "apps/merge-studio/src/links.ts"],
+    ]) {
+      assert.ok(readFileSync(join(ms, msPath)).equals(stored(gsPath)), `${msPath} is ${gsPath} as git stores it`);
+    }
+    assert.equal(checkParity(ms).ok, true);
+
+    const release = contribute(ms, `Release ${NEXT_VERSION}`, {
+      "package.json": (t) => t.replace(/"version": "[^"]+"/, `"version": "${NEXT_VERSION}"`),
+      [MERGE_MODEL]: append("// contributed\n"),
+    });
+    const r = importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib" });
+    assert.deepEqual(r.commits.map((c) => [c.upstream, Boolean(c.sha)]), [[release, true]]);
+    assert.deepEqual(r.roundTrip.filter((x) => x.status !== "identical"), []);
+    assert.equal(JSON.parse(g(gs, "show", "HEAD:apps/merge-studio/package.json")).version, NEXT_VERSION);
+    const lockDiff = g(gs, "diff", "-U0", "main", "HEAD", "--", "package-lock.json").split("\n").filter((l) => /^[-+] /.test(l));
+    assert.deepEqual(lockDiff, [`-      "version": "${SHELL_VERSION}",`, `+      "version": "${NEXT_VERSION}",`], "gitstudio's lockfile entry follows the version");
+    for (const rel of ["apps/merge-studio/package.json", "package-lock.json", "packages/engine/src/mergeModel.ts"]) {
+      assert.doesNotMatch(readFileSync(join(gs, rel), "utf8"), /[^\r]\n/, `${rel} keeps CRLF on disk`);
+    }
+    assert.equal(g(gs, "status", "--porcelain"), "", "and git sees nothing left over");
+  } finally {
+    cleanup(gs, ms);
+  }
+});
+
 test("a pull request on an older export: a file gitstudio has since deleted or moved is refused, saying where it went", () => {
   const gs = scratchGitstudio();
   const ms = scratchMergeStudio(gs);
@@ -759,7 +812,8 @@ test("a range from a stale origin/main takes in an export merged since: refused,
       (e) =>
         e instanceof ImportRefused &&
         e.message.includes(`VENDORED_FROM.json (${exported.slice(0, 7)}): this commit is merge-studio's export`) &&
-        e.message.includes(`git -C ${ms} fetch origin`) &&
+        // Quoted for the shell when the path needs it (a Windows temp folder's \ and ~).
+        e.message.includes(`git -C ${shellQuote(ms)} fetch origin`) &&
         /origin\/main is behind/.test(e.message),
     );
     assert.equal(g(gs, "rev-parse", "HEAD"), head, "nothing was changed");
@@ -816,10 +870,10 @@ test("every file a real export writes maps back to the gitstudio file it came fr
     exportTo({ into, allowDirty: true, lock: false });
     const shell = new Set(shellFiles(GITSTUDIO_ROOT));
     const pairs = new Map(copiedFiles(GITSTUDIO_ROOT).map(([from, to]) => [to, from]));
-    const written = execFileSync("find", [into, "-type", "f"], { encoding: "utf8" })
-      .split("\n")
-      .filter(Boolean)
-      .map((f) => f.slice(into.length + 1));
+    // Every regular file under it, as `find -type f` lists them (Windows has no such find).
+    const written = readdirSync(into, { recursive: true })
+      .filter((rel) => lstatSync(join(into, rel)).isFile())
+      .map((rel) => rel.split(sep).join("/"));
     assert.ok(written.length > 150);
     for (const rel of written) {
       const m = toGitstudio(rel, { shell });
@@ -963,6 +1017,9 @@ test("diffJson, setLockVersion and blobId", () => {
   const lock = '{\n  "packages": {\n    "apps/merge-studio": {\n      "name": "merge-studio",\n      "version": "0.4.0",\n      "license": "MIT"\n    },\n    "apps/x": {\n      "version": "0.4.0"\n    }\n  }\n}\n';
   assert.equal(setLockVersion(lock, "apps/merge-studio", "0.4.1"), lock.replace('"version": "0.4.0",', '"version": "0.4.1",'));
   assert.equal(setLockVersion(lock, "apps/nope", "1.0.0"), undefined);
+  // A checkout with core.autocrlf (git for Windows' default) has it with CRLF line endings, and keeps them.
+  const crlf = lock.replace(/\n/g, "\r\n");
+  assert.equal(setLockVersion(crlf, "apps/merge-studio", "0.4.1"), crlf.replace('"version": "0.4.0",', '"version": "0.4.1",'));
   const bytes = Buffer.from("one\ntwo\n");
   assert.equal(blobId(bytes), execFileSync("git", ["hash-object", "--stdin", "--no-filters"], { input: bytes, encoding: "utf8" }).trim());
   assert.equal(blobId(Buffer.from("")), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");

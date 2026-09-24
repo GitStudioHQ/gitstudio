@@ -95,6 +95,17 @@ export function hashFiles(root, relPaths) {
 }
 
 /**
+ * Whether a shell file still has the bytes the export wrote (`hash`). A
+ * checkout with core.autocrlf (git for Windows' default) has it with CRLF line
+ * endings where git stores the export's LF: git's conversion, not an edit.
+ * (vendor/gitstudio is compared byte for byte: git never converts it there.)
+ */
+function sameAsExported(bytes, hash) {
+  if (sha256(bytes) === hash) return true;
+  return bytes.includes("\r\n") && sha256(Buffer.from(bytes.toString("latin1").replace(/\r\n/g, "\n"), "latin1")) === hash;
+}
+
+/**
  * Compare the checkout at `root` with its VENDORED_FROM.json. `broken` says
  * the manifest itself cannot be used (missing, not JSON, or empty): nothing was
  * compared, so no difference can be reported as a contribution.
@@ -132,7 +143,7 @@ export function checkParity(root, { strict = false } = {}) {
   }
   for (const [rel, hash] of Object.entries(manifest.shell ?? {})) {
     const file = join(root, rel);
-    const differs = !existsSync(file) || sha256(readFileSync(file)) !== hash;
+    const differs = !existsSync(file) || !sameAsExported(readFileSync(file), hash);
     if (differs) (strict ? problems : warnings).push(`shell ${existsSync(file) ? "modified" : "missing"}: ${rel} (differs from the export of gitstudio ${short(manifest)})`);
   }
   return { ok: problems.length === 0, broken, problems, warnings, checked: Object.keys(expected).length, manifest };

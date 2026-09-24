@@ -24,7 +24,8 @@ const fill = (s) =>
     .replace(/"Name <email>"/g, '"Jane Contributor <jane@example.com>"');
 
 /** Every command in a doc: the lines of its bash blocks, and inline code that starts like a command. */
-export function commandsIn(markdown) {
+export function commandsIn(doc) {
+  const markdown = doc.replace(/\r\n/g, "\n"); // a Windows checkout has the docs with CRLF line endings
   const out = [];
   for (const [, body] of markdown.matchAll(/```(?:bash|sh)\n([\s\S]*?)```/g)) {
     for (const line of body.split("\n")) {
