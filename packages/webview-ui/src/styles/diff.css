@@ -75,27 +75,35 @@
 .codicon-question::before { content: "\eb32"; }
 
 /* ── Change colour tokens ──────────────────────────────────────────────────── */
+/* Syntax colours on the tints: every token colour of Dark+ / Light+ (keyword,
+ * control, string, number, comment, type, function, variable) on each line
+ * tint AND each word tint over it, as high as the other rules here allow — the
+ * critic measured Dark+'s comment green at 2.42:1 on the changed-word tint and
+ * Light+'s numbers at 2.54:1 on the removed-word tint. A 3:1 floor for all of
+ * them cannot hold together with conflict vs added staying apart under
+ * deuteranopia (searched, every alpha): the floor is 2.9:1 (dark) and 2.8:1
+ * (light), pinned in mergeContrast.test.ts. */
 :root {
-  --jb-line-conflict: rgba(240,105,100,.24); --jb-inner-conflict: rgba(240,105,100,.14); --jb-edge-conflict: #f0686a;
-  --jb-line-modified: rgba(40,150,245,.28);  --jb-inner-modified: rgba(40,150,245,.18);  --jb-edge-modified: #4a9ff5;
-  --jb-line-inserted: rgba(80,180,40,.14);   --jb-inner-inserted: rgba(80,180,40,.16);   --jb-edge-inserted: #62b34a;
-  --jb-line-deleted:  rgba(139,148,158,.22); --jb-inner-deleted:  rgba(139,148,158,.20); --jb-edge-deleted:  #8b949e;
-  --jb-done-conflict: rgba(240,104,106,.5);  --jb-ruler-conflict: rgba(240,104,106,.6);  --jb-muted-conflict: rgba(240,105,100,.12);
-  --jb-done-modified: rgba(74,159,245,.5);   --jb-ruler-modified: rgba(74,159,245,.6);   --jb-muted-modified: rgba(40,150,245,.13);
-  --jb-done-inserted: rgba(98,179,74,.5);    --jb-ruler-inserted: rgba(98,179,74,.6);    --jb-muted-inserted: rgba(80,180,40,.08);
-  --jb-done-deleted:  rgba(139,148,158,.5);  --jb-ruler-deleted:  rgba(139,148,158,.6);  --jb-muted-deleted:  rgba(139,148,158,.11);
+  --jb-line-conflict: rgba(240,105,100,.23); --jb-inner-conflict: rgba(240,105,100,.13); --jb-edge-conflict: #f0686a;
+  --jb-line-modified: rgba(40,150,245,.23);  --jb-inner-modified: rgba(40,150,245,.14);  --jb-edge-modified: #4a9ff5;
+  --jb-line-inserted: rgba(80,180,40,.13);   --jb-inner-inserted: rgba(80,180,40,.16);   --jb-edge-inserted: #62b34a;
+  --jb-line-deleted:  rgba(139,148,158,.13); --jb-inner-deleted:  rgba(139,148,158,.20); --jb-edge-deleted:  #8b949e;
+  --jb-done-conflict: rgba(240,104,106,.72); --jb-ruler-conflict: rgba(240,104,106,.6);  --jb-muted-conflict: rgba(240,105,100,.12);
+  --jb-done-modified: rgba(74,159,245,.72);  --jb-ruler-modified: rgba(74,159,245,.6);   --jb-muted-modified: rgba(40,150,245,.13);
+  --jb-done-inserted: rgba(98,179,74,.72);   --jb-ruler-inserted: rgba(98,179,74,.6);    --jb-muted-inserted: rgba(80,180,40,.08);
+  --jb-done-deleted:  rgba(139,148,158,.72); --jb-ruler-deleted:  rgba(139,148,158,.6);  --jb-muted-deleted:  rgba(139,148,158,.043);
   --jb-point-conflict: rgba(240,105,100,.62); --jb-point-modified: rgba(74,159,245,.62);
   --jb-point-inserted: rgba(98,179,74,.62);   --jb-point-deleted:  rgba(139,148,158,.62);
 }
 body.vscode-light, body.vscode-high-contrast-light {
-  --jb-line-conflict: rgba(240,75,70,.30);   --jb-inner-conflict: rgba(240,75,70,.16);   --jb-edge-conflict: #cf222e;
+  --jb-line-conflict: rgba(240,75,70,.27);   --jb-inner-conflict: rgba(240,75,70,.15);   --jb-edge-conflict: #cf222e;
   --jb-line-modified: rgba(64,128,255,.28);  --jb-inner-modified: rgba(64,128,255,.18);  --jb-edge-modified: #0969da;
-  --jb-line-inserted: rgba(80,180,40,.16);   --jb-inner-inserted: rgba(80,180,40,.20);   --jb-edge-inserted: #1a7f37;
-  --jb-line-deleted:  rgba(110,118,129,.26); --jb-inner-deleted:  rgba(110,118,129,.26); --jb-edge-deleted:  #59636e;
-  --jb-done-conflict: rgba(207,34,46,.45);   --jb-ruler-conflict: rgba(207,34,46,.55);   --jb-muted-conflict: rgba(240,75,70,.13);
-  --jb-done-modified: rgba(9,105,218,.45);   --jb-ruler-modified: rgba(9,105,218,.55);   --jb-muted-modified: rgba(64,128,255,.12);
-  --jb-done-inserted: rgba(26,127,55,.45);   --jb-ruler-inserted: rgba(26,127,55,.55);   --jb-muted-inserted: rgba(80,180,40,.09);
-  --jb-done-deleted:  rgba(89,99,110,.45);   --jb-ruler-deleted:  rgba(89,99,110,.55);   --jb-muted-deleted:  rgba(110,118,129,.12);
+  --jb-line-inserted: rgba(80,180,40,.15);   --jb-inner-inserted: rgba(80,180,40,.20);   --jb-edge-inserted: #1a7f37;
+  --jb-line-deleted:  rgba(110,118,129,.23); --jb-inner-deleted:  rgba(110,118,129,.20); --jb-edge-deleted:  #59636e;
+  --jb-done-conflict: rgba(207,34,46,.76);   --jb-ruler-conflict: rgba(207,34,46,.55);   --jb-muted-conflict: rgba(240,75,70,.13);
+  --jb-done-modified: rgba(9,105,218,.76);   --jb-ruler-modified: rgba(9,105,218,.55);   --jb-muted-modified: rgba(64,128,255,.12);
+  --jb-done-inserted: rgba(26,127,55,.76);   --jb-ruler-inserted: rgba(26,127,55,.55);   --jb-muted-inserted: rgba(80,180,40,.09);
+  --jb-done-deleted:  rgba(89,99,110,.76);   --jb-ruler-deleted:  rgba(89,99,110,.55);   --jb-muted-deleted:  rgba(110,118,129,.12);
   --jb-point-conflict: rgba(240,75,70,.62);  --jb-point-modified: rgba(9,105,218,.55);
   --jb-point-inserted: rgba(26,127,55,.55);  --jb-point-deleted:  rgba(89,99,110,.55);
 }
@@ -109,9 +117,21 @@ body.vscode-light, body.vscode-high-contrast-light {
 /* High contrast: every edge is solid, points too — in the edge colour, 2px
  * (mergePointPx in ribbons.ts). Declared on body, where the edge colours of
  * both high contrast themes are. */
+/* High contrast dark's black ground: the conflict and added bands keep the
+   strength that holds them apart under protanopia there. */
+body.vscode-high-contrast:not(.vscode-high-contrast-light) {
+  --jb-line-conflict: rgba(240,105,100,.24); --jb-line-inserted: rgba(80,180,40,.14);
+  --jb-line-deleted: rgba(139,148,158,.22); --jb-muted-deleted: rgba(139,148,158,.09);
+  --jb-half-deleted: var(--jb-muted-deleted);
+}
 body.vscode-high-contrast {
   --jb-point-conflict: var(--jb-edge-conflict); --jb-point-modified: var(--jb-edge-modified);
   --jb-point-inserted: var(--jb-edge-inserted); --jb-point-deleted: var(--jb-edge-deleted);
+  /* A handled side's outline too: the legend gives it a meaning ("the side you
+     discarded"), so it must be seen at full strength here — it is told from a
+     pending band by having no tint and no ribbon, not by being faint. */
+  --jb-done-conflict: var(--jb-edge-conflict); --jb-done-modified: var(--jb-edge-modified);
+  --jb-done-inserted: var(--jb-edge-inserted); --jb-done-deleted: var(--jb-edge-deleted);
 }
 
 /* ── Bands ─────────────────────────────────────────────────────────────────────
@@ -314,10 +334,13 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
   opacity: 0.7;
 }
 /* Section caption preceding a toolbar group — muted, like an inline header. */
+/* Muted words a step toward the foreground: the theme's own muted ink is
+ * 4.4:1 on Light+'s toolbar (#717171 on #f3f3f3), under AA — the dashboard's
+ * --cd-muted does the same. */
 .jb-toolbar-label {
   flex: 0 0 auto;
   white-space: nowrap;
-  color: var(--gs-fg-muted);
+  color: color-mix(in srgb, var(--gs-fg-muted) 78%, var(--gs-fg));
   padding: 0 var(--gs-space-1) 0 2px;
 }
 /* Resolved/pending tally — tabular mono so the digits don't jitter. It never
@@ -326,12 +349,14 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
   flex: 0 0 auto;
   max-width: 100%;
   white-space: nowrap;
-  color: var(--gs-fg-muted);
+  color: color-mix(in srgb, var(--gs-fg-muted) 78%, var(--gs-fg));
   font-variant-numeric: tabular-nums;
   padding: 0 var(--gs-space-1);
 }
+/* The added green, a step toward the foreground: as-is it was 3.9:1 on
+ * Light+'s toolbar and 4.33:1 in High Contrast Light. */
 .jb-counter.jb-done {
-  color: var(--gs-status-added);
+  color: color-mix(in srgb, var(--gs-status-added) 68%, var(--gs-fg));
   font-weight: var(--gs-weight-emphasis);
 }
 
@@ -598,9 +623,10 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  opacity: 0.85;
   font-style: italic;
-  color: var(--vscode-editorWarning-foreground, var(--vscode-foreground));
+  /* The warning colour toward the foreground, at full opacity: Light+'s
+   * #bf8803 at 85% measured 2.38:1 on its toolbar. */
+  color: color-mix(in srgb, var(--vscode-editorWarning-foreground, var(--gs-fg)) 55%, var(--gs-fg));
 }
 
 /* ---- Undo/redo action-history dropdown ---- */
@@ -854,6 +880,9 @@ body.vscode-high-contrast .jb-sample-point { border-top: 2px solid var(--jb-edge
   color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
   box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.35));
   white-space: normal;
+  /* mergeLegend.ts caps its height at the room the viewport has. */
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 .jb-legend-pop[hidden] { display: none; }
 .jb-legend-row {

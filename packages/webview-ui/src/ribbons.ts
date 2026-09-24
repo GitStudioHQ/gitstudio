@@ -108,6 +108,13 @@ export interface RibbonOptions {
    * side draws none. Without it, every handled side counts as taken.
    */
   sideFate?: (block: ChangeBlock, side: Side) => SideFate;
+  /**
+   * Whether this pending change's Result already holds text merged outside
+   * the conflict markers (the view seeded it from the file). Its Result is
+   * painted like a half-settled one, so its bands meet it as they meet one:
+   * phase "half", and a settled cap on a Result point.
+   */
+  isSeeded?: (block: ChangeBlock) => boolean;
 }
 
 /** A gutter's horizontal extent on the stage, snapped as its box is painted. */
@@ -304,7 +311,8 @@ export class RibbonOverlay {
       };
       const present = (["left", "right"] as const).filter((s) => (s === "left" ? block.left : block.right));
       const fates = new Map(present.map((s) => [s, fateOf(s)] as const));
-      const phase = resolved ? "resolved" : [...fates.values()].some((f) => f !== "pending") ? "half" : "open";
+      const handled = [...fates.values()].some((f) => f !== "pending");
+      const phase = resolved ? "resolved" : handled || (this.options.isSeeded?.(block) ?? false) ? "half" : "open";
       const resultSpan = this.options.resultSpanOf?.(block) ?? block.baseSpan;
       const result = frame.band(this.editors.result, resultSpan, lineHeight, pointPx);
 

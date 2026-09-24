@@ -49,7 +49,17 @@ export interface DecorationOptions {
   isApplied?: (block: ChangeBlock) => boolean;
   /** When false, character-level inner decorations are skipped (line-only). */
   showInner?: boolean;
+  /**
+   * The Result of this pending change already holds text merged outside the
+   * conflict markers (the view seeded it from the file): painted like a
+   * half-settled Result — the muted tint between faint lines — with a hover
+   * that says so, never like the open conflicts around it.
+   */
+  isSeeded?: (block: ChangeBlock) => boolean;
 }
+
+/** What a seeded Result says on hover (isSeeded). */
+export const SEEDED_WORDS = "Already merged in the file, outside the conflict markers (by git, or by hand): check it";
 
 /**
  * Applies the JetBrains-style merge decorations, by colour CATEGORY
@@ -133,8 +143,9 @@ export class DecorationManager {
           pushDone(result, this.editors.result, span, tone, cat, words?.result);
         }
       } else {
-        pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, half);
-        if (showInner && !half && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
+        const seeded = !half && (options.isSeeded?.(block) ?? false);
+        pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, half || seeded, seeded ? SEEDED_WORDS : undefined);
+        if (showInner && !half && !seeded && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
           // Word ranges are in BASE coordinates; the result is base while the
           // block is untouched, but blocks above may have changed height.
           const shift = span.start - block.baseSpan.start;
@@ -323,9 +334,10 @@ function pushPending(
   cat: MergeCategory,
   whitespaceOnly: boolean,
   half = false,
+  hover?: string,
 ): void {
   if (isEmptySpan(span)) {
-    pushPoint(target, editor, span, half ? `jb-done jb-done-${tone}` : `jb-point-${tone}`, cat);
+    pushPoint(target, editor, span, half ? `jb-done jb-done-${tone}` : `jb-point-${tone}`, cat, hover);
     return;
   }
   const last = span.endExclusive - 1;
@@ -338,10 +350,11 @@ function pushPending(
       // Tint the line-number margin too, like IntelliJ, so the change
       // band runs uninterrupted across the pane.
       marginClassName: `jb-line-${tone}${halfClass}`,
+      hoverMessage: hoverOf(hover),
     },
   });
   if (half) {
-    pushEdges(target, span, `jb-done jb-done-${tone}`, cat);
+    pushEdges(target, span, `jb-done jb-done-${tone}`, cat, hover);
     return;
   }
   pushEdges(target, span, `jb-frame jb-frame-${tone}`);

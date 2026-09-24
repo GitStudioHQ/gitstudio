@@ -264,8 +264,15 @@ export class MergeLegend {
       shownBefore ||= total > 0;
 
       const half = item === "conflict" ? halfDoneWords(detail, pending) : undefined;
+      // How many of the open conflicts the wand can settle: said ON SCREEN
+      // (the critic, r0923: a conflict the wand resolves looked exactly like a
+      // hard one, and only a tooltip said otherwise).
+      const resolvable = item === "conflict" ? Math.min(counts.resolvableConflictsPending, pending) : 0;
       // Nothing left of this colour: its count says 0, and it asks nothing.
-      chip.note.textContent = pending === 0 ? "" : half ?? words.note;
+      chip.note.textContent =
+        pending === 0
+          ? ""
+          : half ?? (resolvable > 0 ? `${words.note} · ${resolvable} can be merged automatically` : words.note);
       chip.note.hidden = pending === 0;
 
       let text =
@@ -318,11 +325,24 @@ export class MergeLegend {
     // because it is fixed, it is placed again whenever the window resizes or
     // anything scrolls while it is open — placed once, it floated away from
     // the button it belongs to.
+    // Against the viewport, vertically too: below the button when it fits,
+    // else above it when there is more room there, and never taller than the
+    // room it has (it scrolls then). In a short window it ran off the bottom
+    // and cut the last two rows — the two that explain the resolved look.
     const place = (): void => {
       const rect = this.helpButton.getBoundingClientRect();
-      this.pop.style.top = `${Math.round(rect.bottom + 4)}px`;
+      const margin = 8;
+      this.pop.style.maxHeight = "";
+      const natural = this.pop.offsetHeight || 0;
+      const below = window.innerHeight - rect.bottom - 4 - margin;
+      const above = rect.top - 4 - margin;
+      const upward = natural > below && above > below;
+      const room = Math.max(80, upward ? above : below);
+      this.pop.style.maxHeight = `${Math.floor(room)}px`;
+      const height = Math.min(natural, room);
+      this.pop.style.top = `${Math.round(upward ? rect.top - 4 - height : rect.bottom + 4)}px`;
       const width = this.pop.offsetWidth || 320;
-      this.pop.style.left = `${Math.round(Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)))}px`;
+      this.pop.style.left = `${Math.round(Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin)))}px`;
     };
     place();
     const onDown = (event: MouseEvent) => {

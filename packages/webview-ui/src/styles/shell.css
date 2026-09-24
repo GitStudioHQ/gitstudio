@@ -157,7 +157,9 @@
   border: 0;
   border-radius: var(--gs-radius);
   background: transparent;
-  color: var(--vscode-textLink-foreground, var(--gs-fg));
+  /* The link colour a step toward the foreground: the desktop's light link
+     blue on the strip's ground measured 4.47:1, under AA. */
+  color: color-mix(in srgb, var(--vscode-textLink-foreground, var(--gs-fg)) 86%, var(--gs-fg));
   font: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;

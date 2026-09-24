@@ -420,6 +420,7 @@ export class MergeView implements MergeViewApi {
         isResolved: (block) => this.isResolved(block),
         isSideDone: (block, side) => this.isSideDone(block, side),
         sideFate: (block, side) => this.sideFate(block, side),
+        isSeeded: (block) => this.seededUntouched(block),
       },
     );
     // IntelliJ's "error stripe", at the view's right edge — never on a seam.
@@ -1230,9 +1231,35 @@ export class MergeView implements MergeViewApi {
       sideFate: (block, side) => this.sideFate(block, side),
       traceWords: (block) => this.traceWords(block),
       isApplied: (block) => this.blockState.get(block.id)?.applied ?? false,
+      isSeeded: (block) => this.seededUntouched(block),
       showInner: this.renderOptions.showInner && !this.largeFile,
     });
     this.map?.scheduleDraw();
+  }
+
+  /**
+   * A change the file already had merged OUTSIDE its conflict markers (by
+   * git's own merge, or by hand) that the Result was seeded with and nothing
+   * has touched since. It is still pending — marked, with its controls — but
+   * its Result already holds the merged text, so it is painted like a
+   * half-settled one with a hover that says so: it looked exactly like the
+   * open conflicts around it (the critic, r0923, stress/userService.js).
+   */
+  private seededUntouched(block: ChangeBlock): boolean {
+    const seed = this.seed;
+    if (!seed || seed.kind !== "markers" || this.isResolved(block)) {
+      return false;
+    }
+    const state = this.blockState.get(block.id);
+    if (!state || state.applied || state.doneLeft || state.doneRight) {
+      return false;
+    }
+    const region = seed.regions.find((r) => r.blockIds.length === 1 && r.blockIds[0] === block.id);
+    if (!region) {
+      return false;
+    }
+    const now = this.readResultLines(this.currentResultSpan(block));
+    return now.length === region.lines.length && now.every((line, i) => line === region.lines[i]);
   }
 
   /** The overview strip (tests read its marks). */

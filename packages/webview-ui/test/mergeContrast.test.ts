@@ -239,6 +239,22 @@ const THEMES: Theme[] = [
   { name: "VS Code High Contrast Light", body: "hcLight", bg: "#ffffff", fg: "#292929" },
 ];
 
+/** Each VS Code theme's own token colours (keyword, control keyword, string, number, comment, type, function, variable). */
+const DARK_PLUS = {
+  keyword: "#569cd6", control: "#c586c0", string: "#ce9178", number: "#b5cea8",
+  comment: "#6a9955", type: "#4ec9b0", function: "#dcdcaa", variable: "#9cdcfe",
+};
+const LIGHT_PLUS = {
+  keyword: "#0000ff", control: "#af00db", string: "#a31515", number: "#098658",
+  comment: "#008000", type: "#267f99", function: "#795e26", variable: "#001080",
+};
+const SYNTAX: Record<string, Record<string, string>> = {
+  "VS Code Dark+": DARK_PLUS,
+  "VS Code Dark Modern": DARK_PLUS,
+  "VS Code Light+": LIGHT_PLUS,
+  "VS Code Light Modern": LIGHT_PLUS,
+};
+
 interface Measured {
   line: string;
   inner: string;
@@ -337,12 +353,30 @@ test("text on every tint, edges on every background, and the categories apart �
       // "A step stronger": the word tint must be seen against its own line.
       const innerStep = deltaE2000(inner, line);
       row.push(`${tone} text ${onLine.toFixed(2)}/${onInner.toFixed(2)} edge ${edgeVsBg.toFixed(2)} done ${doneVsBg.toFixed(2)} ruler ${rulerVsBg.toFixed(2)} word-step ΔE ${innerStep.toFixed(1)}`);
+      // The theme's SYNTAX colours on the tints (the critic, r0923): the
+      // tokens that differ in a conflict — a number, a keyword, a comment —
+      // on the line tint and on the word tint over it. 3:1 for every token
+      // cannot hold together with the colour-blind separation below (searched
+      // over every alpha): the floor is the most both allow, 2.9 dark / 2.8
+      // light. It was 2.42 (Dark+ comment on a changed word).
+      const floor = theme.body === "dark" ? 2.9 : 2.8;
+      for (const [token, hexColor] of Object.entries(SYNTAX[theme.name] ?? {})) {
+        const tok = parseColor(hexColor).slice(0, 3) as RGB;
+        const onL = contrast(tok, line);
+        const onW = contrast(tok, inner);
+        if (onL < floor || onW < floor) problems.push(`${theme.name}: ${token} (${hexColor}) on the ${tone} tint is ${onL.toFixed(2)}:1, on its word tint ${onW.toFixed(2)}:1 (< ${floor})`);
+      }
       if (onLine < 4.5) problems.push(`${theme.name}: text on the ${tone} line tint is ${onLine.toFixed(2)}:1 (< 4.5)`);
       if (onInner < 4.5) problems.push(`${theme.name}: text on the ${tone} word tint is ${onInner.toFixed(2)}:1 (< 4.5)`);
       if (edgeVsBg < 3) problems.push(`${theme.name}: the ${tone} edge is ${edgeVsBg.toFixed(2)}:1 against the background (< 3)`);
       if (innerStep < 5) problems.push(`${theme.name}: the ${tone} word tint is only ΔE ${innerStep.toFixed(1)} from its line (< 5)`);
-      // A handled change's outline is FAINT, but there: visible, and quieter than an edge.
-      if (doneVsBg < 1.5 || doneVsBg >= edgeVsBg) problems.push(`${theme.name}: the ${tone} handled outline is ${doneVsBg.toFixed(2)}:1 (want ≥ 1.5 and below the edge's ${edgeVsBg.toFixed(2)})`);
+      // A handled change's outline is quieter than an edge — but the legend
+      // gives it a meaning ("an outline with no link: the side you
+      // discarded"), so it is a non-text mark WCAG 1.4.11 holds to 3:1 (the
+      // critic, r0923: it measured 2.2–2.3:1, in high contrast too). In high
+      // contrast it IS the edge colour.
+      const hcTheme = theme.body === "hcDark" || theme.body === "hcLight";
+      if (doneVsBg < 3 || (hcTheme ? doneVsBg > edgeVsBg + 0.01 : doneVsBg >= edgeVsBg)) problems.push(`${theme.name}: the ${tone} handled outline is ${doneVsBg.toFixed(2)}:1 (want ≥ 3 and ${hcTheme ? "the edge's" : "below the edge's"} ${edgeVsBg.toFixed(2)})`);
       // A ruler mark at reduced strength: findable, never the full edge colour.
       if (rulerVsBg < 1.8 || rulerVsBg >= edgeVsBg) problems.push(`${theme.name}: the ${tone} ruler mark is ${rulerVsBg.toFixed(2)}:1 (want ≥ 1.8 and below the edge's ${edgeVsBg.toFixed(2)})`);
       if (tone === "conflict" && (theme.body === "dark" || theme.body === "hcDark")) {

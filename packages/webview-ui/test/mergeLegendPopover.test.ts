@@ -48,3 +48,51 @@ test("the legend's key popover follows its button when the window resizes while 
   `);
   assert.deepEqual(v.fails, [], JSON.stringify(v.notes));
 });
+
+test("in a short window the key never runs off the bottom: it opens above, or scrolls within the room it has", { skip }, async () => {
+  // The critic's desktop shots at 1000px: the key opened below the legend and
+  // cut its last two rows — the two that explain the resolved look.
+  const v = await runMergePage(
+    CHROME!,
+    `
+    const W = gsMerge;
+    const view = new W.MergeView(host);
+    const slot = document.getElementById("slot");
+    view.attachLegend(slot);
+    view.render(W.payload({ op: W.REBASE_OP }));
+    await sleep(50);
+    const help = slot.querySelector(".jb-legend-help");
+    const pop = slot.querySelector(".jb-legend-pop");
+    const inside = () => {
+      const r = pop.getBoundingClientRect();
+      return r.top >= -1 && r.bottom <= innerHeight + 1;
+    };
+    const lastRowSeen = () => {
+      const rows = pop.querySelectorAll(".jb-legend-row");
+      const last = rows[rows.length - 1];
+      last.scrollIntoView({ block: "nearest" });
+      const r = last.getBoundingClientRect();
+      return r.bottom <= innerHeight + 1 && r.top >= 0;
+    };
+    // Near the bottom of a short window: more room above than below.
+    slot.style.cssText = "position:fixed;left:20px;top:" + (innerHeight - 40) + "px";
+    help.click();
+    await sleep(30);
+    notes.below = { top: pop.getBoundingClientRect().top, bottom: pop.getBoundingClientRect().bottom, h: innerHeight };
+    expect(!pop.hidden, "precondition: the key is open");
+    expect(inside(), "opened above the button, inside the window (" + JSON.stringify(notes.below) + ")");
+    expect(pop.getBoundingClientRect().bottom <= help.getBoundingClientRect().top + 1, "and above its button");
+    expect(lastRowSeen(), "every row can be reached");
+    help.click();
+    await sleep(20);
+    // No room either way: capped at the room below, and scrolls.
+    slot.style.cssText = "position:fixed;left:20px;top:40px";
+    help.click();
+    await sleep(30);
+    expect(inside(), "capped to the window when it fits neither way");
+    expect(lastRowSeen(), "and its last row is reachable by scrolling");
+  `,
+    { height: 260 },
+  );
+  assert.deepEqual(v.fails, [], JSON.stringify(v.notes));
+});

@@ -80,6 +80,27 @@ test("A1.2: a region settled outside the markers is seeded; git's own file seeds
     expect(counts.pending === 2 && counts.pendingChanged === 1, "both still pending, one holding the file's text: " + show(counts));
     // What the host writes from: the untouched seeded region back to base (it keeps the file's own lines there).
     expect(view.getUnsettledText() === BASE, "the unsettled text puts the untouched seeded region back to base: " + show(view.getUnsettledText()));
+    // The critic, r0923: the change merged outside the markers looked exactly
+    // like the open conflict below it. Its Result is painted settled-looking
+    // (the muted tint between faint lines), with a hover that says why.
+    const decos = (line) => view.result.getModel().getLineDecorations(line).map((d) => d.options);
+    const seededBand = decos(2).find((o) => /jb-line-conflict/.test(o.className || ""));
+    const openBand = decos(5).find((o) => /jb-line-conflict/.test(o.className || ""));
+    expect(!!seededBand && /jb-half/.test(seededBand.className), "the seeded conflict's Result is not painted as an open one: " + show(seededBand && seededBand.className));
+    expect(!!seededBand && /outside the conflict markers/.test((seededBand.hoverMessage || {}).value || ""), "and says, on hover, that it was merged there: " + show(seededBand && seededBand.hoverMessage));
+    expect(!!openBand && !/jb-half/.test(openBand.className), "the conflict still marked stays open: " + show(openBand && openBand.className));
+    // Its bands meet that Result as they meet a half-done one's (the matrix's
+    // seam check: an OPEN band must meet the Result on its own tint).
+    await sleep(80);
+    const phases = (id) => [...document.querySelectorAll('.jb-ribbon-stage path.jb-ribbon[data-block="' + id + '"]')].map((p) => p.dataset.phase);
+    const [s0, o0] = conflicts(view);
+    expect(phases(s0.id).length === 2 && phases(s0.id).every((p) => p === "half"), "the seeded conflict's bands say its Result is half settled: " + show(phases(s0.id)));
+    expect(phases(o0.id).length === 2 && phases(o0.id).every((p) => p === "open"), "the marked one's stay open: " + show(phases(o0.id)));
+    // Touched, it is an ordinary pending change again (or settled).
+    const [seededBlock] = conflicts(view);
+    view.acceptSide(seededBlock, "right", "auto");
+    const after = decos(view.currentResultSpan(seededBlock).start).find((o) => /jb-line-conflict/.test(o.className || ""));
+    expect(!after || !/outside the conflict markers/.test((after.hoverMessage || {}).value || ""), "once a side is taken, the note goes");
     view.dispose();
     view = make(P(BASE));
     expect(seeded === undefined, "a file that is base seeds nothing");

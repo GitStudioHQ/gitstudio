@@ -74,17 +74,17 @@ const MOUNT = `
   const groupsIn = (layer) => [...layer.querySelectorAll(".jb-change-actions")].map((g) => Number(g.dataset.block)).sort((a, b) => a - b);
   const press = (el) => el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
   const TINT = {
-    conflict: "rgba(240, 105, 100, 0.24)",
-    modified: "rgba(40, 150, 245, 0.28)",
-    inserted: "rgba(80, 180, 40, 0.14)",
-    deleted: "rgba(139, 148, 158, 0.22)",
+    conflict: "rgba(240, 105, 100, 0.23)",
+    modified: "rgba(40, 150, 245, 0.23)",
+    inserted: "rgba(80, 180, 40, 0.13)",
+    deleted: "rgba(139, 148, 158, 0.13)",
   };
   /** A settled change's trace — a taken side, its ribbon, the Result (and a half-done Result). */
   const MUTED = {
     conflict: "rgba(240, 105, 100, 0.12)",
     modified: "rgba(40, 150, 245, 0.13)",
     inserted: "rgba(80, 180, 40, 0.08)",
-    deleted: "rgba(139, 148, 158, 0.11)",
+    deleted: "rgba(139, 148, 158, 0.043)",
   };
   const EDGE = {
     conflict: "rgb(240, 104, 106)",
@@ -93,10 +93,10 @@ const MOUNT = `
     deleted: "rgb(139, 148, 158)",
   };
   const DONE = {
-    conflict: "rgba(240, 104, 106, 0.5)",
-    modified: "rgba(74, 159, 245, 0.5)",
-    inserted: "rgba(98, 179, 74, 0.5)",
-    deleted: "rgba(139, 148, 158, 0.5)",
+    conflict: "rgba(240, 104, 106, 0.72)",
+    modified: "rgba(74, 159, 245, 0.72)",
+    inserted: "rgba(98, 179, 74, 0.72)",
+    deleted: "rgba(139, 148, 158, 0.72)",
   };
   /** An insertion or deletion point's line (and a ribbon's end at it). */
   const POINT = { inserted: "rgba(98, 179, 74, 0.62)", deleted: "rgba(139, 148, 158, 0.62)" };
@@ -458,7 +458,8 @@ test("the legend explains the COLOURS in words — a solid dot, the name, how ma
     const legend = document.querySelector("#slot .jb-legend");
     const chip = (item) => document.querySelector('#slot .jb-legend-chip[data-category="' + item + '"]');
     const text = (item) => chip(item) && chip(item).textContent.replace(/\\s+/g, " ").trim();
-    expect(text("conflict") === "Conflicts2you choose", "conflict item: " + JSON.stringify(text("conflict")));
+    // One of the two conflicts is one the wand resolves: said on screen (K-1).
+    expect(text("conflict") === "Conflicts2you choose · 1 can be merged automatically", "conflict item: " + JSON.stringify(text("conflict")));
     expect(text("same") === "Same on both sides2either arrow takes it", "identical item: " + JSON.stringify(text("same")));
     // A one-sided change is blue, green or grey by what it did: the item names
     // each colour, so the legend explains what the panes show.
@@ -466,7 +467,7 @@ test("the legend explains the COLOURS in words — a solid dot, the name, how ma
     const shown = (el) => getComputedStyle(el).display !== "none";
     const visible = [...legend.children].filter((e) => !e.classList.contains("jb-legend-pop") && shown(e));
     const line = visible.map((e) => e.classList.contains("jb-legend-help") ? "?" : [...e.querySelectorAll(":scope > span, :scope > .jb-legend-kind")].map((s) => s.textContent.trim()).filter(Boolean).join(" ") || e.textContent.trim()).join(" ");
-    expect(line === "Conflicts 2 you choose · Changed Added Removed on one side 4 safe to take · Same on both sides 2 either arrow takes it ?", "the legend reads as words: " + JSON.stringify(line));
+    expect(line === "Conflicts 2 you choose · 1 can be merged automatically · Changed Added Removed on one side 4 safe to take · Same on both sides 2 either arrow takes it ?", "the legend reads as words: " + JSON.stringify(line));
     expect(!/[≠≈‹›✨✓=]/.test(legend.textContent), "no symbols of our own anywhere in it: " + JSON.stringify(legend.textContent));
     // Solid round dots, one per colour, in the colours the panes use — no box
     // that reads as a checkbox waiting for a tick.
