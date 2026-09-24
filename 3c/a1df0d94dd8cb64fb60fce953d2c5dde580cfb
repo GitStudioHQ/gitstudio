@@ -1,0 +1,64 @@
+apps/extension/test/rebaseFailureCallSites.test.ts
+  s_26f5e669d3043c::t_18ba86b718ac44 4
+  s_26f5e669d3043c::t_77eeb572ac79a6 30-34
+  s_26f5e669d3043c::t_29bbd19ec8b688 90
+  s_26f5e669d3043c::t_5a353e985abc2f 50-51,53
+  s_26f5e669d3043c::t_ce8ea122cb7cf3 60
+  s_26f5e669d3043c::t_616dc2ae4b578b 76-77,80
+  s_26f5e669d3043c::t_e51527203b0910 67
+  s_26f5e669d3043c::t_dbe6b7e46995a5 99
+scripts/merge-studio/test/import.test.mjs
+  s_26f5e669d3043c::t_dcd666e2029c6b 12,14,17,29,35-36
+  s_26f5e669d3043c::t_fb4e9c2e0e107f 58-63,69-73
+  s_26f5e669d3043c::t_e89638287bd606 603-647
+  s_26f5e669d3043c::t_5c30de24db22ec 1020-1022
+  s_26f5e669d3043c::t_5d718c908a1455 873-876
+  s_26f5e669d3043c::t_0c184ac8954d45 815-816
+docs/merge-studio.md
+  s_26f5e669d3043c::t_c71dc950d0d0a6 169-173
+scripts/merge-studio/import.mjs
+  s_26f5e669d3043c::t_6578a896fc8c2c 49
+  s_26f5e669d3043c::t_fec0fc0e8ae8b2 705-712
+  s_26f5e669d3043c::t_da02805d6818db 45,48
+  s_26f5e669d3043c::t_c28cd63290efd8 652-656,659,662
+apps/extension/test/rebaseAbort.test.ts
+  s_26f5e669d3043c::t_81cda7ecd88143 43
+  s_26f5e669d3043c::t_58ff69ee41f2d6 6
+scripts/merge-studio/test/export.test.mjs
+  s_26f5e669d3043c::t_fa64902da8372e 212-214
+  s_26f5e669d3043c::t_dc633738be2dae 301-303
+  s_26f5e669d3043c::t_a57acedcf35007 31
+  s_26f5e669d3043c::t_2521e383064c92 135
+  s_26f5e669d3043c::t_df0056094f9e6f 14,16,26-30
+  s_26f5e669d3043c::t_f9ae07d621db4a 136-176
+scripts/merge-studio/check-parity.mjs
+  s_26f5e669d3043c::t_b0fc55160403b2 98-107
+  s_26f5e669d3043c::t_d1c7f5fd2b4f9c 97
+  s_26f5e669d3043c::t_8f68a621718351 146
+scripts/merge-studio/test/docs.test.mjs
+  s_26f5e669d3043c::t_9ac7c3e962f780 27-28
+scripts/merge-studio/export.mjs
+  s_26f5e669d3043c::t_3218c43de6ae17 33-36,44
+  s_26f5e669d3043c::t_d2b17b3ffe44be 87-122,124-126
+  s_26f5e669d3043c::t_47c2359793c705 123
+  s_26f5e669d3043c::t_901cb864ed1918 326-327,330,332
+scripts/merge-studio/test/checkParity.test.mjs
+  s_26f5e669d3043c::t_13bac9fc033d9e 128-143
+  s_26f5e669d3043c::t_3522534abb8844 127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3ca1df0d94dd8cb64fb60fce953d2c5dde580cfb",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
