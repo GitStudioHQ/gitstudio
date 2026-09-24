@@ -186,8 +186,13 @@
             "title": "Resolve a sample conflict",
             "description": "A ready-made rebase stop, no setup needed, with every kind of change in it. Take a change with the arrows beside it, or edit the result yourself, then press Apply to see what a real Apply does.\n[Open sample merge](command:jbMerge.openDemo)",
             "media": {
-              "svg": "media/walkthrough/sample-merge.svg",
-              "altText": "The sample merge in Merge Studio: yours on the left, the result in the middle, theirs on the right."
+              "image": {
+                "dark": "media/walkthrough/sample-merge-dark.png",
+                "light": "media/walkthrough/sample-merge-light.png",
+                "hc": "media/walkthrough/sample-merge-dark.png",
+                "hcLight": "media/walkthrough/sample-merge-light.png"
+              },
+              "altText": "The sample merge, nothing resolved yet: YOURS feature/session-hardening on the left, the result in the middle, THEIRS main on the right, the toolbar above and Apply below."
             },
             "completionEvents": [
               "onCommand:jbMerge.openDemo"
@@ -198,8 +203,13 @@
             "title": "Read the colours",
             "description": "The legend names every colour in words. Red is a real conflict, and Resolve simple on the toolbar resolves the ones whose edits don't overlap. Blue, green and grey are changes that don't conflict: changed, added and removed lines. Coloured on one side, only that side made the change. Coloured on both sides, it is the same change made on both, and either arrow takes it. A change you settled keeps a muted trace of the side you took.",
             "media": {
-              "svg": "media/walkthrough/legend.svg",
-              "altText": "The legend, in words: Conflicts in red, and Changed, Added and Removed in blue, green and grey."
+              "image": {
+                "dark": "media/walkthrough/legend-dark.png",
+                "light": "media/walkthrough/legend-light.png",
+                "hc": "media/walkthrough/legend-dark.png",
+                "hcLight": "media/walkthrough/legend-light.png"
+              },
+              "altText": "The legend names each colour in words: Conflicts, then Changed, Added and Removed on one side, then Same on both sides. Below it, a conflict in red, a change in blue and an added function in green."
             },
             "completionEvents": [
               "onStepSelected"
@@ -210,8 +220,13 @@
             "title": "Rebase without swapping sides",
             "description": "In a rebase, git calls your own commit “theirs”. Merge Studio doesn't: Yours is always your work, on the left, with both branch names on screen.",
             "media": {
-              "svg": "media/walkthrough/rebase-sides.svg",
-              "altText": "Mid-rebase: YOURS is the commit being replayed from your branch, on the left; THEIRS is the branch you are rebasing onto, on the right."
+              "image": {
+                "dark": "media/walkthrough/rebase-sides-dark.png",
+                "light": "media/walkthrough/rebase-sides-light.png",
+                "hc": "media/walkthrough/rebase-sides-dark.png",
+                "hcLight": "media/walkthrough/rebase-sides-light.png"
+              },
+              "altText": "Mid-rebase: YOURS test, onto, THEIRS master. The left pane is your commit being replayed from test; the right pane is master with the commits already rebased onto it."
             },
             "completionEvents": [
               "onStepSelected"
@@ -222,8 +237,13 @@
             "title": "Finish the whole operation from the dashboard",
             "description": "When the last file is resolved, press Continue, or Skip or Abort.\n[Show my conflicts](command:jbMerge.showConflicts)",
             "media": {
-              "svg": "media/walkthrough/dashboard.svg",
-              "altText": "The conflicts dashboard mid-rebase, with Continue Rebase, Skip this commit and Abort Rebase."
+              "image": {
+                "dark": "media/walkthrough/dashboard-dark.png",
+                "light": "media/walkthrough/dashboard-light.png",
+                "hc": "media/walkthrough/dashboard-dark.png",
+                "hcLight": "media/walkthrough/dashboard-light.png"
+              },
+              "altText": "The foot of the Conflicts dashboard mid-rebase: conflicted files with Accept Yours, Accept Theirs and Merge…, then Abort Rebase, and Continue Rebase waiting until no file has conflicts."
             },
             "completionEvents": [
               "onCommand:jbMerge.showConflicts"
@@ -235,8 +255,13 @@
             "when": "!jbMerge.defersToGitStudio",
             "description": "At your first conflict, Merge Studio asks whether to turn off VS Code's own merge editor and conflict highlights, so they don't open alongside it. Changed your mind later? Put them back with one command.\n[Restore VS Code's merge editor](command:jbMerge.restoreBuiltInMergeEditor)",
             "media": {
-              "svg": "media/walkthrough/choose-editor.svg",
-              "altText": "The question Merge Studio asks at the first conflict: turn off VS Code's own merge editor and conflict highlights?"
+              "image": {
+                "dark": "media/walkthrough/choose-editor-dark.png",
+                "light": "media/walkthrough/choose-editor-light.png",
+                "hc": "media/walkthrough/choose-editor-dark.png",
+                "hcLight": "media/walkthrough/choose-editor-light.png"
+              },
+              "altText": "At the first conflict Merge Studio asks whether to turn off VS Code's own merge editor and conflict highlights: Turn them off, Not now, or Don't ask again."
             },
             "completionEvents": [
               "onStepSelected"
@@ -248,8 +273,13 @@
             "when": "jbMerge.defersToGitStudio",
             "description": "GitStudio ships this same merge editor and conflicts dashboard. With both installed, GitStudio opens conflicts automatically and Merge Studio stays quiet. Its commands (Resolve Conflicts…, Open Sample Merge, Compare) still work and open the same screens.\n[Let Merge Studio open conflicts instead](command:workbench.action.openSettings?%5B%22gitstudio.merge.autoOpen%22%5D)",
             "media": {
-              "svg": "media/walkthrough/gitstudio.svg",
-              "altText": "GitStudio and Merge Studio show the same conflicts dashboard; with both installed, GitStudio opens it."
+              "image": {
+                "dark": "media/walkthrough/gitstudio-dark.png",
+                "light": "media/walkthrough/gitstudio-light.png",
+                "hc": "media/walkthrough/gitstudio-dark.png",
+                "hcLight": "media/walkthrough/gitstudio-light.png"
+              },
+              "altText": "Settings with both installed: GitStudio's Merge: Auto Open is on, so GitStudio opens conflicts and Merge Studio stays quiet; turning it off lets Merge Studio open them."
             },
             "completionEvents": [
               "onStepSelected"
@@ -260,8 +290,13 @@
             "title": "Compare two files",
             "description": "Select two files in the Explorer, right-click, and choose Compare in Merge Studio. Or start with a sample.\n[Open sample diff](command:jbMerge.openDemoDiff)",
             "media": {
-              "svg": "media/walkthrough/diff.svg",
-              "altText": "The side-by-side diff with line-aligned panes and highlights on exactly what changed."
+              "image": {
+                "dark": "media/walkthrough/diff-dark.png",
+                "light": "media/walkthrough/diff-light.png",
+                "hc": "media/walkthrough/diff-dark.png",
+                "hcLight": "media/walkthrough/diff-light.png"
+              },
+              "altText": "Two files selected in the Explorer and the context menu's Compare in Merge Studio, over the side-by-side diff it opened."
             },
             "completionEvents": [
               "onCommand:jbMerge.openDemoDiff"
@@ -273,8 +308,13 @@
             "when": "jbMerge.ideAvailable",
             "description": "Prefer a JetBrains IDE? Merge Studio can hand conflicts to an installed IntelliJ, WebStorm, PyCharm or other JetBrains IDE.\n[Choose the resolver](command:workbench.action.openSettings?%5B%22jbMerge.conflictResolver%22%5D)",
             "media": {
-              "svg": "media/walkthrough/jetbrains.svg",
-              "altText": "The Merge Studio setting that chooses between the three-pane editor and an installed JetBrains IDE."
+              "image": {
+                "dark": "media/walkthrough/jetbrains-dark.png",
+                "light": "media/walkthrough/jetbrains-light.png",
+                "hc": "media/walkthrough/jetbrains-dark.png",
+                "hcLight": "media/walkthrough/jetbrains-light.png"
+              },
+              "altText": "The Conflict Resolver setting and its two values: Merge Studio, the default three-pane editor, and JetBrains IDE."
             },
             "completionEvents": [
               "onSettingChanged:jbMerge.conflictResolver"

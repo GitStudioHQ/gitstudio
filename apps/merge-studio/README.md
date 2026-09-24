@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="media/screenshots/hero.gif" alt="A rebase stops on a conflict; the Conflicts dashboard reads Rebasing feature/session-hardening onto main, commit 2 of 3; Merge… opens the three panes; the wand and one arrow resolve it; Apply, then Continue Rebase, and the rebase completes." width="1200">
+  <img src="media/screenshots/hero.gif" alt="A rebase started in the terminal stops on a conflict in src/authorizeRequest.ts. The Conflicts dashboard reads Rebasing feature/session-hardening onto main, commit 2 of 3; Merge… opens the three panes; All takes the changes only one side made, the wand resolves the simple conflict, and an arrow and a cross settle each of the other two; Apply, then Continue Rebase, and the dashboard reads Rebase complete." width="1200">
 </p>
 
 ## Why Merge Studio
@@ -25,12 +25,14 @@
 
 During a rebase git swaps its own words: `--ours` is the branch you are rebasing onto, and `--theirs` is your commit. Merge Studio does not. **Yours** (left) is always your work, the commit being replayed, and **Theirs** (right) is the branch it is landing on. The header says which: *Rebasing test onto master · commit 1 of 3*.
 
-<p align="center"><img src="media/screenshots/dashboard-rebase.png" alt="The Conflicts dashboard mid-rebase: YOURS test, onto, THEIRS master; commit 1 of 1; the file list with Accept Yours, Accept Theirs and Merge…; Continue Rebase, Skip this commit and Abort Rebase."></p>
+<p align="center"><img src="media/screenshots/dashboard-rebase.png" alt="The Conflicts dashboard mid-rebase: Rebasing test onto master, commit 1 of 1; YOURS test, onto, THEIRS master; the commit being replayed; f.txt with Accept Yours, Accept Theirs and Merge…; Abort Rebase, and Continue Rebase disabled because f.txt still has conflicts."></p>
 
 ## Every change, colour-coded
 
 The legend above the panes names each colour in words, with how many
 changes are left.
+
+<p align="center"><img src="media/screenshots/legend.png" alt="The legend: Conflicts 6, you choose; Changed, Added and Removed on one side 5, safe to take; Same on both sides 1, either arrow takes it; and a button that explains the colours and lines."></p>
 
 | Colour | In the legend | Meaning |
 | --- | --- | --- |
@@ -48,11 +50,11 @@ keeps only its outline, and when you took both, both stay joined to it.
 rebase: the file keeps its conflict markers, and **Merge…** in the Conflicts
 dashboard opens it again.
 
-<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The three-pane merge editor in a light theme: YOURS on the left, the result in the middle, THEIRS on the right; a red conflict, a change made the same on both sides and coloured on both, and blue, green and grey changes only one side made, with the legend above."></p>
+<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The sample merge in a light theme: YOURS feature/session-hardening on the left, the result in the middle, THEIRS main on the right, the legend above. Conflicts in red, one with Yours already taken; changes made on one side only in blue, green and grey; two changes made the same way on both sides, coloured on both; and one change already taken from Theirs, kept as a faint trace joined to the result."></p>
 
 ## The Conflicts dashboard
 
-<p align="center"><img src="media/screenshots/dashboard-done.png" alt="The Conflicts dashboard with every file resolved and Continue Rebase ready."></p>
+<p align="center"><img src="media/screenshots/dashboard-done.png" alt="The Conflicts dashboard with every file resolved: All conflicts resolved, f.txt marked kept yours with Hold to undo, and Continue Rebase ready."></p>
 
 The dashboard opens the moment a merge, rebase, cherry-pick or revert stops on conflicts.
 
@@ -62,9 +64,11 @@ The dashboard opens the moment a merge, rebase, cherry-pick or revert stops on c
 - Resolved files stay in the list, labelled with how they were settled. **Hold Undo** on one to restore its original conflict.
 - Binary files, and files deleted or added on one side, get a panel that says what happened and offers the choices that make sense: keep yours, keep theirs, or delete the file.
 
+<p align="center"><img src="media/screenshots/no-text-panel.png" alt="The panel for a file changed on one side and deleted on the other: greeting.py was edited in theirs (master) and deleted in yours (test), with Delete the file and Accept Theirs."></p>
+
 ## Side-by-side diff
 
-<p align="center"><img src="media/screenshots/diff.png" alt="The side-by-side diff: line-aligned panes with highlights on exactly what changed."></p>
+<p align="center"><img src="media/screenshots/diff.png" alt="The sample side-by-side diff: before on the left, after on the right, line-aligned, changed lines in blue with the changed words highlighted, a removed line in grey and an added line in green."></p>
 
 - **Compare in Merge Studio**: select two files in the Explorer, or compare one file with its last commit.
 - **Open Changes in Merge Studio** from a changed file's title bar, and **Stage Changes with Ticks** to stage it one change at a time.
