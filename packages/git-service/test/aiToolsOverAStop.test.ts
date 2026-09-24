@@ -161,7 +161,7 @@ test("unresolvedConflictsMessage names each operation's own way on — 'commit' 
   assert.deepEqual([...seen].sort(), ["am", "cherry-pick", "merge", "rebase", "revert", "stash pop"]);
 });
 
-test("git_checkout and git_create_branch over every stop, conflicted then resolved: refused in the doors' words, the stop untouched", async () => {
+test("git_checkout, git_create_branch and git_reset over every stop, conflicted then resolved: refused in the doors' words, the stop untouched", async () => {
   const cells: string[] = [];
   for (const s of scenarios) {
     for (const resolved of [false, true]) {
@@ -212,6 +212,18 @@ test("git_checkout and git_create_branch over every stop, conflicted then resolv
       assert.equal(plain.ok, true, `${cell}: create_branch without checkout still works (${plain.message})`);
       git(s.dir, "branch", "-D", "gs-ai-plain");
       assert.equal(state(s.dir), before, `${cell}: …and touched no stop`);
+
+      // git_reset: --mixed and --hard rewrite the index, which ENDS a merge,
+      // cherry-pick or revert (MERGE_HEAD & co. go) and drops a stash pop's
+      // unmerged stages; any mode moves HEAD out from under a rebase or an am.
+      const resetRefused = operationInTheWayMessage({ kind: "reset", ...pick(stop) });
+      for (const mode of ["soft", "mixed", "hard"] as const) {
+        const r = await host.reset(mode, "HEAD");
+        assert.equal(r.ok, false, `${cell}: git_reset --${mode} must not run over the stop`);
+        assert.equal(r.message, resetRefused, `${cell}: git_reset --${mode} says what is stopped`);
+        assert.match(r.message ?? "", /before resetting\.$/);
+        assert.equal(state(s.dir), before, `${cell}: git_reset --${mode} left the stop exactly as it was`);
+      }
       cells.push(cell);
     }
   }

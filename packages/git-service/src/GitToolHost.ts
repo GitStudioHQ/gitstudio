@@ -32,6 +32,7 @@ import {
 import { branchNameOf } from "./BranchOps";
 import { commitBlockerMessage } from "./StagingProvider";
 import { stashBlockerMessage } from "./StashProvider";
+import { pick, stoppedIn } from "./stoppedOperation";
 
 /** Largest blob the read_file tool will return inline. */
 const FILE_CAP_BYTES = 256 * 1024;
@@ -413,6 +414,15 @@ class GitContextToolHost implements GitToolHost {
   async reset(mode: "soft" | "mixed" | "hard", ref: string): Promise<ToolWriteResult> {
     if (!safe(ref)) {
       return UNSAFE;
+    }
+    // Over a stop, `git reset` ENDS it without a word: --mixed and --hard
+    // rewrite the index, which clears MERGE_HEAD, CHERRY_PICK_HEAD and
+    // REVERT_HEAD's conflict (and drops unmerged stages a stash pop left),
+    // and any mode moves HEAD out from under a rebase or an am. Refused like
+    // the checkout door, in the same sentence a person gets.
+    const stop = await stoppedIn(this.ctx.process).catch(() => null);
+    if (stop) {
+      return { ok: false, message: operationInTheWayMessage({ kind: "reset", ...pick(stop) }) };
     }
     return this.run(["reset", `--${mode}`, ref]);
   }

@@ -79,6 +79,12 @@ export class UndoLedger {
 
     try {
       const result = await fn();
+      if (nothingRan(result)) {
+        // Cancelled at a question (Stash & Retry's Cancel, a dismissed
+        // dialog): nothing ran, so there is nothing to undo — an "Undid?
+        // Revert …" toast with Undo said the opposite.
+        return result;
+      }
       this.record(repo.root, snapshot);
       this.offerUndoToast(label);
       return result;
@@ -343,6 +349,16 @@ export class UndoLedger {
     const result = await ctx.process.run(["rev-parse", "HEAD"]);
     return result.code === 0 ? result.stdout.trim() : null;
   }
+}
+
+/**
+ * An operation's result that says nothing ran: the commit actions' `false`
+ * ("nothing changed" — a cancel), or a door's `{ cancelled: true }`
+ * (applyOrAsk's Applied, when the Stash & Retry question was cancelled).
+ */
+export function nothingRan(result: unknown): boolean {
+  if (result === false) return true;
+  return typeof result === "object" && result !== null && (result as { cancelled?: unknown }).cancelled === true;
 }
 
 // ── Local UI helpers (mirror commitActions.ts) ───────────────────────────────

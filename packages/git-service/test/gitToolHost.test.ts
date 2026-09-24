@@ -82,6 +82,12 @@ test("write tools stage and commit", async () => {
   assert.equal(commit.ok, true);
   const log = await host.log({ limit: 10 });
   assert.equal(log[0].subject, "feat: add b and extend a");
+
+  // With nothing stopped, git_reset still resets (its guard is for a stop only).
+  const soft = await host.reset("soft", "HEAD~1");
+  assert.equal(soft.ok, true, soft.message);
+  assert.equal((await host.log({ limit: 10 }))[0].subject, "feat: initial commit");
+  assert.equal((await host.commit("feat: add b and extend a")).ok, true, "the soft reset kept everything staged");
 });
 
 test("branch tools create and switch", async () => {

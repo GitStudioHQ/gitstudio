@@ -26,7 +26,7 @@ import { OperationProvider } from "./OperationProvider";
 export type StoppedOperation = "merge" | "rebase" | "cherry-pick" | "revert" | "am";
 
 /** The door a stop was in the way of. */
-export type BlockedDoor = "revert" | "cherry-pick" | "merge" | "rebase" | "checkout" | "stash" | "pull";
+export type BlockedDoor = "revert" | "cherry-pick" | "merge" | "rebase" | "checkout" | "stash" | "pull" | "reset";
 
 /** What git is stopped in, and what is left unmerged. */
 export interface Stopped {
@@ -103,6 +103,7 @@ const BEFORE: Record<BlockedDoor, string> = {
   checkout: "checking out",
   stash: "applying a stash",
   pull: "pulling again",
+  reset: "resetting",
 };
 
 /** The operation, as the subject of a sentence. */

@@ -11,6 +11,7 @@ import { isWorkingTreeFileOf } from "../util/repoScope";
 import { slowStateChanged, type SlowState } from "./slowState";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { pruneOnFetch } from "../git/fetchOptions";
+import { Arrival } from "../ui/arrival";
 
 /**
  * One change of a file, as the Changes list shows it.
@@ -474,6 +475,7 @@ export class CommitViewProvider
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
+    this.viewArrival.set(view);
     view.webview.options = {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist")],
@@ -498,6 +500,7 @@ export class CommitViewProvider
       // every waiter as "dismissed" so the awaiting command finishes instead of
       // hanging forever on a promise that can't resolve.
       this.settleAllDialogs();
+      this.viewArrival.clear(view);
       if (this.view === view) {
         this.view = undefined;
       }
@@ -519,6 +522,11 @@ export class CommitViewProvider
     (r: DialogResult | undefined) => void
   >();
   private dialogSeq = 0;
+  /**
+   * The view, as VS Code resolves it — which, for a view never opened in this
+   * window, happens AFTER its `.focus` command has returned (see Arrival).
+   */
+  private readonly viewArrival = new Arrival<vscode.WebviewView>();
   /** Resolves once the current webview document's script is listening. */
   private webviewReady: Promise<void> | undefined;
   private markReady: (() => void) | undefined;
@@ -540,8 +548,15 @@ export class CommitViewProvider
         // Fall through — if the view did resolve, the post below still works.
       }
     }
-    const view = this.view;
+    // A view never opened in this window is resolved by VS Code only after
+    // `.focus` returns: wait for it. Without this, the Commit Graph's Revert
+    // over an uncommitted edit (the Changes view never opened) got "dismissed"
+    // back at once — no Stash & Retry question, nothing ran, nothing said.
+    const view = this.view ?? (await this.viewArrival.wait(5000));
     if (!view) {
+      void vscode.window.showWarningMessage(
+        "GitStudio: the Changes view didn't open, so this action can't ask its question. Open the GitStudio sidebar and try again.",
+      );
       return undefined;
     }
     // A just-revealed webview has a document but not yet a running script, and a
