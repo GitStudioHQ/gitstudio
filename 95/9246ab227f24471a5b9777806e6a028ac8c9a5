@@ -1,0 +1,61 @@
+scripts/merge-studio/test/docs.test.mjs
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 139-143,153-154
+apps/merge-studio/SHOTS.md
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 34
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_aa55ea816f75ca 55
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 53-54,56,166-167
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_aa55ea816f75ca 41
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 39-40,42,185-186
+packages/webview-ui/src/mergeLegend.ts
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 154
+  s_26f5e669d3043c::t_c88c9bd46e97ab 152
+scripts/merge-e2e/alignment.ts
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 159,161-173,316-319,328-329
+packages/webview-ui/src/styles/diff.css
+  s_26f5e669d3043c::t_cf5fd5125f1cd9 61,127,167
+  s_26f5e669d3043c::t_e109360e3349e5 3-4,66-68,136-138
+  s_26f5e669d3043c::t_c539d0642a49cc 141,143
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 13-15,17-18,20-21,23-24,33,42-43,51-57,59-60,62-63,69-71,76-81,123-124,126,128-129,135,140,142,148-151,153,155-162,166,168-173,191-194,202-208,210-214,218-219,303-305,315-318,324-325,334,949-950,952-954,962-965
+  s_26f5e669d3043c::t_d9ef4c5a08a0bf 19,25-30,34-39
+  s_26f5e669d3043c::t_0fa1c9a025a719 966
+packages/webview-ui/test/mergeColours.test.ts
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 92-98,137,173-177,223,249,318-322,358-363,376-377,576
+  s_26f5e669d3043c::t_b7c9ec32fdeed4 138-140,219
+apps/merge-studio/CHANGELOG.md
+  s_26f5e669d3043c::t_aa55ea816f75ca 18
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 20,84
+apps/merge-studio/test/manifest.test.ts
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 248,270-274
+packages/webview-ui/src/decorations.ts
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 75-77,82-86,90-92,94,96,99,102-104,367,369-374,396-400
+  s_26f5e669d3043c::t_c88c9bd46e97ab 78-81,357-360,368
+apps/merge-studio/README.md
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 45-47,49
+  s_26f5e669d3043c::t_aa55ea816f75ca 48
+packages/webview-ui/test/mergeColumns.test.ts
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 6-11,17-19,50-51,96,98-99,102,104,106-112,115,118,123-126,128,135,138,152,156,159-160,164,166-167,169-171,175,178-180,183-184,186-188
+  s_26f5e669d3043c::t_b7c9ec32fdeed4 12-16,93,97,113-114,130,172-173,194,198
+packages/webview-ui/test/mergeContrast.test.ts
+  s_26f5e669d3043c::t_45c4ecc7c2d3f0 15-18,25-30,33-34,39-40,42,74,84-85,89,92,95,131,361,369,373-375,377-378,381,388,393-396,399,407,435-437,446-447,468,474-475,478-480,482,484-485,490-493,496-501,503-504,507-508,513-514,517,522,529-536,540,542,553
+  s_26f5e669d3043c::t_cf5fd5125f1cd9 510
+  s_26f5e669d3043c::t_b7c9ec32fdeed4 20-24,113,151-153,376,458,495
+  s_26f5e669d3043c::t_327bc3012270c2 509
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "959246ab227f24471a5b9777806e6a028ac8c9a5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
