@@ -1,0 +1,57 @@
+apps/merge-studio/CHANGELOG.md
+  s_26f5e669d3043c::t_66aaa16fa08d3c 11,13-16,18,20,84
+packages/webview-ui/src/decorations.ts
+  s_26f5e669d3043c::t_c114596cd0a3de 75-78,83-85,90-92,94,96,99,102-104,363,366-369,374-377,387,394,399-404
+  s_26f5e669d3043c::t_26ada24da1ce6f 79-82,150-153,172,174,176-179,181-183,207-208,353-362,364-365,370-371
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_66aaa16fa08d3c 33-48,186-187
+scripts/merge-studio/test/docs.test.mjs
+  s_26f5e669d3043c::t_c03d6e2752bc32 136-143,147-148,151-154,156
+packages/webview-ui/src/styles/diff.css
+  s_26f5e669d3043c::t_e07be595119d96 953-958,966-969
+  s_26f5e669d3043c::t_985f12d02aa162 2-4,13-25,28-29,37-40,44-46,48-50,70-71,74-78,120-121,124-126,132-134,136-139,144,146-147,149,151-158,163-169,174,187-190,202-212,214-215,217,222-223,307-309,319-322
+  s_26f5e669d3043c::t_e0270588c30f40 30-36,198-201
+  s_26f5e669d3043c::t_5e1d2425829cd3 51-54,56-60,62-68,123,162,328-329,338,970
+apps/merge-studio/SHOTS.md
+  s_26f5e669d3043c::t_f3dc19807ddb7e 34,38,51
+scripts/merge-e2e/alignment.ts
+  s_26f5e669d3043c::t_ae921ef0bf6047 158-173,233-235,243,256,314-319,328-329
+apps/merge-studio/test/manifest.test.ts
+  s_26f5e669d3043c::t_d19dc077d7a1ca 248,251-254,256,259,266,268-274,282,288,291,303
+  s_26f5e669d3043c::t_c14e6e005bf646 241-243,245
+packages/webview-ui/test/mergeContrast.test.ts
+  s_26f5e669d3043c::t_cd2ad2c23bda67 8-9,13-18,20-29,31-42,55-56,63,67,73,82-102,112-113,125,140-144,149,155,357,362,366,369-382,384,387,389-392,395-396,399-403,415,431-433,435,439,455,465,471-472,475-477,479,481-482,484-500,502-509,512-513,516-521,523-532,534-535,539,541,548,550,552
+  s_26f5e669d3043c::t_3ae18c3308e935 130
+  s_26f5e669d3043c::t_1aad26d9a58ee7 533
+apps/merge-studio/package.json
+  s_26f5e669d3043c::t_98ef8992136c4a 204
+packages/webview-ui/test/mergeColours.test.ts
+  s_26f5e669d3043c::t_6bfea27391bd0e 321,362
+  s_26f5e669d3043c::t_3ae18c3308e935 576-577
+  s_26f5e669d3043c::t_acb9da9defc01f 92-102,137-140,154,164,173-177,219-220,223,249,318-320,322-324,343,358-361,363,376-377
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_66aaa16fa08d3c 47-62,167-168
+packages/webview-ui/test/mergeColumns.test.ts
+  s_26f5e669d3043c::t_8a83871ae30dfc 1-59,63,65-80,82-132,136-172,174-180,182-202
+  s_26f5e669d3043c::t_c38de7517720b7 60-62,64,81,133-135,173,181
+packages/webview-ui/src/mergeLegend.ts
+  s_26f5e669d3043c::t_e07be595119d96 152,155-156
+apps/merge-studio/README.md
+  s_26f5e669d3043c::t_66aaa16fa08d3c 32-34,40-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9f0bbe0d6db2e76cd22a1989409c9b225b1c5534",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
