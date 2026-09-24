@@ -273,8 +273,8 @@ Until then, `vsce publish -p "$VSCE_PAT"` keeps working with a PAT scoped to
 - [ ] The owner's decisions are settled (architecture: GitStudio is the
       parent, chosen 23 Sep 2026; the version, 1.0.0; licence, engine floor,
       auto-apply default, coexistence question).
-- [ ] Listing shots captured from the final build per SHOTS.md; the
-      walkthrough's placeholder SVGs replaced.
+- [x] Listing shots captured from the 1.0 build per SHOTS.md; the
+      walkthrough's placeholder SVGs replaced (manifest.test.ts gates both).
 - [ ] gitstudio: `npm run check-types && npm test` green.
 - [ ] Exported; in merge-studio `npm ci`, `npm run check-parity`,
       `npm run check-types` and `npm test` green, and `vsce ls` shows no

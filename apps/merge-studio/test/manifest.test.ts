@@ -154,17 +154,18 @@ test("walkthrough text renders as written: no backticks, every media file presen
   }
 });
 
-test(
-  "the walkthrough shows captures from the final build, never a placeholder",
-  { todo: "POLISH B3: the eight media/walkthrough/*.svg still read 'Screenshot pending' (SHOTS.md); a release gate" },
-  () => {
-    for (const s of walkthrough!.steps) {
-      for (const f of [s.media.svg, ...(typeof s.media.image === "string" ? [s.media.image] : Object.values(s.media.image ?? {}))]) {
-        if (typeof f === "string") assert.doesNotMatch(read(f), /Screenshot pending|Placeholder/, `${s.id}: ${f}`);
-      }
+test("the walkthrough shows captures from the final build, never a placeholder", () => {
+  // A release gate (POLISH B3): every step's media is a capture.
+  for (const s of walkthrough!.steps) {
+    const files = [s.media.svg, ...(typeof s.media.image === "string" ? [s.media.image] : Object.values(s.media.image ?? {}))]
+      .filter((f): f is string => typeof f === "string");
+    assert.ok(files.length > 0, `${s.id} has no media`);
+    for (const f of files) {
+      assert.ok(existsSync(join(ROOT, f)), `${s.id}: ${f} is missing`);
+      assert.doesNotMatch(readFileSync(join(ROOT, f)).toString("latin1"), /Screenshot pending|Placeholder/, `${s.id}: ${f}`);
     }
-  },
-);
+  }
+});
 
 // ── README (POLISH B4) ──────────────────────────────────────────────────────
 
@@ -192,15 +193,15 @@ test("every README image is either in the package or on the shot list captured f
   }
 });
 
-test(
-  "every README image exists",
-  { todo: "POLISH B3: the listing shots are captured from the final 1.0 build (SHOTS.md)" },
-  () => {
-    for (const m of readme.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
-      if (!/^https?:/.test(m[1])) assert.ok(existsSync(join(ROOT, m[1])), m[1]);
-    }
-  },
-);
+test("every README image exists", () => {
+  // Markdown images AND <img src> tags: the README uses only the tags, and a
+  // markdown-only pattern found none, so this passed with every image missing.
+  const local = [...readme.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)|<img[^>]+src="([^"]+)"/g)]
+    .map((m) => m[1] ?? m[2])
+    .filter((src) => !/^https?:/.test(src));
+  assert.ok(local.length >= 7, `found ${local.length} local images`);
+  for (const src of local) assert.ok(existsSync(join(ROOT, src)), src);
+});
 
 // ── CHANGELOG (POLISH B5) ───────────────────────────────────────────────────
 

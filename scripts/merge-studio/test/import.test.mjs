@@ -281,7 +281,9 @@ test("a path outside the mapping is refused before anything changes, and --exclu
       "NEWS.md": () => "News.\n",
       "vendor/gitstudio/extra/helper.ts": () => "export {};\n",
       "scripts/release.mjs": () => "// a new script\n",
-      "media/screenshots/new.png": () => "png",
+      // A folder the shell does not have (media/ is the shell's since its
+      // listing shots landed, so a new file there maps to it).
+      "assets/new.png": () => "png",
     });
     const head = g(gs, "rev-parse", "HEAD");
     let refused;
@@ -292,7 +294,7 @@ test("a path outside the mapping is refused before anything changes, and --exclu
         return e instanceof ImportRefused;
       },
     );
-    for (const path of [".github/workflows/release.yml", "docs/index.md", "NEWS.md", "vendor/gitstudio/extra/helper.ts", "scripts/release.mjs", "media/screenshots/new.png"]) {
+    for (const path of [".github/workflows/release.yml", "docs/index.md", "NEWS.md", "vendor/gitstudio/extra/helper.ts", "scripts/release.mjs", "assets/new.png"]) {
       assert.match(refused.message, new RegExp(`^  ${path.replace(/[./]/g, "\\$&")} \\([0-9a-f]{7}\\): `, "m"), path);
     }
     assert.doesNotMatch(refused.message, /mergeModel/, "the mapped path is not listed");
@@ -305,7 +307,7 @@ test("a path outside the mapping is refused before anything changes, and --exclu
       gitstudio: gs,
       from: ms,
       range: "main..contrib",
-      excludes: [".github/", "docs", "NEWS.md", "vendor/gitstudio/extra/", "scripts/release.mjs", "media/screenshots/"],
+      excludes: [".github/", "docs", "NEWS.md", "vendor/gitstudio/extra/", "scripts/release.mjs", "assets/"],
     });
     assert.equal(r.commits.length, 1);
     assert.deepEqual(g(gs, "diff", "--name-only", "main", "HEAD").split("\n"), ["packages/engine/src/mergeModel.ts"]);

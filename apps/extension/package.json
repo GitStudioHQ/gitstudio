@@ -1071,7 +1071,7 @@
         "gitstudio.merge.autoOpen": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "When a merge, rebase, cherry-pick or stash stops on conflicts: show the **Conflicts** dashboard, open a conflicted file in the resolver (the GitStudio merge editor, or your JetBrains IDE) as soon as you switch to it, and take over VS Code's built-in merge editor tab. Off: nothing opens by itself \u2014 use **GitStudio: Resolve Conflicts\u2026**. (This used to open every conflicted file as its own tab.) If Merge Studio is also installed, it leaves this to GitStudio; turn this off to let Merge Studio open conflicts instead."
+          "markdownDescription": "When a merge, rebase, cherry-pick, revert, git am or stash pop stops on conflicts: show the **Conflicts** dashboard, open a conflicted file in the resolver (the GitStudio merge editor, or your JetBrains IDE) as soon as you switch to it, and take over VS Code's built-in merge editor tab. Off: nothing opens by itself \u2014 use **GitStudio: Resolve Conflicts\u2026**. (This used to open every conflicted file as its own tab.) If Merge Studio is also installed, it leaves this to GitStudio; turn this off to let Merge Studio open conflicts instead."
         },
         "gitstudio.merge.autoApplyNonConflicting": {
           "type": "boolean",

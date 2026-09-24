@@ -17,7 +17,7 @@
 ## Why Merge Studio
 
 - **Yours, the result and theirs, side by side.** VS Code's built-in merge editor stacks Incoming and Current above the result. Merge Studio puts your side on the left, the file you will commit in the middle, and theirs on the right, joined by ribbons you click to take a change.
-- **One dashboard for the whole merge or rebase.** Every conflicted file, what happened to it, and **Continue**, **Skip** and **Abort** for the operation itself.
+- **One dashboard for the whole merge or rebase.** Every conflicted file, what happened to it, and **Continue** and **Abort** for the operation itself (and **Skip**, where git offers it).
 - **Every kind of change in its own colour**, with a legend, so a real conflict never hides among changes only one side made.
 - **Undo for every pick.** Step back through a named history, or hold Undo on a resolved file to get its conflict back.
 
@@ -56,11 +56,11 @@ dashboard opens it again.
 
 <p align="center"><img src="media/screenshots/dashboard-done.png" alt="The Conflicts dashboard with every file resolved: All conflicts resolved, f.txt marked kept yours with Hold to undo, and Continue Rebase ready."></p>
 
-The dashboard opens the moment a merge, rebase, cherry-pick or revert stops on conflicts.
+The dashboard opens the moment a merge, rebase, cherry-pick, revert, git am or stash pop stops on conflicts.
 
 - Every conflicted file with **Accept Yours**, **Accept Theirs** and **Merge…**, and a badge for the tricky cases (deleted in theirs, added by both, …) named after the side, not git's stage number.
 - A direction bar with both names (*test → onto → master*), the step (*commit 2 of 3*) and the commit being replayed.
-- **Continue**, **Skip** (where git allows it) and **Abort**, each with a confirm that says what it will do. Continue says why when it can't run yet, and warns before git drops a commit your resolution emptied.
+- **Continue**, **Abort**, and **Skip** where git offers it (a cherry-pick, a revert, a patch). Abort and Skip ask first, in place, and say what they will do. Continue says why when it can't run yet, and asks before git drops a commit your resolution emptied.
 - Resolved files stay in the list, labelled with how they were settled. **Hold Undo** on one to restore its original conflict.
 - Binary files, and files deleted or added on one side, get a panel that says what happened and offers the choices that make sense: keep yours, keep theirs, or delete the file.
 

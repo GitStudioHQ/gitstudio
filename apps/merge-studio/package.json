@@ -104,7 +104,7 @@
           "type": "boolean",
           "default": true,
           "order": 1,
-          "markdownDescription": "Open conflicted files in Merge Studio and show the conflicts dashboard when a merge, rebase, cherry-pick or revert stops. If a GitStudio with the same Conflicts dashboard is installed with `#gitstudio.merge.autoOpen#` on, GitStudio does this instead."
+          "markdownDescription": "Open conflicted files in Merge Studio and show the conflicts dashboard when a merge, rebase, cherry-pick, revert, git am or stash pop stops on conflicts. If a GitStudio with the same Conflicts dashboard is installed with `#gitstudio.merge.autoOpen#` on, GitStudio does this instead."
         },
         "jbMerge.autoApplyNonConflicting": {
           "type": "boolean",
@@ -235,7 +235,7 @@
           {
             "id": "mergeStudio.realConflicts",
             "title": "Finish the whole operation from the dashboard",
-            "description": "When the last file is resolved, press Continue, or Skip or Abort.\n[Show my conflicts](command:jbMerge.showConflicts)",
+            "description": "When the last file is resolved, press Continue. Abort takes you back to where you started, and Skip appears where git offers it (a cherry-pick, a revert, a patch).\n[Show my conflicts](command:jbMerge.showConflicts)",
             "media": {
               "image": {
                 "dark": "media/walkthrough/dashboard-dark.png",
