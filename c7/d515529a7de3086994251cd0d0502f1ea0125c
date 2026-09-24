@@ -1,0 +1,32 @@
+scripts/merge-e2e/dashboardClicks.ts
+  s_26f5e669d3043c::t_8e133f115daf9a 618
+  s_26f5e669d3043c::t_025a9a1662cf7b 814
+  s_26f5e669d3043c::t_ed37b0c391940e 823-827
+  s_26f5e669d3043c::t_f4d96e3068611b 688-693
+  s_26f5e669d3043c::t_4a8692ec599c3f 301-308,313-338,340,342
+  s_26f5e669d3043c::t_555d0a7b26bd62 534-536
+  s_26f5e669d3043c::t_8aaff75a4a7084 55,817-818
+  s_26f5e669d3043c::t_e206882b401cf5 795-799,801,803
+  s_26f5e669d3043c::t_a55769c278cdcb 785,858-859
+  s_26f5e669d3043c::t_18360f41bde46b 398-402,434,460
+  s_26f5e669d3043c::t_2987f44254b9fd 800,811-813,819-822,828-834
+  s_26f5e669d3043c::t_04d245c3def7ed 623-628
+packages/webview-ui/test/fixtures/vscodeDashboardClicks.json
+  s_26f5e669d3043c::t_96a0bd6abb7f65 3,13,25,33-34,50,117,129,141,149-150,166,226,238,250,258-259,275,346,358,370,378-379,395,456,468,480,488-489,505,577,589,601,609-610,626,688,700,712,720-721,737,810,822,834,842-843,859,922,934,946,954-955,971,1043,1055,1067,1075-1076,1092
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c7d515529a7de3086994251cd0d0502f1ea0125c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
