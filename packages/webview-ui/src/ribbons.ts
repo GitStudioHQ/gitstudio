@@ -70,7 +70,8 @@ export const POINT_PX = 2;
  * It was 2px of the full-strength edge colour everywhere — a bright wire
  * across the Result that the ribbons, in their tint, ended at as a dull strip.
  * Now the line and the ribbon's end are one colour (`--jb-point-<tone>`: the
- * tint at a higher strength): the ribbon's end at a point is capped in it
+ * band's own tint, never brighter than the band — the owner's rule for every
+ * line the merge still draws): the ribbon's end at a point is capped in it
  * (RibbonOverlay's `jb-ribbon-cap`).
  */
 export function mergePointPx(): number {

@@ -73,31 +73,24 @@ const MOUNT = `
   const layerB = () => document.querySelector(".jb-gutter-b .jb-button-layer");
   const groupsIn = (layer) => [...layer.querySelectorAll(".jb-change-actions")].map((g) => Number(g.dataset.block)).sort((a, b) => a - b);
   const press = (el) => el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
-  // The paint is the DECISION (paint.ts): red a conflict, green the same
-  // change on both sides, blue a change on one side only — whatever it did.
-  const TINT = {
-    conflict: "rgba(91, 4, 2, 0.55)",
-    same: "rgba(0, 78, 9, 0.55)",
-    "one-sided": "rgba(2, 49, 108, 0.5)",
+  // The palette, read from the page's own tokens (diff.css), so the checks
+  // below pin WHICH colour each change wears — the colour of its decision —
+  // while the palette test (mergeContrast) pins the values and their quality.
+  // The owner's palette (24 Sep 2026, JetBrains' dark merge colours): ORANGE a
+  // conflict, GREEN the same change on both sides, SKY BLUE a change on one
+  // side only, LIGHT GREY lines removed without a conflict.
+  const TONES = ["conflict", "same", "one-sided", "removed"];
+  const tokenColour = (name) => {
+    const el = document.createElement("div");
+    el.style.cssText = "position:absolute;left:0;top:0;width:4px;height:4px;background-color:var(" + name + ")";
+    document.body.appendChild(el);
+    const c = getComputedStyle(el).backgroundColor;
+    el.remove();
+    return c;
   };
-  /** A settled change's trace — a taken side, its ribbon, the Result (and a half-done Result). */
-  const MUTED = {
-    conflict: "rgba(91, 4, 2, 0.3)",
-    same: "rgba(0, 78, 9, 0.275)",
-    "one-sided": "rgba(2, 49, 108, 0.29)",
-  };
-  const EDGE = {
-    conflict: "rgb(223, 104, 98)",
-    same: "rgb(117, 208, 121)",
-    "one-sided": "rgb(116, 167, 232)",
-  };
-  const DONE = {
-    conflict: "rgba(223, 104, 98, 0.72)",
-    same: "rgba(117, 208, 121, 0.72)",
-    "one-sided": "rgba(116, 167, 232, 0.72)",
-  };
-  /** An insertion or deletion point's line (and a ribbon's end at it). */
-  const POINT = { same: "rgba(117, 208, 121, 0.62)", "one-sided": "rgba(116, 167, 232, 0.62)" };
+  const palette = (prefix) => Object.fromEntries(TONES.map((t) => [t, tokenColour("--jb-" + prefix + "-" + t)]));
+  /** A pending band's tint; a settled trace's (muted); a tone's edge; a discarded outline's line; a point's line. */
+  const TINT = palette("line"), MUTED = palette("muted"), EDGE = palette("edge"), DONE = palette("done"), POINT = palette("point");
   /** The 2-way diff's per-type classes: nothing in the merge may carry one. */
   const PER_TYPE = /jb-(line|inner|trace|trace-edge|point|done|frame|ribbon|ribbon-trace|ribbon-cap|ribbon-cap-trace|ribbon-frame|tone)-(inserted|modified|deleted)\\b/;
   /** Monaco's hover words for a decoration on a line (markdown's escapes undone). */
@@ -128,17 +121,19 @@ test("every category is classified, painted and given its own controls — befor
       const w = [...want].sort();
       expect(JSON.stringify(got) === JSON.stringify(w), pane + " pane decorations\\n   got  " + JSON.stringify(got) + "\\n   want " + JSON.stringify(w));
     };
-    // Painted by the DECISION, never by what a change did (the owner, 24 Sep
-    // 2026): the same change on both sides is green on BOTH sides and in the
-    // result; a change on one side only is blue, whether it changed a line
-    // (Yours' 11), inserted one (Theirs' 13) or deleted one (Theirs' 15).
+    // Painted by the DECISION (the owner, 24 Sep 2026): the same change on
+    // both sides is green on BOTH sides and in the result; a change on one side
+    // only is sky blue whether it changed a line (Yours' 11) or inserted one
+    // (Theirs' 13); lines removed without a conflict (Theirs' 15) are grey.
+    // A whitespace-only change is its tint alone — no edge of its own; it says
+    // so on hover.
     expectPane("left", [
       "2:jb-line-conflict jb-cat-conflict",
       "4-5:jb-line-conflict jb-cat-conflict",
       "7:jb-line-same jb-cat-same",
       "9:jb-line-same jb-cat-same",
       "11:jb-line-one-sided jb-cat-yours-only",
-      "16:jb-line-one-sided jb-cat-yours-only jb-ws",
+      "16:jb-line-one-sided jb-cat-yours-only",
     ]);
     expectPane("right", [
       "2:jb-line-conflict jb-cat-conflict",
@@ -146,7 +141,7 @@ test("every category is classified, painted and given its own controls — befor
       "7:jb-line-same jb-cat-same",
       "9:jb-line-same jb-cat-same",
       "13:jb-line-one-sided jb-cat-theirs-only",
-      "15:jb-point-one-sided jb-point jb-cat-theirs-only",
+      "15:jb-point-removed jb-point jb-cat-theirs-only",
     ]);
     expectPane("result", [
       "2:jb-line-conflict jb-cat-conflict",
@@ -155,8 +150,8 @@ test("every category is classified, painted and given its own controls — befor
       "9:jb-line-same jb-cat-same",
       "11:jb-line-one-sided jb-cat-yours-only",
       "13:jb-point-one-sided jb-point jb-cat-theirs-only",
-      "14:jb-line-one-sided jb-cat-theirs-only",
-      "16:jb-line-one-sided jb-cat-yours-only jb-ws",
+      "14:jb-line-removed jb-cat-theirs-only",
+      "16:jb-line-one-sided jb-cat-yours-only",
     ]);
     const everyClass = ["left", "result", "right"].flatMap((p) => panes[p].getModel().getAllDecorations().map((d) => [d.options.className, d.options.marginClassName, d.options.inlineClassName].filter(Boolean).join(" ")));
     expect(!everyClass.some((c) => PER_TYPE.test(c)), "no merge decoration is coloured by what its change did: " + JSON.stringify(everyClass.filter((c) => PER_TYPE.test(c))));
@@ -204,17 +199,18 @@ test("every category is classified, painted and given its own controls — befor
 
     // ── computed styles of the classes the decorations actually carry ──
     const bgOf = (pane, cls) => probe(pane, cls).bg;
-    expect(bgOf("left", "jb-line-conflict jb-cat-conflict") === TINT.conflict, "conflict tint (red): " + bgOf("left", "jb-line-conflict jb-cat-conflict"));
+    expect(bgOf("left", "jb-line-conflict jb-cat-conflict") === TINT.conflict, "conflict tint (orange): " + bgOf("left", "jb-line-conflict jb-cat-conflict"));
     expect(bgOf("left", "jb-line-same jb-cat-same") === TINT.same && bgOf("right", "jb-line-same jb-cat-same") === TINT.same && bgOf("result", "jb-line-same jb-cat-same") === TINT.same,
       "the same change on both sides: green, on both sides and in the result: " + bgOf("left", "jb-line-same jb-cat-same"));
     expect(bgOf("left", "jb-line-one-sided jb-cat-yours-only") === TINT["one-sided"], "Yours-only change: blue");
     expect(bgOf("right", "jb-line-one-sided jb-cat-theirs-only") === TINT["one-sided"], "Theirs-only insertion: blue too, not green");
-    expect(bgOf("result", "jb-line-one-sided jb-cat-theirs-only") === TINT["one-sided"], "Theirs-only deletion: blue too, not grey");
-    expect(new Set([TINT.conflict, TINT.same, TINT["one-sided"]]).size === 3, "three colours, one per decision");
+    expect(bgOf("result", "jb-line-removed jb-cat-theirs-only") === TINT.removed, "Theirs-only deletion: grey, the removed lines' colour: " + bgOf("result", "jb-line-removed jb-cat-theirs-only"));
+    expect(new Set(TONES.map((t) => TINT[t])).size === 4, "four colours: one per decision, and grey for removed lines: " + JSON.stringify(TINT));
     const point = probe("result", "jb-point-one-sided jb-point jb-cat-theirs-only");
     expect(point.bt === "solid" && point.btw === "1px" && point.btc === POINT["one-sided"] && point.bg === "rgba(0, 0, 0, 0)", "an insertion point is a 1px line in the point colour (the tint, stronger), not a bright wire: " + JSON.stringify(point));
-    const ws = probe("left", "jb-line-one-sided jb-cat-yours-only jb-ws");
-    expect(ws.bl === "dotted" && ws.blc === EDGE["one-sided"] && ws.bg === TINT["one-sided"], "whitespace-only: tint + dotted edge: " + JSON.stringify(ws));
+    const ws = probe("left", "jb-line-one-sided jb-cat-yours-only");
+    expect(ws.bl === "none" && ws.bg === TINT["one-sided"], "whitespace-only: the tint alone, no edge of its own: " + JSON.stringify(ws));
+    expect(hoverOn("left", 16).some((h) => /Only whitespace changed here/.test(h)), "…and it says so on hover: " + JSON.stringify(hoverOn("left", 16)));
     const frame = probe("left", "jb-frame jb-frame-conflict jb-edge-top jb-edge-bottom");
     expect(frame.bt === "none" && frame.bb === "none", "outside high contrast, the frame edges draw nothing: " + JSON.stringify(frame));
     // If Monaco painted (it may not, headless), the real overlay agrees.
@@ -234,16 +230,16 @@ test("every category is classified, painted and given its own controls — befor
     await sleep(60);
     const stage = document.querySelector(".jb-ribbon-stage");
     const count = (cls) => stage.querySelectorAll("path." + cls).length;
-    const ribbons = { conflict: count("jb-ribbon-conflict"), same: count("jb-ribbon-same"), "one-sided": count("jb-ribbon-one-sided"), modified: count("jb-ribbon-modified"), inserted: count("jb-ribbon-inserted"), deleted: count("jb-ribbon-deleted"), base: count("jb-ribbon-base"), frame: count("jb-ribbon-frame"), trace: count("jb-ribbon-trace"), cap: count("jb-ribbon-cap") };
-    expect(JSON.stringify(ribbons) === JSON.stringify({ conflict: 4, same: 4, "one-sided": 4, modified: 0, inserted: 0, deleted: 0, base: 12, frame: 24, trace: 0, cap: 2 }), "ribbons per decision (the same change's in green, both sides; every one-sided change in blue): " + JSON.stringify(ribbons));
+    const ribbons = { conflict: count("jb-ribbon-conflict"), same: count("jb-ribbon-same"), "one-sided": count("jb-ribbon-one-sided"), removed: count("jb-ribbon-removed"), modified: count("jb-ribbon-modified"), inserted: count("jb-ribbon-inserted"), deleted: count("jb-ribbon-deleted"), base: count("jb-ribbon-base"), frame: count("jb-ribbon-frame"), trace: count("jb-ribbon-trace"), cap: count("jb-ribbon-cap") };
+    expect(JSON.stringify(ribbons) === JSON.stringify({ conflict: 4, same: 4, "one-sided": 3, removed: 1, modified: 0, inserted: 0, deleted: 0, base: 12, frame: 24, trace: 0, cap: 2 }), "ribbons per decision (the same change's in green, both sides; one-sided changes in blue; the removal in grey): " + JSON.stringify(ribbons));
     const sameBand = stage.querySelector('path.jb-ribbon-same[data-block="2"][data-side="left"]');
     expect(sameBand && getComputedStyle(sameBand).fill === TINT.same, "a band is FILLED with the tint it connects: " + (sameBand && getComputedStyle(sameBand).fill));
     expect(sameBand && sameBand.dataset.state === "pending" && sameBand.dataset.phase === "open" && sameBand.dataset.tone === "same", "and says what it draws: " + JSON.stringify(sameBand && sameBand.dataset));
     const tones = [...stage.querySelectorAll("path[data-tone]")].map((p) => p.dataset.block + ":" + p.dataset.tone);
-    expect(tones.every((x) => /^[01]:conflict$|^[23]:same$|^[4567]:one-sided$/.test(x)), "every ribbon names its block's decision: " + JSON.stringify([...new Set(tones)]));
+    expect(tones.every((x) => /^[01]:conflict$|^[23]:same$|^[457]:one-sided$|^6:removed$/.test(x)), "every ribbon names its block's decision: " + JSON.stringify([...new Set(tones)]));
     // A band that ends at a point is capped in that point's colour.
     const caps = [...stage.querySelectorAll("path.jb-ribbon-cap")].map((p) => p.dataset.block + ":" + getComputedStyle(p).fill).sort();
-    expect(JSON.stringify(caps) === JSON.stringify(["5:" + POINT["one-sided"], "6:" + POINT["one-sided"]]), "the insertion and the deletion end in the one-sided point colour, alike: " + JSON.stringify(caps));
+    expect(JSON.stringify(caps) === JSON.stringify(["5:" + POINT["one-sided"], "6:" + POINT.removed]), "the insertion ends in the one-sided point colour, the removal in the removed one: " + JSON.stringify(caps));
     const base = stage.querySelector('path.jb-ribbon-base[data-block="2"][data-side="left"]');
     expect(base && getComputedStyle(base).fill === "rgb(30, 30, 30)", "…over the editor background, so no gutter border shows through: " + (base && getComputedStyle(base).fill));
     const edge = stage.querySelector("path.jb-ribbon-frame");
@@ -292,15 +288,15 @@ test("a settled change keeps a TRACE: a taken side its muted band and ribbon, a 
     // keeps a muted band in the colour of what went in; a deletion taken
     // keeps its point line, faint.
     const has = (pane, line, cls) => catDecos(pane).some((d) => (d.startsWith(line + ":") || d.startsWith(line + "-")) && d.includes(cls));
-    // Each trace keeps its DECISION's colour, muted: green for the same
-    // change, blue for every one-sided one, whatever it did.
+    // Each trace keeps its colour, muted: green for the same change, blue for
+    // a one-sided one, grey for lines removed without a conflict.
     const want = [
       ["left", 7, "jb-trace jb-trace-same jb-cat-same"], ["right", 7, "jb-trace jb-trace-same jb-cat-same"],
       ["left", 9, "jb-trace jb-trace-same jb-cat-same"], ["right", 9, "jb-trace jb-trace-same jb-cat-same"],
       ["left", 11, "jb-trace jb-trace-one-sided jb-cat-yours-only"], ["left", 16, "jb-trace jb-trace-one-sided jb-cat-yours-only"],
-      ["right", 13, "jb-trace jb-trace-one-sided jb-cat-theirs-only"], ["right", 15, "jb-done jb-done-one-sided jb-point"],
+      ["right", 13, "jb-trace jb-trace-one-sided jb-cat-theirs-only"], ["right", 15, "jb-done jb-done-removed jb-point"],
       ["result", 7, "jb-trace jb-trace-same"], ["result", 9, "jb-trace jb-trace-same"], ["result", 11, "jb-trace jb-trace-one-sided"],
-      ["result", 13, "jb-trace jb-trace-one-sided"], ["result", 15, "jb-done jb-done-one-sided jb-point"], ["result", 16, "jb-trace jb-trace-one-sided"],
+      ["result", 13, "jb-trace jb-trace-one-sided"], ["result", 15, "jb-done jb-done-removed jb-point"], ["result", 16, "jb-trace jb-trace-one-sided"],
     ];
     for (const [pane, line, cls] of want) expect(has(pane, line, cls), pane + " " + line + ": " + cls + " — " + JSON.stringify(catDecos(pane)));
     expect(!["left", "right", "result"].some((p) => catDecos(p).some((d) => /^(7|9|11|13|16):jb-line-/.test(d))), "…and nothing settled still wears an open band");
@@ -324,7 +320,7 @@ test("a settled change keeps a TRACE: a taken side its muted band and ribbon, a 
     await sleep(60);
     const stage = document.querySelector(".jb-ribbon-stage");
     const ribbon = (block, side) => stage.querySelector('path.jb-ribbon-trace[data-block="' + block + '"][data-side="' + side + '"]');
-    for (const [block, side, tone] of [[2, "left", "same"], [2, "right", "same"], [4, "left", "one-sided"], [5, "right", "one-sided"], [6, "right", "one-sided"]]) {
+    for (const [block, side, tone] of [[2, "left", "same"], [2, "right", "same"], [4, "left", "one-sided"], [5, "right", "one-sided"], [6, "right", "removed"]]) {
       const p = ribbon(block, side);
       expect(p && p.dataset.state === "took" && p.dataset.phase === "resolved" && getComputedStyle(p).fill === MUTED[tone],
         "a taken side's ribbon to the Result stays, muted: " + block + "/" + side + " " + (p && [p.dataset.state, p.dataset.phase, getComputedStyle(p).fill].join(" ")));
@@ -339,7 +335,8 @@ test("a settled change keeps a TRACE: a taken side its muted band and ribbon, a 
     press(document.querySelector('.jb-gutter-a .jb-change-actions[data-block="0"] .jb-btn-accept'));
     expect(has("left", 2, "jb-trace jb-trace-conflict"), "Yours, taken: its band stays, muted");
     expect(has("right", 2, "jb-line-conflict") && !has("right", 2, "jb-half"), "Theirs' half keeps the full tint — it is still to decide");
-    expect(has("result", 2, "jb-line-conflict jb-half") && has("result", 2, "jb-done-conflict jb-edge-top"), "the result: the half-done look — the muted tint between two faint lines: " + JSON.stringify(catDecos("result")));
+    expect(has("result", 2, "jb-line-conflict jb-half") && !has("result", 2, "jb-edge-top") && !has("result", 2, "jb-edge-bottom"),
+      "the result: the half-done look — the muted tint, and no line above or below it (bright rules read as wires): " + JSON.stringify(catDecos("result")));
     const halfBg = resultBg();
     expect(halfBg === MUTED.conflict && halfBg !== openBg, "…and it LOOKS different from the open conflict: " + openBg + " → " + halfBg);
     expect(!/jb-inner-/.test(classesOn("result", 2)), "the result holds Yours' text now, so the BASE word ranges are not drawn on it: " + classesOn("result", 2));
@@ -463,7 +460,7 @@ test("typing is progress, and a hand edit takes a conflict out of the wand's rea
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
-test("the legend explains the COLOURS in words — a solid dot, the name, how many are left, what it asks — and jumps to them", { skip }, async () => {
+test("the legend explains the four COLOURS in words — a solid dot, the name, how many are left, what it asks — and jumps to them", { skip }, async () => {
   const v = await runMergePage(CHROME!, MOUNT + `
     view.attachLegend(document.getElementById("slot"));
     const legend = document.querySelector("#slot .jb-legend");
@@ -472,38 +469,53 @@ test("the legend explains the COLOURS in words — a solid dot, the name, how ma
     const text = (item) => chip(item) && chip(item).innerText.replace(/\\s+/g, " ").trim();
     // The owner's words, one entry per colour, each with its count: "Conflict
     // — you choose", "Same on both sides — either arrow takes it", "One side
-    // only — safe to take". One of the two conflicts is one the wand
-    // resolves: said on screen (K-1).
+    // only — safe to take", "Removed lines" (the fixture's Theirs-only
+    // deletion). One of the two conflicts is one the wand resolves: said on
+    // screen (K-1).
     expect(text("conflict") === "Conflict — you choose · 1 can be merged automatically 2", "conflict item: " + JSON.stringify(text("conflict")));
     expect(text("same") === "Same on both sides — either arrow takes it 2", "identical item: " + JSON.stringify(text("same")));
-    expect(text("one-sided") === "One side only — safe to take 4", "one-sided item: " + JSON.stringify(text("one-sided")));
+    expect(text("one-sided") === "One side only — safe to take 3", "one-sided item: " + JSON.stringify(text("one-sided")));
+    expect(text("removed") === "Removed lines 1", "removed item, which asks nothing more than its name: " + JSON.stringify(text("removed")));
     const shown = (el) => getComputedStyle(el).display !== "none";
     const visible = [...legend.children].filter((e) => !e.classList.contains("jb-legend-pop") && shown(e));
     const line = visible.map((e) => e.classList.contains("jb-legend-help") ? "?" : e.innerText.replace(/\\s+/g, " ").trim()).join(" ");
-    expect(line === "Conflict — you choose · 1 can be merged automatically 2 · Same on both sides — either arrow takes it 2 · One side only — safe to take 4 ?", "the legend reads as words: " + JSON.stringify(line));
+    expect(line === "Conflict — you choose · 1 can be merged automatically 2 · Same on both sides — either arrow takes it 2 · One side only — safe to take 3 · Removed lines 1 ?", "the legend reads as words: " + JSON.stringify(line));
     expect(!/[≠≈‹›✨✓=]/.test(legend.textContent), "no symbols of our own anywhere in it: " + JSON.stringify(legend.textContent));
-    expect(!/Changed|Added|Removed|grey|gray/.test(legend.textContent), "nothing names what a change did — the colours name the decision: " + JSON.stringify(legend.textContent));
+    // Four colours: three decisions and the owner's grey for removed lines —
+    // no item per change type (Changed / Added) beside them.
+    const items = [...legend.querySelectorAll(".jb-legend-chip")].map((c) => c.dataset.category);
+    expect(JSON.stringify(items) === JSON.stringify(["conflict", "same", "one-sided", "removed"]), "four items, in this order: " + JSON.stringify(items));
+    const chipWords = [...legend.querySelectorAll(".jb-legend-chip")].map((c) => c.textContent).join(" ");
+    expect(!/\\bChanged\\b|\\bAdded\\b/.test(chipWords), "no item names a change type other than removal: " + JSON.stringify(chipWords));
     // The count is the count badge VS Code puts beside a view's name: filled, round.
     const badge = getComputedStyle(chip("conflict").querySelector(".jb-legend-count"));
     expect(badge.backgroundColor !== "rgba(0, 0, 0, 0)" && parseFloat(badge.borderTopLeftRadius) >= 6, "the count is a badge: " + badge.backgroundColor + " " + badge.borderTopLeftRadius);
     // Solid round dots, one per colour, in the colours the panes use — no box
     // that reads as a checkbox waiting for a tick.
     const dots = (item) => [...chip(item).querySelectorAll(".jb-legend-dot")].map((d) => { const cs = getComputedStyle(d); return cs.backgroundColor + "|" + cs.borderRadius + "|" + cs.borderTopStyle; });
-    expect(JSON.stringify(dots("conflict")) === JSON.stringify([EDGE.conflict + "|50%|none"]), "a red dot for conflicts: " + JSON.stringify(dots("conflict")));
+    expect(JSON.stringify(dots("conflict")) === JSON.stringify([EDGE.conflict + "|50%|none"]), "an orange dot for conflicts: " + JSON.stringify(dots("conflict")));
     expect(JSON.stringify(dots("same")) === JSON.stringify([EDGE.same + "|50%|none"]), "a green dot for the same change on both sides: " + JSON.stringify(dots("same")));
     expect(JSON.stringify(dots("one-sided")) === JSON.stringify([EDGE["one-sided"] + "|50%|none"]), "one blue dot for a change on one side only: " + JSON.stringify(dots("one-sided")));
+    expect(JSON.stringify(dots("removed")) === JSON.stringify([EDGE.removed + "|50%|none"]), "a grey dot for removed lines: " + JSON.stringify(dots("removed")));
+    expect(new Set([EDGE.conflict, EDGE.same, EDGE["one-sided"], EDGE.removed]).size === 4, "four different colours: " + JSON.stringify(EDGE));
     expect(/either arrow takes it/.test(chip("same").title) && /nothing to choose/.test(chip("same").title), "its tooltip says what either arrow does, and that nothing is to choose: " + chip("same").title);
     expect(!legend.querySelector(".jb-legend-swatch, .jb-legend-kind"), "no square swatches, no per-type words");
     expect(chip("conflict").getAttribute("aria-label") === "Conflict — you choose: 2 conflicts left; 1 can be resolved automatically (Resolve simple conflicts). Both sides changed these lines, differently. Go to the next one.", "item name: " + chip("conflict").getAttribute("aria-label"));
     expect(chip("same").getAttribute("aria-label").startsWith("Same on both sides — either arrow takes it: 2 changes made the same on both sides left."), "same: " + chip("same").getAttribute("aria-label"));
-    expect(chip("one-sided").getAttribute("aria-label").startsWith("One side only — safe to take: 4 changes made on one side only left (2 in Yours, 2 in Theirs)."), "one-sided: " + chip("one-sided").getAttribute("aria-label"));
-    expect(/2 in Yours, 2 in Theirs/.test(chip("one-sided").title), "the one-sided item says how many per side: " + chip("one-sided").title);
+    expect(chip("one-sided").getAttribute("aria-label").startsWith("One side only — safe to take: 3 changes made on one side only left (2 in Yours, 1 in Theirs)."), "one-sided: " + chip("one-sided").getAttribute("aria-label"));
+    expect(/2 in Yours, 1 in Theirs/.test(chip("one-sided").title), "the one-sided item says how many per side: " + chip("one-sided").title);
+    expect(chip("removed").getAttribute("aria-label").startsWith("Removed lines: 1 removal left (1 in Theirs)."), "removed: " + chip("removed").getAttribute("aria-label"));
+    expect(/no conflict, safe to take/.test(chip("removed").title), "the removed item says it is safe to take: " + chip("removed").title);
 
-    // An item jumps to the next pending change of its colours — both sides'
-    // one-sided changes, in document order.
+    // An item jumps to the next pending change of its colour — both sides'
+    // one-sided changes, in document order; the removal is grey, so it is
+    // the Removed item's, not One side only's.
     const lines = [];
     for (let i = 0; i < 5; i++) { chip("one-sided").click(); lines.push(view.result.getPosition().lineNumber); }
-    expect(JSON.stringify(lines) === "[11,13,14,16,11]", "one side only → 11, 13, 14, 16, and round again: " + JSON.stringify(lines));
+    expect(JSON.stringify(lines) === "[11,13,16,11,13]", "one side only → 11, 13, 16, and round again: " + JSON.stringify(lines));
+    const removedLines = [];
+    for (let i = 0; i < 2; i++) { chip("removed").click(); removedLines.push(view.result.getPosition().lineNumber); }
+    expect(JSON.stringify(removedLines) === "[14,14]", "removed lines → 14, and round again: " + JSON.stringify(removedLines));
 
     // One side of a conflict in: the conflict item says so, in words.
     press(document.querySelector('.jb-gutter-a .jb-change-actions[data-block="0"] .jb-btn-accept'));
@@ -535,18 +547,18 @@ test("the legend explains the COLOURS in words — a solid dot, the name, how ma
     expect(!pop.hidden && help.getAttribute("aria-expanded") === "true", "the key opens");
     const key = pop.textContent;
     for (const phrase of [
-      "Conflict — you choose (red)", "Same on both sides — either arrow takes it (green)", "One side only — safe to take (blue)",
-      "whether they added, changed or removed lines", "whether it added, changed or removed them",
-      "A solid bar beside the line numbers: a conflict still to decide",
+      "Conflict — you choose (orange)", "Same on both sides — either arrow takes it (green)", "One side only — safe to take (blue)",
+      "Removed lines (grey)", "even when one of them removed lines", "No conflict: safe to take",
       "lines added there, or removed", "exactly what changed within the line", "whitespace",
       "one side in, the other still to decide", "the side you took", "the side you discarded",
     ]) {
       expect(key.includes(phrase), "the key explains " + phrase + ": " + key);
     }
     const keyDots = [...pop.querySelectorAll(".jb-legend-row .jb-legend-dot")].map((d) => getComputedStyle(d).backgroundColor);
-    expect(JSON.stringify(keyDots) === JSON.stringify([EDGE.conflict, EDGE.same, EDGE["one-sided"]]), "one dot per decision in the key, in its colour: " + JSON.stringify(keyDots));
+    expect(JSON.stringify(keyDots) === JSON.stringify([EDGE.conflict, EDGE.same, EDGE["one-sided"], EDGE.removed]), "one dot per colour in the key, in its colour: " + JSON.stringify(keyDots));
     expect(!/[≠≈‹›✨✓]/.test(key) && !/[Dd]ashed/.test(key), "…with no symbols of our own and no dashed style: " + key);
-    expect(!/[Vv]iolet|grey|Changed, Added/.test(key), "…and no violet, no grey, no per-type colour: " + key);
+    expect(!/[Vv]iolet|\\bred\\b|Changed, Added/.test(key), "…and no violet, no red, no per-type colour: " + key);
+    expect(!/\\bbar\\b/i.test(key), "…and no bar beside the line numbers (the owner's palette has none): " + key);
     expect(getComputedStyle(pop).display !== "none", "…and is on screen, not just un-hidden: " + getComputedStyle(pop).display);
     help.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     // The popover and the chips set their own display, which beats the hidden
@@ -559,8 +571,8 @@ test("the legend explains the COLOURS in words — a solid dot, the name, how ma
     expect(document.querySelectorAll("#slot .jb-legend").length === 1 && chip("conflict").querySelector(".jb-legend-count").textContent === "3", "after a re-diff the same legend shows the new counts: " + text("conflict"));
     // A category with no changes at all has no chip on screen, and no dot beside it.
     view.render(W.payload({ base: "a\\nb\\nc", ours: "a\\nX\\nc", theirs: "a\\nY\\nc", result: "a\\nb\\nc" }));
-    expect(shown(chip("conflict")) && !shown(chip("same")) && !shown(chip("one-sided")),
-      "only the conflict item shows: " + ["conflict", "same", "one-sided"].map((c) => c + "=" + getComputedStyle(chip(c)).display).join(" "));
+    expect(shown(chip("conflict")) && !shown(chip("same")) && !shown(chip("one-sided")) && !shown(chip("removed")),
+      "only the conflict item shows: " + ["conflict", "same", "one-sided", "removed"].map((c) => c + "=" + getComputedStyle(chip(c)).display).join(" "));
     expect([...legend.querySelectorAll(".jb-legend-sep")].every((s) => !shown(s)), "…and no separator dot hangs beside it");
     view.dispose();
     expect(!document.querySelector("#slot .jb-legend"), "dispose() takes the legend down");
@@ -614,14 +626,17 @@ test("the overview strip: at the view's right edge, never on a seam; opaque mark
     map.draw();
     const m = map.drawn;
     expect(m.length === 8 && !strip.classList.contains("is-empty"), "a pane shorter than the document: every pending change has a mark (" + m.length + ")");
-    expect(JSON.stringify(m.map((x) => x.block + ":" + x.tone)) === JSON.stringify(["0:conflict", "1:conflict", "2:same", "3:same", "4:one-sided", "5:one-sided", "6:one-sided", "7:one-sided"]), "…one colour per DECISION: " + JSON.stringify(m.map((x) => x.block + ":" + x.tone)));
-    // Opaque: the canvas pixel under a mark is its decision's edge colour, unblended.
+    expect(JSON.stringify(m.map((x) => x.block + ":" + x.tone)) === JSON.stringify(["0:conflict", "1:conflict", "2:same", "3:same", "4:one-sided", "5:one-sided", "6:removed", "7:one-sided"]), "…one colour per legend item: " + JSON.stringify(m.map((x) => x.block + ":" + x.tone)));
+    // Opaque: the canvas pixel under a mark is its colour's edge token (the
+    // legend's dot), unblended.
     const canvas = strip.querySelector("canvas");
     const dpr = window.devicePixelRatio || 1;
     const pixel = (mark) => [...canvas.getContext("2d").getImageData(Math.floor(canvas.width / 2), Math.floor((mark.top + mark.height / 2) * dpr), 1, 1).data];
-    expect(pixel(m.find((x) => x.tone === "conflict")).join(",") === "223,104,98,255", "a conflict mark is the legend's own red, opaque: " + pixel(m.find((x) => x.tone === "conflict")));
-    expect(pixel(m.find((x) => x.tone === "same")).join(",") === "117,208,121,255", "a same-on-both mark is the legend's own green: " + pixel(m.find((x) => x.tone === "same")));
-    expect(pixel(m.find((x) => x.tone === "one-sided")).join(",") === "116,167,232,255", "a one-sided mark is the legend's own blue: " + pixel(m.find((x) => x.tone === "one-sided")));
+    const opaque = (colour) => colour.match(/\\d+/g).slice(0, 3).join(",") + ",255";
+    for (const [tone, name] of [["conflict", "orange"], ["same", "green"], ["one-sided", "blue"], ["removed", "grey"]]) {
+      const got = pixel(m.find((x) => x.tone === tone)).join(",");
+      expect(got === opaque(EDGE[tone]), "a " + tone + " mark is the legend's own " + name + ", opaque: " + got + " (want " + opaque(EDGE[tone]) + ")");
+    }
     view.applyAllNonConflicting();
     map.draw();
     expect(map.drawn.length === 2, "a settled change leaves the strip: " + map.drawn.length);

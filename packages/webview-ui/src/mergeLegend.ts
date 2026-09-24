@@ -2,20 +2,21 @@
 // words, each beside a solid dot of that colour and the count still to do —
 //
 //   ● Conflict — you choose 6 · ● Same on both sides — either arrow takes it 1
-//   · ● One side only — safe to take 5   (?)
+//   · ● One side only — safe to take 5 · ● Removed lines 2   (?)
 //
-// — and a "?" key for the MARKS (an open conflict's bar beside the line
-// numbers, a point line, word highlights, a dotted edge, a taken side's muted
-// band, a discarded side's outline). Clicking an
-// item goes to the next change of that kind.
+// — and a "?" key for the MARKS (a point line, word highlights, a taken
+// side's muted band, a discarded side's outline, a half-decided Result).
+// Clicking an item goes to the next change of that colour.
 //
-// The colours are the DECISION a change needs (paint.ts): red, you choose;
-// green, the same change on both sides, whatever it did; blue, one side only,
-// whatever it did. One colour, one question answered — the owner's rule
-// (24 Sep 2026), after the per-type paint made a same-on-both change blue one
-// time and green the next. Yours-only and Theirs-only are one item; the
-// tooltip says how many of each, and the toolbar's "Apply non-conflicting
-// changes: Yours / Theirs" already speaks per side.
+// The colours are JetBrains' dark merge colours, which the owner picked (24
+// Sep 2026), by the DECISION a change needs (paint.ts): orange, you choose;
+// green, the same change on both sides; blue, one side only — and grey for
+// lines removed without a conflict, on one side or the same on both. One
+// colour, one answer — the owner's rule, after the per-type paint made a
+// same-on-both change blue one time and green the next. Yours-only and
+// Theirs-only are one item; the tooltip says how many of each, and the
+// toolbar's "Apply non-conflicting changes: Yours / Theirs" already speaks
+// per side.
 //
 // No symbols of our own: the owner found invented glyphs (≠ = ‹ › ≈ ✨) not
 // self-explanatory, and small bordered squares read as unticked checkboxes.
@@ -29,33 +30,55 @@
 // with data.
 
 import type { MergeCategory, MergeCountsView } from "./mergeViewApi";
+import type { PaintTone } from "./paint";
 import { iconElement, questionIcon } from "./icons";
 
-/** One legend item: a decision, its colour (paint.ts's tone of the same name), and the categories it counts. */
-export type LegendItem = "conflict" | "same" | "one-sided";
+/** One legend item: a colour the merge paints with (paint.ts's tone of the same name). */
+export type LegendItem = PaintTone;
 
-export const LEGEND_ITEMS: readonly LegendItem[] = ["conflict", "same", "one-sided"];
+export const LEGEND_ITEMS: readonly LegendItem[] = ["conflict", "same", "one-sided", "removed"];
 
-/** The categories a legend item counts (and jumps between). */
+/**
+ * The categories a legend item's changes can be in. A removal is no category
+ * of its own — it is a same or a one-sided change that only removes lines —
+ * so the view counts and finds the items by their paint (LegendDetail.tones).
+ */
 export const LEGEND_CATEGORIES: Record<LegendItem, readonly MergeCategory[]> = {
   conflict: ["conflict"],
   same: ["same"],
   "one-sided": ["yours-only", "theirs-only"],
+  removed: ["same", "yours-only", "theirs-only"],
 };
 
+/** How many changes wear one colour, and how many of them are still to do (the pending ones per side). */
+export interface ToneCount {
+  total: number;
+  pending: number;
+  /** Pending, made in Yours only. */
+  yours: number;
+  /** Pending, made in Theirs only. */
+  theirs: number;
+  /** Pending, made the same on both sides. */
+  both: number;
+}
+
 /**
- * What the view knows beyond the counts: the conflicts with one side in and
- * the other still to decide (JetBrains: that side is resolved, the change is
- * not). Said in words on the conflict item — "Yours taken, Theirs to decide".
+ * What the view knows beyond the counts:
+ * - the conflicts with one side in and the other still to decide (JetBrains:
+ *   that side is resolved, the change is not) — said in words on the conflict
+ *   item, "Yours taken, Theirs to decide";
+ * - each colour's count, by the paint the view gives each change (paint.ts).
+ *   Without it an item counts its categories, and nothing is grey.
  */
 export interface LegendDetail {
   halfDone: Array<{ done: "yours" | "theirs"; taken: boolean }>;
+  tones?: Record<LegendItem, ToneCount>;
 }
 
 interface ItemWords {
   /** What the colour is. */
   label: string;
-  /** What the colour asks of you ("Conflict — you choose"). */
+  /** What the colour asks of you ("Conflict — you choose"); empty when the name says it all. */
   note: string;
   /** Why, in the tooltip (after the count). */
   why: string;
@@ -63,7 +86,11 @@ interface ItemWords {
   many: string;
 }
 
-/** The owner's words, one per colour: "Conflict — you choose", "Same on both sides — either arrow takes it", "One side only — safe to take". */
+/**
+ * The owner's words, one per colour: "Conflict — you choose", "Same on both
+ * sides — either arrow takes it", "One side only — safe to take", "Removed
+ * lines".
+ */
 export const LEGEND_WORDS: Record<LegendItem, ItemWords> = {
   conflict: {
     label: "Conflict",
@@ -75,22 +102,30 @@ export const LEGEND_WORDS: Record<LegendItem, ItemWords> = {
   same: {
     label: "Same on both sides",
     note: "either arrow takes it",
-    why: "Both sides made this change the same way, whether they added, changed or removed lines: nothing to choose",
+    why: "Both sides added or changed these lines the same way: nothing to choose",
     one: "change made the same on both sides",
     many: "changes made the same on both sides",
   },
   "one-sided": {
     label: "One side only",
     note: "safe to take",
-    why: "Only one side changed these lines, whether it added, changed or removed them",
+    why: "Only one side added or changed these lines",
     one: "change made on one side only",
     many: "changes made on one side only",
   },
+  removed: {
+    label: "Removed lines",
+    note: "",
+    why: "Lines removed on one side only, or the same lines removed on both: no conflict, safe to take",
+    one: "removal",
+    many: "removals",
+  },
 };
 
-/** An item's name as a tooltip and a screen reader say it: "Conflict — you choose". */
+/** An item's name as a tooltip and a screen reader say it: "Conflict — you choose", "Removed lines". */
 export function legendName(item: LegendItem): string {
-  return `${LEGEND_WORDS[item].label} — ${LEGEND_WORDS[item].note}`;
+  const { label, note } = LEGEND_WORDS[item];
+  return note ? `${label} — ${note}` : label;
 }
 
 interface Chip {
@@ -110,16 +145,15 @@ interface KeyRow {
 }
 
 const KEY: KeyRow[] = [
-  { dots: ["conflict"], text: "Conflict — you choose (red): both sides changed these lines, differently. Accept one side, both, or edit the result." },
-  { dots: ["same"], text: "Same on both sides — either arrow takes it (green): both sides made this change the same way, whether they added, changed or removed lines. Nothing to choose." },
-  { dots: ["one-sided"], text: "One side only — safe to take (blue): only one side changed these lines, whether it added, changed or removed them." },
-  { sample: "bar", text: "A solid bar beside the line numbers: a conflict still to decide. It goes once you choose." },
+  { dots: ["conflict"], text: "Conflict — you choose (orange): both sides changed these lines, differently — even when one of them removed lines. Accept one side, both, or edit the result." },
+  { dots: ["same"], text: "Same on both sides — either arrow takes it (green): both sides added or changed these lines the same way. Nothing to choose." },
+  { dots: ["one-sided"], text: "One side only — safe to take (blue): only one side added or changed these lines." },
+  { dots: ["removed"], text: "Removed lines (grey): lines removed on one side only, or the same lines removed on both. No conflict: safe to take." },
   { sample: "point", text: "A band that meets a line between two rows on the other side: lines added there, or removed." },
-  { sample: "word", text: "A stronger tint on some words: exactly what changed within the line." },
-  { sample: "ws", text: "A dotted left edge: only whitespace changed." },
-  { sample: "half", text: "A paler band between two faint lines, in the Result: a conflict with one side in, the other still to decide." },
+  { sample: "word", text: "A stronger tint on some words: exactly what changed within the line. A change of whitespace only has none; its tooltip says so." },
+  { sample: "half", text: "A paler band in the Result: a conflict with one side in, the other still to decide." },
   { sample: "trace", text: "A paler band, linked to the Result: the side you took. A settled Result keeps it too." },
-  { sample: "done", text: "An outline with no link: the side you discarded." },
+  { sample: "done", text: "A thin outline with no link: the side you discarded." },
 ];
 
 function dot(tone: string): HTMLElement {
@@ -161,7 +195,12 @@ export class MergeLegend {
   private open = false;
   private closeListeners?: () => void;
 
-  constructor(private readonly onJump: (categories: readonly MergeCategory[]) => void) {
+  /**
+   * `onJump` goes to the next pending change of an item's colour: its
+   * categories, and the item itself (the paint) — a removal is a same or a
+   * one-sided change, so only the paint tells it apart.
+   */
+  constructor(private readonly onJump: (categories: readonly MergeCategory[], item: LegendItem) => void) {
     const root = document.createElement("div");
     root.className = "jb-legend";
     root.setAttribute("role", "group");
@@ -183,7 +222,8 @@ export class MergeLegend {
       button.className = `jb-legend-chip jb-legend-${item}`;
       button.dataset.category = item;
       // ● Conflict — you choose [6]: the dot of its colour, what the colour
-      // is, what it asks of you, and how many are left.
+      // is, what it asks of you (when its name does not say it all: "Removed
+      // lines" asks nothing more), and how many are left.
       const label = document.createElement("span");
       label.className = "jb-legend-label";
       label.textContent = words.label;
@@ -198,7 +238,7 @@ export class MergeLegend {
       count.className = "jb-legend-count";
       count.textContent = "0";
       button.append(dot(item), label, dash, note, count);
-      button.addEventListener("click", () => this.onJump(LEGEND_CATEGORIES[item]));
+      button.addEventListener("click", () => this.onJump(LEGEND_CATEGORIES[item], item));
       this.chips.set(item, { button, count, note, dash, sep });
       root.appendChild(button);
     }
@@ -247,12 +287,22 @@ export class MergeLegend {
       if (!chip) {
         continue;
       }
-      let total = 0;
-      let pending = 0;
-      for (const cat of LEGEND_CATEGORIES[item]) {
-        total += counts.byCategory[cat].total;
-        pending += counts.byCategory[cat].pending;
-      }
+      // By paint when the view says (a removal is grey whatever its
+      // category); else by category, and nothing is grey.
+      const byCategory = (cats: readonly MergeCategory[], key: "total" | "pending"): number =>
+        cats.reduce((n, cat) => n + counts.byCategory[cat][key], 0);
+      const fallback: ToneCount =
+        item === "removed"
+          ? { total: 0, pending: 0, yours: 0, theirs: 0, both: 0 }
+          : {
+              total: byCategory(LEGEND_CATEGORIES[item], "total"),
+              pending: byCategory(LEGEND_CATEGORIES[item], "pending"),
+              yours: item === "one-sided" ? counts.byCategory["yours-only"].pending : 0,
+              theirs: item === "one-sided" ? counts.byCategory["theirs-only"].pending : 0,
+              both: item === "same" ? counts.byCategory.same.pending : 0,
+            };
+      const tally = detail?.tones?.[item] ?? fallback;
+      const { total, pending } = tally;
       const words = LEGEND_WORDS[item];
       chip.count.textContent = String(pending);
       chip.button.disabled = pending === 0;
@@ -271,8 +321,8 @@ export class MergeLegend {
         pending === 0
           ? ""
           : half ?? (resolvable > 0 ? `${words.note} · ${resolvable} can be merged automatically` : words.note);
-      chip.note.hidden = pending === 0;
-      chip.dash.hidden = pending === 0;
+      chip.note.hidden = chip.note.textContent === "";
+      chip.dash.hidden = chip.note.textContent === "";
 
       let text =
         total === 0
@@ -289,9 +339,14 @@ export class MergeLegend {
           text += `; ${k === pending ? (k === 1 ? "it" : "all") : k} can be resolved automatically (Resolve simple conflicts)`;
         }
       } else if (item === "one-sided" && pending > 0) {
-        const y = counts.byCategory["yours-only"].pending;
-        const t = counts.byCategory["theirs-only"].pending;
-        text += ` (${y} in Yours, ${t} in Theirs)`;
+        text += ` (${tally.yours} in Yours, ${tally.theirs} in Theirs)`;
+      } else if (item === "removed" && pending > 0) {
+        const where = [
+          tally.yours > 0 ? `${tally.yours} in Yours` : "",
+          tally.theirs > 0 ? `${tally.theirs} in Theirs` : "",
+          tally.both > 0 ? `${tally.both} the same on both sides` : "",
+        ].filter(Boolean);
+        text += ` (${where.join(", ")})`;
       }
       if (pending > 0) {
         text += `. ${words.why}. Go to the next one.`;

@@ -10,12 +10,15 @@ import { findChrome, runMergePage } from "./fixtures/mergeViewPage";
  *    the legend and the PAINT must all say what the table says. Three layers
  *    each count on their own, so a category the engine gets right can still
  *    reach the legend wrong (an item wired to the wrong key, a stale update).
- *    The legend has one item per COLOUR, and a colour is a DECISION (paint.ts):
+ *    The legend has one item per COLOUR (paint.ts): a colour is a DECISION —
  *    Yours-only and Theirs-only share "One side only — safe to take" (blue),
- *    whose tooltip says how many of each — so a category is read from its
- *    item, and a one-sided one from that tooltip. Every block in every pane
- *    is painted in its decision's colour, whatever the change did (cases 1–3:
- *    the same change, CHANGED, ADDED and REMOVED alike, all green).
+ *    whose tooltip says how many of each — and "Removed lines" (grey) holds
+ *    every non-conflicting change that only removes lines, whose tooltip
+ *    says where (in Yours, in Theirs, the same on both sides). So a category
+ *    is read from its item plus its share of the grey one. Every block in
+ *    every pane is painted in its colour (cases 1–2: the same change,
+ *    CHANGED and ADDED alike, green; case 3 and 23, the same lines REMOVED on
+ *    both sides, grey; a conflict orange even when a side removed lines).
  * 2. What an accept or an ignore writes, against an oracle that knows nothing
  *    about Monaco: the result is base with each block's region replaced by the
  *    lines of whatever was chosen (Yours' region, Theirs' region, both in
@@ -86,12 +89,29 @@ const PROLOGUE = `
   const CATS = ["conflict", "same", "yours-only", "theirs-only"];
   const chip = (item) => slot.querySelector('.jb-legend-chip[data-category="' + item + '"]');
   const itemCount = (item) => Number(chip(item).querySelector(".jb-legend-count").textContent);
+  /** Where the grey item's removals are, from its tooltip: "(1 in Yours, 2 the same on both sides)". */
+  const removedWhere = () => {
+    const out = { yours: 0, theirs: 0, both: 0 };
+    if (itemCount("removed") === 0) return out;
+    const t = chip("removed").title;
+    const n = (re) => { const m = re.exec(t); return m ? Number(m[1]) : 0; };
+    out.yours = n(/(\\d+) in Yours/);
+    out.theirs = n(/(\\d+) in Theirs/);
+    out.both = n(/(\\d+) the same on both sides/);
+    return out;
+  };
   /** What the legend says is left of one engine category (NaN when it does not say). */
   const chipCount = (cat) => {
-    if (cat === "conflict" || cat === "same") return itemCount(cat);
-    if (itemCount("one-sided") === 0) return 0;
-    const m = /\\((\\d+) in Yours, (\\d+) in Theirs\\)/.exec(chip("one-sided").title);
-    return m ? Number(cat === "yours-only" ? m[1] : m[2]) : NaN;
+    const grey = removedWhere();
+    if (cat === "conflict") return itemCount(cat);
+    if (cat === "same") return itemCount(cat) + grey.both;
+    let one = [0, 0];
+    if (itemCount("one-sided") > 0) {
+      const m = /\\((\\d+) in Yours, (\\d+) in Theirs\\)/.exec(chip("one-sided").title);
+      if (!m) return NaN;
+      one = [Number(m[1]), Number(m[2])];
+    }
+    return cat === "yours-only" ? one[0] + grey.yours : one[1] + grey.theirs;
   };
   /** The conflicts the legend says Resolve simple can settle: "; k|it|all can be resolved automatically". */
   const chipResolvable = () => {
@@ -141,18 +161,30 @@ test("Appendix A: the engine, the view's counts and the legend chips agree with 
       for (const b of engine.blocks) engineCats[W.category(b)]++;
       mount(c);
       // The PAINT is the decision: every block's band or point, in all three
-      // panes, carries its category's colour — never what the change did.
+      // panes, carries its category's colour — grey when it is no conflict
+      // and only removes lines (JetBrains' merge type DELETED), whatever its
+      // category; a conflict stays orange whatever its sides did.
       const TONE = { conflict: "conflict", same: "same", "yours-only": "one-sided", "theirs-only": "one-sided" };
+      const toneOf = (b) => (W.category(b) !== "conflict" && b.type === "deleted" ? "removed" : TONE[W.category(b)]);
+      const wantTone = new Map(view.model.blocks.map((b) => [b.id, toneOf(b)]));
       let painted = 0;
       for (const [name, pane] of [["Yours", view.left], ["Result", view.result], ["Theirs", view.right]]) {
         for (const d of pane.getModel().getAllDecorations()) {
           const cls = d.options.className || "";
           const cat = /jb-cat-([\\w-]+)/.exec(cls);
           if (!cat) continue;
-          const tone = /jb-(?:line|point)-(conflict|same|one-sided|inserted|modified|deleted)(?![\\w-])/.exec(cls);
+          const tone = /jb-(?:line|point)-(conflict|same|one-sided|removed|inserted|modified|deleted)(?![\\w-])/.exec(cls);
+          const block = view.model.blocks.find((b) => {
+            const span = pane === view.result ? b.baseSpan : W.sideBlockSpan(b, pane === view.left ? "left" : "right");
+            return d.range.startLineNumber >= Math.min(span.start, span.endExclusive) && d.range.startLineNumber <= Math.max(span.start, span.endExclusive);
+          });
+          const want = block ? wantTone.get(block.id) : TONE[cat[1]];
           painted++;
-          expect(!!tone && tone[1] === TONE[cat[1]], tag + ": " + name + " paints a " + cat[1] + " block " + (tone && tone[1]) + ", the decision's colour is " + TONE[cat[1]] + " (" + cls + ")");
+          expect(!!tone && tone[1] === want, tag + ": " + name + " paints a " + cat[1] + " block " + (tone && tone[1]) + ", its colour is " + want + " (" + cls + ")");
         }
+      }
+      if (c.n === 3 || c.n === 23) {
+        expect([...wantTone.values()].join() === "removed", tag + ": the same lines removed on both sides are grey (" + [...wantTone.values()] + ")");
       }
       expect(painted >= view.model.blocks.length, tag + ": every block is painted somewhere (" + painted + " decorations for " + view.model.blocks.length + " blocks)");
       for (const cat of CATS) {

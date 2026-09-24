@@ -61,11 +61,8 @@ export interface DecorationOptions {
 /** What a seeded Result says on hover (isSeeded). */
 export const SEEDED_WORDS = "Already merged in the file, outside the conflict markers (by git, or by hand): check it";
 
-/**
- * The class of an OPEN conflict's bar beside the line numbers (diff.css): the
- * mark that says "conflict — you choose" without the colour.
- */
-export const CONFLICT_BAR = "jb-conflict-bar";
+/** What a whitespace-only change says on hover: it has no word tints, and no mark of its own. */
+export const WHITESPACE_WORDS = "Only whitespace changed here";
 
 /**
  * Applies the JetBrains-style merge decorations, by colour CATEGORY
@@ -77,28 +74,29 @@ export const CONFLICT_BAR = "jb-conflict-bar";
  *
  * - pending: the tone's line tint (`jb-line-<tone>`, the line-number margin
  *   included, so the band runs uninterrupted across the pane), word tints when
- *   granularity allows, a POINT_PX line for an insertion/deletion point
- *   (`jb-point`), and `jb-frame` edge lines that only high contrast themes
- *   draw (solid, 1px, on the band's first and last pixel row); an open
- *   CONFLICT also a solid bar beside the line numbers (`jb-conflict-bar`),
- *   so "you choose" never rests on telling red from green;
+ *   granularity allows, a 1px line in the band's own colour for an insertion
+ *   or deletion point (`jb-point`), and `jb-frame` edge lines that only high
+ *   contrast themes draw (solid, 1px, on the band's first and last pixel
+ *   row). Nothing else: no bar beside the line numbers (the owner: no
+ *   vertical per-line bars between the numbers and the code), no bright rule;
  * - a handled side leaves a TRACE of what happened to it (the owner: a
  *   resolved conflict must still show which side was chosen, which was
  *   discarded, or that both went in):
  *   - taken (`jb-trace-<tone>`): its band stays, muted — the tint at about
  *     half strength, no word tints — and its ribbon to the Result stays too,
  *     muted (ribbons.ts);
- *   - discarded (`jb-done`): an outline only, a faint 1px line on the band's
- *     first and last row, and no ribbon;
+ *   - discarded (`jb-done`): an outline only — a 1px line on the band's first
+ *     and last row, in the band's own colour and never brighter than it —
+ *     and no ribbon;
  * - half done — a conflict with one side in and the other still to decide:
- *   the RESULT is the muted tint between two faint lines (`jb-half`) — no
- *   longer the open question, not settled either; the pending side keeps its
- *   full band;
+ *   the RESULT is the muted tint (`jb-half`) with no line above or below it
+ *   (bright rules there read as wires across the Result) — no longer the
+ *   open question, not settled either; the pending side keeps its full band;
  * - resolved: the RESULT keeps a muted band in the colour of what went in
  *   (`jb-trace-<tone>`, no lines: calmer than anything still open), or, when
  *   nothing was taken, only its outline (`jb-done`);
- * - whitespace-only: line tint only, never a word tint, plus a dotted left
- *   edge (`jb-ws`).
+ * - whitespace-only: line tint only, never a word tint, and a hover that
+ *   says only whitespace changed (its dotted left edge went with the bars).
  *
  * A settled side or Result says what happened in words, on hover ("Took
  * Yours (test)", "Discarded Theirs (master)", "Took both").
@@ -106,10 +104,11 @@ export const CONFLICT_BAR = "jb-conflict-bar";
  * Every block decoration also carries `jb-cat-<category>` so a reader (or a
  * test) can tell the four categories apart without decoding colours.
  *
- * Tones (paint.ts) are the DECISION a change needs, never what it did: red a
- * conflict (you choose), green the same change on both sides (either arrow
- * takes it), blue a change on one side only (safe to take). Added, changed
- * or removed reads from the band's shape and the word tints instead.
+ * Tones (paint.ts) are the DECISION a change needs — orange a conflict (you
+ * choose), green the same change on both sides (either arrow takes it), blue
+ * a change on one side only (safe to take) — and grey for lines removed
+ * without a conflict (on one side, or the same on both). Added or changed
+ * reads from the band's shape and the word tints.
  *
  * No overview-ruler marks: the Result's ruler and scrollbar sat on the
  * Result|gutter seam and cut every band there. The merge's one overview is
@@ -153,7 +152,15 @@ export class DecorationManager {
         }
       } else {
         const seeded = !half && (options.isSeeded?.(block) ?? false);
-        pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, half || seeded, seeded ? SEEDED_WORDS : undefined);
+        pushPending(
+          result,
+          this.editors.result,
+          span,
+          tone,
+          cat,
+          half || seeded,
+          seeded ? SEEDED_WORDS : block.whitespaceOnly ? WHITESPACE_WORDS : undefined,
+        );
         if (showInner && !half && !seeded && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
           // Word ranges are in BASE coordinates; the result is base while the
           // block is untouched, but blocks above may have changed height.
@@ -183,7 +190,7 @@ export class DecorationManager {
           pushDone(target, editor, region, tone, cat, words?.[side]);
           continue;
         }
-        pushPending(target, editor, region, tone, cat, !!change.whitespaceOnly);
+        pushPending(target, editor, region, tone, cat, false, change.whitespaceOnly ? WHITESPACE_WORDS : undefined);
         if (showInner && !change.whitespaceOnly) {
           pushInner(target, change.innerSide, tone);
         }
@@ -332,9 +339,10 @@ function pushPoint(
  * A pending block's region in one pane: the tint, and the edge lines a high
  * contrast theme draws. An empty region (an insertion or deletion point) is a
  * point line instead. `half`: the result of a conflict with one side in — the
- * muted tint (`jb-half`) between two faint lines; the ribbon of its pending
- * side still meets it on the same rows, and the muted ribbon of the side that
- * is in continues into it.
+ * muted tint (`jb-half`) and nothing else; the ribbon of its pending side
+ * still meets it on the same rows, and the muted ribbon of the side that is
+ * in continues into it. A whitespace-only change is the tint alone, and says
+ * so on hover (WHITESPACE_WORDS).
  */
 function pushPending(
   target: Deco[],
@@ -342,7 +350,6 @@ function pushPending(
   span: LineSpan,
   tone: PaintTone,
   cat: MergeCategory,
-  whitespaceOnly: boolean,
   half = false,
   hover?: string,
 ): void {
@@ -356,21 +363,16 @@ function pushPending(
     range: new monaco.Range(span.start, 1, last, 1),
     options: {
       isWholeLine: true,
-      className: `jb-line-${tone}${halfClass} jb-cat-${cat}${whitespaceOnly ? " jb-ws" : ""}`,
+      className: `jb-line-${tone}${halfClass} jb-cat-${cat}`,
       // Tint the line-number margin too, like IntelliJ, so the change
-      // band runs uninterrupted across the pane.
+      // band runs uninterrupted across the pane. Nothing is drawn in the
+      // column between the numbers and the text: no bar, in any state.
       marginClassName: `jb-line-${tone}${halfClass}`,
-      // An OPEN conflict also carries a solid bar beside the line numbers,
-      // the one mark of "you choose" that needs no colour vision (red and
-      // green come close under deuteranopia and protanopia). Only while it
-      // is open: never on a same or one-sided change, nor on a Result that
-      // already holds one side (`half`) or text merged outside the markers.
-      linesDecorationsClassName: tone === "conflict" && !half ? CONFLICT_BAR : undefined,
       hoverMessage: hoverOf(hover),
     },
   });
   if (half) {
-    pushEdges(target, span, `jb-done jb-done-${tone}`, cat, hover);
+    // The half-done Result: the muted tint, and no line above or below it.
     return;
   }
   pushEdges(target, span, `jb-frame jb-frame-${tone}`);

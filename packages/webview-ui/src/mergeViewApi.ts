@@ -16,13 +16,13 @@ import type { ChangeBlock, Side } from "@gitstudio/engine/types";
 /**
  * The colour category of a change block (PLAN §3.6), JetBrains' model, and
  * the DECISION its colour says (paint.ts — never what the change did):
- * - "conflict": both sides changed the region differently — red, you choose
- *   (may be `resolvable` — Resolve simple, the wand, applies both);
+ * - "conflict": both sides changed the region differently — orange, you
+ *   choose (may be `resolvable` — Resolve simple, the wand, applies both);
  * - "same": both sides made the same change, exactly or up to whitespace —
- *   green, on BOTH sides, whether lines were added, changed or removed, and
- *   either arrow takes it;
- * - "yours-only" / "theirs-only": one side changed it — blue, whatever it
- *   did, safe to take.
+ *   green, on BOTH sides, and either arrow takes it;
+ * - "yours-only" / "theirs-only": one side changed it — blue, safe to take.
+ * A same or one-sided change that only REMOVES lines is painted grey instead
+ * (paint.ts `isRemoval`); its category, and what its arrows do, stay.
  * Left is always Yours after D1, so "yours-only" is the engine's left-only.
  * The engine's `category(block)` (P1) returns exactly this union.
  */

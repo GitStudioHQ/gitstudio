@@ -1,35 +1,50 @@
 // What colour a change is PAINTED in, and what happened to each of its sides.
 //
-// The paint is the DECISION a change needs, never what it did (the owner, 24
-// Sep 2026: a change made the same on both sides was blue one time and green
-// the next, and blue also meant "one side only" — so the colour did not
-// answer "does my choice matter here?"):
+// The paint is the DECISION a change needs (the owner, 24 Sep 2026: a change
+// made the same on both sides was blue one time and green the next, and blue
+// also meant "one side only" — so the colour did not answer "does my choice
+// matter here?"), in JetBrains' dark merge colours, which he picked the same
+// day ("they look stunning … we can just use the same"):
 //
-// - RED, a conflict: the sides differ, you choose;
-// - GREEN, the same change on both sides — whether lines were added, changed
-//   or removed: nothing to choose, either arrow takes the whole block;
-// - BLUE, a change on one side only — whether added, changed or removed:
-//   safe to take.
+// - ORANGE, a conflict: the sides differ, you choose — even when one of them
+//   removed lines;
+// - GREEN, the same change on both sides (added or changed lines): nothing to
+//   choose, either arrow takes the whole block;
+// - BLUE, a change on one side only (added or changed lines): safe to take;
+// - GREY, removed lines: a change that ONLY removes lines and is no conflict —
+//   on one side, or the same removal on both. JetBrains' deleted grey.
 //
-// What a change DID stays readable without a colour of its own: from the
-// shape of its band (a band that meets a line between two rows on the other
-// side was added there, or removed) and from its word highlights. The engine
-// owns the rule (`blockTone`); this module is the view's name for it.
+// What else a change did stays readable from the shape of its band (a band
+// that meets a line between two rows on the other side was added there) and
+// from its word highlights. The engine decides what a block is (`blockTone`,
+// `block.type`); this module is the view's name for its colour.
 //
 // Pure: no Monaco, no DOM.
 
 import type { BlockTone, ChangeBlock, Side } from "@gitstudio/engine/types";
 import { blockTone, category } from "@gitstudio/engine/types";
 
-/** The three colours the merge paints with: red, green, blue — by decision. */
-export type PaintTone = BlockTone;
+/** The four colours the merge paints with: orange, green, blue — by decision — and grey for removed lines. */
+export type PaintTone = BlockTone | "removed";
 
 /** Every paint tone, conflict last (drawn over the others where marks crowd). */
-export const PAINT_TONES: readonly PaintTone[] = ["one-sided", "same", "conflict"];
+export const PAINT_TONES: readonly PaintTone[] = ["removed", "one-sided", "same", "conflict"];
 
-/** A block's paint: red for a conflict, green for the same change on both sides, blue for one side only. */
+/**
+ * A change that is no conflict and only removes lines — on one side, or the
+ * same lines on both (JetBrains' merge type DELETED: the region is empty on
+ * every side that changed it).
+ */
+export function isRemoval(block: ChangeBlock): boolean {
+  return blockTone(block) !== "conflict" && block.type === "deleted";
+}
+
+/**
+ * A block's paint: orange for a conflict, grey for lines removed without one,
+ * green for the same change on both sides, blue for one side only.
+ */
 export function paintTone(block: ChangeBlock): PaintTone {
-  return blockTone(block);
+  return isRemoval(block) ? "removed" : blockTone(block);
 }
 
 /**

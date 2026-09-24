@@ -11,7 +11,7 @@ import { DiffView } from "../../src/diffView";
 import * as monaco from "monaco-editor";
 import { spanY } from "../../src/ribbons";
 import { buildMergeModel } from "@gitstudio/engine/mergeModel";
-import { category } from "@gitstudio/engine/types";
+import { category, sideBlockSpan } from "@gitstudio/engine/types";
 import type { MergeInitPayload } from "@gitstudio/host-bridge/protocol";
 import type { OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
 
@@ -35,7 +35,7 @@ const lines = (arr: string[]): string => arr.join("\n");
  *                          (a conflict under "none"; ≈ under "trailing")
  *   #4 yours-only          y1: modified in Yours
  *   #5 theirs-only         an insertion in Theirs (blue: one side only)
- *   #6 theirs-only         d1 deleted in Theirs (blue: one side only)
+ *   #6 theirs-only         d1 deleted in Theirs (grey: lines removed, no conflict)
  *   #7 yours-only          ws1 re-indented in Yours (whitespace-only under
  *                          "trailing"; a plain change under "none")
  */
@@ -149,6 +149,7 @@ export function payload(over: Partial<MergeInitPayload> = {}): MergeInitPayload 
   spanY,
   buildMergeModel,
   category,
+  sideBlockSpan,
   FIXTURE,
   REBASE_OP,
   payload,

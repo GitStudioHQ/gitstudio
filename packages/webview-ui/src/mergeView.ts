@@ -12,7 +12,7 @@ import {
   isEmptySpan,
   sideBlockSpan,
 } from "@gitstudio/engine/types";
-import { fateWords, paintTone, type SideFate } from "./paint";
+import { PAINT_TONES, fateWords, paintTone, type PaintTone, type SideFate } from "./paint";
 import { buildMergeModel } from "@gitstudio/engine/mergeModel";
 import { eolChars, normalizeEol, splitLines } from "@gitstudio/engine/lineDiff";
 import { languageForFile } from "./language";
@@ -158,10 +158,11 @@ const PANE_SCROLL_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = 
  * (Yours, read-only), Result (editable, seeded with base), Right (Theirs,
  * read-only), with gutter ribbons + accept/ignore controls.
  *
- * Blocks are painted by the DECISION they need (paint.ts): a conflict red
- * (you choose); the same change on both sides green, on both sides, whatever
- * it did (either arrow takes it, for both); a change on one side only blue,
- * whatever it did (safe to take). Every change is one
+ * Blocks are painted by the DECISION they need (paint.ts), in JetBrains' dark
+ * merge colours: a conflict orange (you choose); the same change on both
+ * sides green, on both sides (either arrow takes it, for both); a change on
+ * one side only blue (safe to take); and lines removed without a conflict
+ * grey, on one side or on both. Every change is one
  * continuous band — side pane, filled ribbon, result — and its controls are
  * the ones JetBrains and VS Code users already know: an arrow toward the
  * result to accept a side, × to ignore it, each with its action in words.
@@ -311,7 +312,7 @@ export class MergeView implements MergeViewApi {
    */
   public attachLegend(slot: HTMLElement): void {
     if (!this.legend) {
-      this.legend = new MergeLegend((cats) => this.navigate(1, cats));
+      this.legend = new MergeLegend((cats, tone) => this.navigate(1, cats, tone));
     }
     slot.appendChild(this.legend.element);
     this.legend.update(this.lastCounts, this.legendDetail());
@@ -1098,13 +1099,17 @@ export class MergeView implements MergeViewApi {
     this.navigate(-1, cat ? [cat] : undefined);
   }
 
-  /** With categories, only pending blocks of those (a legend item may name two). */
-  private navigate(direction: 1 | -1, cats?: readonly MergeCategory[]): void {
+  /**
+   * With categories, only pending blocks of those (a legend item may name
+   * two); with a paint tone too, only those painted in it (a legend item is a
+   * colour, and removed lines are grey whatever their category).
+   */
+  private navigate(direction: 1 | -1, cats?: readonly MergeCategory[], tone?: PaintTone): void {
     if (!this.model || !this.result) {
       return;
     }
     const pending = this.model.blocks.filter(
-      (b) => !this.isResolved(b) && (!cats || cats.includes(category(b))),
+      (b) => !this.isResolved(b) && (!cats || cats.includes(category(b))) && (!tone || paintTone(b) === tone),
     );
     if (pending.length === 0) {
       return;
@@ -1549,13 +1554,27 @@ export class MergeView implements MergeViewApi {
    */
   private legendDetail(): LegendDetail {
     const halfDone: LegendDetail["halfDone"] = [];
+    // Each colour's count, by the paint each change wears (paint.ts): the
+    // legend names colours, and removed lines are grey whatever their category.
+    const tones = Object.fromEntries(
+      PAINT_TONES.map((tone) => [tone, { total: 0, pending: 0, yours: 0, theirs: 0, both: 0 }]),
+    ) as NonNullable<LegendDetail["tones"]>;
     for (const block of this.model?.blocks ?? []) {
       const half = this.halfDone(block);
       if (half) {
         halfDone.push(half);
       }
+      const tally = tones[paintTone(block)];
+      tally.total++;
+      if (!this.isResolved(block)) {
+        tally.pending++;
+        const cat = category(block);
+        if (cat === "yours-only") tally.yours++;
+        else if (cat === "theirs-only") tally.theirs++;
+        else if (cat === "same") tally.both++;
+      }
     }
-    return { halfDone };
+    return { halfDone, tones };
   }
 
   /** Which side of a pending block is in, when exactly one of its own sides is. */
