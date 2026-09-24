@@ -267,7 +267,10 @@ export class ConflictOps {
     // A file on one side and a FOLDER on the other (`rebase --apply` and
     // `am -3` leave the file unmerged at `path` beside the folder's files at
     // stage 0, with the folder on disk). git can't hold both at one path.
-    const folder = await this.folderAt(path, guard.abs, opts?.signal);
+    // Not a submodule: its checkout IS a folder at the path, and taking a
+    // side of it only records a commit (below).
+    const gitlink = [...stages.values()].some((s) => s.mode === "160000");
+    const folder = gitlink ? undefined : await this.folderAt(path, guard.abs, opts?.signal);
     if (!stages.has(stage)) {
       // That side's answer IS "delete it", and ls-files says so.
       if (folder) {
