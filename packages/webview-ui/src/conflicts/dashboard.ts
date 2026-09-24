@@ -77,6 +77,48 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: s
   return n;
 }
 
+/**
+ * A row's file: its name, then its folder, muted (the way the Changes lists
+ * show a path). The folder is cut in the MIDDLE: the leading folders give way
+ * first, behind an ellipsis, and the folder the file sits in stays as long as
+ * it can — "packages/web…conflicts". The whole path is the cell's title.
+ */
+function fileCell(path: string): HTMLElement {
+  const cell = el("span", "cd-file");
+  cell.title = path;
+  const slash = path.lastIndexOf("/");
+  cell.appendChild(el("span", "cd-name", slash >= 0 ? path.slice(slash + 1) : path));
+  if (slash > 0) {
+    const dir = path.slice(0, slash);
+    const cut = dir.lastIndexOf("/");
+    const d = el("span", "cd-dir");
+    if (cut >= 0) d.appendChild(el("span", "cd-dir-head", dir.slice(0, cut + 1)));
+    d.appendChild(el("span", "cd-dir-tail", cut >= 0 ? dir.slice(cut + 1) : dir));
+    cell.appendChild(d);
+  }
+  return cell;
+}
+
+/**
+ * A button's words, in their own span: a slot narrower than a label cuts it
+ * with an ellipsis instead of overflowing the button. The words a compact
+ * dashboard can do without ("Accept" of Accept Yours, "the file" of Delete
+ * the file) are a .cd-trim span, which a narrow pane hides from SIGHT only:
+ * the button's text and its accessible name stay whole.
+ */
+function buttonLabel(label: string): HTMLElement {
+  const span = el("span", "cd-btn-label");
+  const trim = /^(Accept )(.+)$/.exec(label) ?? /^(Delete)( the file)$/.exec(label);
+  if (!trim) {
+    span.textContent = label;
+  } else if (trim[1] === "Accept ") {
+    span.append(el("span", "cd-trim", trim[1]), document.createTextNode(trim[2]));
+  } else {
+    span.append(document.createTextNode(trim[1]), el("span", "cd-trim", trim[2]));
+  }
+  return span;
+}
+
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
@@ -234,7 +276,8 @@ export class ConflictsDashboard {
     root.dataset.kind = op.kind;
     root.replaceChildren();
 
-    // Header: brand, title, what is in progress, which repository.
+    // Header: brand, title, which repository (secondary: "in <repo>"), what
+    // is in progress. The words wrap as one line beside the mark.
     const head = el("header", "cd-head");
     const mark = el("span", "cd-mark");
     if (state.brand.mark === "merge-studio") mark.innerHTML = MS_MARK;
@@ -245,15 +288,21 @@ export class ConflictsDashboard {
     const heading = state.finished ? "Stash conflicts" : dashboardHeading(op);
     const title = el("h1", "cd-title", heading);
     root.setAttribute("aria-label", heading);
-    head.append(mark, title);
+    const headline = el("div", "cd-headline");
+    headline.appendChild(title);
+    if (state.repoName) {
+      const repo = el("span", "cd-repo", `in ${state.repoName}`);
+      repo.title = state.repoName;
+      headline.appendChild(repo);
+    }
     // Nothing in progress and nothing unmerged (our own Continue just ended the
     // operation, and the page stays to say "Rebase complete"): no chip. It used
     // to read a red "UNMERGED FILES" over that, contradicting it. With every
     // file resolved and the operation still waiting for Continue, the chip
     // stays: the rebase IS still in progress (it used to vanish there).
     const nothingLeft = op.kind === "none" && pending === 0;
-    if (!nothingLeft && !state.finished) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
-    if (state.repoName) head.appendChild(el("span", "cd-repo", state.repoName));
+    if (!nothingLeft && !state.finished) headline.appendChild(el("span", "cd-chip", opChipLabel(op)));
+    head.append(mark, headline);
     root.appendChild(head);
 
     if (op.title) root.appendChild(el("div", "cd-optitle", op.title));
@@ -278,8 +327,12 @@ export class ConflictsDashboard {
       const subject = el("span", "cd-subject", op.commit.subject);
       subject.title = op.commit.subject;
       card.appendChild(subject);
-      if (op.commit.author) card.appendChild(el("span", "cd-author", `by ${op.commit.author}`));
-      if (step) card.appendChild(el("span", "cd-step", step));
+      // Who and where in the sequence, as one group at the line's end: in a
+      // narrow pane it moves under the subject whole.
+      const meta = el("span", "cd-commit-meta");
+      if (op.commit.author) meta.appendChild(el("span", "cd-author", `by ${op.commit.author}`));
+      if (step) meta.appendChild(el("span", "cd-step", step));
+      if (meta.childElementCount) card.appendChild(meta);
       root.appendChild(card);
     } else if (step) {
       root.appendChild(el("div", "cd-step cd-step-alone", step));
@@ -441,6 +494,15 @@ export class ConflictsDashboard {
     return p;
   }
 
+  /**
+   * One file, on the list's grid: status | file | pill | actions. Every row
+   * has all four cells, empty or not, so the pill column and the three action
+   * slots line up down the whole list ("everything is everywhere" was rows
+   * that right-aligned whatever buttons they had). The actions are three
+   * fixed-width SLOTS, by role: Accept Yours (or the deleting yours) always in
+   * the first, Accept Theirs in the second, Merge… in the third; a resolved
+   * row's Hold to undo takes the first.
+   */
   private row(f: ConflictFileView, state: ConflictsState): HTMLElement {
     const busy = f.status === "busy" || this.localBusy.has(f.path);
     const resolved = f.status === "resolved" && !busy;
@@ -448,43 +510,41 @@ export class ConflictsDashboard {
     row.setAttribute("role", "listitem");
     row.dataset.path = f.path;
 
+    const status = el("span", "cd-status");
     if (busy) {
       const s = el("span", "cd-spinner");
       s.setAttribute("aria-label", "Working");
-      row.appendChild(s);
+      status.appendChild(s);
     } else if (resolved) {
       const ring = el("span", "cd-check");
       ring.appendChild(codicon("check"));
-      row.appendChild(ring);
+      status.appendChild(ring);
     } else {
-      row.appendChild(el("span", "cd-dot"));
+      status.appendChild(el("span", "cd-dot"));
     }
+    row.appendChild(status);
 
-    const name = el("span", "cd-file");
-    const slash = f.path.lastIndexOf("/");
-    name.append(
-      el("span", "cd-dir", slash >= 0 ? f.path.slice(0, slash + 1) : ""),
-      el("span", "cd-name", slash >= 0 ? f.path.slice(slash + 1) : f.path),
-    );
-    name.title = f.path;
-    row.appendChild(name);
+    row.appendChild(fileCell(f.path));
 
-    if (!resolved && !busy) {
-      const word = f.badge || shapeWord(f.shape);
-      if (word) row.appendChild(el("span", "cd-badge", word));
-    }
-
-    // The row's buttons move as ONE group: when the row is too narrow for
-    // them beside the name, they wrap to a line of their own, right-aligned,
-    // instead of splitting across two lines.
-    const actions = el("span", "cd-actions");
-
+    const pillCell = el("span", "cd-pillcell");
     if (resolved) {
       // "kept yours · test" (P-53), "deleted" for a take of the side with no file.
       const said = choicePill(f, state.op);
       const pill = el("span", "cd-choice", `✓ ${said.text}`);
       pill.title = said.title;
-      row.appendChild(pill);
+      pillCell.appendChild(pill);
+    } else if (!busy) {
+      const word = f.badge || shapeWord(f.shape);
+      if (word) {
+        const badge = el("span", "cd-badge", word);
+        badge.title = word;
+        pillCell.appendChild(badge);
+      }
+    }
+    row.appendChild(pillCell);
+
+    const actions = el("span", "cd-actions");
+    if (resolved) {
       // A finished stash apply has nothing left to undo INTO (git keeps no
       // operation for it), so no hold-to-undo there.
       if (!state.finished) actions.appendChild(this.holdButton(f, state));
@@ -501,8 +561,7 @@ export class ConflictsDashboard {
               this.markBusy(f.path);
               this.post({ type: "delete", path: f.path });
             },
-            "cd-danger",
-            "trash",
+            "cd-danger cd-slot-yours",
           ),
         );
       } else {
@@ -524,8 +583,7 @@ export class ConflictsDashboard {
                 this.markBusy(f.path);
                 this.post({ type: "accept", path: f.path, role });
               },
-              missing ? "cd-danger" : "",
-              missing ? "trash" : "",
+              `${missing ? "cd-danger" : "cd-accept"} cd-slot-${role}`,
             ),
           );
         }
@@ -537,13 +595,13 @@ export class ConflictsDashboard {
               `merge:${f.path}`,
               disabled,
               () => this.post({ type: "merge", path: f.path }),
-              "cd-primary",
+              "cd-primary cd-slot-merge",
             ),
           );
         }
       }
     }
-    if (actions.childElementCount) row.appendChild(actions);
+    row.appendChild(actions);
     return row;
   }
 
@@ -572,7 +630,7 @@ export class ConflictsDashboard {
     const b = el("button", `cd-btn${cls ? ` ${cls}` : ""}`);
     b.type = "button";
     if (icon) b.appendChild(codicon(icon));
-    b.appendChild(document.createTextNode(label));
+    b.appendChild(buttonLabel(label));
     b.title = title;
     b.dataset.key = key;
     b.disabled = disabled;
@@ -590,7 +648,7 @@ export class ConflictsDashboard {
    */
   private holdButton(f: ConflictFileView, state: ConflictsState): HTMLButtonElement {
     const ms = state.holdToUndoMs;
-    const btn = el("button", "cd-undo-hold");
+    const btn = el("button", "cd-undo-hold cd-slot-yours");
     btn.type = "button";
     btn.dataset.key = `restore:${f.path}`;
     btn.title = "Hold to bring the conflict back (hold Enter or Space from the keyboard)";
