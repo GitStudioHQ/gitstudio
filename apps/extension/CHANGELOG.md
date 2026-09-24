@@ -16,7 +16,14 @@ does, the other does. (merge-studio#12)
   item in the status bar, and a button on every "git stopped for you" message
   — lists each conflicted file with **Accept Yours**, **Accept Theirs** and
   **Merge…**, hold-to-undo, and **Continue / Skip / Abort** for the operation,
-  named in your branch names ("test → onto → master", "commit 2 of 3").
+  named in your branch names ("test → onto → master", "commit 2 of 3"). It
+  says where you are in words: "Rebase conflicts", then "Commit 2 of 3
+  resolved — Continue Rebase to replay the next commit", or why Continue
+  still can't run. Each row says what you kept ("kept yours · test",
+  "deleted"). Once every file is resolved, the status bar item stays as
+  **Continue Rebase** (or Merge, Cherry-pick, Revert, `git am`) until git
+  goes on. When a stash pop's last conflict is resolved it says the stash
+  is applied, and that git kept the stash entry for you to drop.
 - **Continue, Skip and Abort in the Changes view.** When a merge, rebase,
   cherry-pick, revert, `git am` or stash apply stops, a banner above your
   changes says what stopped and offers the next step. Continue is disabled —
@@ -36,8 +43,11 @@ does, the other does. (merge-studio#12)
   cross to leave it out, each saying what it does ("Accept Yours (test) for
   this conflict"), from the mouse, the keyboard or a screen reader.
   **Resolve simple** on the toolbar settles every conflict whose two edits
-  touch but don't overlap. It used to colour a change by its side alone, so
-  nothing said which conflicts could be settled for you.
+  touch but don't overlap, and the legend says how many there are. A change
+  the file already had merged outside its conflict markers looks settled,
+  with a hover that says where its text came from. It used to colour a
+  change by its side alone, so nothing said which conflicts could be settled
+  for you.
 - **Close** leaves the merge editor at any point without ending the
   operation: the file keeps its conflict markers, git stays stopped where it
   was, and the Conflicts dashboard opens the file again when you are ready.
@@ -66,7 +76,21 @@ does, the other does. (merge-studio#12)
   *Accept Yours* keeps. Pane titles name the real branches ("Rebasing 1a2b3c4
   from test" / "Already rebased commits and commits from master"). Before,
   the left pane held the branch you were rebasing onto, so *Accept Yours*
-  could silently drop your only commit on Continue.
+  could silently drop your only commit on Continue. The buttons below the
+  merge editor name the side too ("Accept Yours · test"). If you used
+  GitStudio 1.13.0 or earlier, your first rebase or stash conflict after
+  updating shows a one-time note that the sides have changed, until you press
+  *Got it*.
+- **With Merge Studio installed too**, the two extensions show one status bar
+  item and one Conflicts dashboard, and a question either one asks at your
+  first conflict is asked once between them. When you let Merge Studio open
+  conflicts, GitStudio steps back at once. A `jbMerge.*` merge setting you
+  set is read while its `gitstudio.merge.*` twin is unset (never `autoOpen`,
+  and a JetBrains path only from user settings). An older Merge Studio, which
+  still shows a rebase's sides the old way round, is named once, with a
+  button to update it.
+- A conflicted file the merge editor opens for you keeps one tab: the text
+  tab it came from closes, unless it has unsaved changes.
 - **`gitstudio.merge.autoOpen` has a new meaning.** It no longer opens every
   conflicted file as its own tab. When an operation stops it shows the
   Conflicts dashboard, opens a conflicted file in the resolver when you
@@ -247,9 +271,29 @@ does, the other does. (merge-studio#12)
   Rebase onto and Create and Switch, the Changes view's Checkout Revision, a
   pull request's Checkout, and the Stashes view's Apply and Pop — now says
   which of your changes are in the way and offers **Stash & Retry** or
-  **Cancel**. Stash & Retry puts your changes back as they were, staged ones
+  **Cancel** — also in a window where the Changes view has not been opened
+  yet. Stash & Retry puts your changes back as they were, staged ones
   staged; when they can't simply come back, it says which stash they are in.
-  Nothing is sent as a crash report.
+  Its stash is named after the branch the way you write it ("GitStudio:
+  before merging release"). Nothing is sent as a crash report.
+- **Stashing chosen files could stash the wrong ones.** A file whose name
+  git reads as a pattern — `:notes`, `*draft*`, `a[bc].txt` — was stashed as
+  that pattern: the files it matches went into the stash, and the file you
+  chose stayed where it was (and Stash & Retry could not clear it out of the
+  way). Every file is stashed by its exact name now.
+- **"Resolve them and commit" during a rebase.** When a command was refused
+  because files still had conflicts, the message told a rebase, cherry-pick,
+  revert or `git am` to commit. It names each operation's own way on now
+  ("continue the rebase", "commit the merge"), and after a stash pop just
+  "resolve them".
+- **Taking the file's side of a file/folder conflict deleted the folder.**
+  When one side has a file and the other a folder at the same path (a
+  `rebase --apply` or `git am` can stop so), *Accept Yours* or *Accept
+  Theirs* for the file removed the folder and every file in it, and Continue
+  committed the loss. It now changes nothing and says why; taking the side
+  without the file keeps the folder.
+- A command you cancelled at its question (Stash & Retry's *Cancel*) no
+  longer offers **Undo** for a change it never made.
 - **Commands pressed while a merge, rebase, cherry-pick, revert or `git am`
   was stopped showed git's refusal — and some changed the stop.** Merge,
   Rebase onto, Checkout, Cherry-Pick, Revert, the Stashes view's Apply and

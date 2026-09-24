@@ -148,6 +148,29 @@ test("the three changelogs say the merge editor's colours, its trace and Close t
   }
 });
 
+test("the unreleased changelogs carry the shared git fixes each product ships, once", () => {
+  // The r0923 infra lane's fixes live in git-service, so both GitStudio
+  // products ship them; the AI git tools are the desktop's only (Assistant,
+  // Agent Access). Merge Studio has no stash or AI doors, so none of these.
+  const shared = [
+    [/stashed by its exact name/i, "a chosen file is stashed by its name, never as a pattern"],
+    [/"GitStudio: before merging release"/, "a Stash & Retry stash names the branch the way you write it"],
+    [/"continue the rebase", "commit the merge"/, "the unresolved-conflicts message names each operation's way on"],
+    [/file\/folder conflict/i, "taking the file's side never deletes the folder"],
+  ];
+  for (const rel of ["apps/extension/CHANGELOG.md", "apps/desktop/CHANGELOG.md"]) {
+    const entry = firstEntry(rel).replace(/\s+/g, " ");
+    for (const [re, what] of shared) {
+      assert.equal((entry.match(new RegExp(re.source, re.flags + "g")) ?? []).length, 1, `${rel}: says once that ${what}`);
+    }
+  }
+  const desktop = firstEntry("apps/desktop/CHANGELOG.md").replace(/\s+/g, " ");
+  assert.match(desktop, /The Assistant and Agent Access could end a stopped merge\.\*\* Asked to check out a branch, create one, or reset/, "the desktop: the AI git tools refuse over a stopped operation");
+  const ms = firstEntry("apps/merge-studio/CHANGELOG.md").replace(/\s+/g, " ");
+  assert.match(ms, /file\/folder conflict/i, "Merge Studio: taking the file's side never deletes the folder");
+  assert.doesNotMatch(ms, /Stash & Retry|Assistant|Agent Access/, "Merge Studio ships neither door");
+});
+
 test("the docs name the files the export writes and the ones it never touches, as layout.mjs has them", () => {
   const guide = readFileSync(join(GITSTUDIO_ROOT, "apps/merge-studio/CONTRIBUTING.md"), "utf8");
   for (const f of ["VENDORED_FROM.json", "package-lock.json", "tsconfig.json", ".github/workflows/ci.yml", "scripts/check-parity.mjs"]) {

@@ -2,7 +2,7 @@
 
 ## 1.0.0 — unreleased
 
-**Heads-up: during a rebase, Yours is now your commit, on the left.** Git calls the branch you're rebasing onto "ours". Merge Studio used to follow git, so your own commit appeared as "Theirs" on the right, and Accept Yours followed by Continue could drop your only commit ([#12](https://github.com/GitStudioHQ/merge-studio/issues/12)). Now Yours is the commit being replayed from your branch and Theirs is the branch you're rebasing onto, with both names on screen: "Rebasing test onto master · commit 2 of 3". Applying a stash works the same way: your stashed changes are Yours. A merge, a cherry-pick and a revert are unchanged.
+**Heads-up: during a rebase, Yours is now your commit, on the left.** Git calls the branch you're rebasing onto "ours". Merge Studio used to follow git, so your own commit appeared as "Theirs" on the right, and Accept Yours followed by Continue could drop your only commit ([#12](https://github.com/GitStudioHQ/merge-studio/issues/12)). Now Yours is the commit being replayed from your branch and Theirs is the branch you're rebasing onto, with both names on screen: "Rebasing test onto master · commit 2 of 3". Applying a stash works the same way: your stashed changes are Yours. A merge, a cherry-pick and a revert are unchanged. The buttons below the merge editor name the side too ("Accept Yours · test"). If you used Merge Studio 0.3.4 or earlier, your first rebase or stash conflict after updating shows a one-time note that the sides have changed, until you press *Got it*.
 
 Merge Studio 1.0 is built on the same merge editor and Conflicts dashboard as GitStudio, so a fix in one reaches both. Your `jbMerge.*` settings, commands and keybindings keep working.
 
@@ -10,7 +10,7 @@ Merge Studio 1.0 is built on the same merge editor and Conflicts dashboard as Gi
 
 Every change is coloured by what it is, and a legend above the panes names the colours in words, with how many changes are left. Click an item to go to the next change of that kind; the question mark beside it explains every colour and line in words.
 
-- **Conflicts**, in red: both sides changed the same lines, differently. You choose: accept one side, both, or edit the result. **Resolve simple** on the toolbar settles every conflict whose two edits touch but don't overlap, by applying both.
+- **Conflicts**, in red: both sides changed the same lines, differently. You choose: accept one side, both, or edit the result. **Resolve simple** on the toolbar settles every conflict whose two edits touch but don't overlap, by applying both, and the legend says how many there are. A change the file already had merged outside its conflict markers looks settled, with a hover that says where its text came from.
 - **Changed** (blue), **Added** (green) or **Removed** (grey): a change that doesn't conflict, coloured by what it did. Coloured on one side only, it is a change only that side made. Safe to take.
 - A change coloured on both sides is the same change, made on both sides. Either arrow takes it, and it is settled on both sides at once.
 
@@ -25,7 +25,7 @@ Every change has the two controls JetBrains IDEs use: an arrow toward the result
 - Continue stays disabled, with the reason in words, until git can continue. It asks before git drops a commit your resolution left empty.
 - Skip appears only where git offers it. Skip and Abort ask first, in place.
 - What happened is said in words: "Commit 2 of 3 skipped; the rest applied — rebase complete", "Last patch skipped. The series is finished, without it", "Rebase complete".
-- **Where you are**: "Rebasing test onto master · commit 2 of 3" and the commit being replayed, in the dashboard and above the merge editor.
+- **Where you are**: "Rebasing test onto master · commit 2 of 3" and the commit being replayed, in the dashboard and above the merge editor. Once every file is resolved, the status bar item stays as **Continue Rebase** (or Merge, Cherry-pick, Revert, git am) until git goes on.
 - git am is recognised as git am, and its Abort runs `git am --abort`. A range of reverts is called a revert and continues as one. When git declines to rewind an Abort (you committed part of a cherry-pick or revert range yourself), it says the branch was left where it is.
 
 ### The Conflicts dashboard
@@ -33,9 +33,10 @@ Every change has the two controls JetBrains IDEs use: an arrow toward the result
 - Opens the moment a merge, rebase, cherry-pick or revert stops on conflicts, and lists every conflicted file with **Accept Yours**, **Accept Theirs** and **Merge…**.
 - Badges name the side: "deleted in theirs (master)" rather than git's "deleted by them". A submodule is called a submodule and its row names the commit each side points it at; a symbolic link is called one too.
 - A binary file, a file deleted or added on one side, a submodule or a symbolic link opens a panel with the choices that make sense: keep yours, keep theirs, or delete the file.
-- Resolved files stay in the list, labelled with how they were settled. Hold **Undo** on one (with the mouse, or Enter or Space held down) to bring its conflict back while git is still stopped there.
+- Resolved files stay in the list, labelled with how they were settled ("kept yours · test", "deleted"). Hold **Undo** on one (with the mouse, or Enter or Space held down) to bring its conflict back while git is still stopped there.
 - The file list starts over at each step of a rebase. Works in git worktrees.
-- When everything is done it says so ("Rebase complete"), with Close as a quiet button beside Continue.
+- It says where you are in words: "Rebase conflicts", then "Commit 2 of 3 resolved — Continue Rebase to replay the next commit", or why Continue still can't run. When everything is done it says so ("Rebase complete"), with Close as a quiet button beside Continue. When a stash pop's last conflict is resolved it says the stash is applied, and that git kept the stash entry for you to drop.
+- The list scrolls; Abort and Continue stay on screen.
 - Its links: Report a problem (with your Merge Studio and editor versions filled in) while you work; Rate Merge Studio and Sponsor only once everything is resolved.
 
 ### Your work is safe
@@ -48,6 +49,7 @@ Every change has the two controls JetBrains IDEs use: an arrow toward the result
 - **The merge result keeps its line endings.** With Yours in CRLF and Theirs in LF, the editor said the result keeps CRLF but saved LF, changing every line of your file.
 - **Accepting a side writes exactly that side's lines**, also at the very start and end of the file: a final newline, a blank last line and a line added after a last line with no newline were lost or doubled. The diff's copy arrow had the same fault, and is fixed with it.
 - **Apply non-conflicting changes could lose one side's deletion.** Where both sides rewrote the same line and one of them also deleted the next, the change was taken as "the same on both sides", and the deletion was dropped without a word. Each side is now compared over everything it changed.
+- **Taking the file's side of a file/folder conflict no longer deletes the folder.** When one side has a file and the other a folder at the same path (a `rebase --apply` or `git am` can stop so), Accept Yours or Accept Theirs for the file removed the folder and every file in it, and Continue committed the loss. It now changes nothing and says why; taking the side without the file keeps the folder.
 - Undo is refused once the operation it belongs to has finished, instead of putting conflict markers back into a finished merge.
 - Changing the whitespace mode keeps your picks, and asks first when it can't.
 - Handing a conflict to a JetBrains IDE while the merge editor holds unapplied work asks first. A file that is not UTF-8 text, or one reached through a linked folder, is not handed over.
@@ -62,7 +64,8 @@ Every change has the two controls JetBrains IDEs use: an arrow toward the result
 
 ### Changed since 0.3.4
 
-- With GitStudio installed, GitStudio opens conflicts automatically and Merge Studio stays quiet, and says so the first time, with a button to let Merge Studio do it instead. Merge Studio's commands still work and open the same screens. An older GitStudio without the Conflicts dashboard changes nothing.
+- With GitStudio installed, GitStudio opens conflicts automatically and Merge Studio stays quiet, and says so the first time, with a button to let Merge Studio do it instead. Merge Studio's commands still work and open the same screens. An older GitStudio without the Conflicts dashboard changes nothing. The two show one status bar item and one dashboard, a question either one asks at your first conflict is asked once between them, and when you let one of them open conflicts the other steps back at once. GitStudio 1.13.0, which still shows a rebase's sides the old way round, is named once, with a button to update it.
+- A conflicted file the merge editor opens for you keeps one tab: the text tab it came from closes, unless it has unsaved changes.
 - The question about VS Code's own merge editor now comes at your first conflict, as a notification, and is remembered only once you answer it. It used to be asked once at install, where it was easy to miss. If Merge Studio 0.3 already asked you, you're not asked again.
 - **Apply non-conflicting changes** also takes the changes both sides made the same way, and two edits that touch without overlapping are one conflict, as git and JetBrains IDEs see them, which **Resolve simple** settles.
 - In Restricted Mode the Extensions view now says why Merge Studio is off: it works through VS Code's built-in Git extension, which Restricted Mode turns off. Trust the folder to use it.

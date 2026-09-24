@@ -24,7 +24,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   first, inline; a resolved file can be put back by holding **Hold to undo**
   (mouse, or Enter / Space held). It replaces the "rebase in progress —
   resolve and continue" banner, and it is the same dashboard the VS Code
-  extension and Merge Studio show. (merge-studio#12)
+  extension and Merge Studio show. (merge-studio#12) It says where you are in
+  words — "Rebase conflicts", then "Commit 2 of 3 resolved — Continue Rebase
+  to replay the next commit", or why Continue still can't run — and each row
+  what you kept ("kept yours · test", "deleted"); accepting a row is undone
+  with ⌘Z, without a notification per row. When a stash pop's last conflict
+  is resolved it says the stash is applied, and that git kept the stash entry
+  for you to drop. The list scrolls; Abort and Continue stay on screen.
 - **The full merge editor.** A conflicted file now opens with the toolbar the
   extension has always had — undo / redo / history, previous / next change,
   **Apply non-conflicting changes: Yours · All · Theirs**, **Resolve simple**,
@@ -34,7 +40,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   **Close** leaves the editor at any point without ending the operation: the
   file keeps its conflict markers, git stays stopped where it was, and
   **Merge…** in the dashboard opens it again. After the last file,
-  **Continue Rebase** appears right there.
+  **Continue Rebase** appears right there. While it is open it has the whole
+  Changes view: the commit box, the file list and the banner step aside, and
+  **All conflicts** leads back to the dashboard.
 - **Every change coloured by what it is.** The merge editor's legend names
   the colours in words, with how many changes are left: **Conflicts** in red
   (both sides changed the same lines, differently; you choose), and
@@ -49,7 +57,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   cross to leave it out, each saying what it does ("Accept Yours (test) for
   this conflict"), from the mouse, the keyboard or a screen reader.
   **Resolve simple** on the toolbar settles every conflict whose two edits
-  touch but don't overlap.
+  touch but don't overlap, and the legend says how many there are. A change
+  the file already had merged outside its conflict markers looks settled,
+  with a hover that says where its text came from.
 - **Settings ▸ Merge**: open merges with the non-conflicting changes already
   applied (off by default), resolve conflicts and show diffs with GitStudio or
   a JetBrains IDE, which IDE, and its launcher path (the launcher, or the
@@ -73,8 +83,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   says how many are unresolved and what each will be saved as — the original
   text, or, for a conflict with one side already taken, what the Result shows
   — and a second press saves.
-- The whole-file buttons read **Accept Yours / Accept Theirs**, not "Take
-  (side name)", and during a rebase Yours is your commit — on the left.
+- The whole-file buttons read **Accept Yours / Accept Theirs**, with the
+  side's branch ("Accept Yours · test"), not "Take (side name)", and during a
+  rebase Yours is your commit — on the left.
 - ⌘Z with the merge editor focused undoes the last merge action (not text, and
   not something elsewhere in the app), whether it comes from the key or from
   **Edit ▸ Undo**; resolving a file is itself undoable, and brings the
@@ -179,7 +190,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   alone, and the dashboard row names the commit each side points it at. A
   symbolic link is called one too.
 - **The top-bar chip says "Ready to continue"** when every conflict is
-  resolved, instead of "Merging · paused".
+  resolved, instead of "Merging · paused". In a narrower window the chip was
+  cut short, or the **Open in** button covered the search box; the bar makes
+  room for both now.
 - **The Rebase view names its verbs** ("Continue Rebase", "Abort Rebase"), its
   buttons show the focus ring, and when one ends the rebase the keyboard stays
   in the view instead of falling to the top of the window.
@@ -285,8 +298,35 @@ but they share the same engine, so most Git behaviour lands in both at once.
   revert"*) and offers **Stash & Retry** or **Cancel**. Stash & Retry puts your
   changes back exactly as they were, staged ones staged; when they can't simply
   come back (they conflict with what came in, or the command stopped on
-  conflicts of its own) it says which stash they are in. Nothing is sent as a
-  crash report — and a command that fails for any other reason still is.
+  conflicts of its own) it says which stash they are in. Its stash is named
+  after the branch the way you write it ("GitStudio: before merging
+  release"). Nothing is sent as a crash report — and a command that fails for
+  any other reason still is.
+- **Stashing chosen files could stash the wrong ones.** A file whose name
+  git reads as a pattern — `:notes`, `*draft*`, `a[bc].txt` — was stashed as
+  that pattern: the files it matches went into the stash, and the file you
+  chose stayed where it was (and Stash & Retry could not clear it out of the
+  way). Every file is stashed by its exact name now.
+- **"Resolve them and commit" during a rebase.** When a command was refused
+  because files still had conflicts, the message told a rebase, cherry-pick,
+  revert or `git am` to commit. It names each operation's own way on now
+  ("continue the rebase", "commit the merge"), and after a stash pop just
+  "resolve them".
+- **Taking the file's side of a file/folder conflict deleted the folder.**
+  When one side has a file and the other a folder at the same path (a
+  `rebase --apply` or `git am` can stop so), **Accept Yours** or **Accept
+  Theirs** for the file removed the folder and every file in it, and Continue
+  committed the loss. It now changes nothing and says why; taking the side
+  without the file keeps the folder.
+- **The Assistant and Agent Access could end a stopped merge.** Asked to check
+  out a branch, create one, or reset while a merge, rebase, cherry-pick,
+  revert or `git am` was stopped, their git tools ran it: the stopped merge,
+  cherry-pick or revert was over, and a rebase had its branch moved out from
+  under it. They now refuse, in the words the app uses — what is in progress,
+  finish it or abort it first — and a refusal over your edits names the
+  files.
+- **An Assistant answer stopped appearing while the window was hidden** or
+  minimised, until you showed it again; it keeps streaming now.
 - **Commands pressed while a merge, rebase, cherry-pick, revert or `git am`
   was stopped showed git's refusal, sent a crash report — and some changed the
   stop.** Merge, Rebase onto, Check out, Cherry-pick, Revert and a stash's
