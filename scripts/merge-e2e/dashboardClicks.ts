@@ -52,6 +52,7 @@
 //   --settle <ms>       wait after each press for the host's pushes, default 4000 (>= 3000)
 //   --shots a,b         after the scenarios, screenshot the list in each of these themes
 //   --keep-profile      keep the isolated profile (default: deleted with the window)
+//   --only 3,4,5        run only these scenarios (by number), e.g. again after a disturbed run
 //
 // Writes, per scenario, <out>/<scenario>/: report.json (the verdict and why),
 // messages.json (every host message, as received), frames/*.png (the webview,
@@ -297,23 +298,48 @@ interface Frame {
   id: string;
 }
 
-async function findDashboard(c: Cdp, pageSid: string): Promise<Frame> {
-  const until = Date.now() + 60_000;
-  for (;;) {
-    const { targetInfos } = await c.send<{ targetInfos: { targetId: string; type: string; url: string }[] }>("Target.getTargets");
-    for (const t of targetInfos) {
-      if (t.type !== "iframe" || !/^vscode-webview:/.test(t.url)) continue;
+/** Every conflicts dashboard in the window now, with whose it is (GitStudio's, or Merge Studio's). */
+async function dashboards(c: Cdp, pageSid: string): Promise<(Frame & { brand: string })[]> {
+  const out: (Frame & { brand: string })[] = [];
+  const { targetInfos } = await c.send<{ targetInfos: { targetId: string; type: string; url: string }[] }>("Target.getTargets");
+  for (const t of targetInfos) {
+    if (t.type !== "iframe" || !/^vscode-webview:/.test(t.url)) continue;
+    // A webview can come and go between the listing and the question: skip it.
+    try {
       const id = new URL(t.url).searchParams.get("id") ?? "";
       const inPage = await c.eval<boolean>(pageSid, `[...document.querySelectorAll('iframe')].some((f) => (f.src || '').includes(${JSON.stringify(id)}))`);
       if (!inPage) continue;
       const sid = await c.attach(t.targetId);
-      const ok = await c
-        .eval<boolean>(sid, `(() => { const f = document.querySelector('iframe#active-frame'); const d = f && f.contentDocument; return !!(d && d.querySelector('.cd-dash .cd-row')); })()`)
-        .catch(() => false);
-      if (ok) return { sid, id };
+      const brand = await c.eval<string | null>(
+        sid,
+        `(() => { const f = document.querySelector('iframe#active-frame'); const d = f && f.contentDocument; if (!d || !d.querySelector('.cd-dash .cd-row')) return null; return d.querySelector('.cd-mark .cd-mark-svg') ? 'merge-studio' : 'gitstudio'; })()`,
+      );
+      if (brand) out.push({ sid, id, brand });
+    } catch {
+      // gone
     }
+  }
+  return out;
+}
+
+/**
+ * The dashboard to drive: GitStudio's when both products are installed (it
+ * owns the automatic behaviour; Merge Studio's stands down), and only once
+ * the same one has been there for two looks in a row.
+ */
+async function findDashboard(c: Cdp, pageSid: string): Promise<Frame> {
+  const until = Date.now() + 90_000;
+  let last = "";
+  for (;;) {
+    const all = await dashboards(c, pageSid);
+    const pick = all.find((d) => d.brand === "gitstudio") ?? all[0];
+    if (pick && pick.id === last) {
+      if (all.length > 1) console.log(`note: ${all.length} dashboards open (${all.map((d) => d.brand).join(", ")}); driving ${pick.brand}'s`);
+      return { sid: pick.sid, id: pick.id };
+    }
+    last = pick?.id ?? "";
     if (Date.now() > until) throw new Error("the conflicts dashboard never showed (is the repository stopped with conflicts?)");
-    await sleep(1000);
+    await sleep(1500);
   }
 }
 
@@ -369,6 +395,11 @@ const PROBE = (path: string) => `(() => { ${INNER}
   W.addEventListener('message', onMsg, true);
   const onPtr = (e) => { const k = e.target && e.target.closest && e.target.closest('[data-key]'); P.events.push({ t: t(), type: e.type, key: k ? k.dataset.key : null }); };
   for (const ty of ['pointerdown', 'pointerup', 'click']) D.addEventListener(ty, onPtr, true);
+  // Anyone else at this window: the pointer moving (the press never moves it once
+  // recording starts), a wheel, a key. The window is a real one on a machine in use.
+  P.foreign = [];
+  const onForeign = (e) => P.foreign.push({ t: t(), type: e.type, x: Math.round(e.clientX || 0), y: Math.round(e.clientY || 0), key: e.key });
+  for (const ty of ['pointermove', 'wheel', 'keydown']) D.addEventListener(ty, onForeign, true);
   const mo = new W.MutationObserver((recs) => {
     for (const r of recs) {
       const zone = zoneOf(r.target);
@@ -400,7 +431,7 @@ const PROBE = (path: string) => `(() => { ${INNER}
     if (live) W.requestAnimationFrame(look);
   };
   look();
-  P.stop = () => { live = false; mo.disconnect(); W.removeEventListener('message', onMsg, true); for (const ty of ['pointerdown', 'pointerup', 'click']) D.removeEventListener(ty, onPtr, true); };
+  P.stop = () => { live = false; mo.disconnect(); W.removeEventListener('message', onMsg, true); for (const ty of ['pointerdown', 'pointerup', 'click']) D.removeEventListener(ty, onPtr, true); for (const ty of ['pointermove', 'wheel', 'keydown']) D.removeEventListener(ty, onForeign, true); };
   // The places a press may change, in the page's CSS px.
   const box = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
   const row = [...D.querySelectorAll('.cd-row')].find((r) => r.dataset.path === PATH);
@@ -426,7 +457,7 @@ const COLLECT = `(() => { ${INNER}
   const bar = D.querySelector('.cd-bar'), fill = D.querySelector('.cd-bar-fill'), label = D.querySelector('.cd-progress-label');
   const m = label ? /^(\\d+) of (\\d+)/.exec(label.textContent) : null;
   const progress = bar && fill && m ? { shown: fill.getBoundingClientRect().width / bar.getBoundingClientRect().width, said: Number(m[1]) / Number(m[2]), label: label.textContent } : null;
-  return { msgs: P.msgs, muts: P.muts, looks: P.looks, events: P.events, progress,
+  return { msgs: P.msgs, muts: P.muts, looks: P.looks, events: P.events, foreign: P.foreign, progress,
     sameDocument: W.__gsDoc === P.doc, sameDashboard: !!dash && dash.__gsNode === P.doc };
 })()`;
 
@@ -499,6 +530,9 @@ const SCENARIOS: Scenario[] = [
 ];
 
 // ── one scenario ─────────────────────────────────────────────────────────────
+
+/** The run was disturbed (someone else's input reached the window): no verdict either way. */
+class Disturbed extends Error {}
 
 interface Verdict {
   scenario: string;
@@ -581,10 +615,17 @@ async function runScenario(
     looks: { t: number; key: string; row: string | null; from: string; to: string }[];
     events: { t: number; type: string; key: string | null }[];
     progress: { shown: number; said: number; label: string } | null;
+    foreign: { t: number; type: string; x: number; y: number; key?: string }[];
     sameDocument: boolean;
     sameDashboard: boolean;
   }>(dash.sid, COLLECT);
 
+  if (got.foreign?.length) {
+    // Someone used the window while it was recording (it is a real window on
+    // a machine in use): what it saw is not the press's doing. Not a verdict.
+    const f = got.foreign[0];
+    throw new Disturbed(`${got.foreign.length} input events that were not the press (first: ${f.type} at ${f.x},${f.y})`);
+  }
   const failures: string[] = [];
   if (got.reloaded || !got.sameDocument || !got.sameDashboard) failures.push("the page was reloaded or the dashboard rebuilt (the probe did not survive)");
   if (got.progress && Math.abs(got.progress.shown - got.progress.said) > 0.03) {
@@ -643,6 +684,12 @@ async function runScenario(
     }
     frameNotes.push({ ms: f.ms, changedOutside: n, ...(n ? { box: [x0, y0, x1, y1].map((v) => Math.round(v / scale)) } : {}) });
     if (n > 0) changedFrames++;
+  }
+  if (frameNotes.length === 0) {
+    // A window that paints nothing (hidden, minimised) would pass the frame
+    // check over no frames at all: the press itself changes its row, so a
+    // recording without one frame after it saw nothing.
+    failures.push("the screen recorded no frame after the press (is the window hidden or minimised?)");
   }
   if (changedFrames > 0) {
     const worst = frameNotes.filter((f) => f.changedOutside > 0).slice(0, 3);
@@ -735,6 +782,7 @@ async function main(): Promise<void> {
   const vs = launchVsCode(o);
   let c: Cdp | undefined;
   let failed = false;
+  let disturbed = false;
   try {
     c = await Cdp.connect(o.port);
     const { targetInfos } = await c.send<{ targetInfos: { targetId: string; type: string; url: string }[] }>("Target.getTargets");
@@ -744,8 +792,15 @@ async function main(): Promise<void> {
     // Behave as the focused window the owner clicks in — without focusing
     // (or raising) any real window.
     await c.send("Emulation.setFocusEmulationEnabled", { enabled: true }, pageSid).catch(() => undefined);
-    const dash = await findDashboard(c, pageSid);
+    const window = async (name: string) => {
+      if (!process.env.GS_DASH_DEBUG) return;
+      const s = await c!.send<{ data: string }>("Page.captureScreenshot", { format: "png" }, pageSid);
+      writeFileSync(join(o.out, `debug-${name}.png`), Buffer.from(s.data, "base64"));
+    };
+    await findDashboard(c, pageSid);
+    await window("found");
     await sleep(2500); // the first git events after opening settle
+    await window("settled");
     // A fresh profile's first-run notices (the coexistence question, the
     // blame note) sit over the dashboard's corner: close them, so the
     // recordings show the list.
@@ -753,10 +808,30 @@ async function main(): Promise<void> {
       await c.eval(pageSid, `(() => { for (const b of document.querySelectorAll('.notifications-toasts .codicon-notifications-clear')) b.click(); })()`);
       await sleep(500);
     }
+    // Looked for again once the start has settled (Merge Studio's own
+    // dashboard, if it opened too, has stood down by now).
+    const dash = await findDashboard(c, pageSid);
+    await window("ready");
     const log: { scenario: string; act: Act; messages: unknown[] }[] = [];
     const verdicts: Verdict[] = [];
-    for (const s of SCENARIOS) {
-      const r = await runScenario(c, pageSid, dash, s, o);
+    const only = (flag("only") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    for (const s of SCENARIOS.filter((x) => only.length === 0 || only.includes(x.name.split("-")[0]))) {
+      let r: Awaited<ReturnType<typeof runScenario>>;
+      try {
+        r = await runScenario(c, pageSid, dash, s, o);
+      } catch (e) {
+        if (e instanceof Disturbed) {
+          console.log(`DISTURBED ${s.name}: ${e.message} — someone used the window; run again on a fresh repository`);
+          disturbed = true;
+          break;
+        }
+        // The webview it was driving went away mid-press: that IS the page
+        // being re-created — a failure, not a harness error.
+        const still = (await dashboards(c, pageSid)).some((d) => d.id === dash.id);
+        console.log(`FAIL ${s.name}: ${still ? "the probe failed" : "the dashboard's webview went away (re-created or closed)"}: ${e instanceof Error ? e.message : e}`);
+        failed = true;
+        break;
+      }
       if (!r) continue;
       verdicts.push(r.verdict);
       log.push({ scenario: s.name, act: r.verdict.act, messages: r.messages });
@@ -780,8 +855,8 @@ async function main(): Promise<void> {
     c?.close();
     vs.stop();
   }
-  console.log(failed ? "FAILED" : "PASSED: every press changed its own row, the progress and the count — nothing else, on the page or on the screen");
-  process.exitCode = failed ? 1 : 0;
+  console.log(failed ? "FAILED" : disturbed ? "DISTURBED: no verdict" : "PASSED: every press changed its own row, the progress and the count — nothing else, on the page or on the screen");
+  process.exitCode = failed ? 1 : disturbed ? 3 : 0;
 }
 
 void main().catch((e) => {

@@ -1,6 +1,6 @@
 {
  "recordedWith": "scripts/merge-e2e/dashboardClicks.ts",
- "repo": "merge-playground/quick-rebase (scripts: quick-playground.sh)",
+ "repo": "quick-rebase",
  "initial": {
   "brand": {
    "name": "GitStudio",
@@ -10,7 +10,7 @@
   "op": {
    "kind": "rebase",
    "backend": "merge",
-   "title": "Rebasing test onto master · commit 1 of 1: d401081 test: rework the sample",
+   "title": "Rebasing test onto master · commit 1 of 1: 0f1762a test: rework the sample",
    "direction": {
     "from": "yours",
     "verb": "onto",
@@ -22,7 +22,7 @@
     "unit": "commit"
    },
    "commit": {
-    "sha": "d401081c869e63f36f826687ddd73b2e9fed5a32",
+    "sha": "0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538",
     "subject": "test: rework the sample",
     "author": "Playground"
    },
@@ -30,8 +30,8 @@
     "role": "yours",
     "stage": 3,
     "name": "test",
-    "paneTitle": "Rebasing d401081 from test",
-    "description": "Your commit d401081 “test: rework the sample” from test"
+    "paneTitle": "Rebasing 0f1762a from test",
+    "description": "Your commit 0f1762a “test: rework the sample” from test"
    },
    "theirs": {
     "role": "theirs",
@@ -47,7 +47,7 @@
    "canContinue": false,
    "canSkip": false,
    "continueBlocked": "9 files still have conflicts",
-   "episode": "rebase:d401081c869e63f36f826687ddd73b2e9fed5a32:1:d401081c869e63f36f826687ddd73b2e9fed5a32"
+   "episode": "rebase:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538:1:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538"
   },
   "files": [
    {
@@ -114,7 +114,7 @@
    },
    "messages": [
     {
-     "t": 4639.6,
+     "t": 6379.2,
      "data": {
       "type": "state",
       "state": {
@@ -126,7 +126,7 @@
        "op": {
         "kind": "rebase",
         "backend": "merge",
-        "title": "Rebasing test onto master · commit 1 of 1: d401081 test: rework the sample",
+        "title": "Rebasing test onto master · commit 1 of 1: 0f1762a test: rework the sample",
         "direction": {
          "from": "yours",
          "verb": "onto",
@@ -138,7 +138,7 @@
          "unit": "commit"
         },
         "commit": {
-         "sha": "d401081c869e63f36f826687ddd73b2e9fed5a32",
+         "sha": "0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538",
          "subject": "test: rework the sample",
          "author": "Playground"
         },
@@ -146,8 +146,8 @@
          "role": "yours",
          "stage": 3,
          "name": "test",
-         "paneTitle": "Rebasing d401081 from test",
-         "description": "Your commit d401081 “test: rework the sample” from test"
+         "paneTitle": "Rebasing 0f1762a from test",
+         "description": "Your commit 0f1762a “test: rework the sample” from test"
         },
         "theirs": {
          "role": "theirs",
@@ -163,7 +163,7 @@
         "canContinue": false,
         "canSkip": false,
         "continueBlocked": "9 files still have conflicts",
-        "episode": "rebase:d401081c869e63f36f826687ddd73b2e9fed5a32:1:d401081c869e63f36f826687ddd73b2e9fed5a32"
+        "episode": "rebase:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538:1:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538"
        },
        "files": [
         {
@@ -223,7 +223,7 @@
      }
     },
     {
-     "t": 4822.1,
+     "t": 6580.8,
      "data": {
       "type": "state",
       "state": {
@@ -235,7 +235,7 @@
        "op": {
         "kind": "rebase",
         "backend": "merge",
-        "title": "Rebasing test onto master · commit 1 of 1: d401081 test: rework the sample",
+        "title": "Rebasing test onto master · commit 1 of 1: 0f1762a test: rework the sample",
         "direction": {
          "from": "yours",
          "verb": "onto",
@@ -247,7 +247,7 @@
          "unit": "commit"
         },
         "commit": {
-         "sha": "d401081c869e63f36f826687ddd73b2e9fed5a32",
+         "sha": "0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538",
          "subject": "test: rework the sample",
          "author": "Playground"
         },
@@ -255,8 +255,8 @@
          "role": "yours",
          "stage": 3,
          "name": "test",
-         "paneTitle": "Rebasing d401081 from test",
-         "description": "Your commit d401081 “test: rework the sample” from test"
+         "paneTitle": "Rebasing 0f1762a from test",
+         "description": "Your commit 0f1762a “test: rework the sample” from test"
         },
         "theirs": {
          "role": "theirs",
@@ -272,7 +272,7 @@
         "canContinue": false,
         "canSkip": false,
         "continueBlocked": "8 files still have conflicts",
-        "episode": "rebase:d401081c869e63f36f826687ddd73b2e9fed5a32:1:d401081c869e63f36f826687ddd73b2e9fed5a32"
+        "episode": "rebase:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538:1:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538"
        },
        "files": [
         {
@@ -343,7 +343,7 @@
    },
    "messages": [
     {
-     "t": 13888.7,
+     "t": 16594.7,
      "data": {
       "type": "state",
       "state": {
@@ -355,7 +355,7 @@
        "op": {
         "kind": "rebase",
         "backend": "merge",
-        "title": "Rebasing test onto master · commit 1 of 1: d401081 test: rework the sample",
+        "title": "Rebasing test onto master · commit 1 of 1: 0f1762a test: rework the sample",
         "direction": {
          "from": "yours",
          "verb": "onto",
@@ -367,7 +367,7 @@
          "unit": "commit"
         },
         "commit": {
-         "sha": "d401081c869e63f36f826687ddd73b2e9fed5a32",
+         "sha": "0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538",
          "subject": "test: rework the sample",
          "author": "Playground"
         },
@@ -375,8 +375,8 @@
          "role": "yours",
          "stage": 3,
          "name": "test",
-         "paneTitle": "Rebasing d401081 from test",
-         "description": "Your commit d401081 “test: rework the sample” from test"
+         "paneTitle": "Rebasing 0f1762a from test",
+         "description": "Your commit 0f1762a “test: rework the sample” from test"
         },
         "theirs": {
          "role": "theirs",
@@ -392,7 +392,7 @@
         "canContinue": false,
         "canSkip": false,
         "continueBlocked": "8 files still have conflicts",
-        "episode": "rebase:d401081c869e63f36f826687ddd73b2e9fed5a32:1:d401081c869e63f36f826687ddd73b2e9fed5a32"
+        "episode": "rebase:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538:1:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538"
        },
        "files": [
         {
@@ -453,7 +453,7 @@
      }
     },
     {
-     "t": 14077.3,
+     "t": 16787.9,
      "data": {
       "type": "state",
       "state": {
@@ -465,7 +465,7 @@
        "op": {
         "kind": "rebase",
         "backend": "merge",
-        "title": "Rebasing test onto master · commit 1 of 1: d401081 test: rework the sample",
+        "title": "Rebasing test onto master · commit 1 of 1: 0f1762a test: rework the sample",
         "direction": {
          "from": "yours",
          "verb": "onto",
@@ -477,7 +477,7 @@
          "unit": "commit"
         },
         "commit": {
-         "sha": "d401081c869e63f36f826687ddd73b2e9fed5a32",
+         "sha": "0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538",
          "subject": "test: rework the sample",
          "author": "Playground"
         },
@@ -485,8 +485,8 @@
          "role": "yours",
          "stage": 3,
          "name": "test",
-         "paneTitle": "Rebasing d401081 from test",
-         "description": "Your commit d401081 “test: rework the sample” from test"
+         "paneTitle": "Rebasing 0f1762a from test",
+         "description": "Your commit 0f1762a “test: rework the sample” from test"
         },
         "theirs": {
          "role": "theirs",
@@ -502,7 +502,7 @@
         "canContinue": false,
         "canSkip": false,
         "continueBlocked": "7 files still have conflicts",
-        "episode": "rebase:d401081c869e63f36f826687ddd73b2e9fed5a32:1:d401081c869e63f36f826687ddd73b2e9fed5a32"
+        "episode": "rebase:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538:1:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538"
        },
        "files": [
         {
@@ -574,7 +574,7 @@
    },
    "messages": [
     {
-     "t": 22597.7,
+     "t": 25620.1,
      "data": {
       "type": "state",
       "state": {
@@ -586,7 +586,7 @@
        "op": {
         "kind": "rebase",
         "backend": "merge",
-        "title": "Rebasing test onto master · commit 1 of 1: d401081 test: rework the sample",
+        "title": "Rebasing test onto master · commit 1 of 1: 0f1762a test: rework the sample",
         "direction": {
          "from": "yours",
          "verb": "onto",
@@ -598,7 +598,7 @@
          "unit": "commit"
         },
         "commit": {
-         "sha": "d401081c869e63f36f826687ddd73b2e9fed5a32",
+         "sha": "0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538",
          "subject": "test: rework the sample",
          "author": "Playground"
         },
@@ -606,8 +606,8 @@
          "role": "yours",
          "stage": 3,
          "name": "test",
-         "paneTitle": "Rebasing d401081 from test",
-         "description": "Your commit d401081 “test: rework the sample” from test"
+         "paneTitle": "Rebasing 0f1762a from test",
+         "description": "Your commit 0f1762a “test: rework the sample” from test"
         },
         "theirs": {
          "role": "theirs",
@@ -623,7 +623,7 @@
         "canContinue": false,
         "canSkip": false,
         "continueBlocked": "7 files still have conflicts",
-        "episode": "rebase:d401081c869e63f36f826687ddd73b2e9fed5a32:1:d401081c869e63f36f826687ddd73b2e9fed5a32"
+        "episode": "rebase:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538:1:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538"
        },
        "files": [
         {
@@ -685,7 +685,7 @@
      }
     },
     {
-     "t": 22767,
+     "t": 25806.8,
      "data": {
       "type": "state",
       "state": {
@@ -697,7 +697,7 @@
        "op": {
         "kind": "rebase",
         "backend": "merge",
-        "title": "Rebasing test onto master · commit 1 of 1: d401081 test: rework the sample",
+        "title": "Rebasing test onto master · commit 1 of 1: 0f1762a test: rework the sample",
         "direction": {
          "from": "yours",
          "verb": "onto",
@@ -709,7 +709,7 @@
          "unit": "commit"
         },
         "commit": {
-         "sha": "d401081c869e63f36f826687ddd73b2e9fed5a32",
+         "sha": "0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538",
          "subject": "test: rework the sample",
          "author": "Playground"
         },
@@ -717,8 +717,8 @@
          "role": "yours",
          "stage": 3,
          "name": "test",
-         "paneTitle": "Rebasing d401081 from test",
-         "description": "Your commit d401081 “test: rework the sample” from test"
+         "paneTitle": "Rebasing 0f1762a from test",
+         "description": "Your commit 0f1762a “test: rework the sample” from test"
         },
         "theirs": {
          "role": "theirs",
@@ -734,7 +734,7 @@
         "canContinue": false,
         "canSkip": false,
         "continueBlocked": "6 files still have conflicts",
-        "episode": "rebase:d401081c869e63f36f826687ddd73b2e9fed5a32:1:d401081c869e63f36f826687ddd73b2e9fed5a32"
+        "episode": "rebase:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538:1:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538"
        },
        "files": [
         {
@@ -807,7 +807,7 @@
    },
    "messages": [
     {
-     "t": 32868.7,
+     "t": 36411.4,
      "data": {
       "type": "state",
       "state": {
@@ -819,7 +819,7 @@
        "op": {
         "kind": "rebase",
         "backend": "merge",
-        "title": "Rebasing test onto master · commit 1 of 1: d401081 test: rework the sample",
+        "title": "Rebasing test onto master · commit 1 of 1: 0f1762a test: rework the sample",
         "direction": {
          "from": "yours",
          "verb": "onto",
@@ -831,7 +831,7 @@
          "unit": "commit"
         },
         "commit": {
-         "sha": "d401081c869e63f36f826687ddd73b2e9fed5a32",
+         "sha": "0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538",
          "subject": "test: rework the sample",
          "author": "Playground"
         },
@@ -839,8 +839,8 @@
          "role": "yours",
          "stage": 3,
          "name": "test",
-         "paneTitle": "Rebasing d401081 from test",
-         "description": "Your commit d401081 “test: rework the sample” from test"
+         "paneTitle": "Rebasing 0f1762a from test",
+         "description": "Your commit 0f1762a “test: rework the sample” from test"
         },
         "theirs": {
          "role": "theirs",
@@ -856,7 +856,7 @@
         "canContinue": false,
         "canSkip": false,
         "continueBlocked": "6 files still have conflicts",
-        "episode": "rebase:d401081c869e63f36f826687ddd73b2e9fed5a32:1:d401081c869e63f36f826687ddd73b2e9fed5a32"
+        "episode": "rebase:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538:1:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538"
        },
        "files": [
         {
@@ -919,7 +919,7 @@
      }
     },
     {
-     "t": 32968.2,
+     "t": 36521.6,
      "data": {
       "type": "state",
       "state": {
@@ -931,7 +931,7 @@
        "op": {
         "kind": "rebase",
         "backend": "merge",
-        "title": "Rebasing test onto master · commit 1 of 1: d401081 test: rework the sample",
+        "title": "Rebasing test onto master · commit 1 of 1: 0f1762a test: rework the sample",
         "direction": {
          "from": "yours",
          "verb": "onto",
@@ -943,7 +943,7 @@
          "unit": "commit"
         },
         "commit": {
-         "sha": "d401081c869e63f36f826687ddd73b2e9fed5a32",
+         "sha": "0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538",
          "subject": "test: rework the sample",
          "author": "Playground"
         },
@@ -951,8 +951,8 @@
          "role": "yours",
          "stage": 3,
          "name": "test",
-         "paneTitle": "Rebasing d401081 from test",
-         "description": "Your commit d401081 “test: rework the sample” from test"
+         "paneTitle": "Rebasing 0f1762a from test",
+         "description": "Your commit 0f1762a “test: rework the sample” from test"
         },
         "theirs": {
          "role": "theirs",
@@ -968,7 +968,7 @@
         "canContinue": false,
         "canSkip": false,
         "continueBlocked": "7 files still have conflicts",
-        "episode": "rebase:d401081c869e63f36f826687ddd73b2e9fed5a32:1:d401081c869e63f36f826687ddd73b2e9fed5a32"
+        "episode": "rebase:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538:1:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538"
        },
        "files": [
         {
@@ -1040,7 +1040,7 @@
    },
    "messages": [
     {
-     "t": 50246.8,
+     "t": 54188.2,
      "data": {
       "type": "state",
       "state": {
@@ -1052,7 +1052,7 @@
        "op": {
         "kind": "rebase",
         "backend": "merge",
-        "title": "Rebasing test onto master · commit 1 of 1: d401081 test: rework the sample",
+        "title": "Rebasing test onto master · commit 1 of 1: 0f1762a test: rework the sample",
         "direction": {
          "from": "yours",
          "verb": "onto",
@@ -1064,7 +1064,7 @@
          "unit": "commit"
         },
         "commit": {
-         "sha": "d401081c869e63f36f826687ddd73b2e9fed5a32",
+         "sha": "0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538",
          "subject": "test: rework the sample",
          "author": "Playground"
         },
@@ -1072,8 +1072,8 @@
          "role": "yours",
          "stage": 3,
          "name": "test",
-         "paneTitle": "Rebasing d401081 from test",
-         "description": "Your commit d401081 “test: rework the sample” from test"
+         "paneTitle": "Rebasing 0f1762a from test",
+         "description": "Your commit 0f1762a “test: rework the sample” from test"
         },
         "theirs": {
          "role": "theirs",
@@ -1089,7 +1089,7 @@
         "canContinue": false,
         "canSkip": false,
         "continueBlocked": "6 files still have conflicts",
-        "episode": "rebase:d401081c869e63f36f826687ddd73b2e9fed5a32:1:d401081c869e63f36f826687ddd73b2e9fed5a32"
+        "episode": "rebase:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538:1:0f1762a5bbc72a0b138ed61c966ee4ba4fd5d538"
        },
        "files": [
         {
