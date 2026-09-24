@@ -12,7 +12,7 @@ does, the other does. (merge-studio#12)
 
 ### Added
 - **Conflicts dashboard.** *GitStudio: Resolve Conflicts…* — also a button on
-  the Source Control view's *Merge Changes* header, a **⚠ Resolve Conflicts**
+  the Source Control view's *Merge Changes* header, a **Resolve Conflicts**
   item in the status bar, and a button on every "git stopped for you" message
   — lists each conflicted file with **Accept Yours**, **Accept Theirs** and
   **Merge…**, hold-to-undo, and **Continue / Skip / Abort** for the operation,
@@ -22,10 +22,31 @@ does, the other does. (merge-studio#12)
   changes says what stopped and offers the next step. Continue is disabled —
   with the reason — until git can continue; Skip appears only where git
   offers it. The rebase workspace's stop banner gains Skip too.
+- **Every change coloured by what it is.** The merge editor's legend names
+  the colours in words, with how many changes are left: **Conflicts** in red
+  (both sides changed the same lines, differently; you choose), and
+  **Changed**, **Added** or **Removed** in blue, green or grey for a change
+  that doesn't conflict. Coloured on one side, only that side made it;
+  coloured on both sides, it is the same change made on both, and either
+  arrow takes it. Each change is one band from its side into the result; a
+  conflict with one side taken looks half done, and a settled change keeps a
+  muted trace of what you took: the side you took stays joined to the
+  result, a side you left out keeps only its outline, and when you took
+  both, both stay joined. Every change has an arrow toward the result and a
+  cross to leave it out, each saying what it does ("Accept Yours (test) for
+  this conflict"), from the mouse, the keyboard or a screen reader.
+  **Resolve simple** on the toolbar settles every conflict whose two edits
+  touch but don't overlap. It used to colour a change by its side alone, so
+  nothing said which conflicts could be settled for you.
+- **Close** leaves the merge editor at any point without ending the
+  operation: the file keeps its conflict markers, git stays stopped where it
+  was, and the Conflicts dashboard opens the file again when you are ready.
 - **JetBrains IDE hand-off.** New settings `gitstudio.merge.conflictResolver`
   and `gitstudio.merge.diffTool` send merges and diffs to your installed
-  JetBrains IDE (`preferredIde`, `jetbrainsPath`); its menus appear only when
-  an IDE is found, and *Mark Resolved & Stage* stages the result.
+  JetBrains IDE (`gitstudio.merge.preferredIde`,
+  `gitstudio.merge.jetbrainsPath`, which can be the IDE's launcher or its
+  install folder; Toolbox and snap installs are found too); its menus appear
+  only when an IDE is found, and *Mark Resolved & Stage* stages the result.
 - **`gitstudio.merge.autoApplyNonConflicting`** (off by default, as in
   JetBrains IDEs): open the merge editor with every non-conflicting change
   already applied.
@@ -35,9 +56,9 @@ does, the other does. (merge-studio#12)
   Operation*.
 - **A sample merge that shows everything** (*Open Sample Merge*): a rebase
   stop on *Sample: authorizeRequest.ts* with every kind of change the
-  legend names in words — Conflicts, Same on both sides, and Changed, Added
-  or Removed on one side — both branch names, the step and the commit. It
-  touches no repository: *Apply* says what a real Apply does and *Cancel*
+  legend names — conflicts, changes only one side made, and changes both
+  sides made the same way — both branch names, the step and the commit. It
+  touches no repository: *Apply* says what a real Apply does and *Close*
   closes it.
 
 ### Changed
@@ -49,9 +70,9 @@ does, the other does. (merge-studio#12)
 - **`gitstudio.merge.autoOpen` has a new meaning.** It no longer opens every
   conflicted file as its own tab. When an operation stops it shows the
   Conflicts dashboard, opens a conflicted file in the resolver when you
-  switch to it, and takes over VS Code's built-in merge editor tab. Choosing
-  *Exit viewer* keeps a file out of the merge editor until its conflict is
-  gone.
+  switch to it, and takes over VS Code's built-in merge editor tab. A file
+  whose merge editor you closed does not reopen in it by itself until its
+  conflict is gone.
 - A conflicted file in the Changes view opens in the merge editor, not in a
   diff full of conflict markers.
 - The merge editor's title-bar actions show only on a file with merge
@@ -70,13 +91,24 @@ does, the other does. (merge-studio#12)
   settings cannot name the program GitStudio launches.
 - Continue / Skip / Abort say what they do per operation — "All patches
   applied.", "Commit 2 of 3 skipped; the rest applied — rebase complete",
-  "Last patch skipped. The series is finished, without it", "Stash apply
-  cancelled — the stash is still in your list." — in the same words as the
-  Conflicts dashboard, and cancelling unmerged files with no operation now
-  warns that anything staged is discarded too.
+  "Last patch skipped. The series is finished, without it" (it used to say
+  "All patches applied"), "Stash apply cancelled — the stash is still in your
+  list." — in the same words as the Conflicts dashboard, and cancelling
+  unmerged files with no operation now warns that anything staged is
+  discarded too.
 - Opening a conflict in the JetBrains IDE while the merge editor holds
   unapplied work asks first: the IDE starts the merge over, so that work is
   discarded — never left behind to be saved over the IDE's result.
+- **Apply non-conflicting changes** also takes the changes both sides made
+  the same way, and two edits that touch without overlapping are one
+  conflict, as git and JetBrains IDEs see them, which **Resolve simple**
+  settles.
+- **The status bar's Pull asks "Merge or Rebase?" only when it has to**: when
+  your branch and its upstream have both moved on. It used to ask before
+  every pull, also on a branch that was only behind.
+- The Interactive Rebase panel's stop banner names its buttons ("Continue
+  Rebase", "Abort Rebase"), and keeps the keyboard on them when the rebase
+  stops again.
 
 ### Fixed
 - *Apply* said "resolved file saved and staged" even when `git add` failed
@@ -112,6 +144,23 @@ does, the other does. (merge-studio#12)
   file" — and its row names the commit each side points it at.
 - **The merge result keeps its line endings**: with Yours in CRLF and Theirs in
   LF the editor said the result keeps CRLF, then saved LF.
+- **Apply non-conflicting changes could lose one side's deletion.** Where both
+  sides rewrote the same line and one of them also deleted the next, the
+  change was taken as "the same on both sides", and the deletion was dropped
+  without a word. Each side is now compared over everything it changed.
+- **Accepting a side writes exactly that side's lines**, also at the very
+  start and end of the file: a final newline, a blank last line, and a line
+  added after a last line with no newline were lost or doubled. The diff's
+  copy arrow had the same fault, and is fixed with it.
+- With *Trim* or *Ignore whitespace*, a change that only touched whitespace
+  was dropped, and the result kept the original bytes; it is shown as a
+  change, with a dotted edge. A side that only changed its line endings is no
+  longer a conflict over the whole file, and word highlights under *Ignore
+  whitespace* are drawn at the right columns.
+- **A range of reverts was called a cherry-pick** once you had committed one of
+  them yourself, and its Continue could never work; it is a revert again. And
+  when git declines to rewind an Abort (after such a commit), it says the
+  branch was left where it is instead of "aborted".
 - A refresh of the Conflicts dashboard no longer cancels a Hold Undo in
   progress, and after Continue finishes the operation the dashboard says
   "Rebase complete" without a red "Unmerged files" label over an empty list.
@@ -119,8 +168,6 @@ does, the other does. (merge-studio#12)
 - **Abort Rebase during `git am`** (the command, the rebase todo's Abort and
   the Interactive Rebase panel's) ran `git rebase --abort`, which git refuses
   there; it now ends the patch series with `git am --abort`.
-- Skipping the last patch of a `git am` said "All patches applied"; it now
-  says the patch was skipped.
 - Delete and Abort buttons are readable in light themes (Light Modern's red
   was below the contrast they need).
 - A file deleted on both sides opens the Conflicts dashboard (where *Delete the
@@ -129,9 +176,9 @@ does, the other does. (merge-studio#12)
 - The JetBrains hand-off passes the same checks as *Apply*: a file that is not
   UTF-8, or one reached through a symlinked folder, is refused instead of
   being handed over and saved back damaged or outside the repository.
-- Conflicts in a **linked worktree** were noticed late: GitStudio watched
-  `<worktree>/.git`, which is a file there. It now asks git where the
-  operation files are.
+- Conflicts in a **linked worktree** were noticed late: GitStudio looked for
+  git's operation files in the wrong place there. It now asks git where they
+  are.
 - On a non-English git, "a rebase is already in progress" and "pull hit
   conflicts" were never detected (they matched git's English messages); they
   now read the state git writes. A stash apply or pop that conflicts is no
@@ -144,9 +191,8 @@ does, the other does. (merge-studio#12)
   happened, in commits, and offers the choice git is asking for: **Merge**,
   **Rebase**, or cancel. Nothing is changed while the question is open, and
   picking one applies to **that pull only** — your `pull.rebase` setting is
-  never written. **Pull using Merge** in the branch menu also passes
-  `--no-rebase` explicitly, so the one item that had already asked you no
-  longer walks into the same wall.
+  never written. **Pull using Merge** in the branch menu, the one item that
+  had already asked you, no longer walks into the same wall.
 - **A pull that stopped on conflicts looked like a failure.** *Pull using
   Rebase* showed git's *"Resolve all conflicts manually… git rebase
   --continue"* as an error, and *Pull using Merge* a bare "pullMerge failed".
@@ -166,12 +212,10 @@ does, the other does. (merge-studio#12)
   question. The branch menu's **Push** and the push dialog follow the same
   rule. And Sync forces only when the remote is still where you last saw it,
   holding the push to that — so the same commit amended on another machine, or
-  a colleague's amend of one of yours, is not overwritten either.
-- **Pull over a merge or rebase in progress showed git's advice.** Pull, Sync
-  or Update pressed while conflicts were still being resolved now say what is
-  in progress and reveal the Changes view, instead of git's *"Pulling is not
-  possible because you have unmerged files"* — or, from Update, the
-  Merge / Rebase question all over again.
+  a colleague's amend of one of yours, is not overwritten either. Every force
+  push (Sync, Push, the push dialog) is also refused when the remote holds a
+  version your branch never had, even one a background fetch brought in
+  unseen; it says so and offers **Pull** instead.
 - **"Rebase onto" over uncommitted changes said it had hit conflicts.** In any
   repository where a rebase had once stopped and then been finished, a rebase
   that git refused because of uncommitted changes was reported as *"Rebase hit
@@ -208,23 +252,60 @@ does, the other does. (merge-studio#12)
   Nothing is sent as a crash report.
 - **Commands pressed while a merge, rebase, cherry-pick, revert or `git am`
   was stopped showed git's refusal — and some changed the stop.** Merge,
-  Rebase onto, Checkout, Cherry-Pick, Revert and the Stashes view's Apply and
-  Pop, pressed while an operation was waiting for you, showed git's *"Merging
-  is not possible because you have unmerged files"*, *"You have not concluded
-  your merge"* or *"It seems that there is already a rebase-merge directory"*
-  in red — and Cherry-Pick and Revert over a resolved stop sent a crash
-  report. During a `git am` — and for a pull with rebase during a cherry-pick
-  or revert — your resolved files were offered to **Stash & Retry**, which
-  took them out of the operation. And a checkout quietly ended a stopped
-  merge, cherry-pick or revert. Each now says what is in progress — finish it
-  or abort it first — with **Resolve Conflicts…** while files are left to
-  resolve; a checkout, merge, rebase or pull is not run over a stopped
-  operation at all.
+  Rebase onto, Checkout, Cherry-Pick, Revert, the Stashes view's Apply and
+  Pop, and Pull, Sync or Update, pressed while an operation was waiting for
+  you, showed git's *"Merging is not possible because you have unmerged
+  files"*, *"Pulling is not possible because you have unmerged files"*, *"You
+  have not concluded your merge"* or *"It seems that there is already a
+  rebase-merge directory"* in red (and Update asked Merge or Rebase all over
+  again); Cherry-Pick and Revert over a resolved stop sent a crash report.
+  During a `git am` — and for a pull with rebase during a cherry-pick or
+  revert — your resolved files were offered to **Stash & Retry**, which took
+  them out of the operation. And a checkout, or a new branch, quietly ended a
+  stopped merge, cherry-pick or revert. Each now says what is in progress —
+  finish it or abort it first — with **Resolve Conflicts…** while files are
+  left to resolve, and a pull reveals the Changes view; a checkout, a new
+  branch, a merge, a rebase or a pull is not run over a stopped operation at
+  all.
 - **With `pull.ff only` in your git config, a diverged branch got git's
   advice.** That setting is one git's own advice suggests, and Sync and Update
   then showed *"Diverging branches can't be fast-forwarded"* and its hints as
   an error. They now ask **Merge** or **Rebase** like any other divergence —
   for that pull only; your setting is left as it is.
+- **A branch named like an option could discard your work.** A branch called
+  `-f` (git's plumbing and a fetch can make one) was checked out as
+  `git checkout -f`, which throws away every uncommitted change, from the
+  graph's *Checkout Commit* among others. Every door now refuses it, says why,
+  and offers to rename the branch.
+- **A branch and a tag with the same name** (`release`, say) were told apart
+  only by git's short names, "heads/release" and "tags/release", and several
+  commands got the wrong one: checking out the branch left HEAD detached while
+  saying it had switched, a merge was recorded as "Merge branch
+  'heads/release'", publishing pushed a branch called `heads/release`, and
+  rename and delete found no branch at all. Every branch action now names the
+  branch exactly; chips, menus, the Branches view and the status bar say
+  "release". Checking out a remote branch no longer fails as "ambiguous"
+  when a local branch is called `origin/x`.
+- The Branches view and the Changes view's branch menu no longer list
+  `origin/HEAD` as a remote branch called "origin", whose checkout could only
+  fail. The commit details pane and the row's menu no longer offer it either.
+- **Commit Graph branch filter (#30), after its first release:** with many
+  branches (about 800 on Windows) the filtered graph showed an error instead
+  of history; **Show only** a branch you are not on also showed your current
+  branch's history; **Current branch** stayed on the old branch after a
+  checkout, and **Local only** missed branches made after it was picked; on a
+  detached HEAD the graph said "no commits yet" and the sidebar lost *Jump to
+  HEAD*; a new filter opened far down the list and loaded every page; a plain
+  click on a chip in the graph did nothing. The commit details pane's chips
+  now open the same menu as the graph's; revealing a commit the filter hides
+  offers to add a branch that has it (*Add main to the filter*) before **Show
+  all branches**; the filter is one choice per repository, however the folder
+  was opened; *Jump to HEAD* shows only when HEAD can be in the filtered
+  graph; the sidebar's Branches picker fits a narrow sidebar; and the
+  pickers' muted text is readable in Light+ and Dark+.
+- **Crash reports no longer carry a repository's name** when an error message
+  quotes it (GitHub's "Could not resolve to a Repository with the name …"
+  did), or a quoted path.
 
 ## [1.13.0] - 2026-09-21
 

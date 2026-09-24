@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,7 +40,13 @@ function tree() {
 }
 
 const cleanup = (root) => rmSync(root, { recursive: true, force: true });
-const cli = (root, ...extra) => spawnSync(process.execPath, [SCRIPT, "--root", root, ...extra], { encoding: "utf8" });
+// The CLI as CI runs it, outside GitHub Actions unless a test says otherwise.
+const cli = (root, ...extra) => {
+  const env = { ...process.env };
+  delete env.GITHUB_ACTIONS;
+  delete env.GITHUB_STEP_SUMMARY;
+  return spawnSync(process.execPath, [SCRIPT, "--root", root, ...extra], { encoding: "utf8", env });
+};
 
 test("an untouched export passes, and the CLI exits 0", () => {
   const root = tree();
@@ -128,6 +134,63 @@ test("no manifest, or an empty one, fails", () => {
     const r = checkParity(root);
     assert.equal(r.ok, false);
     assert.match(r.problems[0], /VENDORED_FROM\.json is missing/);
+  } finally {
+    cleanup(root);
+  }
+});
+
+// merge-studio's CI runs `check-parity --pull-request` on a pull request: a
+// contributor may change vendor/gitstudio, and a maintainer imports it. Only a
+// push to main must match GitStudio exactly.
+
+test("on a pull request a vendored edit is reported for a maintainer to import, and the run passes", () => {
+  const root = tree();
+  try {
+    const file = `${VENDOR_DIR}/engine/src/mergeModel.ts`;
+    writeFileSync(join(root, file), "export const a = 2;\n");
+    const pr = cli(root, "--pull-request");
+    assert.equal(pr.status, 0, pr.stderr);
+    assert.match(pr.stdout, /a maintainer will import this change into GitStudio/);
+    assert.match(pr.stdout, /modified: vendor\/gitstudio\/engine\/src\/mergeModel\.ts/);
+    assert.doesNotMatch(`${pr.stdout}${pr.stderr}`, /FAILED/);
+    // The same tree on a push to main fails, as before.
+    assert.equal(cli(root).status, 1);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("on a pull request in GitHub Actions the report is a notice and a step summary, not an error", () => {
+  const root = tree();
+  const summary = join(root, "summary.md");
+  try {
+    writeFileSync(join(root, `${VENDOR_DIR}/engine/src/localPatch.ts`), "export {};\n");
+    const run = spawnSync(process.execPath, [SCRIPT, "--root", root, "--pull-request"], {
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_ACTIONS: "true", GITHUB_STEP_SUMMARY: summary },
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /^::notice title=[^:]*::.*a maintainer will import this change into GitStudio/m);
+    assert.doesNotMatch(run.stdout, /^::error/m);
+    const text = readFileSync(summary, "utf8");
+    assert.match(text, /a maintainer will import this change into GitStudio/);
+    assert.match(text, /added: vendor\/gitstudio\/engine\/src\/localPatch\.ts/);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("on a pull request an untouched export is ok, and a broken manifest still fails", () => {
+  const root = tree();
+  try {
+    const ok = cli(root, "--pull-request");
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stdout, /check-parity: ok/);
+    assert.doesNotMatch(ok.stdout, /maintainer will import/);
+    unlinkSync(join(root, MANIFEST_FILE));
+    const broken = cli(root, "--pull-request");
+    assert.equal(broken.status, 1, "no manifest is not a contribution: nothing can be compared");
+    assert.match(broken.stderr, /VENDORED_FROM\.json is missing/);
   } finally {
     cleanup(root);
   }

@@ -5,7 +5,7 @@
 // Every id Merge Studio 0.3.4 shipped is kept exactly as it was — command ids,
 // setting ids, the custom editor, the walkthrough and its context key — so a
 // user's settings.json, keybindings and muscle memory keep working across the
-// move onto the shared packages. The roles that are new in 0.4.0 (Continue /
+// move onto the shared packages. The roles that are new in 1.0.0 (Continue /
 // Skip / Abort, staging ticks, restoring VS Code's merge editor) follow the
 // same `jbMerge.` prefix. GitStudio registers the same roles under
 // `gitstudio.*` (apps/extension/src/merge/mergeIds.ts); the pairing is what
@@ -26,7 +26,7 @@ export const MS_MERGE_COMMANDS: MergeCommandIds = {
   openChanges: "jbMerge.openChanges",
   openDemo: "jbMerge.openDemo",
   openDemoDiff: "jbMerge.openDemoDiff",
-  // New in 0.4.0.
+  // New in 1.0.0.
   stageWithTicks: "jbMerge.stageWithTicks",
   operationContinue: "jbMerge.operation.continue",
   operationSkip: "jbMerge.operation.skip",
@@ -76,7 +76,7 @@ export const MS_WALKTHROUGH_SHOWN_KEY = "jbMerge.walkthroughShown";
  */
 export const MS_COEXISTENCE_PROMPT_KEY = "jbMerge.coexistence.answered";
 
-/** Merge Studio 0.3.4's "asked about the built-ins" flag: read once, never written by 0.4. */
+/** Merge Studio 0.3.4's "asked about the built-ins" flag: read once, never written since 1.0. */
 export const MS_034_COEXIST_KEY = "jbMerge.coexistPromptShown";
 
 /** globalState: Merge Studio said, once, that it stands down for GitStudio (POLISH A5.8). */

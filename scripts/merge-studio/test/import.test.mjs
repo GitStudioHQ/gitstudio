@@ -40,6 +40,11 @@ process.env.GIT_CONFIG_NOSYSTEM = "1";
 const JANE = "Jane Contributor <jane@example.com>";
 const MERGE_MODEL = "vendor/gitstudio/engine/src/mergeModel.ts";
 
+// The release a contributor's "Release x.y.z" bumps from, and to: whatever
+// Merge Studio's version is, never a number typed here.
+const SHELL_VERSION = JSON.parse(readFileSync(join(GITSTUDIO_ROOT, "apps/merge-studio/package.json"), "utf8")).version;
+const NEXT_VERSION = SHELL_VERSION.replace(/\d+$/, (patch) => String(Number(patch) + 1));
+
 const g = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).replace(/\n$/, "");
 
 function identity(repo) {
@@ -72,7 +77,8 @@ function scratchMergeStudio(gs) {
   g(root, "init", "-q", "-b", "main");
   identity(root);
   for (const [rel, text] of Object.entries({
-    ".github/workflows/ci.yml": "name: CI\n",
+    ".github/workflows/ci.yml": "name: CI\n", // replaced by the export's own
+    ".github/workflows/release.yml": "name: Release\n",
     "SECURITY.md": "# Security\n",
     "docs/index.md": "# Merge Studio\n",
     "test-fixtures/make-conflict.sh": "#!/bin/sh\n",
@@ -173,9 +179,9 @@ test("a contributor's branch comes back commit by commit, and exports to their e
       "README.md": (t) => t.replace(/\n$/, "\n\nContributed line.\n"),
       "test/contributed.test.ts": () => 'import { test } from "node:test";\ntest("contributed", () => {});\n',
     });
-    const release = contribute(ms, "Release 0.4.1", {
-      "package.json": (t) => t.replace(/"version": "[^"]+"/, '"version": "0.4.1"'),
-      "CHANGELOG.md": (t) => t.replace(/^(# [^\n]*\n)/, "$1\n## 0.4.1\n\n- A contributed fix.\n"),
+    const release = contribute(ms, `Release ${NEXT_VERSION}`, {
+      "package.json": (t) => t.replace(/"version": "[^"]+"/, `"version": "${NEXT_VERSION}"`),
+      "CHANGELOG.md": (t) => t.replace(/^(# [^\n]*\n)/, `$1\n## ${NEXT_VERSION}\n\n- A contributed fix.\n`),
     });
     // Only files the export generates: nothing of it is imported.
     const generated = contribute(ms, "Bump esbuild and regenerate", {
@@ -201,7 +207,7 @@ test("a contributor's branch comes back commit by commit, and exports to their e
     assert.deepEqual(log, [
       `${JANE}|2026-09-01T10:00:00+02:00|engine: keep the base side's blank line|GitStudioHQ/merge-studio#12 / ${engine}`,
       `${JANE}|${g(ms, "log", "-1", "--format=%aI", shell)}|Link the new docs page|GitStudioHQ/merge-studio#12 / ${shell}`,
-      `${JANE}|${g(ms, "log", "-1", "--format=%aI", release)}|Release 0.4.1|GitStudioHQ/merge-studio#12 / ${release}`,
+      `${JANE}|${g(ms, "log", "-1", "--format=%aI", release)}|Release ${NEXT_VERSION}|GitStudioHQ/merge-studio#12 / ${release}`,
     ]);
     assert.equal(g(gs, "log", "-1", "--format=%b", "HEAD~1").split("\n")[0], "The walkthrough's link was stale.", "the message body is kept");
     assert.equal(g(gs, "log", "-1", "--format=%cn", "HEAD"), "Maintainer", "the maintainer commits it");
@@ -219,11 +225,13 @@ test("a contributor's branch comes back commit by commit, and exports to their e
     ]);
     // package.json: the version bump is imported, the dependency block is not.
     const pkg = (rev) => JSON.parse(g(gs, "show", `${rev}:apps/merge-studio/package.json`));
-    assert.equal(pkg("HEAD").version, "0.4.1");
+    assert.equal(pkg("HEAD").version, NEXT_VERSION);
     assert.deepEqual(pkg("HEAD").devDependencies, pkg("main").devDependencies);
     assert.deepEqual({ ...pkg("HEAD"), version: "x" }, { ...pkg("main"), version: "x" }, "nothing but the version changed");
+    // From gitstudio's own lockfile, whose entry must already say the release
+    // package.json says: the import moves it from there, and nothing else.
     const lockDiff = g(gs, "diff", "-U0", "main", "HEAD", "--", "package-lock.json").split("\n").filter((l) => /^[-+] /.test(l));
-    assert.deepEqual(lockDiff, ['-      "version": "0.4.0",', '+      "version": "0.4.1",'], "gitstudio's lockfile entry follows the version");
+    assert.deepEqual(lockDiff, [`-      "version": "${SHELL_VERSION}",`, `+      "version": "${NEXT_VERSION}",`], "gitstudio's lockfile entry follows the version");
     const notes = g(gs, "log", "-1", "--format=%(trailers:key=Import-note,valueonly)", "HEAD");
     assert.match(notes, /package\.json version applied to apps\/merge-studio\/package\.json/);
     // The generated-only commit is reported, not imported.
@@ -268,7 +276,7 @@ test("a path outside the mapping is refused before anything changes, and --exclu
   try {
     contribute(ms, "A mixed pull request", {
       [MERGE_MODEL]: append("// contributed\n"),
-      ".github/workflows/ci.yml": append("# merge-studio's own CI\n"),
+      ".github/workflows/release.yml": append("# merge-studio's own release\n"),
       "docs/index.md": append("More docs.\n"),
       "NEWS.md": () => "News.\n",
       "vendor/gitstudio/extra/helper.ts": () => "export {};\n",
@@ -284,7 +292,7 @@ test("a path outside the mapping is refused before anything changes, and --exclu
         return e instanceof ImportRefused;
       },
     );
-    for (const path of [".github/workflows/ci.yml", "docs/index.md", "NEWS.md", "vendor/gitstudio/extra/helper.ts", "scripts/release.mjs", "media/screenshots/new.png"]) {
+    for (const path of [".github/workflows/release.yml", "docs/index.md", "NEWS.md", "vendor/gitstudio/extra/helper.ts", "scripts/release.mjs", "media/screenshots/new.png"]) {
       assert.match(refused.message, new RegExp(`^  ${path.replace(/[./]/g, "\\$&")} \\([0-9a-f]{7}\\): `, "m"), path);
     }
     assert.doesNotMatch(refused.message, /mergeModel/, "the mapped path is not listed");
@@ -302,6 +310,23 @@ test("a path outside the mapping is refused before anything changes, and --exclu
     assert.equal(r.commits.length, 1);
     assert.deepEqual(g(gs, "diff", "--name-only", "main", "HEAD").split("\n"), ["packages/engine/src/mergeModel.ts"]);
     assert.equal(r.excluded.length, 6);
+  } finally {
+    cleanup(gs, ms);
+  }
+});
+
+test("a change to the CI workflow the export writes comes back to its template, and exports as the contributor wrote it", () => {
+  const gs = scratchGitstudio();
+  const ms = scratchMergeStudio(gs);
+  try {
+    const sha = contribute(ms, "CI: cache the npm download", {
+      ".github/workflows/ci.yml": (t) => t.replace("          cache: npm\n", "          cache: npm\n          cache-dependency-path: package-lock.json\n"),
+    });
+    const r = importPullRequest({ gitstudio: gs, from: ms, range: "main..contrib", pr: "31" });
+    assert.equal(r.commits.length, 1);
+    assert.deepEqual(g(gs, "diff", "--name-only", "main", "HEAD").split("\n"), ["scripts/merge-studio/merge-studio-ci.yml"]);
+    assert.deepEqual(r.roundTrip.map((x) => [x.path, x.status]), [[".github/workflows/ci.yml", "identical"]]);
+    assert.equal(exportOverMain(ms, gs, sha), "", "the next export writes the contributor's workflow, and nothing else differs");
   } finally {
     cleanup(gs, ms);
   }
@@ -373,9 +398,9 @@ test("a patch file: `gh pr diff --patch` keeps each commit and author; a plain `
   const files = mkdtempSync(join(tmpdir(), "ms-import-patch-"));
   try {
     const one = contribute(ms, "engine: one", { [MERGE_MODEL]: append("// one\n") }, "2026-09-02T09:30:00+03:00");
-    const two = contribute(ms, "Release 0.4.1", {
+    const two = contribute(ms, `Release ${NEXT_VERSION}`, {
       "src/links.ts": append("// two\n"),
-      "package.json": (t) => t.replace(/"version": "[^"]+"/, '"version": "0.4.1"'),
+      "package.json": (t) => t.replace(/"version": "[^"]+"/, `"version": "${NEXT_VERSION}"`),
     });
     const mbox = join(files, "pr.patch");
     writeFileSync(mbox, execFileSync("git", ["-C", ms, "format-patch", "--stdout", "main..contrib"]));
@@ -385,11 +410,11 @@ test("a patch file: `gh pr diff --patch` keeps each commit and author; a plain `
     const r = importPullRequest({ gitstudio: gs, patch: mbox, pr: "7" });
     assert.deepEqual(
       g(gs, "log", "--reverse", "--format=%an <%ae>|%s|%(trailers:key=Imported-from,valueonly,separator=)", "main..HEAD").split("\n"),
-      [`${JANE}|engine: one|GitStudioHQ/merge-studio#7 / ${one}`, `${JANE}|Release 0.4.1|GitStudioHQ/merge-studio#7 / ${two}`],
+      [`${JANE}|engine: one|GitStudioHQ/merge-studio#7 / ${one}`, `${JANE}|Release ${NEXT_VERSION}|GitStudioHQ/merge-studio#7 / ${two}`],
     );
     assert.equal(g(gs, "log", "-1", "--format=%aI", "HEAD~1"), "2026-09-02T09:30:00+03:00");
     assert.ok(r.roundTrip.every((x) => x.status === "identical"), JSON.stringify(r.roundTrip));
-    assert.equal(JSON.parse(g(gs, "show", "HEAD:apps/merge-studio/package.json")).version, "0.4.1");
+    assert.equal(JSON.parse(g(gs, "show", "HEAD:apps/merge-studio/package.json")).version, NEXT_VERSION);
 
     g(gs, "reset", "-q", "--hard", "main");
     assert.throws(() => importPullRequest({ gitstudio: gs, patch: plain, pr: "7" }), (e) => e instanceof ImportRefused && /--author "Name <email>"/.test(e.message));
@@ -705,6 +730,47 @@ test("a commit gitstudio already has is skipped; merge-studio's own export, carr
   }
 });
 
+test("a range from a stale origin/main takes in an export merged since: refused, saying to fetch it first; fetched, it imports", () => {
+  // Found running RELEASING.md as written against a scratch export: the pull
+  // request was opened after the export was merged, and the maintainer's
+  // `fetch origin pull/<n>/head:pr-<n>` left origin/main behind it.
+  const gs = scratchGitstudio();
+  const ms = scratchMergeStudio(gs);
+  try {
+    g(ms, "update-ref", "refs/remotes/origin/main", "main"); // what the maintainer last fetched
+    // gitstudio moves on, and is exported and merged on merge-studio's main.
+    const readme = join(gs, "apps/merge-studio/README.md");
+    writeFileSync(readme, `${readFileSync(readme, "utf8")}\nOne more line from gitstudio.\n`);
+    g(gs, "commit", "-qam", "gitstudio moves on");
+    g(ms, "switch", "-q", "main");
+    exportTo({ into: ms, gitstudio: gs });
+    g(ms, "add", "-A");
+    g(ms, "commit", "-qm", "Export again");
+    const exported = g(ms, "rev-parse", "HEAD");
+    // A contributor branches from that main.
+    g(ms, "switch", "-qc", "pr-7");
+    const theirs = contribute(ms, "A link", { "src/links.ts": append("// a link\n") });
+    const head = g(gs, "rev-parse", "HEAD");
+
+    assert.throws(
+      () => importPullRequest({ gitstudio: gs, from: ms, range: "origin/main..pr-7" }),
+      (e) =>
+        e instanceof ImportRefused &&
+        e.message.includes(`VENDORED_FROM.json (${exported.slice(0, 7)}): this commit is merge-studio's export`) &&
+        e.message.includes(`git -C ${ms} fetch origin`) &&
+        /origin\/main is behind/.test(e.message),
+    );
+    assert.equal(g(gs, "rev-parse", "HEAD"), head, "nothing was changed");
+
+    g(ms, "update-ref", "refs/remotes/origin/main", "main"); // git -C <ms> fetch origin
+    const r = importPullRequest({ gitstudio: gs, from: ms, range: "origin/main..pr-7" });
+    assert.deepEqual(r.commits.map((c) => [c.upstream, Boolean(c.sha)]), [[theirs, true]]);
+    assert.deepEqual(r.roundTrip.filter((x) => x.status !== "identical"), []);
+  } finally {
+    cleanup(gs, ms);
+  }
+});
+
 test("a binary conflict says there are no markers, and the printed commands finish it for any author name", () => {
   const gs = scratchGitstudio();
   const ms = scratchMergeStudio(gs);
@@ -777,12 +843,16 @@ test("the table: new files map by the folder they land in; merge-studio's own fi
   assert.equal(map("src/deep/new.ts", true).gitstudio, "apps/merge-studio/src/deep/new.ts", "src/ is the shell's as a whole");
   assert.equal(map("media/walkthrough/new.svg", true).gitstudio, "apps/merge-studio/media/walkthrough/new.svg");
   assert.equal(map("README.md").gitstudio, "apps/merge-studio/README.md");
+  // The CI workflow the export writes comes back to the template it is written from.
+  assert.deepEqual(map(".github/workflows/ci.yml"), { kind: "copied", gitstudio: "scripts/merge-studio/merge-studio-ci.yml", shell: false });
   for (const p of ["package.json", "package-lock.json", "tsconfig.json", "VENDORED_FROM.json", "vendor/gitstudio/.gitattributes"]) {
     assert.equal(map(p).kind, "generated", p);
   }
   for (const [p, isNew] of [
     ["SECURITY.md", false],
-    [".github/workflows/ci.yml", false],
+    [".github/workflows/release.yml", false],
+    [".github/workflows/nightly.yml", true],
+    [".github/dependabot.yml", false],
     ["media/screenshots/new.png", true],
     ["NEWS.md", true],
     ["vendor/gitstudio/engine/package-lock.json", true],

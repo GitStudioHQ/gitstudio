@@ -8,9 +8,10 @@
 // operation, so the editor shows what a real stop shows: the direction bar
 // with branch names, the step, the commit, and every kind of change the
 // legend counts (a conflict, the same change on both sides, and a change in
-// Yours only and in Theirs only), including a conflict the wand can resolve. What it contains is
-// never typed here: the engine classifies the three versions, and
-// test/demoContent.test.ts holds the sample to "every category at least once".
+// Yours only and in Theirs only), including a conflict that Resolve simple
+// (the toolbar's wand) settles. What it contains is never typed here: the
+// engine classifies the three versions, and test/demoContent.test.ts holds
+// the sample to "every category at least once".
 
 import { markUnsettled, prepareMerge } from "@gitstudio/engine/conflict/documentText";
 import type { OperationView } from "@gitstudio/host-bridge/conflictsProtocol";

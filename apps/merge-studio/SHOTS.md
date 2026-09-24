@@ -1,7 +1,7 @@
-# Shots to capture for Merge Studio 0.4.0
+# Shots to capture for Merge Studio 1.0.0
 
 The README and the walkthrough reference these. None of them is captured yet:
-they are taken from the **final 0.4.0 build** (after the polish pass: the new
+they are taken from the **final 1.0.0 build** (after the polish pass: the new
 sample merge, the practice conflict, the colour defaults), never from an
 intermediate one, and never copied from 0.3.4's `media/screenshots/`, which
 show a UI this release replaces ("Accept Left/Right", no colours, no rebase,
@@ -23,11 +23,11 @@ that tag.
 | File | Theme | What it shows |
 | --- | --- | --- |
 | `media/screenshots/hero.gif` | dark | ≤ 8 s, 1200 px wide, ≤ 3 MB. A rebase stops → the dashboard reads "Rebasing feature/session-hardening onto main · commit 2 of 3" → Merge… → the wand and one » → Apply → Continue Rebase → "Rebase complete". |
-| `media/screenshots/merge-editor-dark.png` | dark | The sample merge (*Sample: authorizeRequest.ts*) with the legend visible, in words: Conflicts (red; one Resolve simple resolves), Same on both sides (violet), Changed / Added / Removed on one side (blue, green and grey). |
+| `media/screenshots/merge-editor-dark.png` | dark | The sample merge (*Sample: authorizeRequest.ts*) with the legend visible, in words: Conflicts in red (one of them Resolve simple resolves), and Changed / Added / Removed in blue, green and grey, on one side, and on both sides for the change both sides made the same way (the added `req.sessionId` line, green on both). Take one side of one conflict and settle one other change first, so the half-done look and the trace a settled change keeps are in the shot too. |
 | `media/screenshots/merge-editor-light.png` | light | The same, in Light Modern (the README's colour section uses this one). |
 | `media/screenshots/dashboard-rebase.png` | dark | The dashboard mid-rebase: YOURS test → onto → THEIRS master, "commit 1 of 1", the commit card, rows with Accept Yours / Accept Theirs / Merge…, Continue Rebase disabled with its reason. |
 | `media/screenshots/dashboard-done.png` | dark | Every file resolved: the success card, pills "kept yours · test", Continue Rebase enabled. |
-| `media/screenshots/legend.png` | dark | A tight crop of the legend, "Conflicts · Same on both sides · Changed Added Removed on one side" (also the walkthrough's "Read the colours" media). |
+| `media/screenshots/legend.png` | dark | A tight crop of the legend, every colour named in words (also the walkthrough's "Read the colours" media). |
 | `media/screenshots/no-text-panel.png` | dark | A modify/delete file: the panel with Keep yours / Keep theirs / Delete the file. |
 | `media/screenshots/diff.png` | dark | The side-by-side diff of the sample diff. |
 

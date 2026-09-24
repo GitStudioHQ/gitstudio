@@ -29,17 +29,26 @@ During a rebase git swaps its own words: `--ours` is the branch you are rebasing
 
 ## Every change, colour-coded
 
-The legend above the panes names each kind of change in words, with its
-colour and how many are left: **Conflicts · Same on both sides · Changed
-Added Removed on one side**.
+The legend above the panes names each colour in words, with how many
+changes are left.
 
 | Colour | In the legend | Meaning |
 | --- | --- | --- |
-| red | Conflicts | A real conflict: both sides changed the same lines differently. When the two edits touch but don't overlap, **Resolve simple** on the toolbar applies both. |
-| violet | Same on both sides | Both sides made the same edit. |
-| blue, green, grey | Changed, Added, Removed on one side | A change only one side made: blue for lines it changed, green for lines it added, grey for lines it removed. |
+| red | Conflicts | A real conflict: both sides changed the same lines differently, and you choose. When the two edits touch but don't overlap, **Resolve simple** on the toolbar applies both. |
+| blue, green, grey | Changed, Added, Removed | A change that doesn't conflict: blue for lines changed, green for lines added, grey for lines removed. Coloured on one side only, only that side made it. |
 
-<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The three-pane merge editor in a light theme: YOURS on the left, the result in the middle, THEIRS on the right; a red conflict, a violet identical edit, and blue, green and grey one-sided changes, with the legend above."></p>
+A change coloured on **both** sides is the same change, made on both sides:
+either arrow takes it, and it is settled on both sides at once.
+
+Once you settle a change it keeps a muted trace of what you took: the side
+you took stays faintly coloured and joined to the result, a side you left out
+keeps only its outline, and when you took both, both stay joined to it.
+
+**Close** leaves the merge editor at any point without ending the merge or
+rebase: the file keeps its conflict markers, and **Merge…** in the Conflicts
+dashboard opens it again.
+
+<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The three-pane merge editor in a light theme: YOURS on the left, the result in the middle, THEIRS on the right; a red conflict, a change made the same on both sides and coloured on both, and blue, green and grey changes only one side made, with the legend above."></p>
 
 ## The Conflicts dashboard
 
@@ -63,7 +72,7 @@ The dashboard opens the moment a merge, rebase, cherry-pick or revert stops on c
 
 ## Try it in 30 seconds
 
-Run **Merge Studio: Open Sample Merge** from the Command Palette. A rebase stop opens in the three panes, *Sample: authorizeRequest.ts*: commit 2 of 3 of feature/session-hardening onto main, with every kind of change in it (conflicts, one of them the wand resolves; changes made the same on both sides; changes only in yours and only in theirs). Nothing in your repository is touched: Apply says what it would do in a real conflict, and Cancel closes the sample. **Merge Studio: Open Sample Diff** does the same for the diff, and **Merge Studio: Open Getting Started** walks through both.
+Run **Merge Studio: Open Sample Merge** from the Command Palette. A rebase stop opens in the three panes, *Sample: authorizeRequest.ts*: commit 2 of 3 of feature/session-hardening onto main, with every kind of change in it (conflicts, one of them the wand resolves; changes made the same on both sides; changes only in yours and only in theirs). Nothing in your repository is touched: Apply says what it would do in a real conflict, and Close closes the sample. **Merge Studio: Open Sample Diff** does the same for the diff, and **Merge Studio: Open Getting Started** walks through both.
 
 ## Keyboard
 
