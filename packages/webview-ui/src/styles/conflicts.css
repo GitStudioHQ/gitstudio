@@ -29,6 +29,8 @@
   --cd-muted: color-mix(in srgb, var(--gs-fg-muted) 78%, var(--gs-fg));
   /* A control that cannot be used: plainly grey, whatever its colour when live. */
   --cd-disabled: color-mix(in srgb, var(--gs-fg) 50%, transparent);
+  /* How long a control locked while the host works keeps its look (below). */
+  --cd-lock-delay: 600ms;
 
   /* ONE purple family for every action on a file. Merge… is the brand fill
      (--gs-brand, the same literal on every host); Accept Yours / Accept
@@ -57,14 +59,19 @@
 
   /* The list's grid (see the file list below). */
   --cd-row-px: 14px;
-  --cd-status-w: 16px;
-  /* The pill column: one width for every row, as much as the dashboard can
-     spare (a fifth of it, 136-180px), so "deleted in theirs (feature)" is
-     rarely cut. A cut pill keeps its words in its title. */
-  --cd-pill-w: clamp(136px, 20cqi, 180px);
-  --cd-slot: 104px;
-  --cd-slot-gap: 6px;
+  --cd-row-py: 8px;
+  --cd-status-w: 20px;
+  --cd-col-gap: 8px;
   --cd-btn-h: 26px;
+  /* A row's whole height in the list: its line, its padding and its rule. */
+  --cd-row-h: calc(var(--cd-btn-h) + 2 * var(--cd-row-py) + 1px);
+  /* The action slots: each as wide as the widest label in it down the list,
+     never narrower than these, so a slot keeps its place as rows resolve. */
+  --cd-slot: 100px;
+  --cd-slot-merge: 76px;
+  /* Where the rows cannot share the list's columns (no subgrid: an editor
+     before VS Code 1.86), the pill column is one fixed width instead. */
+  --cd-pill-w: clamp(136px, 20cqi, 180px);
 
   display: flex;
   flex-direction: column;
@@ -123,9 +130,14 @@
 .cd-host-fill > .cd-dash > * {
   flex: none;
 }
+/* The list gives way to the header and the footer, but not to nothing: it
+   keeps three rows (fewer if it has fewer), and below that the dashboard
+   scrolls instead. In the desktop's pane at 900x700 it had shrunk to a
+   hairline between the header and Abort. Its faded edge (below) says there
+   is more. --cd-rows is the row count (dashboard.ts). */
 .cd-host-fill > .cd-dash > .cd-list {
   flex: 0 1 auto;
-  min-height: 0;
+  min-height: calc(min(var(--cd-rows, 0), 3) * var(--cd-row-h) + 1px);
 }
 
 /* Codepoints for the glyphs the dashboard draws. The font comes from the page:
@@ -208,6 +220,20 @@
   line-height: 18px;
   color: var(--gs-fg);
   overflow-wrap: anywhere;
+}
+/* For a screen reader only: the operation's title while the direction bar
+   and the commit card say the same on screen (dashboard.ts). Out of the flow,
+   so it takes no line and no gap. */
+.cd-dash .cd-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* ── Direction bar: the two sides, and which way the work flows ────────── */
@@ -439,14 +465,18 @@
 }
 
 /* ── The file list: one grid, every row on it ──────────────────────────── */
-/* Four columns on every row, filled or not:
-     status (16px) | file (the rest) | pill (fixed) | actions (three fixed slots)
+/* The LIST owns the columns and every row lays its cells on them (subgrid):
+     status | file (the rest) | pill | Yours slot | Theirs slot | Merge… slot
    so a pill starts at the same x on every row, and Accept Yours, Accept
-   Theirs and Merge… each sit in their own column down the whole list. A row
-   used to right-align whatever it had — a binary row's Accept Theirs landed
-   under a text row's Merge…, a badge floated against its buttons. In a
-   narrow dashboard (below) the actions drop under the name as one group,
-   still in their slots. */
+   Theirs and Merge… each sit in their own column down the whole list. Each
+   column is as wide as the widest thing in it: the pill column is the widest
+   pill (it was one fixed width, and "deleted in theirs (feature)" lost half
+   its branch name beside a file column with room to spare), and the file
+   column gives way first — its folder, then its name. A row used to
+   right-align whatever it had: a binary row's Accept Theirs landed under a
+   text row's Merge…, a badge floated against its buttons. In a narrow
+   dashboard (below) the actions drop under the name as one group, still in
+   their slots, their right edge on the pills' and the footer's. */
 .cd-list {
   min-height: 0;
   overflow-y: auto;
@@ -454,6 +484,28 @@
   border-radius: 8px;
   background: var(--vscode-editorWidget-background, transparent);
 }
+/* Rows beyond an edge: that edge fades (dashboard.ts sets the classes). */
+.cd-list.is-more-above,
+.cd-list.is-more-below {
+  --cd-fade-top: 0px;
+  --cd-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.12) 0, #000000 var(--cd-fade-top), #000000 calc(100% - var(--cd-fade-bottom)), rgb(0 0 0 / 0.12) 100%);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.12) 0, #000000 var(--cd-fade-top), #000000 calc(100% - var(--cd-fade-bottom)), rgb(0 0 0 / 0.12) 100%);
+}
+.cd-list.is-more-above { --cd-fade-top: 22px; }
+.cd-list.is-more-below { --cd-fade-bottom: 30px; }
+/* The same for the dashboard itself, where a short pane scrolls all of it
+   (the list at its floor of rows): the pane's edge cut a row's buttons in
+   half and read as broken, not as "more below". */
+.cd-host-fill > .cd-dash.is-more-above,
+.cd-host-fill > .cd-dash.is-more-below {
+  --cd-fade-top: 0px;
+  --cd-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.12) 0, #000000 var(--cd-fade-top), #000000 calc(100% - var(--cd-fade-bottom)), rgb(0 0 0 / 0.12) 100%);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.12) 0, #000000 var(--cd-fade-top), #000000 calc(100% - var(--cd-fade-bottom)), rgb(0 0 0 / 0.12) 100%);
+}
+.cd-host-fill > .cd-dash.is-more-above { --cd-fade-top: 22px; }
+.cd-host-fill > .cd-dash.is-more-below { --cd-fade-bottom: 36px; }
 .cd-empty {
   padding: 14px;
   font-size: 12px;
@@ -461,16 +513,41 @@
 }
 .cd-row {
   display: grid;
+  /* Without subgrid, each row keeps the same columns by fixed widths. */
   grid-template-columns: var(--cd-status-w) minmax(0, 1fr) var(--cd-pill-w) auto;
-  /* One line the height of a button: every row is the same 44px inside its
+  /* One line the height of a button: every row is the same height inside its
      rule, whatever it holds (a busy row has no buttons at all). */
   grid-template-rows: var(--cd-btn-h);
-  grid-template-areas: "status file pill actions";
   align-items: center;
-  column-gap: 12px;
+  column-gap: var(--cd-col-gap);
   row-gap: 8px;
-  padding: 9px var(--cd-row-px);
+  padding: var(--cd-row-py) var(--cd-row-px);
   border-bottom: 1px solid var(--cd-line);
+}
+.cd-row > * { grid-row: 1; }
+.cd-row > .cd-status { grid-column: 1; }
+.cd-row > .cd-file { grid-column: 2; }
+.cd-row > .cd-pillcell { grid-column: 3; }
+.cd-row > .cd-actions { grid-column: 4 / -1; }
+@supports (grid-template-columns: subgrid) {
+  .cd-list {
+    display: grid;
+    /* The first column holds the rows' left padding too (a subgrid's padding
+       sits in its edge tracks); the Merge… slot's floor, the right one. The
+       other slots take theirs from what is in them. */
+    grid-template-columns:
+      calc(var(--cd-row-px) + var(--cd-status-w))
+      minmax(0, 1fr)
+      minmax(0, max-content)
+      minmax(var(--cd-slot), max-content)
+      minmax(var(--cd-slot), max-content)
+      minmax(calc(var(--cd-slot-merge) + var(--cd-row-px)), max-content);
+    column-gap: var(--cd-col-gap);
+    align-content: start;
+  }
+  .cd-list > * { grid-column: 1 / -1; }
+  .cd-row { grid-template-columns: subgrid; }
+  .cd-row > .cd-actions { grid-template-columns: subgrid; }
 }
 .cd-row:last-child { border-bottom: none; }
 .cd-row.is-resolved { background-color: color-mix(in srgb, var(--cd-ok) 5%, transparent); }
@@ -478,7 +555,6 @@
    green), never a replacement for it. */
 .cd-row:hover { background-image: linear-gradient(var(--cd-row-hover), var(--cd-row-hover)); }
 .cd-status {
-  grid-area: status;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -519,7 +595,6 @@
    folders behind an ellipsis, then the one the file sits in); the name only
    once the folder is gone. */
 .cd-file {
-  grid-area: file;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -558,15 +633,18 @@
   text-overflow: ellipsis;
 }
 .cd-pillcell {
-  grid-area: pill;
   display: flex;
   justify-content: flex-start;
   min-width: 0;
+  /* A branch name of any length cannot take the row: past this the pill is
+     cut, its words whole in its title. */
+  max-width: 240px;
 }
 /* A fixed height: the check mark of "✓ kept yours" comes from a fallback
    font whose taller line box made resolved rows a pixel taller. */
 .cd-badge,
 .cd-choice {
+  position: relative;
   min-width: 0;
   max-width: 100%;
   height: 19px;
@@ -586,13 +664,13 @@
   color: color-mix(in srgb, var(--cd-ok) 80%, var(--gs-fg));
   border: 1px solid color-mix(in srgb, var(--cd-ok) 65%, transparent);
 }
-/* Three slots, always, by role: yours | theirs | merge. An empty slot stays
-   empty (a binary row has no Merge…), so the next row's buttons still line up. */
+/* Three slots, always, by role: yours | theirs | merge — the list's last
+   three columns. An empty slot stays empty (a binary row has no Merge…), so
+   the next row's buttons still line up. */
 .cd-actions {
-  grid-area: actions;
   display: grid;
-  grid-template-columns: repeat(3, var(--cd-slot));
-  column-gap: var(--cd-slot-gap);
+  grid-template-columns: var(--cd-slot) var(--cd-slot) var(--cd-slot-merge);
+  column-gap: var(--cd-col-gap);
   justify-content: end;
   align-items: center;
   min-height: var(--cd-btn-h);
@@ -632,18 +710,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cd-btn:hover:not(:disabled) {
+.cd-btn:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--vscode-button-secondaryHoverBackground, var(--gs-hover));
   border-color: color-mix(in srgb, var(--gs-fg) 38%, transparent);
 }
-.cd-btn:active:not(:disabled) {
+.cd-btn:active:not(:disabled, [aria-disabled="true"]) {
   background: color-mix(in srgb, var(--gs-fg) 16%, var(--vscode-button-secondaryBackground, transparent));
 }
 .cd-btn:focus-visible {
   outline: 2px solid var(--cd-focus);
   outline-offset: 2px;
 }
-.cd-btn:disabled {
+.cd-btn:is(:disabled, [aria-disabled="true"]:not([data-lock="quiet"])) {
   cursor: default;
   color: var(--cd-disabled);
   border-color: color-mix(in srgb, var(--gs-fg) 14%, transparent);
@@ -656,14 +734,14 @@
   background: transparent;
   color: var(--cd-brand-ink);
 }
-.cd-btn.cd-accept:hover:not(:disabled) {
+.cd-btn.cd-accept:hover:not(:disabled, [aria-disabled="true"]) {
   border-color: var(--cd-brand-ink);
   background: var(--cd-brand-wash);
 }
-.cd-btn.cd-accept:active:not(:disabled) {
+.cd-btn.cd-accept:active:not(:disabled, [aria-disabled="true"]) {
   background: var(--cd-brand-wash-press);
 }
-.cd-btn.cd-accept:disabled {
+.cd-btn.cd-accept:is(:disabled, [aria-disabled="true"]:not([data-lock="quiet"])) {
   color: var(--cd-disabled);
   border-color: color-mix(in srgb, var(--gs-fg) 14%, transparent);
 }
@@ -674,15 +752,15 @@
   background: var(--cd-brand);
   color: var(--cd-brand-fg);
 }
-.cd-btn.cd-primary:hover:not(:disabled) {
+.cd-btn.cd-primary:hover:not(:disabled, [aria-disabled="true"]) {
   border-color: var(--cd-brand-hover);
   background: var(--cd-brand-hover);
 }
-.cd-btn.cd-primary:active:not(:disabled) {
+.cd-btn.cd-primary:active:not(:disabled, [aria-disabled="true"]) {
   border-color: var(--cd-brand-press);
   background: var(--cd-brand-press);
 }
-.cd-btn.cd-primary:disabled {
+.cd-btn.cd-primary:is(:disabled, [aria-disabled="true"]:not([data-lock="quiet"])) {
   border-color: transparent;
   background: color-mix(in srgb, var(--gs-fg) 9%, transparent);
   color: var(--cd-disabled);
@@ -694,14 +772,14 @@
   border-color: color-mix(in srgb, var(--cd-danger) 70%, transparent);
   color: var(--cd-danger);
 }
-.cd-btn.cd-danger:hover:not(:disabled) {
+.cd-btn.cd-danger:hover:not(:disabled, [aria-disabled="true"]) {
   border-color: var(--cd-danger);
   background: color-mix(in srgb, var(--cd-danger) 15%, transparent);
 }
-.cd-btn.cd-danger:active:not(:disabled) {
+.cd-btn.cd-danger:active:not(:disabled, [aria-disabled="true"]) {
   background: color-mix(in srgb, var(--cd-danger) 26%, transparent);
 }
-.cd-btn.cd-danger:disabled {
+.cd-btn.cd-danger:is(:disabled, [aria-disabled="true"]:not([data-lock="quiet"])) {
   color: var(--cd-disabled);
   border-color: color-mix(in srgb, var(--gs-fg) 14%, transparent);
 }
@@ -732,19 +810,19 @@
     border-color var(--gs-motion-fast) var(--gs-ease),
     color var(--gs-motion-fast) var(--gs-ease);
 }
-.cd-undo-hold:hover:not(:disabled) {
+.cd-undo-hold:hover:not(:disabled, [aria-disabled="true"]) {
   color: var(--gs-fg);
   border-color: color-mix(in srgb, var(--gs-fg) 50%, transparent);
   background: color-mix(in srgb, var(--gs-fg) 8%, transparent);
 }
-.cd-undo-hold:active:not(:disabled) {
+.cd-undo-hold:active:not(:disabled, [aria-disabled="true"]) {
   background: color-mix(in srgb, var(--gs-fg) 14%, transparent);
 }
 .cd-undo-hold:focus-visible {
   outline: 2px solid var(--cd-focus);
   outline-offset: 2px;
 }
-.cd-undo-hold:disabled {
+.cd-undo-hold:is(:disabled, [aria-disabled="true"]:not([data-lock="quiet"])) {
   cursor: default;
   color: var(--cd-disabled);
   border-color: color-mix(in srgb, var(--gs-fg) 14%, transparent);
@@ -765,16 +843,33 @@
   border-color: var(--cd-accent);
 }
 
+/* LOCKED while the host works (aria-disabled, dashboard.ts): a press is
+   ignored at once, but the grey look waits --cd-lock-delay and comes only if
+   the work outlasts it. Resolving a file takes git a few hundred
+   milliseconds, and every button on the page going grey and coming back for
+   that long was the "whole screen flash" the owner saw. A lock that lasts
+   (a Continue replaying a long rebase) still greys, plainly. While the work
+   is ONE file's, the lock is quiet (data-lock="quiet", the grey rules above
+   skip it): that row's spinner says it, and however long git takes, no other
+   row changes. */
+.cd-dash .cd-btn[aria-disabled="true"],
+.cd-dash .cd-undo-hold[aria-disabled="true"] {
+  cursor: progress;
+  transition-delay: var(--cd-lock-delay);
+}
+
 /* ── Footer ────────────────────────────────────────────────────────────── */
 /* Inset by the rows' own padding: Abort starts under the status column and
-   Continue ends under the Merge… column. */
+   Continue ends where Merge… ends, at every width. Right under the list, not
+   pushed to the bottom of the page: in a tall editor it sat 400px below the
+   last row, detached from what it acts on. (A long list still keeps it on
+   screen: under .cd-host-fill the list is what gives way.) */
 .cd-foot {
   display: flex;
   align-items: center;
   gap: 8px;
   row-gap: 8px;
   flex-wrap: wrap;
-  margin-top: auto;
   padding: 2px calc(var(--cd-row-px) + 1px) 0;
 }
 .cd-spacer { flex: 1; }
@@ -817,25 +912,41 @@
 .cd-confirm-d { color: var(--cd-muted); }
 
 /* ── A narrow dashboard (the desktop's pane; a docked panel) ───────────── */
-/* The actions leave the name's line and sit under it, starting where the
-   name starts, as one group — the same three slots, so they still line up
-   from row to row. A slot may narrow a little, never below its label. */
-@container cd (max-width: 659px) {
+/* The actions leave the name's line and sit under it as one group — the same
+   three slots, so they still line up from row to row — at the row's END: the
+   pills' column, the Merge… slot and the footer's Continue share one right
+   edge, and Abort, the status column and the names one left edge. (Started
+   under the name, the buttons ended wherever their labels did while the pill
+   sat at the far right and Continue further out still.) */
+@container cd (max-width: 679px) {
   /* A container query styles what is INSIDE the container, never the
      container itself: the tokens go on its children, which hand them down. */
-  .cd-dash > * { --cd-row-px: 12px; --cd-pill-w: clamp(136px, 34cqi, 190px); }
+  .cd-dash > * {
+    --cd-row-px: 12px;
+    --cd-row-py: 10px;
+    /* Two lines: the name's, 8px, the buttons'. */
+    --cd-row-h: calc(20px + 8px + var(--cd-btn-h) + 2 * var(--cd-row-py) + 1px);
+    --cd-pill-w: clamp(136px, 34cqi, 190px);
+  }
   .cd-row {
     grid-template-columns: var(--cd-status-w) minmax(0, 1fr) var(--cd-pill-w);
     /* Two fixed lines, so every row is one height whatever it holds. */
     grid-template-rows: 20px var(--cd-btn-h);
-    grid-template-areas:
-      "status file    pill"
-      ".      actions actions";
-    padding-block: 10px;
   }
-  .cd-actions {
-    grid-template-columns: repeat(3, minmax(0, var(--cd-slot)));
-    justify-content: start;
+  .cd-row > .cd-actions {
+    grid-row: 2;
+    grid-column: 2 / -1;
+    grid-template-columns: minmax(0, var(--cd-slot)) minmax(0, var(--cd-slot)) minmax(0, var(--cd-slot-merge));
+    justify-content: end;
+  }
+  @supports (grid-template-columns: subgrid) {
+    .cd-list {
+      grid-template-columns:
+        calc(var(--cd-row-px) + var(--cd-status-w))
+        minmax(0, 1fr)
+        minmax(0, max-content);
+    }
+    .cd-row { grid-template-columns: subgrid; }
   }
   /* The commit's author and step under its subject, together. */
   .cd-commit-meta { margin-left: 0; }
@@ -852,9 +963,12 @@
    full labels no longer fit under the name, so the words the slot's place
    already says go — "Accept" of Accept Yours, "the file" of Delete the file —
    from sight only (the text and the accessible name stay whole), and Hold to
-   undo, alone on its row, takes two slots. */
+   undo, alone on its row, takes two slots. A pill drops the side's name the
+   direction bar already gives ("deleted in theirs (feature)" reads "deleted
+   in theirs"), so it is whole beside the file's name. */
 @container cd (max-width: 379px) {
-  .cd-actions .cd-trim {
+  .cd-actions .cd-trim,
+  .cd-pillcell .cd-trim {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -866,11 +980,19 @@
     white-space: nowrap;
   }
   .cd-actions .cd-undo-hold { grid-column: 1 / span 2; }
+  /* The direction bar a little tighter, so "YOURS test → onto → THEIRS
+     master" keeps to one line here and the list gets that line back (a long
+     branch name still wraps, at its slashes). */
+  .cd-dirbar { gap: 6px; }
+  .cd-branch { gap: 4px; padding: 2px 8px; }
+  .cd-role { letter-spacing: 0.4px; }
 }
 
+/* No motion, but the lock's wait stays: a zero-length transition still
+   honours its delay, so the rows do not flash grey here either. */
 @media (prefers-reduced-motion: reduce) {
   .cd-spinner { animation: none; }
   .cd-bar-fill,
   .cd-btn,
-  .cd-undo-hold { transition: none; }
+  .cd-undo-hold { transition-duration: 0s; }
 }

@@ -99,6 +99,8 @@ const PROLOGUE = `
   const text = (s) => ($(s) ? $(s).textContent.replace(/\\s+/g, " ").trim() : null);
   const btn = (label) => $$(".cd-dash button").find((b) => b.textContent.replace(/\\s+/g, " ").trim() === label);
   const last = () => posted[posted.length - 1];
+  /** Locked while the host works (aria-disabled), or disabled outright. */
+  const locked = (b) => !!b && (b.disabled || b.getAttribute("aria-disabled") === "true");
 `;
 
 const run = (script: string) => runInChrome(CHROME!, ENTRY, PROLOGUE + script, { css: CSS, width: 1000, height: 820 });
@@ -210,7 +212,7 @@ test("Skip is offered only where git names it as the way out, and asks first", {
     go.click();
     go.click();
     expect(posted.filter((a) => a.type === "skip").length === 1, "confirmed twice in a row: exactly one skip");
-    expect(btn("Skip this commit") && btn("Skip this commit").disabled, "and the footer stays locked until the host answers");
+    expect(locked(btn("Skip this commit")), "and the footer stays locked until the host answers");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
@@ -367,7 +369,7 @@ test("a new stop resets a half-answered confirm, and a host that cannot close of
     d.render(state(OPS.merge, [row("x.ts", { status: "resolved", choice: "yours" })]));
     expect(!btn("Close"), "no Close where the host cannot close");
     d.render(state(OPS.rebase, [row("a.ts")], { busy: true }));
-    expect($$(".cd-dash button").every((b) => b.disabled), "while the host works, every control is locked");
+    expect($$(".cd-dash button").every(locked), "while the host works, every control is locked");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });

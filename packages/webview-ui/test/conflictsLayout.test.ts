@@ -239,7 +239,12 @@ const ALIGN = (mode: "wide" | "narrow" | "compact", t: (typeof THEMES)[keyof typ
   expect(pills.length >= 6, "precondition: the badges and the resolved rows' pills (" + pills.length + ")");
   const pl = pills.map((p) => box(p).left);
   expect(same(pl), "every pill starts at one x (" + px(pl) + ")");
-  for (const p of pills) expect(box(p).height <= 20, p.textContent + ": the pill is one line (" + Math.round(box(p).height) + "px)");
+  for (const p of pills) {
+    expect(box(p).height <= 20, p.textContent + ": the pill is one line (" + Math.round(box(p).height) + "px)");
+    // Whole, never cut: "deleted in theirs (feat…" lost its branch in the
+    // desktop's pane beside a file column with room to spare (critic, r0924).
+    expect(p.scrollWidth <= p.clientWidth + 0.5, p.textContent + ": the pill is whole (" + p.scrollWidth + " > " + p.clientWidth + ")");
+  }
 
   // Buttons: hit targets, and every label whole (never cut off by its slot).
   for (const b of $$(".cd-row button")) {
@@ -271,10 +276,18 @@ const ALIGN = (mode: "wide" | "narrow" | "compact", t: (typeof THEMES)[keyof typ
     // The header block, the direction bar and the commit line each hold one line here.
     expect(box($(".cd-head")).height <= 34, "the header is one line (" + Math.round(box($(".cd-head")).height) + "px)");
   } else {
-    // Under the name, starting where the name starts, as one group on one line.
+    // Under the name, as one group on one line that ENDS on the row's right
+    // edge — where the pill column ends, and where the footer's Continue ends
+    // (the critic, r0924: Continue ended 40px past Merge…, and the pill sat
+    // at the far right while the buttons started under the name).
     expect(box(firstBtn).top >= box($(".cd-name", nameRow)).bottom, "narrow: the actions drop under the name");
-    const file = box($(".cd-file", nameRow));
-    expect(Math.abs(box(bySlot.yours[0]).left - file.left) < 1, "and start where the name starts (" + px([box(bySlot.yours[0]).left, file.left]) + ")");
+    const mergeRight = box(bySlot.merge[0]).right;
+    const pillRight = Math.max(...pills.map((p) => box(p).right));
+    expect(Math.abs(pillRight - mergeRight) < 1, "the pill column ends where Merge… ends (" + px([pillRight, mergeRight]) + ")");
+    const cont = $$(".cd-foot button").find((b) => /Continue/.test(b.textContent));
+    const abort = $$(".cd-foot button").find((b) => /Abort/.test(b.textContent));
+    expect(Math.abs(box(cont).right - mergeRight) < 1, "Continue ends where Merge… ends (" + px([box(cont).right, mergeRight]) + ")");
+    expect(Math.abs(box(abort).left - box($(".cd-status", nameRow)).left) < 1, "Abort starts at the status column (" + px([box(abort).left, box($(".cd-status", nameRow)).left]) + ")");
     for (const r of rows) {
       const tops = new Set($$("button", r).map((b) => Math.round(box(b).top)));
       expect(tops.size <= 1, r.dataset.path + ": its buttons share one line");
@@ -380,9 +393,10 @@ for (const [name, t] of Object.entries(THEMES)) {
       }
 
       // Disabled: grey, not a faded purple.
-      d.render(state(ROWS, { busy: true }));
+      // (Work that is not one file's — a Continue: one file's keeps every other row's look, conflictsInPlace.test.ts.)
+      d.render(state(ROWS.filter((f) => f.status !== "busy"), { busy: true }));
       const dy = $('[data-key="accept:yours:src/app.ts"]'), dm = $('[data-key="merge:src/app.ts"]');
-      expect(dy.disabled && dm.disabled, "precondition: the host is working");
+      expect([dy, dm].every((b) => b.disabled || b.getAttribute("aria-disabled") === "true"), "precondition: the host is working");
       expect(sat(rgba(getComputedStyle(dy).color)) < 0.12, "a disabled Accept Yours is grey (" + getComputedStyle(dy).color + ")");
       expect(sat(ground(dm)) < 0.12, "a disabled Merge… is not a purple fill (" + ground(dm).map(Math.round) + ")");
     `);
@@ -401,11 +415,49 @@ test("the header names the repository as secondary: 'in <repo>', after the title
     const rs = getComputedStyle(repo), ts = getComputedStyle(title);
     expect(parseFloat(rs.fontSize) < parseFloat(ts.fontSize) && +rs.fontWeight < +ts.fontWeight, "smaller and lighter than the title");
     expect(lum(rgba(rs.color)) < lum(rgba(ts.color)), "and muted on a dark theme");
+    // The operation's title ("Merging feature/login into main") says what the
+    // direction bar under it says: it is the dashboard's description for a
+    // screen reader, and takes no line of its own (the critic, r0924: the
+    // header said the same thing three times, and the list paid for it).
+    const t = $(".cd-optitle");
+    expect(t && t.textContent === "Merging feature/login into main" && box(t).height <= 1, "the operation's title takes no line (" + (t && Math.round(box(t).height)) + "px)");
+    expect($(".cd-dash").getAttribute("aria-describedby") === t.id, "and describes the dashboard instead");
     // Each block of the header on its own line, the same space apart.
-    const blocks = [".cd-head", ".cd-optitle", ".cd-dirbar", ".cd-progress", ".cd-list"].map((s) => box($(s)));
+    const blocks = [".cd-head", ".cd-dirbar", ".cd-progress", ".cd-list"].map((s) => box($(s)));
     const gaps = blocks.slice(1).map((b, i) => b.top - blocks[i].bottom);
     expect(gaps.every((g) => g > 4), "no block overlaps the one above (" + px(gaps) + ")");
     expect(same(gaps, 1), "one rhythm between them (" + px(gaps) + ")");
   `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("the list's height: the footer right under a short list, a floor of three rows in a short pane, and a faded edge where rows run on", { skip }, async () => {
+  // The critic, r0924: in a tall editor Abort and Continue sat 400px below the
+  // last row; in the desktop's pane at 900x900 two rows showed and then slivers
+  // of buttons, and at 900x700 the list shrank to a hairline.
+  const v = await run(`
+    theme(${JSON.stringify(THEMES.dark)});
+    const root = document.getElementById("root");
+    root.classList.add("cd-host-fill");
+    const d = mount();
+    d.render(state(ROWS));
+    const list = $(".cd-list"), foot = $(".cd-foot"), dash = $(".cd-dash");
+    const gap = box(foot).top - box(list).bottom;
+    expect(gap >= 8 && gap <= 16, "tall: the footer sits right under the list (" + Math.round(gap) + "px), not at the bottom of the page");
+    expect(!list.classList.contains("is-more-below") && getComputedStyle(list).maskImage === "none", "and a list that fits has no fade");
+
+    // The desktop's compact pane, short: the list keeps three rows and more, the dashboard scrolls.
+    root.style.width = "343px";
+    root.style.height = "380px";
+    d.render(state(ROWS.map((f) => ({ ...f }))));
+    const rowH = box($(".cd-row")).height;
+    expect(box(list).height >= 3 * rowH, "short: the list keeps at least three rows (" + Math.round(box(list).height) + "px, rows " + Math.round(rowH) + "px)");
+    expect(dash.scrollHeight > dash.clientHeight + 10, "and the dashboard scrolls instead (" + dash.scrollHeight + " in " + dash.clientHeight + ")");
+    expect(dash.classList.contains("is-more-below") && getComputedStyle(dash).maskImage !== "none", "its bottom edge fades: a cut row reads as more below (" + getComputedStyle(dash).maskImage.slice(0, 40) + ")");
+    expect(list.classList.contains("is-more-below") && getComputedStyle(list).maskImage !== "none", "and so does the list's, with rows beyond it");
+    dash.scrollTop = dash.scrollHeight;
+    dash.dispatchEvent(new Event("scroll"));
+    expect(!dash.classList.contains("is-more-below") && dash.classList.contains("is-more-above"), "scrolled to its end, the fade moves to the top");
+  `, 960);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });

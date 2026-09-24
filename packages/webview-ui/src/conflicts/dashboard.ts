@@ -15,6 +15,14 @@
 // The component holds no git state. The host sends a full ConflictsState after
 // every change; the component posts ConflictsActions and nothing else. Every
 // name it shows — a branch, a path, a subject — is written as a text node.
+//
+// A state is painted IN PLACE (patch.ts): the page is built from the state
+// into a detached copy and only what differs is written to the screen, so
+// resolving one file changes that file's row, the progress bar and the footer
+// and nothing else — no row, button, hover, focus or scroll position is
+// thrown away. While the host works, the controls are LOCKED (aria-disabled,
+// ignored by the click handler) rather than disabled: a lock that lasts a
+// moment is invisible, and a disabled button would drop the keyboard focus.
 
 import type {
   ConflictFileView,
@@ -43,6 +51,7 @@ import {
   successCard,
   willDropText,
 } from "./opText";
+import { patchElement, type PatchOptions } from "./patch";
 
 export interface DashboardTimers {
   set(fn: () => void, ms: number): number;
@@ -119,6 +128,79 @@ function buttonLabel(label: string): HTMLElement {
   return span;
 }
 
+/**
+ * A pill's words. The side's name at the end — "deleted in theirs (master)",
+ * "kept yours · main" — is a .cd-trim span: the compact pane hides it from
+ * sight only (the direction bar above names both sides), so the pill stays
+ * whole instead of losing half the branch name to an ellipsis.
+ */
+function pillLabel(pill: HTMLElement, text: string): void {
+  const m = /^(.+?)( \([^()]+\)| · .+)$/.exec(text);
+  if (!m) {
+    pill.textContent = text;
+    return;
+  }
+  pill.append(document.createTextNode(m[1]), el("span", "cd-trim", m[2]));
+}
+
+/**
+ * How a control stands: live; LOCKED while the host works (aria-disabled — it
+ * keeps its keyboard focus, the click handler ignores it, and its grey look
+ * waits a moment: conflicts.css); QUIET, locked while one FILE is being
+ * resolved (the row's spinner says so, and the rest of the page keeps its
+ * look however long git takes); or disabled by the operation itself.
+ */
+type Gate = false | "locked" | "quiet" | true;
+
+/** A control that must not act right now: disabled, or locked while the host works. */
+function isLocked(b: Element): boolean {
+  return (b as HTMLButtonElement).disabled === true || b.getAttribute("aria-disabled") === "true";
+}
+
+function gate(b: HTMLButtonElement, g: Gate): void {
+  if (g === true) b.disabled = true;
+  else if (g) {
+    b.setAttribute("aria-disabled", "true");
+    if (g === "quiet") b.dataset.lock = "quiet";
+  }
+}
+
+const ANCHOR_TAG = "gs-cd-anchor";
+
+/**
+ * A hidden child that hears the dashboard being put back into a page. The
+ * desktop rebuilds its Changes view after every file action and MOVES the
+ * dashboard into the new one: a move is a removal, and a removal resets the
+ * list's scroll and drops the keyboard focus. A custom element's
+ * connectedCallback runs before the page is painted again, so the dashboard
+ * restores both before anyone sees the list jump.
+ */
+function anchorElement(onConnect: () => void): HTMLElement {
+  const registry = (globalThis as { customElements?: CustomElementRegistry }).customElements;
+  if (!registry) {
+    const s = document.createElement("span");
+    s.hidden = true;
+    return s;
+  }
+  if (!registry.get(ANCHOR_TAG)) {
+    registry.define(
+      ANCHOR_TAG,
+      class extends HTMLElement {
+        connectedCallback(): void {
+          (this as unknown as { onConnect?: () => void }).onConnect?.();
+        }
+      },
+    );
+  }
+  const a = document.createElement(ANCHOR_TAG);
+  a.hidden = true;
+  (a as unknown as { onConnect?: () => void }).onConnect = onConnect;
+  return a;
+}
+
+/** The attributes a hold in progress takes from a new state; the rest (its sweep) is its own. */
+const HOLD_ATTRS = ["aria-disabled", "disabled", "title", "aria-label"] as const;
+
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
@@ -160,16 +242,47 @@ export class ConflictsDashboard {
   /** The inline confirm open in the footer, if any. Survives a state push of the same episode. */
   private confirming?: "abort" | "skip" | "drop";
   private episode?: string;
-  /** Rows the reader just acted on, drawn busy until the host's next state. */
-  private localBusy = new Set<string>();
-  /** Cancels for holds in progress, so a re-render or dispose never leaves a timer armed. */
-  private holds = new Set<() => void>();
+  /**
+   * Rows the reader just acted on, drawn busy until the host has done it: the
+   * row's status when it was pressed. It lasts while the host says it is
+   * working and the row has not changed yet (the desktop marks no row busy
+   * of its own, only the whole dashboard).
+   */
+  private localBusy = new Map<string, ConflictFileView["status"]>();
+  /**
+   * What each row last showed while it was not busy. A busy row keeps
+   * showing it — its pill and its buttons, locked, a spinner for its status —
+   * so a press changes the row once, when the file is resolved, instead of
+   * emptying it for the moment git takes.
+   */
+  private lastView = new Map<string, ConflictFileView>();
+  /** Holds in progress (button → its cancel), so a state, a lock or dispose never leaves a timer armed. */
+  private holds = new Map<HTMLButtonElement, () => void>();
   /**
    * A Continue / Skip / Abort was posted and the host has not answered yet.
    * The footer stays locked until the next state: two presses must never
    * become two commands (the desktop's main process QUEUES a second call).
    */
   private sent = false;
+  /** One FILE is being resolved (a row is busy): the page's lock is quiet (Gate). Set per paint. */
+  private fileWork = false;
+  /** A new stop was just rendered: its list starts at the top, not where the last one was scrolled. */
+  private freshEpisode = false;
+  /** Every button's action, by its data-key, as the LAST paint built it (one delegated click handler reads it). */
+  private handlers = new Map<string, () => void>();
+  /** The actions of the paint being built. */
+  private building = new Map<string, () => void>();
+  /** The file list on screen, and what watches it (its edges fade while rows lie beyond them). */
+  private listEl?: HTMLElement;
+  private listWatch?: ResizeObserver;
+  /** Where the list and the dashboard were scrolled, for a host that moves the dashboard (anchorElement). */
+  private listScroll = 0;
+  private dashScroll = 0;
+  /** The control the keyboard is on (its data-key, and its row's path), while it is in the dashboard. */
+  private focusKey?: string;
+  private focusPath?: string;
+  private readonly anchor: HTMLElement;
+  private readonly patchOpts: PatchOptions;
 
   constructor(root: HTMLElement, opts: ConflictsDashboardOptions) {
     this.post = opts.post;
@@ -182,7 +295,14 @@ export class ConflictsDashboard {
     // A label on a plain div is ignored; as a region it is a landmark.
     this.element.setAttribute("role", "region");
     this.element.setAttribute("aria-label", "Conflicts");
-    root.replaceChildren(this.element);
+    this.anchor = anchorElement(() => this.reattached());
+    this.element.appendChild(this.anchor);
+    this.patchOpts = {
+      keep: (n) => n === this.anchor,
+      // A hold in progress keeps its sweep; a lock or a removal still reaches it (paint cancels it then).
+      opaque: (e) => (this.holds.has(e as HTMLButtonElement) ? HOLD_ATTRS : undefined),
+      runtimeClasses: ["is-more-above", "is-more-below", "arming"],
+    };
     this.element.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.confirming) {
         e.stopPropagation();
@@ -191,6 +311,33 @@ export class ConflictsDashboard {
         this.rerender(trigger);
       }
     });
+    // ONE click handler for every button, by its data-key: a button kept from
+    // an earlier paint runs what THIS paint says it does.
+    this.element.addEventListener("click", (e) => {
+      const b = (e.target as Element | null)?.closest?.("button[data-key]");
+      if (!b || !this.element.contains(b) || isLocked(b)) return;
+      this.handlers.get(b.getAttribute("data-key") ?? "")?.();
+    });
+    this.element.addEventListener("focusin", (e) => this.noteFocus(e.target as Element | null));
+    this.element.addEventListener("focusout", () => {
+      queueMicrotask(() => {
+        // Moved by the host (the desktop's rebuild): keep what the keyboard
+        // was on, to give it back once the dashboard is in the page again.
+        if (!this.element.isConnected) return;
+        const now = document.activeElement;
+        if (now && this.element.contains(now)) this.noteFocus(now);
+        else this.focusKey = this.focusPath = undefined;
+      });
+    });
+    this.element.addEventListener(
+      "scroll",
+      () => {
+        this.dashScroll = this.element.scrollTop;
+        this.edges();
+      },
+      { passive: true },
+    );
+    root.replaceChildren(this.element);
     // The host answers with the first full state.
     this.post({ type: "ready" });
   }
@@ -198,9 +345,8 @@ export class ConflictsDashboard {
   /** Paint a full state. Every host re-sends one after each change. */
   render(state: ConflictsState): void {
     // Hosts re-send the whole state after any repository event (in VS Code a
-    // click that focuses the window sets off vscode.git's refresh). A repaint
-    // cancels every hold, so while one is in progress a re-send of exactly
-    // what is on screen is not painted — the hold would never complete.
+    // click that focuses the window sets off vscode.git's refresh). A re-send
+    // of exactly what is on screen changes nothing — and must not end a hold.
     if (this.holds.size > 0 && this.state && JSON.stringify(state) === JSON.stringify(this.state)) {
       return;
     }
@@ -210,8 +356,17 @@ export class ConflictsDashboard {
       // one before it.
       this.episode = state.op.episode;
       this.confirming = undefined;
+      this.freshEpisode = true;
+      this.localBusy.clear();
+      this.lastView.clear();
     }
-    this.localBusy.clear();
+    // A row the reader pressed stays busy while the host is still at it and
+    // the row has not moved yet; the host's answer (the row resolved, or the
+    // host done) ends it.
+    for (const [path, was] of [...this.localBusy]) {
+      const f = state.files.find((x) => x.path === path);
+      if (!f || !state.busy || f.status !== was) this.localBusy.delete(path);
+    }
     this.sent = false;
     if (state.busy) this.confirming = undefined;
     this.state = state;
@@ -219,8 +374,10 @@ export class ConflictsDashboard {
   }
 
   dispose(): void {
-    for (const cancel of [...this.holds]) cancel();
+    for (const cancel of [...this.holds.values()]) cancel();
     this.holds.clear();
+    this.listWatch?.disconnect();
+    this.listWatch = undefined;
     this.element.remove();
   }
 
@@ -233,16 +390,58 @@ export class ConflictsDashboard {
    * there (yet).
    */
   focusFile(path: string): boolean {
+    const pick = this.rowControl(path);
+    if (!pick) return false;
+    pick.focus();
+    return document.activeElement === pick;
+  }
+
+  /** A file's row's control for the keyboard: its Merge…, its Hold to undo, else its first usable button. */
+  private rowControl(path: string): HTMLButtonElement | undefined {
     const row = [...this.element.querySelectorAll<HTMLElement>(".cd-row")].find((r) => r.dataset.path === path);
-    if (!row) return false;
+    if (!row) return undefined;
     const live = (b: HTMLButtonElement | null | undefined): b is HTMLButtonElement => !!b && !b.disabled;
     const byKey = [`merge:${path}`, `restore:${path}`]
       .map((k) => row.querySelector<HTMLButtonElement>(`[data-key="${cssEscape(k)}"]`))
       .find(live);
-    const pick = byKey ?? [...row.querySelectorAll<HTMLButtonElement>("button")].find(live);
-    if (!pick) return false;
-    pick.focus();
-    return document.activeElement === pick;
+    return byKey ?? [...row.querySelectorAll<HTMLButtonElement>("button")].find(live);
+  }
+
+  /** Remember where the keyboard is, while it is in the dashboard. */
+  private noteFocus(target: Element | null): void {
+    if (!target || !this.element.contains(target)) return;
+    this.focusKey = target.closest("[data-key]")?.getAttribute("data-key") ?? undefined;
+    this.focusPath = target.closest<HTMLElement>(".cd-row")?.dataset.path;
+  }
+
+  /**
+   * Give the keyboard back to `key` — or, when that control is gone (the row
+   * it was in resolved), to its row's control for the keyboard. Scrolls
+   * nothing.
+   */
+  private restoreFocus(key: string | undefined, path: string | undefined): void {
+    const byKey = key ? this.element.querySelector<HTMLButtonElement>(`[data-key="${cssEscape(key)}"]`) : null;
+    const pick = byKey && !byKey.disabled ? byKey : path ? this.rowControl(path) : undefined;
+    pick?.focus({ preventScroll: true });
+  }
+
+  /**
+   * The host put the dashboard back into its page (anchorElement): the move
+   * reset the list's scroll and, if the keyboard was in the dashboard, left it
+   * on <body>. Give both back.
+   */
+  private reattached(): void {
+    // Lay the page out first: until then the moved nodes have no boxes, and
+    // Chrome will neither scroll nor focus an element it has not laid out.
+    void this.element.offsetHeight;
+    const list = this.listEl;
+    if (list && list.isConnected && list.scrollTop !== this.listScroll) list.scrollTop = this.listScroll;
+    if (this.element.scrollTop !== this.dashScroll) this.element.scrollTop = this.dashScroll;
+    const now = document.activeElement;
+    if (this.focusKey !== undefined && (!now || now === document.body)) {
+      this.restoreFocus(this.focusKey, this.focusPath);
+    }
+    this.edges();
   }
 
   // ── painting ──
@@ -257,24 +456,25 @@ export class ConflictsDashboard {
     if (!state) return;
     // Keep the keyboard where it was across a repaint — only when it was IN
     // the dashboard: a host page has its own `data-key`s (the desktop's file
-    // rows), and a repaint must never pull focus in from outside.
+    // rows), and a repaint must never pull focus in from outside. A patch
+    // keeps the focused node itself; this is for when that node goes (the
+    // row it was in resolved) or a confirm moves the keyboard on purpose.
     const active = document.activeElement as HTMLElement | null;
+    const hadFocus = !!active && this.element.contains(active);
     const focusKey =
-      focusKeyOverride ??
-      (active && this.element.contains(active)
-        ? active.closest("[data-key]")?.getAttribute("data-key") ?? undefined
-        : undefined);
-    for (const cancel of [...this.holds]) cancel();
-    this.holds.clear();
+      focusKeyOverride ?? (hadFocus ? active!.closest("[data-key]")?.getAttribute("data-key") ?? undefined : undefined);
+    const focusPath = hadFocus ? active!.closest<HTMLElement>(".cd-row")?.dataset.path : undefined;
 
     const op = state.op;
     const files = state.files;
     const pending = files.filter((f) => f.status !== "resolved").length;
     const allDone = files.length > 0 && pending === 0;
-    const root = this.element;
-    root.className = "cd-dash" + (state.busy ? " is-busy" : "") + (allDone ? " is-done" : "");
+    this.fileWork = files.some((f) => f.status === "busy" || this.localBusy.has(f.path));
+    // The page is BUILT into a detached copy, then patched onto the screen.
+    const root = el("div", "cd-dash" + (state.busy ? " is-busy" : "") + (allDone ? " is-done" : ""));
+    root.setAttribute("role", "region");
     root.dataset.kind = op.kind;
-    root.replaceChildren();
+    this.building = new Map();
 
     // Header: brand, title, which repository (secondary: "in <repo>"), what
     // is in progress. The words wrap as one line beside the mark.
@@ -305,9 +505,21 @@ export class ConflictsDashboard {
     head.append(mark, headline);
     root.appendChild(head);
 
-    if (op.title) root.appendChild(el("div", "cd-optitle", op.title));
-
     const dir = directionParts(op);
+    if (op.title) {
+      const t = el("div", "cd-optitle", op.title);
+      if (dir) {
+        // "Rebasing test onto master · commit 1 of 1: fbb4899 test: rework
+        // the sample" is the direction bar and the commit card below it, a
+        // third time. With them on screen the title is the dashboard's
+        // description for a screen reader, and its line goes to the list.
+        t.classList.add("cd-sr");
+        t.id = "cd-optitle";
+        root.setAttribute("aria-describedby", t.id);
+      }
+      root.appendChild(t);
+    }
+
     if (dir) {
       const bar = el("div", "cd-dirbar");
       bar.setAttribute("role", "group");
@@ -421,6 +633,9 @@ export class ConflictsDashboard {
       );
     }
     for (const f of files) list.appendChild(this.row(f, state));
+    // How many rows: a host that fills gives the list a floor of a few of
+    // them (conflicts.css), never more than it has.
+    list.style.setProperty("--cd-rows", String(files.length));
     if (list.childElementCount > 0) root.appendChild(list);
 
     // POLISH A5.10: in the middle of an operation only the FIRST link (the
@@ -437,7 +652,7 @@ export class ConflictsDashboard {
         a.type = "button";
         a.title = link.url;
         a.dataset.key = `link:${link.url}`;
-        a.addEventListener("click", () => this.post({ type: "openExternal", url: link.url }));
+        this.building.set(a.dataset.key, () => this.post({ type: "openExternal", url: link.url }));
         support.appendChild(a);
       }
       root.appendChild(support);
@@ -455,9 +670,71 @@ export class ConflictsDashboard {
 
     root.appendChild(this.footer(state, pending, allDone));
 
-    if (focusKey) {
-      const again = root.querySelector<HTMLElement>(`[data-key="${cssEscape(focusKey)}"]`);
-      if (again && !(again as HTMLButtonElement).disabled) again.focus({ preventScroll: true });
+    // Onto the screen: only what differs is written (patch.ts).
+    this.handlers = this.building;
+    patchElement(this.element, root, this.patchOpts);
+
+    // A hold whose button went away, or that the host has just locked, ends.
+    for (const [btn, cancel] of [...this.holds]) {
+      if (!btn.isConnected || !this.element.contains(btn) || isLocked(btn)) cancel();
+    }
+
+    this.watchList(this.element.querySelector<HTMLElement>(":scope > .cd-list"));
+    if (this.freshEpisode) {
+      // A new stop's list starts at the top, not where the last one was scrolled.
+      this.freshEpisode = false;
+      if (this.listEl) this.listEl.scrollTop = this.listScroll = 0;
+    }
+    this.edges();
+
+    if (focusKeyOverride !== undefined || hadFocus) {
+      const now = document.activeElement;
+      if (focusKeyOverride !== undefined || !now || !this.element.contains(now)) this.restoreFocus(focusKey, focusPath);
+    }
+  }
+
+  /**
+   * Fade the edge of the list that has rows beyond it (is-more-below /
+   * is-more-above), so a row the pane cuts reads as "more this way" and not as
+   * a sliver of broken buttons. Measured after every paint, on every scroll,
+   * and whenever the list's box changes (the host resized, a notice came or
+   * went) — a class, not a scroll-driven animation, so a page with animations
+   * switched off still shows it.
+   */
+  private watchList(list: HTMLElement | null): void {
+    if ((list ?? undefined) === this.listEl) return;
+    this.listWatch?.disconnect();
+    this.listWatch = undefined;
+    this.listEl = list ?? undefined;
+    if (!list) return;
+    this.listScroll = list.scrollTop;
+    list.addEventListener(
+      "scroll",
+      () => {
+        if (list !== this.listEl) return;
+        this.listScroll = list.scrollTop;
+        this.edges();
+      },
+      { passive: true },
+    );
+    this.listWatch = typeof ResizeObserver === "function" ? new ResizeObserver(() => this.edges()) : undefined;
+    this.listWatch?.observe(list);
+    this.listWatch?.observe(this.element);
+  }
+
+  /**
+   * The list's edges — and the dashboard's own, where a short host pane
+   * scrolls the whole dashboard (the list keeps a floor of rows, and below
+   * that the page scrolls: the desktop's pane in a 700 px window). Only a
+   * host that fills styles the dashboard's (conflicts.css).
+   */
+  private edges(): void {
+    for (const box of [this.listEl, this.element]) {
+      if (!box || !box.isConnected) continue;
+      const below = box.scrollHeight - box.clientHeight - box.scrollTop > 1;
+      const above = box.scrollTop > 1;
+      if (box.classList.contains("is-more-below") !== below) box.classList.toggle("is-more-below", below);
+      if (box.classList.contains("is-more-above") !== above) box.classList.toggle("is-more-above", above);
     }
   }
 
@@ -473,7 +750,7 @@ export class ConflictsDashboard {
       b.type = "button";
       b.dataset.key = "tip-why";
       b.title = why;
-      b.addEventListener("click", () => this.post({ type: "openExternal", url: why }));
+      this.building.set("tip-why", () => this.post({ type: "openExternal", url: why }));
       actions.appendChild(b);
     }
     actions.appendChild(
@@ -495,20 +772,33 @@ export class ConflictsDashboard {
   }
 
   /**
-   * One file, on the list's grid: status | file | pill | actions. Every row
-   * has all four cells, empty or not, so the pill column and the three action
-   * slots line up down the whole list ("everything is everywhere" was rows
-   * that right-aligned whatever buttons they had). The actions are three
-   * fixed-width SLOTS, by role: Accept Yours (or the deleting yours) always in
-   * the first, Accept Theirs in the second, Merge… in the third; a resolved
-   * row's Hold to undo takes the first.
+   * One file, on the LIST's grid: status | file | pill | actions. Every row
+   * has all four cells, empty or not, and the columns belong to the list
+   * (conflicts.css), so the pill column and the three action slots line up
+   * down the whole list, each as wide as the widest thing in it ("everything
+   * is everywhere" was rows that right-aligned whatever buttons they had). The
+   * actions are three SLOTS, by role: Accept Yours (or the deleting yours)
+   * always in the first, Accept Theirs in the second, Merge… in the third; a
+   * resolved row's Hold to undo takes the first.
+   *
+   * A BUSY row (the host is doing what was pressed) keeps showing what it
+   * showed — its pill, its buttons, locked — with a spinner for its status,
+   * so it changes once, when the file is resolved; it used to empty itself
+   * for the moment git takes and fill again, a flash per press.
    */
-  private row(f: ConflictFileView, state: ConflictsState): HTMLElement {
-    const busy = f.status === "busy" || this.localBusy.has(f.path);
-    const resolved = f.status === "resolved" && !busy;
-    const row = el("div", "cd-row" + (resolved ? " is-resolved" : busy ? " is-busy" : ""));
+  private row(fileView: ConflictFileView, state: ConflictsState): HTMLElement {
+    const busy = fileView.status === "busy" || this.localBusy.has(fileView.path);
+    if (!busy) this.lastView.set(fileView.path, fileView);
+    // What the row shows: the file as it is, or, while busy, as it last was.
+    const f = busy ? (this.lastView.get(fileView.path) ?? fileView) : fileView;
+    const resolved = f.status === "resolved";
+    // Its own buttons wait quietly behind its spinner; the others are locked
+    // while the host works — quietly too while that work is one file's.
+    const lock: Gate = busy ? "quiet" : state.busy ? (this.fileWork ? "quiet" : "locked") : false;
+    const row = el("div", "cd-row" + (resolved ? " is-resolved" : "") + (busy ? " is-busy" : ""));
     row.setAttribute("role", "listitem");
     row.dataset.path = f.path;
+    if (busy) row.setAttribute("aria-busy", "true");
 
     const status = el("span", "cd-status");
     if (busy) {
@@ -530,13 +820,15 @@ export class ConflictsDashboard {
     if (resolved) {
       // "kept yours · test" (P-53), "deleted" for a take of the side with no file.
       const said = choicePill(f, state.op);
-      const pill = el("span", "cd-choice", `✓ ${said.text}`);
+      const pill = el("span", "cd-choice");
+      pillLabel(pill, `✓ ${said.text}`);
       pill.title = said.title;
       pillCell.appendChild(pill);
-    } else if (!busy) {
+    } else if (f.status !== "busy") {
       const word = f.badge || shapeWord(f.shape);
       if (word) {
-        const badge = el("span", "cd-badge", word);
+        const badge = el("span", "cd-badge");
+        pillLabel(badge, word);
         badge.title = word;
         pillCell.appendChild(badge);
       }
@@ -547,9 +839,9 @@ export class ConflictsDashboard {
     if (resolved) {
       // A finished stash apply has nothing left to undo INTO (git keeps no
       // operation for it), so no hold-to-undo there.
-      if (!state.finished) actions.appendChild(this.holdButton(f, state));
-    } else if (!busy) {
-      const disabled = state.busy;
+      if (!state.finished) actions.appendChild(this.holdButton(f, state, lock));
+    } else if (f.status !== "busy") {
+      const disabled = lock;
       if (f.shape === "both-deleted") {
         actions.appendChild(
           this.button(
@@ -614,15 +906,20 @@ export class ConflictsDashboard {
   }
 
   private markBusy(path: string): void {
-    this.localBusy.add(path);
+    const now = this.state?.files.find((f) => f.path === path)?.status ?? "pending";
+    this.localBusy.set(path, now);
     this.rerender();
   }
 
+  /**
+   * A button. Its action is looked up by `key` when it is clicked (the one
+   * delegated handler), so the node can outlive the paint that built it.
+   */
   private button(
     label: string,
     title: string,
     key: string,
-    disabled: boolean,
+    g: Gate,
     onClick: () => void,
     cls = "",
     icon = "",
@@ -633,11 +930,8 @@ export class ConflictsDashboard {
     b.appendChild(buttonLabel(label));
     b.title = title;
     b.dataset.key = key;
-    b.disabled = disabled;
-    b.addEventListener("click", () => {
-      if (b.disabled) return;
-      onClick();
-    });
+    gate(b, g);
+    this.building.set(key, onClick);
     return b;
   }
 
@@ -645,15 +939,18 @@ export class ConflictsDashboard {
    * Undo a resolved row by HOLDING the button for `holdToUndoMs` — a pointer
    * press, or Enter / Space held down. A plain click does nothing: bringing a
    * conflict back is one gesture too many to be an accident.
+   *
+   * Its listeners live on the node, which a later paint keeps: what they need
+   * from the state (the hold's length) they read when the hold starts.
    */
-  private holdButton(f: ConflictFileView, state: ConflictsState): HTMLButtonElement {
-    const ms = state.holdToUndoMs;
+  private holdButton(f: ConflictFileView, state: ConflictsState, g: Gate): HTMLButtonElement {
+    const path = f.path;
     const btn = el("button", "cd-undo-hold cd-slot-yours");
     btn.type = "button";
-    btn.dataset.key = `restore:${f.path}`;
+    btn.dataset.key = `restore:${path}`;
     btn.title = "Hold to bring the conflict back (hold Enter or Space from the keyboard)";
-    btn.setAttribute("aria-label", `Hold to undo the resolution of ${f.path}`);
-    btn.disabled = state.busy;
+    btn.setAttribute("aria-label", `Hold to undo the resolution of ${path}`);
+    gate(btn, g);
     const fill = el("span", "cd-undo-fill");
     const label = el("span", "cd-undo-label", "Hold to undo");
     btn.append(fill, label);
@@ -668,22 +965,27 @@ export class ConflictsDashboard {
       if (!timer) return;
       this.timers.clear(timer);
       timer = 0;
-      this.holds.delete(cancel);
+      this.holds.delete(btn);
       reset();
     };
     const start = (): void => {
-      if (timer || btn.disabled) return;
+      if (timer || isLocked(btn)) return;
+      const ms = this.state?.holdToUndoMs ?? state.holdToUndoMs;
       btn.classList.add("arming");
       fill.style.transitionDuration = `${ms}ms`;
       // Force a layout so the sweep starts from 0 even mid-cancel.
       void fill.offsetWidth;
       fill.style.width = "100%";
-      this.holds.add(cancel);
+      this.holds.set(btn, cancel);
       timer = this.timers.set(() => {
         timer = 0;
-        this.holds.delete(cancel);
-        this.markBusy(f.path);
-        this.post({ type: "restore", path: f.path });
+        this.holds.delete(btn);
+        // Done: the sweep goes, the row turns busy (locked) until the host has it.
+        btn.classList.remove("arming");
+        fill.style.transitionDuration = "0ms";
+        fill.style.width = "0%";
+        this.markBusy(path);
+        this.post({ type: "restore", path });
       }, ms);
     };
     btn.addEventListener("pointerdown", (e) => {
@@ -719,7 +1021,7 @@ export class ConflictsDashboard {
       return foot;
     }
 
-    const busy = state.busy || this.sent;
+    const busy: Gate = this.sent ? "locked" : state.busy ? (this.fileWork ? "quiet" : "locked") : false;
     const abort = this.button(
       abortLabel(op),
       abortConfirm(op).detail,
@@ -767,7 +1069,7 @@ export class ConflictsDashboard {
         op.verbs.continue,
         why || op.title || op.verbs.continue,
         "continue",
-        busy || !op.canContinue,
+        !op.canContinue ? true : busy,
         () => {
           if (op.willDrop) {
             this.confirming = "drop";
@@ -819,7 +1121,7 @@ export class ConflictsDashboard {
       this.confirming = undefined;
       this.rerender(which ? triggerKey(which) : undefined);
     });
-    const go = this.button(ask.confirm, ask.detail, "confirm-go", state.busy || this.sent, () => {
+    const go = this.button(ask.confirm, ask.detail, "confirm-go", state.busy || this.sent ? "locked" : false, () => {
       this.confirming = undefined;
       if (which === "abort") this.send({ type: "abort" });
       else if (which === "skip") this.send({ type: "skip" });

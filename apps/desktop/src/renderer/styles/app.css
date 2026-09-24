@@ -9652,6 +9652,15 @@ body.vscode-light .gh-label-chip {
   overflow: auto;
   background: var(--vscode-editor-background);
 }
+/* Every file resolved from the dashboard (Accept, Delete, Hold to undo, the
+   merge editor's) repaints the Changes view, and a repainted view is a new
+   .view-host child, so gs-view-in played again: the whole window dropped to
+   30% and came back — "the whole screen flashes when you resolve a file".
+   While the dashboard is in the view, the view does not make an entrance;
+   the dashboard updates the one row that changed (conflicts/patch.ts). */
+.view-host > .changes-view:has(.cd-dash) {
+  animation: none;
+}
 /* A conflicted file open in the merge editor takes the whole Changes view.
    Beside the commit composer, its buttons, the file list and the operation
    banner, three panes got about 194px each at the default 1280px window and
