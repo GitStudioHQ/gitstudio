@@ -1,9 +1,10 @@
 // A PNG reader for what Chrome's screenshots are: 8-bit RGB or RGBA,
 // non-interlaced. Enough for a check to read the PIXELS the browser painted
 // (alignment.ts samples the columns where a gutter meets a pane) without a
-// dependency.
+// dependency. And a writer, for the crops and film strips a recording keeps
+// (dashboardClicks.ts).
 
-import { inflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 
 export interface Image {
   width: number;
@@ -88,4 +89,101 @@ export const hex = (c: [number, number, number]): string => c.map((v) => v.toStr
 /** Whether two colours are the same, give or take `tol` per channel. */
 export function same(a: [number, number, number], b: [number, number, number], tol = 2): boolean {
   return Math.abs(a[0] - b[0]) <= tol && Math.abs(a[1] - b[1]) <= tol && Math.abs(a[2] - b[2]) <= tol;
+}
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(buf: Uint8Array): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function chunk(type: string, body: Buffer): Buffer {
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(body.length, 0);
+  head.write(type, 4, "latin1");
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0);
+  return Buffer.concat([head, body, crc]);
+}
+
+/** An 8-bit RGBA PNG of `img` (filter 0 on every row: simple, and plenty for UI screenshots). */
+export function encodePng(img: Image): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(img.width, 0);
+  ihdr.writeUInt32BE(img.height, 4);
+  ihdr[8] = 8; // depth
+  ihdr[9] = 6; // RGBA
+  const stride = img.width * 4;
+  const raw = Buffer.alloc((stride + 1) * img.height);
+  for (let y = 0; y < img.height; y++) {
+    raw[y * (stride + 1)] = 0;
+    raw.set(img.data.subarray(y * stride, (y + 1) * stride), y * (stride + 1) + 1);
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw, { level: 6 })),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/** The part of `img` inside [x, x + w) × [y, y + h), clamped to the image. */
+export function crop(img: Image, x: number, y: number, w: number, h: number): Image {
+  const x0 = Math.max(0, Math.round(x));
+  const y0 = Math.max(0, Math.round(y));
+  const x1 = Math.min(img.width, Math.round(x + w));
+  const y1 = Math.min(img.height, Math.round(y + h));
+  const cw = Math.max(0, x1 - x0);
+  const ch = Math.max(0, y1 - y0);
+  const out = new Uint8Array(cw * ch * 4);
+  for (let r = y0; r < y1; r++) {
+    out.set(img.data.subarray((r * img.width + x0) * 4, (r * img.width + x1) * 4), (r - y0) * cw * 4);
+  }
+  return { width: cw, height: ch, data: out };
+}
+
+/** `img` at 1/`k` of its size, each pixel the mean of its k × k block. */
+export function shrink(img: Image, k: number): Image {
+  const w = Math.floor(img.width / k);
+  const h = Math.floor(img.height / k);
+  const out = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      for (let c = 0; c < 4; c++) {
+        let s = 0;
+        for (let dy = 0; dy < k; dy++) for (let dx = 0; dx < k; dx++) s += img.data[((y * k + dy) * img.width + x * k + dx) * 4 + c];
+        out[(y * w + x) * 4 + c] = Math.round(s / (k * k));
+      }
+    }
+  }
+  return { width: w, height: h, data: out };
+}
+
+/** Images in rows of `cols`, `gap` px apart on a dark ground: a film strip. */
+export function sheet(imgs: Image[], cols: number, gap = 8): Image {
+  const w = Math.max(...imgs.map((i) => i.width));
+  const h = Math.max(...imgs.map((i) => i.height));
+  const rows = Math.ceil(imgs.length / cols);
+  const W = cols * w + (cols + 1) * gap;
+  const H = rows * h + (rows + 1) * gap;
+  const out = new Uint8Array(W * H * 4);
+  for (let i = 0; i < W * H; i++) out.set([24, 24, 24, 255], i * 4);
+  imgs.forEach((img, i) => {
+    const ox = gap + (i % cols) * (w + gap);
+    const oy = gap + Math.floor(i / cols) * (h + gap);
+    for (let y = 0; y < img.height; y++) {
+      out.set(img.data.subarray(y * img.width * 4, (y + 1) * img.width * 4), ((oy + y) * W + ox) * 4);
+    }
+  });
+  return { width: W, height: H, data: out };
 }

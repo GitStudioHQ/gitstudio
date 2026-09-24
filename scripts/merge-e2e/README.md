@@ -21,7 +21,21 @@ npx tsx scripts/merge-e2e/render.ts --scenario rebase.diff3 --file stress/userSe
 npx tsx scripts/merge-e2e/alignment.ts --scenarios issue12-exact.diff3 --hosts ext --dpr 2
 npx tsx --test scripts/merge-e2e/alignment.test.ts            # the whole matrix, both hosts, 1x, 1.5x and 2x
 # a slice of it (every case once, one operation per style) runs with packages/webview-ui's own tests
+
+# the conflicts LIST in REAL VS Code: five presses, each must change only its own row (not in CI)
+(cd apps/extension && npm run package && npx @vscode/vsce package --no-dependencies -o /tmp/vsix/)
+(cd apps/merge-studio && npm run package && npx @vscode/vsce package --no-dependencies -o /tmp/vsix/)
+npx tsx scripts/merge-e2e/dashboardClicks.ts --vsix /tmp/vsix --scenario issue12.merge --out /tmp/clicks
+npx tsx scripts/merge-e2e/dashboardClicks.ts --vsix /tmp/vsix --repo <a repository stopped with conflicts> --out /tmp/clicks \
+    --shots "Default Dark Modern,Default Light Modern"
 ```
+
+`dashboardClicks.ts` needs macOS, `/Applications/Visual Studio Code.app` (or
+`GS_VSCODE_APP`) and a free DevTools port (`--port`, default 9873). The VS
+Code it drives is its own: a fresh `--user-data-dir` and `--extensions-dir`
+under `--out`, started with `open -g` (never brought to the front; nothing
+focuses or raises it) and quit, its profile deleted, when the run ends. The
+repository is CHANGED (files get resolved): pass a throwaway one.
 
 ## Files
 
@@ -35,7 +49,8 @@ npx tsx --test scripts/merge-e2e/alignment.test.ts            # the whole matrix
 | `editorHosts.test.ts` | Over every conflict: the extensions and the desktop describe each file alike (shape, missing role, base, conflict type). Over every text conflict: what the merge editor writes to the file before Apply (every open conflict keeps its markers; opening writes nothing) and what it starts from (git's own file is never "already resolved"). |
 | `render.ts`, `cdp.ts`, `themes.ts` | Headless render of the real merge view: the extension's webview (VS Code Dark+ / Light+ / HC dark / HC light token values) and the desktop renderer (dark / light). |
 | `alignment.ts` | Walks every file of every scenario in the real view, as it opens, half handled, and resolved, and measures what the browser PAINTS: every ribbon end must meet its pane's band on the same device row (±0 at 1x and 2x), on the pixel grid the panes are snapped to, reaching into the pane; the result's colour must say whether a conflict is open or has one side in; a resolved change draws nothing across the gutters. Then it photographs the seams (text hidden) and reads the pixels: no column of another colour (the gutter's border) inside any band, and the same first and last rows in the gutter and the pane. |
-| `png.ts` | A PNG reader for Chrome's screenshots, so a check can read pixels without a dependency. |
+| `png.ts` | A PNG reader for Chrome's screenshots, so a check can read pixels without a dependency; and a writer (crops, film strips). |
+| `dashboardClicks.ts` | The conflicts list in REAL VS Code, over CDP: Accept Yours on the first row, Accept Theirs on a middle row, Delete the file, Hold to undo, and a terminal `git add`, each pressed with real input. For each it records every host message, every DOM mutation, every button's look per frame and the screen (a screencast), and fails on any write, look change or changed pixel outside the pressed row, the progress bar and the footer's count, or a reloaded page. Writes the frames, a strip around the press, and `replay.json` — the messages `packages/webview-ui/test/conflictsReplay.test.ts` replays headlessly (copied to its `fixtures/vscodeDashboardClicks.json`). Run against f5b9267 (the build the owner rejected) it fails all four presses (writes to every other row, 4 host messages each); only the terminal resolve, which presses nothing, passes there. |
 | `alignment.test.ts` | Runs it over the whole matrix in both hosts at 1x, 1.5x and 2x, requires every block side of oracle.json to have been measured, and proves the check fails on the builds that were rejected: 562966a (the owner's offset dashed lines) and 9f77171 (the critic's gutter-border hairline, a half-done conflict that looked open, and resolved changes still outlined across the gutters). |
 
 ## One convention

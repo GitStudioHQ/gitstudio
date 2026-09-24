@@ -1,0 +1,2026 @@
+{
+ "recordedWith": "scripts/merge-e2e/dashboardClicks.ts",
+ "repo": "merge-playground/quick-rebase (scripts: quick-playground.sh)",
+ "initial": {
+  "brand": {
+   "name": "GitStudio",
+   "mark": "gitstudio"
+  },
+  "repoName": "quick-rebase",
+  "op": {
+   "kind": "rebase",
+   "backend": "merge",
+   "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+   "direction": {
+    "from": "yours",
+    "verb": "onto",
+    "to": "theirs"
+   },
+   "step": {
+    "n": 1,
+    "m": 1,
+    "unit": "commit"
+   },
+   "commit": {
+    "sha": "744e69108a170419c4e8b1271cc5171100689937",
+    "subject": "test: rework the sample",
+    "author": "Playground"
+   },
+   "yours": {
+    "role": "yours",
+    "stage": 3,
+    "name": "test",
+    "paneTitle": "Rebasing 744e691 from test",
+    "description": "Your commit 744e691 “test: rework the sample” from test"
+   },
+   "theirs": {
+    "role": "theirs",
+    "stage": 2,
+    "name": "master",
+    "paneTitle": "Already rebased commits and commits from master",
+    "description": "master, plus the commits of test already rebased onto it"
+   },
+   "verbs": {
+    "continue": "Continue Rebase",
+    "abort": "Abort Rebase"
+   },
+   "canContinue": false,
+   "canSkip": false,
+   "continueBlocked": "9 files still have conflicts",
+   "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+  },
+  "files": [
+   {
+    "path": "README.md",
+    "status": "pending",
+    "shape": "text"
+   },
+   {
+    "path": "app/calculator.py",
+    "status": "pending",
+    "shape": "text"
+   },
+   {
+    "path": "app/greeting.py",
+    "status": "pending",
+    "badge": "deleted in yours (test)",
+    "shape": "modify-delete",
+    "missingRole": "yours"
+   },
+   {
+    "path": "assets/logo.bin",
+    "status": "pending",
+    "shape": "binary"
+   },
+   {
+    "path": "cases/same-both.txt",
+    "status": "pending",
+    "shape": "text"
+   },
+   {
+    "path": "cases/whitespace.txt",
+    "status": "pending",
+    "shape": "text"
+   },
+   {
+    "path": "f.txt",
+    "status": "pending",
+    "shape": "text"
+   },
+   {
+    "path": "stress/config.json",
+    "status": "pending",
+    "shape": "text"
+   },
+   {
+    "path": "stress/userService.js",
+    "status": "pending",
+    "shape": "text"
+   }
+  ],
+  "total": 9,
+  "resolved": 0,
+  "busy": true,
+  "holdToUndoMs": 750
+ },
+ "scenarios": [
+  {
+   "scenario": "1-accept-yours-first-row",
+   "act": {
+    "kind": "click",
+    "path": "README.md",
+    "key": "accept:yours:README.md"
+   },
+   "messages": [
+    {
+     "t": 4724.8,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "9 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "busy",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "pending",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 0,
+       "busy": true,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 4901.6,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "8 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "pending",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 1,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 5464.1,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "8 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "pending",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 1,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 6637.9,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "8 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "pending",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 1,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    }
+   ]
+  },
+  {
+   "scenario": "2-accept-theirs-middle-row",
+   "act": {
+    "kind": "click",
+    "path": "cases/same-both.txt",
+    "key": "accept:theirs:cases/same-both.txt"
+   },
+   "messages": [
+    {
+     "t": 14071.8,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "8 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "pending",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "busy",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 1,
+       "busy": true,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 14241.1,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "7 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "pending",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 2,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 14804,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "7 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "pending",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 2,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 15948.3,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "7 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "pending",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 2,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    }
+   ]
+  },
+  {
+   "scenario": "3-delete-the-file",
+   "act": {
+    "kind": "click",
+    "path": "app/greeting.py",
+    "key": "accept:yours:app/greeting.py"
+   },
+   "messages": [
+    {
+     "t": 23223.1,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "7 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "busy",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 2,
+       "busy": true,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 23393.1,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "6 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "resolved",
+         "choice": "yours",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 3,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 23948.5,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "6 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "resolved",
+         "choice": "yours",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 3,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 25083.8,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "6 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "resolved",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "resolved",
+         "choice": "yours",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 3,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    }
+   ]
+  },
+  {
+   "scenario": "4-hold-to-undo",
+   "act": {
+    "kind": "hold",
+    "path": "README.md",
+    "key": "restore:README.md"
+   },
+   "messages": [
+    {
+     "t": 33492,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "6 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "busy",
+         "choice": "yours",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "resolved",
+         "choice": "yours",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 3,
+       "busy": true,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 33583.6,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "7 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "resolved",
+         "choice": "yours",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 2,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 34152.4,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "7 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "resolved",
+         "choice": "yours",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 2,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    },
+    {
+     "t": 35319.6,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "7 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "resolved",
+         "choice": "yours",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "pending",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 2,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    }
+   ]
+  },
+  {
+   "scenario": "5-resolved-in-a-terminal",
+   "act": {
+    "kind": "terminal",
+    "path": "stress/userService.js",
+    "side": "theirs"
+   },
+   "messages": [
+    {
+     "t": 50816.9,
+     "data": {
+      "type": "state",
+      "state": {
+       "brand": {
+        "name": "GitStudio",
+        "mark": "gitstudio"
+       },
+       "repoName": "quick-rebase",
+       "op": {
+        "kind": "rebase",
+        "backend": "merge",
+        "title": "Rebasing test onto master · commit 1 of 1: 744e691 test: rework the sample",
+        "direction": {
+         "from": "yours",
+         "verb": "onto",
+         "to": "theirs"
+        },
+        "step": {
+         "n": 1,
+         "m": 1,
+         "unit": "commit"
+        },
+        "commit": {
+         "sha": "744e69108a170419c4e8b1271cc5171100689937",
+         "subject": "test: rework the sample",
+         "author": "Playground"
+        },
+        "yours": {
+         "role": "yours",
+         "stage": 3,
+         "name": "test",
+         "paneTitle": "Rebasing 744e691 from test",
+         "description": "Your commit 744e691 “test: rework the sample” from test"
+        },
+        "theirs": {
+         "role": "theirs",
+         "stage": 2,
+         "name": "master",
+         "paneTitle": "Already rebased commits and commits from master",
+         "description": "master, plus the commits of test already rebased onto it"
+        },
+        "verbs": {
+         "continue": "Continue Rebase",
+         "abort": "Abort Rebase"
+        },
+        "canContinue": false,
+        "canSkip": false,
+        "continueBlocked": "6 files still have conflicts",
+        "episode": "rebase:744e69108a170419c4e8b1271cc5171100689937:1:744e69108a170419c4e8b1271cc5171100689937"
+       },
+       "files": [
+        {
+         "path": "README.md",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/calculator.py",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "app/greeting.py",
+         "status": "resolved",
+         "choice": "yours",
+         "badge": "deleted in yours (test)",
+         "shape": "modify-delete",
+         "missingRole": "yours"
+        },
+        {
+         "path": "assets/logo.bin",
+         "status": "pending",
+         "shape": "binary"
+        },
+        {
+         "path": "cases/same-both.txt",
+         "status": "resolved",
+         "choice": "theirs",
+         "shape": "text"
+        },
+        {
+         "path": "cases/whitespace.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "f.txt",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/config.json",
+         "status": "pending",
+         "shape": "text"
+        },
+        {
+         "path": "stress/userService.js",
+         "status": "resolved",
+         "shape": "text"
+        }
+       ],
+       "total": 9,
+       "resolved": 3,
+       "busy": false,
+       "holdToUndoMs": 750
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
