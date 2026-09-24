@@ -1,0 +1,60 @@
+packages/webview-ui/src/conflicts/patch.ts
+  s_26f5e669d3043c::t_c6428fa2fb82de 152-155
+  s_26f5e669d3043c::t_51a3aac4723e67 1-151,156-163
+packages/webview-ui/test/conflictsLayout.test.ts
+  s_26f5e669d3043c::t_e3f620e8574521 242-247
+  s_26f5e669d3043c::t_62f11843a6c21f 432-462
+  s_26f5e669d3043c::t_1d977568690d77 398
+  s_26f5e669d3043c::t_7299feedb8df83 279-282,284-290,417-423,425
+packages/webview-ui/src/styles/conflicts.css
+  s_26f5e669d3043c::t_debed7b93d0979 846-857
+  s_26f5e669d3043c::t_39cd3f0ebfb940 982-983,988
+  s_26f5e669d3043c::t_bba85b9c9d2b73 32-33
+  s_26f5e669d3043c::t_062754f939ede8 497-508
+  s_26f5e669d3043c::t_1252e4275f0ceb 713,717,724,737,741,744,755,759,763,775,779,782,813,818,825
+packages/webview-ui/src/conflicts/dashboard.ts
+  s_26f5e669d3043c::t_a78f2aaa5967e3 717-722,724-730
+  s_26f5e669d3043c::t_62c94f249b48ff 54
+  s_26f5e669d3043c::t_2128b93e22f684 745
+  s_26f5e669d3043c::t_c5960a2b5ffb11 325-332
+  s_26f5e669d3043c::t_88c1c683efcdc2 1014
+  s_26f5e669d3043c::t_b26754b251894a 1114
+  s_26f5e669d3043c::t_e98140d2a6367c 832-834
+  s_26f5e669d3043c::t_aa489482ebc80e 943
+  s_26f5e669d3043c::t_94013627a7fb09 146-198
+  s_26f5e669d3043c::t_094236d4ba3303 18-25
+  s_26f5e669d3043c::t_ebbe23ca0518d9 341-342,353-361,370
+  s_26f5e669d3043c::t_138fd8bf788716 775-779,781-788,791
+  s_26f5e669d3043c::t_a268009ead7fe7 714
+  s_26f5e669d3043c::t_fb0c4afc45be89 647
+  s_26f5e669d3043c::t_4387904a2e068e 386-393,395,400-426,430-437,452-454,456,458-459,465-467,469
+  s_26f5e669d3043c::t_c6d92f04613f84 1062
+  s_26f5e669d3043c::t_e02e04daeeeb32 241-255,264-269,271-278,291-298,307-324,333
+  s_26f5e669d3043c::t_f009638a9eb947 665-671,674-684,691-694,696-697,699-712,715-716,723
+  s_26f5e669d3043c::t_1d832284610412 427-429
+  s_26f5e669d3043c::t_bed8b7bf45fe86 817
+  s_26f5e669d3043c::t_2c4430f04adbdb 240,899-900,904-907,912,923-924,932-934,936-937,940,942,958,962-963,969,972-978
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_6ac50c0ce17185 9655-9663
+packages/webview-ui/test/conflictsDashboard.test.ts
+  s_26f5e669d3043c::t_1d977568690d77 102-103,215,372
+packages/webview-ui/test/conflictsInPlace.test.ts
+  s_26f5e669d3043c::t_f19509120b00cd 1-254,256-290
+  s_26f5e669d3043c::t_a33cdec5cea2a7 255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f5e35141dae1fe7ca60e2b6ad43d0cf57a300f44",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
