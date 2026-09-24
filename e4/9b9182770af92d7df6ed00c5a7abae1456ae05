@@ -1,0 +1,41 @@
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_d1f23162bed8f2 354-363
+  s_26f5e669d3043c::t_343d00c99a8dfb 82-87
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_df78d72e00ca9d 551-555,557-559
+  s_26f5e669d3043c::t_8ee691538fe421 503
+  s_26f5e669d3043c::t_379af3187f34d5 14
+  s_26f5e669d3043c::t_7fd0daa2b796b4 478
+  s_26f5e669d3043c::t_a318f282289850 525-529
+apps/extension/src/ui/arrival.ts
+  s_26f5e669d3043c::t_7b2cc8e5c89d42 1-44
+packages/git-service/test/aiToolsOverAStop.test.ts
+  s_26f5e669d3043c::t_44b95a310c8b71 215-226
+  s_26f5e669d3043c::t_2181f2e5dbdf71 164
+packages/git-service/src/GitToolHost.ts
+  s_26f5e669d3043c::t_11c3eec137e506 418-426
+  s_26f5e669d3043c::t_7b6651b3a453c1 35
+apps/extension/test/askBeforeTheViewOpens.test.ts
+  s_26f5e669d3043c::t_9a83842e0de952 1-78
+packages/git-service/test/gitToolHost.test.ts
+  s_26f5e669d3043c::t_fc6220a7036b4f 85-90
+packages/git-service/src/stoppedOperation.ts
+  s_26f5e669d3043c::t_ed0ec648819eeb 29
+  s_26f5e669d3043c::t_b86a52623d4ef0 106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e49b9182770af92d7df6ed00c5a7abae1456ae05",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
