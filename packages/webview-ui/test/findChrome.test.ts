@@ -149,3 +149,50 @@ test("headless.ts: GS_CHROME unset picks the newest Playwright headless shell", 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/**
+ * Both halves of headless.ts's rule, end to end. The order comes from
+ * findChrome.mjs, but outside CI the desktop Chrome (a path through
+ * "Google Chrome.app") is never driven, not even from GS_CHROME; on a CI runner
+ * (CI set) it stays the last resort, so the macOS job still runs these checks.
+ */
+test("headless.ts: the desktop Chrome only on CI, even when GS_CHROME names it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "gs-find-chrome-desktop-"));
+  try {
+    const exe = process.platform === "win32" ? ".exe" : "";
+    const put = (rel: string) => {
+      const p = join(dir, rel);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, "#!/bin/sh\nexit 0\n");
+      chmodSync(p, 0o755);
+      return p;
+    };
+    const desktop = put("Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+    const shell = put(`pw/chromium_headless_shell-1228/chrome-headless-shell-x/chrome-headless-shell${exe}`);
+    const headless = fileURLToPath(new URL("./headless.ts", import.meta.url));
+    const probe = join(dir, "probe.mts");
+    writeFileSync(probe, `import { findChrome } from ${JSON.stringify(headless)};\nconsole.log(findChrome() ?? "(none)");\n`);
+    const run = (extra: Record<string, string | undefined>) => {
+      const env: NodeJS.ProcessEnv = { ...process.env, GS_CHROME: desktop, ...extra };
+      delete env.CI;
+      if (extra.CI) env.CI = extra.CI;
+      for (const [k, v] of Object.entries(extra)) if (v === undefined) delete env[k];
+      return execFileSync(process.execPath, ["--import", "tsx", probe], {
+        env,
+        cwd: fileURLToPath(new URL("..", import.meta.url)),
+        encoding: "utf8",
+      }).trim();
+    };
+
+    // Not CI: GS_CHROME naming the desktop Chrome is passed over for the shell…
+    assert.equal(run({ PLAYWRIGHT_BROWSERS_PATH: join(dir, "pw") }), shell);
+    // …and with no Playwright build at all, it is still never chosen.
+    const bare = run({ PLAYWRIGHT_BROWSERS_PATH: undefined, HOME: dir, USERPROFILE: dir, LOCALAPPDATA: dir, XDG_CACHE_HOME: dir });
+    assert.doesNotMatch(bare, /Google Chrome\.app/, `picked ${bare}`);
+
+    // CI: GS_CHROME is honoured as given, desktop Chrome or not.
+    assert.equal(run({ PLAYWRIGHT_BROWSERS_PATH: join(dir, "pw"), CI: "true" }), desktop);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
