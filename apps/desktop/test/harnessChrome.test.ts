@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /**
  * Every harness launcher finds its browser the way packages/webview-ui's
@@ -71,7 +71,8 @@ test("harnessChrome() with GS_CHROME unset is the newest Playwright headless she
     const newest = fakeCache(join(dir, "cache"), join(dir, "log"));
     const out = execFileSync(
       process.execPath,
-      ["--input-type=module", "-e", `import { harnessChrome } from ${JSON.stringify(join(HARNESS, "chrome.mjs"))}; console.log(harnessChrome());`],
+      // A file URL: an absolute Windows path reads to the ESM loader as the scheme "d:".
+      ["--input-type=module", "-e", `import { harnessChrome } from ${JSON.stringify(pathToFileURL(join(HARNESS, "chrome.mjs")).href)}; console.log(harnessChrome());`],
       { env: envWithout(join(dir, "cache")), encoding: "utf8" },
     ).trim();
     assert.equal(out, newest);

@@ -866,8 +866,14 @@ export class CommitRail extends LitElement {
       .pop .flt input::placeholder { color: var(--gs-fg-subtle); }
       .pop .list { max-height: 280px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
       /* Not a fixed cap here: 280px was taller than the whole shell in a
-         240px view, so the list scrolled inside a shell that scrolled too. */
-      .pop.branches > .list { flex: 1 1 auto; min-height: 52px; max-height: none; }
+         240px view, so the list scrolled inside a shell that scrolled too.
+         Its floor is a group heading and most of a row. It was 52px: a UI
+         font with a taller line than the tests' default (Windows' Segoe UI
+         and Linux's Noto Sans stand 1.33 and 1.36 of their size, against
+         1.15) grows the heading and the footnote by 9–13px, which left Segoe
+         nothing to spare in the default 240px view and scrolled the whole
+         shell under Noto, the footnote off its bottom (filterFollowUp.test.ts). */
+      .pop.branches > .list { flex: 1 1 auto; min-height: 40px; max-height: none; }
       .pop .list .hd { padding-top: 5px; }
       .pop .mi .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
       .pop .mi .cur {

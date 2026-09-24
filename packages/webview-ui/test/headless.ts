@@ -83,6 +83,20 @@ export function decodeVerdictTitle(text: string): string {
 }
 
 /**
+ * How much bigger than a frame the window around it is made. The headless
+ * shell gives a page its whole --window-size, but the system Chrome the CI
+ * runners have is the full browser run headless, and lays its own tab strip
+ * and toolbar out inside the window, unseen: a 327px window was a 184px view
+ * on the ubuntu and macOS runners and 176px on the windows one. The frame's
+ * own view is exact either way: a window too short for it hides its foot
+ * from the eye, and a click there still lands on what is there.
+ */
+const FRAME_ROOM = 200;
+
+/** Text as the value of a double-quoted HTML attribute. */
+const attr = (text: string): string => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+
+/**
  * Mount `entry`'s bundle in a page and run `script` against it. The script
  * ends by calling `verdict({fails: [...]})`; assertions it throws on the way
  * become fails too, so a broken page never reads as a passing one.
@@ -92,6 +106,8 @@ export async function runInChrome(
   entry: string,
   script: string,
   opts: {
+    /** The window's size — the page's view in the headless shell, but less
+     *  the browser's own frame in a system Chrome (see FRAME_ROOM). */
     width?: number;
     height?: number;
     css?: string;
@@ -100,19 +116,31 @@ export async function runInChrome(
     prelude?: string;
     /** Attributes for the #root element (a webview entry reads its layout off it). */
     rootAttrs?: string;
+    /**
+     * Run the page in an iframe of exactly this size, the way VS Code mounts
+     * a webview: its view (innerWidth × innerHeight, what fixed positioning
+     * and elementFromPoint work in) is then this, whichever Chrome runs it.
+     * For a check that depends on the view's own size. The window is made
+     * big enough to show the frame whole; width and height are not used.
+     */
+    frame?: { width: number; height: number };
   } = {},
 ): Promise<Verdict> {
   const { js, css } = await bundle(entry);
   const dir = mkdtempSync(join(tmpdir(), "gs-webview-"));
   const page = join(dir, "page.html");
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>PENDING</title>
+  const inner = `<!doctype html><html><head><meta charset="utf-8"><title>PENDING</title>
 <style>${css}</style>
 <style>html,body{margin:0;height:100%;overflow:hidden}${opts.css ?? ""}</style></head>
 <body><div id="root" ${opts.rootAttrs ?? ""}></div>
 <script>${opts.prelude ?? ""}</script>
 <script>${js}</script>
 <script>
-window.verdict = (v) => { document.title = "CHECK " + JSON.stringify(v); };
+window.verdict = (v) => {
+  document.title = "CHECK " + JSON.stringify(v);
+  // In a frame the verdict goes up to the page --dump-dom reads.
+  if (window.parent !== window) window.parent.postMessage({ gsVerdict: v }, "*");
+};
 window.addEventListener("error", (e) => window.verdict({ fails: ["page error: " + (e.message || e.error)] }));
 window.addEventListener("unhandledrejection", (e) => window.verdict({ fails: ["rejection: " + (e.reason && e.reason.message || e.reason)] }));
 (async () => {
@@ -127,9 +155,20 @@ window.addEventListener("unhandledrejection", (e) => window.verdict({ fails: ["r
   window.verdict({ fails, notes });
 })();
 </script></body></html>`;
+  const { frame } = opts;
+  // The frame's page is its srcdoc; the verdict comes up from it by message.
+  const html = frame
+    ? `<!doctype html><html><head><meta charset="utf-8"><title>PENDING</title>
+<style>html,body{margin:0;overflow:hidden}iframe{display:block;border:0;width:${frame.width}px;height:${frame.height}px}</style></head>
+<body><script>
+window.addEventListener("message", (e) => {
+  if (e.data && e.data.gsVerdict) document.title = "CHECK " + JSON.stringify(e.data.gsVerdict);
+});
+</script><iframe srcdoc="${attr(inner)}"></iframe></body></html>`
+    : inner;
   writeFileSync(page, html);
-  const width = opts.width ?? 420;
-  const height = opts.height ?? 800;
+  const width = frame ? frame.width + FRAME_ROOM : (opts.width ?? 420);
+  const height = frame ? frame.height + FRAME_ROOM : (opts.height ?? 800);
   return new Promise((res) => {
     execFile(
       chrome,

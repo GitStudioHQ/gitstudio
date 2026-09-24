@@ -119,12 +119,13 @@ const runGraph = (script: string, opts: { height?: number } = {}) =>
     height: opts.height ?? 700,
   });
 
-const runRail = (script: string, opts: { height?: number; css?: string } = {}) =>
+const runRail = (script: string, opts: { height?: number; css?: string; frame?: { width: number; height: number } } = {}) =>
   runInChrome(CHROME!, RAIL, MOUNT_RAIL + script, {
     css: opts.css ?? `#root{height:600px;width:320px;display:flex;flex-direction:column} gitstudio-commit-rail{flex:1;min-height:0}`,
     prelude: PRELUDE,
     width: 420,
     height: opts.height ?? 700,
+    frame: opts.frame,
   });
 
 /** "Current branch" follows a checkout — the same script for both lists. */
@@ -285,17 +286,21 @@ test("the rail: a plain click on a ref chip opens its menu, like the graph's", {
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
-// The default sidebar: Changes expanded, the Commits view about 240px tall.
-// Headless Chrome keeps a window's height (it floors only the WIDTH at 500px),
-// less its own frame, so the view is short for real. The check is the
-// invariant the bug broke — inside the view, hint included — plus a floor on
-// how short the view is, so a runner that hands out a tall one cannot turn
-// this green for free.
-test("the rail's Branches picker fits a short sidebar view: inside it, hint included, one list scrolling", { skip }, async () => {
-  const v = await runRail(
-    `
-    notes.innerHeight = innerHeight;
-    expect(innerHeight <= 330, "the view is short enough to test this (" + innerHeight + ")");
+// The default sidebar: Changes expanded, the Commits view about 240px tall
+// and 299px wide — here a webview frame of exactly that (runInChrome's
+// `frame`), the way VS Code mounts the rail. It used to be a 327px WINDOW,
+// which is a 327px view in the headless shell but 184px under the system
+// Chrome the CI runners have (176px on windows): that Chrome lays its own
+// toolbar out inside the window. In a view 60px shorter than the one this
+// describes, the picker rightly fell back to scrolling as a whole, and the
+// check failed on every runner. The check is the invariant the bug broke —
+// inside the view, hint included, one list scrolling — in a view it states
+// and asserts.
+const DEFAULT_SIDEBAR = { width: 299, height: 240 };
+const SIDEBAR_CSS = `#root{height:100vh;width:100vw;display:flex;flex-direction:column} gitstudio-commit-rail{flex:1;min-height:0}`;
+const OPEN_IN_THE_SIDEBAR = `
+    notes.view = [innerWidth, innerHeight];
+    expect(innerWidth === ${DEFAULT_SIDEBAR.width} && innerHeight === ${DEFAULT_SIDEBAR.height}, "the view is the default sidebar's ${DEFAULT_SIDEBAR.width}x${DEFAULT_SIDEBAR.height} (" + innerWidth + "x" + innerHeight + ")");
     $(TRIGGER).click();
     await el.updateComplete; await tick();
     const pop = $(POP);
@@ -311,6 +316,13 @@ test("the rail's Branches picker fits a short sidebar view: inside it, hint incl
     const list = pop.querySelector(".list");
     expect(list.scrollHeight > list.clientHeight, "the list is the one part that scrolls");
     const lb = list.getBoundingClientRect();
+    notes.list = Math.round(lb.height);
+`;
+
+test("the rail's Branches picker fits a short sidebar view: inside it, hint included, one list scrolling", { skip }, async () => {
+  const v = await runRail(
+    OPEN_IN_THE_SIDEBAR +
+      `
     expect(lb.height >= 48, "…and shows at least two rows (" + lb.height + ")");
     // The last row the list shows is clickable where a pointer would be.
     const rowsIn = [...list.querySelectorAll(".mi")].filter((r) => { const b = r.getBoundingClientRect(); return b.bottom <= lb.bottom && b.top >= lb.top; });
@@ -319,11 +331,41 @@ test("the rail's Branches picker fits a short sidebar view: inside it, hint incl
     const at = el.shadowRoot.elementFromPoint(rb.left + rb.width / 2, rb.top + rb.height / 2);
     expect(!!at && lastRow.contains(at), "the last visible row is what a click at its centre hits");
   `,
-    {
-      // A window whose view is ~240px on this machine (Chrome's frame takes the rest).
-      height: 327,
-      css: `#root{height:100vh;width:299px;display:flex;flex-direction:column} gitstudio-commit-rail{flex:1;min-height:0}`,
-    },
+    { frame: DEFAULT_SIDEBAR, css: SIDEBAR_CSS },
+  );
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+// The same view in a UI font with a taller line than the tests' default:
+// 1.36 of its size, Noto Sans' (Windows' Segoe UI is 1.33). It is Arial —
+// Liberation Sans, its metric twin, where there is no Arial — with those line
+// metrics, so every runner measures the same font. It grows the heading and
+// the footnote, and the list gives up the height, not the footnote.
+const TALL_UI_FONT = `@font-face{font-family:GsTallUi;src:local("Arial"),local("Liberation Sans"),local("Helvetica");ascent-override:107%;descent-override:29%;line-gap-override:0%}
+:root{--vscode-font-family:GsTallUi;--vscode-font-size:13px}`;
+
+test("…and in a taller UI font the list gives up the height, not the footnote", { skip }, async () => {
+  const v = await runRail(
+    `
+    // Loaded before anything is measured: a font that is not there would
+    // leave the default font on screen and this check passing for nothing.
+    const failed = await document.fonts.load("13px GsTallUi").then(() => "", (e) => String(e && e.message || e));
+    const face = [...document.fonts].find((f) => f.family === "GsTallUi");
+    expect(!failed && !!face && face.status === "loaded", "the tall font is there to measure (" + (failed || (face ? face.status : "no face")) + ")");
+  ` +
+      OPEN_IN_THE_SIDEBAR +
+      `
+    expect(lb.height >= 40, "…down to its floor, a heading and most of a row (" + lb.height + ")");
+    // Its first row shows, and a click on what shows of it lands on it.
+    const first = list.querySelector(".mi");
+    const fb = first.getBoundingClientRect();
+    const shownTop = Math.max(fb.top, lb.top);
+    const shownBottom = Math.min(fb.bottom, lb.bottom);
+    expect(shownBottom - shownTop >= fb.height / 2, "at least half the first row shows (" + (shownBottom - shownTop) + " of " + fb.height + ")");
+    const at = el.shadowRoot.elementFromPoint(fb.left + fb.width / 2, (shownTop + shownBottom) / 2);
+    expect(!!at && first.contains(at), "the first row is what a click on it hits");
+  `,
+    { frame: DEFAULT_SIDEBAR, css: SIDEBAR_CSS + TALL_UI_FONT },
   );
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });

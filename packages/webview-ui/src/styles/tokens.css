@@ -169,6 +169,22 @@
   --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 12%, var(--gs-hover));
 }
 
+/* ---- The page's colour scheme is the THEME's, not the OS's --------------
+ * `light dark` (above) lets the browser choose by the OS setting, and it
+ * paints what a page leaves transparent — and its scrollbars and form
+ * controls — in the scheme it chose: a light theme on a Mac in dark mode had
+ * near-black (#121212) bars beside the Conflicts dashboard. VS Code (and the
+ * desktop app) name the theme's kind on <body>; the root takes that. A page
+ * with no theme class still follows the OS. */
+:root:has(> body.vscode-light),
+:root:has(> body.vscode-high-contrast-light) {
+  color-scheme: light;
+}
+:root:has(> body.vscode-dark),
+:root:has(> body.vscode-high-contrast:not(.vscode-high-contrast-light)) {
+  color-scheme: dark;
+}
+
 /* ---- Section header ----------------------------------------------------- */
 .gs-section-header {
   font: var(--gs-weight-emphasis) var(--gs-text-micro) / 1.4 var(--gs-font-ui);
