@@ -729,6 +729,52 @@ test("the pane grid is one definition: 28px header, 64px gutters, ribbons on the
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
+test("a ribbon reaches past the EDITOR's painted edge, not only its gutter's — in a pane of fractional width the editor stops short of the gutter", { skip }, async () => {
+  // Monaco lays an editor out at a whole CSS width, so in a pane of
+  // fractional width (the desktop, beside its file list) the editor ends up
+  // to a pixel before its gutter begins. A reach measured from the gutter
+  // alone then ends ON the editor's own antialiased edge: at 1.5x that
+  // column came out darker than both (a hairline down the Result|gutter seam
+  // of every band, and of every trace once no gutter button was left).
+  const v = await runMergePage(CHROME!, `
+    const view = mountView(gsMerge.payload());
+    const snap = (x) => Math.round(x);
+    const edges = () => {
+      const res = view.result.getDomNode().getBoundingClientRect();
+      const gb = document.querySelector(".jb-gutter-b").getBoundingClientRect();
+      return { editorRight: res.right, gutterLeft: gb.left };
+    };
+    // Find a host width where the Result editor's snapped right edge falls a
+    // whole pixel before the gutter's: the case the desktop is in.
+    let found = false;
+    for (let w = 1100; w < 1112 && !found; w += 0.1) {
+      host.style.width = w.toFixed(1) + "px";
+      view.layout();
+      const e = edges();
+      found = snap(e.gutterLeft) - snap(e.editorRight) >= 1;
+    }
+    expect(found, "a width where the Result editor stops a pixel short of its gutter: " + JSON.stringify(edges()));
+    await sleep(60);
+    const stage = document.querySelector(".jb-ribbon-stage");
+    const origin = snap(stage.getBoundingClientRect().left);
+    const dpr = window.devicePixelRatio || 1;
+    const editorRight = snap(edges().editorRight) - origin;
+    const xsOf = (p) => (p.getAttribute("d").match(/-?[\\d.]+ -?[\\d.]+/g) || []).map((pt) => Number(pt.split(" ")[0]));
+    // Theirs' bands, and the caps on their Result end (a cap on Theirs' own
+    // end lies wholly across the gutter from here).
+    const gutterLeft = snap(edges().gutterLeft) - origin;
+    const right = [...stage.querySelectorAll('path[data-side="right"]')]
+      .filter((p) => !/jb-ribbon-frame/.test(p.getAttribute("class")))
+      .filter((p) => !/jb-ribbon-cap/.test(p.getAttribute("class")) || Math.min(...xsOf(p)) < gutterLeft);
+    expect(right.length > 0, "Theirs' ribbons are drawn (" + right.length + ")");
+    for (const p of right) {
+      const minX = Math.min(...xsOf(p));
+      expect(minX <= editorRight - 2 / dpr + 0.01, p.getAttribute("class") + " block " + p.dataset.block + " starts at " + minX.toFixed(3) + ", not two device pixels inside the Result editor's edge " + editorRight);
+    }
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
 /**
  * What an accept WRITES, at the edges of the file. The result is lines joined
  * by "\n", so the block that owns the end of the document owns the final

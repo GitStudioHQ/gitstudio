@@ -170,11 +170,22 @@ class Frame {
    * the one vertical edge a band has there, and a band end on a fraction of a
    * pixel is antialiased twice (its base, then its tint), which left a
    * one-pixel-dark column inside the pane's band at 1.25x.
+   *
+   * Measured from the EDITORS' painted edges where they stop short of the
+   * gutter (`before`, `after`: the panes' Monaco editors). Monaco lays an
+   * editor out at a whole CSS width, so in a pane of fractional width (the
+   * desktop, beside its file list) the editor ends up to a pixel before its
+   * gutter begins; a reach measured from the gutter alone then ended on the
+   * editor's own antialiased edge, and at 1.5x that column came out darker
+   * than both — a hairline down the Result|gutter seam of every band, and of
+   * every trace once no gutter button was left above it.
    */
-  reach(gutter: GutterRange): { left: number; right: number } {
+  reach(gutter: GutterRange, before?: HTMLElement | null, after?: HTMLElement | null): { left: number; right: number } {
     const d = this.dpr;
-    const left = Math.floor((this.originX + gutter.left - this.overlap) * d + 1e-6) / d - this.originX;
-    const right = Math.ceil((this.originX + gutter.right + this.overlap) * d - 1e-6) / d - this.originX;
+    const leftEdge = before ? Math.min(gutter.left, this.snap(before.getBoundingClientRect().right) - this.originX) : gutter.left;
+    const rightEdge = after ? Math.max(gutter.right, this.snap(after.getBoundingClientRect().left) - this.originX) : gutter.right;
+    const left = Math.floor((this.originX + leftEdge - this.overlap) * d + 1e-6) / d - this.originX;
+    const right = Math.ceil((this.originX + rightEdge + this.overlap) * d - 1e-6) / d - this.originX;
     return { left, right };
   }
 
@@ -274,6 +285,9 @@ export class RibbonOverlay {
     const frame = new Frame(this.svg);
     const gutterA = frame.gutter(this.gutterA);
     const gutterB = frame.gutter(this.gutterB);
+    // Measured once a draw: each gutter's reach into the editors either side.
+    const reachA = frame.reach(gutterA, this.editors.left.getDomNode(), this.editors.result.getDomNode());
+    const reachB = frame.reach(gutterB, this.editors.result.getDomNode(), this.editors.right.getDomNode());
     const stripA: IconStrip = { side: "a", width: MERGE_ICON_STRIP };
     const stripB: IconStrip = { side: "b", width: MERGE_ICON_STRIP };
     const pointPx = mergePointPx();
@@ -306,11 +320,10 @@ export class RibbonOverlay {
         const editor = side === "left" ? this.editors.left : this.editors.right;
         const sideSpan = sideBlockSpan(block, side);
         const region = frame.band(editor, sideSpan, lineHeight, pointPx);
-        const [gutter, a, b, strip] =
+        const [gutter, a, b, strip, reach] =
           side === "left"
-            ? [gutterA, region, result, stripA]
-            : [gutterB, result, region, stripB];
-        const reach = frame.reach(gutter);
+            ? [gutterA, region, result, stripA, reachA]
+            : [gutterB, result, region, stripB, reachB];
         const geometry = bandGeometry(gutter, frame.height, a, b, reach, strip);
         if (!geometry) {
           continue;
@@ -399,10 +412,11 @@ export class DiffRibbonOverlay {
     const lineHeight = this.editors.left.getOption(monaco.editor.EditorOption.lineHeight);
     const frame = new Frame(this.svg);
     const gutter = frame.gutter(this.gutter);
+    const reach = frame.reach(gutter, this.editors.left.getDomNode(), this.editors.right.getDomNode());
     for (const block of model.blocks) {
       const left = frame.band(this.editors.left, block.leftSpan, lineHeight);
       const right = frame.band(this.editors.right, block.rightSpan, lineHeight);
-      const geometry = bandGeometry(gutter, frame.height, left, right, frame.reach(gutter), {
+      const geometry = bandGeometry(gutter, frame.height, left, right, reach, {
         side: "a",
         width: DIFF_ICON_STRIP,
       });
