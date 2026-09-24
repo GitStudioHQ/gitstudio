@@ -1,0 +1,23 @@
+apps/merge-studio/README.md
+  s_26f5e669d3043c::t_2b501741373230 67-68
+  s_26f5e669d3043c::t_8dfa30ca1d550e 14,28,53,57,71
+  s_26f5e669d3043c::t_2a79be9cad1e14 35-36
+apps/merge-studio/package.json
+  s_26f5e669d3043c::t_46e26997bf5a0c 189-195,206-212,223-229,240-246,258-264,276-282,293-299,311-317
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a86882100e94cf66532313c525831910813201b1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
