@@ -264,6 +264,64 @@ test("both-deleted: taking a side is refused; deleteFile settles it", async () =
   }
 });
 
+/**
+ * A file/folder conflict as `rebase --apply` (and `am -3`) leave it: master
+ * added the FILE layout/panel, test added the FOLDER layout/panel/ — the index
+ * holds layout/panel at stage 2 (AU) and layout/panel/index.txt at stage 0,
+ * with the folder on disk and git's copy of the file beside it
+ * (layout/panel~HEAD). The merge backend renames the file instead, so this
+ * shape is the apply backend's.
+ */
+function fileVersusFolder(): Repo {
+  const r = makeRepo("file-folder");
+  r.write("keep.txt", "keep\n");
+  r.commitAll("base");
+  r.git("checkout", "-q", "-b", "test");
+  r.write("layout/panel/index.txt", "the folder's file\n");
+  r.commitAll("test: a folder");
+  r.git("checkout", "-q", "master");
+  r.write("layout/panel", "the file\n");
+  r.commitAll("master: a file");
+  r.git("checkout", "-q", "test");
+  r.tryGit("rebase", "--apply", "master");
+  return r;
+}
+
+test("a file/folder conflict: taking the file is refused and the folder stays; the other side keeps the folder", async () => {
+  const r = fileVersusFolder();
+  try {
+    assert.match(r.git("ls-files", "-s", "layout"), /2\tlayout\/panel\n[\s\S]*0\tlayout\/panel\/index\.txt/, "the shape under test");
+    const ctx = r.ctx();
+    const op = await ctx.operation.view();
+    assert.equal(op.kind, "rebase");
+    const facts = await ctx.conflictOps.fileFacts("layout/panel", { op });
+    assert.equal(facts?.shape, "added-one-side");
+    // Stage 2 is master's — THEIRS in a rebase — and it has the file.
+    assert.equal(facts?.missingRole, "yours");
+
+    // Taking the file would replace the folder (git's own `update-index
+    // --cacheinfo` refuses: "appears as both a file and as a directory"). It
+    // used to succeed — `checkout --ours` deleted the folder from disk and
+    // `add` dropped layout/panel/index.txt from the index.
+    const took = await ctx.conflictOps.takeRole("layout/panel", "theirs", { op });
+    assert.equal(took.ok, false, "refused");
+    assert.equal(took.expected, true);
+    assert.match(took.message ?? "", /layout\/panel is a file on one side and a folder on the other/);
+    assert.equal(r.read("layout/panel/index.txt"), "the folder's file\n", "the folder is still on disk");
+    assert.match(r.git("ls-files", "-s", "layout"), /0\tlayout\/panel\/index\.txt/, "and still in the index");
+    assert.match(r.git("ls-files", "-u"), /\tlayout\/panel\n/, "the row is still conflicted");
+
+    // The side WITHOUT the file ("Delete the file") settles it and keeps the folder.
+    const del = await ctx.conflictOps.takeRole("layout/panel", "yours", { op });
+    assert.equal(del.ok, true, del.message);
+    assert.equal(r.git("ls-files", "-s", "layout").trim(), r.git("ls-files", "-s", "layout/panel/index.txt").trim());
+    assert.equal(r.git("ls-files", "-u").trim(), "", "nothing is unmerged");
+    assert.equal(r.read("layout/panel/index.txt"), "the folder's file\n");
+  } finally {
+    r.cleanup();
+  }
+});
+
 test("a file that is no longer conflicted is refused, not overwritten", async () => {
   const r = manyShapes();
   try {

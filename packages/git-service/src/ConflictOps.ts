@@ -264,10 +264,31 @@ export class ConflictOps {
     if (!stages.has(2) && !stages.has(3)) {
       return refuse(`Both sides deleted ${path}. There is no side to take — delete the file to settle it.`);
     }
+    // A file on one side and a FOLDER on the other (`rebase --apply` and
+    // `am -3` leave the file unmerged at `path` beside the folder's files at
+    // stage 0, with the folder on disk). git can't hold both at one path.
+    const folder = await this.folderAt(path, guard.abs, opts?.signal);
     if (!stages.has(stage)) {
       // That side's answer IS "delete it", and ls-files says so.
+      if (folder) {
+        // Drop exactly the file's index entry. `rm -- path` is a pathspec
+        // that also reaches every file in the folder; update-index takes the
+        // one path, and the folder on disk is not the file's to delete.
+        const ui = await this.git(["update-index", "--force-remove", "--", path], opts?.signal, false);
+        return ui.code === 0 ? done() : failed(ui.stderr, `Couldn't delete ${path}.`);
+      }
       const rm = await this.git(["rm", "-f", "-q", "--", path], opts?.signal);
       return rm.code === 0 ? done() : failed(rm.stderr, `Couldn't delete ${path}.`);
+    }
+    if (folder) {
+      // Taking the file replaces the folder: `checkout` deleted it from disk
+      // and `add` dropped its files from the index, with no word about it
+      // (git's own `update-index --cacheinfo` refuses the same take).
+      return refuse(
+        `${path} is a file on one side and a folder on the other (${folder} is in the folder). ` +
+          `git can't keep both at one path, and taking the file would delete the folder — nothing was changed. ` +
+          `To keep the folder, take the side without the file; to keep both, rename one of them in a terminal.`,
+      );
     }
     const chosen = stages.get(stage)!;
     if (chosen.mode === "160000") {
@@ -648,6 +669,19 @@ export class ConflictOps {
       };
     }
     return { ok: true, abs };
+  }
+
+  /**
+   * A FOLDER at a conflicted file's path — the index holds files under
+   * `path/`, or the working tree has a directory there. Returns one file in
+   * it (for the message), or undefined when `path` is only a file.
+   */
+  private async folderAt(path: string, abs: string, signal?: AbortSignal): Promise<string | undefined> {
+    const r = await this.git(["ls-files", "-z", "--", `${path}/`], signal);
+    const inIndex = r.code === 0 ? r.stdout.split("\0").find((p) => p.startsWith(`${path}/`)) : undefined;
+    if (inIndex) return inIndex;
+    const onDisk = await lstat(abs).catch(() => undefined);
+    return onDisk?.isDirectory() ? `${path}/` : undefined;
   }
 
   /**
