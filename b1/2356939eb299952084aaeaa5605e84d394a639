@@ -1,0 +1,83 @@
+packages/webview-ui/test/headless.ts
+  s_26f5e669d3043c::t_1f685066de4b68 9-13,15-17,19-20,24-25,27,33-36
+apps/desktop/harness/README.md
+  s_26f5e669d3043c::t_e2ac5df14e73da 18-26
+apps/desktop/harness/affordance.mjs
+  s_26f5e669d3043c::t_70e4327abe94ad 33,42-44
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_d93ce2ae69ffb6 15,26-28,676-679
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_adad4b34b2cb73 12093-12095
+apps/desktop/harness/chrome.mjs
+  s_26f5e669d3043c::t_3416f3bc346813 1-24
+apps/desktop/harness/contrast.mjs
+  s_26f5e669d3043c::t_b8d147eaeb2945 21,30-32
+apps/desktop/harness/fit.mjs
+  s_26f5e669d3043c::t_d72404f6e70afb 26,35-37
+apps/desktop/harness/perf.mjs
+  s_26f5e669d3043c::t_4a210d27890ac4 24,34-36
+apps/desktop/harness/probe.mjs
+  s_26f5e669d3043c::t_9bdc58e2e37e0a 29,40-42
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_4e0e2b72b8a1ac 26-39
+apps/desktop/harness/shot.sh
+  s_26f5e669d3043c::t_ba98c3c406e1c5 24-26
+apps/desktop/harness/validate.mjs
+  s_26f5e669d3043c::t_a70699ccf72877 21,31-33
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_c182b2250f0e7f 41,2521-2522
+apps/desktop/src/main/inTheWay.ts
+  s_26f5e669d3043c::t_61cdcffb7d476e 185-187
+apps/desktop/src/renderer/chatRender.ts
+  s_26f5e669d3043c::t_721e31839c2bf4 193-195,217-231,234-236
+apps/desktop/test/harnessChrome.test.ts
+  s_26f5e669d3043c::t_0fbedb2fdca595 1-100
+apps/desktop/test/unresolvedWordsOverAStop.test.ts
+  s_26f5e669d3043c::t_742cdece6a7af0 1-71
+apps/extension/src/git/inTheWay.ts
+  s_26f5e669d3043c::t_911087f772656a 177-179
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_6e4b7c099e68be 9,709-710,712
+apps/extension/test/unresolvedWordsOverAStop.test.ts
+  s_26f5e669d3043c::t_c6ad5256c5bc0d 1-97
+packages/ai/src/gitTools.ts
+  s_26f5e669d3043c::t_b2923d0f5cc678 425-427,447-448
+packages/git-service/src/ConflictProvider.ts
+  s_26f5e669d3043c::t_969b7ca5b5998d 4,190,192-202
+packages/git-service/src/GitToolHost.ts
+  s_26f5e669d3043c::t_22db88afa3bbdf 24-31,299-301,325-344
+packages/git-service/src/StashProvider.ts
+  s_26f5e669d3043c::t_eceac087bcb320 30-34,195-197,253,286,337-357
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_c55ae0e4c77c57 1,4,110-115,350-351,409-424,532-535
+packages/git-service/src/stoppedOperation.ts
+  s_26f5e669d3043c::t_41121eb149e803 117-119
+packages/git-service/test/aiToolsOverAStop.test.ts
+  s_26f5e669d3043c::t_2c5040f62b7605 1-219
+packages/git-service/test/changesInTheWay.test.ts
+  s_26f5e669d3043c::t_1b83daeb64bc1d 535-608
+packages/git-service/test/stashLiteralPaths.test.ts
+  s_26f5e669d3043c::t_986dc8efeac7a1 1-168
+packages/git-service/test/unmergedSignal.test.ts
+  s_26f5e669d3043c::t_1b3f4d65ce74da 131-144
+packages/webview-ui/test/findChrome.mjs
+  s_26f5e669d3043c::t_e8caed73852bec 1-166
+packages/webview-ui/test/findChrome.test.ts
+  s_26f5e669d3043c::t_c29a87a0712537 1-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b12356939eb299952084aaeaa5605e84d394a639",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
