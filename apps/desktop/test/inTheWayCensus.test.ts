@@ -46,7 +46,13 @@ async function tsFiles(dir: string): Promise<string[]> {
   return out;
 }
 
-const read = (p: string): Promise<string> => readFile(join(SRC, p), "utf8");
+/**
+ * A source file's text with `\n` line ends, whatever the checkout wrote. On
+ * Windows (core.autocrlf) every line ends `\r\n`, and a scan looking for
+ * "\n}\n" ran past the function it meant to the end of the file.
+ */
+const text = async (file: string): Promise<string> => (await readFile(file, "utf8")).replace(/\r\n/g, "\n");
+const read = (p: string): Promise<string> => text(join(SRC, p));
 
 /** Class members at two-space indent → their bodies, comments dropped. */
 function methods(src: string): Map<string, string> {
@@ -124,7 +130,7 @@ test("every main-process command that applies commits goes through the door", as
   let doors = 0;
   for (const file of await tsFiles(join(SRC, "main"))) {
     if (file.endsWith(join("main", "inTheWay.ts"))) continue; // the door itself
-    const lines = (await readFile(file, "utf8")).split("\n");
+    const lines = (await text(file)).split("\n");
     lines.forEach((line, i) => {
       if (COMMENT.test(line)) return;
       const reviewed = REVIEWED.test(lines.slice(Math.max(0, i - 4), i + 1).join("\n"));
@@ -163,7 +169,11 @@ test("commit:action routes every verb that applies commits through applyOpFor", 
   const fn = (name: string): string => {
     const start = src.indexOf(`function ${name}(`);
     assert.ok(start >= 0, `${name} is still there`);
-    return src.slice(start, src.indexOf("\n}\n", start));
+    // Missed, indexOf's -1 would slice to the end of the file and read every
+    // later `case` as this function's.
+    const end = src.indexOf("\n}\n", start);
+    assert.ok(end > start, `${name} ends where the scan looks for its closing brace`);
+    return src.slice(start, end);
   };
   const applying = [...fn("actionArgs").matchAll(/case "([a-z-]+)":\s*return \["(checkout|cherry-pick|revert|merge|rebase)"/g)].map((m) => m[1]);
   assert.deepEqual(applying.sort(), ["checkout", "cherry-pick", "revert"], "the verbs that apply commits");
@@ -190,7 +200,7 @@ test("every renderer caller of those channels says nothing on Cancel", async () 
   let calls = 0;
   for (const file of await tsFiles(join(SRC, "renderer"))) {
     if (file.endsWith(join("renderer", "bridge.ts"))) continue;
-    const lines = (await readFile(file, "utf8")).split("\n");
+    const lines = (await text(file)).split("\n");
     lines.forEach((line, i) => {
       if (COMMENT.test(line)) return;
       const ch = [...channels].find((c) => line.includes(`"${c}"`));

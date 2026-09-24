@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /**
  * Every harness launcher finds its browser the way packages/webview-ui's
@@ -42,9 +42,13 @@ test("no harness launcher names the system Chrome, and every one asks the shared
 });
 
 /** A fake Playwright cache: an old and a new headless shell and a Chrome for
- *  Testing, each a script that records how it was launched. */
+ *  Testing, each a script that records how it was launched. Named as
+ *  Playwright names them here — findChrome.mjs looks for `….exe` on Windows,
+ *  so extension-less fakes there were never found, and discovery went on to
+ *  the runner's own installed Chrome. */
 function fakeCache(dir: string, log: string) {
   const script = `#!/bin/sh\necho "$0" >> "${log}"\nfor a in "$@"; do case "$a" in --screenshot=*) : > "\${a#--screenshot=}";; esac; done\nexit 0\n`;
+  const exe = process.platform === "win32" ? ".exe" : "";
   const put = (rel: string) => {
     const p = join(dir, rel);
     mkdirSync(dirname(p), { recursive: true });
@@ -52,10 +56,10 @@ function fakeCache(dir: string, log: string) {
     chmodSync(p, 0o755);
     return p;
   };
-  put("chromium_headless_shell-999/chrome-headless-shell-x/chrome-headless-shell");
-  const newest = put("chromium_headless_shell-1228/chrome-headless-shell-x/chrome-headless-shell");
+  put(`chromium_headless_shell-999/chrome-headless-shell-x/chrome-headless-shell${exe}`);
+  const newest = put(`chromium_headless_shell-1228/chrome-headless-shell-x/chrome-headless-shell${exe}`);
   put("chromium-1300/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing");
-  put("chromium-1300/chrome-x/chrome");
+  put(`chromium-1300/chrome-x/chrome${exe}`);
   return newest;
 }
 
@@ -69,9 +73,11 @@ test("harnessChrome() with GS_CHROME unset is the newest Playwright headless she
   const dir = mkdtempSync(join(tmpdir(), "gs-harness-chrome-"));
   try {
     const newest = fakeCache(join(dir, "cache"), join(dir, "log"));
+    // A URL, not a path: on Windows the ESM loader reads D:\… as a "d:" scheme.
+    const chromeMjs = pathToFileURL(join(HARNESS, "chrome.mjs")).href;
     const out = execFileSync(
       process.execPath,
-      ["--input-type=module", "-e", `import { harnessChrome } from ${JSON.stringify(join(HARNESS, "chrome.mjs"))}; console.log(harnessChrome());`],
+      ["--input-type=module", "-e", `import { harnessChrome } from ${JSON.stringify(chromeMjs)}; console.log(harnessChrome());`],
       { env: envWithout(join(dir, "cache")), encoding: "utf8" },
     ).trim();
     assert.equal(out, newest);
