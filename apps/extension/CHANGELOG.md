@@ -4,7 +4,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.14.0] - 2026-09-24
+## [1.14.0] - 2026-09-25
 
 GitStudio and Merge Studio now share one merge experience — the same merge
 editor, Conflicts dashboard, routing and JetBrains hand-off — so what one
