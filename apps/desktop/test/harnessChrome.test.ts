@@ -80,6 +80,37 @@ test("harnessChrome() with GS_CHROME unset is the newest Playwright headless she
   }
 });
 
+test("brand/rasterise.sh asks the shared discovery, launches the newest headless shell, and refuses the desktop Chrome outside CI", { skip: process.platform === "win32" && "sh" }, () => {
+  const script = fileURLToPath(new URL("../../../brand/rasterise.sh", import.meta.url));
+  const src = readFileSync(script, "utf8");
+  // It named "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  // as the program to run; only its refusal may mention the app now.
+  assert.doesNotMatch(src, /Google Chrome\.app\/Contents\/MacOS/, "rasterise.sh still launches the system Chrome — not running it");
+  assert.match(src, /packages\/webview-ui\/test\/findChrome\.mjs/, "rasterise.sh does not ask findChrome.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "gs-brand-chrome-"));
+  try {
+    const log = join(dir, "log");
+    const newest = fakeCache(join(dir, "cache"), log);
+    writeFileSync(join(dir, "in.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>');
+    execFileSync("sh", [script, join(dir, "in.svg"), join(dir, "out.png"), "16"], {
+      env: envWithout(join(dir, "cache")),
+      encoding: "utf8",
+    });
+    assert.deepEqual(readFileSync(log, "utf8").trim().split("\n"), [newest]);
+    // Pointed at the desktop Chrome (a fake one here), outside CI it refuses.
+    const fakeDesktop = join(dir, "Google Chrome.app", "Contents", "MacOS", "Google Chrome");
+    mkdirSync(dirname(fakeDesktop), { recursive: true });
+    writeFileSync(fakeDesktop, `#!/bin/sh\necho desktop >> "${log}"\n`);
+    chmodSync(fakeDesktop, 0o755);
+    const env = { ...envWithout(join(dir, "cache")), GS_CHROME: fakeDesktop };
+    delete env.CI;
+    assert.throws(() => execFileSync("sh", [script, join(dir, "in.svg"), join(dir, "out2.png"), "16"], { env, encoding: "utf8", stdio: "pipe" }));
+    assert.doesNotMatch(readFileSync(log, "utf8"), /desktop/, "the desktop Chrome was never launched");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("shot.sh with GS_CHROME unset launches the newest Playwright headless shell", { skip: process.platform === "win32" && "sh" }, () => {
   const shot = join(HARNESS, "shot.sh");
   // Never run a shot.sh that could still reach the system Chrome: that is the
