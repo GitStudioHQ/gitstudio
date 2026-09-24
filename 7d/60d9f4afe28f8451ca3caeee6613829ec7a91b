@@ -1,0 +1,24 @@
+packages/git-service/test/conflictOps.test.ts
+  s_26f5e669d3043c::t_06755dc913b658 267-324
+packages/git-service/src/ConflictOps.ts
+  s_26f5e669d3043c::t_4417d2e7deee70 675-686
+  s_26f5e669d3043c::t_8ff532a05b58f4 267-270,273-279,283-291
+  s_26f5e669d3043c::t_fdf0fa8968d0dc 292
+  s_26f5e669d3043c::t_82fa189c331cb8 674
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7d60d9f4afe28f8451ca3caeee6613829ec7a91b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
