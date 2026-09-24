@@ -12090,8 +12090,9 @@
       c.ok(!!rid, "a turn is running");
       if (!rid) return;
 
-      // `assistant` events render synchronously. Deltas go through
-      // requestAnimationFrame, which this harness starves, so they never paint.
+      // `assistant` events render synchronously, so each one is on the page
+      // before the next line runs. Deltas paint on a throttle (a frame, or an
+      // 80 ms timer when no frame comes), so they would land a beat later.
       const say = (n) =>
         window.__gsEmit("ai:agentEvent", {
           requestId: rid,

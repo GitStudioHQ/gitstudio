@@ -21,6 +21,14 @@ import type {
 } from "@gitstudio/ai/gitTools";
 import type { GitContext } from "./GitContext";
 import { optionLikeCheckout, planRefCheckout } from "./checkoutRef";
+import {
+  changesInTheWayMessage,
+  checkoutOp,
+  newBranchAtHead,
+  operationInTheWayMessage,
+  runApplying,
+  type ApplyOp,
+} from "./changesInTheWay";
 import { branchNameOf } from "./BranchOps";
 import { commitBlockerMessage } from "./StagingProvider";
 import { stashBlockerMessage } from "./StashProvider";
@@ -288,7 +296,9 @@ class GitContextToolHost implements GitToolHost {
     if (!safe(name)) {
       return UNSAFE;
     }
-    return w(await (checkout ? this.ctx.branches.checkoutNew(name) : this.ctx.branches.create(name)));
+    // With checkout it is the app's own "create at HEAD and switch" door:
+    // `git checkout -b` over a stopped merge, cherry-pick or revert ENDS it.
+    return checkout ? this.door(newBranchAtHead(name)) : w(await this.ctx.branches.create(name));
   }
 
   async checkout(ref: string): Promise<ToolWriteResult> {
@@ -312,11 +322,27 @@ class GitContextToolHost implements GitToolHost {
       return { ok: false, message: optionLike.message };
     }
     const plan = fullName ? await planRefCheckout(this.ctx.process, fullName) : undefined;
-    if (plan) {
-      const r = await this.ctx.process.run(plan.args);
-      return r.code === 0 ? { ok: true } : { ok: false, message: r.stderr.trim() || "git reported an error." };
+    return this.door(checkoutOp(plan ? plan.args : ["checkout", ref]));
+  }
+
+  /**
+   * A command that moves HEAD, through the door the app's own checkouts use
+   * (runApplying): over a stopped merge, cherry-pick or revert `git checkout`
+   * — and `git checkout -b` — ENDS the operation, and over a rebase or an am
+   * it moves HEAD out from under it. So it is not run over a stop, and the
+   * agent is told what is stopped and the two ways out, in the same sentence
+   * a person gets; a refusal over the user's uncommitted work names the files.
+   */
+  private async door(op: ApplyOp): Promise<ToolWriteResult> {
+    try {
+      const r = await runApplying(this.ctx.process, op);
+      if (r.blocked) return { ok: false, message: operationInTheWayMessage(r.blocked) };
+      if (r.result.code === 0) return { ok: true };
+      if (r.inTheWay) return { ok: false, message: changesInTheWayMessage(r.inTheWay) };
+      return { ok: false, message: r.result.stderr.trim() || r.result.stdout.trim() || `git exited ${r.result.code}.` };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }
-    return w(await this.ctx.branches.checkout(ref));
   }
 
   /** The full name of the local branch git_branches would report as `short`. */

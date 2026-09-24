@@ -21,8 +21,9 @@ OUT="${2:-$HARNESS/out/$SCENE.png}"
 THEME="${3:-dark}"
 EXTRA="${4:-}"
 mkdir -p "$(dirname "$OUT")"
-# GS_CHROME first (as webview-ui's test/headless.ts), then the usual install.
-CHROME="${GS_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+# GS_CHROME, else Playwright's windowless chrome-headless-shell, and only then a
+# system Chrome — the one order, in packages/webview-ui/test/findChrome.mjs.
+CHROME="$(node "$HARNESS/../../../packages/webview-ui/test/findChrome.mjs")"
 # Its own throwaway profile: left to itself headless Chrome leaves a
 # .com.google.Chrome.* directory in $TMPDIR behind on every launch.
 PROFILE="$(mktemp -d "${TMPDIR:-/tmp}/gs-shot-XXXXXX")"

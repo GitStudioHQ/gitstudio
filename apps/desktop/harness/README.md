@@ -15,6 +15,15 @@ harness/shot.sh 'prs~open106~click:.gh-subtab%5Bdata-sub%3Dfiles%5D' out/files.p
 harness/shot.sh issues out/light.png light       # light theme
 ```
 
+The browser is `$GS_CHROME`, else Playwright's windowless
+`chrome-headless-shell` (the newest in its cache), else its Chrome for Testing,
+and only then a Chrome installed on the system. That order is
+`packages/webview-ui/test/findChrome.mjs`, shared with the webview-ui headless
+tests; every launcher here takes its browser from `chrome.mjs`, and
+`test/harnessChrome.test.ts` fails if one names a Chrome of its own. A run must
+never fall through to the owner's own `/Applications/Google Chrome.app` — one
+did, 111 times, before this.
+
 ## Functional checks
 
 Screenshots prove a surface renders. They do not prove the count badge tracks

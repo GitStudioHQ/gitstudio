@@ -23,6 +23,20 @@
   const steps = scene.slice(1);
   const theme = params.get("theme") || "dark";
 
+  // `frames=none`: a window that is served NO animation frames — an occluded or
+  // minimised one, and this harness most of the time. Headless Chrome makes
+  // frames on the real clock, not the virtual one, so whether a frame lands
+  // inside a check is luck, and a check over a surface that paints in a frame
+  // passed some runs and failed others (the Assistant's jump-to-latest, 3 in
+  // 10). Starving frames outright makes that worst case the only case: a
+  // surface that waits on a frame to paint fails every run, and one that falls
+  // back to a timer when no frame comes passes every run.
+  if (params.get("frames") === "none") {
+    let frame = 0;
+    window.requestAnimationFrame = () => ++frame;
+    window.cancelAnimationFrame = () => {};
+  }
+
   // Pre-seed prefs so the app boots straight into the scene's view, terminal
   // collapsed, fixed rail width — deterministic screenshots.
   //

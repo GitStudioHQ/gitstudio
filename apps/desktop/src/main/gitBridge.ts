@@ -38,6 +38,7 @@ import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
+import { stoppedIn } from "@gitstudio/git-service/stoppedOperation";
 import {
   pullBlockedMessage,
   pullDetachedMessage,
@@ -2517,7 +2518,8 @@ export class GitBridge {
   private async conflictExplains(ctx: GitContext): Promise<string | undefined> {
     try {
       const n = await ctx.conflict.unmergedCount();
-      return n > 0 ? unresolvedConflictsMessage(n) : undefined;
+      // In the stopped operation's own words: a rebase or a pick CONTINUES.
+      return n > 0 ? unresolvedConflictsMessage(n, await stoppedIn(ctx.process)) : undefined;
     } catch {
       return undefined;
     }

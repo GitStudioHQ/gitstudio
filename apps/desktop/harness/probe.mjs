@@ -26,6 +26,7 @@
 //   node harness/probe.mjs changes 'return css(".dc-file", "color", "font-size")' --theme=light
 //   node harness/probe.mjs code 'return $$("button").filter(b=>!b.textContent.trim()&&!b.title).length'
 
+import { harnessChrome } from "./chrome.mjs";
 import { execFile } from "node:child_process";
 import { chromeProfile } from "./profile.mjs";
 import { existsSync } from "node:fs";
@@ -36,9 +37,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = process.env.GS_HARNESS_PAGE
   ? resolve(process.env.GS_HARNESS_PAGE, "harness.html")
   : resolve(HERE, "page/harness.html");
-// GS_CHROME first (as webview-ui's test/headless.ts): the machine's Chrome is
-// not always in /Applications, and a Chrome for Testing build works as well.
-const CHROME = process.env.GS_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// GS_CHROME, else Playwright's windowless chrome-headless-shell — never the
+// owner's own Chrome while a Playwright build exists (see chrome.mjs).
+const CHROME = harnessChrome();
 
 const argv = process.argv.slice(2);
 const flags = Object.fromEntries(

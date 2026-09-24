@@ -1,6 +1,7 @@
+import { refShortName } from "./checkoutRef";
 import type { GitProcess, GitRunOptions, GitRunResult } from "./GitProcess";
 import { rebaseInProgress } from "./rebaseInProgress";
-import { StashProvider } from "./StashProvider";
+import { literalPathspec as literally, StashProvider } from "./StashProvider";
 import { parseV2 } from "./StatusProvider";
 import { pick, sameStop, stoppedIn, type OperationInTheWay, type StoppedHere } from "./stoppedOperation";
 import type { PullDirty, PullResult } from "./SyncOps";
@@ -104,6 +105,12 @@ export interface ChangesInTheWay {
  */
 export function newBranchAtHead(name: string): ApplyOp {
   return { kind: "checkout", target: "HEAD", args: ["checkout", "-b", name] };
+}
+
+/** A checkout op for the argv a door already runs: its target is its last word.
+ *  (The desktop's and the extension's doors, and the AI tools, share it.) */
+export function checkoutOp(args: string[]): ApplyOp {
+  return { kind: "checkout", target: args[args.length - 1] ?? "HEAD", args };
 }
 
 /** The argv an op runs. */
@@ -340,6 +347,8 @@ async function changesInTheWay(
   // some other refusal.
   if (op.kind === "merge" && (await configTrue(proc, "merge.autoStash", signal))) return null;
   if (op.kind === "rebase" && (await configTrue(proc, "rebase.autoStash", signal))) return null;
+  // A new branch refused over its NAME was refused before git looked at a file.
+  if (op.kind === "checkout" && (await newBranchNameRefused(proc, op.args, signal))) return null;
 
   // Renames off: a staged rename is in the way under BOTH its names, and a
   // stash of only the new one leaves the old one's deletion staged — the
@@ -395,6 +404,22 @@ async function changesInTheWay(
   if (inWay.size === 0) return null;
   const paths = [...inWay].sort();
   return { kind: op.kind, paths, untracked: paths.filter((p) => untracked.has(p)) };
+}
+
+/**
+ * `checkout -b <name> [<start>]` whose <name> git will not take: a branch of
+ * that name exists ("a branch named 'x' already exists"), or it is no branch
+ * name at all. git says so before it looks at a file — so the user's edits to
+ * the paths a switch to <start> would write are not what refused it, and
+ * Stash & Retry would stash them for a command that can never run.
+ * (`-B` resets a branch that exists, so it is never refused for that.)
+ */
+async function newBranchNameRefused(proc: GitProcess, args: readonly string[], signal?: AbortSignal): Promise<boolean> {
+  const at = args.indexOf("-b");
+  const name = at > 0 && args[0] === "checkout" ? args[at + 1] : undefined;
+  if (!name) return false;
+  if ((await proc.run(["check-ref-format", "--branch", name], { signal })).code !== 0) return true;
+  return (await proc.run(["rev-parse", "--verify", "--quiet", `refs/heads/${name}`], { signal })).code === 0;
 }
 
 /** Is `key` a true boolean in the repository's config? */
@@ -504,7 +529,10 @@ export interface StashRetryOutcome {
 
 /** The message a stash-and-retry's stash carries, so it can be found again. */
 function stashMessage(op: ApplyOp): string {
-  const short = (s: string): string => (/^[0-9a-f]{40,64}$/.test(s) ? s.slice(0, 7) : s);
+  // Named the way the user names it: the doors hand a merge, a rebase and a
+  // remote checkout their target by its FULL name (a short one is ambiguous
+  // beside a tag), and the stash list read "before merging refs/heads/release".
+  const short = (s: string): string => (/^[0-9a-f]{40,64}$/.test(s) ? s.slice(0, 7) : refShortName(s));
   switch (op.kind) {
     case "cherry-pick":
     case "revert":
@@ -701,9 +729,6 @@ interface Stashed {
    *  once the stash is popped (see stashTheWay). */
   restage: string[];
 }
-
-/** `path` as a pathspec that matches it and nothing else — no glob, no magic. */
-const literally = (path: string): string => `:(literal)${path}`;
 
 /**
  * Put the changes in the way into a stash of their own.

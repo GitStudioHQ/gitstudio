@@ -18,6 +18,7 @@
 // sentence and a predicate against the real app, and prints what is MET and
 // what is not — quoting the sentence, because that is the form it will be read
 // in. An UNMET row is not a failure of the harness. It is the backlog.
+import { harnessChrome } from "./chrome.mjs";
 import { execFile } from "node:child_process";
 import { chromeProfile } from "./profile.mjs";
 import { existsSync, readFileSync } from "node:fs";
@@ -27,9 +28,9 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE_DIR = process.env.GS_HARNESS_PAGE ? resolve(process.env.GS_HARNESS_PAGE) : resolve(HERE, "page");
 const PAGE = resolve(PAGE_DIR, "harness.html");
-// GS_CHROME first (as webview-ui's test/headless.ts): the machine's Chrome is
-// not always in /Applications, and a Chrome for Testing build works as well.
-const CHROME = process.env.GS_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// GS_CHROME, else Playwright's windowless chrome-headless-shell — never the
+// owner's own Chrome while a Playwright build exists (see chrome.mjs).
+const CHROME = harnessChrome();
 
 const argv = process.argv.slice(2);
 const asJson = argv.includes("--json");

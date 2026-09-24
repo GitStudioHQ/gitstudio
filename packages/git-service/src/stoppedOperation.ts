@@ -114,8 +114,9 @@ const NAME: Record<StoppedOperation, string> = {
   am: "Applying patches (git am)",
 };
 
-/** How the operation is finished once nothing is left to resolve. */
-const FINISH: Record<StoppedOperation, string> = {
+/** How the operation is finished once nothing is left to resolve — "commit"
+ *  only for a merge; a rebase, a pick, a revert and an am CONTINUE. */
+export const FINISH: Readonly<Record<StoppedOperation, string>> = {
   merge: "commit the merge",
   rebase: "continue the rebase",
   "cherry-pick": "continue the cherry-pick",

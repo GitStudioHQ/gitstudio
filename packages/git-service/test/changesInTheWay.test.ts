@@ -532,3 +532,77 @@ test("the sentence names the files, and says what they are in the way of", () =>
   assert.match(changesInTheWayMessage(v(["a"], "stash")), /in the way of applying the stash/);
   assert.doesNotMatch(changesInTheWayMessage(v(["a"])), /overwritten by merge|Aborting|fatal/);
 });
+
+// ── what a stash-and-retry's stash is called ──────────────────────────────────
+
+// The doors hand a merge and a rebase their target by its FULL name — a short
+// one is ambiguous beside a tag — and the stash carried it into the list the
+// user reads: "GitStudio: before merging refs/heads/release".
+test("a stash-and-retry's stash names a branch the way the user does, never refs/heads/…", async () => {
+  const { dir, proc } = repo();
+  git(dir, "update-ref", "refs/remotes/origin/feature", "feature");
+
+  writeFileSync(join(dir, "a.txt"), LINES("mine", 4));
+  const merged = await stashAndRetry(proc, merge("refs/heads/feature"));
+  assert.equal(merged.stashed?.message, "GitStudio: before merging feature");
+  git(dir, "reset", "-q", "--hard", "main");
+  git(dir, "stash", "clear");
+
+  writeFileSync(join(dir, "b.txt"), LINES("mine", 4));
+  const rebased = await stashAndRetry(proc, {
+    kind: "rebase",
+    onto: "refs/remotes/origin/feature",
+    args: ["rebase", "refs/remotes/origin/feature"],
+  });
+  assert.equal(rebased.stashed?.message, "GitStudio: before rebasing onto origin/feature");
+});
+
+test("a stash-and-retry's stash names a tracked remote branch, and a tag, by their short names", async () => {
+  const { dir, proc } = repo();
+  git(dir, "update-ref", "refs/remotes/origin/feature", "feature");
+  git(dir, "tag", "v1", "feature");
+  writeFileSync(join(dir, "a.txt"), LINES("mine", 4));
+  const tracked = await stashAndRetry(proc, {
+    kind: "checkout",
+    target: "refs/remotes/origin/feature",
+    args: ["checkout", "-b", "feature-copy", "--track", "refs/remotes/origin/feature"],
+  });
+  assert.equal(tracked.stashed?.message, "GitStudio: before checking out origin/feature");
+  git(dir, "checkout", "-q", "-f", "main");
+  git(dir, "stash", "clear");
+  writeFileSync(join(dir, "a.txt"), LINES("mine", 4));
+  const tag = await stashAndRetry(proc, { kind: "checkout", target: "refs/tags/v1", args: ["checkout", "--detach", "refs/tags/v1"] });
+  assert.equal(tag.stashed?.message, "GitStudio: before checking out v1");
+});
+
+// ── `checkout -b <name> <start>` refused over its NAME ────────────────────────
+
+// git refuses a new branch whose name is taken ("a branch named 'x' already
+// exists") or is no branch name at all, before it looks at a file. The paths
+// the switch to <start> would write still met the user's edit, so the refusal
+// went out as "your uncommitted changes are in the way" — and Stash & Retry
+// stashed them for a command that could never run.
+test("checkout -b <name> <start> refused because <name> exists is not the user's changes in the way", async () => {
+  const { dir, proc } = repo();
+  git(dir, "branch", "taken");
+  writeFileSync(join(dir, "a.txt"), LINES("mine", 4)); // in the way of feature, were the switch to run
+  const op: ApplyOp = { kind: "checkout", target: "feature", args: ["checkout", "-b", "taken", "feature"] };
+  const r = await runApplying(proc, op);
+  assert.notEqual(r.result.code, 0, "git refused");
+  assert.equal(r.inTheWay, undefined, "the NAME was refused, not the edit");
+  const out = await stashAndRetry(proc, op);
+  assert.equal(out.stashed, undefined, "nothing stashed for a command that cannot run");
+  assert.equal(git(dir, "stash", "list"), "");
+  assert.equal(readFileSync(join(dir, "a.txt"), "utf8"), LINES("mine", 4));
+
+  // …nor is a name git will not take as a branch.
+  const bad: ApplyOp = { kind: "checkout", target: "feature", args: ["checkout", "-b", "no..dots", "feature"] };
+  const r2 = await runApplying(proc, bad);
+  assert.notEqual(r2.result.code, 0, "git refused");
+  assert.equal(r2.inTheWay, undefined, "an invalid name is not the user's changes either");
+
+  // A free, valid name over the same edit IS the edit in the way.
+  const free: ApplyOp = { kind: "checkout", target: "feature", args: ["checkout", "-b", "free", "feature"] };
+  const r3 = await runApplying(proc, free);
+  assert.deepEqual(r3.inTheWay, { kind: "checkout", paths: ["a.txt"], untracked: [] });
+});
