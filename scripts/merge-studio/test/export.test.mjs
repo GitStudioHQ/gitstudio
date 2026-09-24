@@ -287,3 +287,20 @@ test("the export writes merge-studio's CI: check-parity in a job of its own, neu
 test("the export never writes into this gitstudio checkout", () => {
   assert.throws(() => exportTo({ into: GITSTUDIO_ROOT, allowDirty: true }), /must be a merge-studio checkout/);
 });
+
+test("the dompurify gitstudio pins — and so every export — is past its advisories", () => {
+  // GHSA-c2j3-45gr-mqc4 and GHSA-55q2-fjhq-7xh7 cover every release up to
+  // 3.4.12; the override stood at 3.4.11. Monaco's vendored copy is
+  // redirected to this package by each esbuild config, so this pin is the
+  // DOMPurify every bundle carries.
+  const root = JSON.parse(readFileSync(join(GITSTUDIO_ROOT, "package.json"), "utf8"));
+  const lock = JSON.parse(readFileSync(join(GITSTUDIO_ROOT, "package-lock.json"), "utf8"));
+  const past = (v) => {
+    const [a, b, c] = v.split(".").map(Number);
+    return a > 3 || (a === 3 && (b > 4 || (b === 4 && c > 12)));
+  };
+  const pinned = root.overrides?.dompurify ?? "";
+  assert.match(pinned, /^\d+\.\d+\.\d+$/, `an exact pin, not a range: ${pinned}`);
+  assert.ok(past(pinned), `the override pins dompurify ${pinned}, inside the advisories' range (<= 3.4.12)`);
+  assert.equal(lock.packages["node_modules/dompurify"]?.version, pinned, "the lock installs the pinned version");
+});
