@@ -1,0 +1,23 @@
+apps/merge-studio/README.md
+  s_26f5e669d3043c::t_040ce237f4ec66 28,57
+apps/merge-studio/SHOTS.md
+  s_26f5e669d3043c::t_040ce237f4ec66 17-20,36-37
+apps/merge-studio/test/manifest.test.ts
+  s_26f5e669d3043c::t_8cf41c2d11cc5b 206-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9e48a93c54778392cfc2f8391a7b6fbc03c980ed",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
