@@ -39,6 +39,10 @@ export class ConflictsDashboard implements vscode.Disposable {
   private done = 0;
   /** Which load of the page is on screen: an action from an earlier load never counts as done for this one. */
   private page = 0;
+  /** Rows whose press is waiting, running or being read back: a second press on one runs nothing. */
+  private readonly activeRows = new Set<string>();
+  /** An operation verb is waiting its turn or running: a second one runs nothing. */
+  private verbPending = false;
   /**
    * The last state message posted, as sent. A state identical to it is not
    * posted again: the page would have nothing to do with it, and every git
@@ -351,9 +355,35 @@ export class ConflictsDashboard implements vscode.Disposable {
   ): Promise<void> {
     const controller = this.controller!;
     const page = this.page;
+    if (this.activeRows.has(path)) {
+      // That row is already at work (or its result is being read back): a
+      // second press on it was made on what it showed before — Accept Theirs
+      // on a file Accept Yours is resolving. It runs nothing.
+      await this.dropped(seq, page);
+      return;
+    }
+    this.activeRows.add(path);
     controller.setRowBusy(path, true);
     this.post();
     await this.enqueue(async () => {
+      try {
+        await this.runFileAction(repo, path, seq, page, undoLabel, act);
+      } finally {
+        this.activeRows.delete(path);
+      }
+    });
+  }
+
+  private async runFileAction(
+    repo: MergeRepo,
+    path: string,
+    seq: number | undefined,
+    page: number,
+    undoLabel: string | undefined,
+    act: () => Promise<ConflictOpResult>,
+  ): Promise<void> {
+    const controller = this.controller!;
+    {
       let result: ConflictOpResult;
       try {
         // A merge editor on this file may hold unapplied work: save it now, so
@@ -379,7 +409,7 @@ export class ConflictsDashboard implements vscode.Disposable {
       }
       this.host.changed(repo);
       await this.refresh(false);
-    });
+    }
   }
 
   /**
@@ -394,9 +424,33 @@ export class ConflictsDashboard implements vscode.Disposable {
   ): Promise<void> {
     const controller = this.controller!;
     const page = this.page;
+    if (this.verbPending) {
+      // A second verb while one waits or runs was pressed on what the page
+      // showed before the first: two Continues walk past the stop.
+      await this.dropped(seq, page);
+      return;
+    }
+    this.verbPending = true;
     controller.setBusy(true);
     this.post();
     await this.enqueue(async () => {
+      try {
+        await this.runVerb(repo, verb, seq, page, act);
+      } finally {
+        this.verbPending = false;
+      }
+    });
+  }
+
+  private async runVerb(
+    repo: MergeRepo,
+    verb: OperationVerb,
+    seq: number | undefined,
+    page: number,
+    act: () => Promise<OperationOutcome>,
+  ): Promise<void> {
+    const controller = this.controller!;
+    {
       let before: OperationView | undefined;
       let outcome: OperationOutcome | undefined;
       let failure: string | undefined;
@@ -423,6 +477,19 @@ export class ConflictsDashboard implements vscode.Disposable {
         controller.setBusy(false);
         this.post();
       }
+    }
+  }
+
+  /**
+   * A press that runs nothing (a second press on a row already at work, a
+   * second verb on top of one). In its turn — after what it was pressed
+   * behind — the page hears it is over; nothing changed in git, so no read.
+   */
+  private async dropped(seq: number | undefined, page: number): Promise<void> {
+    await this.enqueue(async () => {
+      this.finish(seq, page);
+      this.controller?.claimDone(this.done);
+      this.post();
     });
   }
 

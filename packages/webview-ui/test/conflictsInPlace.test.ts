@@ -93,7 +93,9 @@ test("Accept Yours: the row works, then resolves — and not one other node on t
     list().scrollTop = 60;
     const y0 = list().scrollTop;
     expect(y0 > 0, "precondition: the list scrolls (" + list().scrollHeight + " in " + list().clientHeight + ")");
-    await new Promise((r) => setTimeout(r, 50));                       // the scroll is noted (its event: the fades)
+    // The scroll is noted (its event: the fades). Headless Chrome serves no
+    // frame to an idle page, so the event is sent by hand, not waited for.
+    list().dispatchEvent(new Event("scroll"));
     const P = "app/calculator.py";
     const accept = key("accept:yours:" + P);
     const other = key("merge:stress/config.json");

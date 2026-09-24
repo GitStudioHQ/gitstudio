@@ -596,6 +596,12 @@ export class DesktopConflicts {
    * all other rows".
    */
   private readonly rowBusy = new Set<string>();
+  /** An operation verb is waiting its turn or running: a second one is not run. */
+  private verbPending = false;
+  /** A row's action holds the shared lock (`exclusive`) right now: that lock is not the page's. */
+  private rowRunning = false;
+  /** Rows whose press is waiting, running or being read back: a second press on one runs nothing. */
+  private readonly rowActive = new Set<string>();
   /** The dashboard's actions, one at a time in the order pressed (a second row's press waits; it is not dropped). */
   private queue: Promise<void> = Promise.resolve();
   /** The highest action seq finished (ConflictsState.done). */
@@ -707,7 +713,7 @@ export class DesktopConflicts {
       resolved: ended ? ended.files.length : files.filter((f) => f.status === "resolved").length,
       // The page waits for an operation verb — ours, or the merge editor's
       // (one lock for both) — never for one row's action.
-      busy: this.busy || (verbInFlight && this.rowBusy.size === 0),
+      busy: this.busy || (verbInFlight && !this.rowRunning),
       done: this.snapshotDone,
       holdToUndoMs: HOLD_TO_UNDO_MS,
       notice: this.notice ?? (this.readError ? { kind: "error", text: this.readError } : undefined),
@@ -738,36 +744,26 @@ export class DesktopConflicts {
       case "continue":
       case "skip":
       case "abort": {
+        if (this.verbPending) {
+          // A second verb while one waits or runs was pressed on what the page
+          // showed before the first: two Continues walk past the stop. It runs
+          // nothing; the page still hears, in turn, that it is over.
+          await this.inTurn(async () => this.dropped(action.seq));
+          return;
+        }
+        // The page waits from the press (a verb can queue behind a row's action).
+        this.verbPending = true;
+        this.busy = true;
+        this.paint();
         // After any row action pressed before it (the queue), never beside it.
         await this.inTurn(async () => {
-          const before = this.snapshot?.op;
-          let line: { kind: "done" | "stopped" | "failed"; text: string } | undefined;
-          const o = before
-            ? await this.run(
-                () =>
-                  action.type === "continue"
-                    ? invoke("op:continue", action.confirmDrop ? { confirmDrop: true } : {})
-                    : action.type === "skip"
-                      ? invoke("op:skip", undefined)
-                      : invoke("op:abort", undefined),
-                async (result) => {
-                  line = outcomeLine(result, before, action.type);
-                  this.outcome = line;
-                  this.outcomeEpisode = result.view.episode;
-                  this.finish(action.seq);
-                  await this.refresh();
-                },
-                true,
-              )
-            : undefined;
-          if (!o || !line) {
-            // Nothing ran (no state yet, or another verb held the lock): the
-            // page still hears that this press is over.
-            this.finish(action.seq);
-            await this.refresh();
-            return;
+          try {
+            await this.runVerb(action);
+          } finally {
+            this.verbPending = false;
+            this.busy = false;
+            this.paint();
           }
-          this.deps.onOperationChanged(line);
         });
         return;
       }
@@ -776,6 +772,39 @@ export class DesktopConflicts {
         // offers no support links.
         return;
     }
+  }
+
+  /** Continue / Skip / Abort, in its turn: run it, read what it did, say so. */
+  private async runVerb(action: Extract<ConflictsAction, { type: "continue" | "skip" | "abort" }>): Promise<void> {
+    const { invoke } = this.deps;
+    const before = this.snapshot?.op;
+    let line: { kind: "done" | "stopped" | "failed"; text: string } | undefined;
+    const o = before
+      ? await this.run(
+          () =>
+            action.type === "continue"
+              ? invoke("op:continue", action.confirmDrop ? { confirmDrop: true } : {})
+              : action.type === "skip"
+                ? invoke("op:skip", undefined)
+                : invoke("op:abort", undefined),
+          async (result) => {
+            line = outcomeLine(result, before, action.type);
+            this.outcome = line;
+            this.outcomeEpisode = result.view.episode;
+            this.finish(action.seq);
+            await this.refresh();
+          },
+          true,
+        )
+      : undefined;
+    if (!o || !line) {
+      // Nothing ran (no state yet, or another verb held the lock): the page
+      // still hears that this press is over.
+      this.finish(action.seq);
+      await this.refresh();
+      return;
+    }
+    this.deps.onOperationChanged(line);
   }
 
   /**
@@ -788,11 +817,33 @@ export class DesktopConflicts {
   private async fileVerb(
     action: Extract<ConflictsAction, { type: "accept" | "restore" | "delete" }>,
   ): Promise<void> {
-    const { invoke } = this.deps;
     const path = action.path;
+    if (this.rowActive.has(path)) {
+      // That row is already at work (or its result is being read back): a
+      // second press on it was made on what it showed before — Accept Theirs
+      // on a file Accept Yours is resolving. It runs nothing; the page still
+      // hears, in turn, that it is over.
+      await this.inTurn(async () => this.dropped(action.seq));
+      return;
+    }
+    this.rowActive.add(path);
     this.rowBusy.add(path);
     this.paint();
     await this.inTurn(async () => {
+      this.rowRunning = true;
+      try {
+        await this.runFileVerb(action);
+      } finally {
+        this.rowRunning = false;
+        this.rowActive.delete(path);
+      }
+    });
+  }
+
+  private async runFileVerb(action: Extract<ConflictsAction, { type: "accept" | "restore" | "delete" }>): Promise<void> {
+    const { invoke } = this.deps;
+    const path = action.path;
+    {
       let r: Awaited<ReturnType<typeof invoke<"conflict:takeRole">>> | undefined;
       try {
         r = await this.run(
@@ -832,7 +883,7 @@ export class DesktopConflicts {
         }
       }
       if (r) this.deps.onFileChanged();
-    });
+    }
   }
 
   /** Run `job` after every action pressed before it. */
@@ -845,6 +896,19 @@ export class DesktopConflicts {
   /** Press `seq` is finished: every state read from now on says so. */
   private finish(seq: number | undefined): void {
     if (seq !== undefined && seq > this.done) this.done = seq;
+  }
+
+  /**
+   * A press that runs nothing, in its turn. Nothing changed in git, so the
+   * state on screen already shows its (lack of) effect: it is claimed done
+   * without a read, and painted.
+   */
+  private async dropped(seq: number | undefined): Promise<void> {
+    this.finish(seq);
+    if (this.done > this.snapshotDone) {
+      this.snapshotDone = this.done;
+      this.paint();
+    }
   }
 
   /**

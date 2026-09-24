@@ -171,6 +171,16 @@ export class DashboardController {
   }
 
   /**
+   * Presses up to `done` changed nothing git has not already shown (they were
+   * refused before they ran): the state on screen may claim them without a
+   * new read.
+   */
+  claimDone(done: number): ConflictsState {
+    if (this.snapshotDone !== undefined && done > this.snapshotDone) this.snapshotDone = done;
+    return this.state();
+  }
+
+  /**
    * One ROW's action is waiting or running: that row shows busy, and nothing
    * else on the page changes — not `busy`, not the outcome, not a notice
    * (removing a notice above the list would move every row).

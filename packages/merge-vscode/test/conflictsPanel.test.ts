@@ -246,6 +246,35 @@ test("a second row pressed while git is at the first waits its turn (one git com
   assert.equal(statusOf(states(panel).at(-1)!), "a.txt:resolved b.txt:resolved c.txt:pending");
 });
 
+test("a second press on a row already at work, or a second verb on top of one, runs nothing — and still ends", async () => {
+  const state = { files: [pending("a.txt"), pending("b.txt")], episode: "rebase:1" };
+  const { repo, started, release } = gatedRepo(state);
+  let continues = 0;
+  let letContinue: () => void = () => {};
+  (repo.ctx.operation as { continue: unknown }).continue = async () => {
+    continues++;
+    await new Promise<void>((r) => (letContinue = r));
+    return { ok: false, stopped: true, view: view("rebase", { episode: state.episode }), remainingConflicts: 1 };
+  };
+  const { panel } = await openDashboard(repo);
+  panel.receive({ type: "accept", path: "a.txt", role: "yours", seq: 1 });
+  panel.receive({ type: "accept", path: "a.txt", role: "theirs", seq: 2 }); // pressed on what the row showed before
+  await settle();
+  release("a.txt");
+  await settle();
+  assert.deepEqual(started, ["a.txt"], "one git command for the row");
+  assert.equal(states(panel).at(-1)!.done, 2, "and the refused press is over too");
+
+  panel.receive({ type: "continue", seq: 3 });
+  panel.receive({ type: "continue", seq: 4 });
+  await settle();
+  letContinue();
+  await settle();
+  assert.equal(continues, 1, "two Continues run one");
+  assert.equal(states(panel).at(-1)!.done, 4);
+  assert.equal(states(panel).at(-1)!.busy, false, "and the page is unlocked after");
+});
+
 test("a watcher's read that overlaps a press never says it is done", async () => {
   // git has written the file (the read sees it resolved) but the action has
   // not returned: that state must not end the row's working state early.

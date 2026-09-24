@@ -514,16 +514,53 @@ test("the dashboard is fed conflict:state, dressed with the desktop's brand and 
   assert.equal(s.supportLinks, undefined, "the desktop's brand slot carries no support links");
 });
 
-test("Accept Yours on a row resolves by role, locks the dashboard while it runs, and repaints the list", async () => {
-  const r = controllerRig({ "conflict:state": snapshot(), "conflict:takeRole": OK }, 15);
+test("Accept Yours on a row resolves by role, marks THAT row busy while it runs (never the page), and repaints the list", async () => {
+  // The owner (24 Sep 2026): "clicking accept left on the first row flashes and
+  // refreshes all other rows". The controller locked the whole dashboard for
+  // one file, so every button on it was locked and unlocked around each press.
+  const two = snapshot({
+    files: [
+      { path: "src/app.ts", status: "pending", shape: "text" },
+      { path: "src/b.ts", status: "pending", shape: "text" },
+    ],
+    total: 2,
+  });
+  const r = controllerRig({ "conflict:state": two, "conflict:takeRole": OK }, 15);
   await r.ctl.refresh();
-  const run = r.ctl.handle({ type: "accept", path: "src/app.ts", role: "yours" });
+  const run = r.ctl.handle({ type: "accept", path: "src/app.ts", role: "yours", seq: 1 });
   await new Promise((res) => setTimeout(res, 3));
-  assert.equal(r.last().busy, true, "busy while the host works");
+  assert.equal(r.last().busy, false, "the page is not locked for one row");
+  assert.deepEqual(r.last().files.map((f) => f.status), ["busy", "pending"], "only the pressed row is busy");
+  assert.equal(r.last().done, 0, "and its press is not done yet");
   await run;
   assert.deepEqual(r.sent("conflict:takeRole").map((c) => c.payload), [{ path: "src/app.ts", role: "yours" }]);
   assert.equal(r.last().busy, false);
+  assert.equal(r.last().done, 1, "the state read after it says the press is done");
+  assert.ok(r.renders.every((s) => !s.busy), "no state of the press ever locked the page");
   assert.deepEqual(r.log, ["undoable", "file"]);
+});
+
+test("a press on a second row while the first is at work waits its turn — it is not dropped", async () => {
+  const two = snapshot({
+    files: [
+      { path: "src/app.ts", status: "pending", shape: "text" },
+      { path: "src/b.ts", status: "pending", shape: "text" },
+    ],
+    total: 2,
+  });
+  const r = controllerRig({ "conflict:state": two, "conflict:takeRole": OK }, 15);
+  await r.ctl.refresh();
+  const a = r.ctl.handle({ type: "accept", path: "src/app.ts", role: "yours", seq: 1 });
+  const b = r.ctl.handle({ type: "accept", path: "src/b.ts", role: "theirs", seq: 2 });
+  await new Promise((res) => setTimeout(res, 3));
+  assert.deepEqual(r.last().files.map((f) => f.status), ["busy", "busy"], "both rows say so");
+  await Promise.all([a, b]);
+  assert.deepEqual(
+    r.sent("conflict:takeRole").map((c) => c.payload),
+    [{ path: "src/app.ts", role: "yours" }, { path: "src/b.ts", role: "theirs" }],
+    "both ran, one after the other",
+  );
+  assert.equal(r.last().done, 2);
 });
 
 test("Continue, Skip and Abort each run once, even pressed twice, and the outcome stays on the dashboard", async () => {
@@ -643,10 +680,14 @@ test("the dashboard stays locked until it has read what the verb did — a secon
   });
   ctl2.attach((s) => rows.push(s));
   await ctl2.refresh();
-  const a = ctl2.handle({ type: "accept", path: "src/app.ts", role: "yours" });
+  const a = ctl2.handle({ type: "accept", path: "src/app.ts", role: "yours", seq: 1 });
   await h.readPending;
-  assert.equal(rows[rows.length - 1].busy, true, "the list stays locked until the resolved row is read back");
-  const b = ctl2.handle({ type: "accept", path: "src/app.ts", role: "theirs" });
+  const shown = rows[rows.length - 1];
+  assert.ok(
+    shown.files[0].status === "busy" || (shown.done ?? 0) < 1,
+    "until the resolved row is read back, the page is not told the press is done",
+  );
+  const b = ctl2.handle({ type: "accept", path: "src/app.ts", role: "theirs", seq: 2 });
   h.release();
   await Promise.all([a, b]);
   assert.deepEqual(h.sent("conflict:takeRole").map((c) => c.payload), [{ path: "src/app.ts", role: "yours" }]);
