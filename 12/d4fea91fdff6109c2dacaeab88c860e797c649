@@ -1,0 +1,26 @@
+packages/webview-ui/src/conflicts/patch.ts
+  s_26f5e669d3043c::t_4e73e9c3b33df2 133-146,152,159
+packages/webview-ui/test/conflictsInPlace.test.ts
+  s_26f5e669d3043c::t_52b1d2aa703544 351-368,372-380
+  s_26f5e669d3043c::t_f129053f1d8925 369-371
+scripts/merge-e2e/dashboardClicks.ts
+  s_26f5e669d3043c::t_dd3fb6b453e2b6 423-429
+  s_26f5e669d3043c::t_0444b3b3559e89 590-592
+  s_26f5e669d3043c::t_cba1ce13b4bf53 583
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "12d4fea91fdff6109c2dacaeab88c860e797c649",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
