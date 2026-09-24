@@ -1,0 +1,38 @@
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_d65845f39d0e01 55-57,59-60
+  s_26f5e669d3043c::t_507d992e003116 46-54
+apps/merge-studio/README.md
+  s_26f5e669d3043c::t_1e59684874fc91 79
+  s_26f5e669d3043c::t_075c31c23caee2 32-33,35,39-41,43-46,48-51
+  s_26f5e669d3043c::t_b445ceef6b7533 57
+apps/merge-studio/SHOTS.md
+  s_26f5e669d3043c::t_de9d06062e7a73 34,38,51
+apps/merge-studio/CHANGELOG.md
+  s_26f5e669d3043c::t_26aff12ac1096a 11,13-15,17-18
+  s_26f5e669d3043c::t_0c3541cc7638bf 19
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_507d992e003116 32-40
+  s_26f5e669d3043c::t_d65845f39d0e01 41-43,45-46
+scripts/merge-studio/test/docs.test.mjs
+  s_26f5e669d3043c::t_1f4cad11304d8e 136-141,145-150
+apps/merge-studio/test/manifest.test.ts
+  s_26f5e669d3043c::t_9e7f018e5708bd 246,249-251,253-255,261-267,275-287,295-298,310
+apps/merge-studio/package.json
+  s_26f5e669d3043c::t_b65626605f9bbb 204,212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d3026b11a8ceee8a82f4805b21e5a7efe2028e39",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
