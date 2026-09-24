@@ -466,3 +466,42 @@ test("the list's height: the footer right under a short list, a floor of three r
   `, 960);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+test("a list that scrolls ends on a row's edge — never a strip of button tops — at every width, and the footer follows it", { skip }, async () => {
+  // The critic, r0924: the desktop's pane at 900 showed "2 of 9 rows, then red
+  // and purple slivers of greeting.py's buttons"; the extension at 640 x 900
+  // cut its last row the same way. A list that has to scroll is now as tall
+  // as the whole rows that fit (never under three), and the footer sits right
+  // under it.
+  const v = await run(`
+    theme(${JSON.stringify(THEMES.dark)});
+    const root = document.getElementById("root");
+    root.classList.add("cd-host-fill");
+    const d = mount();
+    const many = [...ROWS, ...ROWS.map((f) => ({ ...f, path: "more/" + f.path }))];
+    const cases = [[960, 520], [960, 610], [640, 700], [640, 905], [343, 520], [343, 700]];
+    for (const [w, h] of cases) {
+      root.style.width = w + "px";
+      root.style.height = h + "px";
+      d.render(state(many.map((f) => ({ ...f }))));
+      await new Promise((r) => setTimeout(r, 30)); // the resize observer
+      const list = $(".cd-list"), foot = $(".cd-foot");
+      const top = box(list).top + list.clientTop;
+      const edges = $$(".cd-row").map((r) => Math.round((box(r).bottom - top) * 10) / 10);
+      const inner = Math.round(list.clientHeight * 10) / 10;
+      expect(list.scrollHeight > list.clientHeight + 1, w + "x" + h + ": precondition: the list scrolls");
+      expect(edges.some((e) => Math.abs(e - inner) <= 0.6), w + "x" + h + ": the list ends on a row's edge (" + inner + "px; rows end at " + edges.slice(0, 6).join(", ") + "…)");
+      expect(edges.filter((e) => e <= inner + 0.6).length >= 3, w + "x" + h + ": and shows at least three whole rows");
+      const gap = box(foot).top - box(list).bottom;
+      expect(gap >= 8 && gap <= 16, w + "x" + h + ": the footer right under it (" + Math.round(gap) + "px)");
+    }
+    // A press on a row, a state that changes one row: the list's height is not written.
+    const mo = new MutationObserver((l) => (window.__listWrites = (window.__listWrites || 0) + l.filter((m) => m.target === $(".cd-list") && m.attributeName === "style").length));
+    mo.observe($(".cd-list"), { attributes: true });
+    d.render(state(many.map((f, i) => (i === 1 ? { ...f, status: "resolved", choice: "yours" } : { ...f }))));
+    await new Promise((r) => setTimeout(r, 30));
+    mo.disconnect();
+    expect(!window.__listWrites, "resolving a row does not touch the list's height (" + window.__listWrites + " writes)");
+  `, 960);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});

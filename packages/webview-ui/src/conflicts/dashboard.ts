@@ -288,6 +288,8 @@ export class ConflictsDashboard {
   /** The file list on screen, and what watches it (its edges fade while rows lie beyond them). */
   private listEl?: HTMLElement;
   private listWatch?: ResizeObserver;
+  /** The list's height while it scrolls: whole rows (fitList), or "" for its own. */
+  private listFit = "";
   /** Where the list and the dashboard were scrolled, for a host that moves the dashboard (anchorElement). */
   private listScroll = 0;
   private dashScroll = 0;
@@ -368,8 +370,9 @@ export class ConflictsDashboard {
     // rule, by which its next state is its answer.)
     const legacyAnswer = state.done === undefined && (this.sent !== undefined || this.localBusy.size > 0);
     if (this.state && !legacyAnswer && JSON.stringify(state) === JSON.stringify(this.state)) {
-      // (The list's fades follow its box, not the state: measured, and
-      // written only if the box has changed since.)
+      // (The list's height and fades follow its box, not the state:
+      // measured, and written only if the box has changed since.)
+      this.fitList();
       this.edges();
       return;
     }
@@ -467,6 +470,7 @@ export class ConflictsDashboard {
     if (this.focusKey !== undefined && (!now || now === document.body)) {
       this.restoreFocus(this.focusKey, this.focusPath);
     }
+    this.fitList();
     this.edges();
   }
 
@@ -678,6 +682,12 @@ export class ConflictsDashboard {
     // How many rows: a host that fills gives the list a floor of a few of
     // them (conflicts.css), never more than it has.
     list.style.setProperty("--cd-rows", String(files.length));
+    // Its height, when it scrolls: whole rows (fitList). Built in, so a paint
+    // never takes it off and puts it back.
+    if (this.listFit) {
+      list.style.height = this.listFit;
+      list.style.flexShrink = "0";
+    }
     if (list.childElementCount > 0) root.appendChild(list);
 
     // POLISH A5.10: in the middle of an operation only the FIRST link (the
@@ -728,6 +738,7 @@ export class ConflictsDashboard {
       this.freshEpisode = false;
       if (this.listEl) this.listEl.scrollTop = this.listScroll = 0;
     }
+    this.fitList();
     this.edges();
 
     if (focusKeyOverride !== undefined || hadFocus) {
@@ -760,9 +771,67 @@ export class ConflictsDashboard {
       },
       { passive: true },
     );
-    this.listWatch = typeof ResizeObserver === "function" ? new ResizeObserver(() => this.edges()) : undefined;
+    this.listWatch =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver(() => {
+            this.fitList();
+            this.edges();
+          })
+        : undefined;
     this.listWatch?.observe(list);
     this.listWatch?.observe(this.element);
+  }
+
+  /**
+   * A list that has to scroll ends on a ROW's edge, not across one. Given the
+   * room a host that fills leaves it (conflicts.css .cd-host-fill), it took
+   * all of it, and the last row showed as a strip of button tops: "cut rows",
+   * in the desktop's pane at 900 and in a short editor. Now it is as tall as
+   * the whole rows that fit (never under its floor of three), the footer
+   * follows right under it, and its faded edge says there is more.
+   *
+   * Written only when the answer changes — a resize, rows coming or going —
+   * and carried by every paint (listFit), so a press on a row, which changes
+   * no row's height, writes nothing here.
+   */
+  private fitList(): void {
+    const list = this.listEl;
+    const dash = this.element;
+    if (!list || !list.isConnected) return;
+    let fit = "";
+    if (dash.parentElement?.classList.contains("cd-host-fill")) {
+      const cs = getComputedStyle(dash);
+      const gap = parseFloat(cs.rowGap) || 0;
+      let room = dash.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+      let shown = 0;
+      for (const c of dash.children) {
+        const s = getComputedStyle(c);
+        if (s.display === "none" || s.position === "absolute" || s.position === "fixed") continue;
+        if (shown++ > 0) room -= gap;
+        if (c !== list) room -= (c as HTMLElement).offsetHeight + (parseFloat(s.marginTop) || 0) + (parseFloat(s.marginBottom) || 0);
+      }
+      const ls = getComputedStyle(list);
+      const frame = (parseFloat(ls.borderTopWidth) || 0) + (parseFloat(ls.borderBottomWidth) || 0);
+      const rows = [...list.children].filter((r) => r.classList.contains("cd-row")) as HTMLElement[];
+      if (rows.length > 0 && list.scrollHeight + frame > room + 0.5) {
+        // Each row's bottom edge, in the list's own content space.
+        const top = list.getBoundingClientRect().top + list.clientTop - list.scrollTop;
+        const edges = rows.map((r) => r.getBoundingClientRect().bottom - top);
+        const floor = edges[Math.min(rows.length, 3) - 1];
+        let best = floor;
+        for (const e of edges) if (e + frame <= room + 0.5 && e > best) best = e;
+        fit = `${Math.round((best + frame) * 100) / 100}px`;
+      }
+    }
+    if (fit === this.listFit) return;
+    this.listFit = fit;
+    if (fit) {
+      list.style.height = fit;
+      list.style.flexShrink = "0";
+    } else {
+      list.style.removeProperty("height");
+      list.style.removeProperty("flex-shrink");
+    }
   }
 
   /**
