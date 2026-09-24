@@ -1,0 +1,49 @@
+packages/git-service/test/operationInTheWay.test.ts
+  s_26f5e669d3043c::t_5d8b19b6f9ca2e 324
+  s_26f5e669d3043c::t_fc9447d23cea5d 69-87
+  s_26f5e669d3043c::t_e75dee966f6dec 337
+packages/merge-vscode/test/gitWatch.test.ts
+  s_26f5e669d3043c::t_f0e751f03dbd41 39-44
+apps/desktop/test/repoWatcher.test.ts
+  s_26f5e669d3043c::t_4fa434558b7834 315-321
+apps/desktop/test/operationInTheWayTable.test.ts
+  s_26f5e669d3043c::t_74004ce2d4cee2 285-292,296
+packages/git-service/test/conflictOps.test.ts
+  s_26f5e669d3043c::t_0ce2ecdbf0a624 269-270,272,283-294,301-311
+  s_26f5e669d3043c::t_3f772f6c5bc7db 350-372
+  s_26f5e669d3043c::t_3e083a12375fa8 295
+  s_26f5e669d3043c::t_cabd9f51640112 3
+  s_26f5e669d3043c::t_4d5939a2e02f9a 296-300
+scripts/merge-e2e/fixtures.sh
+  s_26f5e669d3043c::t_bbc5dc879fb0bd 28-31
+  s_26f5e669d3043c::t_f34f1a93fde2b1 78-90,93-104
+  s_26f5e669d3043c::t_fc41534854c642 793-801
+  s_26f5e669d3043c::t_17264d6d9d364b 766-768
+  s_26f5e669d3043c::t_96256e71cfb7ab 704-706
+  s_26f5e669d3043c::t_4c77b518c0725b 91-92
+  s_26f5e669d3043c::t_e1dc90f8506419 105
+scripts/merge-e2e/README.md
+  s_26f5e669d3043c::t_80c965c6049927 114
+  s_26f5e669d3043c::t_46dae1f5bc750c 47
+packages/git-service/test/conflictLinks.test.ts
+  s_26f5e669d3043c::t_f0a86d6026d1c1 19,25-32
+  s_26f5e669d3043c::t_c0d1cf52e0fa17 3
+  s_26f5e669d3043c::t_174d47d7c30fa8 151,156,160
+  s_26f5e669d3043c::t_f5759c626829b9 20-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a3a0e001d3e5371bdbb90ad6177b0f04a60af243",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
