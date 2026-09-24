@@ -114,15 +114,17 @@
  * - light: at least 0.85 L, where #3b3b3b (Light Modern's) is 7:1; red and
  *   blue sit near the edge of sRGB there, which caps their chroma at ~0.05;
  * - word tint: +0.027 L / +0.033 C on dark, -0.035 L / +0.02 C on light,
- *   over the band — still 7:1;
+ *   over the band — still 7:1 — laid, like the band, at the lowest alpha
+ *   that stays in gamut (so it stays light where a tool reads it on its own,
+ *   and the selection still shows through it);
  * - trace (muted): the band's colour at half its alpha;
  * - edge (dots, overview marks, high-contrast frames): L 0.74 / 0.66 / 0.72
  *   dark, 0.46 / 0.59 / 0.51 light — the red and green 0.08–0.13 L apart;
  *   done = the edge softened (>= 3:1), point = the edge fainter still. */
 :root {
-  --jb-line-conflict:  rgba(130,42,41,.45); --jb-inner-conflict:  rgba(116,28,32,.5); --jb-edge-conflict:  #f68482;
+  --jb-line-conflict:  rgba(130,42,41,.45); --jb-inner-conflict:  rgba(210,10,23,.15); --jb-edge-conflict:  #f68482;
   --jb-line-same:      rgba(7,65,2,.55);    --jb-inner-same:      rgba(4,67,0,.55);   --jb-edge-same:      #5ba754;
-  --jb-line-one-sided: rgba(23,74,139,.45); --jb-inner-one-sided: rgba(6,62,127,.5);  --jb-edge-one-sided: #74a7e8;
+  --jb-line-one-sided: rgba(23,74,139,.45); --jb-inner-one-sided: rgba(1,65,138,.4);  --jb-edge-one-sided: #74a7e8;
   --jb-done-conflict:  rgba(246,132,130,.72); --jb-muted-conflict:  rgba(130,42,41,.22);  --jb-point-conflict:  rgba(246,132,130,.62);
   --jb-done-same:      rgba(91,167,84,.72);   --jb-muted-same:      rgba(7,65,2,.27);      --jb-point-same:      rgba(91,167,84,.62);
   --jb-done-one-sided: rgba(116,167,232,.72); --jb-muted-one-sided: rgba(23,74,139,.22);  --jb-point-one-sided: rgba(116,167,232,.62);
@@ -132,9 +134,9 @@
   --jb-line-deleted:  rgba(139,148,158,.13); --jb-inner-deleted:  rgba(139,148,158,.20); --jb-ruler-deleted:  rgba(139,148,158,.6);
 }
 body.vscode-light, body.vscode-high-contrast-light {
-  --jb-line-conflict:  rgba(244,134,127,.4); --jb-inner-conflict:  rgba(250,173,170,.5); --jb-edge-conflict:  #9e212c;
-  --jb-line-same:      rgba(141,223,130,.4); --jb-inner-same:      rgba(171,225,165,.5); --jb-edge-same:      #409339;
-  --jb-line-one-sided: rgba(121,178,253,.4); --jb-inner-one-sided: rgba(165,202,250,.5); --jb-edge-one-sided: #1b65b9;
+  --jb-line-conflict:  rgba(244,134,127,.4); --jb-inner-conflict:  rgba(248,95,91,.15); --jb-edge-conflict:  #9e212c;
+  --jb-line-same:      rgba(141,223,130,.4); --jb-inner-same:      rgba(82,186,71,.15); --jb-edge-same:      #409339;
+  --jb-line-one-sided: rgba(121,178,253,.4); --jb-inner-one-sided: rgba(81,152,240,.15); --jb-edge-one-sided: #1b65b9;
   --jb-done-conflict:  rgba(158,33,44,.84);  --jb-muted-conflict:  rgba(244,134,127,.2); --jb-point-conflict:  rgba(158,33,44,.55);
   --jb-done-same:      rgba(64,147,57,.84);  --jb-muted-same:      rgba(141,223,130,.2); --jb-point-same:      rgba(64,147,57,.55);
   --jb-done-one-sided: rgba(27,101,185,.84); --jb-muted-one-sided: rgba(121,178,253,.2); --jb-point-one-sided: rgba(27,101,185,.55);
@@ -154,9 +156,9 @@ body.vscode-light, body.vscode-high-contrast-light {
  * above), solved over black and a step darker than on grey — against pure
  * black the same lightness reads heavier, and the syntax colours are dimmer. */
 body.vscode-high-contrast:not(.vscode-high-contrast-light) {
-  --jb-line-conflict:  rgba(130,46,47,.5); --jb-inner-conflict:  rgba(99,27,30,.5);  --jb-muted-conflict:  rgba(130,46,47,.25);
-  --jb-line-same:      rgba(10,81,7,.5);   --jb-inner-same:      rgba(9,61,5,.5);    --jb-muted-same:      rgba(10,81,7,.25);
-  --jb-line-one-sided: rgba(27,77,139,.5); --jb-inner-one-sided: rgba(9,55,107,.5); --jb-muted-one-sided: rgba(27,77,139,.25);
+  --jb-line-conflict:  rgba(130,46,47,.5); --jb-inner-conflict:  rgba(177,37,45,.15); --jb-muted-conflict:  rgba(130,46,47,.25);
+  --jb-line-same:      rgba(10,81,7,.5);   --jb-inner-same:      rgba(17,108,8,.15); --jb-muted-same:      rgba(10,81,7,.25);
+  --jb-line-one-sided: rgba(27,77,139,.5); --jb-inner-one-sided: rgba(2,80,164,.2);  --jb-muted-one-sided: rgba(27,77,139,.25);
   --jb-half-conflict: var(--jb-muted-conflict); --jb-half-same: var(--jb-muted-same); --jb-half-one-sided: var(--jb-muted-one-sided);
   --jb-line-inserted: rgba(80,180,40,.14); --jb-line-deleted: rgba(139,148,158,.22);
 }
