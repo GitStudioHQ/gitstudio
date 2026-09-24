@@ -19,7 +19,7 @@ import "./hermeticGit";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -372,7 +372,11 @@ test("a pull the user's uncommitted work is in the way of files nothing, says so
     // …and it is answerable: the renderer asks Stash & Retry or Cancel about
     // exactly these files (main/inTheWay.ts, renderer/bridge.ts).
     assert.match(r.message ?? "", /Stash it and try again, or commit it first\./, label);
-    assert.deepEqual(r.inTheWay, { kind: "pull", files: ["base.txt"], root: realpathSync(work) }, label);
+    // `root` is the repository as git names it, which is how the app opened
+    // it — on a Windows runner C:/Users/runneradmin/… for os.tmpdir()'s
+    // C:\Users\RUNNER~1\…, which realpathSync(work) would have kept.
+    const root = git("rev-parse", "--show-toplevel").trim();
+    assert.deepEqual(r.inTheWay, { kind: "pull", files: ["base.txt"], root }, label);
     assert.doesNotMatch(r.message ?? "", /error:|Aborting|Updating|->|Please commit/, `${label}: not git's lines`);
     const v = pullVerdict({ result: r, cancelled: false }, "Pull failed.");
     assert.equal(v.kind, "blocked", `${label}: settled in Changes, where the work is committed or stashed`);

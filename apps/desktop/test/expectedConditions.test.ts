@@ -32,12 +32,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { reportableResultMessage } from "../src/main/expectedError";
 
 const ROOT = fileURLToPath(new URL("../src/main", import.meta.url));
+
+/** `file` relative to `dir`, joined with `/` on every OS: the lists here are
+ *  keyed that way ("views/releases.ts"), and Windows' `relative()` says
+ *  "views\releases.ts". */
+const relPath = (dir: string, file: string): string => relative(dir, file).split(sep).join("/");
 
 /**
  * The message shapes that mean "you are simply in this state".
@@ -320,7 +325,7 @@ function plain(message: string): string {
 async function allSites(): Promise<Site[]> {
   const out: Site[] = [];
   for (const file of await tsFiles(ROOT)) {
-    out.push(...okFalseSites(relative(ROOT, file), await readFile(file, "utf8")));
+    out.push(...okFalseSites(relPath(ROOT, file), await readFile(file, "utf8")));
   }
   return out;
 }
@@ -524,7 +529,7 @@ const SUPPRESSING_SITES: Record<string, string> = {
 test("`expected` may retone a message, never swallow it", async () => {
   const found: string[] = [];
   for (const file of await tsFiles(RENDERER)) {
-    const rel = relative(RENDERER, file);
+    const rel = relPath(RENDERER, file);
     const lines = (await readFile(file, "utf8")).split("\n");
     lines.forEach((line, i) => {
       if (!/!\s*\w+\.expected\b/.test(line)) return;

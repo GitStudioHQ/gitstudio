@@ -18,7 +18,7 @@ import "./hermeticGit";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
@@ -74,7 +74,7 @@ type State = "clean" | "edit in the way" | "edit on its line" | "untracked in th
  * So every door writes a.txt line 0 and creates n.txt, except the revert,
  * which writes b.txt line 0 and recreates d.txt. e.txt nothing touches.
  */
-function fixture(door: Door): { dir: string; root: string; git: (...a: string[]) => string } {
+function fixture(door: Door): { dir: string; git: (...a: string[]) => string } {
   const base = mkdtempSync(join(scratch, "cell-"));
   const dir = join(base, "work");
   const remote = join(base, "remote.git");
@@ -115,7 +115,7 @@ function fixture(door: Door): { dir: string; root: string; git: (...a: string[])
       git("stash", "push", "-q", "-m", "the one asked for");
     }
   }
-  return { dir, root: realpathSync(dir), git };
+  return { dir, git };
 }
 
 /** The file a door writes, the line it writes, and the file it creates. */
@@ -239,7 +239,7 @@ function expectation(door: Door, state: State): { asks: boolean; after?: "restor
 for (const door of DOORS) {
   for (const state of STATES) {
     test(`${door} × ${state}`, async () => {
-      const { dir, root, git } = fixture(door);
+      const { dir, git } = fixture(door);
       const mine = arrange(dir, door, state);
       const bridge = await bridgeOn(dir);
       const want = expectation(door, state);
@@ -320,7 +320,7 @@ const INDEX_STATES: { name: string; arrange: (git: (...a: string[]) => string) =
 // index, so a staged edit is never in its way.)
 for (const door of ["checkout", "pull"] as Door[]) {
   test(`${door} × a staged edit in the way, beside a staged edit elsewhere: both come back staged`, async () => {
-    const { dir, root, git } = fixture(door);
+    const { dir, git } = fixture(door);
     const t = targets(door);
     const mine = plain.replace("line 6\n", "mine\n");
     writeFileSync(join(dir, t.file), mine);
@@ -329,7 +329,7 @@ for (const door of ["checkout", "pull"] as Door[]) {
     const bridge = await bridgeOn(dir);
     const first = await run(bridge, door, git);
     assert.deepEqual(first.inTheWay?.files, [t.file], `asked about ${t.file} alone: ${first.message}`);
-    const again = await run(bridge, door, git, root);
+    const again = await run(bridge, door, git, first.inTheWay!.root);
     assert.equal(reportableResultMessage(again), undefined, `the retry files nothing: ${again.message}`);
     assert.ok(didIt(door, dir, git), `done: ${again.message}`);
     assert.equal(git("status", "--porcelain", "--", "e.txt").trimEnd(), "M  e.txt", "the one elsewhere, still staged");

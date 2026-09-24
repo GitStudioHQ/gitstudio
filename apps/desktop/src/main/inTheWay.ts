@@ -22,6 +22,8 @@
 // conflicts, git failing — comes back as git's run, and the door handles it
 // exactly as it did before: reported when it is a genuine failure.
 
+import { realpath } from "node:fs/promises";
+import { posix, win32 } from "node:path";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRunResult } from "@gitstudio/git-service/GitProcess";
 import type { PullMode, PullResult } from "@gitstudio/git-service/SyncOps";
@@ -54,7 +56,7 @@ export async function applyForDoor(
   stashFirst: unknown,
 ): Promise<DoorApplied> {
   if (stashFirst !== undefined) {
-    const refused = retryRefused(ctx, stashFirst);
+    const refused = await retryRefused(ctx, stashFirst);
     if (refused) return { answer: refused };
     const out = await stashAndRetry(ctx.process, op);
     if (out.blocked) {
@@ -111,7 +113,7 @@ export async function pullForDoor(
   let pulled: PullResult;
   let stashNote: string | undefined;
   if (stashFirst !== undefined) {
-    const refused = retryRefused(ctx, stashFirst);
+    const refused = await retryRefused(ctx, stashFirst);
     if (refused) return { answer: refused };
     const out = await stashAndRetryPull(ctx.process, pull);
     if (out.stashFailed) return { answer: stashFailedAnswer(out) };
@@ -140,12 +142,14 @@ export async function pullForDoor(
  * open across a switch is not an answer about the new one. A `stashFirst`
  * that is not a path at all is a malformed request — our defect — and is
  * left reportable.
+ *
+ * "The repository" is a folder, not a string: see {@link sameRepository}.
  */
-function retryRefused(ctx: GitContext, stashFirst: unknown): CommitActionResult | undefined {
+async function retryRefused(ctx: GitContext, stashFirst: unknown): Promise<CommitActionResult | undefined> {
   if (typeof stashFirst !== "string") {
     return { ok: false, changed: false, message: "That isn't a repository to stash and retry in." };
   }
-  if (stashFirst !== ctx.root) {
+  if (!(await sameRepository(stashFirst, ctx.root))) {
     return {
       ok: false,
       changed: false,
@@ -154,6 +158,55 @@ function retryRefused(ctx: GitContext, stashFirst: unknown): CommitActionResult 
     };
   }
   return undefined;
+}
+
+const pathsOn = (platform: string) => (platform === "win32" ? win32 : posix);
+
+/**
+ * Whether two paths spell the same folder, by their text alone: resolved, so
+ * `/` against `\`, a trailing separator and a `..` fall away; and on Windows
+ * regardless of case, which its file system ignores. A relative path names no
+ * folder here (resolving it would ask this process's working directory, which
+ * is nobody's answer). Pure, so the Windows rules are tested on any machine
+ * with `platform: "win32"`.
+ */
+export function sameFolderSpelling(a: string, b: string, platform: string = process.platform): boolean {
+  const paths = pathsOn(platform);
+  if (!paths.isAbsolute(a) || !paths.isAbsolute(b)) return false;
+  const x = paths.resolve(a);
+  const y = paths.resolve(b);
+  return platform === "win32" ? x.toLowerCase() === y.toLowerCase() : x === y;
+}
+
+/**
+ * Whether `a` and `b` are one repository's folder.
+ *
+ * The renderer sends a refusal's own `root` back unchanged (renderer/
+ * bridge.ts), so the text agrees and the disk is never asked. When it does
+ * not, the file system settles it: the native realpath sees through a symlink
+ * (/var is /private/var on macOS) and through a Windows 8.3 short name to the
+ * long one — os.tmpdir() on a CI runner is C:\Users\RUNNER~1\…, and git names
+ * the same folder C:/Users/runneradmin/…. No text rule can expand RUNNER~1.
+ * A folder that is not there is not the open repository.
+ */
+export async function sameRepository(
+  a: string,
+  b: string,
+  platform: string = process.platform,
+  real: (path: string) => Promise<string> = realpath,
+): Promise<boolean> {
+  if (sameFolderSpelling(a, b, platform)) return true;
+  const paths = pathsOn(platform);
+  if (!paths.isAbsolute(a) || !paths.isAbsolute(b)) return false;
+  const onDisk = async (p: string): Promise<string | undefined> => {
+    try {
+      return await real(p);
+    } catch {
+      return undefined;
+    }
+  };
+  const [x, y] = await Promise.all([onDisk(a), onDisk(b)]);
+  return x !== undefined && y !== undefined && sameFolderSpelling(x, y, platform);
 }
 
 /**

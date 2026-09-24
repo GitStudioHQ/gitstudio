@@ -18,14 +18,15 @@ import "./hermeticGit";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
 import { GitHubBridge } from "../src/main/githubBridge";
 import { reportableResultMessage } from "../src/main/expectedError";
+import { sameFolderSpelling, sameRepository } from "../src/main/inTheWay";
 import type { CommitActionResult } from "../src/shared/ipc";
 
 const scratch = mkdtempSync(join(tmpdir(), "gs-intheway-"));
@@ -51,6 +52,15 @@ const LINES = (tag: string, at: number): string =>
   Array.from({ length: 9 }, (_, i) => (i === at ? `${tag}\n` : `line ${i}\n`)).join("");
 
 /**
+ * The repository as git names it — which is how the app opens it (RepoStore
+ * asks git for the top level), so it is the `root` a refusal names. Not
+ * `realpathSync(dir)`: on a Windows runner os.tmpdir() is C:\Users\RUNNER~1\…,
+ * which Node's realpath keeps, and git names that folder
+ * C:/Users/runneradmin/…. (On macOS both say /private/var/… for /var/….)
+ */
+const gitRoot = (git: (...a: string[]) => string): string => git("rev-parse", "--show-toplevel").trim();
+
+/**
  * main:    base (a.txt, b.txt nine lines each) → "main changes b" (line 0)
  * feature: base → "feature changes a" (line 0) → "feature adds c"
  * HEAD on main.
@@ -73,7 +83,7 @@ function repo(): { dir: string; root: string; git: (...a: string[]) => string } 
   git("checkout", "-q", "main");
   writeFileSync(join(dir, "b.txt"), LINES("main", 0));
   git("commit", "-q", "-am", "main changes b");
-  return { dir, root: realpathSync(dir), git };
+  return { dir, root: gitRoot(git), git };
 }
 
 async function bridgeOn(dir: string): Promise<{ bridge: GitBridge; github: GitHubBridge }> {
@@ -132,7 +142,7 @@ test("Cherry-Pick over a staged change: Stash & Retry picks it, and the change c
   const { bridge } = await bridgeOn(dir);
   const r = await bridge.commitAction({ action: "cherry-pick", sha });
   assertAsked(r, "cherry-pick", ["b.txt"], root, "cherry-pick");
-  const again = await bridge.commitAction({ action: "cherry-pick", sha, stashFirst: root });
+  const again = await bridge.commitAction({ action: "cherry-pick", sha, stashFirst: r.inTheWay!.root });
   assert.equal(again.ok, true, again.message);
   assert.equal(git("log", "-1", "--format=%s").trim(), "feature changes a");
   assert.equal(git("status", "--porcelain").trim(), "M  b.txt", "staged, as it was");
@@ -146,7 +156,7 @@ test("Check out a commit (detached) over an edit: the edit travels with the swit
   const { bridge } = await bridgeOn(dir);
   const r = await bridge.commitAction({ action: "checkout", sha });
   assertAsked(r, "checkout", ["a.txt"], root, "checkout");
-  const again = await bridge.commitAction({ action: "checkout", sha, stashFirst: root });
+  const again = await bridge.commitAction({ action: "checkout", sha, stashFirst: r.inTheWay!.root });
   assert.equal(again.ok, true, again.message);
   assert.equal(git("rev-parse", "HEAD").trim(), sha);
   assert.equal(read(dir, "a.txt"), LINES("feature", 0).replace("line 7\n", "mine\n"));
@@ -157,12 +167,14 @@ test("a branch checkout — even of a branch that shares its name with a tag —
   git("tag", "feature", "main~1"); // git's checkout reads the branch; a revision would read the tag
   writeFileSync(join(dir, "a.txt"), LINES("mine", 4));
   const { bridge } = await bridgeOn(dir);
+  let askedIn = "";
   for (const req of [
     { action: "checkout-ref" as const, sha: "feature", name: "feature", fullName: "refs/heads/feature", refKind: "head" as const },
     { action: "checkout-ref" as const, sha: "feature", name: "heads/feature", fullName: "refs/heads/feature", refKind: "head" as const },
   ]) {
     const r = await bridge.commitAction(req);
     assertAsked(r, "checkout", ["a.txt"], root, `checkout-ref ${req.name}`);
+    askedIn = r.inTheWay!.root;
   }
   const again = await bridge.commitAction({
     action: "checkout-ref",
@@ -170,7 +182,7 @@ test("a branch checkout — even of a branch that shares its name with a tag —
     name: "heads/feature",
     fullName: "refs/heads/feature",
     refKind: "head",
-    stashFirst: root,
+    stashFirst: askedIn,
   });
   assert.equal(again.ok, true, again.message);
   assert.equal(git("symbolic-ref", "HEAD").trim(), "refs/heads/feature");
@@ -189,7 +201,7 @@ test("Create and switch from elsewhere asks; creating WITHOUT switching changes 
   const r = await bridge.branchCreate({ name: "topic", checkout: true, startPoint: "feature" });
   assertAsked(r, "checkout", ["a.txt"], root, "create and switch");
   assert.throws(() => git("rev-parse", "--verify", "--quiet", "refs/heads/topic"), "no branch was made");
-  const again = await bridge.branchCreate({ name: "topic", checkout: true, startPoint: "feature", stashFirst: root });
+  const again = await bridge.branchCreate({ name: "topic", checkout: true, startPoint: "feature", stashFirst: r.inTheWay!.root });
   assert.equal(again.ok, true, again.message);
   assert.equal(git("symbolic-ref", "--short", "HEAD").trim(), "topic");
   assert.equal(read(dir, "a.txt"), LINES("feature", 0).replace("line 4\n", "mine\n"));
@@ -201,7 +213,7 @@ test("Merge over an edit to a file the incoming side changes: asked, then merged
   const { bridge } = await bridgeOn(dir);
   const r = await bridge.branchMerge({ fullName: "refs/heads/feature" });
   assertAsked(r, "merge", ["a.txt"], root, "merge");
-  const again = await bridge.branchMerge({ fullName: "refs/heads/feature", stashFirst: root });
+  const again = await bridge.branchMerge({ fullName: "refs/heads/feature", stashFirst: r.inTheWay!.root });
   assert.equal(again.ok, true, again.message);
   assert.equal(git("rev-list", "--parents", "-n", "1", "HEAD").trim().split(" ").length, 3, "a merge commit");
   assert.equal(read(dir, "a.txt"), LINES("feature", 0).replace("line 4\n", "mine\n"));
@@ -216,7 +228,7 @@ test("Rebase onto, over ANY tracked change, says so in the rebase's own words �
   const r = await bridge.branchRebase({ fullName: "refs/heads/feature" });
   assertAsked(r, "rebase", ["b.txt"], root, "rebase");
   assert.match(r.message ?? "", /^A rebase needs a clean working tree/);
-  const again = await bridge.branchRebase({ fullName: "refs/heads/feature", stashFirst: root });
+  const again = await bridge.branchRebase({ fullName: "refs/heads/feature", stashFirst: r.inTheWay!.root });
   assert.equal(again.ok, true, again.message);
   assert.equal(git("log", "--format=%s", "-4").trim(), "main changes b\nfeature adds c\nfeature changes a\nbase");
   assert.equal(git("status", "--porcelain").trim(), "M  b.txt", "staged, as it was");
@@ -232,7 +244,7 @@ test("a stash applied or popped over changes in its way: the right stash, found 
     const run = pop ? (req: Parameters<GitBridge["stashPop"]>[0]) => bridge.stashPop(req) : (req: Parameters<GitBridge["stashApply"]>[0]) => bridge.stashApply(req);
     const r = await run("stash@{0}");
     assertAsked(r, "stash", ["a.txt"], root, pop ? "pop" : "apply");
-    const again = await run({ ref: "stash@{0}", stashFirst: root });
+    const again = await run({ ref: "stash@{0}", stashFirst: r.inTheWay!.root });
     assert.equal(again.ok, true, again.message);
     assert.equal(read(dir, "a.txt"), LINES("stashed", 2), "the stash asked for is the one applied");
     const list = stashes(git);
@@ -256,7 +268,7 @@ test("a pull request checked out over an edit asks, and Stash & Retry checks it 
   const { github } = await bridgeOn(dir);
   const r = await github.prCheckout(7);
   assertAsked(r, "checkout", ["a.txt"], root, "pull request checkout");
-  const again = await github.prCheckout({ number: 7, stashFirst: root });
+  const again = await github.prCheckout({ number: 7, stashFirst: r.inTheWay!.root });
   assert.equal(again.ok, true, again.message);
   assert.equal(git("symbolic-ref", "--short", "HEAD").trim(), "pr/7");
   assert.equal(read(dir, "a.txt"), LINES("feature", 0).replace("line 4\n", "mine\n"));
@@ -284,14 +296,14 @@ test("Pull over an edit to a file it changes: asked (with `dirty` still set), an
   s("commit", "-qam", "theirs");
   s("push", "-q", "origin", "main");
   writeFileSync(join(work, "a.txt"), LINES("line 0", 0).replace("line 6\n", "mine\n"));
-  const root = realpathSync(work);
+  const root = gitRoot(git);
   const { bridge } = await bridgeOn(work);
 
   const r = await bridge.syncPull();
   assertAsked(r, "pull", ["a.txt"], root, "pull");
   assert.equal(r.dirty?.files, 1, "the pull's own fact is kept for the verdict");
   assert.match(r.message ?? "", /^Your uncommitted changes to a\.txt are in the way of the pull/);
-  const again = await bridge.syncPull({ stashFirst: root });
+  const again = await bridge.syncPull({ stashFirst: r.inTheWay!.root });
   assert.equal(again.ok, true, again.message);
   assert.equal(read(work, "a.txt"), LINES("theirs", 0).replace("line 6\n", "mine\n"), "pulled, with the edit back on top");
   assert.equal(git("status", "--porcelain").trim(), "M a.txt");
@@ -321,6 +333,83 @@ test("a Stash & Retry is refused in any other repository — nothing is stashed 
   assert.equal(read(dir, "b.txt"), LINES("mine", 4));
 });
 
+test("a retry's repository is a folder, not a string: Windows' spellings of one folder are one repository, and a neighbour is not", async () => {
+  // git prints C:/Users/runneradmin/…, Node joins with `\`, and a drive
+  // letter's case is whoever typed it: the text settles those.
+  const named = "C:/Users/runneradmin/AppData/Local/Temp/gs-x/repo-1";
+  for (const same of [
+    "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\gs-x\\repo-1",
+    "c:\\users\\RUNNERADMIN\\appdata\\local\\temp\\GS-X\\Repo-1",
+    "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\gs-x\\repo-1\\",
+    "C:/Users/runneradmin/AppData/Local/Temp/gs-x/repo-2/../repo-1",
+  ]) {
+    assert.equal(sameFolderSpelling(same, named, "win32"), true, same);
+  }
+  for (const other of [
+    "C:/Users/runneradmin/AppData/Local/Temp/gs-x/repo-10",
+    "C:/Users/runneradmin/AppData/Local/Temp/gs-x",
+    "C:/Users/runneradmin/AppData/Local/Temp/gs-x/repo-1/sub",
+    "D:/Users/runneradmin/AppData/Local/Temp/gs-x/repo-1",
+    "Users/runneradmin/AppData/Local/Temp/gs-x/repo-1",
+    "",
+  ]) {
+    assert.equal(sameFolderSpelling(other, named, "win32"), false, JSON.stringify(other));
+  }
+  // Off Windows, case is a difference; a trailing slash or a `..` still is not.
+  assert.equal(sameFolderSpelling("/work/Repo", "/work/repo", "linux"), false);
+  assert.equal(sameFolderSpelling("/work/repo/", "/work/other/../repo", "linux"), true);
+
+  // The 8.3 short name os.tmpdir() hands out on a runner is the disk's to
+  // settle: no text rule expands RUNNER~1. Windows' realpath answers with the
+  // long name, as git does.
+  const short = "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\gs-x\\repo-1";
+  assert.equal(sameFolderSpelling(short, named, "win32"), false);
+  const disk = async (p: string): Promise<string> =>
+    win32.resolve(p).replace(/^C:\\Users\\RUNNER~1(?=\\)/i, "C:\\Users\\runneradmin");
+  assert.equal(await sameRepository(short, named, "win32", disk), true, "RUNNER~1 is runneradmin");
+  assert.equal(
+    await sameRepository(short, "C:/Users/runneradmin/AppData/Local/Temp/gs-x/repo-2", "win32", disk),
+    false,
+    "…and repo-1 is still not repo-2",
+  );
+  const gone = async (): Promise<string> => {
+    throw Object.assign(new Error("ENOENT: no such file or directory"), { code: "ENOENT" });
+  };
+  assert.equal(await sameRepository(short, named, "win32", gone), false, "a folder that is not there is not the open repository");
+  let asked = 0;
+  const counted = async (p: string): Promise<string> => {
+    asked++;
+    return p;
+  };
+  assert.equal(await sameRepository(named, named, "win32", counted), true);
+  assert.equal(await sameRepository("repo-1", named, "win32", counted), false, "a relative path names no repository");
+  assert.equal(asked, 0, "the renderer's own echo never asks the disk, and a relative path is never resolved against this process's directory");
+});
+
+test("…and on this machine's disk: the folder as the test spelled it is the open repository, and the repository beside it is not", async () => {
+  // `dir` is os.tmpdir()'s spelling (C:\Users\RUNNER~1\… on a Windows runner,
+  // /var/… on macOS), not git's. The renderer never sends it — it echoes the
+  // refusal's root — but it names the same folder, so a retry sent with it
+  // must stash and run; the repository beside it must not.
+  const { dir, root, git } = repo();
+  const beside = repo();
+  writeFileSync(join(dir, "b.txt"), LINES("main", 0).replace("line 6\n", "mine\n"));
+  const head = git("rev-parse", "HEAD").trim();
+  const { bridge } = await bridgeOn(dir);
+  assertAsked(await bridge.commitAction({ action: "revert", sha: head }), "revert", ["b.txt"], root, "revert");
+
+  const elsewhere = await bridge.commitAction({ action: "revert", sha: head, stashFirst: beside.dir });
+  assert.match(elsewhere.message ?? "", /Another repository is open now, so nothing was stashed or run\./);
+  assert.equal(git("rev-parse", "HEAD").trim(), head, "nothing ran");
+  assert.equal(stashes(git), "", "nothing was stashed");
+
+  const again = await bridge.commitAction({ action: "revert", sha: head, stashFirst: dir });
+  assert.equal(again.ok, true, again.message);
+  assert.equal(git("log", "-1", "--format=%s").trim(), 'Revert "main changes b"');
+  assert.equal(git("status", "--porcelain").trim(), "M b.txt", "the edit is back, uncommitted");
+  assert.equal(stashes(git), "", "no stash left behind");
+});
+
 test("a stashFirst that is not a path is a request we built wrong — filed", async () => {
   const { dir, git } = repo();
   writeFileSync(join(dir, "b.txt"), LINES("mine", 4));
@@ -334,6 +423,7 @@ test("a stashFirst that is not a path is a request we built wrong — filed", as
 test("a retry whose stash is gone is the user's state — said, and not filed", async () => {
   const { dir, root, git } = repo();
   const { bridge } = await bridgeOn(dir);
+  // No refusal came first; `root` is what one in this repository would name.
   const r = await bridge.stashApply({ ref: "stash@{0}", stashFirst: root });
   assert.equal(r.ok, false);
   assert.match(r.message ?? "", /no longer exists/);
