@@ -842,9 +842,11 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-one-sided { stroke: var(--jb-don
 .jb-legend-chip[disabled] .jb-legend-label,
 .jb-legend-chip[disabled] .jb-legend-count { opacity: 0.7; }
 .jb-legend-chip.jb-legend-none { display: none; }
-/* How many are left: the count badge VS Code puts beside a view's name (the
- * Source Control or Problems count), after the words, so the words come
- * first. A high contrast theme outlines it. */
+/* How many are left: a count badge like the one VS Code puts beside a view's
+ * name (the Source Control or Problems count), after the words, so the words
+ * come first. A neutral pill in the chip's own ink, not the host's badge
+ * pair: the desktop's is an accent on a tint of itself, 3.9:1 in its light
+ * theme (contrast.mjs). A high contrast theme outlines it. */
 .jb-legend-count {
   box-sizing: border-box;
   min-width: 18px;
@@ -855,8 +857,8 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-one-sided { stroke: var(--jb-don
   text-align: center;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  background: var(--vscode-badge-background, rgba(127, 127, 127, 0.28));
-  color: var(--vscode-badge-foreground, var(--vscode-foreground));
+  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  color: var(--vscode-foreground);
   outline: 1px solid var(--vscode-contrastBorder, transparent);
   outline-offset: -1px;
 }

@@ -10,7 +10,8 @@ import { findChrome, runMergePage } from "./fixtures/mergeViewPage";
  * at 85% opacity, 2.38:1. Each is small text and needs 4.5:1 over the
  * toolbar's own ground, computed ink (color-mix comes back as color(srgb …))
  * with opacity folded in. Light Modern too: its toolbar is #f8f8f8 and its
- * ink #3b3b3b.
+ * ink #3b3b3b. The legend's words and its count badge too (r0924): the count
+ * once wore the host's badge pair, 3.9:1 in the desktop's light theme.
  */
 
 const CHROME = findChrome();
@@ -54,20 +55,26 @@ for (const [name, vars] of Object.entries(THEMES)) {
       const bar = document.createElement("div");
       bar.className = "jb-toolbar";
       bar.innerHTML = '<span class="jb-toolbar-label">Apply non-conflicting</span><span class="jb-counter">3 of 7 left</span>' +
-        '<span class="jb-counter jb-done">All resolved</span><span class="jb-note">Conflicts: both sides changed these lines</span>';
+        '<span class="jb-counter jb-done">All resolved</span><span class="jb-note">Conflicts: both sides changed these lines</span>' +
+        '<span class="jb-legend"><button class="jb-legend-chip" type="button"><span class="jb-legend-label">Conflict</span>' +
+        '<span class="jb-legend-dash">—</span><span class="jb-legend-note">you choose</span><span class="jb-legend-count">6</span></button></span>';
       document.getElementById("slot").appendChild(bar);
       const ground = parse(getComputedStyle(bar).backgroundColor);
       expect(ground && ground[3] === 1 && ground[0] === ${ground}, "the toolbar has its own ground: " + getComputedStyle(bar).backgroundColor);
-      for (const sel of [".jb-toolbar-label", ".jb-counter:not(.jb-done)", ".jb-counter.jb-done", ".jb-note"]) {
+      const over = (c, g) => [0, 1, 2].map((i) => c[i] * c[3] + g[i] * (1 - c[3]));
+      for (const sel of [".jb-toolbar-label", ".jb-counter:not(.jb-done)", ".jb-counter.jb-done", ".jb-note", ".jb-legend-label", ".jb-legend-note", ".jb-legend-count"]) {
         const el = bar.querySelector(sel);
         const cs = getComputedStyle(el);
         const ink = parse(cs.color);
         expect(!!ink, sel + ": a colour this test reads: " + cs.color);
         if (!ink) continue;
+        // The count sits on its own pill: the pill over the toolbar is its ground.
+        const pill = parse(cs.backgroundColor);
+        const under = pill && pill[3] > 0 ? over(pill, ground) : ground;
         const a = ink[3] * parseFloat(cs.opacity);
-        const seen = [0, 1, 2].map((i) => ink[i] * a + ground[i] * (1 - a));
-        const r = ratio(seen, ground);
-        expect(r >= 4.5, sel + " reads at " + r.toFixed(2) + ":1 on the toolbar (" + cs.color + ", opacity " + cs.opacity + "), below 4.5");
+        const seen = [0, 1, 2].map((i) => ink[i] * a + under[i] * (1 - a));
+        const r = ratio(seen, under);
+        expect(r >= 4.5, sel + " reads at " + r.toFixed(2) + ":1 on the toolbar (" + cs.color + " on " + cs.backgroundColor + ", opacity " + cs.opacity + "), below 4.5");
       }
     `,
       // On :root as well as the body, as VS Code sets them on <html>: the
