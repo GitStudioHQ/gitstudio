@@ -201,7 +201,7 @@
           {
             "id": "mergeStudio.readColours",
             "title": "Read the colours",
-            "description": "Each colour says whether your choice matters. Red: a conflict, you choose (Resolve simple on the toolbar settles the ones whose edits don't overlap). Green: the same change on both sides, whether lines were added, changed or removed, so either arrow takes it. Blue: a change on one side only, safe to take. The legend names them in words, and a change you settled keeps a muted trace of the side you took.",
+            "description": "Each colour says whether your choice matters. Orange: a conflict, you choose (Resolve simple on the toolbar settles the ones whose edits don't overlap). Green: the same change on both sides, so either arrow takes it. Blue: a change on one side only, safe to take. Grey: lines removed without a conflict. The legend names them in words, and a change you settled keeps a lighter trace of the side you took.",
             "media": {
               "image": {
                 "dark": "media/walkthrough/legend-dark.png",

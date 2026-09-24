@@ -72,31 +72,36 @@ export const WHITESPACE_WORDS = "Only whitespace changed here";
  * lines) only when both are. Only a side that changed is highlighted at all.
  * What each state LOOKS like is ours, calmer than JetBrains' dotted frames:
  *
- * - pending: the tone's line tint (`jb-line-<tone>`, the line-number margin
- *   included, so the band runs uninterrupted across the pane), word tints when
- *   granularity allows, a 1px line in the band's own colour for an insertion
- *   or deletion point (`jb-point`), and `jb-frame` edge lines that only high
- *   contrast themes draw (solid, 1px, on the band's first and last pixel
- *   row). Nothing else: no bar beside the line numbers (the owner: no
+ * - pending, as JetBrains paints it (the owner's colours, 24 Sep 2026): the
+ *   line-number column in the tone's FULL colour (`jb-margin-<tone>`), which
+ *   the ribbon continues across the gutter; the lines in the LIGHTER colour
+ *   (`jb-line-<tone>`) with the changed words in the full colour — or, when
+ *   the change has no words to compare (text on one pane only: an insertion
+ *   or a deletion, new or gone as a whole; or word highlighting turned off:
+ *   comparedByWords), the lines in the full colour too (`jb-solid`); a 1px
+ *   line in the full colour for an
+ *   insertion or deletion point (`jb-point`); and `jb-frame` edge lines that
+ *   only high contrast themes draw (solid, 1px, on the band's first and last
+ *   pixel row). Nothing else: no bar beside the line numbers (the owner: no
  *   vertical per-line bars between the numbers and the code), no bright rule;
  * - a handled side leaves a TRACE of what happened to it (the owner: a
  *   resolved conflict must still show which side was chosen, which was
  *   discarded, or that both went in):
- *   - taken (`jb-trace-<tone>`): its band stays, muted — the tint at about
- *     half strength, no word tints — and its ribbon to the Result stays too,
- *     muted (ribbons.ts);
+ *   - taken (`jb-trace-<tone>`): its band stays in the lighter colour, line
+ *     numbers included, no word tints — and its ribbon to the Result stays
+ *     too, in the lighter colour (ribbons.ts);
  *   - discarded (`jb-done`): an outline only — a 1px line on the band's first
- *     and last row, in the band's own colour and never brighter than it —
- *     and no ribbon;
+ *     and last row, in the full colour — and no ribbon;
  * - half done — a conflict with one side in and the other still to decide:
- *   the RESULT is the muted tint (`jb-half`) with no line above or below it
+ *   the RESULT is the lighter tint (`jb-half`) with no line above or below it
  *   (bright rules there read as wires across the Result) — no longer the
  *   open question, not settled either; the pending side keeps its full band;
- * - resolved: the RESULT keeps a muted band in the colour of what went in
+ * - resolved: the RESULT keeps a band in the lighter colour of what went in
  *   (`jb-trace-<tone>`, no lines: calmer than anything still open), or, when
  *   nothing was taken, only its outline (`jb-done`);
- * - whitespace-only: line tint only, never a word tint, and a hover that
- *   says only whitespace changed (its dotted left edge went with the bars).
+ * - whitespace-only: the lighter tint only, never a word tint, and a hover
+ *   that says only whitespace changed (its dotted left edge went with the
+ *   bars).
  *
  * A settled side or Result says what happened in words, on hover ("Took
  * Yours (test)", "Discarded Theirs (master)", "Took both").
@@ -142,6 +147,10 @@ export class DecorationManager {
       const words = resolved || half ? options.traceWords?.(block) : undefined;
 
       const span = options.resultSpanOf?.(block) ?? block.baseSpan;
+      // The lighter lines and the full-colour words, or the full colour
+      // throughout (comparedByWords): on every pane of the change alike.
+      const pendingLines = (side: Side): boolean => fates[side] === "pending" && !isEmptySpan(sideBlockSpan(block, side));
+      const light = comparedByWords([pendingLines("left"), !isEmptySpan(span), pendingLines("right")], showInner);
       if (resolved) {
         // Settled: the Result keeps a muted band in the colour of what went
         // in — or only its outline when nothing did.
@@ -160,13 +169,18 @@ export class DecorationManager {
           cat,
           half || seeded,
           seeded ? SEEDED_WORDS : block.whitespaceOnly ? WHITESPACE_WORDS : undefined,
+          !light,
         );
-        if (showInner && !half && !seeded && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
+        if (light && !half && !seeded && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
           // Word ranges are in BASE coordinates; the result is base while the
-          // block is untouched, but blocks above may have changed height.
+          // block is untouched, but blocks above may have changed height. A
+          // side that deletes these lines marks no words in them: its range
+          // is the whole text (JetBrains compares what is left with the
+          // other side).
           const shift = span.start - block.baseSpan.start;
-          pushInner(result, block.left?.innerBase, tone, shift);
-          pushInner(result, block.right?.innerBase, tone, shift);
+          for (const change of [block.left, block.right]) {
+            if (change && !isEmptySpan(change.sideSpan)) pushInner(result, change.innerBase, tone, shift);
+          }
         }
       }
       for (const [side, editor, target] of [
@@ -190,8 +204,8 @@ export class DecorationManager {
           pushDone(target, editor, region, tone, cat, words?.[side]);
           continue;
         }
-        pushPending(target, editor, region, tone, cat, false, change.whitespaceOnly ? WHITESPACE_WORDS : undefined);
-        if (showInner && !change.whitespaceOnly) {
+        pushPending(target, editor, region, tone, cat, false, change.whitespaceOnly ? WHITESPACE_WORDS : undefined, !light);
+        if (light && !change.whitespaceOnly) {
           pushInner(target, change.innerSide, tone);
         }
       }
@@ -336,13 +350,31 @@ function pushPoint(
 }
 
 /**
- * A pending block's region in one pane: the tint, and the edge lines a high
+ * JetBrains' rule for a change's lines (intellij-community
+ * DiffViewerHighlighters.kt: `ignored = !resolved && innerFragments != null`;
+ * DiffUtil.compareThreesideInner): it compares the change's texts word by
+ * word — each pending side that has lines, and the Result's — and when there
+ * are at least two to compare, the lines take the LIGHTER colour and the
+ * changed words the full one. A change with text on one pane only — an
+ * insertion on one side, a deletion on one side or the same on both — has
+ * nothing to compare (it is new, or gone, as a whole) and is the FULL colour
+ * throughout, as is every change with word highlighting off. One answer for
+ * every pane of the change.
+ */
+function comparedByWords(texts: readonly boolean[], showInner: boolean): boolean {
+  return showInner && texts.filter(Boolean).length >= 2;
+}
+
+/**
+ * A pending block's region in one pane: the line-number column in the full
+ * colour, the lines in the lighter one — or the full one too when `solid` (the
+ * change has no words to compare: comparedByWords) — and the edge lines a high
  * contrast theme draws. An empty region (an insertion or deletion point) is a
  * point line instead. `half`: the result of a conflict with one side in — the
- * muted tint (`jb-half`) and nothing else; the ribbon of its pending side
- * still meets it on the same rows, and the muted ribbon of the side that is
- * in continues into it. A whitespace-only change is the tint alone, and says
- * so on hover (WHITESPACE_WORDS).
+ * lighter tint (`jb-half`), its line numbers too, and nothing else; the ribbon
+ * of its pending side still meets it on the same rows, and the lighter ribbon
+ * of the side that is in continues into it. A whitespace-only change is the
+ * lighter tint alone, and says so on hover (WHITESPACE_WORDS).
  */
 function pushPending(
   target: Deco[],
@@ -352,22 +384,24 @@ function pushPending(
   cat: MergeCategory,
   half = false,
   hover?: string,
+  solid = false,
 ): void {
   if (isEmptySpan(span)) {
     pushPoint(target, editor, span, half ? `jb-done jb-done-${tone}` : `jb-point-${tone}`, cat, hover);
     return;
   }
   const last = span.endExclusive - 1;
-  const halfClass = half ? " jb-half" : "";
+  const lineClass = `jb-line-${tone}${half ? " jb-half" : solid ? " jb-solid" : ""}`;
   target.push({
     range: new monaco.Range(span.start, 1, last, 1),
     options: {
       isWholeLine: true,
-      className: `jb-line-${tone}${halfClass} jb-cat-${cat}`,
-      // Tint the line-number margin too, like IntelliJ, so the change
-      // band runs uninterrupted across the pane. Nothing is drawn in the
-      // column between the numbers and the text: no bar, in any state.
-      marginClassName: `jb-line-${tone}${halfClass}`,
+      className: `${lineClass} jb-cat-${cat}`,
+      // The line-number column in the full colour, as JetBrains paints it:
+      // with the ribbon across the gutter, one strong column per change
+      // beside its lighter lines. Nothing is drawn between the numbers and
+      // the text: no bar, in any state.
+      marginClassName: half ? lineClass : `jb-margin-${tone}`,
       hoverMessage: hoverOf(hover),
     },
   });

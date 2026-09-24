@@ -89,8 +89,17 @@ const MOUNT = `
     return c;
   };
   const palette = (prefix) => Object.fromEntries(TONES.map((t) => [t, tokenColour("--jb-" + prefix + "-" + t)]));
-  /** A pending band's tint; a settled trace's (muted); a tone's edge; a discarded outline's line; a point's line. */
-  const TINT = palette("line"), MUTED = palette("muted"), EDGE = palette("edge"), DONE = palette("done"), POINT = palette("point");
+  /**
+   * A pending band's lighter line tint; its full colour (the line-number
+   * column, the ribbon, the words, a change with nothing to compare); a
+   * settled trace's (the lighter colour); a tone's edge; a discarded outline's
+   * line; a point's line.
+   */
+  const TINT = palette("line"), FULL = palette("full"), MUTED = palette("muted"), EDGE = palette("edge"), DONE = palette("done"), POINT = palette("point");
+  /** The line-number-column classes of a pane's line. */
+  const marginOn = (pane, line) => panes[pane].getModel().getAllDecorations()
+    .filter((d) => d.options.marginClassName && d.range.startLineNumber <= line && line <= d.range.endLineNumber)
+    .map((d) => d.options.marginClassName);
   /** The 2-way diff's per-type classes: nothing in the merge may carry one. */
   const PER_TYPE = /jb-(line|inner|trace|trace-edge|point|done|frame|ribbon|ribbon-trace|ribbon-cap|ribbon-cap-trace|ribbon-frame|tone)-(inserted|modified|deleted)\\b/;
   /** Monaco's hover words for a decoration on a line (markdown's escapes undone). */
@@ -125,8 +134,10 @@ test("every category is classified, painted and given its own controls — befor
     // both sides is green on BOTH sides and in the result; a change on one side
     // only is sky blue whether it changed a line (Yours' 11) or inserted one
     // (Theirs' 13); lines removed without a conflict (Theirs' 15) are grey.
-    // A whitespace-only change is its tint alone — no edge of its own; it says
-    // so on hover.
+    // A change with text on one pane only — the insertion, the removal — is
+    // the full colour throughout (\`jb-solid\`: nothing to compare word by
+    // word, JetBrains' rule). A whitespace-only change is its lighter tint
+    // alone — no edge of its own; it says so on hover.
     expectPane("left", [
       "2:jb-line-conflict jb-cat-conflict",
       "4-5:jb-line-conflict jb-cat-conflict",
@@ -140,7 +151,7 @@ test("every category is classified, painted and given its own controls — befor
       "4-5:jb-line-conflict jb-cat-conflict",
       "7:jb-line-same jb-cat-same",
       "9:jb-line-same jb-cat-same",
-      "13:jb-line-one-sided jb-cat-theirs-only",
+      "13:jb-line-one-sided jb-solid jb-cat-theirs-only",
       "15:jb-point-removed jb-point jb-cat-theirs-only",
     ]);
     expectPane("result", [
@@ -150,7 +161,7 @@ test("every category is classified, painted and given its own controls — befor
       "9:jb-line-same jb-cat-same",
       "11:jb-line-one-sided jb-cat-yours-only",
       "13:jb-point-one-sided jb-point jb-cat-theirs-only",
-      "14:jb-line-removed jb-cat-theirs-only",
+      "14:jb-line-removed jb-solid jb-cat-theirs-only",
       "16:jb-line-one-sided jb-cat-yours-only",
     ]);
     const everyClass = ["left", "result", "right"].flatMap((p) => panes[p].getModel().getAllDecorations().map((d) => [d.options.className, d.options.marginClassName, d.options.inlineClassName].filter(Boolean).join(" ")));
@@ -159,9 +170,11 @@ test("every category is classified, painted and given its own controls — befor
     expect(/jb-inner-conflict/.test(classesOn("left", 2)), "the conflict carries word tints (" + classesOn("left", 2) + ")");
     expect(!/jb-inner-/.test(classesOn("left", 16)), "the whitespace-only change has no word tint (" + classesOn("left", 16) + ")");
     expect(/jb-frame-conflict/.test(classesOn("result", 2)), "pending blocks carry the high-contrast frame edges");
-    // The line-number margin carries the band too, so it runs across the pane.
-    const margin = view.left.getModel().getAllDecorations().filter((d) => d.range.startLineNumber === 2 && d.options.marginClassName);
-    expect(margin.some((d) => /jb-line-conflict/.test(d.options.marginClassName)), "the margin is tinted: " + JSON.stringify(margin.map((d) => d.options.marginClassName)));
+    // The line-number column of an open change is its FULL colour — with the
+    // ribbon, the strong column beside the lighter lines (the owner's
+    // JetBrains look).
+    expect(marginOn("left", 2).includes("jb-margin-conflict"), "the line-number column carries the full colour: " + JSON.stringify(marginOn("left", 2)));
+    expect(probe("left", "jb-margin-conflict").bg === FULL.conflict && FULL.conflict !== TINT.conflict, "…which is the full colour, not the lines' lighter one: " + probe("left", "jb-margin-conflict").bg);
 
     // ── the controls: an arrow toward the result and ×, for every change ──
     const A = groupsIn(layerA()), B = groupsIn(layerB());
@@ -203,11 +216,11 @@ test("every category is classified, painted and given its own controls — befor
     expect(bgOf("left", "jb-line-same jb-cat-same") === TINT.same && bgOf("right", "jb-line-same jb-cat-same") === TINT.same && bgOf("result", "jb-line-same jb-cat-same") === TINT.same,
       "the same change on both sides: green, on both sides and in the result: " + bgOf("left", "jb-line-same jb-cat-same"));
     expect(bgOf("left", "jb-line-one-sided jb-cat-yours-only") === TINT["one-sided"], "Yours-only change: blue");
-    expect(bgOf("right", "jb-line-one-sided jb-cat-theirs-only") === TINT["one-sided"], "Theirs-only insertion: blue too, not green");
-    expect(bgOf("result", "jb-line-removed jb-cat-theirs-only") === TINT.removed, "Theirs-only deletion: grey, the removed lines' colour: " + bgOf("result", "jb-line-removed jb-cat-theirs-only"));
+    expect(bgOf("right", "jb-line-one-sided jb-solid jb-cat-theirs-only") === FULL["one-sided"], "Theirs-only insertion: blue too, not green — the full blue, all of it new");
+    expect(bgOf("result", "jb-line-removed jb-solid jb-cat-theirs-only") === FULL.removed, "Theirs-only deletion: grey, the removed lines' colour, full — all of it gone: " + bgOf("result", "jb-line-removed jb-solid jb-cat-theirs-only"));
     expect(new Set(TONES.map((t) => TINT[t])).size === 4, "four colours: one per decision, and grey for removed lines: " + JSON.stringify(TINT));
     const point = probe("result", "jb-point-one-sided jb-point jb-cat-theirs-only");
-    expect(point.bt === "solid" && point.btw === "1px" && point.btc === POINT["one-sided"] && point.bg === "rgba(0, 0, 0, 0)", "an insertion point is a 1px line in the point colour (the tint, stronger), not a bright wire: " + JSON.stringify(point));
+    expect(point.bt === "solid" && point.btw === "1px" && point.btc === POINT["one-sided"] && point.bg === "rgba(0, 0, 0, 0)", "an insertion point is a 1px line in the point colour (the full colour), not a bright wire: " + JSON.stringify(point));
     const ws = probe("left", "jb-line-one-sided jb-cat-yours-only");
     expect(ws.bl === "none" && ws.bg === TINT["one-sided"], "whitespace-only: the tint alone, no edge of its own: " + JSON.stringify(ws));
     expect(hoverOn("left", 16).some((h) => /Only whitespace changed here/.test(h)), "…and it says so on hover: " + JSON.stringify(hoverOn("left", 16)));
@@ -233,7 +246,7 @@ test("every category is classified, painted and given its own controls — befor
     const ribbons = { conflict: count("jb-ribbon-conflict"), same: count("jb-ribbon-same"), "one-sided": count("jb-ribbon-one-sided"), removed: count("jb-ribbon-removed"), modified: count("jb-ribbon-modified"), inserted: count("jb-ribbon-inserted"), deleted: count("jb-ribbon-deleted"), base: count("jb-ribbon-base"), frame: count("jb-ribbon-frame"), trace: count("jb-ribbon-trace"), cap: count("jb-ribbon-cap") };
     expect(JSON.stringify(ribbons) === JSON.stringify({ conflict: 4, same: 4, "one-sided": 3, removed: 1, modified: 0, inserted: 0, deleted: 0, base: 12, frame: 24, trace: 0, cap: 2 }), "ribbons per decision (the same change's in green, both sides; one-sided changes in blue; the removal in grey): " + JSON.stringify(ribbons));
     const sameBand = stage.querySelector('path.jb-ribbon-same[data-block="2"][data-side="left"]');
-    expect(sameBand && getComputedStyle(sameBand).fill === TINT.same, "a band is FILLED with the tint it connects: " + (sameBand && getComputedStyle(sameBand).fill));
+    expect(sameBand && getComputedStyle(sameBand).fill === FULL.same, "a band is FILLED with its full colour, the column it runs into: " + (sameBand && getComputedStyle(sameBand).fill));
     expect(sameBand && sameBand.dataset.state === "pending" && sameBand.dataset.phase === "open" && sameBand.dataset.tone === "same", "and says what it draws: " + JSON.stringify(sameBand && sameBand.dataset));
     const tones = [...stage.querySelectorAll("path[data-tone]")].map((p) => p.dataset.block + ":" + p.dataset.tone);
     expect(tones.every((x) => /^[01]:conflict$|^[23]:same$|^[457]:one-sided$|^6:removed$/.test(x)), "every ribbon names its block's decision: " + JSON.stringify([...new Set(tones)]));
@@ -302,9 +315,13 @@ test("a settled change keeps a TRACE: a taken side its muted band and ribbon, a 
     expect(!["left", "right", "result"].some((p) => catDecos(p).some((d) => /^(7|9|11|13|16):jb-line-/.test(d))), "…and nothing settled still wears an open band");
     expect(!catDecos("result").some((d) => /jb-settled/.test(d)), "no neutral grey lines disconnected from the panes");
     const trace = probe("left", "jb-trace jb-trace-one-sided jb-cat-yours-only");
-    expect(trace.bg === MUTED["one-sided"] && trace.bt === "none" && trace.bb === "none", "a trace is the muted tint, no lines: " + JSON.stringify(trace));
-    expect(trace.bg !== TINT["one-sided"], "…calmer than the open band (" + TINT["one-sided"] + ")");
-    expect(probe("left", "jb-trace jb-trace-same jb-cat-same").bg === MUTED.same, "the same change's trace: the muted green");
+    expect(trace.bg === MUTED["one-sided"] && MUTED["one-sided"] === TINT["one-sided"] && trace.bt === "none" && trace.bb === "none", "a trace is the lighter colour, no lines: " + JSON.stringify(trace));
+    // Calmer than an open band: its line-number column is the lighter colour
+    // too — an open band's is the full one — and it has no word tints.
+    expect(marginOn("left", 11).includes("jb-trace jb-trace-one-sided") && !marginOn("left", 11).some((c) => /jb-margin-/.test(c)) && probe("left", "jb-trace jb-trace-one-sided").bg === TINT["one-sided"] && TINT["one-sided"] !== FULL["one-sided"],
+      "…calmer than the open band: its column the lighter colour, not the full " + FULL["one-sided"] + ": " + JSON.stringify(marginOn("left", 11)));
+    expect(!/jb-inner-/.test(classesOn("left", 11)), "…and no word tints: " + classesOn("left", 11));
+    expect(probe("left", "jb-trace jb-trace-same jb-cat-same").bg === MUTED.same, "the same change's trace: the lighter green");
     expect(probe("left", "jb-frame jb-trace-edge jb-trace-edge-one-sided jb-edge-top").bt === "none", "its edge draws only in high contrast");
 
     // In words, where the controls were (a tooltip, an accessible name) and on hover.
@@ -323,7 +340,7 @@ test("a settled change keeps a TRACE: a taken side its muted band and ribbon, a 
     for (const [block, side, tone] of [[2, "left", "same"], [2, "right", "same"], [4, "left", "one-sided"], [5, "right", "one-sided"], [6, "right", "removed"]]) {
       const p = ribbon(block, side);
       expect(p && p.dataset.state === "took" && p.dataset.phase === "resolved" && getComputedStyle(p).fill === MUTED[tone],
-        "a taken side's ribbon to the Result stays, muted: " + block + "/" + side + " " + (p && [p.dataset.state, p.dataset.phase, getComputedStyle(p).fill].join(" ")));
+        "a taken side's ribbon to the Result stays, in the lighter colour: " + block + "/" + side + " " + (p && [p.dataset.state, p.dataset.phase, getComputedStyle(p).fill].join(" ")));
     }
     expect(!stage.querySelector('path.jb-ribbon-same[data-block="2"], path.jb-ribbon-one-sided[data-block="5"]'), "…and no open band for them");
 
@@ -338,7 +355,12 @@ test("a settled change keeps a TRACE: a taken side its muted band and ribbon, a 
     expect(has("result", 2, "jb-line-conflict jb-half") && !has("result", 2, "jb-edge-top") && !has("result", 2, "jb-edge-bottom"),
       "the result: the half-done look — the muted tint, and no line above or below it (bright rules read as wires): " + JSON.stringify(catDecos("result")));
     const halfBg = resultBg();
-    expect(halfBg === MUTED.conflict && halfBg !== openBg, "…and it LOOKS different from the open conflict: " + openBg + " → " + halfBg);
+    // It LOOKS different from the open conflict: the lighter colour across
+    // its line numbers too, where the open one had the full colour — and no
+    // word tints.
+    expect(halfBg === MUTED.conflict, "…the lighter colour: " + openBg + " → " + halfBg);
+    expect(marginOn("result", 2).includes("jb-line-conflict jb-half") && !marginOn("result", 2).some((c) => /jb-margin-/.test(c)) && probe("result", "jb-line-conflict jb-half").bg === TINT.conflict,
+      "…its line-number column lighter too, no longer the full " + FULL.conflict + ": " + JSON.stringify(marginOn("result", 2)));
     expect(!/jb-inner-/.test(classesOn("result", 2)), "the result holds Yours' text now, so the BASE word ranges are not drawn on it: " + classesOn("result", 2));
     expect(note("a", 0) && note("a", 0).getAttribute("aria-label") === "Conflict 1 of 2: Took Yours (test)", "Yours says it was taken: " + (note("a", 0) && note("a", 0).getAttribute("aria-label")));
     const next = document.querySelector('.jb-gutter-b .jb-change-actions[data-block="0"] .jb-btn-accept');
@@ -351,8 +373,8 @@ test("a settled change keeps a TRACE: a taken side its muted band and ribbon, a 
     await sleep(60);
     const took0 = stage.querySelector('path.jb-ribbon-trace-conflict[data-block="0"][data-side="left"]');
     const open0 = stage.querySelector('path.jb-ribbon-conflict[data-block="0"][data-side="right"]');
-    expect(took0 && took0.dataset.phase === "half" && getComputedStyle(took0).fill === MUTED.conflict && open0 && getComputedStyle(open0).fill === TINT.conflict,
-      "the taken half's ribbon is muted and meets the muted Result on its own colour; the pending half's is the open band");
+    expect(took0 && took0.dataset.phase === "half" && getComputedStyle(took0).fill === MUTED.conflict && open0 && getComputedStyle(open0).fill === FULL.conflict,
+      "the taken half's ribbon is the lighter colour and meets the lighter Result on it; the pending half's is the full colour of an open band");
 
     // …then discard Theirs: settled as Yours. Yours keeps its trace, Theirs an outline and no ribbon.
     press(discard);
@@ -551,6 +573,8 @@ test("the legend explains the four COLOURS in words — a solid dot, the name, h
       "Removed lines (grey)", "even when one of them removed lines", "No conflict: safe to take",
       "lines added there, or removed", "exactly what changed within the line", "whitespace",
       "one side in, the other still to decide", "the side you took", "the side you discarded",
+      "its line numbers and its link to the Result in the full colour", "its lines lighter with the words that changed in the full colour",
+      "all of it in the full colour when it is all new, or all gone",
     ]) {
       expect(key.includes(phrase), "the key explains " + phrase + ": " + key);
     }

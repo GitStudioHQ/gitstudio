@@ -133,23 +133,27 @@ function firstEntry(rel) {
 }
 
 test("the three changelogs say the merge editor's colours, its trace and Close the same way", () => {
-  // The owner's rule (24 Sep 2026): a colour says the DECISION a change needs,
-  // never what it did — "Conflict — you choose" in red, "Same on both sides —
-  // either arrow takes it" in green whatever the change did, "One side only —
-  // safe to take" in blue whatever it did. A settled change keeps a muted
-  // trace of what was taken; Close leaves the editor and keeps the operation.
-  // The research's violet is gone, and so is the per-type paint.
+  // The owner's palette (24 Sep 2026): JetBrains' merge colours, by the
+  // DECISION a change needs — "Conflict — you choose" in orange, "Same on both
+  // sides — either arrow takes it" in green, "One side only — safe to take"
+  // in blue, and "Removed lines" in grey — each at JetBrains' two strengths:
+  // the line numbers and the link to the result in the full colour, the lines
+  // lighter. A settled change keeps a trace of what was taken, in the lighter
+  // shade; Close leaves the editor and keeps the operation. The research's
+  // violet is gone, and so are red and the per-type paint.
   for (const rel of ["apps/extension/CHANGELOG.md", "apps/desktop/CHANGELOG.md", "apps/merge-studio/CHANGELOG.md"]) {
     const entry = firstEntry(rel).replace(/\s+/g, " ");
     assert.doesNotMatch(entry, /\bviolet\b/i, `${rel}: no violet`);
-    assert.match(entry, /\*\*Conflict — you choose\*\*,? in red/, `${rel}: red is "Conflict — you choose"`);
+    assert.doesNotMatch(entry, /\*\*Conflict — you choose\*\*,? in red/, `${rel}: the conflict is no longer red`);
+    assert.match(entry, /\*\*Conflict — you choose\*\*,? in orange/, `${rel}: orange is "Conflict — you choose"`);
     assert.match(entry, /\*\*Same on both sides — either arrow takes it\*\*,? in green/, `${rel}: green is "Same on both sides — either arrow takes it"`);
     assert.match(entry, /\*\*One side only — safe to take\*\*,? in blue/, `${rel}: blue is "One side only — safe to take"`);
-    assert.match(entry, /whether they added, changed or removed/i, `${rel}: green whatever the same change did`);
-    assert.doesNotMatch(entry, /\*\*(Changed|Added|Removed)\*\*|blue, green or grey/, `${rel}: no merge colour for what a change did`);
-    assert.match(entry, /lightness/i, `${rel}: red and green differ in lightness, for colour-blind eyes`);
+    assert.match(entry, /\*\*Removed lines\*\*,? in grey/, `${rel}: grey is "Removed lines"`);
+    assert.doesNotMatch(entry, /\*\*(Changed|Added|Removed)\*\*|blue, green or grey/, `${rel}: no merge colour for what a change did, removal aside`);
+    assert.match(entry, /line numbers and its link (across )?to the result in the full colour/i, `${rel}: the full colour's column`);
+    assert.match(entry, /lighter shade/i, `${rel}: the lines in the lighter shade`);
     assert.match(entry, /either arrow takes it/i, `${rel}: either arrow takes it`);
-    assert.match(entry, /muted trace of what you took/i, `${rel}: a settled change keeps a trace`);
+    assert.match(entry, /trace of what you took, in the lighter shade of its colour/i, `${rel}: a settled change keeps a trace`);
     assert.match(entry, /\*\*Close\*\* leaves the (merge )?editor at any point without ending the operation/i, `${rel}: Close keeps the operation`);
   }
 });

@@ -238,33 +238,40 @@ test("the 1.0.0 entry is in the user's words (no internals, no invented symbols)
     assert.ok(!word.test(prose), String(word));
   }
   // The owner's rule for the merge editor holds for its changelog too: no
-  // glyphs of our own, and the old conflict colour is gone.
+  // glyphs of our own, and no change is said to be red any more (the conflict
+  // is orange; a theme's own red, like Light Modern's Abort button, is not a
+  // merge colour).
   for (const glyph of ["≠", "≈", "‹", "›", "✨", "⚠"]) assert.ok(!prose.includes(glyph), glyph);
-  assert.doesNotMatch(prose, /\borange\b/i);
+  assert.doesNotMatch(prose, /\bin red\b|\(red\)|\bred:/i);
 });
 
-test("the 1.0.0 entry says the colours in words, as the legend names them — one colour per decision", () => {
+test("the 1.0.0 entry says the colours in words, as the legend names them — JetBrains' four, at two strengths", () => {
   const colours = sectionsOf(entry100).find((s) => s.startsWith("The colours")) ?? "";
   assert.ok(colours, "a section on the colours");
-  // The owner's rule (24 Sep 2026): a colour says the DECISION a change needs,
-  // never what it did — red you choose, green the same change on both sides,
-  // blue one side only. The legend's own words, each with its colour.
+  // The owner's palette (24 Sep 2026): JetBrains' merge colours — orange you
+  // choose, green the same change on both sides, blue one side only, grey
+  // lines removed without a conflict. The legend's own words, each with its
+  // colour.
   const pairs: Array<[string, string]> = [
-    ["Conflict — you choose", "red"],
+    ["Conflict — you choose", "orange"],
     ["Same on both sides — either arrow takes it", "green"],
     ["One side only — safe to take", "blue"],
+    ["Removed lines", "grey"],
   ];
   for (const [name, colour] of pairs) {
     const line = colours.split("\n").find((l) => l.includes(`**${name}**`)) ?? "";
     assert.match(line, new RegExp(`\\b${colour}\\b`), `${name} is said to be ${colour}`);
   }
-  // Whatever the change did: added, changed and removed are one colour each way.
   const green = colours.split("\n").find((l) => l.includes("**Same on both sides")) ?? "";
-  assert.match(green, /whether they added, changed or removed/i, "the same change is green whatever it did");
+  assert.match(green, /the same way/i, "the same change on both sides is green");
   const blue = colours.split("\n").find((l) => l.includes("**One side only")) ?? "";
-  assert.match(blue, /whether it added, changed or removed/i, "a one-sided change is blue whatever it did");
-  assert.doesNotMatch(colours, /\*\*(Changed|Added|Removed)\*\*|\bgrey\b/, "no colour for what a change did");
-  assert.match(colours, /lightness/i, "red and green are said to differ in lightness, for colour-blind eyes");
+  assert.match(blue, /added or changed/i, "a one-sided change is blue");
+  assert.doesNotMatch(colours, /\*\*(Changed|Added)\*\*/, "no colour for a change type other than removal");
+  // JetBrains' two strengths: the line numbers and the link to the result in
+  // the full colour, the lines lighter, the changed words full again.
+  assert.match(colours, /two strengths/i, "the two strengths are said");
+  assert.match(colours, /line numbers/i, "…the line numbers in the full colour");
+  assert.match(colours, /lighter shade/i, "…the lines in a lighter shade");
   // A settled change keeps a trace of what was taken, not an empty grey line.
   const settled = colours.split("\n").find((l) => /\btrace\b/i.test(l)) ?? "";
   assert.match(settled, /\btook\b/i, "the trace says which side was taken");
@@ -272,15 +279,16 @@ test("the 1.0.0 entry says the colours in words, as the legend names them — on
   assert.match(settled, /\bboth\b/i, "…or that both went in");
 });
 
-test("the README's colour table names the legend's three entries, each with its one colour", () => {
+test("the README's colour table names the legend's four entries, each with its one colour", () => {
   const section = readme.split("## Every change, colour-coded")[1]?.split("\n## ")[0] ?? "";
   const rows = section.split("\n").filter((l) => l.startsWith("| ") && !/^\| (Colour|---)/.test(l));
   assert.deepEqual(
     rows.map((r) => r.split("|").slice(1, 3).map((c) => c.trim())),
     [
-      ["red", "Conflict — you choose"],
+      ["orange", "Conflict — you choose"],
       ["green", "Same on both sides — either arrow takes it"],
       ["blue", "One side only — safe to take"],
+      ["grey", "Removed lines"],
     ],
   );
 });
@@ -292,7 +300,7 @@ test("the 1.0.0 entry says Close leaves the merge editor without ending the oper
   assert.match(close, /conflict markers/i, "and the file keeps its markers");
 });
 
-test("the listing describes the colours by decision: red, green for the same change on both sides, blue for one side only", () => {
+test("the listing describes the colours by decision: orange, green for the same change on both sides, blue for one side only, grey for removed lines", () => {
   // The research's violet "Same on both sides" was the owner's no, and so,
   // later, was colouring a change by what it did: the listing, the
   // walkthrough and the shot list describe what the editor shows.

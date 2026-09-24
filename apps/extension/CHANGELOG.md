@@ -30,21 +30,22 @@ does, the other does. (merge-studio#12)
   with the reason — until git can continue; Skip appears only where git
   offers it. The rebase workspace's stop banner gains Skip too.
 - **Every change coloured by the decision it needs.** The merge editor's
-  legend names the three colours in words, with how many changes are left:
-  **Conflict — you choose**, in red (both sides changed the same lines,
-  differently); **Same on both sides — either arrow takes it**, in green
-  (both sides made the same change, whether they added, changed or removed
-  lines: nothing to choose); and **One side only — safe to take**, in blue
-  (only one side changed these lines, whatever it did). What a change did
-  shows in the shape of its band and the words it highlights, and red and
-  green also differ in lightness, so they stay apart for colour-blind eyes.
-  Each change is one band from its side into the result; a conflict with one
-  side taken looks half done, and a settled change keeps a muted trace of
-  what you took, in its colour: the side you took stays joined to the
-  result, a side you left out keeps only its outline, and when you took
-  both, both stay joined.
- Every change has an arrow toward the result and a
-  cross to leave it out, each saying what it does ("Accept Yours (test) for
+  legend names its four colours, JetBrains' merge colours, in words, with how
+  many changes are left: **Conflict — you choose**, in orange (both sides
+  changed the same lines, differently); **Same on both sides — either arrow
+  takes it**, in green (both sides made the same change: nothing to choose);
+  **One side only — safe to take**, in blue (only one side added or changed
+  these lines); and **Removed lines**, in grey (lines removed without a
+  conflict). As in JetBrains, a change still to decide has its line numbers
+  and its link to the result in the full colour and its lines in a lighter
+  shade, with the words that changed in the full colour; a change that is
+  all new, or all gone, is the full colour throughout. Each change is one
+  band from its side into the result; a conflict with one side taken looks
+  half done, and a settled change keeps a trace of what you took, in the
+  lighter shade of its colour: the side you took stays joined to the result,
+  a side you left out keeps only its outline, and when you took both, both
+  stay joined. Every change has an arrow toward the result and a cross to
+  leave it out, each saying what it does ("Accept Yours (test) for
   this conflict"), from the mouse, the keyboard or a screen reader.
   **Resolve simple** on the toolbar settles every conflict whose two edits
   touch but don't overlap, and the legend says how many there are. A change
@@ -182,7 +183,8 @@ does, the other does. (merge-studio#12)
   copy arrow had the same fault, and is fixed with it.
 - With *Trim* or *Ignore whitespace*, a change that only touched whitespace
   was dropped, and the result kept the original bytes; it is shown as a
-  change, with a dotted edge. A side that only changed its line endings is no
+  change, in the lighter shade, with a hover that says only whitespace
+  changed. A side that only changed its line endings is no
   longer a conflict over the whole file, and word highlights under *Ignore
   whitespace* are drawn at the right columns.
 - **A range of reverts was called a cherry-pick** once you had committed one of

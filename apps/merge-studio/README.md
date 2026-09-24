@@ -29,26 +29,30 @@ During a rebase git swaps its own words: `--ours` is the branch you are rebasing
 
 ## Every change, colour-coded
 
-Each colour answers one question: does your choice matter here? The legend
-above the panes names each colour in words, with how many changes are left.
+Each colour answers one question: does your choice matter here? They are
+JetBrains' merge colours. The legend above the panes names each colour in
+words, with how many changes are left.
 
 <p align="center"><img src="media/screenshots/legend.png" alt="The legend: Conflict — you choose, 6; Same on both sides — either arrow takes it, 1; One side only — safe to take, 5; and a button that explains the colours and lines."></p>
 
 | Colour | In the legend | Meaning |
 | --- | --- | --- |
-| red | Conflict — you choose | Both sides changed the same lines, differently, and you decide what the result keeps. When the two edits touch but don't overlap, **Resolve simple** on the toolbar applies both. |
-| green | Same on both sides — either arrow takes it | Both sides made the same change, whether they added, changed or removed lines. There is nothing to choose: either arrow takes it, and it is settled on both sides at once. |
-| blue | One side only — safe to take | Only one side changed these lines, whether it added, changed or removed them. |
+| orange | Conflict — you choose | Both sides changed the same lines, differently, and you decide what the result keeps. When the two edits touch but don't overlap, **Resolve simple** on the toolbar applies both. |
+| green | Same on both sides — either arrow takes it | Both sides added or changed these lines the same way. There is nothing to choose: either arrow takes it, and it is settled on both sides at once. |
+| blue | One side only — safe to take | Only one side added or changed these lines. |
+| grey | Removed lines | Lines removed on one side only, or the same lines removed on both. No conflict: safe to take. |
 
-What a change did shows in its shape, not its colour: a band that meets a
-line between two rows on the other side was added there, or removed, and a
-stronger tint marks the words that changed. Red and green also differ in
-lightness, not only in hue, so they stay apart for colour-blind eyes.
+As in JetBrains, a change still to decide wears its colour at two
+strengths: its line numbers and its link across to the result in the full
+colour, its lines in a lighter shade, and the words that changed in the full
+colour again. A change that is all new, or all gone, is the full colour
+throughout. A band that meets a line between two rows on the other side was
+added there, or removed.
 
-Once you settle a change it keeps a muted trace of what you took, in its
-colour: the side you took stays faintly coloured and joined to the result, a
-side you left out keeps only its outline, and when you took both, both stay
-joined to it.
+Once you settle a change it keeps a trace of what you took, in the lighter
+shade of its colour: the side you took stays joined to the result, a side you
+left out keeps only its outline, and when you took both, both stay joined to
+it.
 
 **Close** leaves the merge editor at any point without ending the merge or
 rebase: the file keeps its conflict markers, and **Merge…** in the Conflicts

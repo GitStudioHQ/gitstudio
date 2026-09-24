@@ -1,9 +1,7 @@
 /* The merge paints every change by the DECISION it needs (paint.ts), in
- * JetBrains' dark merge colours — the owner, 24 Sep 2026: "use a shade of
- * orange instead of red … the jetbrains merge colours on dark mode look
- * stunning and we can just use the same, lighter blue like skyblue, the green
- * is lighter shade of grass green, and the red is lighter shade of warning
- * orange, and light gray is for removed":
+ * JetBrains' merge colours — the owner, 24 Sep 2026: orange instead of red,
+ * a lighter grass green, a sky blue, light grey for removed lines; then the
+ * exact light values, measured from JetBrains:
  *
  * - conflict (orange):  the sides differ — you choose (even when one of them
  *                       removed lines);
@@ -12,81 +10,72 @@
  * - removed (grey):     lines removed without a conflict, on one side or the
  *                       same on both (paint.ts `isRemoval`).
  *
- * What else a change did reads from the band's shape (a band that meets a
- * line between two rows on the other side was added there) and from the word
- * tints. The 2-way diff has no decision to make and keeps colouring by what a
- * change did (inserted green, modified blue, deleted grey).
+ * Each colour comes in two strengths, used as JetBrains uses them (the owner:
+ * "#C2D7F2 highlights the diffs in text and uses this colour in the columns,
+ * #E6EFFA is used in the lines"):
+ *
+ *   light        full: words, columns    lighter: lines
+ *   conflict     #fed5cc                 #ffeeeb
+ *   same         #bee6bd                 #e5f5e5
+ *   one-sided    #c2d7f2                 #e6effa
+ *   removed      #d6d6d6                 #efefef
+ *
+ * The lighter colour is 40% of the way from the editor to the full one —
+ * JetBrains' own ratio, which both of the owner's measured pairs follow;
+ * green's and grey's lighter colours are derived by it.
  *
  * Per tone:
- * - line:  the band tint — the changed lines in a pane (line numbers too), the
- *          ribbon polygon across a gutter, the result lines. ONE colour, so a
- *          change reads as one continuous band;
- * - inner: the changed characters, a step stronger, drawn over the line tint;
+ * - full:  an open change's line-number column and its ribbon across the
+ *          gutter (the "columns"), its changed words, the lines of a change
+ *          with nothing to compare word by word (text on one pane only — an
+ *          insertion or a deletion, new or gone as a whole — or word
+ *          highlighting off: decorations.ts comparedByWords, JetBrains' own
+ *          rule), an insertion or deletion point's 1px line, and a discarded
+ *          side's 1px outline;
+ * - line:  the lighter colour — the lines of a change compared word by word;
+ *          and the TRACE a settled change keeps: a side that was taken, its
+ *          ribbon to the Result, the Result itself, and the Result of a
+ *          conflict with one side in (`half`);
+ * - inner: what lays a changed word over the lighter line so that it lands
+ *          on the full colour exactly;
  * - edge:  solid, >= 3:1 on the background — the legend's colour dots, the
  *          overview strip's marks, high-contrast frames;
- * - muted: the TRACE a settled change keeps — a side that was taken, its
- *          ribbon to the Result, and the Result itself: the band's own hue at
- *          about half strength, calmer than anything still open (and the
- *          Result of a conflict with one side in — `half`);
- * - done:  the 1px outline of a side that was DISCARDED (no ribbon) and of a
- *          Result that took nothing — the BAND's own colour, never brighter;
- * - point: an insertion or deletion point's 1px line, and the ribbon's end at
- *          it — the band's own colour too, so the band narrows into the line;
  * - ruler: the 2-way diff's overview-ruler mark, at reduced strength.
- * High contrast draws every edge, outline and point solid, in the edge colour.
+ * Every tint is translucent: Monaco draws decorations OVER the selection, so
+ * an opaque band would hide it. Each is laid at the alpha that lands on the
+ * values above over a white editor.
  *
- * No other lines (the owner, the same day): no bar between the line numbers
- * and the code, no rule above or below a half-decided conflict, and nothing
- * drawn brighter than the band it belongs to.
+ * Dark: the same two strengths. JetBrains' dark (Darcula, which the New UI
+ * "Dark" scheme inherits: DIFF_CONFLICT #45302b, DIFF_INSERTED #294436,
+ * DIFF_MODIFIED #385570, DIFF_DELETED #484a4a, in intellij-community's
+ * DefaultColorSchemesManager.xml; New UI "Dark" and "Islands Dark" override
+ * none of them) is bright hues washed out over the editor, and so is this —
+ * the full colour a bright hue at an alpha over VS Code Dark Modern
+ * (#1f1f1f), the lighter colour 40% of it:
  *
- * WHERE THE COLOURS COME FROM (github.com/JetBrains/intellij-community,
- * master, Sep 2026): platform/platform-resources/src/DefaultColorSchemesManager.xml,
- * scheme "Darcula" — which the New UI "Dark" scheme
- * (platform/platform-resources/src/themes/expUI/expUI_darkScheme.xml,
- * parent_scheme="Darcula", editor #1e1f22) inherits unchanged; the merge
- * viewer paints each change with these keys (diff-impl TextDiffTypeFactory):
+ *   tone        hue (bright)             full   lighter   full lands at (OKLCH)   JetBrains
+ *   conflict    #f5914b warning orange   .25    .10       0.378 0.045  56°        0.332 0.032  34°
+ *   same        #6fd17a grass green      .30    .12       0.416 0.056 147°        0.360 0.041 161°
+ *   one-sided   #63b1fa sky blue         .34    .136      0.423 0.053 248°        0.439 0.057 248°
+ *   removed     #c8ccd0 light grey       .22    .088      0.390 0.002             0.407 0.003
  *
- *   key             BACKGROUND  ERROR_STRIPE  lands at (OKLCH)         a bright hue at alpha over #1f1f1f
- *   DIFF_CONFLICT   #45302b     #8f5247       0.332 0.032  34° brown   rgb(221,116,91) at .20 (coral)
- *   DIFF_INSERTED   #294436     #447152       0.360 0.041 161° green   rgb(81,216,146) at .20 (mint)
- *   DIFF_MODIFIED   #385570     #43698d       0.439 0.057 247° blue    rgb(99,177,250) at .37 (sky blue)
- *   DIFF_DELETED    #484a4a     #656e76       0.407 0.003      grey    rgb(236,246,246) at .20 (light grey)
- *   (the "Default" light scheme: #ffd5cc, #bee6be, #cad9fa, #d6d6d6)
+ * The owner asked for LIGHTER shades than JetBrains' in the dark: its brown
+ * conflict pulled to a lighter warning orange, its mint to a lighter grass
+ * green (and lighter than the orange, so the two stand apart in lightness
+ * too), a sky blue. The editor's text stays >= 5:1 on every full colour. High
+ * contrast dark lays the same hues a step stronger over black; high contrast
+ * light is the light palette; high contrast draws every edge, outline and
+ * point solid, in the edge colour.
  *
- * So JetBrains' dark diff colours ARE bright hues washed out over the editor.
- * Here each is that: a bright hue at an alpha, landing at about JetBrains'
- * lightness on VS Code Dark Modern (#1f1f1f):
- *
- *   tone        hue (bright)       band      lands at (OKLCH, Dark Modern)   JetBrains
- *   conflict    #f0883e warning orange  .19   0.339 0.037  57°             0.332 0.032  34°
- *   same        #6fd17a grass green     .30   0.416 0.056 147°             0.360 0.041 161°
- *   one-sided   #63b1fa sky blue        .34   0.423 0.053 248°             0.439 0.057 247°
- *   removed     #c8ccd0 light grey      .22   0.390 0.002                  0.407 0.003
- *
- * - the conflict is JetBrains' brown pulled to ORANGE (57°, not 34°), the
- *   owner's "warning orange"; the green is grass (147°) and a step lighter
- *   than JetBrains' mint, so orange and green stand apart in LIGHTNESS — the
- *   one axis deuteranopes and protanopes keep (JetBrains ships separate
- *   deuteranopia colours instead; a webview cannot know who is looking);
- * - Dark Modern's #cccccc stays >= 4.5:1 on every band and word tint (5.2 on
- *   the blue and green, 7.4 on the orange); the syntax colours are lower on
- *   the lightest bands, as they are in JetBrains (Dark+'s comment green
- *   #6a9955 is 2.5:1 on the blue, 3.6:1 on the orange);
- * - word tint: the same hue a step over the band (ΔE 3–5.6), the text still
- *   >= 4.5:1 on it;
- * - trace (muted): the band's hue at about half its alpha;
- * - edge: the bright hue itself (grey a step darker), >= 6:1 on the ground.
- * Light keeps the softer bands it had (blue, green) with the same families:
- * a peach-orange for a conflict and a light grey for removed lines, >= 7:1
- * text. High contrast dark lays the same hues a step stronger over black.
+ * No other lines (the owner): no bar between the line numbers and the code,
+ * no rule above or below a half-decided conflict.
  *
  * Measured, not eyeballed (packages/webview-ui/test/mergeContrast.test.ts):
- * the editor's text >= 4.5:1 on every band, word tint and trace in VS Code
- * Dark Modern/Dark+/Light Modern/Light+/HC and the desktop's dark and light
- * themes (the syntax minimum reported); each band its hue; every edge
- * >= 3:1; every pair of the four apart (ΔE in OKLab) with normal vision and
- * under simulated deuteranopia, protanopia and tritanopia — orange and green
- * by LIGHTNESS too; every line the merge draws 1px, the band's own colour. */
+ * the owner's light values land exactly; the editor's text >= 4.5:1 on every
+ * tint in VS Code Dark Modern/Dark+/Light Modern/Light+/HC and the desktop's
+ * dark and light themes; every edge >= 3:1; the four colours apart (ΔE in
+ * OKLab) with normal vision and under simulated deuteranopia, protanopia and
+ * tritanopia. */
 
 @import "./tokens.css";
 
@@ -128,63 +117,61 @@
 .codicon-question::before { content: "\eb32"; }
 
 /* ── Change colour tokens ──────────────────────────────────────────────────── */
-/* The merge's four colours, then the 2-way diff's roles. Each merge tone is
- * ONE bright hue laid at alphas over the editor (the tints stay translucent:
- * the selection and the current line show through them); what it lands on is
- * in the table at the top of this file. Outlines and points are the band's
- * own colour (declared per theme below, where each theme's band is). */
+/* The merge's four colours (full, lighter, word, edge), then the 2-way diff's
+ * roles. What each lands on is in the tables at the top of this file. */
 :root {
-  --jb-line-conflict:  rgba(240,136,62,.19);  --jb-inner-conflict:  rgba(255,138,46,.12);  --jb-edge-conflict:  #f0883e;
-  --jb-line-same:      rgba(111,209,122,.3);  --jb-inner-same:      rgba(61,214,90,.08);   --jb-edge-same:      #6fd17a;
-  --jb-line-one-sided: rgba(99,177,250,.34);  --jb-inner-one-sided: rgba(61,155,255,.1);   --jb-edge-one-sided: #63b1fa;
-  --jb-line-removed:   rgba(200,204,208,.22); --jb-inner-removed:   rgba(200,204,208,.1);  --jb-edge-removed:   #a8adb3;
-  --jb-muted-conflict: rgba(240,136,62,.11);  --jb-muted-same: rgba(111,209,122,.16);
-  --jb-muted-one-sided: rgba(99,177,250,.18); --jb-muted-removed: rgba(200,204,208,.12);
+  --jb-full-conflict:  rgba(245,145,75,.25);  --jb-line-conflict:  rgba(245,145,75,.1);   --jb-inner-conflict:  rgba(245,145,75,.167); --jb-edge-conflict:  #f5914b;
+  --jb-full-same:      rgba(111,209,122,.3);  --jb-line-same:      rgba(111,209,122,.12);  --jb-inner-same:      rgba(111,209,122,.205); --jb-edge-same:      #6fd17a;
+  --jb-full-one-sided: rgba(99,177,250,.34);  --jb-line-one-sided: rgba(99,177,250,.136); --jb-inner-one-sided: rgba(99,177,250,.236); --jb-edge-one-sided: #63b1fa;
+  --jb-full-removed:   rgba(200,204,208,.22); --jb-line-removed:   rgba(200,204,208,.088); --jb-inner-removed:  rgba(200,204,208,.145); --jb-edge-removed:   #a8adb3;
   /* The 2-way diff (by what a change did). */
   --jb-line-modified: rgba(40,150,245,.23);  --jb-inner-modified: rgba(40,150,245,.14);  --jb-ruler-modified: rgba(74,159,245,.6);
   --jb-line-inserted: rgba(80,180,40,.13);   --jb-inner-inserted: rgba(80,180,40,.16);   --jb-ruler-inserted: rgba(98,179,74,.6);
   --jb-line-deleted:  rgba(139,148,158,.13); --jb-inner-deleted:  rgba(139,148,158,.20); --jb-ruler-deleted:  rgba(139,148,158,.6);
 }
-/* Light: the soft bands it had, a peach-orange for a conflict and a light
- * grey for removed lines (JetBrains' light scheme: #ffd5cc, #d6d6d6). */
+/* Light: the owner's values, exactly, over a white editor — full #fed5cc
+ * #bee6bd #c2d7f2 #d6d6d6, lighter #ffeeeb #e5f5e5 #e6effa #efefef. The
+ * edges are each hue, deep enough for 3:1 on white. */
 body.vscode-light, body.vscode-high-contrast-light {
-  --jb-line-conflict:  rgba(235,140,61,.4);  --jb-inner-conflict:  rgba(226,104,0,.12);   --jb-edge-conflict:  #b65a00;
-  --jb-line-same:      rgba(95,254,97,.4);   --jb-inner-same:      rgba(62,208,70,.15);   --jb-edge-same:      #299236;
-  --jb-line-one-sided: rgba(122,178,251,.4); --jb-inner-one-sided: rgba(22,115,234,.1);   --jb-edge-one-sided: #1b65b9;
-  --jb-line-removed:   rgba(162,167,173,.3); --jb-inner-removed:   rgba(110,118,129,.14); --jb-edge-removed:   #6e7781;
-  --jb-muted-conflict: rgba(235,140,61,.2);  --jb-muted-same: rgba(95,254,97,.2);
-  --jb-muted-one-sided: rgba(122,178,251,.2); --jb-muted-removed: rgba(162,167,173,.15);
+  --jb-full-conflict:  rgba(253,171,153,.5);  --jb-line-conflict:  rgba(255,170,155,.2);  --jb-inner-conflict:  rgba(252,171,152,.375); --jb-edge-conflict:  #d4612e;
+  --jb-full-same:      rgba(125,205,123,.5);  --jb-line-same:      rgba(125,205,125,.2);  --jb-inner-same:      rgba(125,205,122,.375); --jb-edge-same:      #299236;
+  --jb-full-one-sided: rgba(133,175,229,.5);  --jb-line-one-sided: rgba(130,175,230,.2);  --jb-inner-one-sided: rgba(134,175,229,.375); --jb-edge-one-sided: #1b65b9;
+  --jb-full-removed:   rgba(173,173,173,.5);  --jb-line-removed:   rgba(175,175,175,.2);  --jb-inner-removed:   rgba(172,172,172,.375); --jb-edge-removed:   #767676;
   --jb-line-modified: rgba(64,128,255,.28);  --jb-inner-modified: rgba(64,128,255,.18);  --jb-ruler-modified: rgba(9,105,218,.55);
   --jb-line-inserted: rgba(80,180,40,.15);   --jb-inner-inserted: rgba(80,180,40,.20);   --jb-ruler-inserted: rgba(26,127,55,.55);
   --jb-line-deleted:  rgba(110,118,129,.23); --jb-inner-deleted:  rgba(110,118,129,.20); --jb-ruler-deleted:  rgba(89,99,110,.55);
 }
-/* Derived per theme, where that theme's bands are declared (a custom property
+/* Derived per theme, where that theme's tints are declared (a custom property
  * is resolved where it is declared, then inherited as that value):
- * - the half-done Result wears the muted tint, so the muted ribbon of the
- *   side that is in continues into it on the same colour;
+ * - a settled change's trace and a half-done Result wear the lighter colour,
+ *   so the taken side's ribbon runs into the Result on the same colour;
  * - a discarded side's outline, a Result that took nothing, and a point's
- *   line are the band's own colour: 1px, never brighter than the band. */
+ *   line are the full colour: 1px, the column's own colour. */
 :root, body.vscode-light, body.vscode-high-contrast-light {
-  --jb-half-conflict: var(--jb-muted-conflict); --jb-half-same: var(--jb-muted-same);
-  --jb-half-one-sided: var(--jb-muted-one-sided); --jb-half-removed: var(--jb-muted-removed);
-  --jb-done-conflict: var(--jb-line-conflict); --jb-done-same: var(--jb-line-same);
-  --jb-done-one-sided: var(--jb-line-one-sided); --jb-done-removed: var(--jb-line-removed);
-  --jb-point-conflict: var(--jb-line-conflict); --jb-point-same: var(--jb-line-same);
-  --jb-point-one-sided: var(--jb-line-one-sided); --jb-point-removed: var(--jb-line-removed);
+  --jb-muted-conflict: var(--jb-line-conflict); --jb-muted-same: var(--jb-line-same);
+  --jb-muted-one-sided: var(--jb-line-one-sided); --jb-muted-removed: var(--jb-line-removed);
+  --jb-half-conflict: var(--jb-line-conflict); --jb-half-same: var(--jb-line-same);
+  --jb-half-one-sided: var(--jb-line-one-sided); --jb-half-removed: var(--jb-line-removed);
+  --jb-done-conflict: var(--jb-full-conflict); --jb-done-same: var(--jb-full-same);
+  --jb-done-one-sided: var(--jb-full-one-sided); --jb-done-removed: var(--jb-full-removed);
+  --jb-point-conflict: var(--jb-full-conflict); --jb-point-same: var(--jb-full-same);
+  --jb-point-one-sided: var(--jb-full-one-sided); --jb-point-removed: var(--jb-full-removed);
 }
 /* High contrast dark's black ground: the same hues, a step stronger. */
 body.vscode-high-contrast:not(.vscode-high-contrast-light) {
-  --jb-line-conflict:  rgba(240,136,62,.3);   --jb-inner-conflict:  rgba(255,138,46,.12); --jb-muted-conflict:  rgba(240,136,62,.15);
-  --jb-line-same:      rgba(111,209,122,.36); --jb-inner-same:      rgba(61,214,90,.1);   --jb-muted-same:      rgba(111,209,122,.18);
-  --jb-line-one-sided: rgba(99,177,250,.4);   --jb-inner-one-sided: rgba(61,155,255,.1);  --jb-muted-one-sided: rgba(99,177,250,.2);
-  --jb-line-removed:   rgba(200,204,208,.3);  --jb-inner-removed:   rgba(200,204,208,.1); --jb-muted-removed:   rgba(200,204,208,.15);
-  --jb-half-conflict: var(--jb-muted-conflict); --jb-half-same: var(--jb-muted-same);
-  --jb-half-one-sided: var(--jb-muted-one-sided); --jb-half-removed: var(--jb-muted-removed);
+  --jb-full-conflict:  rgba(245,145,75,.3);   --jb-line-conflict:  rgba(245,145,75,.12);  --jb-inner-conflict:  rgba(245,145,75,.205);
+  --jb-full-same:      rgba(111,209,122,.36); --jb-line-same:      rgba(111,209,122,.144); --jb-inner-same:     rgba(111,209,122,.252);
+  --jb-full-one-sided: rgba(99,177,250,.4);   --jb-line-one-sided: rgba(99,177,250,.16);  --jb-inner-one-sided: rgba(99,177,250,.286);
+  --jb-full-removed:   rgba(200,204,208,.3);  --jb-line-removed:   rgba(200,204,208,.12); --jb-inner-removed:   rgba(200,204,208,.205);
+  --jb-muted-conflict: var(--jb-line-conflict); --jb-muted-same: var(--jb-line-same);
+  --jb-muted-one-sided: var(--jb-line-one-sided); --jb-muted-removed: var(--jb-line-removed);
+  --jb-half-conflict: var(--jb-line-conflict); --jb-half-same: var(--jb-line-same);
+  --jb-half-one-sided: var(--jb-line-one-sided); --jb-half-removed: var(--jb-line-removed);
   --jb-line-inserted: rgba(80,180,40,.14); --jb-line-deleted: rgba(139,148,158,.22);
 }
 /* High contrast: every edge is solid, points too — in the edge colour, 2px
  * (mergePointPx in ribbons.ts). Declared on body, where the edge colours of
- * both high contrast themes are; after the rule above, so it wins in high
+ * both high contrast themes are; after the rules above, so it wins in high
  * contrast light too. */
 body.vscode-high-contrast {
   --jb-point-conflict: var(--jb-edge-conflict); --jb-point-same: var(--jb-edge-same);
@@ -197,9 +184,10 @@ body.vscode-high-contrast {
 }
 
 /* ── Bands ─────────────────────────────────────────────────────────────────────
- * Whole-line tints (Monaco isWholeLine decorations, content AND line-number
- * margin). Each merge tone class also names its half-done tint as
- * `--jb-tone-half`. The 2-way diff's role classes are its tint only. */
+ * Whole-line tints (Monaco isWholeLine decorations). A merge tone's line class
+ * is the lighter colour, and names its half-done tint as `--jb-tone-half`;
+ * the 2-way diff's role classes are its tint only (content and line-number
+ * margin). */
 .jb-line-conflict { background-color: var(--jb-line-conflict); --jb-tone-half: var(--jb-half-conflict); }
 .jb-line-same { background-color: var(--jb-line-same); --jb-tone-half: var(--jb-half-same); }
 .jb-line-one-sided { background-color: var(--jb-line-one-sided); --jb-tone-half: var(--jb-half-one-sided); }
@@ -207,16 +195,32 @@ body.vscode-high-contrast {
 .jb-line-inserted { background-color: var(--jb-line-inserted); }
 .jb-line-deleted { background-color: var(--jb-line-deleted); }
 .jb-line-modified { background-color: var(--jb-line-modified); }
+/* A change with nothing to compare word by word (decorations.ts
+ * comparedByWords) — text on one pane only, an insertion or a deletion, new
+ * or gone as a whole; or word highlighting turned off: the full colour
+ * throughout, as JetBrains paints it. */
+.jb-line-conflict.jb-solid { background-color: var(--jb-full-conflict); }
+.jb-line-same.jb-solid { background-color: var(--jb-full-same); }
+.jb-line-one-sided.jb-solid { background-color: var(--jb-full-one-sided); }
+.jb-line-removed.jb-solid { background-color: var(--jb-full-removed); }
+/* An open change's line-number column: the full colour, which its ribbon
+ * continues across the gutter — JetBrains' strong column beside the lighter
+ * lines (the owner: the full colour "in the columns"). */
+.jb-margin-conflict { background-color: var(--jb-full-conflict); }
+.jb-margin-same { background-color: var(--jb-full-same); }
+.jb-margin-one-sided { background-color: var(--jb-full-one-sided); }
+.jb-margin-removed { background-color: var(--jb-full-removed); }
 /* A conflict with one side taken (or ignored) and the other still to decide:
- * its result is no longer the open question it was — the tint drops to the
- * muted strength, and nothing else: no line above or below it (they read as
+ * its result is no longer the open question it was — the lighter colour, line
+ * numbers included, and nothing else: no line above or below it (they read as
  * bright rules across the Result). Only the pending half, in its own pane and
- * across its own gutter, stays at full strength. (Two classes, so it outranks
+ * across its own gutter, keeps its full column. (Two classes, so it outranks
  * the tone's own tint.) */
 .jb-half.jb-half { background-color: var(--jb-tone-half); }
 
 /* A settled change's TRACE: a side that was taken, and the Result that holds
- * it — the muted tint of its colour, no word tints and no lines. */
+ * it — the lighter colour, line numbers included; no full column, no word
+ * tints and no lines. */
 .jb-trace-conflict { background-color: var(--jb-muted-conflict); }
 .jb-trace-same { background-color: var(--jb-muted-same); }
 .jb-trace-one-sided { background-color: var(--jb-muted-one-sided); }
@@ -300,8 +304,9 @@ body.vscode-high-contrast .jb-point.jb-point-after { border-top-width: 0; border
   pointer-events: none;
   z-index: 1;
 }
-/* A pending band across a gutter: FILLED with the line tint it connects, no
- * outline — the polygon is the band's continuation, not a frame around it.
+/* A pending band across a gutter: FILLED with its full colour, no outline —
+ * with the line-number column it runs into, the change's strong column
+ * between the lighter text areas (JetBrains' divider), not a frame.
  * Each end reaches one device pixel into the pane it meets (ribbons.ts), so
  * no column of the gutter's border can show between the two at any zoom. */
 .jb-ribbon { stroke: none; }
@@ -311,16 +316,17 @@ body.vscode-high-contrast .jb-point.jb-point-after { border-top-width: 0; border
  * its colour in the panes (tint over editor background) — which is also why
  * the pixel it lays over the pane's own band changes nothing there. */
 .jb-ribbon-base { stroke: none; fill: var(--vscode-editor-background); }
-.jb-ribbon-conflict { fill: var(--jb-line-conflict); }
-.jb-ribbon-same { fill: var(--jb-line-same); }
-.jb-ribbon-one-sided { fill: var(--jb-line-one-sided); }
-.jb-ribbon-removed { fill: var(--jb-line-removed); }
+.jb-ribbon-conflict { fill: var(--jb-full-conflict); }
+.jb-ribbon-same { fill: var(--jb-full-same); }
+.jb-ribbon-one-sided { fill: var(--jb-full-one-sided); }
+.jb-ribbon-removed { fill: var(--jb-full-removed); }
 /* The 2-way diff's bands, by role. */
 .jb-ribbon-inserted { fill: var(--jb-line-inserted); }
 .jb-ribbon-deleted { fill: var(--jb-line-deleted); }
 .jb-ribbon-modified { fill: var(--jb-line-modified); }
 /* A TAKEN side's ribbon: the trace of where the Result's text came from, in
- * the muted tint its pane band and the Result wear. A discarded side has none. */
+ * the lighter colour its pane band and the Result wear. A discarded side has
+ * none. */
 .jb-ribbon-trace { stroke: none; }
 .jb-ribbon-trace-conflict { fill: var(--jb-muted-conflict); }
 .jb-ribbon-trace-same { fill: var(--jb-muted-same); }
@@ -329,7 +335,7 @@ body.vscode-high-contrast .jb-point.jb-point-after { border-top-width: 0; border
 /* A band's end at a POINT, capped in the point's colour on the point's own
  * rows: the pane's point line carries on into the ribbon (ribbons.ts
  * appendCap) — an open band's in the point colour, a trace's in the outline
- * colour (both the band's own colour outside high contrast). */
+ * colour (both the full colour outside high contrast). */
 .jb-ribbon-cap { stroke: none; }
 .jb-ribbon-cap-conflict { fill: var(--jb-point-conflict); }
 .jb-ribbon-cap-same { fill: var(--jb-point-same); }
@@ -944,16 +950,23 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-removed { stroke: var(--jb-done-
 .jb-dot-one-sided { --jb-dot: var(--jb-edge-one-sided); }
 .jb-dot-removed { --jb-dot: var(--jb-edge-removed); }
 /* The key's samples of the MARKS (not colours): a strip of band as the pane
- * draws it, 16 by 10 — a conflict with one side taken (the muted tint, no
- * lines), a side that was taken (the muted band), a side that was discarded
- * (an outline in the band's colour), an insertion point (a line in the
- * band's colour), a word highlight (a stronger stretch of the band). */
+ * draws it, 16 by 10 — an open change (its line numbers in the full colour
+ * beside its lighter line), a conflict with one side taken (the lighter
+ * colour, no lines), a side that was taken (the lighter band), a side that
+ * was discarded (an outline in the full colour), an insertion point (a line
+ * in the full colour), a word highlight (a full-colour stretch of the lighter
+ * line). */
 .jb-legend-sample {
   display: inline-block;
   flex: 0 0 auto;
   box-sizing: border-box;
   width: 16px;
   height: 10px;
+}
+.jb-sample-column {
+  background:
+    linear-gradient(var(--jb-full-one-sided), var(--jb-full-one-sided)) 0 0 / 5px 100% no-repeat,
+    var(--jb-line-one-sided);
 }
 .jb-sample-half { background: var(--jb-half-conflict); }
 .jb-sample-done { border-top: 1px solid var(--jb-done-conflict); border-bottom: 1px solid var(--jb-done-conflict); }
