@@ -1,0 +1,93 @@
+packages/merge-vscode/src/dashboardController.ts
+  s_26f5e669d3043c::t_2f1bdf9f40157a 59-64,66-67
+  s_26f5e669d3043c::t_d6310f1f52d0c4 83-89
+  s_26f5e669d3043c::t_28441bb88dea3e 201,209-211,215-217
+  s_26f5e669d3043c::t_52f1c5447c43a6 152-156,165-172
+  s_59c0dd2af30db2::t_d68cf3311cf0bc 173-175
+packages/merge-vscode/src/conflictsPanel.ts
+  s_26f5e669d3043c::t_750997973ea673 32,306,311,314,319,324,327,335-341,345,350-351,353-379,382-385,389,393,396-404,406-423
+  s_26f5e669d3043c::t_f59e1ef9d398d8 133-137
+  s_26f5e669d3043c::t_b9ceda33fb9a3d 40-41
+  s_26f5e669d3043c::t_eaf48520746987 33-39,42-47
+  s_26f5e669d3043c::t_0819df95120f58 190-193,204-211,220-223,234-237,242-246,250-270
+  s_26f5e669d3043c::t_73d5d5e7b8a11c 280
+  s_59c0dd2af30db2::t_62526aed74111b 271
+packages/webview-ui/test/conflictsDashboard.test.ts
+  s_26f5e669d3043c::t_c670d31b64c03f 189-190,239,278,373-379
+packages/merge-vscode/test/support/vscodeStub.cjs
+  s_26f5e669d3043c::t_760a3392abbfb1 181,190-193,196-202
+packages/merge-vscode/test/dashboardController.test.ts
+  s_26f5e669d3043c::t_0264f7bfc2737c 117-138,142,144,146-158
+apps/desktop/src/renderer/mergeParity.ts
+  s_26f5e669d3043c::t_67adb211d2c35e 781-787,793-831,833-847,852-854
+  s_26f5e669d3043c::t_8840cca2f9b360 698-700,705,707-711
+  s_26f5e669d3043c::t_dfd8d59750f8c5 668-669,673-674,676
+  s_26f5e669d3043c::t_c797a497a4e7d8 590,592-607
+  s_26f5e669d3043c::t_b50978a084755c 741-766,768-771
+  s_26f5e669d3043c::t_3430e14dff3de7 865-869,871-875,886
+packages/webview-ui/test/conflictsJudge.ts
+  s_26f5e669d3043c::t_ab4a0815175bd0 1-79
+packages/webview-ui/test/conflictsLayout.test.ts
+  s_26f5e669d3043c::t_826f0e6d4710b5 395-401,404
+packages/webview-ui/test/conflictsInPlace.test.ts
+  s_26f5e669d3043c::t_c84e3136acd187 96
+  s_26f5e669d3043c::t_ab4a0815175bd0 6
+  s_26f5e669d3043c::t_a0f94e922c58fb 9,11-20,22-31,40,72,76-78,91,100,104-106,108-111,115-121,125-131,138-139,142-145,150,152,154-168,173,179-181,183,193-194,196,198,206,213-241,276,282,290,292,305,323,327,329-338,342-343
+packages/merge-vscode/test/conflictsPanel.test.ts
+  s_26f5e669d3043c::t_e2dbf7246745ee 166-303
+packages/webview-ui/src/conflicts/dashboard.ts
+  s_26f5e669d3043c::t_5542ad23fd8a83 1058,1062
+  s_26f5e669d3043c::t_63ec07da6ef211 511-515
+  s_26f5e669d3043c::t_b307923372dec6 366-370
+  s_26f5e669d3043c::t_b0a51f416ac76b 633,638,640
+  s_26f5e669d3043c::t_032318be5d749b 276-279,281
+  s_26f5e669d3043c::t_dadc5cfda9ba1c 371-373
+  s_26f5e669d3043c::t_3f18bcf4951f71 480-484
+  s_26f5e669d3043c::t_7a4ca641a6645b 927
+  s_26f5e669d3043c::t_5403f49fb1f405 153-156,158,160,167,170-175
+  s_26f5e669d3043c::t_86426ea36f82e2 255-261,263
+  s_26f5e669d3043c::t_466bf5eb194d52 387-390,392-394,396
+  s_26f5e669d3043c::t_0e5c757caccffa 365
+  s_26f5e669d3043c::t_45e3229c1dbfee 946
+  s_26f5e669d3043c::t_f3a7b5d966a79e 969-973,977-982,984,986
+  s_26f5e669d3043c::t_c2245d59a9f015 856,859-863,871-872
+  s_26f5e669d3043c::t_a88185896a3b37 719-720,722
+  s_26f5e669d3043c::t_d8e30ba2af81e7 501-508
+  s_26f5e669d3043c::t_2e784e2da20ade 1047
+  s_26f5e669d3043c::t_d5d66d7a5e6689 1098-1100
+  s_26f5e669d3043c::t_5d00ade3771c23 1200
+  s_26f5e669d3043c::t_ed5de650de6dbc 23-31
+  s_26f5e669d3043c::t_bfbb1215f3fe2d 332-334
+  s_26f5e669d3043c::t_391bc5fe0fca98 176
+packages/merge-vscode/test/support/useVscodeStub.ts
+  s_26f5e669d3043c::t_79928bf0224219 38-41
+packages/webview-ui/src/styles/conflicts.css
+  s_26f5e669d3043c::t_f351be6ed16850 741,745,752,765,769,772,783,787,791,803,807,810,841,846,853,874-884,888
+packages/host-bridge/src/conflictsProtocol.ts
+  s_26f5e669d3043c::t_29501d948217e3 328-332,336,338-342
+  s_26f5e669d3043c::t_9a36255fbcb394 271-276,278-287
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "35461d0feb919ba0f3a22ba546283539b5b9310b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_59c0dd2af30db2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54ca11b6-e37a-494e-95d0-c9e5a1baed9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
