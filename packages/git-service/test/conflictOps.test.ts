@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync, existsSync, lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
@@ -265,14 +266,10 @@ test("both-deleted: taking a side is refused; deleteFile settles it", async () =
 });
 
 /**
- * A file/folder conflict as `rebase --apply` (and `am -3`) leave it: master
- * added the FILE layout/panel, test added the FOLDER layout/panel/ — the index
- * holds layout/panel at stage 2 (AU) and layout/panel/index.txt at stage 0,
- * with the folder on disk and git's copy of the file beside it
- * (layout/panel~HEAD). The merge backend renames the file instead, so this
- * shape is the apply backend's.
+ * master added the FILE layout/panel, test added the FOLDER layout/panel/, and
+ * test is rebased onto master with `backend`, which stops.
  */
-function fileVersusFolder(): Repo {
+function fileVersusFolderStop(backend: "--apply" | "--merge"): Repo {
   const r = makeRepo("file-folder");
   r.write("keep.txt", "keep\n");
   r.commitAll("base");
@@ -283,7 +280,35 @@ function fileVersusFolder(): Repo {
   r.write("layout/panel", "the file\n");
   r.commitAll("master: a file");
   r.git("checkout", "-q", "test");
-  r.tryGit("rebase", "--apply", "master");
+  r.tryGit("rebase", backend, "master");
+  return r;
+}
+
+/**
+ * A file/folder conflict as `rebase --apply` (and `am -3`) leave it on git
+ * 2.49 and older: the index holds layout/panel at stage 2 (AU) and
+ * layout/panel/index.txt at stage 0, with the folder on disk and git's copy
+ * of the file beside it (layout/panel~HEAD, untracked).
+ *
+ * git 2.50 retired merge-recursive, and the apply backend now merges with ort,
+ * which moves the file aside IN THE INDEX too (layout/panel~HEAD at stage 2),
+ * as the merge backend has since ort became its strategy — see the next test.
+ * Every older git still stops in this shape, so a newer git's stop is put
+ * into it: the one stage-2 entry moved back to layout/panel, the same blob
+ * (`update-index --index-info`; the index, `status` and the working tree then
+ * read exactly as git 2.49 leaves them). A stop in any other shape fails "the
+ * shape under test".
+ */
+function fileVersusFolder(): Repo {
+  const r = fileVersusFolderStop("--apply");
+  const aside = /^(\d{6}) ([0-9a-f]+) 2\tlayout\/panel~HEAD$/m.exec(r.git("ls-files", "-u"));
+  if (aside) {
+    const [, mode, blob] = aside;
+    execFileSync("git", ["update-index", "--index-info"], {
+      cwd: r.root,
+      input: `0 ${"0".repeat(blob.length)}\tlayout/panel~HEAD\n${mode} ${blob} 2\tlayout/panel\n`,
+    });
+  }
   return r;
 }
 
@@ -319,6 +344,29 @@ test("a file/folder conflict: taking the file is refused and the folder stays; t
     assert.equal(r.read("layout/panel/index.txt"), "the folder's file\n");
   } finally {
     r.cleanup();
+  }
+});
+
+test("a file/folder conflict with the file moved aside (ort's stop, the apply backend's too since git 2.50): either side keeps the folder", async () => {
+  for (const role of ["theirs", "yours"] as const) {
+    const r = fileVersusFolderStop("--merge");
+    try {
+      assert.match(r.git("ls-files", "-s", "layout"), /0\tlayout\/panel\/index\.txt\n.*2\tlayout\/panel~HEAD\n/, "the shape under test");
+      const ctx = r.ctx();
+      const op = await ctx.operation.view();
+      const facts = await ctx.conflictOps.fileFacts("layout/panel~HEAD", { op });
+      assert.equal(facts?.shape, "added-one-side");
+      assert.equal(facts?.missingRole, "yours");
+      const out = await ctx.conflictOps.takeRole("layout/panel~HEAD", role, { op });
+      assert.equal(out.ok, true, out.message);
+      assert.equal(r.git("ls-files", "-u").trim(), "", `${role}: nothing is unmerged`);
+      assert.equal(r.read("layout/panel/index.txt"), "the folder's file\n", `${role}: the folder is still on disk`);
+      assert.match(r.git("ls-files", "-s", "layout/panel/"), /0\tlayout\/panel\/index\.txt$/m, `${role}: and in the index`);
+      // Theirs (stage 2) keeps the file, under the name git gave it; yours has none, so it goes.
+      assert.equal(r.exists("layout/panel~HEAD"), role === "theirs");
+    } finally {
+      r.cleanup();
+    }
   }
 });
 

@@ -36,7 +36,12 @@ before(() => {
 
 after(() => removeTemp(dir));
 
-const real = (p: string) => realpathSync(p);
+// One spelling per folder: the OS's own realpath. On Windows git names a
+// linked worktree's git dir by its LONG path (C:/Users/runneradmin/…, from the
+// gitfile), while os.tmpdir() — and so `main` — may be an 8.3 short one
+// (C:\Users\RUNNER~1\…); the same folder either way, and the JS realpath keeps
+// whichever spelling it is given.
+const real = (p: string) => realpathSync.native(p);
 
 test("in a linked worktree the operation files are watched in its PRIVATE git dir, where MERGE_HEAD really is", async () => {
   assert.ok(statSync(join(linked, ".git")).isFile(), "the old `<root>/.git` watch base is a file here");

@@ -312,8 +312,13 @@ test("a linked worktree's git dir is watched: a commit made there is a git-dir c
     if (w.degraded) return;
     const dirs = await gitWatchDirs(ctx);
     assert.ok(dirs, "git named the worktree's directories");
-    assert.equal(realpathSync(dirs!.commonDir), join(mainRoot, ".git"));
-    assert.equal(dirname(realpathSync(dirs!.gitDir)), join(mainRoot, ".git", "worktrees"));
+    // Compared as the OS spells them: on Windows git names these by the long
+    // path (C:/Users/runneradmin/…, from the gitfile) while `base` may be an
+    // 8.3 short one (C:\Users\RUNNER~1\…, os.tmpdir()) — one folder, two
+    // spellings, and the JS realpath keeps the spelling it is given.
+    const real = (p: string) => realpathSync.native(p);
+    assert.equal(real(dirs!.commonDir), real(join(mainRoot, ".git")));
+    assert.equal(dirname(real(dirs!.gitDir)), real(join(mainRoot, ".git", "worktrees")));
     w.watchGitDirs(dirs!);
     let n = 0;
     const info = await changeAfter(

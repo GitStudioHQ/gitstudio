@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readlinkSync, rmSync, symlinkSync } from "node:fs";
+import { lstatSync, readFileSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { makeRepo, type Repo } from "./opRepo";
 
@@ -15,6 +15,20 @@ import { makeRepo, type Repo } from "./opRepo";
 // resolution reported success. And `checkout -m` cannot merge a gitlink
 // ("unable to read blob object") or a link target (it writes the marker text
 // AS the link's target), so hold-to-undo has to put those back another way.
+
+/**
+ * Where the link at `path` points, as git left it on disk. Where git does not
+ * make symlinks (core.symlinks=false: Git for Windows unless they are enabled
+ * for it — the CI runner's wrote plain files, though Node there makes real
+ * links) it writes a link as a plain file holding the target, and that text
+ * is the link. Anywhere but Windows, a link git wrote must be a real symlink.
+ */
+function linkOnDisk(r: Repo, path: string): string {
+  const abs = join(r.root, path);
+  if (lstatSync(abs).isSymbolicLink()) return readlinkSync(abs);
+  assert.equal(process.platform, "win32", `${path} is a symlink wherever git makes them`);
+  return readFileSync(abs, "utf8");
+}
 
 /** The commit a path's index entry names at `stage` (0 = resolved). */
 function entry(r: Repo, path: string, stage: 0 | 1 | 2 | 3): string | undefined {
@@ -134,16 +148,16 @@ test("hold-to-undo brings a symlink conflict back with the link as git first lef
     relink("dirC");
     r.commitAll("master: link to dirC");
     assert.notEqual(r.tryGit("merge", "test"), 0);
-    const left = readlinkSync(join(r.root, "link"));
+    const left = linkOnDisk(r, "link");
     assert.equal(left, "dirC", "git leaves stage 2's link in place");
 
     const ctx = r.ctx();
     assert.equal((await ctx.conflictOps.takeRole("link", "theirs")).ok, true);
-    assert.equal(readlinkSync(join(r.root, "link")), "dirB");
+    assert.equal(linkOnDisk(r, "link"), "dirB");
     const out = await ctx.conflictOps.restore("link");
     assert.equal(out.ok, true, out.message);
     assert.ok(entry(r, "link", 2) && entry(r, "link", 3), "conflicted again");
-    assert.equal(readlinkSync(join(r.root, "link")), left, "the link points where git first left it");
+    assert.equal(linkOnDisk(r, "link"), left, "the link points where git first left it");
   } finally {
     r.cleanup();
   }

@@ -282,12 +282,18 @@ test("a genuine failure over a stop is still reported: a pick that fails at a pl
   git(c.dir, "merge", "--abort");
   git(c.dir, "merge", "--no-ff", "--no-edit", "other");
   const mergeCommit = git(c.dir, "rev-parse", "HEAD").trim();
-  const seq = join(c.dir, "..", "seq.sh");
-  writeFileSync(seq, '#!/bin/sh\nsed -i.bak "1s/^pick/edit/" "$1"\n', { mode: 0o755 });
+  // A NODE sequence editor (`edit` on the first pick): git runs the editor
+  // through its shell, where the backslashes of a Windows path are escapes —
+  // a `#!/bin/sh` script named by its path was never found there.
+  const seq = join(c.dir, "..", "seq.cjs");
+  writeFileSync(
+    seq,
+    'const fs=require("fs");const p=process.argv[2];fs.writeFileSync(p,fs.readFileSync(p,"utf8").replace(/^pick /,"edit "));\n',
+  );
   execFileSync("git", ["rebase", "-i", "HEAD~2"], {
     cwd: c.dir,
     stdio: "ignore",
-    env: { ...process.env, GIT_SEQUENCE_EDITOR: seq, GIT_EDITOR: "true" },
+    env: { ...process.env, GIT_SEQUENCE_EDITOR: `node "${seq.replace(/\\/g, "/")}"`, GIT_EDITOR: "true" },
   });
   assert.ok(existsSync(join(c.dir, ".git", "rebase-merge")), "paused at edit");
   const repos = new RepoStore([]);

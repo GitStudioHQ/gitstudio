@@ -25,6 +25,10 @@
 # the three-way merge in `git am -3` and `rebase --apply` instead of failing the
 # whole patch (mailsplit strips CRs by default — then no file is merged at all).
 #
+# Symlinks: where this machine cannot make a link git sees as one (Git Bash on
+# Windows — see "Symlinks" below), links/current is kept the way git keeps a
+# link there itself, and every tree, commit and stage is still the same.
+#
 # Sources of the content cases (copied verbatim, then checked byte-for-byte):
 #   - the owner's merge-conflict-tests: base d6f1f21, main 76b62c7, feature b7ddc41
 #   - merge-studio test-fixtures/make-stress-conflict.sh (userService.js, config.json)
@@ -70,6 +74,34 @@ mkdir -p "$TARGET"
 TARGET="$(cd "$TARGET" && pwd -P)"
 CONTENT="$TARGET/.content"
 SUB="$TARGET/.sub"
+
+# ── Symlinks ─────────────────────────────────────────────────────────────────
+# links/current is a symlink in every variant. Git Bash's `ln -s` copies the
+# target instead of linking to it (and fails on a target that does not
+# exist), and Windows grants real symlinks only with Developer Mode or the
+# privilege. Where `ln -s` cannot make a link that git records as one, the
+# matrix keeps its links as git itself does without symlinks
+# (core.symlinks=false): a plain file holding the target, recorded in the
+# index as a link (mode 120000). Every tree, commit and stage is then the same
+# as with symlinks; only the working tree's copy of a link is a file.
+# MATRIX_NO_SYMLINKS=1 builds it that way on any machine.
+LINK_PATHS=(links/current)
+SYMLINKS=0
+if [ "${MATRIX_NO_SYMLINKS:-}" != 1 ]; then
+  probe="$TARGET/.symlink-probe"
+  rm -rf "$probe"
+  if git init -q "$probe" && ln -s probe-target "$probe/link" 2>/dev/null && git -C "$probe" add link; then
+    probe_entry="$(git -C "$probe" ls-files -s link)"
+    if [ "${probe_entry%% *}" = 120000 ]; then SYMLINKS=1; fi
+  fi
+  rm -rf "$probe"
+fi
+
+# A symlink at `path` to `target` — or, without symlinks, the file git checks
+# a link out as: the target, no newline.
+mklink() { # target path
+  if [ "$SYMLINKS" = 1 ]; then ln -s "$1" "$2"; else printf '%s' "$1" > "$2"; fi
+}
 
 die() { echo "fixtures.sh: $*" >&2; exit 1; }
 
@@ -669,9 +701,9 @@ cases_content() { # variant dir
 
   # A symlink whose target both sides changed.
   case "$v" in
-    base) ln -s "releases/v1" "$d/links/current" ;;
-    x)    ln -s "releases/v2-x" "$d/links/current" ;;
-    y)    ln -s "releases/v2-y" "$d/links/current" ;;
+    base) mklink "releases/v1" "$d/links/current" ;;
+    x)    mklink "releases/v2-x" "$d/links/current" ;;
+    y)    mklink "releases/v2-y" "$d/links/current" ;;
   esac
 
   # A file/directory conflict: X adds a FILE where Y adds a DIRECTORY. git
@@ -731,6 +763,9 @@ init_repo() { # dir style initial-branch
   git config commit.gpgsign false
   git config tag.gpgsign false
   git config advice.detachedHead false
+  # Without symlinks git must keep links as files (see "Symlinks" above) —
+  # even a git that could make one itself, where `ln -s` cannot.
+  if [ "$SYMLINKS" = 0 ]; then git config core.symlinks false; fi
 }
 
 # Make the worktree AND the index hold `variant` for every matrix path.
@@ -755,6 +790,15 @@ apply_variant() {
     fi
   done
   git add -A .
+  if [ "$SYMLINKS" = 0 ]; then
+    # A link's first `add` records the plain file it is here (100644); every
+    # link is recorded as the link it stands for, its target the blob.
+    for p in "${LINK_PATHS[@]}"; do
+      if [ -f "$src/$p" ]; then
+        git update-index --add --cacheinfo "120000,$(git hash-object -w --stdin < "$src/$p"),$p"
+      fi
+    done
+  fi
   git update-index --add --cacheinfo "160000,$(sub_sha "$v"),vendor/lib"
   mkdir -p vendor/lib
 }

@@ -66,6 +66,25 @@ function tryGit(cwd: string, ...args: string[]): void {
   }
 }
 
+/**
+ * `git rebase -i <upstream>`, paused at an `edit` of its first commit. The
+ * sequence editor is a NODE script: git runs the editor through its shell,
+ * where the backslashes of a Windows path are escapes — a `#!/bin/sh` script
+ * named by its path was never found there, and the rebase never started.
+ */
+function pauseAtFirstEdit(dir: string, upstream: string): void {
+  const seq = join(dir, "..", "seq.cjs");
+  writeFileSync(
+    seq,
+    'const fs=require("fs");const p=process.argv[2];fs.writeFileSync(p,fs.readFileSync(p,"utf8").replace(/^pick /,"edit "));\n',
+  );
+  execFileSync("git", ["rebase", "-i", upstream], {
+    cwd: dir,
+    stdio: "ignore",
+    env: { ...process.env, GIT_SEQUENCE_EDITOR: `node "${seq.replace(/\\/g, "/")}"`, GIT_EDITOR: "true" },
+  });
+}
+
 const LINES = (tag: string, at: number): string =>
   Array.from({ length: 9 }, (_, i) => (i === at ? `${tag}\n` : `line ${i}\n`)).join("");
 
@@ -302,13 +321,7 @@ test("a rebase stopped at a deliberate `edit` is still a rebase in progress: a s
   const r = stopped("merge", false);
   git(r.dir, "merge", "--abort");
   // edit-stop at "main changes a"
-  const seq = join(r.dir, "..", "seq.sh");
-  writeFileSync(seq, '#!/bin/sh\nsed -i.bak "1s/^pick/edit/" "$1"\n', { mode: 0o755 });
-  execFileSync("git", ["rebase", "-i", "HEAD~1"], {
-    cwd: r.dir,
-    stdio: "ignore",
-    env: { ...process.env, GIT_SEQUENCE_EDITOR: seq, GIT_EDITOR: "true" },
-  });
+  pauseAtFirstEdit(r.dir, "HEAD~1");
   assert.ok(existsSync(join(r.dir, ".git", "rebase-merge")), "paused at edit");
   const sw = await runApplying(r.proc, { kind: "checkout", target: "other", args: ["checkout", "other"] });
   assert.deepEqual(sw.blocked, { kind: "checkout", operation: "rebase", unmerged: 0 });
@@ -321,13 +334,7 @@ test("a rebase stopped at a deliberate `edit` is still a rebase in progress: a s
 test("a pick that STOPS on conflicts during an edit pause is its own stop, not blocked", async () => {
   const r = stopped("merge", false);
   git(r.dir, "merge", "--abort");
-  const seq = join(r.dir, "..", "seq.sh");
-  writeFileSync(seq, '#!/bin/sh\nsed -i.bak "1s/^pick/edit/" "$1"\n', { mode: 0o755 });
-  execFileSync("git", ["rebase", "-i", "HEAD~1"], {
-    cwd: r.dir,
-    stdio: "ignore",
-    env: { ...process.env, GIT_SEQUENCE_EDITOR: seq, GIT_EDITOR: "true" },
-  });
+  pauseAtFirstEdit(r.dir, "HEAD~1");
   const feature = git(r.dir, "rev-parse", "feature").trim();
   const pick = await runApplying(r.proc, { kind: "cherry-pick", commit: feature, args: ["cherry-pick", feature] });
   assert.notEqual(pick.result.code, 0);

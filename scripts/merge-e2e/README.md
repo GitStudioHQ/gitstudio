@@ -44,7 +44,7 @@ repository and run again (`--only 3,4,5` reruns some scenarios).
 
 | File | What it is |
 |---|---|
-| `fixtures.sh` | Builds one repository per operation, stopped with conflicts, each carrying every content case. Hermetic (no global/system config, `core.autocrlf=false`, fixed identities and dates, so every sha and header is the same on every machine). |
+| `fixtures.sh` | Builds one repository per operation, stopped with conflicts, each carrying every content case. Hermetic (no global/system config, `core.autocrlf=false`, fixed identities and dates, so every sha and header is the same on every machine). Where `ln -s` can't make a link git records as one (Git Bash on Windows), `links/current` is kept the way git keeps links there (`core.symlinks=false`: a plain file holding the target, mode 120000 in the index), and every sha is still the same; `MATRIX_NO_SYMLINKS=1` builds it that way anywhere. |
 | `cases.ts` | The definition: operations, conflict styles, content cases, and what each case must produce. |
 | `oracle.ts` → `oracle.json` | What every later check expects of every file, read from git and the products' own code (never typed by hand). |
 | `completeness.ts` | Holds an oracle to `cases.ts`, in both directions. |
@@ -111,7 +111,7 @@ Between them the cases reach every shape the UI distinguishes: text, added-both,
 - A file/directory conflict gets a different path depending on the operation:
   - `layout/panel~HEAD` for merge, rebase, cherry-pick and revert.
   - `layout/panel~Updated upstream` for stash.
-  - `layout/panel` (AU, not moved aside) for `am` and `rebase --apply`.
+  - `layout/panel` (AU, not moved aside) for `am` and `rebase --apply` on git 2.49 and older. git 2.50 retired merge-recursive, and those merge with ort too: `layout/panel~HEAD` since.
 - If a rename/rename also edits the file, git stores a three-way merge, markers included, in both new names' stages. That's why `rename2` only renames.
 - git's own conflict count and the engine's don't always agree, and `oracle.json` records both. `git merge-file` also depends on the conflict style. Two examples:
   - `eol-mixed.txt`: git reports 1 conflict and the engine 0, because the engine normalises line endings.
