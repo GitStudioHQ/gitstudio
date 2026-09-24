@@ -76,28 +76,28 @@ const MOUNT = `
   // The paint is the DECISION (paint.ts): red a conflict, green the same
   // change on both sides, blue a change on one side only — whatever it did.
   const TINT = {
-    conflict: "rgba(232, 96, 60, 0.24)",
-    same: "rgba(32, 168, 140, 0.13)",
-    "one-sided": "rgba(75, 110, 245, 0.28)",
+    conflict: "rgba(130, 42, 41, 0.45)",
+    same: "rgba(7, 65, 2, 0.55)",
+    "one-sided": "rgba(23, 74, 139, 0.45)",
   };
   /** A settled change's trace — a taken side, its ribbon, the Result (and a half-done Result). */
   const MUTED = {
-    conflict: "rgba(232, 96, 60, 0.12)",
-    same: "rgba(32, 168, 140, 0.067)",
-    "one-sided": "rgba(75, 110, 245, 0.15)",
+    conflict: "rgba(130, 42, 41, 0.22)",
+    same: "rgba(7, 65, 2, 0.27)",
+    "one-sided": "rgba(23, 74, 139, 0.22)",
   };
   const EDGE = {
-    conflict: "rgb(250, 123, 76)",
-    same: "rgb(32, 151, 136)",
-    "one-sided": "rgb(122, 156, 247)",
+    conflict: "rgb(246, 132, 130)",
+    same: "rgb(91, 167, 84)",
+    "one-sided": "rgb(116, 167, 232)",
   };
   const DONE = {
-    conflict: "rgba(250, 123, 76, 0.72)",
-    same: "rgba(32, 151, 136, 0.72)",
-    "one-sided": "rgba(122, 156, 247, 0.72)",
+    conflict: "rgba(246, 132, 130, 0.72)",
+    same: "rgba(91, 167, 84, 0.72)",
+    "one-sided": "rgba(116, 167, 232, 0.72)",
   };
   /** An insertion or deletion point's line (and a ribbon's end at it). */
-  const POINT = { same: "rgba(32, 168, 140, 0.62)", "one-sided": "rgba(75, 110, 245, 0.62)" };
+  const POINT = { same: "rgba(91, 167, 84, 0.62)", "one-sided": "rgba(116, 167, 232, 0.62)" };
   /** The 2-way diff's per-type classes: nothing in the merge may carry one. */
   const PER_TYPE = /jb-(line|inner|trace|trace-edge|point|done|frame|ribbon|ribbon-trace|ribbon-cap|ribbon-cap-trace|ribbon-frame|tone)-(inserted|modified|deleted)\\b/;
   /** Monaco's hover words for a decoration on a line (markdown's escapes undone). */
@@ -618,9 +618,9 @@ test("the overview strip: at the view's right edge, never on a seam; opaque mark
     const canvas = strip.querySelector("canvas");
     const dpr = window.devicePixelRatio || 1;
     const pixel = (mark) => [...canvas.getContext("2d").getImageData(Math.floor(canvas.width / 2), Math.floor((mark.top + mark.height / 2) * dpr), 1, 1).data];
-    expect(pixel(m.find((x) => x.tone === "conflict")).join(",") === "250,123,76,255", "a conflict mark is the legend's own red, opaque: " + pixel(m.find((x) => x.tone === "conflict")));
-    expect(pixel(m.find((x) => x.tone === "same")).join(",") === "32,151,136,255", "a same-on-both mark is the legend's own green: " + pixel(m.find((x) => x.tone === "same")));
-    expect(pixel(m.find((x) => x.tone === "one-sided")).join(",") === "122,156,247,255", "a one-sided mark is the legend's own blue: " + pixel(m.find((x) => x.tone === "one-sided")));
+    expect(pixel(m.find((x) => x.tone === "conflict")).join(",") === "246,132,130,255", "a conflict mark is the legend's own red, opaque: " + pixel(m.find((x) => x.tone === "conflict")));
+    expect(pixel(m.find((x) => x.tone === "same")).join(",") === "91,167,84,255", "a same-on-both mark is the legend's own green: " + pixel(m.find((x) => x.tone === "same")));
+    expect(pixel(m.find((x) => x.tone === "one-sided")).join(",") === "116,167,232,255", "a one-sided mark is the legend's own blue: " + pixel(m.find((x) => x.tone === "one-sided")));
     view.applyAllNonConflicting();
     map.draw();
     expect(map.drawn.length === 2, "a settled change leaves the strip: " + map.drawn.length);

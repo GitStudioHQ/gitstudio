@@ -4719,13 +4719,14 @@
       c.ok(!!grid, "the merge view is up");
       if (!grid) return;
       const light = document.body.classList.contains("vscode-light");
-      // diff.css's r0924 values: the merge paints by DECISION — red a
-      // conflict, green the same change on both sides, blue one side only,
-      // whatever the change did — with the syntax colours no worse than
-      // before and a handled outline at 3:1 (it carries a meaning in the legend).
+      // diff.css's values: the merge paints by DECISION — red a conflict,
+      // green the same change on both sides, blue one side only, whatever the
+      // change did — the three balanced in OKLCH (equal weight, the text at
+      // 7:1 on each) and a handled outline at 3:1 (it carries a meaning in
+      // the legend).
       const want = light
-        ? { conflict: "rgba(232, 96, 60, 0.28)", same: "rgba(32, 168, 140, 0.14)", oneSided: "rgba(56, 139, 253, 0.3)", half: "rgba(232, 96, 60, 0.14)", done: "rgba(184, 50, 26, 0.76)", point: "rgba(29, 72, 232, 0.55)", dot: "rgb(184, 50, 26)", dots: ["rgb(184, 50, 26)", "rgb(19, 134, 103)", "rgb(29, 72, 232)"] }
-        : { conflict: "rgba(232, 96, 60, 0.24)", same: "rgba(32, 168, 140, 0.13)", oneSided: "rgba(75, 110, 245, 0.28)", half: "rgba(232, 96, 60, 0.12)", done: "rgba(250, 123, 76, 0.72)", point: "rgba(75, 110, 245, 0.62)", dot: "rgb(250, 123, 76)", dots: ["rgb(250, 123, 76)", "rgb(32, 151, 136)", "rgb(122, 156, 247)"] };
+        ? { conflict: "rgba(244, 134, 127, 0.4)", same: "rgba(141, 223, 130, 0.4)", oneSided: "rgba(121, 178, 253, 0.4)", half: "rgba(244, 134, 127, 0.2)", done: "rgba(158, 33, 44, 0.84)", point: "rgba(27, 101, 185, 0.55)", dot: "rgb(158, 33, 44)", dots: ["rgb(158, 33, 44)", "rgb(64, 147, 57)", "rgb(27, 101, 185)"] }
+        : { conflict: "rgba(130, 42, 41, 0.45)", same: "rgba(7, 65, 2, 0.55)", oneSided: "rgba(23, 74, 139, 0.45)", half: "rgba(130, 42, 41, 0.22)", done: "rgba(246, 132, 130, 0.72)", point: "rgba(116, 167, 232, 0.62)", dot: "rgb(246, 132, 130)", dots: ["rgb(246, 132, 130)", "rgb(91, 167, 84)", "rgb(116, 167, 232)"] };
       const body = grid.querySelector(".jb-pane-body");
       const probe = (cls) => {
         const el = document.createElement("div");

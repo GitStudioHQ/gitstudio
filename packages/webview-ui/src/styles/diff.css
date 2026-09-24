@@ -31,24 +31,32 @@
  *          ends at it are one colour;
  * - ruler: the 2-way diff's overview-ruler mark, at reduced strength.
  *
- * COLOUR-BLIND SAFE by LIGHTNESS as well as hue. Red against green is the
- * pair deuteranopia and protanopia lose, so the conflict stands further from
- * the background than the same change in every theme — deeper on a light
- * ground, brighter on a dark one — and the same change is the quiet band. The
- * hues help too: a vermilion red and a sea green fall on opposite sides of the
- * blue–yellow axis those viewers keep. Blue stands with red in lightness and
- * apart from both in hue. The dots and the overview marks keep the same order.
+ * EQUAL WEIGHT (the owner, 24 Sep 2026, on the first decision palette: the
+ * green so faint he could not tell it was green, the blue so strong the text
+ * on it was hard to read, the red a bit like the blue). The three are designed
+ * in OKLCH — hues red 22°, green 142°, blue 255°, chroma matched (the green a
+ * step more, 0.01, to buy back the lightness it gives up below) — so each
+ * stands about as far off the background as the others and reads as its hue:
+ * a true green, not the sea green that read as grey; a calm blue, not the
+ * violet one. The tokens are rgba over the editor (the tints must stay
+ * translucent: the selection and the current line show through them); the
+ * OKLCH they land on is in the token block's comment.
+ *
+ * COLOUR-BLIND: red against green is the pair deuteranopia and protanopia
+ * lose, so the conflict stands further from the background than the same
+ * change — brighter on a dark ground, deeper on a light one — on the band,
+ * the word tint and the dot. The offset is small on the bands (0.03 OKLab L:
+ * a bigger one is what made the green the faint band before) and large on the
+ * dots and overview marks; the legend's words carry the meaning on their own.
  *
  * Measured, not eyeballed (packages/webview-ui/test/mergeContrast.test.ts):
- * editor text on every line tint and every word tint >= 4.5:1 in VS Code
- * Dark+/Dark Modern/Light+/Light Modern/HC and the desktop's dark and light
- * themes; every syntax colour at least as readable as the per-type palette it
- * replaces; every edge >= 3:1 against the background; every pair of line
- * tints, word tints, edges and traces apart under simulated deuteranopia,
- * protanopia and tritanopia. The dark conflict stays about as quiet as before
- * (ΔE 17.3 off Dark+'s background; the owner found 21.9 heavy). The words
- * (legend, tooltips, accessible names) carry the meaning on their own; colour
- * only reinforces it. */
+ * the editor's text >= 7:1 on every band, word tint and trace in VS Code Dark
+ * Modern/Dark+/Light Modern/Light+/HC and the desktop's dark and light themes;
+ * the OKLCH of every band (hue, matched chroma, even weight); every syntax
+ * colour at least as readable as on the palette this replaced; every edge
+ * >= 3:1; every pair of bands, word tints, dots and traces apart (ΔE in OKLab)
+ * with normal vision and under simulated deuteranopia, protanopia and
+ * tritanopia. */
 
 @import "./tokens.css";
 
@@ -92,37 +100,44 @@
 /* ── Change colour tokens ──────────────────────────────────────────────────── */
 /* The merge's three decisions, then the 2-way diff's roles.
  *
- * Lightness is fixed by two walls. Syntax colours must read at least as well
- * as on the per-type palette this replaced (every token of Dark+ / Light+ and
- * of Monaco's own built-in themes, on the worst tint, line and word), so no
- * tint is brighter (dark) or deeper (light) than that palette's; and the same
- * change must still show against the background (ΔE >= 9). Between them the
- * conflict sits at the wall and the same change near the background: 4.5 L*
- * apart on a dark ground, 7 on a light one, and a vermilion against a sea
- * green for the hue. Measured over every theme, worst case: the conflict and
- * the same change stand ΔE 10.7 apart under deuteranopia and 6.7 under
- * protanopia on the bands (the per-type red and green: 4.0 and 4.2), 14.1 /
- * 8.3 on the word tints (4.4 / 9.9), 19.6 / 18.3 on the dots and marks (4.0 /
- * 13.2); the dots differ by 8–10 L*. */
+ * Each band is the colour it LANDS on over the editor, designed in OKLCH
+ * (L C h) and solved back to an rgba at the lowest alpha that stays in gamut
+ * (so the selection and the current line still show through):
+ *
+ *              dark (on #1f1f1f)    light (on #fff)      HC dark (on #000)
+ *   conflict   0.315 0.060  22°     0.890 0.050  22°     0.270 0.065  22°
+ *   same       0.283 0.070 142°     0.928 0.060 142°     0.245 0.075 142°
+ *   one-sided  0.315 0.060 255°     0.900 0.048 255°     0.270 0.065 255°
+ *
+ * - dark: at most 0.35 L, where #ccc (Dark Modern's text) is still 7:1; the
+ *   bands stand 8–10 ΔE (OKLab x100) off the background, the old green 6;
+ * - light: at least 0.85 L, where #3b3b3b (Light Modern's) is 7:1; red and
+ *   blue sit near the edge of sRGB there, which caps their chroma at ~0.05;
+ * - word tint: +0.027 L / +0.033 C on dark, -0.035 L / +0.02 C on light,
+ *   over the band — still 7:1;
+ * - trace (muted): the band's colour at half its alpha;
+ * - edge (dots, overview marks, high-contrast frames): L 0.74 / 0.66 / 0.72
+ *   dark, 0.46 / 0.59 / 0.51 light — the red and green 0.08–0.13 L apart;
+ *   done = the edge softened (>= 3:1), point = the edge fainter still. */
 :root {
-  --jb-line-conflict:  rgba(232,96,60,.24);  --jb-inner-conflict:  rgba(232,96,60,.13);  --jb-edge-conflict:  #fa7b4c;
-  --jb-line-same:      rgba(32,168,140,.13); --jb-inner-same:      rgba(32,168,140,.10); --jb-edge-same:      #209788;
-  --jb-line-one-sided: rgba(75,110,245,.28); --jb-inner-one-sided: rgba(75,110,245,.18); --jb-edge-one-sided: #7a9cf7;
-  --jb-done-conflict:  rgba(250,123,76,.72);  --jb-muted-conflict:  rgba(232,96,60,.12);  --jb-point-conflict:  rgba(232,96,60,.62);
-  --jb-done-same:      rgba(32,151,136,.72);  --jb-muted-same:      rgba(32,168,140,.067); --jb-point-same:      rgba(32,168,140,.62);
-  --jb-done-one-sided: rgba(122,156,247,.72); --jb-muted-one-sided: rgba(75,110,245,.15); --jb-point-one-sided: rgba(75,110,245,.62);
+  --jb-line-conflict:  rgba(130,42,41,.45); --jb-inner-conflict:  rgba(116,28,32,.5); --jb-edge-conflict:  #f68482;
+  --jb-line-same:      rgba(7,65,2,.55);    --jb-inner-same:      rgba(4,67,0,.55);   --jb-edge-same:      #5ba754;
+  --jb-line-one-sided: rgba(23,74,139,.45); --jb-inner-one-sided: rgba(6,62,127,.5);  --jb-edge-one-sided: #74a7e8;
+  --jb-done-conflict:  rgba(246,132,130,.72); --jb-muted-conflict:  rgba(130,42,41,.22);  --jb-point-conflict:  rgba(246,132,130,.62);
+  --jb-done-same:      rgba(91,167,84,.72);   --jb-muted-same:      rgba(7,65,2,.27);      --jb-point-same:      rgba(91,167,84,.62);
+  --jb-done-one-sided: rgba(116,167,232,.72); --jb-muted-one-sided: rgba(23,74,139,.22);  --jb-point-one-sided: rgba(116,167,232,.62);
   /* The 2-way diff (by what a change did). */
   --jb-line-modified: rgba(40,150,245,.23);  --jb-inner-modified: rgba(40,150,245,.14);  --jb-ruler-modified: rgba(74,159,245,.6);
   --jb-line-inserted: rgba(80,180,40,.13);   --jb-inner-inserted: rgba(80,180,40,.16);   --jb-ruler-inserted: rgba(98,179,74,.6);
   --jb-line-deleted:  rgba(139,148,158,.13); --jb-inner-deleted:  rgba(139,148,158,.20); --jb-ruler-deleted:  rgba(139,148,158,.6);
 }
 body.vscode-light, body.vscode-high-contrast-light {
-  --jb-line-conflict:  rgba(232,96,60,.28);  --jb-inner-conflict:  rgba(232,96,60,.15);  --jb-edge-conflict:  #b8321a;
-  --jb-line-same:      rgba(32,168,140,.14); --jb-inner-same:      rgba(32,168,140,.12); --jb-edge-same:      #138667;
-  --jb-line-one-sided: rgba(56,139,253,.30); --jb-inner-one-sided: rgba(56,139,253,.18); --jb-edge-one-sided: #1d48e8;
-  --jb-done-conflict:  rgba(184,50,26,.76);  --jb-muted-conflict:  rgba(232,96,60,.14);  --jb-point-conflict:  rgba(184,50,26,.55);
-  --jb-done-same:      rgba(19,134,103,.76); --jb-muted-same:      rgba(32,168,140,.075); --jb-point-same:      rgba(19,134,103,.55);
-  --jb-done-one-sided: rgba(29,72,232,.76);  --jb-muted-one-sided: rgba(56,139,253,.15); --jb-point-one-sided: rgba(29,72,232,.55);
+  --jb-line-conflict:  rgba(244,134,127,.4); --jb-inner-conflict:  rgba(250,173,170,.5); --jb-edge-conflict:  #9e212c;
+  --jb-line-same:      rgba(141,223,130,.4); --jb-inner-same:      rgba(171,225,165,.5); --jb-edge-same:      #409339;
+  --jb-line-one-sided: rgba(121,178,253,.4); --jb-inner-one-sided: rgba(165,202,250,.5); --jb-edge-one-sided: #1b65b9;
+  --jb-done-conflict:  rgba(158,33,44,.84);  --jb-muted-conflict:  rgba(244,134,127,.2); --jb-point-conflict:  rgba(158,33,44,.55);
+  --jb-done-same:      rgba(64,147,57,.84);  --jb-muted-same:      rgba(141,223,130,.2); --jb-point-same:      rgba(64,147,57,.55);
+  --jb-done-one-sided: rgba(27,101,185,.84); --jb-muted-one-sided: rgba(121,178,253,.2); --jb-point-one-sided: rgba(27,101,185,.55);
   --jb-line-modified: rgba(64,128,255,.28);  --jb-inner-modified: rgba(64,128,255,.18);  --jb-ruler-modified: rgba(9,105,218,.55);
   --jb-line-inserted: rgba(80,180,40,.15);   --jb-inner-inserted: rgba(80,180,40,.20);   --jb-ruler-inserted: rgba(26,127,55,.55);
   --jb-line-deleted:  rgba(110,118,129,.23); --jb-inner-deleted:  rgba(110,118,129,.20); --jb-ruler-deleted:  rgba(89,99,110,.55);
@@ -135,13 +150,13 @@ body.vscode-light, body.vscode-high-contrast-light {
   --jb-half-conflict: var(--jb-muted-conflict); --jb-half-same: var(--jb-muted-same);
   --jb-half-one-sided: var(--jb-muted-one-sided);
 }
-/* High contrast dark's black ground: the bands a step stronger where black
- * leaves the room (the conflict and the same change keep their lightness gap
- * there, and the word tints their step over the band). */
+/* High contrast dark's black ground: its own bands (the OKLCH in the table
+ * above), solved over black and a step darker than on grey — against pure
+ * black the same lightness reads heavier, and the syntax colours are dimmer. */
 body.vscode-high-contrast:not(.vscode-high-contrast-light) {
-  --jb-line-conflict: rgba(232,96,60,.24);  --jb-inner-conflict: rgba(232,96,60,.20);  --jb-muted-conflict: rgba(232,96,60,.14);
-  --jb-line-same:     rgba(32,168,140,.14); --jb-inner-same:     rgba(32,168,140,.08); --jb-muted-same:     rgba(32,168,140,.08);
-  --jb-inner-one-sided: rgba(75,110,245,.24); --jb-muted-one-sided: rgba(75,110,245,.16);
+  --jb-line-conflict:  rgba(130,46,47,.5); --jb-inner-conflict:  rgba(99,27,30,.5);  --jb-muted-conflict:  rgba(130,46,47,.25);
+  --jb-line-same:      rgba(10,81,7,.5);   --jb-inner-same:      rgba(9,61,5,.5);    --jb-muted-same:      rgba(10,81,7,.25);
+  --jb-line-one-sided: rgba(27,77,139,.5); --jb-inner-one-sided: rgba(9,55,107,.5); --jb-muted-one-sided: rgba(27,77,139,.25);
   --jb-half-conflict: var(--jb-muted-conflict); --jb-half-same: var(--jb-muted-same); --jb-half-one-sided: var(--jb-muted-one-sided);
   --jb-line-inserted: rgba(80,180,40,.14); --jb-line-deleted: rgba(139,148,158,.22);
 }
