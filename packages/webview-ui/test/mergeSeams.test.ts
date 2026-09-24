@@ -6,13 +6,16 @@ import { findChrome, runMergePage } from "./fixtures/mergeViewPage";
  * The seam from the engine to what the merge view shows and writes, driven in
  * headless Chrome against the REAL MergeView, Monaco and the legend.
  *
- * 1. Every PLAN Appendix A case: the engine's categories, the view's counts and
- *    the legend must all say what the table says. Three layers each count on
- *    their own, so a category the engine gets right can still reach the legend
- *    wrong (an item wired to the wrong key, a stale update). The legend has one
- *    item per COLOUR — Yours-only and Theirs-only share "on one side", whose
- *    tooltip says how many of each — so a category is read from its item, and
- *    a one-sided one from that tooltip.
+ * 1. Every PLAN Appendix A case: the engine's categories, the view's counts,
+ *    the legend and the PAINT must all say what the table says. Three layers
+ *    each count on their own, so a category the engine gets right can still
+ *    reach the legend wrong (an item wired to the wrong key, a stale update).
+ *    The legend has one item per COLOUR, and a colour is a DECISION (paint.ts):
+ *    Yours-only and Theirs-only share "One side only — safe to take" (blue),
+ *    whose tooltip says how many of each — so a category is read from its
+ *    item, and a one-sided one from that tooltip. Every block in every pane
+ *    is painted in its decision's colour, whatever the change did (cases 1–3:
+ *    the same change, CHANGED, ADDED and REMOVED alike, all green).
  * 2. What an accept or an ignore writes, against an oracle that knows nothing
  *    about Monaco: the result is base with each block's region replaced by the
  *    lines of whatever was chosen (Yours' region, Theirs' region, both in
@@ -137,6 +140,21 @@ test("Appendix A: the engine, the view's counts and the legend chips agree with 
       const engineCats = { conflict: 0, same: 0, "yours-only": 0, "theirs-only": 0 };
       for (const b of engine.blocks) engineCats[W.category(b)]++;
       mount(c);
+      // The PAINT is the decision: every block's band or point, in all three
+      // panes, carries its category's colour — never what the change did.
+      const TONE = { conflict: "conflict", same: "same", "yours-only": "one-sided", "theirs-only": "one-sided" };
+      let painted = 0;
+      for (const [name, pane] of [["Yours", view.left], ["Result", view.result], ["Theirs", view.right]]) {
+        for (const d of pane.getModel().getAllDecorations()) {
+          const cls = d.options.className || "";
+          const cat = /jb-cat-([\\w-]+)/.exec(cls);
+          if (!cat) continue;
+          const tone = /jb-(?:line|point)-(conflict|same|one-sided|inserted|modified|deleted)(?![\\w-])/.exec(cls);
+          painted++;
+          expect(!!tone && tone[1] === TONE[cat[1]], tag + ": " + name + " paints a " + cat[1] + " block " + (tone && tone[1]) + ", the decision's colour is " + TONE[cat[1]] + " (" + cls + ")");
+        }
+      }
+      expect(painted >= view.model.blocks.length, tag + ": every block is painted somewhere (" + painted + " decorations for " + view.model.blocks.length + " blocks)");
       for (const cat of CATS) {
         const want = c.want[cat] || 0;
         expect(engineCats[cat] === want, tag + ": engine " + cat + " = " + engineCats[cat] + ", Appendix A says " + want);

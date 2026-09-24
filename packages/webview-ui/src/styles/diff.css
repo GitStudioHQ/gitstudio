@@ -1,8 +1,17 @@
-/* JetBrains-style change palette (New UI flavour): a conflict red, and every
- * other change by what it did — inserted green, modified blue, deleted grey —
- * whether one side made it or both made it alike (paint.ts). A change made the
- * same on both sides is simply coloured on both sides; it had a violet of its
- * own once, which the owner found wrong.
+/* The merge paints every change by the DECISION it needs (paint.ts), never by
+ * what it did — the owner's rule (24 Sep 2026), after a change made the same on
+ * both sides came out blue one time and green the next:
+ *
+ * - conflict (red):   the sides differ — you choose;
+ * - same (green):     the same change on both sides, whether lines were added,
+ *                     changed or removed — either arrow takes it;
+ * - one-sided (blue): a change on one side only, whether added, changed or
+ *                     removed — safe to take.
+ *
+ * What a change DID reads from the band's shape (a band that meets a line
+ * between two rows on the other side was added there, or removed) and from
+ * the word tints. The 2-way diff has no decision to make and keeps colouring
+ * by what a change did (inserted green, modified blue, deleted grey).
  *
  * Per tone:
  * - line:  the band tint — the changed lines in a pane (line numbers too), the
@@ -17,23 +26,29 @@
  *          conflict with one side in, between its done lines — `half`);
  * - done:  the faint 1px outline of a side that was DISCARDED (no ribbon), of
  *          a Result that took nothing, and the half-done Result's lines;
- * - point: an insertion or deletion point's line, and the ribbon's end at it —
- *          the tint at a higher strength (the edge colour in high contrast), so
- *          the line and the band that ends at it are one colour;
+ * - point: an insertion or deletion point's line, and the ribbon's end at it
+ *          (the edge colour in high contrast), so the line and the band that
+ *          ends at it are one colour;
  * - ruler: the 2-way diff's overview-ruler mark, at reduced strength.
  *
- * The dark conflict red is as quiet as the rules below allow: it stood ΔE 21.9
- * off Dark+'s background (the owner: maroon dominated a page of conflicts),
- * and now 17.3 — any lighter and red and green run together under
- * deuteranopia or protanopia.
+ * COLOUR-BLIND SAFE by LIGHTNESS as well as hue. Red against green is the
+ * pair deuteranopia and protanopia lose, so the conflict stands further from
+ * the background than the same change in every theme — deeper on a light
+ * ground, brighter on a dark one — and the same change is the quiet band. The
+ * hues help too: a vermilion red and a sea green fall on opposite sides of the
+ * blue–yellow axis those viewers keep. Blue stands with red in lightness and
+ * apart from both in hue. The dots and the overview marks keep the same order.
  *
  * Measured, not eyeballed (packages/webview-ui/test/mergeContrast.test.ts):
  * editor text on every line tint and every word tint >= 4.5:1 in VS Code
  * Dark+/Dark Modern/Light+/Light Modern/HC and the desktop's dark and light
- * themes; every edge >= 3:1 against the editor background; every pair of
- * tints apart, and the category pairs apart under simulated deuteranopia and
- * protanopia too. The words (legend, tooltips, accessible names) carry the
- * meaning on their own; colour only reinforces it. */
+ * themes; every syntax colour at least as readable as the per-type palette it
+ * replaces; every edge >= 3:1 against the background; every pair of line
+ * tints, word tints, edges and traces apart under simulated deuteranopia,
+ * protanopia and tritanopia. The dark conflict stays about as quiet as before
+ * (ΔE 17.3 off Dark+'s background; the owner found 21.9 heavy). The words
+ * (legend, tooltips, accessible names) carry the meaning on their own; colour
+ * only reinforces it. */
 
 @import "./tokens.css";
 
@@ -75,73 +90,85 @@
 .codicon-question::before { content: "\eb32"; }
 
 /* ── Change colour tokens ──────────────────────────────────────────────────── */
-/* Syntax colours on the tints: every token colour of Dark+ / Light+ (keyword,
- * control, string, number, comment, type, function, variable) on each line
- * tint AND each word tint over it, as high as the other rules here allow — the
- * critic measured Dark+'s comment green at 2.42:1 on the changed-word tint and
- * Light+'s numbers at 2.54:1 on the removed-word tint. A 3:1 floor for all of
- * them cannot hold together with conflict vs added staying apart under
- * deuteranopia (searched, every alpha): the floor is 2.9:1 (dark) and 2.8:1
- * (light), pinned in mergeContrast.test.ts. */
+/* The merge's three decisions, then the 2-way diff's roles.
+ *
+ * Lightness is fixed by two walls. Syntax colours must read at least as well
+ * as on the per-type palette this replaced (every token of Dark+ / Light+ and
+ * of Monaco's own built-in themes, on the worst tint, line and word), so no
+ * tint is brighter (dark) or deeper (light) than that palette's; and the same
+ * change must still show against the background (ΔE >= 9). Between them the
+ * conflict sits at the wall and the same change near the background: 4.5 L*
+ * apart on a dark ground, 7 on a light one, and a vermilion against a sea
+ * green for the hue. Measured over every theme, worst case: the conflict and
+ * the same change stand ΔE 10.7 apart under deuteranopia and 6.7 under
+ * protanopia on the bands (the per-type red and green: 4.0 and 4.2), 14.1 /
+ * 8.3 on the word tints (4.4 / 9.9), 19.6 / 18.3 on the dots and marks (4.0 /
+ * 13.2); the dots differ by 8–10 L*. */
 :root {
-  --jb-line-conflict: rgba(240,105,100,.23); --jb-inner-conflict: rgba(240,105,100,.13); --jb-edge-conflict: #f0686a;
-  --jb-line-modified: rgba(40,150,245,.23);  --jb-inner-modified: rgba(40,150,245,.14);  --jb-edge-modified: #4a9ff5;
-  --jb-line-inserted: rgba(80,180,40,.13);   --jb-inner-inserted: rgba(80,180,40,.16);   --jb-edge-inserted: #62b34a;
-  --jb-line-deleted:  rgba(139,148,158,.13); --jb-inner-deleted:  rgba(139,148,158,.20); --jb-edge-deleted:  #8b949e;
-  --jb-done-conflict: rgba(240,104,106,.72); --jb-ruler-conflict: rgba(240,104,106,.6);  --jb-muted-conflict: rgba(240,105,100,.12);
-  --jb-done-modified: rgba(74,159,245,.72);  --jb-ruler-modified: rgba(74,159,245,.6);   --jb-muted-modified: rgba(40,150,245,.13);
-  --jb-done-inserted: rgba(98,179,74,.72);   --jb-ruler-inserted: rgba(98,179,74,.6);    --jb-muted-inserted: rgba(80,180,40,.08);
-  --jb-done-deleted:  rgba(139,148,158,.72); --jb-ruler-deleted:  rgba(139,148,158,.6);  --jb-muted-deleted:  rgba(139,148,158,.043);
-  --jb-point-conflict: rgba(240,105,100,.62); --jb-point-modified: rgba(74,159,245,.62);
-  --jb-point-inserted: rgba(98,179,74,.62);   --jb-point-deleted:  rgba(139,148,158,.62);
+  --jb-line-conflict:  rgba(232,96,60,.24);  --jb-inner-conflict:  rgba(232,96,60,.13);  --jb-edge-conflict:  #fa7b4c;
+  --jb-line-same:      rgba(32,168,140,.13); --jb-inner-same:      rgba(32,168,140,.10); --jb-edge-same:      #209788;
+  --jb-line-one-sided: rgba(75,110,245,.28); --jb-inner-one-sided: rgba(75,110,245,.18); --jb-edge-one-sided: #7a9cf7;
+  --jb-done-conflict:  rgba(250,123,76,.72);  --jb-muted-conflict:  rgba(232,96,60,.12);  --jb-point-conflict:  rgba(232,96,60,.62);
+  --jb-done-same:      rgba(32,151,136,.72);  --jb-muted-same:      rgba(32,168,140,.043); --jb-point-same:      rgba(32,168,140,.62);
+  --jb-done-one-sided: rgba(122,156,247,.72); --jb-muted-one-sided: rgba(75,110,245,.13); --jb-point-one-sided: rgba(75,110,245,.62);
+  /* The 2-way diff (by what a change did). */
+  --jb-line-modified: rgba(40,150,245,.23);  --jb-inner-modified: rgba(40,150,245,.14);  --jb-ruler-modified: rgba(74,159,245,.6);
+  --jb-line-inserted: rgba(80,180,40,.13);   --jb-inner-inserted: rgba(80,180,40,.16);   --jb-ruler-inserted: rgba(98,179,74,.6);
+  --jb-line-deleted:  rgba(139,148,158,.13); --jb-inner-deleted:  rgba(139,148,158,.20); --jb-ruler-deleted:  rgba(139,148,158,.6);
 }
 body.vscode-light, body.vscode-high-contrast-light {
-  --jb-line-conflict: rgba(240,75,70,.27);   --jb-inner-conflict: rgba(240,75,70,.15);   --jb-edge-conflict: #cf222e;
-  --jb-line-modified: rgba(64,128,255,.28);  --jb-inner-modified: rgba(64,128,255,.18);  --jb-edge-modified: #0969da;
-  --jb-line-inserted: rgba(80,180,40,.15);   --jb-inner-inserted: rgba(80,180,40,.20);   --jb-edge-inserted: #1a7f37;
-  --jb-line-deleted:  rgba(110,118,129,.23); --jb-inner-deleted:  rgba(110,118,129,.20); --jb-edge-deleted:  #59636e;
-  --jb-done-conflict: rgba(207,34,46,.76);   --jb-ruler-conflict: rgba(207,34,46,.55);   --jb-muted-conflict: rgba(240,75,70,.13);
-  --jb-done-modified: rgba(9,105,218,.76);   --jb-ruler-modified: rgba(9,105,218,.55);   --jb-muted-modified: rgba(64,128,255,.12);
-  --jb-done-inserted: rgba(26,127,55,.76);   --jb-ruler-inserted: rgba(26,127,55,.55);   --jb-muted-inserted: rgba(80,180,40,.09);
-  --jb-done-deleted:  rgba(89,99,110,.76);   --jb-ruler-deleted:  rgba(89,99,110,.55);   --jb-muted-deleted:  rgba(110,118,129,.12);
-  --jb-point-conflict: rgba(240,75,70,.62);  --jb-point-modified: rgba(9,105,218,.55);
-  --jb-point-inserted: rgba(26,127,55,.55);  --jb-point-deleted:  rgba(89,99,110,.55);
+  --jb-line-conflict:  rgba(232,96,60,.28);  --jb-inner-conflict:  rgba(232,96,60,.15);  --jb-edge-conflict:  #b8321a;
+  --jb-line-same:      rgba(32,168,140,.14); --jb-inner-same:      rgba(32,168,140,.12); --jb-edge-same:      #138667;
+  --jb-line-one-sided: rgba(56,139,253,.30); --jb-inner-one-sided: rgba(56,139,253,.18); --jb-edge-one-sided: #1d48e8;
+  --jb-done-conflict:  rgba(184,50,26,.76);  --jb-muted-conflict:  rgba(232,96,60,.14);  --jb-point-conflict:  rgba(184,50,26,.55);
+  --jb-done-same:      rgba(19,134,103,.76); --jb-muted-same:      rgba(32,168,140,.06); --jb-point-same:      rgba(19,134,103,.55);
+  --jb-done-one-sided: rgba(29,72,232,.76);  --jb-muted-one-sided: rgba(56,139,253,.13); --jb-point-one-sided: rgba(29,72,232,.55);
+  --jb-line-modified: rgba(64,128,255,.28);  --jb-inner-modified: rgba(64,128,255,.18);  --jb-ruler-modified: rgba(9,105,218,.55);
+  --jb-line-inserted: rgba(80,180,40,.15);   --jb-inner-inserted: rgba(80,180,40,.20);   --jb-ruler-inserted: rgba(26,127,55,.55);
+  --jb-line-deleted:  rgba(110,118,129,.23); --jb-inner-deleted:  rgba(110,118,129,.20); --jb-ruler-deleted:  rgba(89,99,110,.55);
 }
 /* The half-done Result wears the muted tint: the muted ribbon of the side that
  * is in continues into it on the same colour. Declared where the muted
- * colours are, so each theme resolves its own. */
+ * colours are, so each theme resolves its own (a custom property is resolved
+ * where it is declared, then inherited as that value). */
 :root, body.vscode-light, body.vscode-high-contrast-light {
-  --jb-half-conflict: var(--jb-muted-conflict); --jb-half-modified: var(--jb-muted-modified);
-  --jb-half-inserted: var(--jb-muted-inserted); --jb-half-deleted: var(--jb-muted-deleted);
+  --jb-half-conflict: var(--jb-muted-conflict); --jb-half-same: var(--jb-muted-same);
+  --jb-half-one-sided: var(--jb-muted-one-sided);
+}
+/* High contrast dark's black ground: the bands a step stronger where black
+ * leaves the room (the conflict and the same change keep their lightness gap
+ * there, and the word tints their step over the band). */
+body.vscode-high-contrast:not(.vscode-high-contrast-light) {
+  --jb-line-conflict: rgba(232,96,60,.24);  --jb-inner-conflict: rgba(232,96,60,.20);  --jb-muted-conflict: rgba(232,96,60,.13);
+  --jb-line-same:     rgba(32,168,140,.14); --jb-inner-same:     rgba(32,168,140,.08); --jb-muted-same:     rgba(32,168,140,.055);
+  --jb-inner-one-sided: rgba(75,110,245,.24); --jb-muted-one-sided: rgba(75,110,245,.14);
+  --jb-half-conflict: var(--jb-muted-conflict); --jb-half-same: var(--jb-muted-same); --jb-half-one-sided: var(--jb-muted-one-sided);
+  --jb-line-inserted: rgba(80,180,40,.14); --jb-line-deleted: rgba(139,148,158,.22);
 }
 /* High contrast: every edge is solid, points too — in the edge colour, 2px
  * (mergePointPx in ribbons.ts). Declared on body, where the edge colours of
  * both high contrast themes are. */
-/* High contrast dark's black ground: the conflict and added bands keep the
-   strength that holds them apart under protanopia there. */
-body.vscode-high-contrast:not(.vscode-high-contrast-light) {
-  --jb-line-conflict: rgba(240,105,100,.24); --jb-line-inserted: rgba(80,180,40,.14);
-  --jb-line-deleted: rgba(139,148,158,.22); --jb-muted-deleted: rgba(139,148,158,.09);
-  --jb-half-deleted: var(--jb-muted-deleted);
-}
 body.vscode-high-contrast {
-  --jb-point-conflict: var(--jb-edge-conflict); --jb-point-modified: var(--jb-edge-modified);
-  --jb-point-inserted: var(--jb-edge-inserted); --jb-point-deleted: var(--jb-edge-deleted);
+  --jb-point-conflict: var(--jb-edge-conflict); --jb-point-same: var(--jb-edge-same);
+  --jb-point-one-sided: var(--jb-edge-one-sided);
   /* A handled side's outline too: the legend gives it a meaning ("the side you
      discarded"), so it must be seen at full strength here — it is told from a
      pending band by having no tint and no ribbon, not by being faint. */
-  --jb-done-conflict: var(--jb-edge-conflict); --jb-done-modified: var(--jb-edge-modified);
-  --jb-done-inserted: var(--jb-edge-inserted); --jb-done-deleted: var(--jb-edge-deleted);
+  --jb-done-conflict: var(--jb-edge-conflict); --jb-done-same: var(--jb-edge-same);
+  --jb-done-one-sided: var(--jb-edge-one-sided);
 }
 
 /* ── Bands ─────────────────────────────────────────────────────────────────────
  * Whole-line tints (Monaco isWholeLine decorations, content AND line-number
- * margin). Each tone class also names its edge / done colour as `--jb-e`, for
- * the edge lines below. */
-.jb-line-inserted { background-color: var(--jb-line-inserted); --jb-tone-edge: var(--jb-edge-inserted); --jb-tone-half: var(--jb-half-inserted); }
-.jb-line-deleted { background-color: var(--jb-line-deleted); --jb-tone-edge: var(--jb-edge-deleted); --jb-tone-half: var(--jb-half-deleted); }
-.jb-line-modified { background-color: var(--jb-line-modified); --jb-tone-edge: var(--jb-edge-modified); --jb-tone-half: var(--jb-half-modified); }
+ * margin). Each merge tone class also names its edge colour as
+ * `--jb-tone-edge` (the whitespace-only dotted edge) and its half-done tint as
+ * `--jb-tone-half`. The 2-way diff's role classes are its tint only. */
 .jb-line-conflict { background-color: var(--jb-line-conflict); --jb-tone-edge: var(--jb-edge-conflict); --jb-tone-half: var(--jb-half-conflict); }
+.jb-line-same { background-color: var(--jb-line-same); --jb-tone-edge: var(--jb-edge-same); --jb-tone-half: var(--jb-half-same); }
+.jb-line-one-sided { background-color: var(--jb-line-one-sided); --jb-tone-edge: var(--jb-edge-one-sided); --jb-tone-half: var(--jb-half-one-sided); }
+.jb-line-inserted { background-color: var(--jb-line-inserted); }
+.jb-line-deleted { background-color: var(--jb-line-deleted); }
+.jb-line-modified { background-color: var(--jb-line-modified); }
 /* A conflict with one side taken (or ignored) and the other still to decide:
  * its result is no longer the open question it was — the tint drops to the
  * muted strength, between two faint lines. Only the pending half, in its own
@@ -150,29 +177,24 @@ body.vscode-high-contrast {
 .jb-half.jb-half { background-color: var(--jb-tone-half); }
 
 /* A settled change's TRACE: a side that was taken, and the Result that holds
- * it — the muted tint, no word tints and no lines. */
-.jb-trace-inserted { background-color: var(--jb-muted-inserted); }
-.jb-trace-deleted { background-color: var(--jb-muted-deleted); }
-.jb-trace-modified { background-color: var(--jb-muted-modified); }
+ * it — the muted tint of its decision's colour, no word tints and no lines. */
 .jb-trace-conflict { background-color: var(--jb-muted-conflict); }
+.jb-trace-same { background-color: var(--jb-muted-same); }
+.jb-trace-one-sided { background-color: var(--jb-muted-one-sided); }
 
-.jb-frame-inserted { --jb-e: var(--jb-edge-inserted); }
-.jb-frame-deleted { --jb-e: var(--jb-edge-deleted); }
-.jb-frame-modified { --jb-e: var(--jb-edge-modified); }
 .jb-frame-conflict { --jb-e: var(--jb-edge-conflict); }
+.jb-frame-same { --jb-e: var(--jb-edge-same); }
+.jb-frame-one-sided { --jb-e: var(--jb-edge-one-sided); }
 /* A trace's edge, high contrast only: faint, in the outline colour. */
-.jb-trace-edge-inserted { --jb-e: var(--jb-done-inserted); }
-.jb-trace-edge-deleted { --jb-e: var(--jb-done-deleted); }
-.jb-trace-edge-modified { --jb-e: var(--jb-done-modified); }
 .jb-trace-edge-conflict { --jb-e: var(--jb-done-conflict); }
-.jb-point-inserted { --jb-e: var(--jb-point-inserted); }
-.jb-point-deleted { --jb-e: var(--jb-point-deleted); }
-.jb-point-modified { --jb-e: var(--jb-point-modified); }
+.jb-trace-edge-same { --jb-e: var(--jb-done-same); }
+.jb-trace-edge-one-sided { --jb-e: var(--jb-done-one-sided); }
 .jb-point-conflict { --jb-e: var(--jb-point-conflict); }
-.jb-done-inserted { --jb-e: var(--jb-done-inserted); }
-.jb-done-deleted { --jb-e: var(--jb-done-deleted); }
-.jb-done-modified { --jb-e: var(--jb-done-modified); }
+.jb-point-same { --jb-e: var(--jb-point-same); }
+.jb-point-one-sided { --jb-e: var(--jb-point-one-sided); }
 .jb-done-conflict { --jb-e: var(--jb-done-conflict); }
+.jb-done-same { --jb-e: var(--jb-done-same); }
+.jb-done-one-sided { --jb-e: var(--jb-done-one-sided); }
 
 /* Whitespace-only change: the line tint alone (no word tint) and a dotted
  * left edge, so "only the spacing changed" reads without a colour. */
@@ -210,11 +232,14 @@ body.vscode-high-contrast .jb-frame.jb-edge-bottom { border-bottom: 1px solid va
 body.vscode-high-contrast .jb-point { border-top-width: 2px; }
 body.vscode-high-contrast .jb-point.jb-point-after { border-top-width: 0; border-bottom-width: 2px; }
 
-/* Character-level overlays (Monaco inlineClassName decorations). */
+/* Character-level overlays (Monaco inlineClassName decorations): the merge's
+ * decisions, and the 2-way diff's roles. */
+.jb-inner-conflict { background-color: var(--jb-inner-conflict); border-radius: 2px; }
+.jb-inner-same { background-color: var(--jb-inner-same); border-radius: 2px; }
+.jb-inner-one-sided { background-color: var(--jb-inner-one-sided); border-radius: 2px; }
 .jb-inner-inserted { background-color: var(--jb-inner-inserted); border-radius: 2px; }
 .jb-inner-deleted { background-color: var(--jb-inner-deleted); border-radius: 2px; }
 .jb-inner-modified { background-color: var(--jb-inner-modified); border-radius: 2px; }
-.jb-inner-conflict { background-color: var(--jb-inner-conflict); border-radius: 2px; }
 
 /* One full-width drawing stage per merge/diff grid: the bands across the
  * gutters, in absolute stage coordinates. It spans the editor-row area only
@@ -244,30 +269,30 @@ body.vscode-high-contrast .jb-point.jb-point-after { border-top-width: 0; border
  * its colour in the panes (tint over editor background) — which is also why
  * the pixel it lays over the pane's own band changes nothing there. */
 .jb-ribbon-base { stroke: none; fill: var(--vscode-editor-background); }
+.jb-ribbon-conflict { fill: var(--jb-line-conflict); }
+.jb-ribbon-same { fill: var(--jb-line-same); }
+.jb-ribbon-one-sided { fill: var(--jb-line-one-sided); }
+/* The 2-way diff's bands, by role. */
 .jb-ribbon-inserted { fill: var(--jb-line-inserted); }
 .jb-ribbon-deleted { fill: var(--jb-line-deleted); }
 .jb-ribbon-modified { fill: var(--jb-line-modified); }
-.jb-ribbon-conflict { fill: var(--jb-line-conflict); }
 /* A TAKEN side's ribbon: the trace of where the Result's text came from, in
  * the muted tint its pane band and the Result wear. A discarded side has none. */
 .jb-ribbon-trace { stroke: none; }
-.jb-ribbon-trace-inserted { fill: var(--jb-muted-inserted); }
-.jb-ribbon-trace-deleted { fill: var(--jb-muted-deleted); }
-.jb-ribbon-trace-modified { fill: var(--jb-muted-modified); }
 .jb-ribbon-trace-conflict { fill: var(--jb-muted-conflict); }
+.jb-ribbon-trace-same { fill: var(--jb-muted-same); }
+.jb-ribbon-trace-one-sided { fill: var(--jb-muted-one-sided); }
 /* A band's end at a POINT, capped in the point's colour on the point's own
  * rows: the pane's point line carries on into the ribbon (ribbons.ts
  * appendCap) — an open band's in the point colour, a trace's in its faint
  * outline colour. */
 .jb-ribbon-cap { stroke: none; }
-.jb-ribbon-cap-inserted { fill: var(--jb-point-inserted); }
-.jb-ribbon-cap-deleted { fill: var(--jb-point-deleted); }
-.jb-ribbon-cap-modified { fill: var(--jb-point-modified); }
 .jb-ribbon-cap-conflict { fill: var(--jb-point-conflict); }
-.jb-ribbon-cap-trace-inserted { fill: var(--jb-done-inserted); }
-.jb-ribbon-cap-trace-deleted { fill: var(--jb-done-deleted); }
-.jb-ribbon-cap-trace-modified { fill: var(--jb-done-modified); }
+.jb-ribbon-cap-same { fill: var(--jb-point-same); }
+.jb-ribbon-cap-one-sided { fill: var(--jb-point-one-sided); }
 .jb-ribbon-cap-trace-conflict { fill: var(--jb-done-conflict); }
+.jb-ribbon-cap-trace-same { fill: var(--jb-done-same); }
+.jb-ribbon-cap-trace-one-sided { fill: var(--jb-done-one-sided); }
 /* Its edges, high contrast only. The stroke WIDTH is set per path (ribbons.ts)
  * to the pane's own 1px border, drawn inside the band from the same snapped
  * edge — so at any zoom it covers the rows that border covers. */
@@ -277,14 +302,12 @@ body.vscode-high-contrast .jb-point.jb-point-after { border-top-width: 0; border
   stroke-linecap: butt;
   stroke-linejoin: round;
 }
-body.vscode-high-contrast .jb-ribbon-frame-inserted { stroke: var(--jb-edge-inserted); }
-body.vscode-high-contrast .jb-ribbon-frame-deleted { stroke: var(--jb-edge-deleted); }
-body.vscode-high-contrast .jb-ribbon-frame-modified { stroke: var(--jb-edge-modified); }
 body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conflict); }
-body.vscode-high-contrast .jb-ribbon-trace-edge-inserted { stroke: var(--jb-done-inserted); }
-body.vscode-high-contrast .jb-ribbon-trace-edge-deleted { stroke: var(--jb-done-deleted); }
-body.vscode-high-contrast .jb-ribbon-trace-edge-modified { stroke: var(--jb-done-modified); }
+body.vscode-high-contrast .jb-ribbon-frame-same { stroke: var(--jb-edge-same); }
+body.vscode-high-contrast .jb-ribbon-frame-one-sided { stroke: var(--jb-edge-one-sided); }
 body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done-conflict); }
+body.vscode-high-contrast .jb-ribbon-trace-edge-same { stroke: var(--jb-done-same); }
+body.vscode-high-contrast .jb-ribbon-trace-edge-one-sided { stroke: var(--jb-done-one-sided); }
 
 /* The 2-way diff's insertion/deletion points: the same 2px line, in the word
  * tint; after an unterminated last line, on its bottom rows. */
@@ -464,7 +487,7 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
 }
 .jb-button-layer { position: absolute; inset: 0; pointer-events: none; }
 
-/* The overview strip: every pending change as an OPAQUE mark in its category's
+/* The overview strip: every pending change as an OPAQUE mark in its decision's
  * edge colour (the legend's dots), the view's extent behind the marks and
  * outlined above them, so no mark is ever blended. Empty while the whole
  * Result fits its pane. Its colours are declared on the strip itself, so they
@@ -476,9 +499,8 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
 }
 .jb-map {
   --jb-map-conflict: var(--jb-edge-conflict);
-  --jb-map-modified: var(--jb-edge-modified);
-  --jb-map-inserted: var(--jb-edge-inserted);
-  --jb-map-deleted: var(--jb-edge-deleted);
+  --jb-map-same: var(--jb-edge-same);
+  --jb-map-one-sided: var(--jb-edge-one-sided);
   position: relative;
   z-index: 2;
   min-width: 0;
@@ -766,15 +788,14 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
 }
 /* Accept (the arrow toward the result): hover tints to the change's own
  * colour so the target reads as "this is the change you're taking". The
- * merge names the tone (jb-tone-*); the 2-way diff's transfer arrow
- * (diffView.ts) still names its role (jb-role-*) — both are live. */
-.jb-btn-accept.jb-role-inserted:hover,
-.jb-btn-accept.jb-tone-inserted:hover { background: var(--jb-inner-inserted); color: var(--vscode-foreground); }
-.jb-btn-accept.jb-role-deleted:hover,
-.jb-btn-accept.jb-tone-deleted:hover { background: var(--jb-inner-deleted); color: var(--vscode-foreground); }
-.jb-btn-accept.jb-role-modified:hover,
-.jb-btn-accept.jb-tone-modified:hover { background: var(--jb-inner-modified); color: var(--vscode-foreground); }
+ * merge names its decision (jb-tone-*); the 2-way diff's transfer arrow
+ * (diffView.ts) names its role (jb-role-*) — both are live. */
 .jb-btn-accept.jb-tone-conflict:hover { background: var(--jb-inner-conflict); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-tone-same:hover { background: var(--jb-inner-same); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-tone-one-sided:hover { background: var(--jb-inner-one-sided); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-role-inserted:hover { background: var(--jb-inner-inserted); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-role-deleted:hover { background: var(--jb-inner-deleted); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-role-modified:hover { background: var(--jb-inner-modified); color: var(--vscode-foreground); }
 /* Ignore (the ×): a dismiss action, so it picks up the deleted/red status tint
  * on hover — distinct from the directional accept control beside it. */
 .jb-btn-ignore:hover {
@@ -784,11 +805,10 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
 
 /* ── The colour legend (mergeLegend.ts), mounted by the shell ───────────────
  * It explains the COLOURS the panes show, in words, each beside a solid dot of
- * that colour: "● Conflicts 6 you choose · ● Changed ● Added ● Removed on one
- * side 5 safe to take · Same on both sides 1 either arrow takes it" (the last
- * a count in words: it has no colour of its own). A dot is not a box: nothing
- * here should look like a checkbox waiting for a tick. Clicking an item goes
- * to the next change of that kind. */
+ * that colour and the count still to do: "● Conflict — you choose 6 · ● Same
+ * on both sides — either arrow takes it 1 · ● One side only — safe to take 5".
+ * A dot is not a box: nothing here should look like a checkbox waiting for a
+ * tick. Clicking an item goes to the next change of that kind. */
 .jb-legend {
   display: inline-flex;
   align-items: center;
@@ -822,13 +842,34 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
 .jb-legend-chip[disabled] .jb-legend-label,
 .jb-legend-chip[disabled] .jb-legend-count { opacity: 0.7; }
 .jb-legend-chip.jb-legend-none { display: none; }
-.jb-legend-count { font-variant-numeric: tabular-nums; font-weight: 600; }
-/* What a colour asks of you, quieter than its name. The muted ink is mixed a
- * step toward the foreground so it stays readable on the toolbar grounds. */
-.jb-legend-note {
+/* How many are left: the count badge VS Code puts beside a view's name (the
+ * Source Control or Problems count), after the words, so the words come
+ * first. A high contrast theme outlines it. */
+.jb-legend-count {
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  background: var(--vscode-badge-background, rgba(127, 127, 127, 0.28));
+  color: var(--vscode-badge-foreground, var(--vscode-foreground));
+  outline: 1px solid var(--vscode-contrastBorder, transparent);
+  outline-offset: -1px;
+}
+/* What a colour asks of you, quieter than its name, after a dash — the
+ * owner's own words, "Conflict — you choose"; both go when nothing is left.
+ * The muted ink is mixed a step toward the foreground so it stays readable on
+ * the toolbar grounds. */
+.jb-legend-note,
+.jb-legend-dash {
   color: color-mix(in srgb, var(--vscode-descriptionForeground, var(--vscode-foreground)) 80%, var(--vscode-foreground));
 }
-.jb-legend-kind { display: inline-flex; align-items: center; gap: 4px; }
+.jb-legend-dash[hidden],
+.jb-legend-note[hidden] { display: none; }
 .jb-legend-sep {
   color: var(--vscode-descriptionForeground, var(--vscode-foreground));
   user-select: none;
@@ -836,7 +877,8 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
 .jb-legend-sep[hidden] { display: none; }
 .jb-legend-help { width: 22px; padding: 0; justify-content: center; }
 /* A solid dot of the colour, at full strength: the band it names is the
- * same hue, lighter. */
+ * same hue, and the dots keep the bands' lightness order (the conflict
+ * furthest from the background, the same change nearest). */
 .jb-legend-dot {
   display: inline-block;
   flex: 0 0 auto;
@@ -845,15 +887,14 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
   border-radius: 50%;
   background: var(--jb-dot, currentColor);
 }
-.jb-dot-inserted { --jb-dot: var(--jb-edge-inserted); }
-.jb-dot-deleted { --jb-dot: var(--jb-edge-deleted); }
-.jb-dot-modified { --jb-dot: var(--jb-edge-modified); }
 .jb-dot-conflict { --jb-dot: var(--jb-edge-conflict); }
+.jb-dot-same { --jb-dot: var(--jb-edge-same); }
+.jb-dot-one-sided { --jb-dot: var(--jb-edge-one-sided); }
 /* The key's samples of the MARKS (not colours): a strip of band as the pane
  * draws it, 16 by 10 — a conflict with one side taken (the muted tint between
  * two faint lines), a side that was taken (the muted band), a side that was
- * discarded (an outline), an insertion point, a whitespace-only change's
- * dotted edge. */
+ * discarded (an outline), an insertion point, a word highlight (a stronger
+ * stretch of the band), a whitespace-only change's dotted edge. */
 .jb-legend-sample {
   display: inline-block;
   flex: 0 0 auto;
@@ -864,9 +905,14 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
 .jb-sample-half { background: var(--jb-half-conflict); border-top: 1px solid var(--jb-done-conflict); border-bottom: 1px solid var(--jb-done-conflict); }
 .jb-sample-done { border-top: 1px solid var(--jb-done-conflict); border-bottom: 1px solid var(--jb-done-conflict); }
 .jb-sample-trace { background: var(--jb-muted-conflict); }
-.jb-sample-point { border-top: 1px solid var(--jb-point-inserted); height: 6px; }
-body.vscode-high-contrast .jb-sample-point { border-top: 2px solid var(--jb-edge-inserted); }
-.jb-sample-ws { background: var(--jb-line-modified); border-left: 2px dotted var(--jb-edge-modified); }
+.jb-sample-point { border-top: 1px solid var(--jb-point-one-sided); height: 6px; }
+body.vscode-high-contrast .jb-sample-point { border-top: 2px solid var(--jb-edge-one-sided); }
+.jb-sample-word {
+  background:
+    linear-gradient(var(--jb-inner-one-sided), var(--jb-inner-one-sided)) 4px 0 / 8px 100% no-repeat,
+    var(--jb-line-one-sided);
+}
+.jb-sample-ws { background: var(--jb-line-one-sided); border-left: 2px dotted var(--jb-edge-one-sided); }
 .jb-legend-pop {
   /* Fixed: the legend sits in a toolbar that scrolls sideways (overflow-x),
    * which would clip an absolutely positioned popover. */

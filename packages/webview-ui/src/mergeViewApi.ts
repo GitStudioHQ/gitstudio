@@ -14,13 +14,15 @@ import type { WhitespaceMode } from "@gitstudio/engine/lineDiff";
 import type { ChangeBlock, Side } from "@gitstudio/engine/types";
 
 /**
- * The colour category of a change block (PLAN §3.6), JetBrains' model:
- * - "conflict": both sides changed the region differently (red; may be
- *   `resolvable` — Resolve simple, the wand, applies both);
+ * The colour category of a change block (PLAN §3.6), JetBrains' model, and
+ * the DECISION its colour says (paint.ts — never what the change did):
+ * - "conflict": both sides changed the region differently — red, you choose
+ *   (may be `resolvable` — Resolve simple, the wand, applies both);
  * - "same": both sides made the same change, exactly or up to whitespace —
- *   painted like any other change, green / blue / grey by what it did, on
- *   BOTH sides, and either arrow takes it (paint.ts);
- * - "yours-only" / "theirs-only": one side changed it (green / blue / grey by type).
+ *   green, on BOTH sides, whether lines were added, changed or removed, and
+ *   either arrow takes it;
+ * - "yours-only" / "theirs-only": one side changed it — blue, whatever it
+ *   did, safe to take.
  * Left is always Yours after D1, so "yours-only" is the engine's left-only.
  * The engine's `category(block)` (P1) returns exactly this union.
  */
@@ -155,10 +157,11 @@ export interface MergeViewApi {
   /** Re-measure the editors after the container changed size or became visible. */
   layout(): void;
   /**
-   * Mount the colour legend (items in words, each with a dot of its colour:
-   * "Conflicts n · Same on both sides n · Changed Added Removed on one side n",
-   * + the "?" key popover) into `slot`. Yours-only and Theirs-only are one
-   * item; its tooltip says how many of each.
+   * Mount the colour legend (items in words, each with a dot of its colour
+   * and its count: "Conflict — you choose n · Same on both sides — either
+   * arrow takes it n · One side only — safe to take n", + the "?" key
+   * popover) into `slot`. Yours-only and Theirs-only are one item; its
+   * tooltip says how many of each.
    * The view keeps it current; a later call moves it to the new slot. The EOL
    * notice is NOT part of the legend — the shell renders it from onEolMismatch.
    */

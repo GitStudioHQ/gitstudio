@@ -34,8 +34,8 @@ const lines = (arr: string[]): string => arr.join("\n");
  *   #3 identical (≈)       w1: the same change, Theirs with trailing spaces
  *                          (a conflict under "none"; ≈ under "trailing")
  *   #4 yours-only          y1: modified in Yours
- *   #5 theirs-only         an insertion in Theirs (green)
- *   #6 theirs-only         d1 deleted in Theirs (grey)
+ *   #5 theirs-only         an insertion in Theirs (blue: one side only)
+ *   #6 theirs-only         d1 deleted in Theirs (blue: one side only)
  *   #7 yours-only          ws1 re-indented in Yours (whitespace-only under
  *                          "trailing"; a plain change under "none")
  */

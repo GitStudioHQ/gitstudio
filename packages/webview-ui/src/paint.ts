@@ -1,29 +1,35 @@
 // What colour a change is PAINTED in, and what happened to each of its sides.
 //
-// The engine's categories stay what they are (conflict / same / yours-only /
-// theirs-only — the counts, the legend's numbers, "Apply non-conflicting"
-// all read them). The PAINT is simpler, and the owner's: a conflict is red,
-// and every other change is coloured by what it did — green added, blue
-// changed, grey removed — whether one side made it or both made it alike. A
-// change made the same on both sides is simply coloured on BOTH sides, and
-// either arrow takes it (JetBrains shows it this way). It once had a violet
-// of its own, from the research; the owner found it wrong on sight.
+// The paint is the DECISION a change needs, never what it did (the owner, 24
+// Sep 2026: a change made the same on both sides was blue one time and green
+// the next, and blue also meant "one side only" — so the colour did not
+// answer "does my choice matter here?"):
+//
+// - RED, a conflict: the sides differ, you choose;
+// - GREEN, the same change on both sides — whether lines were added, changed
+//   or removed: nothing to choose, either arrow takes the whole block;
+// - BLUE, a change on one side only — whether added, changed or removed:
+//   safe to take.
+//
+// What a change DID stays readable without a colour of its own: from the
+// shape of its band (a band that meets a line between two rows on the other
+// side was added there, or removed) and from its word highlights. The engine
+// owns the rule (`blockTone`); this module is the view's name for it.
 //
 // Pure: no Monaco, no DOM.
 
-import type { ChangeBlock, ChangeType, Side } from "@gitstudio/engine/types";
-import { category } from "@gitstudio/engine/types";
+import type { BlockTone, ChangeBlock, Side } from "@gitstudio/engine/types";
+import { blockTone, category } from "@gitstudio/engine/types";
 
-/** The colours the merge paints with: red for a conflict, else what the change did. */
-export type PaintTone = ChangeType | "conflict";
+/** The three colours the merge paints with: red, green, blue — by decision. */
+export type PaintTone = BlockTone;
 
 /** Every paint tone, conflict last (drawn over the others where marks crowd). */
-export const PAINT_TONES: readonly PaintTone[] = ["deleted", "inserted", "modified", "conflict"];
+export const PAINT_TONES: readonly PaintTone[] = ["one-sided", "same", "conflict"];
 
-/** A block's paint: red for a conflict; green / blue / grey by what it did otherwise. */
+/** A block's paint: red for a conflict, green for the same change on both sides, blue for one side only. */
 export function paintTone(block: ChangeBlock): PaintTone {
-  if (block.kind === "conflict") return "conflict";
-  return block.type === "conflict" ? "modified" : block.type;
+  return blockTone(block);
 }
 
 /**

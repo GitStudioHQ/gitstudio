@@ -260,13 +260,27 @@ test("category() is exactly the merge UI's four categories", () => {
   assert.deepEqual(cats("a\nb\nc\nd", "a\nB\nc\nd", "a\nb\nc\nD"), ["yours-only", "theirs-only"]);
 });
 
-test("blockTone paints one-sided changes by what they did, the rest by category", () => {
+test("blockTone paints by the DECISION a change needs, never by what it did", () => {
+  // The owner (24 Sep 2026): a same-on-both change was blue one time and
+  // green the next, and blue also meant one side only — so the colour did not
+  // say whether picking a side matters. Red: you choose. Green: the same on
+  // both sides, whatever it did. Blue: one side only, whatever it did.
   const tones = (base: string, ours: string, theirs: string) =>
     buildMergeModel(base, ours, theirs).blocks.map(blockTone);
-  // Yours inserts, Theirs deletes further down: green, then grey.
-  assert.deepEqual(tones("a\nb\nc\nd", "a\nN\nb\nc\nd", "a\nb\nc"), ["inserted", "deleted"]);
+  // One side only: an insertion, a deletion and a rewrite are all blue.
+  assert.deepEqual(tones("a\nb\nc\nd", "a\nN\nb\nc\nd", "a\nb\nc"), ["one-sided", "one-sided"]);
+  assert.deepEqual(tones("a\nb\nc\nd", "a\nB\nc\nd", "a\nb\nc\nd"), ["one-sided"]);
+  // The same change on both sides: changed, added and removed are all green.
   assert.deepEqual(tones("a\nb\nc", "a\nX\nc", "a\nX\nc"), ["same"]);
+  assert.deepEqual(tones("a\nc", "a\nN\nc", "a\nN\nc"), ["same"]);
+  assert.deepEqual(tones("a\nb\nc", "a\nc", "a\nc"), ["same"]);
   assert.deepEqual(tones("a\nb\nc", "a\nX\nc", "a\nY\nc"), ["conflict"]);
+  // Nothing of the old per-type paint survives.
+  for (const [base, ours, theirs] of [["a\nb\nc", "a\nc", "a\nc"], ["a\nc", "a\nN\nc", "a\nc"], ["a\nb\nc", "a\nB\nc", "a\nb\nc"]]) {
+    for (const tone of tones(base, ours, theirs)) {
+      assert.ok(["conflict", "same", "one-sided"].includes(tone), `${JSON.stringify([base, ours, theirs])}: ${tone}`);
+    }
+  }
 });
 
 test("a whitespace-only change beside a real one on the same side joins it, and is not flagged", () => {

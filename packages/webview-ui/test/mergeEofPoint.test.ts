@@ -37,6 +37,9 @@ test("the result's marker for an insertion after an unterminated last line is on
     const d = decos[0];
     expect(d && d.range.startLineNumber === 2, "it decorates the last line");
     expect(d && /jb-point-after/.test(d.options.className), "…as the AFTER variant: " + (d && d.options.className));
+    // Both sides append the same line: the same change on both sides, green
+    // (paint.ts paints the decision, not "added").
+    expect(d && /(^|\\s)jb-point-same(\\s|$)/.test(d.options.className), "…in the same-on-both green: " + (d && d.options.className));
     // Computed, never the class name alone.
     const body = document.querySelectorAll(".jb-pane-body")[1];
     const probe = document.createElement("div");
@@ -66,7 +69,7 @@ test("the ribbon end sits on the last line's bottom rows, not on top of it", { s
     expect(Math.abs(top - bottomOfLast) < 0.5 && top === bottom, "the point is the last line's bottom edge");
     await sleep(80);
     // The ribbon's end at the result is the marker's row: [bottom - 1, bottom].
-    // (The same change on both sides is painted by what it did: green, added.)
+    // (Both sides appended the same line: the same change on both sides, green.)
     const ends = (sel) => {
       const path = document.querySelector('.jb-ribbon-stage path' + sel + '[data-side="left"]');
       const pts = path ? path.getAttribute("d").replace(/[MLQZ]/g, " ").trim().split(/\\s+/).map(Number) : [];
@@ -74,7 +77,7 @@ test("the ribbon end sits on the last line's bottom rows, not on top of it", { s
       const xMax = Math.max(...xy.map(([x]) => x));
       return { path, ys: xy.filter(([x]) => x === xMax).map(([, y]) => y) };
     };
-    const band = ends(".jb-ribbon-inserted");
+    const band = ends(".jb-ribbon-same");
     const stageTop = document.querySelector(".jb-ribbon-stage").getBoundingClientRect().top;
     const editorTop = r.getContainerDomNode().getBoundingClientRect().top;
     notes.end = band.ys;
@@ -87,7 +90,7 @@ test("the ribbon end sits on the last line's bottom rows, not on top of it", { s
     expect(on(cap.ys), "the cap is on the point's row (" + JSON.stringify(cap.ys) + ")");
     const body = document.querySelectorAll(".jb-pane-body")[1];
     const probe = document.createElement("div");
-    probe.className = "jb-point-inserted jb-point jb-point-after";
+    probe.className = "jb-point-same jb-point jb-point-after";
     body.appendChild(probe);
     const line = getComputedStyle(probe).borderBottomColor;
     probe.remove();

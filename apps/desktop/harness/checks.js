@@ -4719,11 +4719,13 @@
       c.ok(!!grid, "the merge view is up");
       if (!grid) return;
       const light = document.body.classList.contains("vscode-light");
-      // diff.css's r0923 values: tints that keep the syntax colours readable,
-      // and a handled outline at 3:1 (it carries a meaning in the legend).
+      // diff.css's r0924 values: the merge paints by DECISION — red a
+      // conflict, green the same change on both sides, blue one side only,
+      // whatever the change did — with the syntax colours no worse than
+      // before and a handled outline at 3:1 (it carries a meaning in the legend).
       const want = light
-        ? { conflict: "rgba(240, 75, 70, 0.27)", half: "rgba(240, 75, 70, 0.13)", done: "rgba(207, 34, 46, 0.76)", point: "rgba(26, 127, 55, 0.55)", dot: "rgb(207, 34, 46)" }
-        : { conflict: "rgba(240, 105, 100, 0.23)", half: "rgba(240, 105, 100, 0.12)", done: "rgba(240, 104, 106, 0.72)", point: "rgba(98, 179, 74, 0.62)", dot: "rgb(240, 104, 106)" };
+        ? { conflict: "rgba(232, 96, 60, 0.28)", same: "rgba(32, 168, 140, 0.14)", oneSided: "rgba(56, 139, 253, 0.3)", half: "rgba(232, 96, 60, 0.14)", done: "rgba(184, 50, 26, 0.76)", point: "rgba(29, 72, 232, 0.55)", dot: "rgb(184, 50, 26)", dots: ["rgb(184, 50, 26)", "rgb(19, 134, 103)", "rgb(29, 72, 232)"] }
+        : { conflict: "rgba(232, 96, 60, 0.24)", same: "rgba(32, 168, 140, 0.13)", oneSided: "rgba(75, 110, 245, 0.28)", half: "rgba(232, 96, 60, 0.12)", done: "rgba(250, 123, 76, 0.72)", point: "rgba(75, 110, 245, 0.62)", dot: "rgb(250, 123, 76)", dots: ["rgb(250, 123, 76)", "rgb(32, 151, 136)", "rgb(122, 156, 247)"] };
       const body = grid.querySelector(".jb-pane-body");
       const probe = (cls) => {
         const el = document.createElement("div");
@@ -4736,6 +4738,11 @@
         return out;
       };
       c.eq(probe("jb-line-conflict").bg, want.conflict, "a conflict band is the red tint of this theme");
+      c.eq(probe("jb-line-same").bg, want.same, "the same change on both sides is the green tint of this theme");
+      c.eq(probe("jb-line-one-sided").bg, want.oneSided, "a change on one side only is the blue tint of this theme");
+      // What the merge's bands actually carry: a decision's class, never a type's.
+      const decoClasses = [...grid.querySelectorAll(".view-overlays div, .margin-view-overlays div")].map((e) => (typeof e.className === "string" ? e.className : "")).filter((s) => /\bjb-(line|point|trace|done)-/.test(s));
+      c.eq(decoClasses.filter((s) => /\bjb-(line|point|trace|done)-(inserted|modified|deleted)\b/.test(s)).join(" | "), "", "no band in the merge is coloured by what its change did");
       c.eq(probe("jb-line-conflict jb-half").bg, want.half, "a conflict with one side in: its result muted — not the open conflict's look");
       const done = probe("jb-done jb-done-conflict jb-edge-top jb-edge-bottom");
       c.eq(`${done.bg} | ${done.bt} | ${done.bb}`, `rgba(0, 0, 0, 0) | solid 1px ${want.done} | solid 1px`, "a discarded side: no fill, a faint 1px line top and bottom");
@@ -4743,7 +4750,7 @@
       c.eq(trace.bg, want.half, "a taken side, and a settled Result: the muted band");
       c.ok(trace.bt.startsWith("none"), `…with no lines (${trace.bt})`);
       c.ok(!probe("jb-settled jb-edge-top").bt.startsWith("solid"), "no neutral grey line of the old look");
-      c.eq(probe("jb-point jb-point-inserted").bt, `solid 1px ${want.point}`, "an insertion point is a 1px line in its point colour");
+      c.eq(probe("jb-point jb-point-one-sided").bt, `solid 1px ${want.point}`, "an insertion point is a 1px line in its point colour");
       c.eq(probe("jb-frame jb-frame-conflict jb-edge-top").bt.split(" ")[0], "none", "no frame lines outside high contrast");
       // The ribbons land on the 32 ms timer, which the virtual clock does serve.
       const band = grid.querySelector(".jb-ribbon-stage path.jb-ribbon-conflict");
@@ -4756,14 +4763,17 @@
       c.ok(!document.querySelector(".jb-mark, .jb-result-actions, .jb-btn-wand, .jb-btn-append"), "no invented marks, no per-change wand, no append icon");
       const buttons = $$(".jb-change-actions button");
       c.ok(buttons.length > 0, `the gutters carry controls (${buttons.length})`);
-      const odd = buttons.filter((b) => !/codicon-(arrow-right|arrow-left|close)\b/.test(b.innerHTML) || !/^((Accept|Ignore|Add|Discard) (Yours|Theirs)\b|Same change on both sides — either arrow takes it|Discard this change on both sides)/.test(b.title) || !b.getAttribute("aria-label"));
+      const odd = buttons.filter((b) => !/codicon-(arrow-right|arrow-left|close)\b/.test(b.innerHTML) || !/^((Accept|Ignore|Add|Discard) (Yours|Theirs)\b|Same on both sides — either arrow takes it|Discard this change on both sides)/.test(b.title) || !b.getAttribute("aria-label"));
       c.eq(odd.map((b) => b.title || b.innerHTML).join(" | "), "", "every control is an arrow or ×, with its action in words");
       const legend = $(".ms-legend-slot .jb-legend");
-      c.ok(!!legend && /Conflicts/.test(legend.textContent) && /Changed/.test(legend.textContent) && !/[≠≈‹›✨]/.test(legend.textContent), `the legend is words (${legend && legend.textContent.replace(/\s+/g, " ").trim()})`);
+      c.ok(!!legend && /Conflict/.test(legend.textContent) && /you choose/.test(legend.textContent) && !/Changed|Added|Removed/.test(legend.textContent) && !/[≠≈‹›✨]/.test(legend.textContent), `the legend is words, one per decision (${legend && legend.textContent.replace(/\s+/g, " ").trim()})`);
       // …with a solid round dot of each colour — never a square box that reads as a checkbox.
       const dot = legend && legend.querySelector('.jb-legend-chip[data-category="conflict"] .jb-legend-dot');
       const dcs = dot && getComputedStyle(dot);
       c.eq(dcs ? `${dcs.backgroundColor} | ${dcs.borderRadius}` : "none", `${want.dot} | 50%`, "the conflict item's dot is the conflict red, round");
+      // Red, green, blue: one dot per decision, in the order the legend reads.
+      const allDots = legend ? [...legend.querySelectorAll(".jb-legend-chip .jb-legend-dot")].map((d) => getComputedStyle(d).backgroundColor) : [];
+      c.eq(allDots.join(" | "), want.dots.join(" | "), "one dot per decision: red, green, blue");
       c.ok(!legend || !legend.querySelector(".jb-legend-swatch"), "no square swatches in the legend");
       // The bottom bar's secondary buttons read as buttons here too: a visible
       // border (the desktop's own button-border is transparent).

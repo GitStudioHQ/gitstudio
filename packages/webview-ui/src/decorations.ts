@@ -98,9 +98,10 @@ export const SEEDED_WORDS = "Already merged in the file, outside the conflict ma
  * Every block decoration also carries `jb-cat-<category>` so a reader (or a
  * test) can tell the four categories apart without decoding colours.
  *
- * Tones (paint.ts): a conflict is red; every other change is coloured by what
- * it did — green inserted, blue modified, grey deleted — whether one side
- * made it or both made it alike (then it is coloured on both sides).
+ * Tones (paint.ts) are the DECISION a change needs, never what it did: red a
+ * conflict (you choose), green the same change on both sides (either arrow
+ * takes it), blue a change on one side only (safe to take). Added, changed
+ * or removed reads from the band's shape and the word tints instead.
  *
  * No overview-ruler marks: the Result's ruler and scrollbar sat on the
  * Result|gutter seam and cut every band there. The merge's one overview is
@@ -220,7 +221,7 @@ export class DiffDecorationManager {
 
     const palette = rulerPalette();
     for (const block of model.blocks) {
-      const role: ChangeRole = block.role;
+      const role = block.role;
       pushLine(left, this.editors.left, block.leftSpan, role);
       pushLine(right, this.editors.right, block.rightSpan, role, palette[role]);
       if (showInner) {
@@ -244,12 +245,14 @@ export class DiffDecorationManager {
 }
 
 /**
- * Resolves the tone -> stripe colour map from the live CSS palette, for the
+ * Resolves the role -> stripe colour map from the live CSS palette, for the
  * 2-way diff's IntelliJ-style overview-ruler ("error stripe") marks:
- * `--jb-ruler-<tone>`, the category colour at reduced strength — a thin mark
- * to find a change by, not a block to read.
+ * `--jb-ruler-<role>`, the role's colour at reduced strength — a thin mark to
+ * find a change by, not a block to read. The 2-way diff has no decision to
+ * make, so it keeps colouring by what a change did (green added, blue
+ * changed, grey removed); only the merge paints by decision.
  */
-function rulerPalette(): Record<PaintTone, string> {
+function rulerPalette(): Record<Exclude<ChangeRole, "conflict">, string> {
   // Resolved through a probe's computed `color`, not the raw custom-property
   // text: the browser's canonical "rgba(63, 185, 80, 0.6)" is the one form
   // every colour consumer (Monaco's own parser included) reads.
@@ -264,7 +267,6 @@ function rulerPalette(): Record<PaintTone, string> {
     inserted: read("--jb-ruler-inserted"),
     deleted: read("--jb-ruler-deleted"),
     modified: read("--jb-ruler-modified"),
-    conflict: read("--jb-ruler-conflict"),
   };
   probe.remove();
   return palette;

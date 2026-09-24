@@ -18,8 +18,9 @@ type Editor = monaco.editor.IStandaloneCodeEditor;
  * laid a lighter strip over every band's end (the owner's "solid block beside
  * the result text" in another form). Here:
  *
- * - the marks are OPAQUE, one colour per category (the legend's own dot
- *   colours), drawn conflicts last, so a crowded stretch reads as conflicts
+ * - the marks are OPAQUE, one colour per decision (the legend's own dot
+ *   colours: red a conflict, green the same on both sides, blue one side
+ *   only), drawn conflicts last, so a crowded stretch reads as conflicts
  *   rather than as a mix of everything;
  * - the view's extent is drawn BEHIND the marks, and outlined above them, so
  *   no mark is ever tinted by it;
@@ -214,7 +215,7 @@ export class OverviewMap {
     this.head.remove();
   }
 
-  /** The categories' opaque colours, resolved from the live theme (`--jb-map-<tone>`). */
+  /** The three decisions' opaque colours, resolved from the live theme (`--jb-map-<tone>`). */
   private palette(): Record<PaintTone, string> {
     const probe = document.createElement("span");
     probe.style.display = "none";
@@ -223,12 +224,7 @@ export class OverviewMap {
       probe.style.color = `var(--jb-map-${tone})`;
       return getComputedStyle(probe).color;
     };
-    const out = {
-      inserted: read("inserted"),
-      deleted: read("deleted"),
-      modified: read("modified"),
-      conflict: read("conflict"),
-    };
+    const out = Object.fromEntries(PAINT_TONES.map((tone) => [tone, read(tone)])) as Record<PaintTone, string>;
     probe.remove();
     return out;
   }

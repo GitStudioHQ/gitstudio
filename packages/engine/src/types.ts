@@ -18,11 +18,17 @@ export type Side = "left" | "right";
 export type MergeCategory = "conflict" | "same" | "yours-only" | "theirs-only";
 
 /**
- * The paint of a block: a conflict and an identical change have their own
- * colours; a one-sided change is coloured by what it did (green inserted,
- * blue modified, grey deleted).
+ * The paint of a block: the DECISION it needs, never what it did.
+ * - "conflict" (red): the sides differ, you choose;
+ * - "same" (green): the same change on both sides, whether lines were added,
+ *   changed or removed — nothing to choose, either arrow takes it;
+ * - "one-sided" (blue): a change on one side only, whether added, changed or
+ *   removed — safe to take.
+ * What a change DID stays readable from the shape of its band (a band that
+ * meets a line on the other side was added there, or removed) and from its
+ * word highlights.
  */
-export type BlockTone = ChangeType | "same" | "conflict";
+export type BlockTone = "conflict" | "same" | "one-sided";
 
 /** A line-ending style. */
 export type LineEnding = "LF" | "CRLF" | "CR";
@@ -203,13 +209,15 @@ export function category(block: ChangeBlock): MergeCategory {
   }
 }
 
-/** The paint of a block (see BlockTone). */
+/** The paint of a block: the decision it needs (see BlockTone). */
 export function blockTone(block: ChangeBlock): BlockTone {
-  if (block.kind === "conflict") {
-    return "conflict";
+  switch (block.kind) {
+    case "conflict":
+      return "conflict";
+    case "both-same":
+      return "same";
+    case "left-only":
+    case "right-only":
+      return "one-sided";
   }
-  if (block.kind === "both-same") {
-    return "same";
-  }
-  return block.type === "conflict" ? "modified" : block.type;
 }

@@ -74,12 +74,18 @@ const CATEGORY_WORDS: Record<MergeCategory, string> = {
 const CATEGORY_NOUNS: Record<MergeCategory, string> = {
   conflict: "Conflict",
   same: "Change made the same on both sides",
-  "yours-only": "Change",
-  "theirs-only": "Change",
+  "yours-only": "Change on one side only",
+  "theirs-only": "Change on one side only",
 };
 
-/** What a change made the same on both sides says on either of its arrows. */
-const SAME_ARROW_WORDS = "Same change on both sides — either arrow takes it";
+/**
+ * What a change made the same on both sides says on either of its arrows —
+ * the legend's own words for its colour (green).
+ */
+const SAME_ARROW_WORDS = "Same on both sides — either arrow takes it";
+
+/** What a change on one side only says after its side's name — the legend's words for blue. */
+const ONE_SIDE_WORDS = "one side only — safe to take";
 
 /**
  * Per-block runtime state. Each side of a block is processed (applied or
@@ -152,9 +158,10 @@ const PANE_SCROLL_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = 
  * (Yours, read-only), Result (editable, seeded with base), Right (Theirs,
  * read-only), with gutter ribbons + accept/ignore controls.
  *
- * Blocks are painted (paint.ts): a conflict red; every other change green /
- * blue / grey by what it did — on one side, or on BOTH sides when both made
- * the same change (either arrow takes that one, for both). Every change is one
+ * Blocks are painted by the DECISION they need (paint.ts): a conflict red
+ * (you choose); the same change on both sides green, on both sides, whatever
+ * it did (either arrow takes it, for both); a change on one side only blue,
+ * whatever it did (safe to take). Every change is one
  * continuous band — side pane, filled ribbon, result — and its controls are
  * the ones JetBrains and VS Code users already know: an arrow toward the
  * result to accept a side, × to ignore it, each with its action in words.
@@ -1443,11 +1450,18 @@ export class MergeView implements MergeViewApi {
     const state = this.blockState.get(block.id);
     const addAfter = cat === "conflict" && (state?.applied ?? false);
     const otherIn = cat === "conflict" && this.halfDone(block) !== undefined;
-    // The same change on both sides is one change, coloured on both sides:
+    // The same change on both sides is one change, green on both sides:
     // either arrow takes it, either × sets it aside — for both.
     const same = cat === "same";
+    const oneSided = cat === "yours-only" || cat === "theirs-only";
 
-    const acceptWords = addAfter ? `Add ${who} after ${other}` : same ? SAME_ARROW_WORDS : `Accept ${who} for ${what}`;
+    const acceptWords = addAfter
+      ? `Add ${who} after ${other}`
+      : same
+        ? SAME_ARROW_WORDS
+        : oneSided
+          ? `Accept ${who}: ${ONE_SIDE_WORDS}`
+          : `Accept ${who} for ${what}`;
     const accept = this.makeButton(
       `jb-gutter-btn jb-btn-accept jb-tone-${tone}`,
       side === "left" ? chevronDoubleRight : chevronDoubleLeft,

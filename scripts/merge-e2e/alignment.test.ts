@@ -35,6 +35,12 @@ const BEFORE = "562966a";
 const ROUND1 = "9f77171";
 /** The redesign as merged: the Result's overview ruler and scrollbar sat on the Result|gutter seam. */
 const SEAM_RULER = "6b793ed";
+/**
+ * The last build that painted a change by what it DID (green added, blue
+ * changed, grey removed), one-sided or the same on both sides alike: the
+ * owner saw a same-on-both change blue one time and green the next.
+ */
+const PER_TYPE = "9e48a93";
 
 /** Runs alignment.ts on another build's webview (its source at `rev`), one scenario, the extension only. */
 function runOnBuild(rev: string, scenario: string, dprs: string, extra: string[] = []): { status: number | null; out: string } {
@@ -138,6 +144,19 @@ test(`the measurement FAILS on ${ROUND1}'s merge view — the critic's hairline,
   // no side's trace. (Its outlines in the side panes are no longer a fault:
   // the owner wants a discarded side to keep one.)
   assert.match(out, /\[resolve\] a resolved change still draws across a gutter something other than the trace of a side it took/);
+});
+
+test(`the measurement FAILS on ${PER_TYPE}'s merge view — a change painted by what it did, not by the decision it needs`, { timeout: 10 * 60_000 }, () => {
+  // The owner (24 Sep 2026): "sometimes both sides merging appears blue,
+  // other times it's green … but blue is also used for just one-sided merge".
+  // The stress file holds an identical edit on both sides and one-sided
+  // changes of every type, so both halves of that show.
+  const { status, out } = runOnBuild(PER_TYPE, "rebase.diff3", "1", ["--files", "stress/userService.js", "--no-pixels"]);
+  assert.equal(status, 1, `that build must fail the check:\n${out.slice(-3000)}`);
+  assert.match(out, /\[open\] a same change is painted (inserted|modified|deleted), not in its decision's colour \(same\)/);
+  assert.match(out, /\[open\] a (yours|theirs)-only change is painted (inserted|modified|deleted), not in its decision's colour \(one-sided\)/);
+  // …and the settled traces kept the per-type colour too.
+  assert.match(out, /\[(half|resolve)\] a (same|yours-only|theirs-only) change is painted (inserted|modified|deleted)/);
 });
 
 test(`the measurement FAILS on ${SEAM_RULER}'s merge view — the Result's overview ruler and scrollbar cut every band at its seam`, { timeout: 20 * 60_000 }, () => {

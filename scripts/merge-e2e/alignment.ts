@@ -156,7 +156,7 @@ const PROBE = (state: string) => `(() => {
   // (The "applied" names are the rejected builds' dashed style: kept so the
   // proof that this fails on them can still read what they drew. "trace" is a
   // settled side's muted band and ribbon, "cap" a band's end at a point.)
-  const TONE = /jb-(?:ribbon-(?:done-|frame-|applied-|trace-|cap-trace-|cap-)?|line-|applied-|point-|marker-|frame-|done-|trace-)(inserted|deleted|modified|same|conflict)(?![\\w-])/;
+  const TONE = /jb-(?:ribbon-(?:done-|frame-|applied-|trace-|cap-trace-|cap-)?|line-|applied-|point-|marker-|frame-|done-|trace-)(inserted|deleted|modified|same|one-sided|conflict)(?![\\w-])/;
   const alpha = (c) => {
     if (!c || c === "none" || c === "transparent") return 0;
     let m = /rgba?\\(([^)]*)\\)/.exec(c);
@@ -215,6 +215,21 @@ const PROBE = (state: string) => `(() => {
   const strokes = [];
   const seen = new Set();
   let checked = 0;
+  // THE PAINT is the decision a change needs (paint.ts), never what it did:
+  // red a conflict, green the same change on both sides, blue one side only —
+  // open, half handled or settled (a trace keeps its decision's colour).
+  const DECISION = { conflict: "conflict", same: "same", "yours-only": "one-sided", "theirs-only": "one-sided" };
+  const paintSeen = new Set();
+  for (const body of bodies) {
+    for (const el of body.querySelectorAll(".view-overlays div, .margin-view-overlays div")) {
+      const cls = typeof el.className === "string" ? el.className : "";
+      const cat = /jb-cat-(conflict|same|yours-only|theirs-only)(?![\\w-])/.exec(cls);
+      const m = cat && TONE.exec(cls);
+      if (!m || m[1] === DECISION[cat[1]] || paintSeen.has(cat[1] + ":" + m[1])) continue;
+      paintSeen.add(cat[1] + ":" + m[1]);
+      mismatches.push({ seam: "panes", tone: m[1], kind: "paint", problem: "a " + cat[1] + " change is painted " + m[1] + ", not in its decision's colour (" + DECISION[cat[1]] + ")", ribbon: [0, 0], pane: [] });
+    }
+  }
   const paths = [...stage.querySelectorAll("path")];
   const painted = (p) => { const cs = getComputedStyle(p); return (cs.fill !== "none" && alpha(cs.fill) > 0) || (cs.stroke !== "none" && alpha(cs.stroke) > 0); };
   if (STATE === "resolve") {
@@ -223,7 +238,7 @@ const PROBE = (state: string) => `(() => {
     // none, and nothing may still look open — in a gutter or in a side pane.
     const drawn = paths.filter((p) => painted(p) && !/jb-ribbon-base|jb-ribbon-line-base/.test(p.getAttribute("class") || "") && p.dataset.state !== "took");
     if (drawn.length) mismatches.push({ seam: "gutters", tone: "?", kind: "state", problem: "a resolved change still draws across a gutter something other than the trace of a side it took (" + drawn.length + " paths)", ribbon: [0, 0], pane: [] });
-    const open = [bodies[0], bodies[1], bodies[2]].flatMap((b) => [...b.querySelectorAll(".view-overlays div, .margin-view-overlays div")].filter((el) => /(^|\\s)jb-line-(inserted|deleted|modified|same|conflict)(\\s|$)/.test(typeof el.className === "string" ? el.className : "")));
+    const open = [bodies[0], bodies[1], bodies[2]].flatMap((b) => [...b.querySelectorAll(".view-overlays div, .margin-view-overlays div")].filter((el) => /(^|\\s)jb-line-(inserted|deleted|modified|same|one-sided|conflict)(\\s|$)/.test(typeof el.className === "string" ? el.className : "")));
     if (open.length) mismatches.push({ seam: "panes", tone: "?", kind: "state", problem: "a resolved change still wears an open band (" + open.length + " overlays)", ribbon: [0, 0], pane: [] });
   }
   // Blocks with a side in while the other is still to decide: from the
