@@ -29,28 +29,32 @@ During a rebase git swaps its own words: `--ours` is the branch you are rebasing
 
 ## Every change, colour-coded
 
-The legend above the panes names each colour in words, with how many
-changes are left.
+Each colour answers one question: does your choice matter here? The legend
+above the panes names each colour in words, with how many changes are left.
 
-<p align="center"><img src="media/screenshots/legend.png" alt="The legend: Conflicts 6, you choose; Changed, Added and Removed on one side 5, safe to take; Same on both sides 1, either arrow takes it; and a button that explains the colours and lines."></p>
+<p align="center"><img src="media/screenshots/legend.png" alt="The legend: Conflict — you choose, 6; Same on both sides — either arrow takes it, 1; One side only — safe to take, 5; and a button that explains the colours and lines."></p>
 
 | Colour | In the legend | Meaning |
 | --- | --- | --- |
-| red | Conflicts | A real conflict: both sides changed the same lines differently, and you choose. When the two edits touch but don't overlap, **Resolve simple** on the toolbar applies both. |
-| blue, green, grey | Changed, Added, Removed | A change that doesn't conflict: blue for lines changed, green for lines added, grey for lines removed. Coloured on one side only, only that side made it. |
+| red | Conflict — you choose | Both sides changed the same lines, differently, and you decide what the result keeps. When the two edits touch but don't overlap, **Resolve simple** on the toolbar applies both. |
+| green | Same on both sides — either arrow takes it | Both sides made the same change, whether they added, changed or removed lines. There is nothing to choose: either arrow takes it, and it is settled on both sides at once. |
+| blue | One side only — safe to take | Only one side changed these lines, whether it added, changed or removed them. |
 
-A change coloured on **both** sides is the same change, made on both sides:
-either arrow takes it, and it is settled on both sides at once.
+What a change did shows in its shape, not its colour: a band that meets a
+line between two rows on the other side was added there, or removed, and a
+stronger tint marks the words that changed. Red and green also differ in
+lightness, not only in hue, so they stay apart for colour-blind eyes.
 
-Once you settle a change it keeps a muted trace of what you took: the side
-you took stays faintly coloured and joined to the result, a side you left out
-keeps only its outline, and when you took both, both stay joined to it.
+Once you settle a change it keeps a muted trace of what you took, in its
+colour: the side you took stays faintly coloured and joined to the result, a
+side you left out keeps only its outline, and when you took both, both stay
+joined to it.
 
 **Close** leaves the merge editor at any point without ending the merge or
 rebase: the file keeps its conflict markers, and **Merge…** in the Conflicts
 dashboard opens it again.
 
-<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The sample merge in a light theme: YOURS feature/session-hardening on the left, the result in the middle, THEIRS main on the right, the legend above. Conflicts in red, one with Yours already taken; changes made on one side only in blue, green and grey; two changes made the same way on both sides, coloured on both; and one change already taken from Theirs, kept as a faint trace joined to the result."></p>
+<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The sample merge in a light theme: YOURS feature/session-hardening on the left, the result in the middle, THEIRS main on the right, the legend above. Conflicts in red, one with Yours already taken; changes made on one side only in blue; two changes made the same way on both sides, in green on both; and one change already taken from Theirs, kept as a faint blue trace joined to the result."></p>
 
 ## The Conflicts dashboard
 
@@ -72,7 +76,7 @@ The dashboard opens the moment a merge, rebase, cherry-pick, revert, git am or s
 
 - **Compare in Merge Studio**: select two files in the Explorer, or compare one file with its last commit.
 - **Open Changes in Merge Studio** from a changed file's title bar, and **Stage Changes with Ticks** to stage it one change at a time.
-- The same ribbons, colours and navigation as the merge editor, re-diffed live as you edit.
+- The same ribbons and navigation as the merge editor, re-diffed live as you edit. With no decision to make, a diff colours a change by what it did: blue changed, green added, grey removed.
 
 ## Try it in 30 seconds
 

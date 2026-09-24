@@ -43,17 +43,21 @@ but they share the same engine, so most Git behaviour lands in both at once.
   **Continue Rebase** appears right there. While it is open it has the whole
   Changes view: the commit box, the file list and the banner step aside, and
   **All conflicts** leads back to the dashboard.
-- **Every change coloured by what it is.** The merge editor's legend names
-  the colours in words, with how many changes are left: **Conflicts** in red
-  (both sides changed the same lines, differently; you choose), and
-  **Changed**, **Added** or **Removed** in blue, green or grey for a change
-  that doesn't conflict. Coloured on one side, only that side made it;
-  coloured on both sides, it is the same change made on both, and either
-  arrow takes it. Each change is one band from its side into the result; a
-  conflict with one side taken looks half done, and a settled change keeps a
-  muted trace of what you took: the side you took stays joined to the
+- **Every change coloured by the decision it needs.** The merge editor's
+  legend names the three colours in words, with how many changes are left:
+  **Conflict — you choose**, in red (both sides changed the same lines,
+  differently); **Same on both sides — either arrow takes it**, in green
+  (both sides made the same change, whether they added, changed or removed
+  lines: nothing to choose); and **One side only — safe to take**, in blue
+  (only one side changed these lines, whatever it did). What a change did
+  shows in the shape of its band and the words it highlights, and red and
+  green also differ in lightness, so they stay apart for colour-blind eyes.
+  Each change is one band from its side into the result; a conflict with one
+  side taken looks half done, and a settled change keeps a muted trace of
+  what you took, in its colour: the side you took stays joined to the
   result, a side you left out keeps only its outline, and when you took
-  both, both stay joined. Every change has an arrow toward the result and a
+  both, both stay joined.
+ Every change has an arrow toward the result and a
   cross to leave it out, each saying what it does ("Accept Yours (test) for
   this conflict"), from the mouse, the keyboard or a screen reader.
   **Resolve simple** on the toolbar settles every conflict whose two edits

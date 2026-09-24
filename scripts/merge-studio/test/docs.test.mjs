@@ -133,15 +133,21 @@ function firstEntry(rel) {
 }
 
 test("the three changelogs say the merge editor's colours, its trace and Close the same way", () => {
-  // The owner's model (24 Sep 2026): the same change on both sides wears the
-  // colour of what it did on BOTH sides and either arrow takes it; a settled
-  // change keeps a muted trace of what was taken; Close leaves the editor and
-  // keeps the operation. The research's violet "Same on both sides" is gone.
+  // The owner's rule (24 Sep 2026): a colour says the DECISION a change needs,
+  // never what it did — "Conflict — you choose" in red, "Same on both sides —
+  // either arrow takes it" in green whatever the change did, "One side only —
+  // safe to take" in blue whatever it did. A settled change keeps a muted
+  // trace of what was taken; Close leaves the editor and keeps the operation.
+  // The research's violet is gone, and so is the per-type paint.
   for (const rel of ["apps/extension/CHANGELOG.md", "apps/desktop/CHANGELOG.md", "apps/merge-studio/CHANGELOG.md"]) {
     const entry = firstEntry(rel).replace(/\s+/g, " ");
     assert.doesNotMatch(entry, /\bviolet\b/i, `${rel}: no violet`);
-    assert.doesNotMatch(entry, /\*\*Same on both sides\*\*/, `${rel}: "Same on both sides" is not a colour of its own`);
-    assert.match(entry, /coloured on both sides, it is the same change|A change coloured on both sides is the same change/i, `${rel}: a change coloured on both sides is the same change`);
+    assert.match(entry, /\*\*Conflict — you choose\*\*,? in red/, `${rel}: red is "Conflict — you choose"`);
+    assert.match(entry, /\*\*Same on both sides — either arrow takes it\*\*,? in green/, `${rel}: green is "Same on both sides — either arrow takes it"`);
+    assert.match(entry, /\*\*One side only — safe to take\*\*,? in blue/, `${rel}: blue is "One side only — safe to take"`);
+    assert.match(entry, /whether they added, changed or removed/i, `${rel}: green whatever the same change did`);
+    assert.doesNotMatch(entry, /\*\*(Changed|Added|Removed)\*\*|blue, green or grey/, `${rel}: no merge colour for what a change did`);
+    assert.match(entry, /lightness/i, `${rel}: red and green differ in lightness, for colour-blind eyes`);
     assert.match(entry, /either arrow takes it/i, `${rel}: either arrow takes it`);
     assert.match(entry, /muted trace of what you took/i, `${rel}: a settled change keeps a trace`);
     assert.match(entry, /\*\*Close\*\* leaves the (merge )?editor at any point without ending the operation/i, `${rel}: Close keeps the operation`);

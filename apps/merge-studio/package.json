@@ -201,7 +201,7 @@
           {
             "id": "mergeStudio.readColours",
             "title": "Read the colours",
-            "description": "The legend names every colour in words. Red is a real conflict, and Resolve simple on the toolbar resolves the ones whose edits don't overlap. Blue, green and grey are changes that don't conflict: changed, added and removed lines. Coloured on one side, only that side made the change. Coloured on both sides, it is the same change made on both, and either arrow takes it. A change you settled keeps a muted trace of the side you took.",
+            "description": "Each colour says whether your choice matters. Red: a conflict, you choose (Resolve simple on the toolbar settles the ones whose edits don't overlap). Green: the same change on both sides, whether lines were added, changed or removed, so either arrow takes it. Blue: a change on one side only, safe to take. The legend names them in words, and a change you settled keeps a muted trace of the side you took.",
             "media": {
               "image": {
                 "dark": "media/walkthrough/legend-dark.png",
@@ -209,7 +209,7 @@
                 "hc": "media/walkthrough/legend-dark.png",
                 "hcLight": "media/walkthrough/legend-light.png"
               },
-              "altText": "The legend names each colour in words: Conflicts, then Changed, Added and Removed on one side, then Same on both sides. Below it, a conflict in red, a change in blue and an added function in green."
+              "altText": "The legend names each colour in words: Conflict — you choose, Same on both sides — either arrow takes it, One side only — safe to take. Below it, conflicts in red, the same change on both sides in green, and changes made on one side only in blue."
             },
             "completionEvents": [
               "onStepSelected"

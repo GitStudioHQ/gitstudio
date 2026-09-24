@@ -243,30 +243,46 @@ test("the 1.0.0 entry is in the user's words (no internals, no invented symbols)
   assert.doesNotMatch(prose, /\borange\b/i);
 });
 
-test("the 1.0.0 entry says the colours in words, as the legend names them", () => {
+test("the 1.0.0 entry says the colours in words, as the legend names them — one colour per decision", () => {
   const colours = sectionsOf(entry100).find((s) => s.startsWith("The colours")) ?? "";
   assert.ok(colours, "a section on the colours");
+  // The owner's rule (24 Sep 2026): a colour says the DECISION a change needs,
+  // never what it did — red you choose, green the same change on both sides,
+  // blue one side only. The legend's own words, each with its colour.
   const pairs: Array<[string, string]> = [
-    ["Conflicts", "red"],
-    ["Changed", "blue"],
-    ["Added", "green"],
-    ["Removed", "grey"],
+    ["Conflict — you choose", "red"],
+    ["Same on both sides — either arrow takes it", "green"],
+    ["One side only — safe to take", "blue"],
   ];
   for (const [name, colour] of pairs) {
     const line = colours.split("\n").find((l) => l.includes(`**${name}**`)) ?? "";
     assert.match(line, new RegExp(`\\b${colour}\\b`), `${name} is said to be ${colour}`);
   }
-  // The owner's model (24 Sep 2026, "both are green"): the same change on both
-  // sides has no colour of its own. It wears the colour of what it did on BOTH
-  // sides, and either side's arrow takes it.
-  const both = colours.split("\n").find((l) => /coloured on both sides/i.test(l)) ?? "";
-  assert.match(both, /same change/i, "a change coloured on both sides is said to be the same change");
-  assert.match(both, /either arrow/i, "and either arrow takes it");
+  // Whatever the change did: added, changed and removed are one colour each way.
+  const green = colours.split("\n").find((l) => l.includes("**Same on both sides")) ?? "";
+  assert.match(green, /whether they added, changed or removed/i, "the same change is green whatever it did");
+  const blue = colours.split("\n").find((l) => l.includes("**One side only")) ?? "";
+  assert.match(blue, /whether it added, changed or removed/i, "a one-sided change is blue whatever it did");
+  assert.doesNotMatch(colours, /\*\*(Changed|Added|Removed)\*\*|\bgrey\b/, "no colour for what a change did");
+  assert.match(colours, /lightness/i, "red and green are said to differ in lightness, for colour-blind eyes");
   // A settled change keeps a trace of what was taken, not an empty grey line.
   const settled = colours.split("\n").find((l) => /\btrace\b/i.test(l)) ?? "";
   assert.match(settled, /\btook\b/i, "the trace says which side was taken");
   assert.match(settled, /\bleft out\b/i, "…which was left out");
   assert.match(settled, /\bboth\b/i, "…or that both went in");
+});
+
+test("the README's colour table names the legend's three entries, each with its one colour", () => {
+  const section = readme.split("## Every change, colour-coded")[1]?.split("\n## ")[0] ?? "";
+  const rows = section.split("\n").filter((l) => l.startsWith("| ") && !/^\| (Colour|---)/.test(l));
+  assert.deepEqual(
+    rows.map((r) => r.split("|").slice(1, 3).map((c) => c.trim())),
+    [
+      ["red", "Conflict — you choose"],
+      ["green", "Same on both sides — either arrow takes it"],
+      ["blue", "One side only — safe to take"],
+    ],
+  );
 });
 
 test("the 1.0.0 entry says Close leaves the merge editor without ending the operation", () => {
@@ -276,9 +292,10 @@ test("the 1.0.0 entry says Close leaves the merge editor without ending the oper
   assert.match(close, /conflict markers/i, "and the file keeps its markers");
 });
 
-test("the listing never describes a colour of its own for the same change on both sides", () => {
-  // The research's violet "Same on both sides" was the owner's no: the listing,
-  // the walkthrough and the shot list describe what the editor shows.
+test("the listing describes the colours by decision: red, green for the same change on both sides, blue for one side only", () => {
+  // The research's violet "Same on both sides" was the owner's no, and so,
+  // later, was colouring a change by what it did: the listing, the
+  // walkthrough and the shot list describe what the editor shows.
   const places: Array<[string, string]> = [
     ["CHANGELOG 1.0.0", entry100],
     ["README", readme],
@@ -290,7 +307,7 @@ test("the listing never describes a colour of its own for the same change on bot
   }
   for (const [where, text] of places) {
     assert.doesNotMatch(text, /\b(violet|purple|lavender)\b/i, where);
-    assert.doesNotMatch(text, /Same on both sides \(|\*\*Same on both sides\*\*/, `${where}: "Same on both sides" named as a colour`);
+    assert.doesNotMatch(text, /Changed \/ Added \/ Removed|Changed, Added,? and Removed|blue, green and grey|blue, green or grey|grey for lines removed/i, `${where}: a merge colour named for what a change did`);
   }
 });
 
