@@ -264,13 +264,20 @@
 .jb-toolbar-btn.ms-continue { gap: 6px; }
 
 /* ── The no-text panel ────────────────────────────────────────────────────── */
+/* border-box: a content-box 100% plus its padding ran past the content area
+   and, positioned, painted over the bottom bar — Close, the only way out of
+   a submodule or symlink conflict, showed as a sliver (VS Code has no global
+   border-box; the desktop does). What does not fit a short pane scrolls,
+   and "safe" keeps the top of a centred panel reachable when it does. */
 .ms-notext {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   gap: var(--gs-space-2);
   height: 100%;
+  overflow: auto;
   padding: var(--gs-space-4) 10%;
   text-align: center;
   font-family: var(--gs-font-ui);

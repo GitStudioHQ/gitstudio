@@ -782,3 +782,41 @@ test("the sample's Close reads Close sample; Close's question is announced, and 
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+test("the no-text panel stays above the bottom bar: its Close is whole and takes the click, and a short pane scrolls the panel", { skip }, async () => {
+  // In VS Code the panel (height 100% plus its padding, content-box) ran past
+  // the content area and painted over the bottom bar: the only way out of a
+  // submodule, symlink or binary conflict showed as a sliver of its border.
+  const v = await run(`
+    const root = document.getElementById("root");
+    const covered = () => {
+      const close = $(".ms-close");
+      const b = close.getBoundingClientRect();
+      const r = root.getBoundingClientRect();
+      if (!(b.height > 0 && b.top >= r.top - 1 && b.bottom <= r.bottom + 1)) return "Close at " + Math.round(b.top) + "–" + Math.round(b.bottom) + " outside " + Math.round(r.top) + "–" + Math.round(r.bottom);
+      for (const y of [b.top + 2, b.top + b.height / 2, b.bottom - 2]) {
+        const hit = document.elementFromPoint(b.left + b.width / 2, y);
+        if (!hit || !close.contains(hit)) return "at y=" + Math.round(y) + " the click lands on " + (hit ? hit.className || hit.tagName : "nothing");
+      }
+      const panel = $(".ms-notext").getBoundingClientRect();
+      const bar = $(".jb-bottom-bar").getBoundingClientRect();
+      return panel.bottom <= bar.top + 1 ? "" : "the panel ends at " + Math.round(panel.bottom) + ", under the bar's top " + Math.round(bar.top);
+    };
+    for (const over of [
+      { shape: "submodule", commits: { yours: "1c34b25aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", theirs: "9d20bedbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } },
+      { shape: "symlink" },
+      { shape: "binary" },
+      { shape: "modify-delete", missingRole: "theirs" },
+    ]) {
+      root.style.height = "640px";
+      mount(payload(over));
+      expect(shown(".ms-close") && !covered(), over.shape + ": " + covered());
+      root.style.height = "220px";
+      const why = covered();
+      const panel = $(".ms-notext");
+      expect(!why, over.shape + " in a short pane: " + why);
+      expect(panel.scrollHeight > panel.clientHeight + 1 ? getComputedStyle(panel).overflowY === "auto" : true, over.shape + ": what does not fit scrolls (" + getComputedStyle(panel).overflowY + ")");
+    }
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
