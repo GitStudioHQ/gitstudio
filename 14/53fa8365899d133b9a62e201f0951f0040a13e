@@ -1,0 +1,27 @@
+packages/merge-vscode/src/dashboardController.ts
+  s_26f5e669d3043c::t_7c5715b6305e71 166-172
+  s_26f5e669d3043c::t_afbe524d1cd6cc 165
+packages/merge-vscode/test/conflictsPanel.test.ts
+  s_26f5e669d3043c::t_567ea5d284571a 310
+  s_26f5e669d3043c::t_9ec79a81f768ae 292,295-302
+packages/merge-vscode/src/conflictsPanel.ts
+  s_26f5e669d3043c::t_396a92e6a9f237 258
+  s_26f5e669d3043c::t_d1fcab49fe1f50 194
+  s_26f5e669d3043c::t_72b835655a1179 211-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1453fa8365899d133b9a62e201f0951f0040a13e",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
