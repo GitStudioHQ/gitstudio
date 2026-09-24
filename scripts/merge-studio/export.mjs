@@ -30,6 +30,10 @@
 //    only on main. Then it writes VENDORED_FROM.json: the gitstudio sha, and a
 //    sha256 for every vendored file (checked) and every shell file (reported).
 //
+// Every file is written with the bytes git stores for it (gitBytes), so an
+// export from a Windows checkout, whose working tree has CRLF line endings
+// (core.autocrlf), writes what an export from anywhere else does.
+//
 // Nothing is committed, pushed or published: the target is left as a working
 // tree change for a human to review. The other direction, a merge-studio pull
 // request replayed into gitstudio, is import.mjs.
@@ -37,6 +41,7 @@
 // usage: node scripts/merge-studio/export.mjs --into <merge-studio checkout> [--allow-dirty] [--no-lock] [--gitstudio <checkout>]
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, posix, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -78,6 +83,46 @@ const writeJson = (file, value) => {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 };
+
+/** git's blob id for these bytes. */
+export function blobId(bytes) {
+  return createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+}
+
+/**
+ * The bytes git stores for each of `rels` (forward-slashed, relative to the
+ * checkout `root`), in their order: what the export writes. With
+ * core.autocrlf, git for Windows' default, the working tree has CRLF line
+ * endings where git stores LF, and copying it would give merge-studio other
+ * bytes (and VENDORED_FROM.json other hashes) than an export from anywhere
+ * else; merge-studio keeps vendor/gitstudio byte for byte (`* -text`). A file
+ * changed since its last commit (--allow-dirty) is taken as `git add` would
+ * store it. `env`: the environment git runs in.
+ */
+export function gitBytes(root, rels, { env = process.env } = {}) {
+  if (rels.length === 0) return [];
+  const git = (args, input) =>
+    execFileSync("git", ["-C", root, ...args], { input, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] });
+  // The blob git makes of each file, by its attributes and core.autocrlf...
+  const ids = git(["hash-object", "--stdin-paths"], `${rels.join("\n")}\n`).split("\n");
+  let storedCrlf;
+  return rels.map((rel, i) => {
+    const bytes = readFileSync(join(root, rel));
+    if (blobId(bytes) === ids[i]) return bytes;
+    // ...except that hash-object reads no index, so it misses autocrlf's
+    // "safer" rule: git never converts a file it already stores with CRLF.
+    storedCrlf ??= new Set(
+      git(["ls-files", "--eol", "-z"])
+        .split("\0")
+        .filter((rec) => /^i\/(crlf|mixed) /.test(rec))
+        .map((rec) => rec.slice(rec.indexOf("\t") + 1)),
+    );
+    if (storedCrlf.has(rel)) return bytes;
+    const lf = Buffer.from(bytes.toString("latin1").replace(/\r\n/g, "\n"), "latin1");
+    if (blobId(lf) === ids[i]) return lf;
+    throw new Error(`${rel}: git stores other bytes for it than it has, with or without CRLF line endings (a filter in .gitattributes?), and the export cannot tell which to write`);
+  });
+}
 
 /**
  * The version gitstudio's lockfile resolves `name` to when `fromPath` (a lock
@@ -278,9 +323,13 @@ export function exportTo({ into, allowDirty = false, lock = true, gitstudio = GI
   // GitStudio's licence, the parity inputs, check-parity and the CI that runs
   // it (they travel with the vendored code) and the shell.
   const copied = copiedFiles(root);
+  const files = copied.map(([from]) => from).filter((from) => lstatSync(join(root, from)).isFile());
+  const stored = new Map(gitBytes(root, files).map((bytes, i) => [files[i], bytes]));
   for (const [from, to] of copied) {
     mkdirSync(dirname(join(target, to)), { recursive: true });
+    // The file with its mode (a symbolic link as it is), then the bytes git stores for it.
     cpSync(join(root, from), join(target, to));
+    if (stored.has(from)) writeFileSync(join(target, to), stored.get(from));
   }
   // Vendored bytes are hashed, so git must never rewrite them: no line-ending
   // conversion on a Windows checkout (core.autocrlf), in either repository.

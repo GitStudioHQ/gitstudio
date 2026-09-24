@@ -11,7 +11,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkParity, sha256 } from "../check-parity.mjs";
 import {
+  blobId,
   exportTo,
+  gitBytes,
   GITSTUDIO_ROOT,
   lockSubset,
   resolveInLock,
@@ -20,6 +22,12 @@ import {
   VENDOR_GITATTRIBUTES,
   VENDORED_PACKAGES,
 } from "../export.mjs";
+
+/**
+ * The blob git makes of gitstudio's file `rel`: what an export writes for it,
+ * not the CRLF a checkout with core.autocrlf (on Windows) has on disk.
+ */
+const gitstudioBlobId = (rel) => execFileSync("git", ["-C", GITSTUDIO_ROOT, "hash-object", "--", rel], { encoding: "utf8" }).trim();
 
 const entry = (version, extra = {}) => ({
   version,
@@ -124,6 +132,48 @@ test("the standalone tsconfig maps every vendored package into vendor/gitstudio"
   assert.equal(t.compilerOptions.baseUrl, undefined, "paths resolve from the tsconfig itself (baseUrl is deprecated)");
 });
 
+test("gitBytes, what the export writes: the bytes `git add` stores, not the CRLF a checkout with core.autocrlf (git for Windows' default) has on disk", () => {
+  const home = mkdtempSync(join(tmpdir(), "ms-export-eol-"));
+  const repo = join(home, "repo");
+  // Hermetic git: the config of the machine running this (autocrlf, on a Windows runner) decides nothing here.
+  writeFileSync(join(home, "gitconfig"), "");
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: join(home, "gitconfig"), GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (...args) => execFileSync("git", ["-C", repo, ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    mkdirSync(repo);
+    git("init", "-q");
+    git("config", "user.name", "Maintainer");
+    git("config", "user.email", "maintainer@example.com");
+    const committed = {
+      "lf.ts": "one\ntwo\n",
+      "crlf.ts": "one\r\ntwo\r\n", // stored with CRLF: autocrlf never converts it
+      "edited.ts": "one\ntwo\n",
+      "icon.png": Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]), // binary: never converted
+    };
+    for (const [rel, body] of Object.entries(committed)) writeFileSync(join(repo, rel), body);
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const rels = [...Object.keys(committed), "new.ts"];
+    writeFileSync(join(repo, "new.ts"), "a\r\nb\n");
+    assert.deepEqual(gitBytes(repo, rels, { env }), rels.map((rel) => readFileSync(join(repo, rel))), "without autocrlf, the bytes on disk");
+
+    // git for Windows: every file checked out again, with CRLF on disk where git has LF.
+    git("config", "core.autocrlf", "true");
+    for (const rel of Object.keys(committed)) rmSync(join(repo, rel));
+    git("checkout", "--", ".");
+    assert.equal(readFileSync(join(repo, "lf.ts"), "utf8"), "one\r\ntwo\r\n", "precondition: CRLF on disk");
+    writeFileSync(join(repo, "edited.ts"), "one\r\ntwo\r\nthree\r\n"); // changed since the commit (--allow-dirty)
+    writeFileSync(join(repo, "new.ts"), "a\r\nb\r\n"); // never committed
+    const bytes = gitBytes(repo, rels, { env });
+    assert.equal(bytes[0].toString(), "one\ntwo\n");
+    assert.equal(bytes[1].toString(), "one\r\ntwo\r\n");
+    git("add", "-A");
+    rels.forEach((rel, i) => assert.ok(bytes[i].equals(git("cat-file", "blob", `:${rel}`)), `${rel}: what git add stores`));
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("a real export: replaces the old layout, vendors the packages, and passes check-parity until a byte changes", () => {
   const into = mkdtempSync(join(tmpdir(), "ms-export-test-"));
   try {
@@ -159,11 +209,9 @@ test("a real export: replaces the old layout, vendors the packages, and passes c
     const head = execFileSync("git", ["-C", GITSTUDIO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
     assert.equal(manifest.gitstudio.sha, head);
     const mergeModel = "vendor/gitstudio/engine/src/mergeModel.ts";
-    assert.equal(
-      manifest.files[mergeModel],
-      sha256(readFileSync(join(GITSTUDIO_ROOT, "packages/engine/src/mergeModel.ts"))),
-      "the hash is of gitstudio's bytes",
-    );
+    const vendoredBytes = readFileSync(join(into, mergeModel));
+    assert.equal(manifest.files[mergeModel], sha256(vendoredBytes), "the hash is of the vendored bytes...");
+    assert.equal(blobId(vendoredBytes), gitstudioBlobId("packages/engine/src/mergeModel.ts"), "...which are gitstudio's, as git stores them");
     assert.ok(existsSync(join(into, "scripts/check-parity.mjs")));
 
     assert.deepEqual(checkParity(into).problems, []);
@@ -250,8 +298,9 @@ test("the export writes merge-studio's CI: check-parity in a job of its own, neu
     writeFileSync(join(into, ".github/workflows/release.yml"), "name: Release\n");
     exportTo({ into, allowDirty: true, lock: false });
 
-    const yml = readFileSync(join(into, ".github/workflows/ci.yml"), "utf8");
-    assert.equal(yml, readFileSync(join(GITSTUDIO_ROOT, "scripts/merge-studio/merge-studio-ci.yml"), "utf8"), "written from gitstudio's template, byte for byte");
+    const ymlBytes = readFileSync(join(into, ".github/workflows/ci.yml"));
+    assert.equal(blobId(ymlBytes), gitstudioBlobId("scripts/merge-studio/merge-studio-ci.yml"), "written from gitstudio's template, byte for byte as git stores it");
+    const yml = ymlBytes.toString("utf8");
     assert.equal(readFileSync(join(into, ".github/workflows/release.yml"), "utf8"), "name: Release\n", "merge-studio's own release workflow is left alone");
     assert.match(yml, /^on:\n {2}push:\n {4}branches: \[main\]\n {2}pull_request:\n/m, "it runs on pushes to main and on pull requests");
 

@@ -166,7 +166,11 @@ node scripts/check-parity.mjs --gitstudio ../gitstudio
 
 (run in merge-studio, with gitstudio checked out beside it). A missing or
 unreadable `VENDORED_FROM.json` always fails. `vendor/gitstudio/.gitattributes`
-keeps git from changing the line endings of the hashed files on Windows.
+keeps git from changing the line endings of the hashed files on Windows, and a
+root file that a Windows checkout has with CRLF line endings (git's
+`core.autocrlf`) is not a difference. The export writes every file as git
+stores it, so an export from a Windows checkout of gitstudio writes the same
+bytes as one from anywhere else.
 
 check-parity does not look at merge-studio's own files, and it does not judge
 whether code is right: that is the tests' job, in both repositories.

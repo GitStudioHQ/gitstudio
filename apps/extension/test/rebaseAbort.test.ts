@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 // Hermetic git for every process this file spawns, GitContext's included
 // (see opInProgress.test.ts for why).
@@ -40,7 +40,7 @@ test("during git am, the rebase doors' Abort ends the patch series (am --abort),
     r.git("checkout", "-qb", "feature");
     writeFileSync(join(r.root, "f.txt"), "one\ntwo-feature\nthree\n");
     r.git("commit", "-qam", "feature edit");
-    const patch = join(r.root, "..", `${r.root.split("/").pop()}.patch`);
+    const patch = join(r.root, "..", `${basename(r.root)}.patch`);
     writeFileSync(patch, r.git("format-patch", "-1", "--stdout"));
     r.git("checkout", "-q", "master");
     writeFileSync(join(r.root, "f.txt"), "one\ntwo-master\nthree\n");

@@ -38,13 +38,14 @@
 // It commits on the current branch (never main) and pushes nothing.
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { exportTo, GENERATED_PACKAGE_FIELDS, GITSTUDIO_ROOT, standaloneFrom } from "./export.mjs";
+import { blobId, exportTo, GENERATED_PACKAGE_FIELDS, GITSTUDIO_ROOT, standaloneFrom } from "./export.mjs";
 import { MANIFEST_FILE, SHELL_DIR, shellFiles, toGitstudio } from "./layout.mjs";
+
+export { blobId };
 
 export const DEFAULT_REPO = "GitStudioHQ/merge-studio";
 
@@ -85,11 +86,6 @@ function run(cwd, args, { input, allowFail = false, buffer = false } = {}) {
   return r;
 }
 const git = (cwd, ...args) => run(cwd, args).stdout.replace(/\n$/, "");
-
-/** git's blob id for these bytes. */
-export function blobId(bytes) {
-  return createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
-}
 
 // ---------------------------------------------------------------- patches
 //
@@ -653,13 +649,17 @@ export function packageJsonChange({ baseText, headText, shellText }) {
   return { apply, skipped, conflicts, shell, text: `${JSON.stringify(shell, null, 2)}\n` };
 }
 
-/** The lockfile's version for a workspace, changed in place; undefined when the entry is not found. */
+/**
+ * The lockfile's version for a workspace, changed in place; undefined when the
+ * entry is not found. Each line keeps its ending: CRLF in a checkout with
+ * core.autocrlf (git for Windows' default).
+ */
 export function setLockVersion(lockText, workspace, version) {
   const lines = lockText.split("\n");
-  const start = lines.findIndex((l) => l === `    "${workspace}": {`);
+  const start = lines.findIndex((l) => l.replace(/\r$/, "") === `    "${workspace}": {`);
   if (start < 0) return undefined;
   for (let i = start + 1; i < lines.length && !/^ {4}\}/.test(lines[i]); i++) {
-    const m = /^( {6}"version": ")([^"]*)(",?)$/.exec(lines[i]);
+    const m = /^( {6}"version": ")([^"]*)(",?\r?)$/.exec(lines[i]);
     if (m) {
       lines[i] = `${m[1]}${version}${m[3]}`;
       return lines.join("\n");
@@ -702,8 +702,14 @@ function planPackageJson(gitstudio, commit, section) {
     headText = Buffer.from(applied, "latin1").toString("utf8");
   }
   const change = packageJsonChange({ baseText, headText, shellText });
-  if (change.text && `${JSON.stringify(JSON.parse(shellText), null, 2)}\n` !== shellText) {
-    return { ...change, conflicts: [{ path: [], why: `${SHELL_DIR}/package.json is not in the 2-space JSON form the import writes: make the change by hand` }] };
+  if (change.text) {
+    // A checkout with core.autocrlf (git for Windows' default) has the file
+    // with CRLF line endings: the same form, and it is written back with them.
+    const eol = shellText.includes("\r\n") ? "\r\n" : "\n";
+    if (`${JSON.stringify(JSON.parse(shellText), null, 2)}\n`.replace(/\n/g, eol) !== shellText) {
+      return { ...change, conflicts: [{ path: [], why: `${SHELL_DIR}/package.json is not in the 2-space JSON form the import writes: make the change by hand` }] };
+    }
+    change.text = change.text.replace(/\n/g, eol);
   }
   return { ...change, baseText, headText };
 }
