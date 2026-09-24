@@ -348,3 +348,33 @@ test("a row at work leaves every other row's look alone however long git takes; 
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+test("under the webview's CSP (no inline style attributes) a patched style still applies: the bar fills as files resolve", { skip }, async () => {
+  // Real VS Code, the recording of this lane: "3 of 9 resolved" over an EMPTY
+  // progress bar. The extensions' page allows no inline styles (webviewHtml.ts:
+  // style-src without 'unsafe-inline'), and the patch wrote the fill's new
+  // width with setAttribute("style") — which CSP blocks. The first paint
+  // inserts nodes styled through the CSSOM (allowed), so it showed; every
+  // later width was dropped. Headless pages have no CSP, so nothing here saw it.
+  const v = await run(`
+    const meta = document.createElement("meta");
+    meta.httpEquiv = "Content-Security-Policy";
+    meta.content = "style-src-attr 'none'";
+    document.head.appendChild(meta);
+    const canary = document.createElement("div");
+    canary.setAttribute("style", "position:absolute;width:7px;height:7px");
+    document.body.appendChild(canary);
+    expect(canary.getBoundingClientRect().width !== 7, "precondition: this page, like the webview, applies no style attribute");
+    canary.remove();
+    const still = document.createElement("style"); // the bar's width, not its glide
+    still.textContent = ".cd-bar-fill { transition: none !important; }";
+    document.head.appendChild(still);
+    const fillW = () => Math.round(parseFloat(getComputedStyle($(".cd-bar-fill")).width) / $(".cd-bar").getBoundingClientRect().width * 100);
+    expect(Math.abs(fillW() - 33) <= 1, "the first paint's bar: 3 of 9 (" + fillW() + "%)");
+    set("app/calculator.py", { status: "resolved", choice: "yours" });
+    d.render(S(FILES, { done: 0 }));
+    expect($(".cd-progress-label").textContent === "4 of 9 resolved", "the label moves (" + $(".cd-progress-label").textContent + ")");
+    expect(Math.abs(fillW() - 44) <= 1, "and so does the bar (" + fillW() + "%, its style says " + $(".cd-bar-fill").getAttribute("style") + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});

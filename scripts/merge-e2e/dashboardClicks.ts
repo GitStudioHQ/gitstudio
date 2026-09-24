@@ -420,7 +420,13 @@ const COLLECT = `(() => { ${INNER}
   if (!P) return { reloaded: true };
   const dash = D.querySelector('.cd-dash');
   P.stop();
-  return { msgs: P.msgs, muts: P.muts, looks: P.looks, events: P.events,
+  // What the progress bar SHOWS against what its label says (the page's CSP
+  // drops a style written as an attribute: a label that moves over a bar that
+  // does not).
+  const bar = D.querySelector('.cd-bar'), fill = D.querySelector('.cd-bar-fill'), label = D.querySelector('.cd-progress-label');
+  const m = label ? /^(\\d+) of (\\d+)/.exec(label.textContent) : null;
+  const progress = bar && fill && m ? { shown: fill.getBoundingClientRect().width / bar.getBoundingClientRect().width, said: Number(m[1]) / Number(m[2]), label: label.textContent } : null;
+  return { msgs: P.msgs, muts: P.muts, looks: P.looks, events: P.events, progress,
     sameDocument: W.__gsDoc === P.doc, sameDashboard: !!dash && dash.__gsNode === P.doc };
 })()`;
 
@@ -574,12 +580,16 @@ async function runScenario(
     muts: { zone: string; type: string; target: string; attr?: string; key?: string; old?: string; now?: string; added?: string[]; removed?: string[] }[];
     looks: { t: number; key: string; row: string | null; from: string; to: string }[];
     events: { t: number; type: string; key: string | null }[];
+    progress: { shown: number; said: number; label: string } | null;
     sameDocument: boolean;
     sameDashboard: boolean;
   }>(dash.sid, COLLECT);
 
   const failures: string[] = [];
   if (got.reloaded || !got.sameDocument || !got.sameDashboard) failures.push("the page was reloaded or the dashboard rebuilt (the probe did not survive)");
+  if (got.progress && Math.abs(got.progress.shown - got.progress.said) > 0.03) {
+    failures.push(`the progress bar shows ${Math.round(got.progress.shown * 100)}% under "${got.progress.label}"`);
+  }
   // What was written, and where.
   const mine = `row:${act.path}`;
   const allowed = (m: (typeof got.muts)[number]) =>

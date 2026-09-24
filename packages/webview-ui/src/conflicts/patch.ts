@@ -130,19 +130,33 @@ export function patchChildren(live: Node, next: Node, o: PatchOptions = {}): voi
   }
 }
 
+/**
+ * Write one attribute. The STYLE attribute goes through the CSSOM: the
+ * extensions' webview CSP allows no inline styles (`style-src` without
+ * 'unsafe-inline'), so `setAttribute("style", …)` changes the attribute and
+ * applies nothing — in VS Code the progress bar never filled after the first
+ * paint, while every headless check (no CSP) passed. `style.cssText` is not
+ * inline markup, and CSP lets it through.
+ */
+function setAttr(live: Element, name: string, value: string): void {
+  const css = (live as HTMLElement).style as CSSStyleDeclaration | undefined;
+  if (name === "style" && css) css.cssText = value;
+  else live.setAttribute(name, value);
+}
+
 function syncAttr(live: Element, next: Element, name: string): void {
   const v = next.getAttribute(name);
   if (v === null) {
     if (live.hasAttribute(name)) live.removeAttribute(name);
   } else if (live.getAttribute(name) !== v) {
-    live.setAttribute(name, v);
+    setAttr(live, name, v);
   }
 }
 
 function syncAttrs(live: Element, next: Element, o: PatchOptions): void {
   for (const a of [...next.attributes]) {
     if (a.name === "class") continue;
-    if (live.getAttribute(a.name) !== a.value) live.setAttribute(a.name, a.value);
+    if (live.getAttribute(a.name) !== a.value) setAttr(live, a.name, a.value);
   }
   for (const a of [...live.attributes]) {
     if (a.name !== "class" && !next.hasAttribute(a.name)) live.removeAttribute(a.name);
