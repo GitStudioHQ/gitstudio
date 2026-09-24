@@ -1,0 +1,31 @@
+docs/releases/app-v2.1.0.md
+  s_26f5e669d3043c::t_7dd282d0e8c8ee 1-81
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_431360670bcb43 7
+apps/desktop/package.json
+  s_26f5e669d3043c::t_431360670bcb43 3
+apps/extension/package.json
+  s_26f5e669d3043c::t_431360670bcb43 5
+docs/releases/ext-v1.14.0.md
+  s_26f5e669d3043c::t_5fd63ba4b13ec0 1-83
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_431360670bcb43 12
+package-lock.json
+  s_26f5e669d3043c::t_4eadfcd64fdc9c 26,63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "91f925a31cbd361257da9dc6e06d0e269cff4924",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
