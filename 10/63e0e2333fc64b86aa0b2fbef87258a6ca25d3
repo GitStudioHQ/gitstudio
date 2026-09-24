@@ -1,0 +1,23 @@
+packages/webview-ui/src/styles/diff.css
+  s_26f5e669d3043c::t_2a800b5121886d 630-633
+  s_26f5e669d3043c::t_0311a3b6931d4a 356-360,362
+packages/webview-ui/test/mergeToolbarContrast.test.ts
+  s_26f5e669d3043c::t_84320621d7e8fc 1-5,14-18,37-38
+  s_26f5e669d3043c::t_a569c03d131189 6-13,19-36,39-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1063e0e2333fc64b86aa0b2fbef87258a6ca25d3",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
