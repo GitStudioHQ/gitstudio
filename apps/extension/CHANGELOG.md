@@ -38,8 +38,7 @@ does, the other does. (merge-studio#12)
   these lines); and **Removed lines**, in grey (lines removed without a
   conflict). As in JetBrains, a change still to decide has its line numbers
   and its link to the result in the full colour and its lines in a lighter
-  shade, with the words that changed in the full colour; a change that is
-  all new, or all gone, is the full colour throughout. Each change is one
+  shade, with the words that changed in the full colour. Each change is one
   band from its side into the result; a conflict with one side taken looks
   half done, and a settled change keeps a trace of what you took, in the
   lighter shade of its colour: the side you took stays joined to the result,

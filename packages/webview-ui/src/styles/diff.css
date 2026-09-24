@@ -1,7 +1,7 @@
 /* The merge paints every change by the DECISION it needs (paint.ts), in
  * JetBrains' merge colours — the owner, 24 Sep 2026: orange instead of red,
- * a lighter grass green, a sky blue, light grey for removed lines; then the
- * exact light values, measured from JetBrains:
+ * a leaf green, a sky blue, light grey for removed lines; then the exact
+ * light values, measured from JetBrains:
  *
  * - conflict (orange):  the sides differ — you choose (even when one of them
  *                       removed lines);
@@ -16,24 +16,27 @@
  *
  *   light        full: words, columns    lighter: lines
  *   conflict     #fed5cc                 #ffeeeb
- *   same         #bee6bd                 #e5f5e5
+ *   same         #9edcaa                 #d8f1dd
  *   one-sided    #c2d7f2                 #e6effa
  *   removed      #d6d6d6                 #efefef
  *
  * The lighter colour is 40% of the way from the editor to the full one —
  * JetBrains' own ratio, which both of the owner's measured pairs follow;
- * green's and grey's lighter colours are derived by it.
+ * green's and grey's lighter colours are derived by it. The green is a leaf
+ * green (the owner found JetBrains' #bee6bd mint too washed out and asked for
+ * "a forest green like a leaf"): deeper and a touch cooler, oklch(0.84 0.094
+ * 150°). Every change's LINES are the lighter colour — an insertion's and a
+ * deletion's too: a solid full-colour block was the part that was not pale
+ * enough.
  *
  * Per tone:
  * - full:  an open change's line-number column and its ribbon across the
- *          gutter (the "columns"), its changed words, the lines of a change
- *          with nothing to compare word by word (text on one pane only — an
- *          insertion or a deletion, new or gone as a whole — or word
- *          highlighting off: decorations.ts comparedByWords, JetBrains' own
- *          rule), an insertion or deletion point's 1px line, and a discarded
- *          side's 1px outline;
- * - line:  the lighter colour — the lines of a change compared word by word;
- *          and the TRACE a settled change keeps: a side that was taken, its
+ *          gutter (the "columns"), its changed words (only where the change
+ *          has words to compare: decorations.ts comparedByWords), an
+ *          insertion or deletion point's 1px line, and a discarded side's 1px
+ *          outline;
+ * - line:  the lighter colour — every open change's lines; and the TRACE a
+ *          settled change keeps: a side that was taken, its
  *          ribbon to the Result, the Result itself, and the Result of a
  *          conflict with one side in (`half`);
  * - inner: what lays a changed word over the lighter line so that it lands
@@ -55,14 +58,14 @@
  *
  *   tone        hue (bright)             full   lighter   full lands at (OKLCH)   JetBrains
  *   conflict    #f5914b warning orange   .25    .10       0.378 0.045  56°        0.332 0.032  34°
- *   same        #6fd17a grass green      .30    .12       0.416 0.056 147°        0.360 0.041 161°
+ *   same        #3fc168 leaf green       .32    .128      0.403 0.067 153°        0.360 0.041 161°
  *   one-sided   #63b1fa sky blue         .34    .136      0.423 0.053 248°        0.439 0.057 248°
  *   removed     #c8ccd0 light grey       .22    .088      0.390 0.002             0.407 0.003
  *
  * The owner asked for LIGHTER shades than JetBrains' in the dark: its brown
- * conflict pulled to a lighter warning orange, its mint to a lighter grass
- * green (and lighter than the orange, so the two stand apart in lightness
- * too), a sky blue. The editor's text stays >= 5:1 on every full colour. High
+ * conflict pulled to a lighter warning orange, a leaf green in place of its
+ * mint (lighter than the orange, so the two stand apart in lightness too), a
+ * sky blue. The editor's text stays >= 5:1 on every full colour. High
  * contrast dark lays the same hues a step stronger over black; high contrast
  * light is the light palette; high contrast draws every edge, outline and
  * point solid, in the edge colour.
@@ -121,7 +124,7 @@
  * roles. What each lands on is in the tables at the top of this file. */
 :root {
   --jb-full-conflict:  rgba(245,145,75,.25);  --jb-line-conflict:  rgba(245,145,75,.1);   --jb-inner-conflict:  rgba(245,145,75,.167); --jb-edge-conflict:  #f5914b;
-  --jb-full-same:      rgba(111,209,122,.3);  --jb-line-same:      rgba(111,209,122,.12);  --jb-inner-same:      rgba(111,209,122,.205); --jb-edge-same:      #6fd17a;
+  --jb-full-same:      rgba(63,193,104,.32);  --jb-line-same:      rgba(63,193,104,.128);  --jb-inner-same:      rgba(63,193,104,.22);   --jb-edge-same:      #6bd694;
   --jb-full-one-sided: rgba(99,177,250,.34);  --jb-line-one-sided: rgba(99,177,250,.136); --jb-inner-one-sided: rgba(99,177,250,.236); --jb-edge-one-sided: #63b1fa;
   --jb-full-removed:   rgba(200,204,208,.22); --jb-line-removed:   rgba(200,204,208,.088); --jb-inner-removed:  rgba(200,204,208,.145); --jb-edge-removed:   #a8adb3;
   /* The 2-way diff (by what a change did). */
@@ -130,13 +133,14 @@
   --jb-line-deleted:  rgba(139,148,158,.13); --jb-inner-deleted:  rgba(139,148,158,.20); --jb-ruler-deleted:  rgba(139,148,158,.6);
 }
 /* Light: the owner's values, exactly, over a white editor — full #fed5cc
- * #bee6bd #c2d7f2 #d6d6d6, lighter #ffeeeb #e5f5e5 #e6effa #efefef. The
- * edges are each hue, deep enough for 3:1 on white. */
+ * #c2d7f2 #d6d6d6, lighter #ffeeeb #e6effa #efefef — and the leaf green that
+ * replaced JetBrains' mint, full #9edcaa, lighter #d8f1dd. The edges are each
+ * hue, deep enough for 3:1 on white. */
 body.vscode-light, body.vscode-high-contrast-light {
   --jb-full-conflict:  rgba(253,171,153,.5);  --jb-line-conflict:  rgba(255,170,155,.2);  --jb-inner-conflict:  rgba(252,171,152,.375); --jb-edge-conflict:  #d4612e;
-  --jb-full-same:      rgba(125,205,123,.5);  --jb-line-same:      rgba(125,205,125,.2);  --jb-inner-same:      rgba(125,205,122,.375); --jb-edge-same:      #299236;
+  --jb-full-same:      rgba(61,185,85,.5);    --jb-line-same:      rgba(61,185,85,.2);    --jb-inner-same:      rgba(61,185,85,.375);   --jb-edge-same:      #2b9860;
   --jb-full-one-sided: rgba(133,175,229,.5);  --jb-line-one-sided: rgba(130,175,230,.2);  --jb-inner-one-sided: rgba(134,175,229,.375); --jb-edge-one-sided: #1b65b9;
-  --jb-full-removed:   rgba(173,173,173,.5);  --jb-line-removed:   rgba(175,175,175,.2);  --jb-inner-removed:   rgba(172,172,172,.375); --jb-edge-removed:   #767676;
+  --jb-full-removed:   rgba(173,173,173,.5);  --jb-line-removed:   rgba(175,175,175,.2);  --jb-inner-removed:   rgba(172,172,172,.375); --jb-edge-removed:   #666666;
   --jb-line-modified: rgba(64,128,255,.28);  --jb-inner-modified: rgba(64,128,255,.18);  --jb-ruler-modified: rgba(9,105,218,.55);
   --jb-line-inserted: rgba(80,180,40,.15);   --jb-inner-inserted: rgba(80,180,40,.20);   --jb-ruler-inserted: rgba(26,127,55,.55);
   --jb-line-deleted:  rgba(110,118,129,.23); --jb-inner-deleted:  rgba(110,118,129,.20); --jb-ruler-deleted:  rgba(89,99,110,.55);
@@ -160,7 +164,7 @@ body.vscode-light, body.vscode-high-contrast-light {
 /* High contrast dark's black ground: the same hues, a step stronger. */
 body.vscode-high-contrast:not(.vscode-high-contrast-light) {
   --jb-full-conflict:  rgba(245,145,75,.3);   --jb-line-conflict:  rgba(245,145,75,.12);  --jb-inner-conflict:  rgba(245,145,75,.205);
-  --jb-full-same:      rgba(111,209,122,.36); --jb-line-same:      rgba(111,209,122,.144); --jb-inner-same:     rgba(111,209,122,.252);
+  --jb-full-same:      rgba(63,193,104,.38);  --jb-line-same:      rgba(63,193,104,.152);  --jb-inner-same:     rgba(63,193,104,.269);
   --jb-full-one-sided: rgba(99,177,250,.4);   --jb-line-one-sided: rgba(99,177,250,.16);  --jb-inner-one-sided: rgba(99,177,250,.286);
   --jb-full-removed:   rgba(200,204,208,.3);  --jb-line-removed:   rgba(200,204,208,.12); --jb-inner-removed:   rgba(200,204,208,.205);
   --jb-muted-conflict: var(--jb-line-conflict); --jb-muted-same: var(--jb-line-same);
@@ -195,14 +199,6 @@ body.vscode-high-contrast {
 .jb-line-inserted { background-color: var(--jb-line-inserted); }
 .jb-line-deleted { background-color: var(--jb-line-deleted); }
 .jb-line-modified { background-color: var(--jb-line-modified); }
-/* A change with nothing to compare word by word (decorations.ts
- * comparedByWords) — text on one pane only, an insertion or a deletion, new
- * or gone as a whole; or word highlighting turned off: the full colour
- * throughout, as JetBrains paints it. */
-.jb-line-conflict.jb-solid { background-color: var(--jb-full-conflict); }
-.jb-line-same.jb-solid { background-color: var(--jb-full-same); }
-.jb-line-one-sided.jb-solid { background-color: var(--jb-full-one-sided); }
-.jb-line-removed.jb-solid { background-color: var(--jb-full-removed); }
 /* An open change's line-number column: the full colour, which its ribbon
  * continues across the gutter — JetBrains' strong column beside the lighter
  * lines (the owner: the full colour "in the columns"). */

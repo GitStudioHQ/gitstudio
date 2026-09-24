@@ -75,10 +75,10 @@ export const WHITESPACE_WORDS = "Only whitespace changed here";
  * - pending, as JetBrains paints it (the owner's colours, 24 Sep 2026): the
  *   line-number column in the tone's FULL colour (`jb-margin-<tone>`), which
  *   the ribbon continues across the gutter; the lines in the LIGHTER colour
- *   (`jb-line-<tone>`) with the changed words in the full colour — or, when
- *   the change has no words to compare (text on one pane only: an insertion
- *   or a deletion, new or gone as a whole; or word highlighting turned off:
- *   comparedByWords), the lines in the full colour too (`jb-solid`); a 1px
+ *   (`jb-line-<tone>`) with the changed words in the full colour, where the
+ *   change has words to compare (comparedByWords) — an insertion or a
+ *   deletion is the lighter lines alone (the owner: its solid full-colour
+ *   block was the part that was not pale enough); a 1px
  *   line in the full colour for an
  *   insertion or deletion point (`jb-point`); and `jb-frame` edge lines that
  *   only high contrast themes draw (solid, 1px, on the band's first and last
@@ -147,10 +147,10 @@ export class DecorationManager {
       const words = resolved || half ? options.traceWords?.(block) : undefined;
 
       const span = options.resultSpanOf?.(block) ?? block.baseSpan;
-      // The lighter lines and the full-colour words, or the full colour
-      // throughout (comparedByWords): on every pane of the change alike.
+      // Word tints only where the change has words to compare
+      // (comparedByWords): on every pane of the change alike.
       const pendingLines = (side: Side): boolean => fates[side] === "pending" && !isEmptySpan(sideBlockSpan(block, side));
-      const light = comparedByWords([pendingLines("left"), !isEmptySpan(span), pendingLines("right")], showInner);
+      const byWords = comparedByWords([pendingLines("left"), !isEmptySpan(span), pendingLines("right")], showInner);
       if (resolved) {
         // Settled: the Result keeps a muted band in the colour of what went
         // in — or only its outline when nothing did.
@@ -169,9 +169,8 @@ export class DecorationManager {
           cat,
           half || seeded,
           seeded ? SEEDED_WORDS : block.whitespaceOnly ? WHITESPACE_WORDS : undefined,
-          !light,
         );
-        if (light && !half && !seeded && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
+        if (byWords && !half && !seeded && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
           // Word ranges are in BASE coordinates; the result is base while the
           // block is untouched, but blocks above may have changed height. A
           // side that deletes these lines marks no words in them: its range
@@ -204,8 +203,8 @@ export class DecorationManager {
           pushDone(target, editor, region, tone, cat, words?.[side]);
           continue;
         }
-        pushPending(target, editor, region, tone, cat, false, change.whitespaceOnly ? WHITESPACE_WORDS : undefined, !light);
-        if (light && !change.whitespaceOnly) {
+        pushPending(target, editor, region, tone, cat, false, change.whitespaceOnly ? WHITESPACE_WORDS : undefined);
+        if (byWords && !change.whitespaceOnly) {
           pushInner(target, change.innerSide, tone);
         }
       }
@@ -350,16 +349,15 @@ function pushPoint(
 }
 
 /**
- * JetBrains' rule for a change's lines (intellij-community
- * DiffViewerHighlighters.kt: `ignored = !resolved && innerFragments != null`;
- * DiffUtil.compareThreesideInner): it compares the change's texts word by
- * word — each pending side that has lines, and the Result's — and when there
- * are at least two to compare, the lines take the LIGHTER colour and the
- * changed words the full one. A change with text on one pane only — an
- * insertion on one side, a deletion on one side or the same on both — has
- * nothing to compare (it is new, or gone, as a whole) and is the FULL colour
- * throughout, as is every change with word highlighting off. One answer for
- * every pane of the change.
+ * Whether a change has words to mark — JetBrains' rule (intellij-community
+ * DiffUtil.compareThreesideInner, MergeThreesideViewer's word diff): it
+ * compares the change's texts word by word — each pending side that has
+ * lines, and the Result's — only when there are at least two. A change with
+ * text on one pane only — an insertion on one side, a deletion on one side or
+ * the same on both — is new, or gone, as a whole: its lighter lines and its
+ * full-colour column say so, and no word of it is marked (Monaco's word range
+ * for it is the whole text). One answer for every pane of the change; none
+ * with word highlighting off.
  */
 function comparedByWords(texts: readonly boolean[], showInner: boolean): boolean {
   return showInner && texts.filter(Boolean).length >= 2;
@@ -367,8 +365,7 @@ function comparedByWords(texts: readonly boolean[], showInner: boolean): boolean
 
 /**
  * A pending block's region in one pane: the line-number column in the full
- * colour, the lines in the lighter one — or the full one too when `solid` (the
- * change has no words to compare: comparedByWords) — and the edge lines a high
+ * colour, the lines in the lighter one, and the edge lines a high
  * contrast theme draws. An empty region (an insertion or deletion point) is a
  * point line instead. `half`: the result of a conflict with one side in — the
  * lighter tint (`jb-half`), its line numbers too, and nothing else; the ribbon
@@ -384,14 +381,13 @@ function pushPending(
   cat: MergeCategory,
   half = false,
   hover?: string,
-  solid = false,
 ): void {
   if (isEmptySpan(span)) {
     pushPoint(target, editor, span, half ? `jb-done jb-done-${tone}` : `jb-point-${tone}`, cat, hover);
     return;
   }
   const last = span.endExclusive - 1;
-  const lineClass = `jb-line-${tone}${half ? " jb-half" : solid ? " jb-solid" : ""}`;
+  const lineClass = `jb-line-${tone}${half ? " jb-half" : ""}`;
   target.push({
     range: new monaco.Range(span.start, 1, last, 1),
     options: {

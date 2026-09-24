@@ -135,9 +135,9 @@ test("every category is classified, painted and given its own controls — befor
     // only is sky blue whether it changed a line (Yours' 11) or inserted one
     // (Theirs' 13); lines removed without a conflict (Theirs' 15) are grey.
     // A change with text on one pane only — the insertion, the removal — is
-    // the full colour throughout (\`jb-solid\`: nothing to compare word by
-    // word, JetBrains' rule). A whitespace-only change is its lighter tint
-    // alone — no edge of its own; it says so on hover.
+    // its lighter lines with no word marked (nothing to compare word by word,
+    // JetBrains' rule). A whitespace-only change is its lighter tint alone —
+    // no edge of its own; it says so on hover.
     expectPane("left", [
       "2:jb-line-conflict jb-cat-conflict",
       "4-5:jb-line-conflict jb-cat-conflict",
@@ -151,7 +151,7 @@ test("every category is classified, painted and given its own controls — befor
       "4-5:jb-line-conflict jb-cat-conflict",
       "7:jb-line-same jb-cat-same",
       "9:jb-line-same jb-cat-same",
-      "13:jb-line-one-sided jb-solid jb-cat-theirs-only",
+      "13:jb-line-one-sided jb-cat-theirs-only",
       "15:jb-point-removed jb-point jb-cat-theirs-only",
     ]);
     expectPane("result", [
@@ -161,7 +161,7 @@ test("every category is classified, painted and given its own controls — befor
       "9:jb-line-same jb-cat-same",
       "11:jb-line-one-sided jb-cat-yours-only",
       "13:jb-point-one-sided jb-point jb-cat-theirs-only",
-      "14:jb-line-removed jb-solid jb-cat-theirs-only",
+      "14:jb-line-removed jb-cat-theirs-only",
       "16:jb-line-one-sided jb-cat-yours-only",
     ]);
     const everyClass = ["left", "result", "right"].flatMap((p) => panes[p].getModel().getAllDecorations().map((d) => [d.options.className, d.options.marginClassName, d.options.inlineClassName].filter(Boolean).join(" ")));
@@ -216,8 +216,8 @@ test("every category is classified, painted and given its own controls — befor
     expect(bgOf("left", "jb-line-same jb-cat-same") === TINT.same && bgOf("right", "jb-line-same jb-cat-same") === TINT.same && bgOf("result", "jb-line-same jb-cat-same") === TINT.same,
       "the same change on both sides: green, on both sides and in the result: " + bgOf("left", "jb-line-same jb-cat-same"));
     expect(bgOf("left", "jb-line-one-sided jb-cat-yours-only") === TINT["one-sided"], "Yours-only change: blue");
-    expect(bgOf("right", "jb-line-one-sided jb-solid jb-cat-theirs-only") === FULL["one-sided"], "Theirs-only insertion: blue too, not green — the full blue, all of it new");
-    expect(bgOf("result", "jb-line-removed jb-solid jb-cat-theirs-only") === FULL.removed, "Theirs-only deletion: grey, the removed lines' colour, full — all of it gone: " + bgOf("result", "jb-line-removed jb-solid jb-cat-theirs-only"));
+    expect(bgOf("right", "jb-line-one-sided jb-cat-theirs-only") === TINT["one-sided"], "Theirs-only insertion: blue too, not green — its lighter lines, like every change's");
+    expect(bgOf("result", "jb-line-removed jb-cat-theirs-only") === TINT.removed, "Theirs-only deletion: grey, the removed lines' colour: " + bgOf("result", "jb-line-removed jb-cat-theirs-only"));
     expect(new Set(TONES.map((t) => TINT[t])).size === 4, "four colours: one per decision, and grey for removed lines: " + JSON.stringify(TINT));
     const point = probe("result", "jb-point-one-sided jb-point jb-cat-theirs-only");
     expect(point.bt === "solid" && point.btw === "1px" && point.btc === POINT["one-sided"] && point.bg === "rgba(0, 0, 0, 0)", "an insertion point is a 1px line in the point colour (the full colour), not a bright wire: " + JSON.stringify(point));
@@ -574,7 +574,6 @@ test("the legend explains the four COLOURS in words — a solid dot, the name, h
       "lines added there, or removed", "exactly what changed within the line", "whitespace",
       "one side in, the other still to decide", "the side you took", "the side you discarded",
       "its line numbers and its link to the Result in the full colour", "its lines lighter with the words that changed in the full colour",
-      "all of it in the full colour when it is all new, or all gone",
     ]) {
       expect(key.includes(phrase), "the key explains " + phrase + ": " + key);
     }

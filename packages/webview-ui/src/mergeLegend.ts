@@ -149,7 +149,7 @@ const KEY: KeyRow[] = [
   { dots: ["same"], text: "Same on both sides — either arrow takes it (green): both sides added or changed these lines the same way. Nothing to choose." },
   { dots: ["one-sided"], text: "One side only — safe to take (blue): only one side added or changed these lines." },
   { dots: ["removed"], text: "Removed lines (grey): lines removed on one side only, or the same lines removed on both. No conflict: safe to take." },
-  { sample: "column", text: "A change still to decide: its line numbers and its link to the Result in the full colour, its lines lighter with the words that changed in the full colour — or all of it in the full colour when it is all new, or all gone." },
+  { sample: "column", text: "A change still to decide: its line numbers and its link to the Result in the full colour, its lines lighter with the words that changed in the full colour." },
   { sample: "point", text: "A band that meets a line between two rows on the other side: lines added there, or removed." },
   { sample: "word", text: "A stronger tint on some words: exactly what changed within the line. A change of whitespace only has none; its tooltip says so." },
   { sample: "half", text: "A lighter band in the Result, line numbers too: a conflict with one side in, the other still to decide." },

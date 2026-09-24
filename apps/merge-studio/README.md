@@ -45,8 +45,7 @@ words, with how many changes are left.
 As in JetBrains, a change still to decide wears its colour at two
 strengths: its line numbers and its link across to the result in the full
 colour, its lines in a lighter shade, and the words that changed in the full
-colour again. A change that is all new, or all gone, is the full colour
-throughout. A band that meets a line between two rows on the other side was
+colour again. A band that meets a line between two rows on the other side was
 added there, or removed.
 
 Once you settle a change it keeps a trace of what you took, in the lighter

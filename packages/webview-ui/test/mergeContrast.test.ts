@@ -17,10 +17,11 @@ import { findChrome, runMergePage } from "./fixtures/mergeViewPage";
  * in text and uses this colour in the columns, #E6EFFA is used in the lines".
  * So:
  *
- * - light: the full colours land EXACTLY on #fed5cc #bee6bd #c2d7f2 #d6d6d6,
- *   the lighter ones on #ffeeeb #e5f5e5 #e6effa #efefef (green's and grey's
- *   derived by JetBrains' 40% rule, which both measured pairs follow), and a
- *   changed word over a lighter line lands on the full colour;
+ * - light: the full colours land EXACTLY on #fed5cc #c2d7f2 #d6d6d6, the
+ *   lighter ones on #ffeeeb #e6effa #efefef (grey's derived by JetBrains' 40%
+ *   rule, which both measured pairs follow); the green is the leaf green that
+ *   replaced JetBrains' mint (the owner found it too washed out), #9edcaa and
+ *   #d8f1dd; and a changed word over a lighter line lands on the full colour;
  * - every theme: the lighter colour visibly off the background and a visible
  *   step below the full one; a word on the full colour; the editor's text
  *   >= 4.5:1 (WCAG AA) on all of them, and the syntax colours no worse than
@@ -109,7 +110,7 @@ test("diff.css declares every colour's tokens in both palettes; every class the 
   const selectors: string[] = [];
   for (const tone of TONES) {
     selectors.push(
-      `.jb-line-${tone}`, `.jb-line-${tone}.jb-solid`, `.jb-margin-${tone}`, `.jb-inner-${tone}`, `.jb-ribbon-${tone}`,
+      `.jb-line-${tone}`, `.jb-margin-${tone}`, `.jb-inner-${tone}`, `.jb-ribbon-${tone}`,
       `.jb-point-${tone}`, `.jb-done-${tone}`, `.jb-frame-${tone}`, `.jb-ribbon-frame-${tone}`,
       `.jb-trace-${tone}`, `.jb-trace-edge-${tone}`, `.jb-ribbon-trace-${tone}`, `.jb-ribbon-trace-edge-${tone}`,
       `.jb-ribbon-cap-${tone}`, `.jb-ribbon-cap-trace-${tone}`,
@@ -147,6 +148,9 @@ test("diff.css declares every colour's tokens in both palettes; every class the 
     ".jb-btn-append", ".jb-btn-keep-base", ".jb-btn-wand", ".jb-legend-glyph", ".jb-legend-extra", ".codicon-insert",
     ".codicon-sparkle", ".jb-legend-swatch", ".jb-swatch-conflict", ".jb-swatch-one-sided", ".jb-legend-kind",
     ".jb-conflict-bar", ".jb-sample-bar", ".jb-ws", ".jb-sample-ws",
+    // …and the solid full-colour block an insertion or a deletion was: the
+    // part the owner found not pale enough.
+    ".jb-solid",
   ];
   for (const role of ROLES) {
     gone.push(
@@ -369,7 +373,7 @@ interface Measured {
 /** The owner's light colours (JetBrains', measured): full, and lighter. */
 const OWNER: Record<Tone, { full: string; lighter: string }> = {
   conflict: { full: "#fed5cc", lighter: "#ffeeeb" },
-  same: { full: "#bee6bd", lighter: "#e5f5e5" },
+  same: { full: "#9edcaa", lighter: "#d8f1dd" },
   "one-sided": { full: "#c2d7f2", lighter: "#e6effa" },
   removed: { full: "#d6d6d6", lighter: "#efefef" },
 };
@@ -432,7 +436,6 @@ test("the owner's colours in light, text readable on every tint, each colour its
           // a line with nothing to compare, and a word.
           full: probe("jb-margin-" + t).bg,
           line: probe("jb-line-" + t).bg,
-          solid: probe("jb-line-" + t + " jb-solid").bg,
           inner: probe("jb-inner-" + t).bg,
           edge: probe("", "color:var(--jb-edge-" + t + ")").color,
           done: probe("", "color:var(--jb-done-" + t + ")").color,
@@ -452,7 +455,7 @@ test("the owner's colours in light, text readable on every tint, each colour its
     notes.measured = out;
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
-  const measured = v.notes?.measured as Record<BodyClass, Record<Tone, Measured & { solid: string }>>;
+  const measured = v.notes?.measured as Record<BodyClass, Record<Tone, Measured>>;
   assert.ok(measured, "the page reported its colours");
 
   const problems: string[] = [];
@@ -489,10 +492,8 @@ test("the owner's colours in light, text readable on every tint, each colour its
         if (!sameColour(full, wf)) problems.push(`${theme.name}: the ${tone} full colour is ${hexOf(full)}, not the owner's ${want.full}`);
         if (!sameColour(line, wl)) problems.push(`${theme.name}: the ${tone} lighter colour is ${hexOf(line)}, not ${want.lighter}`);
       }
-      // A word over the lighter line lands on the full colour; a line with
-      // nothing to compare IS the full colour.
+      // A word over the lighter line lands on the full colour.
       if (deltaEok(word, full) > 1) problems.push(`${theme.name}: a ${tone} word lands on ${hexOf(word)}, not the full ${hexOf(full)} (ΔE ${f(deltaEok(word, full), 2)})`);
-      if (m.solid !== m.full) problems.push(`${theme.name}: a ${tone} line with nothing to compare (${m.solid}) is not the full colour (${m.full})`);
       // Two strengths: the lighter one visibly off the background, and a
       // visible step below the full one.
       if (deltaEok(line, bg) < 4) problems.push(`${theme.name}: the lighter ${tone} is only ΔE ${f(deltaEok(line, bg))} off the background (< 4)`);
@@ -505,8 +506,8 @@ test("the owner's colours in light, text readable on every tint, each colour its
       }
       // The theme's SYNTAX colours: no worse than measured on this palette
       // (Dark Modern's comment green on the green, 2.5:1; Light+'s type teal
-      // on the blue, 3.1:1).
-      const floor = dark ? 2.45 : 3.05;
+      // and number green on the leaf green, 2.9:1).
+      const floor = dark ? 2.45 : 2.85;
       for (const [token, hexColor] of Object.entries(SYNTAX[theme.name] ?? {})) {
         const tok = parseColor(hexColor).slice(0, 3) as RGB;
         const worst = Math.min(contrast(tok, full), contrast(tok, line));

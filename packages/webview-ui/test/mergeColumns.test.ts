@@ -9,10 +9,11 @@ import { findChrome, runMergePage, type PageTheme } from "./fixtures/mergeViewPa
  *
  * - an open change's line-number column, and its ribbon across the gutter:
  *   the FULL colour;
- * - its lines: the LIGHTER colour, with the changed words in the full one —
- *   or the full colour throughout when the change has nothing to compare word
- *   by word (text on one pane only: an insertion, a deletion — JetBrains'
- *   own rule, decorations.ts comparedByWords);
+ * - its lines: the LIGHTER colour, with the changed words in the full one
+ *   where the change has words to compare (JetBrains' rule, decorations.ts
+ *   comparedByWords) — an insertion's and a deletion's lines too, with no
+ *   word marked (the owner: the solid full-colour blocks were the part that
+ *   was not pale enough);
  * - a settled side's trace: the lighter colour, line numbers too, and a
  *   lighter ribbon;
  * - nothing drawn between the line numbers and the code.
@@ -89,11 +90,11 @@ const MOUNT = `
   const same = (a, b) => a.length === 7 && b.length === 7 && [1, 3, 5].every((i) => Math.abs(parseInt(a.slice(i, i + 2), 16) - parseInt(b.slice(i, i + 2), 16)) <= 1);
 `;
 
-test("light: the owner's exact colours — the columns full, the lines lighter with the words full, full throughout with nothing to compare", { skip }, async () => {
+test("light: the owner's exact colours — the columns full, every line lighter, the words full where there are words to compare", { skip }, async () => {
   const v = await runMergePage(CHROME!, MOUNT + `
     const OWNER = {
       conflict: { full: "#fed5cc", lighter: "#ffeeeb" },
-      same: { full: "#bee6bd", lighter: "#e5f5e5" },
+      same: { full: "#9edcaa", lighter: "#d8f1dd" },
       "one-sided": { full: "#c2d7f2", lighter: "#e6effa" },
       removed: { full: "#d6d6d6", lighter: "#efefef" },
     };
@@ -109,8 +110,8 @@ test("light: the owner's exact colours — the columns full, the lines lighter w
       ["right", 7, "same", "lighter", true],
       ["left", 11, "one-sided", "lighter", true],   // #4: a line changed in Yours
       ["result", 11, "one-sided", "lighter", true],
-      ["right", 13, "one-sided", "full", false],    // #5: an insertion in Theirs — text on one pane only
-      ["result", 14, "removed", "full", false],     // #6: a deletion in Theirs — text on one pane only
+      ["right", 13, "one-sided", "lighter", false], // #5: an insertion in Theirs — text on one pane only
+      ["result", 14, "removed", "lighter", false],  // #6: a deletion in Theirs — text on one pane only
       ["left", 16, "one-sided", "lighter", false],  // #7: whitespace only — lighter, no word tint
     ];
     const rows = [];
@@ -126,7 +127,7 @@ test("light: the owner's exact colours — the columns full, the lines lighter w
       if (words) {
         expect(tints.length > 0 && same(word, want.full), pane + " " + line + ": a changed word is the full " + want.full + ": " + word + " (" + tints.length + " word tints)");
       } else {
-        expect(tints.length === 0, pane + " " + line + ": no word tints — " + (lines === "full" ? "nothing to compare" : "only whitespace changed") + " (" + tints.length + ")");
+        expect(tints.length === 0, pane + " " + line + ": no word tints — " + (line === 16 ? "only whitespace changed" : "nothing to compare") + " (" + tints.length + ")");
       }
     }
     notes.rows = rows;
@@ -168,8 +169,8 @@ test("every theme: the same structure — full columns and words, lighter lines,
       check("left", 2, "conflict", "lighter", true);
       check("right", 7, "same", "lighter", true);
       check("left", 11, "one-sided", "lighter", true);
-      check("right", 13, "one-sided", "full", false);
-      check("result", 14, "removed", "full", false);
+      check("right", 13, "one-sided", "lighter", false);
+      check("result", 14, "removed", "lighter", false);
       await sleep(80);
       expect(same(ribbon("jb-ribbon-conflict"), full("conflict")), t + ": an open ribbon is the full colour: " + ribbon("jb-ribbon-conflict"));
 
@@ -190,11 +191,11 @@ test("every theme: the same structure — full columns and words, lighter lines,
   }
 });
 
-test("with word highlighting off, every open change is the full colour throughout", { skip }, async () => {
+test("with word highlighting off, every open change is its lighter lines and full column, no word marked", { skip }, async () => {
   const v = await runMergePage(CHROME!, MOUNT + `
     view.setRenderOptions({ showInner: false });
     for (const [pane, line, tone] of [["left", 2, "conflict"], ["right", 7, "same"], ["left", 11, "one-sided"], ["result", 14, "removed"]]) {
-      expect(same(seen(pane, line, "line"), full(tone)), pane + " " + line + ": " + tone + " lines are full with no words to mark: " + seen(pane, line, "line"));
+      expect(same(seen(pane, line, "line"), lighter(tone)) && same(seen(pane, line, "margin"), full(tone)), pane + " " + line + ": " + tone + " lines lighter, numbers full: " + seen(pane, line, "line") + " / " + seen(pane, line, "margin"));
       expect(wordsOn(pane, line, tone).length === 0, pane + " " + line + ": no word tints");
     }
   `, { theme: "light" });
