@@ -1,0 +1,63 @@
+apps/desktop/test/reportingVerdicts.test.ts
+  s_26f5e669d3043c::t_79427e3a040d3e 375-379
+  s_26f5e669d3043c::t_3fc6c74d015c7d 22
+apps/desktop/test/expectedConditions.test.ts
+  s_26f5e669d3043c::t_c79a4339a50ff7 328
+  s_26f5e669d3043c::t_bee084812fc55a 35,42-45
+  s_26f5e669d3043c::t_d4d2a4f8d230de 532
+  s_26f5e669d3043c::t_c3a2244b7227e2 46
+apps/desktop/test/inTheWayCensus.test.ts
+  s_26f5e669d3043c::t_74584068415ce3 133
+  s_26f5e669d3043c::t_b81fc9ee48c40e 203
+  s_26f5e669d3043c::t_86e1877915ceba 49-55
+  s_26f5e669d3043c::t_eb655e67631374 172-176
+apps/desktop/test/inTheWayStateTable.test.ts
+  s_26f5e669d3043c::t_486dc0ddf89c53 77
+  s_26f5e669d3043c::t_15b15bae42006a 118
+  s_26f5e669d3043c::t_36847bdec9fd2d 332
+  s_26f5e669d3043c::t_faaac30a624bd1 242
+  s_26f5e669d3043c::t_4beb969117bc31 323
+  s_26f5e669d3043c::t_9288a34590c0c0 21
+apps/desktop/src/main/inTheWay.ts
+  s_26f5e669d3043c::t_f870f7ef82fb2b 145-146,148,152,163-210
+  s_26f5e669d3043c::t_f6bca1683e0cc4 116
+  s_26f5e669d3043c::t_639d30a7740c56 59
+  s_26f5e669d3043c::t_0dd124de1acb98 25-26
+  s_26f5e669d3043c::t_e13b3304942c15 211
+apps/desktop/test/inTheWayDoors.test.ts
+  s_26f5e669d3043c::t_ae1459041f80d9 336-412
+  s_26f5e669d3043c::t_2ae5044dc3d313 426
+  s_26f5e669d3043c::t_980ba9bd5b880a 231
+  s_26f5e669d3043c::t_06773818ea398a 21,23,29
+  s_26f5e669d3043c::t_f60f5bf0847618 170,177,185
+  s_26f5e669d3043c::t_89cf0557a3a8c7 86
+  s_26f5e669d3043c::t_802279586f4e5f 271
+  s_26f5e669d3043c::t_e26a5cd45030a4 159
+  s_26f5e669d3043c::t_741c441cda0f28 55-62
+  s_26f5e669d3043c::t_dae306343d3cc1 145
+  s_26f5e669d3043c::t_fbb06fc097ce5f 204
+  s_26f5e669d3043c::t_bab4cba52aa04b 216
+  s_26f5e669d3043c::t_9239b7d6a184ae 247
+  s_26f5e669d3043c::t_5470e3724fb20e 299,306
+  s_26f5e669d3043c::t_fbb5c4ebee2263 54
+apps/desktop/test/harnessChrome.test.ts
+  s_26f5e669d3043c::t_825562c875c298 45-48,51,59-60,62
+  s_26f5e669d3043c::t_ee91430b13abff 76-77,80
+  s_26f5e669d3043c::t_daca9f56fef347 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "13dfc3d604e83cc35b8a0c756e1ed183f76c7966",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
