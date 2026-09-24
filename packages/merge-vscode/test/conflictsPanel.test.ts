@@ -289,9 +289,17 @@ test("the same state is never posted twice, the page's HTML is set once, and a d
 });
 
 test("the page loading again (a reload) starts its numbering again: an earlier press never counts as done for it", async () => {
-  const state = { files: [pending("a.txt"), pending("b.txt")], episode: "rebase:1" };
+  const state = { files: [pending("a.txt"), pending("b.txt"), pending("c.txt")], episode: "rebase:1" };
   const { repo, release } = gatedRepo(state);
   const { panel } = await openDashboard(repo);
+  panel.receive({ type: "accept", path: "c.txt", role: "yours", seq: 3 });
+  await settle();
+  release("c.txt");
+  await settle();
+  assert.equal(states(panel).at(-1)!.done, 3, "precondition: this page's press 3 is done");
+  panel.receive({ type: "ready" }); // the page reloaded: it numbers from 1 again
+  await settle();
+  assert.equal(states(panel).at(-1)!.done, 0, "the reloaded page is told nothing of ITS is done yet");
   panel.receive({ type: "accept", path: "a.txt", role: "yours", seq: 7 });
   await settle();
   panel.receive({ type: "ready" }); // the page reloaded while git was at it
@@ -299,5 +307,5 @@ test("the page loading again (a reload) starts its numbering again: an earlier p
   release("a.txt");
   await settle();
   assert.equal(states(panel).at(-1)!.done, 0, "the old page's press 7 is not this page's");
-  assert.equal(statusOf(states(panel).at(-1)!), "a.txt:resolved b.txt:pending", "its result is shown all the same");
+  assert.equal(statusOf(states(panel).at(-1)!), "a.txt:resolved b.txt:pending c.txt:resolved", "its result is shown all the same");
 });

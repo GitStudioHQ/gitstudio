@@ -163,6 +163,14 @@ export class DashboardController {
   }
 
   /**
+   * The page loaded again and numbers its presses from 1: what the last read
+   * claimed was done belonged to the page before it.
+   */
+  restartNumbering(): void {
+    if (this.snapshotDone !== undefined) this.snapshotDone = 0;
+  }
+
+  /**
    * One ROW's action is waiting or running: that row shows busy, and nothing
    * else on the page changes — not `busy`, not the outcome, not a notice
    * (removing a notice above the list would move every row).

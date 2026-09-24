@@ -191,6 +191,7 @@ export class ConflictsDashboard implements vscode.Disposable {
     // read that overlaps an action (a watcher's, while git is still at it)
     // must not tell the page that action is done.
     const doneAtRead = this.done;
+    const pageAtRead = this.page;
     let snapshot;
     try {
       snapshot = await repo.ctx.conflictOps.snapshot();
@@ -207,7 +208,8 @@ export class ConflictsDashboard implements vscode.Disposable {
         open: this.panel !== undefined,
         autoShow: auto && this.host.settings().autoOpen && !this.host.defers(),
       },
-      doneAtRead,
+      // A page that loaded again while this read ran numbers from 1: nothing of its is done yet.
+      pageAtRead === this.page ? doneAtRead : 0,
     );
     if (decision.close && this.panel) {
       this.disposePanel();
@@ -253,6 +255,7 @@ export class ConflictsDashboard implements vscode.Disposable {
     this.page++;
     this.done = 0;
     this.lastPosted = undefined;
+    this.controller?.restartNumbering();
   }
 
   /** An action of page `page` is finished: states read from now on say so. */
