@@ -186,7 +186,8 @@ test("Continue is disabled with the reason in words, and enabled once git would 
     btn("Continue Rebase").click();
     btn("Continue Rebase").click();
     expect(posted.filter((a) => a.type === "continue").length === 1, "a double press posts ONE continue (" + posted.filter((a) => a.type === "continue").length + ")");
-    expect(JSON.stringify(last()) === JSON.stringify({ type: "continue" }), "with no drop confirm");
+    expect(last().type === "continue" && !("confirmDrop" in last()), "with no drop confirm (" + JSON.stringify(last()) + ")");
+    expect(typeof last().seq === "number", "numbered, for the host to say when it is done");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
@@ -235,7 +236,7 @@ test("hold-to-undo fires at the hold time, not before — by pointer and by keyb
     clock.advance(749);
     expect(!posted.some((a) => a.type === "restore"), "749 ms is not a hold either");
     clock.advance(1);
-    expect(JSON.stringify(last()) === JSON.stringify({ type: "restore", path: "src/a.ts" }), "750 ms restores the file (" + JSON.stringify(last()) + ")");
+    expect(last().type === "restore" && last().path === "src/a.ts", "750 ms restores the file (" + JSON.stringify(last()) + ")");
     expect($(".cd-row[data-path='src/a.ts'] .cd-spinner"), "and the row shows it is working");
 
     d.render(state(OPS.merge, files));
@@ -274,7 +275,7 @@ test("a host re-sending the same state does not cancel a hold in progress; a cha
     clock.advance(400);
     d.render(state(OPS.merge, files));
     clock.advance(350);
-    expect(JSON.stringify(last()) === JSON.stringify({ type: "restore", path: "src/a.ts" }), "the hold survives an identical state (" + JSON.stringify(last()) + ")");
+    expect(last().type === "restore" && last().path === "src/a.ts", "the hold survives an identical state (" + JSON.stringify(last()) + ")");
 
     d.render(state(OPS.merge, files));
     $(".cd-undo-hold").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
@@ -369,7 +370,13 @@ test("a new stop resets a half-answered confirm, and a host that cannot close of
     d.render(state(OPS.merge, [row("x.ts", { status: "resolved", choice: "yours" })]));
     expect(!btn("Close"), "no Close where the host cannot close");
     d.render(state(OPS.rebase, [row("a.ts")], { busy: true }));
-    expect($$(".cd-dash button").every(locked), "while the host works, every control is locked");
+    // An operation verb in flight: ONE lock, on the page (a class and
+    // aria-busy), not an attribute written to every row's buttons.
+    expect($(".cd-dash").classList.contains("is-busy") && $(".cd-dash").getAttribute("aria-busy") === "true", "while a verb runs the page is locked");
+    expect($$(".cd-foot button").every(locked), "its footer waits");
+    const before = posted.length;
+    for (const b of $$(".cd-dash button")) b.click();
+    expect(posted.length === before, "and no control sends anything (" + JSON.stringify(posted.slice(before)) + ")");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });

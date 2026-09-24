@@ -178,6 +178,7 @@ function toast(kind) {
 function createWebviewPanel(viewType, title, showOptions, options) {
   const onDispose = new EventEmitter();
   let receive;
+  let html = "";
   const panel = {
     viewType,
     title,
@@ -186,9 +187,19 @@ function createWebviewPanel(viewType, title, showOptions, options) {
     posted: [],
     revealed: [],
     disposed: false,
+    /** On screen (a test hides it behind another editor by setting this). */
+    visible: true,
+    /** How many times the page's HTML was set: every set reloads the page. */
+    htmlSets: 0,
     webview: {
       options: {},
-      html: "",
+      get html() {
+        return html;
+      },
+      set html(v) {
+        panel.htmlSets++;
+        html = v;
+      },
       cspSource: "vscode-webview-resource:",
       asWebviewUri: (u) => u,
       postMessage: (m) => {

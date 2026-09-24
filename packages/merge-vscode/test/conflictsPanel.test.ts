@@ -163,3 +163,141 @@ test("Accept Theirs on a file whose merge editor holds unsaved work saves it fir
   assert.ok(order.includes("close:clean"), order.join(" → "));
   assert.ok(!order.includes("close:dirty"), order.join(" → "));
 });
+
+// ── One press, one row (the owner, 24 Sep 2026: "clicking accept left on the
+// first row flashes and refreshes all other rows … it looks like a server side
+// website"). The host locked the whole page for one file (`busy`), posted the
+// same state again after every git event, and a watcher's read taken while git
+// was still at it could paint the pressed row as it was.
+
+interface PostedState {
+  type: string;
+  state: {
+    busy: boolean;
+    done?: number;
+    files: { path: string; status: string }[];
+  };
+}
+
+/** A repository whose takeRole waits until the test lets it finish. */
+function gatedRepo(state: { files: ConflictFileView[]; episode: string }) {
+  const started: string[] = [];
+  const gates = new Map<string, () => void>();
+  const repo = repoWith(state);
+  (repo.ctx.conflictOps as { takeRole: unknown }).takeRole = async (path: string) => {
+    started.push(path);
+    await new Promise<void>((r) => gates.set(path, r));
+    state.files = state.files.map((f) => (f.path === path ? { ...f, status: "resolved", choice: "yours" } : f));
+    return { ok: true, changed: true };
+  };
+  return { repo, started, release: (path: string) => gates.get(path)?.() };
+}
+
+const states = (panel: { posted: unknown[] }) => (panel.posted as PostedState[]).filter((m) => m.type === "state").map((m) => m.state);
+const statusOf = (s: PostedState["state"]) => s.files.map((f) => `${f.path}:${f.status}`).join(" ");
+
+async function openDashboard(repo: MergeRepo) {
+  const dashboard = new ConflictsDashboard(hostFor(), async () => {});
+  await dashboard.show(repo);
+  const panel = stub.panels[stub.panels.length - 1];
+  panel.receive({ type: "ready" });
+  await settle();
+  return { dashboard, panel };
+}
+
+test("a press on one row marks THAT row busy and never the page; its result comes with `done`", async () => {
+  const state = { files: [pending("a.txt"), pending("b.txt"), pending("c.txt")], episode: "rebase:1" };
+  const { repo, release } = gatedRepo(state);
+  const { panel } = await openDashboard(repo);
+  const before = states(panel).length;
+  panel.receive({ type: "accept", path: "a.txt", role: "yours", seq: 1 });
+  await settle();
+  const during = states(panel).slice(before);
+  assert.equal(during.length, 1, "one state for the press");
+  assert.equal(statusOf(during[0]), "a.txt:busy b.txt:pending c.txt:pending", "only the pressed row is busy");
+  assert.equal(during[0].busy, false, "the page is not locked for one row");
+  assert.equal(during[0].done, 0, "and nothing is done yet");
+  release("a.txt");
+  await settle();
+  const after = states(panel).slice(before);
+  const last = after[after.length - 1];
+  assert.equal(statusOf(last), "a.txt:resolved b.txt:pending c.txt:pending");
+  assert.equal(last.done, 1, "the state that shows it says the press is done");
+  assert.ok(after.every((s) => !s.busy), "no state of the press ever locked the page");
+});
+
+test("a second row pressed while git is at the first waits its turn (one git command at a time) and is never dropped", async () => {
+  const state = { files: [pending("a.txt"), pending("b.txt"), pending("c.txt")], episode: "rebase:1" };
+  const { repo, started, release } = gatedRepo(state);
+  const { panel } = await openDashboard(repo);
+  panel.receive({ type: "accept", path: "a.txt", role: "yours", seq: 1 });
+  panel.receive({ type: "accept", path: "b.txt", role: "yours", seq: 2 });
+  await settle();
+  assert.deepEqual(started, ["a.txt"], "the second waits for the first");
+  assert.equal(statusOf(states(panel).at(-1)!), "a.txt:busy b.txt:busy c.txt:pending", "both rows say so; the third is untouched");
+  release("a.txt");
+  await settle();
+  assert.deepEqual(started, ["a.txt", "b.txt"], "then it runs");
+  assert.equal(states(panel).at(-1)!.done, 1);
+  assert.equal(statusOf(states(panel).at(-1)!), "a.txt:resolved b.txt:busy c.txt:pending");
+  release("b.txt");
+  await settle();
+  assert.equal(states(panel).at(-1)!.done, 2);
+  assert.equal(statusOf(states(panel).at(-1)!), "a.txt:resolved b.txt:resolved c.txt:pending");
+});
+
+test("a watcher's read that overlaps a press never says it is done", async () => {
+  // git has written the file (the read sees it resolved) but the action has
+  // not returned: that state must not end the row's working state early.
+  const state = { files: [pending("a.txt"), pending("b.txt")], episode: "rebase:1" };
+  const { repo, release } = gatedRepo(state);
+  const { dashboard, panel } = await openDashboard(repo);
+  panel.receive({ type: "accept", path: "a.txt", role: "yours", seq: 1 });
+  await settle();
+  state.files = state.files.map((f) => (f.path === "a.txt" ? { ...f, status: "resolved" } : f));
+  await dashboard.onStateChanged(repo); // vscode.git's refresh, mid-press
+  await settle();
+  const mid = states(panel).at(-1)!;
+  assert.equal(mid.done, 0, "a read that began before the press finished does not claim it");
+  assert.equal(statusOf(mid), "a.txt:busy b.txt:pending", "and the row is still at work");
+  release("a.txt");
+  await settle();
+  assert.equal(states(panel).at(-1)!.done, 1);
+});
+
+test("the same state is never posted twice, the page's HTML is set once, and a dashboard on screen is not revealed", async () => {
+  const state = { files: [pending("a.txt"), pending("b.txt")], episode: "rebase:1" };
+  const repo = repoWith(state);
+  const { dashboard, panel } = await openDashboard(repo);
+  const n = states(panel).length;
+  for (let i = 0; i < 3; i++) await dashboard.onStateChanged(repo); // git events with nothing new
+  await settle();
+  assert.equal(states(panel).length, n, "nothing new, nothing posted");
+  panel.receive({ type: "accept", path: "a.txt", role: "yours", seq: 1 });
+  await settle();
+  for (let i = 0; i < 3; i++) await dashboard.onStateChanged(repo);
+  await settle();
+  const posted = states(panel).slice(n);
+  assert.equal(posted.length, 2, "one state for the press, one for its result (" + posted.map(statusOf).join(" | ") + ")");
+  assert.equal(panel.htmlSets, 1, "the page was loaded once and never reloaded");
+  assert.equal(stub.panels.length, 1, "and never replaced by a new panel");
+  assert.equal(panel.revealed.length, 0, "already on screen: not revealed (a file dropping out of pending used to reveal it)");
+  panel.visible = false; // the merge editor over it
+  panel.receive({ type: "accept", path: "b.txt", role: "yours", seq: 2 });
+  await settle();
+  assert.equal(panel.revealed.length, 1, "behind another editor, finishing a file brings it back");
+});
+
+test("the page loading again (a reload) starts its numbering again: an earlier press never counts as done for it", async () => {
+  const state = { files: [pending("a.txt"), pending("b.txt")], episode: "rebase:1" };
+  const { repo, release } = gatedRepo(state);
+  const { panel } = await openDashboard(repo);
+  panel.receive({ type: "accept", path: "a.txt", role: "yours", seq: 7 });
+  await settle();
+  panel.receive({ type: "ready" }); // the page reloaded while git was at it
+  await settle();
+  release("a.txt");
+  await settle();
+  assert.equal(states(panel).at(-1)!.done, 0, "the old page's press 7 is not this page's");
+  assert.equal(statusOf(states(panel).at(-1)!), "a.txt:resolved b.txt:pending", "its result is shown all the same");
+});

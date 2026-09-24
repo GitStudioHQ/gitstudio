@@ -114,15 +114,48 @@ test("nothing left to resolve lifts a close even when git keeps the same episode
   assert.equal(c.update(snap(none, [["b.txt", "pending"]]), auto).show, true);
 });
 
-test("busy: the row in flight shows busy and every control is disabled; a new action clears the old outcome", () => {
+test("a row's action marks THAT row busy and nothing else: not the page, not the outcome, not a notice", () => {
+  // The owner (24 Sep 2026): "clicking accept left on the first row flashes
+  // and refreshes all other rows". A row's action used to set the page's
+  // `busy` (every control on the page locked) and clear the notice above the
+  // list (every row moved up).
+  const c = new DashboardController({ brand });
+  c.update(snap(step1, [["a.txt", "pending"], ["b.txt", "pending"], ["c.txt", "pending"]]), auto);
+  c.setOutcome({ kind: "stopped", text: "Stopped at commit 2 of 3" });
+  c.setNotice({ kind: "warn", text: "an earlier refusal" });
+  const before = c.state();
+  const s = c.setRowBusy("b.txt", true);
+  assert.equal(s.busy, false, "the page is not locked for one row");
+  assert.deepEqual(s.files.map((f) => f.status), ["pending", "busy", "pending"]);
+  assert.deepEqual(s.outcome, before.outcome, "the outcome stays");
+  assert.deepEqual(s.notice, before.notice, "the notice stays (removing it would move every row)");
+  // A second row pressed while the first is at work: both are busy, nothing else.
+  assert.deepEqual(c.setRowBusy("c.txt", true).files.map((f) => f.status), ["pending", "busy", "busy"]);
+  assert.deepEqual(c.setRowBusy("b.txt", false).files.map((f) => f.status), ["pending", "pending", "busy"]);
+  assert.deepEqual(c.setRowBusy("c.txt", false), before);
+});
+
+test("an operation verb locks the page and makes the old outcome and notice stale", () => {
   const c = new DashboardController({ brand });
   c.update(snap(step1, [["a.txt", "pending"], ["b.txt", "pending"]]), auto);
   c.setOutcome({ kind: "failed", text: "no" });
-  const s = c.setBusy(true, "b.txt");
+  const s = c.setBusy(true);
   assert.equal(s.busy, true);
-  assert.deepEqual(s.files.map((f) => f.status), ["pending", "busy"]);
+  assert.deepEqual(s.files.map((f) => f.status), ["pending", "pending"], "no row is marked: the page is");
   assert.equal(s.outcome, undefined);
-  assert.deepEqual(c.setBusy(false).files.map((f) => f.status), ["pending", "pending"]);
+  assert.equal(c.setBusy(false).busy, false);
+});
+
+test("`done` is what the host had finished when the files were READ, and a busy row is not counted resolved", () => {
+  const c = new DashboardController({ brand });
+  assert.equal(c.update(snap(step1, [["a.txt", "pending"]]), auto).state.done, undefined, "no number, no claim");
+  // Read while action 3 was still running: it says 2.
+  const read = c.update(snap(step1, [["a.txt", "resolved"], ["b.txt", "pending"]]), auto, 2);
+  assert.equal(read.state.done, 2);
+  const s = c.setRowBusy("a.txt", true);
+  assert.equal(s.done, 2, "marking a row does not advance it");
+  assert.equal(s.resolved, 0, "the row at work is not in the progress count yet");
+  assert.equal(c.setRowBusy("a.txt", false).resolved, 1);
 });
 
 test("state carries the brand, hold-to-undo and support links; the title counts pending rows", () => {

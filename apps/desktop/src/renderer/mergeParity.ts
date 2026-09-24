@@ -587,7 +587,24 @@ export interface ConflictsControllerDeps {
 export class DesktopConflicts {
   private renderTarget?: (state: ConflictsState) => void;
   private snapshot?: ConflictsSnapshot;
+  /** An operation verb (Continue / Skip / Abort) is in flight: the whole dashboard waits. */
   private busy = false;
+  /**
+   * Rows whose own action is waiting or running. Only these show busy: a
+   * press on one row used to lock the whole dashboard (`busy`), and every
+   * button on it went locked and back — the owner's "flashes and refreshes
+   * all other rows".
+   */
+  private readonly rowBusy = new Set<string>();
+  /** The dashboard's actions, one at a time in the order pressed (a second row's press waits; it is not dropped). */
+  private queue: Promise<void> = Promise.resolve();
+  /** The highest action seq finished (ConflictsState.done). */
+  private done = 0;
+  /** `done` as it stood when the snapshot on screen was READ: a read that overlapped an action does not claim it. */
+  private snapshotDone = 0;
+  /** Reads are numbered; one that comes back after a later one has been shown is stale and dropped. */
+  private reads = 0;
+  private shownRead = 0;
   private outcome?: ConflictsState["outcome"];
   private outcomeEpisode?: string;
   private notice?: ConflictsState["notice"];
@@ -648,10 +665,15 @@ export class DesktopConflicts {
   }
 
   async refresh(): Promise<ConflictsSnapshot | undefined> {
+    const read = ++this.reads;
+    const doneAtRead = this.done;
     try {
       const s = await this.deps.invoke("conflict:state", undefined);
       if (!s) throw new Error("The conflict state came back empty.");
+      if (read < this.shownRead) return this.snapshot; // a later read is already on screen
+      this.shownRead = read;
       this.snapshot = s;
+      this.snapshotDone = doneAtRead;
       this.stashEnd = this.stashEnds.fold(s);
       this.readError = undefined;
       // An outcome describes the stop it happened at, plus the one it led
@@ -673,14 +695,20 @@ export class DesktopConflicts {
     const s = this.snapshot;
     if (!s) return undefined;
     const ended = this.stashEnd;
+    const files = ended
+      ? ended.files
+      : s.files.map((f) => (this.rowBusy.has(f.path) ? { ...f, status: "busy" as const } : f));
     return {
       brand: { name: "GitStudio", mark: "gitstudio" },
       repoName: s.repoName,
       op: s.op,
-      files: ended ? ended.files : s.files,
+      files,
       total: ended ? ended.files.length : s.total,
-      resolved: ended ? ended.files.length : s.resolved,
-      busy: this.busy || verbInFlight,
+      resolved: ended ? ended.files.length : files.filter((f) => f.status === "resolved").length,
+      // The page waits for an operation verb — ours, or the merge editor's
+      // (one lock for both) — never for one row's action.
+      busy: this.busy || (verbInFlight && this.rowBusy.size === 0),
+      done: this.snapshotDone,
       holdToUndoMs: HOLD_TO_UNDO_MS,
       notice: this.notice ?? (this.readError ? { kind: "error", text: this.readError } : undefined),
       outcome: this.outcome,
@@ -710,26 +738,37 @@ export class DesktopConflicts {
       case "continue":
       case "skip":
       case "abort": {
-        const before = this.snapshot?.op;
-        if (!before) return;
-        this.notice = undefined;
-        let line: { kind: "done" | "stopped" | "failed"; text: string } | undefined;
-        const o = await this.run(
-          () =>
-            action.type === "continue"
-              ? invoke("op:continue", action.confirmDrop ? { confirmDrop: true } : {})
-              : action.type === "skip"
-                ? invoke("op:skip", undefined)
-                : invoke("op:abort", undefined),
-          async (done) => {
-            line = outcomeLine(done, before, action.type);
-            this.outcome = line;
-            this.outcomeEpisode = done.view.episode;
+        // After any row action pressed before it (the queue), never beside it.
+        await this.inTurn(async () => {
+          const before = this.snapshot?.op;
+          let line: { kind: "done" | "stopped" | "failed"; text: string } | undefined;
+          const o = before
+            ? await this.run(
+                () =>
+                  action.type === "continue"
+                    ? invoke("op:continue", action.confirmDrop ? { confirmDrop: true } : {})
+                    : action.type === "skip"
+                      ? invoke("op:skip", undefined)
+                      : invoke("op:abort", undefined),
+                async (result) => {
+                  line = outcomeLine(result, before, action.type);
+                  this.outcome = line;
+                  this.outcomeEpisode = result.view.episode;
+                  this.finish(action.seq);
+                  await this.refresh();
+                },
+                true,
+              )
+            : undefined;
+          if (!o || !line) {
+            // Nothing ran (no state yet, or another verb held the lock): the
+            // page still hears that this press is over.
+            this.finish(action.seq);
             await this.refresh();
-          },
-        );
-        if (!o || !line) return;
-        this.deps.onOperationChanged(line);
+            return;
+          }
+          this.deps.onOperationChanged(line);
+        });
         return;
       }
       default:
@@ -739,44 +778,80 @@ export class DesktopConflicts {
     }
   }
 
+  /**
+   * One ROW's action: that row is busy while it waits its turn and runs, and
+   * nothing else on the dashboard changes — the page is not locked, the
+   * notice above the list stays where it is (taking it away would move every
+   * row). The row's result reaches the page with the read after it, which
+   * says the press is `done`.
+   */
   private async fileVerb(
     action: Extract<ConflictsAction, { type: "accept" | "restore" | "delete" }>,
   ): Promise<void> {
     const { invoke } = this.deps;
     const path = action.path;
-    this.notice = undefined;
-    const r = await this.run(
-      () =>
-        action.type === "accept"
-          ? invoke("conflict:takeRole", { path, role: action.role })
-          : action.type === "delete"
-            ? invoke("conflict:delete", { path })
-            : invoke("conflict:restore", { path }),
-      async (res) => {
-        if (!res.ok) {
-          this.notice = { kind: "error", text: res.message || `Couldn't change ${path}.` };
-        } else if (action.type !== "restore") {
-          const undo = {
-            label: `Bring back the conflict in ${path}`,
-            undo: async () => restoreResult(await invoke("conflict:restore", { path }), path),
-            after: () => {
-              void this.refresh();
-              this.deps.onFileChanged();
-            },
-          };
-          if (this.deps.pushUndo) this.deps.pushUndo(undo);
-          else this.deps.undoable(action.type === "delete" ? `Deleted ${path}.` : `Resolved ${path}.`, undo);
+    this.rowBusy.add(path);
+    this.paint();
+    await this.inTurn(async () => {
+      let r: Awaited<ReturnType<typeof invoke<"conflict:takeRole">>> | undefined;
+      try {
+        r = await this.run(
+          () =>
+            action.type === "accept"
+              ? invoke("conflict:takeRole", { path, role: action.role })
+              : action.type === "delete"
+                ? invoke("conflict:delete", { path })
+                : invoke("conflict:restore", { path }),
+          async (res) => {
+            if (!res.ok) {
+              this.notice = { kind: "error", text: res.message || `Couldn't change ${path}.` };
+            } else if (action.type !== "restore") {
+              const undo = {
+                label: `Bring back the conflict in ${path}`,
+                undo: async () => restoreResult(await invoke("conflict:restore", { path }), path),
+                after: () => {
+                  void this.refresh();
+                  this.deps.onFileChanged();
+                },
+              };
+              if (this.deps.pushUndo) this.deps.pushUndo(undo);
+              else this.deps.undoable(action.type === "delete" ? `Deleted ${path}.` : `Resolved ${path}.`, undo);
+            }
+            this.rowBusy.delete(path);
+            this.finish(action.seq);
+            await this.refresh();
+          },
+          false,
+        );
+      } finally {
+        if (this.rowBusy.delete(path) || !r) {
+          // Nothing ran (another verb held the lock) or it threw: the row
+          // still hears that its press is over.
+          this.finish(action.seq);
+          await this.refresh();
         }
-        await this.refresh();
-      },
-    );
-    if (!r) return;
-    this.deps.onFileChanged();
+      }
+      if (r) this.deps.onFileChanged();
+    });
+  }
+
+  /** Run `job` after every action pressed before it. */
+  private inTurn(job: () => Promise<void>): Promise<void> {
+    const run = this.queue.then(job);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Press `seq` is finished: every state read from now on says so. */
+  private finish(seq: number | undefined): void {
+    if (seq !== undefined && seq > this.done) this.done = seq;
   }
 
   /**
    * One verb at a time, with the dashboard locked (busy) while it runs AND
-   * while the state it led to is read back (`settle`).
+   * while the state it led to is read back (`settle`) — for an operation
+   * verb (`lockPage`). A row's action holds the same lock against the merge
+   * editor, but only its own row shows it.
    *
    * Unlocking when the verb returns is not enough. The verb takes ~10 ms; the
    * read of what it did takes longer — and in between, the dashboard repaints
@@ -787,10 +862,17 @@ export class DesktopConflicts {
    * that is no longer conflicted. The banner this replaced kept its buttons
    * dead through its repaint for the same reason.
    */
-  private async run<T>(fn: () => Promise<T>, settle: (result: T) => Promise<void>): Promise<T | undefined> {
+  private async run<T>(
+    fn: () => Promise<T>,
+    settle: (result: T) => Promise<void>,
+    lockPage: boolean,
+  ): Promise<T | undefined> {
     if (verbInFlight) return undefined;
-    this.busy = true;
-    this.paint();
+    if (lockPage) {
+      this.notice = undefined; // a verb makes the last one's notice stale
+      this.busy = true;
+      this.paint();
+    }
     try {
       return await exclusive(async () => {
         const result = await fn();
@@ -801,7 +883,7 @@ export class DesktopConflicts {
       this.notice = { kind: "error", text: e instanceof Error ? e.message : String(e) };
       return undefined;
     } finally {
-      this.busy = false;
+      if (lockPage) this.busy = false;
       this.paint();
     }
   }

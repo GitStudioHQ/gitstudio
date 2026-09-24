@@ -392,11 +392,16 @@ for (const [name, t] of Object.entries(THEMES)) {
         expect(ratio(ring, ground(r)) >= 3, b.dataset.key + ": and stands off the row at " + ratio(ring, ground(r)).toFixed(2) + ":1");
       }
 
-      // Disabled: grey, not a faded purple.
-      // (Work that is not one file's — a Continue: one file's keeps every other row's look, conflictsInPlace.test.ts.)
+      // Disabled: grey, not a faded purple — the look an operation verb's
+      // lock takes once it lasts (a Continue; a row's own work keeps every
+      // other row's look, conflictsInPlace.test.ts). Its wait is timing, not
+      // look: measured with transitions off.
+      const still = document.createElement("style");
+      still.textContent = ".cd-dash, .cd-dash * { transition: none !important; }";
+      document.head.appendChild(still);
       d.render(state(ROWS.filter((f) => f.status !== "busy"), { busy: true }));
       const dy = $('[data-key="accept:yours:src/app.ts"]'), dm = $('[data-key="merge:src/app.ts"]');
-      expect([dy, dm].every((b) => b.disabled || b.getAttribute("aria-disabled") === "true"), "precondition: the host is working");
+      expect($(".cd-dash").classList.contains("is-busy") && !!dy && !!dm, "precondition: an operation verb is running");
       expect(sat(rgba(getComputedStyle(dy).color)) < 0.12, "a disabled Accept Yours is grey (" + getComputedStyle(dy).color + ")");
       expect(sat(ground(dm)) < 0.12, "a disabled Merge… is not a purple fill (" + ground(dm).map(Math.round) + ")");
     `);

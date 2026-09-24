@@ -35,6 +35,10 @@ export interface StubPanel {
   posted: unknown[];
   revealed: unknown[][];
   disposed: boolean;
+  /** On screen; a test hides it (behind another editor) by setting it false. */
+  visible: boolean;
+  /** How many times the page's HTML was set — each set reloads the page. */
+  htmlSets: number;
   /** Also what VS Code does when the user closes the tab. */
   dispose(): void;
   /** The page posting a message to the host. */

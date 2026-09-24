@@ -268,8 +268,23 @@ export interface ConflictsState {
   total: number;
   /** Rows with status "resolved". */
   resolved: number;
-  /** A host action is in flight; every mutating control is disabled. */
+  /**
+   * An OPERATION verb (Continue / Skip / Abort) is in flight: the whole
+   * dashboard waits for it. A row's own action (Accept, Delete, Hold to undo)
+   * never sets this — it marks only its row, status "busy" — so resolving one
+   * file changes nothing on any other row.
+   */
   busy: boolean;
+  /**
+   * The highest action `seq` (ConflictsAction) whose RESULT this state shows:
+   * the host had finished it before it read these files. A row the reader
+   * pressed keeps its working state until `done` reaches the press's seq, so a
+   * state read while git was still at it — or one sent before the host even
+   * had the press — never paints the row as it was. Absent from a host that
+   * does not number actions (the dashboard then falls back to the row's
+   * status).
+   */
+  done?: number;
   /** Hold-to-undo duration (HOLD_TO_UNDO_MS). */
   holdToUndoMs: number;
   /** A transient note ("No JetBrains IDE found — using the embedded editor"). */
@@ -310,16 +325,21 @@ export interface ConflictsState {
  * - restore: hold-to-undo — re-create the conflict (`git checkout -m`).
  * - delete: the one resolution of a both-deleted (DD) row (`ConflictOps.deleteFile`).
  * - continue: `confirmDrop: true` only after the user confirmed `op.willDrop`.
+ *
+ * Every action that changes git carries `seq`, numbered by the dashboard. The
+ * host runs them ONE AT A TIME in the order they came (a press on a second row
+ * while git is busy with the first waits its turn; it is never dropped), and
+ * says which it has finished in `ConflictsState.done`.
  */
 export type ConflictsAction =
   | { type: "ready" }
-  | { type: "accept"; path: string; role: SideRole }
+  | { type: "accept"; path: string; role: SideRole; seq?: number }
   | { type: "merge"; path: string }
-  | { type: "restore"; path: string }
-  | { type: "delete"; path: string }
-  | { type: "continue"; confirmDrop?: boolean }
-  | { type: "skip" }
-  | { type: "abort" }
+  | { type: "restore"; path: string; seq?: number }
+  | { type: "delete"; path: string; seq?: number }
+  | { type: "continue"; confirmDrop?: boolean; seq?: number }
+  | { type: "skip"; seq?: number }
+  | { type: "abort"; seq?: number }
   | { type: "close" }
   | { type: "openExternal"; url: string }
   /** The tip's "Got it": never show tip `id` again. */

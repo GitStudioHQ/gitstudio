@@ -56,8 +56,15 @@ export interface Decision {
 
 export class DashboardController {
   private snapshot: ConflictsSnapshot | undefined;
+  /**
+   * The actions the host had finished when `snapshot` was READ (its `done`):
+   * a state never claims a press whose result its files may not show yet.
+   */
+  private snapshotDone: number | undefined;
+  /** An operation verb (Continue / Skip / Abort) is in flight: the whole page waits. */
   private busy = false;
-  private busyPath: string | undefined;
+  /** Rows whose own action is waiting or running: only these show busy. */
+  private readonly busyPaths = new Set<string>();
   private notice: ConflictsState["notice"];
   private outcome: ConflictsState["outcome"];
   private outcomeEpisode: string | undefined;
@@ -73,8 +80,13 @@ export class DashboardController {
 
   constructor(private readonly opts: DashboardOptions) {}
 
-  /** Fold in a fresh git snapshot and decide what the panel should do. */
-  update(snapshot: ConflictsSnapshot, ctx: UpdateContext): Decision {
+  /**
+   * Fold in a fresh git snapshot and decide what the panel should do. `done`
+   * is the host's count of finished actions as it stood when the read BEGAN
+   * (ConflictsState.done): a read that overlapped an action does not claim it.
+   */
+  update(snapshot: ConflictsSnapshot, ctx: UpdateContext, done?: number): Decision {
+    this.snapshotDone = done;
     // A stash apply's end reads as "nothing in progress" (git keeps no
     // operation for it): keep its page, finished, instead of closing.
     this.stashEnd = this.stashEnds.fold(snapshot);
@@ -137,15 +149,27 @@ export class DashboardController {
     this.closedEpisode = undefined;
   }
 
-  /** An action is in flight (every mutating control disabled; `path`'s row shows busy). */
-  setBusy(busy: boolean, path?: string): ConflictsState {
+  /**
+   * An operation verb is in flight: the whole page waits (`busy`). A verb
+   * makes the previous outcome and notice stale.
+   */
+  setBusy(busy: boolean): ConflictsState {
     this.busy = busy;
-    this.busyPath = busy ? path : undefined;
     if (busy) {
-      // A new action makes the previous outcome / notice stale.
       this.outcome = undefined;
       this.notice = undefined;
     }
+    return this.state();
+  }
+
+  /**
+   * One ROW's action is waiting or running: that row shows busy, and nothing
+   * else on the page changes — not `busy`, not the outcome, not a notice
+   * (removing a notice above the list would move every row).
+   */
+  setRowBusy(path: string, busy: boolean): ConflictsState {
+    if (busy) this.busyPaths.add(path);
+    else this.busyPaths.delete(path);
     return this.state();
   }
 
@@ -174,7 +198,7 @@ export class DashboardController {
     const snap = this.snapshot;
     const ended = this.stashEnd;
     const files: ConflictFileView[] = (ended ? ended.files : (snap?.files ?? [])).map((f) =>
-      this.busyPath !== undefined && f.path === this.busyPath ? { ...f, status: "busy" } : f,
+      this.busyPaths.has(f.path) ? { ...f, status: "busy" } : f,
     );
     const state: ConflictsState = {
       brand: this.opts.brand,
@@ -182,10 +206,15 @@ export class DashboardController {
       op: snap?.op ?? NO_OP,
       files,
       total: ended ? files.length : (snap?.total ?? files.length),
-      resolved: ended ? files.length : (snap?.resolved ?? files.filter((f) => f.status === "resolved").length),
+      // Counted from the rows as sent: a row still at work is not "resolved"
+      // in the progress bar before it is on its row.
+      resolved: ended ? files.length : files.filter((f) => f.status === "resolved").length,
       busy: this.busy,
       holdToUndoMs: this.opts.holdToUndoMs ?? HOLD_TO_UNDO_MS,
     };
+    if (this.snapshotDone !== undefined) {
+      state.done = this.snapshotDone;
+    }
     if (ended) {
       state.finished = ended.finished;
     }

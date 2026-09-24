@@ -30,6 +30,22 @@ export class ConflictsDashboard implements vscode.Disposable {
   private refreshQueued = false;
   private queuedAuto = false;
   /**
+   * The page's actions, ONE AT A TIME in the order they came: a press on a
+   * second row while git is still at the first waits its turn (two git
+   * commands at once fight over index.lock), and is never dropped.
+   */
+  private work: Promise<void> = Promise.resolve();
+  /** The highest action seq finished (ConflictsState.done); the page numbers from 1 again when it loads. */
+  private done = 0;
+  /** Which load of the page is on screen: an action from an earlier load never counts as done for this one. */
+  private page = 0;
+  /**
+   * The last state message posted, as sent. A state identical to it is not
+   * posted again: the page would have nothing to do with it, and every git
+   * event (a watcher, the focus refresh) re-reads the same state.
+   */
+  private lastPosted: string | undefined;
+  /**
    * Panels this host is disposing itself (the operation ended, another
    * repository, shutdown). Any other dispose is the user closing the tab,
    * which the controller must hear as a close for this stop.
@@ -114,6 +130,11 @@ export class ConflictsDashboard implements vscode.Disposable {
     );
     this.panel = panel;
     this.ready = false;
+    this.lastPosted = undefined;
+    // The page's HTML is set ONCE, here. Every change after this is a state
+    // message the page patches in place: re-setting the HTML (or making a new
+    // panel) for a change reloads the whole page — the "server side website"
+    // flash.
     panel.webview.html = conflictsWebviewHtml(panel.webview, this.host.context.extensionUri);
     const sub = panel.webview.onDidReceiveMessage((raw: unknown) => {
       void this.onAction(raw as ConflictsAction).catch((error) => {
@@ -166,6 +187,10 @@ export class ConflictsDashboard implements vscode.Disposable {
     if (!repo || !controller) {
       return;
     }
+    // What this read can vouch for: the actions finished BEFORE it began. A
+    // read that overlaps an action (a watcher's, while git is still at it)
+    // must not tell the page that action is done.
+    const doneAtRead = this.done;
     let snapshot;
     try {
       snapshot = await repo.ctx.conflictOps.snapshot();
@@ -176,10 +201,14 @@ export class ConflictsDashboard implements vscode.Disposable {
       return; // rebound while reading
     }
     controller.setTip(sidesTipFor(this.host, snapshot.op));
-    const decision = controller.update(snapshot, {
-      open: this.panel !== undefined,
-      autoShow: auto && this.host.settings().autoOpen && !this.host.defers(),
-    });
+    const decision = controller.update(
+      snapshot,
+      {
+        open: this.panel !== undefined,
+        autoShow: auto && this.host.settings().autoOpen && !this.host.defers(),
+      },
+      doneAtRead,
+    );
     if (decision.close && this.panel) {
       this.disposePanel();
       return;
@@ -188,7 +217,10 @@ export class ConflictsDashboard implements vscode.Disposable {
       // Automatic: appear beside the work, never steal the keyboard.
       this.create(false);
     }
-    if (decision.reveal && this.panel) {
+    if (decision.reveal && this.panel && !this.panel.visible) {
+      // Back to the front after a file is finished elsewhere (the merge
+      // editor over it). Already on screen, it is left alone: re-opening the
+      // visible editor for nothing is work VS Code may lay out again.
       this.panel.reveal(undefined, true);
     }
     this.post();
@@ -199,12 +231,42 @@ export class ConflictsDashboard implements vscode.Disposable {
       return;
     }
     const state = this.controller.state();
-    this.panel.title = dashboardTitle(state);
+    const title = dashboardTitle(state);
+    if (this.panel.title !== title) {
+      this.panel.title = title;
+    }
     if (!this.ready) {
       return; // the page asks with "ready" and gets it then
     }
     const message: ConflictsHostMessage = { type: "state", state };
+    const sent = JSON.stringify(message);
+    if (sent === this.lastPosted) {
+      return; // exactly what the page already has
+    }
+    this.lastPosted = sent;
     void this.panel.webview.postMessage(message);
+  }
+
+  /** The page finished loading (again): it numbers its actions from 1, and has no state yet. */
+  private pageLoaded(): void {
+    this.ready = true;
+    this.page++;
+    this.done = 0;
+    this.lastPosted = undefined;
+  }
+
+  /** An action of page `page` is finished: states read from now on say so. */
+  private finish(seq: number | undefined, page: number): void {
+    if (seq !== undefined && page === this.page && seq > this.done) {
+      this.done = seq;
+    }
+  }
+
+  /** Run `job` after every action before it (see `work`). */
+  private enqueue(job: () => Promise<void>): Promise<void> {
+    const run = this.work.then(job);
+    this.work = run.catch(() => undefined);
+    return run;
   }
 
   private async onAction(action: ConflictsAction): Promise<void> {
@@ -215,7 +277,7 @@ export class ConflictsDashboard implements vscode.Disposable {
     }
     switch (action.type) {
       case "ready":
-        this.ready = true;
+        this.pageLoaded();
         if (!controller.hasSnapshot()) {
           await this.refresh(false);
         } else {
@@ -241,28 +303,28 @@ export class ConflictsDashboard implements vscode.Disposable {
         await this.openConflict(fileUri(repo, action.path));
         return;
       case "accept":
-        await this.fileAction(repo, action.path, `Accept ${action.role === "yours" ? "Yours" : "Theirs"}`, () =>
+        await this.fileAction(repo, action.path, action.seq, `Accept ${action.role === "yours" ? "Yours" : "Theirs"}`, () =>
           repo.ctx.conflictOps.takeRole(action.path, action.role),
         );
         return;
       case "restore":
-        await this.fileAction(repo, action.path, undefined, () => repo.ctx.conflictOps.restore(action.path));
+        await this.fileAction(repo, action.path, action.seq, undefined, () => repo.ctx.conflictOps.restore(action.path));
         return;
       case "delete":
-        await this.fileAction(repo, action.path, "Delete the conflicted file", () =>
+        await this.fileAction(repo, action.path, action.seq, "Delete the conflicted file", () =>
           repo.ctx.conflictOps.deleteFile(action.path),
         );
         return;
       case "continue":
-        await this.verb(repo, "continue", () =>
+        await this.verb(repo, "continue", action.seq, () =>
           repo.ctx.operation.continue({ confirmDrop: action.confirmDrop }),
         );
         return;
       case "skip":
-        await this.verb(repo, "skip", () => repo.ctx.operation.skip());
+        await this.verb(repo, "skip", action.seq, () => repo.ctx.operation.skip());
         return;
       case "abort":
-        await this.verb(repo, "abort", async () => {
+        await this.verb(repo, "abort", action.seq, async () => {
           await saveConflictedDocuments(repo);
           return repo.ctx.operation.abort();
         });
@@ -270,74 +332,95 @@ export class ConflictsDashboard implements vscode.Disposable {
     }
   }
 
-  /** One row's whole-file action, with the row busy while it runs. */
+  /**
+   * One row's whole-file action. Only THAT row changes while it waits and
+   * runs (status "busy"); the page is not locked and no other row is touched.
+   * Its result reaches the page with the re-read after it, which says the
+   * action is `done` — so a state read while git was still at it never shows
+   * the row as it was.
+   */
   private async fileAction(
     repo: MergeRepo,
     path: string,
+    seq: number | undefined,
     undoLabel: string | undefined,
     act: () => Promise<ConflictOpResult>,
   ): Promise<void> {
     const controller = this.controller!;
-    controller.setBusy(true, path);
+    const page = this.page;
+    controller.setRowBusy(path, true);
     this.post();
-    let result: ConflictOpResult;
-    try {
-      // A merge editor on this file may hold unapplied work: save it now, so
-      // the document follows what git writes next and closing that editor
-      // afterwards has nothing to ask (see saveDocumentAt).
-      await saveDocumentAt(fileUri(repo, path));
-      const run = () => act();
-      result =
-        undoLabel && this.host.product.runWithUndo
-          ? await this.host.product.runWithUndo(repo, `${undoLabel}: ${path}`, run)
-          : await run();
-    } catch (error) {
-      result = { ok: false, changed: false, message: error instanceof Error ? error.message : String(error) };
-    } finally {
-      controller.setBusy(false);
-    }
-    if (!result.ok && result.message) {
-      controller.setNotice({ kind: result.expected ? "warn" : "error", text: result.message });
-    }
-    if (result.ok) {
-      // A merge editor open on this file would now show a stale conflict.
-      void closeMergeEditorTabs(this.host.product.viewTypes.mergeEditor, fileUri(repo, path));
-    }
-    this.host.changed(repo);
-    await this.refresh(false);
+    await this.enqueue(async () => {
+      let result: ConflictOpResult;
+      try {
+        // A merge editor on this file may hold unapplied work: save it now, so
+        // the document follows what git writes next and closing that editor
+        // afterwards has nothing to ask (see saveDocumentAt).
+        await saveDocumentAt(fileUri(repo, path));
+        const run = () => act();
+        result =
+          undoLabel && this.host.product.runWithUndo
+            ? await this.host.product.runWithUndo(repo, `${undoLabel}: ${path}`, run)
+            : await run();
+      } catch (error) {
+        result = { ok: false, changed: false, message: error instanceof Error ? error.message : String(error) };
+      }
+      controller.setRowBusy(path, false);
+      this.finish(seq, page);
+      if (!result.ok && result.message) {
+        controller.setNotice({ kind: result.expected ? "warn" : "error", text: result.message });
+      }
+      if (result.ok) {
+        // A merge editor open on this file would now show a stale conflict.
+        void closeMergeEditorTabs(this.host.product.viewTypes.mergeEditor, fileUri(repo, path));
+      }
+      this.host.changed(repo);
+      await this.refresh(false);
+    });
   }
 
-  /** Continue / Skip / Abort from the dashboard. */
+  /**
+   * Continue / Skip / Abort from the dashboard: the whole page waits (`busy`)
+   * until the state the verb led to has been read and painted.
+   */
   private async verb(
     repo: MergeRepo,
     verb: OperationVerb,
+    seq: number | undefined,
     act: () => Promise<OperationOutcome>,
   ): Promise<void> {
     const controller = this.controller!;
+    const page = this.page;
     controller.setBusy(true);
     this.post();
-    let before: OperationView | undefined;
-    let outcome: OperationOutcome | undefined;
-    let failure: string | undefined;
-    try {
-      before = await repo.ctx.operation.view();
-      outcome = await act();
-    } catch (error) {
-      failure = error instanceof Error ? error.message : String(error);
-    } finally {
-      controller.setBusy(false);
-    }
-    if (outcome && before) {
-      const line = outcomeLine(outcome, verb, before);
-      controller.setOutcome(line, outcome.view.episode);
-      if (verb === "abort" && outcome.ok) {
-        void closeMergeEditorTabs(this.host.product.viewTypes.mergeEditor);
+    await this.enqueue(async () => {
+      let before: OperationView | undefined;
+      let outcome: OperationOutcome | undefined;
+      let failure: string | undefined;
+      try {
+        before = await repo.ctx.operation.view();
+        outcome = await act();
+      } catch (error) {
+        failure = error instanceof Error ? error.message : String(error);
       }
-    } else {
-      controller.setOutcome({ kind: "failed", text: failure ?? `Git refused to ${verb}.` });
-    }
-    this.host.changed(repo);
-    await this.refresh(false);
+      if (outcome && before) {
+        const line = outcomeLine(outcome, verb, before);
+        controller.setOutcome(line, outcome.view.episode);
+        if (verb === "abort" && outcome.ok) {
+          void closeMergeEditorTabs(this.host.product.viewTypes.mergeEditor);
+        }
+      } else {
+        controller.setOutcome({ kind: "failed", text: failure ?? `Git refused to ${verb}.` });
+      }
+      this.finish(seq, page);
+      this.host.changed(repo);
+      try {
+        await this.refresh(false);
+      } finally {
+        controller.setBusy(false);
+        this.post();
+      }
+    });
   }
 
   dispose(): void {

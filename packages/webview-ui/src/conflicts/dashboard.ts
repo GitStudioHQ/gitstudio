@@ -20,9 +20,15 @@
 // into a detached copy and only what differs is written to the screen, so
 // resolving one file changes that file's row, the progress bar and the footer
 // and nothing else — no row, button, hover, focus or scroll position is
-// thrown away. While the host works, the controls are LOCKED (aria-disabled,
-// ignored by the click handler) rather than disabled: a lock that lasts a
-// moment is invisible, and a disabled button would drop the keyboard focus.
+// thrown away. A state identical to the one on screen is not painted at all.
+//
+// A ROW's action (Accept Yours / Theirs, Delete the file, Hold to undo) is
+// that row's alone: it shows its own working state (a spinner, its buttons
+// waiting behind it) until the host says it has finished that press (`done`,
+// by the press's `seq`), and no other row is written to — not locked, not
+// greyed, not re-enabled. A press on another row meanwhile is not refused: it
+// shows ITS working state and the host runs it next. Only an operation verb
+// (Continue / Skip / Abort) locks the page, with one class on the dashboard.
 
 import type {
   ConflictFileView,
@@ -144,26 +150,29 @@ function pillLabel(pill: HTMLElement, text: string): void {
 }
 
 /**
- * How a control stands: live; LOCKED while the host works (aria-disabled — it
- * keeps its keyboard focus, the click handler ignores it, and its grey look
- * waits a moment: conflicts.css); QUIET, locked while one FILE is being
- * resolved (the row's spinner says so, and the rest of the page keeps its
- * look however long git takes); or disabled by the operation itself.
+ * How a control stands: live; WAITING (aria-disabled — it keeps its keyboard
+ * focus and the click handler ignores it) while its own row is at work, or,
+ * in the footer, while an operation verb runs; or disabled by the operation
+ * itself (Continue while files are still conflicted).
  */
-type Gate = false | "locked" | "quiet" | true;
+type Gate = false | "wait" | true;
 
-/** A control that must not act right now: disabled, or locked while the host works. */
+/** A control that must not act right now: disabled, or waiting for its own work. */
 function isLocked(b: Element): boolean {
   return (b as HTMLButtonElement).disabled === true || b.getAttribute("aria-disabled") === "true";
 }
 
 function gate(b: HTMLButtonElement, g: Gate): void {
   if (g === true) b.disabled = true;
-  else if (g) {
-    b.setAttribute("aria-disabled", "true");
-    if (g === "quiet") b.dataset.lock = "quiet";
-  }
+  else if (g) b.setAttribute("aria-disabled", "true");
 }
+
+/**
+ * Presses are numbered for the host (ConflictsAction `seq`, ConflictsState
+ * `done`). Module-wide, so a dashboard a host builds again (the desktop, after
+ * a view change) never reuses a number the host has already finished.
+ */
+let lastSeq = 0;
 
 const ANCHOR_TAG = "gs-cd-anchor";
 
@@ -243,12 +252,15 @@ export class ConflictsDashboard {
   private confirming?: "abort" | "skip" | "drop";
   private episode?: string;
   /**
-   * Rows the reader just acted on, drawn busy until the host has done it: the
-   * row's status when it was pressed. It lasts while the host says it is
-   * working and the row has not changed yet (the desktop marks no row busy
-   * of its own, only the whole dashboard).
+   * Rows the reader just acted on, drawn at work until the host has done it:
+   * the press's number and the row's status when it was pressed. It lasts
+   * until a state says the host has finished that press (`done` ≥ seq) — not
+   * merely until the next state, which may have left the host before the
+   * press reached it, or been read while git was still at it. A host that
+   * does not number presses ends it the old way: when it is no longer busy,
+   * or the row has moved.
    */
-  private localBusy = new Map<string, ConflictFileView["status"]>();
+  private localBusy = new Map<string, { seq: number; was: ConflictFileView["status"] }>();
   /**
    * What each row last showed while it was not busy. A busy row keeps
    * showing it — its pill and its buttons, locked, a spinner for its status —
@@ -261,13 +273,12 @@ export class ConflictsDashboard {
   /** Holds in progress (button → its cancel), so a state, a lock or dispose never leaves a timer armed. */
   private holds = new Map<HTMLButtonElement, () => void>();
   /**
-   * A Continue / Skip / Abort was posted and the host has not answered yet.
-   * The footer stays locked until the next state: two presses must never
-   * become two commands (the desktop's main process QUEUES a second call).
+   * A Continue / Skip / Abort was posted (its seq) and the host has not
+   * finished it: the page stays locked until a state says it has (`done`), or,
+   * from a host that does not number presses, until its next state. Two
+   * presses must never become two commands (the hosts QUEUE a second call).
    */
-  private sent = false;
-  /** One FILE is being resolved (a row is busy): the page's lock is quiet (Gate). Set per paint. */
-  private fileWork = false;
+  private sent?: number;
   /** A new stop was just rendered: its list starts at the top, not where the last one was scrolled. */
   private freshEpisode = false;
   /** Every button's action, by its data-key, as the LAST paint built it (one delegated click handler reads it). */
@@ -318,6 +329,9 @@ export class ConflictsDashboard {
     this.element.addEventListener("click", (e) => {
       const b = (e.target as Element | null)?.closest?.("button[data-key]");
       if (!b || !this.element.contains(b) || isLocked(b)) return;
+      // An operation verb in flight holds every row (the page's one lock); a
+      // row's own work holds only that row's buttons (their aria-disabled).
+      if (this.verbLocked() && b.closest(".cd-row")) return;
       this.handlers.get(b.getAttribute("data-key") ?? "")?.();
     });
     this.element.addEventListener("focusin", (e) => this.noteFocus(e.target as Element | null));
@@ -348,8 +362,15 @@ export class ConflictsDashboard {
   render(state: ConflictsState): void {
     // Hosts re-send the whole state after any repository event (in VS Code a
     // click that focuses the window sets off vscode.git's refresh). A re-send
-    // of exactly what is on screen changes nothing — and must not end a hold.
-    if (this.holds.size > 0 && this.state && JSON.stringify(state) === JSON.stringify(this.state)) {
+    // of exactly what is on screen changes nothing: nothing is painted, no
+    // hold ends, no row's working state ends. (Only from a host that does not
+    // number presses may a re-send end a press or a posted verb — the old
+    // rule, by which its next state is its answer.)
+    const legacyAnswer = state.done === undefined && (this.sent !== undefined || this.localBusy.size > 0);
+    if (this.state && !legacyAnswer && JSON.stringify(state) === JSON.stringify(this.state)) {
+      // (The list's fades follow its box, not the state: measured, and
+      // written only if the box has changed since.)
+      this.edges();
       return;
     }
     if (state.op.episode !== this.episode) {
@@ -363,14 +384,16 @@ export class ConflictsDashboard {
       this.lastView.clear();
       this.pillWords.clear();
     }
-    // A row the reader pressed stays busy while the host is still at it and
-    // the row has not moved yet; the host's answer (the row resolved, or the
-    // host done) ends it.
-    for (const [path, was] of [...this.localBusy]) {
+    // A row the reader pressed stays at work until the host has finished that
+    // press. Numbered (`done`): exactly then, whatever came before. Not
+    // numbered: when the host is no longer busy, or the row has moved.
+    for (const [path, press] of [...this.localBusy]) {
       const f = state.files.find((x) => x.path === path);
-      if (!f || !state.busy || f.status !== was) this.localBusy.delete(path);
+      const finished =
+        state.done !== undefined ? state.done >= press.seq : !state.busy || f?.status !== press.was;
+      if (!f || finished) this.localBusy.delete(path);
     }
-    this.sent = false;
+    if (this.sent !== undefined && (state.done === undefined || state.done >= this.sent)) this.sent = undefined;
     if (state.busy) this.confirming = undefined;
     this.state = state;
     this.paint();
@@ -454,6 +477,11 @@ export class ConflictsDashboard {
     this.paint(focusKey);
   }
 
+  /** An operation verb is in flight (posted here, or the host says so): the page waits. */
+  private verbLocked(): boolean {
+    return this.sent !== undefined || !!this.state?.busy;
+  }
+
   private paint(focusKeyOverride?: string): void {
     const state = this.state;
     if (!state) return;
@@ -470,11 +498,21 @@ export class ConflictsDashboard {
 
     const op = state.op;
     const files = state.files;
-    const pending = files.filter((f) => f.status !== "resolved").length;
+    // The counts are the ROWS' as drawn: a row still at work shows what it
+    // was, so the progress bar, the footer and the finished card move when
+    // the row does — never a beat before it.
+    const shown = files.map((f) =>
+      f.status === "busy" || this.localBusy.has(f.path) ? (this.lastView.get(f.path) ?? f) : f,
+    );
+    const pending = shown.filter((f) => f.status !== "resolved").length;
+    const resolvedCount = state.finished ? state.resolved : shown.length - pending;
     const allDone = files.length > 0 && pending === 0;
-    this.fileWork = files.some((f) => f.status === "busy" || this.localBusy.has(f.path));
     // The page is BUILT into a detached copy, then patched onto the screen.
-    const root = el("div", "cd-dash" + (state.busy ? " is-busy" : "") + (allDone ? " is-done" : ""));
+    // Its one lock is a class: an operation verb in flight (a row's own work
+    // is that row's alone and never reaches the page).
+    const verbLock = this.verbLocked();
+    const root = el("div", "cd-dash" + (verbLock ? " is-busy" : "") + (allDone ? " is-done" : ""));
+    if (verbLock) root.setAttribute("aria-busy", "true");
     root.setAttribute("role", "region");
     root.dataset.kind = op.kind;
     this.building = new Map();
@@ -592,14 +630,14 @@ export class ConflictsDashboard {
       const row = el("div", "cd-progress");
       const bar = el("div", "cd-bar");
       const fill = el("div", "cd-bar-fill");
-      fill.style.width = `${Math.round((state.resolved / state.total) * 100)}%`;
+      fill.style.width = `${Math.round((resolvedCount / state.total) * 100)}%`;
       bar.appendChild(fill);
       bar.setAttribute("role", "progressbar");
       bar.setAttribute("aria-valuemin", "0");
       bar.setAttribute("aria-valuemax", String(state.total));
-      bar.setAttribute("aria-valuenow", String(state.resolved));
+      bar.setAttribute("aria-valuenow", String(resolvedCount));
       bar.setAttribute("aria-label", "Files resolved");
-      row.append(bar, el("span", "cd-progress-label", `${state.resolved} of ${state.total} resolved`));
+      row.append(bar, el("span", "cd-progress-label", `${resolvedCount} of ${state.total} resolved`));
       root.appendChild(row);
     }
 
@@ -678,9 +716,10 @@ export class ConflictsDashboard {
     this.handlers = this.building;
     patchElement(this.element, root, this.patchOpts);
 
-    // A hold whose button went away, or that the host has just locked, ends.
+    // A hold whose button went away, whose row went to work, or that an
+    // operation verb now holds, ends.
     for (const [btn, cancel] of [...this.holds]) {
-      if (!btn.isConnected || !this.element.contains(btn) || isLocked(btn)) cancel();
+      if (!btn.isConnected || !this.element.contains(btn) || isLocked(btn) || verbLock) cancel();
     }
 
     this.watchList(this.element.querySelector<HTMLElement>(":scope > .cd-list"));
@@ -814,9 +853,14 @@ export class ConflictsDashboard {
    * resolved row's Hold to undo takes the first.
    *
    * A BUSY row (the host is doing what was pressed) keeps showing what it
-   * showed — its pill, its buttons, locked — with a spinner for its status,
+   * showed — its pill, its buttons, waiting — with a spinner for its status,
    * so it changes once, when the file is resolved; it used to empty itself
    * for the moment git takes and fill again, a flash per press.
+   *
+   * A row is built from its OWN file and nothing else on the page: what
+   * another row, the host or an operation verb is doing never reaches it, so
+   * a state that changes one row leaves every other row's nodes exactly as
+   * they were (the patch then writes nothing to them).
    */
   private row(fileView: ConflictFileView, state: ConflictsState): HTMLElement {
     const busy = fileView.status === "busy" || this.localBusy.has(fileView.path);
@@ -824,9 +868,8 @@ export class ConflictsDashboard {
     // What the row shows: the file as it is, or, while busy, as it last was.
     const f = busy ? (this.lastView.get(fileView.path) ?? fileView) : fileView;
     const resolved = f.status === "resolved";
-    // Its own buttons wait quietly behind its spinner; the others are locked
-    // while the host works — quietly too while that work is one file's.
-    const lock: Gate = busy ? "quiet" : state.busy ? (this.fileWork ? "quiet" : "locked") : false;
+    // Its own buttons wait behind its spinner, their look unchanged.
+    const lock: Gate = busy ? "wait" : false;
     const row = el("div", "cd-row" + (resolved ? " is-resolved" : "") + (busy ? " is-busy" : ""));
     row.setAttribute("role", "listitem");
     row.dataset.path = f.path;
@@ -881,10 +924,7 @@ export class ConflictsDashboard {
             "Neither side has this file — delete it and stage the deletion",
             `delete:${f.path}`,
             disabled,
-            () => {
-              this.markBusy(f.path);
-              this.post({ type: "delete", path: f.path });
-            },
+            () => this.post({ type: "delete", path: f.path, seq: this.press(f.path) }),
             "cd-danger cd-slot-yours",
           ),
         );
@@ -903,10 +943,7 @@ export class ConflictsDashboard {
                   : `Resolve the whole file with ${role}${side.description ? ` — ${side.description}` : side.name ? ` (${side.name})` : ""}`,
               `accept:${role}:${f.path}`,
               disabled,
-              () => {
-                this.markBusy(f.path);
-                this.post({ type: "accept", path: f.path, role });
-              },
+              () => this.post({ type: "accept", path: f.path, role, seq: this.press(f.path) }),
               `${missing ? "cd-danger" : "cd-accept"} cd-slot-${role}`,
             ),
           );
@@ -929,18 +966,24 @@ export class ConflictsDashboard {
     return row;
   }
 
-  /** Post an operation verb once, and lock the footer until the host answers. */
-  private send(action: ConflictsAction): void {
-    if (this.sent) return;
-    this.sent = true;
-    this.post(action);
+  /** Post an operation verb once, and lock the page until the host has done it. */
+  private send(action: Extract<ConflictsAction, { type: "continue" | "skip" | "abort" }>): void {
+    if (this.sent !== undefined) return;
+    this.sent = ++lastSeq;
+    this.post({ ...action, seq: this.sent });
     this.rerender();
   }
 
-  private markBusy(path: string): void {
+  /**
+   * A press on a row: the row goes to work (only it is repainted), and the
+   * press gets the number the host will report back as `done`.
+   */
+  private press(path: string): number {
+    const seq = ++lastSeq;
     const now = this.state?.files.find((f) => f.path === path)?.status ?? "pending";
-    this.localBusy.set(path, now);
+    this.localBusy.set(path, { seq, was: now });
     this.rerender();
+    return seq;
   }
 
   /**
@@ -1001,7 +1044,7 @@ export class ConflictsDashboard {
       reset();
     };
     const start = (): void => {
-      if (timer || isLocked(btn)) return;
+      if (timer || isLocked(btn) || this.verbLocked()) return;
       const ms = this.state?.holdToUndoMs ?? state.holdToUndoMs;
       btn.classList.add("arming");
       fill.style.transitionDuration = `${ms}ms`;
@@ -1012,12 +1055,11 @@ export class ConflictsDashboard {
       timer = this.timers.set(() => {
         timer = 0;
         this.holds.delete(btn);
-        // Done: the sweep goes, the row turns busy (locked) until the host has it.
+        // Done: the sweep goes, the row goes to work until the host has it.
         btn.classList.remove("arming");
         fill.style.transitionDuration = "0ms";
         fill.style.width = "0%";
-        this.markBusy(path);
-        this.post({ type: "restore", path });
+        this.post({ type: "restore", path, seq: this.press(path) });
       }, ms);
     };
     btn.addEventListener("pointerdown", (e) => {
@@ -1053,7 +1095,9 @@ export class ConflictsDashboard {
       return foot;
     }
 
-    const busy: Gate = this.sent ? "locked" : state.busy ? (this.fileWork ? "quiet" : "locked") : false;
+    // Waiting only while an operation verb runs. A row's work leaves the
+    // footer alone: an Abort pressed meanwhile is the host's next job.
+    const busy: Gate = this.verbLocked() ? "wait" : false;
     const abort = this.button(
       abortLabel(op),
       abortConfirm(op).detail,
@@ -1153,7 +1197,7 @@ export class ConflictsDashboard {
       this.confirming = undefined;
       this.rerender(which ? triggerKey(which) : undefined);
     });
-    const go = this.button(ask.confirm, ask.detail, "confirm-go", state.busy || this.sent ? "locked" : false, () => {
+    const go = this.button(ask.confirm, ask.detail, "confirm-go", this.verbLocked() ? "wait" : false, () => {
       this.confirming = undefined;
       if (which === "abort") this.send({ type: "abort" });
       else if (which === "skip") this.send({ type: "skip" });

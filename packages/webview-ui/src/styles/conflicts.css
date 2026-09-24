@@ -738,18 +738,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cd-btn:hover:not(:disabled, [aria-disabled="true"]) {
+.cd-btn:hover:not(:disabled, [aria-disabled="true"], .cd-dash.is-busy *) {
   background: var(--vscode-button-secondaryHoverBackground, var(--gs-hover));
   border-color: color-mix(in srgb, var(--gs-fg) 38%, transparent);
 }
-.cd-btn:active:not(:disabled, [aria-disabled="true"]) {
+.cd-btn:active:not(:disabled, [aria-disabled="true"], .cd-dash.is-busy *) {
   background: color-mix(in srgb, var(--gs-fg) 16%, var(--vscode-button-secondaryBackground, transparent));
 }
 .cd-btn:focus-visible {
   outline: 2px solid var(--cd-focus);
   outline-offset: 2px;
 }
-.cd-btn:is(:disabled, [aria-disabled="true"]:not([data-lock="quiet"])) {
+.cd-btn:is(:disabled, .cd-dash.is-busy *) {
   cursor: default;
   color: var(--cd-disabled);
   border-color: color-mix(in srgb, var(--gs-fg) 14%, transparent);
@@ -762,14 +762,14 @@
   background: transparent;
   color: var(--cd-brand-ink);
 }
-.cd-btn.cd-accept:hover:not(:disabled, [aria-disabled="true"]) {
+.cd-btn.cd-accept:hover:not(:disabled, [aria-disabled="true"], .cd-dash.is-busy *) {
   border-color: var(--cd-brand-ink);
   background: var(--cd-brand-wash);
 }
-.cd-btn.cd-accept:active:not(:disabled, [aria-disabled="true"]) {
+.cd-btn.cd-accept:active:not(:disabled, [aria-disabled="true"], .cd-dash.is-busy *) {
   background: var(--cd-brand-wash-press);
 }
-.cd-btn.cd-accept:is(:disabled, [aria-disabled="true"]:not([data-lock="quiet"])) {
+.cd-btn.cd-accept:is(:disabled, .cd-dash.is-busy *) {
   color: var(--cd-disabled);
   border-color: color-mix(in srgb, var(--gs-fg) 14%, transparent);
 }
@@ -780,15 +780,15 @@
   background: var(--cd-brand);
   color: var(--cd-brand-fg);
 }
-.cd-btn.cd-primary:hover:not(:disabled, [aria-disabled="true"]) {
+.cd-btn.cd-primary:hover:not(:disabled, [aria-disabled="true"], .cd-dash.is-busy *) {
   border-color: var(--cd-brand-hover);
   background: var(--cd-brand-hover);
 }
-.cd-btn.cd-primary:active:not(:disabled, [aria-disabled="true"]) {
+.cd-btn.cd-primary:active:not(:disabled, [aria-disabled="true"], .cd-dash.is-busy *) {
   border-color: var(--cd-brand-press);
   background: var(--cd-brand-press);
 }
-.cd-btn.cd-primary:is(:disabled, [aria-disabled="true"]:not([data-lock="quiet"])) {
+.cd-btn.cd-primary:is(:disabled, .cd-dash.is-busy *) {
   border-color: transparent;
   background: color-mix(in srgb, var(--gs-fg) 9%, transparent);
   color: var(--cd-disabled);
@@ -800,14 +800,14 @@
   border-color: color-mix(in srgb, var(--cd-danger) 70%, transparent);
   color: var(--cd-danger);
 }
-.cd-btn.cd-danger:hover:not(:disabled, [aria-disabled="true"]) {
+.cd-btn.cd-danger:hover:not(:disabled, [aria-disabled="true"], .cd-dash.is-busy *) {
   border-color: var(--cd-danger);
   background: color-mix(in srgb, var(--cd-danger) 15%, transparent);
 }
-.cd-btn.cd-danger:active:not(:disabled, [aria-disabled="true"]) {
+.cd-btn.cd-danger:active:not(:disabled, [aria-disabled="true"], .cd-dash.is-busy *) {
   background: color-mix(in srgb, var(--cd-danger) 26%, transparent);
 }
-.cd-btn.cd-danger:is(:disabled, [aria-disabled="true"]:not([data-lock="quiet"])) {
+.cd-btn.cd-danger:is(:disabled, .cd-dash.is-busy *) {
   color: var(--cd-disabled);
   border-color: color-mix(in srgb, var(--gs-fg) 14%, transparent);
 }
@@ -838,19 +838,19 @@
     border-color var(--gs-motion-fast) var(--gs-ease),
     color var(--gs-motion-fast) var(--gs-ease);
 }
-.cd-undo-hold:hover:not(:disabled, [aria-disabled="true"]) {
+.cd-undo-hold:hover:not(:disabled, [aria-disabled="true"], .cd-dash.is-busy *) {
   color: var(--gs-fg);
   border-color: color-mix(in srgb, var(--gs-fg) 50%, transparent);
   background: color-mix(in srgb, var(--gs-fg) 8%, transparent);
 }
-.cd-undo-hold:active:not(:disabled, [aria-disabled="true"]) {
+.cd-undo-hold:active:not(:disabled, [aria-disabled="true"], .cd-dash.is-busy *) {
   background: color-mix(in srgb, var(--gs-fg) 14%, transparent);
 }
 .cd-undo-hold:focus-visible {
   outline: 2px solid var(--cd-focus);
   outline-offset: 2px;
 }
-.cd-undo-hold:is(:disabled, [aria-disabled="true"]:not([data-lock="quiet"])) {
+.cd-undo-hold:is(:disabled, .cd-dash.is-busy *) {
   cursor: default;
   color: var(--cd-disabled);
   border-color: color-mix(in srgb, var(--gs-fg) 14%, transparent);
@@ -871,20 +871,21 @@
   border-color: var(--cd-accent);
 }
 
-/* LOCKED while the host works (aria-disabled, dashboard.ts): a press is
-   ignored at once, but the grey look waits --cd-lock-delay and comes only if
-   the work outlasts it. Resolving a file takes git a few hundred
-   milliseconds, and every button on the page going grey and coming back for
-   that long was the "whole screen flash" the owner saw. A lock that lasts
-   (a Continue replaying a long rebase) still greys, plainly. While the work
-   is ONE file's, the lock is quiet (data-lock="quiet", the grey rules above
-   skip it): that row's spinner says it, and however long git takes, no other
-   row changes. */
-.cd-dash .cd-btn[aria-disabled="true"],
-.cd-dash .cd-undo-hold[aria-disabled="true"] {
+/* LOCKED while an operation verb runs (Continue / Skip / Abort: the
+   dashboard is .is-busy, dashboard.ts): a press is ignored at once, but the
+   grey look waits --cd-lock-delay and comes only if the verb outlasts it (a
+   Continue replaying a long rebase). The lock is ONE class on the dashboard,
+   never an attribute on every button.
+   A ROW's own action (Accept, Delete, Hold to undo) locks nothing else: the
+   row is .is-busy, its spinner says so, its own buttons wait behind it with
+   their look unchanged, and no other row is written to at all. Every button
+   on the page going grey and back for the moment the host takes was the
+   "whole screen flash" the owner saw. */
+.cd-dash.is-busy :is(.cd-btn, .cd-undo-hold) {
   cursor: progress;
   transition-delay: var(--cd-lock-delay);
 }
+.cd-row.is-busy :is(.cd-btn, .cd-undo-hold) { cursor: progress; }
 
 /* ── Footer ────────────────────────────────────────────────────────────── */
 /* Inset by the rows' own padding: Abort starts under the status column and
