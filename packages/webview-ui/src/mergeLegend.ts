@@ -4,8 +4,9 @@
 //   ● Conflict — you choose 6 · ● Same on both sides — either arrow takes it 1
 //   · ● One side only — safe to take 5   (?)
 //
-// — and a "?" key for the MARKS (a point line, word highlights, a dotted
-// edge, a taken side's muted band, a discarded side's outline). Clicking an
+// — and a "?" key for the MARKS (an open conflict's bar beside the line
+// numbers, a point line, word highlights, a dotted edge, a taken side's muted
+// band, a discarded side's outline). Clicking an
 // item goes to the next change of that kind.
 //
 // The colours are the DECISION a change needs (paint.ts): red, you choose;
@@ -112,6 +113,7 @@ const KEY: KeyRow[] = [
   { dots: ["conflict"], text: "Conflict — you choose (red): both sides changed these lines, differently. Accept one side, both, or edit the result." },
   { dots: ["same"], text: "Same on both sides — either arrow takes it (green): both sides made this change the same way, whether they added, changed or removed lines. Nothing to choose." },
   { dots: ["one-sided"], text: "One side only — safe to take (blue): only one side changed these lines, whether it added, changed or removed them." },
+  { sample: "bar", text: "A solid bar beside the line numbers: a conflict still to decide. It goes once you choose." },
   { sample: "point", text: "A band that meets a line between two rows on the other side: lines added there, or removed." },
   { sample: "word", text: "A stronger tint on some words: exactly what changed within the line." },
   { sample: "ws", text: "A dotted left edge: only whitespace changed." },

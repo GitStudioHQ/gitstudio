@@ -62,6 +62,12 @@ export interface DecorationOptions {
 export const SEEDED_WORDS = "Already merged in the file, outside the conflict markers (by git, or by hand): check it";
 
 /**
+ * The class of an OPEN conflict's bar beside the line numbers (diff.css): the
+ * mark that says "conflict — you choose" without the colour.
+ */
+export const CONFLICT_BAR = "jb-conflict-bar";
+
+/**
  * Applies the JetBrains-style merge decorations, by colour CATEGORY
  * (PLAN §3.6). JetBrains' rules for WHAT is resolved (TextMergeChange,
  * ThreesideMergeHighlighters, DiffViewerHighlighters): each side of a change
@@ -73,7 +79,9 @@ export const SEEDED_WORDS = "Already merged in the file, outside the conflict ma
  *   included, so the band runs uninterrupted across the pane), word tints when
  *   granularity allows, a POINT_PX line for an insertion/deletion point
  *   (`jb-point`), and `jb-frame` edge lines that only high contrast themes
- *   draw (solid, 1px, on the band's first and last pixel row);
+ *   draw (solid, 1px, on the band's first and last pixel row); an open
+ *   CONFLICT also a solid bar beside the line numbers (`jb-conflict-bar`),
+ *   so "you choose" never rests on telling red from green;
  * - a handled side leaves a TRACE of what happened to it (the owner: a
  *   resolved conflict must still show which side was chosen, which was
  *   discarded, or that both went in):
@@ -352,6 +360,12 @@ function pushPending(
       // Tint the line-number margin too, like IntelliJ, so the change
       // band runs uninterrupted across the pane.
       marginClassName: `jb-line-${tone}${halfClass}`,
+      // An OPEN conflict also carries a solid bar beside the line numbers,
+      // the one mark of "you choose" that needs no colour vision (red and
+      // green come close under deuteranopia and protanopia). Only while it
+      // is open: never on a same or one-sided change, nor on a Result that
+      // already holds one side (`half`) or text merged outside the markers.
+      linesDecorationsClassName: tone === "conflict" && !half ? CONFLICT_BAR : undefined,
       hoverMessage: hoverOf(hover),
     },
   });

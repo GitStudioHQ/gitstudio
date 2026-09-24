@@ -5,31 +5,42 @@ import { fileURLToPath } from "node:url";
 import { findChrome, runMergePage } from "./fixtures/mergeViewPage";
 
 /**
- * The merge colours are readable and tell apart — measured on the COMPUTED
- * colours Chrome resolves from diff.css under each theme's body class, then
- * composited over each editor background (a tint is translucent: what the eye
- * gets is tint-over-background, not the token).
+ * The merge colours are readable, balanced and tell apart — measured on the
+ * COMPUTED colours Chrome resolves from diff.css under each theme's body
+ * class, then composited over each editor background (a tint is translucent:
+ * what the eye gets is tint-over-background, not the token).
  *
  * The merge paints by DECISION (paint.ts): red a conflict (you choose), green
  * the same change on both sides (either arrow takes it), blue one side only
- * (safe to take) — the owner's rule of 24 Sep 2026. So the three tones are
- * what must tell apart, for everyone:
+ * (safe to take) — the owner's rule of 24 Sep 2026. His verdict on the first
+ * palette: the green so faint he could not tell it was green, the blue so
+ * strong the text on it was hard to read, the red a bit like the blue. So:
  *
- * - the editor's text on every line tint, and on every word tint over it,
- *   >= 4.5:1 (WCAG 1.4.3); the word tint a visible step (ΔE >= 5) over its line;
- * - the syntax colours of Dark+ / Light+ on every tint and word tint no worse
- *   than on the per-type palette this replaced (its floor was 2.9 dark, 2.8
- *   light; the decision palette holds 2.95 / 2.82);
+ * - the editor's text >= 7:1 (WCAG AAA) on every band, every word tint over
+ *   it and every trace; the word tint a visible step over its band;
+ * - designed in OKLCH: each band is its hue (red ~25°, green ~145°, blue
+ *   ~255°), none of them the faint one, the blue never the loud one, red and
+ *   blue apart — and, after his second verdict (red and green at matched
+ *   lightness: "the green … looks close to the red shade"), the GREEN
+ *   LIGHTER THAN THE RED in every theme, with at least the red's chroma, and
+ *   the two far apart with normal vision;
+ * - the syntax colours of Dark+ / Light+ (Dark Modern / Light Modern paint
+ *   the same tokens) no worse on the tints than on the palette this replaced;
  * - every edge colour (legend dots, overview marks, high-contrast frames)
  *   >= 3:1 against the editor background (WCAG 1.4.11, non-text); a handled
  *   change's outline >= 3:1 and quieter than an edge;
- * - every pair of the three tones apart (CIEDE2000) with normal vision AND
- *   under simulated deuteranopia, protanopia and tritanopia (Machado et al.
- *   2009, severity 1) — on the bands, on the word tints, on the dots and
- *   marks, and on the traces a decision leaves;
+ * - every pair of the three decisions apart (ΔE in OKLab) with normal vision
+ *   AND under simulated deuteranopia, protanopia and tritanopia (Machado et
+ *   al. 2009, severity 1) — on the bands, the word tints, the dots and marks,
+ *   and the traces a decision leaves;
  * - red and green apart in LIGHTNESS as well as hue — the pair deuteranopia
- *   and protanopia lose: the conflict stands further from the background than
- *   the same change, on the band, the word tint and the dot;
+ *   and protanopia lose: the green the lighter on the band, the word tint, the
+ *   trace and the dot, and LOOKING the lighter (CIELAB L* corrected for the
+ *   Helmholtz–Kohlrausch effect — on the palette he turned down, the
+ *   saturated red looked the lighter of the two);
+ * - an OPEN conflict's bar beside the line numbers, the cue that needs no
+ *   colour vision: solid, 2px, the conflict's edge colour, >= 3:1 against the
+ *   band it sits on and against the background;
  * - a settled change's TRACE (the muted tint a taken side, its ribbon and
  *   the Result keep) readable, visibly quieter than the open band, and still
  *   there against the background.
@@ -105,7 +116,7 @@ test("diff.css declares every decision's tokens in both palettes; every class th
     ".jb-ribbon-base", ".jb-ribbon-trace", ".jb-ribbon-cap", ".jb-ribbon-frame", ".jb-legend", ".jb-legend-chip",
     ".jb-legend-help", ".jb-legend-pop", ".jb-legend-row", ".jb-legend-count", ".jb-legend-sep",
     ".jb-legend-dot", ".jb-legend-note", ".jb-legend-dash", ".jb-legend-sample",
-    ".jb-sample-half", ".jb-sample-done", ".jb-sample-trace", ".jb-sample-point", ".jb-sample-word", ".jb-sample-ws",
+    ".jb-conflict-bar", ".jb-sample-bar", ".jb-sample-half", ".jb-sample-done", ".jb-sample-trace", ".jb-sample-point", ".jb-sample-word", ".jb-sample-ws",
     ".jb-map", ".jb-map-canvas", ".jb-map-thumb", ".jb-map-view",
     ".codicon-arrow-right", ".codicon-arrow-left", ".codicon-close", ".codicon-wand", ".codicon-question",
   );
@@ -137,7 +148,7 @@ test("diff.css declares every decision's tokens in both palettes; every class th
   assert.ok(!/jb-applied|dasharray|\bdashed\b/.test(css), "no dashed 'applied' style anywhere");
 });
 
-// ── colour maths (contrast: WCAG 2; distance: CIEDE2000; CVD: Machado 2009) ───
+// ── colour maths (contrast: WCAG 2; distance: OKLab, CIEDE2000; CVD: Machado 2009)
 
 type RGB = [number, number, number];
 type RGBA = [number, number, number, number];
@@ -232,12 +243,60 @@ function deltaE2000(c1: RGB, c2: RGB): number {
   return Math.sqrt((dLp / SL) ** 2 + (dCp / SC) ** 2 + (dHp / SH) ** 2 + RT * (dCp / SC) * (dHp / SH));
 }
 
+/**
+ * The lightness a colour LOOKS: CIELAB L* plus the Helmholtz–Kohlrausch lift a
+ * saturated colour gets (Fairchild & Pirrotta 1991). A saturated red at the
+ * green's L* looks the lighter of the two.
+ */
+const lightnessSeen = (c: RGB): number => {
+  const [L, a, b] = lab(c);
+  const C = Math.hypot(a, b);
+  const h = (Math.atan2(b, a) * 180) / Math.PI;
+  return L + (2.5 - 0.025 * L) * (0.116 * Math.abs(Math.sin((((h - 90) / 2) * Math.PI) / 180)) + 0.085) * C;
+};
+
+/** OKLab (Ottosson 2020) of an sRGB colour: [L 0..1, a, b]. */
+const oklab = (c: RGB): [number, number, number] => {
+  const [r, g, b] = c.map(lin);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+};
+/** OKLCH: [L, C, h in degrees]. */
+const oklch = (c: RGB): [number, number, number] => {
+  const [L, a, b] = oklab(c);
+  const h = (Math.atan2(b, a) * 180) / Math.PI;
+  return [L, Math.hypot(a, b), h < 0 ? h + 360 : h];
+};
+/** ΔE in OKLab, x100 (a just-noticeable difference is about 2). */
+const deltaEok = (c1: RGB, c2: RGB): number => {
+  const [L1, a1, b1] = oklab(c1);
+  const [L2, a2, b2] = oklab(c2);
+  return 100 * Math.hypot(L1 - L2, a1 - a2, b1 - b2);
+};
+/** ΔE in OKLab as seen by one eye: N normal, or D / P / T simulated. */
+const seen = (a: RGB, b: RGB, eye: "N" | "D" | "P" | "T"): number =>
+  eye === "N" ? deltaEok(a, b) : deltaEok(simulate(a, CVD[eye]), simulate(b, CVD[eye]));
+/** Hue distance in degrees. */
+const hueGap = (a: number, b: number): number => Math.abs(((a - b + 540) % 360) - 180);
+
 test("the colour maths is the standard one", () => {
   // Reference points: WCAG's black on white, and a CIEDE2000 pair from
   // Sharma, Wu & Dalal's test data expressed in sRGB (≈ identity check).
   assert.equal(contrast([0, 0, 0], [255, 255, 255]).toFixed(2), "21.00");
   assert.equal(deltaE2000([128, 128, 128], [128, 128, 128]), 0);
   assert.ok(deltaE2000([255, 0, 0], [0, 0, 255]) > 50);
+  // OKLab: white is L 1 with no chroma; sRGB red is oklch(0.628 0.258 29.2).
+  const [wL, wa, wb] = oklab([255, 255, 255]);
+  assert.ok(Math.abs(wL - 1) < 1e-4 && Math.abs(wa) < 1e-4 && Math.abs(wb) < 1e-4);
+  const red = oklch([255, 0, 0]);
+  assert.deepEqual([red[0].toFixed(3), red[1].toFixed(3), red[2].toFixed(1)], ["0.628", "0.258", "29.2"]);
+  assert.equal(deltaEok([255, 255, 255], [0, 0, 0]).toFixed(1), "100.0");
   assert.deepEqual(parseColor("rgba(63, 185, 80, 0.14)"), [63, 185, 80, 0.14]);
   assert.deepEqual(parseColor("rgb(26, 127, 55)"), [26, 127, 55, 1]);
 });
@@ -303,27 +362,58 @@ interface Measured {
   muted: string;
 }
 
-/** CIE L* (lightness) of an sRGB colour. */
-const lightness = (c: RGB): number => lab(c)[0];
+/** The hue each decision is designed on (diff.css's token block), in OKLCH degrees. */
+const HUE: Record<Tone, number> = { conflict: 25, same: 145, "one-sided": 255 };
 
+type Surface = "line" | "inner" | "edge" | "muted";
+type Eye = "N" | "D" | "P" | "T";
 /**
- * The floors every PAIR of decisions holds, as ΔE (CIEDE2000) with normal
+ * The floors every PAIR of decisions holds, as ΔE in OKLab (x100), with normal
  * vision (N) and under simulated deuteranopia (D), protanopia (P) and
  * tritanopia (T): on the bands, the word tints, the dots and marks (edges),
- * and the traces a decision leaves. The red/green pair gets its own, higher
- * band floors under deuteranopia and protanopia — the pair those viewers
- * lose, and the owner's first concern. The per-type palette this replaced
- * stood its red and green bands 4.0 (D) and 4.2 (P) apart, its dots 4.0 (D).
+ * and the traces a decision leaves. A few pairs lose an axis to one kind of
+ * eye and hold lower, measured floors (PAIR_FLOORS):
+ *
+ * - red and green under deuteranopia: what is left is the green's extra
+ *   lightness (0.05 L on the bands: with 7:1 text on every tint no red/green
+ *   pair gets much further), so an open conflict also carries its bar, and
+ *   the legend says it in words. Protanopes see the red darken: far apart.
+ *   The word tints give a little of it back (D 3.0): the red's is a clear
+ *   step LIGHTER than its band, so everyone sees what changed — the owner's
+ *   critic found them "only just visible" at ΔE 4.3;
+ * - green and blue under tritanopia, the pair it loses (the blue sits 0.03 L
+ *   below the green for them).
+ *
+ * Red and green are held apart with NORMAL vision too (the owner, on the
+ * palette before this one: the green "looks close to the red shade").
+ *
+ * For scale, on Dark Modern — the palette he turned down (2ac20d1): red~green
+ * bands N 11.7 D 3.7 P 3.8, word tints N 16.6 D 4.0 P 5.6; this one: bands
+ * N 14.2 D 4.4 P 10.7, word tints N 17.7 D 3.0 P 11.6. Green~blue under
+ * tritanopia: bands 3.8 then, 3.3 now; word tints 4.9 then, 3.2 now.
  */
-const FLOORS = {
-  line: { N: 10, D: 5.5, P: 5.5, T: 5.5 },
-  inner: { N: 10, D: 7, P: 7, T: 7 },
-  edge: { N: 20, D: 11, P: 11, T: 11 },
-  muted: { N: 5, D: 3, P: 3, T: 3 },
-} as const;
-const RED_GREEN_LINE = { D: 10, P: 6.5 } as const;
+const FLOORS: Record<Surface, Record<Eye, number>> = {
+  line: { N: 8, D: 6, P: 6, T: 6 },
+  inner: { N: 10, D: 8, P: 8, T: 8 },
+  edge: { N: 20, D: 12, P: 12, T: 12 },
+  muted: { N: 4, D: 3, P: 3, T: 3 },
+};
+const PAIR_FLOORS: Partial<Record<`${Tone}~${Tone}`, Partial<Record<Surface, Partial<Record<Eye, number>>>>>> = {
+  "conflict~same": {
+    line: { N: 13.5, D: 4, P: 9.5 },
+    inner: { N: 16, D: 2.8, P: 10.5 },
+    edge: { D: 9, P: 18 },
+    muted: { D: 2.2, P: 4.5 },
+  },
+  "same~one-sided": {
+    line: { T: 3 },
+    inner: { T: 3 },
+    edge: { T: 6 },
+    muted: { T: 1.5 },
+  },
+};
 
-test("text on every tint, edges on every background, and the three decisions apart — for colour-blind eyes too — in every theme", { skip: !CHROME && "no Chrome on this machine" }, async (t) => {
+test("text at 7:1 on every tint, three balanced hues, edges on every background, and the decisions apart — for colour-blind eyes too — in every theme", { skip: !CHROME && "no Chrome on this machine" }, async (t) => {
   // The page resolves the tokens under each theme's BODY CLASS — the only
   // thing that picks a palette — and reports the computed colours.
   const v = await runMergePage(CHROME!, `
@@ -335,7 +425,7 @@ test("text on every tint, edges on every background, and the three decisions apa
       el.style.cssText = "position:absolute;width:20px;height:18px;" + (style || "");
       body.appendChild(el);
       const cs = getComputedStyle(el);
-      const out = { bg: cs.backgroundColor, color: cs.color, border: cs.borderTopStyle };
+      const out = { bg: cs.backgroundColor, color: cs.color, border: cs.borderTopStyle, left: cs.borderLeftStyle + " " + cs.borderLeftWidth, leftColor: cs.borderLeftColor };
       el.remove();
       return out;
     };
@@ -346,8 +436,11 @@ test("text on every tint, edges on every background, and the three decisions apa
       hcLight: "vscode-high-contrast vscode-high-contrast-light",
     };
     const out = {};
+    const bars = {};
     for (const [key, cls] of Object.entries(CLASSES)) {
       document.body.className = cls;
+      // An open conflict's bar beside the line numbers (decorations.ts).
+      bars[key] = probe("jb-conflict-bar");
       const tones = {};
       for (const t of ${JSON.stringify(TONES)}) {
         tones[t] = {
@@ -368,18 +461,23 @@ test("text on every tint, edges on every background, and the three decisions apa
       out[key] = tones;
     }
     notes.measured = out;
+    notes.bars = bars;
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
   const measured = v.notes?.measured as Record<BodyClass, Record<Tone, Measured & { dot: string }>>;
   assert.ok(measured, "the page reported its colours");
+  const bars = v.notes?.bars as Record<BodyClass, { bg: string; left: string; leftColor: string }>;
+  assert.ok(bars, "the page reported the conflict bar");
 
   const problems: string[] = [];
   const report: string[] = [];
+  const f = (n: number, d = 1) => n.toFixed(d);
   for (const theme of THEMES) {
     const bg = parseColor(theme.bg).slice(0, 3) as RGB;
     const fg = parseColor(theme.fg).slice(0, 3) as RGB;
     const tones = measured[theme.body];
-    const cols = { line: {}, inner: {}, edge: {}, muted: {} } as Record<keyof typeof FLOORS, Record<Tone, RGB>>;
+    const cols = { line: {}, inner: {}, edge: {}, muted: {} } as Record<Surface, Record<Tone, RGB>>;
+    const weight = {} as Record<Tone, number>;
     const row: string[] = [];
     const hc = theme.body === "hcDark" || theme.body === "hcLight";
     const dark = theme.body === "dark" || theme.body === "hcDark";
@@ -402,100 +500,137 @@ test("text on every tint, edges on every background, and the three decisions apa
       if (m.dot !== m.edge) problems.push(`${theme.name}: the legend's ${tone} dot (${m.dot}) is not the ${tone} edge colour (${m.edge})`);
       const onLine = contrast(fg, line);
       const onInner = contrast(fg, inner);
+      const onMuted = contrast(fg, muted);
       const edgeVsBg = contrast(edge, bg);
       const doneVsBg = contrast(done, bg);
-      // "A step stronger": the word tint must be seen against its own line.
-      const innerStep = deltaE2000(inner, line);
-      row.push(`${tone} text ${onLine.toFixed(2)}/${onInner.toFixed(2)} L* ${lightness(line).toFixed(1)} edge ${edgeVsBg.toFixed(2)} done ${doneVsBg.toFixed(2)} word-step ΔE ${innerStep.toFixed(1)} off bg ΔE ${deltaE2000(line, bg).toFixed(1)}`);
-      // The theme's SYNTAX colours on the tints: the tokens that differ in a
-      // conflict — a number, a keyword, a comment — on the line tint and on
-      // the word tint over it. No worse than the per-type palette this
-      // replaced (its floor was 2.9 dark / 2.8 light; it measured 2.90 /
-      // 2.80 at worst): 2.95 / 2.82.
-      const floor = theme.body === "dark" ? 2.95 : 2.82;
+      const [L, C, h] = oklch(line);
+      const [, iC, ih] = oklch(inner);
+      weight[tone] = deltaEok(line, bg);
+      const step = deltaEok(inner, line);
+      row.push(`${tone} oklch(${f(L, 3)} ${f(C, 3)} ${f(h, 0)}) weight ${f(weight[tone])} text ${f(onLine, 2)}/${f(onInner, 2)}/${f(onMuted, 2)} word +${f(step)} edge ${f(edgeVsBg, 2)} done ${f(doneVsBg, 2)}`);
+
+      // Text: AAA on the band, the word tint over it and the trace.
+      if (onLine < 7) problems.push(`${theme.name}: text on the ${tone} band is ${f(onLine, 2)}:1 (< 7)`);
+      if (onInner < 7) problems.push(`${theme.name}: text on the ${tone} word tint is ${f(onInner, 2)}:1 (< 7)`);
+      if (onMuted < 7) problems.push(`${theme.name}: text on the ${tone} trace is ${f(onMuted, 2)}:1 (< 7)`);
+
+      // The band is its hue, and shows: the rejected green stood ΔE 6.1 off
+      // Dark Modern's background (5.6 on white) and read as grey.
+      if (hueGap(h, HUE[tone]) > 8) problems.push(`${theme.name}: the ${tone} band's hue is ${f(h, 0)}° (want ${HUE[tone]}° ± 8)`);
+      if (weight[tone] < 7) problems.push(`${theme.name}: the ${tone} band is only ΔE ${f(weight[tone])} off the background (< 7)`);
+
+      // The word tint: a visible step over its band, more colour, same hue.
+      if (step < 3.5 || iC < C + 0.01 || hueGap(ih, h) > 8) problems.push(`${theme.name}: the ${tone} word tint is not a step over its band (ΔE ${f(step)}, chroma ${f(C, 3)} → ${f(iC, 3)}, hue ${f(h, 0)}° → ${f(ih, 0)}°)`);
+
+      // The theme's SYNTAX colours on the band and on the word tint over it:
+      // no worse than on the palette this replaced (it held 2.98 dark, 2.83
+      // light at worst; this one holds 3.44 / 2.90 — Dark+'s comment green on
+      // the green band, Light+'s type teal on the red one).
+      const floor = dark ? 3.4 : 2.85;
       for (const [token, hexColor] of Object.entries(SYNTAX[theme.name] ?? {})) {
         const tok = parseColor(hexColor).slice(0, 3) as RGB;
         const onL = contrast(tok, line);
         const onW = contrast(tok, inner);
-        if (onL < floor || onW < floor) problems.push(`${theme.name}: ${token} (${hexColor}) on the ${tone} tint is ${onL.toFixed(2)}:1, on its word tint ${onW.toFixed(2)}:1 (< ${floor})`);
+        if (onL < floor || onW < floor) problems.push(`${theme.name}: ${token} (${hexColor}) on the ${tone} band is ${f(onL, 2)}:1, on its word tint ${f(onW, 2)}:1 (< ${floor})`);
       }
-      if (onLine < 4.5) problems.push(`${theme.name}: text on the ${tone} line tint is ${onLine.toFixed(2)}:1 (< 4.5)`);
-      if (onInner < 4.5) problems.push(`${theme.name}: text on the ${tone} word tint is ${onInner.toFixed(2)}:1 (< 4.5)`);
-      if (edgeVsBg < 3) problems.push(`${theme.name}: the ${tone} edge is ${edgeVsBg.toFixed(2)}:1 against the background (< 3)`);
-      if (innerStep < 5) problems.push(`${theme.name}: the ${tone} word tint is only ΔE ${innerStep.toFixed(1)} from its line (< 5)`);
-      // Every band shows against the background — the quiet same change too.
-      if (deltaE2000(line, bg) < 9) problems.push(`${theme.name}: the ${tone} band is only ΔE ${deltaE2000(line, bg).toFixed(1)} off the background (< 9)`);
+
+      // Edges and outlines.
+      if (edgeVsBg < 3) problems.push(`${theme.name}: the ${tone} edge is ${f(edgeVsBg, 2)}:1 against the background (< 3)`);
       // A handled change's outline is quieter than an edge — but the legend
       // gives it a meaning ("an outline with no link: the side you
       // discarded"), so it is a non-text mark WCAG 1.4.11 holds to 3:1. In
       // high contrast it IS the edge colour.
-      if (doneVsBg < 3 || (hc ? doneVsBg > edgeVsBg + 0.01 : doneVsBg >= edgeVsBg)) problems.push(`${theme.name}: the ${tone} handled outline is ${doneVsBg.toFixed(2)}:1 (want ≥ 3 and ${hc ? "the edge's" : "below the edge's"} ${edgeVsBg.toFixed(2)})`);
-      if (tone === "conflict" && dark) {
-        // The owner found the dark conflict red heavy: with six conflicts,
-        // maroon dominated the page. It stood ΔE 21.9 off Dark+'s background;
-        // it may stand no further than 19 in any dark theme.
-        const weight = deltaE2000(line, bg);
-        if (weight > 19) problems.push(`${theme.name}: the conflict band stands ΔE ${weight.toFixed(1)} off the background (> 19): heavy`);
-      }
+      if (doneVsBg < 3 || (hc ? doneVsBg > edgeVsBg + 0.01 : doneVsBg >= edgeVsBg)) problems.push(`${theme.name}: the ${tone} handled outline is ${f(doneVsBg, 2)}:1 (want ≥ 3 and ${hc ? "the edge's" : "below the edge's"} ${f(edgeVsBg, 2)})`);
+
       if (tone === "conflict") {
         // A conflict with one side in: its result is a DIFFERENT, quieter
         // tint than the open conflict (the owner: "after Accept Yours the
-        // result still wears the full conflict look"), still readable, still
-        // there against the background.
+        // result still wears the full conflict look"), still there.
         const half = over(parseColor(m.half), bg);
-        const halfStep = deltaE2000(half, line);
-        const halfVsBg = deltaE2000(half, bg);
-        if (contrast(fg, half) < 4.5) problems.push(`${theme.name}: text on the half-done conflict tint is ${contrast(fg, half).toFixed(2)}:1 (< 4.5)`);
-        if (halfStep < 5) problems.push(`${theme.name}: a half-done conflict's result is only ΔE ${halfStep.toFixed(1)} from an open one (< 5)`);
-        if (halfVsBg < 2) problems.push(`${theme.name}: a half-done conflict's result is only ΔE ${halfVsBg.toFixed(1)} from the background (< 2)`);
+        if (deltaEok(half, line) < 3) problems.push(`${theme.name}: a half-done conflict's result is only ΔE ${f(deltaEok(half, line))} from an open one (< 3)`);
+        if (deltaEok(half, bg) < 2) problems.push(`${theme.name}: a half-done conflict's result is only ΔE ${f(deltaEok(half, bg))} from the background (< 2)`);
       }
       // Every change, once settled, keeps a TRACE in its decision's colour:
-      // the muted tint, readable, visibly quieter than its open band, and
-      // still there on the background (the owner: which side was taken must
-      // remain visible). The half-done Result wears the same tint, so the
-      // taken side's ribbon runs into it.
-      const mutedStep = deltaE2000(muted, line);
-      const mutedVsBg = deltaE2000(muted, bg);
-      if (contrast(fg, muted) < 4.5) problems.push(`${theme.name}: text on the ${tone} trace is ${contrast(fg, muted).toFixed(2)}:1 (< 4.5)`);
-      if (mutedStep < 3) problems.push(`${theme.name}: the ${tone} trace is only ΔE ${mutedStep.toFixed(1)} from its open band (< 3): not calmer`);
-      // Visible, not merely there: the round-1 screenshots showed a dark
-      // same-change trace at ΔE 4.3 as all but gone.
-      if (mutedVsBg < 4.5) problems.push(`${theme.name}: the ${tone} trace is only ΔE ${mutedVsBg.toFixed(1)} from the background (< 4.5): all but gone`);
-      if (mutedVsBg >= deltaE2000(line, bg)) problems.push(`${theme.name}: the ${tone} trace stands further off the background than its open band`);
+      // visibly quieter than its open band and still there (the owner: which
+      // side was taken must remain visible — the rejected green's trace stood
+      // ΔE 3.2 off Dark Modern's background, all but gone). The half-done
+      // Result wears the same tint, so the taken side's ribbon runs into it.
+      const mutedStep = deltaEok(muted, line);
+      const mutedVsBg = deltaEok(muted, bg);
+      if (mutedStep < 3) problems.push(`${theme.name}: the ${tone} trace is only ΔE ${f(mutedStep)} from its open band (< 3): not calmer`);
+      if (mutedVsBg < 4) problems.push(`${theme.name}: the ${tone} trace is only ΔE ${f(mutedVsBg)} from the background (< 4): all but gone`);
+      if (mutedVsBg >= weight[tone]) problems.push(`${theme.name}: the ${tone} trace stands further off the background than its open band`);
       if (m.half !== m.muted) problems.push(`${theme.name}: the half-done ${tone} Result (${m.half}) is not the trace's tint (${m.muted}), so the taken side's ribbon changes colour where it meets it`);
       if (hc && m.frame !== "solid") problems.push(`${theme.name}: a pending ${tone} block has no solid frame edge (${m.frame})`);
       if (!hc && m.frame !== "none") problems.push(`${theme.name}: frame edges drawn outside high contrast (${m.frame})`);
     }
+    if (TONES.some((tone) => !cols.line[tone])) continue;
+
+    // BALANCE. None of the three the faint one — the green least of all (it
+    // carries the most chroma, and on a dark ground the most lightness) —
+    // none far heavier than the others, the blue never the loud one, red and
+    // blue apart.
+    const chroma = TONES.map((tone) => oklch(cols.line[tone])[1]);
+    const weights = TONES.map((tone) => weight[tone]);
+    const wRatio = Math.max(...weights) / Math.min(...weights);
+    row.push(`chroma ${chroma.map((c) => f(c, 3)).join("/")}, weight ratio ${f(wRatio, 2)}`);
+    if (wRatio > 1.55) problems.push(`${theme.name}: the bands stand ${weights.map((w) => f(w)).join(" / ")} off the background (ratio ${f(wRatio, 2)} > 1.55): not balanced`);
+    if (chroma[1] < 0.07) problems.push(`${theme.name}: the green band's chroma is ${f(chroma[1], 3)} (< 0.07): not a fresh green`);
+    if (chroma[1] < chroma[0] - 0.005) problems.push(`${theme.name}: the green band (chroma ${f(chroma[1], 3)}) is duller than the red (${f(chroma[0], 3)})`);
+    if (weight.same < 0.95 * Math.max(...weights)) problems.push(`${theme.name}: the green band (ΔE ${f(weight.same)}) is fainter than ${f(Math.max(...weights))}`);
+    if (chroma[2] > 0.07 || chroma[2] > Math.min(chroma[0], chroma[1])) problems.push(`${theme.name}: the blue band's chroma is ${f(chroma[2], 3)}: louder than the red or green, or > 0.07`);
+    if (!hc && weight["one-sided"] > 1.05 * weight.conflict) problems.push(`${theme.name}: the blue band (ΔE ${f(weight["one-sided"])}) outweighs the conflict (${f(weight.conflict)})`);
+    // The owner found the old dark conflict red heavy (ΔE 21.9 CIEDE2000 on
+    // Dark+); the rejected palette's, which he let stand, was ΔE 11.4 (OKLab).
+    if (dark && !hc && weight.conflict > 12.5) problems.push(`${theme.name}: the conflict band stands ΔE ${f(weight.conflict)} off the background (> 12.5): heavy`);
+
     // Every pair of decisions, on every surface, for every eye.
-    for (const kind of Object.keys(FLOORS) as Array<keyof typeof FLOORS>) {
+    for (const kind of Object.keys(FLOORS) as Surface[]) {
       for (let a = 0; a < TONES.length; a++) {
         for (let b = a + 1; b < TONES.length; b++) {
           const [ta, tb] = [TONES[a], TONES[b]];
           const [ca, cb] = [cols[kind][ta], cols[kind][tb]];
-          if (!ca || !cb) continue;
-          const seen: string[] = [];
+          const out: string[] = [];
           for (const eye of ["N", "D", "P", "T"] as const) {
-            const d = eye === "N" ? deltaE2000(ca, cb) : deltaE2000(simulate(ca, CVD[eye]), simulate(cb, CVD[eye]));
-            seen.push(`${eye}${d.toFixed(1)}`);
-            const redGreen = kind === "line" && ta === "conflict" && tb === "same" && (eye === "D" || eye === "P");
-            const floor = redGreen ? RED_GREEN_LINE[eye] : FLOORS[kind][eye];
-            if (d < floor) problems.push(`${theme.name}: ${ta} vs ${tb} ${kind} ${eye === "N" ? "with normal vision" : `under ${{ D: "deuteranopia", P: "protanopia", T: "tritanopia" }[eye]}`} is ΔE ${d.toFixed(1)} (< ${floor})`);
+            const d = seen(ca, cb, eye);
+            out.push(`${eye}${f(d)}`);
+            const floor = PAIR_FLOORS[`${ta}~${tb}`]?.[kind]?.[eye] ?? FLOORS[kind][eye];
+            if (d < floor) problems.push(`${theme.name}: ${ta} vs ${tb} ${kind} ${eye === "N" ? "with normal vision" : `under ${{ D: "deuteranopia", P: "protanopia", T: "tritanopia" }[eye]}`} is ΔE ${f(d)} (< ${floor})`);
           }
-          if (kind === "line" || kind === "edge") row.push(`${ta}~${tb} ${kind} ${seen.join(" ")}`);
+          if (kind === "line" || kind === "edge") row.push(`${ta}~${tb} ${kind} ${out.join(" ")}`);
         }
       }
     }
-    // Red and green apart in LIGHTNESS as well as hue: the conflict stands
-    // further from the background than the same change — brighter on a dark
-    // ground, deeper on a light one — on its band, its word tint and its dot.
-    for (const [kind, min] of [["line", 4], ["inner", 4], ["edge", 7]] as const) {
-      const c = cols[kind].conflict;
-      const s = cols[kind].same;
-      if (!c || !s) continue;
-      const gap = dark ? lightness(c) - lightness(s) : lightness(s) - lightness(c);
-      row.push(`red-green ${kind} ΔL* ${gap.toFixed(1)}`);
-      if (gap < min) problems.push(`${theme.name}: the conflict ${kind} stands only ${gap.toFixed(1)} L* further from the background than the same change's (< ${min})`);
+    // Red and green apart in LIGHTNESS as well as hue: the GREEN the lighter,
+    // in every theme, on its band, its word tint, its trace and its dot.
+    for (const [kind, min] of [["line", 0.045], ["inner", 0.03], ["muted", 0.02], ["edge", 0.1]] as const) {
+      const gap = oklch(cols[kind].same)[0] - oklch(cols[kind].conflict)[0];
+      row.push(`green-red ${kind} ΔL ${f(gap, 3)}`);
+      if (gap < min) problems.push(`${theme.name}: the green ${kind} is only ${f(gap, 3)} L lighter than the red (< ${min})`);
     }
+    // …and it LOOKS the lighter: a saturated colour looks lighter than its
+    // L* (Helmholtz–Kohlrausch; Fairchild & Pirrotta 1991). The palette he
+    // turned down had the green 0.03 L below a red that looked 0.8 L* the
+    // lighter; here the green must look clearly lighter on the band and the
+    // word tint.
+    for (const kind of ["line", "inner"] as const) {
+      const gap = lightnessSeen(cols[kind].same) - lightnessSeen(cols[kind].conflict);
+      row.push(`green-red ${kind} seen ΔL* ${f(gap)}`);
+      if (gap < 4) problems.push(`${theme.name}: the green ${kind} LOOKS only ${f(gap)} L* lighter than the red (< 4)`);
+    }
+
+    // The open conflict's bar: solid, 2px, in the conflict's edge colour,
+    // >= 3:1 against the band it sits on and against the background — and
+    // no tint of its own.
+    const bar = bars[theme.body];
+    const barInk = over(parseColor(bar.leftColor), bg);
+    const onBand = contrast(barInk, cols.line.conflict);
+    const onBg = contrast(barInk, bg);
+    row.push(`conflict bar ${bar.left} ${f(onBand, 2)}:1 on its band`);
+    if (bar.left !== "solid 2px") problems.push(`${theme.name}: the open conflict's bar is "${bar.left}" (want solid 2px)`);
+    if (bar.leftColor !== tones.conflict.edge) problems.push(`${theme.name}: the bar (${bar.leftColor}) is not the conflict's edge colour (${tones.conflict.edge})`);
+    if (onBand < 3 || onBg < 3) problems.push(`${theme.name}: the bar is ${f(onBand, 2)}:1 on its band, ${f(onBg, 2)}:1 on the background (< 3)`);
+    if (parseColor(bar.bg)[3] !== 0) problems.push(`${theme.name}: the bar paints a fill (${bar.bg})`);
     report.push(`${theme.name}: ${row.join(", ")}`);
   }
   for (const line of report) {
