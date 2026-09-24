@@ -4719,9 +4719,11 @@
       c.ok(!!grid, "the merge view is up");
       if (!grid) return;
       const light = document.body.classList.contains("vscode-light");
+      // diff.css's r0923 values: tints that keep the syntax colours readable,
+      // and a handled outline at 3:1 (it carries a meaning in the legend).
       const want = light
-        ? { conflict: "rgba(240, 75, 70, 0.3)", half: "rgba(240, 75, 70, 0.13)", done: "rgba(207, 34, 46, 0.45)", point: "rgba(26, 127, 55, 0.55)", dot: "rgb(207, 34, 46)" }
-        : { conflict: "rgba(240, 105, 100, 0.24)", half: "rgba(240, 105, 100, 0.12)", done: "rgba(240, 104, 106, 0.5)", point: "rgba(98, 179, 74, 0.62)", dot: "rgb(240, 104, 106)" };
+        ? { conflict: "rgba(240, 75, 70, 0.27)", half: "rgba(240, 75, 70, 0.13)", done: "rgba(207, 34, 46, 0.76)", point: "rgba(26, 127, 55, 0.55)", dot: "rgb(207, 34, 46)" }
+        : { conflict: "rgba(240, 105, 100, 0.23)", half: "rgba(240, 105, 100, 0.12)", done: "rgba(240, 104, 106, 0.72)", point: "rgba(98, 179, 74, 0.62)", dot: "rgb(240, 104, 106)" };
       const body = grid.querySelector(".jb-pane-body");
       const probe = (cls) => {
         const el = document.createElement("div");
