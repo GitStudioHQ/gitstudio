@@ -353,10 +353,13 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
   font-variant-numeric: tabular-nums;
   padding: 0 var(--gs-space-1);
 }
-/* The added green, a step toward the foreground: as-is it was 3.9:1 on
- * Light+'s toolbar and 4.33:1 in High Contrast Light. */
+/* The added green, a step toward the editor's ink: as-is (#388a34) it was
+ * 3.9:1 on Light+'s toolbar. Toward the editor foreground — not the UI
+ * foreground, Light+'s #616161, which is itself only 5.6:1 there — it is
+ * 6.7:1 in Light+ and 5.4:1 in Light Modern, and a lighter green in dark
+ * themes (mergeToolbarContrast.test.ts). */
 .jb-counter.jb-done {
-  color: color-mix(in srgb, var(--gs-status-added) 68%, var(--gs-fg));
+  color: color-mix(in srgb, var(--gs-status-added) 70%, var(--vscode-editor-foreground, var(--gs-fg)));
   font-weight: var(--gs-weight-emphasis);
 }
 
@@ -624,9 +627,10 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-conflict { stroke: var(--jb-done
   overflow: hidden;
   text-overflow: ellipsis;
   font-style: italic;
-  /* The warning colour toward the foreground, at full opacity: Light+'s
-   * #bf8803 at 85% measured 2.38:1 on its toolbar. */
-  color: color-mix(in srgb, var(--vscode-editorWarning-foreground, var(--gs-fg)) 55%, var(--gs-fg));
+  /* The warning colour toward the editor's ink, at full opacity: Light+'s
+   * #bf8803 at 85% measured 2.38:1 on its toolbar; 60% of it with the editor
+   * foreground is 6.5:1 there and 4.8:1 in Light Modern. */
+  color: color-mix(in srgb, var(--vscode-editorWarning-foreground, var(--gs-fg)) 60%, var(--vscode-editor-foreground, var(--gs-fg)));
 }
 
 /* ---- Undo/redo action-history dropdown ---- */
