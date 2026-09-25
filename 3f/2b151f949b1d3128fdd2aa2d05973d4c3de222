@@ -1,0 +1,105 @@
+apps/extension/src/views/branchReset.ts
+  s_26f5e669d3043c::t_b8f90a6dbe4a80 1-160
+apps/extension/test/branchMenuKeyboard.test.ts
+  s_26f5e669d3043c::t_1d2616096ffb56 250-274
+  s_26f5e669d3043c::t_d37efacd4ebcbc 344-358,360
+  s_26f5e669d3043c::t_c351c8a6b2e31d 1-249,275-343,359,361-442
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_c72d7a202f3b4d 144
+  s_26f5e669d3043c::t_069c8fcc0d3c33 253-273
+  s_26f5e669d3043c::t_d8b035e6450d8d 12-13
+packages/git-service/test/branchReset.test.ts
+  s_26f5e669d3043c::t_64d30dcd55a6c1 1-588
+apps/extension/test/branchResetDoor.test.ts
+  s_26f5e669d3043c::t_68fe6482d34ebf 22,264
+  s_26f5e669d3043c::t_0c04039d4f81a1 1-21,23-263,265-374
+packages/git-service/src/index.ts
+  s_26f5e669d3043c::t_35d5e88e1493aa 58
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_4a210a06a9b786 5479-5480
+  s_26f5e669d3043c::t_c2d28b7cd22560 6183
+  s_26f5e669d3043c::t_fda1dcf6d4874e 5086
+  s_26f5e669d3043c::t_f8fec1016eee8c 5359-5362
+  s_26f5e669d3043c::t_a49d648c5ae9fe 1489
+  s_26f5e669d3043c::t_41a272c3bf43a9 5298-5310,5317-5319,5321,5331-5332
+  s_26f5e669d3043c::t_5e9d37d4edbf8b 5223,5227-5233
+  s_26f5e669d3043c::t_97f2c108695278 86-91
+  s_26f5e669d3043c::t_17a8784c9ef141 9
+  s_26f5e669d3043c::t_548c450a8b380a 1478-1479
+  s_26f5e669d3043c::t_0168fc7ad4ea8a 5188,5191
+  s_26f5e669d3043c::t_db44cea8aff3da 4917-5061,5063-5069,5073-5074
+  s_26f5e669d3043c::t_47e1575ebe61f0 5392,5397-5417,5420
+  s_26f5e669d3043c::t_c19629a1bebf4e 5062
+  s_26f5e669d3043c::t_65c5721a113b7c 5111
+  s_26f5e669d3043c::t_11a0368380bf23 5553,5555-5556,5563-5564
+  s_26f5e669d3043c::t_5f2bdec3841a48 5170-5178
+  s_26f5e669d3043c::t_63f07190121455 2763-2796
+  s_26f5e669d3043c::t_e82ca48c16bf36 6116-6117
+  s_26f5e669d3043c::t_e07a01eb139d77 6214-6216
+  s_26f5e669d3043c::t_8d38165b2f86b7 6268-6269,6275-6278,6283-6287,6289,6292-6311
+  s_26f5e669d3043c::t_f000d2612a05c3 5613-5614
+  s_26f5e669d3043c::t_70335908de919a 6004-6005
+  s_26f5e669d3043c::t_5ed3c7ebf0d5dd 5582,5584-5588
+apps/extension/test/changesPage.ts
+  s_26f5e669d3043c::t_604a035d65644a 1-290
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_46eb5e50b0443f 587
+  s_26f5e669d3043c::t_65cf06874b44eb 739-741
+  s_26f5e669d3043c::t_557e4896e51002 738
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_cef3d7c8e6e017 947-948,1294-1295
+  s_26f5e669d3043c::t_5db4cd2e7be9de 32
+apps/extension/package.json
+  s_26f5e669d3043c::t_399a7d5aa906e0 1813-1815
+  s_26f5e669d3043c::t_3b9a1d1d6e1668 507-511
+  s_26f5e669d3043c::t_204804fd765385 506
+  s_26f5e669d3043c::t_cd27d5cdf62214 1812
+packages/git-service/src/branchReset.ts
+  s_26f5e669d3043c::t_ad9813d135cbdc 425-444
+  s_26f5e669d3043c::t_e3b9fed7bef880 28
+  s_26f5e669d3043c::t_cfaa35d38070c2 1-27,29-424,445-469
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_89acb7b75f992a 24,28-35
+  s_26f5e669d3043c::t_eab24684d08933 36-37
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_dfbd5a2403ffaa 242-253
+  s_26f5e669d3043c::t_a5eb2802a6e6fb 21-45
+  s_26f5e669d3043c::t_28f10f51ef4362 61-67,75-82,84-86,94-147,156-162,165-179
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_f0dae1054bc1fd 7-31
+apps/extension/harness/branch-menu/shots.ts
+  s_26f5e669d3043c::t_d740763113ee9e 1-147,149-151,153-190
+  s_26f5e669d3043c::t_3f4a03bb2850ea 148,152
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_fb6817d7aa57ea 305-312
+  s_26f5e669d3043c::t_fb8a88f738c904 215-218
+  s_26f5e669d3043c::t_eb07ae59489371 4
+  s_26f5e669d3043c::t_9bd426c8339e91 110-111,267-304,313-345
+  s_26f5e669d3043c::t_1ea15bd1ac1aad 70,74-77,92,98,104-109
+  s_26f5e669d3043c::t_9e4a1ce1798868 112
+  s_26f5e669d3043c::t_883d97fc2de42c 266
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_0ae4ddbc62c538 168,482-508
+  s_26f5e669d3043c::t_b51f619aa5ef8a 716
+  s_26f5e669d3043c::t_8c6f098eb34382 786
+  s_26f5e669d3043c::t_2d27180234f514 1061-1066
+  s_26f5e669d3043c::t_5908b99c9d31b6 20-25
+  s_26f5e669d3043c::t_31bfb62b417512 117
+  s_26f5e669d3043c::t_c10d112ec166f5 130-133,135-140,154-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3f2b151f949b1d3128fdd2aa2d05973d4c3de222",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
