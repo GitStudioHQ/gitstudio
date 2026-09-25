@@ -802,7 +802,7 @@ export class CommitViewProvider
         await this.doDiscardPaths(msg.paths ?? []);
         return;
       case "openDiff":
-        this.doOpenDiff(msg.path ?? "", !!msg.staged, msg.line);
+        await this.doOpenDiff(msg.path ?? "", !!msg.staged, msg.line);
         return;
       case "stageAll":
         await this.doBulkStage(msg.group);
@@ -1070,7 +1070,7 @@ export class CommitViewProvider
     await this.discardEntries(files);
   }
 
-  private doOpenDiff(path: string, staged: boolean, line?: number): void {
+  private async doOpenDiff(path: string, staged: boolean, line?: number): Promise<void> {
     const conflicted = this.repos.getActive();
     if (!staged && conflicted && path && this.merge && this.isConflictRow(conflicted, path)) {
       // A conflicted file opens where it can be RESOLVED — the merge editor or
@@ -1111,13 +1111,17 @@ export class CommitViewProvider
     }
     // Eager window (or a not-yet-known file): openChangeDiff only needs the
     // working-tree URI, which we synthesize from the path — so the diff opens
-    // without waiting for vscode.git.
-    const uri = vscode.Uri.joinPath(
-      vscode.Uri.file(active.root),
-      ...path.split("/"),
-    );
+    // without waiting for vscode.git. A staged rename also needs its old name,
+    // which vscode.git's Change would have carried; git says what it is.
+    const at = (rel: string) => vscode.Uri.joinPath(vscode.Uri.file(active.root), ...rel.split("/"));
+    const renamedFrom = staged
+      ? await active.ctx.staging.renamedFrom(path).catch(() => undefined)
+      : undefined;
     void openChangeDiff(
-      new ChangeFileNode(kind, active.root, { uri } as unknown as Change),
+      new ChangeFileNode(kind, active.root, {
+        uri: at(path),
+        ...(renamedFrom ? { originalUri: at(renamedFrom) } : {}),
+      } as unknown as Change),
     );
   }
 

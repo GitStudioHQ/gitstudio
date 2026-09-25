@@ -1162,7 +1162,7 @@ export class CommitDetails extends LitElement {
       class="file ${f.status === "D" ? "deleted" : ""}"
       style="--st:${st}"
       title=${f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}
-      @click=${() => this.emit("gs-file-open", { path: f.path, status: f.status, wip })}>
+      @click=${() => this.emit("gs-file-open", { path: f.path, oldPath: f.oldPath, status: f.status, wip })}>
       <span class="fstatus">${f.status}</span>
       <span class="fname">${name}</span>
       ${dir ? html`<span class="fdir" dir="ltr">${dir}</span>` : html`<span class="fdir"></span>`}

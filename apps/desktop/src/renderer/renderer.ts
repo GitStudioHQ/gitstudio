@@ -10059,7 +10059,7 @@ class App {
       const f = d.files.find((x) => x.path === detail.path);
       if (f) {
         void this.openFile(
-          { path: f.path, status: f.status },
+          { path: f.path, status: f.status, oldPath: f.oldPath },
           d.kind === "wip" ? undefined : d.sha,
         );
       }
@@ -10352,7 +10352,11 @@ class App {
     const panel = this.diffPanel;
     if (!panel) return;
     const gen = ++this.diffGen;
-    const diff = await host.invoke("file:diff", { path: file.path, sha });
+    const diff = await host.invoke("file:diff", {
+      path: file.path,
+      sha,
+      ...(sha && file.oldPath ? { oldPath: file.oldPath } : {}),
+    });
     if (gen !== this.diffGen || panel !== this.diffPanel) return;
     if (!diff) {
       // The FOURTH caller of this shape, and the last one still laundering a

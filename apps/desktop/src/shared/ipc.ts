@@ -2043,7 +2043,8 @@ export interface IpcChannels {
   "commit:branches": [string, CommitBranches];
   "commit:rowStats": [string[], RowStat[]];
   "diff:files": [void, ChangedFile[]];
-  "file:diff": [{ path: string; sha?: string }, FileDiff | undefined];
+  /** `oldPath`: with `sha`, the file's name in the parent when the commit renamed it. */
+  "file:diff": [{ path: string; sha?: string; oldPath?: string }, FileDiff | undefined];
   "conflict:model": [string, ConflictModel | undefined];
   "blame:file": [string, unknown];
   "commit:action": [CommitActionRequest, CommitActionResult];

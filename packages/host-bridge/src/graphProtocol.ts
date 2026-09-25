@@ -284,8 +284,13 @@ export type GraphWebviewMessage =
   | { type: "loadMore" }
   /** Toolbar refresh — reload the graph from the first page. */
   | { type: "refresh" }
-  /** Open a changed file from the details panel as a diff. */
-  | { type: "openFile"; sha: string; path: string; wip?: boolean }
+  /**
+   * Open a changed file from the details panel as a diff. `oldPath` is the
+   * file's name in the parent when the commit renamed it (the parent side is
+   * read under that name); `status` is git's letter (A has no parent side, D
+   * no commit side).
+   */
+  | { type: "openFile"; sha: string; path: string; oldPath?: string; status?: string; wip?: boolean }
   /** A commit action from the details panel's toolbar. */
   | { type: "commitAction"; action: string; sha: string }
   /**

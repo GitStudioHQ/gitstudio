@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { Change } from "../git/git";
-import { toRevisionUri } from "../history/revisionContentProvider";
+import { EMPTY_TREE, openSidesDiff } from "../history/revisionContentProvider";
 
 // Change-row helpers shared by the unified Commit webview (commitView.ts) and
 // the line/hunk-staging commands. The standalone "Changes" tree view was folded
@@ -74,30 +74,39 @@ export async function openChangeDiff(node: ChangeFileNode): Promise<void> {
   const fileName = baseName(rel);
 
   if (node.kind === "staged") {
-    const left = toRevisionUri(root, "HEAD", rel);
-    const right = toRevisionUri(root, "", rel); // index
-    await vscode.commands.executeCommand(
-      "vscode.diff",
-      left,
-      right,
+    // A staged rename is read from HEAD under its OLD name: HEAD has no file
+    // at the new one, and reading it there showed the whole file as added.
+    const original = change.originalUri ? relativePath(root, change.originalUri.fsPath) : rel;
+    await openSidesDiff(
+      root,
+      rel,
+      { left: { rev: "HEAD", path: original }, right: { rev: "" } }, // "" = the index
       `${fileName} (Staged)`,
-      { preview: true },
     );
     return;
   }
 
-  // unstaged / merge: working tree (right) vs index or HEAD (left).
+  // unstaged / merge: working tree (right) vs index or HEAD (left). A file
+  // deleted from the working tree has no right side; the file URI of a path
+  // that is not on disk is not an empty file, so it is read as nothing.
   const baseRev = node.kind === "merge" ? "HEAD" : "";
-  const left = toRevisionUri(root, baseRev, rel);
-  const right = change.uri; // live working-tree file
+  const gone = !(await existsOnDisk(change.uri));
   const label = node.kind === "merge" ? "Working Tree vs HEAD" : "Working Tree";
-  await vscode.commands.executeCommand(
-    "vscode.diff",
-    left,
-    right,
-    `${fileName} (${label})`,
-    { preview: true },
+  await openSidesDiff(
+    root,
+    rel,
+    { left: { rev: baseRev }, right: gone ? { rev: EMPTY_TREE } : { rev: undefined } },
+    `${fileName} (${gone ? "Deleted" : label})`,
   );
+}
+
+async function existsOnDisk(uri: vscode.Uri): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** The single-letter status code (M/A/D/U/R/!/I/T) for a vscode.git Status. */

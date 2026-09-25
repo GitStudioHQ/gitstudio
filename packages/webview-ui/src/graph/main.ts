@@ -158,9 +158,10 @@ function start(root: HTMLElement): void {
 
   // ── Details panel events → host ───────────────────────────────────────────
   details.addEventListener("gs-file-open", (e) => {
-    const d = (e as CustomEvent).detail as { path: string; wip?: boolean };
+    const d = (e as CustomEvent).detail as { path: string; oldPath?: string; status?: string; wip?: boolean };
     const sha = details.details?.sha ?? "";
-    vscode.postMessage({ type: "openFile", sha, path: d.path, wip: d.wip });
+    // oldPath too: a renamed file's parent side is read under its old name.
+    vscode.postMessage({ type: "openFile", sha, path: d.path, oldPath: d.oldPath, status: d.status, wip: d.wip });
   });
   details.addEventListener("gs-action", (e) => {
     const d = (e as CustomEvent).detail as { id: string; sha: string };

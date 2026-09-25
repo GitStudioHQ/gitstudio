@@ -95,6 +95,26 @@ test("fileHistory returns the file's commits newest-first, following the rename"
   assert.ok(head.authorDate > 0, "authorDate is an epoch seconds number");
 });
 
+test("fileHistory names the file's path AT each commit, and the rename's old path", async () => {
+  // A diff of c2 built from today's name reads c1:doc.txt and c2:doc.txt,
+  // neither of which exists — an empty diff for a commit that changed the file.
+  const entries = await ctx.history.fileHistory("doc.txt", { follow: true });
+  assert.deepEqual(
+    entries.map((e) => [e.path, e.oldPath]),
+    [
+      ["doc.txt", undefined],
+      ["doc.txt", "old.txt"],
+      ["old.txt", undefined],
+      ["old.txt", undefined],
+    ],
+  );
+  // Every (parent side, commit side) named that way is a real blob.
+  for (const e of entries.slice(0, 3)) {
+    git(["cat-file", "-e", `${e.sha}:${e.path}`]);
+    git(["cat-file", "-e", `${e.sha}~1:${e.oldPath ?? e.path}`]);
+  }
+});
+
 test("fileHistory respects maxCount", async () => {
   const entries = await ctx.history.fileHistory("doc.txt", { maxCount: 2 });
   assert.equal(entries.length, 2);

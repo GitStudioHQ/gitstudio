@@ -356,6 +356,28 @@ export class StagingProvider {
     return r.stdout.trim() !== "false";
   }
 
+  /**
+   * The HEAD-side name of a staged rename whose NEW name is `rel`, or
+   * undefined when `rel` is not the destination of one.
+   *
+   * NO pathspec: limiting the diff to the destination filters the rename's
+   * source out, and `-M` then has nothing to pair it with — git reports
+   * `A new` instead of `R old new`.
+   */
+  async renamedFrom(rel: string, opts?: StagingOptions): Promise<string | undefined> {
+    const r = await this.proc.run(["diff", "--cached", "--name-status", "-M", "-z"], {
+      signal: opts?.signal,
+    });
+    if (r.code !== 0) return undefined;
+    const tok = r.stdout.split("\0").filter((t) => t.length > 0);
+    for (let i = 0; i < tok.length; ) {
+      const renamed = /^[RC]/.test(tok[i]);
+      if (renamed && tok[i + 2] === rel) return tok[i + 1];
+      i += renamed ? 3 : 2;
+    }
+    return undefined;
+  }
+
   /** The staged (index) version of a file via `git show :<rel>`, or "". */
   async indexContent(rel: string, opts?: StagingOptions): Promise<string> {
     const r = await this.proc.run(["show", `:${rel}`], { signal: opts?.signal });

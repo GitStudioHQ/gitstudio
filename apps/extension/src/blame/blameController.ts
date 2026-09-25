@@ -5,7 +5,7 @@ import { UNCOMMITTED_SHA } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
 import { commitWebUrl } from "../util/remoteUrl";
-import { openRevisionDiff, toRevisionUri } from "../history/revisionContentProvider";
+import { blameChangeSides, openSidesDiff, toRevisionUri } from "../history/revisionContentProvider";
 
 // How long after the selection settles before we run a blame — fast enough to
 // feel live, slow enough not to spawn git on every cursor twitch.
@@ -669,18 +669,22 @@ export class BlameController implements vscode.Disposable {
     void vscode.window.showInformationMessage(`Copied ${short(at.commit.sha)}`);
   }
 
-  /** Diff THIS file as the line's commit changed it (parent ↔ commit). */
+  /**
+   * Diff THIS file as the line's commit changed it (parent ↔ commit), under
+   * the names it had there. Blame follows renames, so a line older than a
+   * rename belongs to a commit where the file had another name; built from
+   * today's name, both sides were empty.
+   */
   private async showRevisionDiff(): Promise<void> {
     const at = await this.commitAtCursor();
     if (!at) {
       return;
     }
     const rel = relative(at.entry.root, at.editor.document.uri.fsPath);
-    await openRevisionDiff(
+    await openSidesDiff(
       at.entry.root,
       rel,
-      `${at.commit.sha}^`,
-      at.commit.sha,
+      blameChangeSides(at.commit, rel),
       `${rel.split("/").pop()} (${short(at.commit.sha)})`,
     );
   }
@@ -692,8 +696,17 @@ export class BlameController implements vscode.Disposable {
       return;
     }
     const rel = relative(at.entry.root, at.editor.document.uri.fsPath);
+    const previous = at.commit.previous;
+    if (!previous) {
+      // The commit added the file: there is no earlier version to open, and
+      // an empty editor would say there was one with nothing in it.
+      void vscode.window.showInformationMessage(
+        `GitStudio: ${rel.split("/").pop()} was added by ${short(at.commit.sha)}, so there is no earlier revision of it.`,
+      );
+      return;
+    }
     const doc = await vscode.workspace.openTextDocument(
-      toRevisionUri(at.entry.root, `${at.commit.sha}^`, rel),
+      toRevisionUri(at.entry.root, previous.sha, rel, previous.filename),
     );
     await vscode.window.showTextDocument(doc, { preview: true });
   }
