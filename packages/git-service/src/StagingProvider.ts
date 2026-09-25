@@ -1,5 +1,6 @@
-import { lstat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { hasConflictMarkers } from "@gitstudio/engine/conflict/documentText";
 import type { GitProcess } from "./GitProcess";
 import { runIndexWrite } from "./indexWrites";
 
@@ -106,6 +107,40 @@ export class StagingProvider {
    */
   async stageFiles(rels: string[], opts?: StagingOptions): Promise<CommitResult> {
     return this.runChunked(rels, (chunk) => ["add", "--", ...chunk], opts);
+  }
+
+  /**
+   * Which of `rels` are UNMERGED and still carry conflict markers.
+   *
+   * `git add` on an unmerged file is how git is told the conflict is resolved;
+   * it does not look inside. Staging one that still has `<<<<<<<` in it marks
+   * it resolved with the markers in, and the next commit carries them into
+   * the tree. Only unmerged paths are checked: an ordinary file that happens
+   * to contain marker-shaped lines (a merge tool's fixture, docs about
+   * conflicts) must stay stageable. An unreadable file is not reported — git
+   * decides when it is staged.
+   */
+  async markedConflicts(rels: string[], opts?: StagingOptions): Promise<string[]> {
+    if (rels.length === 0) return [];
+    // Every unmerged entry, filtered here: no pathspec, so no path of the
+    // user's is ever read by git as anything but a path.
+    const r = await this.proc.run(["ls-files", "-u", "-z"], { signal: opts?.signal });
+    if (r.code !== 0) return [];
+    const unmerged = new Set<string>();
+    for (const rec of r.stdout.split("\0")) {
+      const tab = rec.indexOf("\t");
+      if (tab !== -1) unmerged.add(rec.slice(tab + 1));
+    }
+    const marked: string[] = [];
+    for (const rel of new Set(rels)) {
+      if (!unmerged.has(rel)) continue;
+      try {
+        if (hasConflictMarkers(await readFile(join(this.proc.cwd, rel), "utf8"))) marked.push(rel);
+      } catch {
+        // Deleted by one side, a directory, unreadable: not a file with markers.
+      }
+    }
+    return marked;
   }
 
   /**

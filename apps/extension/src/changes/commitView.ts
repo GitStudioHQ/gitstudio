@@ -748,12 +748,17 @@ export class CommitViewProvider
           await this.memento.update(LAYOUT_KEY, msg.layout);
         }
         return;
-      case "stage":
-        await this.mutate(
-          (entry) => entry.ctx.staging.stageFile(msg.path ?? ""),
-          { verb: "stage", paths: [msg.path ?? ""] },
-        );
+      case "stage": {
+        const [path] = await this.withoutMarkedConflicts([msg.path ?? ""]);
+        if (!path) {
+          return;
+        }
+        await this.mutate((entry) => entry.ctx.staging.stageFile(path), {
+          verb: "stage",
+          paths: [path],
+        });
         return;
+      }
       case "unstage":
         await this.mutate(
           (entry) => entry.ctx.staging.unstageFile(msg.path ?? ""),
@@ -769,7 +774,10 @@ export class CommitViewProvider
       // confirm per file, each dismissing the last, so only the final file was
       // discarded.
       case "stagePaths": {
-        const paths = (msg.paths ?? []).filter((p) => p);
+        const paths = await this.withoutMarkedConflicts(msg.paths ?? []);
+        if (paths.length === 0) {
+          return;
+        }
         await this.mutate((entry) => entry.ctx.staging.stageFiles(paths), {
           verb: "stage",
           paths,
@@ -808,12 +816,17 @@ export class CommitViewProvider
       case "discardAll":
         await this.doDiscardAll();
         return;
-      case "stageFolder":
-        await this.mutate(
-          (entry) => entry.ctx.staging.stageFiles(msg.paths ?? []),
-          { verb: "stage", paths: msg.paths ?? [] },
-        );
+      case "stageFolder": {
+        const paths = await this.withoutMarkedConflicts(msg.paths ?? []);
+        if (paths.length === 0) {
+          return;
+        }
+        await this.mutate((entry) => entry.ctx.staging.stageFiles(paths), {
+          verb: "stage",
+          paths,
+        });
         return;
+      }
       case "unstageFolder":
         await this.mutate(
           (entry) => entry.ctx.staging.unstageFiles(msg.paths ?? []),
@@ -882,6 +895,40 @@ export class CommitViewProvider
         await this.pushState();
         return;
     }
+  }
+
+  /**
+   * `paths` without the unmerged files that still carry conflict markers.
+   *
+   * `git add` on an unmerged file is how git is told the conflict is resolved,
+   * and it does not look inside: staging one with `<<<<<<<` still in it marked
+   * it resolved, and the next commit carried the markers into the tree. Every
+   * Stage in this view (a row's +, a tick, a folder, a selection, Stage All,
+   * the checklist's check-all) comes through here. The held-back rows go back
+   * on the page, and the user is told which files and why, in the words the
+   * desktop app's Stage uses for the same refusal.
+   */
+  private async withoutMarkedConflicts(paths: string[]): Promise<string[]> {
+    const wanted = paths.filter((p) => p);
+    const entry = this.repos.getActive();
+    if (!entry || wanted.length === 0) {
+      return wanted;
+    }
+    let held: string[] = [];
+    try {
+      held = await entry.ctx.staging.markedConflicts(wanted);
+    } catch {
+      held = [];
+    }
+    if (held.length === 0) {
+      return wanted;
+    }
+    const keep = wanted.filter((p) => !held.includes(p));
+    void this.view?.webview.postMessage({ type: "opFailed", paths: held });
+    void vscode.window.showWarningMessage(
+      `GitStudio: ${markedConflictsMessage(held, keep.length > 0)}`,
+    );
+    return keep;
   }
 
   /**
@@ -1123,7 +1170,20 @@ export class CommitViewProvider
     if (staged.length > 0) {
       return "ok"; // normal path — commit what is staged, as always
     }
-    const candidates = [...merge, ...unstaged];
+    // Conflicted files are never swept into "everything". This used to stage
+    // them with the rest, and `git add` on a conflicted file marks it resolved
+    // whatever is in it, so a stopped rebase could be committed with the
+    // conflict markers inside. git will not commit while files are unmerged
+    // anyway; say so before touching the index rather than after.
+    if (merge.length > 0) {
+      const n = merge.length;
+      void vscode.window.showWarningMessage(
+        `GitStudio: ${n === 1 ? `${merge[0].path} still has` : `${n} files still have`} conflicts. ` +
+          "Resolve and stage them first — git can't commit while files are unmerged.",
+      );
+      return "cancelled";
+    }
+    const candidates = unstaged;
     if (candidates.length === 0) {
       return "ok"; // nothing anywhere; the commit will explain itself
     }
@@ -1254,7 +1314,7 @@ export class CommitViewProvider
       return;
     }
     const { merge, unstaged } = await this.resolveState(active);
-    const rels = [...merge, ...unstaged].map((e) => e.path);
+    const rels = await this.withoutMarkedConflicts([...merge, ...unstaged].map((e) => e.path));
     if (rels.length === 0) {
       return;
     }
@@ -1267,7 +1327,12 @@ export class CommitViewProvider
       return;
     }
     const { merge, unstaged } = await this.resolveState(active);
-    const rels = (group === "merge" ? merge : unstaged).map((e) => e.path);
+    const rels = await this.withoutMarkedConflicts(
+      (group === "merge" ? merge : unstaged).map((e) => e.path),
+    );
+    if (rels.length === 0) {
+      return;
+    }
     await this.mutate((e) => e.ctx.staging.stageFiles(rels), { verb: "stage", paths: rels });
   }
 
@@ -4799,8 +4864,11 @@ export class CommitViewProvider
       // everything after confirming (issue #16), so the button must be reachable —
       // it used to be disabled, which is how a stale list could make it look like
       // there was nothing to do.
+      // Conflicted files are not part of "all": the host never sweeps them in
+      // (staging one marks it resolved, markers and all), so counting them
+      // offered "Commit all 1" for a commit that could not include it.
       const totalChanges =
-        (lastState ? lastState.merge.length + lastState.staged.length + lastState.unstaged.length : 0);
+        (lastState ? lastState.staged.length + lastState.unstaged.length : 0);
       const canCommit = hasStaged || totalChanges > 0;
       // Commit button label + state.
       if (!committing) {
@@ -7874,6 +7942,28 @@ function isRefusal(result: unknown): result is { ok: false; stderr: string } {
     result !== null &&
     (result as { ok?: unknown }).ok === false &&
     typeof (result as { stderr?: unknown }).stderr === "string"
+  );
+}
+
+/**
+ * Why some files were not staged: they are unmerged and still carry conflict
+ * markers. The one-file sentence is the desktop app's Stage refusal, word for
+ * word, so the same refusal reads the same in both.
+ */
+function markedConflictsMessage(held: string[], stagedTheRest: boolean): string {
+  if (held.length === 1 && !stagedTheRest) {
+    return (
+      `${held[0]} still contains conflict markers. Staging it would mark the conflict ` +
+      "resolved and commit the markers — resolve them first."
+    );
+  }
+  const head = held.slice(0, 3).join(", ");
+  const list = held.length > 3 ? `${head} and ${held.length - 3} more` : head;
+  const count = held.length === 1 ? "1 file still contains" : `${held.length} files still contain`;
+  return (
+    (stagedTheRest ? "Staged everything else. " : "") +
+    `${count} conflict markers (${list}) — staging a file with markers in it tells git ` +
+    "the conflict is settled. Resolve them first."
   );
 }
 
