@@ -1,0 +1,96 @@
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_461be2ab220a1c 13152-13159
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_ca841b042292b7 638-733,736,740
+  s_26f5e669d3043c::t_8ac25fec804270 4-6,10-14
+  s_26f5e669d3043c::t_a5ec4b3b50ff8a 734-735,737-739
+apps/desktop/src/renderer/multiCommit.ts
+  s_26f5e669d3043c::t_93175d50c91550 1-205
+apps/desktop/harness/shot.sh
+  s_26f5e669d3043c::t_f2f27465cc7ec8 8
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_b57519c0064fac 9263-9282,9284-9324,9326-9329,9331-9336,9339-9352,9354-9404,9406-9414,9416-9435,9437-9451,9453-9533
+  s_26f5e669d3043c::t_859b6caf12e093 9325
+  s_26f5e669d3043c::t_184604a5559d4d 9405,9452
+  s_26f5e669d3043c::t_e30560ab93e3fb 9330,9337
+  s_26f5e669d3043c::t_816a44c08cf217 9283,9353,9415,9436
+  s_26f5e669d3043c::t_956eebbea9fc6a 9338
+apps/desktop/src/renderer/contextMenu.ts
+  s_26f5e669d3043c::t_4cfa1d67a520d0 260
+  s_26f5e669d3043c::t_fa24af60d9aed7 97-123,125-130
+  s_26f5e669d3043c::t_2a941de3a1d553 124
+  s_26f5e669d3043c::t_18264509fa3f2d 156-157,160-212
+  s_26f5e669d3043c::t_8b3c808225fc84 213
+apps/desktop/test/multiCommitFlow.test.ts
+  s_26f5e669d3043c::t_877387e49586de 1-9,11-284
+  s_26f5e669d3043c::t_259d38001eb82b 10
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_7fbe94c7214739 3616-3623
+  s_26f5e669d3043c::t_2e09f315f7fc86 3253
+  s_26f5e669d3043c::t_8b70db6d06fade 2798-2802,2806-2823
+  s_26f5e669d3043c::t_022d83ca0d17ca 3178-3252,3254-3269
+  s_26f5e669d3043c::t_816a44c08cf217 2803-2805
+  s_26f5e669d3043c::t_8db12d3a212a2c 3624
+apps/desktop/test/multiCommit.test.ts
+  s_26f5e669d3043c::t_56b478e2007412 1-247
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_015babc2950018 605-612
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_8983ae2841be15 356-362
+  s_26f5e669d3043c::t_f7b8c9a853e0b8 2148-2153
+  s_26f5e669d3043c::t_27b03f30d9a434 415-418,420
+  s_26f5e669d3043c::t_2716678afc259e 2031-2097
+  s_26f5e669d3043c::t_ead8ab92517b4f 407-414,419
+  s_26f5e669d3043c::t_e519c554ba2362 2030,2098
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_4b7fe889fcc260 555-646
+apps/desktop/src/renderer/graphMount.ts
+  s_26f5e669d3043c::t_ca0b61dfc0e073 11-12,14
+  s_26f5e669d3043c::t_988f5896e27c88 19-20,22-24
+  s_26f5e669d3043c::t_7cc3a54375f0be 53-55,62-67,69
+  s_26f5e669d3043c::t_820ab254244304 241-249
+  s_26f5e669d3043c::t_c38a96dc8ffdd5 250
+apps/desktop/test/destructiveGuards.test.ts
+  s_26f5e669d3043c::t_894cdcd5c7950a 40
+  s_26f5e669d3043c::t_08161d53e683a5 51
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_65fd96d7b36d9e 104,106
+  s_26f5e669d3043c::t_bae303717c41bc 8483-8485,8487
+  s_26f5e669d3043c::t_389a5d9044c6e0 4497-4498,4500-4502
+  s_26f5e669d3043c::t_fecdc135fc1b10 378-380
+  s_26f5e669d3043c::t_8ae095b3e93cf4 10521
+  s_26f5e669d3043c::t_543cf72ac15b1a 10442-10503,10506-10520,10522-10530
+  s_26f5e669d3043c::t_be642f0e3d9b3f 10019
+  s_26f5e669d3043c::t_b6066f47b5af0e 58
+  s_26f5e669d3043c::t_3247b8a70cddbe 828
+  s_26f5e669d3043c::t_0888eed9fa94b8 23
+  s_26f5e669d3043c::t_f97d533685d880 4499
+  s_26f5e669d3043c::t_6e7c9447adc50b 10504-10505
+  s_26f5e669d3043c::t_1c5cfe536a2807 200,202-203
+  s_26f5e669d3043c::t_5b36f57eb7cbc8 10531
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_f432ba7f623a16 2809-2812
+  s_26f5e669d3043c::t_003d918e9fc8a4 42-44
+  s_26f5e669d3043c::t_962952bbd94229 2865-2922,2924-2934
+  s_26f5e669d3043c::t_5d5654b3d8ef74 2923
+  s_26f5e669d3043c::t_1498a792d5cad8 2935-2940
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_2a701407df3ca9 523-526
+  s_26f5e669d3043c::t_0abacd8c721e0a 816-821
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5b027fc946408895d98a78fb8c29247993185bc5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
