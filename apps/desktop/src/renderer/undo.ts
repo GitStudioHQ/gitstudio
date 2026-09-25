@@ -45,9 +45,44 @@ export interface Undoable {
 /** What an undo reports: nothing (done), a failure message, or an expected refusal. */
 export type UndoResult = string | { info: string } | void;
 
-/** Deepest first. Small on purpose: this is "I didn't mean that", not history. */
-const stack: Undoable[] = [];
+/** Small on purpose: this is "I didn't mean that", not history. */
 const LIMIT = 20;
+
+/**
+ * ONE STACK PER TAB (issue #32), keyed by the tab's session.
+ *
+ * An undo is a promise about a specific repository: "restore the branch I
+ * deleted" run in a different one would CREATE a branch nobody asked for.
+ * With a single repository open, switching simply forgot the stack. With
+ * tabs, switching is constant and forgetting would make undo useless, so each
+ * tab keeps its own, ⌘Z reads only the one in front, and an entry remembers
+ * the tab it was recorded in and refuses to run anywhere else.
+ */
+const stacks = new Map<number, Undoable[]>();
+/** The tab in front. 0 = no repository open (the shell's own screen). */
+let scope = 0;
+/** Which tab each entry was recorded in. */
+const recordedIn = new WeakMap<Undoable, number>();
+
+function current(): Undoable[] {
+  let s = stacks.get(scope);
+  if (!s) {
+    s = [];
+    stacks.set(scope, s);
+  }
+  return s;
+}
+
+/** The tab in front changed: ⌘Z now reads its stack. */
+export function setUndoScope(session: number): void {
+  scope = session;
+}
+
+/** A tab closed: its entries go with it. Their `after` repaints a screen
+ *  that no longer exists, and nobody can reach them. */
+export function dropUndoScope(session: number): void {
+  stacks.delete(session);
+}
 
 /**
  * Record a reversible action, tell the user what happened, and offer Undo on
@@ -63,13 +98,15 @@ export function didUndoable(message: string, action: Undoable): void {
 }
 
 export function push(action: Undoable): void {
-  stack.push(action);
-  if (stack.length > LIMIT) stack.shift();
+  const s = current();
+  recordedIn.set(action, scope);
+  s.push(action);
+  if (s.length > LIMIT) s.shift();
 }
 
 /** Undo the most recent action. Returns false when there was nothing to undo. */
 export async function undoLast(): Promise<boolean> {
-  const action = stack.pop();
+  const action = current().pop();
   if (!action) {
     toast("Nothing to undo.", "info");
     return false;
@@ -78,27 +115,33 @@ export async function undoLast(): Promise<boolean> {
   return true;
 }
 
-/** How many reversals are waiting — the harness asserts on this. */
+/** How many reversals are waiting in the tab in front — the harness asserts on this. */
 export function undoDepth(): number {
-  return stack.length;
+  return current().length;
 }
 
 /**
- * Drop everything pending.
+ * Drop everything pending in the tab in front.
  *
- * Called when the open repository changes: an undo is a promise about a
- * specific repository, and "restore the branch I deleted" carried into a
- * different one would CREATE a branch nobody asked for. Nothing on this stack
- * is worth that, so switching repositories forgets it.
+ * An undo is a promise about a specific repository; anything that makes the
+ * tab's own repository a different one (it cannot, today) would call this.
  */
 export function clearUndo(): void {
-  stack.length = 0;
+  current().length = 0;
 }
 
 async function run(action: Undoable): Promise<void> {
+  // An entry from another tab never runs here — the toast that offered it is
+  // cleared on a switch, and this is the rule behind that.
+  const home = recordedIn.get(action);
+  if (home !== undefined && home !== scope) {
+    toast("That undo belongs to another tab. Switch back to it to undo.", "info");
+    return;
+  }
   // Whichever way it was triggered — the toast button or ⌘Z — it happens once.
-  const at = stack.indexOf(action);
-  if (at >= 0) stack.splice(at, 1);
+  const s = current();
+  const at = s.indexOf(action);
+  if (at >= 0) s.splice(at, 1);
   try {
     const failure = await action.undo();
     if (typeof failure === "string" && failure) {
@@ -192,7 +235,7 @@ export function installUndoKey(): void {
       if (inTextField(e.target)) return;
       // Nothing on the stack: let the platform have the keystroke rather than
       // swallowing it and looking broken.
-      if (!stack.length) return;
+      if (!current().length) return;
       e.preventDefault();
       void undoLast();
     },

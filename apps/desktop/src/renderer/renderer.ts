@@ -19,8 +19,22 @@ import { ConflictsDashboard } from "@gitstudio/webview-ui/conflicts/dashboard";
 import type { ConflictsState } from "@gitstudio/host-bridge/conflictsProtocol";
 import { clickIntent, parseRowKey, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import { installNavStack } from "./navStack";
-import { clearUndo, didUndoable, installUndoKey, push as pushUndoable, redoOrText, undoOrText } from "./undo";
+import { didUndoable, dropUndoScope, installUndoKey, push as pushUndoable, redoOrText, setUndoScope, undoOrText } from "./undo";
 import { repoChanged } from "./repoEpoch";
+import {
+  currentSession,
+  endSession,
+  heldFor,
+  inOpenLanding,
+  onRunningChange,
+  runningOperation,
+  setActiveSession,
+  shellHost,
+  type TabSession,
+} from "./bridge";
+import { RepoTabStrip, type TabStripItem } from "./repoTabs";
+import { afterClose, stepTab, tabAtDigit, tabKeyAction } from "./tabModel";
+import { saveDraftIn, takeDraftIn } from "./draftStore";
 import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
 import { renderReleaseCompose } from "./views/releaseCompose";
@@ -52,16 +66,16 @@ import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
 import { renderAssistant, seedAssistantGoal } from "./assistant";
 import { aiModelsCard, agentAccessCard } from "./aiSettings";
-import { openInButton } from "./openIn";
+import { openInButton, REVEAL_LABEL } from "./openIn";
 import { editorsCard } from "./views/editorsCard";
 import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled } from "./aiAssist";
-import { toast, confirmDialog, promptInline, promptChoice, openModal, type ToastAction } from "./dialogs";
+import { toast, clearToasts, confirmDialog, promptInline, promptChoice, openModal, type ToastAction } from "./dialogs";
 import { refLabel, revealCandidate, storedFilterOf, withRef } from "@gitstudio/host-bridge/graphRefFilter";
 import { createBranchFlow } from "./branchCreate";
 import type { BranchStart } from "../shared/branchStart";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
-import { gget, peek, bust, setCacheScope, swr, sameData} from "./cache";
+import { gget, peek, bust, bustEverywhere, dropCacheScope, setCacheScope, swr, sameData} from "./cache";
 import {
   el,
   span,
@@ -97,8 +111,8 @@ import {
 } from "./ui";
 import type { MenuItem } from "./ui";
 import { plural } from "./textFit";
-import { dismissLayers, pageOwnsKeys } from "./overlays";
-import { setFocusScope, clearFocusReturn } from "./focusReturn";
+import { dismissLayers, isModalOpen, openLayerCount, pageOwnsKeys } from "./overlays";
+import { setFocusScope, setFocusTab, dropFocusTab } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
@@ -157,6 +171,7 @@ import type {
   FileDiff,
   GitOpState,
   CommitActionResult,
+  RepoTabsState,
 } from "../shared/ipc";
 
 
@@ -190,7 +205,35 @@ function sameTargetContent(a: SectionTarget | undefined, b: SectionTarget | unde
   );
 }
 
+/**
+ * One repository tab's whole app — its screen (top bar, rail, view host,
+ * terminal dock) and every piece of state behind it (issue #32).
+ *
+ * There is one of these PER TAB, not one whose fields are swapped on a switch:
+ * a late answer closes over `this`, and with an instance per tab it can only
+ * ever write into its own tab. The shell (TabShell, below) attaches the screen
+ * of the tab in front and detaches the rest — detached, so every "is my view
+ * still on screen" guard in the app (`isConnected`) stands a background tab's
+ * pollers down by the rules that already stand a parked view's down.
+ */
 class App {
+  constructor(
+    private readonly shell: TabShell,
+    /** This tab's lifetime; the bridge delivers its answers only while it is in front. */
+    readonly session: TabSession,
+    /** The repository, or undefined for the no-repository screen. */
+    private readonly info: RepoInfo | undefined,
+    /** Where a NEW tab starts: the view of the tab it was opened from, or the
+     *  view this repository was last left on. */
+    private readonly startView?: string,
+  ) {}
+
+  /** This tab's whole screen — attached while it is in front, detached otherwise. */
+  screenEl?: HTMLElement;
+  /** Where the tab's view and rail were scrolled when it went to the back. */
+  private awayScroll: [HTMLElement, number, number, boolean][] = [];
+  private awayRailScroll = 0;
+
   private graph?: GraphMount;
   private diffPanel?: DiffPanel;
   private contextMenu = new CommitContextMenu(
@@ -266,7 +309,7 @@ class App {
   /** The repo changed while the graph was parked — reload in place on return. */
   private graphDirty = false;
   private diffSurfaceEl?: HTMLElement;
-  private repoSwitchName?: HTMLElement;
+
   private branchSwitchName?: HTMLElement;
   private notifBellBadge?: HTMLElement;
   /** The resolved HEAD from `head:get` — the authoritative answer to "which
@@ -541,31 +584,13 @@ class App {
   private terminalExpanded = false;
   private terminalHeight = 280;
 
-  async start(): Promise<void> {
-    // Before anything can invoke a commit-applying command: the one place that
-    // asks Stash & Retry or Cancel for all of them (bridge.ts). It holds its
-    // question while this repository stays open — see whileThisRepo.
-    installInTheWayAsker(() => this.currentRepo?.root);
-    // Views can pop the history from here on. Before this the only way back
-    // from a detail page was a forward navigation dressed as a back button.
-    this.installNav();
-    // Catch-all error boundary: a rejected promise or thrown render should never
-    // leave the app silently broken — surface it as a toast. BUT skip the benign
-    // Monaco worker noise (it asks the base worker for TS language-service methods
-    // we don't bundle, and ResizeObserver loop warnings) — those are harmless.
-    window.addEventListener("unhandledrejection", (e) => {
-      const msg = cleanErr(e.reason);
-      if (isBenignError(msg)) return;
-      toast(msg || "Something went wrong.", "error");
-    });
-    window.addEventListener("error", (e) => {
-      const msg = e.error ? cleanErr(e.error) : e.message || "";
-      if (isBenignError(msg, e.filename)) return;
-      if (e.error || e.message) toast(msg || "Something went wrong.", "error");
-    });
-
-    // Power-user view switching: Cmd/Ctrl+1..8 jumps between sidebar views; Cmd/Ctrl+, opens Settings.
-    window.addEventListener("keydown", (e) => {
+  /**
+   * Power-user view switching: Cmd/Ctrl+1..8 jumps between sidebar views;
+   * Cmd/Ctrl+, opens Settings. The shell's ONE window listener hands the key
+   * to the tab in front — a background tab's App never hears a key.
+   */
+  handleAppKey(e: KeyboardEvent): void {
+    {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
       // Per-branch repo guards, not one at the top. The single early return
       // used to gate EVERY branch on an open repository — so ⌘K, ⌘, and even
@@ -612,38 +637,45 @@ class App {
         e.preventDefault();
         if (!paletteIsOpen()) this.openPalette();
       }
-    });
+    }
+  }
 
-    // "?" opens the keyboard cheat sheet — the j/k/e/Esc layer is worthless
-    // if nobody can discover it.
-    window.addEventListener("keydown", (e) => {
-      if (e.key !== "?" || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (!this.currentRepo) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      // A PAGE-LEVEL key, so any open layer outranks it — including the sheet
-      // itself. Skipping the text-field check alone let "?" open a second
-      // identical sheet over the first (its own first focusable is a button,
-      // not a field), and a third, and a fourth — each needing its own Escape.
-      // It also fired straight through an open dropdown or dialog.
-      if (!pageOwnsKeys()) return;
+  /** "?" opens the keyboard cheat sheet — the j/k/e/Esc layer is worthless
+   *  if nobody can discover it. */
+  handleHelpKey(e: KeyboardEvent): void {
+    if (e.key !== "?" || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (!this.currentRepo) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    // A PAGE-LEVEL key, so any open layer outranks it — including the sheet
+    // itself. Skipping the text-field check alone let "?" open a second
+    // identical sheet over the first (its own first focusable is a button,
+    // not a field), and a third, and a fourth — each needing its own Escape.
+    // It also fired straight through an open dropdown or dialog.
+    if (!pageOwnsKeys()) return;
+    e.preventDefault();
+    openShortcutsHelp();
+  }
+
+  /** Mouse back/forward buttons (buttons 3/4) walk the same history — the
+   *  muscle memory every browser user brings to a mouse with side buttons. */
+  handleMouseUp(e: MouseEvent): void {
+    if (!this.currentRepo) return;
+    if (e.button === 3) {
       e.preventDefault();
-      openShortcutsHelp();
-    });
+      this.navBack();
+    } else if (e.button === 4) {
+      e.preventDefault();
+      this.navForward();
+    }
+  }
 
-    // Mouse back/forward buttons (buttons 3/4) walk the same history — the
-    // muscle memory every browser user brings to a mouse with side buttons.
-    window.addEventListener("mouseup", (e) => {
-      if (!this.currentRepo) return;
-      if (e.button === 3) {
-        e.preventDefault();
-        this.navBack();
-      } else if (e.button === 4) {
-        e.preventDefault();
-        this.navForward();
-      }
-    });
-
+  /**
+   * Build this tab's screen and land on its first view. Runs ONCE per tab, the
+   * first time the tab is shown — a tab restored at launch and never visited
+   * costs nothing until it is.
+   */
+  mount(): void {
     // Restore persisted UI preferences so the app reopens where you left it.
     const prefs = loadPrefs();
     // Rail entries are not the only real places. Settings lives in the rail's
@@ -651,30 +683,65 @@ class App {
     // session can end on, and a restore that silently falls back to "changes"
     // teaches people their place isn't kept.
     const OFF_RAIL = new Set(["settings", "explore"]);
-    if (
-      typeof prefs.currentView === "string" &&
-      (App.TABS.some((t) => t.id === prefs.currentView) || OFF_RAIL.has(prefs.currentView))
-    ) {
-      this.currentView = prefs.currentView;
+    const known = (v: unknown): v is string =>
+      typeof v === "string" && (App.TABS.some((t) => t.id === v) || OFF_RAIL.has(v));
+    // A tab starts where it was asked to (the view of the tab it was opened
+    // from), else where THIS repository was last left, else the last view.
+    const tabViews = (prefs.tabViews ?? {}) as Record<string, unknown>;
+    const remembered = this.info ? tabViews[this.info.root] : undefined;
+    // Search is identified by its target, which belongs to the tab it was
+    // opened in — a new tab asked for "explore" lands in the repository.
+    if (this.startView === "explore") this.currentView = this.info ? "code" : "dashboard";
+    else if (known(this.startView)) this.currentView = this.startView;
+    else if (known(remembered)) this.currentView = remembered;
+    else if (known(prefs.currentView)) this.currentView = prefs.currentView;
+    // An unsent commit message this repository's tab was closed with.
+    if (this.info) {
+      const kept = takeDraftIn(this.info.root, "commit", "message");
+      if (kept) {
+        this.composerDraft = { message: kept, amend: false, signoff: false, coAuthors: [] };
+        this.composerDraftRoot = this.info.root;
+      }
     }
-    if (typeof prefs.compareFileListW === "number" && prefs.compareFileListW >= 180) {
-      this.compareFileListW = prefs.compareFileListW;
-    }
-    if (prefs.compareView === "commits" || prefs.compareView === "files") {
-      this.compareView = prefs.compareView;
-    }
-    // `branchCatsCollapsed` is gone with the four collapsible groups it
-    // remembered — the Branches view shows ONE kind at a time now. An old
-    // stored value is simply ignored rather than migrated; it described a
-    // shape that no longer exists.
-    if (
-      prefs.branchTab === "local" ||
-      prefs.branchTab === "remote" ||
-      prefs.branchTab === "tags" ||
-      prefs.branchTab === "stashes" ||
-      prefs.branchTab === "worktrees"
-    ) {
-      this.branchTab = prefs.branchTab;
+    this.readSharedPrefs(prefs, true);
+    this.showRepoScreen(this.info);
+  }
+
+  /**
+   * The saved preferences. Everything when a tab is built; afterwards — each
+   * time the tab comes to the front — only the ones every tab SHARES (the
+   * rail, the theme, the staging model), so collapsing the rail in one tab
+   * collapses it in all of them while each tab keeps its own Compare layout,
+   * Branches kind and dock.
+   */
+  private readSharedPrefs(prefs: Record<string, unknown> = loadPrefs(), initial = false): void {
+    if (initial) {
+      if (typeof prefs.compareFileListW === "number" && prefs.compareFileListW >= 180) {
+        this.compareFileListW = prefs.compareFileListW;
+      }
+      if (prefs.compareView === "commits" || prefs.compareView === "files") {
+        this.compareView = prefs.compareView;
+      }
+      // `branchCatsCollapsed` is gone with the four collapsible groups it
+      // remembered — the Branches view shows ONE kind at a time now. An old
+      // stored value is simply ignored rather than migrated; it described a
+      // shape that no longer exists.
+      if (
+        prefs.branchTab === "local" ||
+        prefs.branchTab === "remote" ||
+        prefs.branchTab === "tags" ||
+        prefs.branchTab === "stashes" ||
+        prefs.branchTab === "worktrees"
+      ) {
+        this.branchTab = prefs.branchTab;
+      }
+      if (typeof prefs.changesListW === "number" && prefs.changesListW >= 220) {
+        this.changesListW = prefs.changesListW;
+      }
+      if (typeof prefs.terminalOpen === "boolean") this.terminalExpanded = prefs.terminalOpen;
+      if (typeof prefs.terminalHeight === "number" && prefs.terminalHeight >= 120) {
+        this.terminalHeight = prefs.terminalHeight;
+      }
     }
     if (prefs.stagingModel === "checkboxes" || prefs.stagingModel === "split") {
       this.stagingModelPref = prefs.stagingModel;
@@ -692,43 +759,126 @@ class App {
       this.railWidth = prefs.railWidth;
     }
     if (typeof prefs.railCollapsed === "boolean") this.railCollapsed = prefs.railCollapsed;
-    if (typeof prefs.changesListW === "number" && prefs.changesListW >= 220) {
-      this.changesListW = prefs.changesListW;
-    }
-    if (typeof prefs.terminalOpen === "boolean") this.terminalExpanded = prefs.terminalOpen;
-    if (typeof prefs.terminalHeight === "number" && prefs.terminalHeight >= 120) {
-      this.terminalHeight = prefs.terminalHeight;
-    }
+  }
 
-    applyTheme(resolveTheme(this.themeMode));
-    // Reflect the resolved brand mark on the dock now that the theme is settled.
-    this.syncDockIcon();
-    // Re-apply on OS theme flips ONLY when following the system.
-    followSystemTheme((osTheme) => {
-      if (this.themeMode === "system") {
-        applyTheme(osTheme);
-        this.rerenderForTheme();
-        // Monaco's token classes are global — without this, every highlighted
-        // code block keeps the OLD theme's colors after an OS light/dark flip.
-        refreshHighlightTheme();
-        this.terminalDock?.applyTheme();
-        // An "auto" dock icon must follow the OS flip too — and so must the
-        // Appearance card's preview OF that icon, which is built once and kept.
-        this.syncDockIcon();
-        this.invalidateAppearanceCard();
+  /**
+   * The OS flipped light/dark. Every tab hears it — a background tab's
+   * terminal and Appearance card would otherwise come back in the old theme.
+   * The body class itself is the shell's to set, once.
+   */
+  onSystemThemeFlip(): void {
+    if (this.themeMode !== "system") return;
+    this.rerenderForTheme();
+    this.terminalDock?.applyTheme();
+    this.invalidateAppearanceCard();
+  }
+
+  /** The theme mode a tab was built with — the shell applies it at launch. */
+  get themeModePref(): ThemeMode {
+    return this.themeMode;
+  }
+
+  // ── The tab's life (issue #32) ──────────────────────────────────────────────
+
+  /**
+   * This tab's screen has just been attached and it is in front. Point every
+   * per-tab module at it, put the scroll back, and ask the disk whether
+   * anything moved while it was away.
+   */
+  activate(firstTime: boolean): void {
+    setCacheScope(this.info?.root);
+    setUndoScope(this.session.id);
+    setFocusTab(this.session.id);
+    // A question held open through refreshes (repoEpoch) is about the tab it
+    // was asked in — and none can be open across a switch (the shell refuses
+    // to switch under a modal) — but the epoch is what `whileSameRepo` reads.
+    repoChanged();
+    // Module-level hooks point at the App in front.
+    this.installNav();
+    this.registerAssistantOpener();
+    setPeekNav((v, t) => this.routeView(v, false, t));
+    if (firstTime) return;
+    // Shared preferences may have moved while this tab was in the back.
+    const wasCollapsed = this.railCollapsed;
+    const wasWidth = this.railWidth;
+    this.readSharedPrefs();
+    if (this.railEl && (wasCollapsed !== this.railCollapsed || wasWidth !== this.railWidth)) {
+      this.railEl.classList.toggle("collapsed", this.railCollapsed);
+      this.railEl.style.width = this.railCollapsed ? "" : `${this.railWidth}px`;
+      this.syncRailToggle();
+    }
+    // Detaching zeroed every scrollTop in the screen; put them back — now, and
+    // on the frame after layout, as the keep-alive restore does.
+    const shot = this.awayScroll;
+    const rail = this.awayRailScroll;
+    const apply = (): void => {
+      for (const [node, top, left, atTail] of shot) {
+        if (!node.isConnected) continue;
+        node.scrollTop = atTail ? node.scrollHeight : top;
+        node.scrollLeft = left;
       }
-    });
-    this.wireHostEvents();
+      if (this.railEl) this.railEl.scrollTop = rail;
+    };
+    apply();
+    requestAnimationFrame(apply);
+    this.terminalDock?.layout();
+    this.fitTopbar?.();
+    void this.syncAccountChip?.();
+    void this.refreshNotifBadge();
+    // Anything done to this repository while it was in the back — a commit in
+    // a terminal, an edit in your editor — is found by the same cheap question
+    // a window focus asks. Nothing moved, nothing rebuilds.
+    void this.refreshIfDiskMoved();
+  }
 
-    try {
-      const current = await host.invoke("repo:current", undefined);
-      // The shell either way. With nothing open it lands on Home, whose first
-      // card is the Open / Browse door.
-      this.showRepoScreen(current);
-    } catch (e) {
-      toast(cleanErr(e) || "Couldn't open the repository.", "error");
-      this.showRepoScreen(undefined);
+  /** This tab is going to the back: remember where its screen was scrolled
+   *  (detaching loses it) before the shell detaches it. */
+  deactivate(): void {
+    const view = this.viewHost?.firstElementChild as HTMLElement | null;
+    this.awayScroll = view ? this.scrollSnapshot(view) : [];
+    this.awayRailScroll = this.railEl?.scrollTop ?? 0;
+  }
+
+  /**
+   * Is anything running in this tab that closing it would stop watching?
+   * In words ("a push"), for the question the close asks.
+   */
+  runningOperation(): string | undefined {
+    return runningOperation(this.session.id);
+  }
+
+  /**
+   * The tab closed. Its unsent commit message is KEPT (it comes back when this
+   * repository is opened again); everything live is torn down — its shells,
+   * its Monaco surfaces, its graph.
+   */
+  dispose(): void {
+    const root = this.info?.root;
+    if (root) {
+      const draft = this.composerDraftRoot === root ? this.composerDraft.message : "";
+      // The prefilled amend message is the previous commit's, not the user's.
+      const own = draft && draft !== this.composerDraft.prefilled ? draft : "";
+      saveDraftIn(root, "commit", "message", own);
     }
+    try {
+      this.activeMonacoView?.dispose();
+    } catch {
+      /* a dying surface's fault is its own */
+    }
+    this.activeMonacoView = undefined;
+    this.changesPanel?.panel.dispose();
+    this.changesPanel = undefined;
+    this.graph?.dispose();
+    this.graph = undefined;
+    this.terminalDock?.dispose();
+    this.terminalDock = undefined;
+    this.viewCache.clear();
+    this.screenEl?.remove();
+  }
+
+  /** Every kept-alive view goes — the signed-in account changed under all of them. */
+  dropKeptViews(): void {
+    this.viewCache.clear();
   }
 
   /**
@@ -784,12 +934,10 @@ class App {
     // to the previous repo's sections.
     this.navHistory = [];
     this.navPos = -1;
-    // Namespace (and wipe) the SWR cache so the previous repo's branches/status/
-    // graph can never bleed into this one.
+    // Namespace the SWR cache so another repo's branches/status/graph can never
+    // bleed into this one. (Each tab has its own namespace now, kept across
+    // switches — see cache.ts.)
     setCacheScope(info?.root);
-    // A different repo makes every remembered row meaningless — issue #31 in
-    // one repo is not issue #31 in another.
-    clearFocusReturn();
     // Baseline the on-disk state for this repo, so the FIRST window focus can
     // tell "nothing changed" from "no idea" and skip a full refresh it does not
     // need. Fire-and-forget: it only has to land before the user alt-tabs.
@@ -867,7 +1015,10 @@ class App {
     main.append(this.buildNav(), this.buildRailResizer(), stack);
     screen.appendChild(main);
 
-    document.getElementById("root")!.replaceChildren(screen);
+    // Onto the tab stage — this tab's screen, beside (detached from) the
+    // others', never replacing them (issue #32).
+    this.screenEl = screen;
+    this.shell.present(this, screen);
     // The terminal dock is a permanent footer bar — always mounted (after the
     // screen is in the DOM so xterm measures cleanly), starting collapsed or
     // expanded per the saved preference.
@@ -1159,12 +1310,22 @@ class App {
         this.persist();
       },
       onCloseDetails: () => this.closeGraphDiff(),
+      // One dock per tab: its Output log is this repository's commands.
+      root: this.info?.root,
     });
     // Shrinking the window must not leave the dock covering the whole view.
     window.addEventListener("resize", () => this.terminalDock?.handleWindowResize());
-    // The ✨ inline AI actions land in the ASSISTANT SECTION — one AI surface,
-    // full height, instead of a chat tab splitting the window in half from
-    // the bottom dock.
+    this.registerAssistantOpener();
+    return this.terminalDock;
+  }
+
+  /**
+   * The ✨ inline AI actions land in the ASSISTANT SECTION — one AI surface,
+   * full height, instead of a chat tab splitting the window in half from the
+   * bottom dock. Registered by the tab in FRONT (again on every switch), so an
+   * action lands in the tab it was taken in.
+   */
+  private registerAssistantOpener(): void {
     registerAssistantTab((req) => {
       // The TITLE is what the user bubble says — "Analyze #42", not the whole
       // prompt the action builds around the issue body and its comments.
@@ -1178,12 +1339,26 @@ class App {
       if (seedAssistantGoal(req.goal, req.title)) this.routeView("assistant", true);
       else this.routeView("assistant");
     });
-    return this.terminalDock;
   }
 
   /** Persist the UI preferences worth restoring on next launch. */
   private persist(): void {
+    // A background tab has nothing to say about the window's preferences —
+    // the tab in front owns them.
+    if (!this.shell.isActive(this)) return;
+    // Each repository's own last view, for the tab's next launch (#32). Only
+    // the tabs that are open are kept, so the map cannot grow without end.
+    const prev = loadPrefs().tabViews;
+    const tabViews: Record<string, string> = {};
+    const open = new Set(this.shell.openRoots());
+    if (prev && typeof prev === "object") {
+      for (const [root, v] of Object.entries(prev as Record<string, unknown>)) {
+        if (open.has(root) && typeof v === "string") tabViews[root] = v;
+      }
+    }
+    if (this.info) tabViews[this.info.root] = this.currentView;
     savePrefs({
+      tabViews,
       currentView: this.currentView,
       stagingModel: this.stagingModelPref,
       pruneOnFetch: this.pruneOnFetchPref,
@@ -1286,27 +1461,8 @@ class App {
       const left = bar.querySelector<HTMLElement>(".topbar-left");
       const right = bar.querySelector<HTMLElement>(".topbar-right");
       if (!left || !right || !bar.clientWidth) return;
-      const natural = (sel: string): number => bar.querySelector<HTMLElement>(sel)?.scrollWidth ?? 0;
-      const editorLabel = natural(".topbar-openin .openin-label");
-      const searchLabel = natural(".topbar-cmdk-label");
-      // A stopped operation's chip ("Rebasing · 30 conflicts") collapses to its
-      // icon with the editor's name (.is-tight). Its words were left out of
-      // the need, so a tight bar measured as fitting, let everything back, and
-      // the open-in button ended up over the search box ("earch anything…"),
-      // or the chip was cut ("Rebasing · 30 conflic") — in about one render in
-      // seven, whichever observer happened to fire last.
-      const chipLabel = natural(".topbar-opchip:not([hidden]) .topbar-opchip-label");
-      // What the row would need with EVERYTHING shown, whatever state it is in
-      // right now — a collapsed label still reports its full scrollWidth, which
-      // is what stops this flip-flopping between the two states.
-      const need =
-        naturalWidth(left) +
-        naturalWidth(right) +
-        (bar.classList.contains("is-tight") ? editorLabel + chipLabel : 0) +
-        (bar.classList.contains("is-tighter") ? searchLabel : 0);
-      // The room between the bar's OWN padding — on macOS the left one keeps
-      // the traffic lights clear, ~80px that a flat 24px allowance counted as
-      // free — less the gap between the two clusters, and a little slack.
+      // The room between the bar's OWN padding, less the gap between the two
+      // clusters, and a little slack.
       const cs = getComputedStyle(bar);
       const have =
         bar.clientWidth -
@@ -1314,9 +1470,29 @@ class App {
         (parseFloat(cs.paddingRight) || 0) -
         (parseFloat(cs.columnGap) || 0) -
         4;
-      const tight = need > have;
+      // What the row NEEDS in each state, measured IN that state — not the
+      // current state plus whatever its collapsed labels report. A collapse
+      // takes more than the words: the tight rules also drop the gaps and
+      // padding around them (the editor button's, the operation chip's, the
+      // search box's), and adding back only the words' scrollWidth left the
+      // need ~25px short. The bar then read as fitting from its collapsed
+      // state, let everything back, and the open-in button overlapped the
+      // search box — at exactly the widths where the row is on the edge.
+      // (Also why a stopped operation's words count: "Rebasing · 30
+      // conflicts" collapses with the editor's name.) Classes are toggled and
+      // measured within one task, so nothing paints in between, and the
+      // MutationObserver below ignores attributes, so this cannot loop.
+      const needIn = (tight: boolean, tighter: boolean): number => {
+        bar.classList.toggle("is-tight", tight);
+        bar.classList.toggle("is-tighter", tighter);
+        return naturalWidth(left) + naturalWidth(right);
+      };
+      const open = needIn(false, false);
+      const tightNeed = open > have ? needIn(true, false) : open;
+      const tight = open > have;
+      const tighter = tight && tightNeed > have;
       bar.classList.toggle("is-tight", tight);
-      bar.classList.toggle("is-tighter", tight && need - editorLabel - chipLabel > have);
+      bar.classList.toggle("is-tighter", tighter);
     };
     this.fitTopbar = fit;
     const ro = new ResizeObserver(fit);
@@ -1406,6 +1582,16 @@ class App {
    *  specific item in a section view (e.g. opening an issue from the project
    *  board) — keeping navigation inside the app instead of bouncing to GitHub. */
   private routeView(id: string, force = false, target?: SectionTarget): void {
+    // A tab in the BACK never navigates (issue #32). Its screen is detached,
+    // and a route would build a view whose reads are stamped with the tab in
+    // front. The one route that reaches a background tab on purpose is the
+    // landing after an open — `await openPath(); nav("code")` — whose answer
+    // arrives with the opened repository already in front: that means "land
+    // THERE", so it goes to the tab in front. Anything else is dropped.
+    if (!this.shell.isActive(this)) {
+      if (inOpenLanding()) this.shell.routeActive(id, force, target);
+      return;
+    }
     // Where the app actually navigated, for the harness to assert against.
     // Several defects are "it went somewhere else" — a commit reference
     // ejecting you into the graph, a back button landing on a list — and none
@@ -8986,11 +9172,15 @@ class App {
     sidebarToggle.addEventListener("click", () => this.toggleRail());
     this.railToggleEl = sidebarToggle;
 
+    // The brand mark goes HOME. It used to close the repository ("Back to main
+    // menu") — with repositories as tabs (#32) that is the tab's own × and
+    // ⌘W, and a logo that quietly closed a tab, with a push perhaps still
+    // running in it, would be the most surprising click in the app.
     const home = el("button", "topbar-home");
-    home.title = "Back to main menu";
-    home.setAttribute("aria-label", "Back to main menu");
+    home.title = "Home";
+    home.setAttribute("aria-label", "Home");
     home.appendChild(brandMark());
-    home.addEventListener("click", () => void this.backToMenu());
+    home.addEventListener("click", () => this.routeView("dashboard"));
 
     // Back / forward chevrons — the in-app history walkers (⌘[ / ⌘], and the
     // mouse's back/forward buttons). What makes section-hopping feel like a
@@ -9010,13 +9200,9 @@ class App {
     this.navFwdBtn = fwdBtn;
     this.updateNavButtons();
 
-    const repoSwitch = el("button", "topbar-switch");
-    const repoName = el("span", "switch-name");
-    repoName.textContent = info?.name ?? "No repository";
-    this.repoSwitchName = repoName;
-    repoSwitch.append(glyph("folder"), repoName, glyph("chevron-down"));
-    repoSwitch.title = info?.root ?? "Open or clone a repository";
-    repoSwitch.addEventListener("click", () => void this.openRepoMenu(repoSwitch));
+    // No repository chip: the TAB names the repository you are working in, one
+    // row up (issue #32 — "tabs at the top row instead of a single one"), and
+    // the tab row's + is where another is opened.
 
     const branchSwitch = el("button", "topbar-switch topbar-branch");
     const branchName = el("span", "switch-name");
@@ -9042,9 +9228,13 @@ class App {
     const where = el("span", "topbar-where");
     where.append(glyph("globe"), span("", "topbar-where-name"));
     where.hidden = true;
-    const working = span("working in", "topbar-working");
+    // "working in <repo>" — the repository the controls to its right act on.
+    // It was a clause before the old repository chip; the chip is the tab row
+    // now (#32), so the clause carries the name itself, in words.
+    const working = el("span", "topbar-working");
+    working.append(span("working in", "topbar-working-lead"), span(info?.name ?? "", "topbar-working-name"));
     working.hidden = true;
-    left.append(home, sidebarToggle, backBtn, fwdBtn, where, working, repoSwitch);
+    left.append(home, sidebarToggle, backBtn, fwdBtn, where, working);
     let primedStatus = false;
     const syncWhere = (): void => {
       const route =
@@ -9070,6 +9260,7 @@ class App {
           .catch(() => {});
       }
       working.hidden = !route || !info || openName === route.fullName.toLowerCase();
+      working.title = info ? `The controls on this bar act on ${info.root}` : "";
       // `hidden` is an ATTRIBUTE, and wireTopbarFit's MutationObserver
       // deliberately does not watch attributes — so ask for the re-measure.
       this.fitTopbar?.();
@@ -9299,114 +9490,97 @@ class App {
    * clock. The toast stays at the call site — only Sign out has one to say.
    */
   private async authChanged(): Promise<void> {
-    // Every cached GitHub answer was computed for a session that is over.
-    bust();
-    // …and the kept-alive DOM those answers were rendered into, which `bust()`
+    // Every cached GitHub answer was computed for a session that is over — in
+    // EVERY tab (issue #32): the account is the window's, not the tab's.
+    bustEverywhere();
+    // …and the kept-alive DOM those answers were rendered into, which a bust
     // does not touch: a stashed view is re-attached verbatim on return, so
     // Issues and PRs came back showing the previous account's pages — names,
-    // avatars, private titles — on a window that was signed out.
-    this.viewCache.clear();
+    // avatars, private titles — on a window that was signed out. Every tab's
+    // parked views go, or a background tab would come back signed in as
+    // someone who just signed out.
+    this.shell.dropEveryTabsKeptViews();
     await this.syncAccountChip?.();
     void this.refreshNotifBadge();
   }
 
   // ── Host events ──────────────────────────────────────────────────────────────
 
-  private wireHostEvents(): void {
-    host.on("repo:changed", (info) => {
-      // FIRST: a question held open through refreshes (repoEpoch) is about the
-      // repository that was open, and must close with it.
-      repoChanged();
-      // Every pending undo belongs to the repository it was recorded in. A
-      // branch restored into whatever repo happens to be open now would be a
-      // brand-new branch in the wrong place — the one outcome an undo must
-      // never produce — so switching repositories drops them.
-      clearUndo();
-      // A stopped operation belongs to its repository too — and so does the
-      // Changes surface kept across repaints, with whatever merge is in it.
-      this.conflictsCtl = undefined;
-      this.resolveHere.clear();
-      this.changesShowConflicts = undefined;
-      this.changesOpenMerge = undefined;
-      this.changesPanel?.panel.dispose();
-      this.changesPanel = undefined;
-      this.changesDash = undefined;
-      // Closing the repository keeps the shell and lands on Home, rather than
-      // dropping you onto a separate card with no navigation on it.
-      this.showRepoScreen(info);
-    });
-    // Forgetting or trashing a clone changes the welcome screen's recent list
-    // (and the repo switcher, which re-reads on open) — repaint the one surface
-    // that renders it eagerly, and only when it's actually showing.
-    // The Inbox tells the shell what it actually loaded, so the bell badge and
-    // the panel header can't drift apart.
-    window.addEventListener("gs:unread", (e) => {
-      const n = (e as CustomEvent<number>).detail;
-      if (typeof n === "number") this.setNotifBadge(n);
-    });
-    host.on("repo:recentChanged", () => {
-      // Home's "other repositories" card and the Repositories list both read
-      // this, so repaint whichever is showing rather than a bespoke screen.
-      if (this.currentView === "dashboard" || this.currentView === "repositories") {
-        this.routeView(this.currentView, true);
-      }
-    });
-    host.on("app:notice", (n) => {
-      // A warning is a state the user is in — a folder that is not a
-      // repository, a repository this account cannot read — not a failure of
-      // the app, so it is not painted as one. Only `error` is red.
-      toast(n.message, n.kind === "error" ? "error" : "info");
-    });
-    // Something changed on disk (issue #17). Already debounced in main.
-    host.on("repo:filesChanged", (info) => {
-      void this.refreshFromDisk(info?.gitDir ?? true);
-    });
-    // And when the window comes back to the front. This is the reported flow —
-    // edit in another app, switch to GitStudio — and it is also the safety net
-    // for when the watcher could not start at all (a huge tree on Linux can
-    // exhaust inotify), so it deliberately does not check whether one is running.
-    // Coming back to the front does NOT mean anything changed. This used to call
-    // refreshFromDisk(true) unconditionally, which drops the entire cache, throws
-    // away every kept-alive view and force-rebuilds the current one — so a plain
-    // alt-tab away and back cost a full reload of the app and ejected you from
-    // whatever detail page you were reading. Ask what changed first; if the
-    // answer is nothing, do nothing.
-    window.addEventListener("focus", () => {
-      void this.refreshIfDiskMoved();
-    });
-    installUndoKey();
-    // Home's Push/Fetch buttons ride the topbar's own sync flow — same busy
-    // state, same toasts, same refresh — rather than forking a second one out
-    // of raw IPC calls. The event is the only coupling the view needs.
-    window.addEventListener("gs:sync", (e) => {
-      const action = (e as CustomEvent<{ action?: string }>).detail?.action;
-      if (action === "push" || action === "fetch" || action === "pull") void this.doSync(action);
-    });
-    // "Take me to the repository that just became the open one." Used by the
-    // clone flow, which otherwise leaves you on whatever view was current when
-    // you started — a browse page that no longer has a target.
-    window.addEventListener("gs:go", (e) => {
-      const view = (e as CustomEvent<{ view?: string }>).detail?.view;
-      if (view) this.routeView(view);
-    });
-    host.on("menu:command", (msg) => {
-      if (msg.command === "openRepo") void this.openRepo();
-      else if (msg.command === "refresh") void this.refreshAll();
-      else if (msg.command === "closeRepo") void this.backToMenu();
-      else if (msg.command === "toggleTerminal") this.toggleTerminal();
-      else if (msg.command === "cloneRepo") openCloneDialog((root) => void this.openPath(root));
-      else if (msg.command === "toggleSidebar") this.toggleRail();
-      else if (msg.command === "palette") this.openPalette();
-      else if (msg.command === "undo") void undoOrText();
-      else if (msg.command === "redo") redoOrText();
-    });
-    // App updates: the main process polls; the USER decides. Nothing downloads
-    // or installs without a confirm here.
-    host.on("update:available", (u) => void this.promptUpdateAvailable(u));
-    host.on("update:ready", (r) => void this.promptUpdateReady(r));
-    host.on("update:progress", (p) => {
-      if (this.updateProgressEl) this.updateProgressEl.textContent = `Downloading… ${p.percent}%`;
-    });
+  // The shell (TabShell) owns the ONE subscription to each host event and
+  // window event, and hands it to the tab in front through these. A background
+  // tab hears nothing: its screen is not on show, and whatever it would do
+  // with the news it does when it comes back (refreshIfDiskMoved, the held
+  // answers the bridge delivers).
+
+  /** The Inbox tells the shell what it actually loaded, so the bell badge and
+   *  the panel header can't drift apart. */
+  onUnread(n: number): void {
+    this.setNotifBadge(n);
+  }
+
+  /** Forgetting or trashing a clone changes Home's "other repositories" card
+   *  and the Repositories list — repaint whichever is showing. */
+  onRecentChanged(): void {
+    if (this.currentView === "dashboard" || this.currentView === "repositories") {
+      this.routeView(this.currentView, true);
+    }
+  }
+
+  /** Something changed on disk (issue #17). Already debounced in main. */
+  onFilesChanged(gitDir: boolean): void {
+    void this.refreshFromDisk(gitDir);
+  }
+
+  /**
+   * The window came back to the front. This is the reported flow — edit in
+   * another app, switch to GitStudio — and it is also the safety net for when
+   * the watcher could not start at all (a huge tree on Linux can exhaust
+   * inotify), so it deliberately does not check whether one is running.
+   *
+   * Coming back to the front does NOT mean anything changed. This used to call
+   * refreshFromDisk(true) unconditionally, which drops the entire cache, throws
+   * away every kept-alive view and force-rebuilds the current one — so a plain
+   * alt-tab away and back cost a full reload of the app and ejected you from
+   * whatever detail page you were reading. Ask what changed first; if the
+   * answer is nothing, do nothing.
+   */
+  onWindowFocus(): void {
+    void this.refreshIfDiskMoved();
+  }
+
+  /** Home's Push/Fetch buttons ride the topbar's own sync flow — same busy
+   *  state, same toasts, same refresh — rather than forking a second one out
+   *  of raw IPC calls. The event is the only coupling the view needs. */
+  onSyncRequest(action: string | undefined): void {
+    if (action === "push" || action === "fetch" || action === "pull") void this.doSync(action);
+  }
+
+  /** A route asked from outside the App — "take me to the repository that
+   *  just became the open one" (gs:go), or the landing after an open. */
+  route(view: string, force = false, target?: SectionTarget): void {
+    this.routeView(view, force, target);
+  }
+
+  /** The menu commands that belong to the tab in front. */
+  onMenuCommand(command: string): void {
+    if (command === "refresh") void this.refreshAll();
+    else if (command === "toggleTerminal") this.toggleTerminal();
+    else if (command === "toggleSidebar") this.toggleRail();
+    else if (command === "palette") this.openPalette();
+    else if (command === "undo") void undoOrText();
+    else if (command === "redo") redoOrText();
+  }
+
+  /** App updates: the main process polls; the USER decides. Nothing
+   *  downloads or installs without a confirm here. */
+  onUpdateAvailable(u: { version: string; current: string }): void {
+    void this.promptUpdateAvailable(u);
+  }
+  onUpdateReady(r: { version: string; kind: "restart" | "installer" }): void {
+    void this.promptUpdateReady(r);
+  }
+  onUpdateProgress(percent: number): void {
+    if (this.updateProgressEl) this.updateProgressEl.textContent = `Downloading… ${percent}%`;
   }
 
   // ── App updates (confirm → pull → apply) ────────────────────────────────────
@@ -9415,14 +9589,14 @@ class App {
    *  card's status line when Settings is open; harmlessly detached otherwise). */
   private updateProgressEl?: HTMLElement;
   /** Versions the user already saw a prompt for this session. */
-  private readonly updatePrompted = new Set<string>();
+  private static readonly updatePrompted = new Set<string>();
 
   private async promptUpdateAvailable(
     u: { version: string; current: string },
     force = false,
   ): Promise<void> {
-    if (!force && this.updatePrompted.has(u.version)) return;
-    this.updatePrompted.add(u.version);
+    if (!force && App.updatePrompted.has(u.version)) return;
+    App.updatePrompted.add(u.version);
     const mac = navigator.platform.toLowerCase().includes("mac");
     const ok = await confirmDialog({
       title: `GitStudio ${u.version} is available`,
@@ -9468,16 +9642,13 @@ class App {
     if (!res.ok) toast(res.message || "Couldn't apply the update.", "error");
   }
 
-  // ── Repo lifecycle (screen transitions are driven by repo:changed) ──────────
+  // ── Repo lifecycle (tab changes are the shell's, driven by repo:tabs) ───────
 
   private async openRepo(): Promise<void> {
-    await host.invoke("repo:open", undefined);
+    await this.shell.openRepo();
   }
   private async openPath(root: string): Promise<void> {
-    await host.invoke("repo:openPath", root);
-  }
-  private async backToMenu(): Promise<void> {
-    await host.invoke("repo:close", undefined);
+    await this.shell.openPath(root);
   }
 
   /**
@@ -9693,59 +9864,7 @@ class App {
     }
   }
 
-  // ── Top-bar dropdowns (repo switcher + branch switcher) ─────────────────────
-
-  private async openRepoMenu(anchor: HTMLElement): Promise<void> {
-    const recent = await host.invoke("repo:recent", undefined);
-    const items: MenuItem[] = [
-      {
-        label: "Open repository…",
-        icon: "folder-opened",
-        onClick: () => void this.openRepo(),
-      },
-      {
-        label: "Clone repository…",
-        icon: "cloud-download",
-        onClick: () => openCloneDialog((root) => void this.openPath(root)),
-      },
-    ];
-    const others = recent
-      .filter((r) => r.root !== this.currentRepo?.root)
-      .slice(0, 8);
-    if (others.length) {
-      items.push({ separator: true, label: "Recent" });
-      for (const r of others) {
-        items.push({
-          label: r.name,
-          sub: middleTruncate(r.root, 40),
-          icon: "folder",
-          onClick: () => void this.openPath(r.root),
-        });
-      }
-    }
-    items.push({ separator: true });
-    items.push({
-      // The DESTINATION, not a modal listing the same clones a third time.
-      // "move the repos in a dedicated space" was answered by ADDING a space
-      // while two older pickers stayed wired — this menu, which is the most
-      // used gesture for switching repository, did not even offer the new one.
-      label: "All repositories",
-      icon: "repo",
-      title: "Every repository on this machine and on GitHub",
-      onClick: () => this.routeView("repositories"),
-    });
-    items.push({
-      // Was "Back to the main menu" — a name for a destination that does not
-      // exist. It closes the repository, and what it opened was a full-screen
-      // card offering Open… / Clone… / Recent: the same three things this menu
-      // already offers, one row above. One name for one act.
-      label: "Close repository",
-      icon: "close",
-      title: "Close this repository and go back to the picker",
-      onClick: () => void this.backToMenu(),
-    });
-    openMenu(anchor, items);
-  }
+  // ── Top-bar dropdowns (branch switcher; the repository menu is the tab row's +) ──
 
   /** Jump to a commit in the graph, switching to the graph view first if the
    *  graph isn't currently mounted (the branch switcher is available on every
@@ -10486,6 +10605,535 @@ class App {
       toast(cleanErr(e) || "The action failed.", "error");
     }
   }
+
+  /** The repository this tab is for, or undefined for the no-repository screen. */
+  get repo(): RepoInfo | undefined {
+    return this.info;
+  }
+
+  /** The view on screen — a tab opened from this one starts on it. */
+  get currentViewId(): string {
+    return this.currentView;
+  }
+
+  /** Push the dock icon variant this tab's preferences resolve to. */
+  syncDock(): void {
+    this.syncDockIcon();
+  }
+}
+
+// ── The tab shell (issue #32) ───────────────────────────────────────────────
+
+/**
+ * Owns the repository tab row and the stage the tab in front is shown on, one
+ * App per open repository, and the ONE subscription to every window-level
+ * event (keys, focus, host events), which it hands to the tab in front.
+ *
+ * main (RepoStore) is the source of truth for which tabs are open and which
+ * is active; every change arrives as `repo:tabs` and is applied here. A switch
+ * is shown at once and told to main; `activations` keeps the answers to a
+ * burst of Ctrl+Tabs from dragging the screen back through each step.
+ * docs/desktop-repo-tabs.md is the design and the state table.
+ */
+class TabShell {
+  private readonly apps = new Map<string, App>();
+  private noRepo?: App;
+  private active?: App;
+  private state: RepoTabsState = { tabs: [] };
+  private readonly strip: RepoTabStrip;
+  private readonly stage: HTMLElement;
+  private readonly dirty = new Map<string, number>();
+  private sessionSeq = 0;
+  /** Switches told to main and not yet answered. */
+  private activations = 0;
+  /** A switch main asked for while a dialog was open — shown when it closes. */
+  private deferredTo: string | undefined | null = null;
+  private marksTimer = 0;
+  private marksSeq = 0;
+  /** When the marks were last asked for. */
+  private marksAt = 0;
+  /** True while the first `repo:tabs` answer is applied: restored tabs start
+   *  where they were left, not where the (absent) opener was. */
+  private booting = true;
+  private readonly isMac = navigator.platform.toLowerCase().includes("mac");
+  private readonly inElectron = /Electron\//.test(navigator.userAgent);
+
+  constructor() {
+    this.strip = new RepoTabStrip({
+      activate: (root) => this.requestActivate(root),
+      close: (root) => void this.requestClose(root),
+      add: (anchor) => void this.openAddMenu(anchor),
+      move: (root, index) => void shellHost.invoke("repo:moveTab", { root, index }).catch(() => undefined),
+      menu: (root, anchor) => this.openTabMenu(root, anchor),
+    });
+    this.stage = el("div", "tab-stage");
+    // The panel the tab row controls: whatever tab is in front is shown here.
+    this.stage.id = RepoTabStrip.PANEL_ID;
+    this.stage.setAttribute("role", "tabpanel");
+  }
+
+  async start(): Promise<void> {
+    document.getElementById("root")!.replaceChildren(this.strip.el, this.stage);
+    // Before anything can invoke a commit-applying command: the one place that
+    // asks Stash & Retry or Cancel for all of them (bridge.ts). It holds its
+    // question while the tab it was asked in stays in front.
+    installInTheWayAsker(() => currentSession()?.root);
+    // Catch-all error boundary: a rejected promise or thrown render should never
+    // leave the app silently broken — surface it as a toast. BUT skip the benign
+    // Monaco worker noise (it asks the base worker for TS language-service methods
+    // we don't bundle, and ResizeObserver loop warnings) — those are harmless.
+    window.addEventListener("unhandledrejection", (e) => {
+      const msg = cleanErr(e.reason);
+      if (isBenignError(msg)) return;
+      toast(msg || "Something went wrong.", "error");
+    });
+    window.addEventListener("error", (e) => {
+      const msg = e.error ? cleanErr(e.error) : e.message || "";
+      if (isBenignError(msg, e.filename)) return;
+      if (e.error || e.message) toast(msg || "Something went wrong.", "error");
+    });
+    // The theme is the window's: applied once here, and on an OS flip.
+    const prefs = loadPrefs();
+    const mode: ThemeMode =
+      prefs.themeMode === "light" || prefs.themeMode === "dark" || prefs.themeMode === "system"
+        ? prefs.themeMode
+        : "system";
+    applyTheme(resolveTheme(mode));
+    followSystemTheme((osTheme) => {
+      if ((this.active?.themeModePref ?? "system") !== "system") return;
+      applyTheme(osTheme);
+      // Monaco's token classes are global — without this, every highlighted
+      // code block keeps the OLD theme's colors after an OS light/dark flip.
+      refreshHighlightTheme();
+      // Every tab, not just the one in front: a background tab's terminal and
+      // Appearance card would come back in the old theme.
+      for (const app of this.allApps()) app.onSystemThemeFlip();
+      // An "auto" dock icon must follow the OS flip too.
+      this.active?.syncDock();
+    });
+    window.addEventListener("keydown", (e) => this.onKey(e));
+    window.addEventListener("keydown", (e) => this.active?.handleHelpKey(e));
+    window.addEventListener("mouseup", (e) => this.active?.handleMouseUp(e));
+    installUndoKey();
+    this.wireHostEvents();
+    // A tab's spinner follows the operations running in it.
+    onRunningChange(() => {
+      this.renderStrip();
+      // An operation that just ENDED may have changed what the marks say.
+      this.scheduleMarks(600);
+    });
+    let st: RepoTabsState = { tabs: [] };
+    try {
+      st = await shellHost.invoke("repo:tabs", undefined);
+    } catch (e) {
+      toast(cleanErr(e) || "Couldn't open the repository.", "error");
+    }
+    this.apply(st ?? { tabs: [] });
+    this.booting = false;
+    this.active?.syncDock();
+  }
+
+  // ── What the Apps ask of the shell ──
+
+  /** Put a tab's freshly built screen on the stage (only the tab in front builds). */
+  present(app: App, screen: HTMLElement): void {
+    if (app !== this.active) return;
+    for (const child of [...this.stage.children]) if (child !== screen) child.remove();
+    if (screen.parentElement !== this.stage) this.stage.appendChild(screen);
+  }
+
+  isActive(app: App): boolean {
+    return app === this.active;
+  }
+
+  /** A route asked of a background tab by the landing after an open. */
+  routeActive(id: string, force: boolean, target?: SectionTarget): void {
+    this.active?.route(id, force, target);
+  }
+
+  openRoots(): string[] {
+    return this.state.tabs.map((t) => t.root);
+  }
+
+  /** Every tab's kept-alive views — the signed-in account changed. */
+  dropEveryTabsKeptViews(): void {
+    for (const app of this.allApps()) app.dropKeptViews();
+  }
+
+  async openRepo(): Promise<void> {
+    await host.invoke("repo:open", undefined);
+  }
+
+  async openPath(root: string): Promise<void> {
+    await host.invoke("repo:openPath", root);
+  }
+
+  // ── Tabs ──
+
+  private allApps(): App[] {
+    return [...this.apps.values(), ...(this.noRepo ? [this.noRepo] : [])];
+  }
+
+  private activeRoot(): string | undefined {
+    return this.active?.repo?.root;
+  }
+
+  /** main says which tabs are open and which is in front. */
+  private apply(next: RepoTabsState): void {
+    this.state = { tabs: next.tabs ?? [], active: next.active };
+    const open = new Set(this.state.tabs.map((t) => t.root));
+    const want = this.state.active && open.has(this.state.active) ? this.state.active : this.state.tabs[0]?.root;
+    // A switch we asked for is still being answered: its echo — and the
+    // echoes of the Ctrl+Tabs before it — must not drag the screen back.
+    if (this.activations === 0 && (want !== this.activeRoot() || !this.active)) {
+      if (isModalOpen()) this.deferUntilNoModal(want);
+      else this.show(want);
+    }
+    // Tabs that closed go AFTER the switch away from them.
+    for (const [root, app] of [...this.apps]) {
+      if (!open.has(root) && app !== this.active) this.disposeApp(root, app);
+    }
+    this.renderStrip();
+    this.scheduleMarks(0);
+  }
+
+  /** Show `root`'s tab (undefined = the no-repository screen). */
+  private show(root: string | undefined): void {
+    const prev = this.active;
+    const next = root ? this.appFor(root) : this.noRepoApp();
+    if (prev === next) return;
+    // Floating layers and toasts belong to the tab being left.
+    closePeek();
+    closeMenu();
+    dismissLayers();
+    clearToasts();
+    if (prev) {
+      prev.deactivate();
+      prev.screenEl?.remove();
+    }
+    this.active = next;
+    // BEFORE the screen is built: every call it makes is stamped with it. The
+    // answers it was owed while in the back are delivered as microtasks, after
+    // this switch has finished attaching and activating it.
+    setActiveSession(next.session);
+    if (!next.screenEl) {
+      next.activate(true);
+      next.mount();
+    } else {
+      this.stage.replaceChildren(next.screenEl);
+      next.activate(false);
+    }
+    // The no-repository screen is rebuilt when it is needed again.
+    if (prev && prev === this.noRepo && next !== prev) {
+      this.noRepo = undefined;
+      prev.dispose();
+      endSession(prev.session.id);
+      dropUndoScope(prev.session.id);
+      dropFocusTab(prev.session.id);
+    }
+    this.renderStrip();
+  }
+
+  private newSession(root: string | undefined): TabSession {
+    return { id: ++this.sessionSeq, root };
+  }
+
+  private appFor(root: string): App {
+    let app = this.apps.get(root);
+    if (!app) {
+      const info = this.state.tabs.find((t) => t.root === root) ?? { root, name: root.split(/[\\/]/).pop() || root };
+      // A tab opened in this session starts on the view of the tab it was
+      // opened from; one restored at launch starts where it was left.
+      const from = this.booting ? undefined : this.active?.currentViewId;
+      app = new App(this, this.newSession(root), info, from);
+      this.apps.set(root, app);
+    }
+    return app;
+  }
+
+  private noRepoApp(): App {
+    if (!this.noRepo) this.noRepo = new App(this, this.newSession(undefined), undefined);
+    return this.noRepo;
+  }
+
+  private disposeApp(root: string, app: App): void {
+    this.apps.delete(root);
+    this.dirty.delete(root);
+    app.dispose();
+    endSession(app.session.id);
+    dropCacheScope(root);
+    dropUndoScope(app.session.id);
+    dropFocusTab(app.session.id);
+  }
+
+  /** A dialog is open: the switch main asked for waits for it to be answered. */
+  private deferUntilNoModal(root: string | undefined): void {
+    const first = this.deferredTo === null;
+    this.deferredTo = root;
+    if (!first) return;
+    const wait = (): void => {
+      if (isModalOpen()) {
+        window.setTimeout(wait, 120);
+        return;
+      }
+      const to = this.deferredTo;
+      this.deferredTo = null;
+      if (to !== this.activeRoot()) this.show(to ?? undefined);
+      // Tabs closed while waiting go now that nothing shows them.
+      const open = new Set(this.state.tabs.map((t) => t.root));
+      for (const [r, app] of [...this.apps]) if (!open.has(r) && app !== this.active) this.disposeApp(r, app);
+    };
+    window.setTimeout(wait, 120);
+  }
+
+  /** The user asked for a tab. Shown now; main is told. */
+  requestActivate(root: string | undefined): void {
+    if (!root || root === this.activeRoot()) return;
+    if (!this.state.tabs.some((t) => t.root === root)) return;
+    // A dialog is answered before anything else happens — its verb would run
+    // in whichever tab is in front when it is answered.
+    if (isModalOpen()) return;
+    dismissLayers();
+    // A layer that declined to close (a form with unsaved work) keeps you here.
+    if (openLayerCount() > 0) return;
+    this.show(root);
+    this.activations++;
+    void shellHost
+      .invoke("repo:activate", root)
+      .catch(() => false)
+      .finally(() => {
+        this.activations--;
+        // The last answer is in: main's word is final again.
+        if (this.activations === 0) this.apply(this.state);
+      });
+  }
+
+  /** Close a tab — asking first when an operation is still running in it. */
+  async requestClose(root: string | undefined): Promise<void> {
+    if (!root) return;
+    if (isModalOpen()) return;
+    const tab = this.state.tabs.find((t) => t.root === root);
+    if (!tab) return;
+    const running = this.apps.get(root)?.runningOperation();
+    if (running) {
+      const ok = await confirmDialog({
+        title: `Close ${tab.name}?`,
+        message:
+          `${running.charAt(0).toUpperCase()}${running.slice(1)} is still running in ${tab.name}. ` +
+          "Git will finish it, but this tab will not be here to say how it ended.",
+        confirmLabel: "Close tab",
+      });
+      if (!ok) return;
+    }
+    await shellHost.invoke("repo:closeTab", root).catch(() => false);
+  }
+
+  private renderStrip(): void {
+    const items: TabStripItem[] = this.state.tabs.map((t) => {
+      const app = this.apps.get(t.root);
+      return {
+        root: t.root,
+        name: t.name,
+        dirty: this.dirty.get(t.root),
+        running: app ? runningOperation(app.session.id) : undefined,
+      };
+    });
+    this.strip.render(items, this.activeRoot());
+    // The panel is named by the tab in front.
+    const front = this.activeRoot() ? this.strip.tabFor(this.activeRoot()!) : undefined;
+    if (front) this.stage.setAttribute("aria-labelledby", front.id);
+    else this.stage.removeAttribute("aria-labelledby");
+  }
+
+  /** Ask which tabs have uncommitted changes — soon, and once for a burst. */
+  private scheduleMarks(ms: number): void {
+    window.clearTimeout(this.marksTimer);
+    this.marksTimer = window.setTimeout(() => void this.refreshMarks(), ms);
+  }
+
+  private async refreshMarks(): Promise<void> {
+    const roots = this.state.tabs.map((t) => t.root);
+    if (!roots.length) return;
+    const seq = ++this.marksSeq;
+    this.marksAt = Date.now();
+    try {
+      const st = await shellHost.invoke("repo:tabStatus", roots);
+      if (seq !== this.marksSeq || !st) return;
+      for (const r of roots) {
+        const d = st[r]?.dirty;
+        if (typeof d === "number") this.dirty.set(r, d);
+        else this.dirty.delete(r);
+      }
+      this.renderStrip();
+    } catch {
+      /* the marks are a courtesy: a failed read leaves the last known */
+    }
+  }
+
+  // ── Keys and host events: one subscription each, for the tab in front ──
+
+  private onKey(e: KeyboardEvent): void {
+    const act = tabKeyAction(e, this.isMac);
+    if (act) {
+      // ⌘W is the menu's in Electron (Repo ▸ Close Tab) — answering it here
+      // too would close two tabs per press.
+      if (act.kind === "close" && this.inElectron) return;
+      if (isModalOpen()) return;
+      const order = this.openRoots();
+      if (!order.length) return;
+      e.preventDefault();
+      if (act.kind === "next") this.requestActivate(stepTab(order, this.activeRoot(), 1));
+      else if (act.kind === "prev") this.requestActivate(stepTab(order, this.activeRoot(), -1));
+      else if (act.kind === "digit") this.requestActivate(tabAtDigit(order, act.n));
+      else void this.requestClose(this.activeRoot());
+      return;
+    }
+    this.active?.handleAppKey(e);
+  }
+
+  private wireHostEvents(): void {
+    host.on("repo:tabs", (st) => this.apply(st));
+    window.addEventListener("gs:unread", (e) => {
+      const n = (e as CustomEvent<number>).detail;
+      if (typeof n === "number") this.active?.onUnread(n);
+    });
+    host.on("repo:recentChanged", () => this.active?.onRecentChanged());
+    host.on("app:notice", (n) => {
+      // A warning is a state the user is in — a folder that is not a
+      // repository, a repository this account cannot read — not a failure of
+      // the app, so it is not painted as one. Only `error` is red.
+      toast(n.message, n.kind === "error" ? "error" : "info");
+    });
+    host.on("repo:filesChanged", (info) => {
+      // About the tab you LEFT, if it landed after a switch: that tab re-asks
+      // the disk when it comes back, and this one did not change.
+      const about = info?.root;
+      if (!about || about === this.activeRoot()) this.active?.onFilesChanged(info?.gitDir ?? true);
+      this.scheduleMarks(800);
+    });
+    window.addEventListener("focus", () => {
+      this.active?.onWindowFocus();
+      // Your editor may have changed a background tab's files — but a focus
+      // is not news, and the marks cost one `git status` per open tab. At
+      // most once a minute from focus; everything else that changes a count
+      // (a switch, a watcher tick, an operation ending) asks on its own.
+      if (Date.now() - this.marksAt > 60_000) this.scheduleMarks(0);
+    });
+    window.addEventListener("gs:sync", (e) => {
+      this.active?.onSyncRequest((e as CustomEvent<{ action?: string }>).detail?.action);
+    });
+    // "Take me to the repository that just became the open one." Used by the
+    // clone flow, which otherwise leaves you on whatever view was current when
+    // you started — a browse page that no longer has a target.
+    window.addEventListener("gs:go", (e) => {
+      const view = (e as CustomEvent<{ view?: string }>).detail?.view;
+      if (view) this.active?.route(view);
+    });
+    host.on("menu:command", (msg) => {
+      // The tab-row commands are the shell's; the rest belong to the tab in front.
+      if (msg.command === "openRepo") {
+        if (!isModalOpen()) void this.openRepo();
+      } else if (msg.command === "cloneRepo") {
+        if (!isModalOpen()) openCloneDialog((root) => void this.openPath(root));
+      } else if (msg.command === "openPath") {
+        if (msg.root && !isModalOpen()) void this.openPath(msg.root);
+      } else if (msg.command === "closeTab" || msg.command === "closeRepo") {
+        void this.requestClose(this.activeRoot());
+      } else {
+        this.active?.onMenuCommand(msg.command);
+      }
+    });
+    host.on("update:available", (u) => this.active?.onUpdateAvailable(u));
+    host.on("update:ready", (r) => this.active?.onUpdateReady(r));
+    host.on("update:progress", (p) => this.active?.onUpdateProgress(p.percent));
+  }
+
+  // ── Menus ──
+
+  /** The +: open a repository in a new tab, or switch to one you have. */
+  private async openAddMenu(anchor: HTMLElement): Promise<void> {
+    const recent = await host.invoke("repo:recent", undefined).catch(() => []);
+    const open = new Set(this.openRoots());
+    const mod = this.isMac ? "⌘" : "Ctrl+";
+    const items: MenuItem[] = [
+      {
+        label: "Open repository…",
+        icon: "folder-opened",
+        title: `Open a folder as a new tab  (${mod}O)`,
+        onClick: () => void this.openRepo(),
+      },
+      {
+        label: "Clone repository…",
+        icon: "cloud-download",
+        title: `Clone into a new tab  (${this.isMac ? "⌘⇧O" : "Ctrl+Shift+O"})`,
+        onClick: () => openCloneDialog((root) => void this.openPath(root)),
+      },
+    ];
+    // Recent repositories that do not already have a tab: the ones that do
+    // are one row above, and "opening" one only switches to it.
+    const others = recent.filter((r) => !open.has(r.root)).slice(0, 8);
+    if (others.length) {
+      items.push({ separator: true, label: "Recent" });
+      for (const r of others) {
+        items.push({
+          label: r.name,
+          sub: middleTruncate(r.root, 40),
+          icon: "folder",
+          title: `Open ${r.root} in a new tab`,
+          onClick: () => void this.openPath(r.root),
+        });
+      }
+    }
+    items.push({ separator: true });
+    items.push({
+      // The DESTINATION, not a modal listing the same clones a third time.
+      label: "All repositories",
+      icon: "repo",
+      title: "Every repository on this machine and on GitHub",
+      onClick: () => this.active?.route("repositories"),
+    });
+    openMenu(anchor, items);
+  }
+
+  /** Right-click on a tab: the close family, and where the folder is. */
+  private openTabMenu(root: string, anchor: HTMLElement): void {
+    const order = this.openRoots();
+    const i = order.indexOf(root);
+    const others = order.filter((r) => r !== root);
+    const right = order.slice(i + 1);
+    const closeAll = async (roots: string[]): Promise<void> => {
+      for (const r of roots) await this.requestClose(r);
+    };
+    const items: MenuItem[] = [
+      { label: "Close", icon: "close", title: "Close this tab", onClick: () => void this.requestClose(root) },
+      {
+        label: "Close Other Tabs",
+        disabled: !others.length,
+        title: "Close every tab but this one",
+        onClick: () => void closeAll(others),
+      },
+      {
+        label: "Close Tabs to the Right",
+        disabled: !right.length,
+        title: "Close the tabs after this one",
+        onClick: () => void closeAll(right),
+      },
+      { separator: true },
+      {
+        label: "Copy Path",
+        icon: "copy",
+        title: root,
+        onClick: () => void copyText(root).then(() => toast("Copied the repository's path.", "success")),
+      },
+      {
+        label: REVEAL_LABEL,
+        icon: "folder-opened",
+        title: root,
+        onClick: () => void host.invoke("repos:reveal", root).catch(() => undefined),
+      },
+    ];
+    openMenu(anchor, items);
+  }
 }
 
 const PREFS_KEY = "gitstudio.ui.prefs";
@@ -10602,7 +11250,7 @@ function savePrefs(p: Record<string, unknown>): void {
   }
 }
 
-new App().start().catch((err) => {
+new TabShell().start().catch((err) => {
   // eslint-disable-next-line no-console
   console.error("Renderer failed:", err);
 });

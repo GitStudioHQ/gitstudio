@@ -27,33 +27,49 @@ const store = new Map<string, Entry>();
 /** Default freshness window (ms) — within this, `gget` skips the network. */
 const DEFAULT_TTL = 8000;
 
-/** The active repo root. Every cache key is namespaced by it so a fast repo
- *  switch can never resolve repo A's (cached or in-flight) data into repo B's
- *  view — switching repos wipes the cache outright. */
+/**
+ * The active repo root. Every cache key is namespaced by it, so repo A's
+ * (cached or in-flight) data can never resolve into repo B's view.
+ *
+ * With repositories as TABS (issue #32) a scope change is a tab switch, and it
+ * no longer wipes anything: switching back to a tab paints from what that tab
+ * already knew, which is most of why a switch is instant. A request keeps the
+ * scope it STARTED in (its key is built at the call), so an answer that lands
+ * after a switch is stored for its own tab. A closed tab's entries go with
+ * `dropCacheScope`.
+ */
 let scope = "";
 
 /**
- * Bumped by every `bust()` and every scope change. A request that was already
- * in flight when the cache was invalidated must NOT write its (pre-mutation)
+ * Bumped per scope by every `bust()` in it. A request that was already in
+ * flight when the cache was invalidated must NOT write its (pre-mutation)
  * answer back — doing so re-seeded stale data with a FRESH timestamp, so a
  * just-deleted branch reappeared for the whole TTL and looked like the delete
  * had failed. The epoch is captured when the request starts and re-checked
- * before the write.
+ * before the write. Per scope, because a commit in one tab says nothing about
+ * what another tab is reading.
  */
-let epoch = 0;
+const epochs = new Map<string, number>();
+/** Between a key's repository and the rest. NUL is the one character no path
+ *  holds — a space made "/x/my" a prefix of "/x/my repo". */
+const SEP = "\u0000";
+const epochOf = (s: string): number => epochs.get(s) ?? 0;
+const bumpEpoch = (s: string): void => {
+  epochs.set(s, epochOf(s) + 1);
+};
 
-/**
- * Point the cache at a repo. Changing the active repo clears all cached entries
- * (a different repo's branches/status/graph must never bleed through). Call this
- * on every `repo:changed` before re-rendering.
- */
+/** Point the cache at the repo in front. Nothing is dropped — see `scope`. */
 export function setCacheScope(repoRoot: string | undefined): void {
-  const next = repoRoot ?? "";
-  if (next !== scope) {
-    scope = next;
-    store.clear();
-    epoch++;
+  scope = repoRoot ?? "";
+}
+
+/** A tab closed: forget everything cached for it, and void its in-flight writes. */
+export function dropCacheScope(repoRoot: string): void {
+  const prefix = repoRoot + SEP;
+  for (const k of [...store.keys()]) {
+    if (k.startsWith(prefix)) store.delete(k);
   }
+  bumpEpoch(repoRoot);
 }
 
 /**
@@ -66,7 +82,7 @@ export function cacheScope(): string {
 }
 
 function keyFor(channel: string, payload: unknown): string {
-  return scope + " " + channel + "|" + (payload === undefined ? "" : JSON.stringify(payload));
+  return scope + SEP + channel + "|" + (payload === undefined ? "" : JSON.stringify(payload));
 }
 
 /** The cached value if present and (optionally) younger than `maxAgeMs`. */
@@ -109,10 +125,12 @@ export async function gget<C extends IpcChannel>(
     if (e.pending) return e.pending as Promise<IpcResponse<C>>;
     if (Date.now() - e.at <= ttl) return e.value as IpcResponse<C>;
   }
-  const startedEpoch = epoch;
   const startedScope = scope;
-  /** Was the cache invalidated (or the repo switched) while we were waiting? */
-  const superseded = (): boolean => epoch !== startedEpoch || scope !== startedScope;
+  const startedEpoch = epochOf(startedScope);
+  /** Was this repository's cache invalidated while we were waiting? A switch
+   *  to another tab is NOT an invalidation: the answer is still true of the
+   *  repository it was asked about, and is stored under that repository. */
+  const superseded = (): boolean => epochOf(startedScope) !== startedEpoch;
 
   let pending!: Promise<unknown>;
   /**
@@ -164,18 +182,25 @@ export async function gget<C extends IpcChannel>(
 }
 
 /** Force the next `gget`/`peek(maxAge)` for matching channels to refetch.
- *  No prefix → clear everything; a prefix clears the current repo's channels
- *  that start with it (keys are namespaced by repo scope, so match within it). */
+ *  No prefix → everything of the CURRENT repo; a prefix → the current repo's
+ *  channels that start with it (keys are namespaced by repo scope). Other
+ *  tabs' entries are untouched: a commit here changed nothing there. */
 export function bust(prefix?: string): void {
-  epoch++;
-  if (!prefix) {
-    store.clear();
-    return;
-  }
-  const scoped = scope + " " + prefix;
-  for (const k of store.keys()) {
+  bumpEpoch(scope);
+  const scoped = scope + SEP + (prefix ?? "");
+  for (const k of [...store.keys()]) {
     if (k.startsWith(scoped)) store.delete(k);
   }
+}
+
+/**
+ * Drop EVERY tab's entries. For the one change that is true of all of them at
+ * once — the signed-in GitHub account — whose answers every tab has cached.
+ */
+export function bustEverywhere(): void {
+  for (const k of store.keys()) bumpEpoch(k.slice(0, k.indexOf(SEP)));
+  bumpEpoch(scope);
+  store.clear();
 }
 
 /** Seed the cache with a value obtained elsewhere (e.g. an event payload). */

@@ -17,7 +17,8 @@ import { join } from "node:path";
 import type { CloneProgress } from "../shared/ipc";
 import { startClone } from "./cloneBridge";
 import { parseGitHubRemote } from "./githubRemote";
-import type { RepoStore } from "./repoStore";
+import { MAX_TABS, type RepoStore } from "./repoStore";
+import { tabsFullNotice } from "./repoNotice";
 
 /** Where implicit clones live. Fixed and predictable (GitHub Desktop keeps
  *  ~/Documents/GitHub); users who care about placement use Clone… instead. */
@@ -98,7 +99,11 @@ export async function openGitHubRepo(
     const info = await repos.open(hitRoot);
     return info
       ? { ok: true, root: hitRoot, cloned: false }
-      : { ok: false, code: "open-failed", message: `Found a clone at ${hitRoot}, but it couldn't be opened.` };
+      : (tabsFull(repos) ?? {
+          ok: false,
+          code: "open-failed",
+          message: `Found a clone at ${hitRoot}, but it couldn't be opened.`,
+        });
   }
 
   // 2. No clone anywhere — make one in the chosen destination (an explicit
@@ -139,5 +144,24 @@ export async function openGitHubRepo(
   const info = await repos.open(result.root);
   return info
     ? { ok: true, root: result.root, cloned: true }
-    : { ok: false, code: "open-failed", message: `Cloned to ${result.root}, but it couldn't be opened.` };
+    : (tabsFull(repos, result.root) ?? {
+        ok: false,
+        code: "open-failed",
+        message: `Cloned to ${result.root}, but it couldn't be opened.`,
+      });
+}
+
+/**
+ * The one open refusal that is a state, not a fault: every tab is taken
+ * (issue #32). Said as such, and not crash-reported.
+ */
+function tabsFull(repos: RepoStore, cloned?: string): GhOpenResult | undefined {
+  if (!repos.isFull?.()) return undefined;
+  const says = tabsFullNotice(MAX_TABS).message;
+  return {
+    ok: false,
+    code: "open-failed",
+    expected: true,
+    message: cloned ? `Cloned to ${cloned}. ${says}` : says,
+  };
 }

@@ -111,3 +111,32 @@ export function cannotOpenNotice(path: string, probe: Partial<RepoNoticeProbe> =
     message: `${root} is a Git repository, but Git can't read it — its .git folder may be damaged.`,
   };
 }
+
+/**
+ * Every tab is taken (issue #32). An open is refused rather than closing a tab
+ * the user did not choose — a limit you can see beats state that vanishes.
+ */
+export function tabsFullNotice(max: number): RepoNotice {
+  return {
+    kind: "info",
+    message: `GitStudio keeps up to ${max} repositories open. Close a tab to open another.`,
+  };
+}
+
+/**
+ * Tabs the last session had open whose folders are gone now — deleted, moved,
+ * or on a drive that is not mounted. Said ONCE, naming them, and quietly: the
+ * user's disk changed, the app did not fail.
+ */
+export function droppedTabsNotice(roots: readonly string[]): RepoNotice {
+  const names = roots.map((r) => r.split(/[\\/]/).filter(Boolean).pop() || r);
+  const list =
+    names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+  return {
+    kind: "info",
+    message:
+      names.length === 1
+        ? `${list} was not reopened: ${roots[0]} is gone or no longer a Git repository.`
+        : `${names.length} tabs were not reopened because their folders are gone or no longer Git repositories: ${list}.`,
+  };
+}

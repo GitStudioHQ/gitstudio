@@ -693,14 +693,81 @@
     },
   };
 
+  // ── The open tabs (issue #32) ────────────────────────────────────────────
+  //
+  // `?tabs=N` opens the first N of these (default 1: gitstudio alone, as every
+  // scene before tabs expected); `?active=K` puts the K-th (1-based) in front.
+  // ?norepo=1 opens none. Every tab but gitstudio answers `head:get` with its
+  // OWN branch, so a check can see which repository an answer was about.
+  const TAB_FIXTURES = [
+    { root: "/Users/anton/Developer/GitStudioHQ/gitstudio", name: "gitstudio", branch: "main", dirty: 6 },
+    { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev", branch: "site/pricing", dirty: 3 },
+    { root: "/Users/anton/Code/webapp", name: "webapp", branch: "feature/login", dirty: 0 },
+    { root: "/Users/anton/Code/api-server", name: "api-server", branch: "develop", dirty: 12 },
+    { root: "/Users/anton/Code/design-system", name: "design-system", branch: "main", dirty: 0 },
+    { root: "/Users/anton/Code/infrastructure-terraform-modules", name: "infrastructure-terraform-modules", branch: "main", dirty: 1 },
+    { root: "/Users/anton/Code/mobile", name: "mobile", branch: "release/2.4", dirty: 0 },
+    { root: "/Users/anton/Code/docs", name: "docs", branch: "main", dirty: 2 },
+    { root: "/Users/anton/Code/data-pipeline", name: "data-pipeline", branch: "main", dirty: 0 },
+    { root: "/Users/anton/Code/sandbox", name: "sandbox", branch: "main", dirty: 0 },
+  ];
+  const tabCount = params.get("norepo") ? 0 : Math.max(1, Math.min(TAB_FIXTURES.length, Number(params.get("tabs")) || 1));
+  const tabState = {
+    tabs: TAB_FIXTURES.slice(0, tabCount).map((t) => ({ root: t.root, name: t.name })),
+    active: undefined,
+  };
+  tabState.active = tabState.tabs[Math.max(0, (Number(params.get("active")) || 1) - 1)]?.root ?? tabState.tabs[0]?.root;
+  /** Every `repo:tabStatus` request's roots, in order. */
+  const tabStatusCalls = [];
+  window.__gsTabStatusCalls = tabStatusCalls;
+  const tabName = (root) => String(root).split("/").filter(Boolean).pop();
+  const emitTabs = () => window.__gsEmit("repo:tabs", { tabs: tabState.tabs.slice(), active: tabState.active });
+  window.__gsTabs = {
+    state: () => ({ tabs: tabState.tabs.slice(), active: tabState.active }),
+    /** main's openTab: switch to a tab it has, else add one (10 at most). */
+    open(root) {
+      const had = tabState.tabs.find((t) => t.root === root);
+      if (!had && tabState.tabs.length >= 10) {
+        window.__gsEmit("app:notice", { kind: "info", message: "GitStudio keeps up to 10 repositories open. Close a tab to open another." });
+        return undefined;
+      }
+      if (!had) tabState.tabs.push({ root, name: tabName(root) });
+      tabState.active = root;
+      emitTabs();
+      return { root, name: tabName(root) };
+    },
+    activate(root) {
+      if (!tabState.tabs.some((t) => t.root === root)) return false;
+      tabState.active = root;
+      emitTabs();
+      return true;
+    },
+    /** main's closeTab: the right neighbour takes over, else the left. */
+    close(root) {
+      const i = tabState.tabs.findIndex((t) => t.root === root);
+      if (i < 0) return false;
+      tabState.tabs.splice(i, 1);
+      if (tabState.active === root) tabState.active = (tabState.tabs[i] || tabState.tabs[i - 1])?.root;
+      emitTabs();
+      return true;
+    },
+    move(root, index) {
+      const i = tabState.tabs.findIndex((t) => t.root === root);
+      if (i < 0 || typeof index !== "number") return false;
+      const [t] = tabState.tabs.splice(i, 1);
+      tabState.tabs.splice(Math.max(0, Math.min(tabState.tabs.length, index)), 0, t);
+      emitTabs();
+      return true;
+    },
+    fixtures: TAB_FIXTURES,
+  };
+
   const fixtures = {
     // ?norepo=1 → NO repository open, which is the welcome screen: the first
     // thing anyone sees, the only screen shown after closing a repo, and
     // unreachable in this harness until now — which is why nothing had ever
-    // checked it.
-    "repo:current": params.get("norepo")
-      ? undefined
-      : { root: "/Users/anton/Developer/GitStudioHQ/gitstudio", name: "gitstudio" },
+    // checked it. (The tab in front — see __gsTabs; kept for its readers.)
+    "repo:current": tabState.active ? { root: tabState.active, name: tabName(tabState.active) } : undefined,
     "repo:recent": [
       { root: "/Users/anton/Developer/GitStudioHQ/gitstudio", name: "gitstudio" },
       { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" },
@@ -1713,21 +1780,38 @@
       homepage: "https://gistudio.dev",
     }),
     // Opening a repository you already have. Like a clone, main emits
-    // repo:changed from inside the handler, so the shell has rebuilt by the
-    // time the invoke resolves.
+    // repo:tabs from inside the handler, so the shell has switched by the time
+    // the invoke resolves. A repository that already has a tab is switched
+    // to, not opened twice (issue #32).
     "repo:openPath": (root) => {
-      const name = String(root).split("/").filter(Boolean).pop();
-      window.__gsEmit("repo:changed", { root, name });
-      return { root, name, branch: "main" };
+      const info = window.__gsTabs.open(String(root));
+      return info ? { ...info, branch: "main" } : undefined;
     },
-    // The clone the browse page starts. Main emits repo:changed from INSIDE the
+    // The clone the browse page starts. Main emits repo:tabs from INSIDE the
     // handler, before the invoke resolves — mirror that, or the renderer's
     // landing hook is never exercised and a check passes over the bug.
     "ghrepo:open": ({ fullName }) => {
       const name = String(fullName).split("/")[1];
       const root = `/Users/demo/GitStudio/${name}`;
-      window.__gsEmit("repo:changed", { root, name });
+      window.__gsTabs.open(root);
       return { ok: true, root, cloned: true };
+    },
+    // ── Repositories as tabs (issue #32) — main's RepoStore, in miniature ──
+    "repo:tabs": () => window.__gsTabs.state(),
+    "repo:activate": (root) => window.__gsTabs.activate(String(root)),
+    "repo:closeTab": (root) => window.__gsTabs.close(String(root)),
+    "repo:moveTab": (req) => window.__gsTabs.move(req && req.root, req && req.index),
+    // The tab row's ●N. Every fixture tab has its own count, so a check can
+    // tell one tab's mark from another's; ?tabsclean=1 makes them all clean.
+    "repo:tabStatus": (roots) => {
+      tabStatusCalls.push((roots || []).slice());
+      return Object.fromEntries(
+        (roots || []).map((r) => {
+          const t = TAB_FIXTURES.find((x) => x.root === r);
+          const dirty = params.get("tabsclean") ? 0 : t ? t.dirty : 0;
+          return [r, { branch: t ? t.branch : "main", dirty, ahead: 0, behind: 0 }];
+        }),
+      );
     },
     // E4: entity pages — remote tree/file/readme at a ref, branches, paths.
     "ghrepo:commits": ifEmpty(({ ref }) =>
@@ -3329,6 +3413,9 @@
   // `?slow=github:repos:1500,b:300` answers those channels that many ms late,
   // resolved or rejected alike. A view that paints whatever answer arrives last
   // (Repositories' two sides, #32) only shows its race with a slow channel.
+  // `channel@tab:ms` slows that channel for ONE repository tab only (by its
+  // folder name), and `*@tab:ms` every channel of that tab: the race between
+  // tabs (#32) is one tab's answer landing after you have moved to another.
   const slow = new Map(
     (params.get("slow") || "")
       .split(",")
@@ -3340,11 +3427,31 @@
   );
   const late = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  function answerInvoke(channel, payload) {
-    invoked.push({ channel, payload });
+  function answerInvoke(channel, payload, scope) {
+    // `scope` is the preload's third argument (issue #32): which tab asked.
+    // Recorded, so a check can assert what a call was FOR, not only that it
+    // was made.
+    const root = scope && typeof scope === "object" ? scope.root : undefined;
+    invoked.push({ channel, payload, root, scoped: !!scope });
     calls[channel] = (calls[channel] || 0) + 1;
     if (failing.has(channel)) {
       return Promise.reject(new Error(`${channel} failed (harness ?fail=)`));
+    }
+    // Per-repository answers. Every tab fixture but gitstudio has its own
+    // branch, which is what the tab checks read to tell whose answer landed.
+    const tabFixture = root ? TAB_FIXTURES.find((t) => t.root === root) : undefined;
+    if (channel === "head:get" && tabFixture && tabFixture.name !== "gitstudio") {
+      return Promise.resolve({ detached: false, branch: tabFixture.branch, sha: "5a4b3c2" });
+    }
+    if (channel === "repo:current") {
+      const r = scope ? root : tabState.active;
+      return Promise.resolve(r && tabState.tabs.some((t) => t.root === r) ? { root: r, name: tabName(r) } : undefined);
+    }
+    // repo:close closes the tab the call came FROM — never "whichever is in front".
+    if (channel === "repo:close") {
+      const r = scope ? root : tabState.active;
+      if (r) window.__gsTabs.close(r);
+      return Promise.resolve(undefined);
     }
     if (channel in dynamic) {
       try { return Promise.resolve(dynamic[channel](payload)); } catch (e) { return Promise.reject(e); }
@@ -3385,9 +3492,11 @@
   }
 
   window.gitstudio = {
-    invoke(channel, payload) {
-      const answer = answerInvoke(channel, payload);
-      const ms = slow.get(channel);
+    invoke(channel, payload, scope) {
+      const answer = answerInvoke(channel, payload, scope);
+      const tab = scope && scope.root ? tabName(scope.root) : undefined;
+      const ms =
+        (tab && (slow.get(`${channel}@${tab}`) || slow.get(`*@${tab}`))) || slow.get(channel);
       if (!ms) return answer;
       return answer.then(
         (v) => late(ms).then(() => v),

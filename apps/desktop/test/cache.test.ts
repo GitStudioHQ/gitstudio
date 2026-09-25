@@ -51,6 +51,8 @@ interface CacheModule {
   prime: (c: string, p: unknown, v: unknown) => void;
   setCacheScope: (root: string | undefined) => void;
   cacheScope: () => string;
+  dropCacheScope: (root: string) => void;
+  bustEverywhere: () => void;
 }
 let peek!: CacheModule["peek"];
 let gget!: CacheModule["gget"];
@@ -58,10 +60,12 @@ let bust!: CacheModule["bust"];
 let prime!: CacheModule["prime"];
 let setCacheScope!: CacheModule["setCacheScope"];
 let cacheScope!: CacheModule["cacheScope"];
+let dropCacheScope!: CacheModule["dropCacheScope"];
+let bustEverywhere!: CacheModule["bustEverywhere"];
 
 before(async () => {
   const m = (await import("../src/renderer/cache")) as unknown as CacheModule;
-  ({ peek, gget, bust, prime, setCacheScope, cacheScope } = m);
+  ({ peek, gget, bust, prime, setCacheScope, cacheScope, dropCacheScope, bustEverywhere } = m);
 });
 
 /** Let the microtask queue drain so `.then` handlers on settled calls run. */
@@ -72,7 +76,8 @@ const quiet = <T>(p: Promise<T>): Promise<T | undefined> => p.catch(() => undefi
 
 beforeEach(() => {
   calls = [];
-  bust();
+  // Every tab's entries, not only the current one's: a bust is per tab now.
+  bustEverywhere();
   setCacheScope(undefined);
 });
 
@@ -101,13 +106,88 @@ test("the payload is part of the key", async () => {
   assert.equal(calls.length, 2, "different payloads are different entries");
 });
 
-test("a repo switch drops everything, in-flight answers included", async () => {
+test("a repo switch never lets repo A's in-flight answer land in repo B", async () => {
   setCacheScope("/repos/a");
   const p = gget("branches:list", undefined);
   setCacheScope("/repos/b");
   calls[0].resolve(["main-of-a"]);
   await p;
   assert.equal(peek("branches:list", undefined), undefined, "repo A's answer must not land in repo B");
+});
+
+// ── Repositories as tabs (issue #32) ────────────────────────────────────────
+
+test("a tab switch KEEPS each tab's entries — switching back paints from what it knew", async () => {
+  setCacheScope("/repos/a");
+  const pa = gget("branches:list", undefined);
+  calls[0].resolve(["main-of-a"]);
+  await pa;
+  setCacheScope("/repos/b");
+  assert.equal(peek("branches:list", undefined), undefined, "B never sees A's");
+  const pb = gget("branches:list", undefined);
+  calls[1].resolve(["main-of-b"]);
+  await pb;
+  setCacheScope("/repos/a");
+  assert.deepEqual(peek("branches:list", undefined), ["main-of-a"], "A's is still there");
+  assert.equal(calls.length, 2, "…and cost no request");
+});
+
+test("an answer that lands after a switch is stored for the tab that ASKED", async () => {
+  setCacheScope("/repos/a");
+  const p = gget("status", undefined);
+  setCacheScope("/repos/b");
+  calls[0].resolve(["a-file"]);
+  await p;
+  setCacheScope("/repos/a");
+  assert.deepEqual(peek("status", undefined), ["a-file"], "kept, under A — it is still true of A");
+});
+
+test("a bust in one tab leaves the other tabs' entries, and their in-flight writes, alone", async () => {
+  setCacheScope("/repos/a");
+  prime("branches:list", undefined, ["a"]);
+  setCacheScope("/repos/b");
+  prime("branches:list", undefined, ["b"]);
+  const inflight = gget("status", undefined);
+  // A commit in tab A…
+  setCacheScope("/repos/a");
+  bust();
+  assert.equal(peek("branches:list", undefined), undefined, "A's own entries go");
+  setCacheScope("/repos/b");
+  assert.deepEqual(peek("branches:list", undefined), ["b"], "B's stay");
+  calls[0].resolve(["b-status"]);
+  await inflight;
+  assert.deepEqual(peek("status", undefined), ["b-status"], "…and B's in-flight answer is still stored");
+});
+
+test("closing a tab forgets its entries, and voids what it had in flight", async () => {
+  setCacheScope("/repos/gone");
+  prime("branches:list", undefined, ["x"]);
+  const p = gget("status", undefined);
+  dropCacheScope("/repos/gone");
+  calls[0].resolve(["late"]);
+  await p;
+  assert.equal(peek("branches:list", undefined), undefined);
+  assert.equal(peek("status", undefined), undefined, "a closed tab's late answer writes nothing");
+});
+
+test("a root that is a PREFIX of another is a different tab", () => {
+  setCacheScope("/x/my");
+  prime("status", undefined, ["mine"]);
+  setCacheScope("/x/my repo");
+  prime("status", undefined, ["spaced"]);
+  dropCacheScope("/x/my");
+  assert.deepEqual(peek("status", undefined), ["spaced"], "dropping /x/my must not drop /x/my repo");
+});
+
+test("signing out drops EVERY tab's entries", () => {
+  setCacheScope("/repos/a");
+  prime("issue:list", undefined, ["a"]);
+  setCacheScope("/repos/b");
+  prime("issue:list", undefined, ["b"]);
+  bustEverywhere();
+  assert.equal(peek("issue:list", undefined), undefined);
+  setCacheScope("/repos/a");
+  assert.equal(peek("issue:list", undefined), undefined, "the tab in the back too");
 });
 
 // ── the in-flight/bust interaction — where the real bug lived ────────────────

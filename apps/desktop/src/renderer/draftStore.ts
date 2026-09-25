@@ -33,7 +33,44 @@ interface Stored {
  * `id` the thing being edited — a number, a tag, or "new".
  */
 export function draftKey(kind: string, id: string | number): string {
-  return `${PREFIX}${cacheScope()}|${kind}|${id}`;
+  return draftKeyIn(cacheScope(), kind, id);
+}
+
+/**
+ * The same identity in a NAMED repository, rather than the tab in front. A
+ * repository tab closing keeps its unsent commit message (issue #32) — and a
+ * background tab can be closed from its ×, while another is in front.
+ */
+export function draftKeyIn(root: string, kind: string, id: string | number): string {
+  return `${PREFIX}${root}|${kind}|${id}`;
+}
+
+/** Save a draft for a named repository (see draftKeyIn). Empty clears it. */
+export function saveDraftIn(root: string, kind: string, id: string | number, text: string): void {
+  const key = draftKeyIn(root, kind, id);
+  try {
+    if (!text.trim()) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, JSON.stringify({ text, at: Date.now() } satisfies Stored));
+  } catch {
+    /* storage full or refused — the draft is a convenience, never a promise */
+  }
+}
+
+/** Take a named repository's draft back out — read AND cleared, so it is
+ *  restored exactly once, into the composer that now holds it. */
+export function takeDraftIn(root: string, kind: string, id: string | number): string | undefined {
+  const key = draftKeyIn(root, kind, id);
+  const v = read(key);
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* nothing to do */
+  }
+  if (!v || Date.now() - v.at > MAX_AGE_MS) return undefined;
+  return v.text || undefined;
 }
 
 function read(key: string): Stored | undefined {

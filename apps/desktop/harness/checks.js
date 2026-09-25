@@ -109,6 +109,57 @@
     },
   });
 
+  // ── Repositories as tabs (issue #32) ────────────────────────────────────
+  const GS_ROOT = "/Users/anton/Developer/GitStudioHQ/gitstudio";
+  const GS_DEV_ROOT = "/Users/anton/Developer/GitStudioHQ/gistudio.dev";
+  /** The root of the tab in front, read off the tab row. */
+  const activeTabRoot = () => $(".repo-tab.is-active")?.dataset.root;
+  const tabEl = (root) => $$(".repo-tab").find((t) => t.dataset.root === root);
+  /** A key press where a person's would land: the focused element (memory:
+   *  harness-synthetic-events), else the body. */
+  const press = (key, mods = {}) => {
+    const target = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body;
+    const code = /^[0-9]$/.test(key) ? `Digit${key}` : undefined;
+    target.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key,
+        code,
+        metaKey: !!mods.meta,
+        ctrlKey: !!mods.ctrl,
+        altKey: !!mods.alt,
+        shiftKey: !!mods.shift,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  };
+  /**
+   * With a question up, try every way there is to another tab: main putting
+   * another tab in front (a menu's Open Recent, a restore), Ctrl+Tab, and a
+   * click on the other tab. None may take the question away or answer it — the
+   * verb it would run belongs to the tab it was asked in.
+   */
+  const tryToLeaveUnderAQuestion = async (c) => {
+    window.__gsTabs.open(GS_DEV_ROOT); // main: "gistudio.dev is in front now"
+    await settle(400);
+    press("Tab", { ctrl: true });
+    await settle(250);
+    tabEl(GS_DEV_ROOT)?.click();
+    await settle(400);
+    c.ok(!!$(".modal-card"), "the question stays until it is answered");
+    c.eq(activeTabRoot(), GS_ROOT, "…and the screen stays on the tab it was asked in");
+  };
+  /** Cancel the question; the switch main asked for happens after it. */
+  const cancelAndLand = async (c) => {
+    const card = $(".modal-card");
+    const cancel = card && [...card.querySelectorAll("button")].find((b) => /^cancel$/i.test(text(b)));
+    if (cancel) cancel.click();
+    else document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await settle(700);
+    c.ok(!$(".modal-card"), "Cancel closes it");
+    c.eq(activeTabRoot(), GS_DEV_ROOT, "and then the tab main put in front comes to the front");
+  };
+
   window.__GS_CHECKS = {
     // ── the count badge reports what is on screen ────────────────────────────
     "count-badge-filtered": (f) => {
@@ -2837,7 +2888,7 @@
     },
 
     // ── repositories are an object you manage, not a preference ─────────────
-    "repo-manager-opens-from-the-repo-chip": (f) => {
+    "repo-manager-opens-from-the-tab-row": (f) => {
       const c = check(f);
       // The clone list used to live 480px down the Settings page, with Open,
       // Reveal in Finder and Delete from disk on each row. Choosing a
@@ -2847,7 +2898,7 @@
       // that listed the same clones a second time. Choosing a repository is the
       // most frequent thing anyone does in a Git client; it deserves a place,
       // not a dialog.
-      c.eq(text(".nav-item.active"), "Repositories", "the chip leads to Repositories");
+      c.eq(text(".nav-item.active"), "Repositories", "the tab row's + leads to Repositories");
       c.ok($$(".sec-row").length >= 3, `which lists the repositories (${$$(".sec-row").length})`);
       c.ok($$(".repo-folder-head").length >= 1, "grouped by the folder they live in");
       const tools = $$("button").map((b) => (b.textContent || "").trim());
@@ -3343,7 +3394,10 @@
     // which page was showing, and arrow keys did nothing.
     "detail-subtabs-are-a-tablist": (f) => {
       const c = check(f);
-      const bar = $("[role=tablist]");
+      // The DETAIL page's sub-tabs, in the view — not the first tablist in the
+      // document, which is the repository tab row now (#32) and is checked by
+      // its own case (the-tab-row-is-a-tablist).
+      const bar = $(".view-host [role=tablist]");
       c.ok(!!bar, "the sub-tab bar is a tablist");
       if (!bar) return;
       c.ok(!!bar.getAttribute("aria-label"), "the tablist is named");
@@ -4901,10 +4955,17 @@
       $$(".rb-inprogress button").find((b) => /^Abort/.test(text(b)))?.click();
       await settle(500);
       c.ok(!!$(".modal-card"), "precondition: the question is up");
-      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
-      await settle(900);
-      c.ok(!$(".modal-card"), "switching repository takes the question with it");
-      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 0, "and nothing was aborted");
+      await tryToLeaveUnderAQuestion(c);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 0, "nothing was aborted by the attempt");
+      // Answering it now aborts the rebase of the tab it was ASKED in — the
+      // call says so (issue #32) — never the one main has put in front.
+      $$(".modal-card button").find((b) => /^Abort/.test(text(b)))?.click();
+      await settle(700);
+      const aborts = window.__GS_INVOKED.filter((r) => r.channel === "op:abort");
+      c.eq(aborts.length, 1, "the answer aborts once");
+      c.eq(aborts[0] && aborts[0].root, GS_ROOT, "…in the repository the question was about");
+      await settle(400);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "and only then does the other tab come to the front");
     },
 
     /**
@@ -6962,9 +7023,9 @@
      */
     "a-running-clone-can-always-be-left": async (f) => {
       const c = check(f);
-      // The welcome screen is gone; cloning with no repository open starts
-      // from the repository chip, which is on screen in every state now.
-      const chip = $(".topbar-switch");
+      // The welcome screen is gone; cloning starts from the tab row's +, which
+      // is on screen in every state — no repository open included (#32).
+      const chip = $(".repo-tabs-add");
       if (chip) {
         chip.click();
         await settle(400);
@@ -13849,7 +13910,8 @@
       c.ok(!!$$(".btn-primary", card)[0], "…an ordinary one");
     },
 
-    /** A switch to another repository takes the question with it. */
+    /** A question is answered in the tab it was asked in: no switch to another
+     *  repository happens under it (issue #32 — it used to be closed by one). */
     "a-reset-question-does-not-follow-you-to-another-repository": async (f) => {
       const c = check(f);
       await settle(1000);
@@ -13858,10 +13920,10 @@
       $$(".dropdown .dropdown-item").find((i) => text(i) === "Reset to 'origin/main'…")?.click();
       await settle(300);
       c.ok(!!$(".modal-card"), "precondition: the question is up");
-      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
-      await settle(900);
-      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      await tryToLeaveUnderAQuestion(c);
       c.eq(window.__gsResets.resets.length, 0, "…and resets nothing");
+      await cancelAndLand(c);
+      c.eq(window.__gsResets.resets.length, 0, "a cancelled question resets nothing either");
     },
     /**
      * Settings ▸ Editors: every editor found is listed; unticking hides it
@@ -14936,13 +14998,16 @@
       await settle(900);
       const where = $(".topbar-where");
       const browsed = text(".topbar-where-name");
-      const working = text(".topbar-switch .switch-name");
+      // The repository chip became the tab row (#32); the clause names the
+      // repository itself now, and the tab in front says the same.
+      const working = text(".topbar-working-name");
       c.eq(browsed, "libgit2/libgit2", "the bar names the repository on screen");
       c.eq(working, "gitstudio", "…and still names the one its controls act on");
+      c.eq(text(".repo-tab.is-active .repo-tab-name"), working, "…which is the tab in front");
       c.ok(browsed !== working, "the two are different repositories, said differently");
       c.ok($(".topbar-working")?.offsetParent !== null, "the clause joining them is visible");
       const a = where?.getBoundingClientRect();
-      const b = $(".topbar-switch")?.getBoundingClientRect();
+      const b = $(".topbar-working")?.getBoundingClientRect();
       c.ok(!!a && !!b && a.right <= b.left + 1, "what you are reading sits left of what you are working in");
       $('.nav-item[data-view="changes"]')?.click();
       await settle(900);
@@ -15484,10 +15549,10 @@
       const routes = window.__GS_ROUTES || [];
       c.eq((routes[routes.length - 1] || {}).view, "changes", "…and the user is taken back to where the merge is finished");
     },
-    /** Holding the question against a refresh must not hold it across a
-     *  REPOSITORY switch: `sync:pull` acts on whatever repository is open, so
-     *  an answer given after the switch would pull a repository the question
-     *  was never about. */
+    /** A question held against a refresh must never be answered in ANOTHER
+     *  repository. With tabs (#32) no switch happens under a question — it
+     *  waits for the answer — and the answer's call names the tab it was
+     *  asked in, so it can never pull a repository it was not about. */
     "the-pull-question-does-not-follow-you-to-another-repository": async (f) => {
       const c = check(f);
       await settle(900);
@@ -15496,10 +15561,10 @@
       main.click();
       await settle(200);
       c.ok(!!$(".modal-card"), "precondition: the question is up");
-      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
-      await settle(900);
-      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      await tryToLeaveUnderAQuestion(c);
       c.eq(window.__gsPulledWith, null, "…and pulls nothing");
+      await cancelAndLand(c);
+      c.eq(window.__gsPulledWith, null, "a cancelled question pulls nothing either");
     },
     /** GitHub answers what it can and names the rest; the reads keep what came
      *  back. `?partial=1` names one project and one card it could not return —
@@ -15716,8 +15781,9 @@
       c.ok(!!$$("#toast-stack .toast-success").find((t) => /Pulled/.test(text(t))), `and it pulled (${text("#toast-stack")})`);
       c.ok(!$(".toast-error"), "nothing red");
     },
-    /** Switching repository answers the question with Cancel: a Stash & Retry
-     *  there would stash and run in a repository nobody asked about. */
+    /** A Stash & Retry answered in another repository would stash and run
+     *  where nobody asked. With tabs (#32) the switch waits for the question,
+     *  and Cancel runs nothing anywhere. */
     "the-stash-question-does-not-follow-you-to-another-repository": async (f) => {
       const c = check(f);
       await settle(900);
@@ -15726,9 +15792,8 @@
       main.click();
       await settle(200);
       c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "precondition: the question is up");
-      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
-      await settle(900);
-      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      await tryToLeaveUnderAQuestion(c);
+      await cancelAndLand(c);
       const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
       c.eq(pulls.length, 1, "…and nothing is stashed or pulled");
       const failed = $$("#toast-stack .toast").filter((t) => /fail|couldn/i.test(text(t) || ""));

@@ -153,7 +153,7 @@ const CASES = [
   ["every-ansi-block-can-be-read", "actions~open9100~click:.gh-job-log"],
   ["every-ansi-block-can-be-read", "actions~open9100~click:.gh-job-log", { theme: "light" }],
   ["switch-account-starts-a-sign-in", "settings"],
-  ["a-half-filled-dialog-survives-a-file-save", "changes~click:.topbar-switch~text:Clone"],
+  ["a-half-filled-dialog-survives-a-file-save", "changes~click:.repo-tabs-add~text:Clone"],
   ["a-nested-control-keeps-its-own-enter", "projects"],
   ["the-gate-closes-as-well-as-it-opens", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["stopping-a-run-closes-what-it-was-asking", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
@@ -358,7 +358,7 @@ const CASES = [
     { extra: "staging=checkboxes" },
   ],
   ["staging-does-not-blank-the-list", "changes~text:app.css"],
-  ["repo-manager-opens-from-the-repo-chip", "code~click:.topbar-switch~text:All%20repositories"],
+  ["repo-manager-opens-from-the-tab-row", "code~click:.repo-tabs-add~text:All%20repositories"],
   ["settings-holds-preferences-not-repositories", "code~text:Settings"],
   ["landing-answers-what-you-arrive-with", "changes"],
   // …and the real first run, where nothing has chosen a view yet.

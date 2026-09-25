@@ -10,7 +10,7 @@
 // bridges the two — it pages via IPC and feeds the element host messages — so
 // the component itself needs no desktop-specific code.
 
-import type { GitStudioBridge, GraphRefFilter, InTheWayInfo } from "../shared/ipc";
+import type { GitStudioBridge, GraphRefFilter, InTheWayInfo, InvokeScope } from "../shared/ipc";
 import type { GraphInitMessage, GraphAppendMessage } from "@gitstudio/host-bridge/graphProtocol";
 import { nextGraphMessage } from "../shared/graphAdapterCore";
 
@@ -72,8 +72,12 @@ export const STASH_AND_RETRY: Readonly<Record<string, (payload: unknown, root: s
  * (something the stash could not cover) goes to the door as it is, to be said.
  */
 async function invokeAsking(channel: string, payload: unknown): Promise<unknown> {
-  const invoke = raw.invoke as (c: string, p: unknown) => Promise<unknown>;
-  const first = await invoke(channel, payload);
+  // The tab this call belongs to is decided NOW, at the call, and both of its
+  // round trips go to that tab's repository — the question in between is a
+  // modal, and no tab switch happens under a modal.
+  const owner = activeSession;
+  const send = (p: unknown): Promise<unknown> => owned(channel, owner, sendRaw(channel, p, owner));
+  const first = await send(payload);
   const way = (first as { inTheWay?: InTheWayInfo } | undefined)?.inTheWay;
   const retry = Object.hasOwn(STASH_AND_RETRY, channel) ? STASH_AND_RETRY[channel] : undefined;
   if (!way || !askInTheWay || !retry) return first;
@@ -82,15 +86,237 @@ async function invokeAsking(channel: string, payload: unknown): Promise<unknown>
   if (!(await askInTheWay(way, (first as { message?: string }).message))) {
     return { ok: false, changed: false, expected: true, cancelled: true };
   }
-  const second = await invoke(channel, again);
+  const second = await send(again);
   const note = (second as { stashNote?: string } | undefined)?.stashNote;
   if (note) sayStashNote?.(note);
   return second;
 }
 
+// ── Which tab a call belongs to (issue #32) ────────────────────────────────
+//
+// Every open repository is a tab with its own App, and only one is in front.
+// A call is stamped with the tab that was in front when it was MADE — main
+// runs it against that tab's repository (the preload's third argument) — and
+// its answer is delivered only while that tab is in front again. An answer for
+// a tab in the background waits at the door; one for a tab that has been
+// closed is dropped. So a slow read started in A can never paint into B, a
+// push that finishes in A says so when you are back in A, and a flow with two
+// steps can never make its second call against B.
+// docs/desktop-repo-tabs.md has the whole table.
+
+/** One tab's lifetime. A repository closed and opened again is a NEW session. */
+export interface TabSession {
+  readonly id: number;
+  readonly root: string | undefined;
+}
+
+let activeSession: TabSession | undefined;
+/** Answers that landed while their tab was in the background, in order. */
+const waiting = new Map<number, Array<() => void>>();
+/** Sessions whose tab is gone — their answers are dropped, never delivered. */
+const ended = new Set<number>();
+
+/**
+ * The calls that CHANGE the tabs. Their answers are never held: they are about
+ * the tab row, not about the tab that asked, and holding "you opened X" until
+ * you come back to the tab you opened it FROM would land you nowhere.
+ */
+const TAB_CHANNELS = new Set([
+  "repo:open",
+  "repo:openPath",
+  "repo:close",
+  "repo:tabs",
+  "repo:activate",
+  "repo:closeTab",
+  "repo:moveTab",
+  "ghrepo:open",
+  "clone:start",
+]);
+/** Of those, the ones that OPEN a repository — see inOpenLanding. */
+const OPENING = new Set(["repo:open", "repo:openPath", "ghrepo:open", "clone:start"]);
+
+/**
+ * The operations a tab shows as running (its spinner) and a close asks about,
+ * with the words the question uses. Reads are not here: a slow read is not
+ * something closing a tab could lose.
+ */
+const OPERATIONS: Readonly<Record<string, string>> = {
+  "sync:fetch": "a fetch",
+  "sync:pull": "a pull",
+  "sync:push": "a push",
+  "branch:push": "a push",
+  "branch:publish": "a publish",
+  "branch:pullFf": "a pull",
+  "branch:merge": "a merge",
+  "branch:rebase": "a rebase",
+  "branch:resetToUpstream": "a reset",
+  "branch:deleteRemote": "a remote branch deletion",
+  "rebase:apply": "a rebase",
+  "rebase:continue": "a rebase",
+  "rebase:skip": "a rebase",
+  "op:continue": "a continue",
+  "op:skip": "a skip",
+  "op:abort": "an abort",
+  commit: "a commit",
+  "commit:action": "a git operation",
+  "commit:drop": "a commit drop",
+  "pr:checkout": "a pull request checkout",
+  "stash:apply": "a stash apply",
+  "stash:pop": "a stash pop",
+  "stash:save": "a stash",
+  "tag:push": "a tag push",
+  "worktree:add": "a worktree add",
+  "ai:agentRun": "an Assistant run",
+};
+
+/** Operation calls still in flight, per session → their channels. */
+const running = new Map<number, string[]>();
+const runningListeners = new Set<() => void>();
+
+function sendRaw(channel: string, payload: unknown, owner: TabSession | undefined): Promise<unknown> {
+  const invoke = raw.invoke as (c: string, p: unknown, s?: InvokeScope) => Promise<unknown>;
+  const scope: InvokeScope = { root: owner?.root };
+  const p = invoke(channel, payload, scope);
+  const op = owner && Object.hasOwn(OPERATIONS, channel);
+  if (op && owner) {
+    const list = running.get(owner.id) ?? [];
+    list.push(channel);
+    running.set(owner.id, list);
+    notifyRunning();
+    const done = (): void => {
+      const now = running.get(owner.id);
+      if (!now) return;
+      const i = now.indexOf(channel);
+      if (i >= 0) now.splice(i, 1);
+      if (!now.length) running.delete(owner.id);
+      notifyRunning();
+    };
+    p.then(done, done);
+  }
+  return p;
+}
+
+function notifyRunning(): void {
+  for (const fn of runningListeners) {
+    try {
+      fn();
+    } catch {
+      /* a listener's fault is its own */
+    }
+  }
+}
+
+/** Opening landed: true only while the continuations of an OPEN's answer run. */
+let landing = false;
+
+/** Deliver `p`'s answer to its tab — now, later, or never. */
+function owned<T>(channel: string, owner: TabSession | undefined, p: Promise<T>): Promise<T> {
+  if (TAB_CHANNELS.has(channel)) {
+    if (!OPENING.has(channel)) return p;
+    // Mark the continuations of an open's answer — they run as microtasks
+    // before the next task — so a route they ask of the tab they were started
+    // from goes to the tab that was just opened (see inOpenLanding).
+    return p.then(
+      (v) => {
+        landing = true;
+        setTimeout(() => (landing = false), 0);
+        return v;
+      },
+      (e) => {
+        throw e;
+      },
+    );
+  }
+  if (!owner) return p;
+  return new Promise<T>((resolve, reject) => {
+    const deliver = (fn: () => void): void => {
+      if (ended.has(owner.id)) return; // the tab is gone: nobody to tell
+      if (activeSession?.id === owner.id) {
+        fn();
+        return;
+      }
+      let q = waiting.get(owner.id);
+      if (!q) {
+        q = [];
+        waiting.set(owner.id, q);
+      }
+      q.push(fn);
+    };
+    p.then(
+      (v) => deliver(() => resolve(v)),
+      (e) => deliver(() => reject(e)),
+    );
+  });
+}
+
+/**
+ * The tab in front changed. Called by the tab shell AFTER that tab's screen is
+ * attached, so every held answer it now delivers lands in the screen it was
+ * asked for, in the order the answers arrived.
+ */
+export function setActiveSession(s: TabSession | undefined): void {
+  activeSession = s;
+  if (!s) return;
+  const q = waiting.get(s.id);
+  if (!q) return;
+  waiting.delete(s.id);
+  for (const fn of q) fn();
+}
+
+/** The tab in front, or undefined when no repository is open. */
+export function currentSession(): TabSession | undefined {
+  return activeSession;
+}
+
+/** A tab closed: drop every answer still owed to it, now and later. */
+export function endSession(id: number): void {
+  ended.add(id);
+  waiting.delete(id);
+  if (running.delete(id)) notifyRunning();
+}
+
+/** How many answers are waiting for a background tab (for its checks). */
+export function heldFor(id: number): number {
+  return waiting.get(id)?.length ?? 0;
+}
+
+/** The operation still running in a tab, in words ("a push"), or undefined. */
+export function runningOperation(id: number): string | undefined {
+  const list = running.get(id);
+  return list && list.length ? OPERATIONS[list[0]] : undefined;
+}
+
+/** Subscribe to operations starting and ending in any tab (the spinners). */
+export function onRunningChange(fn: () => void): () => void {
+  runningListeners.add(fn);
+  return () => runningListeners.delete(fn);
+}
+
+/**
+ * Is this the answer to an OPEN landing right now?
+ *
+ * `await openPath(root); nav("code")` means "land in the repository I just
+ * opened" — and by the time the answer arrives that repository is the tab in
+ * front, while `nav` belongs to the tab the open was started from. The tab
+ * shell sends such a route to the tab in front; any other route asked of a
+ * background tab is dropped.
+ */
+export function inOpenLanding(): boolean {
+  return landing;
+}
+
 export const host: GitStudioBridge = {
   invoke: invokeAsking as GitStudioBridge["invoke"],
   on: (event, listener) => raw.on(event, listener),
+};
+
+/**
+ * Calls that belong to no tab — the tab row's own questions (which tabs have
+ * changes). Never held, and stamped "the tab in front" by main's default.
+ */
+export const shellHost: Pick<GitStudioBridge, "invoke"> = {
+  invoke: ((channel: string, payload: unknown) =>
+    (raw.invoke as (c: string, p: unknown) => Promise<unknown>)(channel, payload)) as GitStudioBridge["invoke"],
 };
 
 /**

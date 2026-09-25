@@ -308,21 +308,30 @@ function mustSucceed(result: { stdout: string; stderr?: string; code?: number },
 }
 
 
-export class GitBridge {
+/**
+ * One repository's graph accumulator.
+ *
+ * ONE PER OPEN TAB (issue #32). It used to be fields on the bridge, which held
+ * because only one repository was ever open: with tabs, paging tab A after tab
+ * B had loaded would find B's commits in the accumulator, treat A's `skip: 200`
+ * as a fresh load, and hand back page 1 of a history the renderer believed it
+ * was 200 rows into.
+ */
+class GraphState {
   /** sha → record, accumulated as the graph pages stream in (for details). */
-  private records = new Map<string, CommitRecord>();
+  records = new Map<string, CommitRecord>();
   /** Every loaded input commit, so a page append relayouts the full DAG. */
-  private loaded: GraphInputCommit[] = [];
-  private refsBySha = new Map<string, GitRef[]>();
+  loaded: GraphInputCommit[] = [];
+  refsBySha = new Map<string, GitRef[]>();
   /** Every ref of the last loadRefs, for the picker and for pruning. */
-  private refs: GitRef[] = [];
+  refs: GitRef[] = [];
   /** False when that listing threw or found nothing — then `refs` is not the
    *  repository's list, and must not prune a stored selection (see below). */
-  private refsListed = false;
-  private refList: GraphRefEntry[] = [];
+  refsListed = false;
+  refList: GraphRefEntry[] = [];
   /** refListSignature(refList), computed once per listing — a page request
    *  compares against it (see graphPage). */
-  private refListSig = refListSignature([]);
+  refListSig = refListSignature([]);
   /**
    * The branch filter the accumulated pages were walked with (issue #30) —
    * pruned against the refs that existed at load time, null for everything.
@@ -330,17 +339,40 @@ export class GitBridge {
    * different history. Presets stay symbolic here ("Current branch" is
    * CURRENT_BRANCH), so a request is compared with what was asked for.
    */
-  private refFilter: GraphRefFilter = null;
+  refFilter: GraphRefFilter = null;
   /** What that filter walks for the accumulated pages — resolved against the
    *  fresh load's listing, HEAD only when detached (filterWalk). Every page,
    *  the chips and graph:reaches read this one value. */
-  private walk: FilterWalk = { refs: null, head: true };
-  private currentHeadSha = "";
-  private loadedRoot: string | undefined;
+  walk: FilterWalk = { refs: null, head: true };
+  currentHeadSha = "";
+  /** False until the first fresh load, so a page before it starts one. */
+  primed = false;
   /** Serializes graph:load so two pages never interleave in the accumulator. */
-  private graphChain: Promise<unknown> = Promise.resolve();
+  chain: Promise<unknown> = Promise.resolve();
   /** Bumped by a fresh load so queued stale pages discard themselves. */
-  private graphGen = 0;
+  gen = 0;
+}
+
+export class GitBridge {
+  /** Each open repository's graph accumulator, by root. See GraphState. */
+  private readonly graphs = new Map<string, GraphState>();
+
+  /** The accumulator for `root`, made on first use. Forgotten repositories'
+   *  states are few and small (a closed tab's is dropped by forgetGraph). */
+  private graphState(root: string): GraphState {
+    let g = this.graphs.get(root);
+    if (!g) {
+      g = new GraphState();
+      this.graphs.set(root, g);
+    }
+    return g;
+  }
+
+  /** Drop a closed tab's accumulator — its pages are the largest thing held here. */
+  forgetGraph(root: string): void {
+    this.graphs.delete(root);
+    this.mutationChains.delete(root);
+  }
   /**
    * JetBrains merge windows still open, by repo root + path, with the stop
    * (op.episode) they were opened for. Their LOCAL / REMOTE / BASE temp files
@@ -389,16 +421,9 @@ export class GitBridge {
    *     arrived discard itself instead of appending pre-reload commits.
    */
   async graphLoad(opts: GraphLoadRequest): Promise<GraphPage> {
-    const run = this.graphChain.then(() => this.graphLoadInner(opts));
-    // Never let one failure poison the chain for every later page.
-    this.graphChain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
-  }
-
-  private async graphLoadInner(opts: GraphLoadRequest): Promise<GraphPage> {
+    // The repository is fixed HERE, when the request arrives, and each one
+    // has its own chain and accumulator (GraphState) — two tabs paging at once
+    // never wait on, or write into, each other.
     const ctx = this.ctx();
     if (!ctx) {
       const none = refListSignature([]);
@@ -413,32 +438,42 @@ export class GitBridge {
         refListSig: none,
       };
     }
+    const g = this.graphState(ctx.root);
+    const run = g.chain.then(() => this.graphLoadInner(ctx, g, opts));
+    // Never let one failure poison the chain for every later page.
+    g.chain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
 
+  private async graphLoadInner(ctx: GitContext, g: GraphState, opts: GraphLoadRequest): Promise<GraphPage> {
     const maxCount = opts.maxCount ?? PAGE_SIZE;
     const skip = opts.skip ?? 0;
     // A request that SETS the filter (issue #30) is fresh whatever its skip
     // says: every page accumulated so far was walked under the old filter, and
     // appending a page of one history to another is the splice this chain
     // exists to prevent.
-    const setsFilter = opts.refs !== undefined && !sameRefFilter(opts.refs, this.refFilter);
-    const fresh = skip === 0 || ctx.root !== this.loadedRoot || setsFilter;
+    const setsFilter = opts.refs !== undefined && !sameRefFilter(opts.refs, g.refFilter);
+    const fresh = skip === 0 || !g.primed || setsFilter;
 
     if (fresh) {
       // Supersede anything queued behind us: those pages describe the history we
       // are about to throw away.
-      this.graphGen++;
-      this.records.clear();
-      this.loaded = [];
-      this.loadedRoot = ctx.root;
-      await this.loadRefs(ctx);
+      g.gen++;
+      g.records.clear();
+      g.loaded = [];
+      g.primed = true;
+      await this.loadRefs(ctx, g);
       // The filter: the request's, else the one remembered for this repo —
       // pruned against the refs that exist now (a remembered branch can be
       // gone), and remembered back when that changed anything.
       const wanted = opts.refs !== undefined ? opts.refs : (this.refFilters?.get(ctx.root) ?? null);
-      if (this.refsListed) {
-        this.refFilter = normalizeRefFilter(wanted, this.refs);
-        if (opts.refs !== undefined || !sameRefFilter(this.refFilter, wanted)) {
-          await this.refFilters?.set(ctx.root, this.refFilter);
+      if (g.refsListed) {
+        g.refFilter = normalizeRefFilter(wanted, g.refs);
+        if (opts.refs !== undefined || !sameRefFilter(g.refFilter, wanted)) {
+          await this.refFilters?.set(ctx.root, g.refFilter);
         }
       } else {
         // The listing threw or found nothing, so there is no list to prune
@@ -447,62 +482,62 @@ export class GitBridge {
         // selection is applied as it is (the walk's --ignore-missing takes a
         // gone ref) and the store keeps its value for a load that can prune.
         // Only a request that SETS the filter is remembered, as asked.
-        this.refFilter = wanted && wanted.length > 0 ? wanted : null;
+        g.refFilter = wanted && wanted.length > 0 ? wanted : null;
         if (opts.refs !== undefined) {
-          await this.refFilters?.set(ctx.root, this.refFilter);
+          await this.refFilters?.set(ctx.root, g.refFilter);
         }
       }
       // Resolved against the listing just read: a preset means the branch
       // HEAD is on NOW, and an attached HEAD is walked only when ticked.
-      this.walk = filterWalk(this.refFilter, this.refList, this.refs);
+      g.walk = filterWalk(g.refFilter, g.refList, g.refs);
     }
-    const gen = this.graphGen;
+    const gen = g.gen;
 
-    const page = await this.readPage(ctx, fresh ? 0 : skip, maxCount);
-    if (gen !== this.graphGen) {
+    const page = await this.readPage(ctx, g, fresh ? 0 : skip, maxCount);
+    if (gen !== g.gen) {
       // A fresh load landed while we were streaming. Appending now would splice
       // the old history into the new one.
       return {
         rows: [],
-        head: this.currentHeadSha,
+        head: g.currentHeadSha,
         totalColumns: 1,
         hasMore: false,
-        nextSkip: this.loaded.length,
-        ...this.filterFields(),
-        ...this.refListFor(opts),
+        nextSkip: g.loaded.length,
+        ...this.filterFields(g),
+        ...this.refListFor(g, opts),
       };
     }
-    const before = fresh ? 0 : this.loaded.length;
-    this.loaded = fresh ? page : this.loaded.concat(page);
+    const before = fresh ? 0 : g.loaded.length;
+    g.loaded = fresh ? page : g.loaded.concat(page);
     const hasMore = page.length === maxCount;
 
-    const layout = computeGraphLayout(this.loaded, { colorCount: 8 });
+    const layout = computeGraphLayout(g.loaded, { colorCount: 8 });
     const allRows = buildWireRows({
       rows: layout.rows,
-      records: this.records,
+      records: g.records,
       // Chips follow the filter: a ref the graph is not walked from draws no
       // chip — the current branch included, unless it is ticked.
       // commit:details keeps reading the full map — it describes the commit.
-      refsBySha: chipRefsUnderFilter(this.refsBySha, this.walk.refs),
+      refsBySha: chipRefsUnderFilter(g.refsBySha, g.walk.refs),
     });
 
     return {
       rows: allRows.slice(before),
-      head: this.currentHeadSha,
+      head: g.currentHeadSha,
       totalColumns: layout.totalColumns,
       hasMore,
-      nextSkip: this.loaded.length,
-      ...this.filterFields(),
-      ...this.refListFor(opts),
+      nextSkip: g.loaded.length,
+      ...this.filterFields(g),
+      ...this.refListFor(g, opts),
     };
   }
 
   /** What a page says about the filter: the full names its rows were walked
    *  from (the picker ticks these) and the preset they stand for, if any. */
-  private filterFields(): Pick<GraphPage, "refFilter" | "refPreset"> {
+  private filterFields(g: GraphState): Pick<GraphPage, "refFilter" | "refPreset"> {
     return {
-      refFilter: this.walk.refs,
-      ...(this.walk.preset ? { refPreset: this.walk.preset } : {}),
+      refFilter: g.walk.refs,
+      ...(g.walk.preset ? { refPreset: g.walk.preset } : {}),
     };
   }
 
@@ -514,10 +549,10 @@ export class GitBridge {
    * handed the graph element), so a reloaded renderer — which holds none —
    * always gets one, whatever this process sent before.
    */
-  private refListFor(opts: GraphLoadRequest): Pick<GraphPage, "refList" | "refListSig"> {
-    return opts.refListSig === this.refListSig
-      ? { refListSig: this.refListSig }
-      : { refList: this.refList, refListSig: this.refListSig };
+  private refListFor(g: GraphState, opts: GraphLoadRequest): Pick<GraphPage, "refList" | "refListSig"> {
+    return opts.refListSig === g.refListSig
+      ? { refListSig: g.refListSig }
+      : { refList: g.refList, refListSig: g.refListSig };
   }
 
   /**
@@ -527,8 +562,8 @@ export class GitBridge {
    */
   async graphReaches(sha: string): Promise<{ reached: boolean }> {
     const ctx = this.ctx();
-    const walk = this.walk;
-    if (!ctx || !walk.refs) {
+    const walk = ctx ? this.graphState(ctx.root).walk : undefined;
+    if (!ctx || !walk?.refs) {
       return { reached: true };
     }
     return { reached: await ctx.log.walkReaches(sha, walk.refs, { head: walk.head }) };
@@ -536,6 +571,7 @@ export class GitBridge {
 
   private async readPage(
     ctx: GitContext,
+    g: GraphState,
     skip: number,
     maxCount: number,
   ): Promise<GraphInputCommit[]> {
@@ -544,51 +580,51 @@ export class GitBridge {
       revRange: "--all",
       // The branch filter: every page of one load walks the same ticked set,
       // so skip-based paging stays consistent across the load.
-      refs: this.walk.refs ?? undefined,
-      head: this.walk.head,
+      refs: g.walk.refs ?? undefined,
+      head: g.walk.head,
       maxCount,
       skip,
     })) {
-      this.records.set(commit.sha, commit);
+      g.records.set(commit.sha, commit);
       page.push({ sha: commit.sha, parents: commit.parents });
     }
     return page;
   }
 
-  private async loadRefs(ctx: GitContext): Promise<void> {
-    this.refsBySha.clear();
-    this.currentHeadSha = "";
+  private async loadRefs(ctx: GitContext, g: GraphState): Promise<void> {
+    g.refsBySha.clear();
+    g.currentHeadSha = "";
     let refs: GitRef[] = [];
     try {
       refs = await ctx.refs.listRefs();
     } catch {
       refs = [];
     }
-    this.refs = refs;
-    this.refsListed = refs.length > 0;
-    this.refList = refEntries(refs);
-    this.refListSig = refListSignature(this.refList);
+    g.refs = refs;
+    g.refsListed = refs.length > 0;
+    g.refList = refEntries(refs);
+    g.refListSig = refListSignature(g.refList);
     for (const ref of refs) {
       if (ref.type === "stash") {
         continue;
       }
-      const list = this.refsBySha.get(ref.sha);
+      const list = g.refsBySha.get(ref.sha);
       if (list) {
         list.push(ref);
       } else {
-        this.refsBySha.set(ref.sha, [ref]);
+        g.refsBySha.set(ref.sha, [ref]);
       }
       if (ref.type === "head" && ref.isCurrent) {
-        this.currentHeadSha = ref.sha;
+        g.currentHeadSha = ref.sha;
       }
     }
-    if (!this.currentHeadSha) {
+    if (!g.currentHeadSha) {
       // No branch is current: HEAD is detached (or unborn). It still sits on
       // a commit, and that is what a page's `head` means — the graph's "you
       // are here" and its header's "Detached HEAD at …". The extension had
       // the same gap (its header read "no commits yet" over the history).
       try {
-        this.currentHeadSha = await ctx.refs.headCommit();
+        g.currentHeadSha = await ctx.refs.headCommit();
       } catch {
         /* no HEAD to point at */
       }
@@ -700,7 +736,8 @@ export class GitBridge {
     if (!ctx) {
       return undefined;
     }
-    let record = this.records.get(sha);
+    const g = this.graphState(ctx.root);
+    let record = g.records.get(sha);
     if (!record) {
       for await (const c of ctx.log.streamCommits({ revRange: sha, maxCount: 1 })) {
         record = c;
@@ -721,8 +758,8 @@ export class GitBridge {
     // menu resolves them through the graph's ref list. A copy of that mapping
     // kept refs/remotes/origin/HEAD, which the graph draws no chip for and the
     // list leaves out — an "origin/HEAD" chip whose menu could never act.
-    const refs: WireRef[] = wireRefs(this.refsBySha.get(sha));
-    const hasRemote = [...this.refsBySha.values()].some((list) =>
+    const refs: WireRef[] = wireRefs(g.refsBySha.get(sha));
+    const hasRemote = [...g.refsBySha.values()].some((list) =>
       list.some((r) => r.type === "remote"),
     );
     return {
@@ -2664,7 +2701,13 @@ export class GitBridge {
    * `index.lock`, or leave a half-applied state. Every mutation runs through this
    * single chain; reads stay concurrent.
    */
-  private mutationChain: Promise<unknown> = Promise.resolve();
+  /**
+   * One chain PER REPOSITORY (issue #32). The index a mutation protects belongs
+   * to one repository, and with tabs a single chain meant a thirty-second push
+   * in one tab held every commit, stage and checkout in every other tab behind
+   * it, for no reason git has.
+   */
+  private readonly mutationChains = new Map<string, Promise<unknown>>();
   private serialize<T>(op: () => Promise<T>): Promise<T> {
     // Every mutation can move git's state, so the cached conflict state goes —
     // both when it starts and when it ends (a read that raced the mutation
@@ -2677,13 +2720,18 @@ export class GitBridge {
         this.invalidateConflictState();
       }
     };
-    const result = this.mutationChain.then(run, run);
+    const key = this.ctx()?.root ?? "";
+    const chain = this.mutationChains.get(key) ?? Promise.resolve();
+    const result = chain.then(run, run);
     // Keep the chain alive whatever this op does; swallow on the chain copy so a
     // failed mutation can't surface as an unhandled rejection (the caller still
     // receives the real outcome via `result`).
-    this.mutationChain = result.then(
-      () => undefined,
-      () => undefined,
+    this.mutationChains.set(
+      key,
+      result.then(
+        () => undefined,
+        () => undefined,
+      ),
     );
     return result;
   }
