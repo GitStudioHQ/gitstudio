@@ -78,6 +78,9 @@ const PAGE_SIZE = 500;
 const FIRST_PAGE_SIZE = 150;
 /** Debounce repo-change rebuilds (a rebase touches many refs in a burst). */
 const REFRESH_DEBOUNCE_MS = 300;
+/** How long a selection of several must hold before its summary asks git
+ *  what applies (issue #32) — see pushCommitsSummary. */
+const SUMMARY_SETTLE_MS = 120;
 
 /**
  * The singleton commit-graph panel: one editor-area WebviewPanel that streams
@@ -993,6 +996,10 @@ export class CommitGraphPanel {
     const seq = ++this.summarySeq;
     const active = this.repos.getActive();
     if (!active || shas.length < 2) return;
+    // Settle first: Shift+Down held over twenty rows is twenty selections, and
+    // each would walk the branch three ways. Only the one it stops on is asked.
+    await new Promise((r) => setTimeout(r, SUMMARY_SETTLE_MS));
+    if (seq !== this.summarySeq) return;
     const items = await multiCommitMenuItemsFor(active.ctx, shas);
     if (seq !== this.summarySeq) return;
     this.post({ type: "commitsSummary", shas, items });

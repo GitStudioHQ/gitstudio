@@ -10484,11 +10484,17 @@ class App {
     wrap.append(panel);
     this.detailsEl?.replaceChildren(wrap);
     this.setGraphDetailsVisible(true);
-    void host
-      .invoke("commits:menu", { shas })
-      .catch(() => ({ apply: false, drop: false, squash: false }))
+    // Settle first: Shift+Down held over twenty rows is twenty selections, and
+    // each would walk the branch three ways. Only the one it stops on is asked
+    // (the extension's summary waits the same).
+    void new Promise((r) => setTimeout(r, 120))
+      .then(() =>
+        seq !== this.selectionSeq
+          ? undefined
+          : host.invoke("commits:menu", { shas }).catch(() => ({ apply: false, drop: false, squash: false })),
+      )
       .then((can) => {
-        if (seq !== this.selectionSeq || !panel.selection) return;
+        if (!can || seq !== this.selectionSeq || !panel.selection) return;
         panel.selection = {
           ...panel.selection,
           actions: manyMenuRows(shas.length, can).map((r) => ({ id: r.action, label: r.label, icon: r.icon, danger: r.danger })),
