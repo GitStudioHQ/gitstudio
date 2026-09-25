@@ -74,6 +74,13 @@ export interface InputSpec extends BaseSpec {
   validate?: DialogValidator;
   /** Render a textarea (PR bodies, commit messages). */
   multiline?: boolean;
+  /**
+   * Select the pre-filled `value` on open, so typing replaces it (the
+   * default). False puts the caret at the start instead — for a message to
+   * EDIT, like Squash Commits' combined messages (issue #32), where the first
+   * keystroke must not throw the whole text away.
+   */
+  selectOnOpen?: boolean;
   /** Mask the field (API keys). The value still crosses postMessage once, on
    *  confirm — the same trip a quick-input password field makes. */
   secret?: boolean;
