@@ -54,8 +54,32 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   own** now asks: switch to your local branch as it is, or reset it to
   'origin/feature' first. When your local branch has nothing of its own, the
   checkout just switches to it, as before. (#32)
+- **Set the action of several commits at once in an interactive rebase.** In
+  the Interactive Rebase workspace, click a commit, then Shift-click or
+  Cmd/Ctrl-click others — or use **Shift+Up/Down**, **Home**/**End** and
+  **Cmd/Ctrl+A**; **Escape** goes back to one — and choose **Pick**,
+  **Reword**, **Squash**, **Fixup**, **Edit** or **Drop** in the **Set
+  action** bar at the top, or press git's own letter for it: **P R S F E D**.
+  **Alt+Up/Down** and dragging move the whole selection. Squash or Fixup
+  across a selection folds the commits into the oldest of them, which stays
+  as it is — git can't fold the oldest commit you keep into nothing, and the
+  plan says so instead of letting the rebase fail. The editor that opens for
+  a `git rebase -i` run in a terminal does the same, in git's own order,
+  oldest at the top. (#32)
 
 ### Fixed
+- **The editor for a `git rebase -i` run in a terminal listed no commits.**
+  It opened saying "No commits to rebase." over a todo full of them. It shows
+  the plan now, and a long one scrolls with **Start rebase** kept on screen.
+- **Interactive Rebase: a dragged commit lands where the line says.** A drag
+  could put the commit one row away from the line drawn for it — dragging up
+  in the workspace, dragging down in the terminal rebase's editor. The line is
+  drawn on the side you are pointing at, and the commit lands there. Also in
+  the workspace: the
+  reason a squash was refused is shown just above **Start Rebase**, on screen
+  however long the plan is; the commit the keyboard moves to is never hidden
+  under the header or the footer; and **Reset plan** no longer has a grey
+  button face.
 - **Undo after moving a branch back onto pushed history.** Undoing an
   operation that left the branch on an older, already-pushed commit — a reset
   to it, or dropping your last local commit — offered to revert an empty range

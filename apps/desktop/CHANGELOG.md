@@ -51,8 +51,33 @@ but they share the same engine, so most Git behaviour lands in both at once.
   in Changes, where the conflicts dashboard offers Continue, Skip and Abort —
   Abort puts the branch back as it was. **Undo** on the toast, or ⌘Z,
   restores the branch. The same drop as the VS Code extension's. (#32)
+- **Set the action of several commits at once in an interactive rebase.** In
+  the Rebase view, click a commit, then Shift-click or ⌘-click (Ctrl-click)
+  others — or use **Shift+↑/↓**, **Home**/**End** and **⌘A**; **Escape** goes
+  back to one — and choose **Pick**, **Reword**, **Squash**, **Fixup**,
+  **Edit** or **Drop** in the **Set action** bar at the top, or press git's
+  own letter for it: **P R S F E D**. **Alt+↑/↓** and dragging move the whole
+  selection. Squash or Fixup across a selection folds the commits into the
+  oldest of them, which stays as it is — git can't fold the oldest commit you
+  keep into nothing, and the plan says so instead of letting the rebase fail.
+  The same as the VS Code extension's. (#32)
+- **The branch switcher works from the keyboard.** Type to filter; **↑**/**↓**
+  move through the branches, and letters you type on one keep filtering;
+  **→** or **Enter** opens a branch's actions — **Checkout** first, then
+  Fetch, Push, Pull, Merge, Rebase, Rename, Reset to its remote and the rest
+  of the Branches list's menu for it — with the keyboard on the first;
+  **←** or **Escape** goes back to the branch, and **Escape** again closes.
+  Remote branches and tags have their actions too, and the arrow at the end
+  of every row opens them with the mouse; a plain click still switches.
+  Holding Enter never runs a second action. As in IntelliJ's branch popup and
+  the VS Code extension's branch menu. (#32)
 
 ### Fixed
+
+- **Rebase: the reason a squash was refused could be off screen.** It was
+  written under the list, below the fold of any plan long enough to scroll;
+  it is shown just above **Start rebase** now. The commit the keyboard moves
+  to is never hidden under the header or the footer either. (#32)
 
 - **Repositories: switching to *On GitHub* and straight back showed GitHub's
   list under *On this machine*.** The GitHub request kept running after the
