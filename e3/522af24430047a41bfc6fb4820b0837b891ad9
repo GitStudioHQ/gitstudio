@@ -1,0 +1,68 @@
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_d8f5bbf18df59b 2639
+  s_26f5e669d3043c::t_6b0da95fa24f00 2659
+  s_26f5e669d3043c::t_5862a3e0730978 4732,6090
+  s_26f5e669d3043c::t_87cfacbc8af39d 2645
+  s_26f5e669d3043c::t_676a61abb74e7a 13,131-132,184,700-704,2356-2357,2400,2621-2638,2640-2644,2646-2658,2660,4031-4035,4226-4227,4729-4731,4733-4738,6085-6089,6091
+apps/extension/package.json
+  s_26f5e669d3043c::t_aa75781f98eb80 281-285
+  s_26f5e669d3043c::t_69d2dea56a7b74 280
+  s_26f5e669d3043c::t_6cc83bc0eb8cb8 1649-1651
+  s_26f5e669d3043c::t_227d39e4ceca04 1648
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_54fa2db7c2f1c5 320-324
+  s_26f5e669d3043c::t_b245dfa945a39f 5
+  s_26f5e669d3043c::t_9d9b4879eeef2d 182-184
+apps/extension/test/repoPickerWebview.test.ts
+  s_26f5e669d3043c::t_5d377eec0cfd02 1-33,35-171
+  s_26f5e669d3043c::t_75407b4e19b900 34
+apps/extension/test/vscodeRepoStub.cjs
+  s_26f5e669d3043c::t_606d33f749fba6 1-184
+apps/extension/src/git/repoPicker.ts
+  s_26f5e669d3043c::t_57adf590d8391e 1-43,45-89,91-133,135-199
+  s_26f5e669d3043c::t_7e7b0c0168a83e 134
+  s_26f5e669d3043c::t_5395a4db6c673d 44,90
+apps/extension/test/changesViewPage.ts
+  s_26f5e669d3043c::t_e6ab1495a71d0b 1-236
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_179561d5b7e571 98
+  s_26f5e669d3043c::t_adb9a9b6e11292 14-22,57-79,88-97,107-113,122-124,126-127,132,219-221,225-226,236-260,266-268,271-273,392-397,405-406,418-421,424-426,434-459,473-505,529-534
+  s_26f5e669d3043c::t_a5ce1285761188 269-270
+  s_26f5e669d3043c::t_133a8e6bb84361 80-82
+  s_26f5e669d3043c::t_79c105e47df9c7 506
+  s_26f5e669d3043c::t_d5a8c11da59ec7 535
+  s_26f5e669d3043c::t_44374011de9fdf 549
+  s_26f5e669d3043c::t_0013364ff32118 261-262,264-265
+  s_26f5e669d3043c::t_6015783f49a774 507
+  s_26f5e669d3043c::t_dfe82f331a01cf 263
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_fc258bfef8c6b0 7-26
+apps/extension/test/repoPicker.test.ts
+  s_26f5e669d3043c::t_434b92be5e2ac9 55-61
+  s_26f5e669d3043c::t_b134230e6e15d5 54
+  s_26f5e669d3043c::t_49dcf13829877c 70-87
+  s_26f5e669d3043c::t_05fb74c03090d0 271,273-278,280-290,292-294,296-302
+  s_26f5e669d3043c::t_98a7cfa5d0409d 88
+  s_26f5e669d3043c::t_8baa71a3ccd0a5 89
+  s_26f5e669d3043c::t_f7a63c07355382 1-52,62-69,90-261,272,295,303-418
+  s_26f5e669d3043c::t_ddd1d8de591b2c 262-270
+  s_26f5e669d3043c::t_bfd9c1e1500fd1 53,279,291
+apps/extension/src/blame/blameController.ts
+  s_26f5e669d3043c::t_adb9a9b6e11292 766-771
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e3522af24430047a41bfc6fb4820b0837b891ad9",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
