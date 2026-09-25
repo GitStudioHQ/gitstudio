@@ -11,6 +11,32 @@ but they share the same engine, so most Git behaviour lands in both at once.
 
 ## [Unreleased]
 
+### Added
+
+- **Open a repository in your editor from its row.** Every repository under
+  *On this machine* has the editor button beside **Open** — the same one the
+  top bar and Home carry, the primary half opening your default editor, its
+  chevron listing every editor you have. A repository you have also carries it
+  on the *On GitHub* side, for your copy. The **…** menu no longer repeats
+  the editors; with no editor found, no button is shown and the menu still
+  says where to add one. (#32)
+- **The number of changes per repository.** Each repository on *On this
+  machine* says what is waiting in it — **●** changed files, **↑** commits to
+  push, **↓** commits to pull — the same way Home's card says it, with the
+  same explanations on hover. A repository with nothing waiting shows nothing,
+  and one that can't be read shows nothing rather than a zero. The counts fill
+  in after the list appears and nothing on the row moves when they do; a
+  folded folder's repositories are checked when you open it. (#32)
+- **Reset a branch to its remote.** A local branch that tracks a remote branch
+  now has **Reset to 'origin/feature'…** in its menu: it fetches the branch,
+  tells you exactly what goes — how many commits are only on your branch, by
+  name, and for the branch you're on how many files of uncommitted changes
+  (untracked files are kept) — and then makes the branch match the remote.
+  When nothing would be lost it says so; when the branch already matches
+  there's nothing to ask. A branch checked out in another worktree is refused,
+  naming the worktree. It can be undone straight afterwards, commits and
+  uncommitted changes alike. (#32)
+
 ### Fixed
 
 - **Repositories: switching to *On GitHub* and straight back showed GitHub's

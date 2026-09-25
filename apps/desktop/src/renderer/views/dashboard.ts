@@ -23,6 +23,7 @@
 import { el, span, glyph, emptyState } from "../ui";
 import { host } from "../bridge";
 import { openInButton } from "../openIn";
+import { repoState } from "../repoState";
 import { gget, peek } from "../cache";
 import { openExternalItem } from "./notifications";
 import type { SectionRender, SectionNav } from "./common";
@@ -394,24 +395,10 @@ async function fillRepos(body: HTMLElement, nav: SectionNav, live: () => boolean
     const status = await gget("repos:localStatus", shown.map((r) => r.root), 10000);
     if (!live()) return;
     shown.forEach((r, i) => {
-      const st = status[r.root];
-      if (!st || (st.dirty === 0 && st.ahead === 0 && st.behind === 0)) return;
-      const cluster = el("span", "dash-repo-state");
-      if (st.dirty > 0) {
-        const d = span(`●${st.dirty}`, "dash-state-bit is-dirty");
-        d.title = `${st.dirty} changed ${st.dirty === 1 ? "file" : "files"} in the working tree`;
-        cluster.appendChild(d);
-      }
-      if (st.ahead > 0) {
-        const a = span(`↑${st.ahead}`, "dash-state-bit is-ahead");
-        a.title = `${st.ahead} ${st.ahead === 1 ? "commit" : "commits"} not pushed${st.branch ? ` on ${st.branch}` : ""}`;
-        cluster.appendChild(a);
-      }
-      if (st.behind > 0) {
-        const b = span(`↓${st.behind}`, "dash-state-bit is-behind");
-        b.title = `${st.behind} ${st.behind === 1 ? "commit" : "commits"} behind the remote`;
-        cluster.appendChild(b);
-      }
+      // The same cluster the Repositories screen wears (repoState.ts), so the
+      // two say "3 changed, 1 to push" the same way.
+      const cluster = repoState(status[r.root]);
+      if (!cluster) return;
       const hint = rows[i].querySelector(".dash-line-hint");
       if (hint) hint.before(cluster);
       else rows[i].appendChild(cluster);

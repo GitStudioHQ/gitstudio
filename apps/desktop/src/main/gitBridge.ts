@@ -53,6 +53,10 @@ import type {
 } from "@gitstudio/git-service/index";
 import type {
   BranchInfo,
+  BranchResetPlan,
+  BranchResetRequest,
+  BranchResetResult,
+  BranchResetUndoRequest,
   ChangedFile,
   CommitActionRequest,
   CommitActionResult,
@@ -107,6 +111,7 @@ import {
 } from "@gitstudio/host-bridge/graphRefFilter";
 import type { CommitFileChange } from "@gitstudio/host-bridge/git";
 import type { RepoStore } from "./repoStore";
+import { planBranchReset, resetBranchToUpstream, undoBranchReset } from "./branchReset";
 
 /**
  * Where the graph's branch filter (issue #30) is remembered, one selection per
@@ -204,6 +209,12 @@ function notABranch(what: string): CommitActionResult {
     changed: false,
     message: `Couldn't tell which branch to ${what} — refresh and try again.`,
   };
+}
+
+/** Is the repository a request was built in the one open now? A string from
+ *  the renderer that is not a path at all is simply not the same one. */
+function sameRoot(a: unknown, b: string): boolean {
+  return typeof a === "string" && a.length > 0 && resolve(a) === resolve(b);
 }
 
 /** Standard rejection for an unusable path reaching a mutation. */
@@ -2094,6 +2105,46 @@ export class GitBridge {
     const name = localBranchOf(fullName);
     if (!name) return notABranch("pull into");
     return this.staged((ctx) => ctx.sync.pullFastForward(name));
+  }
+
+  // ── Reset a branch to its upstream (#32) — see branchReset.ts ──────────────
+
+  /** Fetch the branch's upstream and say what resetting to it would cost. */
+  async branchResetPlan(req: { fullName: string }): Promise<BranchResetPlan> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, expected: true, message: "No repository open." };
+    const name = localBranchOf(req?.fullName);
+    if (!name) return { ok: false, message: "Couldn't tell which branch to reset — refresh and try again." };
+    // Serialized: the fetch WRITES the remote-tracking ref.
+    return this.serialize(() => planBranchReset(ctx, req.fullName, name));
+  }
+
+  /** Reset a local branch to its upstream, against the state its plan read. */
+  async branchResetToUpstream(req: BranchResetRequest): Promise<BranchResetResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
+    const name = localBranchOf(req?.fullName);
+    if (!name) return notABranch("reset");
+    // The plan was read in ONE repository. A reset that arrives after a
+    // switch would run the right verb in the wrong place.
+    if (!sameRoot(req.root, ctx.root)) {
+      return { ok: false, changed: false, expected: true, message: "Another repository is open now — nothing was changed." };
+    }
+    return this.serialize(() => resetBranchToUpstream(ctx, name, req));
+  }
+
+  /** Undo a reset to upstream — the tip, and any changes it discarded. */
+  async branchResetUndo(req: BranchResetUndoRequest): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
+    const name = localBranchOf(req?.fullName);
+    if (!name) return notABranch("put back");
+    // An undo belongs to ONE repository (renderer/undo.ts clears the stack on
+    // a switch); this is the same rule, held where the git runs.
+    if (!sameRoot(req.root, ctx.root)) {
+      return { ok: false, changed: false, expected: true, message: "Another repository is open now — nothing was changed." };
+    }
+    return this.serialize(() => undoBranchReset(ctx, name, req));
   }
 
   /**
