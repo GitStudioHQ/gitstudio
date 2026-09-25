@@ -859,6 +859,7 @@ cell({
   setup: (f) => {
     mainAndFeature(f);
     f.git("checkout", "-q", "feature");
+    f.memo.F = sha(f, "feature");
   },
   op: async (f) => {
     answer = yes();
@@ -866,7 +867,8 @@ cell({
   },
   expect: (f) => {
     onBranch(f, "feature", "on feature");
-    isAt(f, "refs/heads/feature", "F", "feature back at F");
+    // By sha: the rebased copy F' carries the same subject.
+    assert.equal(sha(f, "refs/heads/feature"), f.memo.F, "feature back at the ORIGINAL F");
     isAt(f, "refs/heads/main", "M", "main untouched");
   },
 });
@@ -900,7 +902,7 @@ cell({
   setup: (f) => {
     f.commit("M", "f.txt", "main's line\n");
     f.git("checkout", "-q", "-b", "feature", "HEAD~1");
-    f.commit("F", "f.txt", "feature's line\n");
+    f.memo.F = f.commit("F", "f.txt", "feature's line\n");
   },
   op: async (f) => {
     answer = yes();
@@ -909,7 +911,7 @@ cell({
   expect: (f, s) => {
     assert.equal(s.op, "none", "no rebase left in progress");
     onBranch(f, "feature", "back on feature");
-    isAt(f, "refs/heads/feature", "F", "feature at F");
+    assert.equal(sha(f, "refs/heads/feature"), f.memo.F, "feature at the ORIGINAL F");
   },
   followUp: continueAfterUndo,
 });
@@ -923,7 +925,7 @@ cell({
     f.commit("M", "f.txt", "main's line\n");
     f.git("push", "-q", "origin", "refs/heads/main:refs/heads/main");
     f.git("checkout", "-q", "-b", "feature", "HEAD~1");
-    f.commit("F", "f.txt", "feature's line\n");
+    f.memo.F = f.commit("F", "f.txt", "feature's line\n");
   },
   op: async (f) => {
     answer = yes();
@@ -932,7 +934,7 @@ cell({
   expect: (f, s) => {
     assert.equal(s.op, "none", "no rebase left in progress");
     onBranch(f, "feature", "back on feature");
-    isAt(f, "refs/heads/feature", "F", "feature at F");
+    assert.equal(sha(f, "refs/heads/feature"), f.memo.F, "feature at the ORIGINAL F");
   },
 });
 
