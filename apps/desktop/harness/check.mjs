@@ -100,6 +100,7 @@ const CASES = [
   ["a-worktree-is-a-checkout-not-a-repository", "repositories"],
   ["a-capped-scan-says-so", "repositories", { arg: "capped", extra: "manyrepos=1" }],
   ["a-capped-scan-says-so", "repositories"],
+  ["switching-sides-quickly-keeps-the-side-you-are-on", "repositories", { extra: "slow=github:repos:1500" }],
   ["a-branch-list-shows-whole-branch-names", "branches", { extra: "longnames=1" }],
   ["a-real-choice-of-remote-is-offered", "branches", { extra: "tworemotes=1" }],
   // …and at the width where the squeeze actually bit. At 1600px there is slack

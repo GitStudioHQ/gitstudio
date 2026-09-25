@@ -4719,14 +4719,16 @@
       c.ok(!!grid, "the merge view is up");
       if (!grid) return;
       const light = document.body.classList.contains("vscode-light");
-      // diff.css's values: the merge paints by DECISION — red a conflict,
-      // green the same change on both sides, blue one side only, whatever the
-      // change did — designed in OKLCH (the green clearly LIGHTER than the
-      // red, the blue the soft one, the text at 7:1 on each) and a handled
-      // outline at 3:1 (it carries a meaning in the legend).
+      // diff.css's values: the merge paints by DECISION in JetBrains' merge
+      // colours, the owner's final palette (25 Sep 2026) — orange a conflict,
+      // leaf green the same change on both sides, blue one side only, grey
+      // removed lines. A change's lines are the pale shade; its outline, its
+      // insertion point and its ribbon the full colour; the legend's dots the
+      // edge colour. (Chrome stores alpha in 8 bits: dark green's .128 reads
+      // back as 0.13, blue's .136 as 0.137.)
       const want = light
-        ? { conflict: "rgba(244, 134, 123, 0.4)", same: "rgba(95, 254, 97, 0.4)", oneSided: "rgba(122, 178, 251, 0.4)", half: "rgba(244, 134, 123, 0.2)", done: "rgba(161, 38, 40, 0.84)", point: "rgba(27, 101, 185, 0.55)", dot: "rgb(161, 38, 40)", dots: ["rgb(161, 38, 40)", "rgb(41, 146, 54)", "rgb(27, 101, 185)"] }
-        : { conflict: "rgba(91, 4, 2, 0.55)", same: "rgba(0, 78, 9, 0.55)", oneSided: "rgba(2, 49, 108, 0.5)", half: "rgba(91, 4, 2, 0.3)", done: "rgba(223, 104, 98, 0.72)", point: "rgba(116, 167, 232, 0.62)", dot: "rgb(223, 104, 98)", dots: ["rgb(223, 104, 98)", "rgb(117, 208, 121)", "rgb(116, 167, 232)"] };
+        ? { conflict: "rgba(255, 170, 155, 0.2)", same: "rgba(61, 185, 85, 0.2)", oneSided: "rgba(130, 175, 230, 0.2)", half: "rgba(255, 170, 155, 0.2)", done: "rgba(253, 171, 153, 0.5)", point: "rgba(133, 175, 229, 0.5)", ribbon: "rgba(253, 171, 153, 0.5)", dot: "rgb(212, 97, 46)", dots: ["rgb(212, 97, 46)", "rgb(43, 152, 96)", "rgb(27, 101, 185)", "rgb(102, 102, 102)"] }
+        : { conflict: "rgba(245, 145, 75, 0.1)", same: "rgba(63, 193, 104, 0.13)", oneSided: "rgba(99, 177, 250, 0.137)", half: "rgba(245, 145, 75, 0.1)", done: "rgba(245, 145, 75, 0.25)", point: "rgba(99, 177, 250, 0.34)", ribbon: "rgba(245, 145, 75, 0.25)", dot: "rgb(245, 145, 75)", dots: ["rgb(245, 145, 75)", "rgb(107, 214, 148)", "rgb(99, 177, 250)", "rgb(168, 173, 179)"] };
       const body = grid.querySelector(".jb-pane-body");
       const probe = (cls) => {
         const el = document.createElement("div");
@@ -4738,9 +4740,9 @@
         el.remove();
         return out;
       };
-      c.eq(probe("jb-line-conflict").bg, want.conflict, "a conflict band is the red tint of this theme");
-      c.eq(probe("jb-line-same").bg, want.same, "the same change on both sides is the green tint of this theme");
-      c.eq(probe("jb-line-one-sided").bg, want.oneSided, "a change on one side only is the blue tint of this theme");
+      c.eq(probe("jb-line-conflict").bg, want.conflict, "a conflict's lines are the pale orange of this theme");
+      c.eq(probe("jb-line-same").bg, want.same, "the same change on both sides: the pale green of this theme");
+      c.eq(probe("jb-line-one-sided").bg, want.oneSided, "a change on one side only: the pale blue of this theme");
       // What the merge's bands actually carry: a decision's class, never a type's.
       const decoClasses = [...grid.querySelectorAll(".view-overlays div, .margin-view-overlays div")].map((e) => (typeof e.className === "string" ? e.className : "")).filter((s) => /\bjb-(line|point|trace|done)-/.test(s));
       c.eq(decoClasses.filter((s) => /\bjb-(line|point|trace|done)-(inserted|modified|deleted)\b/.test(s)).join(" | "), "", "no band in the merge is coloured by what its change did");
@@ -4753,27 +4755,14 @@
       c.ok(!probe("jb-settled jb-edge-top").bt.startsWith("solid"), "no neutral grey line of the old look");
       c.eq(probe("jb-point jb-point-one-sided").bt, `solid 1px ${want.point}`, "an insertion point is a 1px line in its point colour");
       c.eq(probe("jb-frame jb-frame-conflict jb-edge-top").bt.split(" ")[0], "none", "no frame lines outside high contrast");
-      // An OPEN conflict's lines carry a solid bar beside the line numbers, in
-      // the conflict's own colour: the cue that needs no colour vision (red
-      // and green come close under deuteranopia). Its rule, and — where Monaco
-      // painted an open conflict's margin — the bar itself.
-      const barRule = (() => {
-        const el = document.createElement("div");
-        el.className = "jb-conflict-bar";
-        body.appendChild(el);
-        const cs = getComputedStyle(el);
-        const out = `${cs.borderLeftStyle} ${cs.borderLeftWidth} ${cs.borderLeftColor}`;
-        el.remove();
-        return out;
-      })();
-      c.eq(barRule, `solid 2px ${want.dot}`, "the open conflict's bar: solid, 2px, the conflict colour");
-      const openMargins = grid.querySelectorAll(".margin-view-overlays .jb-line-conflict:not(.jb-half)").length;
-      const bars = [...grid.querySelectorAll(".margin-view-overlays .jb-conflict-bar")];
-      if (openMargins > 0) c.ok(bars.length > 0, `an open conflict's painted lines carry the bar (${openMargins} open lines, ${bars.length} bars)`);
+      // The solid bar beside an open conflict's line numbers went with the
+      // four-colour design (9c629cf, "no bar beside the numbers"): the line
+      // numbers themselves carry the full colour now.
+      c.ok(!grid.querySelector(".jb-conflict-bar"), "no bar beside the line numbers");
       // The ribbons land on the 32 ms timer, which the virtual clock does serve.
       const band = grid.querySelector(".jb-ribbon-stage path.jb-ribbon-conflict");
       c.ok(!!band, "the ribbons are drawn");
-      if (band) c.eq(getComputedStyle(band).fill, want.conflict, "a ribbon is FILLED with the tint it connects");
+      if (band) c.eq(getComputedStyle(band).fill, want.ribbon, "a ribbon is FILLED with its change's full colour");
       const base = grid.querySelector(".jb-ribbon-stage path.jb-ribbon-base");
       const editorBg = getComputedStyle(grid).backgroundColor;
       if (base) c.eq(getComputedStyle(base).fill, editorBg, "…over the editor background, so no gutter border shows through it");
@@ -4784,14 +4773,14 @@
       const odd = buttons.filter((b) => !/codicon-(arrow-right|arrow-left|close)\b/.test(b.innerHTML) || !/^((Accept|Ignore|Add|Discard) (Yours|Theirs)\b|Same on both sides — either arrow takes it|Discard this change on both sides)/.test(b.title) || !b.getAttribute("aria-label"));
       c.eq(odd.map((b) => b.title || b.innerHTML).join(" | "), "", "every control is an arrow or ×, with its action in words");
       const legend = $(".ms-legend-slot .jb-legend");
-      c.ok(!!legend && /Conflict/.test(legend.textContent) && /you choose/.test(legend.textContent) && !/Changed|Added|Removed/.test(legend.textContent) && !/[≠≈‹›✨]/.test(legend.textContent), `the legend is words, one per decision (${legend && legend.textContent.replace(/\s+/g, " ").trim()})`);
+      c.ok(!!legend && /Conflict/.test(legend.textContent) && /you choose/.test(legend.textContent) && /Same on both sides/.test(legend.textContent) && /One side only/.test(legend.textContent) && /Removed lines/.test(legend.textContent) && !/\b(Changed|Added)\b/.test(legend.textContent) && !/[≠≈‹›✨]/.test(legend.textContent), `the legend is words, one per decision (${legend && legend.textContent.replace(/\s+/g, " ").trim()})`);
       // …with a solid round dot of each colour — never a square box that reads as a checkbox.
       const dot = legend && legend.querySelector('.jb-legend-chip[data-category="conflict"] .jb-legend-dot');
       const dcs = dot && getComputedStyle(dot);
-      c.eq(dcs ? `${dcs.backgroundColor} | ${dcs.borderRadius}` : "none", `${want.dot} | 50%`, "the conflict item's dot is the conflict red, round");
-      // Red, green, blue: one dot per decision, in the order the legend reads.
+      c.eq(dcs ? `${dcs.backgroundColor} | ${dcs.borderRadius}` : "none", `${want.dot} | 50%`, "the conflict item's dot is the conflict orange, round");
+      // Orange, green, blue, grey: one dot per decision, in the order the legend reads.
       const allDots = legend ? [...legend.querySelectorAll(".jb-legend-chip .jb-legend-dot")].map((d) => getComputedStyle(d).backgroundColor) : [];
-      c.eq(allDots.join(" | "), want.dots.join(" | "), "one dot per decision: red, green, blue");
+      c.eq(allDots.join(" | "), want.dots.join(" | "), "one dot per decision: orange, green, blue, grey");
       c.ok(!legend || !legend.querySelector(".jb-legend-swatch"), "no square swatches in the legend");
       // The bottom bar's secondary buttons read as buttons here too: a visible
       // border (the desktop's own button-border is transparent).
@@ -7496,6 +7485,30 @@
      * `?manyrepos=1` pads the fixture to the cap; the plain scene must NOT
      * show the note (a warning over a complete list is a false alarm).
      */
+    /**
+     * #32: "switch quickly between On this machine → On GitHub and back, and
+     * after a second it shows the GitHub screen". The GitHub request outlived
+     * the switch back and painted its rows under "On this machine". The scene
+     * answers github:repos 1.5 s late (`?slow=`), so the switch back always
+     * beats it; the list must still be this machine's when it lands.
+     */
+    "switching-sides-quickly-keeps-the-side-you-are-on": async (f) => {
+      const c = check(f);
+      const [local, github] = $$(".gh-seg-btn");
+      c.ok(!!local && !!github, "both sides of the toggle exist");
+      if (!local || !github) return;
+      await settle(300);
+      c.ok(!!$(".repo-folder-head"), "precondition: this machine's list is painted");
+      github.click();
+      await settle(100);
+      local.click();
+      await settle(2500); // well past the late GitHub answer
+      c.ok(local.getAttribute("aria-pressed") === "true" || local.classList.contains("is-selected") || local.classList.contains("is-active"),
+        "the toggle says On this machine");
+      c.ok(!$(".repo-owner-head"), "no GitHub owner group was painted under it");
+      c.ok(!!$(".repo-folder-head"), "this machine's folders are what the list shows");
+    },
+
     "a-capped-scan-says-so": (f) => {
       const c = check(f);
       const note = $(".repo-scan-capped");
