@@ -24,7 +24,6 @@ import { repoChanged } from "./repoEpoch";
 import {
   currentSession,
   endSession,
-  heldFor,
   inOpenLanding,
   onRunningChange,
   runningOperation,
@@ -33,7 +32,7 @@ import {
   type TabSession,
 } from "./bridge";
 import { RepoTabStrip, type TabStripItem } from "./repoTabs";
-import { afterClose, stepTab, tabAtDigit, tabKeyAction } from "./tabModel";
+import { stepTab, tabAtDigit, tabKeyAction } from "./tabModel";
 import { saveDraftIn, takeDraftIn } from "./draftStore";
 import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
@@ -223,9 +222,6 @@ class App {
     readonly session: TabSession,
     /** The repository, or undefined for the no-repository screen. */
     private readonly info: RepoInfo | undefined,
-    /** Where a NEW tab starts: the view of the tab it was opened from, or the
-     *  view this repository was last left on. */
-    private readonly startView?: string,
   ) {}
 
   /** This tab's whole screen — attached while it is in front, detached otherwise. */
@@ -685,16 +681,17 @@ class App {
     const OFF_RAIL = new Set(["settings", "explore"]);
     const known = (v: unknown): v is string =>
       typeof v === "string" && (App.TABS.some((t) => t.id === v) || OFF_RAIL.has(v));
-    // A tab starts where it was asked to (the view of the tab it was opened
-    // from), else where THIS repository was last left, else the last view.
+    // A tab starts where THIS repository was last left (a tab restored at
+    // launch, or one reopened while its tab's view is still remembered), else
+    // on the view the window was last on — which is the view of the tab you
+    // opened it from, since the tab in front is the one that saves it.
     const tabViews = (prefs.tabViews ?? {}) as Record<string, unknown>;
     const remembered = this.info ? tabViews[this.info.root] : undefined;
-    // Search is identified by its target, which belongs to the tab it was
-    // opened in — a new tab asked for "explore" lands in the repository.
-    if (this.startView === "explore") this.currentView = this.info ? "code" : "dashboard";
-    else if (known(this.startView)) this.currentView = this.startView;
-    else if (known(remembered)) this.currentView = remembered;
+    if (known(remembered)) this.currentView = remembered;
     else if (known(prefs.currentView)) this.currentView = prefs.currentView;
+    // Search is identified by its target, and that target belongs to the tab
+    // it was searched in: a repository tab asked for it lands in its code.
+    if (this.currentView === "explore" && this.info) this.currentView = "code";
     // An unsent commit message this repository's tab was closed with.
     if (this.info) {
       const kept = takeDraftIn(this.info.root, "commit", "message");
@@ -10613,11 +10610,6 @@ class App {
     return this.info;
   }
 
-  /** The view on screen — a tab opened from this one starts on it. */
-  get currentViewId(): string {
-    return this.currentView;
-  }
-
   /** Push the dock icon variant this tab's preferences resolve to. */
   syncDock(): void {
     this.syncDockIcon();
@@ -10654,9 +10646,6 @@ class TabShell {
   private marksSeq = 0;
   /** When the marks were last asked for. */
   private marksAt = 0;
-  /** True while the first `repo:tabs` answer is applied: restored tabs start
-   *  where they were left, not where the (absent) opener was. */
-  private booting = true;
   private readonly isMac = navigator.platform.toLowerCase().includes("mac");
   private readonly inElectron = /Electron\//.test(navigator.userAgent);
 
@@ -10667,6 +10656,7 @@ class TabShell {
       add: (anchor) => void this.openAddMenu(anchor),
       move: (root, index) => void shellHost.invoke("repo:moveTab", { root, index }).catch(() => undefined),
       menu: (root, anchor) => this.openTabMenu(root, anchor),
+      list: (anchor) => this.openTabList(anchor),
     });
     this.stage = el("div", "tab-stage");
     // The panel the tab row controls: whatever tab is in front is shown here.
@@ -10731,7 +10721,6 @@ class TabShell {
       toast(cleanErr(e) || "Couldn't open the repository.", "error");
     }
     this.apply(st ?? { tabs: [] });
-    this.booting = false;
     this.active?.syncDock();
   }
 
@@ -10844,10 +10833,9 @@ class TabShell {
     let app = this.apps.get(root);
     if (!app) {
       const info = this.state.tabs.find((t) => t.root === root) ?? { root, name: root.split(/[\\/]/).pop() || root };
-      // A tab opened in this session starts on the view of the tab it was
-      // opened from; one restored at launch starts where it was left.
-      const from = this.booting ? undefined : this.active?.currentViewId;
-      app = new App(this, this.newSession(root), info, from);
+      // Where it starts is the App's to decide (mount): where this
+      // repository was left, else the view the window was last on.
+      app = new App(this, this.newSession(root), info);
       this.apps.set(root, app);
     }
     return app;
@@ -11097,6 +11085,23 @@ class TabShell {
     openMenu(anchor, items);
   }
 
+  /** Every open tab — the row's overflow button, for the ones scrolled away. */
+  private openTabList(anchor: HTMLElement): void {
+    const front = this.activeRoot();
+    const items: MenuItem[] = this.state.tabs.map((t) => {
+      const dirty = this.dirty.get(t.root);
+      return {
+        label: t.name,
+        sub: middleTruncate(t.root, 40),
+        icon: "repo",
+        current: t.root === front,
+        title: dirty ? `${t.root}\n${dirty} changed ${dirty === 1 ? "file" : "files"}` : t.root,
+        onClick: () => this.requestActivate(t.root),
+      };
+    });
+    openMenu(anchor, items);
+  }
+
   /** Right-click on a tab: the close family, and where the folder is. */
   private openTabMenu(root: string, anchor: HTMLElement): void {
     const order = this.openRoots();
@@ -11107,7 +11112,7 @@ class TabShell {
       for (const r of roots) await this.requestClose(r);
     };
     const items: MenuItem[] = [
-      { label: "Close", icon: "close", title: "Close this tab", onClick: () => void this.requestClose(root) },
+      { label: "Close", title: "Close this tab", onClick: () => void this.requestClose(root) },
       {
         label: "Close Other Tabs",
         disabled: !others.length,
@@ -11123,13 +11128,13 @@ class TabShell {
       { separator: true },
       {
         label: "Copy Path",
-        icon: "copy",
         title: root,
         onClick: () => void copyText(root).then(() => toast("Copied the repository's path.", "success")),
       },
       {
+        // No icons in this menu: VS Code's tab menu has none, and half a menu
+        // with icons leaves the other half's words out of line.
         label: REVEAL_LABEL,
-        icon: "folder-opened",
         title: root,
         onClick: () => void host.invoke("repos:reveal", root).catch(() => undefined),
       },
@@ -11155,6 +11160,17 @@ function openShortcutsHelp(): void {
         [`${mod}\``, "Toggle the terminal dock"],
         [`${mod},`, "Settings"],
         ["?", "This cheat sheet"],
+      ],
+    },
+    {
+      // Repositories are tabs (#32). The number keys are VS Code's "open
+      // editor at index" chord, because ⌘1–8 above already means the rail.
+      title: "Repository tabs",
+      rows: [
+        ["Ctrl+Tab  Ctrl+Shift+Tab", "Next / previous tab"],
+        [mac ? "⌃1–8  ⌃9" : "Alt+1–8  Alt+9", "Go to a tab by position / the last tab"],
+        [`${mod}W`, "Close the tab in front"],
+        [`${mod}O`, "Open a repository in a new tab"],
       ],
     },
     {

@@ -13190,6 +13190,46 @@ html.is-mac .repo-tabs { padding-left: 80px; }
   scrollbar-width: none;
 }
 .repo-tabs-scroller::-webkit-scrollbar { display: none; }
+/* More tabs past an edge: that edge fades, so the row itself says so. */
+.repo-tabs-scroller.more-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
+.repo-tabs-scroller.more-left {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 20px), transparent);
+}
+.repo-tabs-scroller.more-left.more-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+}
+/* The overflow list: the + button's size and manner, there only when needed. */
+.repo-tabs-list {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 0 1px 4px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+}
+.repo-tabs-list[hidden] { display: none; }
+.repo-tabs-list .codicon { font-size: 14px; }
+.repo-tabs-list:hover {
+  background: var(--app-hover);
+  color: var(--vscode-foreground);
+}
+.repo-tabs-list:focus-visible {
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: -2px;
+}
 .repo-tab {
   position: relative;
   flex: 0 1 auto;
@@ -13197,10 +13237,10 @@ html.is-mac .repo-tabs { padding-left: 80px; }
   align-items: center;
   gap: 6px;
   box-sizing: border-box;
-  min-width: 104px;
+  min-width: 120px;
   max-width: 220px;
   height: 30px;
-  padding: 0 5px 0 12px;
+  padding: 0 3px 0 12px;
   border: 1px solid transparent;
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
@@ -13263,11 +13303,11 @@ html.is-mac .repo-tabs { padding-left: 80px; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--app-muted);
   cursor: pointer;
@@ -13289,9 +13329,12 @@ html.is-mac .repo-tabs { padding-left: 80px; }
 .repo-tab.drop-after { box-shadow: inset -2px 0 0 var(--gs-accent); }
 .repo-tab.is-active.drop-before { box-shadow: inset 0 2px 0 var(--gs-accent), inset 2px 0 0 var(--gs-accent); }
 .repo-tab.is-active.drop-after { box-shadow: inset 0 2px 0 var(--gs-accent), inset -2px 0 0 var(--gs-accent); }
+/* On the tabs' own centre line (the row is 36px, a tab is its bottom 30), so
+   the + reads as the next tab's place, not as a control floating above. */
 .repo-tabs-add {
   flex: 0 0 auto;
-  align-self: center;
+  align-self: flex-end;
+  margin-bottom: 1px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

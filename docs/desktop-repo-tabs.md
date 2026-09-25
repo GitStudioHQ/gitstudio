@@ -14,7 +14,7 @@ before the code; the code follows this, or this gets corrected.
 - One tab per open repository: its folder name, `●N` when it has uncommitted
   changes (the same mark Home and Repositories use), a spinning `loading`
   codicon while an operation of that tab is running, and the `close` codicon
-  ("Close <name>"). The active tab carries the top bar's panel colour and an
+  ("Close gitstudio"). The active tab carries the top bar's panel colour and an
   accent rule; the rest are quiet.
 - `+` (the `add` codicon, "Open a repository in a new tab") at the end of the
   row, pinned outside the scroller so a narrow window never loses it. It opens
@@ -22,8 +22,15 @@ before the code; the code follows this, or this gets corrected.
   recent repositories that are not open, All repositories.
 - Opening a repository that already has a tab switches to that tab (compared
   by real path, so a symlinked spelling is the same repository).
-- Tabs shrink to a minimum width, then the row scrolls sideways; the active tab
-  is always scrolled into view.
+- Tabs shrink to a minimum width (120px, so a name keeps a few letters), then
+  the row scrolls sideways; the active tab is always scrolled into view, clear
+  of the edges. While it overflows, the edge with tabs past it fades and a
+  `chevron-down` button ("All open repositories") lists every tab — VS Code's
+  "Show Opened Editors", in words. A narrow window never loses the `+` or the
+  list: they sit outside the scroller.
+- Right-click a tab: Close, Close Other Tabs, Close Tabs to the Right, Copy
+  Path, Reveal in Finder. Middle-click closes. Tabs drag to reorder (the drop
+  edge is drawn in the accent colour).
 - Keyboard: Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle.
   Jumping by number follows VS Code's "open editor at index", because ⌘1–9
   already means the rail's views here: **Ctrl+1–9 on macOS, Alt+1–9 on
@@ -90,7 +97,7 @@ their answers wait at the door.**
 ## Per tab vs global
 
 | Per tab | Global |
-|---|---|
+| --- | --- |
 | route + target, history (⌘[ / ⌘]), kept-alive views and their scroll | theme, rail width / collapsed, terminal height |
 | SWR cache entries (namespaced by root; a switch no longer wipes) | GitHub account (sign-out drops every tab's GitHub caches and kept views) |
 | undo stack (⌘Z acts on the active tab only; an entry refuses to run in another) | notifications badge, Assistant sessions list |
@@ -102,7 +109,7 @@ their answers wait at the door.**
 ## The state table (what each cell must do)
 
 | # | State | Must |
-|---|---|---|
+| --- | --- | --- |
 | 1 | A read (git / GitHub) started in A lands while B is active | held; painted into A when A is shown; never into B |
 | 2 | An operation (push) started in A finishes while B is active | A's tab spins until it ends; its toast and refresh run when A is shown |
 | 3 | A's watcher event arrives after the switch | ignored for B (payload carries the root); A re-checks the disk when shown |

@@ -765,6 +765,7 @@ const CASES = [
   ["a-background-tabs-disk-event-leaves-the-front-tab-alone", "changes", { extra: "tabs=2" }],
   ["a-stopped-operation-stays-with-its-tab", "changes", { extra: "tabs=2&op=cherry-pick&conflicts=1" }],
   ["each-tab-has-its-own-terminal-dock", "changes", { extra: "tabs=2" }],
+  ["each-restored-tab-comes-back-on-its-own-view", "changes", { extra: "tabs=2&tabviews=1" }],
 ];
 
 function run(scene, checkId, opts = {}) {

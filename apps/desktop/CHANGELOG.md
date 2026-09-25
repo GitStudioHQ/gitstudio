@@ -13,6 +13,24 @@ but they share the same engine, so most Git behaviour lands in both at once.
 
 ### Added
 
+- **Repositories open as tabs.** The top row of the window holds a tab for
+  every repository you have open — its name, **●** with the number of changed
+  files when it has any, a spinner while a push, pull or other operation runs
+  in it, and a close button. **+** opens another (Open…, Clone…, your recent
+  repositories); opening one that already has a tab switches to it. Each tab
+  keeps its own place: the view you were on, Back and Forward, how far you had
+  scrolled, the commit message you had started, its terminals, and a stopped
+  rebase or merge — switching back finds everything as you left it, and
+  nothing from one tab ever shows up in another. A push that finishes in a tab
+  you are not looking at tells you when you go back to it. **Ctrl+Tab** and
+  **Ctrl+Shift+Tab** move between tabs, **⌃1–⌃9** (Alt+1–9 on Windows and
+  Linux) jump to one, and **⌘W** (Ctrl+W) closes the tab in front — asking
+  first if something is still running in it; an unsent commit message is kept
+  and comes back when you reopen the repository. Right-click a tab to close
+  the others or reveal it in Finder, drag tabs to reorder them, and when there
+  are more than fit, the list button shows them all. The tabs you had open come
+  back when you restart GitStudio. Up to ten repositories can be open at once.
+  (#32)
 - **Open a repository in your editor from its row.** Every repository under
   *On this machine* has the editor button beside **Open** — the same one the
   top bar and Home carry, the primary half opening your default editor, its
@@ -52,8 +70,20 @@ but they share the same engine, so most Git behaviour lands in both at once.
   Abort puts the branch back as it was. **Undo** on the toast, or ⌘Z,
   restores the branch. The same drop as the VS Code extension's. (#32)
 
+### Changed
+
+- **Closing a repository is closing its tab.** Repo ▸ **Close Tab** is ⌘W
+  (Ctrl+W) — it was ⌘⇧W, and on macOS ⌘W did nothing. On Windows and Linux
+  the window's own Close moves to Ctrl+Shift+W. The GitStudio mark in the top
+  bar now goes to Home instead of closing the repository, and the top bar's
+  repository menu moved to the tab row's **+**. (#32)
+
 ### Fixed
 
+- **The top bar no longer lets the editor button run over the search box**
+  when the window is just wide enough for everything but a stopped
+  operation's label — it measured what it needed from the collapsed state and
+  came out short. (#32)
 - **Repositories: switching to *On GitHub* and straight back showed GitHub's
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on

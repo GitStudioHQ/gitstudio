@@ -59,6 +59,11 @@
       // in, the ticks that ARE the staging model in that mode were unreachable
       // from the harness and never looked at.
       stagingModel: params.get("staging") === "checkboxes" ? "checkboxes" : "split",
+      // ?tabviews=1: the last session left gistudio.dev's tab on Branches
+      // (#32) — each restored tab comes back on its own view.
+      ...(params.get("tabviews")
+        ? { tabViews: { "/Users/anton/Developer/GitStudioHQ/gistudio.dev": "branches" } }
+        : {}),
     }),
   );
 

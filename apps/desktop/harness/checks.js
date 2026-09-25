@@ -16029,6 +16029,8 @@
       c.eq(add?.getAttribute("aria-label"), "Open a repository in a new tab", "the + is named in words");
       c.ok(!!add?.querySelector(".codicon-add"), "…and is the add codicon");
       c.ok($(".repo-tabs-add-label")?.hidden, "with tabs open it is the glyph alone");
+      c.eq(getComputedStyle($(".repo-tabs-list")).display, "none", "three tabs fit: no overflow list");
+      c.eq(getComputedStyle($(".repo-tabs-scroller")).maskImage || "none", "none", "…and no faded edge");
       c.ok(!$(".topbar-switch:not(.topbar-branch)"), "the top bar's old single-repository chip is gone");
     },
 
@@ -16301,16 +16303,46 @@
       const ab = add.getBoundingClientRect();
       c.ok(ab.left >= 0 && ab.right <= row.getBoundingClientRect().right && ab.width >= 28, `the + is whole and on screen (${Math.round(ab.left)}–${Math.round(ab.right)})`);
       c.ok(list.scrollWidth > list.clientWidth, "the tabs scroll inside their row instead");
+      // …and never draw over it: what is under the middle of the + IS the +.
+      const hit = document.elementFromPoint(ab.left + ab.width / 2, ab.top + ab.height / 2);
+      c.ok(!!hit && (hit === add || add.contains(hit)), `nothing covers the + (${hit && hit.className})`);
       const lb = list.getBoundingClientRect();
       const front = $(".repo-tab.is-active");
       const fb = front.getBoundingClientRect();
       c.ok(fb.left >= lb.left - 1 && fb.right <= lb.right + 1, `the tab in front is scrolled into view (${Math.round(fb.left)}–${Math.round(fb.right)} in ${Math.round(lb.left)}–${Math.round(lb.right)})`);
-      c.ok(tabs.every((t) => t.getBoundingClientRect().width >= 103), "no tab shrinks past its minimum");
+      c.ok(tabs.every((t) => t.getBoundingClientRect().width >= 119), "no tab shrinks past its minimum");
       const long = tabEl("/Users/anton/Code/infrastructure-terraform-modules")?.querySelector(".repo-tab-name");
       c.ok(!!long && long.scrollWidth > long.clientWidth, "a long name gives way…");
       c.eq(long && getComputedStyle(long).textOverflow, "ellipsis", "…with an ellipsis");
       c.ok(tabs.every((t) => t.querySelector(".repo-tab-close").getBoundingClientRect().width >= 20), "every close control keeps its room");
       c.ok($(".topbar-branch")?.getBoundingClientRect().right <= innerWidth, "the top bar below keeps its branch");
+      // The tabs scrolled away are still reachable — and the row says so.
+      const mask = (el) => getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage || "none";
+      c.ok(mask(list) !== "none", `the edge with more tabs past it fades (${mask(list).slice(0, 40)})`);
+      const more = $(".repo-tabs-list");
+      c.ok(!!more && getComputedStyle(more).display !== "none", "an overflowing row offers the list of every tab");
+      c.eq(more?.getAttribute("aria-label"), "All open repositories", "…named in words");
+      more?.click();
+      await settle(400);
+      const rows = $$(".dropdown .dropdown-item");
+      c.eq(rows.length, 9, "it lists all nine");
+      const first = rows.find((r) => /gitstudio/.test(text(r)) && !/gistudio/.test(text(r)));
+      first?.click();
+      await settle(700);
+      c.eq(activeTabRoot(), GS_ROOT, "choosing one scrolled out of sight brings it to the front");
+      const fb2 = $(".repo-tab.is-active").getBoundingClientRect();
+      const lb2 = list.getBoundingClientRect();
+      c.ok(fb2.left >= lb2.left - 1 && fb2.right <= lb2.right + 1, "…and into view");
+      // A tab from the MIDDLE lands clear of both faded edges, close and all.
+      $(".repo-tabs-list")?.click();
+      await settle(400);
+      $$(".dropdown .dropdown-item").find((r) => /^mobile/.test(text(r)))?.click();
+      await settle(700);
+      c.eq(activeTabRoot(), "/Users/anton/Code/mobile", "a middle tab from the list");
+      const fb3 = $(".repo-tab.is-active").getBoundingClientRect();
+      const moreL = list.classList.contains("more-left");
+      const moreR = list.classList.contains("more-right");
+      c.ok((!moreL || fb3.left >= lb2.left + 20) && (!moreR || fb3.right <= lb2.right - 20), `…sits clear of the faded edges (${Math.round(fb3.left)}–${Math.round(fb3.right)} in ${Math.round(lb2.left)}–${Math.round(lb2.right)}, fades ${moreL ? "L" : ""}${moreR ? "R" : ""})`);
     },
 
     /** Row 12: opening a repository that has a tab switches to it; opening a
@@ -16379,6 +16411,22 @@
       await settle(800);
       c.ok($(".cd-dash") === dash && dash.isConnected, "and comes back with A — the same dashboard, not a rebuild");
       c.ok(!!$(".topbar-opchip:not([hidden])"), "A's bar still names the stopped operation");
+    },
+
+    /** Row 16, the renderer's half: each tab restored at launch comes back on
+     *  the view IT was left on, not on whichever view the window last had. */
+    "each-restored-tab-comes-back-on-its-own-view": async (f) => {
+      const c = check(f);
+      await settle(900);
+      c.eq(text(".nav-item.active"), "Changes", "the tab in front is on the window's last view");
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.eq(text(".nav-item.active"), "Branches", "the other tab is on the view it was left on");
+      $('.nav-item[data-view="graph"]')?.click();
+      await settle(700);
+      const saved = JSON.parse(localStorage.getItem("gitstudio.ui.prefs") || "{}");
+      c.eq(saved.tabViews && saved.tabViews[GS_DEV_ROOT], "graph", "a tab's view is remembered for it");
+      c.eq(saved.tabViews && saved.tabViews[GS_ROOT], "changes", "…and the other tab's is kept beside it");
     },
 
     /** One terminal dock per tab: each tab's shells are its own. */

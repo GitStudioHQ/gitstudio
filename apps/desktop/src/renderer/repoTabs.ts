@@ -34,6 +34,8 @@ export interface TabStripHandlers {
   move?(root: string, index: number): void;
   /** Right-click: the tab's own menu. */
   menu?(root: string, anchor: HTMLElement): void;
+  /** The overflow button: every open tab, in a list. */
+  list?(anchor: HTMLElement): void;
 }
 
 const MOD = typeof navigator !== "undefined" && navigator.platform.toLowerCase().includes("mac") ? "⌘" : "Ctrl+";
@@ -43,6 +45,7 @@ export class RepoTabStrip {
   private readonly scroller: HTMLElement;
   private readonly addBtn: HTMLButtonElement;
   private readonly addLabel: HTMLElement;
+  private readonly listBtn: HTMLButtonElement;
   private readonly byRoot = new Map<string, HTMLElement>();
   private items: TabStripItem[] = [];
   private active: string | undefined;
@@ -80,10 +83,50 @@ export class RepoTabStrip {
     this.addBtn.setAttribute("aria-label", "Open a repository in a new tab");
     this.addBtn.addEventListener("click", () => this.on.add(this.addBtn));
 
+    // When the tabs no longer fit, some are scrolled out of sight — and a tab
+    // you cannot see is a tab you forget you have. This lists them all: VS
+    // Code's "Show Opened Editors" and a browser's tab search, in words. It is
+    // there only while the row actually overflows.
+    this.listBtn = el("button", "repo-tabs-list") as HTMLButtonElement;
+    this.listBtn.type = "button";
+    this.listBtn.append(glyph("chevron-down"));
+    this.listBtn.title = "All open repositories";
+    this.listBtn.setAttribute("aria-label", "All open repositories");
+    this.listBtn.hidden = true;
+    this.listBtn.addEventListener("click", () => this.on.list?.(this.listBtn));
+
     // What is left of the row is the window's title bar: it drags the window.
     const grip = el("div", "repo-tabs-drag");
     grip.setAttribute("aria-hidden", "true");
-    this.el.append(this.scroller, this.addBtn, grip);
+    this.el.append(this.scroller, this.listBtn, this.addBtn, grip);
+
+    // Overflow is a matter of measured width, not of tab count: a narrow
+    // window with three long names overflows, a wide one with nine short
+    // names may not. Re-measured on every resize and every scroll.
+    this.scroller.addEventListener("scroll", () => this.syncOverflow(), { passive: true });
+    // A narrowing window must not push the front tab out of sight either.
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(() => {
+        this.syncOverflow();
+        this.revealActive();
+        this.syncOverflow();
+      }).observe(this.scroller);
+    }
+  }
+
+
+  /**
+   * Say whether the row overflows, and which way there is more: the list
+   * button appears, and the edge with tabs past it fades (the row itself
+   * shows there is more, without a symbol to learn).
+   */
+  syncOverflow(): void {
+    const s = this.scroller;
+    const over = s.scrollWidth > s.clientWidth + 1;
+    this.listBtn.hidden = !over;
+    this.el.classList.toggle("is-overflowing", over);
+    this.scroller.classList.toggle("more-left", over && s.scrollLeft > 1);
+    this.scroller.classList.toggle("more-right", over && s.scrollLeft + s.clientWidth < s.scrollWidth - 1);
   }
 
   /** Draw the row. Tabs are kept by root and moved, never rebuilt, so a
@@ -113,7 +156,11 @@ export class RepoTabStrip {
     // With nothing open the + says what it does in words, not just a glyph.
     this.el.classList.toggle("is-empty", items.length === 0);
     this.addLabel.hidden = items.length > 0;
+    // Overflow FIRST: the list button appearing narrows the row, and a reveal
+    // measured before that leaves the front tab half under it.
+    this.syncOverflow();
     if (activeChanged) this.revealActive();
+    this.syncOverflow();
   }
 
   /** Keep the tab in front on screen when the row scrolls. */
@@ -121,10 +168,14 @@ export class RepoTabStrip {
     const tab = this.active ? this.byRoot.get(this.active) : undefined;
     if (!tab) return;
     const s = this.scroller;
+    // Clear of the faded edge too (24px > the 20px fade), so the front tab's
+    // name and close are never under it. The first and last tabs still reach
+    // their end of the row: there is nothing past them to fade.
+    const EDGE = 24;
     const left = tab.offsetLeft - s.offsetLeft;
     const right = left + tab.offsetWidth;
-    if (left < s.scrollLeft) s.scrollLeft = left;
-    else if (right > s.scrollLeft + s.clientWidth) s.scrollLeft = right - s.clientWidth;
+    if (left - EDGE < s.scrollLeft) s.scrollLeft = Math.max(0, left - EDGE);
+    else if (right + EDGE > s.scrollLeft + s.clientWidth) s.scrollLeft = right + EDGE - s.clientWidth;
   }
 
   /** The tab element for a root — the checks and the context menu anchor. */
