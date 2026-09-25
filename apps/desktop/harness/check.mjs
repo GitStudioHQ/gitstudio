@@ -139,6 +139,8 @@ const CASES = [
   // plan the issue is about, in both themes where the selection is painted.
   ["rebase-selection-follows-the-keyboard", "rebase", { extra: "rbmany=1" }],
   ["rebase-selection-follows-the-keyboard", "rebase", { extra: "rbmany=1", theme: "light" }],
+  // A laptop's height: the list runs under both sticky bars.
+  ["rebase-selection-follows-the-keyboard", "rebase", { extra: "rbmany=1", height: 700 }],
   ["rebase-selection-follows-the-mouse", "rebase", { extra: "rbmany=1" }],
   ["rebase-selection-follows-the-mouse", "rebase", { extra: "rbmany=1", theme: "light" }],
   ["rebase-sets-the-action-of-every-selected-commit", "rebase", { extra: "rbmany=1" }],

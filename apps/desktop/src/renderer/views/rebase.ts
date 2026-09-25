@@ -238,6 +238,27 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
   foot.prepend(banner);
   wrap.replaceChildren(head, explain, hintBar(), list, foot);
 
+  /**
+   * The rows the keyboard reaches scroll clear of BOTH sticky bars. Focus
+   * scrolls only as far as the view's edge, which is under the header or the
+   * footer (and the dock under that) — so End put the oldest commit behind
+   * Start rebase. Kept in step with the bars' heights, which the toolbar's
+   * wrapping and the banner change.
+   */
+  const syncBars = (): void => {
+    const dock = parseFloat(getComputedStyle(foot).bottom) || 0;
+    wrap.style.scrollPaddingTop = `${head.offsetHeight + 8}px`;
+    wrap.style.scrollPaddingBottom = `${foot.offsetHeight + dock + 8}px`;
+  };
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => {
+      if (!head.isConnected) return ro.disconnect();
+      syncBars();
+    });
+    ro.observe(head);
+    ro.observe(foot);
+  }
+
   // A note from the host (base fell back, or the list was capped) is worth
   // showing — otherwise the range silently isn't what the user asked for.
   /** The host's own note — the base fell back, or the list was capped. It is
@@ -246,11 +267,13 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
   const showHostNote = (): void => {
     if (!state.message) {
       banner.hidden = true;
+      syncBars();
       return;
     }
     banner.textContent = state.message;
     banner.className = "rb-banner warn";
     banner.hidden = false;
+    syncBars();
   };
   showHostNote();
 
@@ -308,6 +331,7 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     banner.textContent = msg;
     banner.className = `rb-banner ${kind}`;
     banner.hidden = false;
+    syncBars();
     window.setTimeout(() => {
       if (mine !== flashSeq) return;
       showHostNote();
@@ -641,6 +665,7 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     if (state.baseCommit) list.appendChild(makeBaseRow());
     paintSelection();
     updatePreview();
+    syncBars();
     const target = rowEl(sha ?? selection.focus);
     if (refocus === "select") target?.querySelector<HTMLSelectElement>(".rb-action")?.focus();
     else if (refocus === "row" || hadFocus) target?.focus();

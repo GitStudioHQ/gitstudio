@@ -16019,6 +16019,16 @@
         c.eq(claimed, true, `${what}: the list took the key`);
         c.eq(rbPaintedSelected(), sel, `${what}: exactly the selected rows are PAINTED selected`);
       }
+      // The row the keyboard reaches is clear of both sticky bars: focus alone
+      // scrolls to the view's edge, under the header or the footer.
+      await rbKey("End");
+      const endRow = document.activeElement.getBoundingClientRect();
+      const footTop = $(".rb-foot").getBoundingClientRect().top;
+      c.ok(endRow.bottom <= footTop + 1, `End: the oldest commit clears the footer (${Math.round(endRow.bottom)} vs ${Math.round(footTop)})`);
+      await rbKey("Home");
+      const homeRow = document.activeElement.getBoundingClientRect();
+      const headBottom = $(".rb-head").getBoundingClientRect().bottom;
+      c.ok(homeRow.top >= headBottom - 1, `Home: the newest commit clears the header (${Math.round(homeRow.top)} vs ${Math.round(headBottom)})`);
       c.eq(text(".rb-selcount"), "1 selected", "the count follows");
       await rbKey("ArrowDown", { shiftKey: true });
       await rbKey("ArrowDown", { shiftKey: true });
