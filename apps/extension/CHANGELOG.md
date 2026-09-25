@@ -7,6 +7,30 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 ## [Unreleased]
 
 ### Added
+- **Select several commits.** In the Commit Graph and the Commits list,
+  **Cmd/Ctrl+click** adds or removes a commit, **Shift+click** selects
+  everything from the last one you clicked, and **Shift+Up/Down** extends the
+  selection from the keyboard; **Escape** keeps only the commit the cursor is
+  on. Right-click inside the selection (or press Shift+F10) for one menu for
+  all of them; right-click outside it and it is that commit's own menu, as
+  before. The commit details pane says how many commits are selected, by whom
+  and when, and offers the same actions — it no longer shows one commit's
+  details as if they were all. (#32)
+- **Act on several commits at once.** **Cherry-Pick N Commits** applies them
+  oldest first in one run, and **Revert N Commits** reverts them newest first;
+  if one conflicts, **Resolve Conflicts…** takes you to the Conflicts
+  dashboard to continue, skip or abort — abort puts the branch back as it was
+  — and uncommitted changes that any of them would overwrite are asked about
+  before anything is applied, with **Stash & Retry**. **Squash N Commits…**
+  opens a message editor with every commit message, oldest first, ready to
+  edit, and makes them one commit with your message. **Drop N Commits…** asks
+  once, listing every commit it removes and whether they are already pushed.
+  **Compare These Two Commits** opens the Compare view for exactly two, and
+  **Copy SHAs** copies every one, a line each. Only what can apply is offered:
+  Cherry-Pick and Revert are left out when a merge commit is selected, Squash
+  and Drop when the commits are not all on your current branch — and Squash
+  also when there are other commits between them. Undo (Ctrl/Cmd+Alt+G Z)
+  covers every one. (#32)
 - **Drop Commit… in the commit menu.** Right-click a commit on your current
   branch — in the Commit Graph or the Commits list — and choose **Drop
   Commit…** to take it out of the branch; the commits after it are replayed

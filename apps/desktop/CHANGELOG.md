@@ -13,6 +13,31 @@ but they share the same engine, so most Git behaviour lands in both at once.
 
 ### Added
 
+- **Select several commits in the graph.** **Cmd/Ctrl+click** adds or removes
+  a commit, **Shift+click** selects everything from the last one you clicked,
+  and **Shift+Up/Down** extends the selection from the keyboard; **Escape**
+  keeps only the commit the cursor is on. Every selected row is highlighted and
+  the one the cursor is on keeps its accent bar. Right-click inside the
+  selection (or press Shift+F10) for one menu for all of them; right-click
+  outside it and it is that commit's own menu, as before. The details pane says
+  how many commits are selected, by whom and when, lists them — click one to
+  keep just it — and offers the same actions, instead of one commit's details
+  standing in for all of them. (#32)
+- **Act on several commits at once.** **Cherry-pick N commits** applies them
+  oldest first in one run, and **Revert N commits** reverts them newest first;
+  if one conflicts you're taken to Changes, where the conflicts dashboard
+  offers Continue, Skip and Abort — abort puts the branch back as it was — and
+  uncommitted changes that any of them would overwrite are asked about before
+  anything is applied, with Stash & Retry. **Squash N commits…** opens a
+  message editor with every commit message, oldest first, ready to edit, and
+  makes them one commit with your message. **Drop N commits…** asks once,
+  listing every commit it removes and whether they are already pushed.
+  **Compare these two commits** opens Compare for exactly two, and **Copy
+  SHAs** copies every one, a line each. Only what can apply is offered:
+  Cherry-pick and Revert are left out when a merge commit is selected, Squash
+  and Drop when the commits are not all on your current branch — and Squash
+  also when there are other commits between them. Each one can be undone
+  straight afterwards. (#32)
 - **Open a repository in your editor from its row.** Every repository under
   *On this machine* has the editor button beside **Open** — the same one the
   top bar and Home carry, the primary half opening your default editor, its
