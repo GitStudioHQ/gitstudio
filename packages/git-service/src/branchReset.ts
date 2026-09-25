@@ -347,7 +347,7 @@ export function resetQuestion(p: ResetPlan): ResetQuestion {
       kind: "confirm",
       title: `Fast-forward ${b} to ${t}?`,
       message: [
-        `${b} is ${plural(p.behind, "commit")} behind ${t} and has no commits of its own, so nothing is lost: it moves forward to match.`,
+        `${b} is ${plural(p.behind, "commit")} behind ${t} and has no commits of its own, so nothing will be lost: it will move forward to match.`,
         stale,
       ]
         .filter(Boolean)
@@ -362,20 +362,20 @@ export function resetQuestion(p: ResetPlan): ResetQuestion {
     const lines = p.dropped.map((c) => `    ${c.sha}  ${c.subject}`);
     if (p.ahead > p.dropped.length) lines.push(`    …and ${p.ahead - p.dropped.length} more`);
     parts.push(
-      `${plural(p.ahead, "commit")} on ${b} ${p.ahead === 1 ? "is" : "are"} not on ${t}, and the reset takes ${p.ahead === 1 ? "it" : "them"} off the branch:\n` +
+      `${b} will lose ${plural(p.ahead, "commit")} that ${p.ahead === 1 ? "isn't" : "aren't"} on ${t}:\n` +
         lines.join("\n"),
     );
   }
   if (dirty > 0) {
-    parts.push(`Uncommitted changes to ${plural(dirty, "file")} are discarded.`);
+    parts.push(`Uncommitted changes to ${plural(dirty, "file")} will be discarded.`);
   }
   if (overwritten > 0) {
     parts.push(
-      `${plural(overwritten, "untracked file")} ${overwritten === 1 ? "is" : "are"} overwritten by what ${t} has at ${overwritten === 1 ? "its path" : "their paths"}.`,
+      `${plural(overwritten, "untracked file")} will be overwritten by what ${t} has at ${overwritten === 1 ? "its path" : "their paths"}.`,
     );
   }
   if (p.behind > 0) {
-    parts.push(`${b} also gets the ${plural(p.behind, "commit")} on ${t} it doesn't have yet.`);
+    parts.push(`${b} will also get the ${plural(p.behind, "commit")} on ${t} it doesn't have yet.`);
   }
   parts.push(
     `GitStudio's Undo can put the branch back${dirty > 0 ? ", with your uncommitted changes" : ""}.` +

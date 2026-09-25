@@ -192,25 +192,25 @@ for (const current of [true, false]) {
             assert.equal(q.danger, false, "behind with nothing of its own: a fast-forward, not a warning");
             assert.equal(q.title, "Fast-forward 'feature' to 'origin/feature'?");
             assert.equal(q.confirmLabel, "Fast-forward");
-            assert.match(q.message, /2 commits behind 'origin\/feature' and has no commits of its own, so nothing is lost/);
+            assert.match(q.message, /2 commits behind 'origin\/feature' and has no commits of its own, so nothing will be lost/);
           } else {
             assert.equal(q.danger, true);
             assert.equal(q.title, "Reset 'feature' to 'origin/feature'?");
             assert.equal(q.confirmLabel, "Reset");
             if (EXPECT[relation].ahead) {
-              assert.match(q.message, /3 commits on 'feature' are not on 'origin\/feature', and the reset takes them off the branch:/);
+              assert.match(q.message, /'feature' will lose 3 commits that aren't on 'origin\/feature':/);
               assert.match(q.message, /local three\n.*local two\n.*local one/);
             } else {
               assert.doesNotMatch(q.message, /commits? on 'feature'/);
             }
             if (current && dirty) {
-              assert.match(q.message, /Uncommitted changes to 2 files are discarded\./);
+              assert.match(q.message, /Uncommitted changes to 2 files will be discarded\./);
               assert.match(q.message, /Undo can put the branch back, with your uncommitted changes\./);
             } else {
               assert.doesNotMatch(q.message, /Uncommitted/, "a branch that isn't checked out takes no working tree with it");
             }
             if (EXPECT[relation].behind) {
-              assert.match(q.message, /also gets the 2 commits on 'origin\/feature' it doesn't have yet/);
+              assert.match(q.message, /will also get the 2 commits on 'origin\/feature' it doesn't have yet/);
             }
           }
 
@@ -419,7 +419,7 @@ test("untracked files the target has at their path are counted — reset --hard 
     assert.equal(p.untrackedOverwritten, 1, "r.txt, not unrelated.txt");
     const q = resetQuestion(p);
     assert.equal(q.kind === "confirm" && q.danger, true, "something is lost, so it is not a plain fast-forward");
-    assert.match(q.kind === "confirm" ? q.message : "", /1 untracked file is overwritten by what 'origin\/feature' has at its path\./);
+    assert.match(q.kind === "confirm" ? q.message : "", /1 untracked file will be overwritten by what 'origin\/feature' has at its path\./);
     assert.match(q.kind === "confirm" ? q.message : "", /It can't bring back the overwritten untracked file\./);
   } finally {
     f.ctx.dispose();

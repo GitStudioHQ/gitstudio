@@ -153,9 +153,9 @@ test("the menu's Reset on a branch that is not checked out: asks, resets it alon
     assert.equal(q.title, "Reset 'feature' to 'origin/feature'?");
     assert.equal(q.danger, true);
     assert.equal(q.confirmLabel, "Reset");
-    assert.match(q.message, /3 commits on 'feature' are not on 'origin\/feature'/);
+    assert.match(q.message, /'feature' will lose 3 commits that aren't on 'origin\/feature'/);
     assert.match(q.message, /mess three\n.*mess two\n.*mess one/, "by subject, newest first");
-    assert.match(q.message, /also gets the 2 commits on 'origin\/feature'/, "counted after the fetch");
+    assert.match(q.message, /will also get the 2 commits on 'origin\/feature'/, "counted after the fetch");
     assert.doesNotMatch(q.message, /Uncommitted/, "main's edit is not feature's business");
 
     const remote = c.git("rev-parse", "refs/remotes/origin/feature");
@@ -190,7 +190,7 @@ test("the menu's Reset on the checked-out branch with uncommitted edits: Undo br
     answer = (spec) => (spec.kind === "confirm" ? "ok" : undefined);
     await branchActions.resetBranchToUpstream(c.repos, node("feature"), () => {});
     const q = asked[0] as DialogSpec & { kind: "confirm" };
-    assert.match(q.message, /Uncommitted changes to 1 file are discarded\./);
+    assert.match(q.message, /Uncommitted changes to 1 file will be discarded\./);
     assert.match(q.message, /Undo can put the branch back, with your uncommitted changes\./);
     assert.equal(c.git("rev-parse", "HEAD"), c.git("rev-parse", "refs/remotes/origin/feature"));
     assert.equal(c.git("status", "--porcelain"), "");
