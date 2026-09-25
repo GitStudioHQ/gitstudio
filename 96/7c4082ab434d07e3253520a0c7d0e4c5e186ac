@@ -1,0 +1,24 @@
+apps/merge-studio/SHOTS.md
+  s_26f5e669d3043c::t_f220a0b2d705ba 56
+  s_26f5e669d3043c::t_aa2aef666b7e44 41
+  s_26f5e669d3043c::t_ce2aa5fbbabc49 22
+  s_26f5e669d3043c::t_93a147d29de68d 20-21
+  s_26f5e669d3043c::t_b951253e63dbc6 39
+  s_26f5e669d3043c::t_6a024ff5b80d28 47-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "967c4082ab434d07e3253520a0c7d0e4c5e186ac",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
