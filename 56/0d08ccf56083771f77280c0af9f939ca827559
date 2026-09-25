@@ -1,0 +1,69 @@
+apps/extension/test/renameDiffs.test.ts
+  s_26f5e669d3043c::t_d50581c454cc3a 1-46,49-231
+  s_26f5e669d3043c::t_0fc82046e3a00f 47-48
+apps/extension/src/blame/blameController.ts
+  s_26f5e669d3043c::t_621957d581e42f 8,672-677,684,687,699-707,709
+packages/host-bridge/src/blame.ts
+  s_26f5e669d3043c::t_a92a3b6fbbf9f6 20-24
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_621957d581e42f 805,1073,1114-1119,1121-1124
+apps/desktop/test/commitRenameDiff.test.ts
+  s_26f5e669d3043c::t_6c2a0b31a59945 1-49
+apps/extension/src/history/revisionContentProvider.ts
+  s_26f5e669d3043c::t_871822c140503a 3-4,9-14,21-25,31,35-36,40,48,50-51,54,58-131,135-150,192,203
+apps/extension/src/history/fileTimelineProvider.ts
+  s_26f5e669d3043c::t_621957d581e42f 6,124-128,133-134
+packages/host-bridge/src/graphProtocol.ts
+  s_26f5e669d3043c::t_4ecd2e99406d79 287-293
+packages/webview-ui/src/graph/main.ts
+  s_26f5e669d3043c::t_4ecd2e99406d79 161,163-164
+packages/webview-ui/src/commit-details.ts
+  s_26f5e669d3043c::t_4ecd2e99406d79 1165
+apps/extension/src/history/lineHistory.ts
+  s_26f5e669d3043c::t_621957d581e42f 3,5,70-75,78,85-99
+  s_26f5e669d3043c::t_b64e271db469e1 100-101
+packages/engine/test/blame.test.ts
+  s_26f5e669d3043c::t_b5bd3b68bad11c 118-144
+packages/git-service/test/history.test.ts
+  s_26f5e669d3043c::t_4c75e69fd93174 98-117
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_fa67cb8cea9109 2046-2047
+packages/engine/src/blame/parse.ts
+  s_26f5e669d3043c::t_895e5d86005f49 142-149
+apps/extension/src/history/revisionNavigation.ts
+  s_26f5e669d3043c::t_621957d581e42f 8-9,83,86,148,151
+packages/git-service/src/StagingProvider.ts
+  s_26f5e669d3043c::t_621957d581e42f 359-380
+packages/webview-ui/test/detailsFileOpen.test.ts
+  s_26f5e669d3043c::t_a506f029dc1321 1-67
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_4ecd2e99406d79 284,1247-1248,1254,1256-1267,1272-1274,1277
+  s_26f5e669d3043c::t_233c957b309bcd 43-44
+  s_26f5e669d3043c::t_d0040a888e6107 1199-1210
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_fa67cb8cea9109 813,823-827,830
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_fa67cb8cea9109 10062,10355-10359
+apps/extension/src/changes/changesView.ts
+  s_26f5e669d3043c::t_621957d581e42f 3,77-83,89-91,93,95-99,103-109
+  s_26f5e669d3043c::t_20daeb2143efd6 110-111
+packages/git-service/src/HistoryProvider.ts
+  s_26f5e669d3043c::t_f6b5ef6b4a7e39 26-28,31-35,38-47,93,100,111,187-221
+  s_26f5e669d3043c::t_f432bad73b9078 222-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "560d08ccf56083771f77280c0af9f939ca827559",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
