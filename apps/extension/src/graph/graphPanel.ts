@@ -29,7 +29,7 @@ import {
   sameRefFilter,
   withRef,
 } from "@gitstudio/host-bridge/graphRefFilter";
-import type { RepoManager, RepoEntry } from "../git/repoManager";
+import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
 import { getRefFilterStore } from "./refFilterStore";
@@ -944,8 +944,8 @@ export class CommitGraphPanel {
     // Route destructive ops through the Undo envelope when it's available.
     const ledger = this.repos.getUndoLedger();
     const undo = ledger
-      ? <T>(label: string, fn: () => Promise<T>) =>
-          ledger.runWithUndo(active, label, fn)
+      ? <T>(label: string, fn: () => Promise<T>, opts?: UndoOptions) =>
+          ledger.runWithUndo(active, label, fn, opts)
       : undefined;
     const changed = await runCommitAction(
       id,
@@ -1291,8 +1291,8 @@ export class CommitGraphPanel {
     const record = this.records.get(sha);
     const ledger = this.repos.getUndoLedger();
     const undo = ledger
-      ? <T>(label: string, fn: () => Promise<T>) =>
-          ledger.runWithUndo(active, label, fn)
+      ? <T>(label: string, fn: () => Promise<T>, opts?: UndoOptions) =>
+          ledger.runWithUndo(active, label, fn, opts)
       : undefined;
     const changed = await runCommitAction(
       mapped,

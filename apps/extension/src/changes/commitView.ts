@@ -6,6 +6,7 @@ import { applyOrAsk, checkoutOp, pullOrAsk } from "../git/inTheWay";
 import { newBranchAtHead } from "@gitstudio/git-service/changesInTheWay";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
+import { resettableBranches } from "@gitstudio/git-service/branchReset";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import { slowStateChanged, type SlowState } from "./slowState";
@@ -82,6 +83,12 @@ interface BranchRefPayload {
   /** Commits ahead/behind the upstream — drives the menu's ↑/↓ badges. */
   ahead?: number;
   behind?: number;
+  /**
+   * The upstream is a remote-tracking branch this repository has — what
+   * "Reset to '<upstream>'…" resets to. False for no upstream, one that is a
+   * local branch, and one gone from the remote.
+   */
+  upstreamOnRemote?: boolean;
 }
 
 /** Everything the branch menu needs: local branches (with favorites), remotes, recents, tags. */
@@ -1468,6 +1475,8 @@ export class CommitViewProvider
   private async collectBranches(entry: RepoEntry): Promise<BranchesPayload> {
     const refs = await this.listRefsCached(entry);
     const favs = new Set(this.favorites(entry));
+    // Where the submenu offers "Reset to '<upstream>'…" (#32).
+    const resettable = resettableBranches(refs);
     const local: BranchRefPayload[] = refs
       .filter((r) => r.type === "head")
       .map((r) => ({
@@ -1477,6 +1486,7 @@ export class CommitViewProvider
         favorite: favs.has(r.name),
         ahead: r.ahead,
         behind: r.behind,
+        upstreamOnRemote: resettable.has(r.name),
       }));
     // Not a remote's HEAD pointer. git shortens refs/remotes/origin/HEAD to
     // the bare remote name ("origin"), so the "/HEAD" test never matched it:
@@ -2749,6 +2759,40 @@ export class CommitViewProvider
     .bm-bup { flex: 0 1 auto; font-size: 10.5px; color: var(--gs-fg-subtle); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .bm-bmore { flex: 0 0 auto; font-size: 13px; color: var(--gs-fg-subtle); opacity: 0; transition: opacity 100ms; }
     .bm-branch:hover .bm-bmore { opacity: 0.8; }
+
+    /* The keyboard highlight: the one row the arrow keys have reached (and
+       the mouse, which moves it too). VS Code's own colours for a focused
+       selection, plus the focus outline, because the high-contrast themes
+       give a selection no background at all and draw it with that outline. */
+    .bm-action.is-active,
+    .bm-branch.is-active,
+    .bm-more.is-active,
+    .bm-subaction.is-active {
+      background: var(--vscode-list-activeSelectionBackground, var(--gs-hover-strong));
+      color: var(--vscode-list-activeSelectionForeground, var(--gs-fg));
+      outline: 1px solid var(--vscode-list-focusOutline, var(--vscode-focusBorder, transparent));
+      outline-offset: -1px;
+    }
+    .bm-action.is-active .codicon,
+    .bm-branch.is-active .bm-bicon,
+    .bm-branch.is-active.is-current .bm-bname,
+    .bm-branch.is-active .bm-bup,
+    .bm-subaction.is-active .codicon { color: inherit; }
+    .bm-branch.is-active .bm-bmore { opacity: 0.9; color: inherit; }
+    /* The row whose submenu holds the highlight stays marked, as VS Code
+       marks a selection whose list is not the focused one. */
+    .bm-branch.is-open {
+      background: var(--vscode-list-inactiveSelectionBackground, var(--gs-hover));
+      outline: 1px dashed var(--vscode-contrastActiveBorder, transparent);
+      outline-offset: -1px;
+    }
+    .bm-branch.is-open .bm-bmore { opacity: 0.8; }
+    /* A destructive item keeps its colour when highlighted: red on red tint. */
+    .bm-subaction.danger.is-active {
+      background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 20%, transparent);
+      color: var(--vscode-errorForeground, #e15a5a);
+      outline-color: var(--vscode-errorForeground, #e15a5a);
+    }
 
     /* Per-branch action submenu (flyout). */
     /* The scrim behind the branch dialog stack: dims the view so the open
@@ -4870,9 +4914,164 @@ export class CommitViewProvider
     // Per-category collapse memory (Favorites / Recents / Local / Remote / Tags).
     const collapsedCats = Object.create(null);
 
+    // ── Keyboard navigation (IntelliJ's branch popup, #32) ──────────────────
+    // Focus never leaves the search box: the arrows move a highlight through
+    // the visible rows (top actions, branches, "Show more" — never a group
+    // header), Right or Enter on a branch opens its submenu with the highlight
+    // on its first item, Up/Down move there, Enter runs it, Left or Escape
+    // goes back to the branch. The box is a combobox whose
+    // aria-activedescendant follows the highlight, so a screen reader reads
+    // each row as it is reached.
+    //
+    // bmActiveKey names the highlighted main row by its data-bmkey — rows are
+    // rebuilt on every repaint, so an element reference would go stale; the
+    // key finds its new row. bmSubActive is the highlighted submenu item, or
+    // -1 when the highlight is in the main list.
+    let bmActiveKey = "";
+    let bmSubActive = -1;
+    let bmOptSeq = 0;
+    // Where the pointer last was: a mousemove at the same spot is the list
+    // scrolling under a still mouse, not the mouse moving, and must not take
+    // the highlight from the keyboard.
+    let bmPointer = "";
+
+    function bmOption(node) {
+      node.id = "bm-opt-" + (++bmOptSeq);
+      node.setAttribute("role", "option");
+      node.setAttribute("aria-selected", "false");
+    }
+    function bmList() { return branchMenu ? branchMenu.querySelector(".bm-list") : null; }
+    /** The rows the arrows visit: every keyed row that is on screen (not in a collapsed group). */
+    function bmRows() {
+      const list = bmList();
+      if (!list) return [];
+      return Array.prototype.filter.call(list.querySelectorAll("[data-bmkey]"),
+        (n) => n.getClientRects().length > 0);
+    }
+    function bmRowByKey(key) {
+      const list = bmList();
+      if (!list || !key) return null;
+      const all = list.querySelectorAll("[data-bmkey]");
+      for (let i = 0; i < all.length; i++) if (all[i].dataset.bmkey === key) return all[i];
+      return null;
+    }
+    function bmSubItems() {
+      return branchSubmenu ? Array.prototype.slice.call(branchSubmenu.querySelectorAll(".bm-subaction")) : [];
+    }
+    /** Paint the highlight where the state says it is, and point the box at it. */
+    function paintBm(scroll) {
+      if (!branchMenu) return;
+      const input = branchMenu.querySelector(".bm-search input");
+      document.querySelectorAll(".branch-menu .is-active, .branch-menu .is-open, .branch-submenu .is-active")
+        .forEach((n) => {
+          n.classList.remove("is-active", "is-open");
+          if (n.getAttribute("role") === "option") n.setAttribute("aria-selected", "false");
+        });
+      const main = bmRowByKey(bmActiveKey);
+      let target = main;
+      if (branchSubmenu && bmSubActive >= 0) {
+        const items = bmSubItems();
+        target = items[Math.min(bmSubActive, items.length - 1)] || null;
+        if (main) main.classList.add("is-open");
+      }
+      if (input) {
+        input.setAttribute("aria-controls", branchSubmenu ? "bm-list bm-sub" : "bm-list");
+      }
+      if (target) {
+        target.classList.add("is-active");
+        target.setAttribute("aria-selected", "true");
+        if (input) input.setAttribute("aria-activedescendant", target.id);
+        if (scroll && target.scrollIntoView) target.scrollIntoView({ block: "nearest" });
+      } else if (input) {
+        input.removeAttribute("aria-activedescendant");
+      }
+    }
+    /** Move the main-list highlight, clamped at both ends. */
+    function moveBm(delta) {
+      const rows = bmRows();
+      if (!rows.length) return;
+      let i = -1;
+      for (let k = 0; k < rows.length; k++) if (rows[k].dataset.bmkey === bmActiveKey) i = k;
+      i = i < 0 ? 0 : Math.max(0, Math.min(rows.length - 1, i + delta));
+      // An open submenu belongs to the row it was opened on.
+      if (branchSubmenu) { closeBranchSubmenu(); subMenuFor = null; }
+      bmActiveKey = rows[i].dataset.bmkey;
+      paintBm(true);
+    }
+    function moveBmSub(delta) {
+      const items = bmSubItems();
+      if (!items.length) return;
+      bmSubActive = bmSubActive < 0 ? 0 : Math.max(0, Math.min(items.length - 1, bmSubActive + delta));
+      paintBm(true);
+    }
+    /** Open a branch row's submenu, the highlight on its first item. */
+    function openBmSub(row) {
+      row.click(); // exactly what a click does — openBranchActions
+      if (!branchSubmenu) return;
+      bmSubActive = 0;
+      paintBm(true);
+    }
+    /** Close the submenu; the highlight goes back to its branch. */
+    function closeBmSub() {
+      closeBranchSubmenu();
+      subMenuFor = null;
+      paintBm(true);
+    }
+    /** The search box's keys. Only the box's own events: a dialog raised
+     *  over the menu keeps its arrows and its Enter. */
+    function onBmInputKey(e) {
+      if (e.isComposing) return;
+      const k = e.key;
+      if (k === "ArrowDown" || k === "ArrowUp") {
+        e.preventDefault();
+        const d = k === "ArrowDown" ? 1 : -1;
+        if (branchSubmenu) moveBmSub(d); else moveBm(d);
+        return;
+      }
+      if (k === "ArrowRight") {
+        // Only on a branch; anywhere else the caret moves as usual.
+        const row = bmRowByKey(bmActiveKey);
+        if (branchSubmenu || !row || !row.classList.contains("bm-branch")) return;
+        e.preventDefault();
+        openBmSub(row);
+        return;
+      }
+      if (k === "ArrowLeft") {
+        if (!branchSubmenu) return;
+        e.preventDefault();
+        closeBmSub();
+        return;
+      }
+      if (k === "Enter") {
+        e.preventDefault();
+        // A held Enter repeats: the first opens a submenu, the second would
+        // run its first item. Only a fresh press acts.
+        if (e.repeat) return;
+        if (branchSubmenu) {
+          if (bmSubActive < 0) { moveBmSub(1); return; }
+          const item = bmSubItems()[bmSubActive];
+          if (item) item.click();
+          return;
+        }
+        const row = bmRowByKey(bmActiveKey);
+        if (!row) return;
+        if (row.classList.contains("bm-branch")) openBmSub(row);
+        else row.click();
+      }
+    }
+    /** Whether the pointer really moved (see bmPointer). */
+    function bmPointerMoved(e) {
+      const at = e.clientX + "," + e.clientY;
+      if (at === bmPointer) return false;
+      bmPointer = at;
+      return true;
+    }
+
     function closeBranchMenu() {
       closeBranchSubmenu();
       subMenuFor = null;
+      bmActiveKey = "";
+      bmSubActive = -1;
       if (branchBackdrop) { branchBackdrop.remove(); branchBackdrop = null; }
       if (!branchMenu) return;
       branchMenu.remove();
@@ -4884,6 +5083,7 @@ export class CommitViewProvider
     }
     function closeBranchSubmenu() {
       if (branchSubmenu) { branchSubmenu.remove(); branchSubmenu = null; }
+      bmSubActive = -1;
       hideTip(); // a tip anchored to a removed submenu item must not linger
     }
     function onBranchDocDown(e) {
@@ -4908,7 +5108,7 @@ export class CommitViewProvider
     }
     function onBranchKey(e) {
       if (e.key === "Escape") {
-        if (branchSubmenu) { closeBranchSubmenu(); subMenuFor = null; return; }
+        if (branchSubmenu) { closeBmSub(); return; }
         closeBranchMenu(); branchPill.focus();
       }
     }
@@ -4967,6 +5167,15 @@ export class CommitViewProvider
       // Full ref name on hover — a narrow sidebar ellipsis-clips the row, so the
       // tooltip is how the whole name (esp. long remote refs) is always readable.
       row.title = name + (up ? "  ↔ " + up : "");
+      row.dataset.bmkey = "b:" + kind + ":" + name;
+      bmOption(row);
+      // What a screen reader says when the highlight lands here — the badges
+      // are arrows and numbers, so they are spelled out.
+      row.setAttribute("aria-label", name +
+        (current ? ", current branch" : kind === "remote" ? ", remote branch" : kind === "tag" ? ", tag" : "") +
+        (ahead ? ", " + ahead + " to push" : "") +
+        (behind ? ", " + behind + " to pull" : "") +
+        (up ? ", tracks " + up : ""));
       row.addEventListener("click", () => openBranchActions(name, kind, current, row));
       return row;
     }
@@ -4976,10 +5185,10 @@ export class CommitViewProvider
       vscode.postMessage({ type: "branchRefCommand", command: command, ref: refName, refType: refType });
       closeBranchMenu();
     }
-    function subItem(list, icon, label, fn, danger) {
+    function subItem(list, icon, label, fn, danger, title) {
       const b = el("button", "bm-subaction" + (danger ? " danger" : ""), bIcon(icon) + "<span></span>");
       b.querySelector("span").textContent = label;
-      b.title = label; // full text on hover when the label ellipsis-clips a long branch name
+      b.title = title || label; // full text on hover when the label ellipsis-clips a long branch name
       b.addEventListener("click", fn);
       list.appendChild(b);
     }
@@ -5011,11 +5220,17 @@ export class CommitViewProvider
     function refreshOpenBranchUi() {
       if (!branchMenu) return;
       const sub = subMenuFor;
+      const subActive = bmSubActive; // a keyboard highlight in the submenu survives the repaint
       renderBranchMenu(); // closes the submenu; rows rebuilt with fresh data
       if (sub) {
         const row = branchMenu.querySelector('.bm-branch[data-bname="' + (window.CSS && CSS.escape ? CSS.escape(sub.name) : sub.name) + '"]');
-        if (row) openBranchActions(sub.name, sub.kind, sub.current, row);
-        else subMenuFor = null; // the branch vanished (e.g. deleted)
+        if (row) {
+          openBranchActions(sub.name, sub.kind, sub.current, row);
+          bmSubActive = subActive;
+          paintBm(false);
+        } else {
+          subMenuFor = null; // the branch vanished (e.g. deleted)
+        }
       }
     }
 
@@ -5080,13 +5295,30 @@ export class CommitViewProvider
       if (first) first.focus();
     }
 
+    /**
+     * "Reset to 'origin/feature'…" (#32) — on a local branch whose upstream is
+     * a remote branch this repo has (upstreamOnRemote, decided by the host).
+     * The host fetches first, then asks, saying what would be lost.
+     */
+    function resetToUpstreamItem(list, name, bd) {
+      if (!bd || !bd.upstream || !bd.upstreamOnRemote) return;
+      subItem(list, "discard", "Reset to '" + bd.upstream + "'…",
+        () => subAct("gitstudio.branch.resetToUpstream", name, "head"), true,
+        "Fetches, then makes '" + name + "' match '" + bd.upstream +
+        "' exactly. Asks first, and says what would be lost.");
+    }
+
     function openBranchActions(name, kind, current, anchor) {
       closeBranchSubmenu();
       const cur = currentBranchName();
       const refType = kind === "remote" ? "remote" : kind === "tag" ? "tag" : "head";
       const headIcon = kind === "remote" ? "cloud" : kind === "tag" ? "tag" : "git-branch";
       const menu = el("div", "branch-submenu");
+      menu.id = "bm-sub";
+      menu.setAttribute("role", "listbox");
+      menu.setAttribute("aria-label", "Actions for " + name);
       const head = el("div", "bm-subhead");
+      head.setAttribute("aria-hidden", "true");
       head.appendChild(el("i", "codicon codicon-" + headIcon));
       head.appendChild(el("span", "bm-subhead-name", esc(name)));
       menu.appendChild(head);
@@ -5096,6 +5328,8 @@ export class CommitViewProvider
       // Live branch data for this row (counts may have just changed via Fetch).
       const bd = (branchData.local || []).find((x) => x.name === name);
       subMenuFor = { name: name, kind: kind, current: current };
+      // The row this submenu belongs to holds the main list's highlight.
+      if (anchor && anchor.dataset && anchor.dataset.bmkey) bmActiveKey = anchor.dataset.bmkey;
       if (kind === "tag") {
         subItem(list, "check", "Checkout Tag (detached)", () => subAct("gitstudio.tag.checkout", name, "tag"));
         subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, "tag"));
@@ -5122,6 +5356,10 @@ export class CommitViewProvider
         subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
         subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
         subItem(list, "copy", "Copy Branch Name", () => branchAct("copyName", name));
+        if (bd && bd.upstreamOnRemote) {
+          subSep(list);
+          resetToUpstreamItem(list, name, bd);
+        }
       } else {
         subItem(list, kind === "remote" ? "cloud-download" : "check", "Checkout", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.checkout" : "gitstudio.branch.checkout", name, refType));
@@ -5151,12 +5389,35 @@ export class CommitViewProvider
         if (kind === "local") subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
         subItem(list, "copy", "Copy Branch Name", () => branchAct("copyName", name));
         subSep(list);
+        if (kind === "local") resetToUpstreamItem(list, name, bd);
         subItem(list, "trash", "Delete", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.delete" : "gitstudio.branch.delete", name, refType), true);
       }
 
+      // Options of the submenu's listbox, for aria-activedescendant.
+      list.querySelectorAll(".bm-subaction").forEach((b, i) => {
+        b.id = "bm-sub-" + i;
+        b.setAttribute("role", "option");
+        b.setAttribute("aria-selected", "false");
+      });
+      list.querySelectorAll(".bm-subsep").forEach((s) => s.setAttribute("aria-hidden", "true"));
+      // The highlight follows the pointer here too. A press never takes focus
+      // from the search box, so the keys keep working after a click.
+      menu.addEventListener("mousemove", (e) => {
+        if (!bmPointerMoved(e)) return;
+        const item = e.target.closest ? e.target.closest(".bm-subaction") : null;
+        const i = item ? bmSubItems().indexOf(item) : -1;
+        if (i < 0 || i === bmSubActive) return;
+        bmSubActive = i;
+        paintBm(false);
+      });
+      menu.addEventListener("mousedown", (e) => {
+        if (e.target.closest && e.target.closest(".bm-subaction")) e.preventDefault();
+      });
+
       document.body.appendChild(menu);
       branchSubmenu = menu;
+      paintBm(false);
       // Cascade as a secondary popup off the RIGHT edge of the main branch menu,
       // vertically aligned to the clicked row. Flip to the LEFT only if it would
       // overflow the (narrow) panel. SEAM = small overlap so it reads as a child.
@@ -5215,6 +5476,8 @@ export class CommitViewProvider
         const b = el("button", "bm-action" + (spinning ? " is-busy" : ""),
           bIcon(spinning ? "loading codicon-modifier-spin" : it.icon) + "<span></span>");
         b.querySelector("span").innerHTML = spinning ? busyLabels[it.a] : hl(it.label);
+        b.dataset.bmkey = "a:" + it.a;
+        bmOption(b);
         b.addEventListener("click", () => {
           if (live) {
             if (menuSyncBusy || syncBusy) return;
@@ -5287,14 +5550,18 @@ export class CommitViewProvider
         head.querySelector(".bm-sep-label").textContent = label;
         head.querySelector(".bm-sep-count").textContent =
           String(opts && opts.count != null ? opts.count : rows.length);
+        head.setAttribute("aria-expanded", collapsed ? "false" : "true");
         const body = el("div", "bm-group-body");
+        body.setAttribute("role", "group");
+        body.setAttribute("aria-label", label);
         if (collapsed) body.style.display = "none";
         rows.forEach((r) => body.appendChild(build(r)));
         if (opts && opts.note) body.appendChild(el("div", "bm-note", esc(opts.note)));
         if (opts && opts.more > 0) {
           const more = el("div", "bm-more", "Show " + Math.min(opts.more, TAG_PAGE) +
             " more of " + opts.more);
-          more.setAttribute("role", "button");
+          more.dataset.bmkey = "more:" + label;
+          bmOption(more);
           more.setAttribute("tabindex", "0");
           const grow = (ev) => {
             ev.preventDefault();
@@ -5312,7 +5579,13 @@ export class CommitViewProvider
           collapsedCats[label] = !collapsedCats[label];
           const c = !!collapsedCats[label];
           head.classList.toggle("collapsed", c);
+          head.setAttribute("aria-expanded", c ? "false" : "true");
           body.style.display = c ? "none" : "";
+          // A highlighted row folded away has nowhere to be seen.
+          if (c && bmActiveKey && body.contains(bmRowByKey(bmActiveKey))) {
+            bmActiveKey = "";
+            paintBm(false);
+          }
         });
         list.appendChild(head);
         list.appendChild(body);
@@ -5337,6 +5610,8 @@ export class CommitViewProvider
           !remotes.length && !allTags.length) {
         list.appendChild(el("div", "bm-empty", "No matches"));
       }
+      // The rows are new; the highlight finds its row again by key.
+      paintBm(false);
     }
 
     // ── GitStudio dialogs ─────────────────────────────────────────────────
@@ -5726,7 +6001,8 @@ export class CommitViewProvider
           // In a textarea Enter inserts a newline; Ctrl/Cmd+Enter submits.
           if (spec.multiline && !(e.ctrlKey || e.metaKey)) return;
           e.preventDefault();
-          confirm();
+          // A held Enter from the menu that opened this must not submit it.
+          if (!e.repeat) confirm();
           return;
         }
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -5837,7 +6113,8 @@ export class CommitViewProvider
         if (e.key === "Escape") { e.preventDefault(); closeDialog(undefined); return; }
         if (e.key === "Enter") {
           e.preventDefault();
-          if (shown[sel]) closeDialog(shown[sel].id);
+          // A held Enter from the menu that opened this must not pick for you.
+          if (!e.repeat && shown[sel]) closeDialog(shown[sel].id);
           return;
         }
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -5903,6 +6180,7 @@ export class CommitViewProvider
         if (e.key === " ") { e.preventDefault(); toggle(sel); return; }
         if (e.key === "Enter") {
           e.preventDefault();
+          if (e.repeat) return; // a held key is not an answer
           closeDialog(choices.filter(function (c) { return c.picked; })
             .map(function (c) { return c.id; }));
           return;
@@ -5933,7 +6211,9 @@ export class CommitViewProvider
       panel.tabIndex = -1;
       panel.addEventListener("keydown", function (e) {
         if (e.key === "Escape") { e.preventDefault(); closeDialog(undefined); return; }
-        if (e.key === "Enter") { e.preventDefault(); closeDialog("ok"); }
+        // Not a held key: the Enter that picked "Reset…" or "Delete" in the
+        // branch menu can still be repeating when this question opens.
+        if (e.key === "Enter") { e.preventDefault(); if (!e.repeat) closeDialog("ok"); }
       });
       // A destructive action never starts focused — Enter out of muscle memory
       // should not delete a branch. Cancel takes focus instead.
@@ -5985,19 +6265,50 @@ export class CommitViewProvider
       branchBackdrop = el("div", "bm-backdrop");
       document.body.appendChild(branchBackdrop);
       branchMenu = el("div", "branch-menu");
+      bmActiveKey = "";
+      bmSubActive = -1;
       const search = el("div", "bm-search");
       const input = document.createElement("input");
       input.type = "text";
       input.placeholder = "Search for branches and actions";
       input.setAttribute("aria-label", "Search branches and actions");
+      input.setAttribute("role", "combobox");
+      input.setAttribute("aria-expanded", "true");
+      input.setAttribute("aria-autocomplete", "list");
+      input.setAttribute("aria-controls", "bm-list");
       input.addEventListener("input", () => {
         branchFilter = input.value.trim().toLowerCase();
         tagLimit = TAG_PAGE; // a new query starts from the first page again
         renderBranchMenu();
+        // Typing puts the highlight on the first match (none for an empty box),
+        // so Enter runs what the search found.
+        const rows = bmRows();
+        bmActiveKey = branchFilter && rows.length ? rows[0].dataset.bmkey : "";
+        paintBm(true);
       });
+      input.addEventListener("keydown", onBmInputKey);
       search.appendChild(input);
       branchMenu.appendChild(search);
-      branchMenu.appendChild(el("div", "bm-list"));
+      const list = el("div", "bm-list");
+      list.id = "bm-list";
+      list.setAttribute("role", "listbox");
+      list.setAttribute("aria-label", "Branches and actions");
+      // The highlight follows the pointer, but not while a submenu is open —
+      // the way to it can cross other rows — and not when the list scrolls
+      // under a pointer that has not moved.
+      list.addEventListener("mousemove", (e) => {
+        if (!bmPointerMoved(e) || branchSubmenu) return;
+        const row = e.target.closest ? e.target.closest("[data-bmkey]") : null;
+        if (!row || row.dataset.bmkey === bmActiveKey) return;
+        bmActiveKey = row.dataset.bmkey;
+        paintBm(false);
+      });
+      // A press on a row never takes focus from the search box, so the keys
+      // keep working after a click.
+      list.addEventListener("mousedown", (e) => {
+        if (e.target.closest && e.target.closest("[data-bmkey], .bm-sep")) e.preventDefault();
+      });
+      branchMenu.appendChild(list);
       document.body.appendChild(branchMenu);
       renderBranchMenu();
       branchPill.setAttribute("aria-expanded", "true");

@@ -504,6 +504,12 @@
         "icon": "$(cloud)"
       },
       {
+        "command": "gitstudio.branch.resetToUpstream",
+        "title": "Reset Branch to Its Upstream\u2026",
+        "category": "GitStudio",
+        "icon": "$(discard)"
+      },
+      {
         "command": "gitstudio.branch.new",
         "title": "New Branch from Here\u2026",
         "category": "GitStudio",
@@ -1802,6 +1808,10 @@
         {
           "command": "gitstudio.branch.setUpstream",
           "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.branch.resetToUpstream",
+          "when": "false"
         },
         {
           "command": "gitstudio.branch.createWorktree",

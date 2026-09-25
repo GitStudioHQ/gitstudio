@@ -160,7 +160,9 @@ test("every checkout door in the Branches view goes through the full-name planne
     const body = src.slice(src.indexOf(`export async function ${door}(`));
     const end = body.indexOf("\nexport async function ", 10);
     const fn = end > 0 ? body.slice(0, end) : body;
-    assert.match(fn, /await runRefCheckout\(a, ref, refresh\);/, `${door} checks out through runRefCheckout`);
+    // `repos` rides along for the Undo envelope of the reset a remote
+    // checkout can offer (#32); the ref it plans from is the same.
+    assert.match(fn, /await runRefCheckout\(repos, a, ref, refresh\);/, `${door} checks out through runRefCheckout`);
   }
   assert.match(src, /const c = await listedRefCheckout\(a\.ctx, ref\);/, "runRefCheckout plans from the listed full name");
   assert.doesNotMatch(src, /branches\.checkout\(ref\.name/, "no door hands git the short name");

@@ -4,6 +4,31 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **The branch menu works from the keyboard.** Type to search, then **Up** and
+  **Down** move through the actions and branches, **Right** (or **Enter**) on a
+  branch opens its actions, **Enter** runs one, and **Left** or **Escape** goes
+  back — as in IntelliJ's branch popup. The highlighted row is drawn in your
+  theme's selection colours (with the focus outline in high-contrast themes),
+  follows the mouse too, and is read out by screen readers. Holding Enter never
+  runs a second action, nor answers the question the first one asked. (#32)
+- **Reset a branch to its remote.** A local branch that tracks a remote branch
+  has **Reset to 'origin/feature'…** in its branch-menu actions. GitStudio
+  fetches first, then says exactly what the reset would take away — the commits
+  on your branch that the remote doesn't have (with their messages), and, for
+  the branch you're on, how many files with uncommitted changes are discarded —
+  before anything happens. A branch that is only behind is fast-forwarded, and
+  says so. The branch you're on is reset with its working tree; any other branch
+  is moved without touching your files, and one checked out in another worktree
+  is left alone, with a message saying where. **Undo** (Ctrl/Cmd+Alt+G Z) puts
+  the branch back, with the uncommitted changes you had. (#32)
+- **Checkout 'origin/feature' when your local 'feature' has commits of its
+  own** now asks: switch to your local branch as it is, or reset it to
+  'origin/feature' first. When your local branch has nothing of its own, the
+  checkout just switches to it, as before. (#32)
+
 ## [1.14.0] - 2026-09-25
 
 GitStudio and Merge Studio now share one merge experience — the same merge
