@@ -1,0 +1,30 @@
+apps/desktop/test/dropCommitFlow.test.ts
+  s_26f5e669d3043c::t_a720e0a53c6972 129,207
+  s_26f5e669d3043c::t_dcecc19d5e18aa 130
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_98a597f3181499 9175-9176
+packages/engine/test/rebaseDrop.test.ts
+  s_26f5e669d3043c::t_4441952df31328 71
+  s_26f5e669d3043c::t_dcecc19d5e18aa 72
+  s_26f5e669d3043c::t_a720e0a53c6972 69-70,81,83
+packages/engine/src/rebase/drop.ts
+  s_26f5e669d3043c::t_a720e0a53c6972 117,120,122-123,128
+apps/extension/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_a720e0a53c6972 217-218,233,365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1b2687342206f7fc851d07e227b8908fff5b1311",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
