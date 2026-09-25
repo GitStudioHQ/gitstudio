@@ -10,6 +10,7 @@ import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockSt
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import { slowStateChanged, type SlowState } from "./slowState";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { repoName as repoNameOf, switchRepository, workspacePathOf } from "../git/repoPicker";
 import { pruneOnFetch } from "../git/fetchOptions";
 import { Arrival } from "../ui/arrival";
 
@@ -127,6 +128,11 @@ interface StatePayload {
   canPublish?: boolean;
   /** Short repo/workspace name shown in the header. */
   repoName?: string;
+  /** How many repositories are open; from 2 the header offers Switch Repository. */
+  repoCount: number;
+  /** Where the active repository is ("code/api"), for the control's tooltip —
+   *  a long name is clipped in the header, and two repos can share a name. */
+  repoPath?: string;
   lastMessage?: string;
   signoffDefault: boolean;
   aiEnabled: boolean;
@@ -178,6 +184,7 @@ interface FromWebview {
     | "openGraph"
     | "resolveConflicts"
     | "operation"
+    | "switchRepo"
     | "dialogResult";
   /** operation: which verb the banner's button asked for. */
   verb?: "continue" | "skip" | "abort";
@@ -692,6 +699,11 @@ export class CommitViewProvider
         return;
       case "openGraph":
         await vscode.commands.executeCommand("gitstudio.showCommitGraph");
+        return;
+      case "switchRepo":
+        // The header's repository control — the same picker as the palette's
+        // Switch Repository…, answered in this view's own dialog.
+        await switchRepository(this.repos);
         return;
       case "resolveConflicts": {
         const entry = this.repos.getActive();
@@ -2344,9 +2356,9 @@ export class CommitViewProvider
       ? { root: active.root, paths: new Set(merge.map((e) => e.path)) }
       : undefined;
     const stagedCount = staged.length;
-    const repoName = active
-      ? active.root.split(/[\\/]/).filter(Boolean).pop()
-      : undefined;
+    const repoName = active ? repoNameOf(active.root) : undefined;
+    const repoCount = this.repos.getAll().length;
+    const repoPath = active && repoCount > 1 ? workspacePathOf(active.root) : undefined;
     const lastMessage =
       amend && active ? await this.lastMessage(active) : undefined;
     const signoffDefault = vscode.workspace
@@ -2389,6 +2401,8 @@ export class CommitViewProvider
       unpushed: sent.unpushed,
       canPublish: sent.canPublish,
       repoName,
+      repoCount,
+      repoPath,
       lastMessage,
       signoffDefault,
       aiEnabled: sent.aiEnabled,
@@ -2609,6 +2623,50 @@ export class CommitViewProvider
       background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
       border-color: color-mix(in srgb, var(--gs-accent) 55%, transparent);
     }
+    /* The repository, when the workspace holds more than one (issue #32): the
+       branch pill's shape and type, in the neutral foreground so the branch
+       stays the brand-coloured thing in the row. Click opens Switch
+       Repository. On a narrow sidebar it gives way FIRST — the huge shrink
+       factor folds its name away before the branch loses a letter (the
+       tooltip still says which repository it is). Its min-width is what is
+       left then — padding, icon, the two gaps, caret, border — so the control
+       itself never folds. */
+    .repo {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 49px;
+      max-width: 42%;
+      flex: 0 1000 auto;
+      height: 22px;
+      padding: 0 6px 0 7px;
+      border-radius: var(--gs-radius-pill);
+      background: color-mix(in srgb, var(--gs-fg) 7%, transparent);
+      border: 1px solid color-mix(in srgb, var(--gs-fg) 18%, transparent);
+      color: var(--gs-fg);
+      font-family: var(--gs-font-ui);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background var(--gs-motion-fast) var(--gs-ease),
+                  border-color var(--gs-motion-fast) var(--gs-ease);
+    }
+    .repo[hidden] { display: none; }
+    .repo:hover {
+      background: color-mix(in srgb, var(--gs-fg) 13%, transparent);
+      border-color: color-mix(in srgb, var(--gs-fg) 30%, transparent);
+    }
+    .repo:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+    .repo .codicon { font-size: 13px; flex: 0 0 auto; }
+    .repo .codicon-repo { color: var(--gs-fg-muted); }
+    .repo .repo-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      letter-spacing: 0.005em;
+    }
+    .repo .repo-caret { font-size: 12px; opacity: 0.8; margin-left: -1px; }
     .sync { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; flex: 0 0 auto; }
     .sync.hidden { display: none; }
     /* The sync pills are real buttons: ↓ Pull N runs the pull (↑ Push N the
@@ -3979,6 +4037,11 @@ export class CommitViewProvider
 </head>
 <body class="layout-list">
   <header class="repo-bar">
+    <button class="repo" id="repo-pill" type="button" aria-haspopup="dialog" hidden>
+      <i class="codicon codicon-repo" aria-hidden="true"></i>
+      <span class="repo-name" id="repo-name"></span>
+      <i class="codicon codicon-chevron-down repo-caret" aria-hidden="true"></i>
+    </button>
     <button class="branch" id="branch-pill" type="button" title="Branch &amp; actions"
       aria-haspopup="true" aria-expanded="false">
       <i class="codicon codicon-git-branch" aria-hidden="true"></i>
@@ -4169,6 +4232,8 @@ export class CommitViewProvider
     const stageAllTopBtn = $("stage-all-top");
     const stashChangesBtn = $("stash-changes");
     const refreshBtn = $("refresh");
+    const repoPill = $("repo-pill");
+    const repoNameEl = $("repo-name");
     const branchPill = $("branch-pill");
     const branchName = $("branch-name");
     const syncEl = $("sync");
@@ -4670,6 +4735,18 @@ export class CommitViewProvider
     // ---- Branch / sync header -------------------------------------------
     function renderHeader(state) {
       lastHeaderState = state;
+      // The repository control: only when there is another repository to
+      // switch to. With one, the name would be a label that opens a list of one.
+      const repoCount = state.hasRepo ? (state.repoCount || 0) : 0;
+      repoPill.hidden = repoCount < 2;
+      if (repoCount >= 2) {
+        repoNameEl.textContent = state.repoName || "";
+        // Where it is first: the name is clipped on a narrow sidebar, and two
+        // repositories in one workspace can share a folder name.
+        const what = "Switch repository (" + repoCount + " in this workspace)";
+        repoPill.dataset.tip = (state.repoPath ? state.repoPath + " — " : "") + what;
+        repoPill.setAttribute("aria-label", "Repository " + (state.repoName || "") + ". " + what);
+      }
       branchName.textContent = state.branch || "(no branch)";
       // A detached head is a revision, not a branch — mark it so the pill can
       // look different from an ordinary branch instead of silently lying.
@@ -6016,6 +6093,13 @@ export class CommitViewProvider
       }, 0);
     }
     branchPill.addEventListener("click", openBranchMenu);
+    // Switch Repository: the host builds the list (it holds every repository's
+    // branch and changes) and asks through the same pick dialog the palette
+    // command uses, rendered right here.
+    repoPill.addEventListener("click", () => {
+      if (branchMenu) closeBranchMenu();
+      vscode.postMessage({ type: "switchRepo" });
+    });
 
     // ---- Push review modal (confirm before every push) -------------------
     // Every push route (the ↑ pill, the branch-menu Push, Commit & Push) opens

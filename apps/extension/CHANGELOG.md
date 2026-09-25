@@ -22,6 +22,17 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Conflicts…** takes you to the Conflicts dashboard to continue, skip or
   abort — abort puts the branch back as it was. Undo (Ctrl/Cmd+Alt+G Z)
   restores the branch afterwards. (#32)
+- **Switch Repository.** When the folder you open holds more than one
+  repository — a parent folder of checkouts, a multi-root workspace, a repo
+  inside another's folder — the Changes view's header shows which one it is
+  showing, before the branch. Click it (or run *GitStudio: Switch
+  Repository…*) to pick another from a list of every repository, with its
+  path, its branch and how many files it has changed. The Changes view, the
+  commit graph, Worktrees and the sync status all follow your pick, and keep
+  it while you edit files in other repositories — until you pick again, or
+  that repository closes. The pick is remembered for the workspace; *Follow
+  the active editor* in the same list goes back to showing whichever
+  repository holds the file you're editing. (#32)
 
 ### Fixed
 - **Undo after moving a branch back onto pushed history.** Undoing an
@@ -29,6 +40,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   to it, or dropping your last local commit — offered to revert an empty range
   and failed with git's "empty commit set passed". Going back is a
   fast-forward that rewrites nothing, so Undo now simply does it.
+- Blame in a repository nested inside another's folder (a vendored checkout,
+  a submodule) no longer runs in the outer repository when the outer one is
+  the repository on screen.
 
 ## [1.14.0] - 2026-09-25
 
