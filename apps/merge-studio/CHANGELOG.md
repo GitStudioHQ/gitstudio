@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1 — 2026-09-25
+
+- The README shows its VS Marketplace version, Sponsor and Buy me a coffee badges again. The 1.0.0 README had lost them.
+
 ## 1.0.0 — 2026-09-25
 
 **Heads-up: during a rebase, Yours is now your commit, on the left.** Git calls the branch you're rebasing onto "ours". Merge Studio used to follow git, so your own commit appeared as "Theirs" on the right, and Accept Yours followed by Continue could drop your only commit ([#12](https://github.com/GitStudioHQ/merge-studio/issues/12)). Now Yours is the commit being replayed from your branch and Theirs is the branch you're rebasing onto, with both names on screen: "Rebasing test onto master · commit 2 of 3". Applying a stash works the same way: your stashed changes are Yours. A merge, a cherry-pick and a revert are unchanged. The buttons below the merge editor name the side too ("Accept Yours · test"). If you used Merge Studio 0.3.4 or earlier, your first rebase or stash conflict after updating shows a one-time note that the sides have changed, until you press *Got it*.
