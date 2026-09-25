@@ -1,0 +1,35 @@
+apps/extension/src/ui/dialogs.ts
+  s_26f5e669d3043c::t_ef7aad45dc931e 77-83
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_b160b449e31a65 6101-6108
+apps/extension/test/squashMessageEditor.test.ts
+  s_26f5e669d3043c::t_9b586a479b46b0 1-78
+apps/extension/test/multiCommitActions.test.ts
+  s_26f5e669d3043c::t_ce40aa9bd48dd2 1-171,173-174,179,181-183,185,187-434
+  s_26f5e669d3043c::t_2388b33ca02f3f 172,175-178,180,184,186
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_bc312bfd43e587 964-1020
+  s_26f5e669d3043c::t_4439a844df9e18 36-46
+  s_26f5e669d3043c::t_430b4647fc34c4 285-294,296,300-302,304
+packages/webview-ui/src/styles/codicons.ts
+  s_26f5e669d3043c::t_6b69a7d516aa36 32-35
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_a6a32c22e0ea5a 20-33
+  s_26f5e669d3043c::t_ef7a983b51c975 805-1073
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ab054c5c6ccfe6193593c06e50a770dea67b21f8",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
