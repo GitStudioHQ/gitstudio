@@ -9,6 +9,24 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Added
+- **Drop commit… in the graph's menu.** Right-click a commit on your current
+  branch and choose **Drop commit…** to take it out of the branch; the
+  commits after it are replayed on top. It asks first, in words: which
+  commit, how many later commits are replayed, and — if the commit is already
+  pushed — that this rewrites history other people have and the next push
+  will need to be a force push. When other branches point at a replayed
+  commit, it asks whether they move with it. It is offered only where it can
+  work: not for a merge commit, a commit below a merge, a commit on another
+  branch, or the only commit on the branch. With uncommitted changes, or with
+  a merge, rebase, cherry-pick or revert still in progress, it says so before
+  asking anything. If a later commit conflicts, the rebase stops and you land
+  in Changes, where the conflicts dashboard offers Continue, Skip and Abort —
+  Abort puts the branch back as it was. **Undo** on the toast, or ⌘Z,
+  restores the branch. The same drop as the VS Code extension's. (#32)
+
 ## [2.1.0] - 2026-09-25
 
 ### Added

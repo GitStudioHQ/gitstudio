@@ -201,9 +201,16 @@ export class UndoLedger {
     // The op's *result* is whatever HEAD is now (if the op moved HEAD). If that
     // commit is published, undoing by reset would rewrite shared history.
     const movedHead = currentHead !== null && currentHead !== entry.headBefore;
+    // …but only when going back would DISCARD it. An op that moved HEAD
+    // backwards — Drop Commit on the tip (issue #32), a reset to an older
+    // commit — leaves HEAD on a commit that is published because it was always
+    // there, and going back is a fast-forward that rewrites nothing. Read as
+    // "the result is pushed", that offered to revert `before..now`, an empty
+    // range, and the undo failed with git's "empty commit set passed".
     const resultPushed =
       movedHead && currentHead
-        ? await active.ctx.snapshot.isPushed(currentHead)
+        ? (await active.ctx.snapshot.isPushed(currentHead)) &&
+          !(await this.isAncestor(active.ctx, currentHead, entry.headBefore))
         : false;
 
     if (resultPushed) {
@@ -348,6 +355,12 @@ export class UndoLedger {
   private async currentHead(ctx: GitContext): Promise<string | null> {
     const result = await ctx.process.run(["rev-parse", "HEAD"]);
     return result.code === 0 ? result.stdout.trim() : null;
+  }
+
+  /** Is `a` an ancestor of (or equal to) `b`? A failed read says no. */
+  private async isAncestor(ctx: GitContext, a: string, b: string): Promise<boolean> {
+    const result = await ctx.process.run(["merge-base", "--is-ancestor", a, b]);
+    return result.code === 0;
   }
 }
 

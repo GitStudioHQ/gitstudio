@@ -47,6 +47,8 @@ export const codiconStyles = css`
   .codicon-link-external::before { content: "\\eb14"; }
   .codicon-history::before { content: "\\ea82"; }
   .codicon-discard::before { content: "\\eae2"; }
+  /* Drop Commit… in the graph context menu (issue #32). */
+  .codicon-trash::before { content: "\\ea81"; }
   .codicon-redo::before { content: "\\ebb0"; }
   .codicon-sync::before { content: "\\ea77"; }
   .codicon-lock::before { content: "\\ea75"; }

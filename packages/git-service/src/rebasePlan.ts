@@ -52,6 +52,16 @@ export interface BuildOptions {
    * they asked for.
    */
   updateRefs?: boolean;
+  /**
+   * Accept a plan in which every row is `drop`.
+   *
+   * The Rebase view refuses one because there it erases the whole range the
+   * user opened. Drop Commit (issue #32) on the branch tip is exactly that
+   * plan — one row, dropped — and it means what it says: git runs it and the
+   * branch lands on the dropped commit's parent (verified against git 2.49).
+   * Off by default, so the planner's guard stands everywhere else.
+   */
+  allowDropAll?: boolean;
 }
 
 export type RebasePlanResult =
@@ -132,7 +142,7 @@ export function buildRebasePlan(
       message: `The oldest commit can't be "${firstKept.action}" — there's nothing older for it to fold into.`,
     };
   }
-  if (!plan.some((r) => r.action !== "drop")) {
+  if (!opts?.allowDropAll && !plan.some((r) => r.action !== "drop")) {
     return { ok: false, expected: true, message: "Dropping every commit would erase the whole range." };
   }
 

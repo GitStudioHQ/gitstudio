@@ -101,6 +101,7 @@ import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
+import { dropCommitFlow } from "./dropCommit";
 import { askPullMode, pullWithChoice, pullVerdict, type PullOutcome, type PullVerdict } from "./pullFlow";
 import { installInTheWayAsker } from "./inTheWayAsk";
 import { refCheckoutRequest, refDisplay, type RowRef } from "./refMenuItems";
@@ -190,7 +191,12 @@ function sameTargetContent(a: SectionTarget | undefined, b: SectionTarget | unde
 class App {
   private graph?: GraphMount;
   private diffPanel?: DiffPanel;
-  private contextMenu = new CommitContextMenu((req) => this.runAction(req));
+  private contextMenu = new CommitContextMenu(
+    (req) => this.runAction(req),
+    (sha) => void this.dropCommit(sha),
+  );
+  /** Bumped per right-click; see openCommitMenu. */
+  private commitMenuSeq = 0;
 
   private detailsEl?: HTMLElement;
   /** The commit-details column beside the graph (commits view). */
@@ -8351,7 +8357,7 @@ class App {
     const graph = new GraphMount(graphHost, {
       onSelect: (sha) => void this.selectCommit(sha),
       onOpen: (sha) => void this.selectCommit(sha),
-      onContext: (sha, x, y) => this.contextMenu.open(sha, x, y, this.refsOn(sha)),
+      onContext: (sha, x, y) => void this.openCommitMenu(sha, x, y),
       // Ref labels are LINKS now: click a branch/tag chip in the graph and land
       // on that ref in Branches, scrolled + flashed.
       // `kind` too. The chip knows whether it is a branch, a remote or a tag,
@@ -10291,6 +10297,41 @@ class App {
   }
 
   // ── Commit actions (context menu) ────────────────────────────────────────────
+
+  /**
+   * Open the graph's commit menu. "Drop commit…" is offered only where it can
+   * work (issue #32), which only main can say — so it is asked first. A second
+   * right-click while the first is being answered wins: the late answer never
+   * opens a menu over the newer one.
+   */
+  private async openCommitMenu(sha: string, x: number, y: number): Promise<void> {
+    const seq = ++this.commitMenuSeq;
+    const plan = await host.invoke("commit:dropPlan", { sha }).catch(() => undefined);
+    if (seq !== this.commitMenuSeq) return;
+    this.contextMenu.open(sha, x, y, this.refsOn(sha), { drop: plan?.ok === true });
+  }
+
+  /** "Drop commit…" — see renderer/dropCommit.ts for the flow. */
+  private async dropCommit(sha: string): Promise<void> {
+    try {
+      await dropCommitFlow(sha, {
+        plan: (req) => host.invoke("commit:dropPlan", req),
+        drop: (req) => host.invoke("commit:drop", req),
+        undo: (req) => host.invoke("commit:undoDrop", req),
+        confirm: (opts) => confirmDialog(opts),
+        choose: (opts) => promptChoice(opts),
+        toast: (message, kind) => toast(message, kind),
+        undoable: (message, action) => didUndoable(message, action),
+        refresh: async () => {
+          bust();
+          await this.refreshAll();
+        },
+        landOnConflicts: () => this.landOnConflicts(),
+      });
+    } catch (e) {
+      toast(cleanErr(e) || "Couldn't drop the commit.", "error");
+    }
+  }
 
   private async runAction(req: Parameters<CommitContextMenu["resolve"]>[0]): Promise<void> {
     if (req.action === "copy-sha") {

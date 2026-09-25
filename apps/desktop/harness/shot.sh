@@ -4,6 +4,7 @@
 # A scene is "<view>[~step[~step…]]" — steps run after the repo screen mounts:
 #   open<N>          click the list row with data-num="<N>" (open a detail)
 #   click:<selector> click the first match (URL-encode [ ] = as %5B %5D %3D)
+#   rclick:<selector> right-click it (the graph row's commit menu)
 #   esc              dispatch Escape (detail → list)
 #   palette          open the ⌘K palette
 #   bell             open the notifications popover

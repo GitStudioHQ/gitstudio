@@ -4,6 +4,32 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Drop Commit… in the commit menu.** Right-click a commit on your current
+  branch — in the Commit Graph or the Commits list — and choose **Drop
+  Commit…** to take it out of the branch; the commits after it are replayed
+  on top. It asks first, in words: which commit, how many later commits are
+  replayed, and — if the commit is already pushed — that this rewrites
+  history other people have and the next push will need to be a force push.
+  When other branches point at a replayed commit, it asks whether they move
+  with it, as reordering does. It is offered only where it can work: not for
+  a merge commit, a commit below a merge, a commit on another branch, or the
+  only commit on the branch. With uncommitted changes, or with a merge,
+  rebase, cherry-pick or revert still in progress, it says so before asking
+  anything. If a later commit conflicts, the rebase stops and **Resolve
+  Conflicts…** takes you to the Conflicts dashboard to continue, skip or
+  abort — abort puts the branch back as it was. Undo (Ctrl/Cmd+Alt+G Z)
+  restores the branch afterwards. (#32)
+
+### Fixed
+- **Undo after moving a branch back onto pushed history.** Undoing an
+  operation that left the branch on an older, already-pushed commit — a reset
+  to it, or dropping your last local commit — offered to revert an empty range
+  and failed with git's "empty commit set passed". Going back is a
+  fast-forward that rewrites nothing, so Undo now simply does it.
+
 ## [1.14.0] - 2026-09-25
 
 GitStudio and Merge Studio now share one merge experience — the same merge
