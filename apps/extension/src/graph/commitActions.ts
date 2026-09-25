@@ -12,10 +12,17 @@ import { explainOptionLikeCheckout } from "../views/optionLikeBranch";
 import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 import { ellipsizeMiddle, resolveCheckoutTarget, type MenuRef } from "./checkoutTarget";
+import { dropBlocker, dropCommit, planDropCommit } from "@gitstudio/git-service/dropCommit";
+import { dropOutcomeMessage, dropQuestion } from "@gitstudio/engine/rebase/drop";
+import { runRebasePlan } from "../rebase/rebaseRunner";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
- * / codicon markup) — the webview renders these; ids match runCommitAction. */
-export function commitMenuItems(): GraphMenuItem[] {
+ * / codicon markup) — the webview renders these; ids match runCommitAction.
+ *
+ * `drop` offers "Drop Commit…" (issue #32). Only the caller knows whether this
+ * commit CAN be dropped — see commitMenuItemsFor — and the item is left out
+ * where it cannot, the way the per-ref items leave out the branch you are on. */
+export function commitMenuItems(opts: { drop?: boolean } = {}): GraphMenuItem[] {
   return [
     { id: "checkout", label: "Checkout Commit", icon: "git-commit" },
     // Detaching stays a FIRST-CLASS action. "Checkout Commit" prefers the
@@ -28,12 +35,27 @@ export function commitMenuItems(): GraphMenuItem[] {
     { id: "tag", label: "Create Tag Here…", icon: "tag" },
     { id: "cherryPick", label: "Cherry-Pick Commit", icon: "git-pull-request" },
     { id: "revert", label: "Revert Commit", icon: "history" },
+    ...(opts.drop ? [{ id: "drop", label: "Drop Commit…", icon: "trash", danger: true }] : []),
     { id: "reset", label: "Reset Current Branch to Here…", icon: "discard", danger: true },
     { id: "interactiveRebase", label: "Start Interactive Rebase Here…", icon: "git-merge" },
     { id: "", label: "", sep: true },
     { id: "copySha", label: "Copy SHA", icon: "copy" },
     { id: "copyMessage", label: "Copy Message", icon: "copy" },
   ];
+}
+
+/**
+ * The commit menu for `sha`, asking git whether it can be dropped.
+ *
+ * Drop Commit is offered only where it can work: a commit on HEAD's
+ * first-parent line, not a merge, not below one, and not the branch's only
+ * commit (git-service/dropCommit.ts). Everything else leaves the item out
+ * rather than offering a click that can only be refused. A read that fails is
+ * "cannot drop", never a menu that fails to open.
+ */
+export async function commitMenuItemsFor(ctx: GitContext, sha: string): Promise<GraphMenuItem[]> {
+  const plan = await planDropCommit(ctx.process, sha).catch(() => undefined);
+  return commitMenuItems({ drop: plan?.ok === true });
 }
 
 /** Namespace for the per-ref items, so they cannot collide with a commit id. */
@@ -199,6 +221,8 @@ export async function runCommitAction(
       return cherryPick(ctx, commit, undo);
     case "revert":
       return revert(ctx, commit, undo);
+    case "drop":
+      return dropCommitHere(ctx, commit, undo);
     case "reset":
       return resetTo(ctx, commit, undo);
     case "copySha":
@@ -636,6 +660,109 @@ async function resetTo(
       `Reset to ${short(commit.sha)}`,
     ),
   );
+}
+
+/**
+ * Drop Commit (issue #32): take this commit out of the current branch and
+ * replay the ones after it.
+ *
+ * The drag-to-reorder pipeline with one row set to `drop` — the plan, the
+ * todo and the run are git-service's (dropCommit.ts), shared with the desktop
+ * — under the same Undo envelope reorder runs in. What this door adds is the
+ * asking: refusals first (an operation in progress, uncommitted changes), so
+ * nobody agrees to a rewrite that is then refused; then one question that says
+ * which commit, how many later commits are replayed, and whether it is already
+ * pushed; and, when other branches point at the replayed commits, whether they
+ * come along — the reorder's own question.
+ */
+async function dropCommitHere(
+  ctx: GitContext,
+  commit: CommitContext,
+  undo?: UndoRunner,
+): Promise<boolean> {
+  // Re-read, never trust the menu: it may have been open while history moved.
+  const plan = await planDropCommit(ctx.process, commit.sha);
+  if (!plan.ok) {
+    void vscode.window.showWarningMessage(`GitStudio: ${plan.message}`);
+    return false;
+  }
+  const blocked = await dropBlocker(ctx.process);
+  if (blocked) {
+    void vscode.window.showWarningMessage(`GitStudio: ${blocked}`);
+    return false;
+  }
+
+  const question = dropQuestion(plan);
+  let carry = false;
+  if (plan.carryable.length > 0) {
+    // The question names the branches; the choice IS the confirmation.
+    const picked = await promptPick({
+      title: question.title,
+      hint: question.message,
+      choices: [
+        {
+          id: "carry",
+          label: "Drop and move those branches",
+          icon: "git-branch",
+          description: "They follow onto the replayed commits.",
+          danger: true,
+        },
+        {
+          id: "only",
+          label: "Drop from this branch only",
+          icon: "git-commit",
+          description: "They keep pointing at the commits as they are now.",
+          danger: true,
+        },
+        { id: "no", label: "Cancel", icon: "close" },
+      ],
+    });
+    if (picked !== "carry" && picked !== "only") {
+      return false;
+    }
+    carry = picked === "carry";
+  } else {
+    const ok = await promptConfirm({
+      title: question.title,
+      message: question.message,
+      confirmLabel: "Drop Commit",
+      danger: true,
+    });
+    if (!ok) {
+      return false;
+    }
+  }
+
+  const outcome = await withUndo(undo, `Drop ${plan.shortSha}`, async () => {
+    const out = await dropCommit(
+      ctx.process,
+      { sha: plan.sha, head: plan.head, carry },
+      (p) => runRebasePlan(ctx.process.cwd, p),
+    );
+    // A drop that failed changed nothing — every refusal comes before git
+    // writes, and a failed rebase ends where it began — so there is nothing
+    // for Undo to offer. `cancelled` is how the ledger is told exactly that.
+    return out.status === "failed" ? { ...out, cancelled: true as const } : out;
+  });
+
+  const text = dropOutcomeMessage(plan.shortSha, outcome);
+  if (outcome.status === "done") {
+    flash(text);
+    return true;
+  }
+  if (outcome.status === "stopped") {
+    // The rebase is left open and the conflict flow takes it from here: the
+    // notice's Resolve Conflicts… opens the dashboard, and the Changes view's
+    // banner offers Continue, Skip and Abort.
+    notifyPaused(`GitStudio: ${text}`);
+    return true;
+  }
+  if (outcome.expected) {
+    void vscode.window.showWarningMessage(`GitStudio: ${text}`);
+  } else {
+    void vscode.window.showErrorMessage(`GitStudio: ${text}`);
+  }
+  return false;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

@@ -3104,6 +3104,51 @@
     const ended = mp.state.op === mp.NONE && invoked.some((r) => /^op:(continue|skip|abort)$/.test(r.channel));
     return { ...fixtures["rebase:load"], inProgress: fixtures["rebase:load"].inProgress && !ended };
   };
+
+  // ── Drop Commit (issue #32) ────────────────────────────────────────────────
+  // What main answers for the graph fixture: HEAD's first-parent line runs
+  // tip → merge → …, so only the tip can be dropped — and it is published
+  // (origin/main sits on it), which is the confirmation with the most to say.
+  // The merge is refused as a merge, the redesign branch's own commits as not
+  // on this branch, and everything under the merge as past it. Switches:
+  //   ?dropblocked=1   the preflight finds uncommitted changes
+  //   ?dropcarry=1     a branch points at a replayed commit (the either/or)
+  //   ?dropconflict=1  the run stops on a conflict
+  const DROP_TIP = "9f8e7d6c5b4a39281706";
+  const DROP_AFTER = "a1b2c3d4e5f60718293a";
+  dynamic["commit:dropPlan"] = (req) => {
+    const sha = (req && req.sha) || "";
+    if (sha !== DROP_TIP) {
+      const off = sha === "b2c3d4e5f6a71829304b" || sha === "c3d4e5f6a7b829304c5d" || sha === "77aa88b9c0d1e2f3a4b5";
+      const reason = sha === DROP_AFTER ? "merge" : off ? "not-on-branch" : "past-merge";
+      const message = {
+        merge: "That's a merge commit — dropping it would flatten the history it joined. Revert it instead.",
+        "not-on-branch": "That commit isn't on the current branch, so there's nothing to drop it from.",
+        "past-merge":
+          "There's a merge between that commit and the tip of the branch — replaying the commits after it would flatten the merge.",
+      }[reason];
+      return { ok: false, expected: true, reason, message };
+    }
+    return {
+      ok: true,
+      sha: DROP_TIP,
+      shortSha: DROP_TIP.slice(0, 7),
+      subject: "release: extension 1.11.1",
+      head: DROP_TIP,
+      branch: "main",
+      replayed: params.get("dropcarry") ? 1 : 0,
+      published: true,
+      carryable: params.get("dropcarry") ? ["release/1.11"] : [],
+      ...(req && req.preflight && params.get("dropblocked")
+        ? { blocked: "You have uncommitted changes. Commit or stash them, then drop the commit." }
+        : {}),
+    };
+  };
+  dynamic["commit:drop"] = (req) =>
+    params.get("dropconflict")
+      ? { status: "stopped", reason: "conflict", message: "could not apply 9f8e7d6", before: req.head }
+      : { status: "done", before: req.head, after: DROP_AFTER };
+  dynamic["commit:undoDrop"] = () => ({ ok: true, changed: true });
   const IDE = { id: "webstorm", name: "WebStorm", command: "/Applications/WebStorm.app/Contents/MacOS/webstorm" };
   dynamic["jetbrains:detect"] = () => (params.get("noide") === "1" ? undefined : IDE);
   dynamic["jetbrains:merge"] = (req) => {
@@ -3438,6 +3483,18 @@
         const sel = decodeURIComponent(step.slice(6));
         const elx = await until(() => q(sel));
         elx.click();
+      } else if (step.startsWith("rclick:")) {
+        // A right-click, for the graph row's commit menu: `contextmenu` at a
+        // point inside the match, composed so it leaves the shadow root.
+        const sel = decodeURIComponent(step.slice(7));
+        const elx = await until(() => q(sel));
+        const r = elx.getBoundingClientRect();
+        elx.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true, composed: true, cancelable: true,
+            clientX: Math.round(r.left + Math.min(240, r.width / 2)), clientY: Math.round(r.top + r.height / 2),
+          }),
+        );
       } else if (step.startsWith("scroll:")) {
         const sel = decodeURIComponent(step.slice(7));
         const target = await until(() => q(sel));

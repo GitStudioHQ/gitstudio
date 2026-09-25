@@ -1945,6 +1945,68 @@ export interface RebaseOutcomeWire {
 }
 
 /**
+ * Drop Commit (issue #32): can this commit be dropped from the current branch,
+ * and what would dropping it mean? The graph's menu asks before it opens and
+ * leaves the item out on `ok: false`; the drop asks again with `preflight`,
+ * which adds what stops it right now (an operation in progress, uncommitted
+ * changes) so that is said before the confirmation, not after it.
+ */
+export interface DropPlanRequest {
+  sha: string;
+  preflight?: boolean;
+}
+
+export type DropPlanWire =
+  | {
+      ok: true;
+      /** Full sha of the commit to drop. */
+      sha: string;
+      shortSha: string;
+      subject: string;
+      /** HEAD when planned; the drop refuses if it has moved. */
+      head: string;
+      /** The branch it is dropped from; null on a detached HEAD. */
+      branch: string | null;
+      /** How many later commits are replayed. */
+      replayed: number;
+      /** Already on a remote: dropping it rewrites pushed history. */
+      published: boolean;
+      /** Other local branches pointing at a replayed commit. */
+      carryable: string[];
+      /** With `preflight`: why it cannot start right now. */
+      blocked?: string;
+    }
+  | {
+      ok: false;
+      expected: true;
+      reason: "not-on-branch" | "merge" | "past-merge" | "only-commit" | "too-far" | "no-repo";
+      message: string;
+    };
+
+export interface DropRequest {
+  /** The commit, as the confirmed plan named it. */
+  sha: string;
+  /** HEAD as the confirmed plan saw it. */
+  head: string;
+  /** Carry `carryable` along with the rewrite. */
+  carry?: boolean;
+}
+
+/** How a drop ended, plus the two tips its Undo needs. */
+export interface DropOutcomeWire extends RebaseOutcomeWire {
+  /** HEAD before the drop. */
+  before?: string;
+  /** HEAD after a drop that finished. */
+  after?: string;
+}
+
+/** Undo a drop: back from `after` to `before`, only while HEAD is still `after`. */
+export interface UndoDropRequest {
+  before: string;
+  after: string;
+}
+
+/**
  * The full channel map: channel name -> [request, response]. Used to make the
  * preload's `invoke` and the main handlers strongly typed end to end.
  */
@@ -1989,6 +2051,10 @@ export interface IpcChannels {
   //    mid-operation channels further down — they drive the same git state.
   "rebase:load": [{ base?: string; sha?: string }, RebasePlanState];
   "rebase:apply": [RebaseApplyRequest, RebaseOutcomeWire];
+  // ── Drop Commit from the graph's menu (issue #32) — the same shared runner.
+  "commit:dropPlan": [DropPlanRequest, DropPlanWire];
+  "commit:drop": [DropRequest, DropOutcomeWire];
+  "commit:undoDrop": [UndoDropRequest, CommitActionResult];
   // ── Working-tree staging + commit (Changes view) ──
   "stage": [string, CommitActionResult];
   "unstage": [string, CommitActionResult];

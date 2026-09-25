@@ -517,6 +517,9 @@ function actionLabel(channel: string): string {
     "conflict:model": "Open conflict",
     "blame:file": "Blame file",
     "commit:action": "Commit action",
+    "commit:dropPlan": "Check drop",
+    "commit:drop": "Drop commit",
+    "commit:undoDrop": "Undo drop",
     stage: "Stage",
     unstage: "Unstage",
     discard: "Discard",
@@ -802,6 +805,10 @@ function registerIpc(): void {
   // registered below (the mid-operation controls) and drive the same git state.
   handle("rebase:load", (req) => rebase.load(req ?? {}));
   handle("rebase:apply", (req) => rebase.apply(req));
+  // Drop Commit from the graph's menu (issue #32): the same runner again.
+  handle("commit:dropPlan", (req) => rebase.dropPlan(req));
+  handle("commit:drop", (req) => rebase.drop(req));
+  handle("commit:undoDrop", (req) => rebase.undoDrop(req));
 
   // Working-tree staging + commit (Changes view).
   handle("stage", (path) => bridge.stage(path));

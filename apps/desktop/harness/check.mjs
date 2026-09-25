@@ -597,6 +597,11 @@ const CASES = [
   ["a-commit-the-filter-hides-says-so-and-offers-every-branch", "graph"],
   ["the-branch-picker-clears-the-dock", "graph~click:.dock-chevron", { height: 700 }],
   ["a-details-chip-opens-the-graphs-chip-menu", "graph"],
+  // Drop Commit from the graph's menu (issue #32).
+  ["the-graph-menu-offers-drop-only-where-it-can-work", "graph"],
+  ["the-graph-menu-offers-drop-only-where-it-can-work", "graph", { theme: "light" }],
+  ["a-drop-over-uncommitted-changes-is-refused-before-the-question", "graph", { extra: "dropblocked=1" }],
+  ["a-drop-that-conflicts-lands-on-the-conflict-flow", "graph", { extra: "dropconflict=1" }],
   ["the-open-branch-picker-reads-at-aa", "graph~click:.gh-branches", { theme: "light" }],
   ["the-open-branch-picker-reads-at-aa", "graph~click:.gh-branches~click:.gh-preset%5Bdata-preset%3Dlocal%5D", { theme: "light" }],
   ["the-open-branch-picker-reads-at-aa", "graph~click:.gh-branches~click:.gh-preset%5Bdata-preset%3Dlocal%5D"],

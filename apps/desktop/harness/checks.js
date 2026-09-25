@@ -9120,6 +9120,147 @@
     },
 
     /**
+     * "Drop commit…" (issue #32) is offered only where it can work — the menu
+     * asks main first — sits after Revert in the danger colour, and choosing
+     * it asks main again with the preflight, confirms in words (the commit,
+     * the branch, the published-history warning and the force push), runs the
+     * drop with the head the question was about, and offers Undo with the two
+     * tips the drop answered with.
+     */
+    "the-graph-menu-offers-drop-only-where-it-can-work": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const TIP = "9f8e7d6c5b4a39281706";
+      const sent = (ch) => window.__GS_INVOKED.filter((r) => r.channel === ch);
+      const rclick = async (sha) => {
+        const row = sr.querySelector(`.row[data-sha="${sha}"]`);
+        if (!row) return false;
+        const r = row.getBoundingClientRect();
+        row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: r.left + 240, clientY: r.top + r.height / 2 }));
+        await settle(400);
+        return true;
+      };
+      const closeMenu = async () => {
+        const m = $(".ctx-menu");
+        if (!m) return;
+        (document.activeElement || m).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        await settle(200);
+      };
+      const dropRow = () => $(".ctx-menu [data-action=drop]");
+
+      // ── Offered on the tip, in its place ──
+      c.ok(await rclick(TIP), "the tip's row to right-click");
+      c.ok(!!$(".ctx-menu"), "the commit menu opens");
+      c.ok(sent("commit:dropPlan").some((r) => r.payload?.sha === TIP && !r.payload?.preflight), "the menu asked main before it opened");
+      const row = dropRow();
+      c.ok(!!row, "Drop commit… is offered for the tip");
+      if (!row) return;
+      c.eq(text(row), "Drop commit…", "its label");
+      c.ok(row.classList.contains("ctx-danger"), "danger-styled like Reset (hard)");
+      c.eq(row.previousElementSibling?.dataset.action, "revert", "right after Revert");
+      c.eq(row.nextElementSibling?.dataset.action, "reset-soft", "and before the resets");
+      const red = getComputedStyle(row).color;
+      const plain = getComputedStyle($(".ctx-menu [data-action=revert]")).color;
+      c.ok(red !== plain, `and it is painted as one (${red} vs Revert's ${plain})`);
+      await closeMenu();
+
+      // ── Not offered where it cannot work ──
+      for (const [sha, what] of [
+        ["a1b2c3d4e5f60718293a", "the merge commit"],
+        ["b2c3d4e5f6a71829304b", "a commit on another branch"],
+        ["d4e5f6a7b8c930415d6e", "a commit below the merge"],
+      ]) {
+        c.ok(await rclick(sha), `${what}'s row to right-click`);
+        c.ok(!!$(".ctx-menu"), `the menu still opens for ${what}`);
+        c.ok(!dropRow(), `…without Drop commit… for ${what}`);
+        c.ok(!!$(".ctx-menu [data-action=revert]"), `…and with everything else for ${what}`);
+        await closeMenu();
+      }
+
+      // ── Choosing it: preflight, then the question, in words ──
+      await rclick(TIP);
+      dropRow()?.click();
+      await settle(500);
+      c.ok(sent("commit:dropPlan").some((r) => r.payload?.sha === TIP && r.payload?.preflight === true), "it asks main again, with the preflight");
+      c.eq(sent("commit:drop").length, 0, "nothing runs before the answer");
+      const card = $(".modal-card");
+      c.ok(!!card, "a confirmation opens");
+      if (!card) return;
+      c.eq(text(card.querySelector(".modal-title")), "Drop 9f8e7d6?", "the title names the commit");
+      const said = text(card.querySelector(".modal-message"));
+      c.match(said, /9f8e7d6 "release: extension 1\.11\.1" will be removed from main\./, "which commit, from where");
+      c.match(said, /nothing else changes/, "how many later commits are replayed");
+      c.match(said, /Already pushed\. Dropping it would rewrite history other people have\./, "the published-history warning");
+      c.match(said, /force push/, "and the force push");
+      const ok = card.querySelector(".modal-ok");
+      c.ok(ok?.classList.contains("btn-danger"), "the confirm button is the danger one");
+      c.eq(text(ok), "Drop commit", "and says what it does");
+
+      // ── Confirmed: run with the head the question was about; Undo offered ──
+      ok?.click();
+      await settle(600);
+      const run = sent("commit:drop").at(-1)?.payload;
+      c.eq(run?.sha, TIP, "the drop names the commit");
+      c.eq(run?.head, TIP, "and the head the question was about");
+      c.eq(run?.carry, false, "no branches to carry");
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /Dropped 9f8e7d6\./, "it says so");
+      const undo = $$(".toast-action").find((b) => text(b) === "Undo");
+      c.ok(!!undo, "with Undo on the toast");
+      undo?.click();
+      await settle(500);
+      const back = sent("commit:undoDrop").at(-1)?.payload;
+      c.eq(back?.before, TIP, "Undo goes back to the old tip");
+      c.eq(back?.after, "a1b2c3d4e5f60718293a", "from the tip the drop left");
+    },
+
+    /** A preflight refusal (uncommitted changes) is said INSTEAD of the question. */
+    "a-drop-over-uncommitted-changes-is-refused-before-the-question": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      const row = sr?.querySelector('.row[data-sha="9f8e7d6c5b4a39281706"]');
+      c.ok(!!row, "the tip's row");
+      if (!row) return;
+      const r = row.getBoundingClientRect();
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: r.left + 240, clientY: r.top + r.height / 2 }));
+      await settle(400);
+      $(".ctx-menu [data-action=drop]")?.click();
+      await settle(500);
+      c.ok(!$(".modal-card"), "no question is asked");
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /uncommitted changes/, "the refusal is said");
+      c.eq(window.__GS_INVOKED.filter((x) => x.channel === "commit:drop").length, 0, "and nothing runs");
+    },
+
+    /** A drop that stops on a conflict lands on Changes, where the dashboard's Continue/Skip/Abort are. */
+    "a-drop-that-conflicts-lands-on-the-conflict-flow": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      const row = sr?.querySelector('.row[data-sha="9f8e7d6c5b4a39281706"]');
+      c.ok(!!row, "the tip's row");
+      if (!row) return;
+      const r = row.getBoundingClientRect();
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: r.left + 240, clientY: r.top + r.height / 2 }));
+      await settle(400);
+      $(".ctx-menu [data-action=drop]")?.click();
+      await settle(500);
+      $(".modal-ok")?.click();
+      await settle(900);
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /hit a conflict while replaying a later commit/, "it says what happened");
+      c.ok(!$$(".toast-error").length, "neutrally: nothing failed");
+      const changes = $('[data-view="changes"]');
+      c.ok(
+        !!changes && (changes.getAttribute("aria-current") === "page" || changes.classList.contains("active")),
+        `and takes you to Changes (current: ${$$("[data-view]").filter((n) => n.getAttribute("aria-current") === "page" || n.classList.contains("active")).map((n) => n.dataset.view).join(",")})`,
+      );
+      c.eq(window.__GS_INVOKED.filter((x) => x.channel === "commit:drop").length, 1, "the drop ran once");
+    },
+
+    /**
      * The commit-details pane's ref chips are the graph's chip shortcut too
      * (issue #30: "clicking a ref chip could also be a shortcut: show only
      * this branch / add this branch to the filter"). The pane has no ref list
