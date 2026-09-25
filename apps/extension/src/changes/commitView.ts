@@ -161,6 +161,9 @@ interface FromWebview {
     | "stage"
     | "unstage"
     | "discard"
+    | "stagePaths"
+    | "unstagePaths"
+    | "discardPaths"
     | "openDiff"
     | "stageAll"
     | "stageAllForCommit"
@@ -204,7 +207,7 @@ interface FromWebview {
   oldPath?: string;
   staged?: boolean;
   group?: GroupKind;
-  /** File paths targeted by a folder-level stage/unstage/discard. */
+  /** File paths targeted by a folder-level or multi-selection stage/unstage/discard. */
   paths?: string[];
   /** Which hunk of `path` a stageHunk targets (index from the last requestHunks). */
   hunkIndex?: number;
@@ -746,17 +749,43 @@ export class CommitViewProvider
         }
         return;
       case "stage":
-        await this.mutate((entry) =>
-          entry.ctx.staging.stageFile(msg.path ?? ""),
+        await this.mutate(
+          (entry) => entry.ctx.staging.stageFile(msg.path ?? ""),
+          { verb: "stage", paths: [msg.path ?? ""] },
         );
         return;
       case "unstage":
-        await this.mutate((entry) =>
-          entry.ctx.staging.unstageFile(msg.path ?? ""),
+        await this.mutate(
+          (entry) => entry.ctx.staging.unstageFile(msg.path ?? ""),
+          { verb: "unstage", paths: [msg.path ?? ""] },
         );
         return;
       case "discard":
-        await this.doDiscard(msg.path ?? "");
+        await this.doDiscardPaths([msg.path ?? ""]);
+        return;
+      // A multi-selection is ONE message and one git call. It used to be one
+      // "stage" per file, all at once: every git after the first found the
+      // index locked and failed, and a multi-selection Discard opened one
+      // confirm per file, each dismissing the last, so only the final file was
+      // discarded.
+      case "stagePaths": {
+        const paths = (msg.paths ?? []).filter((p) => p);
+        await this.mutate((entry) => entry.ctx.staging.stageFiles(paths), {
+          verb: "stage",
+          paths,
+        });
+        return;
+      }
+      case "unstagePaths": {
+        const paths = (msg.paths ?? []).filter((p) => p);
+        await this.mutate((entry) => entry.ctx.staging.unstageFiles(paths), {
+          verb: "unstage",
+          paths,
+        });
+        return;
+      }
+      case "discardPaths":
+        await this.doDiscardPaths(msg.paths ?? []);
         return;
       case "openDiff":
         this.doOpenDiff(msg.path ?? "", !!msg.staged, msg.line);
@@ -780,13 +809,15 @@ export class CommitViewProvider
         await this.doDiscardAll();
         return;
       case "stageFolder":
-        await this.mutate((entry) =>
-          entry.ctx.staging.stageFiles(msg.paths ?? []),
+        await this.mutate(
+          (entry) => entry.ctx.staging.stageFiles(msg.paths ?? []),
+          { verb: "stage", paths: msg.paths ?? [] },
         );
         return;
       case "unstageFolder":
-        await this.mutate((entry) =>
-          entry.ctx.staging.unstageFiles(msg.paths ?? []),
+        await this.mutate(
+          (entry) => entry.ctx.staging.unstageFiles(msg.paths ?? []),
+          { verb: "unstage", paths: msg.paths ?? [] },
         );
         return;
       case "discardFolder":
@@ -866,16 +897,31 @@ export class CommitViewProvider
    */
   private async mutate(
     op: (entry: RepoEntry) => Promise<unknown>,
+    what?: { verb: "stage" | "unstage" | "discard"; paths: string[] },
   ): Promise<void> {
     const entry = this.repos.getActive();
     if (!entry) {
       return;
     }
+    // A failure is SAID, and the rows it moved go back at once. This used to
+    // ignore the op's result entirely: a refused `git add` left its row sitting
+    // in Staged until the optimistic move timed out four seconds later, then
+    // snapped back without a word.
+    let failure: string | undefined;
     try {
-      await op(entry);
-    } catch {
-      // A failed op leaves git untouched; the reconcile below repaints the real
-      // state, which quietly undoes the optimistic move.
+      const result = await op(entry);
+      if (isRefusal(result)) {
+        failure = result.stderr.trim() || "git gave no reason.";
+      }
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+    }
+    if (failure !== undefined && what) {
+      const paths = what.paths.filter((p) => p);
+      void this.view?.webview.postMessage({ type: "opFailed", paths, error: failure });
+      void vscode.window.showErrorMessage(
+        `GitStudio: couldn't ${what.verb} ${describePaths(paths)} — ${failure}`,
+      );
     }
     // Re-scan NOW so pushState reads fresh index/worktree state. (The old code
     // fired this and forgot, then immediately read STALE state — so the row only
@@ -905,14 +951,14 @@ export class CommitViewProvider
     if (untracked.length === 0 && tracked.length === 0) {
       return;
     }
-    await this.mutate(async (e) => {
-      if (tracked.length > 0) {
-        await e.ctx.staging.discardFiles(tracked);
-      }
-      if (untracked.length > 0) {
-        await e.ctx.staging.cleanFiles(untracked);
-      }
-    });
+    await this.mutate(
+      async (e) => {
+        const checkedOut = tracked.length > 0 ? await e.ctx.staging.discardFiles(tracked) : undefined;
+        const cleaned = untracked.length > 0 ? await e.ctx.staging.cleanFiles(untracked) : undefined;
+        return [checkedOut, cleaned].find(isRefusal);
+      },
+      { verb: "discard", paths: files.map((f) => f.path) },
+    );
   }
 
   /**
@@ -920,41 +966,55 @@ export class CommitViewProvider
    * Paths not currently in the unstaged/merge groups default to tracked ("M"),
    * so they still go through `git checkout --`.
    */
-  private async entriesForPaths(
+  /**
+   * The files a discard would touch, with their status letters, and how many
+   * of them ALSO have staged changes. `git checkout --` restores from the
+   * index, so for those the staged part survives: the confirm has to say so
+   * rather than promise a return to the committed version.
+   */
+  private async discardTargets(
     active: RepoEntry,
     paths: string[],
-  ): Promise<FileEntry[]> {
-    const wanted = paths.filter((p) => p);
+  ): Promise<{ files: FileEntry[]; partlyStaged: number }> {
+    const wanted = [...new Set(paths.filter((p) => p))];
     if (wanted.length === 0) {
-      return [];
+      return { files: [], partlyStaged: 0 };
     }
-    const { unstaged, merge } = await this.resolveState(active);
+    const { unstaged, merge, staged } = await this.resolveState(active);
     const byPath = new Map<string, string>();
     for (const f of [...unstaged, ...merge]) {
       byPath.set(f.path, f.status);
     }
-    return wanted.map((path) => ({ path, status: byPath.get(path) ?? "M" }));
+    const stagedPaths = new Set(staged.map((f) => f.path));
+    const files = wanted.map((path) => ({ path, status: byPath.get(path) ?? "M" }));
+    const partlyStaged = files.filter((f) => f.status !== "U" && stagedPaths.has(f.path)).length;
+    return { files, partlyStaged };
   }
 
-  private async doDiscard(path: string): Promise<void> {
-    if (!path) {
+  /**
+   * Discard one file or a multi-selection: ONE question naming what goes, then
+   * one git call per kind of file (see discardEntries).
+   */
+  private async doDiscardPaths(paths: string[]): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active) {
       return;
     }
+    const { files, partlyStaged } = await this.discardTargets(active, paths);
+    if (files.length === 0) {
+      return;
+    }
+    const n = files.length;
     const ok = await promptConfirm({
-      title: `Discard changes in ${path}?`,
-      message:
-        "The file goes back to its committed state. These edits were never committed, so nothing — not even Undo — can bring them back.",
-      confirmLabel: "Discard",
+      title: n === 1 ? `Discard changes in ${files[0].path}?` : `Discard changes in ${n} files?`,
+      message: discardConsequence(files, partlyStaged),
+      confirmLabel: n === 1 ? "Discard" : `Discard ${n} Files`,
       danger: true,
     });
     if (!ok) {
       return;
     }
-    const active = this.repos.getActive();
-    if (!active) {
-      return;
-    }
-    await this.discardEntries(await this.entriesForPaths(active, [path]));
+    await this.discardEntries(files);
   }
 
   private doOpenDiff(path: string, staged: boolean, line?: number): void {
@@ -1198,7 +1258,7 @@ export class CommitViewProvider
     if (rels.length === 0) {
       return;
     }
-    await this.mutate((e) => e.ctx.staging.stageFiles(rels));
+    await this.mutate((e) => e.ctx.staging.stageFiles(rels), { verb: "stage", paths: rels });
   }
 
   private async doBulkStage(group?: GroupKind): Promise<void> {
@@ -1208,7 +1268,7 @@ export class CommitViewProvider
     }
     const { merge, unstaged } = await this.resolveState(active);
     const rels = (group === "merge" ? merge : unstaged).map((e) => e.path);
-    await this.mutate((e) => e.ctx.staging.stageFiles(rels));
+    await this.mutate((e) => e.ctx.staging.stageFiles(rels), { verb: "stage", paths: rels });
   }
 
   private async doBulkUnstage(): Promise<void> {
@@ -1218,7 +1278,7 @@ export class CommitViewProvider
     }
     const { staged } = await this.resolveState(active);
     const rels = staged.map((e) => e.path);
-    await this.mutate((e) => e.ctx.staging.unstageFiles(rels));
+    await this.mutate((e) => e.ctx.staging.unstageFiles(rels), { verb: "unstage", paths: rels });
   }
 
   private async doDiscardAll(): Promise<void> {
@@ -1231,10 +1291,10 @@ export class CommitViewProvider
     if (rels.length === 0) {
       return;
     }
+    const { partlyStaged } = await this.discardTargets(active, rels);
     const ok = await promptConfirm({
       title: `Discard all ${rels.length} working-tree change${rels.length === 1 ? "" : "s"}?`,
-      message:
-        "Every unstaged edit goes back to its committed state. These edits were never committed, so nothing — not even Undo — can bring them back.",
+      message: discardConsequence(unstaged, partlyStaged),
       confirmLabel: "Discard All",
       danger: true,
     });
@@ -1245,25 +1305,24 @@ export class CommitViewProvider
   }
 
   private async doDiscardFolder(paths: string[]): Promise<void> {
-    const rels = paths.filter((p) => p);
-    if (rels.length === 0) {
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+    const { files, partlyStaged } = await this.discardTargets(active, paths);
+    if (files.length === 0) {
       return;
     }
     const ok = await promptConfirm({
-      title: `Discard changes in ${rels.length} file${rels.length === 1 ? "" : "s"}?`,
-      message:
-        "Every edit under this folder goes back to its committed state. These edits were never committed, so nothing — not even Undo — can bring them back.",
+      title: `Discard changes in ${files.length} file${files.length === 1 ? "" : "s"}?`,
+      message: discardConsequence(files, partlyStaged),
       confirmLabel: "Discard",
       danger: true,
     });
     if (!ok) {
       return;
     }
-    const active = this.repos.getActive();
-    if (!active) {
-      return;
-    }
-    await this.discardEntries(await this.entriesForPaths(active, rels));
+    await this.discardEntries(files);
   }
 
   /**
@@ -4447,23 +4506,25 @@ export class CommitViewProvider
       items.push({ icon: "archive", label: "Stash " + label,
         fn: () => { vscode.postMessage({ type: "stashPaths", paths: paths }); clearSelection(); } });
       items.push({ sep: true });
+      // ONE message per action, never one per file. Per-file messages ran
+      // their git commands together, so all but one found the index locked and
+      // failed; and each Discard opened its own confirm, which dismissed the
+      // one before it, so only the last file was ever discarded.
       if (stageable.length > 0) {
         items.push({ icon: "add", label: "Stage " + (stageable.length === 1 ? "1 File" : String(stageable.length) + " Files"),
           fn: () => {
-            for (let i = 0; i < stageable.length; i++) {
-              queueOp(stageable[i].path, "stage");
-              vscode.postMessage({ type: "stage", path: stageable[i].path });
-            }
+            const paths = stageable.map((en) => en.path);
+            queueFiles(paths, "stage");
+            vscode.postMessage({ type: "stagePaths", paths: paths });
             clearSelection();
           } });
       }
       if (unstageable.length > 0) {
         items.push({ icon: "remove", label: "Unstage " + (unstageable.length === 1 ? "1 File" : String(unstageable.length) + " Files"),
           fn: () => {
-            for (let i = 0; i < unstageable.length; i++) {
-              queueOp(unstageable[i].path, "unstage");
-              vscode.postMessage({ type: "unstage", path: unstageable[i].path });
-            }
+            const paths = unstageable.map((en) => en.path);
+            queueFiles(paths, "unstage");
+            vscode.postMessage({ type: "unstagePaths", paths: paths });
             clearSelection();
           } });
       }
@@ -4473,9 +4534,7 @@ export class CommitViewProvider
         // The host confirms before discarding; this only asks for it.
         items.push({ icon: "discard", label: "Discard " + (discardable.length === 1 ? "1 File" : String(discardable.length) + " Files"), danger: true,
           fn: () => {
-            for (let i = 0; i < discardable.length; i++) {
-              vscode.postMessage({ type: "discard", path: discardable[i].path });
-            }
+            vscode.postMessage({ type: "discardPaths", paths: discardable.map((en) => en.path) });
             clearSelection();
           } });
       }
@@ -4534,13 +4593,13 @@ export class CommitViewProvider
       clearSelection();
     });
     $("selbar-stage").addEventListener("click", () => {
-      const entries = selectionEntries();
-      for (let i = 0; i < entries.length; i++) {
-        const en = entries[i];
-        // Staged rows are already where this would put them.
-        if (en.kind === "staged") continue;
-        queueOp(en.path, "stage");
-        vscode.postMessage({ type: "stage", path: en.path });
+      // Staged rows are already where this would put them.
+      const paths = selectionEntries()
+        .filter((en) => en.kind !== "staged")
+        .map((en) => en.path);
+      if (paths.length > 0) {
+        queueFiles(paths, "stage");
+        vscode.postMessage({ type: "stagePaths", paths: paths });
       }
       clearSelection();
     });
@@ -7680,6 +7739,13 @@ export class CommitViewProvider
         // Commit finished (ok or not) — clear the in-button spinner. A successful
         // Commit & Push then opens the review modal via a separate pushPreview.
         clearCommitBusy();
+      } else if (msg.type === "opFailed") {
+        // git refused a stage / unstage / discard: put the rows it moved back
+        // now, rather than leaving them where they were dropped until the
+        // optimistic move times out. The host has already said why.
+        const failed = msg.paths || [];
+        for (let i = 0; i < failed.length; i++) pending.delete(failed[i]);
+        applyOptimistic();
       } else if (msg.type === "generateDone") {
         setGenerating(false);
       } else if (msg.type === "operationDone") {
@@ -7799,6 +7865,60 @@ export class CommitViewProvider
     }
     this.disposables.length = 0;
   }
+}
+
+/** A staging op's `{ ok: false, stderr }`: git refused it. */
+function isRefusal(result: unknown): result is { ok: false; stderr: string } {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    (result as { ok?: unknown }).ok === false &&
+    typeof (result as { stderr?: unknown }).stderr === "string"
+  );
+}
+
+/** "src/a.ts", or "3 files" — what a failed stage/unstage/discard was about. */
+function describePaths(paths: string[]): string {
+  if (paths.length === 1) return paths[0];
+  if (paths.length === 0) return "the changes";
+  return `${paths.length} files`;
+}
+
+/**
+ * What a discard does, in words that match what git does.
+ *
+ * `git checkout -- <file>` restores from the INDEX, not from HEAD: a file with
+ * staged edits keeps them. The old sentence ("goes back to its committed
+ * state") was only true for files with nothing staged. An untracked file is
+ * deleted (`git clean`), which is its own sentence.
+ */
+function discardConsequence(files: FileEntry[], partlyStaged: number): string {
+  const untracked = files.filter((f) => f.status === "U").length;
+  const tracked = files.length - untracked;
+  const gone = "These edits were never committed, so nothing — not even Undo — can bring them back.";
+  if (files.length === 1) {
+    if (untracked === 1) {
+      return "The file is deleted. Git has never tracked it, so nothing — not even Undo — can bring it back.";
+    }
+    return partlyStaged === 1
+      ? `Its unstaged edits are lost; the part you staged stays staged. ${gone}`
+      : `The file goes back to its committed version. ${gone}`;
+  }
+  const parts: string[] = [];
+  if (tracked > 0) {
+    parts.push(
+      partlyStaged > 0
+        ? `Unstaged edits are lost; ${partlyStaged === 1 ? "the file that has staged changes keeps them" : `the ${partlyStaged} files that have staged changes keep them`}.`
+        : tracked === 1
+          ? "The changed file goes back to its committed version."
+          : `All ${tracked} changed files go back to their committed version.`,
+    );
+  }
+  if (untracked > 0) {
+    parts.push(untracked === 1 ? "The untracked file is deleted." : `The ${untracked} untracked files are deleted.`);
+  }
+  parts.push(gone);
+  return parts.join(" ");
 }
 
 /** Find the Change whose repo-relative path matches `path`. */
