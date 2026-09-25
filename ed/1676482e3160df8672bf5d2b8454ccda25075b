@@ -1,0 +1,45 @@
+packages/webview-ui/test/rebaseSelection.test.ts
+  s_26f5e669d3043c::t_365a4bfd71b7bb 51
+  s_26f5e669d3043c::t_0f8d5605c5e331 44
+  s_26f5e669d3043c::t_57ef7f388bfb2d 292-293
+  s_26f5e669d3043c::t_3800d841fff320 305-315,320-337
+  s_26f5e669d3043c::t_c82269d706f50d 357
+  s_26f5e669d3043c::t_21836fbd665ea0 1-43,45-50,52-280,286-291,294-304,338-356,358-360
+  s_26f5e669d3043c::t_f00f13252875dd 316-319
+  s_26f5e669d3043c::t_10973f07d3f990 281-285
+apps/extension/harness/rebase-todo/shots.ts
+  s_26f5e669d3043c::t_bd7aaab5ef208d 1-133
+packages/webview-ui/src/rebase/rebase-view.ts
+  s_26f5e669d3043c::t_aae4cbb86e8e32 358-359,362-363
+  s_26f5e669d3043c::t_efb9a681b89773 658
+  s_26f5e669d3043c::t_f338840023514d 85-96,98,100,102-104,106-117
+  s_26f5e669d3043c::t_64206517145911 695-701
+  s_26f5e669d3043c::t_30e9766b341eed 621-643,647-655,666-670,675-676,685-694,705-706,708-709,716-719,734-735
+  s_26f5e669d3043c::t_db46ff4508cfff 684
+  s_26f5e669d3043c::t_ef174fada03236 371-373
+  s_26f5e669d3043c::t_d5b7b66baffd92 752-755,761-764
+  s_26f5e669d3043c::t_495a382ca48809 364,778-793,795-801,804-830,834-896,898-911,913-914,916-931,936-941,944-945,951,953-958,967,973,979-981,984-985,989,992
+  s_26f5e669d3043c::t_0652db009b0540 596-602
+  s_26f5e669d3043c::t_45b77b2282897f 253-354
+  s_26f5e669d3043c::t_0d70f25aa77fd7 80-82,97,99,101,105,119-135
+  s_26f5e669d3043c::t_acef050b7a86cf 13-20,25-46,52
+  s_26f5e669d3043c::t_31423bfc4dfefa 53,946
+packages/webview-ui/src/rebase/rebase.css
+  s_26f5e669d3043c::t_e7b6c98bdde9fb 39-42,44-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ed1676482e3160df8672bf5d2b8454ccda25075b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
