@@ -137,6 +137,11 @@ const CASES = [
   ["a-dragged-commit-lands-where-the-line-says", "rebase"],
   // #32: several commits selected, one action set on all of them — the long
   // plan the issue is about, in both themes where the selection is painted.
+  // #32: the branch switcher from the keyboard, and its per-ref actions.
+  ["the-branch-switcher-works-from-the-keyboard", "code~click:.topbar-branch"],
+  ["the-branch-switcher-works-from-the-keyboard", "code~click:.topbar-branch", { theme: "light" }],
+  ["the-branch-switchers-remotes-and-tags-have-actions", "code~click:.topbar-branch"],
+  ["the-branch-actions-sit-level-with-their-branch", "code~click:.topbar-branch"],
   ["rebase-selection-follows-the-keyboard", "rebase", { extra: "rbmany=1" }],
   ["rebase-selection-follows-the-keyboard", "rebase", { extra: "rbmany=1", theme: "light" }],
   // A laptop's height: the list runs under both sticky bars.

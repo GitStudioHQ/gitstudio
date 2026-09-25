@@ -4936,6 +4936,24 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
      unused space. The menu's own max-width is the real limit. */
 }
 .dropdown-item .glyph:last-child { margin-left: auto; }
+/* A row with actions of its own (the branch switcher's branches, #32): the
+   arrow at its end opens them, as Right and Enter do from the keyboard. */
+.dropdown-more {
+  /* 22px to hit, but it takes no more of the row's height than a line of
+     text does: the negative margins hand the extra back. */
+  margin: -4px -4px -4px auto; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 5px;
+  color: var(--app-muted);
+}
+.dropdown-more .glyph:last-child { margin: 0; color: inherit; }
+.dropdown-more:hover { color: var(--app-text); background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent); }
+/* The current branch's tick keeps the right edge; the arrow sits beside it. */
+.dropdown-item .dropdown-trail { margin-left: auto; }
+.dropdown-trail + .dropdown-more { margin-left: 2px; }
+/* The row whose actions are open reads as the open one. */
+.dropdown-item.is-open { background: var(--app-active); }
+.dropdown-item.is-open .dropdown-more { color: var(--app-text); }
 
 /* ── Main area ─────────────────────────────────────────────────────────────── */
 .graph-host {

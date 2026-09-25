@@ -811,6 +811,17 @@ export interface MenuItem {
   /** Receives the rendered menuitem element, so keepOpen actions can drive a
    *  live state on it (spinner, disabled) while they run. */
   onClick?: (itemEl: HTMLElement) => void;
+  /**
+   * A second level: this row's own actions — the branch switcher's per-branch
+   * menu (#32: "right arrow to show options for that branch"). Built when it
+   * opens. Right or Enter opens it from the keyboard, as IntelliJ's branch
+   * popup and the extension's do, and the arrow at the row's end from the
+   * pointer; Left or Escape comes back to the row. A plain click on the row
+   * still runs `onClick`.
+   */
+  submenu?: () => MenuItem[] | Promise<MenuItem[]>;
+  /** What the submenu is, in words: "Actions for fix/log-stream". */
+  submenuLabel?: string;
 }
 
 /** Tuning for `openMenu`. `searchable` forces the type-to-filter field on (it
@@ -865,11 +876,28 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
   const rows: HTMLElement[] = [];
   const seps: HTMLElement[] = [];
 
+  /** The open submenu, if any: its element, its rows, and the row it hangs from. */
+  let sub: { menu: HTMLElement; rows: HTMLElement[]; from: HTMLElement } | null = null;
+  /** Which opening is current: a slow submenu that lands after another opened is dropped. */
+  let subSeq = 0;
+  /** Close the submenu; the keyboard goes back to its row when asked. */
+  const closeSub = (focusRow: boolean): void => {
+    subSeq++;
+    if (!sub) return;
+    const { from } = sub;
+    sub.menu.remove();
+    sub = null;
+    from.setAttribute("aria-expanded", "false");
+    from.classList.remove("is-open");
+    if (focusRow && from.isConnected) from.focus();
+  };
+
   let closed = false;
   const close = (restoreFocus = true, reason: "escape" | "dismiss" | "action" = "dismiss"): void => {
     if (closed) return;
     closed = true;
     if (liveMenuClose === close) liveMenuClose = null;
+    closeSub(false);
     layer.release();
     menu.remove();
     document.removeEventListener("mousedown", onDoc, true);
@@ -890,7 +918,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     // respond, and anything typed into its filter was silently thrown away.
     // The anchor's own handler now sees aria-expanded="true" and just closes.
     const t = e.target as Node;
-    if (menu.contains(t) || anchor === t || anchor.contains(t)) return;
+    if (menu.contains(t) || sub?.menu.contains(t) || anchor === t || anchor.contains(t)) return;
     close(false);
   };
   /** Currently visible (not filtered-out) menuitem rows. */
@@ -908,7 +936,54 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     const idx = ((i % vis.length) + vis.length) % vis.length;
     vis[idx].focus();
   };
+  /** The keys while a submenu is open: its rows, and the way back. */
+  const onSubKey = (e: KeyboardEvent): void => {
+    if (!sub) return;
+    const srows = sub.rows;
+    const cur = srows.indexOf(document.activeElement as HTMLElement);
+    const to = (i: number): void => {
+      if (!srows.length) return;
+      srows[Math.max(0, Math.min(srows.length - 1, i))].focus();
+    };
+    if (e.key === "Escape" || e.key === "ArrowLeft") {
+      // Back to the row it opened from — one level, the way IntelliJ's
+      // branch popup and the extension's step back. A second Escape closes.
+      e.preventDefault();
+      e.stopPropagation();
+      closeSub(true);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      to(cur < 0 ? 0 : cur + 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      to(cur < 0 ? srows.length - 1 : cur - 1);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      to(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      to(srows.length - 1);
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (cur >= 0) srows[cur].click();
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+    } else if (e.key === "Tab") {
+      close();
+    }
+  };
   const onKey = (e: KeyboardEvent): void => {
+    // A held key's repeat runs nothing. On a branch the first Enter opens its
+    // actions, and the repeat would run the first of them — a checkout
+    // nobody chose, from a key still held down.
+    if (e.repeat && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      return;
+    }
+    if (sub) {
+      onSubKey(e);
+      return;
+    }
     const vis = visible();
     const cur = vis.indexOf(document.activeElement as HTMLElement);
     if (e.key === "Escape") {
@@ -925,6 +1000,10 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       focusAt(cur < 0 ? vis.length - 1 : cur - 1);
+    } else if (e.key === "ArrowRight" && cur >= 0 && itemOf.get(vis[cur])?.submenu) {
+      // A row with actions of its own opens them, the first one ready.
+      e.preventDefault();
+      void openSub(vis[cur], true);
     } else if (e.key === "Home" && !typingIn(e.target)) {
       // NOT while the caret is in the filter field. A searchable menu (more
       // than 8 rows — the branch switcher, the label pickers) puts focus in a
@@ -938,32 +1017,67 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
       e.preventDefault();
       focusAt(vis.length - 1);
     } else if ((e.key === "Enter" || (e.key === " " && cur >= 0))) {
-      // Enter from the search field activates the first match.
-      if (cur >= 0) {
-        e.preventDefault();
-        vis[cur].click();
-      } else if (e.key === "Enter" && vis.length) {
-        e.preventDefault();
-        vis[0].click();
-      }
+      // Enter from the search field acts on the first match. On a row with
+      // actions of its own, Enter (and Space) opens them rather than running
+      // the row — IntelliJ's branch popup, and the extension's: "type feat,
+      // Enter" lands on feat's actions, one more Enter checks it out.
+      const target = cur >= 0 ? vis[cur] : e.key === "Enter" ? vis[0] : undefined;
+      if (!target) return;
+      e.preventDefault();
+      if (itemOf.get(target)?.submenu) void openSub(target, true);
+      else target.click();
     } else if (e.key === "Tab") {
       // Hand the keyboard back to the ANCHOR, exactly as Escape does. `false`
       // skipped the restore, so Tab out of any of the app's 29 menus dropped
       // focus on <body> and the next Tab restarted at the top of the window —
       // from a menu you had opened by pressing Tab to reach in the first place.
       close();
+    } else if (search && cur >= 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // Typing keeps filtering after the arrows took the keyboard to a row:
+      // the letters go to the filter, as they do in the extension's menu,
+      // where the box never loses them. (Space stays the row's.)
+      if (e.key.length === 1 && e.key !== " ") {
+        e.preventDefault();
+        typeInto(e.key);
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        typeInto("", true);
+      }
     }
   };
 
-  for (const it of items) {
-    if (it.separator) {
-      const sep = el("div", "dropdown-sep");
-      sep.setAttribute("role", "separator");
-      if (it.label) sep.textContent = it.label;
-      menu.appendChild(sep);
-      seps.push(sep);
-      continue;
+  /** Which item each row stands for — its submenu, above all. */
+  const itemOf = new Map<HTMLElement, MenuItem>();
+
+  /** Run a row's item the way a click on it does. */
+  const activate = (row: HTMLElement, it: MenuItem): void => {
+    if (it.checkable) {
+      const next = row.getAttribute("aria-checked") !== "true";
+      row.setAttribute("aria-checked", String(next));
+      row.classList.toggle("is-current", next);
+      const tick = row.querySelector<HTMLElement>(".dropdown-tick");
+      if (tick) tick.style.visibility = next ? "visible" : "hidden";
+      it.onClick!(row);
+      return;
     }
+    // A keepOpen action runs in place (live spinner on the item); a busy
+    // in-place action must not re-fire while it's still running.
+    if (it.keepOpen) {
+      if (!row.classList.contains("is-busy-item")) it.onClick!(row);
+      return;
+    }
+    // Restore focus to the trigger BEFORE running the action. openModal
+    // captures `document.activeElement` as the place to return the keyboard
+    // to, and closing the menu without restoring left that as <body> — so
+    // dismissing a dialog opened from a menu stranded the keyboard at the
+    // top of the document instead of on the control you had used.
+    close(true, "action");
+    it.onClick!(row);
+  };
+
+  /** One menu row — the top level's or a submenu's. Returns it, and whether
+   *  the keyboard can land on it. */
+  const makeRow = (it: MenuItem): { row: HTMLElement; operable: boolean } => {
     const row = el(
       "button",
       "dropdown-item" +
@@ -983,43 +1097,141 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     label.textContent = it.label ?? "";
     row.appendChild(label);
     if (it.sub) {
-      const sub = el("span", "dropdown-sub");
-      sub.textContent = it.sub;
-      row.appendChild(sub);
+      const subEl = el("span", "dropdown-sub");
+      subEl.textContent = it.sub;
+      row.appendChild(subEl);
     }
     if (it.checkable) {
       const tick = glyph("check");
       tick.classList.add("dropdown-tick");
       tick.style.visibility = it.current ? "visible" : "hidden";
       row.appendChild(tick);
-    } else if (it.current) row.appendChild(glyph("check"));
-    if (!it.disabled && it.onClick) {
-      row.addEventListener("click", () => {
-        if (it.checkable) {
-          const next = row.getAttribute("aria-checked") !== "true";
-          row.setAttribute("aria-checked", String(next));
-          row.classList.toggle("is-current", next);
-          const tick = row.querySelector<HTMLElement>(".dropdown-tick");
-          if (tick) tick.style.visibility = next ? "visible" : "hidden";
-          it.onClick!(row);
-          return;
-        }
-        // A keepOpen action runs in place (live spinner on the item); a busy
-        // in-place action must not re-fire while it's still running.
-        if (it.keepOpen) {
-          if (!row.classList.contains("is-busy-item")) it.onClick!(row);
-          return;
-        }
-        // Restore focus to the trigger BEFORE running the action. openModal
-        // captures `document.activeElement` as the place to return the keyboard
-        // to, and closing the menu without restoring left that as <body> — so
-        // dismissing a dialog opened from a menu stranded the keyboard at the
-        // top of the document instead of on the control you had used.
-        close(true, "action");
-        it.onClick!(row);
-      });
-      rows.push(row);
+    } else if (it.current) {
+      const check = glyph("check");
+      check.classList.add("dropdown-trail");
+      row.appendChild(check);
     }
+    itemOf.set(row, it);
+    const hasSub = !it.disabled && !!it.submenu;
+    if (hasSub) {
+      row.setAttribute("aria-haspopup", "menu");
+      row.setAttribute("aria-expanded", "false");
+      // The pointer's door to the actions: the arrow at the row's end, the
+      // one IntelliJ and the extension draw. The keyboard's is Right/Enter,
+      // so it is not a stop of its own.
+      const more = el("span", "dropdown-more");
+      more.appendChild(glyph("chevron-right"));
+      more.title = it.submenuLabel ?? `Actions for ${it.label ?? "this"}`;
+      more.setAttribute("aria-hidden", "true");
+      more.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        void openSub(row, false);
+      });
+      row.appendChild(more);
+    }
+    if (!it.disabled && it.onClick) {
+      row.addEventListener("click", () => activate(row, it));
+    } else if (hasSub) {
+      row.addEventListener("click", () => void openSub(row, false));
+    }
+    return { row, operable: !it.disabled && (!!it.onClick || hasSub) };
+  };
+
+  /**
+   * Open a row's submenu beside the menu, level with the row. `focusFirst`
+   * when the keyboard opened it: its first item is where the keys land.
+   */
+  async function openSub(row: HTMLElement, focusFirst: boolean): Promise<void> {
+    const it = itemOf.get(row);
+    if (!it?.submenu || closed) return;
+    if (sub?.from === row) {
+      if (focusFirst) sub.rows[0]?.focus();
+      return;
+    }
+    closeSub(false);
+    const mine = ++subSeq;
+    const panel = el("div", "dropdown dropdown-submenu");
+    panel.setAttribute("role", "menu");
+    panel.setAttribute("aria-label", it.submenuLabel ?? `Actions for ${it.label ?? "this"}`);
+    row.setAttribute("aria-expanded", "true");
+    row.classList.add("is-open");
+    const srows: HTMLElement[] = [];
+    sub = { menu: panel, rows: srows, from: row };
+    const fill = (list: MenuItem[]): void => {
+      panel.replaceChildren();
+      srows.length = 0;
+      for (const s of list) {
+        if (s.separator) {
+          const sep = el("div", "dropdown-sep");
+          sep.setAttribute("role", "separator");
+          if (s.label) sep.textContent = s.label;
+          panel.appendChild(sep);
+          continue;
+        }
+        const made = makeRow(s);
+        if (made.operable) srows.push(made.row);
+        panel.appendChild(made.row);
+      }
+    };
+    let built = it.submenu();
+    if (built instanceof Promise) {
+      fill([{ label: "Loading…", icon: "loading", disabled: true }]);
+      document.body.appendChild(panel);
+      placeSub(panel, row);
+      built = await built.catch(() => [{ label: "Couldn't load these actions", icon: "warning", disabled: true }]);
+      if (mine !== subSeq || closed) return; // closed, or another row's opened since
+    }
+    fill(built);
+    if (!panel.isConnected) document.body.appendChild(panel);
+    placeSub(panel, row);
+    if (focusFirst) srows[0]?.focus();
+  }
+
+  /** Beside the menu (its right edge, or its left when the window ends), top
+   *  level with the row, inside the window's margin. */
+  function placeSub(panel: HTMLElement, row: HTMLElement): void {
+    const GAP_ = 8;
+    panel.style.maxHeight = `${Math.max(160, window.innerHeight - GAP_ * 2)}px`;
+    // LAYOUT geometry, as `place` uses: a menu still in its entrance (scale
+    // .97, 6px lift) under-reads its rects, and a submenu opened that soon
+    // would sit off its row for good.
+    const m = { left: menu.offsetLeft, right: menu.offsetLeft + menu.offsetWidth };
+    const rowTop = menu.offsetTop + menu.clientTop + row.offsetTop - menu.scrollTop;
+    const w = panel.offsetWidth;
+    const h = panel.offsetHeight;
+    let left = m.right - 2;
+    if (left + w > window.innerWidth - GAP_) left = m.left - w + 2;
+    left = Math.max(GAP_, Math.min(left, window.innerWidth - w - GAP_));
+    // The submenu's border and padding (6px) above its first row, so the
+    // first action sits level with the row it belongs to.
+    let top = rowTop - 6;
+    if (top + h > window.innerHeight - GAP_) top = window.innerHeight - h - GAP_;
+    top = Math.max(GAP_, top);
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(top)}px`;
+  }
+
+  /** Put a typed character (or a backspace) into the filter and focus it. */
+  const typeInto = (ch: string, back = false): void => {
+    if (!search) return;
+    search.focus();
+    search.value = back ? search.value.slice(0, -1) : search.value + ch;
+    search.setSelectionRange(search.value.length, search.value.length);
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  for (const it of items) {
+    if (it.separator) {
+      const sep = el("div", "dropdown-sep");
+      sep.setAttribute("role", "separator");
+      if (it.label) sep.textContent = it.label;
+      menu.appendChild(sep);
+      seps.push(sep);
+      continue;
+    }
+    const { row, operable } = makeRow(it);
+    if (operable) rows.push(row);
     menu.appendChild(row);
   }
 
@@ -1039,6 +1251,8 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     const labelOf = (r: HTMLElement): string =>
       (r.querySelector(".dropdown-label")?.textContent ?? "").toLowerCase();
     search.addEventListener("input", () => {
+      // A new filter is a new list: an open submenu belonged to the old one.
+      closeSub(false);
       const q = search!.value.trim().toLowerCase();
       for (const r of rows) r.hidden = !!q && !labelOf(r).includes(q);
       // Hide section separators while filtering (they'd float without context).
@@ -1100,6 +1314,8 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
   // defined above them.
   function reanchor(): void {
     if (closed) return;
+    // The submenu hangs off a row that is about to move: it goes.
+    closeSub(false);
     if (!anchor.isConnected) return close(false);
     rect = anchor.getBoundingClientRect();
     const gone =
@@ -1120,7 +1336,14 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     // The menu's OWN overflow scroll must not move the menu — a long branch
     // switcher scrolls inside itself, and that is not the page moving.
     const t = e.target as Node | null;
-    if (t && (t === menu || (t.nodeType === 1 && menu.contains(t)))) return;
+    const inside = (m: HTMLElement | undefined): boolean =>
+      !!m && !!t && (t === m || (t.nodeType === 1 && m.contains(t)));
+    if (inside(sub?.menu)) return;
+    if (inside(menu)) {
+      // …but a submenu hangs level with its row, which just moved.
+      if (sub) placeSub(sub.menu, sub.from);
+      return;
+    }
     reanchor();
   }
   window.addEventListener("scroll", onScroll, true);

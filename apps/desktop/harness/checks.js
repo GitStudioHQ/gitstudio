@@ -15970,6 +15970,173 @@
       c.ok(!note.closest(".pr-threads-body"), "outside the folding body, so a folded panel still says it");
     },
 
+    // ── #32: the branch switcher from the keyboard ──────────────────────────
+    //
+    // "When branch selection is open I would love to use arrows… right arrow
+    // to show options for that branch" — IntelliJ's popup, and the
+    // extension's menu since the first #32 batch. The table: where the
+    // keyboard is (filter · branch · its actions) × the key (type · Down ·
+    // Up · Right · Enter · held Enter · Left · Escape · Tab), and what is
+    // open, focused and SENT afterwards. Keys go to the focused element.
+    "the-branch-switcher-works-from-the-keyboard": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const top = () => $(".dropdown:not(.dropdown-submenu)");
+      const subm = () => $(".dropdown-submenu");
+      const active = () => document.activeElement;
+      const label = (n) => text(n?.querySelector?.(".dropdown-label") ?? n);
+      const key = async (k, mods = {}) => {
+        const t = active() && active() !== document.body ? active() : null;
+        if (!t) return null;
+        const e = new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...mods });
+        t.dispatchEvent(e);
+        await settle(160);
+        return e.defaultPrevented;
+      };
+      const typeFilter = async (q) => {
+        const box = $(".dropdown .dropdown-search");
+        box.value = q;
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+        await settle(120);
+      };
+      const checkouts = () => (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action");
+      const sent = checkouts().length;
+
+      c.ok(!!top(), "the switcher is open");
+      if (!top()) return;
+      c.ok(active()?.classList.contains("dropdown-search"), "the filter has the keyboard");
+      // One height for every row, the ones with an arrow included.
+      const hs = new Set($$(".dropdown .dropdown-item").map((r) => Math.round(r.getBoundingClientRect().height)));
+      c.eq(hs.size, 1, `every row is one height, arrow or not (${[...hs].join(", ")})`);
+
+      // Type to filter, Down to the first match.
+      await typeFilter("feat");
+      await key("ArrowDown");
+      c.eq(label(active()), "feat/line-staging", "Down from the filter lands on the first match");
+      c.eq(active()?.getAttribute("aria-haspopup"), "menu", "which says it has a menu of its own");
+
+      // Right: its actions, the first one ready.
+      c.eq(await key("ArrowRight"), true, "Right is the menu's");
+      await settle(200);
+      c.ok(!!subm(), "Right opens the branch's actions");
+      c.eq(subm()?.getAttribute("aria-label"), "Actions for feat/line-staging", "named for the branch");
+      c.eq(label(active()), "Checkout feat/line-staging", "with Checkout first, and the keyboard on it");
+      const row = $$(".dropdown:not(.dropdown-submenu) .dropdown-item").find((r) => label(r) === "feat/line-staging");
+      c.eq(row?.getAttribute("aria-expanded"), "true", "the branch says its menu is open");
+      c.ok(getComputedStyle(row).backgroundColor !== getComputedStyle($$(".dropdown:not(.dropdown-submenu) .dropdown-item").find((r) => r !== row && !r.classList.contains("is-current"))).backgroundColor,
+        "and reads as the open one");
+      const subRect = subm().getBoundingClientRect();
+      c.ok(subRect.left >= top().getBoundingClientRect().right - 4, "the actions hang beside the menu, not over it");
+
+      await key("ArrowDown");
+      c.eq(label(active()), "Fetch", "Down walks the actions");
+      await key("ArrowUp");
+      await key("ArrowUp");
+      c.eq(label(active()), "Checkout feat/line-staging", "Up stops at the first");
+
+      // Left and Escape come back to the branch; neither closes the menu.
+      c.eq(await key("ArrowLeft"), true, "Left is the menu's");
+      c.ok(!subm(), "Left closes the actions");
+      c.eq(label(active()), "feat/line-staging", "and the keyboard is back on the branch");
+      c.eq(row?.getAttribute("aria-expanded"), "false", "which says so");
+      await key("Enter");
+      await settle(200);
+      c.ok(!!subm(), "Enter on a branch opens its actions too");
+      c.eq(checkouts().length, sent, "and checks nothing out");
+      c.eq(await key("Escape"), true, "Escape is the menu's");
+      c.ok(!subm() && !!top(), "Escape closes the actions, not the menu");
+      c.eq(label(active()), "feat/line-staging", "and the keyboard is back on the branch");
+
+      // Typing on a row keeps filtering: the keys go to the filter.
+      await key("Backspace");
+      c.ok(active()?.classList.contains("dropdown-search"), "Backspace on a row goes to the filter");
+      c.eq($(".dropdown .dropdown-search")?.value, "fea", "and takes a letter off it");
+      await key("ArrowDown");
+      c.eq(label(active()), "feat/line-staging", "(back on a row)");
+      await key("t");
+      c.ok(active()?.classList.contains("dropdown-search"), "a letter typed on a row goes to the filter");
+      c.eq($(".dropdown .dropdown-search")?.value, "feat", "added to what was there");
+
+      // A held Enter: the first opens the actions, the repeat runs nothing.
+      await typeFilter("fix");
+      await key("Enter");
+      await settle(200);
+      c.ok(!!subm(), "Enter from the filter opens the first match's actions");
+      c.eq(subm()?.getAttribute("aria-label"), "Actions for fix/log-stream", "the first match's");
+      await key("Enter", { repeat: true });
+      c.eq(checkouts().length, sent, "a held Enter's repeat checks nothing out");
+      c.ok(!!subm(), "and leaves the actions open");
+
+      // A fresh Enter runs the action — the switcher switches.
+      await key("Enter");
+      await settle(500);
+      c.ok(!top() && !subm(), "running an action closes both");
+      const last = checkouts().at(-1)?.payload;
+      c.eq(last?.fullName, "refs/heads/fix/log-stream", "Enter, Enter checked out the branch, by its full name");
+    },
+
+    // The first action sits level with its branch — measured in LAYOUT
+    // terms, with the menus' entrance left running (headless freezes it
+    // part-way, as a quick Right press finds it): placed from the moving
+    // rects, the actions landed off their row for good.
+    "the-branch-actions-sit-level-with-their-branch": async (f) => {
+      const c = check(f);
+      const t = document.activeElement;
+      const key = async (k) => {
+        const a = document.activeElement;
+        a.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+        await settle(200);
+      };
+      c.ok(t?.classList.contains("dropdown-search"), "the switcher is open, filter focused");
+      await key("ArrowDown");
+      await key("ArrowDown");
+      await key("ArrowRight");
+      const menu = $(".dropdown:not(.dropdown-submenu)");
+      const sub = $(".dropdown-submenu");
+      const row = $(".dropdown-item.is-open");
+      c.ok(!!sub && !!row, "a branch's actions are open");
+      if (!sub || !row || !menu) return;
+      const first = sub.querySelector(".dropdown-item");
+      const rowTop = menu.offsetTop + menu.clientTop + row.offsetTop - menu.scrollTop;
+      const firstTop = sub.offsetTop + sub.clientTop + first.offsetTop - sub.scrollTop;
+      c.ok(Math.abs(rowTop - firstTop) <= 1, `level: the first action's top ${firstTop} vs the branch's ${rowTop}`);
+      c.ok(sub.offsetLeft >= menu.offsetLeft + menu.offsetWidth - 4, "and beside the menu");
+    },
+
+    // Remotes and tags have actions too, and the pointer reaches them all.
+    "the-branch-switchers-remotes-and-tags-have-actions": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const subm = () => $(".dropdown-submenu");
+      const label = (n) => text(n?.querySelector?.(".dropdown-label") ?? n);
+      const rowNamed = (name) => $$(".dropdown:not(.dropdown-submenu) .dropdown-item").find((r) => label(r) === name);
+      const actions = () => $$(".dropdown-submenu .dropdown-item").map((r) => label(r));
+
+      const remote = rowNamed("origin/main");
+      c.ok(!!remote, "the switcher lists origin/main");
+      if (!remote) return;
+      const arrow = remote.querySelector(".dropdown-more");
+      c.ok(!!arrow, "the row carries an arrow for its actions");
+      c.match(arrow?.title || "", /^Actions for origin\/main$/, "which says so in words");
+      arrow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await settle(250);
+      c.ok(!!$(".dropdown:not(.dropdown-submenu)"), "clicking the arrow leaves the switcher open");
+      c.eq(actions()[0], "Check out as a local branch", "a remote's actions lead with its checkout");
+      c.ok(actions().includes("Compare with main") && actions().includes("Copy name"), `and carry the Branches list's (${actions().join(" | ")})`);
+
+      const tag = rowNamed("ext-v1.11.1");
+      tag.querySelector(".dropdown-more").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await settle(250);
+      c.eq($$(".dropdown-submenu").length, 1, "one submenu at a time");
+      c.eq(subm()?.getAttribute("aria-label"), "Actions for ext-v1.11.1", "the tag's");
+      c.ok(actions().includes("View in Commits") && actions().includes("Delete tag…"), `a tag's are the Branches list's (${actions().join(" | ")})`);
+
+      // A click elsewhere closes both.
+      document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      await settle(250);
+      c.ok(!subm() && !$(".dropdown"), "a click outside closes the switcher and its actions");
+    },
+
     // ── #32: select several commits in the rebase plan and set them at once ──
     //
     // The state table for the keyboard: from each selection, each key, the
