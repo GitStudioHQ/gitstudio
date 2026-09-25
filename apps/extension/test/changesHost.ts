@@ -77,6 +77,8 @@ export function changesHost(root: string): {
   posted: Record<string, unknown>[];
   /** Deliver a message as the page would. */
   send: (msg: Record<string, unknown>) => Promise<void>;
+  /** Resolves once no state push is running or queued. */
+  idle: () => Promise<void>;
   dispose: () => void;
 } {
   const ctx = new GitContext({ root });
@@ -119,6 +121,12 @@ export function changesHost(root: string): {
     provider,
     posted,
     send: (msg) => onMessage(msg),
+    idle: async () => {
+      const p = provider as unknown as { pushing: boolean; pushQueued: boolean };
+      for (let i = 0; i < 200 && (p.pushing || p.pushQueued); i++) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    },
     dispose: () => {
       provider.dispose();
       ctx.dispose();

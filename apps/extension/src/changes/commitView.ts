@@ -282,6 +282,12 @@ const LAYOUT_KEY = "gitstudio.commit.layout";
  */
 const EXTERNAL_REFRESH_DEBOUNCE_MS = 300;
 
+/** Why a push cannot start on a detached HEAD — host and page say the same. */
+const DETACHED_PUSH_REASON =
+  "HEAD is detached, so these commits are on no branch and there is nothing to push them to. Create a branch here to push them.";
+/** Why a push cannot start in a repository with no remote. */
+const NO_REMOTE_PUSH_REASON = "No remote is configured for this repository.";
+
 /** Git's canonical empty-tree object — the "before" side when previewing the
  *  push of a branch whose oldest unpushed commit is a root commit. */
 const COMMIT_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -2007,7 +2013,9 @@ export class CommitViewProvider
         : oldest.parents[0] ?? COMMIT_EMPTY_TREE;
       const pushRemote =
         remotes.find((r) => r.name === "origin")?.name ?? remotes[0]?.name;
-      target = pushRemote ? `${pushRemote}/${branch}` : branch;
+      target = head.detached
+        ? "no branch (detached HEAD)"
+        : pushRemote ? `${pushRemote}/${branch}` : branch;
     }
     // A tracked branch with nothing ahead really has nothing to preview.
     if (upstream && commitRecords.length === 0) {
@@ -2025,7 +2033,11 @@ export class CommitViewProvider
       if (f.additions > 0) additions += f.additions;
       if (f.deletions > 0) deletions += f.deletions;
     }
-    const canPush = upstream ? true : remotes.length > 0;
+    // A detached HEAD (every stopped rebase is one) has no branch to push:
+    // there is nothing on the remote side to update. It used to count as a
+    // publish to "origin/<sha>" and fail only once Push was pressed, blaming a
+    // missing remote.
+    const canPush = head.detached ? false : upstream ? true : remotes.length > 0;
     // Diverged in BOTH directions means our tip is not a descendant of the
     // upstream, which is exactly when git refuses a fast-forward. Derived from
     // the ahead/behind we already have — no fetch, no network.
@@ -2049,7 +2061,7 @@ export class CommitViewProvider
       branch,
       base,
       canPush,
-      reason: canPush ? undefined : "No remote is configured for this repository.",
+      reason: canPush ? undefined : head.detached ? DETACHED_PUSH_REASON : NO_REMOTE_PUSH_REASON,
       ahead: upstream ? ab.ahead : commitRecords.length,
       behind: upstream ? ab.behind : 0,
       needsForce,
@@ -2180,8 +2192,10 @@ export class CommitViewProvider
         // Published as refs/heads/<branch> (SyncOps) — the name under
         // refs/heads/, not "heads/release", which named nothing there.
         const branch = headBranchName(head);
-        if (!remote || !branch) {
-          result = { ok: false, stderr: "No remote is configured to publish to." };
+        if (head.detached || !branch) {
+          result = { ok: false, stderr: DETACHED_PUSH_REASON };
+        } else if (!remote) {
+          result = { ok: false, stderr: NO_REMOTE_PUSH_REASON };
         } else {
           // push-force-reviewed: publishes a branch the remote does not have
           // yet, so there is nothing to fast-forward over and nothing to force.
@@ -2559,7 +2573,7 @@ export class CommitViewProvider
         : Promise.resolve(false),
       active ? this.collectBranches(active) : Promise.resolve(undefined),
       active
-        ? this.countUnpushed(active, upstream, ahead)
+        ? this.countUnpushed(active, upstream, ahead, !!detached)
         : Promise.resolve({ unpushed: 0, canPublish: false }),
       active ? this.readOperation(active) : Promise.resolve(undefined),
     ]);
@@ -2598,9 +2612,15 @@ export class CommitViewProvider
     entry: RepoEntry,
     upstream: string | undefined,
     ahead: number | undefined,
+    detached = false,
   ): Promise<{ unpushed: number; canPublish: boolean }> {
     if (upstream) {
       return { unpushed: ahead ?? 0, canPublish: true };
+    }
+    if (detached) {
+      // Commits on a detached HEAD belong to no branch: there is nothing to
+      // publish them AS until a branch is made.
+      return { unpushed: 0, canPublish: false };
     }
     try {
       const commits = await collectCommits(entry, ["HEAD", "--not", "--remotes"]);
@@ -4699,6 +4719,10 @@ export class CommitViewProvider
     groupsEl.addEventListener("click", (ev) => {
       if (ev.target === groupsEl && selectedRows.size > 0) clearSelection();
     });
+    // The host's DETACHED_PUSH_REASON / NO_REMOTE_PUSH_REASON, word for word:
+    // the button's tip and the push dialog must give the same reason.
+    const DETACHED_PUSH_REASON = "HEAD is detached, so these commits are on no branch and there is nothing to push them to. Create a branch here to push them.";
+    const NO_REMOTE_PUSH_REASON = "No remote is configured for this repository.";
     let aheadCount = 0;     // commits a push would send (drives the button label)
     let canPublish = false; // there IS somewhere to push/publish those commits
     let onUpstream = false; // branch tracks an upstream (Push) vs not (Publish)
@@ -4882,10 +4906,17 @@ export class CommitViewProvider
       // unpushed commits — OR the branch has no upstream yet (publish), where the
       // ahead count reads 0 but there IS local work to send. Only a tracked
       // branch that's fully up to date leaves nothing to push.
+      //
+      // A push that cannot work is never offered: on a detached HEAD (every
+      // stopped rebase is one) there is no branch to push, and with no remote
+      // there is nowhere to push it. Those used to show "Commit & Push" or
+      // "Publish N", enabled, and fail only after the commit — blaming a
+      // missing remote even when the HEAD was the problem.
+      const blocked = pushBlockedReason();
       let mode, label;
-      if (hasStaged) {
+      if (hasStaged && !blocked) {
         mode = "commitpush"; label = (amend.checked ? "Amend" : "Commit") + " & Push";
-      } else if (canPublish && (aheadCount > 0 || !onUpstream)) {
+      } else if (!blocked && canPublish && (aheadCount > 0 || !onUpstream)) {
         // An unpublished branch is always actionable: "Publish" even with a
         // zero ahead-count. Only a TRACKED branch that is up to date has
         // genuinely nothing to do.
@@ -4899,6 +4930,20 @@ export class CommitViewProvider
       pushBtn.dataset.mode = mode;
       if (!pushBtn.classList.contains("is-busy")) mainLabel.textContent = label;
       pushBtn.disabled = committing || hostBusy || mode === "none";
+      if (blocked) pushBtn.dataset.tip = blocked;
+      else delete pushBtn.dataset.tip;
+      pushBtn.setAttribute("aria-label", blocked ? label + " — " + blocked : label);
+    }
+
+    /** Why a push from here cannot work right now, or "" when it can. */
+    function pushBlockedReason() {
+      const st = lastHeaderState;
+      if (st && st.detached) return DETACHED_PUSH_REASON;
+      // Only once the host has LOOKED for a remote: the first post of an
+      // unpublished branch does not know yet, and a disabled button that then
+      // re-enables is a flicker, not information.
+      if (st && !st.upstream && st.canPublish === false) return NO_REMOTE_PUSH_REASON;
+      return "";
     }
     // Back-compat alias — older call sites still call renderCount().
     function renderCount() { renderCommitButtons(); }
@@ -6725,7 +6770,8 @@ export class CommitViewProvider
       pushModal = modal;
       pushBusy = false;
       document.addEventListener("keydown", onPushKey, true);
-      if (data.canPush) pushB.focus(); else cancel.focus();
+      // A destructive action never starts focused: Enter must not force-push.
+      if (data.canPush && !data.needsForce) pushB.focus(); else cancel.focus();
     }
     function pushModalError(text) {
       if (!pushModal) return;
