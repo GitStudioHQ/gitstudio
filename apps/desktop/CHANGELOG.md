@@ -9,6 +9,15 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Fixed
+
+- **Repositories: switching to *On GitHub* and straight back showed GitHub's
+  list under *On this machine*.** The GitHub request kept running after the
+  switch and painted its answer a second later. Only the side you're on
+  paints now. (#32)
+
 ## [2.1.0] - 2026-09-25
 
 ### Added

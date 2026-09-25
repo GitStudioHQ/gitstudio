@@ -3149,49 +3149,73 @@
   /** channel → listeners, for `on()` / `__gsEmit()`. */
   const listeners = {};
 
+  // `?slow=github:repos:1500,b:300` answers those channels that many ms late,
+  // resolved or rejected alike. A view that paints whatever answer arrives last
+  // (Repositories' two sides, #32) only shows its race with a slow channel.
+  const slow = new Map(
+    (params.get("slow") || "")
+      .split(",")
+      .filter(Boolean)
+      .map((pair) => {
+        const at = pair.lastIndexOf(":");
+        return [pair.slice(0, at), Number(pair.slice(at + 1)) || 0];
+      }),
+  );
+  const late = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function answerInvoke(channel, payload) {
+    invoked.push({ channel, payload });
+    calls[channel] = (calls[channel] || 0) + 1;
+    if (failing.has(channel)) {
+      return Promise.reject(new Error(`${channel} failed (harness ?fail=)`));
+    }
+    if (channel in dynamic) {
+      try { return Promise.resolve(dynamic[channel](payload)); } catch (e) { return Promise.reject(e); }
+    }
+    if (channel in fixtures) {
+      // issue:list respects the state filter so Open/Closed/All work.
+      if (channel === "issue:list" && payload && payload.state && payload.state !== "all") {
+        return Promise.resolve(fixtures[channel].filter((i) => i.state === payload.state));
+      }
+      return Promise.resolve(fixtures[channel]);
+    }
+    missing.add(channel);
+    console.error("[shim missing]", channel, JSON.stringify(payload));
+    // Mutations: pretend success so flows continue; reads: undefined.
+    // Anchored at the END of the channel name (or before a capitalised word),
+    // because a plain substring test matched ":set" inside "ai:settings" — a
+    // READ answered with `{ ok: true }`, which is why aiEnabled() memoised
+    // `undefined` and re-asked over IPC on every route for months.
+    if (
+      /:(set|create|edit|comment|merge|rerun|cancel|dispatch|markRead|markAllRead|apply|update|upload|delete|approve|review)(?=$|[A-Z])/.test(
+        channel,
+      ) ||
+      // The rest of the app's MUTATION verbs. Everything not listed here fell
+      // through to `undefined`, so the caller's `r.ok` threw and the control
+      // looked inert — the shim's own note on `commit:action` records that
+      // this is how the branch switcher's checkout hid while being tested.
+      // A mutation with no fixture should still let the flow continue; a READ
+      // with no fixture should not be invented, and still answers undefined.
+      /:(push|pull|pullFf|fetch|pop|drop|save|stage|abort|continue|skip|checkout|rename|resolve|takeSide|add|remove|open|openPath|close|kill|resize|write|install|download|check|connect|addItem|moveItem|start|test|rebase|markReady|replyThread|requestReviewers|agentRun|agentConfirm|chatSend|chatNew|chatDelete|chatSetCurrent|mcpInstall|devicePoll|deviceStart)(?=$|[A-Z])/.test(
+        channel,
+      ) ||
+      // The one mutation whose VERB is the domain rather than the action.
+      channel === "stage:lines"
+    ) {
+      return Promise.resolve({ ok: true, changed: false });
+    }
+    return Promise.resolve(undefined);
+  }
+
   window.gitstudio = {
     invoke(channel, payload) {
-      invoked.push({ channel, payload });
-      calls[channel] = (calls[channel] || 0) + 1;
-      if (failing.has(channel)) {
-        return Promise.reject(new Error(`${channel} failed (harness ?fail=)`));
-      }
-      if (channel in dynamic) {
-        try { return Promise.resolve(dynamic[channel](payload)); } catch (e) { return Promise.reject(e); }
-      }
-      if (channel in fixtures) {
-        // issue:list respects the state filter so Open/Closed/All work.
-        if (channel === "issue:list" && payload && payload.state && payload.state !== "all") {
-          return Promise.resolve(fixtures[channel].filter((i) => i.state === payload.state));
-        }
-        return Promise.resolve(fixtures[channel]);
-      }
-      missing.add(channel);
-      console.error("[shim missing]", channel, JSON.stringify(payload));
-      // Mutations: pretend success so flows continue; reads: undefined.
-      // Anchored at the END of the channel name (or before a capitalised word),
-      // because a plain substring test matched ":set" inside "ai:settings" — a
-      // READ answered with `{ ok: true }`, which is why aiEnabled() memoised
-      // `undefined` and re-asked over IPC on every route for months.
-      if (
-        /:(set|create|edit|comment|merge|rerun|cancel|dispatch|markRead|markAllRead|apply|update|upload|delete|approve|review)(?=$|[A-Z])/.test(
-          channel,
-        ) ||
-        // The rest of the app's MUTATION verbs. Everything not listed here fell
-        // through to `undefined`, so the caller's `r.ok` threw and the control
-        // looked inert — the shim's own note on `commit:action` records that
-        // this is how the branch switcher's checkout hid while being tested.
-        // A mutation with no fixture should still let the flow continue; a READ
-        // with no fixture should not be invented, and still answers undefined.
-        /:(push|pull|pullFf|fetch|pop|drop|save|stage|abort|continue|skip|checkout|rename|resolve|takeSide|add|remove|open|openPath|close|kill|resize|write|install|download|check|connect|addItem|moveItem|start|test|rebase|markReady|replyThread|requestReviewers|agentRun|agentConfirm|chatSend|chatNew|chatDelete|chatSetCurrent|mcpInstall|devicePoll|deviceStart)(?=$|[A-Z])/.test(
-          channel,
-        ) ||
-        // The one mutation whose VERB is the domain rather than the action.
-        channel === "stage:lines"
-      ) {
-        return Promise.resolve({ ok: true, changed: false });
-      }
-      return Promise.resolve(undefined);
+      const answer = answerInvoke(channel, payload);
+      const ms = slow.get(channel);
+      if (!ms) return answer;
+      return answer.then(
+        (v) => late(ms).then(() => v),
+        (e) => late(ms).then(() => Promise.reject(e)),
+      );
     },
     // A REAL subscription registry. This returned a no-op unsubscribe and threw
     // the listener away, so every push-driven path in the app — streamed agent

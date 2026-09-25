@@ -135,17 +135,25 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   wireStickyHeads(listEl, ".repo-owner-head, .repo-folder-head");
   wrap.replaceChildren(view);
 
+  // Only the latest paint may write the list. Switching to "On GitHub" and
+  // straight back left the GitHub request running; it answered a second later
+  // and painted GitHub's repositories under "On this machine" (#32).
+  let paintGen = 0;
   async function refresh(force = false): Promise<void> {
+    const gen = ++paintGen;
+    const current = (): boolean => gen === paintGen && listEl.isConnected;
     if (force) bust("repos");
     listEl.replaceChildren(el("div", "skeleton"));
     try {
-      if (side === "local") await paintLocal(listEl, nav, refresh);
-      else await paintRemote(listEl, nav, refresh);
+      if (side === "local") await paintLocal(listEl, nav, refresh, current);
+      else await paintRemote(listEl, nav, refresh, current);
     } catch (e) {
+      if (!current()) return;
       listEl.replaceChildren(
         emptyState("Couldn’t list repositories", String((e as Error)?.message ?? e), { icon: "warning" }),
       );
     }
+    if (!current()) return;
     // Repositories, not checkouts: a worktree row renders (it is openable)
     // but the page's number must agree with the band heads below it.
     head.setCount?.(listEl.querySelectorAll(".sec-row:not([data-worktree])").length);
@@ -176,12 +184,14 @@ async function paintLocal(
   listEl: HTMLElement,
   nav: SectionNav,
   refresh: () => Promise<void>,
+  current: () => boolean,
 ): Promise<void> {
   const [folders, copies, truncated] = await Promise.all([
     gget("repos:folders", undefined, 5000),
     gget("repos:local", undefined, 5000),
     gget("repos:scanTruncated", undefined, 5000).catch(() => false),
   ]);
+  if (!current()) return;
 
   // A pure join. Every question about where a repository lives — which folder
   // claims it, which directory inside that folder, whether a tracked folder is
@@ -970,12 +980,14 @@ async function paintRemote(
   listEl: HTMLElement,
   nav: SectionNav,
   refresh: () => Promise<void>,
+  current: () => boolean,
 ): Promise<void> {
   const [repos, copies, folders] = await Promise.all([
     gget("github:repos", undefined, 30_000),
     gget("repos:local", undefined, 5000),
     gget("repos:folders", undefined, 30_000),
   ]);
+  if (!current()) return;
 
   // "Do I already have this?" answered by ORIGIN, not by folder name — a repo
   // cloned into a differently-named directory is still the same repo, and
