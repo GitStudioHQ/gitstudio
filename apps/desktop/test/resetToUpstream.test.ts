@@ -35,32 +35,32 @@ test("equal and clean: nothing to ask", () => {
 test("strictly behind and clean: says nothing is lost, and is not a red button", () => {
   const q = resetQuestion(plan({ gained: 3 }))!;
   assert.equal(q.danger, false);
-  assert.match(q.message, /^Nothing will be lost: feature has no commits that aren't on origin\/feature, and no uncommitted changes\. It will move forward 3 commits to match\.$/);
+  assert.match(q.message, /^Nothing will be lost: 'feature' has no commits that aren't on 'origin\/feature', and no uncommitted changes\. It will move forward 3 commits to match\.$/);
   assert.doesNotMatch(q.message, /lose|discard/i, "no scary wording over a fast-forward");
 });
 
 test("a branch you are not on never mentions uncommitted changes", () => {
   const q = resetQuestion(plan({ current: false, dirty: undefined, gained: 1 }))!;
   assert.equal(q.danger, false);
-  assert.match(q.message, /no commits that aren't on origin\/feature\. It will move forward 1 commit to match/);
+  assert.match(q.message, /no commits that aren't on 'origin\/feature'\. It will move forward 1 commit to match/);
   // …even when a stale `dirty` is present: it describes another branch's tree.
   const odd = resetQuestion(plan({ current: false, dirty: 4, lost: 1, lostSubjects: ["x"] }))!;
   assert.doesNotMatch(odd.message, /Uncommitted/);
-  assert.match(odd.message, /You're not on feature, so nothing in your working tree changes\./);
+  assert.match(odd.message, /You're not on 'feature', so nothing in your working tree changes\./);
 });
 
 test("ahead: counts the commits that go and names them by subject", () => {
   const q = resetQuestion(plan({ lost: 2, lostSubjects: ["wip", "try again"] }))!;
   assert.equal(q.danger, true);
-  assert.equal(q.title, "Reset feature to 'origin/feature'?");
-  assert.match(q.message, /feature will lose 2 commits that aren't on origin\/feature:\n {2}• wip\n {2}• try again\n/);
-  assert.match(q.message, /feature will then match origin\/feature exactly\./);
+  assert.equal(q.title, "Reset 'feature' to 'origin/feature'?");
+  assert.match(q.message, /'feature' will lose 2 commits that aren't on 'origin\/feature':\n {2}• wip\n {2}• try again\n/);
+  assert.match(q.message, /'feature' will then match 'origin\/feature' exactly\./);
   assert.match(q.message, /You can undo this straight afterwards\./);
 });
 
 test("one commit reads as one", () => {
   const q = resetQuestion(plan({ lost: 1, lostSubjects: ["wip"] }))!;
-  assert.match(q.message, /feature will lose 1 commit that isn't on origin\/feature:/);
+  assert.match(q.message, /'feature' will lose 1 commit that isn't on 'origin\/feature':/);
 });
 
 test("more than five: five by name, and the rest counted", () => {
@@ -83,7 +83,7 @@ test("diverged and dirty: both, in that order", () => {
 
 test("a failed fetch is said first, with what the plan used instead", () => {
   const q = resetQuestion(plan({ lost: 1, lostSubjects: ["x"], fetchError: "Could not resolve host: github.com" }))!;
-  assert.match(q.message, /^Couldn't fetch from origin \(Could not resolve host: github\.com\), so this uses origin\/feature as it was last fetched\./);
+  assert.match(q.message, /^Couldn't fetch from origin \(Could not resolve host: github\.com\), so this uses 'origin\/feature' as it was last fetched\./);
 });
 
 // ── the flow ────────────────────────────────────────────────────────────────
@@ -123,7 +123,7 @@ test("already 1:1: nothing to ask, and it says so", async () => {
   const t = deps(plan(), true);
   const out = await resetToUpstream(t.d);
   assert.equal(out.kind, "nothing");
-  assert.match((out as { message: string }).message, /already matches origin\/feature/);
+  assert.match((out as { message: string }).message, /already matches 'origin\/feature'/);
   assert.equal(t.seen.resets, 0);
 });
 
@@ -148,7 +148,7 @@ test("confirmed: resets, and names what it did", async () => {
   const t = deps(plan({ lost: 1, lostSubjects: ["x"] }), true);
   const out = await resetToUpstream(t.d);
   assert.equal(out.kind, "reset");
-  assert.equal((out as { message: string }).message, "Reset feature to origin/feature.");
+  assert.equal((out as { message: string }).message, "Reset 'feature' to 'origin/feature'.");
   assert.equal(t.seen.resets, 1);
 });
 

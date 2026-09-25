@@ -35,14 +35,15 @@ export interface ResetQuestion {
  * (equal, and nothing uncommitted), which is said as a toast instead of asked.
  */
 export function resetQuestion(p: BranchResetPlan): ResetQuestion | undefined {
-  const branch = p.branch ?? "this branch";
-  const up = p.upstream ?? "its upstream";
+  // Quoted the way the menu item and the extension's question quote them.
+  const branch = p.branch ? `'${p.branch}'` : "this branch";
+  const up = p.upstream ? `'${p.upstream}'` : "its upstream";
   const lost = p.lost ?? 0;
   const gained = p.gained ?? 0;
   const dirty = p.current ? (p.dirty ?? 0) : 0;
   if (!lost && !gained && !dirty) return undefined;
 
-  const title = `Reset ${branch} to '${up}'?`;
+  const title = `Reset ${branch} to ${up}?`;
   const lines: string[] = [];
   if (p.fetchError) {
     lines.push(`Couldn't fetch from ${p.remote ?? "the remote"} (${p.fetchError}), so this uses ${up} as it was last fetched.`, "");
@@ -118,7 +119,7 @@ export async function resetToUpstream(deps: ResetFlowDeps): Promise<ResetOutcome
   if (!deps.stillHere()) return { kind: "cancelled" };
   const q = resetQuestion(p);
   if (!q) {
-    return { kind: "nothing", message: `${p.branch} already matches ${p.upstream} — there is nothing to reset.` };
+    return { kind: "nothing", message: `'${p.branch}' already matches '${p.upstream}' — there is nothing to reset.` };
   }
   if (!(await deps.ask(q))) return { kind: "cancelled" };
   if (!deps.stillHere()) return { kind: "cancelled" };
@@ -131,5 +132,5 @@ export async function resetToUpstream(deps: ResetFlowDeps): Promise<ResetOutcome
   if (!r?.ok) {
     return { kind: "failed", message: r?.message || `Couldn't reset ${p.branch}.`, tone: r?.expected ? "info" : "error" };
   }
-  return { kind: "reset", plan: p, result: r, message: `Reset ${p.branch} to ${p.upstream}.` };
+  return { kind: "reset", plan: p, result: r, message: `Reset '${p.branch}' to '${p.upstream}'.` };
 }
