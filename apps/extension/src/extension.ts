@@ -592,7 +592,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
             "reset",
             active.ctx,
             { sha, subject },
-            (label, fn) => undo.runWithUndo(active, label, fn),
+            (label, fn, opts) => undo.runWithUndo(active, label, fn, opts),
           );
           if (changed) {
             commitsProvider.refresh();
@@ -742,6 +742,10 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       vscode.commands.registerCommand(
         "gitstudio.branch.setUpstream",
         (arg) => branchActions.setUpstream(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.resetToUpstream",
+        (arg) => branchActions.resetBranchToUpstream(repos, arg, refreshBranches),
       ),
       vscode.commands.registerCommand(
         "gitstudio.branch.new",

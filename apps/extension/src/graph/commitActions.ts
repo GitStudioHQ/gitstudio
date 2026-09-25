@@ -9,6 +9,8 @@ import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvi
 import { stoppedIn } from "@gitstudio/git-service/stoppedOperation";
 import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { explainOptionLikeCheckout } from "../views/optionLikeBranch";
+import { askOverLocalBranch, isCheckedOutHere, resetBranchTo } from "../views/branchReset";
+import type { UndoOptions } from "../git/repoManager";
 import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 import { ellipsizeMiddle, resolveCheckoutTarget, type MenuRef } from "./checkoutTarget";
@@ -161,7 +163,7 @@ interface CommitContext {
  * after. When no runner is supplied the op runs directly (so existing tests and
  * any caller without an UndoLedger keep working).
  */
-export type UndoRunner = <T>(label: string, fn: () => Promise<T>) => Promise<T>;
+export type UndoRunner = <T>(label: string, fn: () => Promise<T>, opts?: UndoOptions) => Promise<T>;
 
 function withUndo<T>(
   undo: UndoRunner | undefined,
@@ -271,6 +273,27 @@ async function checkoutRef(
   const plan = await planRefCheckout(ctx.process, fullName);
   if (!plan) {
     return false;
+  }
+  // A remote branch whose local branch has commits of its own: switch to
+  // the local one, or reset it to the remote's first (#32) — the same
+  // question the branch menu's Remote group asks (branchActions).
+  if (fullName.startsWith("refs/remotes/")) {
+    const over = await askOverLocalBranch(ctx, fullName);
+    if (over.choice === "cancel") {
+      return false;
+    }
+    if (over.choice === "reset") {
+      if (!(await resetBranchTo(ctx, over.localFullName, fullName, undo))) {
+        return false;
+      }
+      if (await isCheckedOutHere(ctx, over.localFullName)) {
+        return true;
+      }
+      // The switch is not an Undo entry of its own: undoing a checkout by
+      // resetting HEAD would move the branch just reset. The reset's entry
+      // undoes it where it stands (`reset --keep` on the checked-out branch).
+      return runCheckout(ctx, plan.args, plan.success);
+    }
   }
   if (plan.detaches) {
     const ok = await promptConfirm({

@@ -30,7 +30,18 @@ export interface UndoLedgerLike {
     repo: RepoEntry,
     label: string,
     fn: () => Promise<T>,
+    opts?: UndoOptions,
   ): Promise<T>;
+}
+
+/** What an op tells the Undo envelope about itself, up front. */
+export interface UndoOptions {
+  /**
+   * The one branch the op moves, by full name (refs/heads/x) — "Reset 'x' to
+   * 'origin/x'". Undo then puts exactly that branch back, and only while it
+   * is still where the op left it (git-service's Snapshot.branch).
+   */
+  branch?: string;
 }
 
 /** A live repository: its root, our data context, and (once vscode.git has
