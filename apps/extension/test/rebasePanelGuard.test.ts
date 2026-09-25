@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import * as plan from "@gitstudio/engine/rebase/planEdit";
 
 // Issue #27: "Unable to fixup/squash last commit (HEAD) to previous …
 // It says 'The top commit has nothing above it to fold into.' which does not
@@ -15,8 +16,10 @@ import { join } from "node:path";
 //
 // The panel is a webview script inside a template literal, invisible to tsc —
 // so this test EXECUTES the real functions: it extracts setAction and
-// foldTargetSubject from the shipped source and drives them with a stubbed
-// DOM surface. A textual assertion would pass on a broken build; this cannot.
+// applyActions from the shipped source and drives them with a stubbed DOM
+// surface and the page's real rules (window.GsRebasePlan, the engine's
+// planEdit, #32). A textual assertion would pass on a broken build; this
+// cannot.
 
 const src = readFileSync(join(__dirname, "../src/rebase/rebaseWorkspacePanel.ts"), "utf8");
 
@@ -50,11 +53,13 @@ function drive(rows: Row[], i: number, action: string): { banner: string | null;
     "rows",
     "flashBanner",
     "renderList",
-    `${extract("foldTargetSubject")}\n${extract("setAction")}\nreturn setAction;`,
+    "P",
+    `${extract("applyActions")}\n${extract("setAction")}\nreturn setAction;`,
   )(
     rows,
     (msg: string) => (banner = msg),
     () => {},
+    plan,
   ) as (i: number, action: string) => void;
   fn(i, action);
   return { banner, rows };
@@ -79,7 +84,7 @@ test("squash on HEAD is allowed too", () => {
 
 test("squash on the OLDEST commit is refused — git cannot execute it", () => {
   const { banner, rows } = drive(two(), 1, "squash");
-  assert.match(banner ?? "", /oldest commit has nothing below/i);
+  assert.match(banner ?? "", /oldest commit you keep can't be a squash — there's nothing below it/i);
   assert.equal(rows[1].action, "pick", "the action was not applied");
 });
 

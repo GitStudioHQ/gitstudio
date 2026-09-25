@@ -144,6 +144,17 @@ async function main() {
     loader: { ".ttf": "dataurl" },
   });
 
+  // The shared rebase-plan rules (engine/rebase/planEdit) as a page global,
+  // for the Interactive Rebase workspace — a hand-written page whose script
+  // is a string in the extension host, so it cannot import them (#32).
+  const rebasePlanCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(webviewUiSrc, "rebase/plan-global.ts")],
+    outfile: path.resolve(__dirname, "dist/webview/rebase-plan.js"),
+    platform: "browser",
+    format: "iife",
+  });
+
   // The conflicts dashboard (the shared webview-ui ConflictsDashboard). Its
   // .css import emits dist/webview/conflicts.css alongside the bundle; the
   // panel (packages/merge-vscode/src/conflictsPanel.ts) links both.
@@ -163,6 +174,7 @@ async function main() {
     graphCtx,
     graphSidebarCtx,
     rebaseCtx,
+    rebasePlanCtx,
     conflictsCtx,
   ];
 
