@@ -20,7 +20,7 @@ import {
   rewriteMany,
   type ManyPlan,
 } from "../src/multiCommit";
-import { undoRewrite } from "../src/dropCommit";
+import { undoRewrite, type DropOutcome } from "../src/dropCommit";
 import { runApplying, stashAndRetry, type ApplyOp } from "../src/changesInTheWay";
 
 // Several commits at once (issue #32), end to end against real git: the plan
@@ -67,6 +67,10 @@ function repo(): Repo {
 }
 
 const run = (r: Repo) => (plan: Parameters<typeof runRebasePlan>[1]) => runRebasePlan(r.dir, plan);
+
+/** An outcome's status, message and `expected`, whichever kind it is. */
+const said = (o: DropOutcome): unknown[] =>
+  o.status === "done" ? [o.status] : [o.status, o.message, "expected" in o ? o.expected : undefined];
 
 async function planOk(r: Repo, verb: "drop" | "squash", shas: string[]): Promise<ManyPlan> {
   const plan = await planMany(r.ctx.process, verb, shas);
@@ -188,7 +192,7 @@ test("a stale confirmation is refused: HEAD moved between the question and the r
       const plan = await planOk(r, verb, [a, b]);
       r.commit("landed meanwhile");
       const moved = await rewriteMany(r.ctx.process, verb, { shas: plan.shas, head: plan.head, message: "m" }, run(r));
-      assert.deepEqual([moved.status, moved.message, moved.expected], ["failed", MANY_MOVED_MESSAGE, true], verb);
+      assert.deepEqual(said(moved), ["failed", MANY_MOVED_MESSAGE, true], verb);
       assert.deepEqual(r.subjects(), ["landed meanwhile", "B", "A", "base"], `${verb}: nothing changed`);
     } finally {
       r.dispose();
@@ -205,7 +209,7 @@ test("an operation in progress or uncommitted tracked changes stop it before the
     assert.equal(await manyBlocker(r.ctx.process, "squash"), SQUASH_DIRTY_MESSAGE);
     const plan = await planOk(r, "squash", [a, b]);
     const out = await rewriteMany(r.ctx.process, "squash", { shas: plan.shas, head: plan.head, message: "x" }, run(r));
-    assert.deepEqual([out.status, out.message], ["failed", SQUASH_DIRTY_MESSAGE]);
+    assert.deepEqual(said(out).slice(0, 2), ["failed", SQUASH_DIRTY_MESSAGE]);
     r.git("checkout", "--", "A.txt");
     writeFileSync(join(r.dir, "untracked.txt"), "u\n");
     assert.equal(await manyBlocker(r.ctx.process, "drop"), undefined, "an untracked file does not stop a rebase");
@@ -303,7 +307,7 @@ test("an empty squash message is refused before anything runs", async () => {
     r.commit("base"); const a = r.commit("A"); const b = r.commit("B");
     const plan = await planOk(r, "squash", [a, b]);
     const out = await rewriteMany(r.ctx.process, "squash", { shas: plan.shas, head: plan.head, message: "  \n" }, run(r));
-    assert.deepEqual([out.status, out.message], ["failed", SQUASH_EMPTY_MESSAGE]);
+    assert.deepEqual(said(out).slice(0, 2), ["failed", SQUASH_EMPTY_MESSAGE]);
     assert.equal(r.git("rev-parse", "HEAD"), plan.head);
   } finally {
     r.dispose();

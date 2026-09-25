@@ -25,7 +25,9 @@ const TABLE: Array<[string, { sha: string; shas?: unknown[] }, ReturnType<typeof
   ["a duplicate is one commit", { sha: A, shas: [A, A] }, { kind: "one", sha: A }],
   ["the uncommitted-changes row never joins", { sha: A, shas: [WIP, A] }, { kind: "one", sha: A }],
   ["an option-shaped entry never joins", { sha: A, shas: ["--all", A, B] }, { kind: "many", shas: [A, B] }],
-  ["a short sha never joins", { sha: A, shas: [A.slice(0, 7), B] }, { kind: "one", sha: A }],
+  ["an abbreviated sha joins — git resolves it", { sha: A, shas: [A.slice(0, 7), B] }, { kind: "many", shas: [A.slice(0, 7), B] }],
+  ["a ref name never joins", { sha: A, shas: ["main", "HEAD", B] }, { kind: "one", sha: A }],
+  ["too short to be a sha never joins", { sha: A, shas: ["abc", B] }, { kind: "one", sha: A }],
   ["non-strings are dropped", { sha: A, shas: [42, null, A, { sha: B }] }, { kind: "one", sha: A }],
 ];
 

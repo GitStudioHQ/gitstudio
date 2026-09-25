@@ -8,14 +8,18 @@
 // changes node, anything that is not a sha) cannot turn into a several-commit
 // action. Pure; no git.
 
-/** A full object name: sha-1 (40 hex) or sha-256 (64). */
-const FULL_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+/**
+ * An object name: hex, 4 to 64 characters — a full sha-1 or sha-256, or an
+ * abbreviation git resolves. Never a ref name, never an option: nothing that
+ * is not hex can join, so nothing that joins can be read as `--all`.
+ */
+const SHA = /^[0-9a-f]{4,64}$/i;
 /** The graph's synthetic "uncommitted changes" row. */
 const ZERO_SHA = /^0+$/;
 
-/** A real commit's full sha — nothing else may join a several-commit action. */
+/** A commit's sha — nothing else may join a several-commit action. */
 export function isCommitSha(s: unknown): s is string {
-  return typeof s === "string" && FULL_SHA.test(s) && !ZERO_SHA.test(s);
+  return typeof s === "string" && SHA.test(s) && !ZERO_SHA.test(s);
 }
 
 /** One commit (the classic messages), or several. */

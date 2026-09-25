@@ -827,7 +827,7 @@ export function multiCommitMenuItems(n: number, opts: ManyMenuOptions): GraphMen
           { id: "revertMany", label: `Revert ${n} Commits`, icon: "history" },
         ]
       : []),
-    ...(opts.squash ? [{ id: "squashMany", label: `Squash ${n} Commits…`, icon: "fold" }] : []),
+    ...(opts.squash ? [{ id: "squashMany", label: `Squash ${n} Commits…`, icon: "fold-down" }] : []),
     ...(opts.drop ? [{ id: "dropMany", label: `Drop ${n} Commits…`, icon: "trash", danger: true }] : []),
     { id: "", label: "", sep: true },
     ...(n === 2 ? [{ id: "compareTwo", label: "Compare These Two Commits", icon: "git-compare" }] : []),
