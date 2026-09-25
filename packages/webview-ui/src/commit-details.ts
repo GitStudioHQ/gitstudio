@@ -83,13 +83,55 @@ export interface RefMenuRequest {
   opener: HTMLElement;
 }
 
+/** A commit as the "N commits selected" summary lists it (issue #32). */
+export interface SelectionCommit {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  author: string;
+  /** Authored, epoch seconds. */
+  authorDate: number;
+}
+
+/** An action the summary offers — the host's own items for the selection,
+ *  the same ones its right-click menu has. A separator is skipped. */
+export interface SelectionAction {
+  id: string;
+  label: string;
+  icon?: string;
+  danger?: boolean;
+  sep?: boolean;
+}
+
+/**
+ * Several commits selected in the graph (issue #32). The pane says so and
+ * offers what can be done to all of them — never the first commit's details
+ * standing in for the rest. `actions` is undefined until the host has said
+ * which apply; the row keeps its height meanwhile.
+ */
+export interface SelectionSummary {
+  /** Newest first, as the graph lists them. */
+  commits: SelectionCommit[];
+  actions?: SelectionAction[];
+}
+
+/** `gs-selection-action`'s detail: an action picked for these commits. */
+export interface SelectionActionRequest {
+  id: string;
+  /** Newest first. */
+  shas: string[];
+}
+
 export class CommitDetails extends LitElement {
   static properties = {
     details: { attribute: false },
+    selection: { attribute: false },
     refMenu: { attribute: false },
   };
 
   declare details: CommitDetailsPayload | null;
+  /** Several commits selected: the summary replaces the details (issue #32). */
+  declare selection: SelectionSummary | null;
   /**
    * Whether a graph beside the pane answers `gs-ref-menu` — only then are the
    * ref chips a shortcut (and look and behave like controls). A host with no
@@ -114,6 +156,7 @@ export class CommitDetails extends LitElement {
   constructor() {
     super();
     this.details = null;
+    this.selection = null;
     this.refMenu = false;
   }
 
@@ -156,6 +199,8 @@ export class CommitDetails extends LitElement {
    * render path: the row appears when the answer does, and nothing waits on it.
    */
   updated(): void {
+    // The summary of several commits asks nothing of the host.
+    if (this.showsSelection()) return;
     const d = this.details;
     if (
       d &&
@@ -712,8 +757,66 @@ export class CommitDetails extends LitElement {
       .bar i { height: 100%; }
       .bar i.a { background: var(--gs-added); }
       .bar i.d { background: var(--gs-deleted); }
+
+      /* ── Several commits selected (issue #32) ─────────────────────── */
+      /* Its own scroller: the wide layout above clips .scroll, and this pane
+         is one column whatever the width — a list and what to do with it. */
+      .sum {
+        box-sizing: border-box;
+        height: 100%;
+        overflow-y: auto;
+        padding: 12px 14px 18px;
+      }
+      .sum-inner { max-width: 760px; }
+      /* The badge takes the avatar's place and size, so the header does not
+         shift when a second commit is added to the selection. */
+      .sum-badge {
+        width: 36px; height: 36px; border-radius: 50%; flex: 0 0 auto;
+        display: inline-flex; align-items: center; justify-content: center;
+        color: var(--gs-accent-text);
+        background: color-mix(in srgb, var(--gs-accent) 14%, var(--gs-bg));
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--gs-fg) 14%, transparent);
+      }
+      .sum-badge .codicon { font-size: 18px; }
+      :host([compact]) .sum-badge { width: 26px; height: 26px; }
+      :host([compact]) .sum-badge .codicon { font-size: 14px; }
+      .sum-title { font-weight: 650; font-size: 15px; line-height: 1.35; letter-spacing: -0.005em; }
+      .sum-sub { color: var(--gs-fg-muted); font-size: 11.5px; margin-top: 1px; }
+      .sum-list {
+        list-style: none; margin: 12px 0 0; padding: 0;
+        display: flex; flex-direction: column; gap: 1px;
+      }
+      /* A row is a button: it keeps just that commit selected. The UA chrome
+         has to go explicitly, as on every other button in this pane. */
+      .sum-row {
+        appearance: none; box-sizing: border-box; width: 100%;
+        display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center; column-gap: 10px;
+        height: 26px; padding: 0 6px; border: 0; border-radius: 5px;
+        background: transparent; color: var(--gs-fg);
+        font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+        transition: background 120ms;
+      }
+      .sum-row:hover { background: var(--gs-hover); }
+      .sum-row:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
+      .sum-sha {
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: calc(var(--gs-fs) * 0.9); color: var(--gs-fg-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .sum-subject { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sum-when { font-size: 11px; color: var(--gs-fg-subtle); white-space: nowrap; font-variant-numeric: tabular-nums; }
+      /* The action row holds one button row's height before the host has
+         said which actions apply, so nothing below it moves when they land. */
+      .sum .actions { min-height: 35px; box-sizing: border-box; align-content: flex-start; }
+      :host([compact]) .sum .actions { min-height: 31px; }
     `,
   ];
+
+  /** Several commits selected, and the summary is what this pane shows. */
+  private showsSelection(): boolean {
+    return !!this.selection && this.selection.commits.length > 1;
+  }
 
   private emit(name: string, detail: unknown): void {
     this.dispatchEvent(
@@ -731,6 +834,9 @@ export class CommitDetails extends LitElement {
   }
 
   render() {
+    if (this.showsSelection()) {
+      return this.selectionHtml(this.selection!);
+    }
     const d = this.details;
     if (!d) {
       return html`<div class="empty">
@@ -1119,6 +1225,68 @@ export class CommitDetails extends LitElement {
           <span class="codicon codicon-${a.icon}"></span
           ><span class="act-label">${a.label}</span></button>`,
       )}
+    </div>`;
+  }
+
+  /**
+   * "3 commits selected" (issue #32): which commits, by whom, over what span,
+   * and what can be done to all of them — the host's items, the same as the
+   * right-click menu's. A row keeps just that commit selected (`gs-reveal`,
+   * the parent chips' event, which every host already answers that way).
+   */
+  private selectionHtml(s: SelectionSummary) {
+    const n = s.commits.length;
+    const shas = s.commits.map((c) => c.sha);
+    const authors = [...new Set(s.commits.map((c) => c.author).filter(Boolean))];
+    const by =
+      authors.length === 0
+        ? ""
+        : authors.length <= 2
+          ? `by ${authors.join(" and ")}`
+          : `by ${authors.length} authors`;
+    const dates = s.commits.map((c) => c.authorDate).filter((d) => d > 0);
+    const span =
+      dates.length === 0
+        ? ""
+        : `${relTime(Math.min(...dates))} to ${relTime(Math.max(...dates))}`;
+    const sub = [by, span].filter(Boolean).join(" · ");
+    const actions = (s.actions ?? []).filter((a) => !a.sep && a.id);
+    return html`<div class="sum">
+      <div class="sum-inner">
+        <div class="head">
+          <span class="sum-badge" aria-hidden="true"><span class="codicon codicon-git-commit"></span></span>
+          <div class="id">
+            <div class="sum-title" role="status">${n} commits selected</div>
+            ${sub ? html`<div class="sum-sub">${sub}</div>` : nothing}
+          </div>
+          <div class="head-tools">${this.closeButton()}</div>
+        </div>
+        <ul class="sum-list" aria-label="Selected commits">
+          ${s.commits.map(
+            (c) => html`<li><button
+              class="sum-row"
+              title="Select only this commit"
+              aria-label=${`Select only ${c.shortSha}: ${c.subject}`}
+              @click=${() => this.emit("gs-reveal", { sha: c.sha })}
+            ><span class="sum-sha">${c.shortSha}</span
+            ><span class="sum-subject">${c.subject}</span
+            ><span class="sum-when" title=${absTime(c.authorDate)}>${c.author} · ${relTime(c.authorDate)}</span
+            ></button></li>`,
+          )}
+        </ul>
+        <div class="actions" aria-label=${`Actions for ${n} commits`} aria-busy=${s.actions ? "false" : "true"}>
+          ${actions.map(
+            (a) => html`<button
+              class="act ${a.danger ? "danger" : ""}"
+              data-action=${a.id}
+              title=${a.label}
+              aria-label=${a.label}
+              @click=${() => this.emit("gs-selection-action", { id: a.id, shas } satisfies SelectionActionRequest)}>
+              ${a.icon ? html`<span class="codicon codicon-${a.icon}"></span>` : nothing}<span
+                class="act-label">${a.label}</span></button>`,
+          )}
+        </div>
+      </div>
     </div>`;
   }
 

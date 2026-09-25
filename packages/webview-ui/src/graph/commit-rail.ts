@@ -69,6 +69,18 @@ import {
 } from "./refFilter";
 import { chipRefs, presetRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
 import { chipLabel, foldRefs } from "./refLayout";
+import {
+  NO_SELECTION,
+  clickSelect,
+  collapse,
+  contextSelect,
+  inOrder,
+  isMany,
+  moveTo,
+  only,
+  reconcile,
+  type Selection,
+} from "./multiSelect";
 
 // ── Layout constants (the sidebar's visual contract) ────────────────────────
 const ROW_HEIGHT = 40;
@@ -103,11 +115,15 @@ const POP_MAX_W = 240;
 const popMaxWidth = (): number => Math.min(POP_MAX_W, window.innerWidth - 8);
 /** The all-zeros sha marks the synthetic "uncommitted changes" (WIP) row. */
 const ZERO_SHA_RE = /^0{40}$/;
+/** Only commits share a selection of several (issue #32) — as in the graph. */
+const canJoin = (sha: string): boolean => !ZERO_SHA_RE.test(sha);
 export type RailAction =
   /** Promote to the editor-area Commit Graph, revealed at this commit. */
   | { type: "open"; sha: string }
-  | { type: "context"; sha: string; x: number; y: number }
-  | { type: "menuAction"; sha: string; id: string }
+  /** The commit menu for `sha` — or, with `shas`, for the selection of
+   *  several it is part of (issue #32), newest first. */
+  | { type: "context"; sha: string; shas?: string[]; x: number; y: number }
+  | { type: "menuAction"; sha: string; shas?: string[]; id: string }
   | { type: "copy"; text: string }
   | { type: "loadMore" }
   | { type: "refresh" }
@@ -132,6 +148,8 @@ export interface RailMenuItem {
 
 interface RailMenu {
   sha: string;
+  /** A menu for several commits (issue #32): handed back with the pick. */
+  shas?: string[];
   x: number;
   y: number;
   title: string;
@@ -355,8 +373,10 @@ export class CommitRail extends LitElement {
       .row.selected .age {
         color: var(--vscode-list-activeSelectionForeground, var(--gs-fg));
       }
-      /* Selection reads as a left accent bar, VS Code list-style. */
-      .row.selected::before {
+      /* The FOCUSED row reads as a left accent bar, VS Code list-style — the
+         selected row when one is, the keyboard's cursor among several
+         (issue #32), where every selected row shares the fill above. */
+      .row.focused::before {
         content: "";
         position: absolute;
         left: 0;
@@ -936,7 +956,12 @@ export class CommitRail extends LitElement {
     x: number;
     y: number;
   } | null;
+  /** The FOCUSED row ("" for none): the keyboard's cursor — with one row
+   *  selected, that row. */
   private declare selectedSha: string;
+  /** Which rows are selected, and the Shift-range anchor (issue #32 — see
+   *  multiSelect.ts). Its `focus` is `selectedSha`. */
+  private sel: Selection = NO_SELECTION;
 
   /** Row intents, forwarded to the host by the entry point. */
   onAction: (action: RailAction) => void = () => {};
@@ -1151,6 +1176,35 @@ export class CommitRail extends LitElement {
     for (let i = 0; i < this.rows.length; i++) {
       this.shaToIndex.set(this.rows[i].sha, i);
     }
+    // Rows that are gone leave the selection (issue #32): a menu for "3
+    // commits" must not include one a rewrite replaced.
+    const next = reconcile(this.sel, this.order());
+    if (next !== this.sel) {
+      this.sel = next;
+      this.selectedSha = next.focus ?? "";
+    }
+  }
+
+  /** Every loaded row's sha, in list order. */
+  private order(): string[] {
+    return this.rows.map((r) => r.sha);
+  }
+
+  /** The selected commits, newest first as the list shows them (issue #32). */
+  get selectedShas(): string[] {
+    return inOrder(this.sel, this.order());
+  }
+
+  /** Apply a selection gesture's result and repaint. The rail has no details
+   *  pane, so nothing goes to the host until a menu is asked for. */
+  private setSelection(next: Selection, scroll = false): void {
+    this.sel = next;
+    this.selectedSha = next.focus ?? "";
+    if (scroll && next.focus) {
+      const i = this.shaToIndex.get(next.focus);
+      if (i !== undefined) this.virtualizer?.scrollToIndex(i, { align: "auto" });
+    }
+    this.renderRows();
   }
 
   /** PER-ROW rail width: exactly the lanes THIS row uses (its node + every
@@ -1205,7 +1259,8 @@ export class CommitRail extends LitElement {
     if (!row) return "";
     const railW = this.rowRailWidth(row);
     const isWip = ZERO_SHA_RE.test(row.sha);
-    const selected = row.sha === this.selectedSha;
+    const selected = this.sel.selected.has(row.sha);
+    const focused = row.sha === this.selectedSha;
     const searching = this.searchQuery.trim().length > 0;
     const isMatch = searching && this.matchSet.has(item.index);
     const isCursor =
@@ -1215,6 +1270,7 @@ export class CommitRail extends LitElement {
     const cls =
       "row" +
       (selected ? " selected" : "") +
+      (focused ? " focused" : "") +
       (isWip ? " is-wip" : "") +
       (row.isMerge ? " is-merge" : "") +
       (searching ? (isMatch ? " is-match" : " is-nomatch") : "") +
@@ -1284,7 +1340,7 @@ export class CommitRail extends LitElement {
         `</span>`;
 
     return (
-      `<div class="${cls}" role="option" data-sha="${row.sha}" data-idx="${item.index}" ` +
+      `<div class="${cls}" role="option" id="gs-rail-${row.sha}" data-sha="${row.sha}" data-idx="${item.index}" ` +
       `aria-selected="${selected ? "true" : "false"}" title="${esc(tip)}" ` +
       `style="transform:translateY(${item.start}px)">` +
       `<div class="rail" style="width:${railW}px">${rail}${avatar}</div>` +
@@ -1441,7 +1497,13 @@ export class CommitRail extends LitElement {
       }
       return;
     }
-    this.select(hit.sha);
+    // Cmd/Ctrl adds or removes the row, Shift selects from the anchor
+    // (issue #32 — multiSelect.ts has the whole table).
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      this.setSelection(clickSelect(this.sel, this.order(), hit.sha, e, canJoin));
+    } else {
+      this.select(hit.sha);
+    }
     this.boundScroller?.focus({ preventScroll: true });
   };
 
@@ -1462,12 +1524,28 @@ export class CommitRail extends LitElement {
     const hit = this.rowFromEvent(e);
     if (!hit) return;
     e.preventDefault();
-    this.select(hit.sha);
-    this.onAction({ type: "context", sha: hit.sha, x: e.clientX, y: e.clientY });
+    this.openMenuFor(hit.sha, e.clientX, e.clientY);
   };
 
+  /**
+   * The commit menu for a right-click (or the menu key) on `sha`: inside a
+   * selection of several it is for ALL of them and the selection stays;
+   * anywhere else that row is selected alone — as in the graph (issue #32).
+   */
+  private openMenuFor(sha: string, x: number, y: number): void {
+    const next = contextSelect(this.sel, sha);
+    if (isMany(next)) {
+      this.setSelection(next);
+      this.onAction({ type: "context", sha, shas: this.selectedShas, x, y });
+      return;
+    }
+    this.select(sha);
+    this.onAction({ type: "context", sha, x, y });
+  }
+
   private select(sha: string): void {
-    if (this.selectedSha === sha) return;
+    if (this.selectedSha === sha && this.sel.selected.size === 1 && this.sel.selected.has(sha)) return;
+    this.sel = only(sha);
     this.selectedSha = sha;
     this.renderRows();
   }
@@ -1479,9 +1557,9 @@ export class CommitRail extends LitElement {
     const idx = this.shaToIndex.get(this.selectedSha) ?? -1;
     const move = (to: number): void => {
       const i = Math.max(0, Math.min(this.rows.length - 1, to));
-      this.selectedSha = this.rows[i].sha;
-      this.virtualizer?.scrollToIndex(i, { align: "auto" });
-      this.renderRows();
+      const sha = this.rows[i].sha;
+      // Shift extends the selection from its anchor (issue #32).
+      this.setSelection(e.shiftKey ? moveTo(this.sel, this.order(), sha, true, canJoin) : only(sha), true);
     };
     switch (e.key) {
       case "ArrowDown":
@@ -1518,7 +1596,9 @@ export class CommitRail extends LitElement {
       case "F10":
         if ((e.key === "F10" && !e.shiftKey) || !this.selectedSha) break;
         e.preventDefault();
-        this.onAction({ type: "context", sha: this.selectedSha, x: -1, y: -1 });
+        // x/y -1: under the focused row (showCommitMenu). Inside a selection
+        // of several the menu is for all of it, as a right-click's is.
+        this.openMenuFor(this.selectedSha, -1, -1);
         break;
       case "/":
         e.preventDefault();
@@ -1527,7 +1607,13 @@ export class CommitRail extends LitElement {
       case "Escape":
         if (this.searchQuery) {
           this.clearSearch();
+        } else if (isMany(this.sel)) {
+          // Several selected: keep only the focused row (issue #32).
+          e.preventDefault();
+          e.stopPropagation();
+          this.setSelection(collapse(this.sel));
         } else if (this.selectedSha) {
+          this.sel = NO_SELECTION;
           this.selectedSha = "";
           this.renderRows();
         }
@@ -1587,6 +1673,7 @@ export class CommitRail extends LitElement {
   private land(sha: string): void {
     const idx = this.shaToIndex.get(sha);
     if (idx === undefined || !this.virtualizer) return;
+    this.sel = only(sha);
     this.selectedSha = sha;
     this.flashSha = sha;
     if (this.flashTimer) clearTimeout(this.flashTimer);
@@ -1605,6 +1692,8 @@ export class CommitRail extends LitElement {
     y: number,
     title: string,
     items: RailMenuItem[],
+    /** A menu for several commits (issue #32), newest first. */
+    shas?: string[],
   ): void {
     this.scopeOpen = false;
     this.branchesOpen = false;
@@ -1612,7 +1701,8 @@ export class CommitRail extends LitElement {
     let px = x;
     let py = y;
     if (x < 0 || y < 0) {
-      const row = this.renderRoot.querySelector<HTMLElement>(".row.selected");
+      // Under the FOCUSED row — among several selected, the keyboard's one.
+      const row = this.renderRoot.querySelector<HTMLElement>(".row.focused");
       const r = row?.getBoundingClientRect();
       px = r ? r.left + 40 : window.innerWidth / 2;
       py = r ? r.bottom - 4 : window.innerHeight / 2;
@@ -1624,7 +1714,7 @@ export class CommitRail extends LitElement {
       items.reduce((n, i) => n + (i.sep ? 9 : 26), 0) + 30;
     px = Math.max(4, Math.min(px, window.innerWidth - estW - 4));
     py = Math.max(4, Math.min(py, window.innerHeight - Math.min(estH, 320) - 4));
-    this.commitMenu = { sha, x: px, y: py, title, items };
+    this.commitMenu = { sha, ...(shas && shas.length > 1 ? { shas } : {}), x: px, y: py, title, items };
   }
 
   // ── Popover dismissal ───────────────────────────────────────────────────
@@ -2226,6 +2316,7 @@ export class CommitRail extends LitElement {
                     this.onAction({
                       type: "menuAction",
                       sha: menu.sha,
+                      ...(menu.shas ? { shas: menu.shas } : {}),
                       id: item.id,
                     });
                   }}
@@ -2247,6 +2338,8 @@ export class CommitRail extends LitElement {
         class="scroller"
         role="listbox"
         aria-label="Commits"
+        aria-multiselectable="true"
+        aria-activedescendant=${this.selectedSha ? `gs-rail-${this.selectedSha}` : nothing}
         tabindex="0"
         @click=${this.onScrollerClick}
         @dblclick=${this.onScrollerDblClick}
