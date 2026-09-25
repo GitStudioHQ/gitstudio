@@ -2967,6 +2967,16 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
   font-size: var(--text-2xs);
 }
 @media (max-width: 1200px) { .sec-row-meta > .repo-path { display: none; } }
+/* A repository's change counts ("●3 ↑1 ↓2", #32) — a column of their own,
+   reserved at paint. They arrive after the list does; without the reservation
+   the slot grew from nothing and pushed every column to its left sideways, a
+   jump on each row as its answer landed. Right-aligned, so the arrows line up
+   down the list whatever the numbers. */
+.sec-row-meta > .repo-state { min-width: 88px; justify-content: flex-end; }
+/* …and the verbs to their right share one width, measured after each paint
+   (alignActions in views/repositories.ts), so a row with fewer controls does
+   not end its columns further right than the rows around it. */
+.repo-row .sec-row-actions { min-width: var(--repo-actions-w, 150px); }
 /* A state pill belongs to the line it labels.
    `.gh-pill` is written for `.gh-row`, a stacked card where the pill hugs the
    TOP line — `align-self: flex-start` plus a 3px nudge. Dropped into a single
@@ -3209,17 +3219,19 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Working-tree signals on a Home repo row — quiet until they have news. */
-.dash-repo-state {
+/* Working-tree signals on a repository row — Home's card and the Repositories
+   screen wear the same cluster (renderer/repoState.ts). Quiet until they have
+   news. */
+.repo-state {
   display: inline-flex;
   gap: var(--sp-2);
   flex: 0 0 auto;
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
-.dash-state-bit.is-dirty { color: var(--status-mod); }
-.dash-state-bit.is-ahead { color: var(--status-add); }
-.dash-state-bit.is-behind { color: var(--status-warn); }
+.repo-state-bit.is-dirty { color: var(--status-mod); }
+.repo-state-bit.is-ahead { color: var(--status-add); }
+.repo-state-bit.is-behind { color: var(--status-warn); }
 
 .dash-line-hint {
   /* Short hints — "Review", "Assigned" — must never clip: a one-word label
@@ -8827,6 +8839,19 @@ body.vscode-light .gh-label-chip {
 .openin-more { border-radius: 0 8px 8px 0; margin-left: -1px; padding: 0 5px; }
 .openin-more .codicon { font-size: 14px; color: var(--app-muted); }
 .openin-more:hover .codicon { color: var(--vscode-foreground); }
+/* …on a list ROW (Repositories, #32): the halves are the row's own .row-btns,
+   so the pair has the Open button's 24px height, 6px radius and 11.5px text
+   rather than a toolbar control's 28px. The name yields before the row does:
+   a long editor name ellipsizes inside its own cap. */
+.openin.is-row .row-btn { position: relative; display: inline-flex; align-items: center; }
+.openin.is-row .row-btn:hover, .openin.is-row .row-btn:focus-visible { z-index: 1; }
+.openin.is-row .openin-primary { gap: 5px; max-width: 136px; padding: 0 8px; border-radius: 6px 0 0 6px; }
+.openin.is-row .openin-label { min-width: 0; }
+.openin.is-row .openin-more { padding: 0 3px; border-radius: 0 6px 6px 0; }
+.openin.is-row .openin-mark,
+.openin.is-row .editor-mark { width: 14px; height: 14px; flex-basis: 14px; }
+.openin.is-row .openin-mark .codicon,
+.openin.is-row .openin-more .codicon { font-size: 13px; }
 
 /* ── Settings ▸ Editors (views/editorsCard.ts) ── */
 .editors-list {

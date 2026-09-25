@@ -541,6 +541,9 @@ function actionLabel(channel: string): string {
     "branch:create": "Create branch",
     "branch:delete": "Delete branch",
     "branch:pullFf": "Pull branch",
+    "branch:resetPlan": "Check a reset to upstream",
+    "branch:resetToUpstream": "Reset branch to upstream",
+    "branch:resetUndo": "Undo reset to upstream",
     "tag:create": "Create tag",
     "tag:delete": "Delete tag",
     "tag:push": "Push tag",
@@ -847,6 +850,9 @@ function registerIpc(): void {
   handle("branch:delete", (req) => bridge.branchDelete(req));
   handle("branches:people", () => bridge.branchesPeople());
   handle("branch:pullFf", (req) => bridge.branchPullFf(req.fullName));
+  handle("branch:resetPlan", (req) => bridge.branchResetPlan(req));
+  handle("branch:resetToUpstream", (req) => bridge.branchResetToUpstream(req));
+  handle("branch:resetUndo", (req) => bridge.branchResetUndo(req));
 
   // Compare (base…head).
   handle("compare:refs", (req) => bridge.compareRefs(req));
