@@ -3821,7 +3821,9 @@ export class CommitGraph extends LitElement {
 
   private headerHtml() {
     const branch = this.currentBranchName();
-    const n = this.rows.length;
+    // Commits only: the "Uncommitted changes" row the host puts on top of a
+    // dirty tree is not one, and counting it made 17 commits read "18".
+    const n = this.rows.reduce((k, r) => (ZERO_SHA_RE.test(r.sha) ? k : k + 1), 0);
     const count =
       n === 0
         ? ""
