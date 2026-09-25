@@ -132,6 +132,13 @@ jobs:
       - name: Install (workspace root)
         run: npm ci
 
+      # As in ci.yml: the macOS runners' own Chrome hangs on exit in headless
+      # mode, and the webview checks time out at random. They run in the
+      # windowless headless shell instead, which findChrome prefers.
+      - name: Headless Chrome for the webview checks (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: npx --yes playwright@1.63.0 install chromium-headless-shell
+
       - name: Type-check
         run: npm run check-types --workspaces --if-present
 
