@@ -1,0 +1,60 @@
+apps/extension/harness/rebase-panel/shots.ts
+  s_26f5e669d3043c::t_82f3f891ade789 1-47
+apps/extension/test/rebasePanelGuard.test.ts
+  s_26f5e669d3043c::t_d7b4c8013613cd 56-57,62
+  s_26f5e669d3043c::t_0acbd7221c9fad 5
+  s_26f5e669d3043c::t_40308f26298834 87
+  s_26f5e669d3043c::t_cff6ee60906f7e 19-22
+apps/extension/test/rebasePanelSelection.test.ts
+  s_26f5e669d3043c::t_f4e1c0437bd187 1-29,31-57,62-111,131-361
+  s_26f5e669d3043c::t_52acfb90ebcddf 30
+  s_26f5e669d3043c::t_ff137648d6a1e3 112-130
+  s_26f5e669d3043c::t_2e5cb1f56398ac 58-61
+packages/webview-ui/src/rebase/plan-global.ts
+  s_26f5e669d3043c::t_8e6f7199bfca08 1-14
+apps/extension/esbuild.js
+  s_26f5e669d3043c::t_9dc3360220183a 147-157
+  s_26f5e669d3043c::t_43c4d118fab7e6 177
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_89bd113127933c 795,801-802
+  s_26f5e669d3043c::t_5e98f4ec24775a 305-310,315
+  s_26f5e669d3043c::t_e5e339ba390390 336-340
+  s_26f5e669d3043c::t_c51d50c45dbec6 364
+  s_26f5e669d3043c::t_1f431857e7f1e8 761-763,767-771
+  s_26f5e669d3043c::t_2aa0bfd7271511 575-577,579-583,585-589
+  s_26f5e669d3043c::t_5f33442113c2f7 519,522-543
+  s_26f5e669d3043c::t_fd7b1b8bb366a0 814-823,825,829-830,832-887,891-907,911-931,934-940,944-1013
+  s_26f5e669d3043c::t_99796576fab39a 355-356
+  s_26f5e669d3043c::t_e296e465ea88f4 354
+  s_26f5e669d3043c::t_c2f4f51c448fc0 781
+  s_26f5e669d3043c::t_fb89f6a3f09d18 1092-1102,1104-1106
+  s_26f5e669d3043c::t_9f0983e263e0a2 720-730,733-752
+  s_26f5e669d3043c::t_9bdc6db49c614a 1087-1091,1103
+  s_26f5e669d3043c::t_5bdf6f2306e0b4 584
+  s_26f5e669d3043c::t_503c7c98429a4a 652-654
+  s_26f5e669d3043c::t_47c4523c9299b1 639-640,642-646
+  s_26f5e669d3043c::t_9af98341f1d65b 357
+  s_26f5e669d3043c::t_a8e08e0e421217 544
+  s_26f5e669d3043c::t_e028d95ea6a3a2 753
+apps/extension/test/rebasePanelPage.ts
+  s_26f5e669d3043c::t_7b62db90279e16 185-188,199-204,206-211
+  s_26f5e669d3043c::t_cb37240f35fb5d 268-279
+  s_26f5e669d3043c::t_0755310ea4c515 326-329
+  s_26f5e669d3043c::t_e4510912543ce3 1-184,189-198,205,212-267,280-325,330-356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2199dbb8da774ba5cfe5d8350308778b45969dd5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
