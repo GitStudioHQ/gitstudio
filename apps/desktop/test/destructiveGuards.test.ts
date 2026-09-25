@@ -37,7 +37,7 @@ const ROOT = fileURLToPath(new URL("../src/renderer", import.meta.url));
  * index, the next patch in a series).
  */
 const DESTRUCTIVE =
-  /"(stash:drop|branch:delete|branch:deleteRemote|gist:delete|release:delete|release:deleteAsset|actions:deleteSecret|actions:deleteVariable|ai:removeConnection|rebase:abort|merge:abort|cherryPick:abort|revert:abort|am:abort|rebase:skip|cherryPick:skip|revert:skip|am:skip|git:discard|discard:all|reset:hard|commit:reset|repos:trash|branch:rebase|branch:resetToUpstream|op:abort|op:skip|op:continue|conflict:takeRole|conflict:delete|conflict:resolve)"/;
+  /"(stash:drop|branch:delete|branch:deleteRemote|gist:delete|release:delete|release:deleteAsset|actions:deleteSecret|actions:deleteVariable|ai:removeConnection|rebase:abort|merge:abort|cherryPick:abort|revert:abort|am:abort|rebase:skip|cherryPick:skip|revert:skip|am:skip|git:discard|discard:all|reset:hard|commit:reset|repos:trash|branch:rebase|branch:resetToUpstream|op:abort|op:skip|op:continue|conflict:takeRole|conflict:delete|conflict:resolve|commit:drop|commits:rewrite)"/;
 
 /**
  * Anything in the enclosing lines that makes a second press harmless.
@@ -48,7 +48,7 @@ const DESTRUCTIVE =
  * keeps the dashboard locked until the state the verb led to is read back.
  */
 const GUARD =
-  /confirmDialog|confirmDanger|requireTyped|promptChoice|askForCommitAction|disabled = true|is-busy|runBusy|refreshInPlace|exclusive\(|this\.run\(/;
+  /confirmDialog|confirmDanger|requireTyped|promptChoice|promptMessage|askForCommitAction|disabled = true|is-busy|runBusy|refreshInPlace|exclusive\(|this\.run\(/;
 
 /** Call sites reviewed and found safe without either guard. */
 const REVIEWED: Record<string, string> = {

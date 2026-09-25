@@ -1,10 +1,17 @@
 import { runRebasePlan, isRebaseInProgress } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
-import { dropBlocker, dropCommit, planDropCommit, undoDrop } from "@gitstudio/git-service/dropCommit";
+import { dropBlocker, dropCommit, planDropCommit, undoDrop, undoRewrite } from "@gitstudio/git-service/dropCommit";
+import { manyBlocker, mergesAmong, planMany, rewriteMany } from "@gitstudio/git-service/multiCommit";
+import { selectedCommits } from "@gitstudio/host-bridge/graphSelection";
 import type { RepoStore } from "./repoStore";
 import type {
   CommitActionResult,
+  CommitsMenuWire,
+  CommitsPlanRequest,
+  CommitsPlanWire,
+  CommitsRewriteRequest,
+  CommitsUndoRequest,
   DropOutcomeWire,
   DropPlanRequest,
   DropPlanWire,
@@ -621,6 +628,109 @@ export class RebaseBridge {
       return { ok: false, changed: false, expected: true, message: "Open a repository first." };
     }
     const r = await undoDrop(ctx.process, { before: String(req?.before ?? ""), after: String(req?.after ?? "") });
+    if (r.ok) {
+      return { ok: true, changed: true };
+    }
+    return r.expected
+      ? { ok: false, changed: false, expected: true, message: r.message }
+      : { ok: false, changed: false, message: r.message };
+  }
+
+  // ── Several commits at once (issue #32) ─────────────────────────────────
+  //
+  // The graph's menu for a selection, and the "N commits selected" summary:
+  // what applies (commits:menu), Drop N / Squash N planned and run by
+  // git-service's multiCommit.ts — the module the extension uses — through
+  // this app's runner, and the one Undo for all of them. Cherry-pick and
+  // revert of several go through commit:action (gitBridge), the
+  // commit-applying door.
+
+  /** What the menu for these commits may offer. A read that fails leaves the
+   *  item out, never a menu that fails to open. */
+  async commitsMenu(req: { shas?: unknown }): Promise<CommitsMenuWire> {
+    const ctx = this.repos.getContext();
+    const shas = selectedCommits(Array.isArray(req?.shas) ? req.shas : []);
+    if (!ctx || shas.length < 2) return { apply: false, drop: false, squash: false };
+    const [merges, drop, squash] = await Promise.all([
+      mergesAmong(ctx.process, shas).catch(() => undefined),
+      planMany(ctx.process, "drop", shas).catch(() => undefined),
+      planMany(ctx.process, "squash", shas).catch(() => undefined),
+    ]);
+    return {
+      apply: merges !== undefined && merges.length === 0,
+      drop: drop?.ok === true,
+      squash: squash?.ok === true,
+    };
+  }
+
+  /** Plan dropping or squashing several commits; `preflight` adds what stops
+   *  it right now. Every refusal is the user's state, never a defect. */
+  async commitsPlan(req: CommitsPlanRequest): Promise<CommitsPlanWire> {
+    const ctx = this.repos.getContext();
+    if (!ctx) {
+      return { ok: false, expected: true, reason: "no-repo", message: "Open a repository first." };
+    }
+    const verb = req?.verb === "squash" ? "squash" : "drop";
+    const plan = await planMany(ctx.process, verb, selectedCommits(Array.isArray(req?.shas) ? req.shas : []));
+    if (!plan.ok) {
+      return { ok: false, expected: true, reason: plan.reason, message: plan.message };
+    }
+    const blocked = req.preflight ? await manyBlocker(ctx.process, verb) : undefined;
+    return {
+      ok: true,
+      verb,
+      shas: plan.shas,
+      commits: plan.commits.map((c) => ({ shortSha: c.shortSha, subject: c.subject })),
+      head: plan.head,
+      branch: plan.branch,
+      replayed: plan.replayed,
+      published: plan.published,
+      carryable: plan.carryable,
+      ...(plan.message !== undefined ? { message: plan.message } : {}),
+      ...(blocked ? { blocked } : {}),
+    };
+  }
+
+  /** Run a confirmed drop or squash of several commits. A stop is not a
+   *  failure: the rebase stays open for Changes' Continue / Skip / Abort. */
+  async commitsRewrite(req: CommitsRewriteRequest): Promise<DropOutcomeWire> {
+    const root = this.root();
+    const ctx = this.repos.getContext();
+    if (!root || !ctx) {
+      return { status: "failed", ok: false, expected: true, message: "Open a repository first." };
+    }
+    try {
+      const verb = req?.verb === "squash" ? "squash" : "drop";
+      const out = await rewriteMany(
+        ctx.process,
+        verb,
+        {
+          shas: selectedCommits(Array.isArray(req?.shas) ? req.shas : []),
+          head: String(req?.head ?? ""),
+          carry: req?.carry === true,
+          ...(typeof req?.message === "string" ? { message: req.message } : {}),
+        },
+        (plan) => runRebasePlan(root, plan, this.repos.runnerOptions()),
+      );
+      const tips = {
+        ...(out.before ? { before: out.before } : {}),
+        ...(out.after ? { after: out.after } : {}),
+      };
+      return { ...onTheWire(out), ...tips };
+    } catch (err) {
+      return { status: "failed", ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Undo a rewrite, cherry-pick or revert of several commits — back from
+   *  `after` to `before`, only while HEAD is still `after`. */
+  async commitsUndo(req: CommitsUndoRequest): Promise<CommitActionResult> {
+    const ctx = this.repos.getContext();
+    if (!ctx) {
+      return { ok: false, changed: false, expected: true, message: "Open a repository first." };
+    }
+    const what = ["drop", "squash", "cherry-pick", "revert"].includes(String(req?.what)) ? String(req.what) : "change";
+    const r = await undoRewrite(ctx.process, { before: String(req?.before ?? ""), after: String(req?.after ?? "") }, what);
     if (r.ok) {
       return { ok: true, changed: true };
     }

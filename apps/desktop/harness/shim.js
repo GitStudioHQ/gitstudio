@@ -2795,6 +2795,32 @@
   // tick would have answered the same ten rows and a check could pass over a
   // dead filter.
   const graphBase = fixtures["graph:load"];
+  // ?stack=1 (issue #32's multi-select scenes): three LOCAL commits on main,
+  // not pushed yet, above the released tip — the history a squash or a drop of
+  // several commits is for. main moves up to the newest; origin/main and the
+  // release tag stay on 9f8e7d6.
+  const STACK = [
+    { sha: "3c0ffee1a2b3c4d5e6f7", subject: "graph: keep the anchor where Shift-click started", h: 0.2 },
+    { sha: "2c0ffee1a2b3c4d5e6f7", subject: "wip", h: 0.5 },
+    { sha: "1c0ffee1a2b3c4d5e6f7", subject: "graph: select several commits with Cmd and Shift", h: 0.8, author: "Mira Holt" },
+  ];
+  if (params.get("stack")) {
+    const tip = graphBase.rows[0];
+    const main = tip.refs.find((r) => r.kind === "currentHead");
+    tip.refs = tip.refs.filter((r) => r.kind !== "currentHead");
+    const stackRows = STACK.map((s, i) => ({
+      ...tip,
+      sha: s.sha,
+      shortSha: s.sha.slice(0, 7),
+      subject: s.subject,
+      author: s.author || "Anton Arnaudov",
+      authorDate: Math.floor(Date.now() / 1000) - Math.round(s.h * 3600),
+      refs: i === 0 && main ? [main] : [],
+      isMerge: false,
+    }));
+    graphBase.rows = [...stackRows, ...graphBase.rows];
+    graphBase.head = STACK[0].sha;
+  }
   /** sha → the refs that ALONE reach it; every other row is on main's line. */
   const reachOnly = { "77aa88b9c0d1e2f3a4b5": ["refs/remotes/origin/chore/dependabot-bump"] };
   const mainLine = new Set(graphBase.rows.map((r) => r.sha).filter((sha) => !reachOnly[sha]));
@@ -3149,6 +3175,98 @@
       ? { status: "stopped", reason: "conflict", message: "could not apply 9f8e7d6", before: req.head }
       : { status: "done", before: req.head, after: DROP_AFTER };
   dynamic["commit:undoDrop"] = () => ({ ok: true, changed: true });
+
+  // ── Several commits at once (issue #32) ────────────────────────────────────
+  // What main answers for a selection, from the same history: HEAD's
+  // first-parent line from the tip down to the merge is what can be
+  // rewritten — the ?stack=1 commits and the released 9f8e7d6 above the merge
+  // (published: origin/main is on it). Squash needs them contiguous on that
+  // line; a merge among them leaves Cherry-pick and Revert out. Switches:
+  //   ?dropblocked=1   the preflight finds uncommitted changes
+  //   ?dropcarry=1     a branch points at a rewritten commit (the either/or)
+  //   ?dropconflict=1  the rewrite stops on a conflict
+  //   ?pickpaused=1    a cherry-pick / revert of several stops on a conflict
+  const MERGE = "a1b2c3d4e5f60718293a";
+  const rewritable = () => {
+    const rows = graphBase.rows;
+    const at = rows.findIndex((r) => r.sha === MERGE);
+    return rows.slice(0, at < 0 ? rows.length : at).map((r) => r.sha);
+  };
+  const rowOf = (sha) => graphBase.rows.find((r) => r.sha === sha);
+  const manyOf = (shas) => {
+    const line = rewritable();
+    const inLine = (shas || []).every((s) => line.includes(s));
+    const idx = (shas || []).map((s) => line.indexOf(s)).sort((a, b) => a - b);
+    const contiguous = inLine && idx.every((v, i) => i === 0 || v === idx[i - 1] + 1);
+    return { line, inLine, contiguous, idx };
+  };
+  dynamic["commits:menu"] = (req) => {
+    const shas = (req && req.shas) || [];
+    const m = manyOf(shas);
+    return {
+      apply: shas.length > 1 && !shas.includes(MERGE),
+      drop: shas.length > 1 && m.inLine && m.idx.length < m.line.length,
+      squash: shas.length > 1 && m.contiguous,
+    };
+  };
+  dynamic["commits:plan"] = (req) => {
+    const verb = req && req.verb === "squash" ? "squash" : "drop";
+    const shas = (req && req.shas) || [];
+    const m = manyOf(shas);
+    if (!m.inLine || (verb === "squash" && !m.contiguous)) {
+      return {
+        ok: false,
+        expected: true,
+        reason: m.inLine ? "not-contiguous" : "past-merge",
+        message: m.inLine
+          ? "Only commits next to each other on the branch can be squashed — there are other commits between the ones you selected."
+          : "There's a merge between those commits and the tip of the branch — replaying the commits after them would flatten the merge.",
+      };
+    }
+    const ordered = m.idx.map((i) => m.line[i]);
+    const oldest = m.idx[m.idx.length - 1];
+    const rows = ordered.map(rowOf);
+    return {
+      ok: true,
+      verb,
+      shas: ordered,
+      commits: rows.map((r) => ({ shortSha: r.shortSha, subject: r.subject })),
+      head: graphBase.head,
+      branch: "main",
+      replayed: oldest + 1 - ordered.length,
+      published: ordered.includes(DROP_TIP),
+      carryable: params.get("dropcarry") ? ["release/1.11"] : [],
+      ...(verb === "squash" ? { message: rows.slice().reverse().map((r) => r.subject).join("\n\n") } : {}),
+      ...(req && req.preflight && params.get("dropblocked")
+        ? { blocked: `You have uncommitted changes. Commit or stash them, then ${verb} the commits.` }
+        : {}),
+    };
+  };
+  dynamic["commits:rewrite"] = (req) =>
+    params.get("dropconflict")
+      ? { status: "stopped", reason: "conflict", message: "could not apply", before: req.head }
+      : { status: "done", before: req.head, after: "d0d0d0d0d0d0d0d0d0d0" };
+  dynamic["commits:undo"] = () => ({ ok: true, changed: true });
+  {
+    // commit:action with `shas` — Cherry-pick / Revert of several — answers
+    // the two tips its Undo moves between, or pauses for the conflict flow.
+    const one = dynamic["commit:action"];
+    dynamic["commit:action"] = (req) => {
+      if (req && Array.isArray(req.shas) && req.shas.length > 1 && (req.action === "cherry-pick" || req.action === "revert")) {
+        if (params.get("pickpaused")) {
+          return {
+            ok: false,
+            changed: true,
+            expected: true,
+            paused: true,
+            message: `${req.action === "cherry-pick" ? "Cherry-picking" : "Reverting"} ${req.shas.length} commits stopped on a commit that needs you — resolve any conflicts and continue, skip that commit, or abort to put the branch back as it was.`,
+          };
+        }
+        return { ok: true, changed: true, before: graphBase.head, after: "d1d1d1d1d1d1d1d1d1d1" };
+      }
+      return one(req);
+    };
+  }
   const IDE = { id: "webstorm", name: "WebStorm", command: "/Applications/WebStorm.app/Contents/MacOS/webstorm" };
   dynamic["jetbrains:detect"] = () => (params.get("noide") === "1" ? undefined : IDE);
   dynamic["jetbrains:merge"] = (req) => {
@@ -3494,6 +3612,15 @@
             bubbles: true, composed: true, cancelable: true,
             clientX: Math.round(r.left + Math.min(240, r.width / 2)), clientY: Math.round(r.top + r.height / 2),
           }),
+        );
+      } else if (step.startsWith("mclick:") || step.startsWith("sclick:")) {
+        // A Cmd-click (mclick) or a Shift-click (sclick) — the graph's
+        // multi-select (issue #32). Composed, so it leaves the shadow root.
+        const sel = decodeURIComponent(step.slice(7));
+        const elx = await until(() => q(sel));
+        const shift = step.startsWith("sclick:");
+        elx.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, metaKey: !shift, shiftKey: shift }),
         );
       } else if (step.startsWith("scroll:")) {
         const sel = decodeURIComponent(step.slice(7));

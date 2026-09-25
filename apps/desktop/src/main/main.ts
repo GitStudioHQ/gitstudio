@@ -520,6 +520,10 @@ function actionLabel(channel: string): string {
     "commit:dropPlan": "Check drop",
     "commit:drop": "Drop commit",
     "commit:undoDrop": "Undo drop",
+    "commits:menu": "Check selected commits",
+    "commits:plan": "Check selected commits",
+    "commits:rewrite": "Rewrite selected commits",
+    "commits:undo": "Undo on selected commits",
     stage: "Stage",
     unstage: "Unstage",
     discard: "Discard",
@@ -809,6 +813,12 @@ function registerIpc(): void {
   handle("commit:dropPlan", (req) => rebase.dropPlan(req));
   handle("commit:drop", (req) => rebase.drop(req));
   handle("commit:undoDrop", (req) => rebase.undoDrop(req));
+  // Several commits at once (issue #32): Drop N and Squash N through the same
+  // runner; Cherry-pick and Revert N are commit:action with `shas`.
+  handle("commits:menu", (req) => rebase.commitsMenu(req));
+  handle("commits:plan", (req) => rebase.commitsPlan(req));
+  handle("commits:rewrite", (req) => rebase.commitsRewrite(req));
+  handle("commits:undo", (req) => rebase.commitsUndo(req));
 
   // Working-tree staging + commit (Changes view).
   handle("stage", (path) => bridge.stage(path));

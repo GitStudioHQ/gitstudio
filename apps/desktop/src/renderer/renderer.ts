@@ -20,7 +20,7 @@ import type { ConflictsState } from "@gitstudio/host-bridge/conflictsProtocol";
 import { clickIntent, parseRowKey, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import { installNavStack } from "./navStack";
 import { clearUndo, didUndoable, installUndoKey, push as pushUndoable, redoOrText, undoOrText } from "./undo";
-import { repoChanged } from "./repoEpoch";
+import { repoChanged, whileSameRepo } from "./repoEpoch";
 import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
 import { renderReleaseCompose } from "./views/releaseCompose";
@@ -55,7 +55,7 @@ import { aiModelsCard, agentAccessCard } from "./aiSettings";
 import { openInButton } from "./openIn";
 import { editorsCard } from "./views/editorsCard";
 import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled } from "./aiAssist";
-import { toast, confirmDialog, promptInline, promptChoice, openModal, type ToastAction } from "./dialogs";
+import { toast, confirmDialog, promptInline, promptChoice, promptMessage, openModal, type ToastAction } from "./dialogs";
 import { refLabel, revealCandidate, storedFilterOf, withRef } from "@gitstudio/host-bridge/graphRefFilter";
 import { createBranchFlow } from "./branchCreate";
 import type { BranchStart } from "../shared/branchStart";
@@ -101,8 +101,9 @@ import { dismissLayers, pageOwnsKeys } from "./overlays";
 import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
-import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
+import { CommitContextMenu, askForCommitAction, commitActionItem, manyMenuRows, type ManyAction } from "./contextMenu";
 import { dropCommitFlow } from "./dropCommit";
+import { runManyAction } from "./multiCommit";
 import { askPullMode, pullWithChoice, pullVerdict, type PullOutcome, type PullVerdict } from "./pullFlow";
 import { resetItemLabel, resetToUpstream } from "./resetToUpstream";
 import { installInTheWayAsker } from "./inTheWayAsk";
@@ -196,7 +197,10 @@ class App {
   private contextMenu = new CommitContextMenu(
     (req) => this.runAction(req),
     (sha) => void this.dropCommit(sha),
+    (action, shas) => void this.runMany(action, shas),
   );
+  /** Bumped per multi-selection summary; see showSelection. */
+  private selectionSeq = 0;
   /** Bumped per right-click; see openCommitMenu. */
   private commitMenuSeq = 0;
 
@@ -371,6 +375,9 @@ class App {
   private codePath = "";
   private compareBase?: string;
   private compareHead?: string;
+  /** Compare sides that are COMMITS, not refs (Compare these two commits,
+   *  issue #32) — labelled by short sha, with the commit glyph. */
+  private compareCommits = new Set<string>();
   private compareMode: CompareMode = "three-dot";
   /** Compare sub-view: the commits list, or the files master/detail. */
   private compareView: "commits" | "files" = "files";
@@ -818,6 +825,7 @@ class App {
     // README.md would open it, third in its list, with nothing to say why.
     this.compareBase = undefined;
     this.compareHead = undefined;
+    this.compareCommits.clear();
     this.compareOpenPath = undefined;
     const screen = el("div", "screen repo");
     screen.appendChild(this.topbar(info));
@@ -4486,7 +4494,12 @@ class App {
     const baseBtn = el("button", "ref-pick");
     const headBtn = el("button", "ref-pick");
     const setLabel = (btn: HTMLElement, ref: string): void => {
-      btn.replaceChildren(glyph("git-branch"), span(ref), glyph("chevron-down"));
+      // A commit (Compare these two commits, issue #32) reads as one: its
+      // short sha with the commit glyph, the full one on hover.
+      const commit = this.compareCommits.has(ref);
+      btn.replaceChildren(glyph(commit ? "git-commit" : "git-branch"), span(commit ? ref.slice(0, 7) : ref), glyph("chevron-down"));
+      if (commit) btn.title = ref;
+      else btn.removeAttribute("title");
     };
     // With no second ref in the repo the picker says so rather than naming a
     // ref that would compare against itself.
@@ -8467,8 +8480,11 @@ class App {
     this.graph?.dispose(); // tear down a prior mount before replacing it
     const graph = new GraphMount(graphHost, {
       onSelect: (sha) => void this.selectCommit(sha),
+      // Several commits selected (issue #32): the pane says so and offers
+      // what can be done to all of them.
+      onSelection: (shas) => this.showSelection(shas),
       onOpen: (sha) => void this.selectCommit(sha),
-      onContext: (sha, x, y) => void this.openCommitMenu(sha, x, y),
+      onContext: (sha, x, y, shas) => void (shas ? this.openManyMenu(shas, x, y) : this.openCommitMenu(sha, x, y)),
       // Ref labels are LINKS now: click a branch/tag chip in the graph and land
       // on that ref in Branches, scrolled + flashed.
       // `kind` too. The chip knows whether it is a branch, a remote or a tag,
@@ -10000,6 +10016,7 @@ class App {
 
   private async selectCommit(sha: string): Promise<void> {
     this.selectedSha = sha;
+    this.selectionSeq++; // a pending "N commits selected" answer is for a selection that is gone
     // Loading a commit's details is a round trip, and this pane used to sit
     // showing the PREVIOUS commit's files the whole time — so a slow load was
     // indistinguishable from a fast one, and a FAILED load was invisible: the
@@ -10420,6 +10437,96 @@ class App {
     const plan = await host.invoke("commit:dropPlan", { sha }).catch(() => undefined);
     if (seq !== this.commitMenuSeq) return;
     this.contextMenu.open(sha, x, y, this.refsOn(sha), { drop: plan?.ok === true });
+  }
+
+  /**
+   * The graph's menu for a selection of several commits (issue #32). What
+   * applies is main's answer (commits:menu); a later right-click wins, as it
+   * does for one commit's menu.
+   */
+  private async openManyMenu(shas: string[], x: number, y: number): Promise<void> {
+    const seq = ++this.commitMenuSeq;
+    const can = await host
+      .invoke("commits:menu", { shas })
+      .catch(() => ({ apply: false, drop: false, squash: false }));
+    if (seq !== this.commitMenuSeq) return;
+    this.contextMenu.openMany(shas, x, y, can);
+  }
+
+  /**
+   * The details pane with several commits selected (issue #32): a summary —
+   * how many, who, when, each commit, and the menu's actions as buttons —
+   * never the first commit's details standing in for the rest. None selected
+   * (a Cmd-click took the last one off) is the pane's empty state.
+   */
+  private showSelection(shas: string[]): void {
+    const seq = ++this.selectionSeq;
+    this.selectedSha = undefined;
+    this.closeGraphDiff();
+    if (shas.length < 2) {
+      this.showDetailsPlaceholder();
+      return;
+    }
+    const panel = document.createElement("gitstudio-commit-details") as CommitDetailsEl;
+    panel.className = "details-panel";
+    panel.selection = { commits: this.graph?.summaryCommits(shas) ?? [] };
+    panel.addEventListener("gs-selection-action", (e) => {
+      const d = (e as CustomEvent<{ id: string; shas: string[] }>).detail;
+      void this.runMany(d.id as ManyAction, d.shas);
+    });
+    // A row keeps just that commit: the graph selects it and says so.
+    panel.addEventListener("gs-reveal", (e) => {
+      const d = (e as CustomEvent<{ sha: string }>).detail;
+      this.revealInGraph(d.sha);
+    });
+    panel.addEventListener("gs-close", () => this.setGraphDetailsVisible(false));
+    const wrap = el("div", "details-split");
+    wrap.append(panel);
+    this.detailsEl?.replaceChildren(wrap);
+    this.setGraphDetailsVisible(true);
+    void host
+      .invoke("commits:menu", { shas })
+      .catch(() => ({ apply: false, drop: false, squash: false }))
+      .then((can) => {
+        if (seq !== this.selectionSeq || !panel.selection) return;
+        panel.selection = {
+          ...panel.selection,
+          actions: manyMenuRows(shas.length, can).map((r) => ({ id: r.action, label: r.label, icon: r.icon, danger: r.danger })),
+        };
+      });
+  }
+
+  /** An item of the several-commit menu or summary — see renderer/multiCommit.ts. */
+  private async runMany(action: ManyAction, shas: string[]): Promise<void> {
+    try {
+      await runManyAction(action, shas, {
+        plan: (req) => host.invoke("commits:plan", req),
+        // in-the-way-reviewed: a forwarder — multiCommit.ts's applyManyFlow
+        // reads `.cancelled` and says nothing on Cancel.
+        apply: (req) => host.invoke("commit:action", req),
+        rewrite: (req) => host.invoke("commits:rewrite", req),
+        undo: (req) => host.invoke("commits:undo", req),
+        confirm: (opts) => confirmDialog(opts),
+        choose: (opts) => promptChoice(opts),
+        message: (opts) => promptMessage({ ...opts, label: "Commit message", holdWhile: whileSameRepo() }),
+        toast: (message, kind) => toast(message, kind),
+        undoable: (message, act) => didUndoable(message, act),
+        refresh: async () => {
+          bust();
+          await this.refreshAll();
+        },
+        landOnConflicts: () => this.landOnConflicts(),
+        copy: (text, said) => copyText(text, said),
+        compare: (base, head) => {
+          this.compareCommits = new Set([base, head]);
+          this.compareBase = base;
+          this.compareHead = head;
+          this.routeView("compare", true);
+        },
+      });
+    } catch (e) {
+      toast(cleanErr(e) || "That didn't work.", "error");
+    }
   }
 
   /** "Drop commit…" — see renderer/dropCommit.ts for the flow. */

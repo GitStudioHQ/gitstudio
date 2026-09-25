@@ -13149,3 +13149,11 @@ body.vscode-light .cmp-seg-btn.active:hover {
 .merge-settings-card .merge-ide-found { margin-top: 6px; overflow-wrap: anywhere; }
 .merge-settings-card .merge-ide-found.is-missing { color: var(--status-warn); }
 .merge-settings-card .merge-ide-path { margin-top: var(--sp-3); }
+
+/* Squash commits…'s message editor (issue #32, dialogs.ts promptMessage):
+   room for several commit messages, in the editor's own face. */
+.msg-editor-card .msg-editor {
+  min-height: 168px;
+  font-family: var(--vscode-editor-font-family);
+  line-height: 1.5;
+}

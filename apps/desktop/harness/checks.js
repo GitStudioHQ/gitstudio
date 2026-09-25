@@ -9260,6 +9260,277 @@
       c.eq(window.__GS_INVOKED.filter((x) => x.channel === "commit:drop").length, 1, "the drop ran once");
     },
 
+    // ── Several commits at once (issue #32) ──────────────────────────────────
+    //
+    // The ?stack=1 graph: three local commits on main (S3 newest … S1) above
+    // the released 9f8e7d6, then the merge. The rows live in the graph's
+    // shadow root; clicks carry the modifiers a person's would.
+
+    /**
+     * Cmd-click and Shift-click select several; every selected row has the
+     * selection fill and ONLY the focused one the accent bar (computed, in
+     * whichever theme the scene runs); aria says so; the details pane becomes
+     * "N commits selected" with the actions that apply — never one commit's
+     * details — and Escape keeps only the focused row.
+     */
+    "several-commits-are-selected-and-summarised": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const S = ["3c0ffee1a2b3c4d5e6f7", "2c0ffee1a2b3c4d5e6f7", "1c0ffee1a2b3c4d5e6f7"];
+      const row = (sha) => sr.querySelector(`.row[data-sha="${sha}"]`);
+      const click = async (sha, mods = {}) => {
+        const r = row(sha);
+        (r?.querySelector(".subject") || r)?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, ...mods }),
+        );
+        await settle(450);
+      };
+      const selected = () => $$('.row[aria-selected="true"]', sr).map((r) => r.dataset.sha);
+      const bg = (sha) => getComputedStyle(row(sha)).backgroundColor;
+      const barOf = (sha) => getComputedStyle(row(sha)).borderLeftColor;
+      const clear = (v) => v === "rgba(0, 0, 0, 0)" || v === "transparent";
+      const sent = (ch) => window.__GS_INVOKED.filter((r) => r.channel === ch);
+
+      await click(S[0]);
+      await click(S[2], { metaKey: true });
+      c.eq(selected().join(","), [S[0], S[2]].join(","), "Cmd+click adds a row");
+      c.eq(sr.querySelector(".scroller")?.getAttribute("aria-multiselectable"), "true", "the grid says it is multi-select");
+      c.ok(!clear(bg(S[0])) && bg(S[0]) === bg(S[2]), `both selected rows are filled alike (${bg(S[0])} / ${bg(S[2])})`);
+      c.ok(bg(S[1]) !== bg(S[0]), `the row between them is not (${bg(S[1])})`);
+      c.ok(!clear(barOf(S[2])), `the focused row has the accent bar (${barOf(S[2])})`);
+      c.ok(clear(barOf(S[0])), `a selected row that is not focused has none (${barOf(S[0])})`);
+      c.eq(sr.querySelector(".scroller")?.getAttribute("aria-activedescendant"), row(S[2])?.id, "aria-activedescendant is the focused row");
+
+      const pane = $(".graph-details gitstudio-commit-details");
+      const psr = pane?.shadowRoot;
+      c.ok(!!psr, "the details pane is mounted");
+      if (!psr) return;
+      c.eq(text(psr.querySelector(".sum-title")), "2 commits selected", "the pane says how many");
+      c.eq($$(".sum-row", psr).length, 2, "and lists each");
+      c.ok(sent("commits:menu").some((r) => (r.payload?.shas || []).join() === [S[0], S[2]].join()), "it asked main what applies, for these commits");
+      const acts = () => $$(".actions .act", psr).map((b) => text(b));
+      c.eq(acts().join(" | "), "Cherry-pick 2 commits | Revert 2 commits | Drop 2 commits… | Compare these two commits | Copy SHAs",
+        "the actions: no squash across a gap");
+
+      await click(S[1], { shiftKey: true });
+      c.eq(selected().join(","), [S[1], S[2]].join(","), "Shift+click selects from the anchor");
+      await click(S[0], { shiftKey: true });
+      c.eq(selected().join(","), S.join(","), "…in either direction");
+      await settle(300);
+      const pane3 = $(".graph-details gitstudio-commit-details")?.shadowRoot;
+      c.eq(text(pane3?.querySelector(".sum-title")), "3 commits selected", "the pane follows");
+      c.ok($$(".actions .act", pane3).some((b) => text(b) === "Squash 3 commits…"), "three next to each other can be squashed");
+      c.ok(!$$(".actions .act", pane3).some((b) => /Compare/.test(text(b))), "compare is for exactly two");
+
+      // Escape, where a person's would land: the focused list.
+      const asked = sent("commit:details").length;
+      const sc = sr.querySelector(".scroller");
+      sc?.focus();
+      (sr.activeElement || sc)?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+      await settle(600);
+      c.eq(selected().join(","), S[0], "Escape keeps only the focused row");
+      c.ok(!$(".graph-details gitstudio-commit-details")?.shadowRoot?.querySelector(".sum-title"), "and the pane is that commit's again");
+      c.ok(sent("commit:details").slice(asked).some((r) => r.payload === S[0]), "its details were asked for, after the Escape");
+      c.ok(!!$(".graph-split") && !$(".graph-split").classList.contains("details-hidden"), "the Escape did not also close the pane");
+    },
+
+    /**
+     * Right-click inside a selection of several keeps it and opens ONE menu for
+     * all of them — only the items main says apply, Drop in the danger colour;
+     * outside it, just that row and its own menu. Drop N asks once, listing
+     * every commit, runs with the head it asked about, and offers Undo.
+     */
+    "the-menu-for-several-commits-runs-for-all-of-them": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      if (!sr) return c.ok(false, "the graph is mounted");
+      const S = ["3c0ffee1a2b3c4d5e6f7", "2c0ffee1a2b3c4d5e6f7", "1c0ffee1a2b3c4d5e6f7"];
+      const row = (sha) => sr.querySelector(`.row[data-sha="${sha}"]`);
+      const click = async (sha, mods = {}) => {
+        row(sha)?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, ...mods }));
+        await settle(400);
+      };
+      const rclick = async (sha) => {
+        const r = row(sha)?.getBoundingClientRect();
+        row(sha)?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: (r?.left ?? 0) + 240, clientY: (r?.top ?? 0) + 17 }));
+        await settle(500);
+      };
+      const selected = () => $$('.row[aria-selected="true"]', sr).map((r) => r.dataset.sha);
+      const sent = (ch) => window.__GS_INVOKED.filter((r) => r.channel === ch);
+      const closeMenu = async () => {
+        (document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        await settle(250);
+      };
+
+      await click(S[0]);
+      await click(S[2], { shiftKey: true });
+      await rclick(S[1]);
+      c.eq(selected().join(","), S.join(","), "right-click inside the selection keeps it");
+      const menu = $(".ctx-menu");
+      c.ok(!!menu, "a menu opens");
+      if (!menu) return;
+      c.eq(text(menu.querySelector(".ctx-menu-header")), "3 commits", "headed by how many");
+      c.eq($$(".ctx-menu-item", menu).map((b) => text(b)).join(" | "),
+        "Cherry-pick 3 commits | Revert 3 commits | Squash 3 commits… | Drop 3 commits… | Copy SHAs", "the items that apply, in order");
+      const drop = menu.querySelector("[data-action=drop-many]");
+      c.ok(!!drop && getComputedStyle(drop).color !== getComputedStyle(menu.querySelector("[data-action=revert-many]")).color, "Drop is painted as danger");
+      c.eq(document.activeElement, menu.querySelector(".ctx-menu-item"), "the keyboard is on the first item");
+      await closeMenu();
+
+      // Outside the selection: that row alone, and its own menu.
+      await rclick("f6a7b8c9d0e152637f80");
+      c.eq(selected().join(","), "f6a7b8c9d0e152637f80", "right-click outside selects just that row");
+      c.eq(text($(".ctx-menu .ctx-menu-header")), "f6a7b8c", "and its own menu opens");
+      await closeMenu();
+
+      // Drop 3 commits…: preflight, one question listing them, the run, Undo.
+      await click(S[0]);
+      await click(S[2], { shiftKey: true });
+      await rclick(S[0]);
+      $(".ctx-menu [data-action=drop-many]")?.click();
+      await settle(600);
+      c.ok(sent("commits:plan").some((r) => r.payload?.verb === "drop" && r.payload?.preflight === true), "asked main again, with the preflight");
+      c.eq(sent("commits:rewrite").length, 0, "nothing runs before the answer");
+      const card = $(".modal-card");
+      c.ok(!!card, "a confirmation opens");
+      if (!card) return;
+      c.eq(text(card.querySelector(".modal-title")), "Drop 3 commits?", "titled with how many");
+      c.match(text(card.querySelector(".modal-message")),
+        /^3 commits will be removed from main: 3c0ffee "graph: keep the anchor where Shift-click started", 2c0ffee "wip" and 1c0ffee "graph: select several commits with Cmd and Shift"\./,
+        "every commit it removes, by name");
+      c.match(text(card.querySelector(".modal-message")), /Nothing else changes\./, "and what is replayed");
+      c.eq(text(card.querySelector(".modal-ok")), "Drop commits", "the button says what it does");
+      c.ok(card.querySelector(".modal-ok")?.classList.contains("btn-danger"), "in the danger style");
+      card.querySelector(".modal-ok")?.click();
+      await settle(700);
+      const run = sent("commits:rewrite").at(-1)?.payload;
+      c.eq(run?.verb, "drop", "the run is a drop");
+      c.eq((run?.shas || []).join(","), S.join(","), "of those three");
+      c.eq(run?.head, "3c0ffee1a2b3c4d5e6f7", "with the head the question was about");
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /Dropped 3 commits\./, "it says so");
+      const undo = $$(".toast-action").find((b) => text(b) === "Undo");
+      c.ok(!!undo, "with Undo");
+      undo?.click();
+      await settle(500);
+      c.eq(sent("commits:undo").at(-1)?.payload?.what, "drop", "Undo puts them back");
+    },
+
+    /**
+     * Squash 3 commits…: the message editor opens pre-filled with every
+     * message, oldest first, the caret at the start; OK is off while empty;
+     * what the user wrote is what runs; and the editor survives the refresh
+     * the repository watcher sets off while it is open.
+     */
+    "the-squash-message-editor-takes-the-message-the-user-writes": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      if (!sr) return c.ok(false, "the graph is mounted");
+      const S = ["3c0ffee1a2b3c4d5e6f7", "2c0ffee1a2b3c4d5e6f7", "1c0ffee1a2b3c4d5e6f7"];
+      const row = (sha) => sr.querySelector(`.row[data-sha="${sha}"]`);
+      row(S[0])?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      await settle(400);
+      row(S[2])?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, shiftKey: true }));
+      await settle(600);
+      const psr = $(".graph-details gitstudio-commit-details")?.shadowRoot;
+      const squash = $$(".actions .act", psr).find((b) => text(b) === "Squash 3 commits…");
+      c.ok(!!squash, "the summary offers Squash 3 commits…");
+      squash?.click();
+      await settle(600);
+      const card = $(".modal-card");
+      const area = card?.querySelector("textarea.msg-editor");
+      c.ok(!!area, "a message editor opens");
+      if (!card || !area) return;
+      c.eq(text(card.querySelector(".modal-title")), "Squash 3 commits", "titled");
+      c.match(text(card.querySelector(".modal-message")), /^3c0ffee, 2c0ffee and 1c0ffee on main will become one commit with the message below\./, "says what will happen");
+      c.eq(area.value, "graph: select several commits with Cmd and Shift\n\nwip\n\ngraph: keep the anchor where Shift-click started", "every message, oldest first");
+      c.eq(document.activeElement, area, "the editor has the keyboard");
+      c.eq(`${area.selectionStart},${area.selectionEnd}`, "0,0", "the caret at the start, nothing selected");
+      c.ok(parseFloat(getComputedStyle(area).minHeight) >= 160, `room for several messages (${getComputedStyle(area).minHeight})`);
+      const ok = card.querySelector(".modal-ok");
+      c.eq(text(ok), "Squash commits", "the button says what it does");
+      c.ok(!ok.hasAttribute("disabled"), "on, with a message");
+      area.value = "   ";
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+      c.ok(ok.hasAttribute("disabled"), "off with none");
+      area.value = "graph: select several commits\n\nWith Cmd, Shift and the keyboard.";
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+      // The watcher's refresh while it is open (memory: refresh-closing-dialogs).
+      window.__gsEmit?.("repo:filesChanged", { gitDir: true });
+      await settle(700);
+      c.ok(!!$(".modal-card textarea.msg-editor"), "the editor survives the watcher's refresh");
+      $(".modal-card .modal-ok")?.click();
+      await settle(700);
+      const run = window.__GS_INVOKED.filter((r) => r.channel === "commits:rewrite").at(-1)?.payload;
+      c.eq(run?.verb, "squash", "the run is a squash");
+      c.eq(run?.message, "graph: select several commits\n\nWith Cmd, Shift and the keyboard.", "with the message the user wrote");
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /Squashed 3 commits into one\./, "it says so");
+    },
+
+    /** Cherry-pick 2 commits: one commit:action with both, and a stop goes to Changes. */
+    "cherry-picking-several-lands-a-stop-on-the-conflict-flow": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      if (!sr) return c.ok(false, "the graph is mounted");
+      const A = "b2c3d4e5f6a71829304b";
+      const B = "c3d4e5f6a7b829304c5d";
+      const row = (sha) => sr.querySelector(`.row[data-sha="${sha}"]`);
+      row(A)?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      await settle(400);
+      row(B)?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, metaKey: true }));
+      await settle(400);
+      const r = row(A)?.getBoundingClientRect();
+      row(A)?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: (r?.left ?? 0) + 240, clientY: (r?.top ?? 0) + 17 }));
+      await settle(500);
+      const items = $$(".ctx-menu .ctx-menu-item").map((b) => text(b));
+      c.eq(items.join(" | "), "Cherry-pick 2 commits | Revert 2 commits | Compare these two commits | Copy SHAs",
+        "another branch's commits: pick, revert, compare, copy — no drop or squash");
+      $(".ctx-menu [data-action=cherry-pick-many]")?.click();
+      await settle(900);
+      const sentReq = window.__GS_INVOKED.filter((x) => x.channel === "commit:action").at(-1)?.payload;
+      c.eq(sentReq?.action, "cherry-pick", "one cherry-pick");
+      c.eq((sentReq?.shas || []).join(","), [A, B].join(","), "with both commits");
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /Cherry-picking 2 commits stopped on a commit that needs you/, "it says what happened");
+      c.ok(!$$(".toast-error").length, "neutrally: nothing failed");
+      const changes = $('[data-view="changes"]');
+      c.ok(!!changes && (changes.getAttribute("aria-current") === "page" || changes.classList.contains("active")), "and takes you to Changes");
+    },
+
+    /** Compare these two commits: the Compare view, older as the base, named by short sha. */
+    "comparing-two-commits-opens-the-compare-view": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      if (!sr) return c.ok(false, "the graph is mounted");
+      const NEWER = "9f8e7d6c5b4a39281706";
+      const OLDER = "f6a7b8c9d0e152637f80";
+      const row = (sha) => sr.querySelector(`.row[data-sha="${sha}"]`);
+      row(NEWER)?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      await settle(400);
+      row(OLDER)?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, metaKey: true }));
+      await settle(600);
+      const psr = $(".graph-details gitstudio-commit-details")?.shadowRoot;
+      const compare = $$(".actions .act", psr).find((b) => text(b) === "Compare these two commits");
+      c.ok(!!compare, "the summary offers the compare");
+      compare?.click();
+      await settle(900);
+      const refs = window.__GS_INVOKED.filter((x) => x.channel === "compare:refs").at(-1)?.payload;
+      c.eq(refs?.base, OLDER, "the older commit is the base");
+      c.eq(refs?.head, NEWER, "the newer one is compared");
+      const picks = $$(".compare-bar .ref-pick").map((b) => text(b));
+      c.eq(picks.join(" | "), "f6a7b8c | 9f8e7d6", "the pickers name them by short sha");
+    },
+
     /**
      * The commit-details pane's ref chips are the graph's chip shortcut too
      * (issue #30: "clicking a ref chip could also be a shortcut: show only
