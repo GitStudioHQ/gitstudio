@@ -1,0 +1,40 @@
+apps/extension/src/blame/blameController.ts
+  s_26f5e669d3043c::t_827f2295fc1d3a 766-771
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_827f2295fc1d3a 13,131-135,187,703-707,2359-2361,2404-2405,2626-2669,4040-4044,4235-4236,4738-4749,6096-6102
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_827f2295fc1d3a 5,182-184,320-324
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_827f2295fc1d3a 14-22,57-82,88-98,107-113,122-124,126-127,132,219-221,225-226,236-273,392-397,405-406,418-421,424-426,434-459,473-507,529-535,549
+apps/extension/test/changesViewPage.ts
+  s_26f5e669d3043c::t_827f2295fc1d3a 1-237
+apps/extension/test/repoPicker.test.ts
+  s_26f5e669d3043c::t_827f2295fc1d3a 1-419
+apps/extension/test/vscodeRepoStub.cjs
+  s_26f5e669d3043c::t_827f2295fc1d3a 1-184
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_827f2295fc1d3a 25-35,43-45
+apps/extension/src/git/repoPicker.ts
+  s_26f5e669d3043c::t_827f2295fc1d3a 1-203
+apps/extension/test/repoPickerWebview.test.ts
+  s_26f5e669d3043c::t_827f2295fc1d3a 1-201
+apps/extension/package.json
+  s_26f5e669d3043c::t_827f2295fc1d3a 281-285,1648-1650
+  s_26f5e669d3043c::t_eaacc51f30973c 280,1651
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5b579fb6f16c7ba74b5abd5b905b9a9730f10d35",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
