@@ -1,0 +1,83 @@
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_44ccf0c659e568 114
+  s_26f5e669d3043c::t_7d35af34b24d89 56-59
+  s_26f5e669d3043c::t_c70aa31709e2bc 2110-2149
+  s_26f5e669d3043c::t_10ae58c1436d97 214-219
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_2c4d032501b825 544-546,853-855
+apps/desktop/test/destructiveGuards.test.ts
+  s_26f5e669d3043c::t_1fcb569eb1ff72 40
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_5a271c22b1c800 8842-8848,8850-8854
+  s_26f5e669d3043c::t_a3d5fcb6d4b1cf 8849
+  s_26f5e669d3043c::t_6010bd88fa327c 2970-2975
+  s_26f5e669d3043c::t_3ef4cbc6b47152 3222-3225,3232-3234
+  s_26f5e669d3043c::t_603dac7ba10482 2976-2979
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_c8ff8275b00296 335-343,1983-1984
+  s_26f5e669d3043c::t_9af4418b1561f8 344-345,673-683,1888-1915,1918-1923,1976-1982,1985-2043
+  s_26f5e669d3043c::t_a8dca0cdca1905 1274-1292,1916-1917
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_3ef4cbc6b47152 7601,7609,7612
+  s_26f5e669d3043c::t_c8ff8275b00296 13577-13578,13580,13679-13680,13683,13688,13697-13698,13701,13706
+  s_26f5e669d3043c::t_c3fd92452f42fa 4120-4122,4124-4127,8676-8678,8683,13250-13263,13266-13286,13288-13294,13296-13576,13579,13581-13678,13681-13682,13684-13687,13689-13696,13699-13700,13702-13705,13707-13723
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_765acebcca3a59 14-39
+apps/desktop/src/renderer/resetToUpstream.ts
+  s_26f5e669d3043c::t_20185c7e5d1a4d 1-135
+apps/desktop/src/main/branchReset.ts
+  s_26f5e669d3043c::t_d337d979ac1eae 1-455
+apps/desktop/test/localRepos.test.ts
+  s_26f5e669d3043c::t_688a7ce2c53cb7 347-348,353-374
+  s_26f5e669d3043c::t_924cfdc95c25f0 375
+apps/desktop/test/branchReset.test.ts
+  s_26f5e669d3043c::t_d37a95f586bb70 1-136,138-166,168-397
+  s_26f5e669d3043c::t_d20eb9766bb646 137,167
+apps/desktop/src/renderer/views/repositories.ts
+  s_26f5e669d3043c::t_41c638adc66ef1 830,873-876,886-893,895,901-906,908,1012,1014
+  s_26f5e669d3043c::t_603dac7ba10482 1180-1190,1358-1365
+  s_26f5e669d3043c::t_7146a4e858a2d7 894
+  s_26f5e669d3043c::t_06311f7b18c09a 1082,1086,1166,1330
+  s_26f5e669d3043c::t_fbfd463595c8f5 314,1177-1178,1191-1197,1201-1202,1206-1221
+  s_26f5e669d3043c::t_33d19350ff2654 147-150,319,325,327-330,441-446,1198-1200,1203-1205
+  s_26f5e669d3043c::t_8b1668fdfd62b9 32-33,47,194-197,201,255,263,282,315-318,320-324,326,331-376
+  s_26f5e669d3043c::t_30e8acc13205f2 1179
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_c8ff8275b00296 671-672
+  s_26f5e669d3043c::t_bb4efda742e33e 656-670,673
+apps/desktop/src/main/localRepos.ts
+  s_26f5e669d3043c::t_688a7ce2c53cb7 190-192,200-206,209,216-218,220-222,224
+apps/desktop/test/resetToUpstream.test.ts
+  s_26f5e669d3043c::t_c4a117d699b48c 1-165
+apps/desktop/src/renderer/repoState.ts
+  s_26f5e669d3043c::t_15cb92a06f8347 1-63
+apps/desktop/src/renderer/openIn.ts
+  s_26f5e669d3043c::t_0d3ee5c98a808f 125-136,173,175,177,182,187,203-205,211,234-236
+  s_26f5e669d3043c::t_4da1ba630ffd7c 48-53
+apps/desktop/src/renderer/views/dashboard.ts
+  s_26f5e669d3043c::t_7b3287f7dc8f8b 26,398-401
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_a48d54783eef81 402-468
+  s_26f5e669d3043c::t_cafc3582dd29d2 2112-2120
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_bca3cd3f258f66 3894,3921,3944-3947
+  s_26f5e669d3043c::t_803a759543cd37 92,106,3995-3997
+  s_26f5e669d3043c::t_e456f723bd5af1 3881-3893,3895-3896,3902,3910,3914-3920,3922-3943,3948-3994,3998-4004
+  s_26f5e669d3043c::t_e1dccf75be04f0 4005-4006
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cf46b74ff9a9526abfa2eb89414ea2dea39f20b3",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
