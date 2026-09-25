@@ -9462,10 +9462,19 @@
       c.ok(ok.hasAttribute("disabled"), "off with none");
       area.value = "graph: select several commits\n\nWith Cmd, Shift and the keyboard.";
       area.dispatchEvent(new Event("input", { bubbles: true }));
-      // The watcher's refresh while it is open (memory: refresh-closing-dialogs).
-      window.__gsEmit?.("repo:filesChanged", { gitDir: true });
-      await settle(700);
+      // The watcher's refresh while it is open (memory: refresh-closing-dialogs):
+      // the graph reloads in place, the question stays, and so does the selection.
+      const loads = (window.__GS_GRAPH_LOADS || []).length;
+      c.ok((window.__gsEmit?.("repo:filesChanged", { gitDir: true }) ?? 0) > 0, "the watcher event reached the app");
+      await settle(900);
+      c.ok((window.__GS_GRAPH_LOADS || []).length > loads, "the graph reloaded under it");
       c.ok(!!$(".modal-card textarea.msg-editor"), "the editor survives the watcher's refresh");
+      c.eq($$('.row[aria-selected="true"]', sr).length, 3, "and the selection survives the reload");
+      // A route nobody made while it is open (a background re-route dismisses
+      // every floating layer): a message being written is work, and stays.
+      window.dispatchEvent(new CustomEvent("gs:go", { detail: { view: "graph" } }));
+      await settle(600);
+      c.ok(!!$(".modal-card textarea.msg-editor"), "the editor survives a background re-route");
       $(".modal-card .modal-ok")?.click();
       await settle(700);
       const run = window.__GS_INVOKED.filter((r) => r.channel === "commits:rewrite").at(-1)?.payload;
