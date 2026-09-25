@@ -109,6 +109,66 @@
     },
   });
 
+  // ── the Rebase view's selection (#32) ────────────────────────────────────
+  // Driven the way a person drives it: keys land on the FOCUSED element
+  // (never on document — see harness-synthetic-events), and "selected" is read
+  // twice, from aria-selected AND from the painted background, because a
+  // class with no rule behind it fails silently.
+  const rbRows = () => $$(".rb-row:not(.rb-base)");
+  const rbActions = () => $$(".rb-row:not(.rb-base) .rb-action").map((s) => s.value);
+  const rbSelected = () =>
+    rbRows()
+      .map((r, i) => (r.getAttribute("aria-selected") === "true" ? i : -1))
+      .filter((i) => i >= 0)
+      .join(",");
+  const rbPaintedSelected = () =>
+    rbRows()
+      .map((r, i) => (getComputedStyle(r).backgroundColor !== "rgba(0, 0, 0, 0)" ? i : -1))
+      .filter((i) => i >= 0)
+      .join(",");
+  const rbFocus = () => rbRows().indexOf(document.activeElement);
+  const rbMod = navigator.platform.toLowerCase().includes("mac") ? { metaKey: true } : { ctrlKey: true };
+  /** A key on whatever has focus; says whether the page claimed it. */
+  const rbKey = async (key, mods = {}) => {
+    const t = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    if (!t) return null;
+    const e = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods });
+    t.dispatchEvent(e);
+    await settle(120);
+    return e.defaultPrevented;
+  };
+  /** A click on row i (on its subject, unless `part` says where). */
+  const rbClick = async (i, mods = {}, part = ".rb-subj") => {
+    const row = rbRows()[i];
+    const at = row?.querySelector(part) ?? row;
+    if (!at) return false;
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, ...mods });
+    at.dispatchEvent(down);
+    at.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...mods }));
+    await settle(120);
+    return down.defaultPrevented;
+  };
+  /** Drag row `from` onto the top ("before") or bottom ("after") half of row `onto`. */
+  const rbDrag = async (from, onto, where) => {
+    const rows = rbRows();
+    const dt = new DataTransfer();
+    const fire = (type, el, y) => {
+      const e = new DragEvent(type, { bubbles: true, cancelable: true, clientY: y });
+      Object.defineProperty(e, "dataTransfer", { value: dt });
+      el.dispatchEvent(e);
+    };
+    const r = rows[onto].getBoundingClientRect();
+    const y = r.top + r.height * (where === "before" ? 0.25 : 0.75);
+    fire("dragstart", rows[from], 0);
+    // What the drag LOOKS like it carries: the rows dimmed as they lift.
+    const carried = rbRows().filter((x) => parseFloat(getComputedStyle(x).opacity) < 1).length;
+    fire("dragover", rows[onto], y);
+    fire("drop", rows[onto], y);
+    fire("dragend", rows[from], 0);
+    await settle(300);
+    return carried;
+  };
+
   window.__GS_CHECKS = {
     // ── the count badge reports what is on screen ────────────────────────────
     "count-badge-filtered": (f) => {
@@ -15908,6 +15968,257 @@
       if (!note) return;
       c.match(text(note), /^1 review thread on this pull request could not be read from GitHub\.$/, "in plain words");
       c.ok(!note.closest(".pr-threads-body"), "outside the folding body, so a folded panel still says it");
+    },
+
+    // ── #32: select several commits in the rebase plan and set them at once ──
+    //
+    // The state table for the keyboard: from each selection, each key, the
+    // selection and the row the keyboard is on afterwards. Plain arrows move
+    // and the selection follows; Shift grows from the anchor; Home/End jump;
+    // ⌘/Ctrl+A takes everything; Escape collapses to the focused row — and
+    // is left alone when there is nothing to collapse.
+    "rebase-selection-follows-the-keyboard": async (f) => {
+      const c = check(f);
+      // Deliberately WITH the page's transitions: headless Chrome never
+      // advances one, the way an occluded window does not, so a selection
+      // that eased in would read as unpainted here. It must land at once.
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list to select in (${n})`);
+      if (n < 8) return;
+      c.eq(rbSelected(), "0", "the newest commit starts selected");
+      c.eq(rbRows().filter((r) => r.tabIndex === 0).length, 1, "the list is ONE tab stop");
+      c.eq(text(".rb-selcount"), "1 selected", "the toolbar counts it");
+      rbRows()[0].focus();
+      const all = [...Array(n).keys()].join(",");
+      const from1 = [...Array(n - 1).keys()].map((i) => i + 1).join(",");
+      // [key, mods, selection after, focused row after]
+      const table = [
+        ["ArrowDown", {}, "1", 1],
+        ["ArrowDown", { shiftKey: true }, "1,2", 2],
+        ["ArrowDown", { shiftKey: true }, "1,2,3", 3],
+        ["ArrowUp", { shiftKey: true }, "1,2", 2],
+        ["ArrowUp", { shiftKey: true }, "1", 1],
+        ["ArrowUp", { shiftKey: true }, "0,1", 0],
+        ["ArrowUp", { shiftKey: true }, "0,1", 0],
+        ["End", { shiftKey: true }, from1, n - 1],
+        ["Home", {}, "0", 0],
+        ["ArrowUp", {}, "0", 0],
+        ["End", {}, String(n - 1), n - 1],
+        ["ArrowDown", {}, String(n - 1), n - 1],
+        ["Home", { shiftKey: true }, all, 0],
+        ["Escape", {}, "0", 0],
+        ["a", rbMod, all, 0],
+        ["ArrowDown", {}, "1", 1],
+      ];
+      for (const [key, mods, sel, focus] of table) {
+        const before = rbSelected();
+        const claimed = await rbKey(key, mods);
+        const what = `${Object.keys(mods).join("+")}${Object.keys(mods).length ? "+" : ""}${key} from [${before}]`;
+        c.eq(rbSelected(), sel, `${what}: the selection`);
+        c.eq(rbFocus(), focus, `${what}: the row the keyboard is on`);
+        c.eq(claimed, true, `${what}: the list took the key`);
+        c.eq(rbPaintedSelected(), sel, `${what}: exactly the selected rows are PAINTED selected`);
+      }
+      c.eq(text(".rb-selcount"), "1 selected", "the count follows");
+      await rbKey("ArrowDown", { shiftKey: true });
+      await rbKey("ArrowDown", { shiftKey: true });
+      c.eq(text(".rb-selcount"), "3 selected", "…every time");
+      // Escape with one row selected is not the list's key.
+      await rbKey("Escape");
+      c.eq(await rbKey("Escape"), false, "Escape on a single selection is left to whoever else wants it");
+    },
+
+    // The same table for the pointer: plain, ⌘/Ctrl, Shift, both — and a
+    // row's own dropdown, which selects its row without collapsing a
+    // selection it is already in.
+    "rebase-selection-follows-the-mouse": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list to select in (${n})`);
+      if (n < 8) return;
+      const table = [
+        [1, {}, "1"],
+        [3, rbMod, "1,3"],
+        [5, { shiftKey: true }, "3,4,5"],
+        [0, { shiftKey: true, ...rbMod }, "0,1,2,3,4,5"],
+        [2, rbMod, "0,1,3,4,5"],
+        [4, {}, "4"],
+        [4, rbMod, ""],
+        [6, {}, "6"],
+      ];
+      for (const [i, mods, sel] of table) {
+        const noText = await rbClick(i, mods);
+        const what = `click row ${i} with ${JSON.stringify(mods)}`;
+        c.eq(rbSelected(), sel, `${what}: the selection`);
+        c.eq(rbPaintedSelected(), sel, `${what}: and what is painted`);
+        if (mods.shiftKey) c.ok(noText, `${what}: selects rows, not the text between them`);
+      }
+      c.eq(rbFocus(), 6, "the clicked row has the keyboard");
+      // A dropdown: focusing an unselected row's selects that row…
+      rbRows()[2].querySelector(".rb-action").focus();
+      await settle(120);
+      c.eq(rbSelected(), "2", "tabbing into a row's dropdown selects its row");
+      // …and inside a selection keeps it.
+      await rbClick(4, { shiftKey: true });
+      c.eq(rbSelected(), "2,3,4", "a range to test against");
+      rbRows()[3].querySelector(".rb-action").focus();
+      rbRows()[3].querySelector(".rb-action").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await settle(120);
+      c.eq(rbSelected(), "2,3,4", "a dropdown inside the selection leaves the selection alone");
+      // No selection: the toolbar says so and does nothing.
+      await rbClick(2);
+      await rbClick(2, rbMod);
+      c.eq(text(".rb-selcount"), "None selected", "an empty selection is said");
+      const btns = $$(".rb-set");
+      c.eq(btns.length, 6, "the toolbar offers the six actions");
+      c.ok(btns.every((b) => b.disabled), "and none of them with nothing selected");
+    },
+
+    // Setting the action: the keys (git's own todo letters), the toolbar, and
+    // what must NOT set it — a modifier held, a letter typed into a message.
+    "rebase-sets-the-action-of-every-selected-commit": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list (${n})`);
+      if (n < 8) return;
+      const picks = (i) => rbActions().slice(i).every((a) => a === "pick");
+      const words = $$(".rb-set").map((b) => text(b));
+      c.eq(words.join(","), "Pick,Reword,Squash,Fixup,Edit,Drop", "the toolbar names the six in words");
+      for (const [b, k] of $$(".rb-set").map((b, i) => [b, "PRSFED"[i]])) {
+        c.ok((b.title || "").endsWith(`(${k})`), `"${text(b)}" says its key in its tooltip (${b.title})`);
+      }
+      c.eq($$(".rb-hint .rb-kbd").map((k) => text(k)).join(""), "PRSFED", "and the hint names all six keys");
+
+      await rbClick(0);
+      await rbClick(2, { shiftKey: true });
+      c.eq(await rbKey("d"), true, "D is taken by the list");
+      c.eq(rbActions().slice(0, 3).join(","), "drop,drop,drop", "D drops every selected commit");
+      c.ok(picks(3), "and nothing else");
+      c.eq(rbSelected(), "0,1,2", "the selection survives the change");
+      c.eq(rbFocus(), 2, "and so does the keyboard");
+
+      $$(".rb-set").find((b) => text(b) === "Edit").click();
+      await settle(200);
+      c.eq(rbActions().slice(0, 3).join(","), "edit,edit,edit", "the toolbar's Edit sets all three");
+      c.ok(picks(3), "and nothing else");
+      const bg = (w) => getComputedStyle($$(".rb-set").find((b) => text(b) === w)).backgroundColor;
+      c.ok(bg("Edit") !== bg("Pick"), `the toolbar shows Edit as what they are set to (${bg("Edit")} vs ${bg("Pick")})`);
+
+      // One row's dropdown sets that row only.
+      const sel = rbRows()[1].querySelector(".rb-action");
+      sel.value = "reword";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle(200);
+      c.eq(rbActions().slice(0, 3).join(","), "edit,reword,edit", "a row's own dropdown changes that row");
+
+      // Keys that must not set anything.
+      rbRows()[0].focus();
+      await rbClick(0);
+      await rbClick(2, { shiftKey: true });
+      const before = rbActions().join(",");
+      // (⌘/Ctrl+P is the command palette's, so D: its letter is also git's.)
+      await rbKey("d", rbMod);
+      c.eq(rbActions().join(","), before, "⌘/Ctrl+D is not D");
+      await rbKey("p", { altKey: true });
+      c.eq(rbActions().join(","), before, "nor is Alt+P");
+      c.eq(await rbKey("x"), false, "a letter git has no action for is left alone");
+      const ta = rbRows()[1].querySelector(".rb-reword textarea");
+      ta.focus();
+      await rbKey("d");
+      c.eq(rbActions().join(","), before, "D typed into a message is a letter, not a drop");
+      rbRows()[2].focus();
+      c.eq(await rbKey("P"), true, "a capital P counts: git's letters, either case");
+      c.eq(rbActions().slice(0, 3).join(","), "pick,pick,pick", "P picks them all again");
+    },
+
+    // "Squash these together": the oldest of the selection stays, the rest
+    // fold into it — and the one squash git refuses outright, on the oldest
+    // commit you keep, is refused with the reason, from every door.
+    "rebase-squash-across-a-selection-keeps-the-oldest": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list (${n})`);
+      if (n < 8) return;
+      const start = () => $$(".rb-foot button").find((b) => /start rebase/i.test(text(b)));
+
+      await rbClick(n - 1);
+      await rbKey("s");
+      c.eq(rbActions()[n - 1], "pick", "S on the oldest commit alone changes nothing");
+      c.match(text(".rb-banner"), /oldest commit you keep can't be a squash/i, "and says why");
+
+      await rbKey("a", rbMod);
+      await rbKey("s");
+      const acts = rbActions();
+      c.ok(acts.slice(0, n - 1).every((a) => a === "squash"), `every newer commit folds (${acts.join(",")})`);
+      c.eq(acts[n - 1], "pick", "the oldest stays a pick for them to fold into");
+      c.match(text(".rb-banner"), new RegExp(`Squash set on ${n - 1} commits\\. The oldest one stays Pick`), "the banner says what happened");
+      // …where it can be read: a plan this long used to put the banner under
+      // the list, below the fold.
+      const b = $(".rb-banner").getBoundingClientRect();
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      c.ok(
+        b.height > 0 && b.bottom <= window.innerHeight && !!hit && $(".rb-banner").contains(hit),
+        `and it is on screen, uncovered (top ${Math.round(b.top)} of ${window.innerHeight})`,
+      );
+      c.eq(start()?.disabled, false, "and the plan can be started — git can run it");
+
+      // The toolbar is the same door.
+      await rbClick(n - 1);
+      $$(".rb-set").find((b) => text(b) === "Fixup").click();
+      await settle(200);
+      c.eq(rbActions()[n - 1], "pick", "the toolbar's Fixup on the oldest is refused too");
+      c.match(text(".rb-banner"), /can't be a fixup/, "with the fixup's own words");
+    },
+
+    // Alt+↑/↓ and a drag move the SELECTION, not one row of it.
+    "rebase-moves-the-selection-together": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list (${n})`);
+      if (n < 8) return;
+      // Subjects repeat in the fixture ("wip"), so rows are tracked by sha:
+      // each row's number is where it started.
+      const shas0 = rbRows().map((r) => r.dataset.sha);
+      const order = () => rbRows().map((r) => shas0.indexOf(r.dataset.sha)).join(",");
+
+      await rbClick(1);
+      await rbClick(2, { shiftKey: true });
+      c.eq(await rbKey("ArrowUp", { altKey: true }), true, "Alt+Up is the list's");
+      c.eq(order().split(",").slice(0, 4).join(","), "1,2,0,3", "the block moves up one, together");
+      c.eq(rbSelected(), "0,1", "still selected where it went");
+      c.eq(rbFocus(), 1, "and the keyboard went with it");
+      await rbKey("ArrowUp", { altKey: true });
+      c.eq(order().split(",").slice(0, 4).join(","), "1,2,0,3", "against the top it stays");
+      await rbKey("ArrowDown", { altKey: true });
+      await rbKey("ArrowDown", { altKey: true });
+      c.eq(order().split(",").slice(0, 4).join(","), "0,3,1,2", "and down again, together");
+
+      // Scattered rows each move one step.
+      await rbClick(0);
+      await rbClick(2, rbMod);
+      await rbKey("ArrowDown", { altKey: true });
+      c.eq(order().split(",").slice(0, 4).join(","), "3,0,2,1", "a scattered selection: each row one step");
+      c.eq(rbSelected(), "1,3", "still selected");
+
+      // A drag that picks up a selected row carries the whole selection…
+      const beforeDrag = order().split(",");
+      await rbClick(0);
+      await rbClick(1, { shiftKey: true });
+      const carried = await rbDrag(1, 3, "after");
+      c.eq(carried, 2, "picking up a selected row lifts the selection");
+      const want = [beforeDrag[2], beforeDrag[3], beforeDrag[0], beforeDrag[1], ...beforeDrag.slice(4)].join(",");
+      c.eq(order(), want, "and both land in the gap the line was drawn at, in order");
+      c.eq(rbSelected(), "2,3", "still selected");
+      // …and one that picks up any other row carries that row alone.
+      const beforeOne = order().split(",");
+      const lifted = await rbDrag(6, 0, "before");
+      c.eq(lifted, 1, "an unselected row is lifted alone");
+      c.eq(order().split(",")[0], beforeOne[6], "and lands at the top");
+      c.eq(rbSelected(), "0", "it is the selection now");
     },
   };
 })();

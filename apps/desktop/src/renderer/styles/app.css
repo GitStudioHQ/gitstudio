@@ -9192,6 +9192,65 @@ body.vscode-light .gh-label-chip {
 .rb-inprogress-body { display: block; margin: 8px 0 14px; color: var(--app-muted); font-size: 12.5px; line-height: 1.55; }
 .rb-inprogress-btns { display: flex; gap: 8px; }
 
+/* Selecting several commits and setting their action at once (#32). The
+   toolbar is the header's second line, so it stays on screen however far the
+   list scrolls; a selected row reads as the app's other selected rows do. */
+.rb-tools {
+  flex: 1 0 100%;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 -18px -10px; padding: 8px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--app-border) 70%, transparent);
+}
+.rb-selcount {
+  min-width: 78px; font-size: 12px; font-weight: 650; color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+}
+.rb-tools-label { font-size: 11.5px; color: var(--app-muted); }
+.rb-setgroup {
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--app-border); border-radius: 7px; overflow: hidden;
+  background: var(--app-elevated);
+}
+.rb-set {
+  border: none; background: transparent; cursor: pointer;
+  padding: 4px 11px; font: inherit; font-size: 12px; font-weight: 600; line-height: 18px;
+  color: var(--app-text);
+}
+.rb-set + .rb-set { border-left: 1px solid var(--app-border); }
+.rb-set:hover:not(:disabled) { background: var(--app-hover); }
+.rb-set:disabled { opacity: 0.5; cursor: default; }
+.rb-set:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: -2px; }
+.rb-set.a-reword { color: var(--status-mod); }
+.rb-set.a-squash { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-set.a-fixup, .rb-set.a-edit { color: var(--status-warn); }
+.rb-set.a-drop { color: var(--gs-danger); }
+/* Every selected commit is already set to this one. */
+.rb-set.is-current { background: var(--app-active); box-shadow: inset 0 -2px 0 currentColor; }
+.rb-set.is-current:hover:not(:disabled) { background: color-mix(in srgb, var(--gs-accent) 26%, transparent); }
+
+.rb-hint { flex-wrap: wrap; }
+.rb-hint-keys { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.rb-kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+  font: 600 10px/1 var(--vscode-editor-font-family, ui-monospace, monospace);
+  color: var(--app-text); background: var(--app-elevated);
+  border: 1px solid var(--app-border); border-radius: 4px;
+}
+
+/* After `.rb-row:hover` on purpose: same specificity, and the later rule wins. */
+.rb-row.is-selected { background: var(--app-active); }
+/* While paintSelection changes the selection: no easing (see rebase.ts). */
+.rb-list.is-painting .rb-row { transition: none; }
+/* The banner is the footer's first line, so it is on screen however long the
+   plan is; the footer grows upward over the list, which does not move. */
+.rb-foot > .rb-banner { flex: 1 0 100%; margin: 0; }
+.rb-row.is-selected:hover { background: color-mix(in srgb, var(--gs-accent) 26%, transparent); }
+body.vscode-light .rb-row.is-selected:hover { background: color-mix(in srgb, var(--gs-accent) 20%, var(--app-elevated)); }
+/* The node's ring is drawn in the page colour to cut the rail; on a selected
+   row it has to be the row's colour, or each dot sits in a dark halo. */
+.rb-row.is-selected .rb-node { box-shadow: 0 0 0 3px var(--app-active); }
+
 /* ════════════════════════════════════════════════════════════════════════════
    Depth styles — conflict merge bar, GitHub Actions (logs/artifacts/secrets),
    commit-composer depth, op-state banner, PR review (Files diff + inline threads),

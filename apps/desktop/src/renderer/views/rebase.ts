@@ -11,6 +11,26 @@ import { toast, confirmDialog, promptInline } from "../dialogs";
 import { exclusive, outcomeLine } from "../mergeParity";
 import { whileSameRepo } from "../repoEpoch";
 import { abortConfirm, skipConfirm, willDropText } from "@gitstudio/webview-ui/conflicts/opText";
+import {
+  NO_SELECTION,
+  PLAN_ACTIONS,
+  actionForKey,
+  actionTooltip,
+  arrowRow,
+  clickRow,
+  collapseSelection,
+  dragKeys,
+  moveKeysToGap,
+  moveSelected,
+  reachRow,
+  refusalText,
+  selectAll,
+  selectOnly,
+  selectedInOrder,
+  selectionCountText,
+  setActions,
+  type PlanSelection,
+} from "@gitstudio/engine/rebase/planEdit";
 import type { OperationOutcome, OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
 import type { SectionRender } from "./common";
 import type {
@@ -36,6 +56,9 @@ const ACTIONS: ReadonlyArray<{ id: RebaseAction; label: string; hint: string }> 
 ];
 
 const EXPLAIN_KEY = "gitstudio.rebase.explainDismissed";
+
+/** Where the keyboard goes after the list is rebuilt (see `render`). */
+type Refocus = "row" | "select" | null;
 
 export const renderRebase: SectionRender = (wrap, nav) => {
   void mount(wrap, nav);
@@ -112,6 +135,18 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
   }));
   let rows: Row[] = original.map((r) => ({ ...r }));
   let busy = false;
+  /**
+   * Which commits the toolbar and the action keys act on (#32: "select
+   * multiple and set the action at once"). The rules — clicks, arrows, Shift,
+   * ⌘, Escape, what a squash across a selection means — are the shared
+   * engine's (engine/rebase/planEdit), the same ones the extension's two
+   * rebase surfaces run. Rows are named by sha, so the selection moves with
+   * them. The newest commit starts selected, so the keys work from the first
+   * Tab into the list.
+   */
+  let selection: PlanSelection = rows.length ? selectOnly(rows[0].sha) : NO_SELECTION;
+  /** The rows a drag picked up, by sha (the selection, or just the row). */
+  let dragging: string[] = [];
 
   const head = el("div", "rb-head");
   const title = el("div", "rb-title");
@@ -123,11 +158,37 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
   baseB.textContent = short(state.base);
   const count = span("", "rb-count");
   sub.append(glyph("git-branch"), branchB, span(" onto "), baseB, span(" · "), count);
-  head.append(title, sub, el("span", "rb-spacer"), baseBar(state, wrap, nav));
+
+  // The toolbar: how many are selected, and the six actions as words. It
+  // lives in the sticky header, so it is still there ten commits down.
+  const tools = el("div", "rb-tools");
+  tools.setAttribute("role", "group");
+  tools.setAttribute("aria-label", "Set the action of the selected commits");
+  const selCount = span("", "rb-selcount");
+  selCount.setAttribute("aria-live", "polite");
+  const setBtns = new Map<RebaseAction, HTMLButtonElement>();
+  const setGroup = el("div", "rb-setgroup");
+  for (const a of PLAN_ACTIONS) {
+    const b = el("button", `rb-set a-${a.id}`) as HTMLButtonElement;
+    b.type = "button";
+    b.textContent = a.label;
+    b.dataset.action = a.id;
+    b.title = actionTooltip(a.id);
+    b.setAttribute("aria-keyshortcuts", a.key);
+    b.addEventListener("click", () => bulkSet(a.id));
+    setBtns.set(a.id, b);
+    setGroup.appendChild(b);
+  }
+  tools.append(selCount, span("Set action", "rb-tools-label"), setGroup);
+  head.append(title, sub, el("span", "rb-spacer"), baseBar(state, wrap, nav), tools);
 
   const explain = buildExplainer();
   const list = el("div", "rb-list");
-  list.setAttribute("role", "list");
+  // A grid of rows, several selectable at once: the arrows walk it, Shift and
+  // ⌘/Ctrl extend it, and each row still owns its dropdown and message box.
+  list.setAttribute("role", "grid");
+  list.setAttribute("aria-multiselectable", "true");
+  list.setAttribute("aria-label", "Commits to rebase, newest first");
   const banner = el("div", "rb-banner");
   banner.hidden = true;
 
@@ -171,7 +232,11 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
   }
   foot.append(resetBtn, el("span", "rb-spacer"), preview, applyBtn);
 
-  wrap.replaceChildren(head, explain, hintBar(), list, banner, foot);
+  // The banner rides in the sticky footer, above Start rebase. Under the list
+  // it was below the fold of any plan long enough to want a selection (#32) —
+  // "squash these twelve" answered with a reason nobody could see.
+  foot.prepend(banner);
+  wrap.replaceChildren(head, explain, hintBar(), list, foot);
 
   // A note from the host (base fell back, or the list was capped) is worth
   // showing — otherwise the range silently isn't what the user asked for.
@@ -249,43 +314,109 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     }, 4200);
   };
 
-  const setAction = (i: number, action: RebaseAction): void => {
-    // A squash folds into the nearest kept commit BELOW — the list is
-    // newest-first (issue #18), and git melds into the entry before it in the
-    // todo file. So the commit that CANNOT be squashed is the last kept one,
-    // not the first.
-    //
-    // The guard checked `i === firstKeptIndex()`, the TOP of the list. That
-    // refused the most ordinary interactive rebase there is — fold my latest
-    // commit into the one before it — while happily accepting a squash on the
-    // oldest commit, which git cannot execute, letting an impossible plan reach
-    // the "you'll need to force-push" dialog. `firstKeptIndex` was a leftover
-    // from before the ordering flip; `foldTargetSubject` already scans the right
-    // way and already skips drop/squash/fixup chains, so ask it.
-    if ((action === "squash" || action === "fixup") && foldTargetSubject(i) === null) {
-      flashBanner("The oldest commit has nothing below it to fold into.");
-      render();
-      return;
-    }
-    rows[i].action = action;
-    render();
-    // Put the keyboard back on the control that was just used, the way `move`
-    // does. Relying on the generic focus rescue alone left it on whichever row
-    // happened to match — a different commit's dropdown, one keystroke from
-    // setting an action nobody chose.
-    (list.children[i] as HTMLElement | undefined)
-      ?.querySelector<HTMLSelectElement>(".rb-action")
-      ?.focus();
+  const order = (): string[] => rows.map((r) => r.sha);
+  const indexOfSha = (sha: string): number => rows.findIndex((r) => r.sha === sha);
+  const rowEls = (): HTMLElement[] => [...list.querySelectorAll<HTMLElement>(".rb-row:not(.rb-base)")];
+  const rowEl = (sha: string | null | undefined): HTMLElement | undefined =>
+    sha ? rowEls().find((r) => r.dataset.sha === sha) : undefined;
+  const isMac = navigator.platform.toLowerCase().includes("mac");
+
+  /**
+   * Set `action` on the rows at `idx` — one row from its dropdown, or the
+   * selection from the toolbar and the keys. The same rule either way (the
+   * shared `setActions`): a squash or fixup is refused, row by row, where it
+   * would have nothing below it to fold into, which git refuses outright.
+   * Across a selection that means "squash these together" — the oldest stays
+   * as it was and the rest fold into it — and the banner says so.
+   *
+   * The dropdown used to refuse on the TOP row (HEAD) — the most ordinary
+   * squash there is — while accepting one on the oldest, which git cannot
+   * run; the rule is now asked in one place, the right way round.
+   */
+  const applyActions = (idx: number[], action: RebaseAction, refocus: Refocus, sha?: string): void => {
+    const before = rows.map((r) => r.action);
+    // Above the display cap the older commits are replayed below the list as
+    // plain picks (apply() does that), so the bottom row DOES have something
+    // to fold into — the same exception `foldOrphan` makes.
+    const plan: RebaseAction[] = hiddenTail() ? [...before, "pick"] : before;
+    const r = setActions(plan, idx, action, "newest-first");
+    rows.forEach((row, i) => {
+      row.action = r.actions[i];
+    });
+    const said = refusalText(
+      action,
+      r,
+      "newest-first",
+      r.refused.length === 1 ? before[r.refused[0]] : undefined,
+    );
+    if (said) flashBanner(said);
+    render(refocus, sha);
   };
 
-  const move = (from: number, to: number): void => {
-    if (to < 0 || to >= rows.length || from === to) return;
-    const [r] = rows.splice(from, 1);
-    rows.splice(to, 0, r);
-    render();
-    // Keep focus on the row the user is dragging with the keyboard.
-    (list.children[to] as HTMLElement | undefined)?.focus();
+  /** One row's dropdown. The keyboard goes back to that dropdown afterwards:
+   *  the generic focus rescue once left it on a DIFFERENT commit's, one
+   *  keystroke from setting an action nobody chose. */
+  const setAction = (i: number, action: RebaseAction): void => {
+    applyActions([i], action, "select", rows[i]?.sha);
   };
+
+  /** The toolbar and the keys: every selected row. */
+  function bulkSet(action: RebaseAction, refocus: Refocus = null): void {
+    if (busy) return;
+    const idx = selectedInOrder(selection, order()).map(indexOfSha).filter((i) => i >= 0);
+    if (!idx.length) return;
+    applyActions(idx, action, refocus);
+  }
+
+  /** Put the rows in this sha order, if it is a different one. */
+  const reorder = (keys: string[], refocus: Refocus): void => {
+    if (keys.join("\n") === order().join("\n")) return;
+    const bySha = new Map(rows.map((r) => [r.sha, r] as const));
+    rows = keys.map((k) => bySha.get(k)).filter((r): r is Row => !!r);
+    render(refocus);
+  };
+
+  /** Alt+↑ / Alt+↓: the selection, one step, as a block. */
+  const moveSelection = (delta: -1 | 1): void => {
+    const next = moveSelected(order(), selection.selected, delta);
+    if (next) reorder(next, "row");
+  };
+
+  /** Point the selection somewhere and paint it; the keyboard follows it. */
+  const select = (next: PlanSelection, focusRow = true): void => {
+    selection = next;
+    paintSelection();
+    if (focusRow) rowEl(selection.focus)?.focus();
+  };
+
+  /** Selected / focused on every row, and the toolbar's count and state. */
+  function paintSelection(): void {
+    const on = new Set(selection.selected);
+    // One tab stop into the list: the row the keyboard is on.
+    const tabStop = selection.focus && indexOfSha(selection.focus) >= 0 ? selection.focus : rows[0]?.sha;
+    // A selection lands at once, as it does in every list; only the pointer's
+    // hover fades. (The rows' background transition would otherwise ease the
+    // selection in and out as well — and a paused compositor, an occluded
+    // window's, leaves it half-painted.)
+    list.classList.add("is-painting");
+    for (const r of rowEls()) {
+      const k = r.dataset.sha ?? "";
+      r.classList.toggle("is-selected", on.has(k));
+      r.setAttribute("aria-selected", String(on.has(k)));
+      r.tabIndex = k === tabStop ? 0 : -1;
+    }
+    void list.offsetHeight; // the new backgrounds are computed with no transition…
+    list.classList.remove("is-painting"); // …and the hover's comes back
+    const n = selection.selected.length;
+    selCount.textContent = selectionCountText(n);
+    // The action every selected row shares, if they share one, reads as the
+    // current one — a look at the toolbar says what the selection is set to.
+    const acts = new Set(rows.filter((r) => on.has(r.sha)).map((r) => r.action));
+    for (const [id, b] of setBtns) {
+      b.disabled = n === 0 || busy;
+      b.classList.toggle("is-current", n > 0 && acts.size === 1 && acts.has(id));
+    }
+  }
 
   const updatePreview = (): void => {
     const kept = rows.filter((r) => r.action !== "drop" && r.action !== "squash" && r.action !== "fixup").length;
@@ -338,18 +469,24 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     const row = el("div", "rb-row");
     row.dataset.action = r.action;
     row.dataset.sha = r.sha;
-    row.setAttribute("role", "listitem");
-    row.tabIndex = 0;
+    row.setAttribute("role", "row");
+    row.setAttribute(
+      "aria-label",
+      `${ACTIONS.find((a) => a.id === r.action)?.label ?? r.action} ${r.shortSha} ${r.subject}`,
+    );
+    row.tabIndex = -1;
     row.draggable = true;
     if (r.action === "drop") row.classList.add("dropped");
 
     const rail = el("div", "rb-rail");
+    rail.setAttribute("aria-hidden", "true");
     rail.appendChild(el("span", "rb-node"));
     row.appendChild(rail);
 
     const grip = el("span", "rb-grip");
+    grip.setAttribute("aria-hidden", "true");
     grip.appendChild(glyph("gripper"));
-    grip.title = "Drag to reorder (or focus the row and press Alt+↑ / Alt+↓)";
+    grip.title = "Drag to reorder — the selected commits move together (or press Alt+↑ / Alt+↓)";
     row.appendChild(grip);
 
     const sel = document.createElement("select");
@@ -373,6 +510,7 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     row.appendChild(sel);
 
     const main = el("div", "rb-main");
+    main.setAttribute("role", "gridcell");
     const line = el("div", "rb-line");
     const subj = span(r.subject, "rb-subj");
     subj.title = r.subject;
@@ -407,25 +545,28 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
 
     row.appendChild(main);
 
-    wireDrag(row, i);
-    row.addEventListener("keydown", (e) => {
-      if (e.altKey && e.key === "ArrowUp") {
-        e.preventDefault();
-        move(i, i - 1);
-      } else if (e.altKey && e.key === "ArrowDown") {
-        e.preventDefault();
-        move(i, i + 1);
-      }
-    });
+    wireDrag(row);
     return row;
   }
 
-  function wireDrag(row: HTMLElement, i: number): void {
+  /**
+   * Drag to reorder. Picking up a SELECTED row carries the whole selection,
+   * in its list order, the way a file manager drags; picking up any other row
+   * selects it and carries it alone.
+   */
+  function wireDrag(row: HTMLElement): void {
+    const sha = row.dataset.sha ?? "";
     row.addEventListener("dragstart", (e) => {
-      e.dataTransfer?.setData("text/plain", String(i));
-      row.classList.add("dragging");
+      if (!selection.selected.includes(sha)) select(selectOnly(sha), false);
+      dragging = dragKeys(selection, order(), sha);
+      e.dataTransfer?.setData("text/plain", sha);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      for (const r of rowEls()) r.classList.toggle("dragging", dragging.includes(r.dataset.sha ?? ""));
     });
-    row.addEventListener("dragend", () => row.classList.remove("dragging"));
+    row.addEventListener("dragend", () => {
+      dragging = [];
+      for (const r of rowEls()) r.classList.remove("dragging");
+    });
     /** Which half of the row the pointer is in — the drop lands on that side.
      *
      *  The indicator was a fixed line under the row and the insert was always
@@ -452,17 +593,23 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
       e.preventDefault();
       const side = half(e);
       paint(null);
-      const from = Number(e.dataTransfer?.getData("text/plain"));
-      if (Number.isNaN(from)) return;
-      // Where it goes in the ORIGINAL array…
-      const at = side === "before" ? i : i + 1;
-      // …corrected for the row about to be removed from in front of it.
-      move(from, from < at ? at - 1 : at);
+      const moving = dragging;
+      dragging = [];
+      const i = indexOfSha(sha);
+      if (!moving.length || i < 0) return;
+      // The gap the line was drawn at: above this row, or below it. Every
+      // dragged row goes into it, in its list order.
+      reorder(moveKeysToGap(order(), moving, side === "before" ? i : i + 1), "row");
     });
   }
 
   function makeBaseRow(): HTMLElement {
     const row = el("div", "rb-row rb-base");
+    row.setAttribute("role", "row");
+    row.setAttribute(
+      "aria-label",
+      `Onto ${state.baseCommit?.shortSha ?? short(state.base)} ${state.baseCommit?.subject ?? ""}`.trim(),
+    );
     const rail = el("div", "rb-rail");
     rail.appendChild(el("span", "rb-node"));
     // The anchor row occupies the SAME columns as a commit row — an invisible
@@ -482,11 +629,91 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     return row;
   }
 
-  function render(): void {
+  /**
+   * Rebuild the list. `refocus` puts the keyboard back where it was working:
+   * "row" on the row it is on, "select" on a row's dropdown (`sha`'s, else
+   * the focused row's). Without one, the keyboard only follows when it was in
+   * the list already — a toolbar button keeps it.
+   */
+  function render(refocus: Refocus = null, sha?: string): void {
+    const hadFocus = list.contains(document.activeElement);
     list.replaceChildren(...rows.map((r, i) => makeRow(r, i)));
     if (state.baseCommit) list.appendChild(makeBaseRow());
+    paintSelection();
     updatePreview();
+    const target = rowEl(sha ?? selection.focus);
+    if (refocus === "select") target?.querySelector<HTMLSelectElement>(".rb-action")?.focus();
+    else if (refocus === "row" || hadFocus) target?.focus();
   }
+
+  // ── selecting, from the mouse and the keyboard ──
+
+  list.addEventListener("mousedown", (e) => {
+    // A Shift-click selects rows, not the text between two clicks.
+    if (e.shiftKey && (e.target as HTMLElement).closest(".rb-row:not(.rb-base)")) e.preventDefault();
+  });
+  list.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    const row = t.closest<HTMLElement>(".rb-row:not(.rb-base)");
+    // A row's own controls keep their clicks: the dropdown opens, the message
+    // box takes the caret. Focusing one selects its row (focusin, below).
+    if (!row || t.closest("select, textarea, button, input, a")) return;
+    select(
+      clickRow(selection, order(), row.dataset.sha ?? "", {
+        range: e.shiftKey,
+        toggle: isMac ? e.metaKey : e.ctrlKey,
+      }),
+    );
+  });
+  list.addEventListener("focusin", (e) => {
+    // Tabbing (or clicking) into a row's dropdown or message box makes that
+    // row the one the keys act on, as a click on the row would. The row's
+    // own focus is the click handler's business: a ⌘-click must not collapse
+    // the selection on its way in.
+    const t = e.target as HTMLElement;
+    const row = t.closest<HTMLElement>(".rb-row:not(.rb-base)");
+    if (!row || t === row) return;
+    const sha = row.dataset.sha ?? "";
+    if (!selection.selected.includes(sha)) select(selectOnly(sha), false);
+    else if (selection.focus !== sha) select({ ...selection, focus: sha }, false);
+  });
+  list.addEventListener("keydown", (e) => {
+    const t = e.target as HTMLElement;
+    const row = t.closest<HTMLElement>(".rb-row:not(.rb-base)");
+    if (!row || busy) return;
+    // Alt+↑/↓ moves the selection from anywhere in a row, as it always has.
+    if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      moveSelection(e.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+    // Everything else only on the row itself: a dropdown's arrows and a
+    // message box's letters are theirs.
+    if (t !== row) return;
+    const mod = isMac ? e.metaKey : e.ctrlKey;
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !mod && !e.altKey) {
+      e.preventDefault();
+      select(arrowRow(selection, order(), e.key === "ArrowUp" ? -1 : 1, e.shiftKey));
+    } else if ((e.key === "Home" || e.key === "End") && !mod && !e.altKey) {
+      e.preventDefault();
+      select(reachRow(selection, order(), e.key === "Home" ? 0 : rows.length - 1, e.shiftKey));
+    } else if (e.key === "Escape") {
+      const next = collapseSelection(selection);
+      if (next === selection) return; // nothing to collapse: Escape is not ours
+      e.preventDefault();
+      e.stopPropagation();
+      select(next);
+    } else if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      select(selectAll(selection, order()));
+    } else if (!mod && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      // git's own todo letters: p r s f e d.
+      const action = actionForKey(e.key);
+      if (!action) return;
+      e.preventDefault();
+      bulkSet(action, "row");
+    }
+  });
 
   // ── actions ──
   resetBtn.addEventListener("click", () => {
@@ -537,6 +764,7 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
       applyBtn.classList.add("busy");
       applyBtn.disabled = true;
       applyLabel.textContent = "Rebasing…";
+      paintSelection(); // nothing sets an action while the plan is running
       try {
         const payload: RebaseApplyRow[] = rows.map((r) => ({
           action: r.action,
@@ -578,6 +806,7 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
         applyBtn.classList.remove("busy");
         applyBtn.disabled = false;
         applyLabel.textContent = "Start rebase";
+        paintSelection();
       }
     })();
   });
@@ -593,9 +822,25 @@ function loadingCard(): HTMLElement {
   return w;
 }
 
+/**
+ * How to read the list, and the keys that work on it — the ones the toolbar's
+ * tooltips name, said once where they can be found without hovering.
+ */
 function hintBar(): HTMLElement {
   const h = el("div", "rb-hint");
-  h.append(glyph("info"), span("Newest first, as in Commits; git replays them bottom → top. Drag to reorder."));
+  const mod = navigator.platform.toLowerCase().includes("mac") ? "⌘" : "Ctrl";
+  const keys = el("span", "rb-hint-keys");
+  keys.append(
+    span(`Shift- or ${mod}-click selects several;`),
+    ...PLAN_ACTIONS.map((a) => {
+      const k = el("kbd", "rb-kbd");
+      k.textContent = a.key;
+      k.title = a.label;
+      return k;
+    }),
+    span("set their action; drag or Alt+↑ / Alt+↓ moves them."),
+  );
+  h.append(glyph("info"), span("Newest first, as in Commits; git replays them bottom → top."), keys);
   return h;
 }
 
