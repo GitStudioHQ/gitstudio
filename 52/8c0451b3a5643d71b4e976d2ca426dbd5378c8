@@ -1,0 +1,26 @@
+packages/git-service/src/StagingProvider.ts
+  s_26f5e669d3043c::t_27cbf655e02513 1,3
+  s_26f5e669d3043c::t_d94e6704949b7b 113-145
+  s_26f5e669d3043c::t_9062d61ba0f8c3 112
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_50eb3e94652e44 751-759,761,777-780,819-827,829,900-933,1173-1186,1317,1330-1335,4867-4869,4871,7948-7966
+  s_26f5e669d3043c::t_3d6fc6c3fef717 7967-7969
+apps/extension/test/changesConflictStaging.test.ts
+  s_26f5e669d3043c::t_d7a03ed37399bb 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "528c0451b3a5643d71b4e976d2ca426dbd5378c8",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
