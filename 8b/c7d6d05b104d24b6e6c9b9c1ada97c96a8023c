@@ -1,0 +1,75 @@
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 1948-2008,2054-2057
+  s_26f5e669d3043c::t_b53978498d50fa 1947
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 36,276,279,918-927,936,940-941
+  s_26f5e669d3043c::t_e455c8e6fab7f2 942
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 520-522,808-811
+apps/extension/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 1-447
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 15-17,20-25,38,47-60,224-225,665-765
+  s_26f5e669d3043c::t_143ccc24527ef3 766-767
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 204-209,212-213,359-363
+  s_26f5e669d3043c::t_5d1c65f2085aba 364
+packages/engine/src/rebase/chain.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 86-95,102
+packages/git-service/src/rebasePlan.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 55-64,145
+packages/git-service/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 1-366
+packages/engine/test/rebaseDrop.test.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 1-105
+packages/webview-ui/src/styles/codicons.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 50-51
+packages/git-service/src/dropCommit.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 1-316
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_ad75c9f3f5391c 7-32
+apps/desktop/src/renderer/dropCommit.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 1-126
+packages/git-service/src/stoppedOperation.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 29-39,117
+packages/engine/src/rebase/drop.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 1-168
+apps/desktop/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 1-266
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_ad75c9f3f5391c 600-604
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_ad75c9f3f5391c 3107-3151,3486-3497
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_ad75c9f3f5391c 9123-9262
+  s_26f5e669d3043c::t_d0e5c8ec060749 9122
+apps/desktop/harness/shot.sh
+  s_26f5e669d3043c::t_ad75c9f3f5391c 7
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 4,7-11,17,559-630
+apps/desktop/src/renderer/contextMenu.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 13-14,39-60,120-121,130-131,138,155,158,244-247
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 105,196-201,8471,10412-10445
+  s_26f5e669d3043c::t_b665dc15bc3f17 10446
+apps/desktop/test/dropCommitFlow.test.ts
+  s_26f5e669d3043c::t_ad75c9f3f5391c 1-211
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_04960b8d7ea37c 40-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8bc7d6d05b104d24b6e6c9b9c1ada97c96a8023c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
