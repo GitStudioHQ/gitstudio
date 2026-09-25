@@ -214,8 +214,8 @@ test("dropping the tip asks first, in words, then moves the branch to its parent
     assert.equal(asked.length, 1);
     assert.equal(asked[0].kind, "confirm");
     assert.equal(asked[0].title, `Drop ${c.slice(0, 7)}?`);
-    assert.match(asked[0].text, new RegExp(`${c.slice(0, 7)} "C" is removed from main\\.`));
-    assert.match(asked[0].text, /nothing else is replayed/);
+    assert.match(asked[0].text, new RegExp(`${c.slice(0, 7)} "C" will be removed from main\\.`));
+    assert.match(asked[0].text, /nothing else changes/);
     assert.equal(asked[0].danger, true);
     assert.equal(r.git("rev-parse", "HEAD"), b);
     assert.ok(said.some((s) => s.kind === "status" && s.text.includes(`Dropped ${c.slice(0, 7)}.`)), JSON.stringify(said));
@@ -230,7 +230,7 @@ test("dropping a middle commit says how many are replayed, and replays them", as
     r.commit("base"); const a = r.commit("A"); r.commit("B"); r.commit("C");
     reset();
     await runCommitAction("drop", r.ctx, { sha: a, subject: "A" });
-    assert.match(asked[0].text, /The 2 commits after it are replayed on top/);
+    assert.match(asked[0].text, /The 2 commits after it will be replayed on top/);
     assert.deepEqual(r.subjects(), ["C", "B", "base"]);
   } finally {
     r.dispose();
@@ -362,7 +362,7 @@ test("branches on replayed commits: the reorder's carry question, and 'move' mov
     await runCommitAction("drop", r.ctx, { sha: a, subject: "A" });
     assert.equal(asked[0].kind, "pick");
     assert.deepEqual(asked[0].choices?.map((c) => c.id), ["carry", "only", "no"]);
-    assert.match(asked[0].text, /feature points at a commit that is replayed/);
+    assert.match(asked[0].text, /feature points at a commit that will be replayed/);
     assert.deepEqual(r.subjects(), ["C", "B", "base"]);
     assert.equal(r.git("merge-base", "--is-ancestor", "feature", "HEAD"), "", "feature followed the rewrite");
   } finally {

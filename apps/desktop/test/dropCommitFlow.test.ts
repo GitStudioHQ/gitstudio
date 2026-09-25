@@ -126,8 +126,8 @@ test("a drop asks main with preflight, confirms in words, runs, and offers Undo"
   assert.equal(await dropCommitFlow(SHA, d), "done");
   assert.deepEqual(log.events, ["plan+preflight", "confirm", "drop", "undoable", "refresh"]);
   assert.equal(log.confirms[0].title, "Drop a1b2c3d?");
-  assert.match(log.confirms[0].message, /a1b2c3d "fix: typo" is removed from main\./);
-  assert.match(log.confirms[0].message, /The 2 commits after it are replayed/);
+  assert.match(log.confirms[0].message, /a1b2c3d "fix: typo" will be removed from main\./);
+  assert.match(log.confirms[0].message, /The 2 commits after it will be replayed/);
   assert.equal(log.confirms[0].danger, true);
   assert.deepEqual(log.drops, [{ sha: SHA, head: HEAD, carry: false }], "the head the question was about travels with the run");
   assert.equal(log.undoables[0].message, "Dropped a1b2c3d.");
@@ -204,7 +204,7 @@ test("branches on replayed commits get the either/or; 'move' carries them", asyn
   assert.equal(await dropCommitFlow(SHA, d), "done");
   assert.deepEqual(log.events.slice(0, 3), ["plan+preflight", "choose", "drop"], "the choice IS the confirmation");
   assert.deepEqual(log.choices[0].ids, ["carry", "only"]);
-  assert.match(log.choices[0].hint, /feature points at a commit that is replayed/);
+  assert.match(log.choices[0].hint, /feature points at a commit that will be replayed/);
   assert.deepEqual(log.drops, [{ sha: SHA, head: HEAD, carry: true }]);
   const cancelled = deps({ plan: okPlan({ carryable: ["feature"] }) });
   assert.equal(await dropCommitFlow(SHA, cancelled.d), "cancelled");

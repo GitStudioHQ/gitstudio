@@ -114,18 +114,18 @@ export interface DropSummary {
  */
 export function dropQuestion(s: DropSummary): { title: string; message: string } {
   const what = s.subject ? `${s.shortSha} "${s.subject}"` : s.shortSha;
-  const parts = [`${what} is removed from ${s.branch ?? "the detached HEAD"}.`];
+  const parts = [`${what} will be removed from ${s.branch ?? "the detached HEAD"}.`];
   parts.push(
     s.replayed === 0
-      ? "It's the newest commit, so nothing else is replayed."
+      ? "It's the newest commit, so nothing else changes."
       : s.replayed === 1
-        ? "The 1 commit after it is replayed on top, so it gets a new identity."
-        : `The ${s.replayed} commits after it are replayed on top, so they get new identities.`,
+        ? "The commit after it will be replayed on top, with a new SHA."
+        : `The ${s.replayed} commits after it will be replayed on top, with new SHAs.`,
   );
   const carry = s.carryable ?? [];
   if (carry.length > 0) {
     const names = carry.slice(0, 3).join(", ") + (carry.length > 3 ? ` and ${carry.length - 3} more` : "");
-    parts.push(`${names} ${carry.length === 1 ? "points" : "point"} at a commit that is replayed.`);
+    parts.push(`${names} ${carry.length === 1 ? "points" : "point"} at a commit that will be replayed.`);
   }
   if (s.published) {
     parts.push(`${publishedWarning("Dropping")} The next push will need to be a force push.`);

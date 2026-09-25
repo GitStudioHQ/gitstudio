@@ -66,10 +66,10 @@ test("the confirmation names the commit, the branch and how many are replayed", 
   const base = { shortSha: "a1b2c3d", subject: "fix: typo", published: false, branch: "main" };
   const none = dropQuestion({ ...base, replayed: 0 });
   assert.equal(none.title, "Drop a1b2c3d?");
-  assert.match(none.message, /a1b2c3d "fix: typo" is removed from main\./);
-  assert.match(none.message, /nothing else is replayed/);
-  assert.match(dropQuestion({ ...base, replayed: 1 }).message, /The 1 commit after it is replayed/);
-  assert.match(dropQuestion({ ...base, replayed: 4 }).message, /The 4 commits after it are replayed/);
+  assert.match(none.message, /a1b2c3d "fix: typo" will be removed from main\./);
+  assert.match(none.message, /nothing else changes/);
+  assert.match(dropQuestion({ ...base, replayed: 1 }).message, /The commit after it will be replayed on top, with a new SHA\./);
+  assert.match(dropQuestion({ ...base, replayed: 4 }).message, /The 4 commits after it will be replayed on top, with new SHAs\./);
   assert.match(none.message, /Undo is available afterwards\./);
   assert.doesNotMatch(none.message, /pushed|force/i, "no push warning for a local commit");
   assert.match(dropQuestion({ ...base, replayed: 0, branch: null }).message, /from the detached HEAD/);
@@ -78,9 +78,9 @@ test("the confirmation names the commit, the branch and how many are replayed", 
 test("branches on replayed commits are named with the replay, before the warnings and the undo note", () => {
   const base = { shortSha: "a1b2c3d", subject: "x", published: true, branch: "main", replayed: 2 };
   const one = dropQuestion({ ...base, carryable: ["feature"] }).message;
-  assert.match(one, /get new identities\. feature points at a commit that is replayed\. Already pushed\./);
+  assert.match(one, /with new SHAs\. feature points at a commit that will be replayed\. Already pushed\./);
   const many = dropQuestion({ ...base, carryable: ["a", "b", "c", "d", "e"] }).message;
-  assert.match(many, /a, b, c and 2 more point at a commit that is replayed\./);
+  assert.match(many, /a, b, c and 2 more point at a commit that will be replayed\./);
   assert.ok(many.endsWith("Undo is available afterwards."));
 });
 

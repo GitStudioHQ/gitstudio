@@ -9172,8 +9172,8 @@
       if (!card) return;
       c.eq(text(card.querySelector(".modal-title")), "Drop 9f8e7d6?", "the title names the commit");
       const said = text(card.querySelector(".modal-message"));
-      c.match(said, /9f8e7d6 "release: extension 1\.11\.1" is removed from main\./, "which commit, from where");
-      c.match(said, /nothing else is replayed/, "how many later commits are replayed");
+      c.match(said, /9f8e7d6 "release: extension 1\.11\.1" will be removed from main\./, "which commit, from where");
+      c.match(said, /nothing else changes/, "how many later commits are replayed");
       c.match(said, /Already pushed\. Dropping it would rewrite history other people have\./, "the published-history warning");
       c.match(said, /force push/, "and the force push");
       const ok = card.querySelector(".modal-ok");
