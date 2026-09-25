@@ -1,0 +1,23 @@
+apps/desktop/src/renderer/resetToUpstream.ts
+  s_26f5e669d3043c::t_9087b7b82d2606 53,55,61,67,72-73
+apps/desktop/test/resetToUpstream.test.ts
+  s_26f5e669d3043c::t_9087b7b82d2606 38,45,56-57,63,74-75,81
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_9087b7b82d2606 13586,13588,13637,13706
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "02090736eed5029d20246b3f367456d33955ecda",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
