@@ -278,6 +278,12 @@
         "icon": "$(history)"
       },
       {
+        "command": "gitstudio.switchRepository",
+        "title": "Switch Repository\u2026",
+        "category": "GitStudio",
+        "icon": "$(repo)"
+      },
+      {
         "command": "gitstudio.resolveInMergeEditor",
         "title": "Resolve in Merge Editor",
         "category": "GitStudio",
@@ -1638,6 +1644,10 @@
         {
           "command": "gitstudio.showReflog",
           "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.switchRepository",
+          "when": "gitstudio.multiRepo"
         },
         {
           "command": "gitstudio.resolveInMergeEditor",

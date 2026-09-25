@@ -4,6 +4,26 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Switch Repository.** When the folder you open holds more than one
+  repository — a parent folder of checkouts, a multi-root workspace, a repo
+  inside another's folder — the Changes view's header shows which one it is
+  showing, before the branch. Click it (or run *GitStudio: Switch
+  Repository…*) to pick another from a list of every repository, with its
+  path, its branch and how many files it has changed. The Changes view, the
+  commit graph, Worktrees and the sync status all follow your pick, and keep
+  it while you edit files in other repositories — until you pick again, or
+  that repository closes. The pick is remembered for the workspace; *Follow
+  the active editor* in the same list goes back to showing whichever
+  repository holds the file you're editing. (#32)
+
+### Fixed
+- Blame in a repository nested inside another's folder (a vendored checkout,
+  a submodule) no longer runs in the outer repository when the outer one is
+  the repository on screen.
+
 ## [1.14.0] - 2026-09-25
 
 GitStudio and Merge Studio now share one merge experience — the same merge
