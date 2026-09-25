@@ -261,7 +261,7 @@ test("refused, in words, before anything is asked: no upstream; checked out in a
     await branchActions.resetBranchToUpstream(c.repos, node("feature"), () => {});
     assert.deepEqual(asked, []);
     assert.ok(
-      said("warning").some((m) => m.includes(`'feature' is checked out in another worktree, at ${realpathSync(wt)}.`)),
+      said("warning").some((m) => m.includes(`'feature' is checked out in another worktree, at ${realpathSync.native(wt)}.`)),
       said("warning").join(" | "),
     );
     assert.equal(c.git("rev-parse", "refs/heads/feature"), before);

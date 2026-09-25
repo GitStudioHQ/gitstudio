@@ -25,7 +25,7 @@
 // test pins it). The fetch writes `+<remote ref>:refs/remotes/<remote>/<x>`.
 
 import { lstat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { OperationKind } from "@gitstudio/host-bridge/conflictsProtocol";
 import type {
@@ -176,9 +176,13 @@ async function occupied(ctx: GitContext, path: string): Promise<string | undefin
     if (st.isDirectory() && (await inIndex(ctx, path))) return undefined;
     return path;
   } catch (e) {
-    if ((e as NodeJS.ErrnoException)?.code !== "ENOTDIR") return undefined;
+    // POSIX answers ENOTDIR when a parent is a file; Windows answers ENOENT,
+    // the same as for a path that simply isn't there. Either way, climb.
+    const code = (e as NodeJS.ErrnoException)?.code;
+    if (code !== "ENOTDIR" && code !== "ENOENT") return undefined;
   }
-  // Something above it is a FILE where the target needs a directory.
+  // Something above it may be a FILE where the target needs a directory; the
+  // first ancestor that exists decides.
   for (let up = dirname(path); up && up !== "."; up = dirname(up)) {
     try {
       const st = await lstat(join(ctx.root, up));
@@ -217,7 +221,8 @@ function refused(message: string): { ok: false; changed: false; expected: true; 
 
 function checkedOutElsewhere(name: string, where: string): string {
   return (
-    `'${name}' is checked out in the worktree at ${where}. Reset it there, or switch that ` +
+    // git spells a Windows path C:/Users/…; say it the way the system does.
+    `'${name}' is checked out in the worktree at ${normalize(where)}. Reset it there, or switch that ` +
     `worktree to another branch first.`
   );
 }

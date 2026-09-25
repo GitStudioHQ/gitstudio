@@ -223,7 +223,7 @@ test("checked out in another worktree: refused before anything is asked, naming 
   const p = await plan();
   assert.equal(p.ok, false);
   assert.equal(p.expected, true, "a state the user is in, not a crash");
-  assert.match(p.message ?? "", new RegExp(`checked out in the worktree at ${realpathSync(wt).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.match(p.message ?? "", new RegExp(`checked out in the worktree at ${realpathSync.native(wt).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   // …and the reset itself refuses too, whatever it is sent.
   const r = await bridge.branchResetToUpstream({ root: repo, fullName: FULL, from: before, to: sha("refs/remotes/origin/feature/x") });
   assert.equal(r.ok, false);
