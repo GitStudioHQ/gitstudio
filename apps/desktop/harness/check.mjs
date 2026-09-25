@@ -745,6 +745,26 @@ const CASES = [
   ["what-a-stash-and-retry-could-not-put-back-is-said", "code", { extra: "intheway=note", theme: "light" }],
   ["still-in-the-way-after-the-stash-is-said-not-asked-again", "code", { extra: "intheway=still" }],
   ["a-genuine-failure-asks-nothing-and-stays-red", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "intheway=fail" }],
+  // Repositories as tabs (issue #32) — the state table in docs/desktop-repo-tabs.md.
+  ["the-tab-row-shows-each-open-repository", "changes", { extra: "tabs=3" }],
+  ["the-tab-row-shows-each-open-repository", "changes", { extra: "tabs=3", theme: "light" }],
+  ["the-front-tab-is-unmistakable", "changes", { extra: "tabs=3" }],
+  ["the-front-tab-is-unmistakable", "changes", { extra: "tabs=3", theme: "light" }],
+  ["switching-tabs-keeps-each-tabs-place", "issues", { extra: "tabs=3&many=1" }],
+  ["each-tab-keeps-its-own-commit-message", "changes", { extra: "tabs=2" }],
+  // A's every answer 2s late: the answer lands after you have moved to B.
+  ["a-slow-answer-from-one-tab-never-paints-into-another", "changes", { extra: "tabs=2&slow=*@gitstudio:2000" }],
+  ["an-operation-in-a-background-tab-reports-when-you-are-back", "changes", { extra: "tabs=2&slow=sync:push@gitstudio:1500" }],
+  ["closing-a-tab-with-an-operation-running-asks-first", "changes", { extra: "tabs=2&slow=sync:push@gitstudio:4000" }],
+  ["closing-tabs-picks-the-neighbour-and-ends-at-home", "changes", { extra: "tabs=3&active=2" }],
+  ["the-tab-keys-move-between-tabs", "changes", { extra: "tabs=4" }],
+  ["the-tab-row-fits-a-narrow-window", "changes", { extra: "tabs=9&active=9", width: 880 }],
+  ["the-tab-row-fits-a-narrow-window", "changes", { extra: "tabs=9&active=9", width: 880, theme: "light" }],
+  ["opening-a-repository-that-has-a-tab-switches-to-it", "branches", { extra: "tabs=2" }],
+  ["an-open-lands-in-the-new-tab-and-the-old-one-stays-put", "repositories", { extra: "tabs=1" }],
+  ["a-background-tabs-disk-event-leaves-the-front-tab-alone", "changes", { extra: "tabs=2" }],
+  ["a-stopped-operation-stays-with-its-tab", "changes", { extra: "tabs=2&op=cherry-pick&conflicts=1" }],
+  ["each-tab-has-its-own-terminal-dock", "changes", { extra: "tabs=2" }],
 ];
 
 function run(scene, checkId, opts = {}) {

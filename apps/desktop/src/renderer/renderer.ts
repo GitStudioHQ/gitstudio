@@ -5588,7 +5588,7 @@ class App {
           await this.showSettingsView();
           // …and for the card INSIDE it, which paints on its own promise.
           await this.accountCardReady;
-          const fresh = document.querySelector<HTMLElement>(".settings-view");
+          const fresh = (this.screenEl ?? document).querySelector<HTMLElement>(".settings-view");
           const btn = fresh
             ? [...fresh.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
                 /sign in with github/i.test(b.textContent ?? ""),
@@ -8840,7 +8840,8 @@ class App {
   private async doSync(action: "fetch" | "pull" | "push" | "publish"): Promise<void> {
     if (this.syncing) return; // lock the trigger against double-invocation
     this.syncing = true;
-    const widget = document.querySelector(".topbar-sync");
+    // This TAB's widget: a document query answers for whichever tab is in front.
+    const widget = (this.screenEl ?? document).querySelector(".topbar-sync");
     widget?.classList.add("busy");
     // Live in-flight state: the widget shows WHAT it's doing with a spinning
     // icon ("Pulling… / Pushing…"), not just a dimmed button.
@@ -8896,7 +8897,7 @@ class App {
       toast(cleanErr(e) || `${action} failed.`, "error");
     } finally {
       this.syncing = false;
-      document.querySelector(".topbar-sync")?.classList.remove("busy");
+      (this.screenEl ?? document).querySelector(".topbar-sync")?.classList.remove("busy");
       // Restore the widget from its in-flight face (success already repainted
       // it via updateSync; this covers the failure path).
       this.renderSyncWidget?.(this.syncStatus);
@@ -9365,7 +9366,8 @@ class App {
     const head = this.headInfo;
     if (!head) return;
     const name = head.detached ? "detached HEAD" : (head.branch ?? "HEAD");
-    const nameEl = document.querySelector<HTMLElement>(".dc-branch-name");
+    // This tab's composer — never whichever tab's is on screen (#32).
+    const nameEl = (this.screenEl ?? document).querySelector<HTMLElement>(".dc-branch-name");
     if (nameEl) nameEl.textContent = name;
     // The composer owns its own label — writing it from here made two writers
     // for one string, and the other one holds the amend flag.

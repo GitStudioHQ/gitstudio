@@ -13246,15 +13246,16 @@ html.is-mac .repo-tabs { padding-left: 80px; }
   font-variant-numeric: tabular-nums;
 }
 .repo-tab-mark[hidden] { display: none; }
-/* Two classes deep: codicons-full.css is imported AFTER this sheet and its
-   `.codicon { display: inline-block }` wins any one-class rule here. */
-.repo-tab .repo-tab-busy {
+/* Three classes deep: `.glyph.codicon[class*="codicon-"]` (0,3,0) pins every
+   glyph to inline-flex, and a two-class `display: none` lost to it — every tab
+   showed a spinner with nothing running. */
+.repo-tab .glyph.repo-tab-busy {
   display: none;
   flex: 0 0 auto;
   font-size: 13px;
   color: var(--gs-accent-ink, var(--gs-accent));
 }
-.repo-tab.is-busy .repo-tab-busy { display: inline-block; }
+.repo-tab.is-busy .glyph.repo-tab-busy { display: inline-flex; }
 /* The close control keeps its width whether or not it shows, so a hover never
    shifts the name; it shows on the tab in front, on hover and on focus. */
 .repo-tab-close {
