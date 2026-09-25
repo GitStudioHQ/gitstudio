@@ -127,10 +127,23 @@ test("a doc that imports a pull request by --range fetches merge-studio's main f
   }
 });
 
-/** A changelog's first entry: Unreleased for GitStudio and the desktop app, 1.0.0 for Merge Studio. */
-function firstEntry(rel) {
+/**
+ * The release these colours and fixes shipped in: GitStudio 1.14.0, the
+ * desktop app 2.1.0 and Merge Studio 1.0.0 (25 Sep 2026). Picked by version,
+ * not as the changelog's first entry: an [Unreleased] section above it is the
+ * next release's, and says nothing about these.
+ */
+const SHIPPED = {
+  "apps/extension/CHANGELOG.md": "1.14.0",
+  "apps/desktop/CHANGELOG.md": "2.1.0",
+  "apps/merge-studio/CHANGELOG.md": "1.0.0",
+};
+function shippedEntry(rel) {
   const text = readFileSync(join(GITSTUDIO_ROOT, rel), "utf8");
-  return text.split(/\n## /)[1] ?? "";
+  const heading = new RegExp(`^\\[?${SHIPPED[rel].replace(/\./g, "\\.")}\\]?[ \\n]`);
+  const entry = text.split(/\n## /).find((section) => heading.test(section));
+  assert.ok(entry, `${rel}: has a ## ${SHIPPED[rel]} entry`);
+  return entry;
 }
 
 test("the three changelogs say the merge editor's colours, its trace and Close the same way", () => {
@@ -143,7 +156,7 @@ test("the three changelogs say the merge editor's colours, its trace and Close t
   // shade; Close leaves the editor and keeps the operation. The research's
   // violet is gone, and so are red and the per-type paint.
   for (const rel of ["apps/extension/CHANGELOG.md", "apps/desktop/CHANGELOG.md", "apps/merge-studio/CHANGELOG.md"]) {
-    const entry = firstEntry(rel).replace(/\s+/g, " ");
+    const entry = shippedEntry(rel).replace(/\s+/g, " ");
     assert.doesNotMatch(entry, /\bviolet\b/i, `${rel}: no violet`);
     assert.doesNotMatch(entry, /\*\*Conflict — you choose\*\*,? in red/, `${rel}: the conflict is no longer red`);
     assert.match(entry, /\*\*Conflict — you choose\*\*,? in orange/, `${rel}: orange is "Conflict — you choose"`);
@@ -159,7 +172,7 @@ test("the three changelogs say the merge editor's colours, its trace and Close t
   }
 });
 
-test("the unreleased changelogs carry the shared git fixes each product ships, once", () => {
+test("the 1.14.0 and 2.1.0 changelogs carry the shared git fixes each product ships, once", () => {
   // The r0923 infra lane's fixes live in git-service, so both GitStudio
   // products ship them; the AI git tools are the desktop's only (Assistant,
   // Agent Access). Merge Studio has no stash or AI doors, so none of these.
@@ -170,14 +183,14 @@ test("the unreleased changelogs carry the shared git fixes each product ships, o
     [/file\/folder conflict/i, "taking the file's side never deletes the folder"],
   ];
   for (const rel of ["apps/extension/CHANGELOG.md", "apps/desktop/CHANGELOG.md"]) {
-    const entry = firstEntry(rel).replace(/\s+/g, " ");
+    const entry = shippedEntry(rel).replace(/\s+/g, " ");
     for (const [re, what] of shared) {
       assert.equal((entry.match(new RegExp(re.source, re.flags + "g")) ?? []).length, 1, `${rel}: says once that ${what}`);
     }
   }
-  const desktop = firstEntry("apps/desktop/CHANGELOG.md").replace(/\s+/g, " ");
+  const desktop = shippedEntry("apps/desktop/CHANGELOG.md").replace(/\s+/g, " ");
   assert.match(desktop, /The Assistant and Agent Access could end a stopped merge\.\*\* Asked to check out a branch, create one, or reset/, "the desktop: the AI git tools refuse over a stopped operation");
-  const ms = firstEntry("apps/merge-studio/CHANGELOG.md").replace(/\s+/g, " ");
+  const ms = shippedEntry("apps/merge-studio/CHANGELOG.md").replace(/\s+/g, " ");
   assert.match(ms, /file\/folder conflict/i, "Merge Studio: taking the file's side never deletes the folder");
   assert.doesNotMatch(ms, /Stash & Retry|Assistant|Agent Access/, "Merge Studio ships neither door");
 });
