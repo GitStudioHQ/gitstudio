@@ -13583,9 +13583,9 @@
       if (!card) return;
       c.eq(text($$(".modal-title", card)[0]), "Reset main to 'origin/main'?", "the question names both");
       const msg = text($$(".modal-message", card)[0]);
-      c.match(msg, /main loses 2 commits that aren't on origin\/main:/, "it counts the commits that go");
+      c.match(msg, /main will lose 2 commits that aren't on origin\/main:/, "it counts the commits that go");
       c.match(msg, /• wip: try the rail without icons\n\s*• release notes, first pass/, "…and names them");
-      c.match(msg, /Uncommitted changes to 5 files are discarded\. Untracked files are kept\./, "…and the files of uncommitted changes");
+      c.match(msg, /Uncommitted changes to 5 files will be discarded\. Untracked files are kept\./, "…and the files of uncommitted changes");
       c.match(msg, /You can undo this straight afterwards\./, "…and that it can be undone");
       c.eq($$(".btn-danger", card).length, 1, "a red button");
       c.ok(card.contains(document.activeElement) && !document.activeElement.classList.contains("btn-danger"), "focus starts on Cancel, not on the reset");
@@ -13634,7 +13634,7 @@
       const card = $(".modal-card");
       if (!card) return c.ok(false, "it asks first");
       const msg = text($$(".modal-message", card)[0]);
-      c.match(msg, /feat\/line-staging loses 3 commits that aren't on origin\/feat\/line-staging:/, "diverged: the commits that go");
+      c.match(msg, /feat\/line-staging will lose 3 commits that aren't on origin\/feat\/line-staging:/, "diverged: the commits that go");
       c.match(msg, /• engine: split hunks at the selection\n\s*• wip\n\s*• engine: hunk splitting groundwork/, "…by name");
       c.match(msg, /You're not on feat\/line-staging, so nothing in your working tree changes\./, "…and that your working tree is not touched");
       c.ok(!/Uncommitted/.test(msg), "…never mentioning uncommitted changes");
@@ -13703,7 +13703,7 @@
       const card = $(".modal-card");
       if (!card) return c.ok(false, "it asks (the branch moves)");
       const msg = text($$(".modal-message", card)[0]);
-      c.match(msg, /^Nothing is lost: docs\/readme has no commits that aren't on origin\/docs\/readme\. It moves forward 2 commits to match\.$/, "it says nothing is lost, and what happens");
+      c.match(msg, /^Nothing will be lost: docs\/readme has no commits that aren't on origin\/docs\/readme\. It will move forward 2 commits to match\.$/, "it says nothing is lost, and what happens");
       c.eq($$(".btn-danger", card).length, 0, "no red button over a fast-forward");
       c.ok(!!$$(".btn-primary", card)[0], "…an ordinary one");
     },

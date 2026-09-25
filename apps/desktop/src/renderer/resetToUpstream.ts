@@ -50,27 +50,27 @@ export function resetQuestion(p: BranchResetPlan): ResetQuestion | undefined {
 
   if (!lost && !dirty) {
     lines.push(
-      `Nothing is lost: ${branch} has no commits that aren't on ${up}` +
+      `Nothing will be lost: ${branch} has no commits that aren't on ${up}` +
         (p.current ? ", and no uncommitted changes" : "") +
-        `. It moves forward ${plural(gained, "commit")} to match.`,
+        `. It will move forward ${plural(gained, "commit")} to match.`,
     );
     return { title, message: lines.join("\n"), confirmLabel: "Reset", danger: false };
   }
 
   if (lost) {
-    lines.push(`${branch} loses ${lost === 1 ? "1 commit that isn't" : `${plural(lost, "commit")} that aren't`} on ${up}:`);
+    lines.push(`${branch} will lose ${lost === 1 ? "1 commit that isn't" : `${plural(lost, "commit")} that aren't`} on ${up}:`);
     const named = p.lostSubjects ?? [];
     for (const s of named) lines.push(`  • ${s}`);
     if (lost > named.length) lines.push(`  …and ${lost - named.length} more`);
   }
   if (dirty) {
-    lines.push(`Uncommitted changes to ${plural(dirty, "file")} are discarded. Untracked files are kept.`);
+    lines.push(`Uncommitted changes to ${plural(dirty, "file")} will be discarded. Untracked files are kept.`);
   }
   lines.push("");
   lines.push(
     p.current
-      ? `${branch} then matches ${up} exactly.`
-      : `${branch} then matches ${up} exactly. You're not on ${branch}, so nothing in your working tree changes.`,
+      ? `${branch} will then match ${up} exactly.`
+      : `${branch} will then match ${up} exactly. You're not on ${branch}, so nothing in your working tree changes.`,
   );
   lines.push("You can undo this straight afterwards.");
   return { title, message: lines.join("\n"), confirmLabel: "Reset", danger: true };

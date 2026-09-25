@@ -35,14 +35,14 @@ test("equal and clean: nothing to ask", () => {
 test("strictly behind and clean: says nothing is lost, and is not a red button", () => {
   const q = resetQuestion(plan({ gained: 3 }))!;
   assert.equal(q.danger, false);
-  assert.match(q.message, /^Nothing is lost: feature has no commits that aren't on origin\/feature, and no uncommitted changes\. It moves forward 3 commits to match\.$/);
+  assert.match(q.message, /^Nothing will be lost: feature has no commits that aren't on origin\/feature, and no uncommitted changes\. It will move forward 3 commits to match\.$/);
   assert.doesNotMatch(q.message, /lose|discard/i, "no scary wording over a fast-forward");
 });
 
 test("a branch you are not on never mentions uncommitted changes", () => {
   const q = resetQuestion(plan({ current: false, dirty: undefined, gained: 1 }))!;
   assert.equal(q.danger, false);
-  assert.match(q.message, /no commits that aren't on origin\/feature\. It moves forward 1 commit to match/);
+  assert.match(q.message, /no commits that aren't on origin\/feature\. It will move forward 1 commit to match/);
   // …even when a stale `dirty` is present: it describes another branch's tree.
   const odd = resetQuestion(plan({ current: false, dirty: 4, lost: 1, lostSubjects: ["x"] }))!;
   assert.doesNotMatch(odd.message, /Uncommitted/);
@@ -53,14 +53,14 @@ test("ahead: counts the commits that go and names them by subject", () => {
   const q = resetQuestion(plan({ lost: 2, lostSubjects: ["wip", "try again"] }))!;
   assert.equal(q.danger, true);
   assert.equal(q.title, "Reset feature to 'origin/feature'?");
-  assert.match(q.message, /feature loses 2 commits that aren't on origin\/feature:\n {2}• wip\n {2}• try again\n/);
-  assert.match(q.message, /feature then matches origin\/feature exactly\./);
+  assert.match(q.message, /feature will lose 2 commits that aren't on origin\/feature:\n {2}• wip\n {2}• try again\n/);
+  assert.match(q.message, /feature will then match origin\/feature exactly\./);
   assert.match(q.message, /You can undo this straight afterwards\./);
 });
 
 test("one commit reads as one", () => {
   const q = resetQuestion(plan({ lost: 1, lostSubjects: ["wip"] }))!;
-  assert.match(q.message, /feature loses 1 commit that isn't on origin\/feature:/);
+  assert.match(q.message, /feature will lose 1 commit that isn't on origin\/feature:/);
 });
 
 test("more than five: five by name, and the rest counted", () => {
@@ -71,14 +71,14 @@ test("more than five: five by name, and the rest counted", () => {
 test("dirty and equal: only the uncommitted changes go, said as a count of files", () => {
   const q = resetQuestion(plan({ dirty: 4 }))!;
   assert.equal(q.danger, true);
-  assert.doesNotMatch(q.message, /loses/);
-  assert.match(q.message, /Uncommitted changes to 4 files are discarded\. Untracked files are kept\./);
+  assert.doesNotMatch(q.message, /will lose/);
+  assert.match(q.message, /Uncommitted changes to 4 files will be discarded\. Untracked files are kept\./);
 });
 
 test("diverged and dirty: both, in that order", () => {
   const q = resetQuestion(plan({ lost: 1, lostSubjects: ["mine"], gained: 2, dirty: 1 }))!;
   const at = (re: RegExp): number => q.message.search(re);
-  assert.ok(at(/loses 1 commit/) < at(/Uncommitted changes to 1 file are/), q.message);
+  assert.ok(at(/will lose 1 commit/) < at(/Uncommitted changes to 1 file will be/), q.message);
 });
 
 test("a failed fetch is said first, with what the plan used instead", () => {
