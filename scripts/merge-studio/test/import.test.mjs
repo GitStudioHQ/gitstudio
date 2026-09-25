@@ -35,8 +35,11 @@ const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "import.mjs")
 // This checkout's git as it is configured, to read its files as it stores them.
 const CHECKOUT_ENV = { ...process.env };
 // Hermetic git: no user or system config (signing, hooks, default branch) leaks in.
+// No background gc either: the scratch repositories hold thousands of loose
+// objects, and a detached `gc --auto` still writing into .git/objects made a
+// test's cleanup fail with ENOTEMPTY (the desktop 2.1.0 release, macOS Intel).
 const EMPTY_CONFIG = join(mkdtempSync(join(tmpdir(), "ms-import-config-")), "gitconfig");
-writeFileSync(EMPTY_CONFIG, "");
+writeFileSync(EMPTY_CONFIG, "[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n");
 process.env.GIT_CONFIG_GLOBAL = EMPTY_CONFIG;
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 
@@ -163,7 +166,7 @@ const lineEdit = (n, fn) => (text) => {
 const append = (extra) => (text) => `${text}${extra}`;
 
 function cleanup(...dirs) {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  for (const d of dirs) rmSync(d, { recursive: true, force: true, maxRetries: 5 });
 }
 
 const generatedPaths = new Set(GENERATED.map((x) => x.mergeStudio));
