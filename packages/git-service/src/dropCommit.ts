@@ -61,7 +61,7 @@ function refused(reason: DropRefusal): DropRefused {
   return { ok: false, reason, message: dropRefusalMessage(reason) };
 }
 
-async function revParse(proc: GitProcess, rev: string, signal?: AbortSignal): Promise<string | undefined> {
+export async function revParse(proc: GitProcess, rev: string, signal?: AbortSignal): Promise<string | undefined> {
   // `rev` is always "HEAD" or a validated hex sha, never user text.
   const r = await proc.run(["rev-parse", "--verify", "--quiet", rev], { signal });
   const out = r.stdout.trim();
@@ -73,7 +73,7 @@ async function revParse(proc: GitProcess, rev: string, signal?: AbortSignal): Pr
  * it (`--not --remotes`), so "published" means the same thing at both doors:
  * the commit is listed only when no remote-tracking ref reaches it.
  */
-async function isPublished(proc: GitProcess, sha: string, signal?: AbortSignal): Promise<boolean> {
+export async function isPublished(proc: GitProcess, sha: string, signal?: AbortSignal): Promise<boolean> {
   const r = await proc.run(["rev-list", "--max-count=1", sha, "--not", "--remotes"], { signal });
   return r.code === 0 && r.stdout.trim() === "";
 }
@@ -200,17 +200,31 @@ export const DROP_DIRTY_MESSAGE = "You have uncommitted changes. Commit or stash
  * to tracked files, which git refuses a rebase over. Untracked files do not
  * stop a rebase and do not stop this. Undefined when the drop can go ahead.
  */
-export async function dropBlocker(proc: GitProcess, signal?: AbortSignal): Promise<string | undefined> {
+export function dropBlocker(proc: GitProcess, signal?: AbortSignal): Promise<string | undefined> {
+  return rewriteBlocker(proc, "drop", DROP_DIRTY_MESSAGE, signal);
+}
+
+/**
+ * dropBlocker's check for any rewrite of the current branch (issue #32: Drop
+ * and Squash of several commits too) — `door` names it in the stop's
+ * sentence, `dirty` is what is said over uncommitted changes.
+ */
+export async function rewriteBlocker(
+  proc: GitProcess,
+  door: "drop" | "drop-many" | "squash",
+  dirty: string,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
   const stop = await stoppedIn(proc, signal);
   if (stop) {
-    return operationInTheWayMessage({ ...pick(stop), kind: "drop" });
+    return operationInTheWayMessage({ ...pick(stop), kind: door });
   }
   const status = await proc.run(
     ["status", "--porcelain=v1", "-z", "--untracked-files=no", "--ignore-submodules=all"],
     { signal },
   );
   if (status.code === 0 && status.stdout.length > 0) {
-    return DROP_DIRTY_MESSAGE;
+    return dirty;
   }
   return undefined;
 }
@@ -280,20 +294,34 @@ export async function dropCommit(
  * moved it since, going back would throw that away too, so this says so and
  * changes nothing.
  */
-export async function undoDrop(
+export function undoDrop(
   proc: GitProcess,
   u: { before: string; after: string },
 ): Promise<{ ok: true } | { ok: false; expected?: true; message: string }> {
+  return undoRewrite(proc, u, "drop");
+}
+
+/**
+ * The same way back for any operation that moved HEAD from `before` to
+ * `after` on the branch it is on — a drop, a squash, several commits
+ * cherry-picked or reverted (issue #32). `what` names it in the words: "the
+ * branch has moved since the squash".
+ */
+export async function undoRewrite(
+  proc: GitProcess,
+  u: { before: string; after: string },
+  what: string,
+): Promise<{ ok: true } | { ok: false; expected?: true; message: string }> {
   if (!/^[0-9a-f]{40,64}$/i.test(u.before) || !/^[0-9a-f]{40,64}$/i.test(u.after)) {
-    // The renderer only ever sends the two shas a drop answered with.
-    return { ok: false, message: "That isn't a drop this app made." };
+    // The renderer only ever sends the two shas the operation answered with.
+    return { ok: false, message: `That isn't a ${what} this app made.` };
   }
   const head = await revParse(proc, "HEAD");
   if (head !== u.after) {
     return {
       ok: false,
       expected: true,
-      message: "The branch has moved since the drop, so undoing it now would throw that away too. Nothing was changed.",
+      message: `The branch has moved since the ${what}, so undoing it now would throw that away too. Nothing was changed.`,
     };
   }
   const stop = await stoppedIn(proc);
@@ -309,7 +337,7 @@ export async function undoDrop(
     return {
       ok: false,
       expected: true,
-      message: "Your uncommitted changes touch files the drop changed. Commit or stash them, then undo.",
+      message: `Your uncommitted changes touch files the ${what} changed. Commit or stash them, then undo.`,
     };
   }
   return { ok: false, message: r.stderr.trim() || "Couldn't put the branch back." };

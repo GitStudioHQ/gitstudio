@@ -36,7 +36,10 @@ export type BlockedDoor =
   | "pull"
   | "reset"
   /** Drop Commit (issue #32) — a rebase, said as the action the user chose. */
-  | "drop";
+  | "drop"
+  /** Drop N Commits and Squash N Commits (issue #32) — rebases too. */
+  | "drop-many"
+  | "squash";
 
 /** What git is stopped in, and what is left unmerged. */
 export interface Stopped {
@@ -115,6 +118,8 @@ const BEFORE: Record<BlockedDoor, string> = {
   pull: "pulling again",
   reset: "resetting",
   drop: "dropping a commit",
+  "drop-many": "dropping commits",
+  squash: "squashing commits",
 };
 
 /** The operation, as the subject of a sentence. */
