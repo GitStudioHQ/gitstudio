@@ -1,0 +1,23 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_6c8a4f63c96276 115-118
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_cb824b5c8d6c85 254-259,262,264-269,279-281,287,299-321
+apps/extension/test/undoHistory.test.ts
+  s_26f5e669d3043c::t_7a23eddc611301 25-28,71,166-243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5894e17cc063e05c7ad44fd6c007bc87e50874ff",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
