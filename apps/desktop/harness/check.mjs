@@ -778,6 +778,15 @@ const CASES = [
   ["a-tab-round-trip-keeps-its-diff-or-log", "actions~open9100~click:.gh-job-log", { extra: "tabs=2", arg: "log" }],
   ["closing-a-tab-in-the-back-lets-its-diff-or-log-go", "prs~open106~text:Files", { extra: "tabs=2" }],
   ["closing-a-tab-in-the-back-lets-its-diff-or-log-go", "actions~open9100~click:.gh-job-log", { extra: "tabs=2" }],
+  ["each-tab-keeps-its-own-list-state", "issues", { extra: "tabs=2", arg: "issues" }],
+  ["each-tab-keeps-its-own-list-state", "prs", { extra: "tabs=2", arg: "prs" }],
+  ["each-tab-keeps-its-own-list-state", "actions", { extra: "tabs=2", arg: "actions" }],
+  ["each-tab-keeps-its-own-list-state", "releases", { extra: "tabs=2", arg: "releases" }],
+  ["a-kept-page-routes-its-own-tab-after-a-visit-to-another", "prs~open106", { extra: "tabs=2", arg: ".det-title-edit|predit" }],
+  ["a-kept-page-routes-its-own-tab-after-a-visit-to-another", "actions~open9100", { extra: "tabs=2", arg: ".det-commit-chip|commit" }],
+  ["a-kept-page-routes-its-own-tab-after-a-visit-to-another", "actions~open9100", { extra: "tabs=2", arg: ".gh-job-log|joblog" }],
+  ["a-kept-page-routes-its-own-tab-after-a-visit-to-another", "releases~open52", { extra: "tabs=2", arg: ".det-tb-actions > .mini-btn:first-child|releasenew" }],
+  ["quote-reply-lands-in-its-own-tabs-box", "issues~open31", { extra: "tabs=2" }],
 ];
 
 function run(scene, checkId, opts = {}) {

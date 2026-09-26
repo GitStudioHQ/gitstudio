@@ -11,7 +11,8 @@
 // re-render.
 
 import { host } from "../bridge";
-import { peek as cachePeek, gget, bust, cacheScope } from "../cache";
+import { peek as cachePeek, gget, bust } from "../cache";
+import { perTab } from "../tabState";
 import {
   avatar,
   el,
@@ -97,46 +98,58 @@ function runDuration(r: WorkflowRun): string {
   return fmtDuration(r.runStartedAt, isLive(r.status) ? "" : r.updatedAt);
 }
 
-/** The section's router, captured at mount so branch chips can navigate. */
-let sectionNav: SectionNav | undefined;
-/** Which list the section shows: workflow runs, or the workflow files. */
-let actionsTab: "runs" | "workflows" = "runs";
-/** The list page's live search query — survives list ⇄ detail round trips. */
-let query = "";
-/** Server-side run filters, kept across re-renders (like `query`). */
-const runFacetState: FacetState = {};
 /**
- * The repository the state above was last used for.
- *
- * A workflow-name facet, a branch filter and a search query are all ABOUT one
- * repository's workflows. Nothing reset them when the open repository changed,
- * so switching repos landed on Actions filtered by a workflow the new repo
- * does not have — an empty list with no visible reason for being empty.
+ * What the Actions section remembers, for ONE tab (issue #32; see
+ * tabState.ts). All of it is about one repository's workflows, and at module
+ * scope it was the window's: another tab's Actions reset or replaced the
+ * search, the facets and the Runs/Workflows choice under this tab's kept page,
+ * and its module-level router sent this page's branch, commit, PR and log links
+ * to a tab in the back. The router is not kept here: every control uses the
+ * `nav` its own page was built with.
  */
-let stateScope = "";
-
-/** Start clean when the repository under the section has changed. */
-function scopeSectionState(): void {
-  const now = cacheScope();
-  if (now === stateScope) return;
-  stateScope = now;
-  actionsTab = "runs";
-  query = "";
-  for (const k of Object.keys(runFacetState)) delete runFacetState[k];
-  // Run-detail state is keyed by run id, and run ids are per repository.
-  expandedJobs.clear();
-  seededJobs.clear();
-  lastRunDetailId = undefined;
-  lastRunAttempt = 0;
+interface ActionsTabState {
+  /** Which list the section shows: workflow runs, or the workflow files. */
+  actionsTab: "runs" | "workflows";
+  /** The list page's live search query — survives list ⇄ detail round trips. */
+  query: string;
+  /** Server-side run filters, kept across re-renders (like `query`). */
+  runFacetState: FacetState;
+  /**
+   * Job cards the user expanded, per run — preserved across live-poll repaints.
+   *
+   * The set is SEEDED with every job the first time a run's cards are built, so
+   * it only ever means "exactly these are open". It used to be read as
+   * `size === 0 || has(id)`, where an empty set also meant "nothing chosen yet,
+   * so show everything" — and the first click then silently redefined every
+   * OTHER card: collapse the one job you were done with and all its siblings
+   * collapsed with it, because the set stopped being empty.
+   */
+  expandedJobs: Set<number>;
+  /** Jobs already given their default. A running workflow gains jobs as it goes,
+   *  and one that starts after you collapsed something must still open itself —
+   *  so the default is applied per job on first sight, not once per run. */
+  seededJobs: Set<number>;
+  lastRunDetailId?: number;
+  lastRunAttempt: number;
+  /** The longest step in the run being rendered — the shared scale for every
+   *  step bar on the page. Set by buildRunDetail before the cards are built. */
+  runMaxStepSec: number;
 }
+const actionsTabState = perTab<ActionsTabState>(() => ({
+  actionsTab: "runs",
+  query: "",
+  runFacetState: {},
+  expandedJobs: new Set(),
+  seededJobs: new Set(),
+  lastRunAttempt: 0,
+  runMaxStepSec: 0,
+}));
 
 export const renderActions: SectionRender = (wrap, nav, target): void => {
-  sectionNav = nav;
   void mount(wrap, nav, target);
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
-  scopeSectionState();
   const refresh = (): void => {
     bust("actions");
     renderActions(wrap, nav, target);
@@ -160,6 +173,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
 // ── The list page (Runs | Workflows) ─────────────────────────────────────────
 
 async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promise<void> {
+  const S = actionsTabState();
   const refresh = (): void => {
     bust("actions");
     renderActions(wrap, nav);
@@ -171,7 +185,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   // slice rather than hiding rows from the 200 already on screen. The filter
   // object IS the cache key, so each combination caches independently.
   const runFilter = (): ActionsRunsFilter | undefined => {
-    const v = runFacetState;
+    const v = S.runFacetState;
     const f: ActionsRunsFilter = {};
     if (v.workflowId) f.workflowId = Number(v.workflowId);
     if (v.branch) f.branch = v.branch;
@@ -188,10 +202,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       { value: "runs", label: "Runs" },
       { value: "workflows", label: "Workflows" },
     ],
-    value: actionsTab,
+    value: S.actionsTab,
     ariaLabel: "Actions view",
     onChange: (v) => {
-      actionsTab = v;
+      S.actionsTab = v;
       renderActions(wrap, nav);
     },
   });
@@ -224,10 +238,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
-      placeholder: actionsTab === "runs" ? "Search runs…" : "Search workflows…",
-      initial: query,
+      placeholder: S.actionsTab === "runs" ? "Search runs…" : "Search workflows…",
+      initial: S.query,
       onInput: (q) => {
-        query = q;
+        S.query = q;
         rerenderList();
       },
     }),
@@ -256,15 +270,15 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   // ── data ──
   let runs: WorkflowRun[] | undefined =
-    actionsTab === "runs" ? cachePeek("actions:runs", runFilter()) : undefined;
+    S.actionsTab === "runs" ? cachePeek("actions:runs", runFilter()) : undefined;
   let workflows: WorkflowInfo[] | undefined =
-    actionsTab === "workflows" ? cachePeek("actions:workflows", undefined) : undefined;
-  if ((actionsTab === "runs" && !runs) || (actionsTab === "workflows" && !workflows)) {
+    S.actionsTab === "workflows" ? cachePeek("actions:workflows", undefined) : undefined;
+  if ((S.actionsTab === "runs" && !runs) || (S.actionsTab === "workflows" && !workflows)) {
     listEl.replaceChildren(skeletonList(6));
   }
 
   // Runs only — "filter workflows by branch" means nothing.
-  if (actionsTab === "runs") {
+  if (S.actionsTab === "runs") {
     facets = facetBar<WorkflowRun>({
       specs: [
         {
@@ -305,7 +319,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
           ],
         },
       ],
-      state: runFacetState,
+      state: S.runFacetState,
       items: runs ?? [],
       onChange: () => {
         // A server facet changes WHAT WE ASK FOR, so re-fetch rather than
@@ -346,7 +360,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // avatars zig-zagged down the list.
     const branchEl = blankable(
       subLink(r.branch || "—", `Show ${r.branch} in Branches`, () =>
-        sectionNav?.("branches", { ref: r.branch }),
+        nav("branches", { ref: r.branch }),
       ),
       !!r.branch,
     );
@@ -413,9 +427,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   const rerenderList = (): void => {
     if (runs) facets?.sync(runs);
-    const q = query.toLowerCase();
+    const q = S.query.toLowerCase();
     listEl.replaceChildren();
-    if (actionsTab === "runs") {
+    if (S.actionsTab === "runs") {
       if (!runs) return;
       if (runs.length === 0) {
         listEl.appendChild(
@@ -431,7 +445,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // the unfiltered total directly above a "No matching …" empty state.
       header.setCount?.(items.length, runs.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching runs", `Nothing matches “${query}”.`, { icon: "search", anchor: "inline" }));
+        listEl.appendChild(emptyState("No matching runs", `Nothing matches “${S.query}”.`, { icon: "search", anchor: "inline" }));
         return;
       }
       for (const r of items) listEl.appendChild(buildRunRow(r));
@@ -453,7 +467,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // the unfiltered total directly above a "No matching …" empty state.
       header.setCount?.(items.length, workflows.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching workflows", `Nothing matches “${query}”.`, { icon: "search", anchor: "inline" }));
+        listEl.appendChild(emptyState("No matching workflows", `Nothing matches “${S.query}”.`, { icon: "search", anchor: "inline" }));
         return;
       }
       for (const w of items) listEl.appendChild(buildWfRow(w));
@@ -465,9 +479,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   // While any run is LIVE, quietly re-fetch the list every 12s and repaint in
   // place — a CI dashboard that only updates on manual refresh isn't one.
   const scheduleListPoll = (): void => {
-    if (actionsTab !== "runs" || !runs?.some((r) => isLive(r.status))) return;
+    if (S.actionsTab !== "runs" || !runs?.some((r) => isLive(r.status))) return;
     window.setTimeout(() => {
-      if (!view.isConnected || actionsTab !== "runs") return;
+      if (!view.isConnected || S.actionsTab !== "runs") return;
       // The poll must ask the SAME question the view is showing — polling
       // unfiltered would quietly replace a filtered list with everything.
       const f = runFilter();
@@ -486,7 +500,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   };
 
   try {
-    if (actionsTab === "runs") {
+    if (S.actionsTab === "runs") {
       const fresh = await gget("actions:runs", runFilter(), 10000);
       if (!view.isConnected) return;
       runs = fresh;
@@ -511,7 +525,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (!runs && !workflows) {
       listEl.replaceChildren(
         errorState(
-          actionsTab === "runs" ? "Couldn't load workflow runs" : "Couldn't load workflows",
+          S.actionsTab === "runs" ? "Couldn't load workflow runs" : "Couldn't load workflows",
           cleanErr(e) || "GitHub request failed.",
           refresh,
         ),
@@ -576,30 +590,13 @@ function runLead(state: string, label?: string): HTMLElement {
 
 // ── The run detail page ──────────────────────────────────────────────────────
 
-/**
- * Job cards the user expanded, per run — preserved across live-poll repaints.
- *
- * The set is SEEDED with every job the first time a run's cards are built, so
- * it only ever means "exactly these are open". It used to be read as
- * `size === 0 || has(id)`, where an empty set also meant "nothing chosen yet,
- * so show everything" — and the first click then silently redefined every
- * OTHER card: collapse the one job you were done with and all its siblings
- * collapsed with it, because the set stopped being empty.
- */
-const expandedJobs = new Set<number>();
-/** Jobs already given their default. A running workflow gains jobs as it goes,
- *  and one that starts after you collapsed something must still open itself —
- *  so the default is applied per job on first sight, not once per run. */
-const seededJobs = new Set<number>();
-let lastRunDetailId: number | undefined;
-let lastRunAttempt = 0;
-
 function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number): void {
-  if (lastRunDetailId !== id) {
-    lastRunDetailId = id;
-    lastRunAttempt = 0;
-    expandedJobs.clear();
-    seededJobs.clear();
+  const S = actionsTabState();
+  if (S.lastRunDetailId !== id) {
+    S.lastRunDetailId = id;
+    S.lastRunAttempt = 0;
+    S.expandedJobs.clear();
+    S.seededJobs.clear();
   }
   const back = (): void => nav("actions", { list: true });
   const reload = (): void => {
@@ -633,7 +630,7 @@ function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number): void
           const sig = JSON.stringify(fresh);
           if (sig !== lastSig) {
             lastSig = sig;
-            buildRunDetail({ main, rail, topActions, d: fresh, reload });
+            buildRunDetail({ main, rail, topActions, d: fresh, reload, nav, tab: S });
           }
           schedulePoll(fresh);
         })
@@ -658,7 +655,7 @@ function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number): void
       return;
     }
     lastSig = JSON.stringify(d);
-    buildRunDetail({ main, rail, topActions, d, reload });
+    buildRunDetail({ main, rail, topActions, d, reload, nav, tab: S });
     schedulePoll(d);
   })();
 }
@@ -669,12 +666,16 @@ interface RunDetailCtx {
   topActions: HTMLElement;
   d: WorkflowRunDetail;
   reload: () => void;
+  /** The router this page was built with — its own tab's. */
+  nav: SectionNav;
+  /** This tab's section state. */
+  tab: ActionsTabState;
 }
 
 function buildRunDetail(ctx: RunDetailCtx): void {
-  const { main, rail, topActions, d, reload } = ctx;
+  const { main, rail, topActions, d, reload, nav, tab: S } = ctx;
   const full = d.run;
-  runMaxStepSec = Math.max(0, ...d.jobs.flatMap((j) => j.steps.map(stepSeconds)));
+  S.runMaxStepSec = Math.max(0, ...d.jobs.flatMap((j) => j.steps.map(stepSeconds)));
   // One identity for this run, everywhere on the page: the run NUMBER. The
   // crumb used to carry the internal id ("#9100") while the title showed
   // "#411" — the same run wearing two numbers 40px apart.
@@ -691,7 +692,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   const state = full.conclusion || full.status || "";
   const live = isLive(full.status);
   // A re-run attempt REPLACES the logs — every pane restarts from zero.
-  lastRunAttempt = full.runAttempt;
+  S.lastRunAttempt = full.runAttempt;
   main.replaceChildren();
   rail.replaceChildren();
 
@@ -740,7 +741,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   logsBtn.disabled = d.jobs.length === 0;
   if (logsBtn.disabled) logsBtn.title = "This run has no jobs yet";
   logsBtn.addEventListener("click", () =>
-    sectionNav?.("joblog", { number: full.id, jobId: (failedJobs[0] ?? d.jobs[0])?.id }),
+    nav("joblog", { number: full.id, jobId: (failedJobs[0] ?? d.jobs[0])?.id }),
   );
 
   const openBtn = btn("mini-btn gh-icon-btn");
@@ -771,7 +772,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
     const chip = el("button", "gh-branch-chip");
     chip.append(glyph("git-branch"), span(full.branch));
     chip.title = `Show ${full.branch} in Branches`;
-    chip.addEventListener("click", () => sectionNav?.("branches", { ref: full.branch }));
+    chip.addEventListener("click", () => nav("branches", { ref: full.branch }));
     sub.appendChild(chip);
   }
   // The commit this run built — one click from its row in the graph.
@@ -788,7 +789,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
     // complaint was still one click away from the run page. The commit page
     // carries a "View in Commits" item, so that view stays reachable.
     commit.title = subject ? `${subject} — open this commit` : "Open this commit";
-    commit.addEventListener("click", () => sectionNav?.("commit", { sha: full.headSha }));
+    commit.addEventListener("click", () => nav("commit", { sha: full.headSha }));
     sub.appendChild(commit);
   }
   const subText = el("span");
@@ -806,12 +807,12 @@ function buildRunDetail(ctx: RunDetailCtx): void {
     // are all shut is two hollow rows. Seeding says that once, as a fact about
     // this run, instead of leaving `jobCard` to infer it from an empty set.
     for (const j of jobs) {
-      if (seededJobs.has(j.id)) continue;
-      seededJobs.add(j.id);
-      expandedJobs.add(j.id);
+      if (S.seededJobs.has(j.id)) continue;
+      S.seededJobs.add(j.id);
+      S.expandedJobs.add(j.id);
     }
     const jobsWrap = el("div", "gh-jobs");
-    for (const j of jobs) jobsWrap.appendChild(jobCard(j, full.id));
+    for (const j of jobs) jobsWrap.appendChild(jobCard(j, full.id, S, nav));
     main.appendChild(jobsWrap);
   }
 
@@ -876,7 +877,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
       const b = btn("det-mono-btn");
       b.append(glyph("git-pull-request"), span(`#${pr.number}`));
       b.title = `Open pull request #${pr.number}`;
-      b.addEventListener("click", () => sectionNav?.("prs", { number: pr.number }));
+      b.addEventListener("click", () => nav("prs", { number: pr.number }));
       prsProp.body.appendChild(b);
     }
   }
@@ -900,13 +901,9 @@ function runStatePill(state: string): HTMLElement {
 }
 
 /** One expandable job card: header row (dot + name + state + Logs) + its steps.
- *  Expansion is remembered in `expandedJobs` so live-poll repaints keep it; the
+ *  Expansion is remembered in the tab's `expandedJobs` so live-poll repaints keep it; the
  *  Logs button leaves for the log's own page (`views/jobLog.ts`), because an
  *  inline pane on this page got 523px of a 913px window. */
-/** The longest step in the run being rendered — the shared scale for every
- *  step bar on the page. Set by buildRunDetail before the cards are built. */
-let runMaxStepSec = 0;
-
 /** Seconds a step took, or 0 when it hasn't finished (or never started). */
 function stepSeconds(s: WorkflowStep): number {
   const a = Date.parse(s.startedAt);
@@ -920,14 +917,14 @@ function stepSeconds(s: WorkflowStep): number {
   return Math.max(0, (end - a) / 1000);
 }
 
-function jobCard(j: WorkflowJob, runId: number): HTMLElement {
+function jobCard(j: WorkflowJob, runId: number, S: ActionsTabState, nav: SectionNav): HTMLElement {
   const card = el("div", "gh-job");
   const state = j.conclusion || j.status || "";
   // Steps are the content of this page. They used to be collapsed by default,
   // so a run detail was two hollow rows in an empty page — you had to click
   // every job to see what actually ran. `buildRunDetail` seeds the default;
   // this asks one question only.
-  const open = expandedJobs.has(j.id);
+  const open = S.expandedJobs.has(j.id);
   // A div, not a <button>: this header carries the job's own "Logs" button, and
   // a control inside a control is invalid — the outer button's accessible name
   // swallows the inner one, assistive tech cannot reach it, and Space activates
@@ -979,7 +976,7 @@ function jobCard(j: WorkflowJob, runId: number): HTMLElement {
   // Normalised across the WHOLE RUN, not per job: per-job scaling drew a 30s
   // step and a 4m step at the same length in adjacent cards, which makes the
   // bars actively misleading — they exist to be compared.
-  const maxSec = Math.max(1, runMaxStepSec, ...stepSecs);
+  const maxSec = Math.max(1, S.runMaxStepSec, ...stepSecs);
   j.steps.forEach((s, i) => {
     const row = el("div", "gh-step-row");
     const sState = s.conclusion || s.status || "";
@@ -1012,8 +1009,8 @@ function jobCard(j: WorkflowJob, runId: number): HTMLElement {
   head.addEventListener("click", () => {
     const nowHidden = steps.classList.toggle("hidden");
     syncHead();
-    if (nowHidden) expandedJobs.delete(j.id);
-    else expandedJobs.add(j.id);
+    if (nowHidden) S.expandedJobs.delete(j.id);
+    else S.expandedJobs.add(j.id);
   });
   head.addEventListener("keydown", (e) => {
     if (e.target !== head) return;
@@ -1027,7 +1024,7 @@ function jobCard(j: WorkflowJob, runId: number): HTMLElement {
   log.title = `Read ${j.name}'s log full-window`;
   log.addEventListener("click", (e) => {
     e.stopPropagation();
-    sectionNav?.("joblog", { number: runId, jobId: j.id });
+    nav("joblog", { number: runId, jobId: j.id });
   });
   head.appendChild(log);
   card.dataset.jobId = String(j.id);
@@ -1654,7 +1651,7 @@ async function showDispatchModal(w: WorkflowInfo, refresh: () => void): Promise<
           toast(`Dispatched “${w.name}” on ${ref}.`, "success");
           close();
           bust("actions");
-          actionsTab = "runs";
+          actionsTabState().actionsTab = "runs";
           refresh();
         } catch (e) {
           toast(cleanErr(e) || "Couldn't start the workflow.", "error");

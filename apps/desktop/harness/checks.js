@@ -16685,5 +16685,111 @@
       c.ok(!tabEl(GS_ROOT), "precondition: the tab closed");
       c.eq(held(), 0, "closing the tab disposed its diff or log");
     },
+
+    /** Each tab's kept list is its own (issue #32): search in A, search in B,
+     *  come back to A and make the list repaint (a sort, or a segment and back)
+     *  — A must still show A's rows under A's words. The list state was module
+     *  scope, so the repaint read what B had left: B's query and, for Issues,
+     *  B's GitHub search hits — another repository's issues. */
+    "each-tab-keeps-its-own-list-state": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const which = window.__GS_ARG || "issues";
+      const words = {
+        issues: ["graph", "rebase"],
+        prs: ["stream", "zz-nothing"],
+        actions: ["release", "zz-nothing"],
+        releases: ["Desktop", "zz-nothing"],
+      }[which];
+      const box = () => $(".view-host .gh-search input");
+      const typeIn = (v) => {
+        const b = box();
+        b.focus();
+        b.value = v;
+        b.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      const rows = () => $$(".view-host .sec-list .sec-row").map((r) => r.dataset.num).sort().join(",");
+      c.ok(!!box(), "precondition: A's search box");
+      if (!box()) return;
+      typeIn(words[0]);
+      await settle(1500);
+      const aRows = rows();
+      c.ok(aRows.length > 0, `precondition: A's search finds something (${aRows})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      c.ok(!!box(), "precondition: B is on the same section");
+      if (!box()) return;
+      typeIn(words[1]);
+      await settle(1500);
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.eq(box()?.value, words[0], "A's box still says A's words");
+      // Make A's list repaint from the section's state.
+      if (which === "issues" || which === "prs") {
+        $(".view-host .gh-sort-btn")?.click();
+        await settle(300);
+        $$(".dropdown .dropdown-item").find((i) => /Newest/.test(text(i)))?.click();
+      } else {
+        const segs = $$(".view-host .gh-seg-btn");
+        segs[1]?.click();
+        await settle(700);
+        $$(".view-host .gh-seg-btn")[0]?.click();
+      }
+      await settle(1200);
+      c.eq(box()?.value, words[0], "…and after it repaints");
+      c.eq(rows(), aRows, "A's list shows A's rows, not what B searched for");
+    },
+
+    /** A kept page navigates its OWN tab (issue #32). A module-level router
+     *  was reassigned by whichever tab last mounted the section, so after a
+     *  visit to another tab's same section this page's links routed a tab in
+     *  the back — dropped, a dead click. */
+    "a-kept-page-routes-its-own-tab-after-a-visit-to-another": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const [sel, want] = (window.__GS_ARG || ".det-title-edit|predit").split("|");
+      const ctl = () => $(`.view-host ${sel}`);
+      c.ok(!!ctl(), `precondition: the page's ${sel}`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: the other tab is in front");
+      const bView = text(".nav-item.active");
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      const before = (window.__GS_ROUTES || []).length;
+      ctl()?.click();
+      await settle(900);
+      const routed = (window.__GS_ROUTES || []).slice(before).map((r) => r.view);
+      c.ok(routed.includes(want), `it routes to ${want} in this tab (B was on ${bView}; routes: ${routed.join(",") || "none"})`);
+      c.eq(activeTabRoot(), GS_ROOT, "…and this tab is still the one in front");
+    },
+
+    /** Quote reply lands in THIS page's reply box, after another tab has
+     *  built an issue page of its own. */
+    "quote-reply-lands-in-its-own-tabs-box": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const quote = async () => {
+        const menu = $$(".view-host .gh-comment-menu")[0];
+        menu?.click();
+        await settle(350);
+        $$(".dropdown-item").find((i) => /Quote/.test(text(i) || ""))?.click();
+        await settle(500);
+      };
+      const box = () => $(".view-host .gh-composer .md-text");
+      c.ok(!!box(), "precondition: A's reply box");
+      const boxA = box();
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      $('.view-host .sec-row[data-num="31"]')?.click();
+      await settle(1500);
+      c.ok(!!box() && box() !== boxA, "precondition: B built an issue page with its own reply box");
+      const boxB = box();
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      await quote();
+      c.match(boxA.value || "", /said:\n>/, "the quote lands in A's box");
+      c.eq(boxB?.value || "", "", "…not in B's");
+    },
   };
 })();
