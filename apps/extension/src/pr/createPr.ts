@@ -3,8 +3,8 @@ import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { RepoManager } from "../git/repoManager";
 import type { GitBrain } from "../ai/gitBrain";
-import { GitHubApi, GitHubApiError, type CreatePrInput } from "./githubApi";
-import { resolveGitHubContext } from "./repoContext";
+import { GitHubApi, GitHubApiError, type CreatePrInput, type PullRequest } from "./githubApi";
+import { listGitHubRemotes, resolveGitHubContext } from "./repoContext";
 import { PrDescriptionPanel } from "./prDescriptionPanel";
 
 // Create a pull request without leaving the editor. The flow:
@@ -14,14 +14,20 @@ import { PrDescriptionPanel } from "./prDescriptionPanel";
 //   3. Prefill title from the last commit subject, body from the commit list;
 //      offer an ✨ AI-drafted body when GitBrain is enabled.
 //   4. Choose draft vs. ready, POST /pulls, and open the new PR's description.
-// "PR already exists" (422) is surfaced gracefully.
+// "PR already exists" (422) opens the PR that exists.
+//
+// WHERE THE BRANCH LIVES. It is pushed where git itself would push it
+// (branch.<b>.pushRemote, remote.pushDefault, branch.<b>.remote — the target
+// repository's remote only when none is set), and when that is another
+// repository on GitHub (your fork), the PR's head is `owner:branch`: GitHub
+// reads a bare branch name as one in the TARGET repository.
 
 export async function createPullRequest(
   repos: RepoManager,
   brain: GitBrain,
   api: GitHubApi,
   extensionUri: vscode.Uri,
-  onCreated?: () => void,
+  onCreated?: (pr: PullRequest) => void,
 ): Promise<void> {
   const ctx = await resolveGitHubContext(repos);
   if (!ctx) {
@@ -42,14 +48,21 @@ export async function createPullRequest(
   }
 
   // Ensure the branch is published. If it has no upstream or is ahead, offer
-  // to push with --set-upstream.
-  const pushed = await ensurePushed(entry.ctx, ctx.remoteName, headBranch);
+  // to push with --set-upstream — to the remote git would push it to.
+  const where = await headLocation(entry.ctx, ctx.remoteName, headBranch);
+  const pushed = await ensurePushed(entry.ctx, where.remote, headBranch);
   if (!pushed) {
     return;
   }
+  const remotes = await listGitHubRemotes(entry);
+  const headOwner = remotes.find((r) => r.name === where.remote)?.owner;
+  const head =
+    headOwner && headOwner.toLowerCase() !== ctx.owner.toLowerCase()
+      ? `${headOwner}:${where.branch}`
+      : where.branch;
 
   // Base branch: default branch first, then other local heads.
-  const base = await pickBase(api, ctx.owner, ctx.repo, headBranch);
+  const base = await pickBase(entry.ctx, api, ctx.owner, ctx.repo, ctx.remoteName, headBranch);
   if (!base) {
     return;
   }
@@ -107,7 +120,7 @@ export async function createPullRequest(
   const draftPick = await promptPick({
     title: "Open as a draft?",
     choices: [
-      { id: "ready", label: "Ready for Review", icon: "git-pull-request", description: "Reviewers are requested and the PR can be merged." },
+      { id: "ready", label: "Ready for Review", icon: "git-pull-request", description: "Open for review; it can be merged once the repository's rules are met." },
       { id: "draft", label: "Draft", icon: "git-pull-request-draft", description: "Signals work in progress; cannot be merged until marked ready." },
     ],
   });
@@ -117,47 +130,78 @@ export async function createPullRequest(
 
   const input: CreatePrInput = {
     title: title.trim(),
-    head: headBranch,
+    head,
     base,
     body: editedBody,
-    draft: draftPick === "Draft",
+    // promptPick answers with the choice's id — "draft", never its label.
+    draft: draftPick === "draft",
   };
 
-  await vscode.window.withProgress(
+  const outcome = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: "Creating pull request…" },
-    async () => {
+    async (): Promise<
+      { kind: "created"; pr: PullRequest } | { kind: "exists"; pr?: PullRequest; message: string } | { kind: "failed"; message: string }
+    > => {
       try {
-        const pr = await api.createPull(ctx.owner, ctx.repo, input);
-        onCreated?.();
-        const panel = await PrDescriptionPanel.show(
-          { api, ctx, extensionUri },
-          pr,
-        );
-        void panel;
-        void vscode.window.showInformationMessage(
-          `Created PR #${pr.number}.`,
-        );
+        return { kind: "created", pr: await api.createPull(ctx.owner, ctx.repo, input) };
       } catch (err) {
-        if (err instanceof GitHubApiError && err.kind === "validation") {
-          // The most common 422 is "a pull request already exists".
-          const open = await vscode.window.showWarningMessage(
-            `GitHub couldn't create the PR: ${err.message}`,
-            "Open on GitHub",
-          );
-          if (open === "Open on GitHub") {
-            void vscode.env.openExternal(
-              vscode.Uri.parse(
-                `https://github.com/${ctx.owner}/${ctx.repo}/pulls`,
-              ),
-            );
-          }
-          return;
+        if (err instanceof GitHubApiError && err.kind === "validation" && /already exists/i.test(err.message)) {
+          // Find the PR that exists, so the answer is that PR — not the list.
+          const existing = await api
+            .findOpenPullForHead(ctx.owner, ctx.repo, head.includes(":") ? head : `${ctx.owner}:${head}`)
+            .catch(() => undefined);
+          return { kind: "exists", pr: existing, message: err.message };
         }
         const msg = err instanceof GitHubApiError ? err.message : "Couldn't create the pull request.";
-        void vscode.window.showErrorMessage(msg);
+        return { kind: "failed", message: msg };
       }
     },
   );
+
+  if (outcome.kind === "created") {
+    onCreated?.(outcome.pr);
+    await PrDescriptionPanel.show({ api, ctx, extensionUri }, outcome.pr);
+    void vscode.window.showInformationMessage(
+      `Created ${input.draft ? "draft " : ""}PR #${outcome.pr.number}.`,
+    );
+    return;
+  }
+  if (outcome.kind === "exists" && outcome.pr) {
+    void vscode.window.showInformationMessage(
+      `${where.branch} already has an open pull request: #${outcome.pr.number}.`,
+    );
+    await PrDescriptionPanel.show({ api, ctx, extensionUri }, outcome.pr);
+    return;
+  }
+  void vscode.window.showErrorMessage(`GitHub couldn't create the PR: ${outcome.message}`);
+}
+
+/**
+ * Where the branch is (or will be) pushed, and its name there — git's own
+ * push-remote rule, so the PR's head is the branch that was actually pushed.
+ */
+async function headLocation(
+  ctx: GitContext,
+  fallbackRemote: string,
+  branch: string,
+): Promise<{ remote: string; branch: string }> {
+  const get = async (key: string): Promise<string | undefined> => {
+    const r = await ctx.process.run(["config", "--get", key]);
+    const v = r.stdout.trim();
+    return r.code === 0 && v ? v : undefined;
+  };
+  const tracking = await get(`branch.${branch}.remote`);
+  const remote =
+    (await get(`branch.${branch}.pushRemote`)) ??
+    (await get("remote.pushDefault")) ??
+    (tracking && tracking !== "." ? tracking : undefined) ??
+    fallbackRemote;
+  // Pushed to the remote it tracks, the branch has the name it tracks there.
+  const merge = remote === tracking ? await get(`branch.${branch}.merge`) : undefined;
+  return {
+    remote,
+    branch: merge?.startsWith("refs/heads/") ? merge.slice("refs/heads/".length) : branch,
+  };
 }
 
 async function currentBranch(ctx: GitContext): Promise<string | undefined> {
@@ -212,16 +256,27 @@ async function ensurePushed(
 }
 
 async function pickBase(
+  git: GitContext,
   api: GitHubApi,
   owner: string,
   repo: string,
+  remote: string,
   headBranch: string,
 ): Promise<string | undefined> {
   // The repo's default branch is the best base default; fall back to "main".
   const defaultBranch = (await api.defaultBranch(owner, repo)) ?? "main";
-  // Offer the default + common names, plus a free-text entry.
+  // Offer the default + those of the common names the remote actually has
+  // (as last fetched), plus a free-text entry. A name offered because it is
+  // common, on a remote without it, was a 422 waiting to happen.
+  const common: string[] = [];
+  for (const b of ["main", "master", "develop"]) {
+    const r = await git.process.run(["rev-parse", "--verify", "--quiet", `refs/remotes/${remote}/${b}`]);
+    if (r.code === 0) {
+      common.push(b);
+    }
+  }
   const candidates = Array.from(
-    new Set([defaultBranch, "main", "master", "develop"].filter((b) => b !== headBranch)),
+    new Set([defaultBranch, ...common].filter((b) => b !== headBranch)),
   );
   const OTHER = "gitstudio:other";
   const pick = await promptPick({

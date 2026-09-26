@@ -9,8 +9,8 @@ import {
   GitHubApiError,
   type PullRequest,
   type PrFile,
-  type CombinedStatus,
 } from "./githubApi";
+import { ciWords, prKey, prKind, PR_STATES, type CiRollup, type PrKind } from "./prModel";
 import type { GitHubRepoContext } from "./repoContext";
 import { openPrFileDiff } from "./reviewDiff";
 
@@ -20,6 +20,11 @@ import { openPrFileDiff } from "./reviewDiff";
 // bold/italic/code, links, lists) that NEVER injects raw HTML. Buttons post
 // messages back to the host for Checkout / Open on GitHub / Merge / Start
 // Review and a manual Refresh.
+//
+// The CSP allows only nonce'd <style> blocks, and a `style="…"` ATTRIBUTE
+// can't carry a nonce: the label chips' colours set that way were blocked, and
+// every label drew the same grey. Per-label colours are classes in the nonce'd
+// block instead.
 
 interface PanelDeps {
   api: GitHubApi;
@@ -35,12 +40,26 @@ interface WebviewMessage {
 export class PrDescriptionPanel {
   private static readonly panels = new Map<string, PrDescriptionPanel>();
 
+  /**
+   * A PR was merged (from this panel, or the tree's Merge…): an open panel
+   * flips to Merged at once — a patch to the page, not a reload — and then
+   * checks with GitHub in the background.
+   */
+  static markMerged(owner: string, repo: string, n: number): void {
+    const panel = PrDescriptionPanel.panels.get(prKey(owner, repo, n));
+    if (panel) {
+      panel.pr = { ...panel.pr, state: "closed", mergedAt: panel.pr.mergedAt ?? new Date().toISOString() };
+      panel.postState();
+      void panel.revalidateState();
+    }
+  }
+
   /** Open (or reveal) the description panel for a PR. */
   static async show(
     deps: PanelDeps,
     pr: PullRequest,
   ): Promise<PrDescriptionPanel> {
-    const key = `${deps.ctx.owner}/${deps.ctx.repo}#${pr.number}`;
+    const key = prKey(deps.ctx.owner, deps.ctx.repo, pr.number);
     const existing = PrDescriptionPanel.panels.get(key);
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.Active);
@@ -67,7 +86,7 @@ export class PrDescriptionPanel {
   private disposed = false;
   private pr: PullRequest;
   private files: PrFile[] = [];
-  private status: CombinedStatus | undefined;
+  private ci: CiRollup | undefined;
 
   private constructor(
     private readonly key: string,
@@ -90,34 +109,54 @@ export class PrDescriptionPanel {
     this.render();
   }
 
-  /** Re-fetch the PR detail + files + status and re-render. */
+  /**
+   * Re-fetch the PR detail + files + checks and re-render. The three are
+   * asked at once — the files and the checks don't wait on the detail; the
+   * checks are asked again only if the detail says the head moved.
+   */
   async update(pr?: PullRequest): Promise<void> {
     const { api, ctx } = this.deps;
-    try {
+    const n = (pr ?? this.pr).number;
+    const knownSha = (pr ?? this.pr).head.sha;
+    const ciFor = (sha: string) => api.getCi(ctx.owner, ctx.repo, sha).catch(() => undefined);
+    const [detail, files, ci] = await Promise.all([
       // Always pull fresh detail (additions/deletions etc. only on detail).
-      this.pr = await api.getPull(ctx.owner, ctx.repo, (pr ?? this.pr).number);
-    } catch (err) {
-      if (pr) {
-        this.pr = pr;
-      } else {
-        void this.showLoadError(err);
-      }
+      api.getPull(ctx.owner, ctx.repo, n).then(
+        (p) => ({ ok: true as const, p }),
+        (err: unknown) => ({ ok: false as const, err }),
+      ),
+      api.getPullFiles(ctx.owner, ctx.repo, n).catch(() => undefined),
+      ciFor(knownSha),
+    ]);
+    if (detail.ok) {
+      this.pr = detail.p;
+    } else if (pr) {
+      this.pr = pr;
+    } else {
+      void this.showLoadError(detail.err);
     }
-    try {
-      this.files = await api.getPullFiles(ctx.owner, ctx.repo, this.pr.number);
-    } catch {
-      this.files = [];
-    }
-    try {
-      this.status = await api.getCombinedStatus(
-        ctx.owner,
-        ctx.repo,
-        this.pr.head.sha,
-      );
-    } catch {
-      this.status = undefined;
-    }
+    this.files = files?.items ?? [];
+    this.ci = this.pr.head.sha === knownSha ? ci : await ciFor(this.pr.head.sha);
     this.render();
+  }
+
+  /** Tell the page the PR's state changed (badge + which actions apply). */
+  private postState(): void {
+    if (this.disposed) {
+      return;
+    }
+    void this.panel.webview.postMessage({ type: "state", kind: prKind(this.pr) });
+  }
+
+  /** After an optimistic flip: ask GitHub, and correct the page if it disagrees. */
+  private async revalidateState(): Promise<void> {
+    const { api, ctx } = this.deps;
+    try {
+      this.pr = await api.getPull(ctx.owner, ctx.repo, this.pr.number);
+    } catch {
+      return; // the optimistic state stands
+    }
+    this.postState();
   }
 
   private async showLoadError(err: unknown): Promise<void> {
@@ -139,7 +178,7 @@ export class PrDescriptionPanel {
       this.deps.extensionUri,
       this.pr,
       this.files,
-      this.status,
+      this.ci,
     );
   }
 
@@ -164,11 +203,12 @@ export class PrDescriptionPanel {
         });
         return;
       case "merge":
+        // The command flips this panel to Merged itself on success
+        // (markMerged) — a second click would only hit GitHub's 405.
         void vscode.commands.executeCommand("gitstudio.pr.merge", {
           pr: this.pr,
           ctx: this.deps.ctx,
         });
-        // The merged PR will close; refresh shortly to reflect new state.
         return;
       case "openFile":
         if (m.path) {
@@ -199,7 +239,7 @@ function renderHtml(
   extensionUri: vscode.Uri,
   pr: PullRequest,
   files: PrFile[],
-  status: CombinedStatus | undefined,
+  ci: CiRollup | undefined,
 ): string {
   const nonce = getNonce();
   const codiconUri = webview.asWebviewUri(
@@ -213,13 +253,12 @@ function renderHtml(
     `script-src 'nonce-${nonce}'`,
   ].join("; ");
 
-  const stateBadge = pr.draft
-    ? `<span class="badge badge-draft">${ICON.draft}Draft</span>`
-    : pr.state === "open"
-      ? `<span class="badge badge-open">${ICON.prOpen}Open</span>`
-      : pr.state === "closed"
-        ? `<span class="badge badge-merged">${ICON.merged}${esc(cap(pr.state))}</span>`
-        : `<span class="badge">${esc(cap(pr.state))}</span>`;
+  // merged beats closed beats draft beats open: GitHub reports a merged PR as
+  // `closed`, and only merged_at tells it from one closed without merging.
+  const kind = prKind(pr);
+  const stateBadge = `<span id="badge" class="badge badge-${PR_STATES[kind].cls}">${codicon(
+    PR_STATES[kind].codicon,
+  )}<span class="badge-word">${PR_STATES[kind].word}</span></span>`;
 
   const author = pr.user;
   const avatar = author?.avatarUrl
@@ -227,11 +266,13 @@ function renderHtml(
     : `<span class="avatar avatar--fallback" aria-hidden="true">${ICON.person}</span>`;
   const age = relativeTime(Date.parse(pr.createdAt) / 1000);
 
+  // One class per label, its colour set in the nonce'd <style> below — an
+  // inline style="" attribute is refused by this page's own CSP.
+  const labelCss = pr.labels
+    .map((l, i) => `.label-${i} { --label: #${sanitizeColor(l.color)}; }`)
+    .join("\n");
   const labels = pr.labels
-    .map((l) => {
-      const hex = sanitizeColor(l.color);
-      return `<span class="gs-chip label" style="--label:#${esc(hex)}">${esc(l.name)}</span>`;
-    })
+    .map((l, i) => `<span class="gs-chip label label-${i}">${esc(l.name)}</span>`)
     .join("");
 
   const reviewers = pr.requestedReviewers
@@ -241,12 +282,19 @@ function renderHtml(
     )
     .join("");
 
-  const checks = status
-    ? `<div class="checks ${checkClass(status.state)}">${checkIcon(status.state)}<span>${esc(checkLabel(status))}</span></div>`
+  const checks = ci
+    ? `<div class="checks ${checkClass(ci)}">${checkIcon(ci)}<span>${esc(ciWords(ci))}</span></div>`
     : "";
 
-  const totalAdd = files.reduce((n, f) => n + f.additions, 0);
-  const totalDel = files.reduce((n, f) => n + f.deletions, 0);
+  // The PR's own totals: `files` may be a partial list (GitHub lists at most
+  // 3,000), and counting it said "Changed files (100)" for a 400-file PR.
+  const totalFiles = pr.changedFiles ?? files.length;
+  const totalAdd = pr.additions ?? files.reduce((n, f) => n + f.additions, 0);
+  const totalDel = pr.deletions ?? files.reduce((n, f) => n + f.deletions, 0);
+  const partial =
+    files.length < totalFiles
+      ? `<p class="files-note">Showing ${files.length} of ${totalFiles} files — GitHub lists at most 3,000. Open on GitHub for the rest.</p>`
+      : "";
 
   const fileRows = files
     .map((f) => {
@@ -254,16 +302,27 @@ function renderHtml(
         ? f.filename.slice(0, f.filename.lastIndexOf("/") + 1)
         : "";
       const name = f.filename.slice(dir.length);
+      const from = f.previousFilename
+        ? `<span class="ffrom">${esc(f.previousFilename)} → </span>`
+        : "";
       const path = dir
-        ? `<span class="fdir">${esc(dir)}</span><span class="fbase">${esc(name)}</span>`
-        : `<span class="fbase">${esc(name)}</span>`;
-      return `<li><button class="filerow" data-path="${esc(f.filename)}" title="${esc(f.filename)}">
+        ? `${from}<span class="fdir">${esc(dir)}</span><span class="fbase">${esc(name)}</span>`
+        : `${from}<span class="fbase">${esc(name)}</span>`;
+      const title = f.previousFilename
+        ? `${f.previousFilename} → ${f.filename}`
+        : f.filename;
+      return `<li><button class="filerow" data-path="${esc(f.filename)}" title="${esc(title)}">
         <span class="fstatus fstatus--${esc(fileStatusClass(f.status))}" aria-hidden="true">${fileStatusGlyph(f.status)}</span>
         <span class="fname">${path}</span>
         <span class="fstat gs-mono"><span class="add">+${f.additions}</span><span class="del">−${f.deletions}</span></span>
       </button></li>`;
     })
     .join("");
+
+  // A same-repository head reads as its branch name; only a fork's head (or
+  // one whose fork was deleted) needs the `owner:` that says where it lives.
+  const headName =
+    pr.head.repoFullName === pr.base.repoFullName ? pr.head.ref : pr.head.label;
 
   const bodyHtml = renderMarkdownish(pr.body ?? "");
 
@@ -279,6 +338,7 @@ function renderHtml(
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <link href="${codiconUri}" rel="stylesheet" />
 <style nonce="${nonce}">${tokensCss}</style>
+<style nonce="${nonce}">${labelCss}</style>
 <style nonce="${nonce}">
   :root {
     /* Short status aliases used in this panel, sourced from the shared scale.
@@ -333,6 +393,7 @@ function renderHtml(
   .badge-open { background: var(--gs-green); color: var(--vscode-editor-background); }
   .badge-draft { background: var(--gs-fg-muted); color: var(--vscode-editor-background); }
   .badge-merged { background: var(--vscode-charts-purple, var(--gs-link)); color: var(--vscode-editor-background); }
+  .badge-closed { background: var(--gs-red); color: var(--vscode-editor-background); }
 
   /* ── Branch chips (base ← head) ─────────────────────────── */
   .branches { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; flex-wrap: wrap; }
@@ -435,6 +496,7 @@ function renderHtml(
   .checks.ok { color: var(--gs-green); border-color: color-mix(in srgb, var(--gs-green) 35%, transparent); background: color-mix(in srgb, var(--gs-green) 8%, transparent); }
   .checks.fail { color: var(--gs-red); border-color: color-mix(in srgb, var(--gs-red) 35%, transparent); background: color-mix(in srgb, var(--gs-red) 8%, transparent); }
   .checks.pending { color: var(--gs-amber); border-color: color-mix(in srgb, var(--gs-amber) 35%, transparent); background: color-mix(in srgb, var(--gs-amber) 8%, transparent); }
+  .checks.none { color: var(--gs-fg-muted); font-weight: 400; }
 
   /* ── Description body ───────────────────────────────────── */
   .body { background: var(--vscode-textCodeBlock-background); border: 1px solid var(--gs-border); border-radius: 6px; padding: 12px 16px; }
@@ -468,7 +530,8 @@ function renderHtml(
   .fstatus--modified { color: var(--gs-amber); }
   .fstatus--renamed { color: var(--gs-link); }
   .fname { flex: 1; min-width: 0; font-family: var(--gs-font-mono); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fdir { color: var(--gs-fg-muted); }
+  .fdir, .ffrom { color: var(--gs-fg-muted); }
+  .files-note { color: var(--gs-fg-muted); font-size: 12px; margin: 0 0 8px; }
   .fstat { display: inline-flex; gap: 8px; font-size: 12px; flex: none; }
   .add { color: var(--gs-green); } .del { color: var(--gs-red); }
   .empty { color: var(--gs-fg-muted); font-style: italic; }
@@ -491,17 +554,17 @@ function renderHtml(
     <div class="branches">
       <span class="branch">${ICON.gitBranch}${esc(pr.base.ref)}</span>
       <span class="merge-arrow" aria-label="merges into" title="${esc(pr.head.label)} → ${esc(pr.base.ref)}">${ICON.arrowLeft}</span>
-      <span class="branch branch--head">${ICON.gitBranch}${esc(pr.head.label)}</span>
+      <span class="branch branch--head">${ICON.gitBranch}${esc(headName)}</span>
     </div>
   </header>
 
   <div class="toolbar">
     <button id="btn-checkout">${ICON.checkout}Checkout</button>
     <button id="btn-review" class="secondary"${
-      pr.state === "open" ? "" : " disabled"
+      kind === "open" || kind === "draft" ? "" : " disabled"
     }>${ICON.review}Start Review</button>
     <button id="btn-merge" class="secondary"${
-      pr.state === "open" && !pr.draft
+      kind === "open"
         ? ""
         : ' disabled title="Only open, non-draft pull requests can be merged"'
     }>${ICON.merge}Merge…</button>
@@ -519,7 +582,8 @@ function renderHtml(
   </div>
 
   <div class="section">
-    <h2>Changed files (${files.length})${files.length > 0 ? `<span class="files-summary gs-mono"><span class="add">+${totalAdd}</span><span class="del">−${totalDel}</span></span>` : ""}</h2>
+    <h2>Changed files (${totalFiles})${totalFiles > 0 ? `<span class="files-summary gs-mono"><span class="add">+${totalAdd}</span><span class="del">−${totalDel}</span></span>` : ""}</h2>
+    ${partial}
     ${files.length > 0 ? `<ul class="files">${fileRows}</ul>` : `<span class="empty">No file data.</span>`}
   </div>
 
@@ -534,40 +598,58 @@ function renderHtml(
     for (const el of document.querySelectorAll(".filerow")) {
       el.addEventListener("click", () => post("openFile", { path: el.getAttribute("data-path") }));
     }
+    // A state change the host already knows (a merge that just succeeded):
+    // the badge and the actions that apply are patched in place — no reload,
+    // so the page keeps its scroll and nothing flashes.
+    const STATES = ${JSON.stringify(PR_STATES)};
+    function applyState(kind) {
+      const s = STATES[kind];
+      if (!s) return;
+      const badge = document.getElementById("badge");
+      badge.className = "badge badge-" + s.cls;
+      badge.querySelector(".codicon").className = "codicon codicon-" + s.codicon;
+      badge.querySelector(".badge-word").textContent = s.word;
+      document.getElementById("btn-review").disabled = !(kind === "open" || kind === "draft");
+      const merge = document.getElementById("btn-merge");
+      merge.disabled = kind !== "open";
+      if (kind === "open") merge.removeAttribute("title");
+      else merge.title = "Only open, non-draft pull requests can be merged";
+    }
+    window.addEventListener("message", (e) => {
+      const m = e.data;
+      if (m && m.type === "state") applyState(m.kind);
+    });
   </script>
 </body>
 </html>`;
 }
 
-function checkClass(state: string): string {
-  if (state === "success") return "ok";
-  if (state === "failure" || state === "error") return "fail";
-  return "pending";
-}
-
-function checkLabel(status: CombinedStatus): string {
-  if (status.totalCount === 0) return "No checks";
-  switch (status.state) {
+/** The checks pill's colour: none is neutral, never the amber of "running". */
+function checkClass(ci: CiRollup): string {
+  switch (ci.state) {
     case "success":
-      return `All ${status.totalCount} checks passed`;
+      return "ok";
     case "failure":
-    case "error":
-      return `Some checks failed`;
+      return "fail";
+    case "pending":
+      return "pending";
     default:
-      return `Checks pending`;
+      return "none";
   }
 }
 
-/** Inline SVG icon for the checks summary (currentColor, no emoji). */
-function checkIcon(state: string): string {
-  if (state === "success") return ICON.pass;
-  if (state === "failure" || state === "error") return ICON.fail;
-  return ICON.pending;
-}
-
-/** Capitalize the first letter of a state word ("closed" → "Closed"). */
-function cap(s: string): string {
-  return s.length > 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+/** Codicon for the checks summary (currentColor, no emoji). */
+function checkIcon(ci: CiRollup): string {
+  switch (ci.state) {
+    case "success":
+      return ICON.pass;
+    case "failure":
+      return ICON.fail;
+    case "pending":
+      return ICON.pending;
+    default:
+      return ICON.noChecks;
+  }
 }
 
 /** Map a GitHub per-file status to a stable CSS class. */
@@ -612,9 +694,7 @@ const ICON = {
   pass: codicon("pass"),
   fail: codicon("error"),
   pending: codicon("clock"),
-  prOpen: codicon("git-pull-request"),
-  merged: codicon("git-merge"),
-  draft: codicon("git-pull-request-draft"),
+  noChecks: codicon("circle-slash"),
   gitBranch: codicon("git-branch"),
   arrowLeft: codicon("arrow-left"),
   person: codicon("account"),

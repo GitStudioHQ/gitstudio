@@ -43,10 +43,11 @@ export function registerPrFeature(
     treeDataProvider: tree,
     showCollapseAll: true,
   });
+  tree.attach(view);
   context.subscriptions.push(view);
 
   // PR-blob content provider (base/head file contents for diffs).
-  const contentProvider = new PrContentProvider(auth);
+  const contentProvider = new PrContentProvider(api);
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(
       PR_SCHEME,
@@ -83,9 +84,11 @@ export function registerPrFeature(
       return undefined;
     }
     try {
-      const pulls = await api.listOpenPulls(ctx.owner, ctx.repo, {
-        interactiveAuth: true,
-      });
+      const pulls = (
+        await api.listOpenPulls(ctx.owner, ctx.repo, {
+          interactiveAuth: true,
+        })
+      ).items;
       if (pulls.length === 0) {
         void vscode.window.showInformationMessage("No open pull requests.");
         return undefined;
@@ -127,9 +130,13 @@ export function registerPrFeature(
       }
     }),
     vscode.commands.registerCommand("gitstudio.pr.create", () =>
-      createPullRequest(repos, brain, api, context.extensionUri, () =>
-        tree.refresh(),
-      ),
+      createPullRequest(repos, brain, api, context.extensionUri, (pr) => {
+        // The new PR joins the list — a row patch, not a reload.
+        const [owner, repo] = (pr.base.repoFullName ?? "").split("/");
+        if (owner && repo) {
+          tree.addPr(owner, repo, pr);
+        }
+      }),
     ),
 
     // ── Item actions ─────────────────────────────────────────────────────────────
@@ -149,11 +156,11 @@ export function registerPrFeature(
         if (!resolved) {
           return;
         }
+        // The open-PR list doesn't change with a checkout: nothing to reload.
         await checkoutPullRequest(
           resolved.ctx.entry,
           resolved.ctx.remoteName,
           resolved.pr,
-          () => tree.refresh(),
         );
       },
     ),
@@ -186,17 +193,9 @@ export function registerPrFeature(
     ),
     vscode.commands.registerCommand(
       "gitstudio.pr.deleteReviewComment",
-      (arg: vscode.CommentThread | { thread?: vscode.CommentThread }) => {
-        // From comments/comment/title VS Code passes the comment node (which
-        // carries `.thread`); from elsewhere a thread directly.
-        const thread =
-          arg && "thread" in arg && arg.thread
-            ? arg.thread
-            : (arg as vscode.CommentThread);
-        if (thread) {
-          review.removeThread(thread);
-        }
-      },
+      // From comments/comment/title VS Code passes OUR comment object — which
+      // keeps its parent thread; from elsewhere, a thread.
+      (arg: unknown) => review.deleteComment(arg),
     ),
     vscode.commands.registerCommand(
       "gitstudio.pr.openOnGitHub",
@@ -222,19 +221,34 @@ export function registerPrFeature(
       async (arg?: PrNode | PrCommandArg) => {
         const resolved = await resolvePr(arg);
         if (resolved) {
-          await mergePr(api, resolved.ctx, resolved.pr, () => tree.refresh());
+          const { ctx, pr } = resolved;
+          const merged = await mergePr(api, ctx, pr);
+          if (merged) {
+            // Optimistic: the row leaves the open list and an open page flips
+            // to Merged at once (then checks with GitHub) — never a reload.
+            tree.removePr(ctx.owner, ctx.repo, pr.number);
+            PrDescriptionPanel.markMerged(ctx.owner, ctx.repo, pr.number);
+          }
+          return merged;
         }
+        return false;
       },
     ),
   );
 }
 
+/** Merge a PR after one question (the method). True when GitHub merged it. */
 async function mergePr(
   api: GitHubApi,
   ctx: GitHubRepoContext,
   pr: PullRequest,
-  onMerged: () => void,
-): Promise<void> {
+): Promise<boolean> {
+  if (pr.draft) {
+    void vscode.window.showInformationMessage(
+      `PR #${pr.number} is a draft. GitHub merges it only once it's marked ready for review.`,
+    );
+    return false;
+  }
   const configured = vscode.workspace
     .getConfiguration("gitstudio.pr")
     .get<MergeMethod>("defaultMergeMethod", "squash");
@@ -244,10 +258,22 @@ async function mergePr(
     squash: "Squash and Merge",
     rebase: "Rebase and Merge",
   };
+  // Only the methods the repository allows: GitHub refuses the others (405).
+  // When the settings can't be read, all three are offered, as before.
+  const allowed = await api
+    .repoSettings(ctx.owner, ctx.repo)
+    .then((s) => s.mergeMethods)
+    .catch((): MergeMethod[] => ["merge", "squash", "rebase"]);
+  if (allowed.length === 0) {
+    void vscode.window.showWarningMessage(
+      `${ctx.owner}/${ctx.repo} allows no merge method GitStudio can use. Merge PR #${pr.number} on GitHub.`,
+    );
+    return false;
+  }
   // Configured default first, so the common answer is the leftmost button.
-  const order: MergeMethod[] = ["merge", "squash", "rebase"].sort((a, b) =>
+  const order: MergeMethod[] = [...allowed].sort((a, b) =>
     a === configured ? -1 : b === configured ? 1 : 0,
-  ) as MergeMethod[];
+  );
 
   // One dialog instead of a pick followed by a confirm: the choice IS the
   // confirmation, so asking twice was pure friction.
@@ -268,24 +294,26 @@ async function mergePr(
     })),
   });
   if (!picked) {
-    return;
+    return false;
   }
-  const pick = { method: picked as MergeMethod };
+  const method = picked as MergeMethod;
 
-  await vscode.window.withProgress(
+  const merged = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Merging PR #${pr.number}…` },
     async () => {
       try {
-        await api.mergePull(ctx.owner, ctx.repo, pr.number, pick.method);
-        onMerged();
-        void vscode.window.showInformationMessage(
-          `Merged PR #${pr.number}.`,
-        );
+        await api.mergePull(ctx.owner, ctx.repo, pr.number, method);
+        return true;
       } catch (err) {
         await warn(err, "Couldn't merge the pull request.");
+        return false;
       }
     },
   );
+  if (merged) {
+    void vscode.window.showInformationMessage(`Merged PR #${pr.number}.`);
+  }
+  return merged;
 }
 
 async function warn(err: unknown, fallback: string): Promise<void> {

@@ -1,11 +1,26 @@
-// A thin GitHub REST client for the PR layer (M11). It runs on the extension
-// host via Node's global `fetch`, talks only to api.github.com, and returns
-// typed results. Errors are normalised into a friendly `GitHubApiError` rather
-// than raw throws so call sites (and especially tree refreshes) can degrade
-// gracefully — 401 → re-auth, 403 rate-limit → reset time, 404 → not found,
+// A thin GitHub REST (+ one GraphQL query) client for the PR layer (M11). It
+// runs on the extension host via Node's global `fetch`, talks only to
+// api.github.com, and returns typed results. Errors are normalised into a
+// friendly `GitHubApiError` rather than raw throws so call sites (and
+// especially tree refreshes) can degrade gracefully — 401 → re-auth, 403/429
+// rate limits → when to retry, 404 → not found, 422 → what GitHub objected to,
 // network → offline message.
+//
+// Every list follows GitHub's `Link: rel="next"` chain. `per_page=100` alone
+// silently cut a busy repository's open PRs at 100, and a big PR's files at
+// 100 — and the list, the panel's count and the review's commentable files
+// all said so as if it were complete.
+
+import {
+  ciFromRollupState,
+  rollupCi,
+  type CiRollup,
+  type CiState,
+  type ReviewPayload,
+} from "./prModel";
 
 const API_BASE = "https://api.github.com";
+const GRAPHQL = `${API_BASE}/graphql`;
 
 /** Minimal shape of a PR as returned by the list + detail endpoints. */
 export interface PullRequest {
@@ -18,6 +33,8 @@ export interface PullRequest {
   user: GitHubUser | null;
   createdAt: string;
   updatedAt: string;
+  /** Set when the PR was merged; a closed PR without it was closed unmerged. */
+  mergedAt: string | null;
   head: PrRef;
   base: PrRef;
   labels: PrLabel[];
@@ -51,38 +68,43 @@ export interface GitHubUser {
 /** One changed file in a PR, with its unified-diff patch when available. */
 export interface PrFile {
   filename: string;
+  /** The path before a rename or copy. */
   previousFilename?: string;
   status: string;
   additions: number;
   deletions: number;
   changes: number;
+  /** Absent for a binary file, or one too large for GitHub to diff. */
   patch?: string;
 }
 
-/** Roll-up of a ref's commit status / check-runs. */
-export interface CombinedStatus {
-  /** "success" | "failure" | "pending" | "error" | "" (none). */
-  state: string;
-  totalCount: number;
+/** A list GitHub may have more of than we read. */
+export interface Paged<T> {
+  items: T[];
+  /** True when the page cap stopped the read with pages still to come. */
+  truncated: boolean;
 }
 
-export interface ReviewComment {
-  path: string;
-  line: number;
-  side?: "LEFT" | "RIGHT";
-  body: string;
+/** A file's content at one commit, as the diff panes need it. */
+export type FileContent =
+  | { kind: "text"; text: string }
+  /** The path does not exist at that commit (added / deleted side). */
+  | { kind: "missing" }
+  | { kind: "binary"; bytes: number }
+  | { kind: "too-large"; bytes: number };
+
+/** The repository settings Merge and Create PR read. */
+export interface RepoSettings {
+  defaultBranch?: string;
+  /** The merge methods the repository allows, in GitHub's order. */
+  mergeMethods: MergeMethod[];
 }
 
 export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
-export interface SubmitReviewInput {
-  event: ReviewEvent;
-  body?: string;
-  comments?: ReviewComment[];
-}
-
 export interface CreatePrInput {
   title: string;
+  /** The branch, or `owner:branch` when it lives in another repository (a fork). */
   head: string;
   base: string;
   body?: string;
@@ -114,15 +136,35 @@ export interface GitHubApiOptions {
   getToken: (opts?: { interactive?: boolean }) => Promise<string | undefined>;
 }
 
+interface RequestInitLite {
+  interactiveAuth?: boolean;
+  signal?: AbortSignal;
+  accept?: string;
+}
+
+/** Page caps: how many 100-item pages a list follows before it stops and says so. */
+export const PAGE_CAPS = {
+  /** Open pull requests: 1,000. */
+  pulls: 10,
+  /** A PR's files: GitHub itself lists at most 3,000. */
+  files: 30,
+  /** Check runs and statuses on one commit. */
+  checks: 5,
+} as const;
+
+/** Largest blob the diff panes load (the Contents API serves up to 100 MB). */
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
 export class GitHubApi {
   constructor(private readonly opts: GitHubApiOptions) {}
 
-  private async request<T>(
+  /** Auth headers, network-error wrapping, non-2xx → GitHubApiError. */
+  private async fetchRes(
     method: string,
-    path: string,
+    url: string,
     body?: unknown,
-    init?: { interactiveAuth?: boolean; signal?: AbortSignal },
-  ): Promise<T> {
+    init?: RequestInitLite,
+  ): Promise<Response> {
     const token = await this.opts.getToken({
       interactive: init?.interactiveAuth ?? false,
     });
@@ -136,11 +178,11 @@ export class GitHubApi {
 
     let res: Response;
     try {
-      res = await fetch(`${API_BASE}${path}`, {
+      res = await fetch(url, {
         method,
         headers: {
           Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
+          Accept: init?.accept ?? "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
           "User-Agent": "GitStudio",
           ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
@@ -149,7 +191,7 @@ export class GitHubApi {
         signal: init?.signal,
       });
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
+      if (err instanceof Error && err.name === "AbortError") {
         throw err;
       }
       throw new GitHubApiError(
@@ -157,73 +199,67 @@ export class GitHubApi {
         "network",
       );
     }
-
-    if (res.ok) {
-      // 204 No Content (e.g. an empty body) → undefined cast to T.
-      if (res.status === 204) {
-        return undefined as T;
-      }
-      const text = await res.text();
-      return (text.length > 0 ? JSON.parse(text) : undefined) as T;
+    if (!res.ok) {
+      throw await toError(res);
     }
-
-    throw await this.toError(res);
+    return res;
   }
 
-  private async toError(res: Response): Promise<GitHubApiError> {
-    let detail = "";
-    try {
-      const data = (await res.json()) as { message?: string };
-      detail = data?.message ?? "";
-    } catch {
-      // Non-JSON error body — ignore.
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    init?: RequestInitLite,
+  ): Promise<T> {
+    const res = await this.fetchRes(method, `${API_BASE}${path}`, body, init);
+    // 204 No Content (e.g. an empty body) → undefined cast to T.
+    if (res.status === 204) {
+      return undefined as T;
     }
+    const text = await res.text();
+    return (text.length > 0 ? JSON.parse(text) : undefined) as T;
+  }
 
-    if (res.status === 401) {
-      return new GitHubApiError(
-        "Your GitHub session expired. Sign in again to continue.",
-        "auth",
-        401,
-      );
-    }
-    if (res.status === 403) {
-      const remaining = res.headers.get("x-ratelimit-remaining");
-      if (remaining === "0") {
-        const reset = res.headers.get("x-ratelimit-reset");
-        const when = reset
-          ? new Date(Number(reset) * 1000).toLocaleTimeString()
-          : "later";
-        return new GitHubApiError(
-          `GitHub rate limit reached. Try again after ${when}.`,
-          "rate-limit",
-          403,
-        );
+  /**
+   * GET a list, following `Link: rel="next"` up to `maxPages` pages. `key`
+   * names the array in an object-bodied answer (`{ check_runs: [...] }`); an
+   * array body is read as is.
+   */
+  private async requestPaged<T>(
+    path: string,
+    maxPages: number,
+    init?: RequestInitLite & { key?: string },
+  ): Promise<Paged<T>> {
+    const items: T[] = [];
+    let next: string | undefined = `${API_BASE}${path}`;
+    let pages = 0;
+    while (next && pages < maxPages) {
+      const res = await this.fetchRes("GET", next, undefined, init);
+      pages++;
+      const text = await res.text();
+      const parsed = (text.length > 0 ? JSON.parse(text) : []) as unknown;
+      const chunk = init?.key
+        ? (parsed as Record<string, unknown>)?.[init.key]
+        : parsed;
+      if (Array.isArray(chunk)) {
+        items.push(...(chunk as T[]));
       }
-      return new GitHubApiError(
-        detail || "GitHub denied the request (insufficient permissions).",
-        "auth",
-        403,
+      next = nextPageUrl(res.headers.get("link"));
+    }
+    return { items, truncated: next !== undefined };
+  }
+
+  /** One GraphQL query. Errors with no data at all throw; partial data is kept. */
+  private async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+    const res = await this.fetchRes("POST", GRAPHQL, { query, variables });
+    const json = (await res.json()) as { data?: T; errors?: { message?: string }[] };
+    if (!json.data) {
+      throw new GitHubApiError(
+        json.errors?.[0]?.message || "GitHub couldn't answer the query.",
+        "server",
       );
     }
-    if (res.status === 404) {
-      return new GitHubApiError(
-        detail || "Not found on GitHub.",
-        "not-found",
-        404,
-      );
-    }
-    if (res.status === 422) {
-      return new GitHubApiError(
-        detail || "GitHub rejected the request.",
-        "validation",
-        422,
-      );
-    }
-    return new GitHubApiError(
-      detail || `GitHub request failed (HTTP ${res.status}).`,
-      "server",
-      res.status,
-    );
+    return json.data;
   }
 
   // ── User ───────────────────────────────────────────────────────────────────
@@ -248,14 +284,25 @@ export class GitHubApi {
     repo: string,
   ): Promise<string | undefined> {
     try {
-      const raw = await this.request<{ default_branch?: string }>(
-        "GET",
-        `/repos/${enc(owner)}/${enc(repo)}`,
-      );
-      return raw.default_branch;
+      return (await this.repoSettings(owner, repo)).defaultBranch;
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * The default branch and the merge methods the repository allows. GitHub
+   * refuses a method a repository has turned off (405), so Merge offers only
+   * these. A repository that reports none (a token that can't read the
+   * settings) is treated as allowing all three, as before.
+   */
+  async repoSettings(owner: string, repo: string): Promise<RepoSettings> {
+    const raw = await this.request<RawRepo>("GET", `/repos/${enc(owner)}/${enc(repo)}`);
+    const allowed: MergeMethod[] = [];
+    if (raw.allow_merge_commit !== false) allowed.push("merge");
+    if (raw.allow_squash_merge !== false) allowed.push("squash");
+    if (raw.allow_rebase_merge !== false) allowed.push("rebase");
+    return { defaultBranch: raw.default_branch, mergeMethods: allowed };
   }
 
   // ── Pull requests ────────────────────────────────────────────────────────────
@@ -292,19 +339,31 @@ export class GitHubApi {
     return map;
   }
 
-  /** `GET /repos/{owner}/{repo}/pulls?state=open` (paged, first 100). */
+  /** Every open PR, newest update first (up to PAGE_CAPS.pulls pages). */
   async listOpenPulls(
     owner: string,
     repo: string,
     init?: { interactiveAuth?: boolean; signal?: AbortSignal },
-  ): Promise<PullRequest[]> {
-    const raw = await this.request<RawPull[]>(
-      "GET",
+  ): Promise<Paged<PullRequest>> {
+    const raw = await this.requestPaged<RawPull>(
       `/repos/${enc(owner)}/${enc(repo)}/pulls?state=open&sort=updated&direction=desc&per_page=100`,
-      undefined,
+      PAGE_CAPS.pulls,
       init,
     );
-    return raw.map(mapPull);
+    return { items: raw.items.map(mapPull), truncated: raw.truncated };
+  }
+
+  /** The open PR whose head is `head` (`owner:branch`), if there is one. */
+  async findOpenPullForHead(
+    owner: string,
+    repo: string,
+    head: string,
+  ): Promise<PullRequest | undefined> {
+    const raw = await this.request<RawPull[]>(
+      "GET",
+      `/repos/${enc(owner)}/${enc(repo)}/pulls?state=open&head=${enc(head)}&per_page=1`,
+    );
+    return raw?.[0] ? mapPull(raw[0]) : undefined;
   }
 
   /** `GET /repos/{owner}/{repo}/pulls/{n}`. */
@@ -323,35 +382,126 @@ export class GitHubApi {
     return mapPull(raw);
   }
 
-  /** `GET /repos/{owner}/{repo}/pulls/{n}/files` (first 100 files). */
+  /**
+   * A PR's changed files, every page GitHub has (it lists at most 3,000).
+   * Mapped field by field: the raw answer says `previous_filename`, and cast
+   * as is, every rename lost the path it was renamed from.
+   */
   async getPullFiles(
     owner: string,
     repo: string,
     number: number,
     init?: { interactiveAuth?: boolean; signal?: AbortSignal },
-  ): Promise<PrFile[]> {
-    return this.request<PrFile[]>(
-      "GET",
+  ): Promise<Paged<PrFile>> {
+    const raw = await this.requestPaged<RawFile>(
       `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/files?per_page=100`,
-      undefined,
+      PAGE_CAPS.files,
       init,
     );
+    return { items: raw.items.map(mapFile), truncated: raw.truncated };
   }
 
-  /** `GET /repos/{owner}/{repo}/commits/{ref}/status` → combined CI state. */
-  async getCombinedStatus(
+  /**
+   * What a commit's checks add up to: its check runs (GitHub Actions and every
+   * Checks API app) together with its legacy commit statuses. The combined
+   * status endpoint alone knows only the latter, and answers "pending" with
+   * none of them for every repository on Actions.
+   */
+  async getCi(owner: string, repo: string, sha: string): Promise<CiRollup> {
+    const base = `/repos/${enc(owner)}/${enc(repo)}/commits/${enc(sha)}`;
+    const [runs, statuses] = await Promise.all([
+      this.requestPaged<RawCheckRun>(`${base}/check-runs?per_page=100`, PAGE_CAPS.checks, {
+        key: "check_runs",
+      }),
+      this.requestPaged<RawStatus>(`${base}/status?per_page=100`, PAGE_CAPS.checks, {
+        key: "statuses",
+      }),
+    ]);
+    return rollupCi(runs.items, statuses.items);
+  }
+
+  /**
+   * The checks state of many PRs' heads in one GraphQL request per 50 PRs:
+   * `statusCheckRollup`, which GitHub computes from check runs AND statuses.
+   * Two REST calls per row would cost hundreds of requests for a busy list.
+   * A PR missing from the answer is simply absent from the map.
+   */
+  async ciForPulls(
     owner: string,
     repo: string,
+    numbers: readonly number[],
+  ): Promise<Map<number, CiState>> {
+    const out = new Map<number, CiState>();
+    for (let i = 0; i < numbers.length; i += 50) {
+      const chunk = numbers.slice(i, i + 50).filter((n) => Number.isSafeInteger(n) && n > 0);
+      if (chunk.length === 0) continue;
+      const fields = chunk
+        .map(
+          (n) =>
+            `pr${n}: pullRequest(number: ${n}) { commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } }`,
+        )
+        .join("\n");
+      const data = await this.graphql<{
+        repository?: Record<
+          string,
+          { commits?: { nodes?: { commit?: { statusCheckRollup?: { state?: string } | null } }[] } } | null
+        > | null;
+      }>(
+        `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {\n${fields}\n} }`,
+        { owner, name: repo },
+      );
+      for (const n of chunk) {
+        const node = data.repository?.[`pr${n}`];
+        if (!node) continue;
+        out.set(n, ciFromRollupState(node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * A file's content at one commit, for a diff pane. 404 means the path is
+   * absent there (the added or deleted side). Binary content (a NUL byte) and
+   * blobs over 5 MB are reported as such, never decoded into the editor.
+   * Every other failure — signed out, rate-limited, offline — THROWS: an
+   * empty pane would claim the file was added or deleted.
+   */
+  async fileAt(
+    owner: string,
+    repo: string,
+    path: string,
     ref: string,
-    init?: { interactiveAuth?: boolean; signal?: AbortSignal },
-  ): Promise<CombinedStatus> {
-    const raw = await this.request<RawStatus>(
-      "GET",
-      `/repos/${enc(owner)}/${enc(repo)}/commits/${enc(ref)}/status`,
-      undefined,
-      init,
-    );
-    return { state: raw.state ?? "", totalCount: raw.total_count ?? 0 };
+    init?: { signal?: AbortSignal },
+  ): Promise<FileContent> {
+    let res: Response;
+    try {
+      res = await this.fetchRes(
+        "GET",
+        `${API_BASE}/repos/${enc(owner)}/${enc(repo)}/contents/${path
+          .split("/")
+          .map(enc)
+          .join("/")}?ref=${enc(ref)}`,
+        undefined,
+        { ...init, accept: "application/vnd.github.raw+json" },
+      );
+    } catch (err) {
+      if (err instanceof GitHubApiError && err.status === 404) {
+        return { kind: "missing" };
+      }
+      throw err;
+    }
+    const declared = Number(res.headers.get("content-length") ?? NaN);
+    if (Number.isFinite(declared) && declared > MAX_FILE_BYTES) {
+      return { kind: "too-large", bytes: declared };
+    }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.length > MAX_FILE_BYTES) {
+      return { kind: "too-large", bytes: bytes.length };
+    }
+    if (bytes.subarray(0, 8000).includes(0)) {
+      return { kind: "binary", bytes: bytes.length };
+    }
+    return { kind: "text", text: new TextDecoder("utf-8").decode(bytes) };
   }
 
   /** `POST /repos/{owner}/{repo}/pulls/{n}/reviews` — submit a review. */
@@ -359,21 +509,12 @@ export class GitHubApi {
     owner: string,
     repo: string,
     number: number,
-    input: SubmitReviewInput,
+    payload: ReviewPayload,
   ): Promise<void> {
     await this.request(
       "POST",
       `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/reviews`,
-      {
-        event: input.event,
-        body: input.body ?? "",
-        comments: (input.comments ?? []).map((c) => ({
-          path: c.path,
-          line: c.line,
-          side: c.side ?? "RIGHT",
-          body: c.body,
-        })),
-      },
+      payload,
       { interactiveAuth: true },
     );
   }
@@ -428,6 +569,101 @@ function enc(part: string): string {
   return encodeURIComponent(part);
 }
 
+/**
+ * The rel="next" URL from a `Link` header, or undefined on the last page. A
+ * next page on any host but api.github.com is never followed.
+ */
+export function nextPageUrl(link: string | null | undefined): string | undefined {
+  if (!link) return undefined;
+  for (const part of link.split(",")) {
+    const m = /<([^>]+)>\s*;\s*(?:[^,]*;\s*)?rel="next"/.exec(part.trim());
+    if (!m) continue;
+    return m[1].startsWith(`${API_BASE}/`) ? m[1] : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * A non-2xx answer → the sentence the user sees. GitHub's own message is kept
+ * where it says something; a 422's `errors[]` — WHICH field or line it
+ * refused — is added, where the bare message said only "Unprocessable Entity"
+ * or "Validation Failed".
+ */
+async function toError(res: Response): Promise<GitHubApiError> {
+  let detail = "";
+  let reasons: string[] = [];
+  try {
+    const data = (await res.json()) as {
+      message?: string;
+      errors?: (string | { message?: string; code?: string; field?: string; resource?: string })[];
+    };
+    detail = data?.message ?? "";
+    reasons = (data?.errors ?? [])
+      .map((e) =>
+        typeof e === "string"
+          ? e
+          : e.message ?? [e.resource, e.field, e.code].filter(Boolean).join(" "),
+      )
+      .filter((s): s is string => !!s && s.length > 0);
+  } catch {
+    // Non-JSON error body — ignore.
+  }
+
+  const retryAt = (): string => {
+    const reset = res.headers.get("x-ratelimit-reset");
+    const after = Number(res.headers.get("retry-after") ?? NaN);
+    if (Number.isFinite(after)) {
+      return new Date(Date.now() + after * 1000).toLocaleTimeString();
+    }
+    return reset ? new Date(Number(reset) * 1000).toLocaleTimeString() : "a few minutes";
+  };
+
+  if (res.status === 401) {
+    return new GitHubApiError(
+      "Your GitHub session expired. Sign in again to continue.",
+      "auth",
+      401,
+    );
+  }
+  if (
+    res.status === 429 ||
+    (res.status === 403 &&
+      (res.headers.get("x-ratelimit-remaining") === "0" ||
+        res.headers.get("retry-after") !== null ||
+        /rate limit/i.test(detail)))
+  ) {
+    return new GitHubApiError(
+      `GitHub rate limit reached. Try again after ${retryAt()}.`,
+      "rate-limit",
+      res.status,
+    );
+  }
+  if (res.status === 403) {
+    return new GitHubApiError(
+      detail || "GitHub denied the request (insufficient permissions).",
+      "auth",
+      403,
+    );
+  }
+  if (res.status === 404) {
+    return new GitHubApiError(
+      detail || "Not found on GitHub.",
+      "not-found",
+      404,
+    );
+  }
+  if (res.status === 422) {
+    const why = reasons.length > 0 ? reasons.join("; ") : "";
+    const head = detail && detail !== "Unprocessable Entity" ? detail : "GitHub rejected the request";
+    return new GitHubApiError(why ? `${head}: ${why}` : `${head}.`, "validation", 422);
+  }
+  return new GitHubApiError(
+    detail || `GitHub request failed (HTTP ${res.status}).`,
+    "server",
+    res.status,
+  );
+}
+
 // ── Raw → typed mapping ────────────────────────────────────────────────────────
 
 interface RawUser {
@@ -458,6 +694,7 @@ interface RawPull {
   user: RawUser | null;
   created_at: string;
   updated_at: string;
+  merged_at?: string | null;
   head: RawRef;
   base: RawRef;
   labels?: { name: string; color: string }[];
@@ -467,9 +704,30 @@ interface RawPull {
   changed_files?: number;
 }
 
+interface RawFile {
+  filename: string;
+  previous_filename?: string;
+  status: string;
+  additions?: number;
+  deletions?: number;
+  changes?: number;
+  patch?: string;
+}
+
+interface RawCheckRun {
+  status?: string | null;
+  conclusion?: string | null;
+}
+
 interface RawStatus {
   state?: string;
-  total_count?: number;
+}
+
+interface RawRepo {
+  default_branch?: string;
+  allow_merge_commit?: boolean;
+  allow_squash_merge?: boolean;
+  allow_rebase_merge?: boolean;
 }
 
 function mapUser(u: RawUser | null): GitHubUser | undefined {
@@ -493,6 +751,18 @@ function mapRef(r: RawRef): PrRef {
   };
 }
 
+function mapFile(f: RawFile): PrFile {
+  return {
+    filename: f.filename,
+    ...(f.previous_filename ? { previousFilename: f.previous_filename } : {}),
+    status: f.status,
+    additions: f.additions ?? 0,
+    deletions: f.deletions ?? 0,
+    changes: f.changes ?? 0,
+    ...(typeof f.patch === "string" ? { patch: f.patch } : {}),
+  };
+}
+
 function mapPull(p: RawPull): PullRequest {
   return {
     number: p.number,
@@ -504,6 +774,7 @@ function mapPull(p: RawPull): PullRequest {
     user: mapUser(p.user) ?? null,
     createdAt: p.created_at,
     updatedAt: p.updated_at,
+    mergedAt: p.merged_at ?? null,
     head: mapRef(p.head),
     base: mapRef(p.base),
     labels: (p.labels ?? []).map((l) => ({ name: l.name, color: l.color })),
