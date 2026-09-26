@@ -108,21 +108,59 @@ their answers wait at the door.**
 
 ## The state table (what each cell must do)
 
-| # | State | Must |
-| --- | --- | --- |
-| 1 | A read (git / GitHub) started in A lands while B is active | held; painted into A when A is shown; never into B |
-| 2 | An operation (push) started in A finishes while B is active | A's tab spins until it ends; its toast and refresh run when A is shown |
-| 3 | A's watcher event arrives after the switch | ignored for B (payload carries the root); A re-checks the disk when shown |
-| 4 | A rebase stopped on conflicts; switch to B and back | A's op chip, Changes panel and dashboard are A's, untouched |
-| 5 | Switch while a modal is open | refused — a modal is answered first (its verb would run on the tab it was asked in) |
-| 6 | Switch with a menu / peek / palette open | they close, then the switch happens |
-| 7 | Close a background tab | its App and caches go; the active tab is untouched |
-| 8 | Close the active tab | the tab to its right becomes active, else the one to its left |
-| 9 | Close the last tab | the no-repository shell (Home, repository views disabled) |
-| 10 | Close a tab with an operation running | asks first, naming the operation; git is not killed |
-| 11 | Close a tab with an unsent commit message | nothing asked; the message is kept and comes back when the repository is reopened |
-| 12 | Open a repository that already has a tab (any spelling) | switches to it; no second tab |
-| 13 | Open an eleventh | refused with the notice above |
-| 14 | A background repository is deleted or moved on disk | its tab stays, and says so when shown (the existing "not a repository" states); closing it works |
-| 15 | Undo | per tab; an entry recorded in A cannot run while B is active |
-| 16 | Boot | the open tabs come back in order with the active one; a tab whose folder is gone is dropped with one quiet notice naming it |
+Each row is pinned by the tests named beside it — harness checks (`node
+harness/check.mjs <id>` in apps/desktop) and unit tests (apps/desktop/test).
+Every one of them was seen to fail with the code it guards reverted.
+
+| # | State | Must | Pinned by |
+| --- | --- | --- | --- |
+| 1 | A read (git / GitHub) started in A lands while B is active | held; painted into A when A is shown; never into B | `a-slow-answer-from-one-tab-never-paints-into-another`; tabBridge.test "row 1" |
+| 2 | An operation (push) started in A finishes while B is active | A's tab spins until it ends; its toast and refresh run when A is shown | `an-operation-in-a-background-tab-reports-when-you-are-back`; tabBridge.test "row 2/10" |
+| 3 | A's watcher event arrives after the switch | ignored for B (payload carries the root); A re-checks the disk when shown | `a-background-tabs-disk-event-leaves-the-front-tab-alone` |
+| 4 | A rebase stopped on conflicts; switch to B and back | A's op chip, Changes panel and dashboard are A's, untouched | `a-stopped-operation-stays-with-its-tab` |
+| 5 | Switch while a modal is open | refused — a modal is answered first (its verb would run on the tab it was asked in) | `a-rebase-` / `a-reset-` / `the-pull-` / `the-stash-question-does-not-follow-you-to-another-repository` |
+| 6 | Switch with a menu / peek / palette open | they close, then the switch happens | `a-switch-takes-the-menus-and-the-palette-with-it`, `a-switch-takes-an-open-peek-with-it` |
+| 7 | Close a background tab | its App and caches go; the active tab is untouched | `closing-tabs-picks-the-neighbour-and-ends-at-home`; repoTabs.test "rows 7–9"; cache.test |
+| 8 | Close the active tab | the tab to its right becomes active, else the one to its left | the same; tabModel.test "after a close…" |
+| 9 | Close the last tab | the no-repository shell (Home, repository views disabled) | `closing-tabs-picks-the-neighbour-and-ends-at-home` |
+| 10 | Close a tab with an operation running | asks first, naming the operation; git is not killed | `closing-a-tab-with-an-operation-running-asks-first`; repoTabs.test "rows 7–9" |
+| 11 | Close a tab with an unsent commit message | nothing asked; the message is kept and comes back when the repository is reopened | `each-tab-keeps-its-own-commit-message` |
+| 12 | Open a repository that already has a tab (any spelling) | switches to it; no second tab | `opening-a-repository-that-has-a-tab-switches-to-it`; repoTabs.test "row 12" |
+| 13 | Open an eleventh | refused with the notice above | repoTabs.test "row 13" |
+| 14 | A background repository is deleted or moved on disk | its tab stays, its name struck through ("folder not found" in words); nothing runs git in it; brought to the front it says so once, with Close Tab; put back, it is whole again at the row's next look and re-reads the disk; closing it works | `a-tab-whose-folder-is-gone-says-so-and-closes`, `a-gone-folder-put-back-makes-its-tab-whole-again`; repoTabs.test "row 14"; tabModel.test "row 14" |
+| 15 | Undo | per tab; an entry recorded in A cannot run while B is active | tabUndo.test |
+| 16 | Boot | the open tabs come back in order with the active one, each on its own view (Search included); a tab whose folder is gone is dropped with one quiet notice naming it | repoTabs.test "row 16"; `each-restored-tab-comes-back-on-its-own-view`, `a-restored-tab-comes-back-to-search-and-a-new-one-lands-on-its-code` |
+
+Also per tab, and pinned: the terminal dock (`each-tab-has-its-own-terminal-dock`),
+the route, scroll and kept-alive DOM (`switching-tabs-keeps-each-tabs-place`),
+and the graph's position (`the-graph-keeps-its-place-across-a-tab-switch`;
+webview-ui graphReattach.test).
+
+## Where a tab lands
+
+- A tab restored at launch lands on the view that repository was left on
+  (`tabViews` in the prefs), else the window's last view — Search included,
+  as the single window always came back to Search.
+- A NEW tab lands on the window's last view, except Search: Search is
+  identified by its target, which belongs to the tab it was searched in, so a
+  new tab opened from Search lands in its own Code rather than on an empty
+  search. An open's landing (`await openPath(); nav("code")`) goes to the new
+  tab.
+
+## A folder that goes away (row 14)
+
+The tab row asks main about every open tab (`repo:tabStatus`): its change
+count, or `gone` when the folder is not there or has no `.git` any more. Gone
+is a `stat` asked afresh every time (never cached), and a gone folder is never
+handed to git to count. The row asks when the tabs change, when an operation
+ends, on a watcher event, and on a window focus at most once a minute. A gone
+tab is not closed for you: the folder may be on a drive that is coming back.
+
+## The graph's position
+
+A node taken out of the document loses its scroll offset, and a background
+tab's screen is detached — as is a parked view inside one tab. The shared
+`<gitstudio-graph>` (and the extension's commit rail, the same shape) keeps
+its list's offset while attached and puts it back after a re-attach, so the
+commit you were reading is still on screen when you come back. This fixed the
+same loss on a plain view switch, which predates tabs.
