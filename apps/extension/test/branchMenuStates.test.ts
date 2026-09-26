@@ -13,6 +13,7 @@ import { ChangesPage, stateMessage, type LocalBranch } from "./changesPage";
 //     soon as they arrive, even when there are none;
 //   · a submenu names what it acts on: the current branch, or on a detached
 //     HEAD the commit HEAD is at, never a branch called "current branch";
+//   · a branch whose upstream is gone offers no pull from it;
 //   · the words say what happens — "Push…" asks more, a count has its unit —
 //     and every glyph is a codicon this build ships, none of them the check
 //     that marks the checked-out branch or the view's tree/list toggle.
@@ -181,4 +182,41 @@ test("the menu's words say what happens, and its glyphs are real and mean one th
   for (const it of seen) {
     for (const g of it.icons) assert.ok(SHIPPED.has(g), `'${it.label}': codicon-${g} is not in the codicons this build ships`);
   }
+});
+
+// The row says its upstream is gone; its actions must not offer to pull from
+// it. "Pull into 'merged-pr'" ran a fetch of a remote branch that no longer
+// exists, so it could only fail, and the current branch's two pulls the same.
+test("a branch whose upstream is gone offers no pull from it, and names that upstream as gone", { skip }, async () => {
+  const local: LocalBranch[] = [
+    { name: "main", upstream: "origin/main", upstreamOnRemote: true, behind: 2 },
+    { name: "merged-pr", upstream: "origin/merged-pr", gone: true },
+    { name: "done", current: true, upstream: "origin/done", gone: true },
+  ];
+  await page.send(stateMessage({ local, remote: ["origin/main"] }));
+  await openMenu();
+  const labelsFor = async (q: string): Promise<string[]> => {
+    await page.eval(`(function () { var i = document.querySelector(".bm-search input"); i.value = ""; i.dispatchEvent(new Event("input")); })()`);
+    await page.type(q);
+    await page.key("ArrowRight");
+    const labels = await page.eval<string[]>(
+      `Array.prototype.map.call(document.querySelectorAll(".branch-submenu .bm-subaction"), function (b) { return b.textContent.trim(); })`,
+    );
+    await page.key("ArrowLeft");
+    return labels;
+  };
+  const gone = await labelsFor("merged-pr");
+  assert.ok(!gone.some((l) => /^Pull/.test(l)), `no pull: ${gone.join(" | ")}`);
+  assert.ok(gone.includes("Tracked Branch: origin/merged-pr (gone)…"), `the tracked branch says it is gone: ${gone.join(" | ")}`);
+  assert.ok(gone.includes("Checkout") && gone.includes("Delete"), "the rest is still there");
+
+  const current = await labelsFor("done");
+  assert.ok(!current.some((l) => /^Pull/.test(l)), `the current branch: no pull either: ${current.join(" | ")}`);
+  assert.ok(current.includes("Push…"), `but Push… is: ${current.join(" | ")}`);
+
+  // A live upstream keeps them.
+  assert.ok((await labelsFor("main")).includes("Pull 2 Commits into 'main'"));
+  await page.send(stateMessage({ local: local.map((b) => (b.name === "done" ? { ...b, gone: undefined } : b)), remote: ["origin/main"] }));
+  const live = await labelsFor("done");
+  assert.ok(live.includes("Pull using Rebase") && live.includes("Pull using Merge"), live.join(" | "));
 });

@@ -86,3 +86,29 @@ export function withFavorites(payload: BranchesPayload, favorites: readonly stri
   return { ...payload, local: payload.local.map((b) => ({ ...b, favorite: favs.has(b.name) })) };
 }
 
+/**
+ * A branch-menu action as the person chose it, for a message about it:
+ * "Pull into 'feature'", not the message's action id ("pullFf").
+ */
+export function branchActionWords(action: string | undefined, ref?: string): string {
+  switch (action) {
+    case "fetch":
+      return "Fetch";
+    case "pull":
+      return "Update (pull)";
+    case "pullMerge":
+      return "Pull using Merge";
+    case "pullRebase":
+      return "Pull using Rebase";
+    case "push":
+      return "Push";
+    case "pullFf":
+      return ref ? `Pull into '${ref}'` : "Pull";
+    case "new":
+      return ref ? `New Branch '${ref.trim()}'` : "New Branch";
+    case "checkoutRef":
+      return ref ? `Checkout '${ref.trim()}'` : "Checkout";
+    default:
+      return action ?? "The branch action";
+  }
+}

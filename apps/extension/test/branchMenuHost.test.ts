@@ -14,7 +14,9 @@ import { withFavorites, type BranchesPayload } from "../src/changes/branchMenuDa
 //   · a star: the host answers it with a state post, and the first (instant)
 //     one re-sends the list it built before the star. That post carried the
 //     old star, so the row the menu had already moved went back. Every post
-//     after the star now carries it.
+//     after the star now carries it;
+//   · a failed branch action is named by what the user did ("Pull into
+//     'merged-pr'"), not by the message's action id ("pullFf").
 
 const CFG = join(mkdtempSync(join(tmpdir(), "gs-ext-bmh-cfg-")), "config");
 writeFileSync(CFG, "");
@@ -193,3 +195,12 @@ test("every post after a star carries it, the instant first one too", async () =
   assert.deepEqual(again.map((m) => starOf(m, "topic")), again.map(() => false), "un-starred the same way");
 });
 
+test("a failed branch action is named by what the user did, not by its action id", async () => {
+  const { p } = provider();
+  said.length = 0;
+  await p.handleBranchAction({ type: "branchAction", action: "pullFf", ref: "merged-pr" });
+  const errors = said.filter((s) => s.kind === "error");
+  assert.equal(errors.length, 1, JSON.stringify(said));
+  assert.match(errors[0].text, /^GitStudio: Pull into 'merged-pr' failed/);
+  assert.doesNotMatch(errors[0].text, /pullFf/);
+});

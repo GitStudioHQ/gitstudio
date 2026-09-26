@@ -9,7 +9,7 @@ import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import { slowStateChanged, type SlowState } from "./slowState";
-import { branchesPayload, withFavorites, type BranchesPayload } from "./branchMenuData";
+import { branchActionWords, branchesPayload, withFavorites, type BranchesPayload } from "./branchMenuData";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { repoName as repoNameOf, switchRepository, workspacePathOf } from "../git/repoPicker";
 import { pruneOnFetch } from "../git/fetchOptions";
@@ -1662,8 +1662,9 @@ export class CommitViewProvider
     } else if (!result.ok && before && stoppedByThisCommand(before, await detectOperation(entry.ctx))) {
       notifyPaused("Pull hit conflicts. Resolve them, then continue or abort.");
     } else if (!result.ok) {
+      // Named by what the user chose ("Pull into 'feature'"), not by the id.
       void vscode.window.showErrorMessage(
-        `GitStudio: ${msg.action} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
+        `GitStudio: ${branchActionWords(msg.action, msg.ref)} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
       );
     } else if (msg.action === "pullFf") {
       vscode.window.setStatusBarMessage(`Fast-forwarded ${ref}`, 2500);
@@ -5517,8 +5518,12 @@ export class CommitViewProvider
         subSep(list);
         subItem(list, "trash", "Delete Tag", () => subAct("gitstudio.tag.delete", name, "tag"), true);
       } else if (current) {
-        subItemLive(list, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name);
-        subItemLive(list, "arrow-down", "Pull using Merge", "Pulling…", "pullMerge", name);
+        // Nothing to pull from an upstream deleted from its remote: the pull
+        // could only fail. Push… can still publish the branch again.
+        if (!(bd && bd.gone)) {
+          subItemLive(list, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name);
+          subItemLive(list, "arrow-down", "Pull using Merge", "Pulling…", "pullMerge", name);
+        }
         // Push opens the review modal (see openPushModal) rather than pushing in
         // place, so every push route funnels through the same confirmation.
         subItem(list, "arrow-up", "Push…", () => {
@@ -5539,8 +5544,9 @@ export class CommitViewProvider
         // Not the check: in this menu that marks the branch that IS checked out.
         subItem(list, kind === "remote" ? "cloud-download" : "arrow-swap", "Checkout", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.checkout" : "gitstudio.branch.checkout", name, refType));
-        if (kind === "local" && bd && bd.upstream) {
-          // Fast-forward this branch from its upstream WITHOUT checking it out.
+        if (kind === "local" && bd && bd.upstream && !bd.gone) {
+          // Fast-forward this branch from its upstream WITHOUT checking it out
+          // (not from one deleted from its remote: that fetch can only fail).
           subItemLive(list, "arrow-down",
             "Pull " + (bd.behind ? bd.behind + (bd.behind === 1 ? " Commit " : " Commits ") : "") + "into '" + name + "'",
             "Pulling…", "pullFf", name,
@@ -5558,7 +5564,7 @@ export class CommitViewProvider
           subSep(list);
           subItem(list, "arrow-up", "Push…", () => subAct("gitstudio.branch.push", name, refType));
           subItem(list, "cloud",
-            bd && bd.upstream ? "Tracked Branch: " + bd.upstream + "…" : "Set Tracked Branch…",
+            bd && bd.upstream ? "Tracked Branch: " + bd.upstream + (bd.gone ? " (gone)" : "") + "…" : "Set Tracked Branch…",
             () => subAct("gitstudio.branch.setUpstream", name, refType));
           subSep(list);
         }

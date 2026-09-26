@@ -100,7 +100,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   your search, and its star.
 - A branch whose upstream was deleted from the remote — what a merged pull
   request leaves behind — shows that upstream struck through and marked
-  **gone** in the branch menu, instead of looking like a live one.
+  **gone** in the branch menu, instead of looking like a live one, and its
+  actions no longer offer a pull from it that could only fail.
+- A branch-menu action that fails is named as you chose it — *Pull into
+  'feature' failed* — rather than by an internal name.
 - The branch menu's words and icons: **Push…** says it asks before pushing,
   *Pull 2 Commits into 'feature'* says what the number counts, and Checkout
   and New Worktree have icons of their own — Checkout no longer wears the
