@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 type Resolver = { _resolveFilename: (request: unknown, ...rest: unknown[]) => string };
@@ -176,11 +176,22 @@ test("Checkout of a pull request whose pr/<n> branch another worktree has: says 
   const prTree = join(s.app, "..", "wt", "pr-7");
   s.git("worktree", "add", "-q", "-b", "pr/7", prTree);
   const before = s.git("rev-parse", "refs/heads/pr/7");
-  await checkoutPullRequest({ ctx: s.ctx, root: s.app } as never, "origin", { number: 7 } as never);
+  // checkoutPullRequest takes the pull request's repository context (its
+  // entry and remote) and a pull request with its head and base.
+  const repoContext = { owner: "acme", repo: "app", remoteName: "origin", entry: { ctx: s.ctx, root: s.app } };
+  const pr = {
+    number: 7,
+    head: { ref: "topic", sha: before, repoFullName: "acme/app" },
+    base: { ref: "main", repoFullName: "acme/app" },
+  };
+  await checkoutPullRequest(repoContext as never, pr as never);
   assert.deepEqual(said("error"), [], "never git's 'refusing to fetch into branch'");
   const w = said("warning").join("\n");
   assert.match(w, /'pr\/7' is checked out in the worktree at /);
   assert.ok(w.includes(prTree), w);
   assert.equal(s.git("rev-parse", "refs/heads/pr/7"), before);
   assert.equal(s.git("symbolic-ref", "HEAD"), "refs/heads/main");
+  // Said BEFORE the fetch: nothing went to the network for a checkout that
+  // cannot happen here.
+  assert.equal(existsSync(join(s.git("rev-parse", "--absolute-git-dir"), "FETCH_HEAD")), false, "nothing was fetched");
 });
