@@ -15,6 +15,7 @@ import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 import { ellipsizeMiddle, resolveCheckoutTarget, type MenuRef } from "./checkoutTarget";
 import { dropBlocker, dropCommit, planDropCommit } from "@gitstudio/git-service/dropCommit";
+import { noCopyClause } from "@gitstudio/git-service/SnapshotProvider";
 import { dropOutcomeMessage, dropQuestion } from "@gitstudio/engine/rebase/drop";
 import { runRebasePlan } from "../rebase/rebaseRunner";
 
@@ -666,9 +667,20 @@ async function resetTo(
   if (mode.value === "--hard") {
     // A second gate, because this is the one reset that destroys work git has
     // never seen — the reflog can restore the commits, but not your edits.
+    // GitStudio's Undo can: its snapshot (`stash create`) holds them, and
+    // undoing the reset puts them back with the branch. But git won't copy an
+    // index with a conflict in progress — exactly when a hard reset is most
+    // often reached for — and then Undo can put the branch back and nothing
+    // more. Asked of git before the question, so the question is true.
+    const discards = `Hard-resetting to ${short(commit.sha)} throws away every uncommitted edit in the working tree and the index.`;
+    const noCopy = undo ? await ctx.snapshot.whyNoCopy().catch(() => "other" as const) : undefined;
     const ok = await promptConfirm({
       title: `Discard all uncommitted changes?`,
-      message: `Hard-resetting to ${short(commit.sha)} throws away every uncommitted edit in the working tree and the index. Undo can move the branch back, but it cannot bring those edits back — git never recorded them.`,
+      message: !undo
+        ? `${discards} git keeps no copy of them, so nothing can bring them back.`
+        : noCopy
+          ? `${discards} git can't keep a copy of them ${noCopyClause(noCopy, "now")}, so GitStudio's Undo can put the branch back, but not those edits.`
+          : `${discards} GitStudio's Undo can put the branch back and bring those edits back with it — git itself keeps no copy of them.`,
       confirmLabel: "Reset --hard",
       danger: true,
     });

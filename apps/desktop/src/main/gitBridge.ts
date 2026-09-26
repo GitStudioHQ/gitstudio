@@ -32,6 +32,7 @@ import type { LineRange, Hunk } from "@gitstudio/engine/staging/applyLineChanges
 import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
+import { restoreStash, stashStack, type StashPlace } from "@gitstudio/git-service/stashRestore";
 import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { branchNameOf, remoteBranchOf } from "@gitstudio/git-service/BranchOps";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
@@ -349,6 +350,12 @@ export class GitBridge {
    * see pruneIdeLaunches), and on quit (disposeIdeLaunches).
    */
   private readonly ideLaunches = new Map<string, { launch: JetBrainsLaunch; root: string; episode: string }>();
+  /**
+   * Where each stash this app dropped sat — its index and the entries above
+   * it then — by repo root + stash sha, so the drop's Undo (`stash:restore`)
+   * puts it back THERE rather than on top. Bounded: the undo stack is short.
+   */
+  private readonly droppedStashes = new Map<string, StashPlace>();
 
   constructor(
     private readonly repos: RepoStore,
@@ -1103,7 +1110,38 @@ export class GitBridge {
     if (!safeArg(req.sha)) return { ok: false, message: "That restore point is not usable." };
     const paths = req.paths.filter((p) => p);
     if (!paths.length) return { ok: false, expected: true, message: "Nothing to restore." };
+    // Put back only what the discard took. It left each path as the index has
+    // it; a path that differs from the index now was edited AGAIN since, and
+    // restoring the old changes over it threw the new ones away under a
+    // success toast. Say which instead, and change nothing. (A path already
+    // back as it was is fine either way.) Likewise a path whose STAGED copy
+    // has changed since — the index then is the snapshot's second parent.
+    // Three git calls for the lot, however many files the discard took.
+    const names = async (args: string[]): Promise<Set<string> | undefined> => {
+      const r = await ctx.process.run(["--literal-pathspecs", "diff", "--name-only", "-z", "--no-ext-diff", "--no-renames", ...args, "--", ...paths]);
+      return r.code === 0 ? new Set(r.stdout.split("\0").filter(Boolean)) : undefined;
+    };
+    const [edited, notAsTaken, restaged] = await Promise.all([
+      names([]),
+      names([req.sha]),
+      names(["--cached", `${req.sha}^2`]),
+    ]);
+    if (!edited || !notAsTaken || !restaged) {
+      return { ok: false, message: "Couldn't tell whether those files have changed since. Nothing was changed." };
+    }
+    const since = paths.filter((p) => (edited.has(p) && notAsTaken.has(p)) || restaged.has(p));
+    if (since.length) {
+      return {
+        ok: false,
+        expected: true,
+        message:
+          since.length === 1
+            ? `${since[0]} has changed since its changes were discarded, and bringing them back would overwrite that. Nothing was changed.`
+            : `${since.length} files have changed since their changes were discarded (${since.join(", ")}), and bringing them back would overwrite that. Nothing was changed.`,
+      };
+    }
     const r = await ctx.process.run([
+      "--literal-pathspecs",
       "restore",
       `--source=${req.sha}`,
       "--worktree",
@@ -1381,33 +1419,46 @@ export class GitBridge {
   }
   async stashDrop(ref: string): Promise<CommitActionResult> {
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => ctx.stashes.drop(ref));
+    return this.staged(async (ctx) => {
+      // Where it sits, read before it goes: the undo puts it back there.
+      const stack = await stashStack(ctx.process);
+      const at = /^stash@\{(\d+)\}$/.exec(ref);
+      const index = at ? Number(at[1]) : -1;
+      const r = await ctx.stashes.drop(ref);
+      if (r.ok && index >= 0 && stack[index]) {
+        const key = `${ctx.root}\0${stack[index].sha}`;
+        this.droppedStashes.delete(key);
+        this.droppedStashes.set(key, { index, above: stack.slice(0, index).map((s) => s.sha) });
+        while (this.droppedStashes.size > 50) {
+          this.droppedStashes.delete(this.droppedStashes.keys().next().value as string);
+        }
+      }
+      return r;
+    });
   }
   /**
    * Undo a drop: `git stash store` re-creates a stash ref pointing at a commit
    * that was never deleted — dropping only removed the reflog entry.
    *
-   * It lands on TOP of the stack, not back at its old index. `store` has no
-   * way to insert, and inventing one by re-writing the reflog to put it back
-   * where it was is the kind of cleverness that loses somebody's work.
+   * Back WHERE IT WAS, when this app dropped it and the entries above it are
+   * still the same ones (git-service's restoreStash lifts them off, stores it,
+   * and stores them back); on top otherwise. It used to land on top always, so
+   * undoing "Drop stash@{1}" left the list in a different order than before.
    */
   async stashRestore(req: { sha: string; message?: string }): Promise<CommitActionResult> {
     if (!safeArg(req.sha)) return UNSAFE_REF_RESULT;
     const ctx = this.ctx();
     if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository is open." };
-    // Refuse a sha that is not a commit rather than letting `stash store` write
-    // a stash ref pointing at nothing.
-    const kind = await ctx.process.run(["cat-file", "-t", req.sha]);
-    if (kind.code !== 0 || kind.stdout.trim() !== "commit") {
-      return { ok: false, changed: false, expected: true, message: "That stash is no longer in the repository." };
-    }
-    const args = ["stash", "store"];
-    if (req.message) args.push("-m", req.message);
-    args.push(req.sha);
-    const r = await ctx.process.run(args);
-    return r.code === 0
-      ? { ok: true, changed: true }
-      : { ok: false, changed: false, expected: true, message: r.stderr.trim() || "Couldn't put the stash back." };
+    const key = `${ctx.root}\0${req.sha}`;
+    const place = this.droppedStashes.get(key);
+    return this.staged(async (c) => {
+      const r = await restoreStash(c.process, { sha: req.sha, message: req.message ?? "" }, place);
+      if (!r.ok) {
+        return { ok: false, changed: false, ...(r.expected ? { expected: true as const } : {}), message: r.message };
+      }
+      this.droppedStashes.delete(key);
+      return { ok: true, changed: !r.already };
+    });
   }
   /**
    * The changes inside one file that are not staged yet (#20), so the Changes

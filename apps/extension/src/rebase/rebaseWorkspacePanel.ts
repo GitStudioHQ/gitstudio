@@ -8,6 +8,7 @@ import { getNonce } from "../webview/html";
 import { operationInProgressMessage } from "../git/pausedForUser";
 import { detectOperation } from "../git/pauseNotice";
 import { abortRebaseLike, nothingToAbortText } from "./rebaseAbort";
+import { describeRebaseBase } from "./rebaseBase";
 import type { OperationOutcome } from "@gitstudio/host-bridge/conflictsProtocol";
 import { relativeTime } from "../util/relativeTime";
 import {
@@ -218,7 +219,7 @@ export class RebaseWorkspacePanel {
     const { todo, rewords } = built;
 
     await this.finish(() =>
-      this.undo.runWithUndo(active, `Interactive rebase onto ${shortRef(this.base)}`, () =>
+      this.undo.runWithUndo(active, `Interactive rebase onto ${describeRebaseBase(this.base)}`, () =>
         runRebasePlan(active.root, { base: this.base, todo, rewords }),
       ),
     );
@@ -308,7 +309,7 @@ export class RebaseWorkspacePanel {
       `script-src 'nonce-${nonce}'`,
     ].join("; ");
     const data = {
-      base: shortRef(this.base),
+      base: describeRebaseBase(this.base),
       branch: this.branch,
       baseCommit: this.baseCommit,
       commits: this.commits,
@@ -324,7 +325,7 @@ export class RebaseWorkspacePanel {
 <body>
   <div class="rb-head">
     <div class="rb-title"><i class="codicon codicon-git-pull-request-draft"></i> Interactive Rebase</div>
-    <div class="rb-sub"><i class="codicon codicon-git-branch"></i> <b class="rb-branch">${esc(this.branch)}</b> onto <b>${esc(shortRef(this.base))}</b> · <span id="rb-count"></span></div>
+    <div class="rb-sub"><i class="codicon codicon-git-branch"></i> <b class="rb-branch">${esc(this.branch)}</b> onto <b>${esc(describeRebaseBase(this.base))}</b> · <span id="rb-count"></span></div>
     <span class="rb-spacer"></span>
   </div>
   <div class="rb-explain" id="rb-explain">
@@ -373,10 +374,6 @@ ${REBASE_JS}
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-function shortRef(ref: string): string {
-  if (ref === "--root") return "the root commit";
-  return /^[0-9a-f]{40}$/i.test(ref) ? ref.slice(0, 7) : ref;
 }
 
 async function resolveBase(active: RepoEntry, sha?: string): Promise<string | undefined> {

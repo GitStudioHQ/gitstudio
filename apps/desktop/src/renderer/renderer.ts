@@ -4209,6 +4209,11 @@ class App {
           }
           const u = await host.invoke("branch:rename", back);
           if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
+          // The rename took `${to}`'s tracking with it — the rename made the
+          // branch track `${fixed.remote}/${to}` — so renaming back left it
+          // tracking the new name. Point it at its own remote branch again,
+          // as the "publish" variant's undo does.
+          if (b.upstream) await host.invoke("branch:setUpstream", { fullName: b.fullName, upstream: b.upstream });
           bust();
           return undefined;
         },
@@ -8052,7 +8057,11 @@ class App {
       label: n === 1 ? "Bring the changes back" : `Bring ${n} files' changes back`,
       undo: async () => {
         const r = await host.invoke("discard:undo", restore);
-        return r.ok ? undefined : (r.message ?? "Couldn't bring them back.");
+        if (r.ok) return undefined;
+        const why = r.message ?? "Couldn't bring them back.";
+        // Edited again since the discard: refused, and said as the user's
+        // state (an info toast) rather than as an error.
+        return r.expected ? { info: why } : why;
       },
       after: () => this.repaintChanges(),
     });

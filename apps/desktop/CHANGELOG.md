@@ -53,6 +53,22 @@ but they share the same engine, so most Git behaviour lands in both at once.
 
 ### Fixed
 
+- **Undo of *Drop commit* put back the wrong branch.** If you made and
+  switched to a branch at the new tip after dropping, Undo reset THAT branch
+  to the old commits, left the dropped one as it was, and said it had undone
+  the drop. Undo now puts back the branch the drop rewrote — and, after
+  *Drop and move those branches*, the branches it carried too — each only
+  while it is still where the drop left it. (#32)
+- **Undo of *Discard changes*, and ⌘Z after *Accept Yours / Theirs*, no longer
+  overwrite edits you made since.** Discard, type something new, Undo: the new
+  text was replaced by the discarded one; resolve a conflict, polish the file
+  (and stage it, as marking it resolved does), ⌘Z: the conflict markers went
+  over the polish. Both now say the file has changed since and leave it
+  alone, staged or not.
+- **Undo of *Rename on origin*** leaves the branch tracking its own remote
+  branch again — it came back tracking the new name.
+- **Undo of *Drop stash*** puts the stash back where it was in the list, not
+  on top of it.
 - **Repositories: switching to *On GitHub* and straight back showed GitHub's
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on

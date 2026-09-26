@@ -700,6 +700,120 @@ test("restore refuses a path git holds no conflict for — and leaves its edits 
   }
 });
 
+test("restore refuses over a hand edit made since the resolution — the markers would overwrite it", async () => {
+  // Accept Yours, then polish the file by hand, then Undo: `checkout -m` put
+  // the conflict markers over the edit and the undo reported success.
+  const r = manyShapes();
+  try {
+    const ctx = r.ctx();
+    assert.equal((await ctx.conflictOps.takeRole("both.txt", "yours")).ok, true);
+    r.write("both.txt", "mine, polished by hand\n");
+    const out = await ctx.conflictOps.restore("both.txt");
+    assert.equal(out.ok, false);
+    assert.equal(out.expected, true);
+    assert.match(out.message ?? "", /both\.txt has changes since it was resolved/);
+    assert.equal(r.read("both.txt"), "mine, polished by hand\n", "the edit is untouched");
+    assert.equal(porcelainXY(r).has("both.txt") && porcelainXY(r).get("both.txt") === "UU", false, "and nothing is conflicted again");
+    // Staged, the polish is a NEW resolution — the user's, not the Accept
+    // Yours being undone — and the markers would go over it just the same.
+    r.git("add", "both.txt");
+    const staged = await ctx.conflictOps.restore("both.txt");
+    assert.equal(staged.ok, false);
+    assert.equal(staged.expected, true);
+    assert.match(staged.message ?? "", /both\.txt has changes since it was resolved/);
+    assert.equal(r.read("both.txt"), "mine, polished by hand\n", "the staged polish is untouched");
+    assert.notEqual(porcelainXY(r).get("both.txt"), "UU");
+    // Put back as the resolution left it, the undo is allowed again.
+    r.git("checkout", "HEAD", "--", "both.txt"); // a merge's "yours" is HEAD's
+    const again = await ctx.conflictOps.restore("both.txt");
+    assert.equal(again.ok, true, again.message);
+    assert.equal(porcelainXY(r).get("both.txt"), "UU");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("restore refuses over a staged change after the merge editor's Apply, and over a deleted side re-added by hand", async () => {
+  const r = manyShapes();
+  try {
+    const ctx = r.ctx();
+    const wrote = await ctx.conflictOps.writeResolution("both.txt", "merged by hand\n");
+    assert.equal(wrote.ok, true, wrote.message);
+    r.write("both.txt", "merged, then polished\n");
+    r.git("add", "both.txt");
+    const out = await ctx.conflictOps.restore("both.txt");
+    assert.equal(out.ok, false);
+    assert.match(out.message ?? "", /has changes since it was resolved/);
+    assert.equal(r.read("both.txt"), "merged, then polished\n");
+
+    // keep.txt: the side (theirs) deleted it. Taking theirs deletes it; the
+    // file brought back by hand and staged is the user's.
+    const took = await ctx.conflictOps.takeRole("keep.txt", "theirs");
+    assert.equal(took.ok, true, took.message);
+    r.write("keep.txt", "brought back by hand\n");
+    r.git("add", "keep.txt");
+    const back = await ctx.conflictOps.restore("keep.txt");
+    assert.equal(back.ok, false);
+    assert.match(back.message ?? "", /has changes since it was resolved/);
+    assert.equal(r.read("keep.txt"), "brought back by hand\n");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("restore refuses over a file re-added by hand after Delete of a both-deleted file", async () => {
+  const r = renameRename();
+  try {
+    const ctx = r.ctx();
+    const deleted = await ctx.conflictOps.deleteFile("doomed.txt");
+    assert.equal(deleted.ok, true, deleted.message);
+    r.write("doomed.txt", "brought back by hand\n");
+    r.git("add", "doomed.txt");
+    const gone = await ctx.conflictOps.restore("doomed.txt");
+    assert.equal(gone.ok, false);
+    assert.match(gone.message ?? "", /has changes since it was resolved/);
+    assert.equal(r.read("doomed.txt"), "brought back by hand\n");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("a side taken through the stage channel (no operation known yet) keeps its note through the dashboard's next refresh", async () => {
+  // The desktop's legacy conflict:takeSide calls takeStage directly, before
+  // any snapshot has named the episode. The note must survive that first
+  // snapshot, or a polish staged after it is overwritten as before.
+  const r = manyShapes();
+  try {
+    const ctx = r.ctx();
+    const took = await ctx.conflictOps.takeStage("both.txt", 2);
+    assert.equal(took.ok, true, took.message);
+    await ctx.conflictOps.snapshot();
+    r.write("both.txt", "polished after taking a side\n");
+    r.git("add", "both.txt");
+    const out = await ctx.conflictOps.restore("both.txt");
+    assert.equal(out.ok, false);
+    assert.match(out.message ?? "", /has changes since it was resolved/);
+    assert.equal(r.read("both.txt"), "polished after taking a side\n");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("a resolution GitStudio didn't make (a `git add` in a terminal) can still be undone from its row", async () => {
+  // Nothing recorded it, so what is staged IS the resolution being undone.
+  const r = manyShapes();
+  try {
+    const ctx = r.ctx();
+    r.write("both.txt", "resolved in a terminal\n");
+    r.git("add", "both.txt");
+    const out = await ctx.conflictOps.restore("both.txt");
+    assert.equal(out.ok, true, out.message);
+    assert.equal(porcelainXY(r).get("both.txt"), "UU");
+  } finally {
+    r.cleanup();
+  }
+});
+
 test("restore refuses once the operation is over — a committed merge gets no conflict back", async () => {
   // git keeps the resolve-undo record after the merge commit, and
   // `checkout -m` then re-creates the conflict in a finished repository —

@@ -42,6 +42,18 @@ export interface UndoOptions {
    * is still where the op left it (git-service's Snapshot.branch).
    */
   branch?: string;
+  /**
+   * The op goes on after the wrapped call returns — an interactive rebase
+   * handed to a terminal. Undo then reads what it changed from the reflogs;
+   * `onto` (the rebase's base, a sha) tells its moves from any other rebase.
+   */
+  deferred?: { onto?: string };
+  /**
+   * The op moves only refs and stashes — Delete branch, Drop stash — never
+   * the working tree. An edit saved while its question was open is then the
+   * user's: a cancel records nothing, and Undo never takes the edit back.
+   */
+  refsOnly?: boolean;
 }
 
 /** A live repository: its root, our data context, and (once vscode.git has

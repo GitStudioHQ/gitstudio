@@ -49,6 +49,8 @@ const dialogsStub = {
   promptPick: async (spec: { choices: { id: string }[] }) => spec.choices.find((c) => c.id !== "..detach")?.id,
   promptConfirm: async () => true,
   promptInput: async () => undefined,
+  // The Undo envelope counts the questions put while an op runs.
+  questionsAsked: () => 0,
 };
 
 type Resolve = (request: string, parent: unknown, ...rest: unknown[]) => string;

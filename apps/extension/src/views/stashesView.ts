@@ -349,8 +349,9 @@ export async function dropStash(
   }
   const ledger = repos.getUndoLedger();
   const run = () => a.ctx.stashes.drop(ref);
+  // Refs only: a drop takes a stash off the stack and never touches the tree.
   const result = ledger
-    ? await ledger.runWithUndo(a, `Drop ${ref}`, run)
+    ? await ledger.runWithUndo(a, `Drop ${ref}`, run, { refsOnly: true })
     : await run();
   reportStashOp(result, "Dropped stash", refresh);
 }

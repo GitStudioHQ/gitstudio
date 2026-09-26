@@ -118,6 +118,18 @@ export interface DialogHost {
 
 let host: DialogHost | undefined;
 
+/** How many questions have been put so far (see `questionsAsked`). */
+let asked = 0;
+
+/**
+ * A running count of the questions put — for the Undo envelope, which must
+ * know whether one was open while an op ran: these dialogs are DOM, not
+ * modal, so the user can edit and save meanwhile (undoLedger.ts).
+ */
+export function questionsAsked(): number {
+  return asked;
+}
+
 /** Wire up the surface that renders dialogs (the Changes view, at activation). */
 export function registerDialogHost(h: DialogHost): vscode.Disposable {
   host = h;
@@ -144,6 +156,7 @@ async function run(spec: DialogSpec): Promise<DialogResult | undefined> {
     );
     return undefined;
   }
+  asked++;
   return host.show(spec);
 }
 

@@ -61,6 +61,8 @@ const dialogsStub = {
     return answer.pick;
   },
   promptInput: async () => undefined,
+  // The Undo envelope counts the questions put while an op runs.
+  questionsAsked: () => asked.length,
 };
 
 type Resolve = (request: string, parent: unknown, ...rest: unknown[]) => string;

@@ -98,10 +98,17 @@ export async function dropCommitFlow(sha: string, d: DropCommitDeps): Promise<Dr
   if (out.status === "done") {
     const { before, after } = out;
     if (before && after) {
+      // The branch the drop rewrote, and the ones it carried: the undo puts
+      // back THOSE. HEAD's commit alone can't say which branch it was — one
+      // made and checked out at the new tip since shares it, and was reset.
+      const which = {
+        ...(out.branch !== undefined ? { branch: out.branch } : {}),
+        ...(out.carried?.length ? { carried: out.carried } : {}),
+      };
       d.undoable(text, {
         label: `Put ${plan.shortSha} back`,
         undo: async () => {
-          const back = await d.undo({ before, after });
+          const back = await d.undo({ before, after, ...which });
           if (back.ok) return undefined;
           const why = back.message ?? `Couldn't put ${plan.shortSha} back.`;
           return back.expected ? { info: why } : why;
