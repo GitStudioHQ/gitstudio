@@ -1,0 +1,39 @@
+packages/git-service/test/stashIdentity.test.ts
+  s_26f5e669d3043c::t_1f7ffa93c381e0 1-264,266,273-298,300-374,445
+  s_26f5e669d3043c::t_352ea3efc94920 265,267-272,299,376
+  s_26f5e669d3043c::t_0ad311c58b163e 375,377-444
+packages/git-service/src/StashProvider.ts
+  s_26f5e669d3043c::t_795084ab9cd0ae 425
+  s_26f5e669d3043c::t_0e910838bce4d7 50-75,486,491
+  s_26f5e669d3043c::t_6418828346b45c 318-350,356-361,368-377,384-411,416,418,420-421,424,426-428,430,432-433,436-444,446,450-457,465-484
+  s_26f5e669d3043c::t_ad5caf3594d954 412-415,417,419,422-423,429
+  s_26f5e669d3043c::t_95b033be7ffaa0 431
+  s_26f5e669d3043c::t_6b1382ef7674ba 485
+  s_26f5e669d3043c::t_3902b5ab39d3c9 487-490
+  s_26f5e669d3043c::t_412a47a83f8eb6 492-493
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_6b5c79419ab53f 319,661,766
+  s_26f5e669d3043c::t_9f9ebb50d0600a 234,236-237,240,481
+  s_26f5e669d3043c::t_5970fd4862b142 77-82,86-95
+  s_26f5e669d3043c::t_4bd475e91a8b58 4
+  s_26f5e669d3043c::t_9ce1cccdfbcac6 152
+  s_26f5e669d3043c::t_7dd6f6f63b943f 174,247-248,254,264-268,280-288,290-297,299,310-318,349,698,794,802
+  s_26f5e669d3043c::t_5f9043b445ad8a 142,145-151,336
+  s_26f5e669d3043c::t_b950055d2db6f7 96-104,153-173,238-239,241-244,249-253,255-258,320-335,337-348,450-480,653-660,662,699-703,723-725,765,767-770,797,803-804,808-810
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "712b39cd43f335ce6bccad8e533fed6f018babb5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
