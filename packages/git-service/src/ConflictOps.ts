@@ -768,8 +768,10 @@ export class ConflictOps {
   }
 
   private memoryFor(episode: string): EpisodeMemory {
-    if (this.memory.episode === undefined && this.memory.order.length > 0) {
-      // Choices noted before the first snapshot belong to the current stop.
+    if (this.memory.episode === undefined && (this.memory.order.length > 0 || this.memory.resolved.size > 0)) {
+      // Choices noted before the first snapshot belong to the current stop —
+      // and so do resolutions noted then (the stage channel's takeStage
+      // remembers no row, only what it left in the index).
       this.memory.episode = episode;
     }
     if (this.memory.episode !== episode) this.memory = freshMemory(episode);

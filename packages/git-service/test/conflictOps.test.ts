@@ -778,6 +778,27 @@ test("restore refuses over a file re-added by hand after Delete of a both-delete
   }
 });
 
+test("a side taken through the stage channel (no operation known yet) keeps its note through the dashboard's next refresh", async () => {
+  // The desktop's legacy conflict:takeSide calls takeStage directly, before
+  // any snapshot has named the episode. The note must survive that first
+  // snapshot, or a polish staged after it is overwritten as before.
+  const r = manyShapes();
+  try {
+    const ctx = r.ctx();
+    const took = await ctx.conflictOps.takeStage("both.txt", 2);
+    assert.equal(took.ok, true, took.message);
+    await ctx.conflictOps.snapshot();
+    r.write("both.txt", "polished after taking a side\n");
+    r.git("add", "both.txt");
+    const out = await ctx.conflictOps.restore("both.txt");
+    assert.equal(out.ok, false);
+    assert.match(out.message ?? "", /has changes since it was resolved/);
+    assert.equal(r.read("both.txt"), "polished after taking a side\n");
+  } finally {
+    r.cleanup();
+  }
+});
+
 test("a resolution GitStudio didn't make (a `git add` in a terminal) can still be undone from its row", async () => {
   // Nothing recorded it, so what is staged IS the resolution being undone.
   const r = manyShapes();
