@@ -340,7 +340,14 @@ export class CommitRail extends LitElement {
         user-select: none;
         -webkit-user-select: none;
         --gs-graph-node-hole: var(--gs-bg);
-        content-visibility: auto;
+        /* No content-visibility: auto here. renderRows() builds every row
+           anew, and Chrome skips a fresh auto row's CONTENTS in hit testing
+           until a rendering update has found it on screen: until the next
+           frame, a click on a ref chip or a Copy/Open button landed on the
+           bare .row and selected it instead (the chip-click check failed
+           that way on a loaded CI runner). The virtualizer already keeps
+           the rows to the window and its overscan; there was nothing left
+           for it to skip. */
       }
       .row:hover {
         background: var(--gs-hover);
