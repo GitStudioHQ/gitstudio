@@ -67,6 +67,39 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **The Changes view's arrows point the way they open.** A closed group or
   folder showed ˄ and an open one ›; they now show › when closed and ˅ when
   open, as everywhere else in VS Code.
+- **Stashes: Drop, Pop, Apply and Create Branch act on the stash you picked.**
+  They named it by its place in the list (`stash@{2}`), and a stash made
+  while a question was open — a pull that stashes by itself, Stash & Retry, a
+  terminal — moved every number down, so Drop could drop a different stash.
+  They now find the stash you picked just before git runs; if it has left the
+  list, they say so and change nothing. The Drop question names the stash by
+  its message.
+- **A stash of new files opened as an empty document.** Clicking a stash made
+  with untracked files (the Stash dialog makes one whenever a new file is
+  ticked) left those files out, so a stash of only new files looked empty.
+  They are shown now, beside the edits.
+- **Apply and Pop keep what the stash had staged.** Its staged changes came
+  back unstaged, and popping a file that was staged and then edited further
+  lost the staged version for good. They come back staged now. When your own
+  staged changes are in the way, or the staged part no longer applies, it asks
+  first whether to apply the stash unstaged.
+- **The Stash dialog listed a partly staged file twice**, and unticking one of
+  its two rows still stashed it. Each file has one row now.
+- **Create Branch from a stash asks about changes in its way.** Over an
+  uncommitted edit, git switched to the new branch, then refused to apply the
+  stash and showed its error in red, leaving you on the new branch without
+  your stash. Now it asks first, Stash & Retry or Cancel, as Apply and Pop do,
+  and a name a branch already has is said before anything runs.
+- **The Stashes view: Cancel on a Drop no longer freezes every row for six
+  seconds.** Only the row you pressed waits — its right-click menu too — and
+  only until its action is over.
+- **The Stashes view keeps your place.** Every file save redrew all the rows
+  and threw keyboard focus out of the list; now only rows that changed are
+  touched. Up, Down, Home and End move between stashes, and Delete asks to drop
+  one. A click previews a stash without taking the keyboard, and a
+  double-click opens its menu without opening the stash twice.
+- Apply and Pop in the Stashes view use the stash-apply and stash-pop icons,
+  and the empty view says "Stash", not "Shelve".
 
 ## [1.14.0] - 2026-09-25
 

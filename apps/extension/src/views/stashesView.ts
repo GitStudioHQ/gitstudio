@@ -1,9 +1,16 @@
 import * as vscode from "vscode";
 import { describeStashScope, listForHint, type StashRequest } from "./stashScope";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
-import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
+import {
+  isStashName,
+  isStashSha,
+  STASH_GONE_MESSAGE,
+  stashBlockerMessage,
+  stashBranchNameRefusal,
+  type StashEntry,
+} from "@gitstudio/git-service/StashProvider";
 import { applyOrAsk, type Applied } from "../git/inTheWay";
-import { promptConfirm, promptInput, promptPickMany } from "../ui/dialogs";
+import { promptConfirm, promptInput, promptPick, promptPickMany } from "../ui/dialogs";
 import { stoppedByThisCommand, type DetectedOperation } from "../git/pausedForUser";
 import { detectOperation, notifyPaused } from "../git/pauseNotice";
 
@@ -28,17 +35,20 @@ export class StashDiffContentProvider
   constructor(private readonly repos: RepoManager) {}
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
-    // uri.path is "/<encoded ref>.diff"; the repo root (+ a cache-busting sha)
-    // ride in the query.
+    // uri.path is "/<encoded ref>.diff", a name for the tab; the repo root and
+    // the stash's full sha ride in the query. The content is read by SHA when
+    // there is one: the ref is a position that later names another stash.
     const ref = decodeURIComponent(
       uri.path.replace(/^\//, "").replace(/\.diff$/, ""),
     );
-    const root = new URLSearchParams(uri.query).get("root") ?? "";
+    const query = new URLSearchParams(uri.query);
+    const root = query.get("root") ?? "";
+    const sha = query.get("sha") ?? "";
     const entry = this.repos.getAll().find((e) => e.root === root);
     if (!entry) {
       return "";
     }
-    return entry.ctx.stashes.show(ref);
+    return entry.ctx.stashes.show(isStashSha(sha) ? sha : ref);
   }
 
   dispose(): void {
@@ -76,20 +86,78 @@ function active(repos: RepoManager): RepoEntry | undefined {
   return a;
 }
 
-/** Open a stash's diff in a read-only editor. */
+/**
+ * Open a stash's diff in a read-only editor. `stash` is its full sha (a
+ * `stash@{n}` is pinned to the sha it names now).
+ *
+ * `focus`: move the keyboard into the editor. A click in the list previews
+ * without it, so the list keeps the keyboard — and a double-click's menu is
+ * not left with its focus in the editor, out of reach of Escape.
+ *
+ * False when the stash has left the list (said to the user), for the caller
+ * to redraw the list without it.
+ */
 export async function showStash(
   repos: RepoManager,
-  ref: string,
-  sha?: string,
-): Promise<void> {
+  stash: string,
+  focus = false,
+): Promise<boolean> {
   const a = repos.getActive();
-  if (!a || !ref) {
-    return;
+  if (!a || !stash) {
+    return true;
   }
-  const uri = stashDiffUri(a.root, ref, sha);
+  const entry = await pinStash(a, stash);
+  if (!entry) {
+    return false;
+  }
+  const uri = stashDiffUri(a.root, entry.ref, entry.sha);
   const doc = await vscode.workspace.openTextDocument(uri);
   await vscode.languages.setTextDocumentLanguage(doc, "diff");
-  await vscode.window.showTextDocument(doc, { preview: true });
+  await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: !focus });
+  return true;
+}
+
+/**
+ * The stash the user acted on, as the list holds it NOW — found by its sha,
+ * because `stash@{n}` is a position that every push, pop and drop renumbers.
+ * A `stash@{n}` handed in is pinned to the sha it names at this moment.
+ * Undefined (and said) when it has left the list.
+ */
+async function pinStash(a: RepoEntry, stash: string): Promise<StashEntry | undefined> {
+  const list = isStashName(stash) ? await a.ctx.stashes.list() : [];
+  const entry = isStashSha(stash)
+    ? list.find((e) => e.sha === stash)
+    : list.find((e) => e.ref === stash);
+  if (!entry) {
+    void vscode.window.showInformationMessage(`GitStudio: ${STASH_GONE_MESSAGE}`);
+  }
+  return entry;
+}
+
+/** How a stash is named to the user: its message, which is what they see in
+ *  the list — never its volatile `stash@{n}`. */
+function stashLabel(entry: StashEntry): string {
+  return entry.message || entry.ref;
+}
+
+/**
+ * Stashes with an operation running on them. A second Pop or Drop on the same
+ * stash while the first is still going — a double-click, the row's button and
+ * then its menu — is ignored: both would look the stash up before either ran,
+ * and the second would then act on whatever had moved into its place.
+ */
+const inFlight = new Set<string>();
+
+async function once(entry: StashEntry, run: () => Promise<void>): Promise<void> {
+  if (inFlight.has(entry.sha)) {
+    return;
+  }
+  inFlight.add(entry.sha);
+  try {
+    await run();
+  } finally {
+    inFlight.delete(entry.sha);
+  }
 }
 
 /**
@@ -121,11 +189,14 @@ export async function saveStash(
   // it. `stagedOnly` is its own git mode and cannot be narrowed per path, so it
   // is confirmed by count instead of by list.
   const status = await a.ctx.status.read();
+  // One row per FILE. A partly staged file (`MM`) is in both the staged and
+  // the unstaged list; listed twice, unticking one of its rows still stashed
+  // it (the other row's tick carried the path), and the title counted it
+  // twice.
   const inScope = stagedOnly
     ? status.staged
-    : [...status.staged, ...status.unstaged].filter(
-        (f) => requested.length === 0 || requested.includes(f.path),
-      );
+    : [...new Map([...status.staged, ...status.unstaged].map((f) => [f.path, f] as const)).values()]
+        .filter((f) => requested.length === 0 || requested.includes(f.path));
 
   if (inScope.length === 0) {
     void vscode.window.showInformationMessage(
@@ -264,39 +335,109 @@ export async function saveStash(
   refresh();
 }
 
-/** Apply a stash without dropping it. */
+/**
+ * Apply a stash without dropping it. `stash` is its full sha — every row
+ * sends it — or a `stash@{n}`, pinned to the sha it names now.
+ */
 export async function applyStash(
   repos: RepoManager,
-  ref: string,
+  stash: string,
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  if (!a || !ref) {
+  if (!a || !stash) {
     return;
   }
-  const before = await detectOperation(a.ctx);
-  // Through the shared door: uncommitted work in the stash's way is said, with
-  // Stash & Retry, instead of git's "would be overwritten by merge" in red.
-  await reportStashApplied(a, before, await applyOrAsk(a.ctx, { kind: "stash", stash: ref }), "Applied stash", refresh);
+  const entry = await pinStash(a, stash);
+  if (!entry) {
+    refresh();
+    return;
+  }
+  await once(entry, async () => {
+    const before = await detectOperation(a.ctx);
+    // Through the shared door: uncommitted work in the stash's way is said, with
+    // Stash & Retry, instead of git's "would be overwritten by merge" in red.
+    await reportStashApplied(a, before, await applyWithStaging(a, entry, false), "Applied stash", refresh);
+  });
 }
 
-/** Apply then drop a stash (routed through Undo). */
+/** Apply then drop a stash (routed through Undo). `stash` as for applyStash. */
 export async function popStash(
   repos: RepoManager,
-  ref: string,
+  stash: string,
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  if (!a || !ref) {
+  if (!a || !stash) {
     return;
   }
-  const ledger = repos.getUndoLedger();
-  const before = await detectOperation(a.ctx);
-  const run = () => applyOrAsk(a.ctx, { kind: "stash", stash: ref, pop: true });
-  const applied = ledger
-    ? await ledger.runWithUndo(a, `Pop ${ref}`, run)
-    : await run();
-  await reportStashApplied(a, before, applied, "Popped stash", refresh);
+  const entry = await pinStash(a, stash);
+  if (!entry) {
+    refresh();
+    return;
+  }
+  await once(entry, async () => {
+    const ledger = repos.getUndoLedger();
+    const before = await detectOperation(a.ctx);
+    const run = () => applyWithStaging(a, entry, true);
+    const applied = ledger
+      ? await ledger.runWithUndo(a, `Pop ${entry.ref}`, run)
+      : await run();
+    await reportStashApplied(a, before, applied, "Popped stash", refresh);
+  });
+}
+
+/**
+ * The stash through the shared door, by sha, with its staging.
+ *
+ * A stash that holds staged changes is applied with `--index`, so they come
+ * back staged — a plain apply brought them back unstaged, and a pop then
+ * dropped the only copy of a staged version that differed from the working
+ * copy. Where git cannot stage them again (the user's own staged changes are
+ * in the way, or the staged half no longer applies at HEAD) nothing has run,
+ * and the user is asked before it runs without.
+ */
+async function applyWithStaging(a: RepoEntry, entry: StashEntry, pop: boolean): Promise<Applied> {
+  const index = await a.ctx.stashes.holdsStaged(entry.sha);
+  const first = await applyOrAsk(a.ctx, { kind: "stash", stash: entry.sha, pop, index });
+  if (!first.staging) {
+    return first;
+  }
+  if (!(await askWithoutStaging(entry, first.staging, pop))) {
+    return { result: first.result, cancelled: true };
+  }
+  return applyOrAsk(a.ctx, { kind: "stash", stash: entry.sha, pop });
+}
+
+/** Run it with everything unstaged, or not at all? */
+async function askWithoutStaging(entry: StashEntry, why: "busy" | "refused", pop: boolean): Promise<boolean> {
+  const verb = pop ? "Pop" : "Apply";
+  const choice = await promptPick({
+    title: `${verb} the stash without its staging?`,
+    hint:
+      why === "busy"
+        ? `“${stashLabel(entry)}” has staged changes, and git can only stage them again when nothing else is staged — your own staged changes are in the way. Nothing has changed yet.`
+        : `“${stashLabel(entry)}” has staged changes that no longer apply to what HEAD has now. Nothing has changed yet.`,
+    choices: [
+      {
+        id: "unstaged",
+        label: `${verb} Unstaged`,
+        icon: pop ? "git-stash-pop" : "git-stash-apply",
+        description: pop
+          ? "Its changes come back unstaged and the stash is dropped. Where a file's staged version differed from its working copy, the staged version is not kept."
+          : "Its changes come back unstaged. The stash is kept, staging and all.",
+      },
+      {
+        id: "cancel",
+        label: "Cancel",
+        icon: "close",
+        description: pop
+          ? "Nothing runs. Apply keeps the stash, so its staged versions stay in it."
+          : "Nothing runs.",
+      },
+    ],
+  });
+  return choice === "unstaged";
 }
 
 /**
@@ -327,56 +468,91 @@ async function reportStashApplied(
   );
 }
 
-/** Confirm + drop a stash (routed through Undo). */
+/**
+ * Confirm + drop a stash (routed through Undo). `stash` as for applyStash.
+ *
+ * The question names the stash by its message, and the drop finds it by sha
+ * AFTER the answer: the question has no time limit, and a stash pushed
+ * meanwhile (a pull's autostash, Stash & Retry, a terminal) renumbers the
+ * list — dropping the old number then dropped somebody else's stash.
+ */
 export async function dropStash(
   repos: RepoManager,
-  ref: string,
+  stash: string,
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  if (!a || !ref) {
+  if (!a || !stash) {
     return;
   }
-  const ok = await promptConfirm({
-    title: `Drop ${ref}?`,
-    message:
-      "The stashed changes are discarded. GitStudio's Undo can bring the stash back.",
-    confirmLabel: "Drop",
-    danger: true,
+  const entry = await pinStash(a, stash);
+  if (!entry) {
+    refresh();
+    return;
+  }
+  await once(entry, async () => {
+    const ok = await promptConfirm({
+      title: `Drop “${stashLabel(entry)}”?`,
+      message:
+        "The stashed changes are discarded. GitStudio's Undo can bring the stash back.",
+      confirmLabel: "Drop",
+      danger: true,
+    });
+    if (!ok) {
+      return;
+    }
+    const ledger = repos.getUndoLedger();
+    const run = () => a.ctx.stashes.drop(entry.sha);
+    const result = ledger
+      ? await ledger.runWithUndo(a, `Drop ${entry.ref}`, run)
+      : await run();
+    reportStashOp(result, "Dropped stash", refresh);
   });
-  if (!ok) {
-    return;
-  }
-  const ledger = repos.getUndoLedger();
-  const run = () => a.ctx.stashes.drop(ref);
-  const result = ledger
-    ? await ledger.runWithUndo(a, `Drop ${ref}`, run)
-    : await run();
-  reportStashOp(result, "Dropped stash", refresh);
 }
 
-/** Create a branch from a stash. */
+/** Create a branch from a stash. `stash` as for applyStash. */
 export async function branchFromStash(
   repos: RepoManager,
-  ref: string,
+  stash: string,
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  if (!a || !ref) {
+  if (!a || !stash) {
     return;
   }
-  const name = await promptInput({
-    title: `Create branch from ${ref}`,
-    hint: "The stash is applied on the new branch and dropped once it applies cleanly.",
-    placeholder: "feature/from-stash",
-    confirmLabel: "Create Branch",
-    validate: "refName",
+  const entry = await pinStash(a, stash);
+  if (!entry) {
+    refresh();
+    return;
+  }
+  await once(entry, async () => {
+    const name = await promptInput({
+      title: `Create branch from “${stashLabel(entry)}”`,
+      hint: "The stash is applied on the new branch and dropped once it applies cleanly.",
+      placeholder: "feature/from-stash",
+      confirmLabel: "Create Branch",
+      validate: "refName",
+    });
+    if (!name) {
+      return;
+    }
+    // A name git will not take — one a branch already has, say — is the
+    // user's to change, said as that rather than as git's error.
+    const refused = await stashBranchNameRefusal(a.ctx.process, name);
+    if (refused) {
+      void vscode.window.showWarningMessage(`GitStudio: ${refused}`);
+      return;
+    }
+    // Through the shared door, by sha: the branch is made from the stash the
+    // user picked, and git drops THAT one, wherever the list has moved it
+    // while the name was typed. `git stash branch` switches first and applies
+    // after, so uncommitted work where it writes is asked about before it
+    // runs (Stash & Retry) — git's refusal left the user on the new branch
+    // with the stash unapplied, and said so in red.
+    const before = await detectOperation(a.ctx);
+    const applied = await applyOrAsk(a.ctx, { kind: "stash", stash: entry.sha, branch: name });
+    await reportStashApplied(a, before, applied, `Created branch ${name}`, refresh);
   });
-  if (!name) {
-    return;
-  }
-  const result = await a.ctx.stashes.branch(ref, name);
-  reportStashOp(result, `Created branch ${name}`, refresh);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -387,13 +563,18 @@ export async function branchFromStash(
  * files for the user, and the Conflicts dashboard resolves them or cancels.
  */
 function reportStashOp(
-  result: { ok: boolean; stderr: string },
+  result: { ok: boolean; stderr: string; gone?: true },
   success: string,
   refresh: () => void,
   paused = false,
 ): void {
   if (result.ok) {
     flash(success);
+    refresh();
+  } else if (result.gone) {
+    // Left the list between the click and git running: the user's state,
+    // said as that, and the list redrawn without it.
+    void vscode.window.showInformationMessage(`GitStudio: ${STASH_GONE_MESSAGE}`);
     refresh();
   } else if (paused) {
     notifyPaused("The stash hit conflicts. Resolve them, or cancel to put the files back — the stash is kept.");
