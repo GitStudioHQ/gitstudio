@@ -1,0 +1,149 @@
+apps/extension/test/summarySettle.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-53
+packages/git-service/src/multiCommit.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-318
+apps/desktop/src/renderer/dropCommit.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 99
+  s_26f5e669d3043c::t_b9743a75fa67b4 106
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 76-88,172-174,229-234,242-246,1242-1246,1253-1256,1736-1739,1741-1743,1756-1757,1762-1764,1766-1772,2040-2047,2150-2160,2164-2179,2733-2734,2743-2745,2750-2761,3203-3204,3216,3435-3440,3445-3447,3454-3498,3507,3526-3527,3530-3546,3621-3622,3810-3817,3823,3826,3829,3832-3841,3843-3856,3860-3867,3870,3906,4499,4536,4539,4542-4544,4546,4548-4549,4551
+packages/webview-ui/src/commit-details.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 86-124,128,133-134,159,202-203,760-812,816-820,837-839,1231-1289,1291
+  s_26f5e669d3043c::t_cd23c730998a3a 1290,1292
+packages/webview-ui/test/multiSelectWebview.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-221
+apps/extension/test/multiCommitActions.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-469
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_61495fe03b83bc 524
+  s_26f5e669d3043c::t_d2fb1c53d924ec 313-317
+  s_26f5e669d3043c::t_db42bb085e1c39 54,56-63,525-553,686-695
+packages/webview-ui/src/graph/selectionSummary.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-17
+apps/desktop/test/destructiveGuards.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 40,51
+packages/git-service/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 330-350
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_db42bb085e1c39 614-625
+apps/desktop/test/multiCommitFlow.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-298
+packages/webview-ui/src/graph/multiSelect.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-166
+packages/webview-ui/test/multiSelect.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-141
+packages/webview-ui/src/graph/main.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 12-13,78-79,86-99,106-108,117,123-128,200-206,212-213,355-359,379,383-389
+  s_26f5e669d3043c::t_2b8ad02ebfd7be 390-391
+packages/webview-ui/test/multiSelectHeadless.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-330
+apps/desktop/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 144-159
+apps/desktop/harness/shot.sh
+  s_26f5e669d3043c::t_db42bb085e1c39 8
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 4-6,10-14,613,632-633,642-752,757-759,761-762
+  s_26f5e669d3043c::t_632102efa47f80 753-756,760
+packages/git-service/src/stoppedOperation.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 39-42,121-122
+apps/extension/src/ui/dialogs.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 77-83
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_db42bb085e1c39 51-66,9426-9871
+  s_26f5e669d3043c::t_3a841289e461bc 9872
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 22-36,189,191,793-807,829-1097,1099-1100,1105,1107
+  s_26f5e669d3043c::t_f5501413b41656 1098,1101-1104,1106,1108
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_db42bb085e1c39 2879-2929,3284-3375,3722-3729
+  s_26f5e669d3043c::t_b564c37905f44f 3730
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 523-526,817-822
+packages/engine/src/rebase/many.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-308
+packages/git-service/test/multiCommit.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-609
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 72-83,118-119,123-126,151-152,157-158,385-388,984-985,987-989,1145-1149,1209-1237,1292-1293,1303,1373,1530-1536,1557,1560-1575,1577-1578,1590-1592,1622-1624,1632-1634,1643-1647,1649,1709,1746-1747,1755-1756,1768-1778,2363,2382,2404-2405
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 23-24,59,107,109,204,206-208,383-385,833,4584-4593,4599-4604,4656-4662,4693,4705,4749-4752,4754,4816,4835,4850,4873,4888,4893,8599-8601,8603,10135,10562-10652
+  s_26f5e669d3043c::t_045212def82840 10653
+packages/host-bridge/test/settleLatest.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-104
+apps/extension/test/squashMessageEditor.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-78
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_db42bb085e1c39 16-40
+packages/webview-ui/src/graph/sidebar-main.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 44-45,54,117,131
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_95ed540b346bfb 2081-2082
+  s_26f5e669d3043c::t_db42bb085e1c39 357-363,413-426,2062-2068,2094-2165,2218-2223
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 44-46,1820-1822,1825-1826,3021-3024,3077-3146
+  s_26f5e669d3043c::t_e5f43c7b2586d2 3147-3152
+packages/git-service/test/snapshot.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 136-165
+apps/desktop/test/multiCommit.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-285
+apps/extension/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 380,384-424
+  s_26f5e669d3043c::t_92b71becc31ce8 425
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 8,137-139,558-641,644-645
+  s_26f5e669d3043c::t_1cac068da2bc04 642-643,646-649
+packages/host-bridge/test/graphSelection.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-66
+apps/desktop/test/dropCommitFlow.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 202-209
+packages/engine/test/rebaseMany.test.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-172
+packages/webview-ui/src/styles/codicons.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 32-35
+packages/host-bridge/src/graphSelection.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-42
+apps/desktop/src/renderer/contextMenu.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 10,98-131,157-158,161-219,238-239,261-262,268
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 36-47,283-284,287-296,298,302-304,306,982-1042,1090-1092
+  s_26f5e669d3043c::t_7e4bbae3e02ef0 766-769
+packages/git-service/src/dropCommit.ts
+  s_26f5e669d3043c::t_6658d0c4186a5d 332,338,359-369,373-377,389-390,400,407-408,410,414,417-419,426,456,478,484,489-520,524,526-545,547-554,573
+  s_26f5e669d3043c::t_db42bb085e1c39 72,84,211-225,228,235,250-262,275-276,279-294,342-358,370-372,405-406,521-523,525,546,555-572
+  s_26f5e669d3043c::t_200aa2e1f39614 295
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_db42bb085e1c39 10-33,163-166
+packages/host-bridge/src/settleLatest.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-37
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 6589-6596
+apps/desktop/src/renderer/multiCommit.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 1-208
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_db42bb085e1c39 5231-5236,13185-13192
+packages/host-bridge/src/graphProtocol.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 223-228,235-246,255,311-323,350-353
+apps/desktop/src/renderer/graphMount.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 11-12,14,19-20,22-24,53-55,62-67,69,241-249
+  s_26f5e669d3043c::t_17167a518a9958 250
+packages/engine/src/rebase/chain.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 92-97
+apps/desktop/src/renderer/focusReturn.ts
+  s_26f5e669d3043c::t_db42bb085e1c39 104-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "34882a4a490dbcad3166d995411578d5843093aa",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
