@@ -3531,6 +3531,8 @@ export class CommitViewProvider
     }
     .icon-btn:active { background: color-mix(in srgb, var(--gs-fg) 12%, transparent); }
     .icon-btn:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+    .icon-btn:disabled { opacity: 0.4; cursor: default; }
+    .icon-btn:disabled:hover { color: var(--gs-fg-muted); background: transparent; }
     .icon-btn.collapse-all { display: none; }
     body.layout-tree .icon-btn.collapse-all { display: inline-flex; }
 
@@ -4348,7 +4350,7 @@ export class CommitViewProvider
     <span class="toolbar-spacer"></span>
     <span class="toolbar-actions">
       <button class="icon-btn layout" id="layout-toggle" type="button"
-        title="Toggle tree / list view" aria-label="Toggle tree / list view">
+        title="View as Tree" aria-label="View as Tree">
         <i class="codicon codicon-list-tree to-tree" aria-hidden="true"></i>
         <i class="codicon codicon-list-flat to-list" aria-hidden="true"></i>
       </button>
@@ -5124,6 +5126,11 @@ export class CommitViewProvider
     function applyLayoutClass() {
       document.body.classList.toggle("layout-tree", layout === "tree");
       document.body.classList.toggle("layout-list", layout !== "tree");
+      // Where the toggle takes you (its icon is that layout's), as the model
+      // toggle beside it says — "Toggle tree / list view" said neither.
+      const label = layout === "tree" ? "View as List" : "View as Tree";
+      layoutToggle.dataset.tip = label;
+      layoutToggle.setAttribute("aria-label", label);
     }
     layoutToggle.addEventListener("click", () => {
       layout = layout === "tree" ? "list" : "tree";
@@ -6957,6 +6964,11 @@ export class CommitViewProvider
       const total =
         data.merge.length + data.staged.length + data.unstaged.length;
       emptyEl.classList.toggle("visible", stateSeen && total === 0);
+      // Nothing for them to take: Stage All has no unstaged or conflicted
+      // file, Stash no change at all. They looked (and posted) the same on a
+      // clean tree.
+      stageAllTopBtn.disabled = data.unstaged.length + data.merge.length === 0;
+      stashChangesBtn.disabled = total === 0;
       changesTotal.textContent = String(total);
       changesTotal.classList.toggle("visible", total > 0);
 
