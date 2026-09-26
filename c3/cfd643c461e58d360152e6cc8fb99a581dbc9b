@@ -1,0 +1,29 @@
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_8973cafe8aba31 537-538
+apps/extension/test/forceWithLeaseSetting.test.ts
+  s_3704f18affede0::t_f939d8a3daf313 1-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c3cfd643c461e58d360152e6cc8fb99a581dbc9b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_3704f18affede0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0da1a4474623c7a3",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
