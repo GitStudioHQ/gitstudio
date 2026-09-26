@@ -723,6 +723,37 @@ test("review: Delete on a pending comment deletes that comment", async () => {
   assert.equal(thread.disposed, true, "the thread goes with its last comment");
 });
 
+test("review: \"pending\" counts pending comments — a posted one is neither counted nor discarded", async () => {
+  github([["POST", /\/reviews$/, () => ({ body: { id: 1 } })], ...acmeRoutes()]);
+  const m = mount(fakeRepos(ORIGIN));
+  await startReview(m, 37);
+  const thread = vscode.__makeThread(prUri("src/a.ts", HEAD_37), new vscode.Range(1, 0, 1, 0));
+  await vscode.commands.executeCommand("gitstudio.pr.addSingleComment", { thread, text: "posted now" });
+  await until(() => thread.comments.length === 1, "the single comment to post");
+  await vscode.commands.executeCommand("gitstudio.pr.addReviewComment", { thread, text: "pending" });
+  await vscode.commands.executeCommand("gitstudio.pr.deleteReviewComment", thread.comments.find((c: any) => c.body.value === "pending"));
+  await vscode.commands.executeCommand("gitstudio.pr.cancelReview");
+  assert.deepEqual(asked.map((a) => a.title), [], "nothing is pending, so nothing to discard");
+  assert.equal(thread.disposed, false, "the posted comment stays in the editor");
+  assert.deepEqual(thread.comments.map((c: any) => c.body.value), ["posted now"]);
+
+  // Two pending replies on one line are two pending comments.
+  await startReview(m, 37);
+  const two = vscode.__makeThread(prUri("src/a.ts", HEAD_37), new vscode.Range(2, 0, 2, 0));
+  await vscode.commands.executeCommand("gitstudio.pr.addReviewComment", { thread: two, text: "one" });
+  await vscode.commands.executeCommand("gitstudio.pr.addReviewComment", { thread: two, text: "two" });
+  await vscode.commands.executeCommand("gitstudio.pr.cancelReview");
+  assert.match(asked.at(-1)?.title ?? "", /^Discard 2 pending comments on #37\?$/);
+
+  // Discarding keeps what is already on GitHub.
+  await vscode.commands.executeCommand("gitstudio.pr.addSingleComment", { thread: two, text: "posted too" });
+  await until(() => two.comments.length === 3, "the single comment to post");
+  answer = (spec) => (spec.kind === "confirm" ? "ok" : undefined);
+  await vscode.commands.executeCommand("gitstudio.pr.cancelReview");
+  assert.equal(two.disposed, false);
+  assert.deepEqual(two.comments.map((c: any) => c.body.value), ["posted too"], "the pending ones go, the posted one stays");
+});
+
 test("review: the submitted review is pinned to the head the diffs showed, with multi-line and LEFT comments as GitHub names them", async () => {
   let sent: any;
   github([

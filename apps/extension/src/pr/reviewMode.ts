@@ -208,7 +208,7 @@ export class ReviewController implements vscode.Disposable {
     }
     const baseSha = await diffBase(this.api, ctx, pr);
 
-    if (this.active && this.threads.size > 0) {
+    if (this.active && this.pendingCount() > 0) {
       const old = this.active.pr.number;
       const choice = await promptPick({
         title: `Discard ${this.pendingWords()} on #${old}?`,
@@ -298,7 +298,10 @@ export class ReviewController implements vscode.Disposable {
   /**
    * The Delete action. VS Code hands a comment/title action the COMMENT; a
    * thread may come from elsewhere. One pending comment goes — the thread
-   * goes with its last one.
+   * goes with its last one, and leaves the queue with its last PENDING one:
+   * a thread that also holds a comment already posted stayed queued, so
+   * Cancel asked to "Discard 1 pending comment" when none was, and discarding
+   * took the posted comment off the editor too.
    */
   deleteComment(arg: unknown): void {
     if (arg instanceof ReviewComment_) {
@@ -307,6 +310,8 @@ export class ReviewController implements vscode.Disposable {
       if (thread.comments.length === 0) {
         this.threads.delete(thread);
         thread.dispose();
+      } else if (pendingIn(thread) === 0) {
+        this.unqueue(thread);
       }
       return;
     }
@@ -317,13 +322,24 @@ export class ReviewController implements vscode.Disposable {
     }
   }
 
-  /** Count of pending draft comments. */
+  /** A thread left with only comments already on GitHub: out of the queue, as posted. */
+  private unqueue(thread: vscode.CommentThread): void {
+    this.threads.delete(thread);
+    thread.label = "Comment posted";
+    thread.contextValue = undefined;
+  }
+
+  /** Count of pending draft comments — comments, not the lines they are on. */
   pendingCount(): number {
-    return this.threads.size;
+    let n = 0;
+    for (const thread of this.threads.keys()) {
+      n += pendingIn(thread);
+    }
+    return n;
   }
 
   private pendingWords(): string {
-    const n = this.threads.size;
+    const n = this.pendingCount();
     return `${n} pending comment${n === 1 ? "" : "s"}`;
   }
 
@@ -423,7 +439,7 @@ export class ReviewController implements vscode.Disposable {
       return false;
     }
 
-    this.clearThreads();
+    this.clearThreads({ keepPosted: false });
     await this.setReviewing(false);
     this.active = undefined;
     void vscode.window.showInformationMessage(
@@ -478,7 +494,7 @@ export class ReviewController implements vscode.Disposable {
 
   /** Abandon the in-progress review — asking first when comments are queued. */
   async cancelReview(): Promise<void> {
-    if (this.active && this.threads.size > 0) {
+    if (this.active && this.pendingCount() > 0) {
       const ok = await promptConfirm({
         title: `Discard ${this.pendingWords()} on #${this.active.pr.number}?`,
         message: "They haven't been sent to GitHub, and discarding them can't be undone.",
@@ -494,9 +510,21 @@ export class ReviewController implements vscode.Disposable {
     this.active = undefined;
   }
 
-  private clearThreads(): void {
+  /**
+   * Drop the queue: every pending comment goes. Discarded, a thread that also
+   * holds a comment already on GitHub keeps that one — removing it here would
+   * not remove it there. Sent (or shutting down), every thread goes, as ever.
+   */
+  private clearThreads(opts: { keepPosted: boolean } = { keepPosted: true }): void {
     for (const thread of this.threads.keys()) {
-      thread.dispose();
+      const posted = opts.keepPosted ? thread.comments.filter((c) => c.contextValue === POSTED) : [];
+      if (posted.length > 0) {
+        thread.comments = posted;
+        thread.label = "Comment posted";
+        thread.contextValue = undefined;
+      } else {
+        thread.dispose();
+      }
     }
     this.threads.clear();
   }
@@ -515,12 +543,17 @@ export class ReviewController implements vscode.Disposable {
   }
 
   dispose(): void {
-    this.clearThreads();
+    this.clearThreads({ keepPosted: false });
     for (const d of this.disposables) {
       d.dispose();
     }
     this.disposables.length = 0;
   }
+}
+
+/** How many of a thread's comments are pending (not yet on GitHub). */
+function pendingIn(thread: vscode.CommentThread): number {
+  return thread.comments.filter((c) => c.contextValue !== POSTED).length;
 }
 
 /** Render a Comment body (string | MarkdownString) to plain text. */
