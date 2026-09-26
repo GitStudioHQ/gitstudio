@@ -469,6 +469,42 @@ test("Merge from the page flips it to Merged in place, drops the row, and offers
   assert.equal(gh.count(/pulls\?state=open/), listLoads, "…without reloading it");
 });
 
+test("a page update still in flight when the merge lands never paints Open over Merged", async () => {
+  let merged = false;
+  const gh = github([
+    ["GET", /^\/repos\/acme\/app$/, () => ({ body: { default_branch: "main" } })],
+    [
+      "PUT",
+      /^\/repos\/acme\/app\/pulls\/37\/merge$/,
+      () => {
+        merged = true;
+        return { body: { merged: true } };
+      },
+    ],
+    [
+      "GET",
+      /^\/repos\/acme\/app\/pulls\/37$/,
+      () => ({ body: merged ? { ...PULLS()[0], state: "closed", merged_at: "2026-09-25T10:00:00Z" } : PULLS()[0] }),
+    ],
+    ...acmeRoutes(),
+  ]);
+  const m = mount(fakeRepos(ORIGIN));
+  const page = await openPage(m, 37);
+  // Refresh; its files (a big PR: page after page) are slow to come.
+  const slow = gh.hold(/^\/repos\/acme\/app\/pulls\/37\/files/);
+  page.receive({ type: "refresh" });
+  await until(() => slow.held() > 0, "the refresh to be in flight");
+  answer = (spec) => (spec.kind === "pick" && /^Merge PR #37/.test(spec.title) ? "squash" : undefined);
+  page.receive({ type: "merge" });
+  await until(() => page.posted.some((p: any) => p.type === "state" && p.kind === "merged"), "the page to be told Merged");
+  await sleep(50);
+  slow.release();
+  await sleep(100);
+  const html: string = page.webview.html;
+  assert.equal(/id="badge" class="badge badge-(\w+)"/.exec(html)?.[1], "merged", "the page still reads Merged");
+  assert.match(html, /id="btn-merge"[^>]*disabled/, "and Merge… stays off");
+});
+
 test("a PR's files follow GitHub's pages: all 130 are listed, and the 130th takes a review comment", async () => {
   const many = Array.from({ length: 130 }, (_, i) => ({
     filename: `src/f${i}.ts`,

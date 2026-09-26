@@ -54,6 +54,8 @@ export class PrDescriptionPanel {
   static markMerged(owner: string, repo: string, n: number): void {
     const panel = PrDescriptionPanel.panels.get(prKey(owner, repo, n));
     if (panel) {
+      // Anything asked of GitHub before now answers for the PR as it WAS.
+      panel.stateGen++;
       panel.pr = { ...panel.pr, state: "closed", mergedAt: panel.pr.mergedAt ?? new Date().toISOString() };
       panel.postState();
       void panel.revalidateState();
@@ -95,6 +97,13 @@ export class PrDescriptionPanel {
   /** Why the last read of the files failed; the files shown are the last good ones. */
   private filesError: string | undefined;
   private ci: CiRollup | undefined;
+  /** Counts update()s: only the latest one started may paint. */
+  private updateGen = 0;
+  /**
+   * Counts state changes the host made itself (a merge): a detail asked of
+   * GitHub before one is the PR as it was, and never replaces it.
+   */
+  private stateGen = 0;
 
   private constructor(
     private readonly key: string,
@@ -121,9 +130,18 @@ export class PrDescriptionPanel {
    * Re-fetch the PR detail + files + checks and re-render. The three are
    * asked at once — the files and the checks don't wait on the detail; the
    * checks are asked again only if the detail says the head moved.
+   *
+   * An update is slow (a big PR's files come a page at a time), and things
+   * happen meanwhile: a merge flipped the page to Merged, then this answer —
+   * the PR as it was before — painted the whole page Open again, Merge…
+   * enabled (#17 again). So an update paints only if no later one has
+   * started, and its detail replaces the PR only if the host changed nothing
+   * about it since the update asked.
    */
   async update(pr?: PullRequest): Promise<void> {
     const { api, ctx } = this.deps;
+    const gen = ++this.updateGen;
+    const stateAt = this.stateGen;
     const n = (pr ?? this.pr).number;
     const knownSha = (pr ?? this.pr).head.sha;
     const ciFor = (sha: string) => api.getCi(ctx.owner, ctx.repo, sha).catch(() => undefined);
@@ -139,10 +157,18 @@ export class PrDescriptionPanel {
       ),
       ciFor(knownSha),
     ]);
+    if (gen !== this.updateGen) {
+      return; // a later update paints
+    }
+    const current = this.stateGen === stateAt;
     if (detail.ok) {
-      this.pr = detail.p;
+      if (current) {
+        this.pr = detail.p;
+      }
     } else if (pr) {
-      this.pr = pr;
+      if (current) {
+        this.pr = pr;
+      }
     } else {
       void this.showLoadError(detail.err);
     }
@@ -153,7 +179,12 @@ export class PrDescriptionPanel {
       this.filesError =
         files.err instanceof GitHubApiError ? files.err.message : "GitHub didn't answer.";
     }
-    this.ci = this.pr.head.sha === knownSha ? ci : await ciFor(this.pr.head.sha);
+    const sha = this.pr.head.sha;
+    const checks = sha === knownSha ? ci : await ciFor(sha);
+    if (gen !== this.updateGen) {
+      return;
+    }
+    this.ci = checks;
     this.render();
   }
 

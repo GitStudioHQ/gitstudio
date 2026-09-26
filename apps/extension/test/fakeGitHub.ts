@@ -21,20 +21,42 @@ export interface FakeReply {
 
 export type Route = [method: string, path: RegExp, reply: (req: FakeRequest, m: RegExpExecArray) => FakeReply];
 
+/** Requests held in flight until released — a slow GitHub, on cue. */
+export interface Hold {
+  /** How many requests are waiting. */
+  held(): number;
+  /** Let every waiting request through, and stop holding. */
+  release(): void;
+}
+
 export interface FakeGitHub {
   requests: FakeRequest[];
   /** Requests whose path matches, e.g. count(/\/pulls\?/). */
   count(re: RegExp): number;
   routes: Route[];
+  /** Hold every request whose path matches `re` until released. */
+  hold(re: RegExp): Hold;
   restore(): void;
 }
 
 export function installFakeGitHub(routes: Route[]): FakeGitHub {
   const original = globalThis.fetch;
+  const holds: { re: RegExp; waiting: (() => void)[]; on: boolean }[] = [];
   const fake: FakeGitHub = {
     requests: [],
     routes,
     count: (re) => fake.requests.filter((r) => re.test(`${r.method} ${r.path}`)).length,
+    hold: (re) => {
+      const h = { re, waiting: [] as (() => void)[], on: true };
+      holds.push(h);
+      return {
+        held: () => h.waiting.length,
+        release: () => {
+          h.on = false;
+          for (const go of h.waiting.splice(0)) go();
+        },
+      };
+    },
     restore: () => {
       globalThis.fetch = original;
     },
@@ -44,6 +66,11 @@ export function installFakeGitHub(routes: Route[]): FakeGitHub {
     if (url.host !== "api.github.com") throw new Error(`the fake GitHub was asked for ${url.href}`);
     const method = (init?.method ?? "GET").toUpperCase();
     const path = url.pathname + url.search;
+    for (const h of holds) {
+      if (h.on && h.re.test(path)) {
+        await new Promise<void>((go) => h.waiting.push(go));
+      }
+    }
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries((init?.headers ?? {}) as Record<string, string>)) headers[k.toLowerCase()] = v;
     const req: FakeRequest = {
