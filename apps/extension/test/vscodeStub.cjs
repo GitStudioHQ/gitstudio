@@ -12,7 +12,7 @@ const said = [];
 /** Any member, callable and constructible, answering more of itself. */
 function anything(path) {
   const fn = function () {};
-  return new Proxy(fn, {
+  const proxy = new Proxy(fn, {
     get(_t, p) {
       if (p === "prototype") return {};
       if (p === Symbol.toPrimitive) return () => path;
@@ -21,7 +21,15 @@ function anything(path) {
     },
     apply: () => anything(`${path}()`),
     construct: () => anything(`new ${path}`),
+    // An assignment TO this object is accepted and forgotten, as on a real
+    // API object: the target is a bare function, whose own `name` and
+    // `length` are read-only, and `statusBarItem.name = …` threw. One that
+    // only passes through it — onto a class below whose prototype this is,
+    // like a test's Object.assign(vscode.Uri, …) — lands on that class, as
+    // an ordinary assignment would.
+    set: (target, p, value, receiver) => (receiver === proxy ? true : Reflect.set(target, p, value, receiver)),
   });
+  return proxy;
 }
 
 class Disposable {
