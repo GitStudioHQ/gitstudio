@@ -1,0 +1,25 @@
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_1b6c0c1496a61d 4972-4973
+  s_26f5e669d3043c::t_3683611731c558 5749-5751
+  s_26f5e669d3043c::t_2178b67f70a67f 5758-5771,6473-6474,6504
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_ac98a835db93af 89-92
+apps/extension/test/branchMenuFit.test.ts
+  s_26f5e669d3043c::t_ebc8b8a00093cf 11-13,231-271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "07e602703d52bc8f2f9793cd2c57873203cd85f2",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
