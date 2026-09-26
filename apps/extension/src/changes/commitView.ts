@@ -6696,7 +6696,7 @@ export class CommitViewProvider
       title.innerHTML = "Push to <b></b>";
       title.querySelector("b").textContent = data.target;
       head.appendChild(title);
-      const close = el("button", "pm-close", "&times;");
+      const close = el("button", "pm-close", '<i class="codicon codicon-close" aria-hidden="true"></i>');
       close.setAttribute("aria-label", "Close");
       close.addEventListener("click", () => { if (!pushBusy) closePushModal(); });
       head.appendChild(close);
@@ -7184,6 +7184,9 @@ export class CommitViewProvider
         const state = stateByPath.get(f.entry.path) || "unstaged";
         const ck = el("input", "ck");
         ck.type = "checkbox";
+        // Named by its file: a list of ticks all called "Not included — click
+        // to include it" does not say which is which.
+        ck.setAttribute("aria-label", "Include " + f.entry.path + " in the commit");
         ck.checked = state === "staged";
         // Some of this file is staged and some is not. An empty box would claim
         // none of it is and a ticked one that all of it is; both are false, and
@@ -7389,6 +7392,7 @@ export class CommitViewProvider
       const header = el("div", "group-header");
       header.tabIndex = 0;
       header.setAttribute("role", "button");
+      header.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
       const twisty = el("span", "twisty", ICON_CHEVRON);
       const gdot = el("span", "gdot");
       const glabel = el("span", "glabel");
@@ -7975,16 +7979,30 @@ export class CommitViewProvider
     let tipTimer = 0;
     function upgradeTips(node) {
       if (!node || node.nodeType !== 1) return;
-      if (node.hasAttribute && node.hasAttribute("title")) {
-        node.dataset.tip = node.getAttribute("title");
-        node.removeAttribute("title");
+      if (node.hasAttribute && node.hasAttribute("title")) moveTitle(node);
+      if (node.querySelectorAll) node.querySelectorAll("[title]").forEach(moveTitle);
+    }
+    /**
+     * A title moves into data-tip (the view draws its own tooltip) WITHOUT
+     * taking the accessible name along: the title is what named every tick
+     * and icon-only button, and deleting it left them nameless to a screen
+     * reader. What it gave stays in ARIA — the name of an element with no
+     * text of its own (a tick, an icon button), else the description. A name
+     * the element carries itself is kept; the tip becomes its description.
+     */
+    function moveTitle(c) {
+      const tip = c.getAttribute("title");
+      c.dataset.tip = tip;
+      c.removeAttribute("title");
+      const ownName = c.hasAttribute("aria-labelledby") ||
+        (c.hasAttribute("aria-label") && c.dataset.tipNamed !== "1");
+      const namedByText = !/^(INPUT|SELECT|TEXTAREA)$/.test(c.tagName) && c.textContent.trim() !== "";
+      if (ownName || namedByText) {
+        if (tip !== c.getAttribute("aria-label")) c.setAttribute("aria-description", tip);
+        return;
       }
-      if (node.querySelectorAll) {
-        node.querySelectorAll("[title]").forEach((c) => {
-          c.dataset.tip = c.getAttribute("title");
-          c.removeAttribute("title");
-        });
-      }
+      c.setAttribute("aria-label", tip);
+      c.dataset.tipNamed = "1";
     }
     function hideTip() { clearTimeout(tipTimer); tipTarget = null; tipEl.classList.remove("show"); }
     function showTip() {
