@@ -262,3 +262,45 @@ test("the editor-area graph's reveal paints the row it lands on at once", { skip
   );
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+// A selection of several (issue #32) goes through setSelection, not select():
+// Shift+End from the top of the editor-area graph lands its cursor on the last
+// row, far down the list. With a bare scrollToIndex there the paint drew the
+// OLD window at the new offset, and the row it landed on was not in the DOM.
+test("Shift+End in the editor-area graph paints the row a several-row selection lands on", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const v = await runInChrome(
+    CHROME!,
+    fileURLToPath(new URL("../src/graph/commit-graph.ts", import.meta.url)),
+    `
+    const sha = (i) => i.toString(16).padStart(4, "0").repeat(10);
+    const row = (i) => ({
+      sha: sha(i), shortSha: sha(i).slice(0, 7), column: 0, color: 0, isMerge: false,
+      segments: [{ fromColumn: 0, toColumn: 0, color: 0 }],
+      subject: "commit " + i, author: "Ada Lovelace", authorEmail: "ada@example.com",
+      authorDate: 1700000000 - i * 3600, refs: [],
+    });
+    const graph = document.createElement("gitstudio-graph");
+    graph.onAction = () => {};
+    graph.status = "loading";
+    document.getElementById("root").replaceChildren(graph);
+    await graph.updateComplete;
+    graph.rows = Array.from({ length: 400 }, (_, i) => row(i)); graph.totalColumns = 1; graph.hasMore = false; graph.status = "ready";
+    await graph.updateComplete;
+    const scroller = graph.shadowRoot.querySelector(".scroller");
+    expect(!!scroller && scroller.clientHeight > 100, "the list has a real height to scroll in");
+    expect(graph.reveal(sha(0)), "the first commit is selected");
+    await graph.updateComplete;
+    scroller.focus();
+    // On the element that has the keyboard, the way a key press lands.
+    scroller.dispatchEvent(new KeyboardEvent("keydown", { key: "End", shiftKey: true, bubbles: true, composed: true, cancelable: true }));
+    await graph.updateComplete;
+    expect(scroller.scrollTop > 300 * 34, "the list scrolled to the end (scrollTop " + scroller.scrollTop + ")");
+    const last = graph.shadowRoot.querySelector('.row[data-sha="' + sha(399) + '"]');
+    expect(!!last, "and the row the cursor landed on is painted");
+    expect(!!last && last.classList.contains("selected") && last.classList.contains("focused"), "selected, with the cursor on it (" + (last && last.className) + ")");
+    expect(graph.shadowRoot.querySelectorAll(".row.selected").length > 1, "among several selected rows");
+  `,
+    { css: `#root{height:600px;display:flex;flex-direction:column} gitstudio-graph{flex:1;min-height:0}` },
+  );
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});

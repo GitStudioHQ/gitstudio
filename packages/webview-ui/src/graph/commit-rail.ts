@@ -1231,8 +1231,10 @@ export class CommitRail extends LitElement {
     this.sel = next;
     this.selectedSha = next.focus ?? "";
     if (scroll && next.focus) {
+      // scrollToRow, not a bare scrollToIndex: the paint below must draw the
+      // window the list lands on (End, PageDown, Shift+End far down the list).
       const i = this.shaToIndex.get(next.focus);
-      if (i !== undefined) this.virtualizer?.scrollToIndex(i, { align: "auto" });
+      if (i !== undefined) this.scrollToRow(i, "auto");
     }
     this.renderRows();
   }

@@ -3474,8 +3474,10 @@ export class CommitGraph extends LitElement {
     const moved = this.selectedSha !== focus;
     this.selectedSha = focus;
     if (scroll && focus !== undefined) {
+      // scrollToRow, as select() does: a Shift+End far down the list paints
+      // the rows it lands on, not the old window at the new offset.
       const idx = this.shaToIndex.get(focus);
-      if (idx !== undefined) this.virtualizer?.scrollToIndex(idx, { align: "auto" });
+      if (idx !== undefined) this.scrollToRow(idx, "auto");
     }
     // A cursor that did not move changes no reactive property, so nothing
     // else would repaint the rows whose selection just changed.
