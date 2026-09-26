@@ -6,7 +6,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
@@ -88,4 +88,19 @@ test("the words: where it is, and what to do instead", () => {
     checkedOutElsewhereMessage("feat", "~/wt/feat", "delete"),
     "'feat' is checked out in the worktree at ~/wt/feat, so it can't be deleted. Check out another branch in that worktree, or remove the worktree, first.",
   );
+  // Its folder gone, git still holds the branch for it: forgetting the
+  // worktree is the only way out.
+  assert.equal(
+    checkedOutElsewhereMessage("feat", "~/wt/feat", "delete", true),
+    "'feat' is checked out in the worktree at ~/wt/feat, whose folder is gone — git still keeps the branch for it. Forget that worktree in Worktrees, then delete it.",
+  );
+  assert.match(checkedOutElsewhereMessage("feat", "~/wt/feat", "checkout", true), /Forget that worktree in Worktrees, then check it out\.$/);
+});
+
+test("a worktree whose folder is gone still holds its branch — git refuses both doors for it", async () => {
+  const gone = join(scratch, "wt", "gone");
+  git("worktree", "add", "-q", "-b", "gone", gone);
+  rmSync(gone, { recursive: true, force: true });
+  assert.equal(await checkedOutElsewhere(ctx.process, "refs/heads/gone"), gone);
+  assert.throws(() => git("branch", "-D", "gone"), "git refuses the delete too");
 });

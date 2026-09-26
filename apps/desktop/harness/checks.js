@@ -7212,13 +7212,19 @@
     "a-deleted-branch-can-be-restored": async (f) => {
       const c = check(f);
       await settle(1300);
-      const row = $$(".sec-row").find((r) => /fix\/log-stream/.test(text(r) || ""));
+      // feat/line-staging: no worktree has it checked out. (fix/log-stream,
+      // which this used, is the hotfix worktree's — git refuses to delete a
+      // branch a worktree holds, even one whose folder is gone, and the app
+      // now says so before asking.)
+      const row = $$(".sec-row").find((r) => /feat\/line-staging/.test(text(r) || ""));
       c.ok(!!row, "the branch to delete is listed");
       if (!row) return;
       const before = $$(".sec-row").length;
       row.querySelector(".lv-menu-btn")?.click();
       await settle(350);
-      const del = $$(".dropdown-item").find((i) => /^delete /i.test(text(i) || ""));
+      // Exactly the local branch's Delete — a tracking branch's menu also
+      // offers "Delete remote branch", which is not this.
+      const del = $$(".dropdown-item").find((i) => text(i) === "Delete feat/line-staging");
       c.ok(!!del, "the branch offers Delete");
       if (!del) return;
       del.click();
@@ -7236,7 +7242,7 @@
       undo.click();
       await settle(1200);
       c.ok(
-        $$(".sec-row").some((r) => /fix\/log-stream/.test(text(r) || "")),
+        $$(".sec-row").some((r) => /feat\/line-staging/.test(text(r) || "")),
         "Undo puts the branch back",
       );
     },
@@ -13802,6 +13808,18 @@
         "…it says where the branch is, in words",
       );
       c.ok($$(".lv-menu-btn").some((b) => b.getAttribute("aria-label") === "More actions for redesign/issues-detail"), "…and the branch is still listed");
+
+      // Held by the worktree whose folder is gone: git still refuses, and
+      // the way out is to forget that worktree.
+      const orphan = await menuOf("fix/log-stream");
+      (orphan || []).find((i) => text(i) === "Delete fix/log-stream")?.click();
+      await settle(800);
+      c.ok(!$(".modal-card"), "nothing is asked for the missing worktree's branch either");
+      c.match(
+        $$(".toast-msg").map((t) => text(t)).join(" | "),
+        /'fix\/log-stream' is checked out in the worktree at \/Users\/anton\/Developer\/GitStudioHQ\/gitstudio-hotfix, whose folder is gone — git still keeps the branch for it\. Forget that worktree in Worktrees, then delete it\./,
+        "…it says to forget that worktree",
+      );
 
       const free = await menuOf("feat/line-staging");
       (free || []).find((i) => text(i) === "Delete feat/line-staging")?.click();

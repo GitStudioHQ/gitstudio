@@ -140,6 +140,20 @@ test("Delete of a branch another worktree has: says so BEFORE asking, and the br
   assert.equal(s.git("branch", "--list", "feat"), "+ feat");
 });
 
+test("its worktree's folder gone: git still holds the branch, so it says to forget that worktree — and offers nothing to open", async () => {
+  const s = scene();
+  rmSync(s.holder, { recursive: true, force: true });
+  await branchActions.deleteBranch(s.repos, node("feat"), noop);
+  await branchActions.checkoutBranch(s.repos, node("feat"), noop);
+  assert.equal(asked.length, 0);
+  assert.deepEqual(said("error"), []);
+  const w = said("warning");
+  assert.equal(w.length, 2);
+  assert.match(w[0], /whose folder is gone — git still keeps the branch for it\. Forget that worktree in Worktrees, then delete it\./);
+  assert.match(w[1], /Forget that worktree in Worktrees, then check it out\./);
+  assert.equal(s.git("branch", "--list", "feat"), "+ feat");
+});
+
 test("a branch no worktree has is checked out and deleted as before", async () => {
   const s = scene();
   s.git("branch", "free");

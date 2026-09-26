@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import type { GitContext } from "@gitstudio/git-service/index";
 import {
@@ -38,10 +39,12 @@ export async function saidCheckedOutElsewhere(
   }
   const open = "Open Worktree in New Window";
   const folder = where;
+  // Its folder gone, there is nothing to open: forgetting it is the way out.
+  const gone = !existsSync(folder);
   void vscode.window
     .showWarningMessage(
-      `GitStudio: ${checkedOutElsewhereMessage(refShortName(fullName), tildify(folder), door)}`,
-      open,
+      `GitStudio: ${checkedOutElsewhereMessage(refShortName(fullName), tildify(folder), door, gone)}`,
+      ...(gone ? [] : [open]),
     )
     .then((pick) => {
       if (pick === open) {

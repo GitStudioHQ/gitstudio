@@ -110,6 +110,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Graph and a pull request's Checkout — with **Open Worktree in New
   Window**. Each used to run git and show its refusal (*already used by
   worktree*); Delete asked first, and the graph reported it as an error.
+  When that worktree's folder is gone — git still keeps the branch for it —
+  it says to forget that worktree first.
 - New Worktree from a branch whose name starts with "-" makes a new branch
   from it, saying why, instead of offering a checkout that git would turn
   into a detached HEAD.

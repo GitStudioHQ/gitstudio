@@ -165,4 +165,9 @@ test("deleting a branch another worktree has says where it is, and the branch st
   assert.equal(r.expected, true);
   assert.match(r.message ?? "", /^'clean' is checked out in the worktree at .*, so it can't be deleted\./);
   assert.equal(s.git("branch", "--list", "clean"), "+ clean");
+
+  // The worktree whose folder is gone still holds `gone`: forget it first.
+  const g = await (await bridgeOn(s.app)).branchDelete({ fullName: "refs/heads/gone" });
+  assert.equal(g.ok, false);
+  assert.match(g.message ?? "", /whose folder is gone — git still keeps the branch for it\. Forget that worktree in Worktrees, then delete it\./);
 });

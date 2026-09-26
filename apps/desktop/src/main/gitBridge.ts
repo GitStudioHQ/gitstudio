@@ -2593,7 +2593,12 @@ export class GitBridge {
       // own words. Say where instead.
       const elsewhere = await checkedOutElsewhere(ctx.process, req.fullName);
       if (elsewhere) {
-        return { ok: false, changed: false, expected: true, message: checkedOutElsewhereMessage(name, elsewhere, "delete") };
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: checkedOutElsewhereMessage(name, elsewhere, "delete", !existsSync(elsewhere)),
+        };
       }
       const tip = await ctx.process.run(["rev-parse", "--verify", req.fullName]);
       if (tip.code === 0) was = tip.stdout.trim() || undefined;
@@ -2687,7 +2692,7 @@ export class GitBridge {
           ok: false,
           changed: false,
           expected: true,
-          message: checkedOutElsewhereMessage(refShortName(plan.branch), elsewhere, "checkout"),
+          message: checkedOutElsewhereMessage(refShortName(plan.branch), elsewhere, "checkout", !existsSync(elsewhere)),
         };
       }
       // Through the one door for commit-applying commands: a switch refused

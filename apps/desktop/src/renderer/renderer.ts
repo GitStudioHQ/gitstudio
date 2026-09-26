@@ -4368,7 +4368,7 @@ class App {
     const worktreeList = await host.invoke("worktree:list", undefined).catch((): WorktreeInfo[] => []);
     const holder = worktreeList.find((w) => !w.current && !w.bare && w.branch === name);
     if (holder) {
-      toast(checkedOutElsewhereMessage(name, holder.path, "delete"), "info");
+      toast(checkedOutElsewhereMessage(name, holder.path, "delete", !!(holder.missing || holder.prunable)), "info");
       return;
     }
     // Confirm FIRST. This sits a few pixels from Checkout in a hover-revealed
