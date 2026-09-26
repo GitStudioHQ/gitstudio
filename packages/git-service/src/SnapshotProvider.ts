@@ -673,7 +673,10 @@ export class SnapshotProvider {
     }
 
     // ── The stashes it took ─────────────────────────────────────────────────
-    const stack = now.stashes;
+    // A stash the op made that goes again goes first, so the ones it took
+    // are placed in the stack as it was before the op.
+    const dropping = await this.stashesItMade(snap, settled, now, steps, lines, opts);
+    const stack = now.stashes.filter((x) => !dropping.has(x.sha));
     for (const d of unrestoredStashes(settled, now)) {
       const at = placeHolds(stack, d) ? d.index : 0;
       lines.push(`Put the stash “${d.message || shortSha(d.sha)}” back${at > 0 || d.index === 0 ? ` as stash@{${at}}` : " on top of the stash list"}.`);
@@ -683,7 +686,6 @@ export class SnapshotProvider {
     if (steps.length === 0) {
       return { kind: "nothing", reason: "everything it changed is already back as it was." };
     }
-    await this.stashesItMade(snap, settled, now, steps, lines, opts);
     // Something git is stopped in that this op didn't start: a checkout or a
     // hard reset would end it, and that is not this undo's to do.
     if (foreignStop && steps.some((st) => st.do === "switch" || st.do === "reset" || st.do === "tree")) {
@@ -986,7 +988,7 @@ export class SnapshotProvider {
    * this undo puts the uncommitted work back from its own copy and a stash
    * holds nothing more than that copy, it goes again — the work is back in
    * the tree. One holding more (untracked files, other contents) is kept,
-   * and said.
+   * and said. Returns the shas that go.
    */
   private async stashesItMade(
     snap: Snapshot,
@@ -995,18 +997,21 @@ export class SnapshotProvider {
     steps: RestoreStep[],
     lines: string[],
     opts?: GitRunOptions,
-  ): Promise<void> {
+  ): Promise<Set<string>> {
     const onStack = new Set(now.stashes.map((x) => x.sha));
     const copy = snap.stashSha;
     const putsBack = !!copy && steps.some((st) => "stash" in st && st.stash === copy);
+    const going = new Set<string>();
     for (const made of settled.pushed ?? []) {
       if (!onStack.has(made.sha)) continue;
       if (putsBack && (await this.stashWithin(made.sha, copy!, opts))) {
         steps.push({ do: "drop-stash", entry: made });
+        going.add(made.sha);
       } else {
         lines.push(`The stash “${made.message}” it made is kept: it holds more than Undo puts back.`);
       }
     }
+    return going;
   }
 
   /**

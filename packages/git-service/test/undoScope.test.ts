@@ -770,3 +770,28 @@ test("the pushed-history revert never moves HEAD from anywhere but where the op 
     r.dispose();
   }
 });
+
+test("undo of a Stash & Retry pop whose put-back git refused: the work, the popped stash in its place, and no stash of the op's", async () => {
+  const r = repo();
+  try {
+    r.commit("base", "f.txt", "base\n");
+    writeFileSync(join(r.dir, "f.txt"), "stashed A\n");
+    r.git("stash", "push", "-q", "-m", "A");
+    writeFileSync(join(r.dir, "g.txt"), "stashed X\n");
+    r.git("stash", "push", "-q", "-u", "-m", "X");
+    const before = (await stashStack(r.ctx.process)).map((x) => x.sha); // [X, A]
+    writeFileSync(join(r.dir, "f.txt"), "my edit, in the way\n");
+    const snap = await around(r, "Pop stash@{1}", async () => {
+      const out = await stashAndRetry(r.ctx.process, { kind: "stash", stash: "stash@{1}", pop: true });
+      assert.equal(out.fate, "kept", "git won't pop the op's stash over what the pop brought in");
+    });
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.equal(plan.kind, "restore", JSON.stringify(plan));
+    assert.ok(plan.kind === "restore" && plan.lines.includes("Put the stash “On main: A” back as stash@{1}."), JSON.stringify(plan));
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.read("f.txt"), "my edit, in the way\n");
+    assert.deepEqual((await stashStack(r.ctx.process)).map((x) => x.sha), before, "A back below X, as it was, and the op's own stash gone");
+  } finally {
+    r.dispose();
+  }
+});
