@@ -131,11 +131,11 @@ test("a confirm answered after the repository moved is not acted on", async () =
 
 test("the toast's Undo undoes ITS operation — after the newer ones, each asked — not whatever is newest", async () => {
   const f = fixture();
-  // Hold every "Undid? …" toast open, to press its Undo later.
+  // Hold every "<label> — done." toast open, to press its Undo later.
   const toasts = new Map<string, () => void>();
   const shown = vscode.window.showInformationMessage;
   vscode.window.showInformationMessage = (message: string, ...items: string[]) =>
-    message.startsWith("Undid? ")
+    items.includes("Undo")
       ? new Promise<string | undefined>((resolve) => void toasts.set(message, () => resolve("Undo")))
       : shown(message, ...items);
   try {
@@ -148,7 +148,7 @@ test("the toast's Undo undoes ITS operation — after the newer ones, each asked
     asked = [];
     answer = (spec) => (spec.kind === "confirm" ? "ok" : undefined);
     // The OLDER toast's Undo, pressed after the newer op.
-    toasts.get("Undid? Commit X")!();
+    toasts.get("Commit X — done.")!();
     for (let i = 0; i < 200 && f.git("rev-parse", "main") !== m; i++) await new Promise((r) => setTimeout(r, 25));
     assert.deepEqual(
       asked.filter((a) => a.kind === "confirm").map((a) => a.title),

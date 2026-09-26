@@ -129,7 +129,7 @@ export class UndoLedger {
   /**
    * Note what the op changed. True when there is something to undo: a door
    * whose question was cancelled part-way ("not fully merged — Force Delete?"
-   * → Cancel) changed nothing, and must not offer "Undid? Delete branch".
+   * → Cancel) changed nothing, and must not offer Undo for "Delete branch".
    * An op whose changes can't be read is not recorded — its undo could only
    * guess.
    */
@@ -177,7 +177,7 @@ export class UndoLedger {
 
   /**
    * The toast's Undo: undo THAT entry. It used to undo whatever was newest,
-   * so after another op the "Undid? Commit X" toast undid the op after X.
+   * so after another op the "Commit X — done." toast undid the op after X.
    * Newer entries go first, newest first, each asked — as Undo History does:
    * an op's plan is only right in the state the ones after it left.
    */

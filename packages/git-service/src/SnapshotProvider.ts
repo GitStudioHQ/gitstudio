@@ -364,7 +364,7 @@ export class SnapshotProvider {
   /**
    * Whether a settled op changed anything Undo would put back. False for an
    * op that was refused or cancelled before git wrote anything — recording
-   * it offered an "Undid? …" toast for something that never happened. A
+   * it offered an Undo toast for something that never happened. A
    * deferred op has not happened YET, so it counts.
    */
   changed(snap: Snapshot): boolean {

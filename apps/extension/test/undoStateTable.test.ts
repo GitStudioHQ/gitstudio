@@ -260,6 +260,8 @@ interface Row {
   extra?: Record<string, unknown>;
 }
 const rows: Row[] = [];
+/** The envelope's toast: "<label> — done." or "<label> did not finish.", with Undo. */
+const UNDO_TOAST = / — done\.$| did not finish\.$/;
 after(() => {
   if (process.env.UNDO_AUDIT_OUT) writeFileSync(process.env.UNDO_AUDIT_OUT, JSON.stringify(rows, null, 2));
 });
@@ -307,7 +309,7 @@ function cell(spec: CellSpec): void {
       row.before = describe(state(f));
       clear();
       await spec.op(f);
-      row.opRecordedUndo = vscode.__said.some((m) => m.kind === "info" && m.message.startsWith("Undid? "));
+      row.opRecordedUndo = vscode.__said.some((m) => m.kind === "info" && UNDO_TOAST.test(m.message));
       row.opAsked = asked.map((a) => a.title);
       row.afterOp = describe(state(f)) + ` | op said: ${saidLines().join(" / ") || "-"}`;
       if (spec.between) await spec.between(f);
@@ -395,7 +397,10 @@ cell({
   expected: "HEAD back on main; main and feature where they were",
   setup: (f) => mainAndFeature(f),
   op: (f) => runCommitAction(refActionId("refs/heads/feature"), f.ctx, { sha: sha(f, "feature"), subject: "F" }, f.undoRunner),
-  expect: (f) => {
+  expect: (f, _s, { row }) => {
+    // The control for every "offers no Undo" cell below: an op that ran IS
+    // offered, so a detector that stopped matching the toast cannot pass them.
+    assert.equal(row.opRecordedUndo, true, "the checkout's toast offers Undo");
     isAt(f, "refs/heads/feature", "F", "feature was never touched by the user — it must stay on F");
     onBranch(f, "main", "Undo of a checkout switches back to main");
     isAt(f, "refs/heads/main", "M", "main stays where it was");
@@ -992,7 +997,7 @@ cell({
   id: "E32",
   operation: "Delete branch feature (Branches view) — NOT merged, Force Delete CANCELLED",
   state: "on main; feature has unmerged F; the user cancels at 'not fully merged'",
-  expected: "nothing ran, so nothing is recorded and no 'Undid? Delete branch' toast",
+  expected: "nothing ran, so nothing is recorded and no 'Delete branch — done.' toast",
   setup: (f) => mainAndFeature(f),
   op: async (f) => {
     // Yes to "Delete branch feature?", No to "feature is not fully merged".
@@ -1002,7 +1007,7 @@ cell({
   },
   expect: (f, _s, { row, undoSaid }) => {
     assert.ok(hasRef(f, "refs/heads/feature"), "feature still exists");
-    assert.equal(row.opRecordedUndo, false, "no 'Undid? Delete branch feature' toast for a delete that did not happen");
+    assert.equal(row.opRecordedUndo, false, "no 'Delete branch feature — done.' toast for a delete that did not happen");
     assert.ok(undoSaid.includes("info: Nothing to undo."), `Undo has nothing to undo (said: ${undoSaid.join(" / ")})`);
   },
 });
@@ -1551,7 +1556,7 @@ cell({
     return branchActions.deleteBranch(f.repos, node("feature"), noop);
   },
   expect: (f, _s, { row, undoSaid }) => {
-    assert.equal(row.opRecordedUndo, false, "no 'Undid? Delete branch' for a delete that didn't happen");
+    assert.equal(row.opRecordedUndo, false, "no 'Delete branch — done.' for a delete that didn't happen");
     assert.ok(undoSaid.includes("info: Nothing to undo."), undoSaid.join(" / "));
     assert.equal(f.read("f.txt"), "typed while the question was open\n");
     assert.ok(hasRef(f, "refs/heads/feature"));
