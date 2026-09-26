@@ -1,0 +1,25 @@
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_d77bd3f1cf4de3 798
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_01ce3b21f2605f 16921-16964
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_22eaecf0774a3f 1498-1499,1682,1685-1690
+apps/desktop/src/renderer/assistant.ts
+  s_26f5e669d3043c::t_f256afada05595 18,20-54,68-70,92-93,155,233,235,241,244,246,252,255,257,491-495,502-503,505,546,557,582,776-779,809-813
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9bc64fd038636e04e3782715505eb3b7b70357c9",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
