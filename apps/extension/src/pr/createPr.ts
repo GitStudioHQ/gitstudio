@@ -17,11 +17,19 @@ import { PrDescriptionPanel } from "./prDescriptionPanel";
 //   4. Choose draft vs. ready, POST /pulls, and open the new PR's description.
 // "PR already exists" (422) opens the PR that exists.
 //
-// WHERE THE BRANCH LIVES. It is pushed where git itself would push it
+// WHERE THE BRANCH LIVES. It is pushed to the remote git pushes it to
 // (branch.<b>.pushRemote, remote.pushDefault, branch.<b>.remote — the target
-// repository's remote only when none is set), and when that is another
-// repository on GitHub (your fork), the PR's head is `owner:branch`: GitHub
-// reads a bare branch name as one in the TARGET repository.
+// repository's remote only when none is set), under ITS OWN NAME, and when
+// that remote is another repository on GitHub (your fork), the PR's head is
+// `owner:branch`: GitHub reads a bare branch name as one in the TARGET
+// repository.
+//
+// Its own name, not the one it tracks: `git checkout -b feature origin/main`
+// makes feature TRACK main, and the push used to follow that into origin's
+// main — the PR's commits landed on the base branch, and the PR was sent as
+// main into main. git's own push.default=simple refuses that push; a PR's head
+// is the branch's own. The push is an explicit refspec to that remote, and
+// "already pushed" is read from <remote>/<branch>, not from @{u}.
 
 export async function createPullRequest(
   repos: RepoManager,
@@ -48,10 +56,10 @@ export async function createPullRequest(
     return;
   }
 
-  // Ensure the branch is published. If it has no upstream or is ahead, offer
-  // to push with --set-upstream — to the remote git would push it to.
+  // Ensure the branch is published where the PR will say it is. When it isn't
+  // there, or is ahead of it, offer to push it there.
   const where = await headLocation(entry.ctx, ctx.remoteName, headBranch);
-  const pushed = await ensurePushed(entry.ctx, where.remote, headBranch);
+  const pushed = await ensurePushed(entry.ctx, where, headBranch);
   if (!pushed) {
     return;
   }
@@ -191,17 +199,25 @@ export function defaultPrTitle(commits: readonly string[], branch: string): stri
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : branch;
 }
 
+/** Where the PR's branch is (or will be) pushed: a remote, and its name there. */
+interface HeadLocation {
+  remote: string;
+  branch: string;
+}
+
 /**
- * Where the branch is (or will be) pushed, and its name there — git's own
- * push-remote rule, so the PR's head is the branch that was actually pushed.
+ * Where the branch is (or will be) pushed — git's own push-remote rule — and
+ * its name there: its own. The name it TRACKS is not a candidate: a branch
+ * started from origin/main tracks main, and that is the PR's base, never its
+ * head (see the note at the top).
  */
 async function headLocation(
   ctx: GitContext,
   fallbackRemote: string,
   branch: string,
-): Promise<{ remote: string; branch: string }> {
-  // A value that reads as an option is no remote or branch name: it never
-  // reaches git's command line (the push takes the remote as an argument).
+): Promise<HeadLocation> {
+  // A value that reads as an option is no remote name: it never reaches git's
+  // command line (the push takes the remote as an argument).
   const get = async (key: string): Promise<string | undefined> => {
     const r = await ctx.process.run(["config", "--get", key]);
     const v = r.stdout.trim();
@@ -213,12 +229,7 @@ async function headLocation(
     (await get("remote.pushDefault")) ??
     (tracking && tracking !== "." ? tracking : undefined) ??
     fallbackRemote;
-  // Pushed to the remote it tracks, the branch has the name it tracks there.
-  const merge = remote === tracking ? await get(`branch.${branch}.merge`) : undefined;
-  return {
-    remote,
-    branch: merge?.startsWith("refs/heads/") ? merge.slice("refs/heads/".length) : branch,
-  };
+  return { remote, branch };
 }
 
 async function currentBranch(ctx: GitContext): Promise<string | undefined> {
@@ -230,20 +241,31 @@ async function currentBranch(ctx: GitContext): Promise<string | undefined> {
   return name && name !== "HEAD" ? name : undefined;
 }
 
+/**
+ * Is `branch` on `where` with nothing unpushed? If not, ask, and push it
+ * there — exactly there. Compared with `<remote>/<branch>` as last fetched or
+ * pushed, not with @{u}: the upstream may be the base branch it was started
+ * from, which it is always ahead of.
+ */
 async function ensurePushed(
   ctx: GitContext,
-  remote: string,
+  where: HeadLocation,
   branch: string,
 ): Promise<boolean> {
-  const upstream = await ctx.sync.currentUpstream();
-  const { ahead } = await ctx.sync.aheadBehind();
-  if (upstream && ahead === 0) {
-    return true; // already published and up to date.
+  const there = `refs/remotes/${where.remote}/${where.branch}`;
+  const known = (await ctx.process.run(["rev-parse", "--verify", "--quiet", `${there}^{commit}`])).code === 0;
+  let ahead = 0;
+  if (known) {
+    const r = await ctx.process.run(["rev-list", "--count", `${there}..refs/heads/${branch}`]);
+    ahead = r.code === 0 ? Number(r.stdout.trim()) || 0 : 1;
+    if (r.code === 0 && ahead === 0) {
+      return true; // already there, nothing unpushed.
+    }
   }
 
-  const prompt = upstream
-    ? `Your branch is ${ahead} commit(s) ahead of ${upstream}. Push before creating the PR?`
-    : `Branch "${branch}" hasn't been pushed to ${remote} yet. Push it now?`;
+  const prompt = known
+    ? `Your branch is ${ahead} commit(s) ahead of ${where.remote}/${where.branch}. Push before creating the PR?`
+    : `Branch "${branch}" hasn't been pushed to ${where.remote} yet. Push it now?`;
   const ok = await promptConfirm({
     title: "Push before creating the pull request?",
     message: prompt,
@@ -253,14 +275,20 @@ async function ensurePushed(
     return false;
   }
 
+  // A branch that tracks nothing starts tracking what it is published as; one
+  // that tracks something (the base it was started from, in a triangular
+  // setup) keeps it — that is the user's pull, not ours to change.
+  const tracks = (await ctx.process.run(["config", "--get", `branch.${branch}.merge`])).code === 0;
   const result = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Pushing ${branch}…` },
     () =>
-      // push-force-reviewed: publishes the PR's branch for the first time.
+      // push-force-reviewed: publishes the PR's branch, or adds commits to it
+      // — a fast-forward, which git refuses rather than overwrite anything.
       ctx.sync.push({
-        remote,
+        remote: where.remote,
         branch,
-        setUpstream: !upstream,
+        dest: where.branch,
+        setUpstream: !tracks,
       }),
   );
   if (!result.ok) {

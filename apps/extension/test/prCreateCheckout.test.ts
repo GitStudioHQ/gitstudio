@@ -318,6 +318,92 @@ test("create: the title proposed is GitHub's — the one commit's subject, else 
   assert.equal(proposed(), "Feature", "two commits: the branch, not the last commit's \"Fix a typo\"");
 });
 
+/**
+ * A clone of acme/app whose pushes land in REAL bare repositories (each
+ * remote's pushurl), with `feature` made the way git makes it by default from
+ * `git checkout -b feature origin/main`: it TRACKS origin/main. One commit on it.
+ */
+function trackingWorld() {
+  const base = mkdtempSync(join(scratch, "t-"));
+  const hub = join(base, "hub.git");
+  const fork = join(base, "fork.git");
+  const work = join(base, "work");
+  for (const bare of [hub, fork]) execFileSync("git", ["init", "-q", "--bare", "-b", "main", bare]);
+  execFileSync("git", ["init", "-q", "-b", "main", work]);
+  const git = at(work);
+  for (const [k, v] of [["user.email", "t@example.com"], ["user.name", "t"], ["commit.gpgsign", "false"], ["gc.auto", "0"]]) git("config", k, v);
+  writeFileSync(join(work, "a.txt"), "a\n");
+  git("add", ".");
+  git("commit", "-qm", "base");
+  git("remote", "add", "origin", "https://github.com/acme/app.git");
+  git("config", "remote.origin.pushurl", hub);
+  git("push", "-q", "origin", "main");
+  git("remote", "add", "mine", "git@github.com:me/app.git");
+  git("config", "remote.mine.pushurl", fork);
+  git("checkout", "-q", "-b", "feature", "--track", "origin/main");
+  writeFileSync(join(work, "b.txt"), "b\n");
+  git("add", ".");
+  git("commit", "-qm", "Add b");
+  const ctx = new GitContext({ root: work });
+  contexts.push({ dispose: () => ctx.dispose() });
+  const tip = (bare: string, branch: string): string | undefined => {
+    try {
+      return execFileSync("git", ["--git-dir", bare, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { encoding: "utf8" }).trim();
+    } catch {
+      return undefined;
+    }
+  };
+  return { work, git, hub, fork, tip, mainBefore: tip(hub, "main"), mine: git("rev-parse", "HEAD"), entry: { root: work, ctx } };
+}
+
+const pushing = (draft: "draft" | "ready") => (spec: any) => (spec.kind === "confirm" ? "ok" : wizard(draft)(spec));
+
+test("create: a branch that tracks origin/main is pushed as itself — never into main", async () => {
+  const w = trackingWorld();
+  let sent: any;
+  fake = installFakeGitHub(
+    createRoutes((body) => {
+      sent = body;
+      return { status: 201, body: rawPull(60) };
+    }),
+  );
+  mountWith(w.entry);
+  answer = pushing("ready");
+  await vscode.commands.executeCommand("gitstudio.pr.create");
+  const push = asked.find((a) => a.kind === "confirm");
+  assert.match(push?.message ?? "", /"feature" hasn't been pushed to origin yet/, "it is new there — not 1 commit ahead of origin/main");
+  assert.equal(w.tip(w.hub, "main"), w.mainBefore, "origin's main is untouched");
+  assert.equal(w.tip(w.hub, "feature"), w.mine, "the branch was published under its own name");
+  assert.equal(sent?.head, "feature");
+  assert.equal(sent?.base, "main");
+  assert.equal(w.git("config", "--get", "branch.feature.merge"), "refs/heads/main", "what it tracks is the user's, and stays");
+});
+
+test("create: a triangular branch (pull from origin, push to your fork) reaches the fork, and the PR's head is there", async () => {
+  const w = trackingWorld();
+  w.git("config", "branch.feature.pushRemote", "mine");
+  let sent: any;
+  fake = installFakeGitHub(
+    createRoutes((body) => {
+      sent = body;
+      return { status: 201, body: rawPull(61) };
+    }),
+  );
+  mountWith(w.entry);
+  answer = pushing("ready");
+  await vscode.commands.executeCommand("gitstudio.pr.create");
+  assert.match(asked.find((a) => a.kind === "confirm")?.message ?? "", /hasn't been pushed to mine yet/);
+  assert.equal(w.tip(w.hub, "main"), w.mainBefore, "origin's main is untouched");
+  assert.equal(w.tip(w.hub, "feature"), undefined, "nothing went to origin");
+  assert.equal(w.tip(w.fork, "feature"), w.mine, "the fork received the branch");
+  assert.equal(sent?.head, "me:feature", "a branch that exists, where GitHub is told it is");
+
+  // Pushed: creating again asks nothing about pushing.
+  asked = [];
+  await vscode.commands.executeCommand("gitstudio.pr.create");
+  assert.equal(asked.filter((a) => a.kind === "confirm").length, 0, "already where it goes");
+});
+
 test("create: the base question offers only branches the remote has", async () => {
   const w = forkWorld();
   fake = installFakeGitHub(createRoutes(() => ({ status: 201, body: rawPull(51) })));
