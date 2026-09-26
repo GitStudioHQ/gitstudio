@@ -350,8 +350,10 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
    * selection from the toolbar and the keys. The same rule either way (the
    * shared `setActions`): a squash or fixup is refused, row by row, where it
    * would have nothing below it to fold into, which git refuses outright.
-   * Across a selection that means "squash these together" — the oldest stays
-   * as it was and the rest fold into it — and the banner says so.
+   * Across a selection every row folds into the kept commit below it (for a
+   * block, the one under the block); only when none is kept below does the
+   * oldest selected row stay as it was, for the rest to fold into — and the
+   * banner says so.
    *
    * The dropdown used to refuse on the TOP row (HEAD) — the most ordinary
    * squash there is — while accepting one on the oldest, which git cannot

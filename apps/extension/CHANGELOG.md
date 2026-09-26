@@ -60,12 +60,14 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   **Cmd/Ctrl+A**; **Escape** goes back to one — and choose **Pick**,
   **Reword**, **Squash**, **Fixup**, **Edit** or **Drop** in the **Set
   action** bar at the top, or press git's own letter for it: **P R S F E D**.
-  **Alt+Up/Down** and dragging move the whole selection. Squash or Fixup
-  across a selection folds the commits into the oldest of them, which stays
-  as it is — git can't fold the oldest commit you keep into nothing, and the
-  plan says so instead of letting the rebase fail. The editor that opens for
-  a `git rebase -i` run in a terminal does the same, in git's own order,
-  oldest at the top. (#32)
+  **Alt+Up/Down** and dragging move the whole selection. **Squash** or
+  **Fixup** folds each selected commit into the kept commit below it, so a
+  block of commits folds into the one under the block. When no kept commit is
+  below — the selection reaches the oldest commit you keep — that oldest
+  selected commit stays as it is, for the rest to fold into, and the plan
+  says why instead of letting the rebase fail. The editor that opens for a
+  `git rebase -i` run in a terminal does the same in git's own order, oldest
+  at the top, so there a commit folds into the kept one above it. (#32)
 
 ### Fixed
 - **The editor for a `git rebase -i` run in a terminal listed no commits.**

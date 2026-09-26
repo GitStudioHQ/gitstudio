@@ -809,9 +809,10 @@ export class RebaseView extends LitElement {
    * selection from the toolbar and the keys. The shared rule (setActions):
    * a squash or fixup is refused, row by row, where nothing above it is kept
    * to fold into, which git refuses outright ("cannot 'squash' without a
-   * previous commit"). Across a selection that means "squash these
-   * together": the first stays as it was and the rest fold into it. What was
-   * refused is said in the footer.
+   * previous commit"). Across a selection every row folds into the kept
+   * line above it (for a block, the one over the block); only when none is
+   * kept above does the first selected line stay as it was, for the rest to
+   * fold into. What was refused is said in the footer.
    */
   private applyActions(indices: number[], action: WireRebaseAction): void {
     const before = this.rows.map((r) => r.action);

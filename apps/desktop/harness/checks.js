@@ -16310,16 +16310,37 @@
       c.eq(rbActions().slice(0, 3).join(","), "pick,pick,pick", "P picks them all again");
     },
 
-    // "Squash these together": the oldest of the selection stays, the rest
-    // fold into it — and the one squash git refuses outright, on the oldest
-    // commit you keep, is refused with the reason, from every door.
-    "rebase-squash-across-a-selection-keeps-the-oldest": async (f) => {
+    // Squash across a selection: EVERY selected commit folds, into the kept
+    // commit below the selection. Only when nothing below it is kept does the
+    // oldest selected one stay as it was — the one squash git refuses
+    // outright, on the oldest commit you keep — and that is refused with the
+    // reason, from every door.
+    "rebase-squash-across-a-selection-folds-into-the-commit-below": async (f) => {
       const c = check(f);
       noAnimation();
       const n = rbRows().length;
       c.ok(n >= 8, `the plan has a long list (${n})`);
       if (n < 8) return;
       const start = () => $$(".rb-foot button").find((b) => /start rebase/i.test(text(b)));
+
+      // The ordinary case: a block in the middle of the plan.
+      const subj = (i) => text(rbRows()[i].querySelector(".rb-subj"));
+      const below = subj(6).slice(0, 24);
+      await rbClick(3);
+      await rbClick(5, { shiftKey: true });
+      await rbKey("s");
+      const mid = rbActions();
+      c.eq(mid.slice(3, 6).join(","), "squash,squash,squash", "every selected commit folds, the oldest of them too");
+      c.ok(mid.slice(0, 3).concat(mid.slice(6)).every((a) => a === "pick"), `and nothing else changes (${mid.join(",")})`);
+      c.ok(!$(".rb-banner") || $(".rb-banner").hidden, "nothing was refused, so nothing is said");
+      for (const i of [3, 4, 5]) {
+        const says = text(rbRows()[i].querySelector(".rb-consequence"));
+        c.ok(says.startsWith("Folds down into “" + below), `row ${i} folds into the kept commit below the selection (${says})`);
+      }
+      await rbKey("p");
+      c.ok(rbActions().every((a) => a === "pick"), "P puts them back");
+
+      // Nothing kept below: the oldest selected stays, for the rest to fold into.
 
       await rbClick(n - 1);
       await rbKey("s");

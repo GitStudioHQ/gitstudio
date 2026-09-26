@@ -149,10 +149,10 @@ const CASES = [
   ["rebase-selection-follows-the-mouse", "rebase", { extra: "rbmany=1" }],
   ["rebase-selection-follows-the-mouse", "rebase", { extra: "rbmany=1", theme: "light" }],
   ["rebase-sets-the-action-of-every-selected-commit", "rebase", { extra: "rbmany=1" }],
-  ["rebase-squash-across-a-selection-keeps-the-oldest", "rebase", { extra: "rbmany=1" }],
+  ["rebase-squash-across-a-selection-folds-into-the-commit-below", "rebase", { extra: "rbmany=1" }],
   // …on a laptop's height, where the list runs past the fold and a reason
   // written under it is written nowhere.
-  ["rebase-squash-across-a-selection-keeps-the-oldest", "rebase", { extra: "rbmany=1", height: 760 }],
+  ["rebase-squash-across-a-selection-folds-into-the-commit-below", "rebase", { extra: "rbmany=1", height: 760 }],
   ["rebase-moves-the-selection-together", "rebase", { extra: "rbmany=1" }],
   // The host's own note shares that footer banner with the refusals.
   ["rebase-keeps-the-hosts-note-on-screen", "rebase", { extra: "rbmany=1&rbnote=1", height: 700 }],

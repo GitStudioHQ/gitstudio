@@ -222,6 +222,18 @@ const ACTIONS = `
 const SQUASH = `
   const note = () => ($(".note") || {}).textContent.trim();
   const start = () => $$("footer button").find((b) => /start rebase/i.test(b.textContent));
+  // The ordinary case: a block in the middle folds, every line of it, into
+  // the kept line above the block — nothing refused, nothing said.
+  await click(6);
+  await click(8, { shiftKey: true });
+  await key("s");
+  let mid = actions().split(",");
+  expect(mid.slice(6, 9).join(",") === "squash,squash,squash", "every selected line folds, the first of them too (" + mid + ")");
+  expect(mid.slice(0, 6).concat(mid.slice(9)).every((a) => a === "pick"), "and nothing else changes");
+  expect(note() === "", "nothing was refused, so nothing is said (" + note() + ")");
+  await key("p");
+  expect(actions().split(",").every((a) => a === "pick"), "P puts them back");
+  // Nothing kept above: the first stays, for the rest to fold into.
   await click(0);
   await key("s");
   expect(actions().split(",")[0] === "pick", "S on the first line alone changes nothing");
@@ -397,7 +409,7 @@ const cases: Array<[string, string]> = [
   ["the keyboard: arrows, Shift, Home/End, Cmd/Ctrl+A and Escape, cell by cell", KEYBOARD],
   ["the pointer: plain, Cmd/Ctrl, Shift and both; a row's own dropdown", POINTER],
   ["the action: git's letters and the toolbar set every selected line; nothing else does", ACTIONS],
-  ["squash across a selection keeps the first; a fold with nothing above it closes Start", SQUASH],
+  ["squash across a selection folds into the kept line above it, or keeps the first; a fold with nothing above it closes Start", SQUASH],
   ["moving: Alt+Up/Down, the move buttons and a drag carry the selection", MOVING],
 ];
 

@@ -870,8 +870,10 @@ function select(next, focusRow) {
 // Set action on the rows at idx: one row from its dropdown, or the selection
 // from the toolbar and the keys. One rule either way (the shared setActions):
 // a squash or fixup is refused, row by row, where nothing below it is kept
-// to fold into, which git refuses outright. Across a selection that means
-// "squash these together": the oldest stays as it was, the rest fold into it.
+// to fold into, which git refuses outright. Across a selection every row
+// folds into the kept commit below it (for a block, the one under the block);
+// only when none is kept below does the oldest selected row stay as it was,
+// for the rest to fold into.
 //
 // The dropdown once refused on the TOP row (HEAD), the most ordinary squash
 // there is, while accepting one on the oldest, which git cannot run (issue

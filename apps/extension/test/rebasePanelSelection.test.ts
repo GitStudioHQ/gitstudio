@@ -16,7 +16,8 @@ import { MOD, RebasePanelPage, type Mods } from "./rebasePanelPage";
 //   · the pointer: plain, Cmd/Ctrl, Shift, both; a row's own dropdown;
 //   · the action: git's todo letters and the toolbar set every selected row,
 //     a modifier or a message box's typing does not; squash across a
-//     selection keeps the oldest; the reason is said where it can be seen;
+//     selection folds into the kept commit below it, or keeps the oldest when
+//     none is; the reason is said where it can be seen;
 //   · moving: Alt+Up/Down and a drag carry the selection;
 //   · and what reaches the host: the rows, in order, with their actions.
 
@@ -238,8 +239,21 @@ test("the action: git's letters and the toolbar set every selected row; nothing 
   assert.ok(typed.endsWith("d"), `and it was typed (${typed})`);
 });
 
-test("squash across a selection keeps the oldest, and the reason is on screen", { skip }, async () => {
+test("squash across a selection folds into the kept commit below it, or keeps the oldest, and the reason is on screen", { skip }, async () => {
   await fresh();
+  // The ordinary case: a block in the middle folds, every commit of it, into
+  // the kept commit under the block — nothing refused, nothing said.
+  await page.clickRow(3);
+  await page.clickRow(5, { shift: true });
+  await page.key("s");
+  const mid = (await snap()).actions.split(",");
+  assert.equal(mid.slice(3, 6).join(","), "squash,squash,squash", "every selected commit folds, the oldest of them too");
+  assert.ok(mid.slice(0, 3).concat(mid.slice(6)).every((a) => a === "pick"), `and nothing else changes (${mid})`);
+  assert.equal(await page.eval(`document.getElementById("rb-banner").hidden`), true, "nothing was refused, so nothing is said");
+  await page.key("p");
+  assert.ok((await snap()).actions.split(",").every((a) => a === "pick"), "P puts them back");
+
+  // Nothing kept below: the oldest stays, for the rest to fold into.
   await page.clickRow(N - 1);
   await page.key("s");
   let s = await snap();

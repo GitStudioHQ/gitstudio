@@ -56,10 +56,12 @@ but they share the same engine, so most Git behaviour lands in both at once.
   back to one — and choose **Pick**, **Reword**, **Squash**, **Fixup**,
   **Edit** or **Drop** in the **Set action** bar at the top, or press git's
   own letter for it: **P R S F E D**. **Alt+↑/↓** and dragging move the whole
-  selection. Squash or Fixup across a selection folds the commits into the
-  oldest of them, which stays as it is — git can't fold the oldest commit you
-  keep into nothing, and the plan says so instead of letting the rebase fail.
-  The keyboard sheet (**?**) lists these keys. The same as the VS Code
+  selection. **Squash** or **Fixup** folds each selected commit into the kept
+  commit below it, so a block of commits folds into the one under the block.
+  When no kept commit is below — the selection reaches the oldest commit you
+  keep — that oldest selected commit stays as it is, for the rest to fold
+  into, and the plan says why instead of letting the rebase fail. The
+  keyboard sheet (**?**) lists these keys. The same as the VS Code
   extension's. (#32)
 - **The branch switcher works from the keyboard.** Type to filter; **↑**/**↓**
   move through the branches, and letters you type on one keep filtering;
