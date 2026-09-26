@@ -86,6 +86,19 @@ test("removal is read before anything is asked: refused for main and this window
   assert.ok(existsSync(s.path("clean")), "the window's own folder stays");
 });
 
+test("removal names a merge stopped in that worktree", async () => {
+  const s = scene();
+  const clean = s.path("clean");
+  const c = at(clean);
+  writeFileSync(join(clean, "a.txt"), "clean\n");
+  c("commit", "-qam", "clean change");
+  writeFileSync(join(s.app, "a.txt"), "main\n");
+  s.git("commit", "-qam", "main change");
+  assert.throws(() => c("merge", "main"));
+  const r = await (await bridgeOn(s.app)).worktreeRemoval({ path: clean });
+  assert.equal(r.kind === "present" && r.operation, "merge");
+});
+
 test("a locked worktree goes when removing it past the lock was agreed", async () => {
   const s = scene();
   const r = await (await bridgeOn(s.app)).worktreeRemove({ path: s.path("locked"), pastLock: true });

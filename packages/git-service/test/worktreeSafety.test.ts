@@ -204,3 +204,63 @@ test("add and move hand git the path and ref after `--`: a branch named like an 
   assert.ok(moved.ok, moved.stderr);
   assert.ok(existsSync(join(base, "wt", "dash-2")));
 });
+
+test("removal() names what git is stopped in THERE — a merge, a clean stopped rebase — and not a stale REBASE_HEAD", async () => {
+  const { base, git, ctx } = repo();
+  git("branch", "side");
+  writeFileSync(join(base, "app", "a.txt"), "main\n");
+  git("commit", "-qam", "main side");
+
+  // A merge stopped on a conflict.
+  const merging = join(base, "wt", "merging");
+  git("worktree", "add", "-q", merging, "side");
+  const m = at(merging);
+  writeFileSync(join(merging, "a.txt"), "side\n");
+  m("commit", "-qam", "side change");
+  assert.throws(() => m("merge", "main"));
+  const mr = await ctx.worktrees.removal(merging);
+  assert.equal(mr.kind === "present" && mr.operation, "merge");
+  assert.deepEqual(mr.kind === "present" && mr.changes, ["a.txt"]);
+
+  // A rebase stopped on an `edit` with nothing uncommitted: git removes
+  // this one with a plain remove, so the question is all there is.
+  git("branch", "rb", "HEAD~1");
+  const rebasing = join(base, "wt", "rebasing");
+  git("worktree", "add", "-q", rebasing, "rb");
+  const r = at(rebasing);
+  writeFileSync(join(rebasing, "b.txt"), "b\n");
+  r("add", "b.txt");
+  r("commit", "-qm", "b");
+  // The sequence editor is a NODE script: git runs it through its shell, where
+  // a Windows path's backslashes are escapes (see operationInTheWay.test.ts).
+  const seq = join(base, "seq.cjs");
+  writeFileSync(seq, 'const fs=require("fs");const p=process.argv[2];fs.writeFileSync(p,fs.readFileSync(p,"utf8").replace(/^pick /,"edit "));\n');
+  execFileSync("git", ["rebase", "-i", "main"], {
+    cwd: rebasing,
+    stdio: "ignore",
+    env: { ...process.env, GIT_SEQUENCE_EDITOR: `node "${seq.replace(/\\/g, "/")}"`, GIT_EDITOR: "true" },
+  });
+  const rr = await ctx.worktrees.removal(rebasing);
+  assert.equal(rr.kind === "present" && rr.operation, "rebase");
+  assert.deepEqual(rr.kind === "present" && rr.changes, []);
+
+  // Clean, and a REBASE_HEAD left behind by a finished rebase: nothing stopped.
+  const clean = join(base, "wt", "clean");
+  git("worktree", "add", "-q", "-b", "clean", clean);
+  const gitDir = at(clean)("rev-parse", "--absolute-git-dir");
+  writeFileSync(join(gitDir, "REBASE_HEAD"), git("rev-parse", "HEAD") + "\n");
+  const cr = await ctx.worktrees.removal(clean);
+  assert.equal(cr.kind, "present");
+  assert.equal(cr.kind === "present" ? cr.operation : "x", undefined);
+
+  // And this window's own stop is not read for another worktree's: the main
+  // worktree mid-merge, the clean one still reads nothing stopped.
+  git("branch", "other", "HEAD~1");
+  const o = at(clean);
+  o("checkout", "-q", "-b", "clean-2", "other");
+  writeFileSync(join(clean, "a.txt"), "other\n");
+  o("commit", "-qam", "other change");
+  assert.throws(() => git("merge", "clean-2"));
+  const again = await ctx.worktrees.removal(clean);
+  assert.equal(again.kind === "present" ? again.operation : "x", undefined);
+});

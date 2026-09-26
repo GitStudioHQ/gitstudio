@@ -841,6 +841,7 @@ async function askAndRemove(
     locked: !!entry.locked,
     lockReason: entry.lockReason,
     changes: removal.kind === "present" ? removal.changes : [],
+    operation: removal.kind === "present" ? removal.operation : undefined,
   });
   const ok = await promptConfirm({
     title: q.title,

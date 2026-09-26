@@ -1570,7 +1570,7 @@ export class GitBridge {
       head: r.entry.head,
       locked: !!r.entry.locked,
       lockReason: r.entry.lockReason,
-      ...(r.kind === "present" ? { changes: r.changes } : {}),
+      ...(r.kind === "present" ? { changes: r.changes, operation: r.operation } : {}),
     };
   }
 

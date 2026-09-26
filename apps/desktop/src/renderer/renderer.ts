@@ -3269,6 +3269,7 @@ class App {
       locked: plan.locked,
       lockReason: plan.lockReason,
       changes: plan.changes,
+      operation: plan.operation,
     });
     const ok = await confirmDialog({
       title: q.title,

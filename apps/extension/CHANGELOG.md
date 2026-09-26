@@ -102,6 +102,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - A worktree row's inline button is **Open in New Window**, and it opens the
   worktree straight away; **Open in This Window** is in the row's menu. The
   button was *Open Worktree* and asked which window first.
+- **Removing a worktree that is stopped in a merge, rebase, cherry-pick or
+  revert says so**, and that removing it abandons the operation. A worktree
+  stopped in a rebase with nothing uncommitted used to go without a word.
 
 ## [1.14.0] - 2026-09-25
 

@@ -69,3 +69,18 @@ test("refusals say why, in words", () => {
   assert.match(worktreeRemovalRefusal("current", "feat"), /This window has feat open/);
   assert.match(worktreeRemovalRefusal("notListed", "feat"), /no longer a worktree/);
 });
+
+test("an operation stopped in it is named, with what removing it abandons", () => {
+  const merge = worktreeRemovalQuestion({ ...base, operation: "merge", changes: ["a.ts"] });
+  assert.match(merge.message, /A merge is in progress in it\. Removing the worktree abandons the merge\./);
+  assert.equal(merge.confirmLabel, "Discard Changes and Remove");
+
+  // Mid-rebase the worktree is detached, and clean it goes with a plain
+  // remove: the question is the only place the rebase is mentioned.
+  const rebase = worktreeRemovalQuestion({ ...base, branch: undefined, label: "0123456 (detached)", operation: "rebase" });
+  assert.match(rebase.message, /A rebase is in progress in it\. Removing the worktree abandons the rebase; the branch being rebased stays as it was before the rebase began\./);
+  assert.doesNotMatch(rebase.message, /no branch checked out/);
+  assert.equal(rebase.confirmLabel, "Remove");
+
+  assert.doesNotMatch(worktreeRemovalQuestion({ ...base, kind: "missing", operation: "merge" }).message, /merge/);
+});

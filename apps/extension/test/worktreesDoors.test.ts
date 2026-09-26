@@ -389,6 +389,24 @@ test("a change made while the question was open is asked about, never deleted â€
   assert.deepEqual(errors(), []);
 });
 
+test("a worktree stopped in a merge: the question says removing it abandons the merge", async () => {
+  const s = scene();
+  const merging = s.path("feat-clean");
+  const m = at(merging);
+  writeFileSync(join(merging, "a.txt"), "feat\n");
+  m("commit", "-qam", "feat change");
+  writeFileSync(join(s.app, "a.txt"), "main\n");
+  s.git("commit", "-qam", "main change");
+  assert.throws(() => m("merge", "main"));
+  const { repos, provider } = windowAt(s.app);
+  answer = () => undefined; // asked, and kept
+  await wt.removeWorktree(repos, await row(provider, "feat-clean"), noop);
+  const q = asked[0] as DialogSpec & { kind: "confirm" };
+  assert.match(q.message, /A merge is in progress in it\. Removing the worktree abandons the merge\./);
+  assert.match(q.message, /a\.txt/);
+  assert.ok(existsSync(merging));
+});
+
 test("the worktree this window has open is never removed â€” nothing is asked and the folder stays", async () => {
   const s = scene();
   const { repos, provider } = windowAt(s.path("feat-clean"));

@@ -24,7 +24,24 @@ export interface WorktreeRemovalFacts {
   /** The uncommitted paths removing it deletes; undefined when git could not
    *  say (then any it has are deleted). Ignored for a missing folder. */
   changes?: string[];
+  /** What git is stopped in there (git-service's StoppedOperation). Removing
+   *  the worktree abandons it — git removes a clean one mid-rebase without a
+   *  word. Ignored for a missing folder. */
+  operation?: WorktreeOperation;
 }
+
+/** An operation git can be stopped in, as git-service's stoppedIn names it. */
+export type WorktreeOperation = "merge" | "rebase" | "cherry-pick" | "revert" | "am";
+
+/** What removing the worktree does to the operation stopped in it. */
+const ABANDONS: Record<WorktreeOperation, string> = {
+  merge: "A merge is in progress in it. Removing the worktree abandons the merge.",
+  rebase:
+    "A rebase is in progress in it. Removing the worktree abandons the rebase; the branch being rebased stays as it was before the rebase began.",
+  "cherry-pick": "A cherry-pick is in progress in it. Removing the worktree abandons the cherry-pick.",
+  revert: "A revert is in progress in it. Removing the worktree abandons the revert.",
+  am: "git am is applying patches in it. Removing the worktree abandons the patches not yet applied.",
+};
 
 export interface WorktreeRemovalQuestion {
   title: string;
@@ -41,9 +58,14 @@ const NAMED = 5;
 
 /** The one question asked before a worktree is removed or forgotten. */
 export function worktreeRemovalQuestion(f: WorktreeRemovalFacts): WorktreeRemovalQuestion {
+  const operation = f.kind === "present" && f.operation ? ABANDONS[f.operation] : "";
+  // Mid-rebase git lists the worktree as detached: the rebase's own sentence
+  // says what happens to the branch, and "no branch checked out" would not.
   const stays = f.branch
     ? `The branch ${f.branch} and its commits stay.`
-    : `It has no branch checked out (detached at ${f.head.slice(0, 7)}).`;
+    : f.kind === "present" && f.operation === "rebase"
+      ? ""
+      : `It has no branch checked out (detached at ${f.head.slice(0, 7)}).`;
   const lock = f.locked
     ? f.lockReason
       ? `It is locked: “${f.lockReason}”.`
@@ -81,7 +103,7 @@ export function worktreeRemovalQuestion(f: WorktreeRemovalFacts): WorktreeRemova
         : "";
   return {
     title: `Remove worktree ${f.label}?`,
-    message: [`Deletes its folder, ${f.shownPath}.`, lost, lock, stays].filter(Boolean).join("\n\n"),
+    message: [`Deletes its folder, ${f.shownPath}.`, lost, operation, lock, stays].filter(Boolean).join("\n\n"),
     confirmLabel:
       f.locked && dirty
         ? "Unlock, Discard Changes and Remove"

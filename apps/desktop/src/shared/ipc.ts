@@ -13,6 +13,7 @@ import type {
   RefPreset,
 } from "@gitstudio/host-bridge/graphProtocol";
 import type { CommitDetailsPayload } from "@gitstudio/host-bridge/commitDetailsProtocol";
+import type { WorktreeOperation } from "@gitstudio/host-bridge/worktreeRemoval";
 import type {
   ConflictShape,
   ConflictsSnapshot,
@@ -548,6 +549,8 @@ export type WorktreeRemovalInfo =
       lockReason?: string;
       /** Uncommitted paths removing it deletes; undefined when unreadable. */
       changes?: string[];
+      /** What git is stopped in there; removing the worktree abandons it. */
+      operation?: WorktreeOperation;
     };
 
 /** One commit in a Compare result. */

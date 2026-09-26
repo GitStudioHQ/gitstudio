@@ -8022,6 +8022,7 @@
       c.match(msg, /It is locked: “claude agent agent-a2c9ae27 \(pid 73264\)”\./, "naming the lock's reason");
       c.match(msg, /Its 2 uncommitted changes go with it/, "…and what is lost");
       c.match(msg, /src\/agent-notes\.md/, "…file by file");
+      c.match(msg, /A merge is in progress in it\. Removing the worktree abandons the merge\./, "…and the merge it abandons");
       c.match(msg, /The branch agent\/wave3 and its commits stay\./, "…and what stays");
       c.eq(text($$(".modal-ok", card)[0]), "Unlock, Discard Changes and Remove", "…on a button that says what happens");
       $$(".modal-ok", card)[0].click();

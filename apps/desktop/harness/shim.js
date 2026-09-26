@@ -1988,7 +1988,8 @@
     }),
     // What removing a worktree takes, answered the way the bridge's
     // worktreeRemoval does from the worktree:list fixture: main and this
-    // window's own are refused; the agent's worktree has two uncommitted files.
+    // window's own are refused; the agent's worktree is stopped in a merge,
+    // with two uncommitted files.
     "worktree:removal": (req) => {
       worktreeState.removals.push(req);
       const w = (fixtures["worktree:list"] || []).find((x) => x.path === (req && req.path));
@@ -1997,8 +1998,9 @@
       if (w.current) return { kind: "current" };
       const facts = { branch: w.branch, head: w.head, locked: !!w.locked, lockReason: w.lockReason };
       if (w.missing) return { kind: "missing", ...facts };
-      const changes = w.branch === "agent/wave3" ? ["src/agent-notes.md", "tmp/scratch.txt"] : [];
-      return { kind: "present", ...facts, changes };
+      const agent = w.branch === "agent/wave3";
+      const changes = agent ? ["src/agent-notes.md", "tmp/scratch.txt"] : [];
+      return { kind: "present", ...facts, changes, ...(agent ? { operation: "merge" } : {}) };
     },
     // Removed as sent; the row leaves the list, as git's would.
     "worktree:remove": (req) => {

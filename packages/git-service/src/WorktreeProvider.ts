@@ -1,5 +1,6 @@
 import { existsSync, realpathSync } from "node:fs";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
+import { stoppedIn, type StoppedOperation } from "./stoppedOperation";
 
 /** One linked worktree as reported by `git worktree list --porcelain`. */
 export interface WorktreeEntry {
@@ -72,8 +73,11 @@ export type WorktreeRemoval =
    *  its lock, when it has one (`entry.locked`). */
   | { kind: "missing"; entry: WorktreeEntry }
   /** Its folder is there. `changes` are the paths git counts as uncommitted
-   *  there, which removing it deletes; undefined when they could not be read. */
-  | { kind: "present"; entry: WorktreeEntry; changes?: string[] };
+   *  there, which removing it deletes; undefined when they could not be read.
+   *  `operation`: what git is stopped in THERE — removing the worktree
+   *  abandons it, and git says nothing (a clean worktree mid-rebase goes
+   *  with a plain remove, exit 0). */
+  | { kind: "present"; entry: WorktreeEntry; changes?: string[]; operation?: StoppedOperation };
 
 export interface WorktreeOpResult {
   ok: boolean;
@@ -216,7 +220,12 @@ export class WorktreeProvider {
     if (!existsSync(entry.path)) {
       return { kind: "missing", entry };
     }
-    return { kind: "present", entry, changes: await this.uncommitted(entry.path, opts) };
+    // Read in THAT worktree: its index and its operation markers are its own.
+    const [changes, stop] = await Promise.all([
+      this.uncommitted(entry.path, opts),
+      stoppedIn(this.proc.at(entry.path), opts?.signal),
+    ]);
+    return { kind: "present", entry, changes, ...(stop?.operation ? { operation: stop.operation } : {}) };
   }
 
   /**

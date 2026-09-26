@@ -67,6 +67,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   disabled; a worktree whose folder is gone reads *folder missing*, has no
   Open, and offers **Forget this worktree…**. The same words as the VS Code
   extension's.
+- **Removing a worktree that is stopped in a merge, rebase, cherry-pick or
+  revert says so**, and that removing it abandons the operation — a worktree
+  stopped in a rebase with nothing uncommitted went without a word.
 
 ## [2.1.0] - 2026-09-25
 
