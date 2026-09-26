@@ -1,0 +1,34 @@
+packages/host-bridge/src/rebaseProtocol.ts
+  s_26f5e669d3043c::t_ea81face12c613 34-41
+packages/webview-ui/src/rebase/rebase-view.ts
+  s_26f5e669d3043c::t_fbc5caadb8d6fb 758-763
+  s_26f5e669d3043c::t_64d243b09abc27 20-22,79,96-98,117,134-146,621-623,679,705,810-824
+apps/extension/src/rebase/rebaseTodoEditor.ts
+  s_26f5e669d3043c::t_1521f6aa5248cc 9-10
+  s_26f5e669d3043c::t_72e1b138802dd2 88
+  s_26f5e669d3043c::t_df76c0b1ec238e 207-222
+apps/extension/test/rebaseTodoContinuing.test.ts
+  s_26f5e669d3043c::t_36fd430a15093f 1-142
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_5b67e706b6be5f 73-77
+packages/webview-ui/src/rebase/main.ts
+  s_26f5e669d3043c::t_eb8f1af852b4d0 50
+packages/webview-ui/test/rebaseSelection.test.ts
+  s_26f5e669d3043c::t_c665c10e5ab494 43-50,52,60-62,260-293,371-380
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d74f53d708515b7016980374a4d73cca51a567e4",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
