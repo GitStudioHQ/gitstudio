@@ -9408,7 +9408,9 @@
       const menu = $(".ctx-menu");
       c.ok(!!menu, "a menu opens");
       if (!menu) return;
-      c.eq(text(menu.querySelector(".ctx-menu-header")), "3 commits", "headed by how many");
+      c.eq(text(menu.querySelector(".ctx-menu-header")), "3 commits selected", "headed by how many, in the extension's words");
+      const manyFace = getComputedStyle(menu.querySelector(".ctx-menu-header")).fontFamily;
+      c.eq(manyFace, getComputedStyle(menu).fontFamily, `words, in the interface's face (${manyFace})`);
       c.eq($$(".ctx-menu-item", menu).map((b) => text(b)).join(" | "),
         "Cherry-pick 3 commits | Revert 3 commits | Squash 3 commits… | Drop 3 commits… | Copy SHAs", "the items that apply, in order");
       const drop = menu.querySelector("[data-action=drop-many]");
@@ -9420,6 +9422,8 @@
       await rclick("f6a7b8c9d0e152637f80");
       c.eq(selected().join(","), "f6a7b8c9d0e152637f80", "right-click outside selects just that row");
       c.eq(text($(".ctx-menu .ctx-menu-header")), "f6a7b8c", "and its own menu opens");
+      const shaFace = getComputedStyle($(".ctx-menu .ctx-menu-header")).fontFamily;
+      c.ok(shaFace !== manyFace, `a sha keeps the editor's face (${shaFace})`);
       await closeMenu();
 
       // Drop 3 commits…: preflight, one question listing them, the run, Undo.

@@ -5228,6 +5228,12 @@ gitstudio-graph {
   margin-bottom: 4px;
 }
 
+/* The menu for several commits is headed by words ("3 commits selected",
+   issue #32), not a sha: the interface's face, not the editor's. */
+.ctx-menu-header.is-words {
+  font-family: inherit;
+}
+
 .ctx-menu-item {
   display: block;
   width: 100%;

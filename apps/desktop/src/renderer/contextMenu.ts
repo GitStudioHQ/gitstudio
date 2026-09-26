@@ -171,8 +171,9 @@ export class CommitContextMenu {
     menu.setAttribute("role", "menu");
     menu.setAttribute("aria-label", `Actions for ${shas.length} commits`);
     const header = document.createElement("div");
-    header.className = "ctx-menu-header";
-    header.textContent = `${shas.length} commits`;
+    // Words, not a sha: the extension's menu for several says the same.
+    header.className = "ctx-menu-header is-words";
+    header.textContent = `${shas.length} commits selected`;
     menu.appendChild(header);
 
     this.rows = [];
