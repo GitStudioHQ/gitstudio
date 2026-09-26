@@ -1,0 +1,27 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_3e463d99d43181 87-89
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_98598fee41c27e 164-168,306-329,1186-1202,2132-2136,2268-2271,2622,2680,4848-4850,5074
+apps/extension/src/changes/operationBanner.ts
+  s_26f5e669d3043c::t_f53217fc6324a8 39-46
+apps/extension/test/changesCommitButtons.test.ts
+  s_26f5e669d3043c::t_66a3a8b7fbc9aa 34,48,81-115
+apps/extension/test/changesPushDoors.test.ts
+  s_26f5e669d3043c::t_89fd40d48e6791 11,74-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3b9f521cc5bd692c042e50e985692f8eb57e6f51",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
