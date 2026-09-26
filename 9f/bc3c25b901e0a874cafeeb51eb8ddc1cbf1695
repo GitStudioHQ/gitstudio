@@ -1,0 +1,22 @@
+apps/desktop/test/tabBridge.test.ts
+  s_26f5e669d3043c::t_19d01bc7288323 193-194
+  s_26f5e669d3043c::t_f8a82a9f53dee9 192,195-209
+apps/desktop/src/renderer/bridge.ts
+  s_26f5e669d3043c::t_f8a82a9f53dee9 173-174,181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9fbc3c25b901e0a874cafeeb51eb8ddc1cbf1695",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
