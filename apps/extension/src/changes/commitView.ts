@@ -3681,10 +3681,11 @@ export class CommitViewProvider
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      transform: rotate(-90deg);
       transition: transform var(--gs-motion-fast) var(--gs-ease);
     }
-    .hunk-twisty.open { transform: none; }
+    /* The glyph is chevron-right (ICON_CHEVRON): right while closed, turned
+       to point down while open, as every tree in the editor does. */
+    .hunk-twisty.open { transform: rotate(90deg); }
     .hunk-twisty .codicon { font-size: 11px; line-height: 1; }
     .hunks {
       display: flex;
@@ -3739,9 +3740,11 @@ export class CommitViewProvider
       display: inline-flex; align-items: center; justify-content: center;
       color: var(--gs-fg-subtle);
       flex: 0 0 auto;
+      transform: rotate(90deg);
       transition: transform var(--gs-motion) var(--gs-ease);
     }
-    .group.collapsed .group-header .twisty { transform: rotate(-90deg); }
+    /* chevron-right: down (turned) while open, right when collapsed. */
+    .group.collapsed .group-header .twisty { transform: none; }
     .group-header .twisty svg { width: 12px; height: 12px; }
     /* Per-group identity dot (staged = green, unstaged = amber, merge = red). */
     .group-header .gdot {
@@ -3824,10 +3827,12 @@ export class CommitViewProvider
       display: inline-flex; align-items: center; justify-content: center;
       color: var(--gs-fg-muted);
       flex: 0 0 auto;
+      transform: rotate(90deg);
       transition: transform var(--gs-motion) ease;
     }
     .row .twisty svg { width: 12px; height: 12px; }
-    .row.collapsed .twisty { transform: rotate(-90deg); }
+    /* chevron-right: down (turned) while open, right when collapsed. */
+    .row.collapsed .twisty { transform: none; }
     .row .file-icon {
       width: 16px; height: 16px;
       display: inline-flex; align-items: center; justify-content: center;
