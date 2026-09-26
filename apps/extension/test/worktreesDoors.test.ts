@@ -680,6 +680,51 @@ test("New worktree into a folder that is taken: refused before git, no branch le
   assert.ok(existsSync(join(parent, "hotfix-x")));
 });
 
+test("New worktree into the folder of a worktree git still has, though its folder is gone: refused in words before git, no branch left behind", async () => {
+  for (const [name, gone] of [["feat/gone", "feat-gone"], ["feat/gone-locked", "feat-gone-locked"]] as const) {
+    const s = scene();
+    const { repos } = windowAt(s.app);
+    pickFolder = join(s.base, "wt");
+    said.length = 0;
+    answer = (spec) => (spec.kind === "pick" ? "gitstudio:new-branch" : spec.kind === "input" ? name : undefined);
+    await wt.addWorktree(repos, noop);
+    assert.deepEqual(errors(), [], `${name}: not git's "missing but already registered worktree; use 'add -f'"`);
+    assert.ok(
+      said.some(
+        (m) =>
+          m.kind === "warning" &&
+          m.message ===
+            `GitStudio: git still has a worktree at ${s.path(gone)} (${gone}), though its folder is gone, so nothing was created. Forget that worktree in Worktrees, or choose another folder.`,
+      ),
+      `${name}: says whose folder it is (${said.map((m) => m.message).join(" / ")})`,
+    );
+    assert.equal(s.git("branch", "--list", name), "", "no branch made");
+    assert.ok(listed(s).includes(gone), "the registered worktree is untouched");
+  }
+});
+
+test("…and one whose folder is there but emptied (git calls that missing too) says Remove, which is what its row offers", async () => {
+  const s = scene();
+  const { repos } = windowAt(s.app);
+  // Emptied, .git file and all: `worktree add` would take an empty folder,
+  // but git still has it registered and refuses.
+  rmSync(s.path("feat-clean"), { recursive: true, force: true });
+  mkdirSync(s.path("feat-clean"));
+  pickFolder = join(s.base, "wt");
+  answer = (spec) => (spec.kind === "pick" ? "gitstudio:new-branch" : spec.kind === "input" ? "feat/clean" : undefined);
+  await wt.addWorktree(repos, noop);
+  assert.deepEqual(errors(), []);
+  assert.ok(
+    said.some(
+      (m) =>
+        m.message ===
+        `GitStudio: git still has a worktree at ${s.path("feat-clean")} (feat-clean), so nothing was created. Remove that worktree in Worktrees, or choose another folder.`,
+    ),
+    said.map((m) => m.message).join(" / "),
+  );
+  assert.equal(s.git("branch", "--list", "feat/clean"), "");
+});
+
 test("New worktree with a branch name that is taken asks again instead of failing in git", async () => {
   const s = scene();
   const { repos } = windowAt(s.app);

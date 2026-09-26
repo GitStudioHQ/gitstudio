@@ -90,10 +90,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   trying again with the same name works. Folders are named for the whole
   branch (`feature/login` → `feature-login`), so `bugfix/login` beside it no
   longer lands in the same folder; a folder that already exists is refused
-  before anything runs; a branch name that's taken is asked for again; and a
-  branch another worktree has checked out goes straight to a new branch from
-  it, saying where it's checked out. The folder picker names the folder it
-  creates.
+  before anything runs, and so is one git still keeps for a worktree whose
+  folder is gone (with where to forget it); a branch name that's taken is
+  asked for again; and a branch another worktree has checked out goes
+  straight to a new branch from it, saying where it's checked out. The folder
+  picker names the folder it creates.
 - The *current* marker in Worktrees survives opening the repository through a
   symlink, and clicking the current worktree no longer offers to reopen it.
 - **Lock Worktree…** asks why (optional); the reason shows in the row's tooltip

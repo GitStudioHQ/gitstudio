@@ -760,6 +760,17 @@ async function pickFolderAndCreate(
     );
     return;
   }
+  // Free on disk, but still a worktree to git — the "folder missing" row this
+  // view shows. git refuses it ("a missing but already registered worktree;
+  // use 'add -f'", advice this view does not offer), so say whose it is.
+  const holder = (await a.ctx.worktrees.list()).find((e) => sameFolder(e.path, target.fsPath));
+  if (holder) {
+    const gone = !existsSync(holder.path);
+    void vscode.window.showWarningMessage(
+      `GitStudio: git still has a worktree at ${target.fsPath} (${worktreeLabel(holder)})${gone ? ", though its folder is gone," : ","} so nothing was created. ${gone ? "Forget" : "Remove"} that worktree in Worktrees, or choose another folder.`,
+    );
+    return;
+  }
 
   const result = await a.ctx.worktrees.add(target.fsPath, opts.branchName, {
     newBranch: opts.newBranch,
