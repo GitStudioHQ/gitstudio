@@ -1,0 +1,28 @@
+packages/git-service/test/stashIdentity.test.ts
+  s_26f5e669d3043c::t_3253f181e9346d 368,380-449
+  s_26f5e669d3043c::t_da239a9f9558f1 33,337,349,363,450
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_6357e4dc964b95 595-600
+  s_26f5e669d3043c::t_57cf5bd4e29986 771-773
+  s_26f5e669d3043c::t_966e5a00f1c3c1 1050-1064,1072-1085,1087-1090,1095-1134
+  s_26f5e669d3043c::t_2e59f7f6be61e5 121-124
+  s_26f5e669d3043c::t_d630cdb58e1151 472-483,487,497,499-502,505-508
+  s_26f5e669d3043c::t_79bf427e4560da 210-218
+  s_26f5e669d3043c::t_f56dbd7430ae8a 1135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d186ffa1c6318238d0e01a7851c13601182dd2b5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
