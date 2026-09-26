@@ -16449,5 +16449,40 @@
       c.ok(onScreen(), "on screen, as before");
       c.eq(rbActions()[n - 1], "pick", "(and the oldest commit was left a pick throughout)");
     },
+
+    // The "?" sheet calls itself every shortcut the app answers to — and a
+    // key nothing advertises is a key nobody has. #32's keys are on it: the
+    // rebase list's, read against the letters the Rebase view itself shows,
+    // and the branch switcher's. Six groups, none left alone on a row.
+    "the-shortcuts-sheet-names-the-rebase-and-switcher-keys": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const viewLetters = $$(".rb-hint .rb-kbd").map((k) => text(k)).join("");
+      c.eq(viewLetters, "PRSFED", "the Rebase view names its letters");
+      const t = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body;
+      t.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true, cancelable: true }));
+      await settle(500);
+      const sheet = $(".shortcuts-card");
+      c.ok(!!sheet, "? opens the sheet");
+      if (!sheet) return;
+      const group = (title) => $$(".shortcuts-group", sheet).find((g) => text(g.querySelector(".shortcuts-group-title")).toLowerCase() === title.toLowerCase());
+      const keysOf = (g) => $$(".shortcuts-keys", g).map((k) => text(k).replace(/\s+/g, " ").trim());
+      const rebase = group("Interactive rebase");
+      c.ok(!!rebase, "an Interactive rebase group");
+      const rk = rebase ? keysOf(rebase) : [];
+      const letters = rk.find((k) => /^[A-Z]( [A-Z])+$/.test(k)) ?? "";
+      c.eq(letters.replace(/ /g, ""), viewLetters, "its letters are the ones the view answers to");
+      const mac = navigator.platform.toLowerCase().includes("mac");
+      for (const k of ["Shift+↑ ↓", mac ? "⌘A" : "Ctrl+A", "Alt+↑ ↓", "Esc"]) c.ok(rk.includes(k), `it names ${k} (${rk.join(" | ")})`);
+      const branches = group("Branches");
+      const bk = branches ? keysOf(branches) : [];
+      for (const k of ["→ or Enter", "← or Esc", "Enter Enter"]) c.ok(bk.includes(k), `Branches names the switcher's ${k} (${bk.join(" | ")})`);
+      // The layout: every row of groups holds more than one.
+      const tops = $$(".shortcuts-group", sheet).map((g) => Math.round(g.getBoundingClientRect().top));
+      const perRow = [...new Set(tops)].map((y) => tops.filter((x) => x === y).length);
+      c.ok(perRow.every((m) => m > 1), `no group alone on a row (${perRow.join("+")})`);
+      const r = sheet.getBoundingClientRect();
+      c.ok(r.top >= 0 && r.bottom <= window.innerHeight, `the sheet fits the window (${Math.round(r.top)}–${Math.round(r.bottom)} of ${window.innerHeight})`);
+    },
   };
 })();

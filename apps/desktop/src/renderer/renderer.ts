@@ -10589,6 +10589,11 @@ function openShortcutsHelp(): void {
         ["/", "Filter the list"],
         [`${mod}Enter`, "Run the focused row's main action — checkout, pull, publish"],
         ["Shift+F", "Fetch from every remote"],
+        // #32: the top bar's switcher — IntelliJ's branch popup, and the
+        // extension's branch menu.
+        ["→  or  Enter", "Switcher: a branch's actions, Checkout first"],
+        ["←  or  Esc", "Switcher: back to the branch"],
+        ["Enter  Enter", "Switcher: check out the first match"],
       ],
     },
     {
@@ -10609,6 +10614,18 @@ function openShortcutsHelp(): void {
         ["n", "Jump to the next failure"],
         ["j / k", "Next / previous job in this run"],
         ["Enter  Shift+Enter", "Step through search matches"],
+      ],
+    },
+    {
+      // #32: several commits at once. The letters are git's own todo letters,
+      // the same ones the Rebase view's toolbar names in its tooltips.
+      title: "Interactive rebase",
+      rows: [
+        ["Shift+↑ ↓", "Select several (or Shift-click)"],
+        [`${mod}A`, "Select every commit"],
+        ["P R S F E D", "Set Pick, Reword, Squash, Fixup, Edit or Drop"],
+        ["Alt+↑ ↓", "Move the selected commits"],
+        ["Esc", "Back to one commit"],
       ],
     },
   ];

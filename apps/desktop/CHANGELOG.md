@@ -59,7 +59,8 @@ but they share the same engine, so most Git behaviour lands in both at once.
   selection. Squash or Fixup across a selection folds the commits into the
   oldest of them, which stays as it is — git can't fold the oldest commit you
   keep into nothing, and the plan says so instead of letting the rebase fail.
-  The same as the VS Code extension's. (#32)
+  The keyboard sheet (**?**) lists these keys. The same as the VS Code
+  extension's. (#32)
 - **The branch switcher works from the keyboard.** Type to filter; **↑**/**↓**
   move through the branches, and letters you type on one keep filtering;
   **→** or **Enter** opens a branch's actions — **Checkout** first, then
@@ -68,8 +69,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   **←** or **Escape** goes back to the branch, and **Escape** again closes.
   Remote branches and tags have their actions too, and the arrow at the end
   of every row opens them with the mouse; a plain click still switches.
-  Holding Enter never runs a second action. As in IntelliJ's branch popup and
-  the VS Code extension's branch menu. (#32)
+  Holding Enter never runs a second action; the keyboard sheet (**?**) lists
+  the keys. As in IntelliJ's branch popup and the VS Code extension's branch
+  menu. (#32)
 
 ### Fixed
 
