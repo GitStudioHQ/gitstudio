@@ -427,7 +427,7 @@ export class GitHubBridge {
             ok: false,
             changed: false,
             expected: true,
-            message: `${divergedMessage(n as number, plan)} It was left as it is — check it out from Branches, or rename it to take the PR's version.`,
+            message: `${divergedMessage(n as number, plan)} It was left as it is: check it out from Branches as it is, or rename or delete ${plan.local}, then Check Out again to get the pull request's version.`,
           };
         case "current":
           if (plan.checkedOut) return { ok: true, changed: false };

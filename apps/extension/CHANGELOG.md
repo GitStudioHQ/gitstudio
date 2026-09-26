@@ -69,13 +69,18 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Actions, whether its runs had failed or passed. They read the runs now, with
   any legacy statuses: a failure reads as failed, a pass as passed, "No
   checks" only when there are none. Every row shows it — drafts too, not just
-  the first eight — as the colour of its icon, with the words in its tooltip;
-  rows no longer show the literal text `$(check)`, `$(x)` or
-  `$(circle-filled)`.
+  the first eight — as its icon, a mark of its own in a colour of its own for
+  passed, failed and running, with the words in its tooltip; rows no longer
+  show the literal text `$(check)`, `$(x)` or `$(circle-filled)`.
 - **Create Pull Request: Draft creates a draft.** Every pull request was
   created ready for review, whichever you picked. A branch that lives in your
   fork is now sent to GitHub as `owner:branch` — as a bare name, GitHub looked
-  for it in the target repository — and is pushed where git itself pushes it.
+  for it in the target repository. The branch is pushed to the remote git
+  pushes it to, under its own name: one started from `origin/main` tracks
+  `main`, and Create Pull Request pushed its commits into `main` — or, with a
+  push remote set to your fork, into the original repository's `main`, and
+  nothing reached the fork. It asks to push only when the branch isn't there
+  yet or has commits that aren't, and leaves what the branch tracks alone.
   The title proposed is the branch's one commit subject, or with several
   commits the branch name, as GitHub proposes it (it was the newest commit's
   subject). The base branch question offers only branches the remote has
@@ -92,27 +97,37 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   push during the review no longer moves its comments onto other code, and a
   comment on several lines is sent as that range. Start Review reads the pull
   request's current head and opens its first file (it opened five previews,
-  each replacing the last). A comment GitHub would still refuse is named before
-  anything is sent, and when GitHub refuses, its reason is shown.
+  each replacing the last), and a file opened from the pull request's page
+  during the review opens as the review sees it, so it takes comments too. A
+  comment GitHub would still refuse is named before anything is sent, and when
+  GitHub refuses, its reason is shown.
+- **A pull request's diff starts where its branch left the base.** The left
+  side was the base branch as it is now: once others had merged, it showed
+  their new work as if the pull request removed it, and comments on removed
+  lines were placed on the wrong lines — or couldn't be placed at all.
 - **Delete Comment on a pending review comment** deletes that comment. It
   threw and deleted nothing. A comment already posted to GitHub no longer
   offers it.
 - **Pending review comments are no longer thrown away.** Starting a review of
   another pull request, or Cancel Review, asks first — submit them, discard
   them, or keep reviewing — and a pull request whose files fail to load leaves
-  your queued comments alone.
+  your queued comments alone. The question counts the comments that are
+  pending, and discarding them leaves the ones already posted.
 - **Check Out on a pull request you already have** brings `pr/<n>` up to
   date. It failed while `pr/<n>` was checked out, and it silently threw away
   any commits you had made on it; now a `pr/<n>` with commits the pull request
   doesn't have is never moved without asking. On the pull request's own
   branch already, it says so instead of moving you to a `pr/<n>` copy. The
-  progress notification ends before "Checked out" appears.
+  progress notification ends before "Checked out" appears, and its Open
+  Description opens that pull request even after you have switched
+  repositories (it opened the same number in the repository active then).
 - **A pull request's page:** label chips wear their colours (the page's own
   security policy dropped them, and every label was grey); a merged pull
   request reads **Merged** in purple and one closed without merging reads
   **Closed** in red (both read a purple "Closed"); after **Merge…** the page
   flips to Merged at once, and the row leaves the list, without a reload or a
-  second Merge. Merge… offers only the methods the repository allows, and
+  second Merge — and stays Merged when a Refresh was still loading as the
+  merge landed. Merge… offers only the methods the repository allows, and
   isn't offered on a draft. A same-repository branch reads without its owner,
   and a file's line counts no longer show a red "−0".
 - **The Pull Requests list no longer asks GitHub on every file save**, even
@@ -122,12 +137,17 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   drops another repository's pull requests as soon as you switch, and says why
   there is no list — no repository, no remote, or remotes not on github.com —
   instead of staying blank. A refresh that fails keeps the list and says so; a
-  list that fails to load offers Retry or Sign in. Rows show when each pull
-  request was last updated, the order they are in.
-- **No more silent 100-item limits.** Every open pull request is listed, not
-  the first 100, and every changed file (GitHub lists up to 3,000), each one
-  commentable in a review. A page's "Changed files" count is the pull
-  request's own, and a list that is partial, or failed to load, says so.
+  list that fails to load offers what can put it right: Retry; Sign in, as a
+  new sign-in when GitHub no longer accepts yours (it handed the refused one
+  back); or GitHub's page, when GitHub refuses you access. An answer that
+  arrives after you have switched repositories is not shown over the other
+  repository's list. Rows show when each pull request was last updated, the
+  order they are in.
+- **No more silent 100-item limits.** Up to 1,000 open pull requests are
+  listed, not the first 100, and the list says when there are more; every
+  changed file is listed (GitHub lists up to 3,000), each one commentable in
+  a review. A page's "Changed files" count is the pull request's own, and a
+  list that is partial, or failed to load, says so.
 - **github.com under another name.** Remotes using an SSH host alias
   (`git@github.com-work:…`, or any `~/.ssh/config` Host whose HostName is
   github.com), `ssh.github.com` (SSH over port 443) or `www.github.com` turned

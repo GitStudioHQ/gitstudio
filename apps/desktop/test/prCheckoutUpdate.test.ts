@@ -85,6 +85,8 @@ test("pr/7 with commits the PR doesn't have is left exactly as it is — said, n
   assert.equal(r.expected, true, "the user's state, not a defect");
   assert.equal(reportableResultMessage(r), undefined, "nothing is filed");
   assert.match(r.message ?? "", /^pr\/7 has 2 commits that pull request #7 doesn't/);
+  // Renaming alone gets nothing: the PR's version comes with the next Check Out.
+  assert.match(r.message ?? "", /rename or delete pr\/7, then Check Out again to get the pull request's version\.$/);
   assert.equal(w.git("rev-parse", "refs/heads/pr/7"), mine, "the fix is where it was");
   assert.equal(w.git("symbolic-ref", "--short", "HEAD"), "main");
 });
