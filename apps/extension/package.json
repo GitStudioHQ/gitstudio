@@ -1522,7 +1522,7 @@
       "scm/inputBox": [
         {
           "command": "gitstudio.ai.generateCommitMessage",
-          "when": "scmProvider == git",
+          "when": "scmProvider == git && gitstudio.ai.enabled",
           "group": "navigation"
         }
       ],
