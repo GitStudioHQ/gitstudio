@@ -112,7 +112,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   to commit a revert of them. Revert instead of rewrite is kept for a result
   you pushed after the operation.
 - **Undo History** undoes an older entry after every newer one, newest first,
-  each asking its own question.
+  each asking its own question. A newer one that can't be undone any more
+  (you have committed since) can be forgotten on the way, and Undo's own
+  warning about it has **Forget It** — it no longer stands in front of
+  everything older for good.
 - **The Undo on an "Undid? …" notification undoes that operation.** Pressed
   after you had done something else, it undid the newer operation instead;
   now the newer ones are undone first, each asked, then the one it names.

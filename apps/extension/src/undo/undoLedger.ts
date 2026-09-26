@@ -251,11 +251,22 @@ export class UndoLedger {
   /**
    * Undo `chain` in order — newest first, down to the one asked for: each op
    * is put back in the state the ones after it left, which is the only state
-   * its plan is right for. Stops at the first that isn't undone.
+   * its plan is right for. Stops at the first that isn't undone — except that
+   * a newer entry which CAN'T be undone (a commit made since, say) may be
+   * forgotten on the way: otherwise it would stand in front of every older
+   * entry for good. The older ones are still each checked on their own
+   * terms — every plan puts back only what its op changed, and only while it
+   * is where the op left it.
    */
   private async undoChain(active: RepoEntry, chain: readonly UndoEntry[]): Promise<void> {
+    const target = chain[chain.length - 1];
     for (let i = 0; i < chain.length; i++) {
-      const done = await this.undoOne(active, chain[i], chain.length > 1 ? { step: i + 1, of: chain.length } : undefined);
+      const done = await this.undoOne(
+        active,
+        chain[i],
+        chain.length > 1 ? { step: i + 1, of: chain.length } : undefined,
+        chain[i] === target ? undefined : target,
+      );
       if (!done) {
         return;
       }
@@ -265,12 +276,15 @@ export class UndoLedger {
   /**
    * Undo one entry: ask git-service what putting back what it changed means
    * now, say that in words, and do exactly that — or say why it can't be done.
-   * True when the entry is done with (undone, or nothing was left to undo).
+   * True when the entry is done with (undone, forgotten, or nothing was left
+   * to undo). `heading`: the older entry a chain is on its way to, when this
+   * one is only in front of it.
    */
   private async undoOne(
     active: RepoEntry,
     entry: UndoEntry,
     progress?: { step: number; of: number },
+    heading?: UndoEntry,
   ): Promise<boolean> {
     const snap = entry.snapshot;
     let plan: RestorePlan;
@@ -282,7 +296,29 @@ export class UndoLedger {
     }
     switch (plan.kind) {
       case "refuse":
-        void vscode.window.showWarningMessage(`Can't undo "${entry.label}": ${plan.reason}`);
+        if (heading) {
+          const forget = await promptConfirm({
+            title: `Can't undo "${entry.label}"`,
+            message:
+              `${plan.reason} Take it off the undo history and go on to undo "${heading.label}"? ` +
+              "That puts back only what it changed, and only where nothing has moved since.",
+            confirmLabel: "Forget It and Continue",
+          });
+          if (!forget) {
+            return false;
+          }
+          this.remove(active.root, entry);
+          await this.save();
+          return true;
+        }
+        // Left alone, a refused entry would stand in front of every older one
+        // for good: Undo would only ever say this. Forget It takes it off.
+        void vscode.window.showWarningMessage(`Can't undo "${entry.label}": ${plan.reason}`, "Forget It").then(async (choice) => {
+          if (choice === "Forget It") {
+            this.remove(active.root, entry);
+            await this.save();
+          }
+        });
         return false;
       case "nothing":
         void vscode.window.showInformationMessage(`Nothing to undo for "${entry.label}" — ${plan.reason}`);

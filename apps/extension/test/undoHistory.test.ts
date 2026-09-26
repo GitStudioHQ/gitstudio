@@ -22,7 +22,10 @@ resolver._resolveFilename = function (request: unknown, ...rest: unknown[]) {
 /* eslint-disable @typescript-eslint/no-require-imports -- loaded after the stand-in is in place */
 const vscode = require("vscode") as {
   __said: { kind: string; message: string }[];
-  window: { showInformationMessage: (message: string, ...items: string[]) => Thenable<string | undefined> };
+  window: {
+    showInformationMessage: (message: string, ...items: string[]) => Thenable<string | undefined>;
+    showWarningMessage: (message: string, ...items: string[]) => Thenable<string | undefined>;
+  };
 };
 const { registerDialogHost, promptConfirm } = require("../src/ui/dialogs") as typeof import("../src/ui/dialogs");
 const { UndoLedger } = require("../src/undo/undoLedger") as typeof import("../src/undo/undoLedger");
@@ -65,7 +68,7 @@ function fixture() {
   const state = new Map<string, unknown>();
   const context = { workspaceState: { get: (k: string) => state.get(k), update: async (k: string, v: unknown) => void state.set(k, v) } };
   const ledger = new UndoLedger({ getActive: () => entry, getAll: () => [entry] } as never, context as never);
-  const run = <T>(label: string, fn: () => Promise<T>) => ledger.runWithUndo(entry as never, label, fn);
+  const run = <T>(label: string, fn: () => Promise<T>, opts?: { refsOnly?: boolean }) => ledger.runWithUndo(entry as never, label, fn, opts);
   return { dir, git, commit, ctx, ledger, run };
 }
 
@@ -156,6 +159,84 @@ test("the toast's Undo undoes ITS operation — after the newer ones, each asked
     assert.equal(f.git("rev-parse", "main"), m, "X is undone");
   } finally {
     vscode.window.showInformationMessage = shown;
+    f.ctx.dispose();
+  }
+});
+
+// ── A newer entry that can't be undone ──────────────────────────────────────
+
+/** feature (F, unmerged) force-deleted under Undo, then a pick, then a plain commit. */
+async function blockedByANewerEntry(f: ReturnType<typeof fixture>): Promise<string> {
+  f.commit("base");
+  f.git("checkout", "-q", "-b", "feature");
+  const F = f.commit("F");
+  f.git("checkout", "-q", "main");
+  f.commit("M");
+  await f.run("Delete branch feature", async () => void f.git("branch", "-D", "feature"), { refsOnly: true });
+  await f.run("Cherry-pick 1234567", async () => void f.commit("X"));
+  f.commit("my own work since");
+  return F;
+}
+
+test("Undo History: a newer entry that can't be undone can be forgotten, and the older one is then undone on its own terms", async () => {
+  const f = fixture();
+  try {
+    const F = await blockedByANewerEntry(f);
+    asked = [];
+    vscode.__said.length = 0;
+    answer = (spec) => (spec.kind === "pick" ? spec.choices[1].id : spec.kind === "confirm" ? "ok" : undefined);
+    await f.ledger.showHistory();
+    const questions = asked.filter((a) => a.kind === "confirm");
+    assert.equal(questions[0]?.title, `Can't undo "Cherry-pick 1234567"`);
+    assert.match("message" in questions[0] ? (questions[0].message ?? "") : "", /'main' has moved since/);
+    assert.equal(f.git("rev-parse", "refs/heads/feature"), F, "the delete is undone");
+    assert.equal(f.git("log", "-1", "--format=%s"), "my own work since", "and main is untouched");
+    vscode.__said.length = 0;
+    await f.ledger.undoLast();
+    assert.ok(vscode.__said.some((s) => s.message === "Nothing to undo."), JSON.stringify(vscode.__said));
+  } finally {
+    f.ctx.dispose();
+  }
+});
+
+test("Undo History: declining to forget the refused entry changes nothing", async () => {
+  const f = fixture();
+  try {
+    await blockedByANewerEntry(f);
+    answer = (spec) => (spec.kind === "pick" ? spec.choices[1].id : undefined);
+    await f.ledger.showHistory();
+    assert.throws(() => f.git("rev-parse", "--verify", "--quiet", "refs/heads/feature"), "not undone");
+    // Both still recorded: the next Undo is the pick again.
+    vscode.__said.length = 0;
+    await f.ledger.undoLast();
+    assert.ok(vscode.__said.some((s) => s.kind === "warning" && s.message.startsWith(`Can't undo "Cherry-pick 1234567"`)), JSON.stringify(vscode.__said));
+  } finally {
+    f.ctx.dispose();
+  }
+});
+
+test("Undo: the newest entry can't be undone — its warning's Forget It takes it off, so Undo reaches the one before it", async () => {
+  const f = fixture();
+  const warn = vscode.window.showWarningMessage;
+  try {
+    const F = await blockedByANewerEntry(f);
+    const offered: string[][] = [];
+    vscode.window.showWarningMessage = (message: string, ...items: string[]) => {
+      offered.push(items);
+      return warn(message).then(() => (items.includes("Forget It") ? "Forget It" : undefined));
+    };
+    await f.ledger.undoLast(); // refused; Forget It
+    for (let i = 0; i < 40 && offered.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 20)); // the toast's answer lands after the command returns
+    assert.deepEqual(offered, [["Forget It"]]);
+    vscode.window.showWarningMessage = warn;
+    asked = [];
+    answer = (spec) => (spec.kind === "confirm" ? "ok" : undefined);
+    await f.ledger.undoLast(); // the delete
+    assert.deepEqual(asked.map((a) => a.title), [`Undo "Delete branch feature"?`]);
+    assert.equal(f.git("rev-parse", "refs/heads/feature"), F);
+  } finally {
+    vscode.window.showWarningMessage = warn;
     f.ctx.dispose();
   }
 });
