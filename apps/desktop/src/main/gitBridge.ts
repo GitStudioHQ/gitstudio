@@ -7,7 +7,7 @@
 // shared by both hosts).
 
 import { readFile, readdir, writeFile, lstat, readlink } from "node:fs/promises";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { continueRebase, skipRebase } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { textWriteSafe } from "@gitstudio/git-service/ConflictOps";
@@ -46,6 +46,7 @@ import {
   pushUnseenMessage,
 } from "@gitstudio/git-service/SyncOps";
 import { GitProcess } from "@gitstudio/git-service/GitProcess";
+import { sameFolder } from "@gitstudio/git-service/WorktreeProvider";
 import type {
   CommitRecord,
   GitContext,
@@ -91,6 +92,7 @@ import type {
   SyncStatus,
   TreeEntry,
   WorktreeInfo,
+  WorktreeRemovalInfo,
   CommitBranches,
   ConflictsSnapshot,
   JetBrainsIdeInfo,
@@ -1521,14 +1523,18 @@ export class GitBridge {
       return [];
     }
     try {
-      return (await ctx.worktrees.list()).map((w) => ({
+      return (await ctx.worktrees.list()).map((w, i) => ({
         path: w.path,
         head: w.head,
         branch: w.branch,
         bare: w.bare,
         locked: w.locked,
+        lockReason: w.lockReason,
         prunable: w.prunable,
         current: w.path === ctx.root,
+        // git lists the main worktree first.
+        main: i === 0,
+        missing: !w.bare && !existsSync(w.path),
       }));
     } catch {
       return [];
@@ -1538,13 +1544,56 @@ export class GitBridge {
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
     return this.staged(async (ctx) => ctx.worktrees.add(path, ref, { newBranch }));
   }
-  async worktreeRemove(opts: { path: string; force?: boolean }): Promise<CommitActionResult> {
-    // `git worktree remove` builds its argv as ["worktree", "remove", path]
-    // with no `--`, so a path beginning with "-" would reach git as an option.
-    // The paths come from git's own worktree list today, but this is the same
-    // guard every other ref-taking mutation on this bridge already applies.
+  /**
+   * What removing the worktree at `path` takes, read before the renderer asks
+   * anything: the main worktree and the one this window has open are refused
+   * outright; otherwise the facts its one question names — a lock's reason,
+   * the uncommitted files that would be lost. It used to ask "Any uncommitted
+   * work goes with it", run a plain remove, and show git's refusal: a dirty
+   * worktree was never removed, and a locked one could not be.
+   */
+  async worktreeRemoval(req: { path: string }): Promise<WorktreeRemovalInfo> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return { kind: "notListed" };
+    }
+    const r = await ctx.worktrees.removal(req.path);
+    if (r.kind === "notListed" || r.kind === "main") {
+      return { kind: r.kind };
+    }
+    if (sameFolder(r.entry.path, ctx.root)) {
+      return { kind: "current" };
+    }
+    return {
+      kind: r.kind,
+      branch: r.entry.branch,
+      head: r.entry.head,
+      locked: !!r.entry.locked,
+      lockReason: r.entry.lockReason,
+      ...(r.kind === "present" ? { changes: r.changes } : {}),
+    };
+  }
+
+  async worktreeRemove(opts: {
+    path: string;
+    discardChanges?: boolean;
+    pastLock?: boolean;
+  }): Promise<CommitActionResult> {
+    // The provider passes the path after `--` now; the guard stays, as on
+    // every other mutation here that takes a renderer string.
     if (!safeArg(opts.path)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => ctx.worktrees.remove(opts.path, { force: opts.force }));
+    return this.staged(async (ctx) => {
+      // Never the window's own worktree, whatever the renderer sent.
+      if (sameFolder(opts.path, ctx.root)) {
+        return { ok: false, expected: true, message: "This window has that worktree open, so it can't be removed from here." };
+      }
+      // The lock's reason, to put back if git refuses (see removeAsAgreed).
+      const entry = (await ctx.worktrees.list()).find((e) => sameFolder(e.path, opts.path));
+      return ctx.worktrees.removeAsAgreed(opts.path, {
+        discardChanges: opts.discardChanges,
+        pastLock: opts.pastLock ? { reason: entry?.lockReason } : undefined,
+      });
+    });
   }
 
   // ── Compare (base…head) ───────────────────────────────────────────────────────

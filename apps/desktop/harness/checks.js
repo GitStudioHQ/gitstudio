@@ -7974,6 +7974,69 @@
       );
     },
 
+    /**
+     * Removing a worktree asks ONE question, built from what removing it takes
+     * (worktree:removal), and sends exactly what it said. It used to promise
+     * "any uncommitted work goes with it" and send a plain remove, which git
+     * refuses for a dirty worktree and a locked one alike; and a worktree
+     * whose folder was gone offered Open.
+     */
+    "a-worktree-removal-says-what-it-takes": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const rowAt = (end) => $$(".ref-row").find((r) => (r.dataset.ref || "").endsWith(end));
+      const menuOf = async (row) => {
+        $$(".lv-menu-btn", row)[0]?.click();
+        await settle(350);
+        return $$(".dropdown .dropdown-item");
+      };
+
+      // Its folder gone: nothing to open, it says so, and the verb is Forget.
+      const gone = rowAt("/gitstudio-hotfix");
+      if (!gone) return c.ok(false, "the worktree whose folder is gone lists");
+      c.ok(!$$("button", gone).some((b) => text(b) === "Open"), "no Open on a folder that is gone");
+      c.match(text(gone.querySelector(".br-state-col")), /folder missing/, "…and the row says why");
+      const forget = (await menuOf(gone)).find((i) => text(i) === "Forget this worktree…");
+      if (!forget) return c.ok(false, `its menu forgets it (${$$(".dropdown .dropdown-item").map(text).join(" | ")})`);
+      forget.click();
+      await settle(600);
+      let card = $(".modal-card");
+      if (!card) return c.ok(false, "Forget asks");
+      c.eq(text($$(".modal-title", card)[0]), "Forget worktree fix/log-stream?", "…by name");
+      c.match(text($$(".modal-message", card)[0]), /nothing on disk changes/, "…saying nothing on disk changes");
+      c.eq(text($$(".modal-ok", card)[0]), "Forget", "…on a button that says so");
+      $$(".modal-ok", card)[0].click();
+      await settle(800);
+      const forgot = window.__gsWorktrees.removes[0];
+      c.eq(forgot && forgot.discardChanges, false, "forgetting discards nothing");
+
+      // Locked by an agent, with uncommitted work: the reason and the files
+      // are in the one question, and the answer goes past both.
+      const agent = rowAt("/gitstudio-agent");
+      if (!agent) return c.ok(false, "the locked worktree lists");
+      (await menuOf(agent)).find((i) => text(i) === "Remove this worktree…")?.click();
+      await settle(600);
+      card = $(".modal-card");
+      if (!card) return c.ok(false, "Remove asks");
+      const msg = text($$(".modal-message", card)[0]);
+      c.match(msg, /It is locked: “claude agent agent-a2c9ae27 \(pid 73264\)”\./, "naming the lock's reason");
+      c.match(msg, /Its 2 uncommitted changes go with it/, "…and what is lost");
+      c.match(msg, /src\/agent-notes\.md/, "…file by file");
+      c.match(msg, /The branch agent\/wave3 and its commits stay\./, "…and what stays");
+      c.eq(text($$(".modal-ok", card)[0]), "Unlock, Discard Changes and Remove", "…on a button that says what happens");
+      $$(".modal-ok", card)[0].click();
+      await settle(800);
+      const sent = window.__gsWorktrees.removes[1];
+      c.eq(sent && sent.path, "/Users/anton/Developer/GitStudioHQ/gitstudio-agent", "the remove goes to that worktree");
+      c.eq(sent && sent.discardChanges, true, "…agreeing to discard what was listed");
+      c.eq(sent && sent.pastLock, true, "…past the lock");
+
+      // The main worktree (here also this window's) never offers Remove.
+      const main = rowAt("/GitStudioHQ/gitstudio");
+      const remove = main && (await menuOf(main)).find((i) => /Remove this worktree/.test(text(i)));
+      c.ok(!!remove && (remove.disabled || remove.getAttribute("aria-disabled") === "true"), "the main worktree's Remove is disabled");
+    },
+
     // The words that answer "wtf is lightweight/annotated" survive the avatar
     // 404 fallback — gravatar answers d=404 on purpose, so MOST authors take
     // that path, and the fallback tile used to reset the tooltip to "@Name".

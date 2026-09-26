@@ -517,10 +517,38 @@ export interface WorktreeInfo {
   branch?: string;
   bare?: boolean;
   locked?: boolean;
+  /** Why it is locked, when it was locked with a reason. */
+  lockReason?: string;
   prunable?: boolean;
   /** True when this worktree is the one the app currently has open. */
   current?: boolean;
+  /** The main worktree (git lists it first): it holds the repository, and git
+   *  never removes it. */
+  main?: boolean;
+  /** Its folder is gone — whether or not git calls it prunable (a locked one
+   *  never is). */
+  missing?: boolean;
 }
+
+/**
+ * What removing a worktree takes, read before anything is asked (git-service's
+ * WorktreeProvider.removal): refused outright (`main`, `current`, `notListed`),
+ * or the facts the one question is built from (host-bridge's
+ * worktreeRemovalQuestion).
+ */
+export type WorktreeRemovalInfo =
+  | { kind: "notListed" }
+  | { kind: "main" }
+  | { kind: "current" }
+  | {
+      kind: "missing" | "present";
+      branch?: string;
+      head: string;
+      locked: boolean;
+      lockReason?: string;
+      /** Uncommitted paths removing it deletes; undefined when unreadable. */
+      changes?: string[];
+    };
 
 /** One commit in a Compare result. */
 export interface CompareCommit {
@@ -2114,7 +2142,14 @@ export interface IpcChannels {
   // ── Worktrees ──
   "worktree:list": [void, WorktreeInfo[]];
   "worktree:add": [{ ref: string; newBranch?: boolean }, CommitActionResult];
-  "worktree:remove": [{ path: string; force?: boolean }, CommitActionResult];
+  "worktree:removal": [{ path: string }, WorktreeRemovalInfo];
+  /**
+   * Remove a worktree as the person agreed (git-service's removeAsAgreed):
+   * `discardChanges` — the uncommitted changes the question listed go too;
+   * `pastLock` — it is locked, and removing it anyway was agreed. Without
+   * `discardChanges`, a change made since the question makes git refuse.
+   */
+  "worktree:remove": [{ path: string; discardChanges?: boolean; pastLock?: boolean }, CommitActionResult];
   "worktree:open": [string, RepoInfo | undefined];
   // ── Sync (control remote changes) ──
   "sync:status": [void, SyncStatus];

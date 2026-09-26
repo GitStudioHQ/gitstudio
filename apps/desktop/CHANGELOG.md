@@ -58,6 +58,15 @@ but they share the same engine, so most Git behaviour lands in both at once.
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on
   paints now. (#32)
+- **Removing a worktree in Branches ▸ Worktrees.** The question promised that
+  uncommitted work would go with it, then git refused any worktree with
+  changes — and a locked one could not be removed at all. The question now
+  says what removing takes — the lock's reason, the uncommitted files that
+  go, that the branch stays — and its button does exactly that (**Unlock and
+  Remove**, **Discard Changes and Remove**). The main worktree's Remove is
+  disabled; a worktree whose folder is gone reads *folder missing*, has no
+  Open, and offers **Forget this worktree…**. The same words as the VS Code
+  extension's.
 
 ## [2.1.0] - 2026-09-25
 
