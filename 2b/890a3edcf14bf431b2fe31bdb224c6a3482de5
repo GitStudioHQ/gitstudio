@@ -1,0 +1,39 @@
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_7cb09d5f5b5530 804-805
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_e3d30b77ddfdd7 16987-17026
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_279e349332b966 1814-1817,1821-1826
+apps/desktop/src/renderer/cloneDialog.ts
+  s_26f5e669d3043c::t_b1ddca6c36019e 7-8,11-12,39,461-469
+apps/desktop/src/renderer/ghOpen.ts
+  s_26f5e669d3043c::t_14cf1746f72de1 169-175
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_8ea94e17724d9a 9001,10939-10940,10945,10950-10966,11128-11135,11142,11174
+apps/desktop/src/renderer/repoBrowser.ts
+  s_26f5e669d3043c::t_fd1f32d8d8dbaa 70
+apps/desktop/src/renderer/views/explore.ts
+  s_26f5e669d3043c::t_1cacf6a1bb49cb 662
+apps/desktop/src/renderer/views/exploreRepo.ts
+  s_26f5e669d3043c::t_315f6934e9de42 197,212
+apps/desktop/src/renderer/views/orgs.ts
+  s_26f5e669d3043c::t_3b011ce2e802f1 598
+apps/desktop/src/renderer/views/repositories.ts
+  s_26f5e669d3043c::t_55dc5c43c0e317 97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2b890a3edcf14bf431b2fe31bdb224c6a3482de5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
