@@ -23,6 +23,13 @@ import { parseGitHubRemote } from "./githubRemote";
 export { parseGitHubRemote } from "./githubRemote";
 import { errorFields } from "./githubErrors";
 import { applyForDoor, checkoutOp } from "./inTheWay";
+import type { ApplyOp } from "@gitstudio/git-service/changesInTheWay";
+import {
+  divergedMessage,
+  fetchPrHead,
+  movePrBranch,
+  planPrHead,
+} from "@gitstudio/git-service/prCheckout";
 import type {
   CheckRun,
   CommitActionResult,
@@ -395,16 +402,57 @@ export class GitHubBridge {
       return { ok: false, changed: false, message: "That isn't a pull request number." };
     }
     try {
-      const f = await ctx.process.run(["fetch", "origin", `pull/${n}/head:pr/${n}`]);
-      if (f.code !== 0) {
-        return { ok: false, changed: false, message: f.stderr.trim() };
+      // The PR head is fetched on its own, and what that means for the pr/<n>
+      // already here is decided by git-service's planPrHead — the extension's
+      // rule too. `git fetch origin pull/<n>/head:pr/<n>` was refused while
+      // pr/<n> was checked out, and after any force-push to the PR.
+      const fetched = await fetchPrHead(ctx.process, "origin", n as number);
+      if ("error" in fetched) {
+        return { ok: false, changed: false, message: fetched.error };
+      }
+      const plan = await planPrHead(ctx.process, n as number, fetched.sha);
+      let op: ApplyOp;
+      switch (plan.kind) {
+        case "elsewhere":
+          return {
+            ok: false,
+            changed: false,
+            expected: true,
+            message: `${plan.local} is checked out in another worktree (${plan.worktree}). Switch to it there.`,
+          };
+        case "diverged":
+          // Nothing is moved over commits the PR doesn't have.
+          return {
+            ok: false,
+            changed: false,
+            expected: true,
+            message: `${divergedMessage(n as number, plan)} It was left as it is — check it out from Branches, or rename it to take the PR's version.`,
+          };
+        case "current":
+          if (plan.checkedOut) return { ok: true, changed: false };
+          op = checkoutOp(["checkout", plan.local]);
+          break;
+        case "fast-forward":
+          if (plan.checkedOut) {
+            op = { kind: "merge", target: plan.sha, args: ["merge", "--ff-only", plan.sha] };
+          } else {
+            const moved = await movePrBranch(ctx.process, plan);
+            if (moved.code !== 0) {
+              return { ok: false, changed: false, message: moved.stderr.trim() };
+            }
+            op = checkoutOp(["checkout", plan.local]);
+          }
+          break;
+        case "create":
+          op = checkoutOp(["checkout", "-b", plan.local, plan.sha]);
+          break;
       }
       // Through the one door for commit-applying commands (main/inTheWay.ts):
       // a switch refused over uncommitted work in its way said which files and
       // offered nothing — git's "would be overwritten by checkout", in red, and
       // filed. It answers which files now, `expected`, and the renderer offers
       // Stash & Retry.
-      const applied = await applyForDoor(ctx, checkoutOp(["checkout", `pr/${n}`]), stashFirst);
+      const applied = await applyForDoor(ctx, op, stashFirst);
       if ("answer" in applied) return applied.answer;
       const c = applied.result;
       const withNote = applied.stashNote ? { stashNote: applied.stashNote } : {};
