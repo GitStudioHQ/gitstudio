@@ -16444,6 +16444,65 @@
       c.ok(dockA.isConnected, "and come back with it");
     },
 
+    /** Row 14: a background tab's folder is moved or deleted. Its tab stays
+     *  (the folder may come back), says so in the row, costs the front tab
+     *  nothing, says so in words when it is brought to the front, and closes
+     *  like any other tab. */
+    "a-tab-whose-folder-is-gone-says-so-and-closes": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      noAnimation();
+      const WEB = "/Users/anton/Code/webapp";
+      const struck = (root) => (getComputedStyle(tabEl(root)?.querySelector(".repo-tab-name")).textDecorationLine || "").includes("line-through");
+      const saysGone = () => $$("#toast-stack .toast").filter((t) => /^webapp's folder was moved or deleted/.test(text(t.querySelector(".toast-msg"))));
+      c.eq(activeTabRoot(), GS_ROOT, "precondition: the tab in front is another");
+      c.ok(struck(WEB), "the gone tab's name is struck through");
+      c.ok(!struck(GS_ROOT) && !struck(GS_DEV_ROOT), "…and no other tab's");
+      c.eq(tabEl(WEB)?.getAttribute("aria-label"), "webapp, folder not found", "…and it says so in words");
+      c.match(tabEl(WEB)?.title || "", /\nNot found: the folder was moved or deleted/, "…in its tooltip too");
+      c.eq(getComputedStyle(tabEl(WEB).querySelector(".repo-tab-mark")).display, "none", "a folder that is gone has no change count");
+      c.eq(saysGone().length, 0, "nothing is said over the tab in front");
+      c.eq((window.__GS_INVOKED || []).filter((r) => r.root === WEB).length, 0, "…and nothing ran in the gone folder while it was in the back");
+      tabEl(WEB)?.click();
+      await settle(900);
+      c.eq(activeTabRoot(), WEB, "it still comes to the front");
+      c.eq(saysGone().length, 1, "and says, once, that its folder is gone");
+      c.match(text(saysGone()[0]?.querySelector(".toast-msg")), /: \/Users\/anton\/Code\/webapp\. Put it back to carry on where you were, or close the tab\.$/, "…where it was, and what to do");
+      tabEl(GS_ROOT)?.click();
+      await settle(600);
+      c.eq(saysGone().length, 0, "leaving it takes the notice with it");
+      tabEl(WEB)?.click();
+      await settle(900);
+      c.eq(saysGone().length, 1, "coming back says it again, once");
+      const close = saysGone()[0] && [...saysGone()[0].querySelectorAll(".toast-action")].find((b) => text(b) === "Close Tab");
+      c.ok(!!close, "the notice offers Close Tab");
+      close?.click();
+      await settle(900);
+      c.ok(!$(".modal-card"), "a gone tab closes without a question");
+      c.ok(!tabEl(WEB), "…and closes");
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "its left-hand neighbour comes to the front");
+    },
+
+    /** Row 14, the other way: the folder comes back — a drive remounted, a
+     *  move undone — and the tab is whole again, without being reopened. */
+    "a-gone-folder-put-back-makes-its-tab-whole-again": async (f) => {
+      const c = check(f);
+      await settle(900);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1200);
+      const name = () => tabEl(GS_DEV_ROOT)?.querySelector(".repo-tab-name");
+      c.ok((getComputedStyle(name()).textDecorationLine || "").includes("line-through"), "precondition: its folder is gone");
+      c.ok(/Couldn't read the working tree/.test(text(".view-host")), "precondition: its view could not read it");
+      window.__gsGone.delete("gistudio.dev");
+      // No disk event: the watcher follows a folder that was gone. The row's
+      // next look (here, a reorder of the row) is what finds it back.
+      window.__gsTabs.move(GS_DEV_ROOT, 0);
+      await settle(1800);
+      c.eq(getComputedStyle(name()).textDecorationLine, "none", "back on disk, its name is whole");
+      c.eq(tabEl(GS_DEV_ROOT)?.getAttribute("aria-label"), "gistudio.dev, 3 changed files", "…and it counts its changes again");
+      c.ok(!/Couldn't read the working tree/.test(text(".view-host")), "and its view reads the folder again");
+    },
+
     /** Row 16 and Search: a tab brought back at launch comes back to Search if
      *  that is where it was left — the single window always did — while a NEW
      *  tab opened from Search lands in its own code, not on an empty search

@@ -19,7 +19,7 @@ import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { parseGitHubRemote } from "./githubRemote";
 import { MAX_LOCAL_REPOS } from "../shared/repoGrouping";
-import type { LocalCopy, LocalRepoStatus } from "../shared/ipc";
+import type { LocalCopy, LocalRepoStatus, RepoTabStatus } from "../shared/ipc";
 
 /** Don't shell out to git hundreds of times for a huge folder. Shared, so the
  *  views that render the list can say when it is a prefix rather than all. */
@@ -222,6 +222,32 @@ export async function localStatuses(
   probe.forEach((r, i) => statusCache.set(r, { at: t, value: answers[i] }));
   const out: Record<string, LocalRepoStatus | undefined> = {};
   for (const r of take) out[r] = statusCache.get(r)?.value;
+  return out;
+}
+
+/**
+ * What the repository tab row says about each open tab (issue #32): its
+ * change count, or that its folder is GONE. Gone is asked every time and
+ * never cached — it is one `stat`, and a folder put back must stop reading as
+ * gone at the next look — while the counts ride localStatuses' own TTL.
+ * A folder that is gone is never handed to git: there is nothing to count.
+ */
+export async function tabStatuses(
+  roots: readonly string[],
+  deps: {
+    isRepo?: (root: string) => Promise<boolean>;
+    statuses?: (roots: string[]) => Promise<Record<string, LocalRepoStatus | undefined>>;
+  } = {},
+): Promise<Record<string, RepoTabStatus>> {
+  const isRepo = deps.isRepo ?? isRepoDir;
+  const statuses = deps.statuses ?? ((r: string[]) => localStatuses(r));
+  const take = roots.slice(0, STATUS_ROOTS_CAP);
+  const present = await Promise.all(take.map((r) => isRepo(r).catch(() => false)));
+  const counts = await statuses(take.filter((_, i) => present[i]));
+  const out: Record<string, RepoTabStatus> = {};
+  take.forEach((r, i) => {
+    out[r] = present[i] ? { dirty: counts[r]?.dirty } : { gone: true };
+  });
   return out;
 }
 

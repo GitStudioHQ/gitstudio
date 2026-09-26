@@ -13278,6 +13278,13 @@ html.is-mac .repo-tabs { padding-left: 80px; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A tab whose folder is gone (moved, deleted, no longer a repository): its
+   name is struck through, as VS Code strikes through an editor tab whose file
+   was deleted. The words are in its tooltip and its accessible name. */
+.repo-tab.is-gone .repo-tab-name {
+  text-decoration-line: line-through;
+  text-decoration-thickness: 1px;
+}
 .repo-tab-mark {
   flex: 0 0 auto;
   color: var(--status-mod);

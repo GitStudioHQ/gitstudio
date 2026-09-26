@@ -10645,6 +10645,10 @@ class TabShell {
   private readonly dirty = new Map<string, number>();
   /** Tabs from the launch state whose App is not built yet (see appFor). */
   private readonly launchRoots = new Set<string>();
+  /** Tabs whose folder is gone (row 14): moved, deleted, no longer a repository. */
+  private readonly gone = new Set<string>();
+  /** The gone tab already told about since it last came to the front. */
+  private goneSaid: string | undefined;
   private sessionSeq = 0;
   /** Switches told to main and not yet answered. */
   private activations = 0;
@@ -10794,6 +10798,9 @@ class TabShell {
     for (const [root, app] of [...this.apps]) {
       if (!open.has(root) && app !== this.active) this.disposeApp(root, app);
     }
+    // …and what the row knew about them, built or not.
+    for (const root of [...this.dirty.keys()]) if (!open.has(root)) this.dirty.delete(root);
+    for (const root of [...this.gone]) if (!open.has(root)) this.gone.delete(root);
     this.renderStrip();
     this.scheduleMarks(0);
   }
@@ -10833,6 +10840,28 @@ class TabShell {
       dropFocusTab(prev.session.id);
     }
     this.renderStrip();
+    // A tab whose folder is gone says so each time it comes to the front.
+    this.goneSaid = undefined;
+    this.sayIfGone();
+  }
+
+  /**
+   * Row 14: the tab in front has no folder any more. Said once each time it
+   * comes to the front (and when it is found gone while in front), in words,
+   * with the one thing to do about it — its tab stays until it is closed,
+   * because the folder may be on a drive that is coming back.
+   */
+  private sayIfGone(): void {
+    const root = this.activeRoot();
+    if (!root || !this.gone.has(root) || this.goneSaid === root) return;
+    this.goneSaid = root;
+    const name = this.state.tabs.find((t) => t.root === root)?.name ?? root;
+    toast(
+      `${name}'s folder was moved or deleted: ${root}. Put it back to carry on where you were, or close the tab.`,
+      "info",
+      12000,
+      { label: "Close Tab", onClick: () => void this.requestClose(root) },
+    );
   }
 
   private newSession(root: string | undefined): TabSession {
@@ -10939,6 +10968,7 @@ class TabShell {
         name: t.name,
         dirty: this.dirty.get(t.root),
         running: app ? runningOperation(app.session.id) : undefined,
+        gone: this.gone.has(t.root),
       };
     });
     this.strip.render(items, this.activeRoot());
@@ -10962,12 +10992,28 @@ class TabShell {
     try {
       const st = await shellHost.invoke("repo:tabStatus", roots);
       if (seq !== this.marksSeq || !st) return;
+      const front = this.activeRoot();
+      let cameBack = false;
       for (const r of roots) {
+        if (st[r]?.gone) {
+          this.gone.add(r);
+          this.dirty.delete(r);
+          continue;
+        }
+        // Put back where it was: the tab is whole again.
+        if (this.gone.delete(r) && r === front) cameBack = true;
         const d = st[r]?.dirty;
         if (typeof d === "number") this.dirty.set(r, d);
         else this.dirty.delete(r);
       }
       this.renderStrip();
+      this.sayIfGone();
+      // The folder in front came back: whatever is on screen was read before
+      // it went, so ask the disk what it holds now.
+      if (cameBack) {
+        this.goneSaid = undefined;
+        this.active?.onWindowFocus();
+      }
     } catch {
       /* the marks are a courtesy: a failed read leaves the last known */
     }

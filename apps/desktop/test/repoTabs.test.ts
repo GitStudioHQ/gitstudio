@@ -8,13 +8,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_TABS, RepoStore, repoScope } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
 import { droppedTabsNotice, tabsFullNotice } from "../src/main/repoNotice";
-import { trashRefusal } from "../src/main/localRepos";
+import { tabStatuses, trashRefusal } from "../src/main/localRepos";
 import { removeTempRepo } from "./tmpRepo";
 import type { GitContext } from "@gitstudio/git-service/index";
 
@@ -284,4 +284,62 @@ test("a repository open in ANY tab cannot be moved to the trash", () => {
   const refusal = trashRefusal("/clones/widgets", { cloneDir, current: "/clones/other", open: ["/clones/other", "/clones/widgets"] });
   assert.match(refusal ?? "", /open in a tab — close its tab first/);
   assert.equal(trashRefusal("/clones/widgets", { cloneDir, current: "/clones/other", open: ["/clones/other"] }), null);
+});
+
+// ── Row 14: a folder that goes away under its tab ────────────────────────────
+
+test("row 14: the row hears that a tab's folder is gone — moved, or no longer a repository — and that it is back", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "gs-tab-gone-"));
+  const init = (r: string): void =>
+    void execFileSync("git", ["-c", "init.defaultBranch=main", "init", r], { stdio: "ignore" });
+  try {
+    const a = join(dir, "a");
+    const b = join(dir, "b");
+    const c = join(dir, "c");
+    for (const r of [a, b, c]) init(r);
+    writeFileSync(join(a, "w.txt"), "work\n");
+    // b is moved away; c stays a folder but stops being a repository.
+    renameSync(b, join(dir, "b-moved"));
+    rmSync(join(c, ".git"), { recursive: true, force: true });
+    const st = await tabStatuses([a, b, c]);
+    assert.deepEqual(st[b], { gone: true }, "a moved folder is gone");
+    assert.deepEqual(st[c], { gone: true }, "a folder that is no longer a repository is gone too");
+    assert.equal(st[a]?.gone, undefined, "a repository that is there is not");
+    assert.equal(st[a]?.dirty, 1, "…and is counted");
+    // Put back: gone is asked afresh every time, never remembered.
+    renameSync(join(dir, "b-moved"), b);
+    const back = await tabStatuses([b]);
+    assert.equal(back[b]?.gone, undefined, "a folder put back is whole again at the next look");
+    assert.equal(back[b]?.dirty, 0);
+  } finally {
+    removeTempRepo(dir);
+  }
+});
+
+test("row 14: a folder that is gone is never handed to git to count", async () => {
+  const asked: string[][] = [];
+  const st = await tabStatuses(["/r/here", "/r/gone"], {
+    isRepo: async (r) => r === "/r/here",
+    statuses: async (roots) => {
+      asked.push(roots);
+      return Object.fromEntries(roots.map((r) => [r, { branch: "main", dirty: 2, ahead: 0, behind: 0 }]));
+    },
+  });
+  assert.deepEqual(asked, [["/r/here"]]);
+  assert.deepEqual(st, { "/r/here": { dirty: 2 }, "/r/gone": { gone: true } });
+});
+
+test("row 14: a tab whose folder is gone still switches and closes, by any spelling", async () => {
+  // The real realpath: the folder is not on disk at all, so it falls back to
+  // a lexical resolve — and must still find the tab.
+  const store = new RepoStore([], {
+    discover: async (cwd) => cwd.replace(/\/+$/, ""),
+    createContext: (root) => ({ root, dispose: () => undefined }) as unknown as GitContext,
+  });
+  await store.openTab("/nowhere/gs-gone-a");
+  await store.openTab("/nowhere/gs-gone-b");
+  assert.equal(store.activate("/nowhere/gs-gone-a/"), true, "it comes to the front");
+  assert.equal(store.closeTab("/nowhere/gs-gone-a/"), true, "it closes");
+  assert.deepEqual(roots(store), ["/nowhere/gs-gone-b"]);
+  assert.equal(store.state().active, "/nowhere/gs-gone-b");
 });

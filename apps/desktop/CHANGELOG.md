@@ -30,7 +30,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   the others or reveal it in Finder, drag tabs to reorder them, and when there
   are more than fit, the list button shows them all. The tabs you had open come
   back when you restart GitStudio. Up to ten repositories can be open at once.
-  (#32)
+  A tab whose folder is moved or deleted stays, its name struck through, and
+  says so when you go to it — put the folder back and it carries on where it
+  was, or close the tab. (#32)
 - **Open a repository in your editor from its row.** Every repository under
   *On this machine* has the editor button beside **Open** — the same one the
   top bar and Home carry, the primary half opening your default editor, its

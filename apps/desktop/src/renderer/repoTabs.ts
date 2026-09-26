@@ -23,6 +23,10 @@ export interface TabStripItem {
   dirty?: number;
   /** The operation running in it, in words ("a push"), when one is. */
   running?: string;
+  /** Its folder is gone — moved, deleted, or no longer a repository. The tab
+   *  stays (the folder may come back); its name is struck through, as VS Code
+   *  strikes through an editor tab whose file was deleted. */
+  gone?: boolean;
 }
 
 export interface TabStripHandlers {
@@ -272,23 +276,29 @@ export class RepoTabStrip {
     const isActive = it.root === this.active;
     tab.classList.toggle("is-active", isActive);
     tab.classList.toggle("is-busy", !!it.running);
+    tab.classList.toggle("is-gone", !!it.gone);
     tab.setAttribute("aria-selected", isActive ? "true" : "false");
     // Roving tab stop: the tab in front is the one Tab reaches.
     tab.tabIndex = isActive ? 0 : -1;
-    const words = tabLabel(it.name, it.dirty, it.running);
+    const words = tabLabel(it.name, it.dirty, it.running, it.gone);
     tab.setAttribute("aria-label", words);
     // The path (two clones can share a folder name), what is running, and the
     // key that brings it to the front.
     const n = index < 8 ? index + 1 : index === this.items.length - 1 ? 9 : 0;
     const key = n ? `${MOD === "⌘" ? "⌃" : "Alt+"}${n}` : "";
-    tab.title = [it.root, it.running ? `${cap(it.running)} is running` : "", key ? `Switch to it: ${key}` : ""]
+    tab.title = [
+      it.root,
+      it.gone ? "Not found: the folder was moved or deleted, or is no longer a Git repository" : "",
+      it.running ? `${cap(it.running)} is running` : "",
+      key ? `Switch to it: ${key}` : "",
+    ]
       .filter(Boolean)
       .join("\n");
     const name = tab.querySelector<HTMLElement>(".repo-tab-name");
     if (name && name.textContent !== it.name) name.textContent = it.name;
     const mark = tab.querySelector<HTMLElement>(".repo-tab-mark");
     if (mark) {
-      const m = changeMark(it.dirty);
+      const m = it.gone ? "" : changeMark(it.dirty);
       if (mark.textContent !== m) mark.textContent = m;
       mark.hidden = !m;
       mark.title = m ? `${it.dirty} changed ${it.dirty === 1 ? "file" : "files"} in the working tree` : "";

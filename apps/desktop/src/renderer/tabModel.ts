@@ -97,11 +97,18 @@ export function changeMark(dirty: number | undefined): string {
   return dirty && dirty > 0 ? `●${dirty}` : "";
 }
 
-/** The tab's accessible name, in words — the mark and the spinner reach
- *  nobody using a screen reader. */
-export function tabLabel(name: string, dirty: number | undefined, running: string | undefined): string {
+/** The tab's accessible name, in words — the mark, the spinner and the
+ *  struck-through name of a folder that is gone reach nobody using a screen
+ *  reader. */
+export function tabLabel(
+  name: string,
+  dirty: number | undefined,
+  running: string | undefined,
+  gone = false,
+): string {
   const parts = [name];
-  if (dirty && dirty > 0) parts.push(`${dirty} changed ${dirty === 1 ? "file" : "files"}`);
+  if (gone) parts.push("folder not found");
+  else if (dirty && dirty > 0) parts.push(`${dirty} changed ${dirty === 1 ? "file" : "files"}`);
   if (running) parts.push(`${running} running`);
   return parts.join(", ");
 }

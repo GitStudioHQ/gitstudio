@@ -726,6 +726,12 @@
   const tabStatusCalls = [];
   window.__gsTabStatusCalls = tabStatusCalls;
   const tabName = (root) => String(root).split("/").filter(Boolean).pop();
+  // ?gone=webapp: that tab's folder is gone (row 14) — moved or deleted while
+  // it sat in the background. The row's status says so, and every git call
+  // for it fails the way git does with no folder to run in. A check puts the
+  // folder back with `window.__gsGone.delete("webapp")`.
+  const goneTabs = new Set((params.get("gone") || "").split(",").filter(Boolean));
+  window.__gsGone = goneTabs;
   const emitTabs = () => window.__gsEmit("repo:tabs", { tabs: tabState.tabs.slice(), active: tabState.active });
   window.__gsTabs = {
     state: () => ({ tabs: tabState.tabs.slice(), active: tabState.active }),
@@ -1812,6 +1818,7 @@
       tabStatusCalls.push((roots || []).slice());
       return Object.fromEntries(
         (roots || []).map((r) => {
+          if (goneTabs.has(tabName(r))) return [r, { gone: true }];
           const t = TAB_FIXTURES.find((x) => x.root === r);
           const dirty = params.get("tabsclean") ? 0 : t ? t.dirty : 0;
           return [r, { branch: t ? t.branch : "main", dirty, ahead: 0, behind: 0 }];
@@ -3441,6 +3448,11 @@
     calls[channel] = (calls[channel] || 0) + 1;
     if (failing.has(channel)) {
       return Promise.reject(new Error(`${channel} failed (harness ?fail=)`));
+    }
+    // A gone tab's folder: git has nowhere to run (the tab row's own calls
+    // are main's bookkeeping, and still answer).
+    if (root && goneTabs.has(tabName(root)) && !String(channel).startsWith("repo:")) {
+      return Promise.reject(new Error(`fatal: cannot change to '${root}': No such file or directory`));
     }
     // Per-repository answers. Every tab fixture but gitstudio has its own
     // branch, which is what the tab checks read to tell whose answer landed.

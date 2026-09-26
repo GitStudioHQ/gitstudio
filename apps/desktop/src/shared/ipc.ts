@@ -63,10 +63,15 @@ export interface InvokeScope {
   root: string | undefined;
 }
 
-/** Why an open did not add a tab: `full` is the tab bound (see RepoTabsState). */
-export interface RepoOpenRefusal {
-  kind: "full";
-  max: number;
+/**
+ * What the tab row says about one open tab (issue #32): how many files changed
+ * in its working tree, or that its folder is GONE — moved, deleted, on a drive
+ * that is not mounted, or no longer a Git repository. A gone tab stays until
+ * it is closed (the folder may come back); `dirty` is then absent.
+ */
+export interface RepoTabStatus {
+  dirty?: number;
+  gone?: boolean;
 }
 
 /** A ref decoration listed in the sidebar (branch / remote / tag). */
@@ -2055,10 +2060,10 @@ export interface IpcChannels {
   "repo:closeTab": [string, boolean];
   /** Move a tab to a position in the row. */
   "repo:moveTab": [{ root: string; index: number }, boolean];
-  /** The tab row's `●N`: each open tab's working-tree counts. The same probe
-   *  as repos:localStatus, on its own channel because it is the row's
-   *  question, not a view's. */
-  "repo:tabStatus": [string[], Record<string, LocalRepoStatus | undefined>];
+  /** The tab row's `●N`: each open tab's working-tree counts — or that its
+   *  folder is gone. The same probe as repos:localStatus, on its own channel
+   *  because it is the row's question, not a view's. */
+  "repo:tabStatus": [string[], Record<string, RepoTabStatus | undefined>];
   "graph:load": [GraphLoadRequest, GraphPage];
   /**
    * Whether the graph's current walk reaches a commit at all (issue #30).

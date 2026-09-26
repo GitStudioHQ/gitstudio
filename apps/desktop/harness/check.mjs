@@ -767,6 +767,9 @@ const CASES = [
   ["each-tab-has-its-own-terminal-dock", "changes", { extra: "tabs=2" }],
   ["each-restored-tab-comes-back-on-its-own-view", "changes", { extra: "tabs=2&tabviews=1" }],
   ["a-restored-tab-comes-back-to-search-and-a-new-one-lands-on-its-code", "explore", { extra: "tabs=1" }],
+  ["a-tab-whose-folder-is-gone-says-so-and-closes", "changes", { extra: "tabs=3&gone=webapp" }],
+  ["a-tab-whose-folder-is-gone-says-so-and-closes", "changes", { extra: "tabs=3&gone=webapp", theme: "light" }],
+  ["a-gone-folder-put-back-makes-its-tab-whole-again", "changes", { extra: "tabs=2&gone=gistudio.dev" }],
 ];
 
 function run(scene, checkId, opts = {}) {

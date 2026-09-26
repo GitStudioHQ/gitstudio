@@ -97,3 +97,9 @@ test("the change mark: a count, or nothing — never zero", () => {
   assert.equal(tabLabel("webapp", 4, "a push"), "webapp, 4 changed files, a push running");
   assert.equal(tabLabel("webapp", 0, undefined), "webapp");
 });
+
+test("row 14: a tab whose folder is gone says so in its name — and claims no count", () => {
+  assert.equal(tabLabel("webapp", undefined, undefined, true), "webapp, folder not found");
+  assert.equal(tabLabel("webapp", 4, undefined, true), "webapp, folder not found", "a stale count is not repeated");
+  assert.equal(tabLabel("webapp", undefined, "a push", true), "webapp, folder not found, a push running");
+});

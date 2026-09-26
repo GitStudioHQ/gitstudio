@@ -35,6 +35,7 @@ import {
   visibleRepoFolders,
   realOrResolve,
   localStatuses,
+  tabStatuses,
   wasLastScanTruncated,
   LocalRepoScanner,
   samePath,
@@ -682,7 +683,7 @@ function registerIpc(): void {
   handle("repo:tabStatus", (roots) =>
     // Only roots that ARE open tabs: the row asks about its own tabs, and this
     // channel is no way to probe arbitrary folders.
-    localStatuses((Array.isArray(roots) ? roots : []).filter((r) => repos.state().tabs.some((t) => t.root === r))),
+    tabStatuses((Array.isArray(roots) ? roots : []).filter((r) => repos.state().tabs.some((t) => t.root === r))),
   );
   handle("repo:activate", async (root) => {
     const ok = typeof root === "string" && repos.activate(root);
