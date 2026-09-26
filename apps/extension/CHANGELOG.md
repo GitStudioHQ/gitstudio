@@ -64,6 +64,87 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - Blame in a repository nested inside another's folder (a vendored checkout,
   a submodule) no longer runs in the outer repository when the outer one is
   the repository on screen.
+- **Staging several files at once works.** Stage, Unstage or Discard on a
+  multi-selection, the selection bar, or a few quick clicks sent one git
+  command per file, all together, and most were refused ("Unable to create
+  '.git/index.lock': File exists"), so only some files moved and nothing
+  said so. A selection is now one request, writes to a repository's index
+  run one at a time, and a file git refuses goes back to where it was, with
+  git's reason.
+- **Discard on a multi-selection discards every selected file.** "Discard 3
+  Files" asked once per file, each question dismissed the one before, and
+  only the last file was discarded. It asks once, naming the count, and says
+  what happens: a partly staged file keeps its staged part; an untracked
+  file is deleted.
+- **A conflicted file is never staged or committed with its conflict markers
+  in it.** Staging a conflicted row (its +, its tick, its folder, Stage All)
+  holds back every file that still has markers and says which; **Commit
+  all** never includes a conflicted file, and no longer counts them.
+- **The commit button no longer offers a push that cannot work.** On a
+  detached HEAD (every stopped rebase is one) or in a repository with no
+  remote, it offers Commit, and its tip says why. The push review on a
+  detached HEAD says that is why it cannot push, and it never starts with
+  **Force push** focused.
+- **Diffs of a renamed file show the change, not an empty or all-new file.**
+  Blame's Show Diff and Open Previous Revision on a line older than the
+  rename, a rename commit in the Commit Graph's details, a staged rename in
+  the Changes view, and file history, the Timeline and Line History before a
+  rename now read each side under the name the file had there. Opening a
+  file deleted from the working tree shows it removed.
+- The Commit Graph's header counted the *Uncommitted changes* row as a
+  commit ("18 commits" for 17).
+- **The Command Palette lists only what works.** *GitStudio: Welcome* (which
+  said "The full Git suite is coming online") now opens Get Started and is
+  not listed beside it; *Show Commit Graph* is listed once; the retired
+  *Refresh Commits* / *Refresh Branches* are gone; *Continue / Skip / Abort
+  Operation* and *Abort Rebase* appear only while something is stopped; *Show
+  Process Audit* only while the audit is on.
+- The status bar's Force push question described it, with
+  `gitstudio.push.forceWithLease` off, as overwriting work you haven't seen.
+  Every force push is leased; the question says so, and the setting, which
+  changed nothing else, is gone.
+- Connecting Claude Code, Codex or Gemini CLI set `gitstudio.ai.provider` to
+  a value the Settings editor flagged as not allowed. `cli` is now one of its
+  values.
+- Messages that said to run *GitStudio: Set AI API Key*, which does not
+  exist, name *Set Anthropic API Key…* or *Connect AI Provider*, and the
+  walkthrough's AI button opens Connect AI Provider.
+- The toast after an operation read "Undid? Amend commit". It says what
+  happened — "Amend commit — done." — with **Undo** beside it.
+- **The status bar items have names of their own.** The branch, Commit Graph,
+  terminal and blame items each have an id and a name, so the status bar's
+  menu lists and hides them one by one; a screen reader hears the branch
+  item in words ("Branch main: 1 commit to pull, 2 commits to push").
+- The Changes view's chevrons point down when open and right when closed
+  (they showed ">" open and "^" closed).
+- Before the Changes view has read anything it says "Reading changes…", not
+  "Working tree clean"; while repositories are still being found it says
+  "Looking for a repository…", not "No repository open". With no repository,
+  the Commit Graph and Commits view say so instead of "No commits yet".
+- GitStudio's AI sparkle no longer appears in VS Code's own commit box while
+  AI is off, and the Connect-AI plug leaves the commit box once you turn AI
+  off.
+- *Open on GitHub* and blame's *View in Browser* open the commit on the
+  branch's upstream remote (then origin, then any other), not always on
+  `origin`: a repository whose only remote is `upstream` works.
+- The Compare panel says "1 commit" and "1 file changed", and each ref shows
+  the icon of what it is: branch, remote branch, tag or commit.
+- On a clean tree, Stage All and Stash are disabled instead of acting on
+  nothing; the tree/list toggle says which view it switches to.
+- A double-click on a file opens its diff once, not twice.
+- At sidebar width a file row keeps the file's name whole while its folder
+  can give way, and the folder keeps its end (the folder the file is in).
+- Destructive buttons (a Discard or Delete confirm, Force push) are readable:
+  white on the theme's error colour was about 2.5:1 in Dark+.
+- The subject-length counter says what it counts on hover, and past 50
+  characters turns the warning colour instead of blue.
+- A screen reader hears every tick and icon button in the Changes view by
+  name (a file's tick: "Include README.md in the commit"), and whether a
+  group is expanded.
+- The README and the Get Started walkthrough no longer say Enter commits,
+  that AI is off by default (with Copilot it works with nothing to set up),
+  or that the graph is at the top of the sidebar or in an editor tab; the
+  shortcut table lists Ctrl/Cmd+Alt+G T.
 
 ## [1.14.0] - 2026-09-25
 
