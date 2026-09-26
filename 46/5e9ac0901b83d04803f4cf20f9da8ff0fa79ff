@@ -1,0 +1,21 @@
+apps/extension/src/pr/reviewMode.ts
+  s_26f5e669d3043c::t_32a3c22e67469b 144-147,151,153,160,167-173,176-181
+apps/extension/test/prFeature.test.ts
+  s_26f5e669d3043c::t_6b5ceb5633c161 559-589
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "465e9ac0901b83d04803f4cf20f9da8ff0fa79ff",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
