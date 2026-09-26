@@ -36,7 +36,6 @@ but they share the same engine, so most Git behaviour lands in both at once.
   there's nothing to ask. A branch checked out in another worktree is refused,
   naming the worktree. It can be undone straight afterwards, commits and
   uncommitted changes alike. (#32)
-
 - **Drop commit… in the graph's menu.** Right-click a commit on your current
   branch and choose **Drop commit…** to take it out of the branch; the
   commits after it are replayed on top. It asks first, in words: which
@@ -78,7 +77,6 @@ but they share the same engine, so most Git behaviour lands in both at once.
   written under the list, below the fold of any plan long enough to scroll;
   it is shown just above **Start rebase** now. The commit the keyboard moves
   to is never hidden under the header or the footer either. (#32)
-
 - **Repositories: switching to *On GitHub* and straight back showed GitHub's
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on
