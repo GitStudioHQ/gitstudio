@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { RepoEntry } from "../git/repoManager";
 import type { PullRequest } from "./githubApi";
 import { applyOrAsk, checkoutOp } from "../git/inTheWay";
+import { saidCheckedOutElsewhere } from "../views/worktreesView";
 
 // Check out a pull request's branch locally. We fetch the universal
 // `pull/<n>/head` ref (which works for cross-fork PRs too) into a local
@@ -17,6 +18,13 @@ export async function checkoutPullRequest(
 ): Promise<void> {
   const local = `pr/${pr.number}`;
   const fetchSpec = `pull/${pr.number}/head:${local}`;
+
+  // pr/<n> is checked out in another worktree: git refuses the forced fetch
+  // into it ("refusing to fetch into branch … checked out at …") and the
+  // checkout alike. Said where, before anything runs.
+  if (await saidCheckedOutElsewhere(entry.ctx, `refs/heads/${local}`, "checkout")) {
+    return;
+  }
 
   await vscode.window.withProgress(
     {

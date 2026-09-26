@@ -10,6 +10,7 @@ import { stoppedIn } from "@gitstudio/git-service/stoppedOperation";
 import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { explainOptionLikeCheckout } from "../views/optionLikeBranch";
 import { askOverLocalBranch, isCheckedOutHere, resetBranchTo } from "../views/branchReset";
+import { saidCheckedOutElsewhere } from "../views/worktreesView";
 import type { UndoOptions } from "../git/repoManager";
 import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
@@ -272,6 +273,11 @@ async function checkoutRef(
   }
   const plan = await planRefCheckout(ctx.process, fullName);
   if (!plan) {
+    return false;
+  }
+  // The branch it lands on is checked out in another worktree: git refuses,
+  // and its words went down the path that files crash reports. Said first.
+  if (await saidCheckedOutElsewhere(ctx, plan.branch, "checkout")) {
     return false;
   }
   // A remote branch whose local branch has commits of its own: switch to

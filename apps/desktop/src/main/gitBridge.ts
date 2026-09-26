@@ -32,7 +32,8 @@ import type { LineRange, Hunk } from "@gitstudio/engine/staging/applyLineChanges
 import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
-import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { optionLikeCheckout, planRefCheckout, refShortName } from "@gitstudio/git-service/checkoutRef";
+import { checkedOutElsewhere, checkedOutElsewhereMessage } from "@gitstudio/git-service/branchElsewhere";
 import { branchNameOf, remoteBranchOf } from "@gitstudio/git-service/BranchOps";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
@@ -2588,6 +2589,12 @@ export class GitBridge {
     let was: string | undefined;
     let upstream: string | undefined;
     if (ctx) {
+      // Another worktree has it checked out: git refuses the delete, in its
+      // own words. Say where instead.
+      const elsewhere = await checkedOutElsewhere(ctx.process, req.fullName);
+      if (elsewhere) {
+        return { ok: false, changed: false, expected: true, message: checkedOutElsewhereMessage(name, elsewhere, "delete") };
+      }
       const tip = await ctx.process.run(["rev-parse", "--verify", req.fullName]);
       if (tip.code === 0) was = tip.stdout.trim() || undefined;
       const up = await ctx.branches.upstreamOf(name);
@@ -2671,6 +2678,17 @@ export class GitBridge {
       const plan = await planRefCheckout(ctx.process, fullName);
       if (!plan) {
         return UNSAFE_REF_RESULT;
+      }
+      // The branch it lands on is checked out in another worktree: git
+      // refuses ("already used by worktree at …"). Say where instead.
+      const elsewhere = plan.branch ? await checkedOutElsewhere(ctx.process, plan.branch) : undefined;
+      if (plan.branch && elsewhere) {
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: checkedOutElsewhereMessage(refShortName(plan.branch), elsewhere, "checkout"),
+        };
       }
       // Through the one door for commit-applying commands: a switch refused
       // over uncommitted work in its way answers which files, `expected`, and

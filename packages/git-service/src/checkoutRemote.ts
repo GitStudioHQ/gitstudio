@@ -28,6 +28,9 @@ export interface GitRunner {
 export interface RemoteCheckoutPlan {
   /** The local branch the checkout lands on. */
   local: string;
+  /** Whether that local branch exists already (the checkout switches to it)
+   *  rather than being created by the checkout. */
+  existing: boolean;
   /** Argv for `ctx.process.run`. */
   args: string[];
   /** Status-bar message on success. */
@@ -76,6 +79,7 @@ export async function planRemoteCheckout(
   if (existing.code === 0) {
     return {
       local,
+      existing: true,
       args: ["checkout", local],
       success: `Switched to ${local}`,
       undoLabel: `Checkout ${local}`,
@@ -83,6 +87,7 @@ export async function planRemoteCheckout(
   }
   return {
     local,
+    existing: false,
     // `--track` is explicit rather than implied, so the new branch gets its
     // upstream even where `branch.autoSetupMerge` has been turned off.
     args: ["checkout", "-b", local, "--track", trackRef ?? remoteRef],

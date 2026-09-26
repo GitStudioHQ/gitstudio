@@ -3007,7 +3007,7 @@ class App {
           done.length
             ? `Deleted ${done.join(", ")}. Stopped at ${branchName(b)}: ${r?.message ?? "git refused."}`
             : `${branchName(b)} was not deleted: ${r?.message ?? "git refused."}`,
-          "error",
+          r?.expected ? "info" : "error",
         );
         break;
       }
@@ -4384,7 +4384,9 @@ class App {
       r = await host.invoke("branch:delete", { fullName: b.fullName, force: true });
     }
     if (!r.ok) {
-      toast(r.message || `Couldn't delete branch '${name}'.`, "error");
+      // `expected`: the person's state (another worktree has it checked out),
+      // said in words — not a failure.
+      toast(r.message || `Couldn't delete branch '${name}'.`, r.expected ? "info" : "error");
       return; // branch still exists — don't refresh as if it were gone
     }
     // A branch is a name and a commit, so putting one back is genuinely

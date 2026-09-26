@@ -138,3 +138,31 @@ test("opened through a symlink, the window's own worktree is still the current o
   );
   assert.deepEqual(await bridge.worktreeRemoval({ path: s.path("clean") }), { kind: "current" });
 });
+
+// ── A branch another worktree has checked out ───────────────────────────────
+// git refuses to check it out a second time or to delete it, in its own words
+// ("already used by worktree at …", "cannot delete branch … used by worktree
+// at …"). The bridge says where it is, in words, and runs nothing.
+
+test("checking out a branch another worktree has says where it is, and runs nothing", async () => {
+  const s = scene();
+  const bridge = await bridgeOn(s.app);
+  const sha = s.git("rev-parse", "HEAD");
+  const r = await bridge.commitAction({ action: "checkout-ref", sha, name: "clean", fullName: "refs/heads/clean" });
+  assert.equal(r.ok, false);
+  assert.equal(r.expected, true, "the person's state, not a failure to report");
+  assert.equal(
+    r.message,
+    `'clean' is checked out in the worktree at ${s.path("clean")}, and a branch can be checked out in only one worktree at a time. Work on it there, or create a new branch from it here.`,
+  );
+  assert.equal(s.git("symbolic-ref", "HEAD"), "refs/heads/main");
+});
+
+test("deleting a branch another worktree has says where it is, and the branch stays", async () => {
+  const s = scene();
+  const r = await (await bridgeOn(s.app)).branchDelete({ fullName: "refs/heads/clean", force: true });
+  assert.equal(r.ok, false);
+  assert.equal(r.expected, true);
+  assert.match(r.message ?? "", /^'clean' is checked out in the worktree at .*, so it can't be deleted\./);
+  assert.equal(s.git("branch", "--list", "clean"), "+ clean");
+});

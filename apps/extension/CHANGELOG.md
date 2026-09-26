@@ -105,6 +105,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **Removing a worktree that is stopped in a merge, rebase, cherry-pick or
   revert says so**, and that removing it abandons the operation. A worktree
   stopped in a rebase with nothing uncommitted used to go without a word.
+- **Checking out or deleting a branch that another worktree has checked out
+  says where it is** — from the Branches view, the branch menu, the Commit
+  Graph and a pull request's Checkout — with **Open Worktree in New
+  Window**. Each used to run git and show its refusal (*already used by
+  worktree*); Delete asked first, and the graph reported it as an error.
 
 ## [1.14.0] - 2026-09-25
 
