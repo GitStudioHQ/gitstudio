@@ -78,6 +78,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   the branch name rather than about three quarters of the view's height,
   fits a sidebar narrower than itself, and stays inside the view — with a
   branch's actions — when you resize the sidebar while it is open.
+- The branch menu says **Loading branches…** until the branches arrive,
+  instead of showing a repository with none.
+- On a detached HEAD, a branch's actions name the commit they act on —
+  *Merge 'origin/main' into HEAD (a1b2c3d)* — rather than a branch called
+  'current branch'.
 - The branch menu keeps its width while you type, and a new search starts at
   the top of the list with its first group heading in view.
 

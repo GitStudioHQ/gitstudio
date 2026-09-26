@@ -2929,6 +2929,8 @@ export class CommitViewProvider
     .bm-star.on { color: var(--vscode-charts-yellow, #d7ba00); }
     .bm-star .codicon { font-size: 13px; }
     .bm-empty { padding: 10px 8px; color: var(--gs-fg-muted); font-size: 12px; text-align: center; }
+    .bm-loading { display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .bm-loading .codicon { font-size: 13px; }
     .bm-note { padding: 4px 8px 6px 34px; color: var(--gs-fg-subtle); font-size: 11px; font-style: italic; }
     /* ── GitStudio dialogs (rp-*) ─────────────────────────────────────────
        Every question GitStudio asks renders here — naming a branch, choosing a
@@ -4600,6 +4602,9 @@ export class CommitViewProvider
     let authState = { merge: [], staged: [], unstaged: [] };
     let lastState = { merge: [], staged: [], unstaged: [] };
     let branchData = { local: [], remote: [], recent: [], tags: [] };
+    // True until the host has listed this repository's branches: a state push
+    // carries none on its first post for a repository (see pushState).
+    let branchesLoading = true;
     let lastBranchSig = "";
 
     // path -> { action: "stage" | "unstage", at: ms }. An optimistic move that
@@ -5261,9 +5266,15 @@ export class CommitViewProvider
         '<mark class="bm-hl">' + esc(text.slice(i, i + branchFilter.length)) + '</mark>' +
         esc(text.slice(i + branchFilter.length));
     }
-    function currentBranchName() {
+    /** What Compare / Merge / Rebase act on, as a submenu names it: the
+     *  current branch, quoted — the header's name when git lists no ref for it
+     *  yet (an unborn branch) — or, HEAD detached, the commit HEAD is at. */
+    function headTarget() {
+      const s = lastHeaderState;
+      if (s && s.detached) return "HEAD" + (s.branch ? " (" + s.branch + ")" : "");
       const cur = (branchData.local || []).find((b) => b.current);
-      return cur ? cur.name : "current branch";
+      const name = cur ? cur.name : (s && s.branch) || "";
+      return name ? "'" + name + "'" : "HEAD";
     }
 
     function branchRow(name, kind, up, fav, current, ahead, behind) {
@@ -5446,7 +5457,7 @@ export class CommitViewProvider
 
     function openBranchActions(name, kind, current, anchor) {
       closeBranchSubmenu();
-      const cur = currentBranchName();
+      const cur = headTarget();
       const refType = kind === "remote" ? "remote" : kind === "tag" ? "tag" : "head";
       const headIcon = kind === "remote" ? "cloud" : kind === "tag" ? "tag" : "git-branch";
       const menu = el("div", "branch-submenu");
@@ -5471,8 +5482,8 @@ export class CommitViewProvider
         subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, "tag"));
         subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, "tag"));
         subSep(list);
-        subItem(list, "git-compare", "Compare with '" + cur + "'", () => subAct("gitstudio.branch.compare", name, "tag"));
-        subItem(list, "git-merge", "Merge '" + name + "' into '" + cur + "'", () => subAct("gitstudio.branch.merge", name, "tag"));
+        subItem(list, "git-compare", "Compare with " + cur, () => subAct("gitstudio.branch.compare", name, "tag"));
+        subItem(list, "git-merge", "Merge '" + name + "' into " + cur, () => subAct("gitstudio.branch.merge", name, "tag"));
         subSep(list);
         subItem(list, "cloud-upload", "Push Tag to Remote…", () => subAct("gitstudio.tag.push", name, "tag"));
         subItem(list, "copy", "Copy Tag Name", () => branchAct("copyName", name));
@@ -5509,10 +5520,10 @@ export class CommitViewProvider
         }
         subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType));
         subSep(list);
-        subItem(list, "git-compare", "Compare with '" + cur + "'", () => subAct("gitstudio.branch.compare", name, refType));
+        subItem(list, "git-compare", "Compare with " + cur, () => subAct("gitstudio.branch.compare", name, refType));
         subSep(list);
-        subItem(list, "git-merge", "Merge '" + name + "' into '" + cur + "'", () => subAct("gitstudio.branch.merge", name, refType));
-        subItem(list, "git-pull-request", "Rebase '" + cur + "' onto '" + name + "'", () => subAct("gitstudio.branch.rebase", name, refType));
+        subItem(list, "git-merge", "Merge '" + name + "' into " + cur, () => subAct("gitstudio.branch.merge", name, refType));
+        subItem(list, "git-pull-request", "Rebase " + cur + " onto '" + name + "'", () => subAct("gitstudio.branch.rebase", name, refType));
         subSep(list);
         subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
         if (kind === "local") {
@@ -5747,7 +5758,12 @@ export class CommitViewProvider
       group("Tags", tagsShown, (n) => branchRow(n, "tag", "", false, false),
         { count: allTags.length, more: tagsHidden });
 
-      if (!anyAction && !favs.length && !recents.length && !others.length &&
+      if (branchesLoading) {
+        // The host has not listed this repository's branches yet (its first
+        // push carries none): say so, rather than show a repository with none.
+        list.appendChild(el("div", "bm-empty bm-loading",
+          bIcon("loading codicon-modifier-spin") + "<span>Loading branches…</span>"));
+      } else if (!anyAction && !favs.length && !recents.length && !others.length &&
           !remotes.length && !allTags.length) {
         list.appendChild(el("div", "bm-empty", "No matches"));
       }
@@ -7724,13 +7740,16 @@ export class CommitViewProvider
         stagingModel = msg.stagingModel || "split";
         applyModelToggleLabel();
         branchData = msg.branches || { local: [], remote: [], recent: [], tags: [] };
+        branchesLoading = !!msg.hasRepo && !msg.branches;
         // Only rebuild an OPEN branch menu when the branch data actually
         // changed. Every state push (and now the redundant 2nd post) would
         // otherwise call renderBranchMenu(), which closeBranchSubmenu()s and
         // replaceChildren()s — wiping a submenu the user just opened and
         // resetting the scroll position. refreshOpenBranchUi re-opens the
         // same branch's submenu on its fresh row, so the stack survives.
-        const branchSig = JSON.stringify(branchData);
+        // Loading is part of it: a repository that really has no branches
+        // yet answers with the same empty lists the loading menu holds.
+        const branchSig = JSON.stringify([branchesLoading, branchData]);
         if (branchMenu && branchSig !== lastBranchSig) refreshOpenBranchUi();
         lastBranchSig = branchSig;
         if (typeof msg.lastMessage === "string" && amend.checked &&
