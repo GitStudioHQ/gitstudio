@@ -161,6 +161,11 @@ interface StatePayload {
    * Abort). Absent when nothing is in progress.
    */
   operation?: OperationBannerData;
+  /**
+   * With `detached`: why a push cannot start from here, in the words the push
+   * review and a refused push use (detachedPushReason). The Push button's tip.
+   */
+  detachedReason?: string;
 }
 
 interface FromWebview {
@@ -297,6 +302,30 @@ const DETACHED_PUSH_REASON =
   "HEAD is detached, so these commits are on no branch and there is nothing to push them to. Create a branch here to push them.";
 /** Why a push cannot start in a repository with no remote. */
 const NO_REMOTE_PUSH_REASON = "No remote is configured for this repository.";
+
+/**
+ * Why a push cannot start on a detached HEAD, given what is stopped there.
+ *
+ * Every stopped rebase is a detached HEAD, and "create a branch here" is the
+ * wrong advice in one: a branch made mid-rebase points at a half-rebased
+ * commit. The commits reach the branch being rebased when the rebase
+ * finishes, so that is what it says. A rebase begun on a detached HEAD has no
+ * branch to reach: finish, then branch. Any other stop on a detached HEAD (a
+ * cherry-pick, say) keeps the plain advice. The page shows the host's words
+ * (StatePayload.detachedReason), so the tip, the review and a refused push
+ * give the same reason.
+ */
+function detachedPushReason(op: OperationBannerData | undefined): string {
+  if (!op || (op.kind !== "rebase" && op.kind !== "rebase-merge-step")) {
+    return DETACHED_PUSH_REASON;
+  }
+  const finish = `Finish it (${op.continueLabel || "Continue"})`;
+  return op.rebaseBranch
+    ? `A rebase of ${op.rebaseBranch} is in progress, so there is no branch to push until it finishes. ` +
+        `${finish} and these commits land on ${op.rebaseBranch}.`
+    : `A rebase is in progress on a detached HEAD, so these commits are on no branch. ` +
+        `${finish}, then create a branch to push them.`;
+}
 
 /** Git's canonical empty-tree object — the "before" side when previewing the
  *  push of a branch whose oldest unpushed commit is a root commit. */
@@ -1154,7 +1183,23 @@ export class CommitViewProvider
       if (detected.kind === "none" && detected.unmerged === 0) {
         return undefined;
       }
-      return operationBanner(await entry.ctx.operation.view(), detected);
+      const view = await entry.ctx.operation.view();
+      const banner = operationBanner(view, detected);
+      if (banner && (view.kind === "rebase" || view.kind === "rebase-merge-step") && view.yours.name) {
+        // `yours` is the branch being rebased — or, for a rebase begun on a
+        // detached HEAD, the commit it began from. Only a branch is one the
+        // commits land on.
+        const r = await entry.ctx.process.run([
+          "show-ref",
+          "--verify",
+          "--quiet",
+          `refs/heads/${view.yours.name}`,
+        ]);
+        if (r.code === 0) {
+          banner.rebaseBranch = view.yours.name;
+        }
+      }
+      return banner;
     } catch {
       return undefined;
     }
@@ -2084,7 +2129,11 @@ export class CommitViewProvider
       branch,
       base,
       canPush,
-      reason: canPush ? undefined : head.detached ? DETACHED_PUSH_REASON : NO_REMOTE_PUSH_REASON,
+      reason: canPush
+        ? undefined
+        : head.detached
+          ? detachedPushReason(await this.readOperation(entry))
+          : NO_REMOTE_PUSH_REASON,
       ahead: upstream ? ab.ahead : commitRecords.length,
       behind: upstream ? ab.behind : 0,
       needsForce,
@@ -2216,7 +2265,10 @@ export class CommitViewProvider
         // refs/heads/, not "heads/release", which named nothing there.
         const branch = headBranchName(head);
         if (head.detached || !branch) {
-          result = { ok: false, stderr: DETACHED_PUSH_REASON };
+          result = {
+            ok: false,
+            stderr: head.detached ? detachedPushReason(await this.readOperation(entry)) : DETACHED_PUSH_REASON,
+          };
         } else if (!remote) {
           result = { ok: false, stderr: NO_REMOTE_PUSH_REASON };
         } else {
@@ -2567,6 +2619,7 @@ export class CommitViewProvider
       // Only when it belongs to the repo now on screen.
       branches: sameRepo ? this.lastBranches : undefined,
       operation: sameRepo ? this.lastOperation : undefined,
+      detachedReason: detached ? detachedPushReason(sameRepo ? this.lastOperation : undefined) : undefined,
       upstream,
       ahead,
       behind,
@@ -2624,6 +2677,7 @@ export class CommitViewProvider
       unpushed: pushInfo.unpushed,
       canPublish: pushInfo.canPublish,
       operation,
+      detachedReason: base.detached ? detachedPushReason(operation) : undefined,
     });
   }
 
@@ -4791,7 +4845,9 @@ export class CommitViewProvider
       if (ev.target === groupsEl && selectedRows.size > 0) clearSelection();
     });
     // The host's DETACHED_PUSH_REASON / NO_REMOTE_PUSH_REASON, word for word:
-    // the button's tip and the push dialog must give the same reason.
+    // the button's tip and the push dialog must give the same reason. On a
+    // detached HEAD the state carries the host's reason (detachedReason),
+    // which knows whether a rebase is what detached it; this is the fallback.
     const DETACHED_PUSH_REASON = "HEAD is detached, so these commits are on no branch and there is nothing to push them to. Create a branch here to push them.";
     const NO_REMOTE_PUSH_REASON = "No remote is configured for this repository.";
     let aheadCount = 0;     // commits a push would send (drives the button label)
@@ -5015,7 +5071,7 @@ export class CommitViewProvider
     /** Why a push from here cannot work right now, or "" when it can. */
     function pushBlockedReason() {
       const st = lastHeaderState;
-      if (st && st.detached) return DETACHED_PUSH_REASON;
+      if (st && st.detached) return st.detachedReason || DETACHED_PUSH_REASON;
       // Only once the host has LOOKED for a remote: the first post of an
       // unpublished branch does not know yet, and a disabled button that then
       // re-enables is a flicker, not information.

@@ -8,7 +8,7 @@
 
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -71,4 +71,103 @@ test("the state tells the page a detached HEAD has nowhere to publish", async ()
   assert.ok(states.length > 0);
   assert.equal(states.at(-1)?.detached, true);
   assert.notEqual(states.at(-1)?.canPublish, true);
+  assert.match(String(states.at(-1)?.detachedReason), DETACHED, "and why, for the button's tip");
+});
+
+// Every stopped rebase is a detached HEAD, and there "create a branch here" is
+// harmful advice: a branch made mid-rebase points at a half-rebased commit.
+// The commits reach the branch being rebased when the rebase finishes, and
+// that is what the reason says — in the review, in a confirmed push's error,
+// and in the state the page takes the button's tip from.
+
+const REBASING = /^A rebase of topic is in progress.*Finish it \(Continue Rebase\) and these commits land on topic\.$/;
+
+/** topic's two commits rebased onto main: the first applies, the second stops on a conflict. */
+function stoppedRebaseWithRemote(): ReturnType<typeof scratchRepo> {
+  const repo = scratchRepo("push-rebasing");
+  cleanups.push(repo.done);
+  const bare = mkdtempSync(join(tmpdir(), "gs-ext-push-origin-"));
+  cleanups.push(() => rmSync(bare, { recursive: true, force: true }));
+  execFileSync("git", ["init", "-q", "--bare", bare]);
+  const w = (n: string, t: string) => writeFileSync(join(repo.dir, n), t);
+  w("a.txt", "base\n");
+  repo.git("add", ".");
+  repo.git("commit", "-qm", "base");
+  repo.git("remote", "add", "origin", bare);
+  repo.git("push", "-q", "-u", "origin", "refs/heads/main:refs/heads/main");
+  repo.git("checkout", "-q", "-b", "topic");
+  w("b.txt", "topic's own file\n");
+  repo.git("add", ".");
+  repo.git("commit", "-qm", "topic: b");
+  w("a.txt", "topic\n");
+  repo.git("commit", "-qam", "topic: a");
+  repo.git("checkout", "-q", "main");
+  w("a.txt", "main\n");
+  repo.git("commit", "-qam", "main: a");
+  repo.git("checkout", "-q", "topic");
+  try {
+    repo.git("rebase", "refs/heads/main");
+  } catch {
+    // stops on the conflict in a.txt, as intended
+  }
+  assert.equal(repo.git("rev-parse", "--abbrev-ref", "HEAD").trim(), "HEAD", "the stop left HEAD detached");
+  return repo;
+}
+
+test("the push review during a stopped rebase says to finish it, not to create a branch", async () => {
+  const repo = stoppedRebaseWithRemote();
+  const host = changesHost(repo.dir);
+  cleanups.push(host.dispose);
+  host.posted.length = 0;
+  await host.send({ type: "requestPushPreview" });
+  const preview = host.posted.find((m) => m.type === "pushPreview");
+  assert.ok(preview);
+  assert.equal(preview.canPush, false);
+  assert.match(String(preview.reason), REBASING);
+  assert.doesNotMatch(String(preview.reason), /create a branch/i);
+});
+
+test("a push confirmed during a stopped rebase fails with the same reason", async () => {
+  const repo = stoppedRebaseWithRemote();
+  const host = changesHost(repo.dir);
+  cleanups.push(host.dispose);
+  host.posted.length = 0;
+  await host.send({ type: "confirmPush" });
+  const done = host.posted.find((m) => m.type === "pushDone");
+  assert.equal(done?.ok, false);
+  assert.match(String(done?.error), REBASING);
+});
+
+test("the state gives the page the rebase's reason for its disabled push", async () => {
+  const repo = stoppedRebaseWithRemote();
+  const host = changesHost(repo.dir);
+  cleanups.push(host.dispose);
+  await host.idle();
+  host.posted.length = 0;
+  await host.send({ type: "ready" });
+  await host.idle();
+  const last = host.posted.filter((m) => m.type === "state").at(-1);
+  assert.equal(last?.detached, true);
+  assert.match(String(last?.detachedReason), REBASING);
+});
+
+test("a rebase that started on a detached HEAD: finish it, THEN create a branch", async () => {
+  const repo = stoppedRebaseWithRemote();
+  // The same stop, but begun from the commit rather than the branch.
+  repo.git("rebase", "--abort");
+  repo.git("checkout", "-q", "--detach", "refs/heads/topic");
+  try {
+    repo.git("rebase", "refs/heads/main");
+  } catch {
+    // stops on the conflict again
+  }
+  const host = changesHost(repo.dir);
+  cleanups.push(host.dispose);
+  host.posted.length = 0;
+  await host.send({ type: "requestPushPreview" });
+  const preview = host.posted.find((m) => m.type === "pushPreview");
+  assert.match(
+    String(preview?.reason),
+    /^A rebase is in progress on a detached HEAD.*Finish it \(Continue Rebase\), then create a branch to push them\.$/,
+  );
 });

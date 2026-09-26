@@ -31,6 +31,7 @@ interface Buttons {
   primary: string;
   primaryDisabled: boolean;
   primaryTip: string;
+  primaryAria: string;
   commit: string;
   commitDisabled: boolean;
 }
@@ -44,6 +45,7 @@ async function buttonsFor(state: Record<string, unknown>): Promise<Buttons> {
       primary: document.getElementById("main-label").textContent,
       primaryDisabled: p.disabled,
       primaryTip: p.dataset.tip || "",
+      primaryAria: p.getAttribute("aria-label") || "",
       commit: document.getElementById("commit-label").textContent,
       commitDisabled: c.disabled,
     };
@@ -74,6 +76,41 @@ test("unpushed commits on a detached HEAD: no 'Publish N'", { skip }, async () =
   assert.equal(b.mode, "none");
   assert.equal(b.primaryDisabled, true);
   assert.match(b.primaryTip, /detached/i);
+});
+
+// Every stopped rebase is a detached HEAD, and "create a branch here" is
+// harmful there: the branch would point at a half-rebased commit. The host
+// knows the operation (changesPushDoors.test.ts) and sends the reason; the
+// tip and the button's name are the host's words.
+const REBASING =
+  "A rebase of topic is in progress, so there is no branch to push until it finishes. " +
+  "Finish it (Continue Rebase) and these commits land on topic.";
+
+test("staged work during a stopped rebase: the reason is to finish it, never to create a branch", { skip }, async () => {
+  const b = await buttonsFor({
+    staged: STAGED,
+    stagedCount: 1,
+    detached: true,
+    branch: "a1b2c3d",
+    upstream: undefined,
+    canPublish: false,
+    unpushed: 0,
+    operation: {
+      kind: "rebase",
+      title: "Rebasing topic onto main · commit 2 of 2",
+      conflicts: 0,
+      canContinue: true,
+      continueLabel: "Continue Rebase",
+      abortLabel: "Abort Rebase",
+    },
+    detachedReason: REBASING,
+  });
+  assert.equal(b.mode, "none");
+  assert.equal(b.primaryDisabled, true);
+  assert.equal(b.primaryTip, REBASING);
+  assert.equal(b.primaryAria, "Push — " + REBASING);
+  assert.doesNotMatch(b.primaryTip + b.primaryAria, /create a branch/i);
+  assert.equal(b.commitDisabled, false, "committing the resolution is still one click away");
 });
 
 test("staged work in a repository with no remote: no push is offered, and the tip says why", { skip }, async () => {
