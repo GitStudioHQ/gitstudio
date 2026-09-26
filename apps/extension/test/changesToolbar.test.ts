@@ -40,8 +40,14 @@ test("Stage All and Stash are disabled while there is nothing for them to take",
   assert.deepEqual(await disabled(page), { stageAll: false, stash: false }, "an unstaged change");
   await page.send({ ...BASE, staged: [{ path: "a.ts", status: "M" }], stagedCount: 1 });
   assert.deepEqual(await disabled(page), { stageAll: true, stash: false }, "everything already staged");
+  // The toolbar's Stage All is the Changes group's: the host never stages a
+  // conflicted file for it (the Merge Changes header's Stage All does, file by
+  // file past the marker check). Lit over conflicted files alone, a click
+  // staged nothing and said nothing.
   await page.send({ ...BASE, merge: [{ path: "c.ts", status: "U" }] });
-  assert.deepEqual(await disabled(page), { stageAll: false, stash: false }, "a conflicted file (staging it marks it resolved)");
+  assert.deepEqual(await disabled(page), { stageAll: true, stash: false }, "only a conflicted file");
+  await page.send({ ...BASE, merge: [{ path: "c.ts", status: "U" }], unstaged: [{ path: "a.ts", status: "M" }] });
+  assert.deepEqual(await disabled(page), { stageAll: false, stash: false }, "a conflicted file and an unstaged change");
 });
 
 test("the layout toggle says which layout it switches to", { skip }, async () => {

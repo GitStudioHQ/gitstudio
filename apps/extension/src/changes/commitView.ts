@@ -1345,6 +1345,11 @@ export class CommitViewProvider
     await this.mutate((e) => e.ctx.staging.stageFiles(rels), { verb: "stage", paths: rels });
   }
 
+  /**
+   * A group header's Stage All, or (no group) the toolbar's, which is the
+   * Changes group's: it never marks a conflict resolved, and the page keeps it
+   * disabled while only conflicted files are left.
+   */
   private async doBulkStage(group?: GroupKind): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
@@ -6998,10 +7003,14 @@ export class CommitViewProvider
       const total =
         data.merge.length + data.staged.length + data.unstaged.length;
       emptyEl.classList.toggle("visible", stateSeen && total === 0);
-      // Nothing for them to take: Stage All has no unstaged or conflicted
-      // file, Stash no change at all. They looked (and posted) the same on a
-      // clean tree.
-      stageAllTopBtn.disabled = data.unstaged.length + data.merge.length === 0;
+      // Nothing for them to take: Stage All has no unstaged file, Stash no
+      // change at all. They looked (and posted) the same on a clean tree.
+      // Conflicted files do not count for Stage All: it is the Changes
+      // group's (VS Code's "Stage All Changes"), and the host never marks a
+      // conflict resolved for it — the Merge Changes header's Stage All does,
+      // past the marker check. Lit over conflicted files alone, a click
+      // staged nothing and said nothing.
+      stageAllTopBtn.disabled = data.unstaged.length === 0;
       stashChangesBtn.disabled = total === 0;
       changesTotal.textContent = String(total);
       changesTotal.classList.toggle("visible", total > 0);

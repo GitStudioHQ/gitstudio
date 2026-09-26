@@ -131,7 +131,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - The Compare panel says "1 commit" and "1 file changed", and each ref shows
   the icon of what it is: branch, remote branch, tag or commit.
 - On a clean tree, Stage All and Stash are disabled instead of acting on
-  nothing; the tree/list toggle says which view it switches to.
+  nothing, and the toolbar's Stage All is disabled while only conflicted files
+  are left (the Merge Changes group's Stage All stages those); the tree/list
+  toggle says which view it switches to.
 - A double-click on a file opens its diff once, not twice.
 - At sidebar width a file row keeps the file's name whole while its folder
   can give way, and the folder keeps its end (the folder the file is in).

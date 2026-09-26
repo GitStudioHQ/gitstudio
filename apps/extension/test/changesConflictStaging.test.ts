@@ -108,6 +108,23 @@ test("Stage All on the Merge Conflicts group holds back the file with markers", 
   assert.equal(warnings().length, 1);
 });
 
+// The toolbar's Stage All posts no group: it is the Changes group's Stage All
+// (VS Code's "Stage All Changes"), and never marks a conflict resolved — not
+// even one resolved by hand. That is why the page disables it when only
+// conflicted files are left (changesToolbar.test.ts): there, a click staged
+// nothing and said nothing.
+test("the toolbar's Stage All stages the Changes group and leaves every conflicted file alone", async () => {
+  const repo = stoppedMerge();
+  const host = changesHost(repo.dir);
+  cleanups.push(host.dispose);
+  vscode.__said.length = 0;
+  await host.send({ type: "stageAll" });
+  assert.deepEqual(unmerged(repo), ["c.txt", "r.txt"], "neither conflict was marked resolved");
+  assert.ok(stagedNames(repo).includes("o.txt"));
+  assert.ok(stagedNames(repo).includes("doc.md"));
+  assert.deepEqual(warnings(), [], "nothing was held back, so there is nothing to explain");
+});
+
 test("the checklist's check-all holds back the file with markers", async () => {
   const repo = stoppedMerge();
   const host = changesHost(repo.dir);
