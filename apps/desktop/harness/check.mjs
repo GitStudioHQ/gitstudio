@@ -794,6 +794,7 @@ const CASES = [
   ["each-tab-keeps-its-own-filter-through-a-rebuild", "repositories", { extra: "tabs=2", arg: "design" }],
   ["a-home-still-loading-when-you-switch-away-paints-when-you-are-back", "dashboard", { extra: "tabs=2&slow=*@gitstudio:800" }],
   ["each-tab-keeps-its-own-search", "explore", { extra: "tabs=2" }],
+  ["a-board-still-loading-when-you-switch-away-paints-when-you-are-back", "projects", { extra: "tabs=2&slow=project:board@gitstudio:1500" }],
 ];
 
 function run(scene, checkId, opts = {}) {

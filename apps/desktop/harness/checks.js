@@ -16898,5 +16898,25 @@
       c.ok(/graph/.test(ids) && !/rebase/.test(ids), `A's People search is for A's words (routed: ${ids})`);
       c.eq(box()?.value, "graph", "…and its box says so");
     },
+
+    /** A project board still loading when you switch away paints when you are
+     *  back — another tab choosing a project meanwhile used to make it decide
+     *  it had been superseded (the selection was module state). */
+    "a-board-still-loading-when-you-switch-away-paints-when-you-are-back": async (f) => {
+      const c = check(f);
+      await settle(150);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1800);
+      c.ok(!!$(".view-host .gh-board"), "precondition: B painted its board");
+      // B looks at a DIFFERENT project than the one A is loading.
+      $(".view-host .gh-picker")?.click();
+      await settle(400);
+      $$(".dropdown-item").find((i) => /v2\.0/.test(text(i)))?.click();
+      await settle(900);
+      tabEl(GS_ROOT)?.click();
+      await settle(2500);
+      c.ok(!!$(".view-host .gh-board"), "A's board painted");
+      c.eq($$(".view-host .gh-board-detail .loading-state").length, 0, "…and is not still saying it is loading");
+    },
   };
 })();
