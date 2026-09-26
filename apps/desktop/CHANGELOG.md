@@ -36,7 +36,6 @@ but they share the same engine, so most Git behaviour lands in both at once.
   there's nothing to ask. A branch checked out in another worktree is refused,
   naming the worktree. It can be undone straight afterwards, commits and
   uncommitted changes alike. (#32)
-
 - **Drop commit… in the graph's menu.** Right-click a commit on your current
   branch and choose **Drop commit…** to take it out of the branch; the
   commits after it are replayed on top. It asks first, in words: which
