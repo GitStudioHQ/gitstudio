@@ -52,7 +52,7 @@ import {
 } from "@gitstudio/git-service/SyncOps";
 import { GitProcess } from "@gitstudio/git-service/GitProcess";
 import { sameFolder } from "@gitstudio/git-service/WorktreeProvider";
-import { worktreeChangedSinceAsked } from "@gitstudio/host-bridge/worktreeRemoval";
+import { worktreeChangedSinceAsked, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
 import type {
   CommitRecord,
   GitContext,
@@ -319,16 +319,20 @@ function mustSucceed(result: { stdout: string; stderr?: string; code?: number },
 /**
  * What removing the worktree at `path` takes, as the renderer's one question
  * needs it (git-service's removal): refused outright — the main worktree, this
- * window's own, one no longer listed — or the facts. Read fresh each time: for
- * the question, and again when a remove was refused because it changed since.
+ * window's own, one another of its tabs has open, one no longer listed — or
+ * the facts. Read fresh each time: for the question, and again when a remove
+ * was refused because it changed since.
  */
-async function removalInfo(ctx: GitContext, path: string): Promise<WorktreeRemovalInfo> {
+async function removalInfo(ctx: GitContext, path: string, otherTabs: readonly string[]): Promise<WorktreeRemovalInfo> {
   const r = await ctx.worktrees.removal(path);
   if (r.kind === "notListed" || r.kind === "main") {
     return { kind: r.kind };
   }
   if (sameFolder(r.entry.path, ctx.root)) {
     return { kind: "current" };
+  }
+  if (otherTabs.some((root) => sameFolder(r.entry.path, root))) {
+    return { kind: "openInTab" };
   }
   return {
     kind: r.kind,
@@ -1711,7 +1715,20 @@ export class GitBridge {
     if (!ctx) {
       return { kind: "notListed" };
     }
-    return removalInfo(ctx, req.path);
+    return removalInfo(ctx, req.path, this.otherTabRoots(ctx));
+  }
+
+  /**
+   * The roots the window's OTHER repository tabs have open (#32). "This
+   * window's own worktree" used to be one folder; with tabs, a worktree of
+   * this repository can be open in the tab beside it, and removing it would
+   * delete that tab's folder from under it.
+   */
+  private otherTabRoots(ctx: GitContext): string[] {
+    return this.repos
+      .state()
+      .tabs.map((t) => t.root)
+      .filter((root) => !sameFolder(root, ctx.root));
   }
 
   /**
@@ -1736,9 +1753,13 @@ export class GitBridge {
     if (!safeArg(opts.path)) return UNSAFE_REF_RESULT;
     let changedSince: WorktreeRemovalInfo | undefined;
     const r = await this.staged(async (ctx) => {
-      // Never the window's own worktree, whatever the renderer sent.
+      // Never the window's own worktree, whatever the renderer sent — nor
+      // one another of its tabs has open.
       if (sameFolder(opts.path, ctx.root)) {
         return { ok: false, expected: true, message: "This window has that worktree open, so it can't be removed from here." };
+      }
+      if (this.otherTabRoots(ctx).some((root) => sameFolder(opts.path, root))) {
+        return { ok: false, expected: true, message: worktreeRemovalRefusal("openInTab", "That worktree") };
       }
       // The lock's reason, to put back if git refuses (see removeAsAgreed).
       const entry = (await ctx.worktrees.list()).find((e) => sameFolder(e.path, opts.path));
@@ -1750,7 +1771,7 @@ export class GitBridge {
       if (done.ok) {
         return done;
       }
-      const now = await removalInfo(ctx, opts.path);
+      const now = await removalInfo(ctx, opts.path, this.otherTabRoots(ctx));
       const dirtyNow = now.kind === "present" && (now.changes === undefined || now.changes.length > 0);
       if (done.changedSince || (!opts.discardChanges && dirtyNow)) {
         changedSince = now;

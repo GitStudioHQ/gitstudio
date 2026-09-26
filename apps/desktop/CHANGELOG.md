@@ -204,7 +204,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   is no longer a worktree when the drive comes back. A worktree that changes
   while the question is open — an agent still at work in it — is asked about
   again with what it holds now; nothing the question didn't name is deleted,
-  and it keeps its lock. The same words as the VS Code extension's.
+  and it keeps its lock. A worktree open in another repository tab is not
+  removed from under it: removing it says so, and to close that tab first.
+  The same words as the VS Code extension's.
 - **Removing a worktree that is stopped in a merge, rebase, cherry-pick or
   revert says so**, and that removing it abandons the operation — a worktree
   stopped in a rebase with nothing uncommitted went without a word.

@@ -89,6 +89,7 @@ test("detached: names the commit instead of a branch", () => {
 test("refusals say why, in words", () => {
   assert.match(worktreeRemovalRefusal("main", "main"), /main worktree/);
   assert.match(worktreeRemovalRefusal("current", "feat"), /This window has feat open/);
+  assert.match(worktreeRemovalRefusal("openInTab", "feat"), /^feat is open in another tab of this window, so it can't be removed — .*Close that tab first\.$/);
   assert.match(worktreeRemovalRefusal("notListed", "feat"), /no longer a worktree/);
 });
 

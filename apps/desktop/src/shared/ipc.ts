@@ -599,6 +599,8 @@ export type WorktreeRemovalInfo =
   | { kind: "notListed" }
   | { kind: "main" }
   | { kind: "current" }
+  /** Another repository tab of this window has it open (#32). */
+  | { kind: "openInTab" }
   | {
       kind: "missing" | "present";
       branch?: string;

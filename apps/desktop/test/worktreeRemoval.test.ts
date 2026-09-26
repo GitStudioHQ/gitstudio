@@ -88,6 +88,27 @@ test("removal is read before anything is asked: refused for main and this window
   assert.ok(existsSync(s.path("clean")), "the window's own folder stays");
 });
 
+test("a worktree another repository tab has open is refused too — its folder stays under that tab (#32)", async () => {
+  const s = scene();
+  // The window has the repository AND its worktree open, as two tabs; the
+  // repository's tab is in front, asking to remove the worktree.
+  const repos = new RepoStore([]);
+  await repos.open(s.app);
+  await repos.open(s.path("clean"));
+  await repos.open(s.app); // back to the repository's tab
+  assert.equal(repos.state().tabs.length, 2, "two tabs");
+  const bridge = new GitBridge(repos);
+  assert.deepEqual(await bridge.worktreeRemoval({ path: s.path("clean") }), { kind: "openInTab" });
+  const refused = await bridge.worktreeRemove({ path: s.path("clean"), pastLock: true, discardChanges: true, listed: [] });
+  assert.equal(refused.ok, false);
+  assert.equal(!refused.ok && refused.expected, true, "the user's state, said — never a crash report");
+  assert.equal(reportableResultMessage(refused), undefined);
+  assert.match(!refused.ok ? (refused.message ?? "") : "", /open in another tab of this window/);
+  assert.ok(existsSync(s.path("clean")), "the other tab's folder stays");
+  // A worktree no tab has open is still the facts, as before.
+  assert.equal((await bridge.worktreeRemoval({ path: s.path("locked") })).kind, "present");
+});
+
 test("removal names a merge stopped in that worktree", async () => {
   const s = scene();
   const clean = s.path("clean");

@@ -136,10 +136,12 @@ export function worktreeChangedSinceAsked(label: string): string {
 /**
  * Why a worktree is not removed at all, said before anything runs: the main
  * worktree (git never removes it), the one this window has open (its folder
- * would go from under the window), or one no longer listed.
+ * would go from under the window), one another of the window's repository
+ * tabs has open (the desktop's, #32 — the same, under that tab), or one no
+ * longer listed.
  */
 export function worktreeRemovalRefusal(
-  why: "main" | "current" | "notListed",
+  why: "main" | "current" | "openInTab" | "notListed",
   label: string,
 ): string {
   switch (why) {
@@ -147,6 +149,8 @@ export function worktreeRemovalRefusal(
       return `${label} is the main worktree — it holds the repository itself, so git never removes it.`;
     case "current":
       return `This window has ${label} open, so it can't be removed from here — its folder would be deleted from under the window. Remove it from another window, or open something else in this one first.`;
+    case "openInTab":
+      return `${label} is open in another tab of this window, so it can't be removed — its folder would be deleted from under that tab. Close that tab first.`;
     case "notListed":
       return `${label} is no longer a worktree of this repository.`;
   }

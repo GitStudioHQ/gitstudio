@@ -3507,7 +3507,7 @@ class App {
   private async removeWorktreeLive(w: WorktreeInfo, again?: WorktreeRemovalInfo): Promise<void> {
     const label = w.branch ?? (w.bare ? "(bare)" : `${w.head.slice(0, 7)} (detached)`);
     const plan = again ?? (await host.invoke("worktree:removal", { path: w.path }));
-    if (plan.kind === "notListed" || plan.kind === "main" || plan.kind === "current") {
+    if (plan.kind === "notListed" || plan.kind === "main" || plan.kind === "current" || plan.kind === "openInTab") {
       toast(worktreeRemovalRefusal(plan.kind, label), "info");
       if (plan.kind === "notListed") await this.refreshBranchesSoft();
       return;
