@@ -85,6 +85,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   'current branch'.
 - The branch menu keeps its width while you type, and a new search starts at
   the top of the list with its first group heading in view.
+- A branch's name keeps its room in the branch menu: in a narrow sidebar the
+  upstream beside it is shortened, or left to the tooltip, before the name
+  loses a letter. The upstream and the group counts are drawn in your theme's
+  secondary text colour, readable in light themes, and the highlighted row
+  still shows which letters matched your search, and its star.
 
 ## [1.14.0] - 2026-09-25
 

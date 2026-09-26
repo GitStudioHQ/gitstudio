@@ -13,6 +13,9 @@ import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from ".
 //   · the menu takes the room below the pill, fits a view narrower than its
 //     least width, and is placed again (with its submenu) when the view is
 //     resized while it is open;
+//   · a branch's name keeps the row's room — its upstream label gives way first;
+//   · the upstream label and the group counts are readable text (4.5:1);
+//   · the highlighted row still shows what matched, and its star.
 
 const chrome = ChangesPage.chrome();
 const skip = chrome ? false : "no windowless Chrome on this machine (set GS_CHROME)";
@@ -239,3 +242,95 @@ test("a new query starts the list at the top, its first group header in view", {
   assert.ok(s.headerTop >= s.listTop, `the first group header is in view: ${JSON.stringify(s)}`);
   await closeMenu(p);
 });
+
+test("a branch's name keeps the row's room: its upstream label gives way first", { skip }, async () => {
+  for (const width of [260, 300, 340]) {
+    const p = await open("dark", width, 640);
+    const local: LocalBranch[] = [
+      { name: "main", current: true, upstream: "origin/main", upstreamOnRemote: true },
+      { name: "bugfix/session-timeout-on-idle-tabs", upstream: "origin/bugfix/session-timeout-on-idle-tabs", upstreamOnRemote: true, ahead: 2, behind: 1 },
+      { name: LONG, upstream: "origin/" + LONG, upstreamOnRemote: true },
+    ];
+    await openMenu(p, stateMessage({ local }));
+    const rows = await p.eval<{ name: string; nameShown: number; nameWants: number; upShown: number }[]>(`Array.prototype.map.call(document.querySelectorAll(".bm-list .bm-branch"), function (r) {
+      var n = r.querySelector(".bm-bname"), u = r.querySelector(".bm-bup");
+      return { name: r.dataset.bname, nameShown: n.clientWidth, nameWants: n.scrollWidth, upShown: u ? u.getBoundingClientRect().width : 0 };
+    })`);
+    for (const r of rows) {
+      if (r.nameWants > r.nameShown) {
+        assert.ok(r.upShown <= 0.5, `${width}px: '${r.name}' is cut to ${r.nameShown}px of ${r.nameWants}px while its upstream label keeps ${r.upShown}px`);
+      }
+    }
+    await closeMenu(p);
+  }
+});
+
+/** In-page colour maths: composite CSS colours bottom-first on a canvas, then WCAG contrast. */
+const COLOUR = `
+window.__px = function (layers) {
+  var c = document.createElement("canvas"); c.width = c.height = 1;
+  var x = c.getContext("2d");
+  x.fillStyle = "#fff"; x.fillRect(0, 0, 1, 1);
+  layers.forEach(function (l) { x.fillStyle = "#fff"; x.fillStyle = l; x.fillRect(0, 0, 1, 1); });
+  var d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2]];
+};
+window.__bgLayers = function (el) {
+  var out = [];
+  for (var n = el; n && n.nodeType === 1; n = n.parentElement) out.unshift(getComputedStyle(n).backgroundColor);
+  return out;
+};
+window.__lum = function (rgb) {
+  var f = function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]);
+};
+window.__contrast = function (a, b) {
+  var la = __lum(a), lb = __lum(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+};
+/** The text colour of el against what is painted behind it. */
+window.__textContrast = function (el) {
+  var bg = __bgLayers(el);
+  return __contrast(__px(bg.concat([getComputedStyle(el).color])), __px(bg));
+};
+`;
+
+for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
+  test(`${theme}: the upstream label and the group counts read at 4.5:1`, { skip }, async () => {
+    const p = await open(theme, 400, 640);
+    await p.eval(COLOUR);
+    await openMenu(p, stateMessage({ local: FEW, remote: ["origin/main"] }));
+    const r = await p.eval<{ up: number; count: number }>(`({
+      up: __textContrast(document.querySelector('.bm-branch[data-bname="feature"] .bm-bup')),
+      count: __textContrast(document.querySelector(".bm-sep-count")),
+    })`);
+    assert.ok(r.up >= 4.5, `the upstream label: ${r.up.toFixed(2)}:1`);
+    assert.ok(r.count >= 4.5, `a group count: ${r.count.toFixed(2)}:1`);
+    await closeMenu(p);
+  });
+
+  test(`${theme}: the highlighted row still shows what matched, and its star`, { skip }, async () => {
+    const p = await open(theme, 400, 640);
+    await p.eval(COLOUR);
+    await openMenu(p, stateMessage({ local: FEW }));
+    await p.type("feat");
+    const r = await p.eval<{ key: string; markBand: number; markText: number; differs: boolean; star: number }>(`(function () {
+      var row = document.querySelector(".bm-list .is-active");
+      var mark = row.querySelector(".bm-hl"), star = row.querySelector(".bm-star");
+      var rowBg = __bgLayers(row), markBg = __bgLayers(mark);
+      var ms = getComputedStyle(mark), rs = getComputedStyle(row);
+      return {
+        key: row.dataset.bmkey,
+        // A mark shows as a band behind the letters, or as letters of their own colour.
+        markBand: __contrast(__px(markBg), __px(rowBg)),
+        markText: __contrast(__px(markBg.concat([ms.color])), __px(markBg)),
+        differs: ms.color !== rs.color || ms.fontWeight !== rs.fontWeight,
+        star: __textContrast(star),
+      };
+    })()`);
+    assert.equal(r.key, "b:local:feature");
+    const shows = r.markBand >= 3 || (r.differs && r.markText >= 3);
+    assert.ok(shows, `the match stands out on the highlighted row: ${JSON.stringify(r)}`);
+    assert.ok(r.star >= 3, `the star on the highlighted row: ${r.star.toFixed(2)}:1`);
+    await closeMenu(p);
+  });
+}

@@ -2794,13 +2794,17 @@ export class CommitViewProvider
       flex: 0 0 auto;
       font-variant-numeric: tabular-nums;
       letter-spacing: 0;
-      color: var(--gs-fg-subtle);
+      color: var(--gs-fg-muted);
     }
     .bm-hl { background: color-mix(in srgb, var(--gs-accent) 34%, transparent); color: inherit; border-radius: 2px; }
     .bm-branch { padding: 4px 8px 4px 4px; }
     .bm-branch.is-current .bm-bname { color: var(--gs-accent-text); font-weight: 600; }
     .bm-branch.is-current .bm-bicon { color: var(--gs-accent-text); }
-    .bm-bname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* The name is the row: it keeps its whole width while anything else can
+       give way. It takes no share of spare room (its auto right margin does,
+       which keeps the counts and the upstream at the right edge), and it is
+       the only thing on the row that shrinks when the row is too narrow. */
+    .bm-bname { flex: 0 1 auto; min-width: 0; margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* Per-branch unpushed/unpulled badges — refreshed live by the in-menu Fetch. */
     .bm-ab {
       flex: 0 0 auto;
@@ -2815,7 +2819,10 @@ export class CommitViewProvider
     .bm-ab.down { color: var(--gs-status-modified); background: color-mix(in srgb, var(--gs-status-modified) 16%, transparent); }
     /* In-flight items keep the normal cursor — the spinner lives IN the item. */
     .bm-action.is-busy, .bm-subaction.is-busy { opacity: 0.8; cursor: default; }
-    .bm-bup { flex: 0 1 auto; font-size: 10.5px; color: var(--gs-fg-subtle); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* The upstream starts from nothing and grows into the room the name left,
+       up to its own width: it is cut, or gone, before the name loses a letter
+       (the row's tooltip and its spoken label still carry it). */
+    .bm-bup { flex: 1 1 0; min-width: 0; max-width: max-content; font-size: 10.5px; color: var(--gs-fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .bm-bmore { flex: 0 0 auto; font-size: 13px; color: var(--gs-fg-subtle); opacity: 0; transition: opacity 100ms; }
     .bm-branch:hover .bm-bmore { opacity: 0.8; }
 
@@ -2838,6 +2845,16 @@ export class CommitViewProvider
     .bm-branch.is-active .bm-bup,
     .bm-subaction.is-active .codicon { color: inherit; }
     .bm-branch.is-active .bm-bmore { opacity: 0.9; color: inherit; }
+    .bm-branch.is-active .bm-star:not(.on) { color: inherit; }
+    /* A match on the highlighted row: the accent band would be blue on the
+       blue selection, so the letters are marked instead, in the colour VS
+       Code gives a match on a focused list row. */
+    .bm-action.is-active .bm-hl,
+    .bm-branch.is-active .bm-hl {
+      background: transparent;
+      color: var(--vscode-list-focusHighlightForeground, inherit);
+      font-weight: 600;
+    }
     /* The row whose submenu holds the highlight stays marked, as VS Code
        marks a selection whose list is not the focused one. */
     .bm-branch.is-open {

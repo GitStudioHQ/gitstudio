@@ -44,6 +44,8 @@ const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
     "--vscode-list-focusOutline": "#007fd4",
     "--vscode-list-inactiveSelectionBackground": "#37373d",
     "--vscode-toolbar-hoverBackground": "rgba(90, 93, 94, 0.31)",
+    "--vscode-list-highlightForeground": "#2aaaff",
+    "--vscode-list-focusHighlightForeground": "#2aaaff",
   },
   light: {
     "--vscode-menu-background": "#ffffff",
@@ -54,6 +56,10 @@ const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
     "--vscode-list-focusOutline": "#0090f1",
     "--vscode-list-inactiveSelectionBackground": "#e4e6f1",
     "--vscode-toolbar-hoverBackground": "rgba(184, 184, 184, 0.31)",
+    "--vscode-list-highlightForeground": "#0066bf",
+    // Light+ leaves list.activeSelectionBackground to the default, so the
+    // registry resolves this to its own light blue for the blue row.
+    "--vscode-list-focusHighlightForeground": "#bbe7ff",
   },
   // The high-contrast themes define no selection background at all — a
   // selection is its outline (list.focusOutline = contrastActiveBorder).
@@ -67,6 +73,8 @@ const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
     "--vscode-list-focusOutline": "#f38518",
     "--vscode-contrastActiveBorder": "#f38518",
     "--vscode-contrastBorder": "#6fc3df",
+    "--vscode-list-highlightForeground": "#f38518",
+    "--vscode-list-focusHighlightForeground": "#f38518",
   },
   "hc-light": {
     "--vscode-menu-background": "#ffffff",
@@ -78,6 +86,8 @@ const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
     "--vscode-list-focusOutline": "#006bbd",
     "--vscode-contrastActiveBorder": "#006bbd",
     "--vscode-contrastBorder": "#0f4a85",
+    "--vscode-list-highlightForeground": "#006bbd",
+    "--vscode-list-focusHighlightForeground": "#006bbd",
   },
 };
 
