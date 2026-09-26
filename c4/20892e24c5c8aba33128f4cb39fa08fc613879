@@ -1,0 +1,31 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_4907eea12cf4c4 93-95
+apps/extension/src/changes/branchMenuData.ts
+  s_26f5e669d3043c::t_f69bdb5a339c58 1-75
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_e346aceb109349 12,1463,2772-2775,2796,5248,5271-5278,5282,5291,5729-5731
+apps/extension/test/branchMenuData.test.ts
+  s_26f5e669d3043c::t_b57d6aa2191f15 1-67
+apps/extension/test/branchMenuFit.test.ts
+  s_26f5e669d3043c::t_2020bdfefb79e7 17,269-306
+apps/extension/test/branchesTreeLabels.test.ts
+  s_26f5e669d3043c::t_d6c12144b2fd8f 131-133,138-141
+apps/extension/test/changesPage.ts
+  s_26f5e669d3043c::t_01145fc6695204 170-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c420892e24c5c8aba33128f4cb39fa08fc613879",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
