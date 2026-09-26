@@ -381,6 +381,12 @@ export class StashesWebviewViewProvider
     function act(type, sha) {
       const row = rows.get(sha);
       if (!row || row.classList.contains("busy")) return;
+      // The keyboard waits on the row while it is busy. Going busy disables
+      // the button that had it (a mouse press focuses it, as Tab does), and
+      // it fell to the page: a Pop that then removed the row had no row to
+      // hand it on from.
+      const at = document.activeElement;
+      if (at && at !== row && row.contains(at)) row.focus();
       setBusy(row, true);
       vscode.postMessage({ type: type, sha: sha });
     }
@@ -449,7 +455,12 @@ export class StashesWebviewViewProvider
         if (ev.target !== row) return;
         if (ev.key === "Enter") { ev.preventDefault(); open(true); }
         else if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) menu(ev);
-        else if (ev.key === "Delete") { ev.preventDefault(); act("drop", sha); }
+        // Delete; and on macOS the delete key, Backspace, and VS Code's
+        // list delete, Cmd+Backspace. The Drop question still comes first.
+        else if (ev.key === "Delete" || (ev.key === "Backspace" && !ev.altKey && !ev.ctrlKey && !ev.shiftKey)) {
+          ev.preventDefault();
+          act("drop", sha);
+        }
         else if (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "Home" || ev.key === "End") {
           ev.preventDefault();
           focusRow(row, ev.key);
@@ -587,8 +598,13 @@ export class StashesWebviewViewProvider
         b.type = "button";
         b.querySelector("span").textContent = label;
         // Through act(), like the row's buttons: a busy row takes no second
-        // action from its menu either.
-        b.addEventListener("click", () => { closeMenu(); act(type, anchor.dataset.sha); });
+        // action from its menu either. The item that had the keyboard goes
+        // with the menu, so the keyboard goes back to the row, as on Escape.
+        b.addEventListener("click", () => {
+          closeMenu();
+          if (anchor.isConnected) anchor.focus();
+          act(type, anchor.dataset.sha);
+        });
         menu.appendChild(b);
       };
       item("git-stash-apply", "Apply", false, "apply");

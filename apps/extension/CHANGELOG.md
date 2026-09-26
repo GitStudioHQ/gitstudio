@@ -86,18 +86,22 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **The Stash dialog listed a partly staged file twice**, and unticking one of
   its two rows still stashed it. Each file has one row now.
 - **Create Branch from a stash asks about changes in its way.** Over an
-  uncommitted edit, git switched to the new branch, then refused to apply the
+  uncommitted edit — or, for a stash with staged changes, over anything you
+  had staged — git switched to the new branch, then refused to apply the
   stash and showed its error in red, leaving you on the new branch without
   your stash. Now it asks first, Stash & Retry or Cancel, as Apply and Pop do,
-  and a name a branch already has is said before anything runs.
+  naming the branch it is in the way of, and a name a branch already has is
+  said before anything runs.
 - **The Stashes view: Cancel on a Drop no longer freezes every row for six
   seconds.** Only the row you pressed waits — its right-click menu too — and
   only until its action is over.
 - **The Stashes view keeps your place.** Every file save redrew all the rows
   and threw keyboard focus out of the list; now only rows that changed are
-  touched. Up, Down, Home and End move between stashes, and Delete asks to drop
-  one. A click previews a stash without taking the keyboard, and a
-  double-click opens its menu without opening the stash twice.
+  touched, and a stash popped or dropped from its buttons or its menu hands
+  the keyboard to the next one. Up, Down, Home and End move between stashes,
+  and Delete (on a Mac, the delete key or Cmd+Delete) asks to drop one. A
+  click previews a stash without taking the keyboard, and a double-click
+  opens its menu without opening the stash twice.
 - Apply and Pop in the Stashes view use the stash-apply and stash-pop icons,
   and the empty view says "Stash", not "Shelve".
 

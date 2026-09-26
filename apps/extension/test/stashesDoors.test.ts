@@ -211,7 +211,10 @@ test("a click previews the stash and leaves the keyboard in the list; Enter move
   const gone = await withRepo(dir, (repos) => stashesView.showStash(repos, sha));
   assert.equal(gone, false);
   assert.equal(opened.length, 2, "nothing more opened");
-  assert.match(vscode.__said.map((s) => `${s.kind}: ${s.message}`).join("\n"), /^info: GitStudio: That stash is no longer in the list/m);
+  // Only looked at: "so nothing was changed" answers a question nobody asked.
+  const said = vscode.__said.map((s) => `${s.kind}: ${s.message}`).join("\n");
+  assert.match(said, /^info: GitStudio: That stash is no longer in the list\.$/m);
+  assert.doesNotMatch(said, /nothing was changed/);
 });
 
 // ── One row per file ────────────────────────────────────────────────────────
@@ -359,6 +362,57 @@ test("Create Branch: Stash & Retry makes the branch from the stash, and the edit
     git("stash", "list", "--format=%H %s").split("\n").some((l) =>
       l.includes("GitStudio: before") && git("show", `${l.split(" ")[0]}:other.ts`).includes("// mine"));
   assert.ok(mine, "the edit that was in the way survives");
+});
+
+test("Create Branch: the question says what the changes are in the way of — the branch, not applying the stash", async () => {
+  reset();
+  const { dir, git, write } = fixture();
+  write("app.ts", "stashed\n");
+  git("stash", "push", "-q", "-m", "picked");
+  const [picked] = shas(git);
+  write("other.ts", "other, committed on\n");
+  git("commit", "-q", "-am", "HEAD moves on");
+  write("other.ts", "mine\n"); // in the way of the switch; the stash never touches it
+  answer = (spec) => (spec.kind === "input" ? { value: "from-picked" } : spec.kind === "pick" ? { value: "cancel" } : undefined);
+  await withRepo(dir, (repos) => stashesView.branchFromStash(repos, picked, () => {}));
+  const hint = String(asked.find((s) => s.kind === "pick")?.hint ?? "");
+  assert.match(hint, /^Your uncommitted changes to other\.ts are in the way of creating the branch “from-picked” from the stash/, hint);
+  assert.doesNotMatch(hint, /applying the stash/, hint);
+});
+
+// `git stash branch` always applies with --index: for a stash that holds
+// staged changes, git resets the index before it merges and refuses over ANY
+// staged change — after the switch. The user was left on the new branch, their
+// staged change unstaged, the stash unapplied, and git's error in red.
+test("Create Branch from a stash with staged changes, over staged work of yours anywhere: asked first, and Stash & Retry makes it", async () => {
+  reset();
+  const { dir, git, write, read } = fixture();
+  write("util.ts", "export const a = 2;\n");
+  git("add", "util.ts");
+  write("util.ts", "export const a = 3;\n");
+  git("stash", "push", "-q", "-m", "staged and not");
+  const [picked] = shas(git);
+  write("other.ts", "mine, staged\n");
+  git("add", "other.ts");
+
+  answer = (spec) => (spec.kind === "input" ? { value: "from-picked" } : spec.kind === "pick" ? { value: "cancel" } : undefined);
+  await withRepo(dir, (repos) => stashesView.branchFromStash(repos, picked, () => {}));
+  assert.ok(asked.some((s) => s.kind === "pick"), asked.map((s) => s.title).join(" | "));
+  assert.equal(git("symbolic-ref", "--short", "HEAD").trim(), "main", "Cancel: not left on a new branch");
+  assert.equal(git("branch", "--list", "from-picked"), "");
+  assert.equal(status(git), "M  other.ts", "still staged");
+  assert.deepEqual(shas(git), [picked]);
+  assert.doesNotMatch(vscode.__said.map((s) => `${s.kind}: ${s.message}`).join("\n"), /^error:/m);
+
+  reset();
+  answer = (spec) => (spec.kind === "input" ? { value: "from-picked" } : spec.kind === "pick" ? { value: "stash" } : undefined);
+  await withRepo(dir, (repos) => stashesView.branchFromStash(repos, picked, () => {}));
+  assert.equal(git("symbolic-ref", "--short", "HEAD").trim(), "from-picked");
+  assert.equal(git("show", ":util.ts"), "export const a = 2;\n", "the stash's staged version, staged");
+  assert.equal(read("util.ts"), "export const a = 3;\n");
+  assert.equal(git("show", ":other.ts"), "mine, staged\n", "yours, back and staged");
+  assert.deepEqual(shas(git), []);
+  assert.doesNotMatch(vscode.__said.map((s) => `${s.kind}: ${s.message}`).join("\n"), /^error:/m);
 });
 
 test("Create Branch with a name a branch already has is said as that, and nothing runs", async () => {

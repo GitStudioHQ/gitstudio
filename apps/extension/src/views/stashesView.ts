@@ -106,7 +106,9 @@ export async function showStash(
   if (!a || !stash) {
     return true;
   }
-  const entry = await pinStash(a, stash);
+  // Only looked at: nothing was going to change, so "so nothing was
+  // changed" would answer a question nobody asked.
+  const entry = await pinStash(a, stash, STASH_GONE_SHOWN);
   if (!entry) {
     return false;
   }
@@ -117,19 +119,26 @@ export async function showStash(
   return true;
 }
 
+/** A stash clicked to look at has left the list. */
+const STASH_GONE_SHOWN = "That stash is no longer in the list.";
+
 /**
  * The stash the user acted on, as the list holds it NOW — found by its sha,
  * because `stash@{n}` is a position that every push, pop and drop renumbers.
  * A `stash@{n}` handed in is pinned to the sha it names at this moment.
- * Undefined (and said) when it has left the list.
+ * Undefined (and said, as `gone`) when it has left the list.
  */
-async function pinStash(a: RepoEntry, stash: string): Promise<StashEntry | undefined> {
+async function pinStash(
+  a: RepoEntry,
+  stash: string,
+  gone: string = STASH_GONE_MESSAGE,
+): Promise<StashEntry | undefined> {
   const list = isStashName(stash) ? await a.ctx.stashes.list() : [];
   const entry = isStashSha(stash)
     ? list.find((e) => e.sha === stash)
     : list.find((e) => e.ref === stash);
   if (!entry) {
-    void vscode.window.showInformationMessage(`GitStudio: ${STASH_GONE_MESSAGE}`);
+    void vscode.window.showInformationMessage(`GitStudio: ${gone}`);
   }
   return entry;
 }

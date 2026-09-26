@@ -170,6 +170,13 @@ for (const theme of ["dark", "light"] as ThemeName[]) {
       expect(lastPost().type === "drop", "Drop posted");
       expect(b.classList.contains("busy") && btn(b, "apply").disabled, "the pressed row is busy");
       expect(!a.classList.contains("busy") && !btn(a, "apply").disabled, "the other rows are not");
+      // What the user SEES, not the class name: a rule renamed or shadowed
+      // would leave the class on a row that looks like every other.
+      const look = (row) => getComputedStyle(row);
+      expect(Number(look(b).opacity) < 1 && look(b).cursor === "progress",
+        "the busy row is dimmed, with the progress cursor: " + look(b).opacity + " " + look(b).cursor);
+      expect(Number(look(a).opacity) === 1 && look(a).cursor !== "progress",
+        "the others are not: " + look(a).opacity + " " + look(a).cursor);
       let n = window.posted.length;
       btn(a, "apply").click();
       expect(since(n).length === 1 && since(n)[0].sha === "${SHA("a")}", "another row still acts");
@@ -230,6 +237,70 @@ for (const theme of ["dark", "light"] as ThemeName[]) {
       n = window.posted.length;
       key("Delete");
       expect(since(n).length === 1 && since(n)[0].type === "drop" && since(n)[0].sha === "${SHA("b")}", "Delete asks to drop it");
+      post({ type: "done", sha: "${SHA("b")}" });
+      // macOS: the delete key sends Backspace, and VS Code's lists delete with
+      // Cmd+Backspace. Both ask to drop it (the question still comes first).
+      for (const opts of [{}, { metaKey: true }]) {
+        b.focus();
+        n = window.posted.length;
+        key("Backspace", opts);
+        expect(since(n).length === 1 && since(n)[0].type === "drop" && since(n)[0].sha === "${SHA("b")}",
+          "Backspace " + JSON.stringify(opts) + " asks to drop it: " + JSON.stringify(since(n)));
+        post({ type: "done", sha: "${SHA("b")}" });
+      }
+      n = window.posted.length;
+      key("Backspace", { altKey: true });
+      expect(since(n).length === 0, "Alt+Backspace is not a delete");
+    `));
+    assert.deepEqual(r.fails, []);
+  });
+
+  // A press on a row's button focuses that button (a mouse press in Chrome,
+  // or Tab and Enter), and the busy latch disables it: the keyboard fell to
+  // <body> at once, and when the Pop removed the row there was no row with
+  // the keyboard to hand it on from. The menu's item is removed as it is
+  // chosen, with the same result.
+  test(`${theme}: Pop by the row's button or its menu leaves the keyboard on the next row`, { skip }, async () => {
+    const r = await runChangesView(CHROME!, stashesPage(theme, `${HELPERS}
+      const withoutB = ${stashes([item("a", 0, "On main: tracked edit"), item("c", 1, "WIP on main: 3f97dc4 initial")])};
+      const where = () => document.activeElement === document.body ? "BODY" : (document.activeElement.className + " " + (document.activeElement.dataset.sha || "").slice(0, 1));
+
+      // The button.
+      post(${stashes(LIST)});
+      await tick();
+      let [a, b, c] = rowsNow();
+      btn(b, "pop").focus();
+      btn(b, "pop").click();
+      expect(lastPost().type === "pop", "Pop posted");
+      expect(document.activeElement === b, "while it runs, the keyboard waits on its row: " + where());
+      post(withoutB);
+      post({ type: "done", sha: "${SHA("b")}" });
+      await tick();
+      expect(document.activeElement === c, "the row gone, the keyboard is on the next row: " + where());
+
+      // The menu, from the keyboard (Shift+F10, then Pop).
+      post(${stashes(LIST)});
+      await tick();
+      [a, b, c] = rowsNow();
+      b.focus();
+      key("F10", { shiftKey: true });
+      const pop = Array.from(document.querySelectorAll(".gs-menu-item")).find((x) => /Pop/.test(x.textContent));
+      const menuEl = document.querySelector(".gs-menu");
+      expect(!!pop && !!menuEl && menuEl.contains(document.activeElement), "the menu has the keyboard");
+      if (pop) { pop.focus(); pop.click(); }
+      expect(!document.querySelector(".gs-menu"), "the menu closed");
+      expect(document.activeElement === b, "the keyboard is back on the row: " + where());
+      post(withoutB);
+      post({ type: "done", sha: "${SHA("b")}" });
+      await tick();
+      expect(document.activeElement === c, "the row gone, the keyboard is on the next row: " + where());
+
+      // Apply leaves the row where it is: the keyboard stays on it.
+      c.querySelector(".row-actions button").focus();
+      btn(c, "apply").click();
+      post({ type: "done", sha: "${SHA("c")}" });
+      await tick();
+      expect(document.activeElement === c, "after an Apply the keyboard is on its row: " + where());
     `));
     assert.deepEqual(r.fails, []);
   });
