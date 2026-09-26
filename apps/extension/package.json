@@ -278,6 +278,12 @@
         "icon": "$(history)"
       },
       {
+        "command": "gitstudio.switchRepository",
+        "title": "Switch Repository\u2026",
+        "category": "GitStudio",
+        "icon": "$(repo)"
+      },
+      {
         "command": "gitstudio.resolveInMergeEditor",
         "title": "Resolve in Merge Editor",
         "category": "GitStudio",
@@ -502,6 +508,12 @@
         "title": "Set Upstream\u2026",
         "category": "GitStudio",
         "icon": "$(cloud)"
+      },
+      {
+        "command": "gitstudio.branch.resetToUpstream",
+        "title": "Reset Branch to Its Upstream\u2026",
+        "category": "GitStudio",
+        "icon": "$(discard)"
       },
       {
         "command": "gitstudio.branch.new",
@@ -1640,6 +1652,10 @@
           "when": "gitstudio.hasRepo"
         },
         {
+          "command": "gitstudio.switchRepository",
+          "when": "gitstudio.multiRepo"
+        },
+        {
           "command": "gitstudio.resolveInMergeEditor",
           "when": "gitstudio.hasRepo && resourceScheme == file"
         },
@@ -1802,6 +1818,10 @@
         {
           "command": "gitstudio.branch.setUpstream",
           "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.branch.resetToUpstream",
+          "when": "false"
         },
         {
           "command": "gitstudio.branch.createWorktree",

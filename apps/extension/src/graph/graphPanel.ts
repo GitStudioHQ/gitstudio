@@ -29,11 +29,11 @@ import {
   sameRefFilter,
   withRef,
 } from "@gitstudio/host-bridge/graphRefFilter";
-import type { RepoManager, RepoEntry } from "../git/repoManager";
+import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
 import { getRefFilterStore } from "./refFilterStore";
-import { commitMenuItems, refActionId, refMenuItems, runCommitAction } from "./commitActions";
+import { commitMenuItems, commitMenuItemsFor, refActionId, refMenuItems, runCommitAction } from "./commitActions";
 import type { MenuRef } from "./checkoutTarget";
 import { rowStatsReply } from "./rowStatsReply";
 import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
@@ -273,10 +273,10 @@ export class CommitGraphPanel {
         void this.pushCommitDetails(msg.sha);
         break;
       case "contextMenu":
-        this.openCommitMenu(msg.sha, msg.x, msg.y);
+        void this.openCommitMenu(msg.sha, msg.x, msg.y);
         break;
       case "action":
-        this.openCommitMenu(msg.sha, -1, -1);
+        void this.openCommitMenu(msg.sha, -1, -1);
         break;
       case "commitMenuAction":
         void this.runCommitMenuAction(msg.sha, msg.id);
@@ -915,7 +915,16 @@ export class CommitGraphPanel {
 
   /** Open the commit actions as an IN-GRAPH popover at (x, y) — no native
    *  quick-pick. x < 0 means "position near the selected row" (keyboard menu). */
-  private openCommitMenu(sha: string, x: number, y: number): void {
+  private async openCommitMenu(sha: string, x: number, y: number): Promise<void> {
+    // Asking git whether the commit can be dropped (issue #32) takes a
+    // moment; a second right-click in that moment wins, rather than the first
+    // menu landing late on top of it.
+    const seq = ++this.menuSeq;
+    const active = this.repos.getActive();
+    const items = active ? await commitMenuItemsFor(active.ctx, sha) : commitMenuItems();
+    if (seq !== this.menuSeq) {
+      return;
+    }
     const record = this.records.get(sha);
     this.post({
       type: "commitMenu",
@@ -924,9 +933,12 @@ export class CommitGraphPanel {
       y,
       title: `${sha.slice(0, 7)} · ${record?.subject ?? ""}`.trim(),
       // Refs on this row first ("Checkout main"), then the commit-scoped actions.
-      items: [...refMenuItems(this.refsToWire(sha)), ...commitMenuItems()],
+      items: [...refMenuItems(this.refsToWire(sha)), ...items],
     });
   }
+
+  /** Bumped per menu request; see openCommitMenu. */
+  private menuSeq = 0;
 
   /** Run the action the user picked in the in-graph commit popover. */
   private async runCommitMenuAction(sha: string, id: string): Promise<void> {
@@ -944,8 +956,8 @@ export class CommitGraphPanel {
     // Route destructive ops through the Undo envelope when it's available.
     const ledger = this.repos.getUndoLedger();
     const undo = ledger
-      ? <T>(label: string, fn: () => Promise<T>) =>
-          ledger.runWithUndo(active, label, fn)
+      ? <T>(label: string, fn: () => Promise<T>, opts?: UndoOptions) =>
+          ledger.runWithUndo(active, label, fn, opts)
       : undefined;
     const changed = await runCommitAction(
       id,
@@ -1291,8 +1303,8 @@ export class CommitGraphPanel {
     const record = this.records.get(sha);
     const ledger = this.repos.getUndoLedger();
     const undo = ledger
-      ? <T>(label: string, fn: () => Promise<T>) =>
-          ledger.runWithUndo(active, label, fn)
+      ? <T>(label: string, fn: () => Promise<T>, opts?: UndoOptions) =>
+          ledger.runWithUndo(active, label, fn, opts)
       : undefined;
     const changed = await runCommitAction(
       mapped,

@@ -10,7 +10,8 @@ import { registerLayer } from "./overlays";
 
 interface MenuItem {
   label: string;
-  action: CommitActionRequest["action"];
+  /** A commit:action verb — or "drop", which is its own flow (see DROP_ITEM). */
+  action: CommitActionRequest["action"] | "drop";
   /** For checkout-ref: the ref this item checks out, its kind, and its full
    *  name when the row knew it (see RowRef.fullName). */
   ref?: { name: string; kind: "head" | "remote" | "tag"; fullName?: string };
@@ -34,6 +35,28 @@ export const ITEMS: MenuItem[] = [
   { label: "Reset (hard)", action: "reset-hard", confirm: "DISCARD all changes and reset HEAD here? This cannot be undone.", danger: true },
   { label: "Copy SHA", action: "copy-sha" },
 ];
+
+/**
+ * "Drop commit…" (issue #32) — offered only where it can work, so it is not in
+ * ITEMS: the menu asks `commit:dropPlan` before it opens and adds this after
+ * Revert when the answer is yes. Its question and its run are a flow of their
+ * own (renderer/dropCommit.ts), not a commit:action verb.
+ */
+const DROP_ITEM: MenuItem = { label: "Drop commit…", action: "drop", danger: true };
+
+/**
+ * The rows for one commit: "Checkout <ref>" for the refs on it, then the
+ * commit actions — with "Drop commit…" beside Revert and the resets when the
+ * commit can be dropped from the current branch.
+ */
+export function commitMenuRows(refs: readonly RowRef[], opts: { drop?: boolean } = {}): MenuItem[] {
+  const rows: MenuItem[] = refMenuItems(refs).map(refRow);
+  for (const item of ITEMS) {
+    rows.push(item);
+    if (item.action === "revert" && opts.drop) rows.push(DROP_ITEM);
+  }
+  return rows;
+}
 
 /**
  * The question a commit action has to ask before it runs — the name it needs,
@@ -94,6 +117,8 @@ export class CommitContextMenu {
   constructor(
     /** Dispatches a fully-resolved action request to the host. */
     public readonly resolve: (req: CommitActionRequest) => void,
+    /** Runs "Drop commit…" for this sha — its own flow, not a commit:action. */
+    private readonly drop?: (sha: string) => void,
   ) {}
 
   /**
@@ -102,12 +127,15 @@ export class CommitContextMenu {
    * since 1.5.0, and without it right-clicking a branch tip offered only a
    * detaching checkout of the commit, which is never what you want when the
    * branch itself is right there.
+   *
+   * `drop` adds "Drop commit…" — the caller asked `commit:dropPlan` first.
    */
   open(
     sha: string,
     x: number,
     y: number,
     refs: readonly RowRef[] = [],
+    opts: { drop?: boolean } = {},
   ): void {
     this.close();
     this.layer = registerLayer(() => this.close(false), "menu");
@@ -124,10 +152,10 @@ export class CommitContextMenu {
     menu.appendChild(header);
 
     this.rows = [];
-    const refRows: MenuItem[] = refMenuItems(refs).map(refRow);
-    for (const item of [...refRows, ...ITEMS]) {
+    for (const item of commitMenuRows(refs, opts)) {
       const button = document.createElement("button");
       button.className = `ctx-menu-item${item.danger ? " ctx-danger" : ""}`;
+      button.dataset.action = item.action;
       button.textContent = item.label;
       button.setAttribute("role", "menuitem");
       button.tabIndex = -1;
@@ -213,6 +241,10 @@ export class CommitContextMenu {
   }
 
   private async dispatch(item: MenuItem, sha: string): Promise<void> {
+    if (item.action === "drop") {
+      this.drop?.(sha);
+      return;
+    }
     let name: string | undefined;
     // Only awaited when the table says there is something to ask. An
     // unconditional await defers even a question-less item by a microtask, so

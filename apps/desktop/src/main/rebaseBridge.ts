@@ -1,13 +1,20 @@
 import { runRebasePlan, isRebaseInProgress } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
+import { dropBlocker, dropCommit, planDropCommit, undoDrop } from "@gitstudio/git-service/dropCommit";
 import type { RepoStore } from "./repoStore";
 import type {
+  CommitActionResult,
+  DropOutcomeWire,
+  DropPlanRequest,
+  DropPlanWire,
+  DropRequest,
   RebaseApplyRequest,
   RebaseApplyRow,
   RebaseCommitInfo,
   RebaseOutcomeWire,
   RebasePlanState,
+  UndoDropRequest,
 } from "../shared/ipc";
 
 /**
@@ -549,6 +556,78 @@ export class RebaseBridge {
     }
   }
 
+  // ── Drop Commit (issue #32) ──────────────────────────────────────────────
+  //
+  // The graph menu's "Drop commit…": the drag-to-reorder pipeline with one row
+  // set to `drop`, planned and run by git-service's dropCommit.ts — the module
+  // the extension's menu uses — through this app's runner options. The
+  // renderer confirms in between and registers the undo.
+
+  /** Can `sha` be dropped, and what would it mean? `preflight` adds what stops
+   *  it right now. Every refusal is the user's state, never a defect. */
+  async dropPlan(req: DropPlanRequest): Promise<DropPlanWire> {
+    const ctx = this.repos.getContext();
+    if (!ctx) {
+      return { ok: false, expected: true, reason: "no-repo", message: "Open a repository first." };
+    }
+    const plan = await planDropCommit(ctx.process, String(req?.sha ?? ""));
+    if (!plan.ok) {
+      return { ok: false, expected: true, reason: plan.reason, message: plan.message };
+    }
+    const blocked = req.preflight ? await dropBlocker(ctx.process) : undefined;
+    return {
+      ok: true,
+      sha: plan.sha,
+      shortSha: plan.shortSha,
+      subject: plan.subject,
+      head: plan.head,
+      branch: plan.branch,
+      replayed: plan.replayed,
+      published: plan.published,
+      carryable: plan.carryable,
+      ...(blocked ? { blocked } : {}),
+    };
+  }
+
+  /** Run a confirmed drop. A stop (a later commit conflicting) is not a
+   *  failure: the rebase stays open for the Changes view's Continue/Skip/Abort. */
+  async drop(req: DropRequest): Promise<DropOutcomeWire> {
+    const root = this.root();
+    const ctx = this.repos.getContext();
+    if (!root || !ctx) {
+      return { status: "failed", ok: false, expected: true, message: "Open a repository first." };
+    }
+    try {
+      const out = await dropCommit(
+        ctx.process,
+        { sha: String(req?.sha ?? ""), head: String(req?.head ?? ""), carry: req?.carry === true },
+        (plan) => runRebasePlan(root, plan, this.repos.runnerOptions()),
+      );
+      const tips = {
+        ...(out.before ? { before: out.before } : {}),
+        ...(out.after ? { after: out.after } : {}),
+      };
+      return { ...onTheWire(out), ...tips };
+    } catch (err) {
+      return { status: "failed", ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Put the branch back where a drop found it — only while HEAD is still
+   *  where the drop left it (git-service's undoDrop says why otherwise). */
+  async undoDrop(req: UndoDropRequest): Promise<CommitActionResult> {
+    const ctx = this.repos.getContext();
+    if (!ctx) {
+      return { ok: false, changed: false, expected: true, message: "Open a repository first." };
+    }
+    const r = await undoDrop(ctx.process, { before: String(req?.before ?? ""), after: String(req?.after ?? "") });
+    if (r.ok) {
+      return { ok: true, changed: true };
+    }
+    return r.expected
+      ? { ok: false, changed: false, expected: true, message: r.message }
+      : { ok: false, changed: false, message: r.message };
+  }
 }
 
 /** Compact humanized age, matching the graph's relative times. */

@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { ErrorReporter } from "./reporting/errorReporter";
 import { ProcessAudit } from "./debug/processAudit";
 import { RepoManager } from "./git/repoManager";
+import { switchRepository } from "./git/repoPicker";
 import { BlameController } from "./blame/blameController";
 import {
   CommitsTreeProvider,
@@ -178,7 +179,9 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
   // RepoManager.create activates vscode.git; do it off the activation path so a
   // slow git extension never blocks startup. The views attach as soon as it
   // resolves and render empty (or the no-repo welcome) until repos arrive.
-  void RepoManager.create().then((repos) => {
+  // workspaceState: where the repository picked with Switch Repository… is
+  // remembered, per workspace, across reloads (issue #32).
+  void RepoManager.create(context.workspaceState).then((repos) => {
     try {
     context.subscriptions.push(repos);
     // NOTE: git activation now runs in the BACKGROUND (RepoManager.create no
@@ -314,6 +317,11 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       vscode.commands.registerCommand("gitstudio.showReflog", () => {
         void showReflog(repos);
       }),
+      // Which repository GitStudio shows, when the workspace holds several
+      // (issue #32). The Changes view header opens the same picker.
+      vscode.commands.registerCommand("gitstudio.switchRepository", () =>
+        switchRepository(repos),
+      ),
     );
 
     // File history in the native Timeline relies on the `timeline` PROPOSED API,
@@ -584,7 +592,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
             "reset",
             active.ctx,
             { sha, subject },
-            (label, fn) => undo.runWithUndo(active, label, fn),
+            (label, fn, opts) => undo.runWithUndo(active, label, fn, opts),
           );
           if (changed) {
             commitsProvider.refresh();
@@ -734,6 +742,10 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       vscode.commands.registerCommand(
         "gitstudio.branch.setUpstream",
         (arg) => branchActions.setUpstream(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.resetToUpstream",
+        (arg) => branchActions.resetBranchToUpstream(repos, arg, refreshBranches),
       ),
       vscode.commands.registerCommand(
         "gitstudio.branch.new",

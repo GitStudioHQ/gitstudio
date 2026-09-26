@@ -517,6 +517,9 @@ function actionLabel(channel: string): string {
     "conflict:model": "Open conflict",
     "blame:file": "Blame file",
     "commit:action": "Commit action",
+    "commit:dropPlan": "Check drop",
+    "commit:drop": "Drop commit",
+    "commit:undoDrop": "Undo drop",
     stage: "Stage",
     unstage: "Unstage",
     discard: "Discard",
@@ -541,6 +544,9 @@ function actionLabel(channel: string): string {
     "branch:create": "Create branch",
     "branch:delete": "Delete branch",
     "branch:pullFf": "Pull branch",
+    "branch:resetPlan": "Check a reset to upstream",
+    "branch:resetToUpstream": "Reset branch to upstream",
+    "branch:resetUndo": "Undo reset to upstream",
     "tag:create": "Create tag",
     "tag:delete": "Delete tag",
     "tag:push": "Push tag",
@@ -799,6 +805,10 @@ function registerIpc(): void {
   // registered below (the mid-operation controls) and drive the same git state.
   handle("rebase:load", (req) => rebase.load(req ?? {}));
   handle("rebase:apply", (req) => rebase.apply(req));
+  // Drop Commit from the graph's menu (issue #32): the same runner again.
+  handle("commit:dropPlan", (req) => rebase.dropPlan(req));
+  handle("commit:drop", (req) => rebase.drop(req));
+  handle("commit:undoDrop", (req) => rebase.undoDrop(req));
 
   // Working-tree staging + commit (Changes view).
   handle("stage", (path) => bridge.stage(path));
@@ -847,6 +857,9 @@ function registerIpc(): void {
   handle("branch:delete", (req) => bridge.branchDelete(req));
   handle("branches:people", () => bridge.branchesPeople());
   handle("branch:pullFf", (req) => bridge.branchPullFf(req.fullName));
+  handle("branch:resetPlan", (req) => bridge.branchResetPlan(req));
+  handle("branch:resetToUpstream", (req) => bridge.branchResetToUpstream(req));
+  handle("branch:resetUndo", (req) => bridge.branchResetUndo(req));
 
   // Compare (base…head).
   handle("compare:refs", (req) => bridge.compareRefs(req));

@@ -187,8 +187,9 @@ export function statusOf(root: string): Promise<LocalRepoStatus | undefined> {
   });
 }
 
-/** How many roots one localStatus request will probe — the Home card shows 8;
- *  anything asking for more is a bug wearing a loop. */
+/** How many roots one localStatus request will probe — the Home card shows 8,
+ *  the Repositories screen asks in batches of this many; anything asking for
+ *  more is a bug wearing a loop. */
 export const STATUS_ROOTS_CAP = 16;
 
 /**
@@ -196,25 +197,31 @@ export const STATUS_ROOTS_CAP = 16;
  * watcher's refreshAll() busts that cache on every save, which turned "at
  * most one probe per 10s" into eight git subprocesses per keystroke-save
  * while Home was open. Main's clock is the one the busts can't reach.
+ *
+ * Kept PER REPOSITORY. It was one entry keyed by the exact list asked for,
+ * which was right while Home was the only asker; the Repositories screen asks
+ * in batches (and a filter changes what each batch holds), so every batch
+ * evicted the one before it and a repaint re-probed every repository on the
+ * screen. Entries older than the TTL are dropped on each call, so it holds at
+ * most what the screens asked about in the last ten seconds.
  */
 const STATUS_TTL_MS = 10_000;
-let statusCache: { at: number; key: string; value: Record<string, LocalRepoStatus | undefined> } | undefined;
+const statusCache = new Map<string, { at: number; value: LocalRepoStatus | undefined }>();
 
 export async function localStatuses(
   roots: string[],
   now: () => number = () => Date.now(),
 ): Promise<Record<string, LocalRepoStatus | undefined>> {
   const take = roots.slice(0, STATUS_ROOTS_CAP);
-  const key = JSON.stringify(take);
-  if (statusCache && statusCache.key === key && now() - statusCache.at < STATUS_TTL_MS) {
-    return statusCache.value;
+  const t = now();
+  for (const [root, e] of statusCache) {
+    if (t - e.at >= STATUS_TTL_MS) statusCache.delete(root);
   }
-  const answers = await mapLimit(take, 4, statusOf);
+  const probe = take.filter((r) => !statusCache.has(r));
+  const answers = await mapLimit(probe, 4, statusOf);
+  probe.forEach((r, i) => statusCache.set(r, { at: t, value: answers[i] }));
   const out: Record<string, LocalRepoStatus | undefined> = {};
-  take.forEach((r, i) => {
-    out[r] = answers[i];
-  });
-  statusCache = { at: now(), key, value: out };
+  for (const r of take) out[r] = statusCache.get(r)?.value;
   return out;
 }
 

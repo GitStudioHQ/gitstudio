@@ -344,8 +344,32 @@ test("localStatuses answers from its own clock, immune to renderer busts", async
   writeFileSync(join(repo, "new.txt"), "x\n");
   t = 5_000;
   const cached = await localStatuses([repo], () => t);
-  assert.equal(cached, first, "within the TTL the SAME answer object returns — no probes ran");
+  assert.deepEqual(cached, first, "within the TTL the same answer returns…");
+  assert.equal(cached[repo]?.dirty, 0, "…and no probe ran: the new file is not seen yet");
   t = 20_000;
   const fresh = await localStatuses([repo], () => t);
   assert.equal(fresh[repo]?.dirty, 1, "past the TTL the new file is seen");
+});
+
+test("localStatuses keeps its answers per repository, so batches do not evict each other", async () => {
+  // The Repositories screen asks in batches of up to 16, and a filter changes
+  // what each batch holds. A cache keyed by the whole list re-probed every
+  // repository on every repaint; this one answers each root from its own entry.
+  const a = makeRepo(join(cloneDir, "batch-a"));
+  const b = makeRepo(join(cloneDir, "batch-b"));
+  const c = makeRepo(join(cloneDir, "batch-c"));
+  let t = 100_000;
+  await localStatuses([a, b], () => t);
+  writeFileSync(join(b, "later.txt"), "x\n");
+  writeFileSync(join(c, "later.txt"), "x\n");
+  t = 103_000;
+  const next = await localStatuses([b, c], () => t);
+  assert.equal(next[b]?.dirty, 0, "b was answered from the earlier batch — no second probe");
+  assert.equal(next[c]?.dirty, 1, "c had never been asked about, so it was probed");
+  t = 104_000;
+  const again = await localStatuses([a, b, c], () => t);
+  assert.equal(again[a]?.dirty, 0, "a's entry survived the batch that did not include it");
+  t = 120_000;
+  const later = await localStatuses([b], () => t);
+  assert.equal(later[b]?.dirty, 1, "and past the TTL b is probed again");
 });

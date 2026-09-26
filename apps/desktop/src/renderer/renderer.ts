@@ -89,6 +89,7 @@ import {
   isBenignError,
   brandMark,
   openMenu,
+  closeMenu,
   wireResizerKeys,
   middleTruncate,
   markSegment,
@@ -101,7 +102,9 @@ import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
+import { dropCommitFlow } from "./dropCommit";
 import { askPullMode, pullWithChoice, pullVerdict, type PullOutcome, type PullVerdict } from "./pullFlow";
+import { resetItemLabel, resetToUpstream } from "./resetToUpstream";
 import { installInTheWayAsker } from "./inTheWayAsk";
 import { refCheckoutRequest, refDisplay, type RowRef } from "./refMenuItems";
 import { branchName, remoteRefParts, tagName, upstreamLabel, upstreamParts } from "./branchRequests";
@@ -190,7 +193,12 @@ function sameTargetContent(a: SectionTarget | undefined, b: SectionTarget | unde
 class App {
   private graph?: GraphMount;
   private diffPanel?: DiffPanel;
-  private contextMenu = new CommitContextMenu((req) => this.runAction(req));
+  private contextMenu = new CommitContextMenu(
+    (req) => this.runAction(req),
+    (sha) => void this.dropCommit(sha),
+  );
+  /** Bumped per right-click; see openCommitMenu. */
+  private commitMenuSeq = 0;
 
   private detailsEl?: HTMLElement;
   /** The commit-details column beside the graph (commits view). */
@@ -3876,13 +3884,28 @@ class App {
         },
       });
     }
+    // The two that take something away sit together at the bottom, in red.
+    const tail: MenuItem[] = [];
+    // "Throw everything local away and make it 1:1 with origin" (#32) — only
+    // for a branch that tracks a remote branch that still exists; the words
+    // are the VS Code extension's, so both products say the same thing.
+    if (upParts && !b.gone) {
+      const upName = `${upParts.remote}/${upParts.branch}`;
+      tail.push({
+        label: resetItemLabel(upName),
+        icon: "discard",
+        danger: true,
+        title: `Drop what is only on ${bn} and make it match ${upName} — you'll see what goes first`,
+        keepOpen: true,
+        onClick: (itemEl) => void this.resetToUpstreamFlow(b, itemEl, anchor),
+      });
+    }
     // Deleting the LOCAL branch belongs here too. The row behind this menu
     // offered it as a plain "Delete" button while the menu — reached from the
     // branch's own peek, where you have just read its history and decided — did
     // not, so the peek was a dead end for the one decision it prepares you for.
     if (!b.current) {
-      items.push({ separator: true });
-      items.push({
+      tail.push({
         label: `Delete ${bn}`,
         icon: "trash",
         danger: true,
@@ -3890,7 +3913,101 @@ class App {
         onClick: () => void this.deleteBranch(b),
       });
     }
+    if (tail.length) items.push({ separator: true }, ...tail);
     openMenu(anchor, items);
+  }
+
+  /**
+   * Reset a local branch to its upstream (#32): fetch it, say what goes, and
+   * only then move it — `git reset --hard` for the branch you are on, `git
+   * branch -f` for any other (main/branchReset.ts). The menu item spins while
+   * the fetch runs, the way Fetch's does; the question outlives the watcher
+   * refresh that fetch sets off, but not a switch to another repository.
+   */
+  private async resetToUpstreamFlow(b: BranchInfo, itemEl?: HTMLElement, anchor?: HTMLElement): Promise<void> {
+    const root = this.currentRepo?.root;
+    if (!root) return;
+    // One press, one reset: a second click on the spinning item is dropped.
+    if (itemEl?.classList.contains("is-busy-item")) return;
+    const g = itemEl?.querySelector(".glyph");
+    itemEl?.classList.add("is-busy-item");
+    g?.classList.add("spin");
+    const bn = branchName(b);
+    const stillHere = this.whileThisRepo();
+    const refresh = async (): Promise<void> => {
+      bust();
+      await this.updateSync();
+      if (b.current) await this.refreshAll();
+      await this.refreshBranchesSoft();
+    };
+    const out = await resetToUpstream({
+      plan: () => host.invoke("branch:resetPlan", { fullName: b.fullName }),
+      stillHere,
+      // Asked AFTER the fetch, which moved a ref: `holdWhile` keeps the question
+      // up through the watcher's refresh (memory: refresh-closing-dialogs).
+      ask: (q) => {
+        closeMenu();
+        // The keyboard goes back to the menu's trigger when the question is
+        // answered, as it does for every other item — the dialog returns focus
+        // to whatever had it when it opened.
+        if (anchor?.isConnected) anchor.focus();
+        return confirmDialog({ ...q, holdWhile: stillHere });
+      },
+      reset: (p) =>
+        host.invoke("branch:resetToUpstream", { root, fullName: b.fullName, from: p.from!, to: p.to! }),
+    }).finally(() => {
+      itemEl?.classList.remove("is-busy-item");
+      g?.classList.remove("spin");
+      closeMenu();
+    });
+    switch (out.kind) {
+      case "refused":
+      case "failed":
+        toast(cleanErr(out.message) || out.message, out.tone);
+        return;
+      case "nothing":
+        toast(out.message, "info");
+        // The fetch may still have moved the remote-tracking ref.
+        bust();
+        await this.refreshBranchesSoft();
+        return;
+      case "cancelled":
+        bust();
+        await this.refreshBranchesSoft();
+        return;
+      case "reset":
+        break;
+    }
+    await refresh();
+    const { plan, result } = out;
+    if (!result.was || !plan.to) {
+      toast(out.message, "success");
+      return;
+    }
+    const was = result.was;
+    const now = plan.to;
+    didUndoable(out.message, {
+      label: `Put ${bn} back`,
+      undo: async () => {
+        const back = await host.invoke("branch:resetUndo", {
+          root,
+          fullName: b.fullName,
+          was,
+          now,
+          snapshot: result.snapshot,
+          current: !!result.current,
+        });
+        if (!back.ok) {
+          // Half of it may have happened (the branch is back, the changes
+          // could not be re-applied) — then the screen still has to show it.
+          if (back.changed) await refresh();
+          const why = back.message ?? `Couldn't put ${bn} back.`;
+          return back.expected ? { info: why } : why;
+        }
+        return undefined;
+      },
+      after: refresh,
+    });
   }
 
   /** Fetch triggered from an open branch menu: spins the menu item in place
@@ -8351,7 +8468,7 @@ class App {
     const graph = new GraphMount(graphHost, {
       onSelect: (sha) => void this.selectCommit(sha),
       onOpen: (sha) => void this.selectCommit(sha),
-      onContext: (sha, x, y) => this.contextMenu.open(sha, x, y, this.refsOn(sha)),
+      onContext: (sha, x, y) => void this.openCommitMenu(sha, x, y),
       // Ref labels are LINKS now: click a branch/tag chip in the graph and land
       // on that ref in Branches, scrolled + flashed.
       // `kind` too. The chip knows whether it is a branch, a remote or a tag,
@@ -10291,6 +10408,41 @@ class App {
   }
 
   // ── Commit actions (context menu) ────────────────────────────────────────────
+
+  /**
+   * Open the graph's commit menu. "Drop commit…" is offered only where it can
+   * work (issue #32), which only main can say — so it is asked first. A second
+   * right-click while the first is being answered wins: the late answer never
+   * opens a menu over the newer one.
+   */
+  private async openCommitMenu(sha: string, x: number, y: number): Promise<void> {
+    const seq = ++this.commitMenuSeq;
+    const plan = await host.invoke("commit:dropPlan", { sha }).catch(() => undefined);
+    if (seq !== this.commitMenuSeq) return;
+    this.contextMenu.open(sha, x, y, this.refsOn(sha), { drop: plan?.ok === true });
+  }
+
+  /** "Drop commit…" — see renderer/dropCommit.ts for the flow. */
+  private async dropCommit(sha: string): Promise<void> {
+    try {
+      await dropCommitFlow(sha, {
+        plan: (req) => host.invoke("commit:dropPlan", req),
+        drop: (req) => host.invoke("commit:drop", req),
+        undo: (req) => host.invoke("commit:undoDrop", req),
+        confirm: (opts) => confirmDialog(opts),
+        choose: (opts) => promptChoice(opts),
+        toast: (message, kind) => toast(message, kind),
+        undoable: (message, action) => didUndoable(message, action),
+        refresh: async () => {
+          bust();
+          await this.refreshAll();
+        },
+        landOnConflicts: () => this.landOnConflicts(),
+      });
+    } catch (e) {
+      toast(cleanErr(e) || "Couldn't drop the commit.", "error");
+    }
+  }
 
   private async runAction(req: Parameters<CommitContextMenu["resolve"]>[0]): Promise<void> {
     if (req.action === "copy-sha") {
