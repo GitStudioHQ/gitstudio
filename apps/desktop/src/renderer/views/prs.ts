@@ -127,9 +127,10 @@ interface PrsTabState {
   diffPanel?: DiffPanel;
   /** Cancels that diff's detach watch. */
   stopDiffWatch?: () => void;
-  /** The reply box on screen, so Quote reply has somewhere to land. */
-  liveComposer?: { get(): string; set(v: string): void; focus(): void };
 }
+
+/** A reply box, as Quote reply needs it. */
+type ReplyBox = { get(): string; set(v: string): void; focus(): void };
 const prsTab = perTab<PrsTabState>(() => ({
   activeSubTab: "conversation",
   query: "",
@@ -1241,6 +1242,8 @@ async function renderSubTab(
     .then((st) => st.login)
     .catch(() => undefined);
   if (id === "conversation") {
+    // The reply box below — where THIS page's Quote reply lands.
+    const reply: { box?: ReplyBox } = {};
     let conv: PrComment[] = [];
     let convFailed: unknown;
     try {
@@ -1261,7 +1264,7 @@ async function renderSubTab(
           association: full.authorAssociation,
           reactions: full.reactions,
           createdAt: full.createdAt,
-          onQuote: (t) => quoteIntoPr(S, t, full.user?.login),
+          onQuote: (t) => quoteIntoPr(reply.box, t, full.user?.login),
           // A pull request IS an issue to the reactions endpoint, so its body
           // reacts by PR number.
           onReact: (content, on) => togglePrReaction("issue", full.number, content, on),
@@ -1293,7 +1296,7 @@ async function renderSubTab(
             c.kind === "comment" && c.id
               ? { id: c.id, htmlUrl: c.htmlUrl, mine: c.author === viewerLogin, reload }
               : undefined,
-          onQuote: (t) => quoteIntoPr(S, t, c.author),
+          onQuote: (t) => quoteIntoPr(reply.box, t, c.author),
           onReact:
             c.kind === "comment" && c.id
               ? (content, on) => togglePrReaction("comment", c.id!, content, on)
@@ -1326,7 +1329,7 @@ async function renderSubTab(
       },
     });
     const ta = ed.textarea;
-    S.liveComposer = ed;
+    reply.box = ed;
     const crow = el("div", "gh-composer-actions");
     const send = el("button", "btn btn-primary") as HTMLButtonElement;
     send.append(glyph("comment"), span("Comment"));
@@ -1945,10 +1948,9 @@ function commentCard(
   return card;
 }
 
-/** Quote into the reply box on screen — this tab's, the one the quote was
- *  clicked in. */
-function quoteIntoPr(S: PrsTabState, body: string, author?: string | null): void {
-  const livePrComposer = S.liveComposer;
+/** Quote into the reply box on the SAME page as the comment, handed in by it —
+ *  never "the one on screen", a global another tab's page had set (#32). */
+function quoteIntoPr(livePrComposer: ReplyBox | undefined, body: string, author?: string | null): void {
   if (!livePrComposer) return;
   const quoted = body
     .trim()

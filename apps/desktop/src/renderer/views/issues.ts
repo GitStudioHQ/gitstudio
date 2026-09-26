@@ -123,14 +123,10 @@ interface IssuesTabState {
    */
   serverHits: IssueInfo[] | null;
   serverNote: string;
-  /**
-   * The reply box currently on screen, so "Quote reply" has somewhere to put
-   * what it quoted. Set when the detail page builds its composer and cleared
-   * when it goes — a stale one would drop a quote into a box nobody can see.
-   * Per tab: one tab's Quote reply used to land in another tab's detached box.
-   */
-  liveComposer?: { get(): string; set(v: string): void; focus(): void };
 }
+
+/** A reply box, as Quote reply needs it. */
+type ReplyBox = { get(): string; set(v: string): void; focus(): void };
 const issuesTab = perTab<IssuesTabState>(() => ({
   issueState: "open",
   issueSort: "updated",
@@ -141,9 +137,12 @@ const issuesTab = perTab<IssuesTabState>(() => ({
 }));
 
 /** Drop a comment into the reply box as a markdown quote, the way GitHub does:
- *  the body prefixed with "> ", the author credited, and the cursor after it. */
-function quoteInto(S: IssuesTabState, body: string, author?: string | null): void {
-  const liveComposer = S.liveComposer;
+ *  the body prefixed with "> ", the author credited, and the cursor after it.
+ *
+ *  The box is the one on the SAME page as the comment, handed in by it. It was
+ *  "the reply box on screen", a module global the last detail page built set —
+ *  another tab's, or the Inbox's, whose box nobody could see (issue #32). */
+function quoteInto(liveComposer: ReplyBox | undefined, body: string, author?: string | null): void {
   if (!liveComposer) return;
   const quoted = body
     .trim()
@@ -1044,8 +1043,8 @@ interface DetailCtx {
 
 function buildDetail(ctx: DetailCtx): void {
   const { main, rail, d, nav, reload } = ctx;
-  // This tab's: the reply box below is where THIS page's Quote reply lands.
-  const S = issuesTab();
+  // The reply box below — where THIS page's Quote reply lands.
+  const reply: { box?: ReplyBox } = {};
   const it = d.issue;
   main.replaceChildren();
   rail?.replaceChildren();
@@ -1428,7 +1427,7 @@ function buildDetail(ctx: DetailCtx): void {
     commentCard(it.user?.login ?? "author", "opened this issue", it.body ?? "", it.createdAt, {
       association: it.authorAssociation,
       reactions: it.reactions,
-      onQuote: (text) => quoteInto(S, text, it.user?.login),
+      onQuote: (text) => quoteInto(reply.box, text, it.user?.login),
       onIssueReact: (content, on) => toggleReaction("issue", it.number, content, on),
     }),
   );
@@ -1456,7 +1455,7 @@ function buildDetail(ctx: DetailCtx): void {
         association: c.authorAssociation,
         reactions: c.reactions,
         comment: { id: c.id, htmlUrl: c.htmlUrl, mine: c.author?.login === ctx.viewer, reload },
-        onQuote: (text) => quoteInto(S, text, c.author?.login),
+        onQuote: (text) => quoteInto(reply.box, text, c.author?.login),
       }),
     );
   }
@@ -1487,7 +1486,7 @@ function buildDetail(ctx: DetailCtx): void {
   const ta = ed.textarea;
   // Quote reply writes here. Cleared by the next detail render, which replaces
   // this composer with its own.
-  S.liveComposer = ed;
+  reply.box = ed;
   const crow = el("div", "gh-composer-actions");
   const send = el("button", "btn btn-primary") as HTMLButtonElement;
   send.append(glyph("comment"), span("Comment"));

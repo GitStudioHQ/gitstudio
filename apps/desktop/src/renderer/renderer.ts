@@ -11106,11 +11106,13 @@ class TabShell {
         this.putAway(app);
         this.showGone(front);
       } else if (cameBack && app && this.goneScreenEl) {
-        // The folder in front came back: its own screen returns — and re-reads
-        // the disk, since whatever it last showed was read before it went.
+        // The folder in front came back: its own screen returns — and, if it
+        // had one, re-reads the disk, since what it last showed was read
+        // before the folder went. (One never built reads it as it builds.)
+        const built = !!app.screenEl;
         this.putAway(app);
         this.bringIn(app);
-        app.onFilesChanged(true);
+        if (built) app.onFilesChanged(true);
       }
     } catch {
       /* the marks are a courtesy: a failed read leaves the last known */
