@@ -31,6 +31,14 @@ export interface RebaseInitMessage {
   /** A human summary parsed from the comment block, if present. */
   headerComment: string | null;
   rows: WireRebaseRow[];
+  /**
+   * git has already applied part of this rebase: the todo is a paused
+   * rebase's `git rebase --edit-todo`, not the plan of one about to start.
+   * The last commit git applied sits above the first line, kept, so git lets
+   * that line be a squash or fixup (sequencer.c: `fixup_okay =
+   * file_exists(rebase_path_done())`). Absent for the first edit.
+   */
+  continuing?: boolean;
 }
 
 export type RebaseHostMessage = RebaseInitMessage;

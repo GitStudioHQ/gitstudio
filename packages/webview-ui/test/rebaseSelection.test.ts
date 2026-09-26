@@ -40,8 +40,16 @@ const PRELUDE = `
   };
 `;
 
+/** What the host's init says beyond the rows: see RebaseInitMessage. */
+interface Init {
+  /** A paused rebase's --edit-todo: git is past the first line. */
+  continuing?: boolean;
+  /** The todo's actions, first line first (the rest are pick). */
+  actions?: string[];
+}
+
 /** Mount through main.ts, send a twelve-line todo, and name the vocabulary. */
-const MOUNT = (bodyClass: string, lines = 12): string => `
+const MOUNT = (bodyClass: string, lines = 12, init: Init = {}): string => `
   document.body.className = ${JSON.stringify(bodyClass)};
   const tick = () => new Promise((r) => setTimeout(r, 30));
   const subjects = ["docs: the staging model", "engine: hunk splitting groundwork", "engine: split a hunk on a selection boundary",
@@ -49,8 +57,9 @@ const MOUNT = (bodyClass: string, lines = 12): string => `
     "staging: keep the selection across a refresh", "fixup! staging: keep the selection across a refresh",
     "fixup! staging: keep the selection across a refresh", "fixup! staging: keep the selection across a refresh"];
   while (subjects.length < ${lines}) subjects.unshift("older: commit " + subjects.length);
-  const initRows = subjects.map((s, i) => ({ id: i * 2, action: "pick", sha: (i + 1).toString(16).padStart(4, "0").repeat(10), shortSha: (i + 1).toString(16).padStart(7, "0"), subject: s }));
-  window.dispatchEvent(new MessageEvent("message", { data: { type: "rebaseInit", headerComment: null, rows: initRows } }));
+  const startActions = ${JSON.stringify(init.actions ?? [])};
+  const initRows = subjects.map((s, i) => ({ id: i * 2, action: startActions[i] || "pick", sha: (i + 1).toString(16).padStart(4, "0").repeat(10), shortSha: (i + 1).toString(16).padStart(7, "0"), subject: s }));
+  window.dispatchEvent(new MessageEvent("message", { data: { type: "rebaseInit", headerComment: null, rows: initRows${init.continuing ? ", continuing: true" : ""} } }));
   await tick();
   const el = document.querySelector("gitstudio-rebase");
   await el.updateComplete;
@@ -248,6 +257,40 @@ const SQUASH = `
   expect(msg && msg.rows.map((r) => r.id / 2).join(",") === order(), "in the order they are shown");
 `;
 
+const EDIT_TODO = `
+  // A paused rebase's --edit-todo (edit c2 / squash c3 / pick c4, stopped at
+  // c2): git has applied c2 and keeps it above the first line, so the
+  // leading squash folds into it — git runs this plan, and so must the editor.
+  const note = () => ($(".note") || {}).textContent.trim();
+  const start = () => $$("footer button").find((b) => /start rebase/i.test(b.textContent));
+  expect(actions().split(",")[0] === "squash", "the todo starts with a squash (" + actions() + ")");
+  expect(start().disabled === false, "Start rebase is open: git runs this plan (" + start().title + ")");
+  expect(start().title === "", "and nothing says it can't (" + start().title + ")");
+  expect(rows()[0].querySelector("select.action").getAttribute("aria-invalid") === "false", "the first line is not marked as the problem");
+  expect(!rows()[0].classList.contains("orphan"), "nor painted as one");
+  rows()[0].focus();
+  await key("p");
+  expect(actions().split(",")[0] === "pick", "P picks it (" + actions() + ")");
+  await key("s");
+  expect(actions().split(",")[0] === "squash", "and S sets the squash back (" + actions() + ")");
+  expect(note() === "", "with nothing refused (" + note() + ")");
+  const sel = rows()[0].querySelector("select.action");
+  sel.value = "fixup";
+  sel.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+  await settle();
+  expect(actions().split(",")[0] === "fixup", "its own dropdown can fold it too (" + actions() + ")");
+  rows()[0].focus();
+  await key("a", MOD);
+  await key("f");
+  expect(actions().split(",").every((a) => a === "fixup"), "every line can fold into what git already applied (" + actions() + ")");
+  expect(start().disabled === false, "and Start stays open");
+  window.__posted.length = 0;
+  start().click();
+  await settle();
+  const msg = window.__posted.find((m) => m.type === "start");
+  expect(!!msg && msg.rows.map((r) => r.action).join(",") === actions(), "Start posts the plan as shown");
+`;
+
 const MOVING = `
   const head = () => order().split(",").slice(0, 4).join(",");
   await click(1);
@@ -324,6 +367,16 @@ const LONG = `
   expect(last.top >= box.top - 1 && last.bottom <= box.bottom + 1, "End brings the last line into the list's view");
   expect(onScreen(), "and nothing else moved off screen");
 `;
+
+test("a paused rebase's --edit-todo: a leading squash folds into the commit git already applied", { skip: CHROME ? false : "no headless Chrome on this machine" }, async () => {
+  const v = await runInChrome(CHROME!, MAIN, MOUNT(BODY_CLASS.dark, 12, { continuing: true, actions: ["squash"] }) + EDIT_TODO, {
+    width: 1000,
+    height: 800,
+    prelude: PRELUDE,
+    css: themeCss("dark"),
+  });
+  assert.deepEqual(v.fails, []);
+});
 
 test("a long todo scrolls inside the list; the header and Start rebase stay on screen", { skip: CHROME ? false : "no headless Chrome on this machine" }, async () => {
   const v = await runInChrome(CHROME!, MAIN, MOUNT(BODY_CLASS.dark, 40) + LONG, {

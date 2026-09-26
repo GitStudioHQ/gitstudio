@@ -47,6 +47,7 @@ function handle(view: RebaseView, message: RebaseHostMessage): void {
   switch (message?.type) {
     case "rebaseInit":
       view.headerComment = message.headerComment;
+      view.continuing = message.continuing === true;
       view.rows = message.rows;
       break;
   }

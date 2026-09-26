@@ -70,7 +70,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 ### Fixed
 - **The editor for a `git rebase -i` run in a terminal listed no commits.**
   It opened saying "No commits to rebase." over a todo full of them. It shows
-  the plan now, and a long one scrolls with **Start rebase** kept on screen.
+  the plan now, each line with the action the todo gives it, and a long one
+  scrolls with **Start rebase** kept on screen. It also opens for `git rebase
+  --edit-todo` on a paused rebase, where git has already applied a commit
+  above the first line: a first line that squashes into it is a plan git
+  runs, and the editor lets you start it. (#32)
 - **Interactive Rebase: a dragged commit lands where the line says.** A drag
   could put the commit one row away from the line drawn for it — dragging up
   in the workspace, dragging down in the terminal rebase's editor. The line is

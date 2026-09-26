@@ -17,7 +17,9 @@
 // a drag move the selection. The rules are the shared engine's
 // (engine/rebase/planEdit) — the same ones the extension's workspace and the
 // desktop's Rebase view run — in git's own order: oldest at the top, so a
-// squash folds into the row ABOVE it and the first row can never be one.
+// squash folds into the row ABOVE it and the first row can never be one —
+// unless git is already past it: in a paused rebase's `--edit-todo` the last
+// commit git applied is kept above the first line (`continuing`).
 
 import { LitElement, html, css } from "lit";
 import { codiconStyles } from "../styles/codicons";
@@ -74,6 +76,7 @@ export class RebaseView extends LitElement {
   static properties = {
     headerComment: { attribute: false },
     rows: { attribute: false },
+    continuing: { attribute: false },
     onIntent: { attribute: false },
     dragIndex: { state: true },
     overIndex: { state: true },
@@ -90,6 +93,9 @@ export class RebaseView extends LitElement {
   // rebase." over a todo full of them.
   declare headerComment: string | null;
   declare rows: Row[];
+  /** git has applied part of this rebase already (a paused rebase's
+   *  `--edit-todo`): a kept commit sits above the first line. */
+  declare continuing: boolean;
   declare onIntent: ((intent: RebaseIntent) => void) | null;
 
   private declare dragIndex: number | null;
@@ -108,6 +114,7 @@ export class RebaseView extends LitElement {
     super();
     this.headerComment = null;
     this.rows = [];
+    this.continuing = false;
     this.onIntent = null;
     this.dragIndex = null;
     this.overIndex = null;
@@ -122,6 +129,19 @@ export class RebaseView extends LitElement {
 
   private order(): string[] {
     return this.rows.map(RebaseView.key);
+  }
+
+  /**
+   * The rows' actions as the fold rules must see them. In a paused rebase's
+   * `--edit-todo`, the last commit git applied sits above the first line,
+   * kept, and git runs a leading squash into it — so the rules are asked
+   * about the plan with that commit in front (the desktop's Rebase view does
+   * the same for the commits below its display cap). `lead` is how many rows
+   * that put in front: row i of the list is row i + lead of the plan.
+   */
+  private plan(): { actions: WireRebaseAction[]; lead: number } {
+    const actions = this.rows.map((r) => r.action);
+    return this.continuing ? { actions: ["pick", ...actions], lead: 1 } : { actions, lead: 0 };
   }
 
   protected willUpdate(changed: Map<string, unknown>): void {
@@ -597,9 +617,10 @@ export class RebaseView extends LitElement {
     const selectedCount = selectedRows.length;
     // The action every selected row shares, if they share one.
     const shared = new Set(selectedRows.map((r) => r.action)).size === 1 ? selectedRows[0]?.action : undefined;
-    const actions = this.rows.map((r) => r.action);
     // A plan git refuses outright: a squash or fixup with nothing kept above it.
-    const orphan = actions.some((_, i) => isOrphanFold(actions, i, "oldest-first"));
+    const plan = this.plan();
+    const orphans = this.rows.map((_, i) => isOrphanFold(plan.actions, i + plan.lead, "oldest-first"));
+    const orphan = orphans.includes(true);
     return html`
       <header>
         <p class="eyebrow">Interactive Rebase</p>
@@ -655,7 +676,7 @@ export class RebaseView extends LitElement {
       >
         ${total === 0
           ? html`<div class="empty">No commits to rebase.</div>`
-          : this.rows.map((row, index) => this.renderRow(row, index))}
+          : this.rows.map((row, index) => this.renderRow(row, index, orphans[index]))}
       </div>
 
       <footer>
@@ -681,17 +702,12 @@ export class RebaseView extends LitElement {
     `;
   }
 
-  private renderRow(row: Row, index: number) {
+  private renderRow(row: Row, index: number, orphan: boolean) {
     const key = RebaseView.key(row);
     const dragging = this.dragging.includes(key);
     const over = this.overIndex === index && !dragging;
     const selected = this.selection.selected.includes(key);
     const tabStop = (this.selection.focus ?? RebaseView.key(this.rows[0])) === key;
-    const orphan = isOrphanFold(
-      this.rows.map((r) => r.action),
-      index,
-      "oldest-first",
-    );
     // A row's move buttons carry what a drag of it would: the selection when
     // the row is in it, else the row.
     const carried = selected ? this.selection.selected : [key];
@@ -739,7 +755,12 @@ export class RebaseView extends LitElement {
           @keydown=${(e: KeyboardEvent) => e.stopPropagation()}
         >
           ${ACTIONS.map(
-            (a) => html`<option value=${a.value} title=${a.hint}>
+            // `selected` as well as the select's `.value`: Lit sets `.value`
+            // before these options exist, so on the first render it matched
+            // nothing and every dropdown showed pick — a todo opened with
+            // fixups (`--autosquash`, a paused rebase's `--edit-todo`) read
+            // as all picks while Start wrote the fixups.
+            (a) => html`<option value=${a.value} title=${a.hint} ?selected=${a.value === row.action}>
               ${a.label}
             </option>`,
           )}
@@ -786,9 +807,21 @@ export class RebaseView extends LitElement {
    */
   private applyActions(indices: number[], action: WireRebaseAction): void {
     const before = this.rows.map((r) => r.action);
-    const r = setActions(before, indices, action, "oldest-first");
-    this.rows = this.rows.map((row, i) => (r.actions[i] === row.action ? row : { ...row, action: r.actions[i] }));
-    this.say(refusalText(action, r, "oldest-first", r.refused.length === 1 ? before[r.refused[0]] : undefined));
+    const { actions: plan, lead } = this.plan();
+    const r = setActions(plan, indices.map((i) => i + lead), action, "oldest-first");
+    // Back to the list's own rows: the commit git already applied is not one.
+    const toRows = (xs: number[]): number[] => xs.map((i) => i - lead).filter((i) => i >= 0);
+    const next = r.actions.slice(lead);
+    const refused = toRows(r.refused);
+    this.rows = this.rows.map((row, i) => (next[i] === row.action ? row : { ...row, action: next[i] }));
+    this.say(
+      refusalText(
+        action,
+        { changed: toRows(r.changed), refused },
+        "oldest-first",
+        refused.length === 1 ? before[refused[0]] : undefined,
+      ),
+    );
   }
 
   private setAction(index: number, action: WireRebaseAction): void {
