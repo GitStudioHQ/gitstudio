@@ -106,6 +106,13 @@ export class RepoManager implements vscode.Disposable {
   private readonly pickStore: PickMemento | undefined;
   /** Resolves when eager discovery has finished (one rev-parse per folder). */
   private eagerDone: Promise<void> = Promise.resolve();
+  /**
+   * False until discovery has settled: our own rev-parse per folder AND
+   * vscode.git's first scan (it finds repositories below the folders, which a
+   * rev-parse does not). Until then "no active repository" means "not found
+   * YET", and a view must not say there is none.
+   */
+  private discovered = false;
   private disposed = false;
 
   private readonly disposables: vscode.Disposable[] = [];
@@ -143,6 +150,7 @@ export class RepoManager implements vscode.Disposable {
     manager.eagerDone = manager.eagerDiscover().catch(() => undefined);
     void manager.init().catch(() => {
       // git unavailable — the views simply stay in their no-repo state.
+      void manager.eagerDone.then(() => manager.markDiscovered());
     });
     return manager;
   }
@@ -251,15 +259,36 @@ export class RepoManager implements vscode.Disposable {
     if (!api || api.state === "initialized") {
       await this.eagerDone;
       this.settlePick();
+      this.markDiscovered();
     } else {
       const settled = api.onDidChangeState((state) => {
         if (state === "initialized") {
           settled.dispose();
-          void this.eagerDone.then(() => this.settlePick());
+          void this.eagerDone.then(() => {
+            this.settlePick();
+            this.markDiscovered();
+          });
         }
       });
       this.disposables.push(settled);
     }
+  }
+
+  /**
+   * True while repositories may still be found: the first discovery has not
+   * settled. A view with no active repository shows "looking", not "none".
+   */
+  isDiscovering(): boolean {
+    return !this.discovered;
+  }
+
+  /** Discovery settled: a view still waiting to say "no repository" may now. */
+  private markDiscovered(): void {
+    if (this.discovered || this.disposed) {
+      return;
+    }
+    this.discovered = true;
+    this.changeEmitter.fire();
   }
 
   /**

@@ -118,6 +118,12 @@ export interface GraphInitMessage {
   totalColumns: number;
   /** True while more pages remain to be loaded on demand. */
   hasMore: boolean;
+  /**
+   * No repository is open: the rows are empty because there is nothing to
+   * read, not because the history is. The graph says so, instead of "No
+   * commits yet".
+   */
+  noRepo?: boolean;
   /** The filter these rows were built under, RESOLVED to full names (see
    *  GraphRefFilter) — what the picker ticks. */
   refFilter: GraphRefFilter;

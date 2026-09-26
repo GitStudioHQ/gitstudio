@@ -85,7 +85,7 @@ function start(root: HTMLElement): void {
         rail.totalColumns = message.totalColumns;
         rail.hasMore = message.hasMore;
         applyGraphInitRefs(rail, message);
-        rail.status = message.rows.length === 0 ? "empty" : "ready";
+        rail.status = message.noRepo ? "no-repo" : message.rows.length === 0 ? "empty" : "ready";
         break;
       case "graphAppend":
         rail.rows = rail.rows.concat(message.rows);

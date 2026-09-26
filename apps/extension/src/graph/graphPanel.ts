@@ -389,7 +389,8 @@ export class CommitGraphPanel {
       this.walk = { refs: null, head: true };
       this.nextSkip = 0;
       this.hasMore = false;
-      this.postInit({ rows: [], head: "", totalColumns: 1, hasMore: false, refFilter: null }, []);
+      // Not "No commits yet": there is no repository to have any.
+      this.postInit({ rows: [], head: "", totalColumns: 1, hasMore: false, noRepo: true, refFilter: null }, []);
       return;
     }
 

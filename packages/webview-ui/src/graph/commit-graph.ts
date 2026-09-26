@@ -1684,7 +1684,8 @@ export class CommitGraph extends LitElement {
   /** Whether more pages remain to be loaded on scroll. */
   declare hasMore: boolean;
   /** Lifecycle phase for the placeholder states. */
-  declare status: "loading" | "ready" | "empty" | "error";
+  /** "no-repo": no repository is open (GraphInitMessage.noRepo) — not an empty history. */
+  declare status: "loading" | "ready" | "empty" | "error" | "no-repo";
   /** Message for the error placeholder — a git failure, NOT an empty repo
       (an empty/fresh repo stays in the "empty" state with its own guidance). */
   declare errorMessage: string;
@@ -4233,6 +4234,13 @@ export class CommitGraph extends LitElement {
           <button class="ph-retry" @click=${() => this.onAction({ type: "refresh" })}>
             <span class="codicon codicon-refresh"></span> Retry
           </button>
+        </div>${nothing}`;
+    }
+    if (this.status === "no-repo") {
+      return html`${header}<div class="placeholder">
+          <span class="ph-icon codicon codicon-source-control"></span>
+          <div class="ph-title">No repository open</div>
+          <div class="ph-detail">Open a folder that's under Git and its history will appear here.</div>
         </div>${nothing}`;
     }
     if (this.status === "empty") {

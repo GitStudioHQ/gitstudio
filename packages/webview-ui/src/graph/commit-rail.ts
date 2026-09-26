@@ -902,7 +902,8 @@ export class CommitRail extends LitElement {
   declare head: string;
   declare totalColumns: number;
   declare hasMore: boolean;
-  declare status: "loading" | "ready" | "empty" | "error";
+  /** "no-repo": no repository is open (GraphInitMessage.noRepo) — not an empty history. */
+  declare status: "loading" | "ready" | "empty" | "error" | "no-repo";
   declare errorMessage: string;
   /** The branch filter the rows were built under (issue #30); null = all. */
   declare refFilter: GraphRefFilter;
@@ -1843,9 +1844,11 @@ export class CommitRail extends LitElement {
         ? this.skeletonTpl()
         : this.status === "empty"
           ? this.emptyTpl()
-          : this.status === "error"
-            ? this.errorTpl()
-            : this.listTpl()}
+          : this.status === "no-repo"
+            ? this.noRepoTpl()
+            : this.status === "error"
+              ? this.errorTpl()
+              : this.listTpl()}
       ${this.scopeOpen ? this.scopePopTpl() : nothing}
       ${this.branchesOpen ? this.branchesPopTpl() : nothing}
       ${this.commitMenu ? this.menuPopTpl(this.commitMenu) : nothing}
@@ -2283,6 +2286,16 @@ export class CommitRail extends LitElement {
             </span>
           </div>
         `)}
+      </div>
+    `;
+  }
+
+  private noRepoTpl() {
+    return html`
+      <div class="state">
+        <span class="codicon codicon-source-control"></span>
+        <span class="t">No repository open</span>
+        <span class="s">Open a folder that's under Git and its history will appear here.</span>
       </div>
     `;
   }

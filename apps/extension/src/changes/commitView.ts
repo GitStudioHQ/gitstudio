@@ -105,6 +105,11 @@ interface StatePayload {
   type: "state";
   /** Whether a repository is open — drives the no-repo onboarding state. */
   hasRepo: boolean;
+  /**
+   * No repository yet, and discovery has not settled (RepoManager
+   * .isDiscovering): the page says it is looking, not that there is none.
+   */
+  discovering?: boolean;
   merge: FileEntry[];
   staged: FileEntry[];
   unstaged: FileEntry[];
@@ -2537,6 +2542,7 @@ export class CommitViewProvider
     const base: StatePayload = {
       type: "state",
       hasRepo,
+      discovering: !active && this.repos.isDiscovering(),
       merge,
       staged,
       unstaged,
@@ -3964,6 +3970,19 @@ export class CommitViewProvider
     body.no-repo .groups,
     body.no-repo #empty-state { display: none !important; }
     body.no-repo #no-repo { display: flex; }
+    /* Before the first state arrives, and while repositories are still being
+       discovered: a neutral "reading" state, never "Working tree clean" or
+       "No repository open" said before anything was read. */
+    #loading-state .badge {
+      color: var(--gs-fg-muted);
+      background: color-mix(in srgb, var(--gs-fg-muted) 12%, transparent);
+    }
+    body.no-repo #loading-state { display: none !important; }
+    body.discovering .repo-bar,
+    body.discovering .composer,
+    body.discovering .changes-toolbar,
+    body.discovering .groups,
+    body.discovering #empty-state { display: none !important; }
 
     @media (prefers-reduced-motion: reduce) {
       textarea, .author-row input, .sparkle, button.gs-commit, .link .chev,
@@ -4385,6 +4404,13 @@ export class CommitViewProvider
     <span class="es">No changes to commit.</span>
   </div>
 
+  <div class="empty-state visible" id="loading-state" role="status">
+    <span class="badge">
+      <i class="codicon codicon-loading codicon-modifier-spin" aria-hidden="true"></i>
+    </span>
+    <span class="et" id="loading-text">Reading changes…</span>
+  </div>
+
   <div class="no-repo" id="no-repo">
     <span class="badge">
       <i class="codicon codicon-source-control" aria-hidden="true"></i>
@@ -4423,6 +4449,11 @@ export class CommitViewProvider
     const stashDropEl = $("stash-drop");
     const stashDropLabel = $("stash-drop-label");
     const emptyEl = $("empty-state");
+    const loadingEl = $("loading-state");
+    const loadingText = $("loading-text");
+    // Nothing has been read until the host's first state: until then the
+    // list is not "clean", it is unknown (the reading state shows instead).
+    let stateSeen = false;
     const layoutToggle = $("layout-toggle");
     const modelToggle = $("model-toggle");
     const collapseAllBtn = $("collapse-all");
@@ -6872,8 +6903,10 @@ export class CommitViewProvider
       // The staging model belongs in the signature: it changes how these exact
       // files are ARRANGED, and without it a model switch made in Settings —
       // where the file list is identical — is skipped as "nothing changed" and
-      // the view keeps showing the other model.
-      let s = layout + "|" + stagingModel;
+      // the view keeps showing the other model. And whether anything has been
+      // read yet: a first state with no files must still paint "Working tree
+      // clean" over the reading state's empty list.
+      let s = (stateSeen ? "read" : "unread") + "|" + layout + "|" + stagingModel;
       for (const k of ["merge", "staged", "unstaged"]) {
         const list = lastState[k] || [];
         s += "|" + k + ":";
@@ -6923,7 +6956,7 @@ export class CommitViewProvider
       };
       const total =
         data.merge.length + data.staged.length + data.unstaged.length;
-      emptyEl.classList.toggle("visible", total === 0);
+      emptyEl.classList.toggle("visible", stateSeen && total === 0);
       changesTotal.textContent = String(total);
       changesTotal.classList.toggle("visible", total > 0);
 
@@ -7789,7 +7822,14 @@ export class CommitViewProvider
       }
       if (msg.type === "state") {
         setBusy(!!msg.busy);
-        document.body.classList.toggle("no-repo", !msg.hasRepo);
+        stateSeen = true;
+        // No repository YET (discovery still running) is not "none": keep
+        // the reading state up, and say what it is doing.
+        const discovering = !msg.hasRepo && !!msg.discovering;
+        document.body.classList.toggle("no-repo", !msg.hasRepo && !discovering);
+        document.body.classList.toggle("discovering", discovering);
+        loadingEl.classList.toggle("visible", discovering);
+        if (discovering) loadingText.textContent = "Looking for a repository…";
         renderHeader(msg);
         renderOpBanner(msg.hasRepo ? msg.operation : undefined);
         generateBtn.classList.toggle("visible", !!msg.aiEnabled);
