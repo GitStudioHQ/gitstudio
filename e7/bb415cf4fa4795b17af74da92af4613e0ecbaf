@@ -1,0 +1,35 @@
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_495e925da84352 790-796
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_801262a52b0e48 16794-16900
+apps/desktop/src/renderer/views/dashboard.ts
+  s_26f5e669d3043c::t_a352b41e68aef5 39,48-57,64-66,108,114-117,122,126
+apps/desktop/src/renderer/views/explore.ts
+  s_26f5e669d3043c::t_de6af1bfba4fe5 75,88-122,139,143,169-173,202,214,217-219,227,229,231,233,236,240,247,263,265,268-270,272,283-284,288,295,297-299,312-315,321-323,325-326,336,343,365-367,385,406-407,411,413,418-419,421,424,451,459,467-468
+apps/desktop/src/renderer/views/gists.ts
+  s_26f5e669d3043c::t_2481ae92ab612a 46,51-54,78,100,102,153,159
+apps/desktop/src/renderer/views/mywork.ts
+  s_26f5e669d3043c::t_cf601a5cf90abe 38,40-57,71,73,82,89,91,103,106,141,199,221,234,246
+apps/desktop/src/renderer/views/notifications.ts
+  s_26f5e669d3043c::t_ad24aedde60f02 47-60,70,106,109,134-135,180,225,272,277,311-312,765
+apps/desktop/src/renderer/views/projects.ts
+  s_26f5e669d3043c::t_d767fbdbe593b9 32,36-39,46,84,100,115,124,148,163
+apps/desktop/src/renderer/views/repositories.ts
+  s_26f5e669d3043c::t_7a5028531e4ce9 52,56-66,73,108,111,118,120,124-125,161,190-191,203-204,315,1093-1094
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e7bb415cf4fa4795b17af74da92af4613e0ecbaf",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
