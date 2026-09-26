@@ -395,7 +395,7 @@ test("Undo after a drop that carried a branch puts the branch back too — and r
     reset();
     await ledger.undoLast();
     const q = asked.find((x) => x.kind === "confirm");
-    assert.match(q?.text ?? "", /feature goes back too\./, "the question says the branch comes back with it");
+    assert.match(q?.text ?? "", /'feature' goes back to [0-9a-f]{7}\./, "the question says the branch comes back with it");
     assert.equal(r.git("rev-parse", "HEAD"), tip, "back on the original tip");
     assert.equal(r.git("rev-parse", "feature"), b, "and feature back on B");
 
@@ -416,11 +416,12 @@ test("Undo after a drop that carried a branch puts the branch back too — and r
 });
 
 test("the reorder's carry is undone with its branches too (graphPanel cannot load here: pinned at source)", () => {
+  // Reorder runs under the Undo envelope, whose scope records every local
+  // branch before the op and keeps the ones it moved — so the branches
+  // "Reorder and move those branches" carries go back with it, as a drop's
+  // do above. The behaviour is the Undo state table's E37 (undoStateTable).
   const src = readFileSync(join(__dirname, "../src/graph/graphPanel.ts"), "utf8");
-  assert.match(
-    src,
-    /ledger\.runWithUndo\(active, `Reorder \$\{order\.length\} commits`, run, carry \? \{ carried: branches\.map\(\(b\) => `refs\/heads\/\$\{b\}`\) \} : undefined\)/,
-  );
+  assert.match(src, /ledger\.runWithUndo\(active, `Reorder \$\{order\.length\} commits`, run\)/);
 });
 
 test("Undo restores the original tip after dropping a middle commit", async () => {

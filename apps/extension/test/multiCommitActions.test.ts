@@ -66,6 +66,8 @@ const dialogsStub = {
     asked.push({ kind: "input", title: spec.title, text: spec.hint ?? "", value: spec.value, multiline: spec.multiline, selectOnOpen: spec.selectOnOpen });
     return answer.input ? answer.input(spec.value ?? "") : undefined;
   },
+  // The Undo envelope counts the questions an op put (undoLedger.ts).
+  questionsAsked: () => asked.length,
 };
 
 type Resolve = (request: string, parent: unknown, ...rest: unknown[]) => string;
@@ -427,8 +429,10 @@ test("Squash N that carried branches: Undo puts them back too", async () => {
     assert.notEqual(r.git("rev-parse", "on-c"), c, "on-c followed the squash");
     reset();
     await ledger.undoLast();
-    // Named in the plan's order, newest first — as the carry question named them.
-    assert.match(asked.find((x) => x.kind === "confirm")?.text ?? "", /on-c and on-a go back too\./);
+    // Each branch that goes back is named, with where it goes.
+    const q = asked.find((x) => x.kind === "confirm")?.text ?? "";
+    assert.match(q, new RegExp(`'on-a' goes back to ${a.slice(0, 7)}\\.`));
+    assert.match(q, new RegExp(`'on-c' goes back to ${c.slice(0, 7)}\\.`));
     assert.equal(r.git("rev-parse", "HEAD"), c);
     assert.equal(r.git("rev-parse", "on-a"), a, "on-a is back");
     assert.equal(r.git("rev-parse", "on-c"), c, "on-c is back");

@@ -138,20 +138,22 @@ test("an op that carries other branches (a rewrite's update-ref) is undone with 
   const start = head();
   git(["branch", "-f", "carried", start]);
   try {
-    const snap = await ctx.snapshot.capture("Squash 2 commits", { carried: ["refs/heads/carried"] });
-    assert.deepEqual(snap.carried, [{ ref: "refs/heads/carried", sha: start }]);
+    // Nothing names the carried branch: the scope records every local branch
+    // before the op, and settle keeps the ones it moved.
+    const snap = await ctx.snapshot.capture("Squash 2 commits");
     // The op: main gets a new commit, and the branch it carried follows.
     commit("a.txt", "1\n2\ncarried\n", "c-carry: the op");
     git(["update-ref", "refs/heads/carried", head()]);
     await ctx.snapshot.settle(snap);
-    assert.equal(snap.carried?.[0].after, head(), "settle notes where the op left it");
+    const moved = snap.scope?.settled?.moved.find((m) => m.ref === "refs/heads/carried");
+    assert.deepEqual(moved && [moved.before, moved.after], [start, head()], "settle notes where the op left it");
     assert.equal(await ctx.snapshot.whyNotRestorable(snap), undefined);
     await ctx.snapshot.restore(snap);
     assert.equal(head(), start, "HEAD is back");
     assert.equal(git(["rev-parse", "carried"]).trim(), start, "and so is the branch it carried");
 
     // Again — and this time work lands on the carried branch after the op.
-    const again = await ctx.snapshot.capture("Squash 2 commits", { carried: ["refs/heads/carried"] });
+    const again = await ctx.snapshot.capture("Squash 2 commits");
     commit("a.txt", "1\n2\ncarried again\n", "c-carry: the op, again");
     git(["update-ref", "refs/heads/carried", head()]);
     await ctx.snapshot.settle(again);

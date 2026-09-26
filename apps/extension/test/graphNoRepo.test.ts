@@ -13,12 +13,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import Module from "node:module";
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
 
 type Resolver = { _resolveFilename: (request: unknown, ...rest: unknown[]) => string };
 const resolver = Module as unknown as Resolver;
 const resolve = resolver._resolveFilename;
 resolver._resolveFilename = function (request: unknown, ...rest: unknown[]) {
   return request === "vscode" ? join(__dirname, "vscodeStub.cjs") : resolve.call(this, request, ...rest);
+};
+// graphPanel.ts opens Compare These Two Commits, and comparePanel.ts imports
+// the shared tokens.css as text (esbuild's "text" loader does it in the build).
+const loaders = (Module as unknown as { _extensions: Record<string, (m: { exports: unknown }, f: string) => void> })._extensions;
+loaders[".css"] = (m, f) => {
+  m.exports = readFileSync(f, "utf8");
 };
 
 /* eslint-disable @typescript-eslint/no-require-imports -- loaded after the stand-in is in place */

@@ -392,7 +392,7 @@ test("undoDrop puts back the DROP's branch — a branch made at the new tip sinc
     const out = await dropCommit(r.ctx.process, { sha: plan.sha, head: plan.head, carry: true }, (p) => runRebasePlan(r.dir, p));
     assert.equal(out.status, "done");
     assert.equal(out.branch, "refs/heads/main");
-    assert.deepEqual(out.carried?.map((m) => [m.ref, m.before]), [["refs/heads/side", b]]);
+    assert.deepEqual(out.carried?.map((m) => [m.branch, m.before]), [["side", b]]);
     const dropped = r.git("rev-parse", "main");
     r.git("checkout", "-q", "-b", "topic");
 
