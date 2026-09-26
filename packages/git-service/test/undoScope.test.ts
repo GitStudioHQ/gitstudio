@@ -795,3 +795,47 @@ test("undo of a Stash & Retry pop whose put-back git refused: the work, the popp
     r.dispose();
   }
 });
+
+test("a mixed reset during a conflict with a new file staged: Undo still leaves every file alone", async () => {
+  // The reset leaves the staged new file untracked — same content, same
+  // place — so the working tree is still exactly what it was.
+  const r = repo();
+  try {
+    const { m } = mergeStops(r);
+    writeFileSync(join(r.dir, "f.txt"), "my hand resolution\n");
+    writeFileSync(join(r.dir, "g.txt"), "a staged new file\n");
+    r.git("add", "g.txt");
+    const snap = await around(r, "Reset to base (--mixed)", () => void r.git("reset", "-q", "--mixed", "HEAD~1"));
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.equal(plan.kind, "restore", JSON.stringify(plan));
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.git("rev-parse", "main"), m);
+    assert.equal(r.read("f.txt"), "my hand resolution\n");
+    assert.equal(r.read("g.txt"), "a staged new file\n");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("undo of a stopped rebase that git's own autostash set the work aside for: it comes back once, not twice", async () => {
+  const r = repo();
+  try {
+    const f = conflicting(r);
+    r.git("config", "rebase.autoStash", "true");
+    writeFileSync(join(r.dir, "g.txt"), "untracked is not the point\n");
+    writeFileSync(join(r.dir, "feat-only.txt"), "x\n");
+    r.git("add", "feat-only.txt");
+    r.git("commit", "-q", "-m", "feat-only");
+    const tip = r.git("rev-parse", "HEAD");
+    writeFileSync(join(r.dir, "feat-only.txt"), "my uncommitted edit\n");
+    const snap = await around(r, "Rebase onto main", () => rebaseStops(r));
+    assert.ok(existsSync(join(r.dir, ".git", "rebase-merge", "autostash")), "git holds the work in its autostash");
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.git("rev-parse", "HEAD"), tip);
+    assert.equal(r.read("feat-only.txt"), "my uncommitted edit\n");
+    assert.equal(r.git("status", "--porcelain", "--untracked-files=no"), "M feat-only.txt");
+    void f;
+  } finally {
+    r.dispose();
+  }
+});

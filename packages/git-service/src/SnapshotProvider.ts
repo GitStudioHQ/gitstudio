@@ -1041,19 +1041,23 @@ export class SnapshotProvider {
   }
 
   /**
-   * The working-tree files that differ from `commit`, by content digest —
-   * what a reset to `commit` that leaves the files alone would leave
-   * uncommitted.
+   * The working-tree files that differ from `commit`, and the untracked ones
+   * (ignored aside), by content digest — what a reset to `commit` that leaves
+   * the files alone would leave. Untracked count because such a reset turns a
+   * staged new file into an untracked one, same content, same place.
    */
   private async fileDigests(commit: string, opts?: GitRunOptions): Promise<Record<string, string> | undefined> {
-    const [top, changed] = await Promise.all([
+    const [top, changed, untracked] = await Promise.all([
       this.process.run(["rev-parse", "--show-toplevel"], opts),
       this.process.run(["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", commit, "--"], opts),
+      this.process.run(["ls-files", "--others", "--exclude-standard", "-z"], opts),
     ]);
-    if (changed.code !== 0) return undefined;
+    if (changed.code !== 0 || untracked.code !== 0) return undefined;
     const root = top.code === 0 ? top.stdout.trim() : this.process.cwd;
     const out: Record<string, string> = {};
-    for (const p of changed.stdout.split("\0").filter(Boolean)) out[p] = fileDigest(join(root, p));
+    for (const p of [...changed.stdout.split("\0"), ...untracked.stdout.split("\0")].filter(Boolean)) {
+      out[p] = fileDigest(join(root, p));
+    }
     return out;
   }
 
