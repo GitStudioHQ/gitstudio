@@ -113,6 +113,8 @@ export class RepoManager implements vscode.Disposable {
    * YET", and a view must not say there is none.
    */
   private discovered = false;
+  /** Bounds the wait for vscode.git's first scan (see create's discoveryLimitMs). */
+  private discoveryTimer: ReturnType<typeof setTimeout> | undefined;
   private disposed = false;
 
   private readonly disposables: vscode.Disposable[] = [];
@@ -141,8 +143,19 @@ export class RepoManager implements vscode.Disposable {
    * `pickStore` is the workspace's Memento (context.workspaceState): where the
    * repository picked with Switch Repository… is remembered across reloads.
    */
-  static async create(pickStore?: PickMemento): Promise<RepoManager> {
+  static async create(
+    pickStore?: PickMemento,
+    opts: {
+      /**
+       * How long "no repository" may mean "not found yet" while vscode.git
+       * has not finished its first scan. A vscode.git that never reports one
+       * must not leave the views saying "Looking for a repository…" for good.
+       */
+      discoveryLimitMs?: number;
+    } = {},
+  ): Promise<RepoManager> {
     const manager = new RepoManager(pickStore);
+    manager.discoveryTimer = setTimeout(() => manager.markDiscovered(), opts.discoveryLimitMs ?? 10_000);
     // Discover repos from the workspace folders via OUR OWN git (one fast
     // `git rev-parse` each) so views get a root + git-service ctx INSTANTLY,
     // without waiting for vscode.git to activate + scan (the gate that made
@@ -284,6 +297,10 @@ export class RepoManager implements vscode.Disposable {
 
   /** Discovery settled: a view still waiting to say "no repository" may now. */
   private markDiscovered(): void {
+    if (this.discoveryTimer !== undefined) {
+      clearTimeout(this.discoveryTimer);
+      this.discoveryTimer = undefined;
+    }
     if (this.discovered || this.disposed) {
       return;
     }
@@ -587,6 +604,10 @@ export class RepoManager implements vscode.Disposable {
 
   dispose(): void {
     this.disposed = true;
+    if (this.discoveryTimer !== undefined) {
+      clearTimeout(this.discoveryTimer);
+      this.discoveryTimer = undefined;
+    }
     if (this.refreshTimer !== undefined) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = undefined;

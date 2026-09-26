@@ -67,3 +67,17 @@ test("with vscode.git already settled, discovery settles as soon as our own look
   assert.equal(m.getActive(), undefined);
   assert.equal(m.isDiscovering(), false);
 });
+
+test("a vscode.git that never finishes its first scan does not keep 'not found yet' for good", async () => {
+  vs.reset({ state: "uninitialized" });
+  vs.setFolders([{ name: "plain", fsPath: plain }]);
+  const m = await RepoManager.create(undefined, { discoveryLimitMs: 300 });
+  live.push(m);
+  await settle(100);
+  assert.equal(m.isDiscovering(), true, "still within the limit");
+  let told = 0;
+  m.onDidChange(() => told++);
+  await settle(400);
+  assert.equal(m.isDiscovering(), false, "past the limit: there is none, as far as anyone can tell");
+  assert.ok(told >= 1, "and the views are told");
+});
