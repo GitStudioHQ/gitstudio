@@ -245,11 +245,17 @@ async function noCopyKind(proc: GitProcess, opts?: GitRunOptions): Promise<NoCop
 /** An undo that rewrites the tree after a question was open while the op ran. */
 const ASKED_LINE = "Anything you changed while its question was open is discarded too.";
 
+/** How long after a rebase's own finish a branch it carried may be moved (the post-rewrite hook runs between). */
+const CARRY_SLACK = 300;
+
 /** A file this big is fingerprinted by size and time rather than read. */
 const DIGEST_LIMIT = 16 * 1024 * 1024;
 
-/** How a branch move made by a rebase reads in its reflog (git doesn't translate these). */
-const REBASE_MOVE = /^rebase( -i)? \(|^rebase finished: |^rewritten during rebase$/;
+/** A rebase's own finish, in the reflog of the branch it rebased (git doesn't translate these). */
+const REBASE_FINISH = /^rebase(?: -i)? \(finish\): (.+) onto ([0-9a-f]+)$|^rebase finished: (.+) onto ([0-9a-f]+)$/;
+
+/** A branch a rebase carried with it (`--update-refs`). */
+const REBASE_CARRIED = "rewritten during rebase";
 
 /**
  * Captures, settles, plans and restores snapshots. Capture writes nothing a
@@ -837,9 +843,14 @@ export class SnapshotProvider {
   /**
    * An op that went on after it was recorded — an interactive rebase in a
    * terminal, or a rebase that stopped and was continued — moved its branches
-   * AFTER `settle` looked. Read them from their reflogs: a branch the rebase
-   * moved (and nothing moved after it) is the op's; one nothing rebased is
-   * not; one moved again since is refused rather than thrown away.
+   * AFTER `settle` looked. Read them from their reflogs, tied to THIS rebase:
+   * HEAD's branch counts only through its own "rebase (finish): <it> onto
+   * <onto>" after the capture — no finish, and the rebase changed nothing (it
+   * was quit, or aborted). Another branch counts only as one this rebase
+   * carried (`--update-refs`): its tip was among the commits rebased, and it
+   * was "rewritten during rebase" between the capture and that finish. A
+   * rebase the user ran later, of any branch, is theirs. A branch moved again
+   * since is refused rather than thrown away.
    */
   private async resettle(
     snap: Snapshot,
@@ -855,40 +866,46 @@ export class SnapshotProvider {
     if (!s.headRef) {
       return refuse(`Undo can't follow a rebase that was started on a detached HEAD. Nothing was changed.`);
     }
+    const head = s.headRef;
     const onto = s.deferred?.onto ?? settled.op?.onto;
-    const moved: MovedRef[] = [];
-    for (const ref of new Set([...Object.keys(s.branches), ...Object.keys(now.branches)])) {
-      const b = s.branches[ref] ?? null;
-      const a = now.branches[ref] ?? null;
-      if (b === a) continue;
-      const since = await this.reflogSince(ref, b, opts);
-      const name = branchShort(ref);
-      if (!since) {
-        if (ref === s.headRef) {
-          return refuse(`GitStudio can't tell what moved '${name}' since "${snap.label}" (it keeps no reflog), so it won't guess. Nothing was changed.`);
-        }
-        continue;
-      }
-      const byRebase = since.map((e) => REBASE_MOVE.test(e.msg));
-      if (!byRebase.some(Boolean)) continue; // not the rebase's doing
-      if (ref === s.headRef && onto && !since.some((e) => REBASE_MOVE.test(e.msg) && e.msg.includes(` onto ${onto}`))) {
-        continue; // a different rebase
-      }
-      if (!byRebase[0]) {
-        return refuse(`'${name}' has moved since the rebase (it is at ${a ? shortSha(a) : "nothing"} now), and putting it back would throw that away.`);
-      }
-      // Published before the op can't be known from here; its commits are new.
-      moved.push({ ref, before: b, after: a, published: [] });
+    const headBefore = s.branches[head] ?? null;
+    const headNow = now.branches[head] ?? null;
+    const name = branchShort(head);
+    const since = await this.reflogSince(head, headBefore, opts);
+    if (!since && headBefore !== headNow) {
+      return refuse(`GitStudio can't tell what moved '${name}' since "${snap.label}" (it keeps no reflog), so it won't guess. Nothing was changed.`);
     }
-    if (moved.length === 0) {
+    const finish = since?.find((e) => e.time >= s.time && finishes(e.msg, head, onto));
+    if (!finish) {
       return { kind: "nothing", reason: "the rebase didn't change any branch." };
     }
-    const own = moved.find((m) => m.ref === s.headRef);
+    if (since![0] !== finish) {
+      return refuse(`'${name}' has moved since the rebase (it is at ${headNow ? shortSha(headNow) : "nothing"} now), and putting it back would throw that away.`);
+    }
+    // Published before the op can't be known from here; its commits are new.
+    const moved: MovedRef[] = [{ ref: head, before: headBefore, after: headNow, published: [] }];
+
+    const carried = (e: { msg: string; time: number }): boolean =>
+      e.msg === REBASE_CARRIED && e.time >= s.time && e.time <= finish.time + CARRY_SLACK;
+    for (const ref of new Set([...Object.keys(s.branches), ...Object.keys(now.branches)])) {
+      if (ref === head) continue;
+      const b = s.branches[ref] ?? null;
+      const a = now.branches[ref] ?? null;
+      if (b === a || b === null) continue;
+      // Only a tip among the commits rebased can be carried with them.
+      if (!(await this.isAncestor(b, snap.headSha, opts)) || (onto && (await this.isAncestor(b, onto, opts)))) continue;
+      const moves = await this.reflogSince(ref, b, opts);
+      if (!moves || !moves.some(carried)) continue;
+      if (!carried(moves[0])) {
+        return refuse(`'${branchShort(ref)}' has moved since the rebase (it is at ${a ? shortSha(a) : "nothing"} now), and putting it back would throw that away.`);
+      }
+      moved.push({ ref, before: b, after: a, published: [] });
+    }
     return {
       kind: "ok",
       settled: {
-        headRef: s.headRef,
-        headSha: own?.after ?? snap.headSha,
+        headRef: head,
+        headSha: headNow ?? snap.headSha,
         // A rebase ends with nothing uncommitted of its own; with a dirty
         // start what it left can't be known, so later changes are named.
         tree: snap.stashSha ? "?" : CLEAN_TREE,
@@ -899,23 +916,25 @@ export class SnapshotProvider {
     };
   }
 
-  /** `ref`'s reflog entries since it was last at `was` (newest first); undefined without a reflog. */
+  /** `ref`'s reflog entries since it was last at `was` (newest first, with their times); undefined without a reflog. */
   private async reflogSince(
     ref: string,
     was: string | null,
     opts?: GitRunOptions,
-  ): Promise<{ sha: string; msg: string }[] | undefined> {
-    const r = await this.process.run(["reflog", "show", "--format=%H%x1f%gs", ref, "--"], opts);
+  ): Promise<{ sha: string; msg: string; time: number }[] | undefined> {
+    // `%gd` with --date=unix is "<ref>@{<seconds>}": the entry's own time.
+    const r = await this.process.run(["reflog", "show", "--date=unix", "--format=%H%x1f%gd%x1f%gs", ref, "--"], opts);
     if (r.code !== 0) return undefined;
     const entries = r.stdout
       .split("\n")
       .filter(Boolean)
       .map((l) => {
-        const cut = l.indexOf("\x1f");
-        return { sha: l.slice(0, cut), msg: l.slice(cut + 1) };
+        const [sha = "", selector = "", ...msg] = l.split("\x1f");
+        const time = Number(/@\{(\d+)\}$/.exec(selector)?.[1] ?? NaN);
+        return { sha, msg: msg.join("\x1f"), time };
       });
     if (entries.length === 0) return undefined;
-    const out: { sha: string; msg: string }[] = [];
+    const out: { sha: string; msg: string; time: number }[] = [];
     for (const e of entries) {
       if (was !== null && e.sha === was) return out;
       out.push(e);
@@ -1143,6 +1162,14 @@ const REVERT_NOT_RESTORE =
 
 function refuse(reason: string): { kind: "refuse"; reason: string } {
   return { kind: "refuse", reason };
+}
+
+/** Is this reflog message `head`'s own rebase finishing (onto `onto`, when known)? */
+function finishes(msg: string, head: string, onto: string | undefined): boolean {
+  const m = REBASE_FINISH.exec(msg);
+  if (!m) return false;
+  const [branch, base] = m[1] !== undefined ? [m[1], m[2]] : [m[3], m[4]];
+  return branch === head && (!onto || base === onto);
 }
 
 /** The same files with the same contents? */

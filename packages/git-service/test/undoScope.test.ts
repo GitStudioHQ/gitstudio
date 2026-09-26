@@ -524,6 +524,100 @@ test("a tree step never runs without a copy of the tree it replaces — refused 
   }
 });
 
+// ── What a rebase that went on after the op changed ──────────────────────────
+//
+// A deferred interactive rebase (handed to a terminal) and a rebase that
+// stopped are read back from the reflogs at Undo time. Only THIS rebase's
+// moves are the op's: the HEAD branch's own "rebase (finish): … onto <onto>"
+// after the capture, and a branch it carried ("rewritten during rebase") by
+// that same finish. A rebase the user ran later, of another branch, is theirs.
+
+test("a deferred interactive rebase the user quit changed nothing — a later rebase of another branch is not the op's", async () => {
+  const r = repo();
+  try {
+    r.commit("base");
+    r.git("checkout", "-q", "-b", "topic");
+    const t = r.commit("T");
+    r.git("checkout", "-q", "main");
+    const a = r.commit("A");
+    r.commit("B");
+    const onto = r.git("rev-parse", `${a}^`);
+    const snap = await r.ctx.snapshot.capture(`Interactive rebase onto ${a.slice(0, 7)}^`, { deferred: { onto } });
+    await r.ctx.snapshot.settle(snap);
+    // The todo is quit: nothing happens. Later, in a terminal:
+    r.git("rebase", "-q", "main", "topic");
+    r.git("checkout", "-q", "main");
+    const rebased = r.git("rev-parse", "topic");
+    assert.notEqual(rebased, t);
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.equal(plan.kind, "nothing", JSON.stringify(plan));
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.git("rev-parse", "topic"), rebased, "the user's own rebase of topic stays");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("a rebase that stopped and was continued by hand: a later rebase of another branch is not put back with it", async () => {
+  const r = repo();
+  try {
+    r.commit("base", "f.txt", "base\n");
+    r.git("checkout", "-q", "-b", "other");
+    r.commit("O");
+    r.git("checkout", "-q", "main");
+    r.commit("M", "f.txt", "main\n");
+    r.git("checkout", "-q", "-b", "feature", "HEAD~1");
+    const f = r.commit("F", "f.txt", "feature\n");
+    const snap = await around(r, "Rebase onto main", () => rebaseStops(r));
+    writeFileSync(join(r.dir, "f.txt"), "resolved\n");
+    r.git("add", "f.txt");
+    execFileSync("git", ["rebase", "--continue"], { cwd: r.dir, env: { ...ENV, GIT_EDITOR: "true" }, stdio: "ignore" });
+    r.git("rebase", "-q", "main", "other");
+    r.git("checkout", "-q", "feature");
+    const other = r.git("rev-parse", "other");
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.deepEqual(plan.kind === "restore" && plan.lines, [`'feature' goes back to ${f.slice(0, 7)}.`], JSON.stringify(plan));
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.git("rev-parse", "feature"), f);
+    assert.equal(r.git("rev-parse", "other"), other, "other was never the op's");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("a deferred rebase with --update-refs, run to the end: the branch it carried goes back with it", async () => {
+  const r = repo();
+  try {
+    r.commit("base");
+    r.git("checkout", "-q", "-b", "feature");
+    const a = r.commit("A");
+    r.git("branch", "mid");
+    const b = r.commit("B");
+    r.git("checkout", "-q", "main");
+    const m = r.commit("M");
+    r.git("checkout", "-q", "feature");
+    const snap = await r.ctx.snapshot.capture("Interactive rebase onto main", { deferred: { onto: m } });
+    await r.ctx.snapshot.settle(snap);
+    execFileSync("git", ["rebase", "-q", "-i", "--update-refs", "main"], {
+      cwd: r.dir,
+      env: { ...ENV, GIT_SEQUENCE_EDITOR: "true" },
+      stdio: "ignore",
+    });
+    assert.notEqual(r.git("rev-parse", "mid"), a);
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.deepEqual(
+      plan.kind === "restore" && [...plan.lines].sort(),
+      [`'feature' goes back to ${b.slice(0, 7)}.`, `'mid' goes back to ${a.slice(0, 7)}.`].sort(),
+      JSON.stringify(plan),
+    );
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.git("rev-parse", "feature"), b);
+    assert.equal(r.git("rev-parse", "mid"), a);
+  } finally {
+    r.dispose();
+  }
+});
+
 test("an op that asked a question inside the envelope: an undo that rewrites the tree says it takes edits made meanwhile, in red", async () => {
   // The question is DOM, not modal: an edit saved while it was open lands
   // inside the op's window and can't be told from the op's own changes.
