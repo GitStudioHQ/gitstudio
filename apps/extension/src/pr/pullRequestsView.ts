@@ -16,10 +16,11 @@ import {
 // when there is none on GitHub, the view's message says why.
 //
 // WHEN IT TALKS TO GITHUB. On the first show, on Refresh, when the active
-// repository (or its GitHub remote) changes, when sign-in changes, and when the
-// view comes back into sight with a list older than STALE_MS. Never on
-// working-tree churn: the tree used to reload on every RepoManager change —
-// every file save — even while collapsed, at up to ten requests a time.
+// repository (or its GitHub remote) changes, when sign-in changes, when the
+// view comes back into sight with a list older than STALE_MS, and every
+// STALE_MS while it is in sight in a focused window. Never on working-tree
+// churn: the tree used to reload on every RepoManager change — every file
+// save — even while collapsed, at up to ten requests a time.
 
 const REFRESH_DEBOUNCE_MS = 400;
 /** A list older than this is refreshed when the view is shown again. */
@@ -210,6 +211,7 @@ export class PullRequestsTreeProvider
 
   private readonly disposables: vscode.Disposable[] = [];
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly pollTimer: ReturnType<typeof setInterval>;
 
   private readonly api: GitHubApi;
   private data: LoadedData | undefined;
@@ -217,12 +219,26 @@ export class PullRequestsTreeProvider
   /** The login, read once per sign-in (GET /user was re-sent on every load). */
   private login: string | undefined;
   private view: vscode.TreeView<PrTreeNode> | undefined;
+  /**
+   * What the view last drew for: the repository root, and its GitHub
+   * identity (undefined when it has none). The rows, an error row or the
+   * view's message all belong to it.
+   */
+  private shown: { root: string | undefined; key: string | undefined } | undefined;
 
   constructor(
     private readonly repos: RepoManager,
     private readonly auth: GitHubAuth,
+    /** How old a list in sight may get before it is read again. */
+    private readonly staleMs: number = STALE_MS,
   ) {
     this.api = new GitHubApi({ getToken: (o) => this.auth.getToken(o) });
+    // A list left open in sight would otherwise never change: the reload on
+    // every file save was the only thing that refreshed it.
+    // Checked four times per period, so a list is at most a quarter period
+    // past stale when it is read again.
+    this.pollTimer = setInterval(() => this.poll(), this.staleMs / 4);
+    this.pollTimer.unref?.();
     this.disposables.push(
       this.repos.onDidChange(() => this.scheduleRepoCheck()),
       this.auth.onDidChange(() => {
@@ -244,7 +260,7 @@ export class PullRequestsTreeProvider
         if (!e.visible) {
           return;
         }
-        if (this.data && Date.now() - this.data.at > STALE_MS) {
+        if (this.data && Date.now() - this.data.at > this.staleMs) {
           this.refresh();
         } else {
           // Hidden, it did not ask whether the GitHub remote changed.
@@ -256,6 +272,24 @@ export class PullRequestsTreeProvider
 
   private visible(): boolean {
     return this.view?.visible ?? true;
+  }
+
+  /**
+   * The slow refresh of a list in sight: only while the view is visible and
+   * the window has focus (a window in the background asks nothing), and
+   * only once the list is stale. Quiet — the rows stay while it runs.
+   */
+  private poll(): void {
+    if (!this.data || this.revalidating || !this.visible()) {
+      return;
+    }
+    if (vscode.window.state?.focused === false) {
+      return;
+    }
+    if (Date.now() - this.data.at < this.staleMs) {
+      return;
+    }
+    void this.revalidate();
   }
 
   /** Resolve the current GitHub context, for commands that need owner/repo. */
@@ -336,9 +370,10 @@ export class PullRequestsTreeProvider
 
   /**
    * RepoManager fires on EVERY working-tree change. Only a different
-   * repository (or a different GitHub remote on it) matters to this list: its
-   * rows are dropped at once — they belong to the other repository, and every
-   * action on them would target it — and the new one loads when in sight.
+   * repository (or a different GitHub remote on it) matters to this list:
+   * what the view shows — rows, an error, or why there is no list — is
+   * dropped at once (rows of another repository would aim every action at
+   * it), and the new one loads when in sight.
    */
   private scheduleRepoCheck(): void {
     if (this.refreshTimer !== undefined) {
@@ -351,25 +386,31 @@ export class PullRequestsTreeProvider
   }
 
   private async checkRepo(): Promise<void> {
-    const active = this.repos.getActive();
-    if (this.data && active?.root !== this.data.ctx.entry.root) {
-      this.data = undefined;
-      this.lastError = undefined;
-      this.redraw();
+    const shown = this.shown;
+    if (!shown) {
+      return; // nothing drawn since the last change: the next draw resolves it
+    }
+    if (this.repos.getActive()?.root !== shown.root) {
+      this.forget();
       return;
     }
-    if (!this.visible() || !this.data) {
-      // Hidden: whether the remote changed is asked when the view is next
-      // shown. Nothing loaded: the next getChildren resolves it anyway.
-      return;
+    if (!this.visible()) {
+      return; // hidden: asked again when the view is shown
     }
+    // The same repository: was a GitHub remote added, removed or re-pointed?
+    // A read of its remotes on disk — GitHub is not asked.
     const ctx = await resolveGitHubContext(this.repos);
-    const now = ctx ? identity(ctx) : undefined;
-    if (now !== this.data?.key) {
-      this.data = undefined;
-      this.lastError = undefined;
-      this.redraw();
+    if ((ctx ? identity(ctx) : undefined) !== shown.key) {
+      this.forget();
     }
+  }
+
+  /** Drop what the view shows — it is another repository's — and draw again. */
+  private forget(): void {
+    this.shown = undefined;
+    this.data = undefined;
+    this.lastError = undefined;
+    this.redraw();
   }
 
   getTreeItem(element: PrTreeNode): vscode.TreeItem {
@@ -387,6 +428,10 @@ export class PullRequestsTreeProvider
 
     // Root: ensure data is loaded.
     const ctx = await resolveGitHubContext(this.repos);
+    this.shown = {
+      root: ctx?.entry.root ?? this.repos.getActive()?.root,
+      key: ctx ? identity(ctx) : undefined,
+    };
     if (!ctx) {
       // Not a GitHub repo (or no active repo): say which, not a blank view.
       this.data = undefined;
@@ -523,6 +568,7 @@ export class PullRequestsTreeProvider
     if (this.refreshTimer !== undefined) {
       clearTimeout(this.refreshTimer);
     }
+    clearInterval(this.pollTimer);
     for (const d of this.disposables) {
       d.dispose();
     }

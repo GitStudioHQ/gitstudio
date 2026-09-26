@@ -37,6 +37,8 @@ const vscode = require("vscode") as any;
 const { registerPrFeature } = require("../src/pr/prFeature") as typeof import("../src/pr/prFeature");
 const { registerDialogHost } = require("../src/ui/dialogs") as typeof import("../src/ui/dialogs");
 const { GitHubApi } = require("../src/pr/githubApi") as typeof import("../src/pr/githubApi");
+const { GitHubAuth } = require("../src/pr/githubAuth") as typeof import("../src/pr/githubAuth");
+const { PullRequestsTreeProvider } = require("../src/pr/pullRequestsView") as typeof import("../src/pr/pullRequestsView");
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 const pr = vscode.__pr;
@@ -254,6 +256,81 @@ test("the list follows GitHub's pages: 130 open PRs are 130 rows, not 100", asyn
   const m = mount(fakeRepos(ORIGIN));
   const open = (await rows(m.tree)).filter((x) => x.group === "open");
   assert.equal(open.length, 130);
+});
+
+test("a list in sight is read again once it is stale — and nothing is asked while it is hidden", async () => {
+  const gh = github(acmeRoutes());
+  const auth = new GitHubAuth();
+  await auth.isConnected(); // the first sign-in event, out of the way
+  const tree = new PullRequestsTreeProvider(fakeRepos(ORIGIN) as any, auth, 160);
+  const view = vscode.window.createTreeView("gitstudio.pullRequests", { treeDataProvider: tree });
+  tree.attach(view);
+  mounted.push({ dispose: () => (tree.dispose(), auth.dispose()) });
+  const loads = () => gh.count(/pulls\?state=open/);
+  await rows(tree);
+  assert.equal(loads(), 1);
+  await until(() => loads() >= 2, "the stale list in sight to be read again", 2000);
+  view.setVisible(false);
+  await sleep(100);
+  const hidden = loads();
+  await sleep(600);
+  assert.equal(loads(), hidden, "hidden, it asks GitHub nothing");
+});
+
+test("a refresh that fails says so above the rows it kept; a first load that fails offers its way out", async () => {
+  let down: { status: number; body: unknown } | undefined;
+  github([["GET", /^\/repos\/acme\/app\/pulls\?state=open/, () => down ?? { body: PULLS() }], ...acmeRoutes()]);
+  const m = mount(fakeRepos(ORIGIN));
+  assert.equal((await rows(m.tree)).filter((x) => x.group === "open").length, 3);
+  down = { status: 502, body: { message: "Server Error" } };
+  await vscode.commands.executeCommand("gitstudio.pr.refresh");
+  await until(() => pr.said.some((s: any) => s.kind === "progress-end"), "the refresh to end");
+  assert.equal((await rows(m.tree)).filter((x) => x.group === "open").length, 3, "the last good list stays");
+  assert.match(String(m.view.message), /^Couldn't refresh: Server Error Showing the list as it was /);
+
+  // Nothing loaded yet: the row says what to do, and doing it is one click.
+  const m2 = mount(fakeRepos(ORIGIN, "/work/app2"));
+  const [retry] = await m2.tree.getChildren();
+  assert.equal(retry.command?.command, "gitstudio.pr.refresh", retry.label);
+  down = { status: 401, body: { message: "Bad credentials" } };
+  const m3 = mount(fakeRepos(ORIGIN, "/work/app3"));
+  const [signIn] = await m3.tree.getChildren();
+  assert.equal(signIn.command?.command, "gitstudio.pr.signIn", signIn.label);
+});
+
+test("a GitHub remote added, or a switch away from an error or a repo with none: the view draws the repository now active", async () => {
+  github([
+    ["GET", /^\/repos\/acme\/broken\/pulls\?state=open/, () => ({ status: 502, body: { message: "Server Error" } })],
+    ...acmeRoutes(),
+  ]);
+  const remotes: Remote[] = [{ name: "origin", fetchUrl: "git@gitlab.com:acme/app.git", pushUrl: "" }];
+  const repos = fakeRepos(remotes, "/work/app");
+  const m = mount(repos);
+  let redraws = 0;
+  m.tree.onDidChangeTreeData(() => redraws++);
+  const open = async () => (await rows(m.tree)).filter((x) => x.group === "open").length;
+  const change = async (what: string) => {
+    const before = redraws;
+    repos.fire();
+    await until(() => redraws > before, what, 2000);
+  };
+
+  assert.equal(await open(), 0);
+  assert.match(String(m.view.message), /gitlab\.com/);
+  // The same repository gains a github.com remote.
+  remotes.push({ name: "github", fetchUrl: "git@github.com:acme/app.git", pushUrl: "" });
+  await change("the view to notice the new remote");
+  assert.equal(await open(), 3);
+  assert.equal(m.view.message, undefined);
+
+  // A repository whose list fails to load, then one whose list loads.
+  repos.switchTo(entryFor("/work/broken", [{ name: "origin", fetchUrl: "https://github.com/acme/broken", pushUrl: "" }]));
+  await change("the view to leave /work/app");
+  assert.match(String((await m.tree.getChildren())[0].label), /Server Error/);
+  repos.switchTo(entryFor("/work/app", ORIGIN));
+  await change("the view to leave the error of /work/broken");
+  assert.equal(await open(), 3);
+  assert.equal(m.view.description, "acme/app");
 });
 
 test("the view says which repository it shows — or why there is none — never a blank", async () => {
