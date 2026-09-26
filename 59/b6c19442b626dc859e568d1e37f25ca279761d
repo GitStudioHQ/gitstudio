@@ -1,0 +1,23 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_15a8c569960109 100-101
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_46948b78db2340 248-250,254-258,846-853,869,871-889,891,894-900,907-908,919,924-926,932-934,937,1167-1174
+packages/git-service/test/undoScope.test.ts
+  s_26f5e669d3043c::t_16f419d8e74136 527-620
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "59b6c19442b626dc859e568d1e37f25ca279761d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
