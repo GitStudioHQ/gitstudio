@@ -1,0 +1,21 @@
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_fdefbf72bec8b9 800-801,817-818,852-853,926-927,934-938,940,944,953-967,980-982,987,990,1022,1377,1391
+apps/extension/test/changesConflictStaging.test.ts
+  s_26f5e669d3043c::t_7299705396d12e 20,101-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "72e7ca671bd96806730f6a1e3840eddd3b7cf15d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
