@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
+import { GitHubBridge } from "../src/main/githubBridge";
 import { reportableResultMessage } from "../src/main/expectedError";
 
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "gs-desktop-wt-")));
@@ -201,6 +202,36 @@ test("checking out a branch another worktree has says where it is, and runs noth
     `'clean' is checked out in the worktree at ${s.path("clean")}, and a branch can be checked out in only one worktree at a time. Work on it there, or create a new branch from it here.`,
   );
   assert.equal(s.git("symbolic-ref", "HEAD"), "refs/heads/main");
+});
+
+test("checking out a pull request whose pr/<n> another worktree has says where it is, and fetches nothing", async () => {
+  const s = scene();
+  // An origin with GitHub's pull/7/head, and pr/7 checked out in a worktree
+  // (a previous checkout, moved there).
+  const origin = join(s.app, "..", "origin.git");
+  execFileSync("git", ["clone", "-q", "--bare", s.app, origin]);
+  at(origin)("update-ref", "refs/pull/7/head", s.git("rev-parse", "HEAD"));
+  s.git("remote", "add", "origin", origin);
+  s.git("worktree", "add", "-q", "-b", "pr/7", s.path("pr7"));
+  const before = s.git("rev-parse", "refs/heads/pr/7");
+  const repos = new RepoStore([]);
+  await repos.open(s.app);
+  const r = await new GitHubBridge(repos).prCheckout(7);
+  assert.equal(r.ok, false);
+  assert.equal(r.expected, true, "the person's state, not a failure");
+  assert.equal(reportableResultMessage(r), undefined, "never filed as a crash report");
+  assert.equal(
+    r.message,
+    `'pr/7' is checked out in the worktree at ${s.path("pr7")}, and a branch can be checked out in only one worktree at a time. Work on it there, or create a new branch from it here.`,
+  );
+  assert.equal(s.git("rev-parse", "refs/heads/pr/7"), before);
+  assert.equal(s.git("symbolic-ref", "HEAD"), "refs/heads/main");
+
+  // Its folder gone, it says to forget that worktree first.
+  rmSync(s.path("pr7"), { recursive: true, force: true });
+  const gone = await new GitHubBridge(repos).prCheckout(7);
+  assert.equal(gone.expected, true);
+  assert.match(gone.message ?? "", /whose folder is gone — git still keeps the branch for it\. Forget that worktree in Worktrees, then check it out\./);
 });
 
 test("deleting a branch another worktree has says where it is, and the branch stays", async () => {
