@@ -2677,6 +2677,11 @@ export class CommitViewProvider
       letter-spacing: 0.005em;
     }
     .repo .repo-caret { font-size: 12px; opacity: 0.8; margin-left: -1px; }
+    /* Folded by fitRepoPill(): the branch name was being clipped, so the
+       repository's name goes completely — never a sliver of it. The pill keeps
+       its icon and caret, at their own width. */
+    .repo.folded { min-width: 0; flex-shrink: 0; }
+    .repo.folded .repo-name { display: none; }
     .sync { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; flex: 0 0 auto; }
     .sync.hidden { display: none; }
     /* The sync pills are real buttons: ↓ Pull N runs the pull (↑ Push N the
@@ -4821,7 +4826,22 @@ export class CommitViewProvider
       renderCommitButtons();
       // A status push can land mid-pull — keep the in-flight face on top.
       applySyncBusy();
+      fitRepoPill();
     }
+
+    // The repository's name gives way FIRST on a narrow sidebar. The shrink
+    // factor alone left a few px of name under a floor sized on macOS glyphs
+    // (Windows' are narrower), with the branch already losing letters. So,
+    // measured with the name shown each time: if the branch name is clipped,
+    // the name folds away completely; with room again, it comes back.
+    function fitRepoPill() {
+      if (repoPill.hidden) return;
+      repoPill.classList.remove("folded");
+      const clipped = branchName.scrollWidth > branchName.clientWidth + 0.5;
+      repoPill.classList.toggle("folded", clipped);
+    }
+    new ResizeObserver(() => fitRepoPill()).observe(repoPill.parentElement);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitRepoPill);
 
     function doCommit(push) {
       vscode.postMessage({

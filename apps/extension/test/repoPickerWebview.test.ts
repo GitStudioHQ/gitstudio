@@ -175,6 +175,56 @@ test("a narrow sidebar: the repository name folds away before the branch loses a
   assert.deepEqual(v.fails, [], JSON.stringify(v.notes));
 });
 
+// Windows' glyphs are narrower than macOS's: the pill's icon and caret there
+// left 6px of name under a floor sized on macOS (CI, windows-latest). Smaller
+// codicons here stand in for those metrics, so the rule is checked on every OS.
+test("a narrow sidebar with narrower glyphs (Windows' metrics): the name still folds away completely", { skip }, async () => {
+  const long = statePayload({
+    repoName: "gitstudio-desktop-electron",
+    repoPath: "code/gitstudio-desktop-electron",
+    branch: "feature/repository-picker-for-multi-root",
+    ahead: 2,
+    behind: 1,
+  });
+  const page = changesViewPage({
+    theme: "dark",
+    width: 400,
+    harness: `${HEADER}
+      document.head.insertAdjacentHTML("beforeend", "<style>.repo .codicon, .branch .codicon { font-size: 9px !important; }</style>");
+      post(${JSON.stringify(long)});
+      await tick();
+      const name = document.getElementById("branch-name");
+      const repoName = document.getElementById("repo-name");
+      const p = pill.getBoundingClientRect();
+      const caret = pill.querySelector(".repo-caret").getBoundingClientRect();
+      const icon = pill.querySelector(".codicon-repo").getBoundingClientRect();
+      notes.widths = { repo: p.width, repoName: repoName.clientWidth, branch: branch.getBoundingClientRect().width };
+      expect(name.scrollWidth > name.clientWidth, "the branch name is long enough to be clipped here");
+      expect(repoName.clientWidth < 1, "so the repository's name has folded away first: " + repoName.clientWidth);
+      expect(icon.left >= p.left && caret.right <= p.right + 0.5, "its icon and caret are still whole");
+    `,
+  });
+  const v = await runChangesView(CHROME!, page);
+  assert.deepEqual(v.fails, [], JSON.stringify(v.notes));
+});
+
+test("a wide sidebar gives the name back: nothing is folded when everything fits", { skip }, async () => {
+  const short = statePayload({ repoName: "api", repoPath: "code/api", branch: "main" });
+  const page = changesViewPage({
+    theme: "dark",
+    width: 400,
+    harness: `${HEADER}
+      post(${JSON.stringify(short)});
+      await tick();
+      const repoName = document.getElementById("repo-name");
+      notes.name = { width: repoName.clientWidth, text: repoName.textContent };
+      expect(repoName.textContent === "api" && repoName.clientWidth >= repoName.scrollWidth && repoName.clientWidth > 0, "the whole name shows: " + repoName.clientWidth + "/" + repoName.scrollWidth);
+    `,
+  });
+  const v = await runChangesView(CHROME!, page);
+  assert.deepEqual(v.fails, [], JSON.stringify(v.notes));
+});
+
 test("many repositories: the list gets a filter that matches paths", { skip }, async () => {
   const rows = Array.from({ length: 12 }, (_, i) => ({
     root: `/w/repo-${i}`,
