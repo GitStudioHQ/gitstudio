@@ -5,6 +5,10 @@
 #   open<N>          click the list row with data-num="<N>" (open a detail)
 #   click:<selector> click the first match (URL-encode [ ] = as %5B %5D %3D)
 #   rclick:<selector> right-click it (the graph row's commit menu)
+#   shiftclick:<selector> / modclick:<selector>  click with Shift, or with
+#                    ⌘ (Mac) / Ctrl — how a list is multi-selected
+#   key:<key>        a key on the focused element; modifiers go first, each
+#                    followed by "+" (URL-encode it: key:Shift%2BArrowDown)
 #   esc              dispatch Escape (detail → list)
 #   palette          open the ⌘K palette
 #   bell             open the notifications popover
