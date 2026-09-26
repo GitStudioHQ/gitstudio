@@ -3265,7 +3265,9 @@ export class CommitViewProvider
       color: var(--gs-fg-subtle);
       transition: color var(--gs-motion) var(--gs-ease);
     }
-    .counter.warn { color: var(--gs-status-modified); }
+    /* A warning, in the theme's warning colour for text in lists — it was
+       --gs-status-modified, the charts-blue this view uses for information. */
+    .counter.warn { color: var(--vscode-list-warningForeground, var(--gs-amber)); }
     .counter.over { color: var(--gs-status-deleted); }
 
     /* ---- Sparkle / generate button (crisp SVG, never emoji) ----------- */
@@ -4918,6 +4920,12 @@ export class CommitViewProvider
       counterEl.textContent = String(subject);
       counterEl.classList.toggle("warn", subject > 50 && subject <= 72);
       counterEl.classList.toggle("over", subject > 72);
+      // What the number is, and what the 50/72 convention asks of it.
+      counterEl.dataset.tip = subject > 72
+        ? "Subject line: " + subject + " characters, over 72. GitHub cuts a longer subject short."
+        : subject > 50
+          ? "Subject line: " + subject + " characters, over 50. Aim for 50; 72 at most."
+          : "Subject line: " + subject + (subject === 1 ? " character" : " characters") + ". Keep it to 50.";
     }
     message.addEventListener("input", () => { autoGrow(); updateComposer(); });
 
