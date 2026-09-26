@@ -163,6 +163,11 @@ export interface SettledScope {
   /** An operation the op left git stopped in (one that wasn't there before). */
   op?: OpMark;
   /**
+   * Stashes the op put on the stack — a Stash & Retry's, holding the work
+   * that was in the command's way — newest first.
+   */
+  pushed?: StashSlot[];
+  /**
    * Remote-tracking branches containing HEAD's commit when the op ended —
    * read only for an op that moved a detached HEAD, the one case that asks
    * (a branch's own move carries its `published`). Every settle would
@@ -173,12 +178,15 @@ export interface SettledScope {
 
 /** One thing `restore` does. */
 export type RestoreStep =
-  | { do: "abort-rebase" }
+  /** `rebase --abort`; then, onto the clean tree it leaves, the uncommitted work from before. */
+  | { do: "abort-rebase"; stash?: string | null }
   | { do: "switch"; ref: string | null; sha: string }
   | { do: "reset"; to: string; mode: "hard" | "keep" | "mixed"; stash: string | null }
   | { do: "tree"; stash: string | null }
   | { do: "ref"; move: MovedRef; here: boolean }
-  | { do: "stash"; entry: DroppedStash };
+  | { do: "stash"; entry: DroppedStash }
+  /** Take a stash the op made off the stack again — its work is back in the tree. */
+  | { do: "drop-stash"; entry: StashSlot };
 
 /** What undoing a snapshot means right now. */
 export type RestorePlan =
@@ -368,6 +376,7 @@ export class SnapshotProvider {
       t.headSha !== snap.headSha ||
       t.moved.length > 0 ||
       t.stashes.length > 0 ||
+      (t.pushed?.length ?? 0) > 0 ||
       // A tree nobody could copy can't be put back: a change to it alone is
       // nothing Undo could do (and a refs-only op's tree is never its own).
       (t.tree !== s.tree && !s.uncopied) ||
@@ -433,17 +442,18 @@ export class SnapshotProvider {
       opNow.headName === (B.ref ?? "detached HEAD");
     if (oursRebase) {
       // Aborting ends the rebase where it began: the branch and HEAD as they
-      // were, and nothing it rewrote kept. That is the whole of this undo.
-      return {
-        kind: "restore",
-        steps: [{ do: "abort-rebase" }],
-        lines: [
-          B.ref
-            ? `Abandon the rebase in progress: '${branchShort(B.ref)}' stays at ${shortSha(B.sha)}, as it was.`
-            : `Abandon the rebase in progress: HEAD goes back to ${shortSha(B.sha)}.`,
-        ],
-        danger: false,
-      };
+      // were, and nothing it rewrote kept. A rebase needs a clean tree, so
+      // uncommitted work from before went into a stash (Stash & Retry) to
+      // wait for it — that comes back too, onto the tree the abort leaves.
+      const abort: RestoreStep[] = [{ do: "abort-rebase", stash: snap.stashSha }];
+      const said = [
+        B.ref
+          ? `Abandon the rebase in progress: '${branchShort(B.ref)}' stays at ${shortSha(B.sha)}, as it was.`
+          : `Abandon the rebase in progress: HEAD goes back to ${shortSha(B.sha)}.`,
+      ];
+      if (snap.stashSha) said.push("Your uncommitted changes come back as they were before it.");
+      await this.stashesItMade(snap, settled, now, abort, said, opts);
+      return { kind: "restore", steps: abort, lines: said, danger: false };
     }
     const oursStop = !!opNow && !!settled.op && sameOp(settled.op, opNow);
     const foreignStop = !!opNow && !oursStop;
@@ -673,6 +683,7 @@ export class SnapshotProvider {
     if (steps.length === 0) {
       return { kind: "nothing", reason: "everything it changed is already back as it was." };
     }
+    await this.stashesItMade(snap, settled, now, steps, lines, opts);
     // Something git is stopped in that this op didn't start: a checkout or a
     // hard reset would end it, and that is not this undo's to do.
     if (foreignStop && steps.some((st) => st.do === "switch" || st.do === "reset" || st.do === "tree")) {
@@ -702,6 +713,9 @@ export class SnapshotProvider {
         case "abort-rebase": {
           const r = await this.process.run(["rebase", "--abort"], opts);
           if (r.code !== 0) throw new Error(`Undo couldn't abandon the rebase: ${r.stderr.trim() || "git refused"}`);
+          // git's own autostash (rebase.autoStash) has already put the work
+          // back; only onto a clean tree does the copy go.
+          if (st.stash && (await this.fingerprint(opts)) === CLEAN_TREE) await this.applyStash(st.stash, opts);
           break;
         }
         case "switch": {
@@ -754,6 +768,15 @@ export class SnapshotProvider {
         case "stash": {
           const r = await restoreStash(this.process, st.entry, st.entry, opts);
           if (!r.ok) throw new Error(r.message);
+          break;
+        }
+        case "drop-stash": {
+          // By its sha, wherever it sits now; one already gone is left be.
+          const at = (await stashStack(this.process, opts)).findIndex((x) => x.sha === st.entry.sha);
+          if (at >= 0) {
+            const r = await this.process.run(["stash", "drop", "-q", `stash@{${at}}`], opts);
+            if (r.code !== 0) throw new Error(`Undo put your changes back, but couldn't drop the stash “${st.entry.message}”: ${r.stderr.trim()}`);
+          }
           break;
         }
       }
@@ -826,6 +849,8 @@ export class SnapshotProvider {
       if (still.has(x.sha)) return;
       stashes.push({ sha: x.sha, message: x.message, index, above: stack.slice(0, index).map((y) => y.sha) });
     });
+    const had = new Set(stack.map((x) => x.sha));
+    const pushed = s.stashes ? now.stashes.filter((x) => !had.has(x.sha)) : [];
     return {
       headRef: now.headRef,
       headSha: now.headSha,
@@ -833,6 +858,7 @@ export class SnapshotProvider {
       tree: s.refsOnly ? s.tree : now.tree,
       moved,
       stashes,
+      ...(pushed.length ? { pushed } : {}),
       ...(now.op && !sameOp(s.op, now.op) ? { op: now.op } : {}),
       ...(s.headRef === null && now.headRef === null && now.headSha && now.headSha !== snap.headSha
         ? { published: await this.published(now.headSha, opts) }
@@ -911,6 +937,7 @@ export class SnapshotProvider {
         tree: snap.stashSha ? "?" : CLEAN_TREE,
         moved,
         stashes: [],
+        ...(settled.pushed ? { pushed: settled.pushed } : {}),
         published: [],
       },
     };
@@ -940,6 +967,60 @@ export class SnapshotProvider {
       out.push(e);
     }
     return was === null ? out : undefined;
+  }
+
+  /**
+   * Stashes the op made (a Stash & Retry's) that are still on the stack. When
+   * this undo puts the uncommitted work back from its own copy and a stash
+   * holds nothing more than that copy, it goes again — the work is back in
+   * the tree. One holding more (untracked files, other contents) is kept,
+   * and said.
+   */
+  private async stashesItMade(
+    snap: Snapshot,
+    settled: SettledScope,
+    now: Observed,
+    steps: RestoreStep[],
+    lines: string[],
+    opts?: GitRunOptions,
+  ): Promise<void> {
+    const onStack = new Set(now.stashes.map((x) => x.sha));
+    const copy = snap.stashSha;
+    const putsBack = !!copy && steps.some((st) => "stash" in st && st.stash === copy);
+    for (const made of settled.pushed ?? []) {
+      if (!onStack.has(made.sha)) continue;
+      if (putsBack && (await this.stashWithin(made.sha, copy!, opts))) {
+        steps.push({ do: "drop-stash", entry: made });
+      } else {
+        lines.push(`The stash “${made.message}” it made is kept: it holds more than Undo puts back.`);
+      }
+    }
+  }
+
+  /**
+   * Does stash `sha` hold nothing that stash-like commit `copy` doesn't —
+   * no untracked part, and for every file it changes, the same content in
+   * `copy`'s working tree and index?
+   */
+  private async stashWithin(sha: string, copy: string, opts?: GitRunOptions): Promise<boolean> {
+    const parents = await this.process.run(["rev-list", "--parents", "-n", "1", sha], opts);
+    const ids = parents.code === 0 ? parents.stdout.trim().split(/\s+/) : [];
+    // [stash, base, index] — a fourth is its untracked files, which no copy holds.
+    if (ids.length !== 3) return false;
+    const names = async (a: string, b: string): Promise<string[] | undefined> => {
+      const r = await this.process.run(["diff", "--name-only", "-z", "--no-renames", a, b, "--"], opts);
+      return r.code === 0 ? r.stdout.split("\0").filter(Boolean) : undefined;
+    };
+    const [changedTree, changedIndex, treeDiff, indexDiff] = await Promise.all([
+      names(`${sha}^1`, sha),
+      names(`${sha}^1`, `${sha}^2`),
+      names(sha, copy),
+      names(`${sha}^2`, `${copy}^2`),
+    ]);
+    if (!changedTree || !changedIndex || !treeDiff || !indexDiff) return false;
+    const differ = new Set(treeDiff);
+    const differIndex = new Set(indexDiff);
+    return changedTree.every((p) => !differ.has(p)) && changedIndex.every((p) => !differIndex.has(p));
   }
 
   /**

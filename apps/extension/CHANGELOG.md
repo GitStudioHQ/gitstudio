@@ -94,7 +94,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   'origin/x'* words its question the same way.
 - **Undo of a rebase that stopped** — Rebase onto…, the Interactive Rebase
   workspace, or *Start Interactive Rebase Here* while paused — abandons the
-  rebase, instead of leaving it half-open on a detached HEAD. An interactive
+  rebase, instead of leaving it half-open on a detached HEAD, and brings back
+  the uncommitted changes *Stash & Retry* had set aside for it. An interactive
   rebase you quit without running changed nothing, so Undo says so; it no
   longer resets the branch to where it was at launch, dropping the commits
   you made since — nor puts back a branch you rebased yourself afterwards.

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
 import { GitContext } from "../src/GitContext";
 import { restoreStash, stashStack } from "../src/stashRestore";
+import { stashAndRetry } from "../src/changesInTheWay";
 import type { Snapshot } from "../src/SnapshotProvider";
 
 // Undo puts back what an operation changed, and only that — the states the
@@ -613,6 +614,99 @@ test("a deferred rebase with --update-refs, run to the end: the branch it carrie
     await r.ctx.snapshot.restore(snap);
     assert.equal(r.git("rev-parse", "feature"), b);
     assert.equal(r.git("rev-parse", "mid"), a);
+  } finally {
+    r.dispose();
+  }
+});
+
+// ── Stash & Retry ────────────────────────────────────────────────────────────
+//
+// A door whose command was refused over uncommitted work stashes it ("GitStudio:
+// before rebasing onto main") and runs the command again. When the command
+// then stops, the work waits in that stash. Undo used to abandon the rebase and
+// leave it there — the tree clean, the edits nowhere the question mentioned.
+
+test("undo of a Stash & Retry rebase that stopped: the rebase is abandoned AND the uncommitted work comes back", async () => {
+  const r = repo();
+  try {
+    r.commit("base", "f.txt", "base\n");
+    r.commit("g", "g.txt", "g\n");
+    r.git("checkout", "-q", "-b", "feature");
+    const f = r.commit("F", "f.txt", "feature\n");
+    r.git("checkout", "-q", "main");
+    r.commit("M", "f.txt", "main\n");
+    r.git("checkout", "-q", "feature");
+    writeFileSync(join(r.dir, "g.txt"), "my uncommitted edit\n");
+    const snap = await around(r, "Rebase onto main", async () => {
+      const out = await stashAndRetry(r.ctx.process, { kind: "rebase", onto: "refs/heads/main", args: ["rebase", "refs/heads/main"] });
+      assert.equal(out.fate, "waiting");
+    });
+    assert.equal((await stashStack(r.ctx.process)).length, 1, "the work waits in the stash");
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.equal(plan.kind, "restore", JSON.stringify(plan));
+    assert.deepEqual(plan.kind === "restore" && plan.lines, [
+      `Abandon the rebase in progress: 'feature' stays at ${f.slice(0, 7)}, as it was.`,
+      "Your uncommitted changes come back as they were before it.",
+    ]);
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.git("symbolic-ref", "HEAD"), "refs/heads/feature");
+    assert.equal(r.git("rev-parse", "HEAD"), f);
+    assert.equal(r.read("g.txt"), "my uncommitted edit\n", "the edit is back in the tree");
+    assert.deepEqual(await stashStack(r.ctx.process), [], "and the stash the op made for it is gone again");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("undo of a Stash & Retry merge that stopped: the work comes back, and the op's own stash of it goes", async () => {
+  const r = repo();
+  try {
+    r.commit("base", "f.txt", "base\n");
+    r.git("checkout", "-q", "-b", "feature");
+    r.commit("F", "f.txt", "feature\n");
+    r.git("checkout", "-q", "main");
+    r.commit("M", "f.txt", "main\n");
+    writeFileSync(join(r.dir, "f.txt"), "dirty\n");
+    const snap = await around(r, "Merge feature", async () => {
+      const out = await stashAndRetry(r.ctx.process, { kind: "merge", target: "refs/heads/feature", args: ["merge", "--no-edit", "refs/heads/feature"] });
+      assert.equal(out.fate, "waiting");
+    });
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.read("f.txt"), "dirty\n");
+    assert.equal(existsSync(join(r.dir, ".git", "MERGE_HEAD")), false);
+    assert.deepEqual(await stashStack(r.ctx.process), [], "the op's stash is dropped once its work is back");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("a stash the op made that holds MORE than Undo puts back is kept, and the question says where it is", async () => {
+  const r = repo();
+  try {
+    r.commit("base", "f.txt", "base\n");
+    r.git("checkout", "-q", "-b", "feature");
+    r.commit("F", "f.txt", "feature\n");
+    r.git("checkout", "-q", "main");
+    r.commit("M", "f.txt", "main\n");
+    writeFileSync(join(r.dir, "f.txt"), "dirty\n");
+    const snap = await around(r, "Merge feature", async () => {
+      // As Stash & Retry does, but with an untracked file in the stash too —
+      // the snapshot's copy never holds untracked files.
+      writeFileSync(join(r.dir, "new.txt"), "untracked\n");
+      r.git("stash", "push", "-q", "-u", "-m", "GitStudio: before merging feature");
+      try {
+        r.git("merge", "--no-edit", "feature");
+      } catch {
+        /* stops */
+      }
+    });
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.ok(
+      plan.kind === "restore" && plan.lines.includes("The stash “On main: GitStudio: before merging feature” it made is kept: it holds more than Undo puts back."),
+      JSON.stringify(plan),
+    );
+    await r.ctx.snapshot.restore(snap);
+    assert.equal((await stashStack(r.ctx.process)).length, 1);
   } finally {
     r.dispose();
   }
