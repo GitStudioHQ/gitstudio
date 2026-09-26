@@ -1,0 +1,82 @@
+packages/host-bridge/src/worktreeRemoval.ts
+  s_26f5e669d3043c::t_8f7621a5b5d882 1-115
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_e1a5ef53ed53e7 61-69
+apps/extension/src/ui/markdownCode.ts
+  s_26f5e669d3043c::t_f5b6a05daafd73 1-17
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_90aff87e59f146 10,49,95,1526,1532,1535-1537,1547-1583,1585-1596
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_9b28edce61f428 697-702
+apps/extension/test/worktreesDoors.test.ts
+  s_26f5e669d3043c::t_306c067c52c7d3 369-391
+  s_26f5e669d3043c::t_70eb08ff6afb7a 635-641
+  s_26f5e669d3043c::t_e468c9c3361d49 621,625,628,630-633
+  s_26f5e669d3043c::t_76b93a58c11e16 404
+  s_26f5e669d3043c::t_52fcf045564a38 515,642-649
+  s_26f5e669d3043c::t_49ee6357e91cd7 526-528,634
+  s_26f5e669d3043c::t_0a538d444efea6 1-368,392-403,405-514,516-525,529-620,622-624,626-627,629,650-658
+apps/extension/package.json
+  s_26f5e669d3043c::t_1c0598415f445b 447-451,454,1772-1775,2076,2084-2088,2091,2096,2101,2109-2111
+  s_26f5e669d3043c::t_c73652d2c5d3af 446,2112-2113
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_f1e06c5b15fb0a 67-101
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_b5ff3c5684f0f0 339
+  s_26f5e669d3043c::t_8ad50ed2e27dd8 415
+  s_26f5e669d3043c::t_a10ba9d1d6815e 8-9,13,21-73,79,81,84,88-91,96,104-106,109-119,125,134-135,137,139,143-145,166-206
+  s_26f5e669d3043c::t_5d0ac173f32cfe 210-211
+  s_26f5e669d3043c::t_7d8bf833b9b2f6 207,209,407-414,416,420-430,432,434,505-508,514,565-592,608,614-620,635,644-684,687-689,695-696,703-707,721-732,734-741,750,766-773,783-796,798-802,804,806-809,829,838,840-843,845-847,852-868,871,882-896,899-905,914,916-935
+  s_26f5e669d3043c::t_76b93a58c11e16 15,797,803,805,810-819,821-824,834,837,839,844,851
+  s_26f5e669d3043c::t_a3b5809ddab9ff 314-315
+  s_26f5e669d3043c::t_9866502fd29ae7 830-833,835-836
+  s_26f5e669d3043c::t_b69708468c9484 208
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_73383b7317bd55 565
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_08970c1f23d8d4 536,834
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_348e60b99de295 684-687,753-754,756,758-765,1998-2019
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_48e26317783e11 60,3144-3145,3162-3163,3166-3171,3184-3193,3246-3254,3256-3272,3274-3278,3281-3285,3288,3291
+packages/git-service/test/worktreeSafety.test.ts
+  s_26f5e669d3043c::t_49ebaf12a6f76c 166-195
+  s_26f5e669d3043c::t_d7f65ee366a1da 1-165
+apps/extension/src/views/branchesView.ts
+  s_26f5e669d3043c::t_a837f5ff3dbda3 122
+  s_26f5e669d3043c::t_6613f8f40bae3f 5
+packages/host-bridge/test/worktreeRemoval.test.ts
+  s_26f5e669d3043c::t_9475dd89da54d2 1-71
+packages/git-service/src/index.ts
+  s_26f5e669d3043c::t_5325105659ef6f 65-70,75-77
+packages/git-service/src/WorktreeProvider.ts
+  s_26f5e669d3043c::t_59756805a083d6 48-55
+  s_26f5e669d3043c::t_f86a71805ba1c6 248-280
+  s_26f5e669d3043c::t_7c56ebfac04689 1,16-18,39-40,42-45,56-77,131-135,137-139,143-175,194-246,281-282,288-291,294,319-325,329,331,390-394,409-465
+  s_26f5e669d3043c::t_9ffe1dee7e8ea5 247
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_91704c84d86dc4 520-521,525-530,533-539,543-551
+  s_26f5e669d3043c::t_5a294d4ecf679c 540-542
+  s_26f5e669d3043c::t_b7a7f59c8d2007 2145-2152
+  s_26f5e669d3043c::t_30b48b1aa4f9ad 552
+apps/desktop/test/worktreeRemoval.test.ts
+  s_26f5e669d3043c::t_80416bad541d8a 1-113
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_9f1157d13c885a 7977-8039
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "910dcad7384da6bc55bd6ccad4f2d13df3f5c9a8",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
