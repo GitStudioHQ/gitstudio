@@ -11650,20 +11650,18 @@ function openShortcutsHelp(): void {
         [`${mod}K`, "Jump anywhere — sections, branches, PRs, actions"],
         [`${mod}1–8`, "Switch between the first eight sections"],
         [`${mod}[  ${mod}]`, "Back / forward through your navigation"],
-        [`${mod}\``, "Toggle the terminal dock"],
-        [`${mod},`, "Settings"],
-        ["?", "This cheat sheet"],
-      ],
-    },
-    {
-      // Repositories are tabs (#32). The number keys are VS Code's "open
-      // editor at index" chord, because ⌘1–8 above already means the rail.
-      title: "Repository tabs",
-      rows: [
-        ["Ctrl+Tab  Ctrl+Shift+Tab", "Next / previous tab"],
+        // Repositories are tabs (#32), and their keys work everywhere. The
+        // number keys are VS Code's "open editor at index" chord, because
+        // ⌘1–8 above already means the rail. Here rather than in a group of
+        // their own: a seventh group sat alone on a row of the sheet (the
+        // rebase keys' check holds it to rows of two or more).
+        ["Ctrl+Tab  Ctrl+Shift+Tab", "Next / previous repository tab"],
         [mac ? "⌃1–8  ⌃9" : "Alt+1–8  Alt+9", "Go to a tab by position / the last tab"],
         [`${mod}W`, "Close the tab in front"],
         [`${mod}O`, "Open a repository in a new tab"],
+        [`${mod}\``, "Toggle the terminal dock"],
+        [`${mod},`, "Settings"],
+        ["?", "This cheat sheet"],
       ],
     },
     {
