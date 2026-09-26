@@ -118,6 +118,10 @@ export interface ChangesInTheWay {
   /** A pull that rebases: it needs the whole working tree clean, not only
    *  the files it brings changes to. */
   rebase?: true;
+  /** A stash op's `branch`: they are in the way of creating that branch from
+   *  the stash — which switches to where the stash was made first — and not
+   *  necessarily of the stash itself (a file it never touches can be). */
+  branch?: string;
 }
 
 /**
@@ -201,6 +205,15 @@ export function changesInTheWayMessage(v: ChangesInTheWay): string {
     return (
       `${v.kind === "pull" ? "Pulling with rebase" : "A rebase"} needs a clean working tree, and your ` +
       `uncommitted changes to ${nameThe(v.paths)} are in the way. Stash ${them} and try again, or commit ${them} first.`
+    );
+  }
+  if (v.kind === "stash" && v.branch !== undefined) {
+    // Not "applying the stash": the file in the way may be one the stash never
+    // touches, in the way of the switch to where the stash was made.
+    return (
+      `Your uncommitted changes to ${nameThe(v.paths)} are in the way of creating the branch “${v.branch}” ` +
+      `from the stash, which first switches to where the stash was made. ` +
+      `Stash ${them} and try again, or commit ${them} first.`
     );
   }
   return (
@@ -456,13 +469,22 @@ async function untrackedStashAhead(
  * So everything of theirs where it will write is in the way, asked up front:
  * a change — staged, unstaged or untracked — to a file that differs between
  * HEAD and the stash's base (the switch), or that the stash changes, stages
- * or restores (the apply; touchedBy). Staged changes anywhere else are carried
- * along, and git's `--index` stages them again. Null when git cannot say;
- * otherwise `status` is the tree as it was asked, as for untrackedStashAhead.
+ * or restores (the apply; touchedBy).
+ *
+ * And for a stash that holds STAGED changes, every staged change of theirs,
+ * wherever it is. `git stash branch` always applies with `--index`, and that
+ * resets the index before it merges and then refuses over any staged change
+ * (verified against git 2.49: "Index was not unstashed") — after the switch,
+ * the user's staging undone. Only for a stash with nothing staged are staged
+ * changes elsewhere carried along, still staged. (Stash & Retry's stash takes
+ * everything staged, so its retry runs over a clean index.)
+ *
+ * Null when git cannot say; otherwise `status` is the tree as it was asked,
+ * as for untrackedStashAhead.
  */
 async function stashBranchAhead(
   proc: GitProcess,
-  op: StashOp,
+  op: StashOp & { branch: string },
   signal?: AbortSignal,
 ): Promise<{ status: string; inTheWay?: ChangesInTheWay } | null> {
   const status = await porcelain(proc, signal);
@@ -472,11 +494,18 @@ async function stashBranchAhead(
   if (s.merge.length > 0) return { status };
   const touched = await touchedBy(proc, op, signal);
   if (!touched) return { status };
+  const anyStaged = s.staged.length > 0 && (await new StashProvider(proc).holdsStaged(op.stash, { signal }));
   const untracked = new Set(s.unstaged.filter((f) => f.status === "U").map((f) => f.path));
-  const inWay = new Set([...s.staged, ...s.unstaged].map((f) => f.path).filter((p) => touched.has(p)));
+  const inWay = new Set([
+    ...s.staged.map((f) => f.path).filter((p) => anyStaged || touched.has(p)),
+    ...s.unstaged.map((f) => f.path).filter((p) => touched.has(p)),
+  ]);
   if (inWay.size === 0) return { status };
   const paths = [...inWay].sort();
-  return { status, inTheWay: { kind: "stash", paths, untracked: paths.filter((p) => untracked.has(p)) } };
+  return {
+    status,
+    inTheWay: { kind: "stash", paths, untracked: paths.filter((p) => untracked.has(p)), branch: op.branch },
+  };
 }
 
 /** HEAD's commit and the branch it is on — what a refusal leaves unchanged. */
@@ -563,7 +592,12 @@ async function changesInTheWay(
   }
   if (inWay.size === 0) return null;
   const paths = [...inWay].sort();
-  return { kind: op.kind, paths, untracked: paths.filter((p) => untracked.has(p)) };
+  return {
+    kind: op.kind,
+    paths,
+    untracked: paths.filter((p) => untracked.has(p)),
+    ...(isStashBranch(op) ? { branch: op.branch } : {}),
+  };
 }
 
 /**
@@ -734,7 +768,9 @@ function stashMessage(op: ApplyOp): string {
  * with whatever else is staged — the rest of the user's work is not the
  * command's business, but staging only survives the way back when nothing
  * else is staged (see stashTheWay). They are put back with their staging
- * where git can (`pop --index`), and without it where it cannot. If the
+ * where git can (`pop --index`), and without it where it cannot — unless one
+ * was staged apart from its file, whose staged version only the stash holds:
+ * then they stay in it, "kept" (see popOurs). If the
  * command stops part-way (conflicts to resolve) they are left in the stash,
  * as git's own autostash leaves them, and `fate` says so; if it fails outright
  * they are put straight back, as if nothing had been tried — and when that
@@ -1011,6 +1047,21 @@ async function putBack(
   return fate;
 }
 
+/**
+ * Pop our stash back, with its staging where git can.
+ *
+ * `pop --index` of a stash that holds staged changes, run over an index that
+ * holds staged changes too — the command's own: a stash's staging just
+ * restored, a new branch's — resets the index before it merges and then
+ * refuses (verified against git 2.49), and what the command staged is gone.
+ * So it runs only over a clean index, or for a stash with nothing staged
+ * (git leaves the index alone then).
+ *
+ * Without `--index` the changes come back unstaged. A pop drops the stash, and
+ * with it the only copy of a staged version that differed from its file
+ * (`MM`) — so a stash holding one stays in the list ("kept"). What was staged
+ * exactly as it was on disk is staged again, where the file still is that.
+ */
 async function popOurs(
   proc: GitProcess,
   stashes: StashProvider,
@@ -1018,18 +1069,68 @@ async function popOurs(
   signal?: AbortSignal,
 ): Promise<StashedFate> {
   const ref = await stashRefOf(stashes, ours, signal);
-  if (!ref) return "kept";
-  const withIndex = await proc.run(["stash", "pop", "--index", ref], { signal });
-  if (withIndex.code === 0) return "restored";
-  const st = await proc.run(["status", "--porcelain=v2", "-z"], { signal });
-  if (st.code === 0 && parseV2(st.stdout).merge.length > 0) return "conflicted";
-  // `--index` refuses when the staged half cannot be restored as it was;
-  // the changes themselves can still come back, unstaged.
-  if ((await stashRefOf(stashes, ours, signal)) !== ref) return "kept";
+  if (!ref || !ours) return "kept";
+  const staged = await stagedIn(proc, ours, signal);
+  if (!staged) return "kept";
+  const holds = staged.asOnDisk.length + staged.apart.length > 0;
+  if (!holds || (await indexMatchesHead(proc, signal))) {
+    const withIndex = await proc.run(["stash", "pop", "--index", ref], { signal });
+    if (withIndex.code === 0) return "restored";
+    const st = await proc.run(["status", "--porcelain=v2", "-z"], { signal });
+    if (st.code === 0 && parseV2(st.stdout).merge.length > 0) return "conflicted";
+    // `--index` refuses when the staged half cannot be restored as it was;
+    // the changes themselves can still come back, unstaged.
+    if ((await stashRefOf(stashes, ours, signal)) !== ref) return "kept";
+  }
+  if (staged.apart.length > 0) return "kept";
   const plain = await proc.run(["stash", "pop", ref], { signal });
-  if (plain.code === 0) return "restored";
+  if (plain.code === 0) {
+    await restageAsStashed(proc, ours, staged.asOnDisk, signal);
+    return "restored";
+  }
   const after = await proc.run(["status", "--porcelain=v2", "-z"], { signal });
   return after.code === 0 && parseV2(after.stdout).merge.length > 0 ? "conflicted" : "kept";
+}
+
+/**
+ * What a stash had staged: the paths staged exactly as their file was
+ * (`asOnDisk`), and those whose file differed from what was staged (`apart`)
+ * — a pop without `--index` loses the staged version of those. Null when git
+ * cannot say.
+ */
+async function stagedIn(
+  proc: GitProcess,
+  stash: string,
+  signal?: AbortSignal,
+): Promise<{ asOnDisk: string[]; apart: string[] } | null> {
+  const names = async (from: string, to: string): Promise<Set<string> | null> => {
+    const r = await proc.run(["diff", "--name-only", "-z", "--no-renames", from, to, "--"], { signal });
+    return r.code === 0 ? nameSet(r.stdout) : null;
+  };
+  const staged = await names(`${stash}^1`, `${stash}^2`);
+  const onDisk = await names(`${stash}^2`, stash);
+  if (!staged || !onDisk) return null;
+  const all = [...staged].sort();
+  return { asOnDisk: all.filter((p) => !onDisk.has(p)), apart: all.filter((p) => onDisk.has(p)) };
+}
+
+/** Stage again those of `paths` whose file is still exactly as the stash
+ *  holds it — after a pop that could not restore the stash's staging. */
+async function restageAsStashed(
+  proc: GitProcess,
+  stash: string,
+  paths: readonly string[],
+  signal?: AbortSignal,
+): Promise<void> {
+  if (paths.length === 0) return;
+  const differs = await proc.run(
+    ["diff", "--name-only", "-z", "--no-renames", stash, "--", ...paths.map(literally)],
+    { signal },
+  );
+  if (differs.code !== 0) return;
+  const changed = nameSet(differs.stdout);
+  const same = paths.filter((p) => !changed.has(p));
+  if (same.length > 0) await proc.run(["add", "--", ...same.map(literally)], { signal });
 }
 
 /**

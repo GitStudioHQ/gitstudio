@@ -30,7 +30,7 @@ import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
 import { GitProcess } from "../src/GitProcess";
 import { StashProvider } from "../src/StashProvider";
-import { runApplying, stashAndRetry } from "../src/changesInTheWay";
+import { changesInTheWayMessage, runApplying, stashAndRetry } from "../src/changesInTheWay";
 
 const trash: string[] = [];
 afterEach(() => {
@@ -334,7 +334,7 @@ test("branch op: an edit where the switch writes is in the way — asked before 
   git(dir, "commit", "-q", "-am", "HEAD moves on");
   write(dir, "other.ts", "mine\n"); // differs between HEAD and the stash's base
   const r = await runApplying(proc, { kind: "stash", stash: s, branch: "from-stash" });
-  assert.deepEqual(r.inTheWay, { kind: "stash", paths: ["other.ts"], untracked: [] });
+  assert.deepEqual(r.inTheWay, { kind: "stash", paths: ["other.ts"], untracked: [], branch: "from-stash" });
   assert.equal(head(dir), "main");
   assert.deepEqual(branches(dir), ["refs/heads/main"], "no branch was made");
   assert.equal(status(dir), " M other.ts");
@@ -346,7 +346,7 @@ test("branch op: an edit to a file the stash changes is in the way — git would
   const s = stashEdit(dir, "stashed", "stashed\n");
   write(dir, "app.ts", "mine\n");
   const r = await runApplying(proc, { kind: "stash", stash: s, branch: "from-stash" });
-  assert.deepEqual(r.inTheWay, { kind: "stash", paths: ["app.ts"], untracked: [] });
+  assert.deepEqual(r.inTheWay, { kind: "stash", paths: ["app.ts"], untracked: [], branch: "from-stash" });
   assert.equal(head(dir), "main", "not left on a new branch");
   assert.deepEqual(branches(dir), ["refs/heads/main"]);
   assert.equal(read(dir, "app.ts"), "mine\n");
@@ -360,12 +360,12 @@ test("branch op: an untracked file where the stash restores one is in the way", 
   const [s] = stashShas(dir);
   write(dir, "new.ts", "mine\n");
   const r = await runApplying(proc, { kind: "stash", stash: s, branch: "from-stash" });
-  assert.deepEqual(r.inTheWay, { kind: "stash", paths: ["new.ts"], untracked: ["new.ts"] });
+  assert.deepEqual(r.inTheWay, { kind: "stash", paths: ["new.ts"], untracked: ["new.ts"], branch: "from-stash" });
   assert.equal(head(dir), "main");
   assert.equal(read(dir, "new.ts"), "mine\n");
 });
 
-test("branch op: staged work elsewhere is carried along, still staged", async () => {
+test("branch op: staged work elsewhere is carried along, still staged — for a stash with nothing staged", async () => {
   const { dir, proc } = repo();
   const s = stashEdit(dir, "stashed", "stashed\n");
   write(dir, "other.ts", "mine, staged\n");
@@ -375,6 +375,77 @@ test("branch op: staged work elsewhere is carried along, still staged", async ()
   assert.equal(head(dir), "from-stash");
   assert.equal(status(dir), " M app.ts\nM  other.ts");
   assert.deepEqual(stashShas(dir), []);
+});
+
+// `git stash branch` always applies with --index. For a stash that holds
+// staged changes, git resets the index before it merges and then refuses over
+// ANY staged change of the user's — after the switch: the user was left on the
+// new branch, their staged change unstaged, the stash unapplied, and git's
+// error in red.
+test("branch op: a stash WITH staged changes over staged work anywhere — in the way, asked before git runs", async () => {
+  const { dir, proc } = repo();
+  const mm = stashMM(dir);
+  write(dir, "other.ts", "mine, staged\n");
+  git(dir, "add", "other.ts");
+  const r = await runApplying(proc, { kind: "stash", stash: mm, branch: "from-stash" });
+  assert.deepEqual(r.inTheWay, { kind: "stash", paths: ["other.ts"], untracked: [], branch: "from-stash" }, r.result.stderr);
+  assert.equal(head(dir), "main", "not left on a new branch");
+  assert.deepEqual(branches(dir), ["refs/heads/main"], "no branch was made");
+  assert.equal(status(dir), "M  other.ts", "still staged");
+  assert.deepEqual(stashShas(dir), [mm]);
+});
+
+test("branch op: …and Stash & Retry makes the branch with the stash's staging, and the staged work comes back staged", async () => {
+  const { dir, proc } = repo();
+  const mm = stashMM(dir);
+  write(dir, "other.ts", "mine, staged\n");
+  git(dir, "add", "other.ts");
+  const out = await stashAndRetry(proc, { kind: "stash", stash: mm, branch: "from-stash" });
+  assert.equal(out.result.code, 0, out.result.stderr);
+  assert.equal(head(dir), "from-stash");
+  assert.equal(git(dir, "show", ":util.ts"), "export const a = 2;\n", "the stash's staged version is staged");
+  assert.equal(read(dir, "util.ts"), "export const a = 3;\n");
+  assert.equal(out.fate, "restored");
+  assert.equal(read(dir, "other.ts"), "mine, staged\n", "the user's change is back");
+  assert.equal(git(dir, "show", ":other.ts"), "mine, staged\n", "…and staged, as it was");
+  assert.deepEqual(stashShas(dir), [], "the stash applied and dropped, and ours popped");
+});
+
+test("branch op: Stash & Retry over a file of the user's staged apart from its working copy keeps it in the stash — never loses the staged version", async () => {
+  const { dir, proc } = repo();
+  const mm = stashMM(dir);
+  write(dir, "other.ts", "mine, staged\n");
+  git(dir, "add", "other.ts");
+  write(dir, "other.ts", "mine, staged\nand more, unstaged\n");
+  const out = await stashAndRetry(proc, { kind: "stash", stash: mm, branch: "from-stash" });
+  assert.equal(out.result.code, 0, out.result.stderr);
+  assert.equal(head(dir), "from-stash");
+  assert.equal(git(dir, "show", ":util.ts"), "export const a = 2;\n", "the stash's staged version is staged");
+  // git will not put it back with its staging over the staging that just came
+  // in, and without it the staged version would be gone once popped.
+  assert.equal(out.fate, "kept");
+  const [ours] = stashShas(dir);
+  assert.equal(stashShas(dir).length, 1);
+  assert.equal(git(dir, "show", `${ours}^2:other.ts`), "mine, staged\n", "its staged version is in the stash");
+  assert.equal(git(dir, "show", `${ours}:other.ts`), "mine, staged\nand more, unstaged\n", "and its working copy");
+});
+
+test("branch op: what is in its way is said as creating the branch, not as applying the stash", async () => {
+  const { dir, proc } = repo();
+  const s = stashEdit(dir, "stashed", "stashed\n");
+  write(dir, "other.ts", "HEAD moves on\n");
+  git(dir, "commit", "-q", "-am", "HEAD moves on");
+  write(dir, "other.ts", "mine\n"); // in the way of the switch; the stash never touches it
+  const r = await runApplying(proc, { kind: "stash", stash: s, branch: "from-stash" });
+  assert.ok(r.inTheWay);
+  const said = changesInTheWayMessage(r.inTheWay!);
+  assert.match(said, /^Your uncommitted changes to other\.ts are in the way of creating the branch “from-stash” from the stash/, said);
+  assert.doesNotMatch(said, /applying the stash/, said);
+  assert.match(
+    changesInTheWayMessage({ kind: "stash", paths: ["app.ts"], untracked: [] }),
+    /in the way of applying the stash/,
+    "an apply is still said as one",
+  );
 });
 
 test("branch op: Stash & Retry puts the edit in the way aside, makes the branch, and brings the edit back", async () => {
