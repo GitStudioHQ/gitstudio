@@ -233,7 +233,10 @@ test("the question is asked in one place, holds through the watcher's refresh, a
   assert.doesNotMatch(ask, /holdWhile:\s*\(\)\s*=>\s*true/, "…but not across a switch to another repository");
   assert.doesNotMatch(ask, /"error"/, "never said as a failure");
   const renderer = await read("renderer/renderer.ts");
-  assert.match(renderer, /installInTheWayAsker\(\(\) => this\.currentRepo\?\.root\)/, "installed by the App, which knows what is open");
+  // Repositories are tabs (#32): the question holds while the tab it was
+  // asked in is the one in front — the bridge's session, which the tab shell
+  // sets on every switch.
+  assert.match(renderer, /installInTheWayAsker\(\(\) => currentSession\(\)\?\.root\)/, "installed by the tab shell, which knows which tab is in front");
   const door = (await read("main/inTheWay.ts"))
     .split("\n")
     .filter((l) => !COMMENT.test(l))

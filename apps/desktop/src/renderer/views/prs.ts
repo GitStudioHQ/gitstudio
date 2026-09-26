@@ -13,6 +13,7 @@
 import { host } from "../bridge";
 import { mdEditor } from "../mdEditor";
 import { peek as cachePeek, gget, bust, prime, cacheScope } from "../cache";
+import { perTab } from "../tabState";
 import {
   el,
   span,
@@ -64,6 +65,7 @@ import {
   secRow,
   sectionList,
   disposeOnDetach,
+  pageState,
   type GhGate,
   type SectionRender,
   type SectionNav,
@@ -91,22 +93,52 @@ import type {
   RepoLabel,
 } from "../../shared/ipc";
 
-// Persist the active sub-tab across re-renders so a comment / state change keeps
-// the user on the tab they were reading.
-let activeSubTab = "conversation";
-/** The section's router, captured at mount so detail components (branch chips,
- *  author profile, check rows) can navigate — mirrors the other module state. */
-let sectionNav: SectionNav | undefined;
-// The file selected within the Files tab, persisted so re-rendering the detail
-// (after a mutation) keeps the same diff open.
-let activeFilePath: string | undefined;
-/** Which PR the detail page last showed — tab state resets when it changes. */
-let lastDetailNumber: number | undefined;
-/** The list page's live search query — survives list ⇄ detail round trips. */
-let query = "";
-/** Which PRs to fetch. GitHub has no "merged" state — merged PRs arrive under
- *  `closed` carrying `mergedAt` — so "merged" asks for closed and narrows here. */
-let prState: "open" | "closed" | "merged" | "all" = "open";
+/**
+ * What the Pull Requests section remembers, for ONE tab (issue #32; see
+ * tabState.ts). At module scope it was the window's: the last tab to mount the
+ * section left its search, its segment and sort, its Files diff and — through a
+ * module-level router — its navigation behind for every other tab's kept page,
+ * where Edit, the branch chips and the check links then routed a tab in the
+ * back and did nothing. The router is not kept here at all now: every control
+ * uses the `nav` its own page was built with.
+ */
+interface PrsTabState {
+  /** The detail's sub-tab, kept across re-renders so a comment or a state
+   *  change keeps the reader on the tab they were reading. */
+  activeSubTab: string;
+  /** The file open in the Files tab, so re-rendering the detail (after a
+   *  mutation) keeps the same diff open. */
+  activeFilePath?: string;
+  /** Which PR the detail page last showed — the sub-tab resets when it changes. */
+  lastDetailNumber?: number;
+  /** The list page's live search query — survives list ⇄ detail round trips. */
+  query: string;
+  /** Which PRs to fetch. GitHub has no "merged" state — merged PRs arrive under
+   *  `closed` carrying `mergedAt` — so "merged" asks for closed and narrows here. */
+  prState: "open" | "closed" | "merged" | "all";
+  /** The list order. */
+  prSort: PrSort;
+  /** Client-side PR facets, kept across list ⇄ detail round trips. */
+  prFacets: FacetState;
+  /** Repaints the open detail's Review button after a queue change. Harmless
+   *  when stale — it touches a detached node. */
+  syncPendingUi: (() => void) | null;
+  /** The Files tab's live Monaco diff (see disposePrDiff). */
+  diffPanel?: DiffPanel;
+  /** Cancels that diff's detach watch. */
+  stopDiffWatch?: () => void;
+}
+
+/** A reply box, as Quote reply needs it. */
+type ReplyBox = { get(): string; set(v: string): void; focus(): void };
+const prsTab = perTab<PrsTabState>(() => ({
+  activeSubTab: "conversation",
+  query: "",
+  prState: "open",
+  prSort: "updated",
+  prFacets: {},
+  syncPendingUi: null,
+}));
 /**
  * The PENDING review — line comments queued locally, posted as ONE review.
  *
@@ -141,10 +173,6 @@ function pendingKey(n: number): string {
   return `${cacheScope()}#${n}`;
 }
 
-/** Repaints the header's Review button after a queue change. Set by the open
- *  detail's header render; harmless when stale — it touches a detached node. */
-let syncPendingUi: (() => void) | null = null;
-
 function pendingFor(n: number): PendingComment[] {
   const k = pendingKey(n);
   let q = pendingReviews.get(k);
@@ -157,10 +185,9 @@ function pendingFor(n: number): PendingComment[] {
 
 /** The list order — client-side re-sorts of the loaded page, like Issues. */
 type PrSort = "updated" | "newest" | "oldest" | "commented" | "reviewed";
-let prSort: PrSort = "updated";
 
 /** Re-order a copy; the cache's array is shared. */
-function sortPrs(items: PullRequest[]): PullRequest[] {
+function sortPrs(items: PullRequest[], prSort: PrSort): PullRequest[] {
   const out = [...items];
   switch (prSort) {
     case "updated":
@@ -174,29 +201,6 @@ function sortPrs(items: PullRequest[]): PullRequest[] {
     case "reviewed":
       return out.sort((a, b) => (b.reviewComments ?? 0) - (a.reviewComments ?? 0));
   }
-}
-/** Client-side PR facets, kept across list ⇄ detail round trips. */
-const prFacets: FacetState = {};
-/**
- * The repository the list state above was last used for.
- *
- * All of it is ABOUT a repository — a text query, a state segment, a sort, a
- * set of facet ticks — and nothing reset it when the open repository changed.
- * Switching repos landed on Pull requests still filtered by the last one's
- * search, usually matching nothing, with the header explaining that zero of
- * zero matched a query the screen had typed on your behalf.
- */
-let stateScope = "";
-
-/** Start clean when the repository under the list has changed. */
-function scopeListState(): void {
-  const now = cacheScope();
-  if (now === stateScope) return;
-  stateScope = now;
-  query = "";
-  prState = "open";
-  prSort = "updated";
-  for (const k of Object.keys(prFacets)) delete prFacets[k];
 }
 /**
  * Unsent comment drafts, per PR — navigating away must never eat one.
@@ -227,15 +231,13 @@ const replyDrafts = new Map<string, string>();
 //   • when the PR view itself re-renders (start of mount),
 //   • when our surface is detached from the DOM (navigating to another section) —
 //     caught by a MutationObserver so the editor never leaks.
-let prDiffPanel: DiffPanel | undefined;
-/** Cancels the detach watch below. */
-let stopPrDiffWatch: (() => void) | undefined;
-
-function disposePrDiff(): void {
-  stopPrDiffWatch?.();
-  stopPrDiffWatch = undefined;
-  prDiffPanel?.dispose();
-  prDiffPanel = undefined;
+// The panel is the TAB's (PrsTabState.diffPanel): opening a diff in one tab
+// used to dispose the one another tab was keeping.
+function disposePrDiff(S: PrsTabState): void {
+  S.stopDiffWatch?.();
+  S.stopDiffWatch = undefined;
+  S.diffPanel?.dispose();
+  S.diffPanel = undefined;
 }
 
 /**
@@ -244,19 +246,19 @@ function disposePrDiff(): void {
  *
  * It watches the WHOLE document for any mutation, so it fires constantly — and
  * it used to call `disposePrDiff()` on behalf of whatever panel happened to be
- * current, clearing `prDiffPanel` even when the surface it was watching was not
- * the live one. After that every `prDiffPanel !== panel` guard in the load path
+ * current, clearing the diff panel even when the surface it was watching was not
+ * the live one. After that every `diffPanel !== panel` guard in the load path
  * was true and the tab stayed blank forever, in both modes, until another file
  * was picked. It disposes only the panel it was created for, and only while
  * that panel is still the live one.
  */
-function watchDiffDetach(surface: HTMLElement, panel: DiffPanel): void {
-  stopPrDiffWatch?.();
-  stopPrDiffWatch = disposeOnDetach(surface, () => {
+function watchDiffDetach(S: PrsTabState, surface: HTMLElement, panel: DiffPanel): void {
+  S.stopDiffWatch?.();
+  S.stopDiffWatch = disposeOnDetach(surface, () => {
     // Only the panel this watch was created for, and only while it is still the
     // live one — see the note above.
-    if (prDiffPanel !== panel) return;
-    disposePrDiff();
+    if (S.diffPanel !== panel) return;
+    disposePrDiff(S);
   });
 }
 
@@ -290,11 +292,9 @@ export const renderPrs: SectionRender = (wrap, nav, target) => {
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
-  sectionNav = nav;
-  scopeListState();
   // A re-render replaces the whole view subtree — drop any live Monaco diff from
   // the previous render so it can't leak or write into detached DOM.
-  disposePrDiff();
+  disposePrDiff(prsTab());
   const refresh = (): void => {
     bust("pr");
     renderPrs(wrap, nav, target);
@@ -312,6 +312,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
 // ── The list page ────────────────────────────────────────────────────────────
 
 async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promise<void> {
+  const S = prsTab();
   const refresh = (): void => {
     bust("pr");
     renderPrs(wrap, nav);
@@ -336,10 +337,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       { value: "closed", label: `Closed${n(cachedClosed?.filter((x) => !x.mergedAt).length)}` },
       { value: "all", label: "All" },
     ],
-    value: prState,
+    value: S.prState,
     ariaLabel: "Pull request state",
     onChange: (v) => {
-      prState = v;
+      S.prState = v;
       renderPrs(wrap, nav);
     },
   });
@@ -356,7 +357,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     reviewed: "Most review comments",
   };
   const sortBtn = el("button", "mini-btn gh-sort-btn");
-  const sortLabel = span(SORT_LABELS[prSort]);
+  const sortLabel = span(SORT_LABELS[S.prSort]);
   sortBtn.append(glyph("sort-precedence"), sortLabel, glyph("chevron-down"));
   sortBtn.title = "Change the list order";
   sortBtn.setAttribute("aria-haspopup", "menu");
@@ -365,9 +366,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       sortBtn,
       (Object.keys(SORT_LABELS) as PrSort[]).map((k) => ({
         label: SORT_LABELS[k],
-        current: k === prSort,
+        current: k === S.prSort,
         onClick: () => {
-          prSort = k;
+          S.prSort = k;
           sortLabel.textContent = SORT_LABELS[k];
           renderList();
         },
@@ -387,7 +388,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   view.append(header, listEl);
   wrap.replaceChildren(view);
 
-  const fetchState = prState === "merged" ? "closed" : prState;
+  const fetchState = S.prState === "merged" ? "closed" : S.prState;
   let prs: PullRequest[] | undefined = cachePeek("pr:list", { state: fetchState });
   if (!prs) listEl.replaceChildren(skeletonList(5));
 
@@ -452,8 +453,8 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
    *  merged, so Merged and Closed are disjoint rather than one containing the
    *  other — which is what people mean when they pick one. */
   const stateMatches = (pr: PullRequest): boolean => {
-    if (prState === "merged") return !!pr.mergedAt;
-    if (prState === "closed") return pr.state === "closed" && !pr.mergedAt;
+    if (S.prState === "merged") return !!pr.mergedAt;
+    if (S.prState === "closed") return pr.state === "closed" && !pr.mergedAt;
     return true;
   };
 
@@ -550,7 +551,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         predicate: (pr, v) => (v === "fork" ? !!pr.headRepoFullName : !pr.headRepoFullName),
       },
     ],
-    state: prFacets,
+    state: S.prFacets,
     items: prs ?? [],
     onChange: () => renderList(),
   });
@@ -565,14 +566,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // one — options that filter the visible list down to nothing, offered as if
     // they were choices.
     facets.sync(inSegment);
-    const q = query.toLowerCase();
+    const q = S.query.toLowerCase();
     // The SEGMENT's own set is the total. `prs` is a superset — Merged and
     // Closed are fetched together — so counting against it put the badge in its
     // narrowed "N of M" form, with the accent and the "N shown of M loaded"
     // tooltip, on a segment where no filter was set at all: "0 of 5" above
     // "No closed pull requests". The "of" is a statement that something is
     // being filtered OUT, and picking a segment is not filtering.
-    const items = sortPrs(inSegment.filter((pr) => facets.passes(pr) && (q ? matches(pr, q) : true)));
+    const items = sortPrs(inSegment.filter((pr) => facets.passes(pr) && (q ? matches(pr, q) : true)), S.prSort);
     header.setCount?.(items.length, inSegment.length);
     // The tabs learn their counts the moment the list lands.
     if (fetchState === "open") stateSeg.setLabel("open", `Open (${prs.length})`);
@@ -585,7 +586,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // hardcoded to the open-state copy, so "Closed" reported "No open pull
     // requests — you're all caught up", which is about a different set entirely.
     // Same table Issues already uses.
-    const emptyCopy: Record<typeof prState, { title: string; desc: string; icon: string }> = {
+    const emptyCopy: Record<typeof S.prState, { title: string; desc: string; icon: string }> = {
       open: {
         title: "No open pull requests",
         desc: "You're all caught up — nothing to review right now.",
@@ -607,14 +608,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         icon: "git-pull-request",
       },
     };
-    const ec = emptyCopy[prState];
+    const ec = emptyCopy[S.prState];
     if (prs.length === 0) {
       listEl.appendChild(
         emptyState(ec.title, ec.desc, {
           icon: ec.icon,
           // Only offer to open one where opening one is the natural next step.
           action:
-            prState === "open" || prState === "all"
+            S.prState === "open" || S.prState === "all"
               ? { label: "New pull request", icon: "git-pull-request", onClick: () => void openCreatePr(refresh) }
               : undefined,
         }),
@@ -625,14 +626,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // Nothing filtered it — the segment did. Blaming filters that are not set
       // ("0 of 5 … matches these filters") sends people hunting for a control
       // that is already clear.
-      const bySegment = facets.activeCount() === 0 && !query;
+      const bySegment = facets.activeCount() === 0 && !S.query;
       listEl.appendChild(
         emptyState(
           bySegment ? ec.title : "No matching pull requests",
           bySegment
             ? ec.desc
-            : query
-              ? `Nothing matches “${query}”.`
+            : S.query
+              ? `Nothing matches “${S.query}”.`
               : "No pull request matches these filters.",
           {
             icon: bySegment ? ec.icon : "search",
@@ -658,9 +659,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
       placeholder: "Search pull requests…",
-      initial: query,
+      initial: S.query,
       onInput: (q) => {
-        query = q;
+        S.query = q;
         renderList();
       },
     }),
@@ -691,14 +692,14 @@ function showDetailPage(
   n: number,
   from?: { view: string; label: string },
 ): void {
-  sectionNav = nav;
-  disposePrDiff();
+  const S = prsTab();
+  disposePrDiff(S);
   // A DIFFERENT PR starts on Conversation with no file pre-selected — the
   // module-scoped tab used to leak: open PR B and land on PR A's Files tab.
-  if (lastDetailNumber !== n) {
-    lastDetailNumber = n;
-    activeSubTab = "conversation";
-    activeFilePath = undefined;
+  if (S.lastDetailNumber !== n) {
+    S.lastDetailNumber = n;
+    S.activeSubTab = "conversation";
+    S.activeFilePath = undefined;
   }
   // Back goes where you CAME from — see the note in issues.ts.
   const back = (): void => nav(from?.view ?? "prs", { list: true });
@@ -741,8 +742,14 @@ function showDetailPage(
   const schedulePoll = (current: PrDetail): void => {
     if (current.checks !== "pending") return;
     window.setTimeout(() => {
-      if (!view.isConnected) return;
-      if (activeSubTab === "files") {
+      const at = pageState(view);
+      if (at === "gone") return;
+      // Its tab is in the back: ask nothing, and look again (see pageState).
+      if (at === "away") {
+        schedulePoll(current);
+        return;
+      }
+      if (S.activeSubTab === "files") {
         schedulePoll(current);
         return;
       }
@@ -767,7 +774,7 @@ function showDetailPage(
           const sig = pollSig(fresh);
           if (sig !== lastSig) {
             lastSig = sig;
-            buildDetail({ view, main, rail, topActions, d: fresh, nav, reload });
+            buildDetail({ view, main, rail, topActions, d: fresh, nav, reload, tab: S });
           }
           schedulePoll(fresh);
         })
@@ -792,7 +799,7 @@ function showDetailPage(
       return;
     }
     lastSig = pollSig(d);
-    buildDetail({ view, main, rail, topActions, d, nav, reload });
+    buildDetail({ view, main, rail, topActions, d, nav, reload, tab: S });
     schedulePoll(d);
   })();
 }
@@ -805,10 +812,12 @@ interface DetailCtx {
   d: PrDetail;
   nav: SectionNav;
   reload: () => void;
+  /** This tab's section state — the page's own, whichever tab is in front. */
+  tab: PrsTabState;
 }
 
 function buildDetail(ctx: DetailCtx): void {
-  const { view, main, rail, topActions, d, nav, reload } = ctx;
+  const { view, main, rail, topActions, d, nav, reload, tab: S } = ctx;
   const full = d.pr;
   const kind = prKind(full);
   main.replaceChildren();
@@ -889,7 +898,7 @@ function buildDetail(ctx: DetailCtx): void {
         : "Submit a review";
   };
   paintReview();
-  syncPendingUi = paintReview;
+  S.syncPendingUi = paintReview;
   reviewBtn.addEventListener("click", () =>
     openMenu(reviewBtn, [
       { label: "Comment", icon: "comment", onClick: () => void doReview(full.number, "COMMENT", reviewBtn, reload) },
@@ -924,7 +933,7 @@ function buildDetail(ctx: DetailCtx): void {
   moreBtn.title = "More actions";
   moreBtn.addEventListener("click", () =>
     openMenu(moreBtn, [
-      { label: "Edit title & description", icon: "pencil", onClick: () => sectionNav?.("predit", { number: full.number }) },
+      { label: "Edit title & description", icon: "pencil", onClick: () => nav("predit", { number: full.number }) },
       { label: "Update branch", icon: "git-merge", onClick: () => void doUpdateBranch(full.number, reload) },
       { separator: true },
       full.state === "open"
@@ -955,7 +964,7 @@ function buildDetail(ctx: DetailCtx): void {
   editTitleBtn.append(glyph("pencil"));
   editTitleBtn.title = "Edit title & description";
   editTitleBtn.setAttribute("aria-label", "Edit pull request title and description");
-  editTitleBtn.addEventListener("click", () => sectionNav?.("predit", { number: full.number }));
+  editTitleBtn.addEventListener("click", () => nav("predit", { number: full.number }));
   titleRow.appendChild(editTitleBtn);
   main.appendChild(titleRow);
 
@@ -998,12 +1007,12 @@ function buildDetail(ctx: DetailCtx): void {
     ariaLabel: "Pull request sections",
     panel: content,
     onSelect: (id) => {
-      if (activeSubTab === "files" && id !== "files") disposePrDiff();
-      activeSubTab = id;
+      if (S.activeSubTab === "files" && id !== "files") disposePrDiff(S);
+      S.activeSubTab = id;
       // Files mode: the rail hides and the content column stretches to the full
       // window — a review surface, not a document.
       view.classList.toggle("det-files-mode", id === "files");
-      void renderSubTab(content, full, d, id, reload, nav);
+      void renderSubTab(content, full, d, id, reload, nav, S);
     },
   });
   const selectSub = tabs.select;
@@ -1097,7 +1106,7 @@ function buildDetail(ctx: DetailCtx): void {
     const b = el("button", "gh-branch-chip");
     b.append(glyph("git-branch"), span(ref));
     b.title = `Show ${ref} in Branches`;
-    b.addEventListener("click", () => sectionNav?.("branches", { ref }));
+    b.addEventListener("click", () => nav("branches", { ref }));
     return b;
   };
   const flow = el("span", "gh-meta-flow");
@@ -1213,7 +1222,7 @@ function buildDetail(ctx: DetailCtx): void {
     about.root,
   );
 
-  selectSub(subDefs.some((s) => s.id === activeSubTab) ? activeSubTab : "conversation");
+  selectSub(subDefs.some((s) => s.id === S.activeSubTab) ? S.activeSubTab : "conversation");
 }
 
 // ── Sub-tab content ──────────────────────────────────────────────────────────
@@ -1225,6 +1234,7 @@ async function renderSubTab(
   id: string,
   reload: () => void,
   nav: SectionNav,
+  S: PrsTabState,
 ): Promise<void> {
   content.replaceChildren(loadingState());
   // Who is reading, so a comment offers only what this account may do.
@@ -1232,6 +1242,8 @@ async function renderSubTab(
     .then((st) => st.login)
     .catch(() => undefined);
   if (id === "conversation") {
+    // The reply box below — where THIS page's Quote reply lands.
+    const reply: { box?: ReplyBox } = {};
     let conv: PrComment[] = [];
     let convFailed: unknown;
     try {
@@ -1242,17 +1254,17 @@ async function renderSubTab(
       // Said, not swallowed.
       convFailed = e;
     }
-    if (activeSubTab !== id) return; // a newer tab was selected mid-fetch
+    if (S.activeSubTab !== id) return; // a newer tab was selected mid-fetch
     content.replaceChildren();
     const timeline = el("div", "gh-subcontent");
-    wireProseNav(timeline, sectionNav);
+    wireProseNav(timeline, nav);
     if (full.body && full.body.trim()) {
       timeline.appendChild(
         commentCard(full.user?.login ?? "author", "opened this pull request", full.body, undefined, {
           association: full.authorAssociation,
           reactions: full.reactions,
           createdAt: full.createdAt,
-          onQuote: (t) => quoteIntoPr(t, full.user?.login),
+          onQuote: (t) => quoteIntoPr(reply.box, t, full.user?.login),
           // A pull request IS an issue to the reactions endpoint, so its body
           // reacts by PR number.
           onReact: (content, on) => togglePrReaction("issue", full.number, content, on),
@@ -1284,7 +1296,7 @@ async function renderSubTab(
             c.kind === "comment" && c.id
               ? { id: c.id, htmlUrl: c.htmlUrl, mine: c.author === viewerLogin, reload }
               : undefined,
-          onQuote: (t) => quoteIntoPr(t, c.author),
+          onQuote: (t) => quoteIntoPr(reply.box, t, c.author),
           onReact:
             c.kind === "comment" && c.id
               ? (content, on) => togglePrReaction("comment", c.id!, content, on)
@@ -1317,7 +1329,7 @@ async function renderSubTab(
       },
     });
     const ta = ed.textarea;
-    livePrComposer = ed;
+    reply.box = ed;
     const crow = el("div", "gh-composer-actions");
     const send = el("button", "btn btn-primary") as HTMLButtonElement;
     send.append(glyph("comment"), span("Comment"));
@@ -1339,7 +1351,7 @@ async function renderSubTab(
     try {
       commits = await host.invoke("pr:commits", full.number);
     } catch (e) {
-      if (activeSubTab !== id) return;
+      if (S.activeSubTab !== id) return;
       // `reload` is in scope and was simply never passed, so a failed read had
       // no way back short of leaving the pull request and returning.
       content.replaceChildren(
@@ -1347,7 +1359,7 @@ async function renderSubTab(
       );
       return;
     }
-    if (activeSubTab !== id) return;
+    if (S.activeSubTab !== id) return;
     content.replaceChildren();
     if (commits.length === 0) {
       content.appendChild(emptyState("No commits", "This PR has no commits yet."));
@@ -1384,13 +1396,13 @@ async function renderSubTab(
     try {
       checks = await host.invoke("pr:checks", full.number);
     } catch (e) {
-      if (activeSubTab !== id) return;
+      if (S.activeSubTab !== id) return;
       content.replaceChildren(
         errorState("Couldn't load checks", cleanErr(e) || "GitHub request failed.", reload),
       );
       return;
     }
-    if (activeSubTab !== id) return;
+    if (S.activeSubTab !== id) return;
     content.replaceChildren();
     if (checks.length === 0) {
       content.appendChild(emptyState("No checks", "No CI checks reported for this PR's head commit."));
@@ -1430,8 +1442,8 @@ async function renderSubTab(
           if (gha) {
             const jobId = gha[2] ? Number(gha[2]) : undefined;
             const runId = Number(gha[1]);
-            if (jobId != null) sectionNav?.("joblog", { number: runId, jobId });
-            else sectionNav?.("actions", { number: runId });
+            if (jobId != null) nav("joblog", { number: runId, jobId });
+            else nav("actions", { number: runId });
           } else {
             window.open(c.detailsUrl!, "_blank");
           }
@@ -1453,7 +1465,7 @@ async function renderSubTab(
       content.appendChild(emptyState("No files changed", "This PR doesn't change any files."));
       return;
     }
-    renderFilesTab(content, full, files);
+    renderFilesTab(content, full, files, S);
   }
 }
 
@@ -1464,7 +1476,7 @@ async function renderSubTab(
  * the whole page column stretches, so the diff gets real height. Layout comes
  * from the .pr-files* CSS — no inline styles.
  */
-function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]): void {
+function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[], S: PrsTabState): void {
   const layout = el("div", "pr-files");
   const list = el("div", "pr-files-list gh-files");
   const detail = el("div", "pr-files-detail");
@@ -1492,9 +1504,9 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
 
   const rows = new Map<string, HTMLElement>();
   const openFile = (f: PrFile): void => {
-    activeFilePath = f.filename;
+    S.activeFilePath = f.filename;
     for (const [p, r] of rows) r.classList.toggle("active", p === f.filename);
-    void showFileDiff(detail, full, f, loadThreads);
+    void showFileDiff(detail, full, f, loadThreads, S);
   };
 
   // GitHub sends WORDS; the CSS and the reader both want git's letters. Taking
@@ -1556,7 +1568,7 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
   }
 
   // Re-open the previously-viewed file if it's still in the set, else the first.
-  const initial = files.find((f) => f.filename === activeFilePath) ?? files[0];
+  const initial = files.find((f) => f.filename === S.activeFilePath) ?? files[0];
   if (initial) openFile(initial);
 }
 
@@ -1571,28 +1583,29 @@ async function showFileDiff(
   full: PullRequest,
   f: PrFile,
   loadThreads: () => Promise<LoadedThreads>,
+  S: PrsTabState,
 ): Promise<void> {
   const surface = el("div", "diff-surface pr-diff-surface");
   const threadsSlot = el("div", "pr-threads");
   detail.replaceChildren(surface, threadsSlot);
   threadsSlot.replaceChildren(loadingState("Loading diff…"));
 
-  disposePrDiff();
+  disposePrDiff(S);
   const panel = new DiffPanel(surface);
-  prDiffPanel = panel;
+  S.diffPanel = panel;
   // The diff arrives over the network. `new DiffPanel(surface)` paints NOTHING,
   // so the pane sat blank for the whole round trip — and every guard below is a
-  // bare `if (prDiffPanel !== panel) return`, so anything that superseded this
+  // bare `if (S.diffPanel !== panel) return`, so anything that superseded this
   // open left the blank there permanently, with no message. Say what is
   // happening from the first frame.
   panel.showEmpty(`Loading ${f.filename}…`, { title: "Reading the diff", kind: "waiting" });
-  watchDiffDetach(surface, panel);
+  watchDiffDetach(S, surface, panel);
 
   const refreshThreads = async (): Promise<void> => {
-    if (prDiffPanel !== panel) return; // the file/view changed under us
+    if (S.diffPanel !== panel) return; // the file/view changed under us
     threadsSlot.replaceChildren(loadingState("Refreshing comments…"));
     const next = await loadThreads();
-    if (prDiffPanel !== panel) return;
+    if (S.diffPanel !== panel) return;
     renderThreadsPanel(threadsSlot, full, f, next.threads, () => void refreshThreads(), next.error, next.unreadable);
   };
 
@@ -1602,12 +1615,12 @@ async function showFileDiff(
   try {
     diff = await host.invoke("pr:fileDiff", { number: full.number, path: f.filename });
   } catch (e) {
-    if (prDiffPanel !== panel) return; // superseded by another open
+    if (S.diffPanel !== panel) return; // superseded by another open
     panel.showEmpty(cleanErr(e) || "GitHub did not return this file's diff.", { kind: "error" });
     threadsSlot.replaceChildren();
     return;
   }
-  if (prDiffPanel !== panel) return; // a newer file was opened mid-fetch
+  if (S.diffPanel !== panel) return; // a newer file was opened mid-fetch
   if (!diff) {
     panel.showEmpty("GitHub reports no textual changes in this file.", { kind: "none" });
   } else {
@@ -1616,7 +1629,7 @@ async function showFileDiff(
 
   const loaded = await threadsReady;
   const threads = loaded.threads;
-  if (prDiffPanel !== panel) return;
+  if (S.diffPanel !== panel) return;
   renderThreadsPanel(threadsSlot, full, f, threads, () => void refreshThreads(), loaded.error, loaded.unreadable);
 }
 
@@ -1743,7 +1756,7 @@ function renderThreadsPanel(
       const q = pendingFor(full.number);
       const idx = q.indexOf(c);
       if (idx >= 0) q.splice(idx, 1);
-      syncPendingUi?.();
+      prsTab().syncPendingUi?.();
       reloadFile();
     });
     hd.appendChild(drop);
@@ -1935,10 +1948,9 @@ function commentCard(
   return card;
 }
 
-/** The reply box on screen, so Quote reply has somewhere to land. */
-let livePrComposer: { get(): string; set(v: string): void; focus(): void } | undefined;
-
-function quoteIntoPr(body: string, author?: string | null): void {
+/** Quote into the reply box on the SAME page as the comment, handed in by it —
+ *  never "the one on screen", a global another tab's page had set (#32). */
+function quoteIntoPr(livePrComposer: ReplyBox | undefined, body: string, author?: string | null): void {
   if (!livePrComposer) return;
   const quoted = body
     .trim()
@@ -2108,7 +2120,7 @@ async function doReview(
           return cleanErr(e) || "Couldn't submit the review.";
         }
         pendingReviews.delete(pendingKey(n));
-        syncPendingUi?.();
+        prsTab().syncPendingUi?.();
         toast(
           queued.length > 0
             ? `Review submitted on PR #${n} — ${queued.length} comment${queued.length === 1 ? "" : "s"} posted with it.`
@@ -2193,7 +2205,7 @@ function reviewModal(
             rm.addEventListener("click", () => {
               const idx = queue.indexOf(c);
               if (idx >= 0) queue.splice(idx, 1);
-              syncPendingUi?.();
+              prsTab().syncPendingUi?.();
               paintQueue();
             });
             row.appendChild(rm);
@@ -2321,7 +2333,7 @@ async function doComment(
     }
     toast(`Commented on PR #${n}.`, "success");
     commentDrafts.delete(draftKey(n));
-    activeSubTab = "conversation";
+    prsTab().activeSubTab = "conversation";
     reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't post the comment.", "error");
@@ -2629,7 +2641,7 @@ async function addInlineComment(
       ...(side ? { side } : {}),
       body,
     });
-    syncPendingUi?.();
+    prsTab().syncPendingUi?.();
     toast(
       `Added to your review — ${pendingFor(n).length} pending. Nothing posts until you submit.`,
       "success",

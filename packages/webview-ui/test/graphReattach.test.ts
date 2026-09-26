@@ -88,6 +88,13 @@ const BODY = (tag: string, ready: string) => `
 
   const back = onScreen(el);
   expect(back > 0, "rows are on screen when it comes back (" + back + " in view)");
+  // …and where they were: a node taken out of the document loses its scroll
+  // offset, and a history you were reading 1800px down came back at the top
+  // (a view switch on the desktop, and a repository tab to the back, #32).
+  const sc = el.shadowRoot.querySelector(".scroller");
+  expect(Math.abs(sc.scrollTop - 1800) <= 1, "it comes back scrolled where it was (" + sc.scrollTop + ")");
+  const firstShown = rowsOf(el).find((r) => r.getBoundingClientRect().bottom > sc.getBoundingClientRect().top);
+  expect(!!firstShown && firstShown.dataset.sha === sha(Math.floor(1800 / ROW_HEIGHT)), "…showing the rows it showed (" + (firstShown && firstShown.dataset.sha) + ")");
   notes.onScreenAfterReturn = back;
   notes.firstRowTop = rowsOf(el)[0] ? Math.round(rowsOf(el)[0].getBoundingClientRect().top) : null;
 

@@ -12,6 +12,7 @@ import type { MenuItem } from "../ui";
 import { createSearchScheduler } from "../searchDebounce";
 import { mdEditor } from "../mdEditor";
 import { peek as cachePeek, gget, bust, cacheScope } from "../cache";
+import { perTab } from "../tabState";
 import {
   avatar,
   cleanErr,
@@ -80,42 +81,68 @@ import type {
   RepoLabel,
 } from "../../shared/ipc";
 
-// ── Section state (module-level so it survives list ⇄ detail round trips) ────
+// ── Section state (kept so it survives list ⇄ detail round trips) ───────────
 
-let issueState: "open" | "closed" | "all" = "open";
 /** The list order. "updated" is what the API returns; the rest are re-sorts of
  *  the loaded page — said honestly by the button, which names the order rather
  *  than pretending to be a server query. */
 type IssueSort = "updated" | "newest" | "oldest" | "commented" | "reactions";
-let issueSort: IssueSort = "updated";
-/** Client-side facets over the loaded list (shared facetBar vocabulary). */
-const issueFacets: FacetState = {};
-/** The live text query — kept so Back from a detail restores the search. */
-let query = "";
+
 /**
- * What GitHub returned for the current query, or null when the list on screen
- * is the locally-filtered one.
+ * What the Issues section remembers, for ONE tab (issue #32; see
+ * tabState.ts).
  *
- * The box does two things at once, deliberately. Typing filters what is
- * already loaded INSTANTLY, because that costs nothing and is usually the
- * answer. A moment later the same query goes to `/search/issues`, which reaches
- * past the 300 most recently updated and is the only path on which
- * `author:@me`, `no:assignee` or `label:"…"` mean anything at all. When that
- * lands it replaces the list, and the header says which of the two you are
- * looking at — a search that quietly searched a subset is the defect this
- * exists to fix, so it must never be ambiguous which one answered.
+ * All of it is ABOUT a repository: a `label:"needs-triage"` query, a state
+ * segment, a sort, a set of facet ticks, the search hits GitHub sent back. At
+ * module scope it was the window's, reset whenever another repository's
+ * Issues mounted — and with tabs every tab keeps its own Issues page alive. A
+ * kept page's search box still showed its own query while its next repaint (a
+ * sort, a facet, the revalidation) read whatever the last tab had left, its
+ * GitHub search hits included: ANOTHER repository's issues, one click from
+ * opening #28 in the wrong repository.
  */
-let serverHits: IssueInfo[] | null = null;
-/**
- * The reply box currently on screen, so "Quote reply" has somewhere to put
- * what it quoted. Set when the detail page builds its composer and cleared
- * when it goes — a stale one would drop a quote into a box nobody can see.
- */
-let liveComposer: { get(): string; set(v: string): void; focus(): void } | undefined;
+interface IssuesTabState {
+  issueState: "open" | "closed" | "all";
+  issueSort: IssueSort;
+  /** Client-side facets over the loaded list (shared facetBar vocabulary). */
+  issueFacets: FacetState;
+  /** The live text query — kept so Back from a detail restores the search. */
+  query: string;
+  /**
+   * What GitHub returned for the current query, or null when the list on screen
+   * is the locally-filtered one.
+   *
+   * The box does two things at once, deliberately. Typing filters what is
+   * already loaded INSTANTLY, because that costs nothing and is usually the
+   * answer. A moment later the same query goes to `/search/issues`, which
+   * reaches past the 300 most recently updated and is the only path on which
+   * `author:@me`, `no:assignee` or `label:"…"` mean anything at all. When that
+   * lands it replaces the list, and the header says which of the two you are
+   * looking at — a search that quietly searched a subset is the defect this
+   * exists to fix, so it must never be ambiguous which one answered.
+   */
+  serverHits: IssueInfo[] | null;
+  serverNote: string;
+}
+
+/** A reply box, as Quote reply needs it. */
+type ReplyBox = { get(): string; set(v: string): void; focus(): void };
+const issuesTab = perTab<IssuesTabState>(() => ({
+  issueState: "open",
+  issueSort: "updated",
+  issueFacets: {},
+  query: "",
+  serverHits: null,
+  serverNote: "",
+}));
 
 /** Drop a comment into the reply box as a markdown quote, the way GitHub does:
- *  the body prefixed with "> ", the author credited, and the cursor after it. */
-function quoteInto(body: string, author?: string | null): void {
+ *  the body prefixed with "> ", the author credited, and the cursor after it.
+ *
+ *  The box is the one on the SAME page as the comment, handed in by it. It was
+ *  "the reply box on screen", a module global the last detail page built set —
+ *  another tab's, or the Inbox's, whose box nobody could see (issue #32). */
+function quoteInto(liveComposer: ReplyBox | undefined, body: string, author?: string | null): void {
   if (!liveComposer) return;
   const quoted = body
     .trim()
@@ -126,31 +153,6 @@ function quoteInto(body: string, author?: string | null): void {
   const existing = liveComposer.get().trim();
   liveComposer.set(`${existing ? `${existing}\n\n` : ""}${prefix}${quoted}\n\n`);
   liveComposer.focus();
-}
-let serverNote = "";
-/**
- * The repository the list state above was last used for.
- *
- * All of it is ABOUT a repository: a `label:"needs-triage"` query, a state
- * segment, a sort, a set of facet ticks. Kept at module scope so Back from a
- * detail restores the search — but nothing reset it when the open repository
- * changed, so switching repos landed on Issues still filtered by the last
- * one's search, usually matching nothing, with a header explaining that zero
- * of zero issues matched a query the screen had typed for you.
- */
-let stateScope = "";
-
-/** Start clean when the repository under the list has changed. */
-function scopeListState(): void {
-  const now = cacheScope();
-  if (now === stateScope) return;
-  stateScope = now;
-  issueState = "open";
-  issueSort = "updated";
-  for (const k of Object.keys(issueFacets)) delete issueFacets[k];
-  query = "";
-  serverHits = null;
-  serverNote = "";
 }
 
 /**
@@ -540,7 +542,6 @@ export const renderIssues: SectionRender = (wrap, nav, target) => {
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
-  scopeListState();
   const refresh = (): void => {
     bust("issue");
     renderIssues(wrap, nav, target);
@@ -558,6 +559,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
 // ── The list page ────────────────────────────────────────────────────────────
 
 async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promise<void> {
+  const S = issuesTab();
   const refresh = (): void => {
     bust("issue");
     renderIssues(wrap, nav);
@@ -582,10 +584,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       { value: "closed", label: `Closed${countFor("closed")}` },
       { value: "all", label: "All" },
     ],
-    value: issueState,
+    value: S.issueState,
     ariaLabel: "Issue state",
     onChange: (v) => {
-      issueState = v;
+      S.issueState = v;
       renderIssues(wrap, nav);
     },
   });
@@ -603,7 +605,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     reactions: "Most reactions",
   };
   const sortBtn = el("button", "mini-btn gh-sort-btn");
-  const sortLabel = span(SORT_LABELS[issueSort]);
+  const sortLabel = span(SORT_LABELS[S.issueSort]);
   sortBtn.append(glyph("sort-precedence"), sortLabel, glyph("chevron-down"));
   sortBtn.title = "Change the list order";
   sortBtn.setAttribute("aria-haspopup", "menu");
@@ -612,9 +614,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       sortBtn,
       (Object.keys(SORT_LABELS) as IssueSort[]).map((k) => ({
         label: SORT_LABELS[k],
-        current: k === issueSort,
+        current: k === S.issueSort,
         onClick: () => {
-          issueSort = k;
+          S.issueSort = k;
           sortLabel.textContent = SORT_LABELS[k];
           renderList();
         },
@@ -634,7 +636,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   wrap.replaceChildren(view);
 
   // ── data: paint from cache instantly, revalidate in the background ──
-  let issues: IssueInfo[] | undefined = cachePeek("issue:list", { state: issueState });
+  let issues: IssueInfo[] | undefined = cachePeek("issue:list", { state: S.issueState });
   if (!issues) listEl.replaceChildren(skeletonList(6));
 
   const buildRow = (it: IssueInfo): HTMLElement => {
@@ -704,10 +706,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const searcher = createSearchScheduler((q, gen) => {
     void (async () => {
       try {
-        const res = await host.invoke("issue:search", { query: q, state: issueState });
-        if (!searcher.isCurrent(gen) || !view.isConnected || query.trim() !== q) return;
-        serverHits = res.items;
-        serverNote = res.incomplete
+        const res = await host.invoke("issue:search", { query: q, state: S.issueState });
+        if (!searcher.isCurrent(gen) || !view.isConnected || S.query.trim() !== q) return;
+        S.serverHits = res.items;
+        S.serverNote = res.incomplete
           ? `${res.items.length} from GitHub — it gave up early, so there may be more`
           : res.totalCount > res.items.length
             ? `${res.items.length} of ${res.totalCount} matching issues on GitHub`
@@ -717,8 +719,8 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         // Leave the local filter on screen and say so, rather than emptying
         // the list because the network hiccuped.
         if (!searcher.isCurrent(gen) || !view.isConnected) return;
-        serverHits = null;
-        serverNote = "Couldn’t reach GitHub — showing matches from the issues already loaded";
+        S.serverHits = null;
+        S.serverNote = "Couldn’t reach GitHub — showing matches from the issues already loaded";
         renderList();
       }
     })();
@@ -729,24 +731,24 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // Re-harvest before painting: the bar is built before the first fetch
     // lands, and a facet menu that offers nothing is worse than no facet.
     facets.sync(issues);
-    const q = query.toLowerCase();
+    const q = S.query.toLowerCase();
     // GitHub's answer wins when we have one for THIS query: it saw every issue
     // in the repository, and the local filter only ever saw the loaded page.
-    const source = q && serverHits ? serverHits : issues;
-    const items = source.filter((it) => passesFacets(it) && (q && !serverHits ? matches(it, q) : true));
-    header.setCount?.(items.length, serverHits && q ? undefined : issues.length);
+    const source = q && S.serverHits ? S.serverHits : issues;
+    const items = source.filter((it) => passesFacets(it) && (q && !S.serverHits ? matches(it, q) : true));
+    header.setCount?.(items.length, S.serverHits && q ? undefined : issues.length);
     // The tab learns its count the moment the list lands, not on the next visit.
-    if (issueState !== "all") {
-      seg.setLabel(issueState, `${issueState === "open" ? "Open" : "Closed"} (${issues.length})`);
+    if (S.issueState !== "all") {
+      seg.setLabel(S.issueState, `${S.issueState === "open" ? "Open" : "Closed"} (${issues.length})`);
     } else {
       // All carries both counts — label both tabs so neither grows on the next click.
       seg.setLabel("open", `Open (${issues.filter((i) => i.state === "open").length})`);
       seg.setLabel("closed", `Closed (${issues.filter((i) => i.state === "closed").length})`);
     }
-    setSearchNote(serverNote);
+    setSearchNote(S.serverNote);
     listEl.replaceChildren();
     if (issues.length === 0) {
-      const emptyCopy: Record<typeof issueState, { title: string; desc: string; icon: string }> = {
+      const emptyCopy: Record<typeof S.issueState, { title: string; desc: string; icon: string }> = {
         open: {
           title: "No open issues",
           desc: "You're all caught up — there's nothing open to triage right now.",
@@ -763,12 +765,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
           icon: "issue-opened",
         },
       };
-      const c = emptyCopy[issueState];
+      const c = emptyCopy[S.issueState];
       listEl.appendChild(
         emptyState(
           c.title,
           c.desc,
-          issueState === "closed"
+          S.issueState === "closed"
             ? { icon: c.icon }
             : {
                 icon: c.icon,
@@ -779,7 +781,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       return;
     }
     if (items.length === 0) {
-      const desc = query ? `Nothing matches “${query}”.` : "No issues match the active filters.";
+      const desc = S.query ? `Nothing matches “${S.query}”.` : "No issues match the active filters.";
       listEl.appendChild(
         emptyState("No matching issues", desc, {
           icon: "search",
@@ -792,7 +794,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       );
       return;
     }
-    for (const it of sortIssues(items)) listEl.appendChild(buildRow(it));
+    for (const it of sortIssues(items, S.issueSort)) listEl.appendChild(buildRow(it));
     const cap = capNotice(issues.length, LIST_CAPS.issues);
     if (cap) listEl.appendChild(cap);
   };
@@ -887,9 +889,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // tab rather than offered there as a filter that can only ever match zero
       // rows. GitHub calls this "closed as"; "Reason" said nothing next to the
       // Open/Closed/All segment.
-      ...(issueState === "open" ? [] : [closedReasonSpec]),
+      ...(S.issueState === "open" ? [] : [closedReasonSpec]),
     ],
-    state: issueFacets,
+    state: S.issueFacets,
     items: issues ?? [],
     onChange: () => renderList(),
   });
@@ -898,14 +900,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
       placeholder: "Search issues…",
-      initial: query,
+      initial: S.query,
       onInput: (q) => {
-        query = q;
+        S.query = q;
         // The old answer is not about the new query. Dropping it here is what
         // stops a stale "12 matching issues on GitHub" sitting above results
         // for something else entirely.
-        serverHits = null;
-        serverNote = q.trim() ? "Searching GitHub…" : "";
+        S.serverHits = null;
+        S.serverNote = q.trim() ? "Searching GitHub…" : "";
         renderList();
         searcher.queue(q);
       },
@@ -915,7 +917,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   if (issues) renderList(); // instant paint from cache
 
   try {
-    const fresh = await gget("issue:list", { state: issueState }, 15000);
+    const fresh = await gget("issue:list", { state: S.issueState }, 15000);
     if (!view.isConnected) return;
     issues = fresh;
     renderList();
@@ -1041,6 +1043,8 @@ interface DetailCtx {
 
 function buildDetail(ctx: DetailCtx): void {
   const { main, rail, d, nav, reload } = ctx;
+  // The reply box below — where THIS page's Quote reply lands.
+  const reply: { box?: ReplyBox } = {};
   const it = d.issue;
   main.replaceChildren();
   rail?.replaceChildren();
@@ -1423,7 +1427,7 @@ function buildDetail(ctx: DetailCtx): void {
     commentCard(it.user?.login ?? "author", "opened this issue", it.body ?? "", it.createdAt, {
       association: it.authorAssociation,
       reactions: it.reactions,
-      onQuote: (text) => quoteInto(text, it.user?.login),
+      onQuote: (text) => quoteInto(reply.box, text, it.user?.login),
       onIssueReact: (content, on) => toggleReaction("issue", it.number, content, on),
     }),
   );
@@ -1451,7 +1455,7 @@ function buildDetail(ctx: DetailCtx): void {
         association: c.authorAssociation,
         reactions: c.reactions,
         comment: { id: c.id, htmlUrl: c.htmlUrl, mine: c.author?.login === ctx.viewer, reload },
-        onQuote: (text) => quoteInto(text, c.author?.login),
+        onQuote: (text) => quoteInto(reply.box, text, c.author?.login),
       }),
     );
   }
@@ -1482,7 +1486,7 @@ function buildDetail(ctx: DetailCtx): void {
   const ta = ed.textarea;
   // Quote reply writes here. Cleared by the next detail render, which replaces
   // this composer with its own.
-  liveComposer = ed;
+  reply.box = ed;
   const crow = el("div", "gh-composer-actions");
   const send = el("button", "btn btn-primary") as HTMLButtonElement;
   send.append(glyph("comment"), span("Comment"));
@@ -1554,7 +1558,7 @@ async function postComment(
 
 /** Lock or unlock the conversation, and say what happened. */
 /** Re-order the loaded page. A copy — the cache's array is shared. */
-function sortIssues(items: IssueInfo[]): IssueInfo[] {
+function sortIssues(items: IssueInfo[], issueSort: IssueSort): IssueInfo[] {
   const out = [...items];
   const reactions = (it: IssueInfo): number => it.reactions?.total ?? 0;
   switch (issueSort) {

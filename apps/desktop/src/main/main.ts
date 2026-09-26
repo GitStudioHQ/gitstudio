@@ -21,8 +21,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { join, basename, extname, dirname, resolve as resolvePath } from "node:path";
 import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "node:fs/promises";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
-import { RepoStore } from "./repoStore";
-import { cannotOpenNotice } from "./repoNotice";
+import { RepoStore, repoScope } from "./repoStore";
+import { cannotOpenNotice, droppedTabsNotice, tabsFullNotice, missingFolderError, missingFolderResult } from "./repoNotice";
+import { menuDelivery, type MenuCommand } from "./menuDelivery";
 import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
 import { RebaseBridge } from "./rebaseBridge";
@@ -35,6 +36,7 @@ import {
   visibleRepoFolders,
   realOrResolve,
   localStatuses,
+  tabStatuses,
   wasLastScanTruncated,
   LocalRepoScanner,
   samePath,
@@ -95,13 +97,20 @@ function statePath(): string {
   return join(app.getPath("userData"), "gitstudio-state.json");
 }
 
-async function loadState(): Promise<{ recent: string[]; current?: string }> {
+async function loadState(): Promise<{ recent: string[]; current?: string; open: string[] }> {
   try {
     const raw = await readFile(statePath(), "utf8");
-    const parsed = JSON.parse(raw) as { recent?: string[]; current?: string };
-    return { recent: parsed.recent ?? [], current: parsed.current };
+    const parsed = JSON.parse(raw) as { recent?: string[]; current?: string; open?: unknown };
+    // `open` is the tab row (issue #32). A file written before tabs has only
+    // `current`, which is then the one tab to bring back.
+    const open = Array.isArray(parsed.open)
+      ? parsed.open.filter((r): r is string => typeof r === "string" && r.length > 0)
+      : parsed.current
+        ? [parsed.current]
+        : [];
+    return { recent: parsed.recent ?? [], current: parsed.current, open };
   } catch {
-    return { recent: [] };
+    return { recent: [], open: [] };
   }
 }
 
@@ -117,6 +126,25 @@ async function saveState(): Promise<void> {
 function send<E extends keyof IpcEvents>(event: E, data: IpcEvents[E]): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(event, data);
+  }
+}
+
+/**
+ * Hand a menu item's work to the renderer — once there is a renderer to hear
+ * it. On macOS the app runs on with its window closed, and `send` to no window
+ * is a no-op: Open Recent, Open… and Clone… did nothing there. Those bring the
+ * window back and are delivered when it has loaded (see menuDelivery.ts).
+ */
+function menuCommand(msg: MenuCommand): void {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const how = menuDelivery(!win ? "none" : win.webContents.isLoading() ? "loading" : "ready", msg.command);
+  if (how === "send") send("menu:command", msg);
+  else if (how === "afterLoad") win?.webContents.once("did-finish-load", () => send("menu:command", msg));
+  else if (how === "createThenSend") {
+    void createWindow().then(
+      () => send("menu:command", msg),
+      () => undefined,
+    );
   }
 }
 
@@ -177,9 +205,11 @@ async function createWindow(): Promise<void> {
     // doesn't flash the wrong shade before the page paints.
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d1016" : "#eef1f5",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    // Vertically center the traffic lights in the slim 40px topbar (macOS).
+    // Vertically center the traffic lights in the 36px repository tab row —
+    // the window's title bar on macOS since repositories became tabs (#32).
+    // app.css `html.is-mac .repo-tabs` reserves their width.
     ...(process.platform === "darwin"
-      ? { trafficLightPosition: { x: 18, y: 13 } }
+      ? { trafficLightPosition: { x: 16, y: 11 } }
       : {}),
     title: "GitStudio",
     icon: appIcon(),
@@ -265,12 +295,16 @@ function setDockIcon(variant: "dark" | "light"): void {
 function buildMenu(): void {
   const isMac = process.platform === "darwin";
 
+  // Opens go THROUGH the renderer (menu:command), never straight to the store:
+  // the renderer is what knows whether a dialog is open in the tab in front,
+  // and a switch under an open dialog would let its verb run in another tab.
+  // menuCommand brings the window back first when there is none (macOS).
   const recentSubmenu: MenuItemConstructorOptions[] = repos
     .recentRepos()
     .map((r) => ({
       label: r.name,
       sublabel: r.root,
-      click: () => void openRepoPath(r.root),
+      click: () => menuCommand({ command: "openPath", root: r.root }),
     }));
   if (recentSubmenu.length === 0) {
     recentSubmenu.push({ label: "No recent repositories", enabled: false });
@@ -299,14 +333,14 @@ function buildMenu(): void {
         {
           label: "Open Repository…",
           accelerator: "CmdOrCtrl+O",
-          click: () => void openRepoDialog(),
+          click: () => menuCommand({ command: "openRepo" }),
         },
         { label: "Open Recent", submenu: recentSubmenu },
         { type: "separator" },
         {
           label: "Clone repository…",
           accelerator: "CmdOrCtrl+Shift+O",
-          click: () => send("menu:command", { command: "cloneRepo" }),
+          click: () => menuCommand({ command: "cloneRepo" }),
         },
         { type: "separator" },
         {
@@ -323,16 +357,21 @@ function buildMenu(): void {
           // came down to menu order. Both dev roles are explicitly re-bound
           // below, so neither can reclaim a chord by default ever again.
           accelerator: "CmdOrCtrl+R",
-          click: () => send("menu:command", { command: "refresh" }),
+          click: () => menuCommand({ command: "refresh" }),
         },
         {
-          label: "Close repository",
-          // NOT CmdOrCtrl+W. On macOS that is the most reflexive shortcut
-          // there is and it means "close this window"; here it threw you back
-          // to the welcome screen with the window still open. The Window menu
-          // owns ⌘W now, and closing the repo is a deliberate act.
-          accelerator: "CmdOrCtrl+Shift+W",
-          click: () => closeRepo(),
+          // Repositories are TABS now (issue #32), and ⌘W is what every tabbed
+          // app the user knows binds to closing the tab in front — Safari,
+          // Chrome, VS Code, Fork. It used to be refused here because it
+          // "means close this window" and threw you back to a welcome screen;
+          // checked before rebinding: on macOS nothing held ⌘W (this Window
+          // menu has no Close item there), and on Windows/Linux the Window
+          // menu's Close moves to Ctrl+Shift+W, VS Code's chord for it. Closing
+          // the repository IS closing its tab, so the old ⌘⇧W item is this one.
+          // The renderer asks first when an operation is still running.
+          label: "Close Tab",
+          accelerator: "CmdOrCtrl+W",
+          click: () => menuCommand({ command: "closeTab" }),
         },
         ...(isMac
           ? []
@@ -353,7 +392,7 @@ function buildMenu(): void {
         {
           label: "Undo",
           accelerator: "CmdOrCtrl+Z",
-          click: () => send("menu:command", { command: "undo" }),
+          click: () => menuCommand({ command: "undo" }),
         },
         // NOT `role: "redo"` either, for the same reason: that role is a text
         // redo, so in the merge editor ⇧⌘Z from the MENU redid typing under
@@ -363,7 +402,7 @@ function buildMenu(): void {
         {
           label: "Redo",
           accelerator: process.platform === "win32" ? "Ctrl+Y" : "Shift+CmdOrCtrl+Z",
-          click: () => send("menu:command", { command: "redo" }),
+          click: () => menuCommand({ command: "redo" }),
         },
         { type: "separator" },
         { role: "cut" },
@@ -381,17 +420,17 @@ function buildMenu(): void {
         {
           label: "Toggle Sidebar",
           accelerator: "CmdOrCtrl+B",
-          click: () => send("menu:command", { command: "toggleSidebar" }),
+          click: () => menuCommand({ command: "toggleSidebar" }),
         },
         {
           label: "Toggle Terminal",
           accelerator: "CmdOrCtrl+`",
-          click: () => send("menu:command", { command: "toggleTerminal" }),
+          click: () => menuCommand({ command: "toggleTerminal" }),
         },
         {
           label: "Command Palette…",
           accelerator: "CmdOrCtrl+K",
-          click: () => send("menu:command", { command: "palette" }),
+          click: () => menuCommand({ command: "palette" }),
         },
         { type: "separator" },
         { role: "resetZoom" },
@@ -424,7 +463,9 @@ function buildMenu(): void {
               { type: "separator" as const },
               { role: "front" as const },
             ]
-          : [{ role: "close" as const }]),
+          : // Ctrl+W closes the repository TAB now (Repo ▸ Close Tab); the
+            // window takes VS Code's chord for closing a window.
+            [{ role: "close" as const, accelerator: "Ctrl+Shift+W" }]),
       ],
     },
     {
@@ -470,11 +511,15 @@ async function openRepoDialog(): Promise<RepoInfo | undefined> {
 }
 
 async function openRepoPath(path: string): Promise<RepoInfo | undefined> {
-  const info = await repos.open(path);
+  const out = await repos.openTab(path);
+  const info = "info" in out ? out.info : undefined;
   // Opening a repo teaches the app where you keep repos. See
   // rememberRepoFolder: the next one you put beside it needs no introduction.
   if (info) void rememberRepoFolder(info.root);
-  if (!info) {
+  if (out.kind === "full") {
+    // Every tab is taken. Said, not done by closing one behind your back.
+    send("app:notice", tabsFullNotice(out.max));
+  } else if (out.kind === "notRepo") {
     // In-app, not a native alert. This is the most likely first-run failure
     // (open the wrong folder) and dialogs.ts is explicit that native dialogs
     // read as jarring — an OS modal was the worst possible first impression.
@@ -486,12 +531,6 @@ async function openRepoPath(path: string): Promise<RepoInfo | undefined> {
   buildMenu();
   void saveState();
   return info;
-}
-
-function closeRepo(): void {
-  repos.close();
-  buildMenu();
-  void saveState();
 }
 
 // ── IPC registration ─────────────────────────────────────────────────────────
@@ -597,10 +636,17 @@ function handle<C extends IpcChannel>(
   channel: C,
   fn: (payload: IpcRequest<C>, event: IpcMainInvokeEvent) => Promise<IpcResponse<C>>,
 ): void {
-  ipcMain.handle(channel, (event, payload) =>
-    actionCtx.run({ id: ++actionSeq, label: actionLabel(channel) }, async () => {
+  ipcMain.handle(channel, (event, payload, scope) =>
+    // Which TAB asked (issue #32). The renderer stamps every call with it, and
+    // the whole handler — every await, and work that outlives it — runs in
+    // that repository's scope (repoStore's `repoScope`). No stamp (an older
+    // caller) means the active tab, as before.
+    runInRepoScope(scope, () => actionCtx.run({ id: ++actionSeq, label: actionLabel(channel) }, async () => {
       try {
-        const result = await fn(payload as IpcRequest<C>, event);
+        let result = await fn(payload as IpcRequest<C>, event);
+        // A repository whose folder is gone fails at spawn with Node's
+        // "spawn git ENOENT" — git-is-not-installed words (row 14).
+        result = missingFolderResult(result, repos.scopedRoot()) ?? result;
         // A handled failure carrying a message (e.g. a non-zero git command) is
         // the desktop analog of the extension's showGitError — report it too.
         //
@@ -623,18 +669,67 @@ function handle<C extends IpcChannel>(
         // Unless it is an answer rather than a fault: "you have not connected
         // GitHub" is a state the user is allowed to be in, and filing it as a
         // crash produced reports for people who had simply not signed in.
+        const gone = missingFolderError(err, repos.scopedRoot());
+        if (gone) throw gone;
         if (!isExpectedError(err)) {
           ErrorReporter.current?.captureError(`ipc:${channel}`, err);
         }
         throw err;
       }
-    }),
+    })),
   );
+}
+
+/**
+ * Run `fn` in the repository scope an invoke carried. Only a plain string root
+ * (or an explicit "no repository") is accepted — anything else the page might
+ * send is treated as no stamp at all, which answers for the active tab.
+ */
+function runInRepoScope<T>(scope: unknown, fn: () => T): T {
+  if (scope && typeof scope === "object" && "root" in scope) {
+    const root = (scope as { root: unknown }).root;
+    if (root === undefined || root === null || typeof root === "string") {
+      return repoScope.run({ root: typeof root === "string" ? root : undefined }, fn);
+    }
+  }
+  return fn();
+}
+
+/** Close one tab, and everything main holds for it. */
+function closeTab(root: string): boolean {
+  const closed = repos.closeTab(root);
+  if (closed) {
+    // Its graph pages are the largest thing a closed tab leaves behind.
+    bridge.forgetGraph(root);
+    buildMenu();
+    void saveState();
+  }
+  return closed;
 }
 
 function registerIpc(): void {
   handle("repo:open", () => openRepoDialog());
   handle("repo:openPath", (path) => openRepoPath(path));
+  // The window's first read of its tabs waits for the launch restore, which
+  // boot() starts before the window loads (see RepoStore.settledState).
+  handle("repo:tabs", () => repos.settledState());
+  handle("repo:tabStatus", (roots) =>
+    // Only roots that ARE open tabs: the row asks about its own tabs, and this
+    // channel is no way to probe arbitrary folders.
+    tabStatuses((Array.isArray(roots) ? roots : []).filter((r) => repos.state().tabs.some((t) => t.root === r))),
+  );
+  handle("repo:activate", async (root) => {
+    const ok = typeof root === "string" && repos.activate(root);
+    if (ok) void saveState();
+    return ok;
+  });
+  handle("repo:closeTab", async (root) => typeof root === "string" && closeTab(root));
+  handle("repo:moveTab", async (req) => {
+    if (!req || typeof req.root !== "string" || typeof req.index !== "number") return false;
+    const moved = repos.moveTab(req.root, req.index);
+    if (moved) void saveState();
+    return moved;
+  });
   handle("repo:recent", async () => repos.recentRepos());
   handle("search:repos", (req) => github.withClient((c) => searchApi.searchRepos(c, req)));
   handle("search:users", (req) => github.withClient((c) => searchApi.searchUsers(c, req)));
@@ -760,6 +855,7 @@ function registerIpc(): void {
     const refusal = await trashRefusalResolved(root, {
       cloneDir: appSettings.effectiveCloneDir(),
       current: repos.current()?.root,
+      open: repos.state().tabs.map((t) => t.root),
     });
     if (refusal) return { ok: false, changed: false, expected: true, message: refusal };
     // Where it lands is not returned by trashItem, and the OS renames on a
@@ -789,7 +885,9 @@ function registerIpc(): void {
   });
   handle("repo:current", async () => repos.current());
   handle("repo:close", async () => {
-    closeRepo();
+    // The tab the call came from — never "whichever is in front by now".
+    const root = repos.current()?.root;
+    if (root) closeTab(root);
   });
 
   handle("graph:load", (opts) => bridge.graphLoad(opts));
@@ -1329,21 +1427,34 @@ async function boot(): Promise<void> {
   );
   rebase = new RebaseBridge(repos);
   ai = new AiBridge(repos, send);
-  repos.onChange((info) => {
-    send("repo:changed", info);
+  let watchedRoot: string | undefined;
+  repos.onChange((state) => {
+    send("repo:tabs", state);
     buildMenu();
-    // Re-point the filesystem watcher at whatever is open now. Closing a repo
-    // (info === undefined) leaves no watcher, which also stops us holding a
-    // handle on a directory the user may be about to delete or unmount.
+    void saveState();
+    // Re-point the filesystem watcher at the ACTIVE tab — only when that
+    // changed; a tab opening or moving behind it must not restart the watch.
+    // One watcher, not one per tab: a recursive watch per repository is a real
+    // cost (inotify on Linux), and a background tab re-checks the disk when it
+    // comes back to the front instead (the renderer's refreshIfDiskMoved).
+    // No tab open leaves no watcher, which also stops us holding a handle on a
+    // directory the user may be about to delete or unmount.
+    if (state.active === watchedRoot && (repoWatcher || !state.active)) return;
+    watchedRoot = state.active;
     repoWatcher?.dispose();
     repoWatcher = undefined;
-    const ctx = repos?.getContext();
+    // By the ACTIVE root, not getContext(): this runs inside whichever IPC
+    // call changed the tabs, and that call's scope is the tab that ASKED —
+    // for a switch, the one being left.
+    const ctx = state.active ? repos.contextFor(state.active) : undefined;
     const root = ctx?.root;
     if (root && ctx) {
       const w = new RepoWatcher(root, (info) => {
         // What the conflicts dashboard read is stale the moment git moves.
         bridge.invalidateConflictState();
-        send("repo:filesChanged", info);
+        // Say WHICH repository: an event that lands after a switch is about
+        // the tab you left, and must not refresh the one in front.
+        send("repo:filesChanged", { ...info, root });
       });
       repoWatcher = w;
       // A linked worktree keeps its git state outside the root (`.git` is a
@@ -1355,7 +1466,7 @@ async function boot(): Promise<void> {
   });
   // Stream every git command the open repo runs to the renderer's Output tab.
   let gitLogId = 0;
-  repos.onGitRun = (e) => {
+  repos.onGitRun = (e, root) => {
     const action = actionCtx.getStore();
     // The Output tab is a surface the user reads, copies and pastes into bug
     // reports, and `git remote add origin https://user:ghp_…@github.com/org/repo`
@@ -1372,6 +1483,7 @@ async function boot(): Promise<void> {
       ...(e.stderr ? { stderr: redactCredentials(e.stderr) } : {}),
       ...(action ? { actionId: action.id, action: action.label } : {}),
       at: Date.now(),
+      ...(root ? { root } : {}),
     });
   };
 
@@ -1381,13 +1493,32 @@ async function boot(): Promise<void> {
   // sensible initial variant from the OS scheme so it doesn't flash the wrong
   // tile before the renderer reports its (possibly overridden) theme.
   setDockIcon(nativeTheme.shouldUseDarkColors ? "dark" : "light");
+  // Bring back the tabs the last session had open, with the one that was in
+  // front (issue #32). A tab whose folder is gone — deleted, moved, an
+  // unmounted drive — is left out, and ONE quiet notice names what was.
+  //
+  // Started BEFORE the window loads, and the renderer's first `repo:tabs`
+  // waits for it: that read happens while the page loads, and answered first
+  // it said "no tabs" — the renderer built the no-repository screen and then
+  // took the restored tabs for new ones, so a window left on Search came back
+  // on Code and every tab's remembered view was overwritten.
+  const restoring = state.open.length
+    ? repos.restore(state.open, state.current).catch(() => ({ dropped: [] as string[] }))
+    : undefined;
   await createWindow();
   updates = initAutoUpdate({ isDev: !app.isPackaged, send });
 
-  // Re-open the last repo, if any, so the window lands on real history.
-  if (state.current) {
-    await repos.open(state.current).catch(() => undefined);
+  if (restoring) {
+    const { dropped } = await restoring;
     buildMenu();
+    void saveState();
+    if (dropped.length) {
+      const notice = droppedTabsNotice(dropped);
+      // The renderer may still be loading; say it once it can hear.
+      const say = (): void => send("app:notice", notice);
+      if (mainWindow?.webContents.isLoading()) mainWindow.webContents.once("did-finish-load", () => setTimeout(say, 400));
+      else say();
+    }
   }
 }
 

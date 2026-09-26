@@ -166,18 +166,19 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
     .then((r) => {
       finish();
       if (r.ok) {
+        // A clone is something you do in order to WORK: land in the repository
+        // it opened, on its code — never on the page it was started from.
+        // `root` says which tab that is (issue #32); the tab it was started
+        // from keeps its browse page.
+        window.dispatchEvent(new CustomEvent("gs:go", { detail: { view: "code", root: r.root } }));
+        // …and AFTER the landing: switching tabs clears the toasts of the tab
+        // you leave, and this one is about the tab you arrive in.
         toast(
           r.cloned
             ? `Cloned ${fullName} into ${destDisplay || "your clone folder"} and opened it.`
             : `Opened ${fullName}.`,
           "success",
         );
-        // A clone is something you do in order to WORK. `repo:changed` rebuilds
-        // the shell and re-routes to whatever view was current — which, started
-        // from the browse page, is Explore with no target: the empty Search
-        // page, with Back disabled because the rebuild just emptied the
-        // history. You cloned a repository and landed nowhere near it.
-        window.dispatchEvent(new CustomEvent("gs:go", { detail: { view: "code" } }));
         return;
       }
       // A folder COLLISION is fixable in place: reopen the sheet prefilled

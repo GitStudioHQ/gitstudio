@@ -29,16 +29,21 @@ import { holdBackground, registerLayer } from "../overlays";
 import { ghGate, ghHeader, headerPicker, unreadableNotice, type SectionRender, type SectionNav } from "./common";
 import { renderIssueDetailInto } from "./issues";
 import type { ProjectBoard, ProjectInfo, ProjectItem, ProjectList } from "../../shared/ipc";
+import { perTab } from "../tabState";
 
 // Which project the user last opened. Survives a re-render so a move (or refresh)
 // re-selects it and reloads its board in place. `undefined` = nothing opened yet.
-let selectedProjectId: string | undefined;
+// One per tab (issue #32; tabState.ts): each tab keeps its own Projects page,
+// and another tab selecting a project made this tab's board, still loading,
+// decide it had been superseded and never paint.
+const projectsTab = perTab<{ selectedProjectId?: string }>(() => ({}));
 
 export const renderProjects: SectionRender = (wrap, nav) => {
   void renderProjectsAsync(wrap, nav);
 };
 
 async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<void> {
+  const S = projectsTab();
   const refresh = (): void => {
     bust("project");
     renderProjects(wrap, nav);
@@ -76,7 +81,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
   if (missing) view.insertBefore(missing, board);
 
   if (projects.length === 0) {
-    selectedProjectId = undefined;
+    S.selectedProjectId = undefined;
     // "None are linked" is only true when GitHub named none.
     board.replaceChildren(
       emptyState(
@@ -92,7 +97,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
 
   const all = projects;
   const select = (p: ProjectInfo): void => {
-    selectedProjectId = p.id;
+    S.selectedProjectId = p.id;
     picker.set(glyph("project"), p.title);
     void showProjectBoard(board, p, refresh, nav);
   };
@@ -107,7 +112,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
           `#${p.number} · ${p.itemCount} item${p.itemCount === 1 ? "" : "s"}` +
           (p.closed ? " · closed" : ""),
         icon: "project",
-        current: p.id === selectedProjectId,
+        current: p.id === S.selectedProjectId,
         onClick: () => select(p),
       }));
       openMenu(anchor, items, { searchable: true });
@@ -116,7 +121,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
   header.querySelector(".gh-head-titlewrap")?.appendChild(picker.el);
 
   // Reopen the project the user was on (else the first) so the board is never a void.
-  const initial = all.find((p) => p.id === selectedProjectId) ?? all[0];
+  const initial = all.find((p) => p.id === S.selectedProjectId) ?? all[0];
   select(initial);
 }
 
@@ -140,6 +145,7 @@ async function showProjectBoard(
    *  the user had already watched it land. */
   have?: ProjectBoard,
 ): Promise<void> {
+  const S = projectsTab();
   let board: ProjectBoard | undefined = have ?? cachePeek("project:board", p.id);
   if (!board) detail.replaceChildren(loadingState());
   try {
@@ -154,7 +160,7 @@ async function showProjectBoard(
       return;
     }
   }
-  if (!detail.isConnected || !board || selectedProjectId !== p.id) return;
+  if (!detail.isConnected || !board || S.selectedProjectId !== p.id) return;
   const b = board;
   detail.replaceChildren();
 

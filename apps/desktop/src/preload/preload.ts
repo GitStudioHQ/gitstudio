@@ -9,6 +9,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { IpcRendererEvent } from "electron";
 import type {
   GitStudioBridge,
+  InvokeScope,
   IpcChannel,
   IpcEvent,
   IpcEvents,
@@ -20,8 +21,14 @@ const bridge: GitStudioBridge = {
   invoke<C extends IpcChannel>(
     channel: C,
     payload: IpcRequest<C>,
+    scope?: InvokeScope,
   ): Promise<IpcResponse<C>> {
-    return ipcRenderer.invoke(channel, payload) as Promise<IpcResponse<C>>;
+    // The scope travels as its own argument, never folded into the payload:
+    // payloads are typed per channel (many are a bare string or nothing), and
+    // main reads the scope in ONE place, the `handle` wrapper. Only its root
+    // crosses — a plain string or undefined, never an object the page built.
+    const root = scope && typeof scope.root === "string" ? scope.root : undefined;
+    return ipcRenderer.invoke(channel, payload, scope ? { root } : undefined) as Promise<IpcResponse<C>>;
   },
   on<E extends IpcEvent>(
     event: E,

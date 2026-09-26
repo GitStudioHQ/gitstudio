@@ -2189,6 +2189,15 @@ export function checkStateLabel(state: string): string {
  * host's children replaced, which fires no event on the view itself. The
  * observer disconnects the moment it fires, so it costs one callback per DOM
  * mutation only until its node goes.
+ *
+ * A page whose whole TAB went to the back has not gone (issue #32). The tab
+ * shell detaches the tab's screen in one piece and puts the same screen back
+ * when the tab returns, so "not in the document" is not "left" for anything
+ * inside a parked screen ({@link parkScreen}). Disposing there emptied the PR
+ * diff, the commit page's diff and the job log of every tab you switched away
+ * from, under a page that was otherwise kept exactly as you left it. What such
+ * a page holds is let go when its tab closes ({@link releaseScreen}), or when it
+ * is left for real after the tab is back.
  */
 export function disposeOnDetach(node: HTMLElement, dispose: () => void): () => void {
   let done = false;
@@ -2196,12 +2205,68 @@ export function disposeOnDetach(node: HTMLElement, dispose: () => void): () => v
     if (done) return;
     done = true;
     obs.disconnect();
+    detachWatches.delete(watch);
+  };
+  const watch: DetachWatch = {
+    node,
+    fire: () => {
+      if (done) return;
+      stop();
+      dispose();
+    },
   };
   const obs = new MutationObserver(() => {
     if (node.isConnected) return;
-    stop();
-    dispose();
+    // Out of the document because its tab is in the back — it is coming back.
+    if (parkedScreens.has(node.getRootNode())) return;
+    watch.fire();
   });
   obs.observe(document.body, { childList: true, subtree: true });
+  detachWatches.add(watch);
   return stop;
+}
+
+interface DetachWatch {
+  node: HTMLElement;
+  fire(): void;
+}
+/** Every {@link disposeOnDetach} still waiting for its node to go. */
+const detachWatches = new Set<DetachWatch>();
+/** The screens of the tabs in the back — detached whole, and coming back. */
+const parkedScreens = new WeakSet<Node>();
+
+/**
+ * Where a page is, for a poller deciding whether to go on (issue #32):
+ * `shown`, in the document; `away`, detached with its whole tab, which is
+ * coming back; `gone`, left for real.
+ *
+ * Every poller in the app stopped the first time it found its page detached —
+ * right for a page that was left, wrong for one whose tab went to the back:
+ * the running CI page and the following log came back frozen. An `away` page
+ * asks for nothing (a call made from the back goes out as the tab in FRONT's
+ * — bridge.ts stamps it at the call) and looks again later.
+ */
+export function pageState(node: Node): "shown" | "away" | "gone" {
+  if (node.isConnected) return "shown";
+  return parkedScreens.has(node.getRootNode()) ? "away" : "gone";
+}
+
+/**
+ * A tab's screen is going to the back (issue #32). Called by the tab shell
+ * BEFORE it detaches the screen, so the pages in it are kept rather than left.
+ */
+export function parkScreen(screen: HTMLElement): void {
+  parkedScreens.add(screen);
+}
+
+/**
+ * A tab closed: whatever its pages were holding until they were left — a Monaco
+ * diff, a log pane — goes now. Its screen will never come back, and nothing
+ * mutates inside a detached screen for the watch to notice.
+ */
+export function releaseScreen(screen: HTMLElement): void {
+  parkedScreens.delete(screen);
+  for (const w of [...detachWatches]) {
+    if (!w.node.isConnected && screen.contains(w.node)) w.fire();
+  }
 }

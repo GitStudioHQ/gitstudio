@@ -30,8 +30,27 @@ const ARM_MS = 2500;
 /** Rows carry `data-num`; that is the identity we remember. */
 const ROW_SELECTOR = "[data-num]";
 
-/** view id → the `data-num` of the row focus was last on in that view. */
-const lastRow = new Map<string, string>();
+/** view id → the `data-num` of the row focus was last on in that view — for
+ *  the tab in front. Each repository tab keeps its own (issue #32): issue #31
+ *  in one repository is not issue #31 in another. */
+let lastRow = new Map<string, string>();
+const rowsByTab = new Map<number, Map<string, string>>();
+
+/** The tab in front changed: remember rows for, and return focus within, it. */
+export function setFocusTab(session: number): void {
+  let rows = rowsByTab.get(session);
+  if (!rows) {
+    rows = new Map();
+    rowsByTab.set(session, rows);
+  }
+  lastRow = rows;
+  armed = undefined;
+}
+
+/** A tab closed: forget its rows. */
+export function dropFocusTab(session: number): void {
+  rowsByTab.delete(session);
+}
 
 let scope = "";
 let armed: { view: string; num: string; until: number } | undefined;

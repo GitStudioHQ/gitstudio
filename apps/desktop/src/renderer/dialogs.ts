@@ -97,6 +97,19 @@ export function toast(
   );
 }
 
+/**
+ * Take every toast down at once — a repository tab switch (issue #32).
+ *
+ * A toast is about the tab it was raised in: "Pushed main to origin" read over
+ * a different repository is a claim about the wrong one, and a toast's Undo is
+ * that tab's undo. So they leave with the tab. The ones a tab raises while it
+ * is in the background are held and shown when it comes back (bridge.ts).
+ */
+export function clearToasts(): void {
+  const stack = document.getElementById("toast-stack");
+  if (stack) stack.replaceChildren();
+}
+
 export interface ModalSpec {
   card: HTMLElement;
   focusEl: HTMLElement;

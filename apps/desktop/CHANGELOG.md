@@ -38,6 +38,28 @@ but they share the same engine, so most Git behaviour lands in both at once.
   and Drop when the commits are not all on your current branch — and Squash
   also when there are other commits between them. Each one can be undone
   straight afterwards. (#32)
+- **Repositories open as tabs.** The top row of the window holds a tab for
+  every repository you have open — its name, **●** with the number of changed
+  files when it has any, a spinner while a push, pull or other operation runs
+  in it, and a close button. **+** opens another (Open…, Clone…, your recent
+  repositories); opening one that already has a tab switches to it. Each tab
+  keeps its own place: the view you were on, Back and Forward, how far you had
+  scrolled, its searches and filters, the diff or log you had open, the
+  commit message you had started, its terminals, and a stopped rebase or
+  merge — switching back finds them as you left them, and a running CI page
+  or a log you were following picks up again. One tab's search never filters
+  another's list. A push that finishes in a tab you are not looking at tells
+  you when you go back to it. **Ctrl+Tab** and
+  **Ctrl+Shift+Tab** move between tabs, **⌃1–⌃9** (Alt+1–9 on Windows and
+  Linux) jump to one, and **⌘W** (Ctrl+W) closes the tab in front — asking
+  first if something is still running in it; an unsent commit message is kept
+  and comes back when you reopen the repository. Right-click a tab to close
+  the others or reveal it in Finder, drag tabs to reorder them, and when there
+  are more than fit, the list button shows them all. The tabs you had open come
+  back when you restart GitStudio. Up to ten repositories can be open at once.
+  A tab whose folder is moved or deleted stays, its name struck through, and
+  when you go to it one screen says so, with **Look again** and **Close Tab**
+  — put the folder back and it carries on where it was. (#32)
 - **Open a repository in your editor from its row.** Every repository under
   *On this machine* has the editor button beside **Open** — the same one the
   top bar and Home carry, the primary half opening your default editor, its
@@ -101,6 +123,14 @@ but they share the same engine, so most Git behaviour lands in both at once.
   the keys. As in IntelliJ's branch popup and the VS Code extension's branch
   menu. (#32)
 
+### Changed
+
+- **Closing a repository is closing its tab.** Repo ▸ **Close Tab** is ⌘W
+  (Ctrl+W) — it was ⌘⇧W, and on macOS ⌘W did nothing. On Windows and Linux
+  the window's own Close moves to Ctrl+Shift+W. The GitStudio mark in the top
+  bar now goes to Home instead of closing the repository, and the top bar's
+  repository menu moved to the tab row's **+**. (#32)
+
 ### Fixed
 
 - **Undo of *Drop commit* put back the wrong branch.** If you made and
@@ -128,6 +158,14 @@ but they share the same engine, so most Git behaviour lands in both at once.
   graph's menu ("Checkout origin/HEAD"), Compare's branch picker and the
   branch fields of Actions and Releases listed it, where acting on it acts on
   whatever it points at. Only the Branches view had left it out. (#32)
+- **The commit graph keeps its place.** Going to another view and back
+  brought the graph back scrolled to the top, with the commit you were
+  reading out of sight; it now comes back where you left it — and so does a
+  repository tab's graph when you return to the tab. (#32)
+- **The top bar no longer lets the editor button run over the search box**
+  when the window is just wide enough for everything but a stopped
+  operation's label — it measured what it needed from the collapsed state and
+  came out short. (#32)
 - **Repositories: switching to *On GitHub* and straight back showed GitHub's
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on

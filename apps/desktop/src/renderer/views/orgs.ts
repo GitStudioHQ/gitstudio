@@ -41,6 +41,7 @@ import { openCloneDialog } from "../cloneDialog";
 import { repoDirCard } from "../repoBrowser";
 import { openGhRepoInApp, openGhRepoChooseLocation } from "../ghOpen";
 import { peek as cachePeek, gget, bust } from "../cache";
+import { perTab } from "../tabState";
 import {
   ghGate,
   ghHeader,
@@ -55,21 +56,31 @@ import type { GhUserInfo, OrgInfo, OrgMember, OrgRepo, OrgRepoDetail, OrgTeam } 
 
 // ── In-session state (in-memory only, like prSubTab — not persisted) ──────────
 
-/** The org whose detail pane is open, restored on re-entry so it isn't empty. */
-let selectedOrg: string | undefined;
-/** The active detail sub-tab; persists across orgs within a session. */
-let orgSubTab: SubTabId = "repos";
-/** The live filter over the active sub-tab (a big org has hundreds of repos). */
-let query = "";
-/** Re-renders the active sub-tab — the search field's hook into the detail. */
-let rerenderActiveTab: (() => void) | null = null;
-
 /**
- * A monotonically increasing token. Every full render bumps it; in-flight async
- * work captures the value and bails if a newer render (a refresh or a view
- * switch) has superseded it — the section-module analogue of App.routeGen.
+ * What Organizations remembers, for ONE tab (issue #32; see tabState.ts).
+ * Each tab keeps its own Organizations page alive, and at module scope the
+ * last one built owned the search's repaint hook and the render token: typing
+ * in one tab's filter repainted another tab's detached page, and a tab whose
+ * list was still loading when another tab built the view never painted it.
  */
-let renderGen = 0;
+interface OrgsTabState {
+  /** The org whose detail pane is open, restored on re-entry so it isn't empty. */
+  selectedOrg?: string;
+  /** The active detail sub-tab; persists across orgs within a session. */
+  orgSubTab: SubTabId;
+  /** The live filter over the active sub-tab (a big org has hundreds of repos). */
+  query: string;
+  /** Re-renders the active sub-tab — the search field's hook into the detail. */
+  rerenderActiveTab: (() => void) | null;
+  /**
+   * A monotonically increasing token. Every full render bumps it; in-flight
+   * async work captures the value and bails if a newer render (a refresh or a
+   * view switch) has superseded it — the section-module analogue of
+   * App.routeGen.
+   */
+  renderGen: number;
+}
+const orgsTab = perTab<OrgsTabState>(() => ({ orgSubTab: "repos", query: "", rerenderActiveTab: null, renderGen: 0 }));
 
 type SubTabId = "repos" | "teams" | "members";
 
@@ -116,7 +127,8 @@ function orgAvatar(url: string | null, alt: string, size = 18): HTMLElement {
 
 /** The routed nav, kept module-level so deep hover actions (Browse → the full
  *  Explore repository page) can reach it without threading it through every
- *  row builder. */
+ *  row builder. It is the router of the tab IN FRONT: App.activate re-points it
+ *  (setPeekNav) on every tab switch, and only the tab in front can be clicked. */
 let sectionNav: SectionNav | undefined;
 
 /**
@@ -149,7 +161,8 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   const gate = await ghGate(wrap, nav, false, refresh);
   if (!gate) return;
 
-  const gen = ++renderGen;
+  const S = orgsTab();
+  const gen = ++S.renderGen;
 
   const header = ghHeader("Organizations", gate.login, refresh);
   const view = el("div", "gh-view");
@@ -159,10 +172,10 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     searchField({
       // Was "Filter repos, teams, members…" — clipped to "Filter repos, teams, mer".
       placeholder: "Filter this organization…",
-      initial: query,
+      initial: S.query,
       onInput: (q) => {
-        query = q;
-        rerenderActiveTab?.();
+        S.query = q;
+        S.rerenderActiveTab?.();
       },
     }),
   );
@@ -176,7 +189,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   try {
     orgs = await gget("orgs:list", undefined, 60000);
   } catch (e) {
-    if (gen !== renderGen) return;
+    if (gen !== S.renderGen) return;
     if (!orgs) {
       detail.replaceChildren(
         errorState("Couldn't load organizations", cleanErr(e) || "GitHub request failed.", refresh),
@@ -184,7 +197,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
       return;
     }
   }
-  if (gen !== renderGen || !orgs) return;
+  if (gen !== S.renderGen || !orgs) return;
 
   header.setCount?.(orgs.length);
   if (orgs.length === 0) {
@@ -197,9 +210,9 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   }
 
   const select = (org: OrgInfo): void => {
-    selectedOrg = org.login;
+    S.selectedOrg = org.login;
     picker.set(orgAvatar(org.avatarUrl, org.login, 20), org.name || org.login);
-    showOrgDetail(detail, org, gen);
+    showOrgDetail(detail, org, gen, S);
   };
 
   // The bar-level picker: a searchable dropdown of every org (with avatars).
@@ -210,7 +223,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
         label: o.name || o.login,
         sub: `@${o.login}`,
         iconEl: avatar(o.login, o.avatarUrl, 18),
-        current: o.login === selectedOrg,
+        current: o.login === S.selectedOrg,
         onClick: () => select(o),
       }));
       openMenu(anchor, items, { searchable: true });
@@ -220,13 +233,13 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
 
   // Auto-select the previously chosen org (or the first) so the detail pane is
   // never empty on entry — selectedOrg persists in-memory across re-renders.
-  const initial = (selectedOrg && orgs.find((o) => o.login === selectedOrg)) || orgs[0];
+  const initial = (S.selectedOrg && orgs.find((o) => o.login === S.selectedOrg)) || orgs[0];
   select(initial);
 }
 
 // ── Detail pane (header + Repos/Teams/Members sub-tabs) ───────────────────────
 
-function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number): void {
+function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number, S: OrgsTabState): void {
   detail.replaceChildren();
 
   // Identity first, then what it is, then what you can do with it. The old
@@ -279,23 +292,23 @@ function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number): void {
     ariaLabel: "Organization sections",
     panel: content,
     onSelect: (id) => {
-      orgSubTab = id;
-      void renderSubTab(content, org.login, id, gen);
+      S.orgSubTab = id;
+      void renderSubTab(content, org.login, id, gen, S);
     },
   });
   const selectSub = tabs.select;
   // Hook the header search into whichever tab is active right now.
-  rerenderActiveTab = () => selectSub(orgSubTab);
+  S.rerenderActiveTab = () => selectSub(S.orgSubTab);
   detail.append(tabs.el, content);
-  selectSub(orgSubTab);
+  selectSub(S.orgSubTab);
 }
 
 /**
  * Stale when a newer render superseded us OR the user switched to a different
  * org — so a fast re-select never paints the previous org's rows.
  */
-function isStale(org: string, gen: number): boolean {
-  return gen !== renderGen || selectedOrg !== org;
+function isStale(org: string, gen: number, S: OrgsTabState): boolean {
+  return gen !== S.renderGen || S.selectedOrg !== org;
 }
 
 async function renderSubTab(
@@ -303,16 +316,17 @@ async function renderSubTab(
   org: string,
   id: SubTabId,
   gen: number,
+  S: OrgsTabState,
 ): Promise<void> {
-  const retry = (): void => void renderSubTab(content, org, id, gen);
+  const retry = (): void => void renderSubTab(content, org, id, gen, S);
   // Each sub-tab holds a different DENSITY of card, and one grid track size
   // suited none of them: a lone team card sat in a 330px column with 1200px of
   // dead space beside it, and a member card — a 20px avatar and a login — was
   // 90% empty at the same width. The tab tells the grid what it is holding.
   content.classList.toggle("is-people", id === "members");
-  const q = query.trim().toLowerCase();
+  const q = S.query.trim().toLowerCase();
   const noMatches = (): HTMLElement =>
-    emptyState("No matches", `Nothing matches “${query.trim()}”.`, {
+    emptyState("No matches", `Nothing matches “${S.query.trim()}”.`, {
       icon: "search",
       anchor: "inline",
     });
@@ -323,7 +337,7 @@ async function renderSubTab(
     try {
       repos = await gget("orgs:repos", org, 60000);
     } catch (e) {
-      if (isStale(org, gen)) return;
+      if (isStale(org, gen, S)) return;
       if (!repos) {
         content.replaceChildren(
           errorState("Couldn't load repositories", cleanErr(e) || "GitHub request failed.", retry),
@@ -331,7 +345,7 @@ async function renderSubTab(
         return;
       }
     }
-    if (isStale(org, gen) || !repos) return;
+    if (isStale(org, gen, S) || !repos) return;
     content.replaceChildren();
     if (repos.length === 0) {
       content.appendChild(
@@ -358,7 +372,7 @@ async function renderSubTab(
     try {
       teams = await gget("orgs:teams", org, 60000);
     } catch (e) {
-      if (isStale(org, gen)) return;
+      if (isStale(org, gen, S)) return;
       if (!teams) {
         content.replaceChildren(
           errorState("Couldn't load teams", cleanErr(e) || "GitHub request failed.", retry),
@@ -366,7 +380,7 @@ async function renderSubTab(
         return;
       }
     }
-    if (isStale(org, gen) || !teams) return;
+    if (isStale(org, gen, S) || !teams) return;
     content.replaceChildren();
     if (teams.length === 0) {
       content.appendChild(
@@ -391,7 +405,7 @@ async function renderSubTab(
   try {
     members = await gget("orgs:members", org, 60000);
   } catch (e) {
-    if (isStale(org, gen)) return;
+    if (isStale(org, gen, S)) return;
     if (!members) {
       content.replaceChildren(
         errorState("Couldn't load members", cleanErr(e) || "GitHub request failed.", retry),
@@ -399,7 +413,7 @@ async function renderSubTab(
       return;
     }
   }
-  if (isStale(org, gen) || !members) return;
+  if (isStale(org, gen, S) || !members) return;
   content.replaceChildren();
   if (members.length === 0) {
     content.appendChild(
@@ -581,7 +595,7 @@ function openRepoPeek(r: OrgRepo): void {
         title: "Clone this repository and open it in GitStudio",
         onClick: (ctx) => {
           ctx.close();
-          openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+          openCloneDialog((root) => host.invoke("repo:openPath", root), {
             url: `${r.htmlUrl}.git`,
           });
         },

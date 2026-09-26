@@ -58,6 +58,9 @@ export interface TerminalDockOptions {
   onStateChange: (s: { expanded: boolean; height: number }) => void;
   /** The Diff tab's ✕ — the renderer owns the DiffPanel's lifecycle. */
   onCloseDetails?: () => void;
+  /** The repository this dock belongs to — one dock per repository tab, so
+   *  its Output log shows that repository's commands only (issue #32). */
+  root?: string;
 }
 
 /** How many shells one window will hold. A held-down "+" must not be able
@@ -127,7 +130,7 @@ export class TerminalDock {
     this.dock.tabsEl.appendChild(this.tabStrip);
 
     // ── Output surface (subscribes to git:log immediately, even while collapsed). ──
-    this.outputs = new OutputsPanel();
+    this.outputs = new OutputsPanel(opts.root);
     this.outputs.el.style.display = "none";
     this.dock.bodyEl.appendChild(this.outputs.el);
     // The Output tab's controls live in the dock's footer action slot — the

@@ -1036,6 +1036,11 @@ export class CommitRail extends LitElement {
   private virtualizer: Virtualizer<HTMLDivElement, HTMLDivElement> | undefined;
   private cleanupVirtualizer: (() => void) | undefined;
   private boundScroller: HTMLDivElement | undefined;
+  /** Where the list was scrolled, kept while attached — a detached scroller
+   *  loses its offset (the same rule, and the same reason, as the graph's
+   *  keptScrollTop in commit-graph.ts). */
+  private keptScrollTop = 0;
+  private restoreScrollPending = false;
   /** The "+N" ref pill's hover card (see refTip.ts). */
   private readonly refTip = new RefTip(() =>
     this.renderRoot.querySelector(".reftip"),
@@ -1098,6 +1103,8 @@ export class CommitRail extends LitElement {
     // the window you last looked at, still at their old offsets, and nothing
     // ever repainting them. Scrolled down first, that is a blank list.
     this.requestUpdate();
+    // A RE-attach (see keptScrollTop): the first connect has nothing to keep.
+    this.restoreScrollPending = this.keptScrollTop > 0;
     this.disposeTheme = observeGraphTheme((palette) => {
       this.palette = palette;
       this.renderRows();
@@ -1162,10 +1169,21 @@ export class CommitRail extends LitElement {
       // near-bottom loadMore trigger never fired. Paint first; landing the
       // reveal, when it can land, is its own paint on top.
       this.renderRows();
+      this.restoreKeptScroll(scroller);
       if (this.pendingReveal) this.retryReveal();
     } else {
       this.teardownVirtualizer();
     }
+  }
+
+  /** After a re-attach, back to where the list was (see commit-graph.ts). */
+  private restoreKeptScroll(scroller: HTMLDivElement): void {
+    if (!this.restoreScrollPending || !this.rows.length) return;
+    this.restoreScrollPending = false;
+    const want = Math.min(this.keptScrollTop, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
+    if (want <= 0 || scroller.scrollTop === want) return;
+    scroller.scrollTop = want;
+    scroller.dispatchEvent(new Event("scroll"));
   }
 
   // ── Virtualizer ─────────────────────────────────────────────────────────
@@ -1190,7 +1208,17 @@ export class CommitRail extends LitElement {
       this.virtualizerOptions(),
     );
     this.virtualizer = v;
-    this.cleanupVirtualizer = v._didMount();
+    const unmount = v._didMount();
+    // Only while attached: a detached scroller fires nothing, so the last
+    // offset read is the one it had when it was taken out.
+    const keep = (): void => {
+      if (this.isConnected) this.keptScrollTop = scroller.scrollTop;
+    };
+    scroller.addEventListener("scroll", keep, { passive: true });
+    this.cleanupVirtualizer = () => {
+      scroller.removeEventListener("scroll", keep);
+      unmount();
+    };
     v._willUpdate();
   }
 

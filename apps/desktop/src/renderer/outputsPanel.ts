@@ -80,7 +80,8 @@ export class OutputsPanel {
     count: number;
   } | null = null;
 
-  constructor() {
+  /** `root`: the repository whose commands this log shows — each repository tab has its own dock, and every git command of every tab arrives here (issue #32). Undefined shows them all. */
+  constructor(private readonly root?: string) {
     this.el = el("div", "outputs-wrap");
 
     // ── Controls: totals · failures filter · clear ────────────────────────
@@ -155,7 +156,10 @@ export class OutputsPanel {
         this.scroller.scrollHeight - this.scroller.scrollTop - this.scroller.clientHeight < 32;
     });
 
-    this.off = host.on("git:log", (e) => this.append(e));
+    this.off = host.on("git:log", (e) => {
+      if (this.root && e.root && e.root !== this.root) return;
+      this.append(e);
+    });
   }
 
   private renderCount(): void {

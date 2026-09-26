@@ -4,10 +4,12 @@
 //     (github:repos), with HTTPS/SSH toggle.
 // In both, "Choose…" picks the parent directory (clone:pickDir) and "Clone"
 // runs clone:start, showing live progress (clone:progress). On success it calls
-// `onCloned(root)` so the shell can open the freshly-cloned repo.
+// `onCloned(root)` so the shell can open the freshly-cloned repo — and says
+// "Cloned …" once that open has landed (see runClone).
 //
 // CONTRACT (keep this signature — renderer.ts + the welcome screen call it):
-//   openCloneDialog(onCloned: (root: string) => void): void
+//   openCloneDialog(onCloned: (root: string) => unknown): void
+// `onCloned` returns the open's promise, so the toast waits for it.
 //
 // The focus-trap / Escape / backdrop-click / focus-restore scaffold mirrors
 // `modal()` in ./dialogs (which isn't exported), so this self-contained module
@@ -34,7 +36,7 @@ type Scheme = "https" | "ssh";
  *  `opts.url` prefills the URL tab (e.g. cloning straight from an org's repo
  *  peek) — the user still picks the destination folder. */
 export function openCloneDialog(
-  onCloned: (root: string) => void,
+  onCloned: (root: string) => unknown,
   opts: { url?: string } = {},
 ): void {
   // ── modal scaffold: the shared openModal (focus-trap, Esc, backdrop) ──────
@@ -455,9 +457,16 @@ export function openCloneDialog(
 
     if (res.ok && res.root) {
       const root = res.root;
-      toast("Cloned " + (name || "repository"), "success");
       close();
-      onCloned(root);
+      // Opened first, THEN said (issue #32): the open switches to the clone's
+      // new tab, and a switch clears the toasts of the tab you leave — said
+      // before it, "Cloned …" was cleared by the very open it announced.
+      try {
+        await onCloned(root);
+      } catch {
+        /* an open that fails says so itself */
+      }
+      toast("Cloned " + (name || "repository"), "success");
     } else {
       toast(res.message || "Clone failed.", "error");
       progress.hidden = true;

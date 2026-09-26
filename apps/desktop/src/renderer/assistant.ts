@@ -15,28 +15,43 @@ import { confirmDialog, toast } from "./dialogs";
 import { runAgentTurn, addBubble, markdownBlock, errorBlock, connectPrompt, elText, setBusy, scrollDown, atBottom } from "./chatRender";
 import type { SectionRender } from "./views/common";
 import type { AiModelOption, AiSettingsView, ChatView } from "../shared/ipc";
+import { perTab } from "./tabState";
 
-/** A goal handed in from elsewhere (✨ actions in PR/issue views) — consumed
- *  by the next render. The ✨ flow used to open a CHAT TAB in the bottom dock,
- *  which split the screen in half; now it lands here, in the one AI surface. */
-let pendingGoal: string | null = null;
-/** What the USER BUBBLE should say for that goal.
- *
- *  A ✨ action's goal is a whole prompt — "Analyze this issue:" plus the title,
- *  the body and every comment on it — and it was posted verbatim as the user's
- *  chat message. Opening ✨ Analyze on a busy issue put several screens of
- *  quoted text into the transcript as if the reader had typed it, burying the
- *  answer below the fold. The dock's chat tab has carried a short label for
- *  exactly this since it was written (`seedLabel` → `runAgentTurn`'s
- *  `displayText`); the section path dropped it on the floor. */
-let pendingLabel: string | undefined;
-
-/** The Assistant currently on screen, if there is one — so a ✨ action can be
- *  handed to it instead of rebuilding the view around it. Cleared when the view
- *  is torn down. */
-let live:
-  | { run: (goal: string, label?: string) => void; busy: () => boolean; el: HTMLElement }
-  | undefined;
+/**
+ * What the Assistant remembers, for ONE tab (issue #32; tabState.ts). Every
+ * tab keeps its own Assistant page, and at module scope the last one built
+ * owned all of this: a ✨ action in one tab was refused as "still working"
+ * over ANOTHER tab's run, and a run took its permission from whichever tab
+ * last changed it — so a page whose chip said Read-only could run with
+ * another tab's "Allow everything".
+ */
+interface AssistantTabState {
+  /** A goal handed in from elsewhere (✨ actions in PR/issue views) — consumed
+   *  by the next render. The ✨ flow used to open a CHAT TAB in the bottom
+   *  dock, which split the screen in half; now it lands here, in the one AI
+   *  surface. */
+  pendingGoal: string | null;
+  /** What the USER BUBBLE should say for that goal.
+   *
+   *  A ✨ action's goal is a whole prompt — "Analyze this issue:" plus the
+   *  title, the body and every comment on it — and it was posted verbatim as
+   *  the user's chat message. Opening ✨ Analyze on a busy issue put several
+   *  screens of quoted text into the transcript as if the reader had typed it,
+   *  burying the answer below the fold. The dock's chat tab has carried a short
+   *  label for exactly this since it was written (`seedLabel` →
+   *  `runAgentTurn`'s `displayText`); the section path dropped it on the floor. */
+  pendingLabel?: string;
+  /** The Assistant this tab has on screen, if there is one — so a ✨ action
+   *  can be handed to it instead of rebuilding the view around it. */
+  live?: { run: (goal: string, label?: string) => void; busy: () => boolean; el: HTMLElement };
+  /** Agent write permission, remembered across navigations. */
+  permission: "read" | "write" | "destructive";
+  /** The explicit model id the user picked (from the provider's models). */
+  selectedModelId?: string;
+  /** Reasoning depth for the Assistant — seeded from the saved agent config. */
+  thinkLevel: "off" | "auto" | "extended";
+}
+const assistantTab = perTab<AssistantTabState>(() => ({ pendingGoal: null, permission: "read", thinkLevel: "auto" }));
 
 /**
  * Seed a goal for the Assistant, and say whether the caller still needs to
@@ -50,6 +65,9 @@ let live:
  * refreshAll exemption fixes, reached through a different door.
  */
 export function seedAssistantGoal(goal: string, label?: string): boolean {
+  // The tab a ✨ action was clicked in — the one in front.
+  const S = assistantTab();
+  const live = S.live;
   // The BUSY test asks about identity, not attachment.
   //
   // Every ✨ action fires from another view — an issue, a PR, the compare page
@@ -71,17 +89,10 @@ export function seedAssistantGoal(goal: string, label?: string): boolean {
     live.run(goal, label);
     return false;
   }
-  pendingGoal = goal;
-  pendingLabel = label;
+  S.pendingGoal = goal;
+  S.pendingLabel = label;
   return true;
 }
-
-/** Agent write permission, remembered across navigations within a session. */
-let permission: "read" | "write" | "destructive" = "read";
-/** The explicit model id the user picked (from the provider's models). */
-let selectedModelId: string | undefined;
-/** Reasoning depth for the Assistant — seeded from the saved agent config. */
-let thinkLevel: "off" | "auto" | "extended" = "auto";
 
 const THINK_OPTS: Array<{ id: "off" | "auto" | "extended"; label: string }> = [
   { id: "off", label: "No thinking" },
@@ -141,6 +152,7 @@ const QUICK_ACTIONS: Array<{ icon: string; label: string; desc: string; goal: st
 ];
 
 export const renderAssistant: SectionRender = (wrap, nav) => {
+  const S = assistantTab();
   wrap.classList.add("assistant-view");
 
   let currentChatId: string | undefined;
@@ -218,31 +230,31 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     if (modelOptions.length === 0) return [{ label: "No models available", disabled: true }];
     return modelOptions.map((m) => ({
       label: m.label ?? shortModel(m.id),
-      current: m.id === selectedModelId,
+      current: m.id === S.selectedModelId,
       onClick: () => {
-        selectedModelId = m.id;
+        S.selectedModelId = m.id;
         modelChip.set(shortModel(m.id));
         void host.invoke("ai:setAgentConfig", { modelId: m.id });
       },
     }));
   });
-  const thinkChip = makeChip("lightbulb", thinkText(thinkLevel), () =>
+  const thinkChip = makeChip("lightbulb", thinkText(S.thinkLevel), () =>
     THINK_OPTS.map((o) => ({
       label: o.label,
-      current: o.id === thinkLevel,
+      current: o.id === S.thinkLevel,
       onClick: () => {
-        thinkLevel = o.id;
+        S.thinkLevel = o.id;
         thinkChip.set(o.label);
         void host.invoke("ai:setAgentConfig", { thinking: o.id });
       },
     })),
   );
-  const accessChip = makeChip("shield", accessText(permission), () =>
+  const accessChip = makeChip("shield", accessText(S.permission), () =>
     ACCESS_OPTS.map((o) => ({
       label: o.label,
-      current: o.id === permission,
+      current: o.id === S.permission,
       onClick: () => {
-        permission = o.id;
+        S.permission = o.id;
         accessChip.set(o.label);
         void host.invoke("ai:setAgentConfig", { permission: o.id });
       },
@@ -476,21 +488,21 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       const def = settings.connections.find((c) => c.id === settings!.defaultId) ?? settings.connections.find((c) => c.usable);
       connTag.textContent = def ? def.label : "";
       // Seed the controls from the saved agent config.
-      permission = settings.agent.permission;
-      thinkLevel = settings.agent.thinking;
-      selectedModelId = settings.agent.modelId;
-      thinkChip.set(thinkText(thinkLevel));
-      accessChip.set(accessText(permission));
+      S.permission = settings.agent.permission;
+      S.thinkLevel = settings.agent.thinking;
+      S.selectedModelId = settings.agent.modelId;
+      thinkChip.set(thinkText(S.thinkLevel));
+      accessChip.set(accessText(S.permission));
       // Propagate the provider's models into the picker.
       try {
         modelOptions = await host.invoke("ai:models", undefined);
       } catch {
         modelOptions = [];
       }
-      if (!selectedModelId && modelOptions[0]) {
-        selectedModelId = modelOptions[0].id;
+      if (!S.selectedModelId && modelOptions[0]) {
+        S.selectedModelId = modelOptions[0].id;
       }
-      modelChip.set(selectedModelId ? shortModel(selectedModelId) : "Model");
+      modelChip.set(S.selectedModelId ? shortModel(S.selectedModelId) : "Model");
       // Restore the chat the user last had open in this repo (survives refresh).
       try {
         const cur = await host.invoke("ai:chatCurrent", undefined);
@@ -531,7 +543,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     // The leak is answered by identity instead. Each build registers itself as
     // `live`; only the newest one acts, and the older listeners fall out with
     // their closures when nothing references them.
-    if (live?.el !== wrap) {
+    if (S.live?.el !== wrap) {
       window.removeEventListener("gs:ai-changed", onAiChanged);
       return;
     }
@@ -542,7 +554,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     // message went to a provider the app had just been told about.
     void (async () => {
       const s = await host.invoke("ai:settings", undefined).catch(() => undefined);
-      if (live?.el !== wrap) return;
+      if (S.live?.el !== wrap) return;
       const enabled = !!s?.enabled;
       if (gated === !enabled) return; // nothing changed for this view
       if (enabled) {
@@ -567,7 +579,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   // Publish this Assistant so a ✨ action fired while it is on screen is handed
   // to it, rather than routed to with `force` — which rebuilds the view and
   // takes a running turn down with it.
-  live = {
+  S.live = {
     el: wrap,
     busy: () => running,
     run: (goal, label) => void runGoal(goal, false, label),
@@ -761,10 +773,10 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         currentChatId,
         goal,
         {
-          allowWrite: permission !== "read",
-          allowDestructive: permission === "destructive",
-          modelId: selectedModelId,
-          thinking: thinkLevel,
+          allowWrite: S.permission !== "read",
+          allowDestructive: S.permission === "destructive",
+          modelId: S.selectedModelId,
+          thinking: S.thinkLevel,
         },
         ac.signal,
         display,
@@ -794,11 +806,11 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
 
   // A goal seeded from another view (✨ Explain / Review / …) starts running
   // the moment this surface is up.
-  if (pendingGoal) {
-    const goal = pendingGoal;
-    const label = pendingLabel;
-    pendingGoal = null;
-    pendingLabel = undefined;
+  if (S.pendingGoal) {
+    const goal = S.pendingGoal;
+    const label = S.pendingLabel;
+    S.pendingGoal = null;
+    S.pendingLabel = undefined;
     // `runGoal` awaits `ready` itself, so this runs with the real permission,
     // model and thinking level rather than whatever the defaults happened to be.
     void runGoal(goal, false, label);

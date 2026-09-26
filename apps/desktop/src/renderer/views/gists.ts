@@ -43,12 +43,15 @@ import {
   subTabs,
 } from "./common";
 import type { GistInfo } from "../../shared/ipc";
+import { perTab } from "../tabState";
 
 /** The selected file tab inside a gist detail, per gist id — so re-renders
  *  (after an edit) restore the file the user was reading. */
 const fileTabByGist = new Map<string, number>();
-/** The list page's live search query — survives list ⇄ detail round trips. */
-let query = "";
+/** The list page's live search query — survives list ⇄ detail round trips.
+ *  One per tab (issue #32; tabState.ts): each tab keeps its own Gists page,
+ *  and a shared query was what another tab's page rebuilt with. */
+const gistsTab = perTab(() => ({ query: "" }));
 
 export const renderGists: SectionRender = (wrap, nav, target) => {
   void mount(wrap, nav, target);
@@ -72,6 +75,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
 // ── The list page ────────────────────────────────────────────────────────────
 
 async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promise<void> {
+  const S = gistsTab();
   const refresh = (): void => {
     bust("gist");
     renderGists(wrap, nav);
@@ -93,9 +97,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
       placeholder: "Search gists…",
-      initial: query,
+      initial: S.query,
       onInput: (q) => {
-        query = q;
+        S.query = q;
         renderList();
       },
     }),
@@ -146,13 +150,13 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       );
       return;
     }
-    const q = query.toLowerCase();
+    const q = S.query.toLowerCase();
     const items = q ? gists.filter((g) => matches(g, q)) : gists;
     // Same contract as the other lists: the badge counts what is on screen, so
     // it can't read "2" above "No matching gists".
     header.setCount?.(items.length, gists.length);
     if (items.length === 0) {
-      listEl.appendChild(emptyState("No matching gists", `Nothing matches “${query}”.`, { icon: "search", anchor: "inline" }));
+      listEl.appendChild(emptyState("No matching gists", `Nothing matches “${S.query}”.`, { icon: "search", anchor: "inline" }));
       return;
     }
     for (const g of items) listEl.appendChild(buildRow(g));

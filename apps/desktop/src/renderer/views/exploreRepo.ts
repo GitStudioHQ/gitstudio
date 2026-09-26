@@ -194,7 +194,7 @@ async function mount(
                 label: "Clone another copy…",
                 icon: "repo-clone",
                 onClick: () =>
-                  openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+                  openCloneDialog((root) => host.invoke("repo:openPath", root), {
                     url: `https://github.com/${fullName}.git`,
                   }),
               },
@@ -209,7 +209,7 @@ async function mount(
                 label: "Clone…",
                 icon: "repo-clone",
                 onClick: () =>
-                  openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+                  openCloneDialog((root) => host.invoke("repo:openPath", root), {
                     url: `https://github.com/${fullName}.git`,
                   }),
               },

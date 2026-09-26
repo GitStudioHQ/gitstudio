@@ -20,7 +20,7 @@
 import { host } from "../bridge";
 import { el, span, glyph, cleanErr, errorState, skeletonList } from "../ui";
 import { toast } from "../dialogs";
-import { detailPage, disposeOnDetach, type SectionTarget, type SectionNav } from "./common";
+import { detailPage, disposeOnDetach, pageState, type SectionTarget, type SectionNav } from "./common";
 import { createLogPane, type LogPane } from "../logView";
 import { setPageLabel, setPageTarget } from "../navStack";
 import { gget, prime } from "../cache";
@@ -154,7 +154,15 @@ export async function renderJobLog(
     const step = (): void => {
       window.setTimeout(() => {
         void (async () => {
-          if (!s.alive || !view.isConnected) return;
+          if (!s.alive) return;
+          const at = pageState(view);
+          if (at === "gone") return;
+          // Its tab is in the back: ask nothing, and look again — the tail
+          // picks up where it was when the tab is in front (see pageState).
+          if (at === "away") {
+            step();
+            return;
+          }
           const live = statusOf(s.jobId) === "in_progress";
           try {
             const chunk = await host.invoke("actions:jobLogChunk", {
@@ -312,7 +320,12 @@ export async function renderJobLog(
   const pollJobs = (): void => {
     if (!jobs.some((j) => j.status === "in_progress" || j.status === "queued")) return;
     window.setTimeout(() => {
-      if (!view.isConnected) return;
+      const at = pageState(view);
+      if (at === "gone") return;
+      if (at === "away") {
+        pollJobs();
+        return;
+      }
       host
         .invoke("actions:runDetail", runId)
         .then((fresh) => {

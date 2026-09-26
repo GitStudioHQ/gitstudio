@@ -17,6 +17,8 @@
 #   palette          open the ⌘K palette
 #   bell             open the notifications popover
 #
+# GS_SHOT_SIZE=880,700 shoots a narrower (or smaller) window than 1600x1000.
+#
 # A 4th argument is appended to the query string, for the scene switches the
 # shim reads directly (e.g. "staging=checkboxes", "many=1", "ask=1").
 # Examples:
@@ -39,7 +41,7 @@ PROFILE="$(mktemp -d "${TMPDIR:-/tmp}/gs-shot-XXXXXX")"
 trap 'rm -rf "$PROFILE"' EXIT
 "$CHROME" \
   --headless --disable-gpu --hide-scrollbars --user-data-dir="$PROFILE" \
-  --window-size=1600,1000 --force-device-scale-factor=2 \
+  --window-size="${GS_SHOT_SIZE:-1600,1000}" --force-device-scale-factor=2 \
   --virtual-time-budget=9000 \
   --screenshot="$OUT" \
   "file://${GS_HARNESS_PAGE:-$HARNESS/page}/harness.html?scene=$SCENE&theme=$THEME${EXTRA:+&$EXTRA}" 2>&1 | grep -viE 'devtools|gpu|fontations|dawn|install' || true

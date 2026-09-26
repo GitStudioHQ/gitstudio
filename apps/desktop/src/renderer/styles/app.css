@@ -851,9 +851,8 @@ button.repo-folder-chip:focus-visible,
   border-bottom: 1px solid var(--app-border);
   -webkit-app-region: drag;
 }
-/* Reserve room for the macOS traffic lights only — Windows/Linux draw their
-   window controls in the native frame, so the bar starts flush there. */
-html.is-mac .topbar { padding-left: 78px; }
+/* The macOS traffic lights live in the repository tab row above this bar
+   (.repo-tabs reserves their room), so the bar starts flush on every platform. */
 .topbar > * { -webkit-app-region: no-drag; }
 .topbar-home {
   display: inline-flex;
@@ -13266,4 +13265,266 @@ body.vscode-light .cmp-seg-btn.active:hover {
   min-height: 168px;
   font-family: var(--vscode-editor-font-family);
   line-height: 1.5;
+}
+
+/* ═══ Repository tabs (issue #32) ════════════════════════════════════════════
+   One tab per open repository, in a row across the top of the window — the
+   place Fork and GitKraken put theirs. On macOS it is the title bar: the
+   traffic lights sit at its left (main.ts trafficLightPosition) and its empty
+   space drags the window. The tab in front wears the top bar's own panel
+   colour and runs into it, with the accent rule VS Code puts on its active
+   editor tab; the rest are quiet text on the window ground.
+   AT THE END ON PURPOSE: later rules win at equal specificity in this file. */
+.repo-tabs {
+  position: relative;
+  z-index: 6;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  height: 36px;
+  padding: 0 8px;
+  background: var(--app-bg);
+  border-bottom: 1px solid var(--app-border);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+html.is-mac .repo-tabs { padding-left: 80px; }
+.repo-tabs > * { -webkit-app-region: no-drag; }
+.repo-tabs > .repo-tabs-drag {
+  -webkit-app-region: drag;
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 24px;
+}
+.repo-tabs-scroller {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.repo-tabs-scroller::-webkit-scrollbar { display: none; }
+/* More tabs past an edge: that edge fades, so the row itself says so. */
+.repo-tabs-scroller.more-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
+.repo-tabs-scroller.more-left {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 20px), transparent);
+}
+.repo-tabs-scroller.more-left.more-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+}
+/* The overflow list: the + button's size and manner, there only when needed. */
+.repo-tabs-list {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 0 1px 4px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+}
+.repo-tabs-list[hidden] { display: none; }
+.repo-tabs-list .codicon { font-size: 14px; }
+.repo-tabs-list:hover {
+  background: var(--app-hover);
+  color: var(--vscode-foreground);
+}
+.repo-tabs-list:focus-visible {
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: -2px;
+}
+.repo-tab {
+  position: relative;
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-width: 120px;
+  max-width: 220px;
+  height: 30px;
+  padding: 0 3px 0 12px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--app-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  outline: none;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.repo-tab:hover {
+  background: color-mix(in srgb, var(--app-hover) 72%, transparent);
+  color: var(--vscode-foreground);
+}
+.repo-tab.is-active {
+  z-index: 1;
+  height: 31px;
+  margin-bottom: -1px;
+  background: var(--app-panel);
+  border-color: var(--app-border);
+  color: var(--vscode-foreground);
+  font-weight: 600;
+  box-shadow: inset 0 2px 0 var(--gs-accent);
+}
+.repo-tab:focus-visible {
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: -2px;
+}
+.repo-tab-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A tab whose folder is gone (moved, deleted, no longer a repository): its
+   name is struck through, as VS Code strikes through an editor tab whose file
+   was deleted. The words are in its tooltip and its accessible name. */
+.repo-tab.is-gone .repo-tab-name {
+  text-decoration-line: line-through;
+  text-decoration-thickness: 1px;
+}
+.repo-tab-mark {
+  flex: 0 0 auto;
+  color: var(--status-mod);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.repo-tab-mark[hidden] { display: none; }
+/* Three classes deep: `.glyph.codicon[class*="codicon-"]` (0,3,0) pins every
+   glyph to inline-flex, and a two-class `display: none` lost to it — every tab
+   showed a spinner with nothing running. */
+.repo-tab .glyph.repo-tab-busy {
+  display: none;
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--gs-accent-ink, var(--gs-accent));
+}
+.repo-tab.is-busy .glyph.repo-tab-busy { display: inline-flex; }
+/* The close control keeps its width whether or not it shows, so a hover never
+   shifts the name; it shows on the tab in front, on hover and on focus. */
+.repo-tab-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.repo-tab-close .codicon { font-size: 14px; }
+.repo-tab.is-active .repo-tab-close,
+.repo-tab:hover .repo-tab-close,
+.repo-tab:focus-visible .repo-tab-close,
+.repo-tab-close:focus-visible { opacity: 1; }
+.repo-tab-close:hover {
+  background: var(--app-hover);
+  color: var(--vscode-foreground);
+}
+.repo-tab.is-active .repo-tab-close:hover { background: var(--app-active); }
+.repo-tab.is-dragging { opacity: 0.5; }
+.repo-tab.drop-before { box-shadow: inset 2px 0 0 var(--gs-accent); }
+.repo-tab.drop-after { box-shadow: inset -2px 0 0 var(--gs-accent); }
+.repo-tab.is-active.drop-before { box-shadow: inset 0 2px 0 var(--gs-accent), inset 2px 0 0 var(--gs-accent); }
+.repo-tab.is-active.drop-after { box-shadow: inset 0 2px 0 var(--gs-accent), inset -2px 0 0 var(--gs-accent); }
+/* On the tabs' own centre line (the row is 36px, a tab is its bottom 30), so
+   the + reads as the next tab's place, not as a control floating above. */
+.repo-tabs-add {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  margin-bottom: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 28px;
+  height: 28px;
+  margin-left: 4px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-muted);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.repo-tabs-add .codicon { font-size: 15px; }
+.repo-tabs-add:hover {
+  background: var(--app-hover);
+  color: var(--vscode-foreground);
+}
+.repo-tabs-add:focus-visible {
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: -2px;
+}
+.repo-tabs.is-empty .repo-tabs-add {
+  margin-left: 0;
+  padding: 0 10px 0 8px;
+}
+.repo-tabs-add-label[hidden] { display: none; }
+/* The stage the tab in front is shown on. Only one screen is ever in it. */
+.tab-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Row 14: the tab in front has no folder. One screen says so, in place of
+   the tab's own (docs/desktop-repo-tabs.md). */
+.tab-gone {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  /* The panel surface, not the page: on the page the soft Close Tab button's
+     label measured 4.42:1 in light theme, short of AA. */
+  background: var(--app-panel);
+}
+/* "working in <repo>": the clause is a label, the name after it is the name. */
+.topbar-working {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.topbar-working[hidden] { display: none; }
+.topbar-working-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--vscode-foreground);
+}
+@media (max-width: 1180px) {
+  .topbar-working { display: none; }
 }

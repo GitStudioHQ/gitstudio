@@ -49,20 +49,28 @@ import { MAX_LOCAL_REPOS } from "../../shared/repoGrouping";
 import { splitBand } from "../../shared/repoGrouping";
 import { middlePath, openPath, openLocalCopy, localCopyIndex } from "../localCopy";
 import { plural } from "../textFit";
+import { perTab } from "../tabState";
 
 type Side = "local" | "remote";
 
-/** Which side was last on screen — kept across visits, like every other view. */
-let side: Side = "local";
-let query = "";
-/** Set by the mounted view so its empty state can clear the box it is about. */
-let clearFilter: () => void = () => {};
+/** What Repositories remembers, for ONE tab (issue #32; tabState.ts): every
+ *  tab keeps its own Repositories page, and a shared filter was what another
+ *  tab's page repainted with — its box saying one thing, its rows another. */
+interface ReposTabState {
+  /** Which side was last on screen — kept across visits, like every other view. */
+  side: Side;
+  query: string;
+  /** Set by the mounted view so its empty state can clear the box it is about. */
+  clearFilter: () => void;
+}
+const reposTab = perTab<ReposTabState>(() => ({ side: "local", query: "", clearFilter: () => {} }));
 
 export const renderRepositories: SectionRender = (wrap, nav) => {
   void mount(wrap, nav);
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
+  const S = reposTab();
   const head = ghHeader("Repositories", undefined, () => void refresh(true));
   const tools = el("div", "gh-head-tools");
 
@@ -86,7 +94,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   cloneBtn.addEventListener("click", () =>
     openCloneDialog((root) => {
       bust("repos");
-      void host.invoke("repo:openPath", root).then((info) => {
+      return host.invoke("repo:openPath", root).then((info) => {
         if (info) nav("code");
       });
     }),
@@ -97,24 +105,24 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       { value: "local", label: "On this machine", icon: "device-desktop" },
       { value: "remote", label: "On GitHub", icon: "cloud" },
     ],
-    value: side,
+    value: S.side,
     ariaLabel: "Which repositories to show",
     onChange: (v) => {
-      side = v;
+      S.side = v;
       void refresh();
     },
   });
 
   const search = searchField({
     placeholder: "Filter repositories…",
-    initial: query,
+    initial: S.query,
     onInput: (v) => {
-      query = v;
+      S.query = v;
       void refresh();
     },
   });
-  clearFilter = (): void => {
-    query = "";
+  S.clearFilter = (): void => {
+    S.query = "";
     const input = search.querySelector("input");
     if (input) input.value = "";
     void refresh();
@@ -150,7 +158,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     (listEl as RepoList).realign = undefined;
     listEl.replaceChildren(el("div", "skeleton"));
     try {
-      if (side === "local") await paintLocal(listEl, nav, refresh, current);
+      if (S.side === "local") await paintLocal(listEl, nav, refresh, current);
       else await paintRemote(listEl, nav, refresh, current);
     } catch (e) {
       if (!current()) return;
@@ -179,7 +187,8 @@ function compactCount(n: number): string {
 
 /** The q a row must match, lowercased once. */
 function matches(hay: string): boolean {
-  const q = query.trim().toLowerCase();
+  // This tab's filter (issue #32).
+  const q = reposTab().query.trim().toLowerCase();
   return !q || hay.toLowerCase().includes(q);
 }
 
@@ -191,6 +200,8 @@ async function paintLocal(
   refresh: () => Promise<void>,
   current: () => boolean,
 ): Promise<void> {
+  // This tab's filter (issue #32), read once for the whole paint.
+  const query = reposTab().query;
   // The editors come in the SAME wait as the rows, so every row paints with
   // its final controls: a split button that arrived afterwards would push the
   // Open beside it sideways under the pointer.
@@ -301,7 +312,7 @@ async function paintLocal(
             // heaviest possible response to a text box having the wrong four
             // characters in it, throwing away every other piece of state on the
             // way.
-            secondary: { label: "Clear filter", onClick: () => clearFilter() },
+            secondary: { label: "Clear filter", onClick: () => reposTab().clearFilter() },
           })
         : emptyState(
             "No repositories yet",
@@ -1079,6 +1090,8 @@ async function paintRemote(
   refresh: () => Promise<void>,
   current: () => boolean,
 ): Promise<void> {
+  // This tab's filter (issue #32), read once for the whole paint.
+  const query = reposTab().query;
   const [repos, copies, folders, editors] = await Promise.all([
     gget("github:repos", undefined, 30_000),
     gget("repos:local", undefined, 5000),

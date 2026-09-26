@@ -1,5 +1,6 @@
-import { accessSync, constants, lstatSync } from "node:fs";
+import { accessSync, constants, existsSync, lstatSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { ExpectedError } from "./expectedError";
 
 /** An in-app notice (`app:notice`) — never a native alert. */
 export interface RepoNotice {
@@ -110,4 +111,83 @@ export function cannotOpenNotice(path: string, probe: Partial<RepoNoticeProbe> =
     kind: "warn",
     message: `${root} is a Git repository, but Git can't read it — its .git folder may be damaged.`,
   };
+}
+
+/**
+ * Every tab is taken (issue #32). An open is refused rather than closing a tab
+ * the user did not choose — a limit you can see beats state that vanishes.
+ */
+export function tabsFullNotice(max: number): RepoNotice {
+  return {
+    kind: "info",
+    message: `GitStudio keeps up to ${max} repositories open. Close a tab to open another.`,
+  };
+}
+
+/**
+ * Tabs the last session had open whose folders are gone now — deleted, moved,
+ * or on a drive that is not mounted. Said ONCE, naming them, and quietly: the
+ * user's disk changed, the app did not fail.
+ */
+export function droppedTabsNotice(roots: readonly string[]): RepoNotice {
+  const names = roots.map((r) => r.split(/[\\/]/).filter(Boolean).pop() || r);
+  const list =
+    names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+  return {
+    kind: "info",
+    message:
+      names.length === 1
+        ? `${list} was not reopened: ${roots[0]} is gone or no longer a Git repository.`
+        : `${names.length} tabs were not reopened because their folders are gone or no longer Git repositories: ${list}.`,
+  };
+}
+
+/** What a git command in a tab whose folder is gone says instead (row 14). */
+export function missingFolderMessage(root: string): string {
+  return `The folder ${root} is not there any more — it was moved or deleted.`;
+}
+
+/** Node's error for a child it could not start: `spawn <git> ENOENT`. */
+function isSpawnEnoent(err: unknown): boolean {
+  const e = err as { code?: unknown; syscall?: unknown; message?: unknown } | undefined;
+  if (!e || typeof e !== "object") return false;
+  if (e.code === "ENOENT" && String(e.syscall ?? "").startsWith("spawn")) return true;
+  return typeof e.message === "string" && /\bspawn\b\S*.*\bENOENT\b/.test(e.message);
+}
+
+/**
+ * A git command run in a repository whose folder is gone fails at SPAWN:
+ * GitProcess starts git with the folder as its working directory, and Node
+ * answers `spawn <git> ENOENT` — the very words it uses when git itself is not
+ * installed. That is what a tab whose folder was moved or deleted showed in
+ * every view that read it (row 14 of docs/desktop-repo-tabs.md). Said as what
+ * it is, and as a condition rather than a crash: only when the folder really is
+ * missing — with the folder there, ENOENT means git is.
+ *
+ * Returns the error to throw instead, or undefined to leave `err` alone.
+ */
+export function missingFolderError(
+  err: unknown,
+  root: string | undefined,
+  exists: (path: string) => boolean = existsSync,
+): ExpectedError | undefined {
+  if (!root || !isSpawnEnoent(err) || exists(root)) return undefined;
+  return new ExpectedError(missingFolderMessage(root));
+}
+
+/**
+ * The same, for a handler that RETURNS its failure (`{ ok: false, message }`)
+ * rather than throwing it: the result with its message said plainly and marked
+ * expected, or undefined to leave it alone.
+ */
+export function missingFolderResult<T>(
+  result: T,
+  root: string | undefined,
+  exists: (path: string) => boolean = existsSync,
+): T | undefined {
+  if (!root || !result || typeof result !== "object") return undefined;
+  const r = result as { ok?: unknown; message?: unknown };
+  if (r.ok !== false || typeof r.message !== "string" || !isSpawnEnoent({ message: r.message })) return undefined;
+  if (exists(root)) return undefined;
+  return { ...result, message: missingFolderMessage(root), expected: true };
 }

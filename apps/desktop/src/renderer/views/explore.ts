@@ -72,6 +72,7 @@ import type {
   SearchSort,
   SearchUserItem,
 } from "../../shared/ipc";
+import { perTab } from "../tabState";
 
 type Tab = "repos" | "users" | "orgs" | "code";
 
@@ -83,18 +84,42 @@ const TABS: ReadonlyArray<{ id: Tab; label: string; icon: string }> = [
 ];
 
 // ── Section state (survives list ⇄ detail round trips, like the other views) ──
-let tab: Tab = "repos";
-let query = "";
-/** Which world the search runs in. "local" is this machine: repos:local, no
- *  network, no account — reachable signed-out and repo-less, which is the
- *  point. Kept across visits like the tab. */
-let scope: "github" | "local" = "github";
-let repoSort: SearchSort = "best";
-/** Pages accumulated for the CURRENT (tab, query, sort) — "Load more" appends. */
-let pages = 1;
 
-/** Guards against a slow earlier query overwriting a newer one's results. */
-let searchSeq = 0;
+/**
+ * What Search remembers, for ONE tab (issue #32; tabState.ts). A search
+ * belongs to the tab it was typed in, and every tab keeps its own Search page:
+ * at module scope, another tab's search was what this tab's page rebuilt
+ * with, and its sequence number superseded this tab's results while they were
+ * held for it.
+ */
+interface ExploreTabState {
+  tab: Tab;
+  query: string;
+  /** Which world the search runs in. "local" is this machine: repos:local, no
+   *  network, no account — reachable signed-out and repo-less, which is the
+   *  point. Kept across visits like the tab. */
+  scope: "github" | "local";
+  repoSort: SearchSort;
+  /** Pages accumulated for the CURRENT (tab, query, sort) — "Load more" appends. */
+  pages: number;
+  /** Guards against a slow earlier query overwriting a newer one's results. */
+  searchSeq: number;
+  /**
+   * Where the result list was scrolled when we left it — and WHICH search that
+   * was. Keyed, because a bare number is applied to whatever runs next: leave a
+   * repo search scrolled to row 40, come back, switch to Code, and the new
+   * (shorter) list was scrolled to a position that meant nothing in it.
+   */
+  listScroll?: { key: string; top: number };
+}
+const exploreTab = perTab<ExploreTabState>(() => ({
+  tab: "repos",
+  query: "",
+  scope: "github",
+  repoSort: "best",
+  pages: 1,
+  searchSeq: 0,
+}));
 
 /**
  * Local copies keyed by lowercased origin, so a GitHub hit can say "you
@@ -103,13 +128,6 @@ let searchSeq = 0;
  * betterCopy picks when several copies share an origin.
  */
 let localByOrigin = new Map<string, LocalCopy>();
-/**
- * Where the result list was scrolled when we left it — and WHICH search that
- * was. Keyed, because a bare number is applied to whatever runs next: leave a
- * repo search scrolled to row 40, come back, switch to Code, and the new
- * (shorter) list was scrolled to a position that meant nothing in it.
- */
-let listScroll: { key: string; top: number } | undefined;
 
 
 
@@ -118,10 +136,11 @@ export const renderExplore: SectionRender = (wrap, nav, target) => {
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
+  const S = exploreTab();
   // Entity pages are Explore states too — a repo, a person, an org. Each is a
   // full page that goes BACK to the search it came from.
   const backToSearch = (): void =>
-    nav("explore", query ? { id: searchTargetId(tab, query) } : undefined);
+    nav("explore", S.query ? { id: searchTargetId(S.tab, S.query) } : undefined);
 
   const repoRoute = parseRepoRoute(target?.id);
   if (repoRoute) {
@@ -147,11 +166,11 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     // search, so resetting unconditionally meant every visit re-paged from one:
     // eight "Load more" clicks thrown away, and the row you had just read gone
     // back above the fold.
-    const same = routed.tab === tab && routed.query === query && routed.scope === scope;
-    tab = routed.tab;
-    query = routed.query;
-    scope = routed.scope;
-    if (!same) pages = 1;
+    const same = routed.tab === S.tab && routed.query === S.query && routed.scope === S.scope;
+    S.tab = routed.tab;
+    S.query = routed.query;
+    S.scope = routed.scope;
+    if (!same) S.pages = 1;
   }
 
   const refresh = (): void => renderExplore(wrap, nav, target);
@@ -180,7 +199,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   title.textContent = "Search";
   const sub = el("div", "explore-sub");
   sub.textContent =
-    scope === "local"
+    S.scope === "local"
       ? "Your repositories on this machine — names, folders and origins."
       : "Repositories, people, organizations and code — all of GitHub, opened here.";
 
@@ -192,12 +211,12 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
       { value: "local", label: "This machine" },
       { value: "github", label: "On GitHub" },
     ],
-    value: scope,
+    value: S.scope,
     ariaLabel: "Search scope",
     onChange: (v) => {
-      scope = v;
-      pages = 1;
-      if (query) nav("explore", { id: v === "local" ? localSearchTargetId(query) : searchTargetId(tab, query) });
+      S.scope = v;
+      S.pages = 1;
+      if (S.query) nav("explore", { id: v === "local" ? localSearchTargetId(S.query) : searchTargetId(S.tab, S.query) });
       else renderExplore(wrap, nav, undefined);
     },
   });
@@ -205,27 +224,27 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
 
   const field = searchField({
     placeholder:
-      scope === "local"
+      S.scope === "local"
         ? "Search your repositories — name, folder or origin"
-        : tab === "code"
+        : S.tab === "code"
         ? "Search code — press Enter (code search is rate-limited)"
-        : tab === "repos"
+        : S.tab === "repos"
           ? "Search repositories — try  stars:>1000 language:TypeScript"
-          : tab === "orgs"
+          : S.tab === "orgs"
             ? "Search organizations…"
             : "Search people…",
-    initial: query,
+    initial: S.query,
     autofocus: true,
     // Code search costs 10× more of the budget, so it never fires on a
     // keystroke: the long debounce is a backstop, Enter is the real trigger.
-    debounceMs: tab === "code" ? 100_000 : 300,
+    debounceMs: S.tab === "code" ? 100_000 : 300,
     onInput: (q) => {
       // Code search costs a request per keystroke and is rate-limited hard, so
       // it waits for Enter rather than typing-as-you-search. But CLEARING is
       // not a search: the ✕ emptied the box and left the previous results
       // sitting under it, so the field said one thing and the list another and
       // the only way to agree with the box was to press Enter on nothing.
-      if (tab === "code" && q !== "") return;
+      if (S.tab === "code" && q !== "") return;
       setQuery(q);
     },
     onEnter: (q) => setQuery(q),
@@ -241,16 +260,16 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   const tabBar = el("div", "explore-tabs");
   tabBar.setAttribute("role", "tablist");
   for (const t of TABS) {
-    const b = el("button", "explore-tab" + (t.id === tab ? " active" : ""));
+    const b = el("button", "explore-tab" + (t.id === S.tab ? " active" : ""));
     b.setAttribute("role", "tab");
-    b.setAttribute("aria-selected", String(t.id === tab));
+    b.setAttribute("aria-selected", String(t.id === S.tab));
     b.append(glyph(t.icon), span(t.label));
     b.addEventListener("click", () => {
-      if (t.id === tab) return;
-      tab = t.id;
-      pages = 1;
+      if (t.id === S.tab) return;
+      S.tab = t.id;
+      S.pages = 1;
       // Re-route rather than re-render in place, so ⌘[ walks tab changes too.
-      if (query) nav("explore", { id: searchTargetId(tab, query) });
+      if (S.query) nav("explore", { id: searchTargetId(S.tab, S.query) });
       else renderExplore(wrap, nav, undefined);
     });
     tabBar.appendChild(b);
@@ -261,23 +280,23 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   // The four GitHub kind-tabs mean nothing on this machine — local search is
   // over repositories. Hidden, not unmounted, so the tab row's position in
   // the DOM (which several checks address by nth-child) never shifts.
-  if (scope === "local") tools.hidden = true;
-  if (scope === "github" && tab === "repos") {
+  if (S.scope === "local") tools.hidden = true;
+  if (S.scope === "github" && S.tab === "repos") {
     const sortBtn = el("button", "mini-btn explore-sort");
     const sortLabel = (s: SearchSort): string =>
       s === "stars" ? "Most stars" : s === "updated" ? "Recently updated" : "Best match";
-    sortBtn.append(glyph("sort-precedence"), span(sortLabel(repoSort)), glyph("chevron-down"));
+    sortBtn.append(glyph("sort-precedence"), span(sortLabel(S.repoSort)), glyph("chevron-down"));
     sortBtn.title = "Sort results";
     sortBtn.addEventListener("click", () =>
       openMenu(
         sortBtn,
         (["best", "stars", "updated"] as SearchSort[]).map((s) => ({
           label: sortLabel(s),
-          icon: repoSort === s ? "check" : undefined,
+          icon: S.repoSort === s ? "check" : undefined,
           onClick: () => {
-            if (repoSort === s) return;
-            repoSort = s;
-            pages = 1;
+            if (S.repoSort === s) return;
+            S.repoSort = s;
+            S.pages = 1;
             run();
           },
         })),
@@ -290,21 +309,21 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   wrap.replaceChildren(view);
 
   const setQuery = (q: string): void => {
-    if (q === query) return;
-    query = q;
-    pages = 1;
-    if (q) nav("explore", { id: scope === "local" ? localSearchTargetId(q) : searchTargetId(tab, q) });
+    if (q === S.query) return;
+    S.query = q;
+    S.pages = 1;
+    if (q) nav("explore", { id: S.scope === "local" ? localSearchTargetId(q) : searchTargetId(S.tab, q) });
     else run();
   };
 
   // ── running the search ──
   const run = async (append = false): Promise<void> => {
-    const seq = ++searchSeq;
-    if (scope === "local") {
-      await runLocal(listEl, nav, query, seq, () => searchSeq, (q) => {
+    const seq = ++S.searchSeq;
+    if (S.scope === "local") {
+      await runLocal(listEl, nav, S.query, seq, () => S.searchSeq, (q) => {
         // The flip door: same query, other world.
-        scope = "github";
-        nav("explore", { id: searchTargetId(tab, q) });
+        S.scope = "github";
+        nav("explore", { id: searchTargetId(S.tab, q) });
       });
       return;
     }
@@ -314,14 +333,14 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
       listEl.replaceChildren(connectPrompt(nav));
       return;
     }
-    if (!query) {
+    if (!S.query) {
       listEl.replaceChildren(startState());
       return;
     }
     // People and organizations are a DIRECTORY, not documents: a 40px row
     // holding a login in a 1350px pane read ~93% empty. Same treatment the
     // organization's Members tab uses — compact chips that wrap from the left.
-    listEl.classList.toggle("is-people", tab === "users" || tab === "orgs");
+    listEl.classList.toggle("is-people", S.tab === "users" || S.tab === "orgs");
     if (!append) listEl.replaceChildren(skeletonList(6));
     else {
       // A retry from the tail card replaces that card, so the list never
@@ -343,9 +362,9 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     }
 
     try {
-      const page = append ? pages + 1 : 1;
-      const result = await fetchPage(tab, query, repoSort, page);
-      if (seq !== searchSeq || !view.isConnected) return;
+      const page = append ? S.pages + 1 : 1;
+      const result = await fetchPage(S.tab, S.query, S.repoSort, page);
+      if (seq !== S.searchSeq || !view.isConnected) return;
       if (result.limited) {
         // On an APPEND the loaded pages are still good — the refusal is about
         // the NEXT page. Replacing the list threw away everything the user had
@@ -363,7 +382,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
         return;
       }
       if (append) {
-        pages = page;
+        S.pages = page;
         listEl.querySelector(".explore-loading-more")?.remove();
         listEl.querySelector(".explore-footer")?.remove();
         appendRows(result, false);
@@ -384,25 +403,25 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
         //
         // (The old loop's guard was dead too: `result.items.length > 0` tests
         // the FIRST page on every iteration, so it never stopped anything.)
-        const restore = pages;
-        pages = 1;
+        const restore = S.pages;
+        S.pages = 1;
         listEl.replaceChildren();
         appendRows(result, true);
         for (let p = 2; p <= restore && result.items.length > 0; p++) {
-          const more = peekPage(tab, query, repoSort, p);
+          const more = peekPage(S.tab, S.query, S.repoSort, p);
           if (!more || more.limited || !more.items.length) break;
-          pages = p;
+          S.pages = p;
           listEl.querySelector(".explore-footer")?.remove();
           appendRows(more, false);
         }
         // Only onto the search it was taken from.
-        if (listScroll && listScroll.key === searchTargetId(tab, query)) {
-          listEl.scrollTop = listScroll.top;
+        if (S.listScroll && S.listScroll.key === searchTargetId(S.tab, S.query)) {
+          listEl.scrollTop = S.listScroll.top;
         }
-        listScroll = undefined;
+        S.listScroll = undefined;
       }
     } catch (e) {
-      if (seq !== searchSeq || !view.isConnected) return;
+      if (seq !== S.searchSeq || !view.isConnected) return;
       // On an APPEND the loaded pages are still good — the failure is about the
       // NEXT page. The `limited` branch above was given this treatment
       // deliberately; the error branch was not, so one flaky request deleted
@@ -429,7 +448,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
    *  you come back to. Opening a result and returning used to land you at the
    *  top of the list with the row you had just opened somewhere below. */
   const leaveNav: SectionNav = (section, t) => {
-    listScroll = { key: searchTargetId(tab, query), top: listEl.scrollTop };
+    S.listScroll = { key: searchTargetId(S.tab, S.query), top: listEl.scrollTop };
     nav(section, t);
   };
 
@@ -437,7 +456,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     const items = result.items;
     if (first && items.length === 0) {
       listEl.replaceChildren(
-        emptyState("No results", `Nothing on GitHub matches “${query}”.`, {
+        emptyState("No results", `Nothing on GitHub matches “${S.query}”.`, {
           icon: "search",
           anchor: "inline",
         }),
@@ -445,8 +464,8 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
       return;
     }
     for (const item of items) {
-      if (tab === "repos") listEl.appendChild(repoRow(item as SearchRepoItem, leaveNav));
-      else if (tab === "code") listEl.appendChild(codeRow(item as SearchCodeItem, leaveNav));
+      if (S.tab === "repos") listEl.appendChild(repoRow(item as SearchRepoItem, leaveNav));
+      else if (S.tab === "code") listEl.appendChild(codeRow(item as SearchCodeItem, leaveNav));
       else listEl.appendChild(userRow(item as SearchUserItem, leaveNav));
     }
     listEl.appendChild(footer(result, () => void run(true)));
@@ -640,7 +659,7 @@ function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
             sub: have ? `You already have this at ${have.root}` : undefined,
             icon: "repo-clone",
             onClick: () =>
-              openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+              openCloneDialog((root) => host.invoke("repo:openPath", root), {
                 url: `https://github.com/${r.fullName}.git`,
               }),
           },

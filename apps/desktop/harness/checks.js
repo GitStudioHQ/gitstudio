@@ -185,6 +185,57 @@
     return carried;
   };
 
+  // ── Repositories as tabs (issue #32) ────────────────────────────────────
+  const GS_ROOT = "/Users/anton/Developer/GitStudioHQ/gitstudio";
+  const GS_DEV_ROOT = "/Users/anton/Developer/GitStudioHQ/gistudio.dev";
+  /** The root of the tab in front, read off the tab row. */
+  const activeTabRoot = () => $(".repo-tab.is-active")?.dataset.root;
+  const tabEl = (root) => $$(".repo-tab").find((t) => t.dataset.root === root);
+  /** A key press where a person's would land: the focused element (memory:
+   *  harness-synthetic-events), else the body. */
+  const press = (key, mods = {}) => {
+    const target = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body;
+    const code = /^[0-9]$/.test(key) ? `Digit${key}` : undefined;
+    target.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key,
+        code,
+        metaKey: !!mods.meta,
+        ctrlKey: !!mods.ctrl,
+        altKey: !!mods.alt,
+        shiftKey: !!mods.shift,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  };
+  /**
+   * With a question up, try every way there is to another tab: main putting
+   * another tab in front (a menu's Open Recent, a restore), Ctrl+Tab, and a
+   * click on the other tab. None may take the question away or answer it — the
+   * verb it would run belongs to the tab it was asked in.
+   */
+  const tryToLeaveUnderAQuestion = async (c) => {
+    window.__gsTabs.open(GS_DEV_ROOT); // main: "gistudio.dev is in front now"
+    await settle(400);
+    press("Tab", { ctrl: true });
+    await settle(250);
+    tabEl(GS_DEV_ROOT)?.click();
+    await settle(400);
+    c.ok(!!$(".modal-card"), "the question stays until it is answered");
+    c.eq(activeTabRoot(), GS_ROOT, "…and the screen stays on the tab it was asked in");
+  };
+  /** Cancel the question; the switch main asked for happens after it. */
+  const cancelAndLand = async (c) => {
+    const card = $(".modal-card");
+    const cancel = card && [...card.querySelectorAll("button")].find((b) => /^cancel$/i.test(text(b)));
+    if (cancel) cancel.click();
+    else document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await settle(700);
+    c.ok(!$(".modal-card"), "Cancel closes it");
+    c.eq(activeTabRoot(), GS_DEV_ROOT, "and then the tab main put in front comes to the front");
+  };
+
   window.__GS_CHECKS = {
     // ── the count badge reports what is on screen ────────────────────────────
     "count-badge-filtered": (f) => {
@@ -2913,7 +2964,7 @@
     },
 
     // ── repositories are an object you manage, not a preference ─────────────
-    "repo-manager-opens-from-the-repo-chip": (f) => {
+    "repo-manager-opens-from-the-tab-row": (f) => {
       const c = check(f);
       // The clone list used to live 480px down the Settings page, with Open,
       // Reveal in Finder and Delete from disk on each row. Choosing a
@@ -2923,7 +2974,7 @@
       // that listed the same clones a second time. Choosing a repository is the
       // most frequent thing anyone does in a Git client; it deserves a place,
       // not a dialog.
-      c.eq(text(".nav-item.active"), "Repositories", "the chip leads to Repositories");
+      c.eq(text(".nav-item.active"), "Repositories", "the tab row's + leads to Repositories");
       c.ok($$(".sec-row").length >= 3, `which lists the repositories (${$$(".sec-row").length})`);
       c.ok($$(".repo-folder-head").length >= 1, "grouped by the folder they live in");
       const tools = $$("button").map((b) => (b.textContent || "").trim());
@@ -3419,7 +3470,10 @@
     // which page was showing, and arrow keys did nothing.
     "detail-subtabs-are-a-tablist": (f) => {
       const c = check(f);
-      const bar = $("[role=tablist]");
+      // The DETAIL page's sub-tabs, in the view — not the first tablist in the
+      // document, which is the repository tab row now (#32) and is checked by
+      // its own case (the-tab-row-is-a-tablist).
+      const bar = $(".view-host [role=tablist]");
       c.ok(!!bar, "the sub-tab bar is a tablist");
       if (!bar) return;
       c.ok(!!bar.getAttribute("aria-label"), "the tablist is named");
@@ -4977,10 +5031,17 @@
       $$(".rb-inprogress button").find((b) => /^Abort/.test(text(b)))?.click();
       await settle(500);
       c.ok(!!$(".modal-card"), "precondition: the question is up");
-      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
-      await settle(900);
-      c.ok(!$(".modal-card"), "switching repository takes the question with it");
-      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 0, "and nothing was aborted");
+      await tryToLeaveUnderAQuestion(c);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "op:abort").length, 0, "nothing was aborted by the attempt");
+      // Answering it now aborts the rebase of the tab it was ASKED in — the
+      // call says so (issue #32) — never the one main has put in front.
+      $$(".modal-card button").find((b) => /^Abort/.test(text(b)))?.click();
+      await settle(700);
+      const aborts = window.__GS_INVOKED.filter((r) => r.channel === "op:abort");
+      c.eq(aborts.length, 1, "the answer aborts once");
+      c.eq(aborts[0] && aborts[0].root, GS_ROOT, "…in the repository the question was about");
+      await settle(400);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "and only then does the other tab come to the front");
     },
 
     /**
@@ -7038,9 +7099,9 @@
      */
     "a-running-clone-can-always-be-left": async (f) => {
       const c = check(f);
-      // The welcome screen is gone; cloning with no repository open starts
-      // from the repository chip, which is on screen in every state now.
-      const chip = $(".topbar-switch");
+      // The welcome screen is gone; cloning starts from the tab row's +, which
+      // is on screen in every state — no repository open included (#32).
+      const chip = $(".repo-tabs-add");
       if (chip) {
         chip.click();
         await settle(400);
@@ -14638,7 +14699,8 @@
       c.ok(!!$$(".btn-primary", card)[0], "…an ordinary one");
     },
 
-    /** A switch to another repository takes the question with it. */
+    /** A question is answered in the tab it was asked in: no switch to another
+     *  repository happens under it (issue #32 — it used to be closed by one). */
     "a-reset-question-does-not-follow-you-to-another-repository": async (f) => {
       const c = check(f);
       await settle(1000);
@@ -14647,10 +14709,10 @@
       $$(".dropdown .dropdown-item").find((i) => text(i) === "Reset to 'origin/main'…")?.click();
       await settle(300);
       c.ok(!!$(".modal-card"), "precondition: the question is up");
-      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
-      await settle(900);
-      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      await tryToLeaveUnderAQuestion(c);
       c.eq(window.__gsResets.resets.length, 0, "…and resets nothing");
+      await cancelAndLand(c);
+      c.eq(window.__gsResets.resets.length, 0, "a cancelled question resets nothing either");
     },
     /**
      * Settings ▸ Editors: every editor found is listed; unticking hides it
@@ -15759,13 +15821,16 @@
       await settle(900);
       const where = $(".topbar-where");
       const browsed = text(".topbar-where-name");
-      const working = text(".topbar-switch .switch-name");
+      // The repository chip became the tab row (#32); the clause names the
+      // repository itself now, and the tab in front says the same.
+      const working = text(".topbar-working-name");
       c.eq(browsed, "libgit2/libgit2", "the bar names the repository on screen");
       c.eq(working, "gitstudio", "…and still names the one its controls act on");
+      c.eq(text(".repo-tab.is-active .repo-tab-name"), working, "…which is the tab in front");
       c.ok(browsed !== working, "the two are different repositories, said differently");
       c.ok($(".topbar-working")?.offsetParent !== null, "the clause joining them is visible");
       const a = where?.getBoundingClientRect();
-      const b = $(".topbar-switch")?.getBoundingClientRect();
+      const b = $(".topbar-working")?.getBoundingClientRect();
       c.ok(!!a && !!b && a.right <= b.left + 1, "what you are reading sits left of what you are working in");
       $('.nav-item[data-view="changes"]')?.click();
       await settle(900);
@@ -16307,10 +16372,10 @@
       const routes = window.__GS_ROUTES || [];
       c.eq((routes[routes.length - 1] || {}).view, "changes", "…and the user is taken back to where the merge is finished");
     },
-    /** Holding the question against a refresh must not hold it across a
-     *  REPOSITORY switch: `sync:pull` acts on whatever repository is open, so
-     *  an answer given after the switch would pull a repository the question
-     *  was never about. */
+    /** A question held against a refresh must never be answered in ANOTHER
+     *  repository. With tabs (#32) no switch happens under a question — it
+     *  waits for the answer — and the answer's call names the tab it was
+     *  asked in, so it can never pull a repository it was not about. */
     "the-pull-question-does-not-follow-you-to-another-repository": async (f) => {
       const c = check(f);
       await settle(900);
@@ -16319,10 +16384,10 @@
       main.click();
       await settle(200);
       c.ok(!!$(".modal-card"), "precondition: the question is up");
-      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
-      await settle(900);
-      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      await tryToLeaveUnderAQuestion(c);
       c.eq(window.__gsPulledWith, null, "…and pulls nothing");
+      await cancelAndLand(c);
+      c.eq(window.__gsPulledWith, null, "a cancelled question pulls nothing either");
     },
     /** GitHub answers what it can and names the rest; the reads keep what came
      *  back. `?partial=1` names one project and one card it could not return —
@@ -16539,8 +16604,9 @@
       c.ok(!!$$("#toast-stack .toast-success").find((t) => /Pulled/.test(text(t))), `and it pulled (${text("#toast-stack")})`);
       c.ok(!$(".toast-error"), "nothing red");
     },
-    /** Switching repository answers the question with Cancel: a Stash & Retry
-     *  there would stash and run in a repository nobody asked about. */
+    /** A Stash & Retry answered in another repository would stash and run
+     *  where nobody asked. With tabs (#32) the switch waits for the question,
+     *  and Cancel runs nothing anywhere. */
     "the-stash-question-does-not-follow-you-to-another-repository": async (f) => {
       const c = check(f);
       await settle(900);
@@ -16549,9 +16615,8 @@
       main.click();
       await settle(200);
       c.eq(text(".modal-title"), "Your uncommitted changes are in the way", "precondition: the question is up");
-      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
-      await settle(900);
-      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      await tryToLeaveUnderAQuestion(c);
+      await cancelAndLand(c);
       const pulls = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:pull");
       c.eq(pulls.length, 1, "…and nothing is stashed or pulled");
       const failed = $$("#toast-stack .toast").filter((t) => /fail|couldn/i.test(text(t) || ""));
@@ -17366,6 +17431,1131 @@
       c.ok(perRow.every((m) => m > 1), `no group alone on a row (${perRow.join("+")})`);
       const r = sheet.getBoundingClientRect();
       c.ok(r.top >= 0 && r.bottom <= window.innerHeight, `the sheet fits the window (${Math.round(r.top)}–${Math.round(r.bottom)} of ${window.innerHeight})`);
+    },
+
+    // ── Repositories as tabs (issue #32) ────────────────────────────────────
+    // The state table these walk is docs/desktop-repo-tabs.md; each check
+    // names its rows. Scenes open tabs with ?tabs=N (shim.js TAB_FIXTURES).
+
+    /** The row: one tab per repository, its words, its marks, its controls. */
+    "the-tab-row-shows-each-open-repository": async (f) => {
+      const c = check(f);
+      await settle(700);
+      noAnimation();
+      const row = $(".repo-tabs");
+      c.ok(!!row && row.offsetParent !== null, "there is a tab row");
+      const tabs = $$(".repo-tab");
+      c.eq(tabs.map((t) => text(t.querySelector(".repo-tab-name"))).join(" | "), "gitstudio | gistudio.dev | webapp", "one tab per open repository, in order");
+      const list = $(".repo-tabs-scroller");
+      c.eq(list?.getAttribute("role"), "tablist", "the row is a tablist");
+      c.ok(!!list?.getAttribute("aria-label"), "…with a name");
+      c.eq(tabs.filter((t) => t.getAttribute("aria-selected") === "true").length, 1, "exactly one tab is selected");
+      c.eq(tabs.filter((t) => t.tabIndex === 0).length, 1, "one roving tab stop…");
+      c.eq(activeTabRoot(), GS_ROOT, "…on the tab in front");
+      const panel = $("#repo-tab-panel");
+      c.eq(panel?.getAttribute("role"), "tabpanel", "the stage is the panel the tabs control");
+      c.eq(panel?.getAttribute("aria-labelledby"), tabEl(GS_ROOT)?.id, "…named by the tab in front");
+      c.eq(tabs.filter((t) => t.getAttribute("aria-controls") === "repo-tab-panel").length, 3, "every tab controls it");
+      // The ●N marks — the same words Home and Repositories use.
+      const mark = (root) => tabEl(root)?.querySelector(".repo-tab-mark");
+      c.eq(text(mark(GS_ROOT)), "●6", "a tab with changes wears ●N");
+      c.eq(text(mark(GS_DEV_ROOT)), "●3", "…each its own count");
+      c.eq(getComputedStyle(mark("/Users/anton/Code/webapp")).display, "none", "a clean tab wears nothing, not ●0");
+      // The SAME colour as Home's and Repositories' ●N — measured on a probe
+      // wearing their class, not assumed from a class name.
+      const probe = document.createElement("span");
+      probe.className = "repo-state-bit is-dirty";
+      document.body.appendChild(probe);
+      const homeColour = getComputedStyle(probe).color;
+      probe.remove();
+      c.eq(getComputedStyle(mark(GS_ROOT)).color, homeColour, "the mark is the colour Home and Repositories use");
+      c.match(tabEl(GS_ROOT)?.getAttribute("aria-label") || "", /^gitstudio, 6 changed files$/, "…and says it in words");
+      // Nothing is running: no spinner anywhere. (`.glyph.codicon[class*=…]`
+      // pins glyphs to inline-flex at (0,3,0), and once won this.)
+      c.ok(tabs.every((t) => getComputedStyle(t.querySelector(".repo-tab-busy")).display === "none"), "no tab shows a spinner while nothing runs");
+      // The close control: the standard codicon, named in words.
+      const close = tabEl(GS_ROOT)?.querySelector(".repo-tab-close");
+      c.ok(!!close?.querySelector(".codicon-close"), "close is the close codicon");
+      c.eq(close?.getAttribute("aria-label"), "Close gitstudio", "…named for what it closes");
+      c.match(close?.title || "", /^Close gitstudio {2}\(⌘W\)$/, "…with the key on the tab in front");
+      c.eq(getComputedStyle(close).opacity, "1", "the front tab shows its close");
+      const bgClose = tabEl(GS_DEV_ROOT)?.querySelector(".repo-tab-close");
+      c.eq(getComputedStyle(bgClose).opacity, "0", "a background tab's close waits for the pointer");
+      c.ok(bgClose.getBoundingClientRect().width >= 20, "…and keeps its room, so a hover never shifts the name");
+      // The + says what it does.
+      const add = $(".repo-tabs-add");
+      c.eq(add?.getAttribute("aria-label"), "Open a repository in a new tab", "the + is named in words");
+      c.ok(!!add?.querySelector(".codicon-add"), "…and is the add codicon");
+      c.ok($(".repo-tabs-add-label")?.hidden, "with tabs open it is the glyph alone");
+      c.eq(getComputedStyle($(".repo-tabs-list")).display, "none", "three tabs fit: no overflow list");
+      c.eq(getComputedStyle($(".repo-tabs-scroller")).maskImage || "none", "none", "…and no faded edge");
+      c.ok(!$(".topbar-switch:not(.topbar-branch)"), "the top bar's old single-repository chip is gone");
+    },
+
+    /** The tab in front is unmistakable — by computed style, in both themes. */
+    "the-front-tab-is-unmistakable": async (f) => {
+      const c = check(f);
+      await settle(600);
+      noAnimation();
+      const front = tabEl(GS_ROOT);
+      const back = tabEl(GS_DEV_ROOT);
+      const bar = $(".topbar");
+      const row = $(".repo-tabs");
+      if (!front || !back || !bar || !row) return c.ok(false, "precondition: a front tab, a back tab, the bars");
+      const fs = getComputedStyle(front);
+      const bs = getComputedStyle(back);
+      c.eq(fs.backgroundColor, getComputedStyle(bar).backgroundColor, "the front tab wears the top bar's panel colour, so it runs into it");
+      c.ok(bs.backgroundColor === "rgba(0, 0, 0, 0)" || bs.backgroundColor === "transparent", `a back tab sits on the row's ground (${bs.backgroundColor})`);
+      c.ok(fs.backgroundColor !== getComputedStyle(row).backgroundColor, "…which is a different colour from the front tab");
+      const accent = getComputedStyle(document.body).getPropertyValue("--gs-accent").trim();
+      c.match(fs.boxShadow, /inset/, `the front tab carries the accent rule (${fs.boxShadow})`);
+      c.ok(bs.boxShadow === "none", "a back tab carries none");
+      c.ok(Number(fs.fontWeight) > Number(bs.fontWeight), "the front tab's name is heavier");
+      c.eq(Math.round(front.getBoundingClientRect().bottom), Math.round(row.getBoundingClientRect().bottom), "it covers the row's bottom rule — no line between it and its bar");
+      // Contrast, measured.
+      const lum = (rgb) => {
+        const m = /rgba?\(([^)]+)\)/.exec(rgb);
+        if (!m) return 0;
+        const [r, g, b] = m[1].split(",").map((x) => Number(x.trim()) / 255);
+        const lin = (v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+      };
+      const ratio = (a, b) => {
+        const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+        return (x + 0.05) / (y + 0.05);
+      };
+      const rowBg = getComputedStyle(row).backgroundColor;
+      c.ok(ratio(bs.color, rowBg) >= 4.5, `a back tab's name reads on the row (${ratio(bs.color, rowBg).toFixed(2)}:1)`);
+      c.ok(ratio(fs.color, fs.backgroundColor) >= 7, `the front tab's name reads strongly (${ratio(fs.color, fs.backgroundColor).toFixed(2)}:1)`);
+      c.ok(accent.length > 0, "the accent token resolves in this theme");
+      const mark = front.querySelector(".repo-tab-mark");
+      c.ok(ratio(getComputedStyle(mark).color, fs.backgroundColor) >= 3, `the ●N mark reads on the front tab (${ratio(getComputedStyle(mark).color, fs.backgroundColor).toFixed(2)}:1)`);
+    },
+
+    /** Rows 1 and 4: switching away and back keeps the tab's route, its
+     *  kept-alive DOM, its scroll and its history — nothing is rebuilt. */
+    "switching-tabs-keeps-each-tabs-place": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const viewA = $(".view-host")?.firstElementChild;
+      const scroller = $$(".view-host *").find((n) => n.scrollHeight > n.clientHeight + 200 && getComputedStyle(n).overflowY !== "visible");
+      if (!viewA || !scroller) return c.ok(false, "precondition: a long issues list to scroll");
+      scroller.scrollTop = 420;
+      scroller.dispatchEvent(new Event("scroll"));
+      await settle(200);
+
+      const backWas = $(".topbar-nav")?.disabled;
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "the other tab is in front");
+      c.ok(!viewA.isConnected, "tab A's screen is detached, not hidden, while it is in the back");
+      c.eq($$(".screen.repo").length, 1, "one screen on the stage");
+      c.eq(text(".topbar-branch .switch-name"), "site/pricing", "tab B's own top bar, on its own branch");
+      const routesMid = window.__GS_ROUTES.length; // B's own first route is B's business
+      tabEl(GS_ROOT)?.click();
+      await settle(700);
+      c.eq(activeTabRoot(), GS_ROOT, "back to tab A");
+      c.ok($(".view-host")?.firstElementChild === viewA, "the SAME view DOM — kept, not rebuilt");
+      c.ok(Math.abs(scroller.scrollTop - 420) <= 2, `scrolled where it was (${scroller.scrollTop})`);
+      c.eq(text(".topbar-branch .switch-name"), "main", "…with its own branch");
+      c.eq($(".topbar-nav")?.disabled, backWas, "its history (Back) is its own");
+      const routedA = window.__GS_ROUTES.slice(routesMid);
+      c.eq(routedA.length, 0, "coming back re-routed nothing");
+    },
+
+    /** Row 11 and composer state: each tab keeps its own half-written message. */
+    "each-tab-keeps-its-own-commit-message": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const type = (v) => {
+        const box = $(".dc-message");
+        if (!box) return false;
+        box.focus();
+        box.value = v;
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+      };
+      c.ok(type("fix: the tab row's close keeps its room"), "precondition: tab A's composer");
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.eq($(".dc-message")?.value ?? "(none)", "", "tab B's composer starts empty");
+      type("docs: pricing copy");
+      tabEl(GS_ROOT)?.click();
+      await settle(700);
+      c.eq($(".dc-message")?.value, "fix: the tab row's close keeps its room", "tab A's message is where it was left");
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(700);
+      c.eq($(".dc-message")?.value, "docs: pricing copy", "…and tab B's where it was left");
+      // Row 11: closing a tab with a message asks nothing and keeps it.
+      tabEl(GS_ROOT)?.querySelector(".repo-tab-close")?.click();
+      await settle(700);
+      c.ok(!$(".modal-card"), "closing a tab with an unsent message asks nothing…");
+      c.ok(!tabEl(GS_ROOT), "…and closes it");
+      window.__gsEmit("menu:command", { command: "openPath", root: GS_ROOT });
+      await settle(1200);
+      c.eq(activeTabRoot(), GS_ROOT, "reopened");
+      c.eq($(".dc-message")?.value, "fix: the tab row's close keeps its room", "…with the message it was closed with");
+    },
+
+    /** Row 1: a SLOW answer from tab A lands after you moved to tab B. It must
+     *  never paint into B — here, the branch name in B's composer and bar. */
+    "a-slow-answer-from-one-tab-never-paints-into-another": async (f) => {
+      const c = check(f);
+      // Tab A (gitstudio) answers everything 2s late (?slow=*@gitstudio:2000);
+      // its first reads are still in flight. Move to B at once.
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(700);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: B is in front");
+      c.eq(text(".dc-branch-name"), "site/pricing", "precondition: B's composer names B's branch");
+      // A's answers land now.
+      await settle(2200);
+      c.eq(text(".dc-branch-name"), "site/pricing", "A's late HEAD did not rename B's branch");
+      c.eq(text(".topbar-branch .switch-name"), "site/pricing", "…nor B's branch switcher");
+      c.ok(!$$(".toast").some((t) => /gitstudio/.test(text(t))), "…nor said anything about A over B");
+      const bCalls = (window.__GS_INVOKED || []).filter((r) => r.root === GS_DEV_ROOT);
+      c.ok(bCalls.length > 0, "B's own reads were B's");
+      // Back in A, A's answers are delivered to A.
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.eq(text(".dc-branch-name"), "main", "and A, back in front, names its own branch");
+    },
+
+    /** Row 2: an operation started in A finishes while B is in front. The tab
+     *  says it is running; its toast waits for A, and never appears over B. */
+    "an-operation-in-a-background-tab-reports-when-you-are-back": async (f) => {
+      const c = check(f);
+      await settle(900);
+      window.dispatchEvent(new CustomEvent("gs:sync", { detail: { action: "push" } }));
+      await settle(150);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(400);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: B is in front while A pushes");
+      const busy = tabEl(GS_ROOT)?.querySelector(".repo-tab-busy");
+      c.ok(tabEl(GS_ROOT)?.classList.contains("is-busy"), "A's tab says something is running");
+      c.ok(!!busy && getComputedStyle(busy).display !== "none", "…with its spinner on screen");
+      c.match(tabEl(GS_ROOT)?.getAttribute("aria-label") || "", /a push running/, "…and in words");
+      c.ok(!$(".topbar-sync")?.classList.contains("busy"), "B's own sync control is not busy");
+      await settle(1800); // the push answers (?slow=sync:push@gitstudio:1500)
+      c.ok(!tabEl(GS_ROOT)?.classList.contains("is-busy"), "A's spinner stops when git is done");
+      c.ok(!$$("#toast-stack .toast").some((t) => /Pushed/.test(text(t))), `nothing about A's push is said over B (${text("#toast-stack")})`);
+      const pushes = (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:push");
+      c.eq(pushes.length === 1 && pushes[0].root, GS_ROOT, "the push was A's");
+      const before = (window.__GS_INVOKED || []).length;
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.ok($$("#toast-stack .toast").some((t) => /Pushed/.test(text(t))), "back in A, the push says how it went");
+      const after = (window.__GS_INVOKED || []).slice(before).filter((r) => r.scoped && r.channel !== "repo:activate" && r.channel !== "repo:tabStatus");
+      c.ok(after.length > 0 && after.every((r) => r.root === GS_ROOT), `and the refresh that follows is A's (${[...new Set(after.map((r) => (r.root || "").split("/").pop()))].join(", ")})`);
+    },
+
+    /** Row 10: closing a tab while an operation runs in it asks first, and says
+     *  what running thing it is. Cancel keeps the tab. */
+    "closing-a-tab-with-an-operation-running-asks-first": async (f) => {
+      const c = check(f);
+      await settle(900);
+      window.dispatchEvent(new CustomEvent("gs:sync", { detail: { action: "push" } }));
+      await settle(200);
+      tabEl(GS_ROOT)?.querySelector(".repo-tab-close")?.click();
+      await settle(400);
+      const card = $(".modal-card");
+      c.ok(!!card, "it asks");
+      if (!card) return;
+      c.eq(text(".modal-title"), "Close gitstudio?", "…about the tab");
+      c.match(text(".modal-message"), /^A push is still running in gitstudio\. Git will finish it/, "…naming what is running");
+      $$("button", card).find((b) => /^cancel$/i.test(text(b)))?.click();
+      await settle(400);
+      c.ok(!!tabEl(GS_ROOT), "Cancel keeps the tab");
+      tabEl(GS_ROOT)?.querySelector(".repo-tab-close")?.click();
+      await settle(400);
+      $$(".modal-card button").find((b) => /^close tab$/i.test(text(b)))?.click();
+      await settle(600);
+      c.ok(!tabEl(GS_ROOT), "confirmed, it closes");
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "and its right-hand neighbour comes to the front");
+    },
+
+    /** Rows 7–9: which tab comes to the front after a close, and the end. */
+    "closing-tabs-picks-the-neighbour-and-ends-at-home": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const WEB = "/Users/anton/Code/webapp";
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: the middle tab is in front");
+      const screenBefore = $(".screen.repo");
+      // Row 7: a background tab.
+      tabEl(GS_ROOT)?.querySelector(".repo-tab-close")?.click();
+      await settle(600);
+      c.eq($$(".repo-tab").length, 2, "a background tab closes");
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "…and the front tab stays in front");
+      c.ok($(".screen.repo") === screenBefore, "…untouched");
+      // Row 8: the front tab — its right-hand neighbour takes over.
+      tabEl(GS_DEV_ROOT)?.querySelector(".repo-tab-close")?.click();
+      await settle(800);
+      c.eq(activeTabRoot(), WEB, "closing the front tab brings its right-hand neighbour");
+      c.eq($$(".screen.repo").length, 1, "one screen on the stage, the new front tab's");
+      // Row 9: the last tab.
+      tabEl(WEB)?.querySelector(".repo-tab-close")?.click();
+      await settle(900);
+      c.eq($$(".repo-tab").length, 0, "the last tab closes");
+      c.ok(!$(".repo-tabs-add-label")?.hidden, "the + says 'Open a repository' in words when nothing is open");
+      c.eq(text(".repo-tabs-add"), "Open a repository", "…exactly");
+      const changes = $('.nav-item[data-view="changes"]');
+      c.ok(changes?.disabled, "the repository views wait for a repository");
+      c.eq(text(".nav-item.active"), "Home", "and Home is where you are");
+    },
+
+    /** The tab keys: Ctrl+Tab / Ctrl+Shift+Tab cycle and wrap, Ctrl+N jumps,
+     *  9 is the last, ⌘N stays the rail's, ⌘W closes the tab in front. */
+    "the-tab-keys-move-between-tabs": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const order = $$(".repo-tab").map((t) => t.dataset.root);
+      c.eq(order.length, 4, "precondition: four tabs");
+      $(".view-host")?.focus();
+      press("Tab", { ctrl: true });
+      await settle(500);
+      c.eq(activeTabRoot(), order[1], "Ctrl+Tab: the next tab");
+      press("Tab", { ctrl: true, shift: true });
+      await settle(500);
+      c.eq(activeTabRoot(), order[0], "Ctrl+Shift+Tab: the previous one");
+      press("Tab", { ctrl: true, shift: true });
+      await settle(500);
+      c.eq(activeTabRoot(), order[3], "…wrapping to the last");
+      press("PageDown", { ctrl: true });
+      await settle(500);
+      c.eq(activeTabRoot(), order[0], "Ctrl+PageDown steps too, and wraps to the first");
+      press("3", { ctrl: true });
+      await settle(500);
+      c.eq(activeTabRoot(), order[2], "⌃3: the third tab");
+      press("9", { ctrl: true });
+      await settle(500);
+      c.eq(activeTabRoot(), order[3], "⌃9: the LAST tab, whatever the count");
+      press("2", { meta: true });
+      await settle(500);
+      c.eq(activeTabRoot(), order[3], "⌘2 is the rail's, and leaves the tab alone");
+      c.eq(text(".nav-item.active"), "Repositories", "…it went to the rail's second view");
+      press("w", { meta: true });
+      await settle(700);
+      c.eq($$(".repo-tab").length, 3, "⌘W closes the tab in front");
+      c.eq(activeTabRoot(), order[2], "…and the one to its left comes to the front");
+      // Inside the row: arrows move the focus, Enter brings a tab forward.
+      tabEl(order[2])?.focus();
+      press("ArrowLeft");
+      await settle(200);
+      c.eq(document.activeElement?.dataset?.root, order[1], "← moves along the row");
+      c.eq(activeTabRoot(), order[2], "…without switching");
+      press("Enter");
+      await settle(500);
+      c.eq(activeTabRoot(), order[1], "Enter brings it to the front");
+    },
+
+    /** Nine tabs in the narrowest window: names give way, the controls never. */
+    "the-tab-row-fits-a-narrow-window": async (f) => {
+      const c = check(f);
+      await settle(900);
+      noAnimation();
+      const row = $(".repo-tabs");
+      const list = $(".repo-tabs-scroller");
+      const add = $(".repo-tabs-add");
+      const tabs = $$(".repo-tab");
+      c.eq(tabs.length, 9, "precondition: nine tabs");
+      c.ok(document.documentElement.scrollWidth <= innerWidth, "the window never scrolls sideways");
+      const ab = add.getBoundingClientRect();
+      c.ok(ab.left >= 0 && ab.right <= row.getBoundingClientRect().right && ab.width >= 28, `the + is whole and on screen (${Math.round(ab.left)}–${Math.round(ab.right)})`);
+      c.ok(list.scrollWidth > list.clientWidth, "the tabs scroll inside their row instead");
+      // …and never draw over it: what is under the middle of the + IS the +.
+      const hit = document.elementFromPoint(ab.left + ab.width / 2, ab.top + ab.height / 2);
+      c.ok(!!hit && (hit === add || add.contains(hit)), `nothing covers the + (${hit && hit.className})`);
+      const lb = list.getBoundingClientRect();
+      const front = $(".repo-tab.is-active");
+      const fb = front.getBoundingClientRect();
+      c.ok(fb.left >= lb.left - 1 && fb.right <= lb.right + 1, `the tab in front is scrolled into view (${Math.round(fb.left)}–${Math.round(fb.right)} in ${Math.round(lb.left)}–${Math.round(lb.right)})`);
+      c.ok(tabs.every((t) => t.getBoundingClientRect().width >= 119), "no tab shrinks past its minimum");
+      const long = tabEl("/Users/anton/Code/infrastructure-terraform-modules")?.querySelector(".repo-tab-name");
+      c.ok(!!long && long.scrollWidth > long.clientWidth, "a long name gives way…");
+      c.eq(long && getComputedStyle(long).textOverflow, "ellipsis", "…with an ellipsis");
+      c.ok(tabs.every((t) => t.querySelector(".repo-tab-close").getBoundingClientRect().width >= 20), "every close control keeps its room");
+      c.ok($(".topbar-branch")?.getBoundingClientRect().right <= innerWidth, "the top bar below keeps its branch");
+      // The tabs scrolled away are still reachable — and the row says so.
+      const mask = (el) => getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage || "none";
+      c.ok(mask(list) !== "none", `the edge with more tabs past it fades (${mask(list).slice(0, 40)})`);
+      const more = $(".repo-tabs-list");
+      c.ok(!!more && getComputedStyle(more).display !== "none", "an overflowing row offers the list of every tab");
+      c.eq(more?.getAttribute("aria-label"), "All open repositories", "…named in words");
+      more?.click();
+      await settle(400);
+      const rows = $$(".dropdown .dropdown-item");
+      c.eq(rows.length, 9, "it lists all nine");
+      const first = rows.find((r) => /gitstudio/.test(text(r)) && !/gistudio/.test(text(r)));
+      first?.click();
+      await settle(700);
+      c.eq(activeTabRoot(), GS_ROOT, "choosing one scrolled out of sight brings it to the front");
+      const fb2 = $(".repo-tab.is-active").getBoundingClientRect();
+      const lb2 = list.getBoundingClientRect();
+      c.ok(fb2.left >= lb2.left - 1 && fb2.right <= lb2.right + 1, "…and into view");
+      // A tab from the MIDDLE lands clear of both faded edges, close and all.
+      $(".repo-tabs-list")?.click();
+      await settle(400);
+      $$(".dropdown .dropdown-item").find((r) => /^mobile/.test(text(r)))?.click();
+      await settle(700);
+      c.eq(activeTabRoot(), "/Users/anton/Code/mobile", "a middle tab from the list");
+      const fb3 = $(".repo-tab.is-active").getBoundingClientRect();
+      const moreL = list.classList.contains("more-left");
+      const moreR = list.classList.contains("more-right");
+      c.ok((!moreL || fb3.left >= lb2.left + 20) && (!moreR || fb3.right <= lb2.right - 20), `…sits clear of the faded edges (${Math.round(fb3.left)}–${Math.round(fb3.right)} in ${Math.round(lb2.left)}–${Math.round(lb2.right)}, fades ${moreL ? "L" : ""}${moreR ? "R" : ""})`);
+    },
+
+    /** Row 12: opening a repository that has a tab switches to it; opening a
+     *  new one adds a tab at the end, on the view you were on. */
+    "opening-a-repository-that-has-a-tab-switches-to-it": async (f) => {
+      const c = check(f);
+      await settle(900);
+      window.__gsEmit("menu:command", { command: "openPath", root: GS_DEV_ROOT });
+      await settle(900);
+      c.eq($$(".repo-tab").length, 2, "no second tab for a repository that has one");
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "it came to the front instead");
+      window.__gsEmit("menu:command", { command: "openPath", root: "/Users/anton/Code/mobile" });
+      await settle(1100);
+      c.eq($$(".repo-tab").length, 3, "a repository with no tab opens one");
+      c.eq($$(".repo-tab").at(-1)?.dataset.root, "/Users/anton/Code/mobile", "…at the end of the row");
+      c.eq(activeTabRoot(), "/Users/anton/Code/mobile", "…in front");
+      c.eq(text(".nav-item.active"), "Branches", "…on the view you were on");
+    },
+
+    /** An open's landing ("open it, then go to its code") lands in the NEW
+     *  tab; the tab it was started from stays where it was. */
+    "an-open-lands-in-the-new-tab-and-the-old-one-stays-put": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const row = $$(".sec-row.repo-row").find((r) => r.dataset.root && r.dataset.root.endsWith("/gistudio.dev"));
+      if (!row) return c.ok(false, "precondition: a row for a repository without a tab");
+      const want = row.dataset.root;
+      row.click();
+      await settle(1500);
+      c.eq(activeTabRoot(), want, "the repository opened in a tab of its own");
+      c.eq($$(".repo-tab").length, 2, "…beside the one it was opened from");
+      c.eq(text(".nav-item.active"), "Code", "…and landed on its code");
+      tabEl(GS_ROOT)?.click();
+      await settle(800);
+      c.eq(text(".nav-item.active"), "Repositories", "the tab it was opened from is still on Repositories");
+    },
+
+    /** Row 3: a watcher event about the tab you LEFT does not refresh this one. */
+    "a-background-tabs-disk-event-leaves-the-front-tab-alone": async (f) => {
+      const c = check(f);
+      await settle(900);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      const before = (window.__GS_INVOKED || []).length;
+      window.__gsEmit("repo:filesChanged", { gitDir: true, root: GS_ROOT });
+      await settle(700);
+      const after = (window.__GS_INVOKED || []).slice(before).filter((r) => r.channel !== "repo:tabStatus");
+      c.eq(after.map((r) => r.channel).join(", "), "", "an event about A cost B nothing");
+      window.__gsEmit("repo:filesChanged", { gitDir: true, root: GS_DEV_ROOT });
+      await settle(900);
+      const own = (window.__GS_INVOKED || []).slice(before).filter((r) => r.channel !== "repo:tabStatus");
+      c.ok(own.length > 0 && own.every((r) => r.root === GS_DEV_ROOT), "an event about B refreshes B, as B");
+    },
+
+    /** Row 4: a stopped operation's dashboard in A is A's, and survives a trip. */
+    "a-stopped-operation-stays-with-its-tab": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const dash = $(".cd-dash");
+      c.ok(!!dash, "precondition: A's conflicts dashboard");
+      if (!dash) return;
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(800);
+      c.ok(!dash.isConnected, "it leaves with A");
+      tabEl(GS_ROOT)?.click();
+      await settle(800);
+      c.ok($(".cd-dash") === dash && dash.isConnected, "and comes back with A — the same dashboard, not a rebuild");
+      c.ok(!!$(".topbar-opchip:not([hidden])"), "A's bar still names the stopped operation");
+    },
+
+    /** Row 16, the renderer's half: each tab restored at launch comes back on
+     *  the view IT was left on, not on whichever view the window last had. */
+    "each-restored-tab-comes-back-on-its-own-view": async (f) => {
+      const c = check(f);
+      await settle(900);
+      c.eq(text(".nav-item.active"), "Changes", "the tab in front is on the window's last view");
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.eq(text(".nav-item.active"), "Branches", "the other tab is on the view it was left on");
+      $('.nav-item[data-view="graph"]')?.click();
+      await settle(700);
+      const saved = JSON.parse(localStorage.getItem("gitstudio.ui.prefs") || "{}");
+      c.eq(saved.tabViews && saved.tabViews[GS_DEV_ROOT], "graph", "a tab's view is remembered for it");
+      c.eq(saved.tabViews && saved.tabViews[GS_ROOT], "changes", "…and the other tab's is kept beside it");
+    },
+
+    /** One terminal dock per tab: each tab's shells are its own. */
+    "each-tab-has-its-own-terminal-dock": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const dockA = $(".main-stack .dock-body")?.closest(".main-stack");
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(800);
+      const dockB = $(".main-stack .dock-body")?.closest(".main-stack");
+      c.ok(!!dockA && !!dockB && dockA !== dockB, "tab B's dock is not tab A's");
+      c.ok(!dockA.isConnected, "A's dock (and its shells) leave with A");
+      tabEl(GS_ROOT)?.click();
+      await settle(600);
+      c.ok(dockA.isConnected, "and come back with it");
+    },
+
+    /** The graph keeps its place through a switch: the commit you were
+     *  reading is still on screen when you come back ("the graph position",
+     *  #32). Detaching a node zeroes its scroll; the element keeps its own. */
+    "the-graph-keeps-its-place-across-a-tab-switch": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const g = $("gitstudio-graph");
+      if (!g) return c.ok(false, "precondition: the graph");
+      // The fixture's history is short: a short list makes it scroll.
+      g.style.height = "220px";
+      g.style.maxHeight = "220px";
+      await settle(400);
+      const scroller = () => g.shadowRoot.querySelector(".scroller");
+      const topRow = () => {
+        const top = scroller().getBoundingClientRect().top;
+        return [...g.shadowRoot.querySelectorAll("[data-sha]")].find((r) => r.getBoundingClientRect().top >= top - 1)?.dataset.sha;
+      };
+      scroller().scrollTop = 120;
+      scroller().dispatchEvent(new Event("scroll"));
+      await settle(300);
+      c.ok(scroller().scrollTop >= 100, `precondition: scrolled down (${scroller().scrollTop})`);
+      const was = topRow();
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.ok(!g.isConnected, "the graph leaves with its tab");
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.ok($("gitstudio-graph") === g, "the same graph comes back");
+      c.eq(scroller().scrollTop, 120, "scrolled where it was");
+      c.eq(topRow(), was, "…with the same commit at the top");
+      // And through the view keep-alive inside one tab, which had the same loss.
+      $('.nav-item[data-view="changes"]')?.click();
+      await settle(700);
+      $('.nav-item[data-view="graph"]')?.click();
+      await settle(900);
+      c.eq(scroller().scrollTop, 120, "a trip to another view keeps it too");
+    },
+
+    /** Row 6: a switch with a menu or the palette open. They are about the
+     *  tab being left, so they close — and the switch happens, whether you
+     *  asked from the keyboard or main put another tab in front. */
+    "a-switch-takes-the-menus-and-the-palette-with-it": async (f) => {
+      const c = check(f);
+      await settle(900);
+      // A menu is position: fixed, so it has no offsetParent even when shown.
+      const menuOpen = () => $$(".dropdown").some((d) => d.isConnected && d.getBoundingClientRect().width > 0);
+      const paletteOpen = () => document.body.classList.contains("cmdk-open") || !!$(".cmdk-card");
+      $(".topbar-branch")?.click();
+      await settle(400);
+      c.ok(menuOpen(), "precondition: the branch menu is open");
+      press("Tab", { ctrl: true });
+      await settle(700);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "Ctrl+Tab from an open menu switches");
+      c.ok(!menuOpen(), "…and the menu, which was about the tab it left, is closed");
+      press("k", { meta: true });
+      await settle(500);
+      c.ok(paletteOpen(), "precondition: the palette is open");
+      press("Tab", { ctrl: true });
+      await settle(700);
+      c.eq(activeTabRoot(), GS_ROOT, "Ctrl+Tab from the palette switches");
+      c.ok(!paletteOpen(), "…and the palette is closed");
+      $(".topbar-branch")?.click();
+      await settle(400);
+      c.ok(menuOpen(), "precondition: a menu again");
+      window.__gsTabs.open(GS_DEV_ROOT); // main: Open Recent ▸ gistudio.dev
+      await settle(800);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "a switch main makes happens too");
+      c.ok(!menuOpen(), "…and takes the menu with it");
+      c.ok(!$("[inert]"), "nothing is left inert behind a surface that closed");
+      $(".topbar-branch")?.click();
+      await settle(400);
+      c.ok(menuOpen(), "and the tab in front opens its own menus as before");
+    },
+
+    /** Row 6: a peek is a surface over the tab it was opened in. */
+    "a-switch-takes-an-open-peek-with-it": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $(".gh-detail .gh-meta-author, .det-main .gh-meta-author")?.click();
+      await settle(900);
+      c.ok(!!$(".peek-overlay"), "precondition: a peek is open over the pull request");
+      press("Tab", { ctrl: true });
+      await settle(800);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "Ctrl+Tab from inside a peek switches");
+      c.ok(!$(".peek-overlay"), "…and the peek is closed");
+      c.ok(!$("[inert]"), "nothing is left inert behind it");
+      tabEl(GS_ROOT)?.click();
+      await settle(800);
+      c.ok(!$(".peek-overlay"), "coming back does not bring back a peek that was closed");
+      c.ok(!!$(".gh-detail, .det-main"), "the pull request it was over is still there");
+      // The app menu's Open Recent reaches past the page: main puts another
+      // tab in front with the peek still open.
+      $(".gh-detail .gh-meta-author, .det-main .gh-meta-author")?.click();
+      await settle(900);
+      c.ok(!!$(".peek-overlay"), "precondition: the peek again");
+      window.__gsTabs.open(GS_DEV_ROOT);
+      await settle(800);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "a switch main makes happens");
+      c.ok(!$(".peek-overlay"), "…and closes the peek too");
+      c.ok(!$("[inert]"), "…leaving nothing inert");
+    },
+
+    /** Row 14: a background tab's folder is moved or deleted. Its tab stays
+     *  (the folder may come back), says so in the row, costs the front tab
+     *  nothing, says so in words when it is brought to the front, and closes
+     *  like any other tab. */
+    "a-tab-whose-folder-is-gone-says-so-and-closes": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      noAnimation();
+      const WEB = "/Users/anton/Code/webapp";
+      const struck = (root) => (getComputedStyle(tabEl(root)?.querySelector(".repo-tab-name")).textDecorationLine || "").includes("line-through");
+      const gone = () => $(".tab-stage > .tab-gone");
+      // Everything the tab asked of main about ITS folder; the row's own
+      // bookkeeping (repo:*) is main's, and is allowed.
+      const ranIn = (root) =>
+        (window.__GS_INVOKED || []).filter(
+          (r) => r.scoped && (r.root === root || (r.root === undefined && activeTabRoot() === root)) && !String(r.channel).startsWith("repo:"),
+        );
+      c.eq(activeTabRoot(), GS_ROOT, "precondition: the tab in front is another");
+      c.ok(struck(WEB), "the gone tab's name is struck through");
+      c.ok(!struck(GS_ROOT) && !struck(GS_DEV_ROOT), "…and no other tab's");
+      c.eq(tabEl(WEB)?.getAttribute("aria-label"), "webapp, folder not found", "…and it says so in words");
+      c.match(tabEl(WEB)?.title || "", /\nNot found: the folder was moved or deleted/, "…in its tooltip too");
+      c.eq(getComputedStyle(tabEl(WEB).querySelector(".repo-tab-mark")).display, "none", "a folder that is gone has no change count");
+      c.ok(!gone(), "nothing is said over the tab in front");
+      c.eq(ranIn(WEB).length, 0, "…and nothing ran in the gone folder while it was in the back");
+      tabEl(WEB)?.click();
+      await settle(1200);
+      c.eq(activeTabRoot(), WEB, "it still comes to the front");
+      c.ok(!!gone(), "ONE screen says its folder is gone, in place of the tab's own");
+      c.count(".tab-stage .screen.repo", 0, "…not a screen of views that each fail to read it");
+      c.match(text(gone()), /webapp's folder is not there/, "…in words");
+      c.match(text(gone()), /\/Users\/anton\/Code\/webapp was moved or deleted\. Put it back and this tab carries on where you left it/, "…where it was, and what to do");
+      c.eq(ranIn(WEB).map((r) => r.channel).join(",") || "nothing", "nothing", "and nothing runs git in the folder that is not there");
+      // ⌘Z, a menu's Refresh, a window focus: none of them reach the tab.
+      window.__gsEmit("menu:command", { command: "refresh" });
+      window.dispatchEvent(new Event("focus"));
+      await settle(600);
+      c.eq(ranIn(WEB).map((r) => r.channel).join(",") || "nothing", "nothing", "…not even a Refresh or a window focus");
+      tabEl(GS_ROOT)?.click();
+      await settle(700);
+      c.ok(!gone(), "leaving it takes the gone screen with it");
+      c.count(".tab-stage .screen.repo", 1, "…and the tab you go to has its own screen back");
+      tabEl(WEB)?.click();
+      await settle(900);
+      c.ok(!!gone(), "coming back says it again");
+      const look = gone() && [...gone().querySelectorAll("button")].find((b) => /Look again/.test(text(b)));
+      c.ok(!!look, "it offers Look again");
+      look?.click();
+      await settle(900);
+      c.match(text("#toast-stack"), /webapp is still not there/, "…which says so when the folder is still missing");
+      c.ok(!!gone(), "…and the gone screen stays");
+      const close = gone() && [...gone().querySelectorAll("button")].find((b) => text(b) === "Close Tab");
+      c.ok(!!close, "it offers Close Tab");
+      close?.click();
+      await settle(900);
+      c.ok(!$(".modal-card"), "a gone tab closes without a question");
+      c.ok(!tabEl(WEB), "…and closes");
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "its left-hand neighbour comes to the front");
+      c.ok(!gone(), "…with its own screen");
+    },
+
+    /** Row 14, the other way: the folder comes back — a drive remounted, a
+     *  move undone — and the tab is whole again, without being reopened. */
+    "a-gone-folder-put-back-makes-its-tab-whole-again": async (f) => {
+      const c = check(f);
+      await settle(900);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1200);
+      const name = () => tabEl(GS_DEV_ROOT)?.querySelector(".repo-tab-name");
+      const gone = () => $(".tab-stage > .tab-gone");
+      c.ok((getComputedStyle(name()).textDecorationLine || "").includes("line-through"), "precondition: its folder is gone");
+      c.ok(!!gone(), "precondition: the gone screen is up");
+      window.__gsGone.delete("gistudio.dev");
+      [...gone().querySelectorAll("button")].find((b) => /Look again/.test(text(b)))?.click();
+      await settle(1800);
+      c.eq(getComputedStyle(name()).textDecorationLine, "none", "back on disk, its name is whole");
+      c.eq(tabEl(GS_DEV_ROOT)?.getAttribute("aria-label"), "gistudio.dev, 3 changed files", "…and it counts its changes again");
+      c.ok(!gone(), "the gone screen gives way");
+      c.eq(text(".topbar-branch .switch-name"), "site/pricing", "…to the tab's own screen, reading its folder");
+
+      // …and the other way round: the folder goes while its tab is IN FRONT.
+      window.__gsGone.add("gistudio.dev");
+      // The watcher on the tab in front notices; the row looks again.
+      window.__gsEmit("repo:filesChanged", { root: GS_DEV_ROOT, gitDir: true });
+      await settle(1800);
+      c.ok(!!gone(), "a folder that goes while its tab is in front brings the gone screen up");
+      // Its App is built this time — and still nothing reaches it.
+      // A call from a tab with no session in front goes out for NO repository:
+      // counted too, since only the gone tab's screen could have made it.
+      const ranIn = () =>
+        (window.__GS_INVOKED || []).filter(
+          (r) => r.scoped && (r.root === GS_DEV_ROOT || r.root === undefined) && !String(r.channel).startsWith("repo:"),
+        ).length;
+      const before = ranIn();
+      window.__gsEmit("menu:command", { command: "refresh" });
+      window.dispatchEvent(new Event("focus"));
+      window.__gsEmit("repo:filesChanged", { root: GS_DEV_ROOT, gitDir: true });
+      await settle(1200);
+      c.eq(ranIn() - before, 0, "…and no Refresh, focus or disk event runs git in it");
+      window.__gsGone.delete("gistudio.dev");
+      window.__gsTabs.move(GS_DEV_ROOT, 0); // the row's next look
+      await settle(1800);
+      c.ok(!gone(), "…and put back, the tab is whole again");
+      c.eq(text(".topbar-branch .switch-name"), "site/pricing", "…on its own screen");
+    },
+
+    /** Row 16 and Search: a tab brought back at launch comes back to Search if
+     *  that is where it was left — the single window always did — while a NEW
+     *  tab opened from Search lands in its own code, not on an empty search
+     *  that belongs to the tab it was opened from. */
+    "a-restored-tab-comes-back-to-search-and-a-new-one-lands-on-its-code": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const onSearch = () => !!$(".view-host .explore-tabs");
+      const lastView = () => ((window.__GS_ROUTES || []).at(-1) || {}).view;
+      c.ok(onSearch(), "the restored tab is back on Search");
+      c.eq(lastView(), "explore", "…routed there, not to its code");
+      window.__gsEmit("menu:command", { command: "openPath", root: GS_DEV_ROOT });
+      await settle(1200);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: the new tab is in front");
+      c.eq(text(".nav-item.active"), "Code", "a new tab opened from Search lands in its code");
+      c.ok(!onSearch(), "…not on an empty search");
+      tabEl(GS_ROOT)?.click();
+      await settle(800);
+      c.ok(onSearch(), "the tab it was opened from is still on Search");
+    },
+
+    /** Keep-alive promise, for the surfaces that own a Monaco editor or a log
+     *  pane: a tab sent to the back and brought forward again comes back with
+     *  its diff or its log, not with the page around an empty pane. Each of
+     *  these disposed itself on ANY detach — and a tab in the back is detached
+     *  whole. Counts `.monaco-editor` and `.log-line` nodes, which a disposed
+     *  panel removes (`.view-line` is painted in rAF, which headless starves). */
+    "a-tab-round-trip-keeps-its-diff-or-log": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const surface = () => {
+        const h = $(".view-host");
+        return {
+          view: h?.firstElementChild,
+          monaco: h ? h.querySelectorAll(".monaco-editor").length : 0,
+          log: h ? h.querySelectorAll(".log-line").length : 0,
+          pane: h?.querySelector(".log-pane"),
+        };
+      };
+      const b = surface();
+      const what = window.__GS_ARG || "diff";
+      if (what === "log") c.ok(b.log > 0, `precondition: a job log on screen (${b.log} lines)`);
+      else c.ok(b.monaco > 0, `precondition: a Monaco diff on screen (${b.monaco})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: the other tab is in front");
+      tabEl(GS_ROOT)?.click();
+      await settle(1200);
+      const a = surface();
+      c.ok(a.view === b.view, "the same page came back");
+      // The pane is virtualized: how many lines it paints depends on the
+      // window it re-measures on return, so "there, and the same pane".
+      if (what === "log") c.ok(a.log > 0 && a.pane === b.pane, `…with its log (${b.log} lines before, ${a.log} after)`);
+      else c.eq(a.monaco, b.monaco, "…with its diff");
+      // And the kept surface still lets go of its editor when it is left for
+      // real: a route away inside the tab disposes it, as before.
+      $('.nav-item[data-view="changes"]')?.click();
+      await settle(900);
+      c.ok(!b.view.isConnected, "precondition: routed away inside the tab");
+      c.eq(b.view.querySelectorAll(".monaco-editor, .log-line").length, 0, "leaving the page for real still lets its editor or log go");
+    },
+
+    /** …and the other half of it: a tab CLOSED in the back lets go of what
+     *  its pages were keeping. Nothing mutates inside a detached screen, so no
+     *  detach watch would ever fire for it on its own. */
+    "closing-a-tab-in-the-back-lets-its-diff-or-log-go": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const view = $(".view-host")?.firstElementChild;
+      const held = () => (view ? view.querySelectorAll(".monaco-editor, .log-line").length : 0);
+      c.ok(held() > 0, `precondition: a diff or a log on screen (${held()})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: the other tab is in front");
+      c.ok(held() > 0, "kept while the tab is only in the back");
+      tabEl(GS_ROOT)?.querySelector(".repo-tab-close")?.click();
+      await settle(900);
+      c.ok(!tabEl(GS_ROOT), "precondition: the tab closed");
+      c.eq(held(), 0, "closing the tab disposed its diff or log");
+    },
+
+    /** Each tab's kept list is its own (issue #32): search in A, search in B,
+     *  come back to A and make the list repaint (a sort, or a segment and back)
+     *  — A must still show A's rows under A's words. The list state was module
+     *  scope, so the repaint read what B had left: B's query and, for Issues,
+     *  B's GitHub search hits — another repository's issues. */
+    "each-tab-keeps-its-own-list-state": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const which = window.__GS_ARG || "issues";
+      const words = {
+        issues: ["graph", "rebase"],
+        prs: ["stream", "zz-nothing"],
+        actions: ["release", "zz-nothing"],
+        releases: ["Desktop", "zz-nothing"],
+      }[which];
+      const box = () => $(".view-host .gh-search input");
+      const typeIn = (v) => {
+        const b = box();
+        b.focus();
+        b.value = v;
+        b.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      const rows = () => $$(".view-host .sec-list .sec-row").map((r) => r.dataset.num).sort().join(",");
+      c.ok(!!box(), "precondition: A's search box");
+      if (!box()) return;
+      typeIn(words[0]);
+      await settle(1500);
+      const aRows = rows();
+      c.ok(aRows.length > 0, `precondition: A's search finds something (${aRows})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      c.ok(!!box(), "precondition: B is on the same section");
+      if (!box()) return;
+      typeIn(words[1]);
+      await settle(1500);
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.eq(box()?.value, words[0], "A's box still says A's words");
+      // Make A's list repaint from the section's state.
+      if (which === "issues" || which === "prs") {
+        $(".view-host .gh-sort-btn")?.click();
+        await settle(300);
+        $$(".dropdown .dropdown-item").find((i) => /Newest/.test(text(i)))?.click();
+      } else {
+        const segs = $$(".view-host .gh-seg-btn");
+        segs[1]?.click();
+        await settle(700);
+        $$(".view-host .gh-seg-btn")[0]?.click();
+      }
+      await settle(1200);
+      c.eq(box()?.value, words[0], "…and after it repaints");
+      c.eq(rows(), aRows, "A's list shows A's rows, not what B searched for");
+    },
+
+    /** A kept page navigates its OWN tab (issue #32). A module-level router
+     *  was reassigned by whichever tab last mounted the section, so after a
+     *  visit to another tab's same section this page's links routed a tab in
+     *  the back — dropped, a dead click. */
+    "a-kept-page-routes-its-own-tab-after-a-visit-to-another": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const [sel, want] = (window.__GS_ARG || ".det-title-edit|predit").split("|");
+      const ctl = () => $(`.view-host ${sel}`);
+      c.ok(!!ctl(), `precondition: the page's ${sel}`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: the other tab is in front");
+      const bView = text(".nav-item.active");
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      const before = (window.__GS_ROUTES || []).length;
+      ctl()?.click();
+      await settle(900);
+      const routed = (window.__GS_ROUTES || []).slice(before).map((r) => r.view);
+      c.ok(routed.includes(want), `it routes to ${want} in this tab (B was on ${bView}; routes: ${routed.join(",") || "none"})`);
+      c.eq(activeTabRoot(), GS_ROOT, "…and this tab is still the one in front");
+    },
+
+    /** Quote reply lands in THIS page's reply box, after another tab has
+     *  built an issue page of its own. */
+    "quote-reply-lands-in-its-own-tabs-box": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const quote = async () => {
+        const menu = $$(".view-host .gh-comment-menu")[0];
+        menu?.click();
+        await settle(350);
+        $$(".dropdown-item").find((i) => /Quote/.test(text(i) || ""))?.click();
+        await settle(500);
+      };
+      const box = () => $(".view-host .gh-composer .md-text");
+      c.ok(!!box(), "precondition: A's reply box");
+      const boxA = box();
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      $('.view-host .sec-row[data-num="31"]')?.click();
+      await settle(1500);
+      c.ok(!!box() && box() !== boxA, "precondition: B built an issue page with its own reply box");
+      const boxB = box();
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      await quote();
+      c.match(boxA.value || "", /said:\n>/, "the quote lands in A's box");
+      c.eq(boxB?.value || "", "", "…not in B's");
+    },
+
+    /** Organizations' filter repaints ITS page, after another tab has built an
+     *  Organizations page of its own (its repaint hook was module state). */
+    "the-org-filter-filters-its-own-tabs-page": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const rows = () => $$(".view-host .gh-org-grid .list-row").length;
+      const n0 = rows();
+      c.ok(n0 > 1, `precondition: A lists several repositories (${n0})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      c.ok(rows() > 0, "precondition: B built its own Organizations page");
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      const b = $(".view-host .gh-search input");
+      b.focus();
+      b.value = "design";
+      b.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(900);
+      c.eq(rows(), 1, "A's filter narrows A's page");
+    },
+
+    /** The account-wide lists are kept per tab too (issue #32): My Work, Gists,
+     *  the Inbox and Repositories. Filter in A, filter differently in B, come
+     *  back to A and rebuild it (its header's refresh) — A keeps A's words and
+     *  A's rows. Each rebuilt from module state another tab had written. */
+    "each-tab-keeps-its-own-filter-through-a-rebuild": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const word = window.__GS_ARG || "stream";
+      const box = () => $(".view-host .gh-search input, .view-host input[type=search]");
+      const typeIn = (v) => {
+        const b = box();
+        b.focus();
+        b.value = v;
+        b.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      const rows = () => $$(".view-host .sec-row, .view-host .notif-row").map((r) => text(r).slice(0, 30)).join(" | ");
+      c.ok(!!box(), "precondition: A's filter box");
+      if (!box()) return;
+      typeIn(word);
+      await settle(1200);
+      const aRows = rows();
+      c.ok(aRows.length > 0, `precondition: A's filter finds something (${aRows})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      c.ok(!!box(), "precondition: B is on the same view");
+      if (!box()) return;
+      typeIn("zz-nothing");
+      await settle(1200);
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      $(".view-host .gh-refresh")?.click();
+      await settle(1800);
+      c.eq(box()?.value, word, "A's box keeps A's words through the rebuild");
+      c.eq(rows(), aRows, "…and A's rows");
+    },
+
+    /** Home's fills are held for a tab in the back and painted when it comes
+     *  back — unless another tab's Home, built meanwhile, has taken the render
+     *  token they check (it was module state). */
+    "a-home-still-loading-when-you-switch-away-paints-when-you-are-back": async (f) => {
+      const c = check(f);
+      await settle(150);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1800);
+      c.ok($$(".view-host .dash-col").length > 0, "precondition: B built its Home");
+      tabEl(GS_ROOT)?.click();
+      // Its second fill (My Work, after the account) is asked only now.
+      await settle(4000);
+      const sk = $$(".view-host .skeleton, .view-host .sk-row").length;
+      c.eq(sk, 0, "A's Home finished painting");
+    },
+
+    /** A search belongs to the tab it was typed in (issue #32): search in A,
+     *  search in B, come back to A and switch A's result kind — A searches A's
+     *  words again, not B's. */
+    "each-tab-keeps-its-own-search": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const box = () => $(".view-host .explore-search input");
+      const typeIn = (v) => {
+        const b = box();
+        b.focus();
+        b.value = v;
+        b.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      c.ok(!!box(), "precondition: A's search box");
+      if (!box()) return;
+      typeIn("graph");
+      await settle(1200);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      c.ok(!!box(), "precondition: B is on Search too");
+      if (!box()) return;
+      typeIn("rebase");
+      await settle(1200);
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.eq(box()?.value, "graph", "precondition: A's box still says A's words");
+      const before = (window.__GS_ROUTES || []).length;
+      $$(".view-host .explore-tab").find((b) => /People/.test(text(b)))?.click();
+      await settle(1500);
+      const ids = (window.__GS_ROUTES || []).slice(before).map((r) => r.target?.id || "").join(" ");
+      c.ok(/graph/.test(ids) && !/rebase/.test(ids), `A's People search is for A's words (routed: ${ids})`);
+      c.eq(box()?.value, "graph", "…and its box says so");
+    },
+
+    /** A project board still loading when you switch away paints when you are
+     *  back — another tab choosing a project meanwhile used to make it decide
+     *  it had been superseded (the selection was module state). */
+    "a-board-still-loading-when-you-switch-away-paints-when-you-are-back": async (f) => {
+      const c = check(f);
+      await settle(150);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1800);
+      c.ok(!!$(".view-host .gh-board"), "precondition: B painted its board");
+      // B looks at a DIFFERENT project than the one A is loading.
+      $(".view-host .gh-picker")?.click();
+      await settle(400);
+      $$(".dropdown-item").find((i) => /v2\.0/.test(text(i)))?.click();
+      await settle(900);
+      tabEl(GS_ROOT)?.click();
+      await settle(2500);
+      c.ok(!!$(".view-host .gh-board"), "A's board painted");
+      c.eq($$(".view-host .gh-board-detail .loading-state").length, 0, "…and is not still saying it is loading");
+    },
+
+    /** An Assistant run takes the permission ITS page's chip shows (issue
+     *  #32). Both tabs build an Assistant on Read-only; A switches to "Allow
+     *  everything"; B's chip still says Read-only — and B's run used to go out
+     *  with A's permission, because it was module state. */
+    "an-assistant-run-uses-its-own-tabs-permission": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const chipText = () => $$(".view-host .assistant-chip-ctl").map((b) => text(b)).join(" | ");
+      const access = () => $$(".view-host .assistant-chip-ctl").find((b) => /Read-only|Allow/.test(text(b)));
+      c.ok(!!access() && !/Allow everything/.test(text(access())), `precondition: A starts short of Allow everything (${chipText()})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      $(".topbar-assistant")?.click();
+      await settle(1500);
+      const bWas = access() ? text(access()) : "";
+      c.ok(!!bWas && !/Allow everything/.test(bWas), `precondition: B built its Assistant (${chipText()})`);
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      access()?.click();
+      await settle(400);
+      $$(".dropdown-item").find((i) => /Allow everything/.test(text(i)))?.click();
+      await settle(600);
+      c.ok(/Allow everything/.test(chipText()), `precondition: A now allows everything (${chipText()})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.eq(access() ? text(access()) : "", bWas, "B's chip still says what it said");
+      const sent = [];
+      const inv = window.gitstudio.invoke.bind(window.gitstudio);
+      window.gitstudio.invoke = (ch, p, sc) => {
+        if (ch === "ai:chatSend") {
+          sent.push(p);
+          return new Promise(() => {});
+        }
+        return inv(ch, p, sc);
+      };
+      const input = $(".view-host .assistant-input");
+      input.value = "what changed?";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      $(".view-host .assistant-send")?.click();
+      await settle(700);
+      c.eq(sent.length, 1, "precondition: B's turn went out");
+      c.eq(sent[0]?.allowDestructive, false, `B's run cannot destroy — its chip says ${bWas}`);
+    },
+
+    /** Opening another worktree opens a TAB (main's openRepoPath): its words
+     *  say so, the new tab is in front with the answer's "Opened …", and
+     *  nothing is left waiting for the tab it was clicked in — no stale toast
+     *  when you go back, no button still busy. */
+    "opening-a-worktree-opens-a-tab-and-says-so-there": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const WT = "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2";
+      const btn = $$(".view-host button.row-btn").find((b) => (b.getAttribute("aria-label") || "").includes("gitstudio-wave2"));
+      c.ok(!!btn, "precondition: the worktree's Open button");
+      if (!btn) return;
+      c.match(btn.title, /in its own tab/, "the button says it opens a tab");
+      btn.click();
+      await settle(1200);
+      c.eq(activeTabRoot(), WT, "the worktree's tab is in front");
+      c.match(text("#toast-stack"), /Opened/, "…and says it opened there");
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.ok(!/Opened/.test(text("#toast-stack")), `no "Opened" held for the tab it was clicked in (${text("#toast-stack")})`);
+      c.ok(!btn.disabled && !btn.classList.contains("is-busy"), "its Open button is not left busy");
+    },
+
+    /** A clone that takes long enough for its progress card lands in its NEW
+     *  tab (issue #32): the tab opens while the card is still up, so the switch
+     *  waits for the card — and the clone's own landing used to route the tab
+     *  it was started from (its browse page replaced by Code), and the switch
+     *  that followed cleared "Cloned … and opened it." */
+    "a-slow-clone-lands-in-its-new-tab-and-says-so": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const NEW = "/Users/demo/GitStudio/libgit2";
+      $(".det-split-main")?.click();
+      await settle(600);
+      c.ok(!!$(".modal-card.ghopen-card"), "precondition: the clone's progress card is up");
+      await settle(2200);
+      c.eq(activeTabRoot(), NEW, "the clone's tab is in front");
+      c.match(text("#toast-stack"), /Cloned libgit2\/libgit2/, "…and says the clone happened");
+      c.eq(text(".nav-item.active"), "Code", "…on its code");
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.ok(!!$(".view-host .det-split-main"), `the tab it was started from is still on the browse page (it is on ${text(".nav-item.active") || "Search"})`);
+    },
+
+    /** The clone dialog's "Cloned …" is said in the tab the clone opened. It
+     *  was raised just BEFORE the open, and the switch to the new tab cleared
+     *  it (a switch clears the toasts of the tab you leave). */
+    "a-cloned-repository-says-so-in-its-new-tab": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const url = $(".clone-card .clone-url-input");
+      c.ok(!!url, "precondition: the clone dialog");
+      if (!url) return;
+      url.value = "https://github.com/libgit2/libgit2.git";
+      url.dispatchEvent(new Event("input", { bubbles: true }));
+      $(".clone-card .clone-choose")?.click();
+      await settle(500);
+      $(".clone-card .clone-go")?.click();
+      await settle(1500);
+      c.eq(activeTabRoot(), "/Users/demo/Code/libgit2", "the clone's tab is in front");
+      c.match(text("#toast-stack"), /Cloned libgit2/, "…and says the clone happened");
+    },
+
+    /** A live page keeps itself live across a tab round trip (issue #32). Its
+     *  poller stopped for good the first time it found its page detached — and
+     *  a tab in the back is detached whole — so a running CI page or a
+     *  following log came back frozen. While its tab is in the back it asks for
+     *  nothing (a call from there would go out as the tab in FRONT's). */
+    "a-live-page-keeps-polling-after-a-tab-round-trip": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const [channel, row] = (window.__GS_ARG || "actions:runDetail").split("|");
+      if (row) {
+        $$(".view-host button, .view-host [role=button], .view-host .is-clickable").find((b) => text(b).includes(row))?.click();
+        await settle(1000);
+      }
+      const calls = () => (window.__GS_INVOKED || []).filter((r) => r.channel === channel);
+      const c0 = calls().length;
+      await settle(9000);
+      c.ok(calls().length > c0, `precondition: it polls while in front (${channel}: ${c0} → ${calls().length})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      const away = calls().length;
+      await settle(10000);
+      const asked = calls().slice(away);
+      c.eq(asked.length, 0, `while its tab is in the back it asks nothing (${asked.map((r) => r.root || "?").join(", ")})`);
+      tabEl(GS_ROOT)?.click();
+      const back = calls().length;
+      await settle(9500);
+      c.ok(calls().length > back, `back in front, it polls again (${channel}: ${back} → ${calls().length})`);
     },
   };
 })();

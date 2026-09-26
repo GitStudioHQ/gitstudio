@@ -29,6 +29,7 @@ import { avatar,
   runBusy,
 } from "../ui";
 import { peek as cachePeek, gget, bust } from "../cache";
+import { perTab } from "../tabState";
 import { plural } from "../textFit";
 import { toast, confirmDialog, openModal, formWithRetry } from "../dialogs";
 import { renderMarkdown } from "../markdown";
@@ -56,10 +57,18 @@ import { setPageLabel } from "../navStack";
 import { pruneOnFetch } from "../prefs";
 import type { CommitDetailsPayload, ReleaseInfo, ReleaseInput, TagInfo } from "../../shared/ipc";
 
-/** Which sub-list the section shows. Module-scoped so it survives re-renders. */
-let releaseTab: "releases" | "tags" = "releases";
-/** The list page's live search query — survives list ⇄ detail round trips. */
-let query = "";
+/**
+ * What the Releases section remembers, for ONE tab (issue #32; see
+ * tabState.ts). Module-scoped, one tab's search and Releases/Tags choice was
+ * what every other tab's kept list read on its next repaint.
+ */
+interface ReleasesTabState {
+  /** Which sub-list the section shows — survives re-renders. */
+  releaseTab: "releases" | "tags";
+  /** The list page's live search query — survives list ⇄ detail round trips. */
+  query: string;
+}
+const releasesTab = perTab<ReleasesTabState>(() => ({ releaseTab: "releases", query: "" }));
 
 /** Human file size for release assets. */
 /** Tag an element with an extra class and return it — for column widths. */
@@ -75,12 +84,11 @@ function fmtBytes(n: number): string {
   return `${(n / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
 }
 
-/** The section's router, so nested builders can leave for another view — the
- *  release composer is a page of its own now, not a modal over this one. */
-let sectionNav: SectionNav | undefined;
-
+// No module-level router: a module global is one tab's, and a page kept in
+// another tab then routed a tab in the back (issue #32). Every builder that
+// leaves for another view — the release composer is a page of its own — uses
+// the `nav` its page was built with.
 export const renderReleases: SectionRender = (wrap, nav, target) => {
-  sectionNav = nav;
   void mount(wrap, nav, target);
 };
 
@@ -102,6 +110,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
 // ── The list page (Releases | Tags) ──────────────────────────────────────────
 
 async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promise<void> {
+  const S = releasesTab();
   const refresh = (): void => {
     bust("release");
     renderReleases(wrap, nav);
@@ -116,10 +125,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       { value: "releases", label: "Releases" },
       { value: "tags", label: "Tags" },
     ],
-    value: releaseTab,
+    value: S.releaseTab,
     ariaLabel: "Releases view",
     onChange: (v) => {
-      releaseTab = v;
+      S.releaseTab = v;
       renderReleases(wrap, nav);
     },
   });
@@ -127,7 +136,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const newBtn = el("button", "btn btn-primary gh-new-btn");
   newBtn.append(glyph("plus"), span("New release"));
   newBtn.title = "Draft a new release";
-  newBtn.addEventListener("click", () => sectionNav?.("releasenew"));
+  newBtn.addEventListener("click", () => nav("releasenew"));
 
   const verbs = el("div", "gh-head-verbs");
   verbs.appendChild(newBtn);
@@ -138,10 +147,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
-      placeholder: releaseTab === "releases" ? "Search releases…" : "Search tags…",
-      initial: query,
+      placeholder: S.releaseTab === "releases" ? "Search releases…" : "Search tags…",
+      initial: S.query,
       onInput: (q) => {
-        query = q;
+        S.query = q;
         rerenderList();
       },
     }),
@@ -149,10 +158,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   // ── data ──
   let releases: ReleaseInfo[] | undefined =
-    releaseTab === "releases" ? cachePeek("release:list", undefined) : undefined;
+    S.releaseTab === "releases" ? cachePeek("release:list", undefined) : undefined;
   let tags: TagInfo[] | undefined =
-    releaseTab === "tags" ? cachePeek("release:tags", undefined) : undefined;
-  if ((releaseTab === "releases" && !releases) || (releaseTab === "tags" && !tags)) {
+    S.releaseTab === "tags" ? cachePeek("release:tags", undefined) : undefined;
+  if ((S.releaseTab === "releases" && !releases) || (S.releaseTab === "tags" && !tags)) {
     listEl.replaceChildren(skeletonList(5));
   }
 
@@ -230,15 +239,15 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     });
 
   const rerenderList = (): void => {
-    const q = query.toLowerCase();
+    const q = S.query.toLowerCase();
     listEl.replaceChildren();
-    if (releaseTab === "releases") {
+    if (S.releaseTab === "releases") {
       if (!releases) return;
       if (releases.length === 0) {
         listEl.appendChild(
           emptyState("No releases yet", "Publish your first release to share builds and notes.", {
             icon: "tag",
-            action: { label: "New release", icon: "plus", onClick: () => sectionNav?.("releasenew") },
+            action: { label: "New release", icon: "plus", onClick: () => nav("releasenew") },
           }),
         );
         return;
@@ -256,7 +265,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // the unfiltered total directly above a "No matching …" empty state.
       header.setCount?.(items.length, releases.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching releases", `Nothing matches “${query}”.`, { icon: "search", anchor: "inline" }));
+        listEl.appendChild(emptyState("No matching releases", `Nothing matches “${S.query}”.`, { icon: "search", anchor: "inline" }));
         return;
       }
       for (const rel of items) listEl.appendChild(buildReleaseRow(rel, latestId));
@@ -269,7 +278,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       const items = q ? tags.filter((t) => t.name.toLowerCase().includes(q)) : tags;
       header.setCount?.(items.length, tags.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching tags", `Nothing matches “${query}”.`, { icon: "search", anchor: "inline" }));
+        listEl.appendChild(emptyState("No matching tags", `Nothing matches “${S.query}”.`, { icon: "search", anchor: "inline" }));
         return;
       }
       for (const t of items) listEl.appendChild(buildTagRow(t));
@@ -279,7 +288,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   if (releases || tags) rerenderList();
 
   try {
-    if (releaseTab === "releases") {
+    if (S.releaseTab === "releases") {
       const fresh = await gget("release:list", undefined, 30000);
       if (!view.isConnected) return;
       releases = fresh;
@@ -294,7 +303,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (!releases && !tags) {
       listEl.replaceChildren(
         errorState(
-          releaseTab === "releases" ? "Couldn't load releases" : "Couldn't load tags",
+          S.releaseTab === "releases" ? "Couldn't load releases" : "Couldn't load tags",
           cleanErr(e) || "GitHub request failed.",
           refresh,
         ),
@@ -334,7 +343,7 @@ function openTagPeek(t: TagInfo, nav: SectionNav, refresh: () => void): void {
         title: `Draft a new release from ${t.name}`,
         onClick: (ctx) => {
           ctx.close();
-          sectionNav?.("releasenew", { ref: t.name });
+          nav("releasenew", { ref: t.name });
         },
       },
     ],
@@ -460,7 +469,7 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
   const editBtn = el("button", "mini-btn");
   editBtn.append(glyph("pencil"), span("Edit"));
   editBtn.title = "Edit this release";
-  editBtn.addEventListener("click", () => sectionNav?.("releasenew", { number: rel.id }));
+  editBtn.addEventListener("click", () => nav("releasenew", { number: rel.id }));
 
   // On a DRAFT, publishing is not "another action" — it is the one thing the
   // word draft exists to prompt, and it was three clicks deep behind a kebab
@@ -745,7 +754,7 @@ async function deleteRelease(rel: ReleaseInfo, btn: HTMLElement, back: () => voi
  * `createRelease`, `editRelease` and `releaseFormDialog` used to live here: a
  * 560px modal card with the release notes squeezed into ~180px of it. They are
  * `views/releaseCompose.ts` now — a routed page, reached through
- * `sectionNav("releasenew")` above.
+ * `nav("releasenew")` above.
  */
 
 /** Flip a draft release to published — the action the word "draft" implies. */

@@ -43,6 +43,38 @@ export interface RepoInfo {
   name: string;
 }
 
+/**
+ * The repositories open as tabs (issue #32), in the order the tab row shows
+ * them, and the one in front. `active` is undefined only when no tab is open.
+ * See docs/desktop-repo-tabs.md.
+ */
+export interface RepoTabsState {
+  tabs: RepoInfo[];
+  active?: string;
+}
+
+/**
+ * Which tab an IPC call is FOR — the preload's third `invoke` argument. Main
+ * runs the handler inside it (repoStore's `repoScope`), so every bridge acts on
+ * the repository of the tab that asked, never on whichever one is in front by
+ * the time it gets there. `root: undefined` means "a window with no repository
+ * open asked".
+ */
+export interface InvokeScope {
+  root: string | undefined;
+}
+
+/**
+ * What the tab row says about one open tab (issue #32): how many files changed
+ * in its working tree, or that its folder is GONE — moved, deleted, on a drive
+ * that is not mounted, or no longer a Git repository. A gone tab stays until
+ * it is closed (the folder may come back); `dirty` is then absent.
+ */
+export interface RepoTabStatus {
+  dirty?: number;
+  gone?: boolean;
+}
+
 /** A ref decoration listed in the sidebar (branch / remote / tag). */
 export interface RefInfo {
   type: "head" | "remote" | "tag" | "stash";
@@ -1749,6 +1781,8 @@ export interface GitLogEntry {
   actionId?: number;
   /** Epoch milliseconds when the command finished. */
   at: number;
+  /** The repository it ran in — each tab's Output log shows only its own. */
+  root?: string;
 }
 
 // ── Clone / browse GitHub repos ──────────────────────────────────────────────
@@ -2177,7 +2211,21 @@ export interface IpcChannels {
   "repo:openPath": [string, RepoInfo | undefined];
   "repo:recent": [void, RepoInfo[]];
   "repo:current": [void, RepoInfo | undefined];
+  /** Close the tab the call came from (the menu's Close Tab uses repo:closeTab). */
   "repo:close": [void, void];
+  // ── Repositories as tabs (issue #32) ──
+  /** Every open tab and the active one. */
+  "repo:tabs": [void, RepoTabsState];
+  /** Bring an open tab to the front. False when it has no tab. */
+  "repo:activate": [string, boolean];
+  /** Close one tab by root. False when it had none. */
+  "repo:closeTab": [string, boolean];
+  /** Move a tab to a position in the row. */
+  "repo:moveTab": [{ root: string; index: number }, boolean];
+  /** The tab row's `●N`: each open tab's working-tree counts — or that its
+   *  folder is gone. The same probe as repos:localStatus, on its own channel
+   *  because it is the row's question, not a view's. */
+  "repo:tabStatus": [string[], Record<string, RepoTabStatus | undefined>];
   "graph:load": [GraphLoadRequest, GraphPage];
   /**
    * Whether the graph's current walk reaches a commit at all (issue #30).
@@ -2831,8 +2879,12 @@ export type IpcResponse<C extends IpcChannel> = IpcChannels[C][1];
 
 /** Push events the main process emits to the renderer (host → renderer). */
 export interface IpcEvents {
-  /** The active repo changed (opened/closed) — the renderer reloads. */
-  "repo:changed": RepoInfo | undefined;
+  /**
+   * The open tabs or the active one changed (an open, a switch, a close, a
+   * move). The renderer's tab row and stage follow this; it replaces the old
+   * single-repository `repo:changed`.
+   */
+  "repo:tabs": RepoTabsState;
   /** The recent-repositories list changed (forgotten or trashed elsewhere in
    *  the app) — the repo switcher and the manager both re-render off this. */
   "repo:recentChanged": RepoInfo[];
@@ -2847,7 +2899,12 @@ export interface IpcEvents {
    * save cannot change a commit, so a build churning files must not drag a graph
    * reload behind every burst.
    */
-  "repo:filesChanged": { gitDir: boolean };
+  "repo:filesChanged": {
+    gitDir: boolean;
+    /** The repository the watcher saw it in. With tabs, an event that arrives
+     *  after a switch is about the tab you LEFT, and must not refresh this one. */
+    root?: string;
+  };
   /** A message from the main process to show in-app (never a native alert). */
   "app:notice": { kind: "info" | "warn" | "error"; message: string };
   /** A menu item asks the renderer to do something it owns. */
@@ -2856,6 +2913,12 @@ export interface IpcEvents {
       | "openRepo"
       | "refresh"
       | "closeRepo"
+      /** ⌘W / Ctrl+W — close the active repository tab (asks first when an
+       *  operation is still running in it). */
+      | "closeTab"
+      /** Open Recent ▸ <repo> — the renderer opens it, so a switch never
+       *  happens under an open dialog. `root` names it. */
+      | "openPath"
       | "toggleTerminal"
       | "cloneRepo"
       | "toggleSidebar"
@@ -2866,6 +2929,8 @@ export interface IpcEvents {
       /** ⇧⌘Z (Ctrl+Y on Windows). The merge editor's redo while focus is in
        *  it, otherwise the text redo the role used to perform. */
       | "redo";
+    /** For `openPath`: the repository to open. */
+    root?: string;
   };
   /** A chunk of PTY output for a terminal session. */
   "terminal:data": TerminalData;
@@ -2923,6 +2988,9 @@ export interface GitStudioBridge {
   invoke<C extends IpcChannel>(
     channel: C,
     payload: IpcRequest<C>,
+    /** Which tab the call is for. The renderer's bridge.ts always sends it;
+     *  absent, main answers for the active tab. */
+    scope?: InvokeScope,
   ): Promise<IpcResponse<C>>;
   on<E extends IpcEvent>(event: E, listener: (data: IpcEvents[E]) => void): () => void;
 }

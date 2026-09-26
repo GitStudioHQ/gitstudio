@@ -67,7 +67,7 @@ export function repoDirCard(fullName: string, path: string): PeekCard {
         title: "Clone to a folder you choose",
         onClick: (ctx) => {
           ctx.close();
-          openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+          openCloneDialog((root) => host.invoke("repo:openPath", root), {
             url: `https://github.com/${fullName}.git`,
           });
         },
