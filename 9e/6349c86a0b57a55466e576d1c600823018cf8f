@@ -1,0 +1,23 @@
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_602cde509d1f4e 1234-1235,1237
+packages/webview-ui/test/railReveal.test.ts
+  s_26f5e669d3043c::t_9021fbaecd9230 265-306
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_602cde509d1f4e 3477-3478,3480
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9e6349c86a0b57a55466e576d1c600823018cf8f",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
