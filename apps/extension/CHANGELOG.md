@@ -45,6 +45,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   box. A local branch's actions include **Add to Favorites** (or **Remove
   from Favorites**), so the star can be set from the keyboard; from there or
   from the star, the branch moves to or from Favorites at once. (#32)
+- **GitStudio: Branches…** in the Command Palette opens the branch menu, as
+  the branch name in the Changes view and the status bar do — bind a key to it
+  to open the menu without the mouse.
 - **Reset a branch to its remote.** A local branch that tracks a remote branch
   has **Reset to 'origin/feature'…** in its branch-menu actions. GitStudio
   fetches first, then says exactly what the reset would take away — the commits

@@ -284,6 +284,12 @@
         "icon": "$(repo)"
       },
       {
+        "command": "gitstudio.branches.open",
+        "title": "Branches\u2026",
+        "category": "GitStudio",
+        "icon": "$(git-branch)"
+      },
+      {
         "command": "gitstudio.resolveInMergeEditor",
         "title": "Resolve in Merge Editor",
         "category": "GitStudio",
@@ -1773,6 +1779,10 @@
         },
         {
           "command": "gitstudio.compareRefs",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.branches.open",
           "when": "gitstudio.hasRepo"
         },
         {

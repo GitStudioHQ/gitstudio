@@ -640,7 +640,15 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     const syncStatus = new SyncStatusItem(repos, () =>
       commitProvider.openBranchMenu(),
     );
-    context.subscriptions.push(syncStatus, statusCluster);
+    context.subscriptions.push(
+      syncStatus,
+      statusCluster,
+      // "GitStudio: Branches…" — the same branch menu, from the keyboard: the
+      // palette, or a key the user binds to it.
+      vscode.commands.registerCommand("gitstudio.branches.open", () =>
+        commitProvider.openBranchMenu(),
+      ),
+    );
 
     context.subscriptions.push(
       worktreesView,
