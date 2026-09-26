@@ -163,6 +163,48 @@ test("row 16: a tab whose folder is gone is dropped at launch and named once", a
   assert.match(droppedTabsNotice(["/x/a", "/x/b", "/x/c", "/x/d"]).message, /^4 tabs were not reopened.*a, b, c and 1 more\.$/);
 });
 
+test("row 16: the window's first read of the tabs waits for the launch restore", async () => {
+  // main starts the restore, then loads the window; the renderer asks which
+  // tabs are open WHILE it loads. Answered before the restore, it heard "none",
+  // built the no-repository screen (its persist wiping every tab's remembered
+  // view), and then took the restored tabs for NEW ones when they arrived — so a
+  // window left on Search came back on Code.
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const store = new RepoStore([], {
+    discover: async (cwd) => {
+      await gate;
+      return cwd;
+    },
+    realpath: (p) => p,
+    createContext: (root) => ({ root, dispose() {} }) as unknown as GitContext,
+  });
+  const restoring = store.restore(["/r/a", "/r/b"], "/r/b");
+  let answered: { tabs: string[]; active?: string } | undefined;
+  const first = store.settledState().then((st) => (answered = { tabs: st.tabs.map((t) => t.root), active: st.active }));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(answered, undefined, "not answered while the restore is still finding its repositories");
+  release();
+  await restoring;
+  await first;
+  assert.deepEqual(answered, { tabs: ["/r/a", "/r/b"], active: "/r/b" });
+});
+
+test("row 16: with no restore under way, the first read answers at once", async () => {
+  const { store } = fakeStore();
+  await store.openTab("/r/a");
+  assert.deepEqual((await store.settledState()).tabs.map((t) => t.root), ["/r/a"]);
+  // …and a failed restore does not hold the window forever.
+  const broken = new RepoStore([], {
+    discover: async () => {
+      throw new Error("the disk went away");
+    },
+    createContext: (root) => ({ root, dispose() {} }) as unknown as GitContext,
+  });
+  await broken.restore(["/r/x"]).catch(() => undefined);
+  assert.deepEqual((await broken.settledState()).tabs, []);
+});
+
 test("restoring more tabs than the bound keeps the first ten", async () => {
   const { store } = fakeStore();
   const many = Array.from({ length: MAX_TABS + 3 }, (_, i) => `/r/${i}`);

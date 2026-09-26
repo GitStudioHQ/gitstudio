@@ -700,7 +700,9 @@ function closeTab(root: string): boolean {
 function registerIpc(): void {
   handle("repo:open", () => openRepoDialog());
   handle("repo:openPath", (path) => openRepoPath(path));
-  handle("repo:tabs", async () => repos.state());
+  // The window's first read of its tabs waits for the launch restore, which
+  // boot() starts before the window loads (see RepoStore.settledState).
+  handle("repo:tabs", () => repos.settledState());
   handle("repo:tabStatus", (roots) =>
     // Only roots that ARE open tabs: the row asks about its own tabs, and this
     // channel is no way to probe arbitrary folders.
@@ -1474,14 +1476,23 @@ async function boot(): Promise<void> {
   // sensible initial variant from the OS scheme so it doesn't flash the wrong
   // tile before the renderer reports its (possibly overridden) theme.
   setDockIcon(nativeTheme.shouldUseDarkColors ? "dark" : "light");
-  await createWindow();
-  updates = initAutoUpdate({ isDev: !app.isPackaged, send });
-
   // Bring back the tabs the last session had open, with the one that was in
   // front (issue #32). A tab whose folder is gone — deleted, moved, an
   // unmounted drive — is left out, and ONE quiet notice names what was.
-  if (state.open.length) {
-    const { dropped } = await repos.restore(state.open, state.current).catch(() => ({ dropped: [] as string[] }));
+  //
+  // Started BEFORE the window loads, and the renderer's first `repo:tabs`
+  // waits for it: that read happens while the page loads, and answered first
+  // it said "no tabs" — the renderer built the no-repository screen and then
+  // took the restored tabs for new ones, so a window left on Search came back
+  // on Code and every tab's remembered view was overwritten.
+  const restoring = state.open.length
+    ? repos.restore(state.open, state.current).catch(() => ({ dropped: [] as string[] }))
+    : undefined;
+  await createWindow();
+  updates = initAutoUpdate({ isDev: !app.isPackaged, send });
+
+  if (restoring) {
+    const { dropped } = await restoring;
     buildMenu();
     void saveState();
     if (dropped.length) {

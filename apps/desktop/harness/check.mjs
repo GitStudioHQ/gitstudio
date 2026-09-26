@@ -767,6 +767,10 @@ const CASES = [
   ["each-tab-has-its-own-terminal-dock", "changes", { extra: "tabs=2" }],
   ["each-restored-tab-comes-back-on-its-own-view", "changes", { extra: "tabs=2&tabviews=1" }],
   ["a-restored-tab-comes-back-to-search-and-a-new-one-lands-on-its-code", "explore", { extra: "tabs=1" }],
+  // …in main's boot order: the restore announces the tabs before the window's
+  // first read of them is answered (?latetabs=1, see the shim).
+  ["a-restored-tab-comes-back-to-search-and-a-new-one-lands-on-its-code", "explore", { extra: "tabs=1&latetabs=1" }],
+  ["each-restored-tab-comes-back-on-its-own-view", "changes", { extra: "tabs=2&tabviews=1&latetabs=1" }],
   ["the-graph-keeps-its-place-across-a-tab-switch", "graph", { extra: "tabs=2" }],
   ["a-switch-takes-the-menus-and-the-palette-with-it", "changes", { extra: "tabs=2" }],
   ["a-switch-takes-an-open-peek-with-it", "prs~open106", { extra: "tabs=2" }],

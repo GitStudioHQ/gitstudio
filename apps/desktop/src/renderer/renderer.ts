@@ -10649,6 +10649,14 @@ class TabShell {
   private readonly dirty = new Map<string, number>();
   /** Tabs from the launch state whose App is not built yet (see appFor). */
   private readonly launchRoots = new Set<string>();
+  /**
+   * The window's first read of its tabs has been answered. Until then main's
+   * `repo:tabs` events are not news: main answers that read once the launch
+   * restore is done, and the restore announces the same tabs a moment BEFORE
+   * the answer arrives — applied, that event built the restored tabs as new
+   * ones (a window left on Search came back on Code).
+   */
+  private tabsRead = false;
   /** Tabs whose folder is gone (row 14): moved, deleted, no longer a repository. */
   private readonly gone = new Set<string>();
   /** The gone tab already told about since it last came to the front. */
@@ -10736,8 +10744,11 @@ class TabShell {
     } catch (e) {
       toast(cleanErr(e) || "Couldn't open the repository.", "error");
     }
-    // The tabs the last session left open, restored by main before this asked.
+    // The tabs the last session left open: main answers this read only once
+    // its launch restore is done (RepoStore.settledState), so every tab in it
+    // is one this window is bringing back.
     for (const t of st?.tabs ?? []) this.launchRoots.add(t.root);
+    this.tabsRead = true;
     this.apply(st ?? { tabs: [] });
     this.active?.syncDock();
   }
@@ -11055,7 +11066,11 @@ class TabShell {
   }
 
   private wireHostEvents(): void {
-    host.on("repo:tabs", (st) => this.apply(st));
+    // Before the first read is answered, an event is the restore announcing
+    // the tabs that answer is about to bring (see tabsRead).
+    host.on("repo:tabs", (st) => {
+      if (this.tabsRead) this.apply(st);
+    });
     window.addEventListener("gs:unread", (e) => {
       const n = (e as CustomEvent<number>).detail;
       if (typeof n === "number") this.active?.onUnread(n);

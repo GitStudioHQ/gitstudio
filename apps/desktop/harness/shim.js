@@ -733,6 +733,8 @@
   const goneTabs = new Set((params.get("gone") || "").split(",").filter(Boolean));
   window.__gsGone = goneTabs;
   const emitTabs = () => window.__gsEmit("repo:tabs", { tabs: tabState.tabs.slice(), active: tabState.active });
+  /** ?latetabs=1: the first repo:tabs read has been answered (see its handler). */
+  let lateTabsAnswered = false;
   window.__gsTabs = {
     state: () => ({ tabs: tabState.tabs.slice(), active: tabState.active }),
     /** main's openTab: switch to a tab it has, else add one (10 at most). */
@@ -1816,7 +1818,19 @@
       return { ok: true, root, cloned: true };
     },
     // ── Repositories as tabs (issue #32) — main's RepoStore, in miniature ──
-    "repo:tabs": () => window.__gsTabs.state(),
+    // ?latetabs=1 is main's boot order. The window asks which tabs are open
+    // while it loads; main answers once the launch restore has finished
+    // (RepoStore.settledState) — and the restore ANNOUNCES the tabs (a
+    // `repo:tabs` event) before that answer arrives. Answering at once, as
+    // this did, hid the order that mattered.
+    "repo:tabs": () => {
+      if (params.get("latetabs") && !lateTabsAnswered) {
+        lateTabsAnswered = true;
+        setTimeout(() => emitTabs(), 60);
+        return late(300).then(() => window.__gsTabs.state());
+      }
+      return window.__gsTabs.state();
+    },
     "repo:activate": (root) => window.__gsTabs.activate(String(root)),
     "repo:closeTab": (root) => window.__gsTabs.close(String(root)),
     "repo:moveTab": (req) => window.__gsTabs.move(req && req.root, req && req.index),

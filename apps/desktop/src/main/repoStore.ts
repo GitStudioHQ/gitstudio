@@ -116,6 +116,8 @@ export class RepoStore {
   private activeRoot: string | undefined;
   /** Monotonic token so an out-of-order `open()` can't clobber a newer one. */
   private openSeq = 0;
+  /** The launch restore, while (and after) it runs — see settledState. */
+  private restoring?: Promise<unknown>;
   /**
    * The roots closed while each open in flight was still finding its
    * repository — one set per open (see openTab). A close is the later word
@@ -209,6 +211,18 @@ export class RepoStore {
   /** Every open tab, in order, and which one is active. */
   state(): RepoTabsState {
     return { tabs: this.tabs.map((t) => toInfo(t.root)), active: this.activeRoot };
+  }
+
+  /**
+   * {@link state}, once a launch restore under way has finished — what the
+   * window's first read of the tabs (`repo:tabs`) answers. main starts the
+   * restore and then loads the window, and the renderer asks while it loads:
+   * answered before the restore, it heard "no tabs", built the no-repository
+   * screen, and then took the restored tabs for new ones when they arrived.
+   */
+  async settledState(): Promise<RepoTabsState> {
+    await this.restoring?.catch(() => undefined);
+    return this.state();
   }
 
   recentRepos(): RepoInfo[] {
@@ -307,7 +321,15 @@ export class RepoStore {
    * out and reported, so the caller can say so once rather than per tab.
    * Emits once, at the end.
    */
-  async restore(open: readonly string[], current?: string): Promise<{ dropped: string[] }> {
+  restore(open: readonly string[], current?: string): Promise<{ dropped: string[] }> {
+    const run = this.restoreTabs(open, current);
+    // Held from the moment it starts, so a read that arrives before the first
+    // repository is found still waits for all of them (settledState).
+    this.restoring = run;
+    return run;
+  }
+
+  private async restoreTabs(open: readonly string[], current?: string): Promise<{ dropped: string[] }> {
     const dropped: string[] = [];
     for (const want of open) {
       if (this.tabs.length >= MAX_TABS) break;
