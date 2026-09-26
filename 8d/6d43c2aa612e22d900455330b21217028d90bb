@@ -1,0 +1,21 @@
+apps/desktop/src/renderer/peeks.ts
+  s_26f5e669d3043c::t_572831d096e56d 43-46,139
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_45abb484085558 2550-2551
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8d6d43c2aa612e22d900455330b21217028d90bb",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
