@@ -75,6 +75,7 @@ import type { BranchStart } from "../shared/branchStart";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
 import { gget, peek, bust, bustEverywhere, dropCacheScope, setCacheScope, swr, sameData} from "./cache";
+import { dropTabState } from "./tabState";
 import {
   el,
   span,
@@ -122,7 +123,7 @@ import { installInTheWayAsker } from "./inTheWayAsk";
 import { refCheckoutRequest, refDisplay, type RowRef } from "./refMenuItems";
 import { branchName, remoteRefParts, tagName, upstreamLabel, upstreamParts } from "./branchRequests";
 import { explainRefusedCheckout } from "./optionLikeRename";
-import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
+import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar, parkScreen, releaseScreen } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
 import { refreshHighlightTheme } from "./highlight";
 import { openCommandPalette, paletteIsOpen } from "./commandPalette";
@@ -877,6 +878,9 @@ class App {
     this.terminalDock = undefined;
     this.viewCache.clear();
     this.screenEl?.remove();
+    // What its pages held until they were left — the PR diff, a commit's
+    // diff, a job log — goes with the tab, which is never coming back.
+    if (this.screenEl) releaseScreen(this.screenEl);
   }
 
   /** Every kept-alive view goes — the signed-in account changed under all of them. */
@@ -10743,7 +10747,11 @@ class TabShell {
   /** Put a tab's freshly built screen on the stage (only the tab in front builds). */
   present(app: App, screen: HTMLElement): void {
     if (app !== this.active) return;
-    for (const child of [...this.stage.children]) if (child !== screen) child.remove();
+    for (const child of [...this.stage.children]) {
+      if (child === screen) continue;
+      parkScreen(child as HTMLElement);
+      child.remove();
+    }
     if (screen.parentElement !== this.stage) this.stage.appendChild(screen);
   }
 
@@ -10817,6 +10825,9 @@ class TabShell {
     clearToasts();
     if (prev) {
       prev.deactivate();
+      // In the back, whole: the pages on it are kept, not left — their Monaco
+      // diffs and log panes must not dispose themselves on the detach.
+      if (prev.screenEl) parkScreen(prev.screenEl);
       prev.screenEl?.remove();
     }
     this.active = next;
@@ -10894,6 +10905,9 @@ class TabShell {
     app.dispose();
     endSession(app.session.id);
     dropCacheScope(root);
+    // What its section views remembered (a search, a sort, a sub-tab) goes
+    // too: the repository opened again is a new tab, and starts clean.
+    dropTabState(root);
     dropUndoScope(app.session.id);
     dropFocusTab(app.session.id);
   }

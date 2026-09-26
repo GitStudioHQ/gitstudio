@@ -16625,5 +16625,46 @@
       await settle(800);
       c.ok(onSearch(), "the tab it was opened from is still on Search");
     },
+
+    /** Keep-alive promise, for the surfaces that own a Monaco editor or a log
+     *  pane: a tab sent to the back and brought forward again comes back with
+     *  its diff or its log, not with the page around an empty pane. Each of
+     *  these disposed itself on ANY detach — and a tab in the back is detached
+     *  whole. Counts `.monaco-editor` and `.log-line` nodes, which a disposed
+     *  panel removes (`.view-line` is painted in rAF, which headless starves). */
+    "a-tab-round-trip-keeps-its-diff-or-log": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const surface = () => {
+        const h = $(".view-host");
+        return {
+          view: h?.firstElementChild,
+          monaco: h ? h.querySelectorAll(".monaco-editor").length : 0,
+          log: h ? h.querySelectorAll(".log-line").length : 0,
+          pane: h?.querySelector(".log-pane"),
+        };
+      };
+      const b = surface();
+      const what = window.__GS_ARG || "diff";
+      if (what === "log") c.ok(b.log > 0, `precondition: a job log on screen (${b.log} lines)`);
+      else c.ok(b.monaco > 0, `precondition: a Monaco diff on screen (${b.monaco})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: the other tab is in front");
+      tabEl(GS_ROOT)?.click();
+      await settle(1200);
+      const a = surface();
+      c.ok(a.view === b.view, "the same page came back");
+      // The pane is virtualized: how many lines it paints depends on the
+      // window it re-measures on return, so "there, and the same pane".
+      if (what === "log") c.ok(a.log > 0 && a.pane === b.pane, `…with its log (${b.log} lines before, ${a.log} after)`);
+      else c.eq(a.monaco, b.monaco, "…with its diff");
+      // And the kept surface still lets go of its editor when it is left for
+      // real: a route away inside the tab disposes it, as before.
+      $('.nav-item[data-view="changes"]')?.click();
+      await settle(900);
+      c.ok(!b.view.isConnected, "precondition: routed away inside the tab");
+      c.eq(b.view.querySelectorAll(".monaco-editor, .log-line").length, 0, "leaving the page for real still lets its editor or log go");
+    },
   };
 })();

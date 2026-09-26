@@ -773,6 +773,9 @@ const CASES = [
   ["a-tab-whose-folder-is-gone-says-so-and-closes", "changes", { extra: "tabs=3&gone=webapp" }],
   ["a-tab-whose-folder-is-gone-says-so-and-closes", "changes", { extra: "tabs=3&gone=webapp", theme: "light" }],
   ["a-gone-folder-put-back-makes-its-tab-whole-again", "changes", { extra: "tabs=2&gone=gistudio.dev" }],
+  ["a-tab-round-trip-keeps-its-diff-or-log", "prs~open106~text:Files", { extra: "tabs=2", arg: "diff" }],
+  ["a-tab-round-trip-keeps-its-diff-or-log", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "tabs=2", arg: "diff" }],
+  ["a-tab-round-trip-keeps-its-diff-or-log", "actions~open9100~click:.gh-job-log", { extra: "tabs=2", arg: "log" }],
 ];
 
 function run(scene, checkId, opts = {}) {
