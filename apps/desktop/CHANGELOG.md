@@ -65,6 +65,8 @@ but they share the same engine, so most Git behaviour lands in both at once.
   text was replaced by the discarded one; resolve a conflict, polish the file,
   ⌘Z: the conflict markers went over the polish. Both now say the file has
   changed since and leave it alone.
+- **Undo of *Drop stash*** puts the stash back where it was in the list, not
+  on top of it.
 - **Repositories: switching to *On GitHub* and straight back showed GitHub's
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on
