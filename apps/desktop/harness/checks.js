@@ -9339,6 +9339,39 @@
     },
 
     /**
+     * Shift+Down held over several rows is a new selection per row, and the
+     * pane's "N commits selected" would ask main what applies for every one of
+     * them. It asks once, for the selection the keys stopped on — and that
+     * answer still lands.
+     */
+    "a-held-shift-arrow-asks-main-once-for-where-it-stops": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      if (!sr) return c.ok(false, "the graph is mounted");
+      const S = ["3c0ffee1a2b3c4d5e6f7", "2c0ffee1a2b3c4d5e6f7", "1c0ffee1a2b3c4d5e6f7", "9f8e7d6c5b4a39281706"];
+      sr.querySelector(`.row[data-sha="${S[0]}"]`)?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      await settle(400);
+      const asked = () => window.__GS_INVOKED.filter((r) => r.channel === "commits:menu");
+      const before = asked().length;
+      const sc = sr.querySelector(".scroller");
+      sc?.focus();
+      // Three presses with no pause between them, as a held key repeats.
+      for (let i = 0; i < 3; i++) {
+        (sr.activeElement || sc)?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", shiftKey: true, bubbles: true, composed: true, cancelable: true }));
+      }
+      await settle(700);
+      c.eq($$('.row[aria-selected="true"]', sr).map((r) => r.dataset.sha).join(","), S.join(","), "Shift+Down three times selects four rows");
+      const psr = $(".graph-details gitstudio-commit-details")?.shadowRoot;
+      c.eq(text(psr?.querySelector(".sum-title")), "4 commits selected", "the pane follows the keys");
+      const now = asked().slice(before);
+      c.eq(now.length, 1, `main was asked once, not once per row (${now.length})`);
+      c.eq((now[0]?.payload?.shas || []).join(","), S.join(","), "for the selection the keys stopped on");
+      c.ok($$(".actions .act", psr).some((b) => text(b) === "Cherry-pick 4 commits"), "and its answer landed in the pane");
+    },
+
+    /**
      * Right-click inside a selection of several keeps it and opens ONE menu for
      * all of them — only the items main says apply, Drop in the danger colour;
      * outside it, just that row and its own menu. Drop N asks once, listing

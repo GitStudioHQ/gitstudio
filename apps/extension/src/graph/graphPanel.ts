@@ -43,6 +43,7 @@ import {
   runMultiCommitAction,
 } from "./commitActions";
 import { menuTarget, selectedCommits } from "@gitstudio/host-bridge/graphSelection";
+import { SettleLatest } from "@gitstudio/host-bridge/settleLatest";
 import { ComparePanel } from "../compare/comparePanel";
 import type { MenuRef } from "./checkoutTarget";
 import { rowStatsReply } from "./rowStatsReply";
@@ -78,9 +79,6 @@ const PAGE_SIZE = 500;
 const FIRST_PAGE_SIZE = 150;
 /** Debounce repo-change rebuilds (a rebase touches many refs in a burst). */
 const REFRESH_DEBOUNCE_MS = 300;
-/** How long a selection of several must hold before its summary asks git
- *  what applies (issue #32) — see pushCommitsSummary. */
-const SUMMARY_SETTLE_MS = 120;
 
 /**
  * The singleton commit-graph panel: one editor-area WebviewPanel that streams
@@ -283,6 +281,8 @@ export class CommitGraphPanel {
       case "selectCommit":
       case "openCommit":
         this.shown = msg.sha;
+        // One commit now: a pending "N commits selected" answer is for a selection that is gone.
+        this.summary.cancel();
         void this.pushCommitDetails(msg.sha);
         break;
       case "selectCommits":
@@ -985,24 +985,24 @@ export class CommitGraphPanel {
     });
   }
 
-  /** Bumped per summary request: only the newest selection is answered. */
-  private summarySeq = 0;
+  /** Only the newest selection is answered, once it settles (host-bridge/settleLatest). */
+  private readonly summary = new SettleLatest();
 
   /**
    * The details pane's "N commits selected" summary (issue #32) asks what can
-   * be done to them: the same items as their right-click menu.
+   * be done to them: the same items as their right-click menu. Shift+Down held
+   * over twenty rows is twenty selections, and each would walk the branch
+   * three ways, so only the one it stops on is asked — the desktop's pane
+   * asks through the same SettleLatest.
    */
   private async pushCommitsSummary(shas: string[]): Promise<void> {
-    const seq = ++this.summarySeq;
     const active = this.repos.getActive();
-    if (!active || shas.length < 2) return;
-    // Settle first: Shift+Down held over twenty rows is twenty selections, and
-    // each would walk the branch three ways. Only the one it stops on is asked.
-    await new Promise((r) => setTimeout(r, SUMMARY_SETTLE_MS));
-    if (seq !== this.summarySeq) return;
-    const items = await multiCommitMenuItemsFor(active.ctx, shas);
-    if (seq !== this.summarySeq) return;
-    this.post({ type: "commitsSummary", shas, items });
+    if (!active || shas.length < 2) {
+      this.summary.cancel();
+      return;
+    }
+    const items = await this.summary.run(() => multiCommitMenuItemsFor(active.ctx, shas));
+    if (items) this.post({ type: "commitsSummary", shas, items });
   }
 
   /** Run an item of the several-commit menu or summary. */

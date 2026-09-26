@@ -605,6 +605,7 @@ const CASES = [
   // Several commits at once (issue #32): select, summarise, the menu, the flows.
   ["several-commits-are-selected-and-summarised", "graph", { extra: "stack=1" }],
   ["several-commits-are-selected-and-summarised", "graph", { extra: "stack=1", theme: "light" }],
+  ["a-held-shift-arrow-asks-main-once-for-where-it-stops", "graph", { extra: "stack=1" }],
   ["the-menu-for-several-commits-runs-for-all-of-them", "graph", { extra: "stack=1" }],
   ["the-menu-for-several-commits-runs-for-all-of-them", "graph", { extra: "stack=1", theme: "light" }],
   ["the-squash-message-editor-takes-the-message-the-user-writes", "graph", { extra: "stack=1" }],

@@ -21,6 +21,7 @@ import { clickIntent, parseRowKey, rangeBetween, reconcile, rowKey, selectionEnt
 import { installNavStack } from "./navStack";
 import { clearUndo, didUndoable, installUndoKey, push as pushUndoable, redoOrText, undoOrText } from "./undo";
 import { repoChanged, whileSameRepo } from "./repoEpoch";
+import { SettleLatest } from "@gitstudio/host-bridge/settleLatest";
 import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
 import { renderReleaseCompose } from "./views/releaseCompose";
@@ -199,8 +200,9 @@ class App {
     (sha) => void this.dropCommit(sha),
     (action, shas) => void this.runMany(action, shas),
   );
-  /** Bumped per multi-selection summary; see showSelection. */
-  private selectionSeq = 0;
+  /** The "N commits selected" summary asks only once the selection settles,
+   *  and only for the newest one — see showSelection. */
+  private readonly selectionSummary = new SettleLatest();
   /** Bumped per right-click; see openCommitMenu. */
   private commitMenuSeq = 0;
 
@@ -10016,7 +10018,7 @@ class App {
 
   private async selectCommit(sha: string): Promise<void> {
     this.selectedSha = sha;
-    this.selectionSeq++; // a pending "N commits selected" answer is for a selection that is gone
+    this.selectionSummary.cancel(); // a pending "N commits selected" answer is for a selection that is gone
     // Loading a commit's details is a round trip, and this pane used to sit
     // showing the PREVIOUS commit's files the whole time — so a slow load was
     // indistinguishable from a fast one, and a FAILED load was invisible: the
@@ -10460,10 +10462,10 @@ class App {
    * (a Cmd-click took the last one off) is the pane's empty state.
    */
   private showSelection(shas: string[]): void {
-    const seq = ++this.selectionSeq;
     this.selectedSha = undefined;
     this.closeGraphDiff();
     if (shas.length < 2) {
+      this.selectionSummary.cancel();
       this.showDetailsPlaceholder();
       return;
     }
@@ -10486,15 +10488,11 @@ class App {
     this.setGraphDetailsVisible(true);
     // Settle first: Shift+Down held over twenty rows is twenty selections, and
     // each would walk the branch three ways. Only the one it stops on is asked
-    // (the extension's summary waits the same).
-    void new Promise((r) => setTimeout(r, 120))
-      .then(() =>
-        seq !== this.selectionSeq
-          ? undefined
-          : host.invoke("commits:menu", { shas }).catch(() => ({ apply: false, drop: false, squash: false })),
-      )
+    // — through the SettleLatest the extension's summary uses too.
+    void this.selectionSummary
+      .run(() => host.invoke("commits:menu", { shas }).catch(() => ({ apply: false, drop: false, squash: false })))
       .then((can) => {
-        if (!can || seq !== this.selectionSeq || !panel.selection) return;
+        if (!can || !panel.selection) return;
         panel.selection = {
           ...panel.selection,
           actions: manyMenuRows(shas.length, can).map((r) => ({ id: r.action, label: r.label, icon: r.icon, danger: r.danger })),
