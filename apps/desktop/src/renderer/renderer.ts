@@ -58,6 +58,7 @@ import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled }
 import { toast, confirmDialog, promptInline, promptChoice, openModal, type ToastAction } from "./dialogs";
 import { refLabel, revealCandidate, storedFilterOf, withRef } from "@gitstudio/host-bridge/graphRefFilter";
 import { worktreeRemovalQuestion, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
+import { checkedOutElsewhereMessage } from "@gitstudio/host-bridge/branchElsewhere";
 import { createBranchFlow } from "./branchCreate";
 import type { BranchStart } from "../shared/branchStart";
 import { TerminalDock } from "./terminalDock";
@@ -4354,6 +4355,15 @@ class App {
     // refs/heads/. The short "heads/x" (beside a tag "x") names no branch to
     // delete, and restored as a branch literally called "heads/x".
     const name = branchName(b);
+    // Another worktree has it checked out: git refuses the delete. Say where
+    // BEFORE asking — the bridge refuses it too, in the same words, should
+    // this list be stale.
+    const worktreeList = await host.invoke("worktree:list", undefined).catch((): WorktreeInfo[] => []);
+    const holder = worktreeList.find((w) => !w.current && !w.bare && w.branch === name);
+    if (holder) {
+      toast(checkedOutElsewhereMessage(name, holder.path, "delete"), "info");
+      return;
+    }
     // Confirm FIRST. This sits a few pixels from Checkout in a hover-revealed
     // row cluster, and every other destructive action in the app asks before
     // acting — deleting a branch outright was the one that did not. The

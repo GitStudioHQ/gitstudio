@@ -13766,6 +13766,42 @@
       c.ok(!!gone && !gone.some((i) => /^Reset to/.test(text(i))), "…nor one whose upstream is gone");
     },
 
+    /**
+     * A branch another worktree has checked out cannot be deleted — git
+     * refuses. Delete used to ask "Delete branch" first and then toast git's
+     * "cannot delete branch … used by worktree at …". It says where the branch
+     * is now, BEFORE asking, and deletes nothing; a branch no worktree has
+     * still asks. (worktree:list has redesign/issues-detail in gitstudio-wave2.)
+     */
+    "deleting-a-branch-another-worktree-has-says-where-before-asking": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      const menuOf = async (name) => {
+        const k = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === `More actions for ${name}`);
+        if (!k) return null;
+        k.click();
+        await settle(350);
+        return $$(".dropdown .dropdown-item");
+      };
+      const held = await menuOf("redesign/issues-detail");
+      const del = (held || []).find((i) => text(i) === "Delete redesign/issues-detail");
+      if (!del) return c.ok(false, `its menu offers Delete (${(held || []).map((i) => text(i)).join(" | ")})`);
+      del.click();
+      await settle(800);
+      c.ok(!$(".modal-card"), "nothing is asked for a delete git refuses");
+      c.match(
+        $$(".toast-msg").map((t) => text(t)).join(" | "),
+        /'redesign\/issues-detail' is checked out in the worktree at \/Users\/anton\/Developer\/GitStudioHQ\/gitstudio-wave2, so it can't be deleted\./,
+        "…it says where the branch is, in words",
+      );
+      c.ok($$(".lv-menu-btn").some((b) => b.getAttribute("aria-label") === "More actions for redesign/issues-detail"), "…and the branch is still listed");
+
+      const free = await menuOf("feat/line-staging");
+      (free || []).find((i) => text(i) === "Delete feat/line-staging")?.click();
+      await settle(600);
+      c.ok(!!$(".modal-card"), "a branch no worktree has still asks first");
+    },
+
     /** The branch you are on: the question says what goes — the local commits
      *  by subject, the files of uncommitted changes — outlives the refresh its
      *  own fetch sets off, resets against exactly what it described, and Undo

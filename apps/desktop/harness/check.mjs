@@ -671,6 +671,7 @@ const CASES = [
   ["a-long-repository-name-keeps-its-counts-and-controls", "repositories", { extra: "longrepo=1", width: 1280 }],
   // Reset a branch to its upstream (#32).
   ["the-branch-menu-offers-a-reset-to-its-upstream", "branches"],
+  ["deleting-a-branch-another-worktree-has-says-where-before-asking", "branches"],
   ["resetting-the-current-branch-says-what-goes-and-can-be-undone", "branches"],
   ["resetting-another-branch-leaves-your-working-tree-alone", "branches"],
   ["a-branch-checked-out-elsewhere-is-refused-before-anything-is-asked", "branches"],
