@@ -49,6 +49,12 @@ export const MS_SETTINGS_SECTION = "jbMerge";
 export const MS_IDE_CONTEXT_KEY = "jbMerge.ideAvailable";
 
 /**
+ * True while an open repository has an operation stopped or unmerged files:
+ * Continue / Skip / Abort Operation are listed in the palette only then.
+ */
+export const MS_OPERATION_CONTEXT_KEY = "jbMerge.operationInProgress";
+
+/**
  * True while GitStudio owns the automatic behaviour (decision D4). The
  * walkthrough shows "Using GitStudio too?" instead of "Choose your merge
  * editor" while it is set.

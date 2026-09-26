@@ -139,11 +139,10 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
 
   const WALKTHROUGH_ID = "gitstudio.gitstudio#gitstudio.gettingStarted";
   context.subscriptions.push(
-    vscode.commands.registerCommand("gitstudio.showWelcome", () => {
-      void vscode.window.showInformationMessage(
-        "GitStudio is installed. The full Git suite is coming online.",
-      );
-    }),
+    // Kept for old keybindings: it opens Get Started, the one listed.
+    vscode.commands.registerCommand("gitstudio.showWelcome", () =>
+      vscode.commands.executeCommand("gitstudio.openWalkthrough"),
+    ),
     vscode.commands.registerCommand("gitstudio.openWalkthrough", () => {
       void vscode.commands.executeCommand(
         "workbench.action.openWalkthrough",

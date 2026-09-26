@@ -207,6 +207,13 @@ export interface MergeProduct {
   readonly commands: MergeCommandIds;
   /** `setContext` key that is true while a JetBrains IDE can be launched. */
   readonly ideAvailableContextKey: string;
+  /**
+   * `setContext` key the watcher keeps true while any open repository has an
+   * operation stopped or unmerged files — what the operation verbs (Continue /
+   * Skip / Abort) act on — so a product can list them in the palette only then.
+   * Without one, nothing is set.
+   */
+  readonly operationContextKey?: string;
   /** Status-bar item id ("⚠ Resolve Conflicts"). */
   readonly statusItemId: string;
   /**

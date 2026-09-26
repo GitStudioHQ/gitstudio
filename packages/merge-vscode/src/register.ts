@@ -10,7 +10,7 @@
 //   dashboard's auto-show, the "⚠ Resolve Conflicts" status item and the
 //   coexistence question — all of them gated on one `autoOpen` meaning and on
 //   D4 (`product.defersTo`);
-// - the ideAvailable context key.
+// - the ideAvailable context key, and the operation one when the product names it.
 
 import * as vscode from "vscode";
 import type { OperationOutcome, OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
@@ -113,12 +113,15 @@ export function registerMergeExperience(
   const dashboard = new ConflictsDashboard(host, openConflict);
   const status = new ConflictStatusItem(product);
 
+  /** Something for an operation verb to act on: a stopped operation, or unmerged files. */
+  const isBusy = (d: { kind: string; unmerged: number }): boolean => d.kind !== "none" || d.unmerged > 0;
+
   const findWorkRepo = async (): Promise<MergeRepo | undefined> => {
     const repos = product.locator.all();
     const detections = await Promise.all(
       repos.map((r) => r.ctx.operation.detect().catch(() => ({ kind: "none" as const, unmerged: 0 }))),
     );
-    const busy = repos.filter((_, i) => detections[i].kind !== "none" || detections[i].unmerged > 0);
+    const busy = repos.filter((_, i) => isBusy(detections[i]));
     const active = product.locator.active();
     return active && busy.includes(active) ? active : busy[0];
   };
@@ -157,6 +160,8 @@ export function registerMergeExperience(
   let deferred: boolean | undefined;
   let scanQueued = false;
   let scanTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The last value given to product.operationContextKey (set only when it changes). */
+  let operationShown: boolean | undefined;
   const scan = async (): Promise<void> => {
     if (scanning) {
       scanQueued = true;
@@ -171,6 +176,11 @@ export function registerMergeExperience(
           repos.map((r) => r.ctx.operation.detect().catch(() => ({ kind: "none" as const, unmerged: 0 }))),
         );
         const total = detections.reduce((n, d) => n + d.unmerged, 0);
+        const busy = detections.some(isBusy);
+        if (product.operationContextKey && busy !== operationShown) {
+          operationShown = busy;
+          void vscode.commands.executeCommand("setContext", product.operationContextKey, busy);
+        }
         const defers = host.defers();
         status.update(statusItemLook({ unmerged: total, defers, op: total === 0 && !defers ? await continueLook(repos, detections) : undefined }));
         if (defers && deferred === false) {

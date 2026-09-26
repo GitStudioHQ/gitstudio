@@ -1584,6 +1584,26 @@
           "when": "true"
         },
         {
+          "command": "gitstudio.showWelcome",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.showCommitGraph",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.refreshCommits",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.refreshBranches",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.debug.showProcessAudit",
+          "when": "config.gitstudio.debug.logChildProcesses"
+        },
+        {
           "command": "gitstudio.ai.selectModel",
           "when": "true"
         },
@@ -1689,15 +1709,15 @@
         },
         {
           "command": "gitstudio.operation.continue",
-          "when": "gitstudio.hasRepo"
+          "when": "gitstudio.hasRepo && gitstudio.operationInProgress"
         },
         {
           "command": "gitstudio.operation.skip",
-          "when": "gitstudio.hasRepo"
+          "when": "gitstudio.hasRepo && gitstudio.operationInProgress"
         },
         {
           "command": "gitstudio.operation.abort",
-          "when": "gitstudio.hasRepo"
+          "when": "gitstudio.hasRepo && gitstudio.operationInProgress"
         },
         {
           "command": "gitstudio.stageSelectedLines",
@@ -1721,7 +1741,7 @@
         },
         {
           "command": "gitstudio.abortRebase",
-          "when": "gitstudio.hasRepo"
+          "when": "gitstudio.hasRepo && gitstudio.operationInProgress"
         },
         {
           "command": "gitstudio.undo",
@@ -2045,7 +2065,7 @@
         },
         {
           "command": "gitstudio.showCommitPanel",
-          "when": "gitstudio.hasRepo"
+          "when": "false"
         },
         {
           "command": "gitstudio.stageWithTicks",

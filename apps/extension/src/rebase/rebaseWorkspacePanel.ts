@@ -240,7 +240,6 @@ export class RebaseWorkspacePanel {
     if (outcome.status === "done") {
       const entry = this.repos.getActive();
       void entry?.repo?.status?.();
-      void vscode.commands.executeCommand("gitstudio.refreshCommits");
       vscode.window.setStatusBarMessage("$(check) Rebase complete", 3000);
       this.dispose();
     } else if (outcome.status === "stopped") {

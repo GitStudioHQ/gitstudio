@@ -525,15 +525,15 @@
         },
         {
           "command": "jbMerge.operation.continue",
-          "when": "gitOpenRepositoryCount != 0"
+          "when": "gitOpenRepositoryCount != 0 && jbMerge.operationInProgress"
         },
         {
           "command": "jbMerge.operation.skip",
-          "when": "gitOpenRepositoryCount != 0"
+          "when": "gitOpenRepositoryCount != 0 && jbMerge.operationInProgress"
         },
         {
           "command": "jbMerge.operation.abort",
-          "when": "gitOpenRepositoryCount != 0"
+          "when": "gitOpenRepositoryCount != 0 && jbMerge.operationInProgress"
         },
         {
           "command": "jbMerge.restoreBuiltInMergeEditor"
