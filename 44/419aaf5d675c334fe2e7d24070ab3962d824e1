@@ -1,0 +1,51 @@
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_eb33bf57a23468 388-389,391-394
+apps/desktop/src/main/inTheWay.ts
+  s_26f5e669d3043c::t_11b11f20499a62 267
+  s_26f5e669d3043c::t_2d4cda792db93d 43
+  s_26f5e669d3043c::t_084b0a1ac77864 263-264,275-278
+  s_26f5e669d3043c::t_d8acbb3b6b63af 51-62,74-78,81-86
+  s_26f5e669d3043c::t_c96d116b824ae5 117,119-122
+  s_26f5e669d3043c::t_18833419b415e5 279-280
+apps/desktop/test/stashStaging.test.ts
+  s_26f5e669d3043c::t_775fe2e01d9336 72-74,77,79,82-86,89-90,96
+  s_26f5e669d3043c::t_b2ac5556cc473a 19-21
+apps/desktop/src/renderer/bridge.ts
+  s_26f5e669d3043c::t_acb6c3e40cd357 73-76,83,89-96
+apps/desktop/src/renderer/views/refDetail.ts
+  s_26f5e669d3043c::t_08e35311fb06d1 332-334,337,346-348,350-354,357
+apps/desktop/test/stashIdentity.test.ts
+  s_26f5e669d3043c::t_9347053aafedc2 1-182
+  s_26f5e669d3043c::t_24d11583bc1d24 183-204
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_8ae4028ff750f3 2944-2945,2950-2952
+  s_26f5e669d3043c::t_fdf62ff961f6dd 2910-2914,2917
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_3b425589ce8818 65-75
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_8a25acd252d91f 616-617
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_29d04b01669717 9831-9870,15888-15891
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_ead682b3ff9c75 2092-2106,2187-2188,2190-2198,2200
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_cac868b30d492b 24,716-725,831-836,1376-1379,1402-1407,2752,2764-2769,3920,3924-3930,3933,4110-4121
+apps/desktop/test/inTheWayDoors.test.ts
+  s_26f5e669d3043c::t_ad60f3e63ac412 429-430
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "44419aaf5d675c334fe2e7d24070ab3962d824e1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
