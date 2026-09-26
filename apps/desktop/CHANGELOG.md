@@ -82,6 +82,10 @@ but they share the same engine, so most Git behaviour lands in both at once.
 
 ### Fixed
 
+- **The commit graph keeps its place.** Going to another view and back
+  brought the graph back scrolled to the top, with the commit you were
+  reading out of sight; it now comes back where you left it — and so does a
+  repository tab's graph when you return to the tab. (#32)
 - **The top bar no longer lets the editor button run over the search box**
   when the window is just wide enough for everything but a stopped
   operation's label — it measured what it needed from the collapsed state and

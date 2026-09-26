@@ -16444,6 +16444,44 @@
       c.ok(dockA.isConnected, "and come back with it");
     },
 
+    /** The graph keeps its place through a switch: the commit you were
+     *  reading is still on screen when you come back ("the graph position",
+     *  #32). Detaching a node zeroes its scroll; the element keeps its own. */
+    "the-graph-keeps-its-place-across-a-tab-switch": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const g = $("gitstudio-graph");
+      if (!g) return c.ok(false, "precondition: the graph");
+      // The fixture's history is short: a short list makes it scroll.
+      g.style.height = "220px";
+      g.style.maxHeight = "220px";
+      await settle(400);
+      const scroller = () => g.shadowRoot.querySelector(".scroller");
+      const topRow = () => {
+        const top = scroller().getBoundingClientRect().top;
+        return [...g.shadowRoot.querySelectorAll("[data-sha]")].find((r) => r.getBoundingClientRect().top >= top - 1)?.dataset.sha;
+      };
+      scroller().scrollTop = 120;
+      scroller().dispatchEvent(new Event("scroll"));
+      await settle(300);
+      c.ok(scroller().scrollTop >= 100, `precondition: scrolled down (${scroller().scrollTop})`);
+      const was = topRow();
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.ok(!g.isConnected, "the graph leaves with its tab");
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.ok($("gitstudio-graph") === g, "the same graph comes back");
+      c.eq(scroller().scrollTop, 120, "scrolled where it was");
+      c.eq(topRow(), was, "…with the same commit at the top");
+      // And through the view keep-alive inside one tab, which had the same loss.
+      $('.nav-item[data-view="changes"]')?.click();
+      await settle(700);
+      $('.nav-item[data-view="graph"]')?.click();
+      await settle(900);
+      c.eq(scroller().scrollTop, 120, "a trip to another view keeps it too");
+    },
+
     /** Row 14: a background tab's folder is moved or deleted. Its tab stays
      *  (the folder may come back), says so in the row, costs the front tab
      *  nothing, says so in words when it is brought to the front, and closes

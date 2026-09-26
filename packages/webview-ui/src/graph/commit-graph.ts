@@ -1841,6 +1841,17 @@ export class CommitGraph extends LitElement {
     | undefined;
   /** The scroll element the live virtualizer is bound to (identity check). */
   private boundScroller: HTMLDivElement | undefined;
+  /**
+   * Where the list was scrolled, kept while the element is attached. A node
+   * taken out of the document loses its scroll offset, and the desktop takes
+   * this element out whenever it parks the graph (a view switch) or its
+   * repository tab goes to the back (#32) — so without this, coming back put
+   * you at the top of the history, with the commit you were on scrolled away.
+   * Read on every scroll, because a detached scroller already reads 0.
+   */
+  private keptScrollTop = 0;
+  /** Put `keptScrollTop` back once the re-attached list has rows to scroll. */
+  private restoreScrollPending = false;
   private cleanupVirtualizer: (() => void) | undefined;
   private disposeTheme: (() => void) | undefined;
   private shaToIndex = new Map<string, number>();
@@ -1891,6 +1902,8 @@ export class CommitGraph extends LitElement {
     // the window you last looked at, still at their old offsets, and nothing
     // ever repainting them. Scrolled down first, that is a blank list.
     this.requestUpdate();
+    // A RE-attach (see keptScrollTop): the first connect has nothing to keep.
+    this.restoreScrollPending = this.keptScrollTop > 0;
     this.disposeTheme = observeGraphTheme((palette) => {
       this.palette = palette;
       this.renderRows();
@@ -2007,10 +2020,23 @@ export class CommitGraph extends LitElement {
       }
       this.applyGutterWidth();
       this.renderRows();
+      this.restoreKeptScroll(scroller);
     } else {
       // Back to a placeholder: drop the stale virtualizer binding.
       this.teardownVirtualizer();
     }
+  }
+
+  /** After a re-attach, back to where the list was — once the sizer is tall
+   *  enough to hold the offset, and told to the virtualizer at once (its
+   *  scroll events arrive a frame later, and never in an occluded window). */
+  private restoreKeptScroll(scroller: HTMLDivElement): void {
+    if (!this.restoreScrollPending || !this.rows.length) return;
+    this.restoreScrollPending = false;
+    const want = Math.min(this.keptScrollTop, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
+    if (want <= 0 || scroller.scrollTop === want) return;
+    scroller.scrollTop = want;
+    scroller.dispatchEvent(new Event("scroll"));
   }
 
   // ── Virtualizer wiring ─────────────────────────────────────────────────────
@@ -2035,7 +2061,17 @@ export class CommitGraph extends LitElement {
       this.virtualizerOptions(),
     );
     this.virtualizer = v;
-    this.cleanupVirtualizer = v._didMount();
+    const unmount = v._didMount();
+    // Only while attached: a detached scroller fires nothing, so the last
+    // offset read is the one it had when it was taken out.
+    const keep = (): void => {
+      if (this.isConnected) this.keptScrollTop = scroller.scrollTop;
+    };
+    scroller.addEventListener("scroll", keep, { passive: true });
+    this.cleanupVirtualizer = () => {
+      scroller.removeEventListener("scroll", keep);
+      unmount();
+    };
     v._willUpdate();
   }
 
