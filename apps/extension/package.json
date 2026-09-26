@@ -444,8 +444,14 @@
         "icon": "$(trash)"
       },
       {
+        "command": "gitstudio.worktree.forget",
+        "title": "Forget Worktree",
+        "category": "GitStudio",
+        "icon": "$(close)"
+      },
+      {
         "command": "gitstudio.worktree.lock",
-        "title": "Lock Worktree",
+        "title": "Lock Worktree\u2026",
         "category": "GitStudio",
         "icon": "$(lock)"
       },
@@ -1764,6 +1770,10 @@
           "when": "false"
         },
         {
+          "command": "gitstudio.worktree.forget",
+          "when": "false"
+        },
+        {
           "command": "gitstudio.worktree.lock",
           "when": "false"
         },
@@ -2063,7 +2073,7 @@
       "view/item/context": [
         {
           "command": "gitstudio.worktree.open",
-          "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
+          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree(\\.main)?(\\.locked)?$/",
           "group": "inline@1"
         },
         {
@@ -2072,23 +2082,33 @@
           "group": "inline@2"
         },
         {
+          "command": "gitstudio.worktree.forget",
+          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree\\.missing(\\.locked)?$/",
+          "group": "inline@2"
+        },
+        {
           "command": "gitstudio.worktree.open",
-          "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
+          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree(\\.main)?(\\.locked)?$/",
           "group": "1_worktree@1"
         },
         {
           "command": "gitstudio.worktree.lock",
-          "when": "view == gitstudio.worktrees && viewItem == gitstudio.worktree",
+          "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.current)",
           "group": "1_worktree@2"
         },
         {
           "command": "gitstudio.worktree.unlock",
-          "when": "view == gitstudio.worktrees && viewItem == gitstudio.worktree.locked",
+          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree(\\.current)?(\\.missing)?\\.locked$/",
           "group": "1_worktree@2"
         },
         {
           "command": "gitstudio.worktree.remove",
           "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
+          "group": "2_worktree@1"
+        },
+        {
+          "command": "gitstudio.worktree.forget",
+          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree\\.missing(\\.locked)?$/",
           "group": "2_worktree@1"
         },
         {

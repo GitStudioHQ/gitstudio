@@ -694,6 +694,12 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
         "gitstudio.worktree.remove",
         (node: WorktreeNode) => removeWorktree(repos, node, refreshWorktrees),
       ),
+      // A worktree whose folder is gone: the same door, which reads that the
+      // folder is missing and asks to forget git's record of it.
+      vscode.commands.registerCommand(
+        "gitstudio.worktree.forget",
+        (node: WorktreeNode) => removeWorktree(repos, node, refreshWorktrees),
+      ),
       vscode.commands.registerCommand(
         "gitstudio.worktree.lock",
         (node: WorktreeNode) =>

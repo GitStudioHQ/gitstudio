@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/host-bridge/git";
 import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import type { RepoManager } from "../git/repoManager";
+import { codeSpan } from "../ui/markdownCode";
 
 // The tree has two levels: fixed category roots (Local / Remotes / Tags) and
 // the refs grouped under them. Stashes get their own dedicated view
@@ -118,7 +119,7 @@ function buildRefTooltip(ref: GitRef): vscode.MarkdownString {
   md.appendMarkdown(`\n\n`);
   md.appendMarkdown(`$(git-commit) \`${ref.sha.slice(0, 7)}\``);
   if (ref.upstream) {
-    md.appendMarkdown(`\n\n$(cloud) tracking \`${escapeMarkdown(ref.upstream)}\``);
+    md.appendMarkdown(`\n\n$(cloud) tracking ${codeSpan(ref.upstream)}`);
   }
   return md;
 }

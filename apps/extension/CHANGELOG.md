@@ -64,6 +64,41 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - Blame in a repository nested inside another's folder (a vendored checkout,
   a submodule) no longer runs in the outer repository when the outer one is
   the repository on screen.
+- **Removing a locked worktree works.** Remove asked twice and then failed
+  with git's "cannot remove a locked working tree". It now asks once, quoting
+  the lock's reason, and **Unlock and Remove** removes it.
+- **Removing a worktree says what goes with it.** The question names the
+  worktree by its branch, lists the uncommitted files that are deleted (five,
+  then how many more) and says the branch and its commits stay; the button
+  reads **Discard Changes and Remove** when there are any. A worktree that was
+  clean when you were asked but changed before you answered — an agent still
+  at work in it — is asked about again instead of deleted, and keeps its lock.
+- **The worktree this window has open is never removed from under it.** Remove
+  deleted the window's own folder; it is no longer offered there (a worktree
+  open as another folder of the workspace counts too), and says why if
+  reached. The main worktree, which git never removes, now reads *main
+  worktree* and offers no Remove.
+- **A worktree whose folder is gone** reads *folder missing* — locked ones too,
+  which git never calls prunable — opens nothing when clicked, and offers
+  **Forget Worktree**, which clears git's record of it (past its lock, when it
+  has one). It used to open a window onto the missing folder.
+- **New Worktree no longer leaves a stray branch behind when it fails**, so
+  trying again with the same name works. Folders are named for the whole
+  branch (`feature/login` → `feature-login`), so `bugfix/login` beside it no
+  longer lands in the same folder; a folder that already exists is refused
+  before anything runs; a branch name that's taken is asked for again; and a
+  branch another worktree has checked out goes straight to a new branch from
+  it, saying where it's checked out. The folder picker names the folder it
+  creates.
+- The *current* marker in Worktrees survives opening the repository through a
+  symlink, and clicking the current worktree no longer offers to reopen it.
+- **Lock Worktree…** asks why (optional); the reason shows in the row's tooltip
+  and in the Remove question.
+- **Prune Worktrees** says which worktrees it pruned, or that there was nothing
+  to prune — it reported success either way.
+- Worktree and branch tooltips show paths and upstream names without stray
+  backslashes, and a detached worktree's row uses the commit icon its tooltip
+  does.
 
 ## [1.14.0] - 2026-09-25
 
