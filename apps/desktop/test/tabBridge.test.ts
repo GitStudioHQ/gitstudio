@@ -189,6 +189,24 @@ test("row 2/10: a tab knows what is running in it until git answers — held or 
   b.endSession(D.id);
 });
 
+test("the operations the other #32 work added are operations too: a tab spins, and a close asks", async () => {
+  // Its own session id: an ended session stays ended for the whole file.
+  const F = { id: 199, root: "/repos/f" };
+  b.setActiveSession(F);
+  for (const [channel, words] of [
+    ["commits:rewrite", "a rewrite of several commits"],
+    ["worktree:remove", "a worktree removal"],
+  ] as const) {
+    void b.host.invoke(channel as never, {} as never);
+    const i = calls.length - 1;
+    assert.equal(b.runningOperation(F.id), words, channel);
+    calls[i].resolve({ ok: true });
+    await flush();
+    assert.equal(b.runningOperation(F.id), undefined, `${channel}: done when git answers`);
+  }
+  b.endSession(F.id);
+});
+
 test("Stash & Retry sends its second call for the SAME tab", async () => {
   const E = { id: 105, root: "/repos/e" };
   b.setActiveSession(E);

@@ -170,12 +170,15 @@ const OPERATIONS: Readonly<Record<string, string>> = {
   commit: "a commit",
   "commit:action": "a git operation",
   "commit:drop": "a commit drop",
+  // Drop N / Squash N (#32): the same rebase as a drop, of several commits.
+  "commits:rewrite": "a rewrite of several commits",
   "pr:checkout": "a pull request checkout",
   "stash:apply": "a stash apply",
   "stash:pop": "a stash pop",
   "stash:save": "a stash",
   "tag:push": "a tag push",
   "worktree:add": "a worktree add",
+  "worktree:remove": "a worktree removal",
   "ai:agentRun": "an Assistant run",
 };
 
