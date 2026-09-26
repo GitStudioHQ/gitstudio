@@ -1,0 +1,89 @@
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_3ba9c458fbb643 78-102,122-130
+apps/extension/test/rebaseTodoContinuing.test.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 1-142
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 305-310,315,336-340,354-357,364,515,518-540,571-573,575-585,635-636,638-642,648-650,716-726,729-749,757-759,763-767,777,791,797-798,810-819,821,825-826,828-885,889-905,909-929,932-938,942-1011,1034-1045,1053,1060-1062,1065-1069,1091,1103-1122,1132-1133
+packages/webview-ui/src/rebase/plan-global.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 1-14
+apps/extension/test/rebaseStopBanner.test.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 93-95,101
+packages/webview-ui/test/rebaseSelection.test.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 1-430
+apps/desktop/src/renderer/refMenuItems.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 10,51-53
+apps/extension/test/rebasePanelPage.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 1-356
+packages/engine/src/rebase/planEdit.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 1-411
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_3ba9c458fbb643 700-707,828-832,840-855,978-991,1996-1998,2000-2007,3762-3774,3836-3842,3849-3855
+packages/engine/test/rebasePlanEdit.test.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 1-261
+apps/extension/src/rebase/rebaseTodoEditor.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 9-10,88,207-221
+  s_26f5e669d3043c::t_2e49c6d078c139 222
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_3ba9c458fbb643 4939-4956,9219-9276
+  s_26f5e669d3043c::t_32ac4ac7f66266 9277
+apps/extension/test/rebasePanelSelection.test.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 1-449
+packages/webview-ui/src/rebase/main.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 50
+apps/desktop/src/renderer/views/actions.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 14,1694-1696,1698
+apps/desktop/src/renderer/views/releaseCompose.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 19,37-38,40
+packages/host-bridge/src/rebaseProtocol.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 34-41
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 114,1915-1916,2605-2634,2668,2740,3752-3765,3797-3802,3831,4026,4605,5195,9663,10039-10042,10066-10070,10085-10094,10112-10113,10132-10157,10826-10833,10856-10865
+  s_26f5e669d3043c::t_9a752ffe07dc92 10866-10867
+apps/extension/test/rebasePanelGuard.test.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 5,19-22,56-57,62,87
+apps/desktop/src/renderer/branchRequests.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 37-54
+apps/extension/harness/rebase-panel/shots.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 1-55
+apps/desktop/test/remoteHead.test.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 1-34
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_3ba9c458fbb643 128-187,16738-17369
+apps/desktop/src/renderer/views/rebase.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 14-33,60-62,138-149,161-183,187-191,235-260,270,276,334,341-384,386,389-408,411-446,498-503,508,513,515,539,574,578-584,586-594,622-628,634-638,658-665,668,670-673,676-744,794,836,852-855,858-870
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_3ba9c458fbb643 90-103,172-191
+  s_26f5e669d3043c::t_52668ed9764831 196,203
+apps/extension/esbuild.js
+  s_26f5e669d3043c::t_3ba9c458fbb643 147-157,177
+packages/webview-ui/src/rebase/rebase-view.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 13-22,27-48,54-55,79,83-85,88-145,147-155,273-374,378-379,382-384,391-393,615-629,648-670,674-682,685,691-698,704-705,713-725,729-730,732-733,740-743,758-759,766-771,781-784,790-793,807-835,837-843,846-872,876-938,940-953,955-956,958-973,978-983,986-988,993,995-1000,1009,1015,1021-1023,1026-1027,1031,1034
+apps/extension/harness/rebase-todo/shots.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 1-146
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_3ba9c458fbb643 139-164
+apps/desktop/harness/shot.sh
+  s_26f5e669d3043c::t_3ba9c458fbb643 9-15
+apps/desktop/test/refMenuItems.test.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 56-67
+packages/webview-ui/src/rebase/rebase.css
+  s_26f5e669d3043c::t_3ba9c458fbb643 39-42,44-45
+apps/desktop/src/renderer/ui.ts
+  s_26f5e669d3043c::t_3ba9c458fbb643 814-824,879-894,900,921,939-974,976-986,1003-1006,1020-1028,1035-1045,1049-1067,1069-1080,1100-1102,1109-1132,1134-1170,1172-1183,1185-1234,1254-1255,1317-1318,1339-1346
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ecadb987cacf19ce3c6b7c5f35b000b5553ddc3c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
