@@ -1,0 +1,31 @@
+packages/git-service/test/worktreeSafety.test.ts
+  s_26f5e669d3043c::t_49ebaf12a6f76c 166-195
+  s_26f5e669d3043c::t_d7f65ee366a1da 1-165
+  s_26f5e669d3043c::t_8be6d80602c5d2 196-206
+packages/git-service/src/WorktreeProvider.ts
+  s_26f5e669d3043c::t_f86a71805ba1c6 252-284
+  s_26f5e669d3043c::t_a63b598241f6a4 303,309
+  s_26f5e669d3043c::t_7c56ebfac04689 1,16-18,39-40,42-45,56-77,135-139,141-143,147-179,198-250,285-286,292,295-298,323-329,333,335,394-398,413-469
+  s_26f5e669d3043c::t_59756805a083d6 48-55
+  s_26f5e669d3043c::t_cfbf1f2ed74a67 119-121,124,128-131,133
+  s_26f5e669d3043c::t_9ffe1dee7e8ea5 251
+  s_26f5e669d3043c::t_90f475e82e94b6 103
+packages/git-service/src/index.ts
+  s_26f5e669d3043c::t_5325105659ef6f 65-70,75-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ca910f62a474281b02f98ad7169f8bfa4c18783e",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
