@@ -1,0 +1,23 @@
+apps/desktop/src/main/menuDelivery.ts
+  s_26f5e669d3043c::t_048a827e4cb5b4 1-37
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_19c1cae2e6f0fa 26,132-150,301,307,336,343,360,374,395,405,423,428,433
+apps/desktop/test/menuDelivery.test.ts
+  s_26f5e669d3043c::t_a994f9e245ab69 1-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8f9e5dd53d5e9e65fa740f44442a6c92cb0bbc78",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
