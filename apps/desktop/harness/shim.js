@@ -1495,6 +1495,8 @@
       : done;
   }
 
+  /** The Assistant's saved agent choices (ai:settings / ai:setAgentConfig). */
+  const agentConfig = { permission: "write", thinking: "medium", modelId: "claude-opus-5" };
   const dynamic = {
     // A READ that the fallback used to answer with a mutation shape. Present so
     // the AI-gating path is exercised instead of silently failing open.
@@ -1677,9 +1679,15 @@
             enabled: true,
             connections: [{ id: "c1", label: "Claude (BYOK)", usable: true }],
             defaultId: "c1",
-            agent: { permission: "write", thinking: "medium", modelId: "claude-opus-5" },
+            agent: { ...agentConfig },
           }
         : { enabled: false, connections: [], defaultId: null },
+    // main's AiBridge.setAgentConfig: the agent's saved choices, merged, and
+    // the settings view they make.
+    "ai:setAgentConfig": (patch) => {
+      Object.assign(agentConfig, patch || {});
+      return dynamic["ai:settings"]();
+    },
     "ai:models": () =>
       params.get("ai")
         ? [

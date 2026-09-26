@@ -795,6 +795,7 @@ const CASES = [
   ["a-home-still-loading-when-you-switch-away-paints-when-you-are-back", "dashboard", { extra: "tabs=2&slow=*@gitstudio:800" }],
   ["each-tab-keeps-its-own-search", "explore", { extra: "tabs=2" }],
   ["a-board-still-loading-when-you-switch-away-paints-when-you-are-back", "projects", { extra: "tabs=2&slow=project:board@gitstudio:1500" }],
+  ["an-assistant-run-uses-its-own-tabs-permission", "assistant~click:.topbar-assistant", { extra: "tabs=2&ai=1" }],
 ];
 
 function run(scene, checkId, opts = {}) {

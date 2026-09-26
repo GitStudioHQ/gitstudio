@@ -16918,5 +16918,49 @@
       c.ok(!!$(".view-host .gh-board"), "A's board painted");
       c.eq($$(".view-host .gh-board-detail .loading-state").length, 0, "…and is not still saying it is loading");
     },
+
+    /** An Assistant run takes the permission ITS page's chip shows (issue
+     *  #32). Both tabs build an Assistant on Read-only; A switches to "Allow
+     *  everything"; B's chip still says Read-only — and B's run used to go out
+     *  with A's permission, because it was module state. */
+    "an-assistant-run-uses-its-own-tabs-permission": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const chipText = () => $$(".view-host .assistant-chip-ctl").map((b) => text(b)).join(" | ");
+      const access = () => $$(".view-host .assistant-chip-ctl").find((b) => /Read-only|Allow/.test(text(b)));
+      c.ok(!!access() && !/Allow everything/.test(text(access())), `precondition: A starts short of Allow everything (${chipText()})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      $(".topbar-assistant")?.click();
+      await settle(1500);
+      const bWas = access() ? text(access()) : "";
+      c.ok(!!bWas && !/Allow everything/.test(bWas), `precondition: B built its Assistant (${chipText()})`);
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      access()?.click();
+      await settle(400);
+      $$(".dropdown-item").find((i) => /Allow everything/.test(text(i)))?.click();
+      await settle(600);
+      c.ok(/Allow everything/.test(chipText()), `precondition: A now allows everything (${chipText()})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.eq(access() ? text(access()) : "", bWas, "B's chip still says what it said");
+      const sent = [];
+      const inv = window.gitstudio.invoke.bind(window.gitstudio);
+      window.gitstudio.invoke = (ch, p, sc) => {
+        if (ch === "ai:chatSend") {
+          sent.push(p);
+          return new Promise(() => {});
+        }
+        return inv(ch, p, sc);
+      };
+      const input = $(".view-host .assistant-input");
+      input.value = "what changed?";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      $(".view-host .assistant-send")?.click();
+      await settle(700);
+      c.eq(sent.length, 1, "precondition: B's turn went out");
+      c.eq(sent[0]?.allowDestructive, false, `B's run cannot destroy — its chip says ${bWas}`);
+    },
   };
 })();
