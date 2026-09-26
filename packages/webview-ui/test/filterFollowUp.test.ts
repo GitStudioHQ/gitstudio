@@ -234,6 +234,14 @@ test("the rail: a new filter's rows open at their top; a refresh keeps its place
 /** A plain click on a chip opens the chip's menu — in both lists. */
 const CHIP_CLICK = `
   const chip = (name) => $$('.chip[data-ref="' + name + '"]')[0];
+  // A paint builds every row anew (a scroll, a selection, a host message
+  // each make one), and a click can come before the browser's next frame:
+  // the chip is what it hits then too. The rail's rows were
+  // content-visibility: auto, whose contents Chrome leaves out of hit testing
+  // until a rendering update has found them on screen, so a click just after
+  // a paint landed on the bare row — on a loaded runner, whenever no frame
+  // came in time. Painted here, so the check does not depend on one coming.
+  el.renderRows();
   const c = chip("heads/release");
   expect(!!c, "the heads/release chip is painted");
   const b = c.getBoundingClientRect();

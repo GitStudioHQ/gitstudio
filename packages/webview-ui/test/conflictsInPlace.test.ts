@@ -299,11 +299,35 @@ test("a hold in progress survives another file being resolved; an operation verb
 
 test("a host that MOVES the dashboard (the desktop's Changes rebuild) gives back its scroll and its keyboard", { skip }, async () => {
   const v = await run(`
+    // The dashboard follows the keyboard and the list's scroll by their
+    // events (focusin, scroll), and this check stands in for a reader's with
+    // script. It used to wait a fixed 50 ms of virtual time for both, which a
+    // loaded runner outran. Each is now had for certain before the move.
+    //
+    // The keyboard onto a button, landing where the dashboard hears it: in a
+    // focused page. Headless Chrome hands a page its focus a task after it
+    // loads, and a focus() before that moves document.activeElement and sends
+    // no focusin — not then, nor when the page's focus arrives. So if the
+    // dashboard did not hear it, the page's focus is waited for (bounded)
+    // and the keyboard landed again.
+    const b = key("merge:stress/config.json");
+    let heard = false;
+    dashEl().addEventListener("focusin", (e) => { heard = heard || e.target === b; });
+    b.focus();
+    if (!heard) {
+      if (!document.hasFocus()) await new Promise((r) => { window.addEventListener("focus", r, { once: true }); setTimeout(r, 2000); });
+      b.blur();
+      b.focus();
+    }
+    expect(heard && document.activeElement === b, "precondition: the keyboard is on the button, and the dashboard heard it land (page focused: " + document.hasFocus() + ")");
     list().scrollTop = 60;
     const y0 = list().scrollTop;
-    await new Promise((r) => setTimeout(r, 50));             // the scroll is noted (its event)
-    const b = key("merge:stress/config.json");
-    b.focus();
+    expect(y0 > 0, "precondition: the list scrolls (" + list().scrollHeight + " in " + list().clientHeight + ")");
+    // A reader's scroll comes with its event, at the browser's next rendering
+    // update; this one is set by hand, and under virtual time that update can
+    // come after the move — which then gave back 0. Sent now, as the first
+    // check here does. Nothing from here to the move lets a frame in.
+    list().dispatchEvent(new Event("scroll"));
     const dash = dashEl();
     // What the desktop does after a file action: a new view, the old pane moved into it.
     const again = document.createElement("div");

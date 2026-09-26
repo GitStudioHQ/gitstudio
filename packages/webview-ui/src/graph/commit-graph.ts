@@ -2052,6 +2052,22 @@ export class CommitGraph extends LitElement {
     s.dispatchEvent(new Event("scroll"));
   }
 
+  /**
+   * Scroll to a row, and tell the virtualizer at once — the same reason as
+   * scrollToTop: after a bare scrollToIndex the paint that follows drew the
+   * OLD window at the new offset, and a jump far down the list (a reveal,
+   * End) left the row it jumped to out of the DOM until the browser's scroll
+   * event came, a frame later or, occluded, not at all. The rail's twin.
+   */
+  private scrollToRow(index: number, align: "auto" | "center"): void {
+    const v = this.virtualizer;
+    if (!v) return;
+    const s = this.boundScroller;
+    const from = s?.scrollTop;
+    v.scrollToIndex(index, { align });
+    if (s && s.scrollTop !== from) s.dispatchEvent(new Event("scroll"));
+  }
+
   private teardownVirtualizer(): void {
     this.cleanupVirtualizer?.();
     this.cleanupVirtualizer = undefined;
@@ -3654,9 +3670,7 @@ export class CommitGraph extends LitElement {
     this.onAction({ type: "select", sha });
     if (scrollIntoView) {
       const idx = this.shaToIndex.get(sha);
-      if (idx !== undefined && this.virtualizer) {
-        this.virtualizer.scrollToIndex(idx, { align: "auto" });
-      }
+      if (idx !== undefined) this.scrollToRow(idx, "auto");
     }
     if (!changed) {
       this.renderRows();
@@ -3677,7 +3691,7 @@ export class CommitGraph extends LitElement {
       return false;
     }
     this.selectedSha = sha;
-    this.virtualizer?.scrollToIndex(idx, { align: "center" });
+    this.scrollToRow(idx, "center");
     this.renderRows();
     return true;
   }

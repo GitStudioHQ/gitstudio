@@ -35,8 +35,9 @@ const MOUNT = `
   // A frame if one comes, a timer if none does. Under --virtual-time-budget
   // headless Chrome serviced no animation frame on the Windows runner (the
   // page sat at PENDING until the budget ran out), while on macOS a bare timer
-  // resolved BEFORE the rendering step the rail's landing rides on. Racing the
-  // two is right on both: the frame wins where frames exist.
+  // resolved BEFORE the next rendering step. Racing the two is right on both:
+  // the frame wins where frames exist. It paces a check; what a check asserts
+  // must not need the frame to have come (see the first case).
   const raf = () => new Promise((r) => {
     let done = false;
     const fin = () => { if (!done) { done = true; setTimeout(r, 0); } };
@@ -77,30 +78,34 @@ const CSS = `#root{height:600px;display:flex;flex-direction:column} gitstudio-co
 
 const run = (script: string) => runInChrome(CHROME!, ENTRY, MOUNT + script, { css: CSS });
 
-// One case below needs the SCROLL to complete, not just the reveal: landing a
-// commit 300 rows down moves the virtualizer's window, and the window is
-// recomputed from a scroll event (observeElementOffset). On the Windows CI
-// runner, headless Chrome under a virtual-time budget never delivers that
-// event, so the row lands in state but never in the DOM — the other six cases
-// here, which land inside the first window, pass there. The behaviour itself
-// is covered on macOS and Linux, where this case runs like any other.
-const SCROLL_LANDS = process.platform !== "win32";
+// Landing a commit 300 rows down moves the virtualizer's window, and the
+// virtualizer learns its offset from scroll events, which the browser sends at
+// its next rendering update. The paint used to wait for that event: the row
+// landed in state at once and in the DOM a frame later — never on the Windows
+// runner (no frame under the virtual-time budget; the case was skipped there),
+// and not before a loaded macOS runner's budget ran out. The rail tells the
+// virtualizer itself now (scrollToRow), so the landing is one step — state,
+// scroll and paint — and this case asserts all three with no frame waited for.
 
-test("a commit further back than the loaded rows is paged toward, and lands when its page does", { skip: (!CHROME && "no Chrome on this machine") || (!SCROLL_LANDS && "headless Chrome delivers no scroll event on the Windows runner") }, async () => {
+test("a commit further back than the loaded rows is paged toward, and lands when its page does", { skip: !CHROME && "no Chrome on this machine" }, async () => {
   const v = await run(`
     const before = loadMores();
     rail.reveal(sha(300));
     await rail.updateComplete;
     expect(loadMores() === before + 1, "reveal of an unloaded sha asks the host for the next page (" + loadMores() + " loadMore actions, was " + before + ")");
-    await landPage2(false);
-    // State first — that is the behaviour — then the paint, which needs the
-    // scroll event the window recompute rides on.
-    const landed = await until(() => rail.selectedSha === sha(300));
-    expect(landed, "the revealed commit is the selection (" + rail.selectedSha + ")");
+    // The host answers with the page; nothing between here and the checks
+    // lets a frame (or its scroll event) in.
+    rail.rows = rail.rows.concat(page2);
+    rail.hasMore = false;
+    await rail.updateComplete;
+    expect(rail.selectedSha === sha(300), "the revealed commit is the selection (" + rail.selectedSha + ")");
     expect(scroller.scrollTop > 200 * ROW_HEIGHT, "the list scrolled down to it (scrollTop " + scroller.scrollTop + ")");
-    const selected = await until(() => $(".row.selected"));
+    const selected = $(".row.selected");
     expect(!!selected, "and its row is painted");
     expect(selected && selected.dataset.sha === sha(300), "the selected row is the revealed commit (" + (selected && selected.dataset.sha) + ")");
+    const rb = selected && selected.getBoundingClientRect();
+    const sb = scroller.getBoundingClientRect();
+    expect(!!rb && rb.top >= sb.top && rb.bottom <= sb.bottom, "where the list scrolled to: inside its view (" + (rb && Math.round(rb.top)) + " in " + Math.round(sb.top) + "-" + Math.round(sb.bottom) + ")");
     notes.scrollTop = scroller.scrollTop;
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
@@ -186,10 +191,8 @@ test("two reveals racing one page request it once, and the later one wins", { sk
     await rail.updateComplete;
     expect(loadMores() === 1, "one page requested for two reveals (" + loadMores() + ")");
     await landPage2(false);
-    // The subject here is WHICH reveal wins, not whether its row had painted
-    // by the time we looked: landing a row 320 deep also moves the window, and
-    // that repaint rides on a scroll event the runners deliver at their own
-    // pace. Assert the selection and the scroll — the paint is test 6's job.
+    // The subject here is WHICH reveal wins: assert the selection and the
+    // scroll — the paint at the landing is the first case's job.
     const landed = await until(() => rail.selectedSha === sha(320));
     expect(landed, "the commit revealed LAST is the one selected (" + rail.selectedSha + ")");
     expect(scroller.scrollTop > 200 * ROW_HEIGHT, "and the list scrolled toward it (" + scroller.scrollTop + ")");
@@ -210,5 +213,52 @@ test("paging toward a reveal gives up after its bound, even while the host says 
     expect(loadMores() === 25, "stopped asking at the bound (" + loadMores() + " requests)");
     expect(sizerHeight() === 150 * ROW_HEIGHT, "the list kept painting throughout (sizer " + sizerHeight() + ")");
   `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+// The same landing reached the other ways: the rail's keyboard (scrollToRow's
+// other callers are it and search) and the editor-area graph's reveal, its
+// twin. A jump far down paints the row it lands on in the same step — no
+// frame waited for, as in the first case.
+test("End in the rail paints the row it jumps to at once", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const v = await run(`
+    scroller.focus();
+    // On the element that has the keyboard, the way a key press lands.
+    scroller.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, composed: true, cancelable: true }));
+    expect(scroller.scrollTop > 100 * ROW_HEIGHT, "the list scrolled to the end (scrollTop " + scroller.scrollTop + ")");
+    const end = $(".row.selected");
+    expect(!!end && end.dataset.sha === sha(149), "and the last row is painted, selected (" + (end && end.dataset.sha) + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("the editor-area graph's reveal paints the row it lands on at once", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const v = await runInChrome(
+    CHROME!,
+    fileURLToPath(new URL("../src/graph/commit-graph.ts", import.meta.url)),
+    `
+    const sha = (i) => i.toString(16).padStart(4, "0").repeat(10);
+    const row = (i) => ({
+      sha: sha(i), shortSha: sha(i).slice(0, 7), column: 0, color: 0, isMerge: false,
+      segments: [{ fromColumn: 0, toColumn: 0, color: 0 }],
+      subject: "commit " + i, author: "Ada Lovelace", authorEmail: "ada@example.com",
+      authorDate: 1700000000 - i * 3600, refs: [],
+    });
+    const graph = document.createElement("gitstudio-graph");
+    graph.onAction = () => {};
+    graph.status = "loading";
+    document.getElementById("root").replaceChildren(graph);
+    await graph.updateComplete;
+    graph.rows = Array.from({ length: 400 }, (_, i) => row(i)); graph.totalColumns = 1; graph.hasMore = false; graph.status = "ready";
+    await graph.updateComplete;
+    const scroller = graph.shadowRoot.querySelector(".scroller");
+    expect(!!scroller && scroller.clientHeight > 100, "the list has a real height to scroll in");
+    expect(graph.reveal(sha(300)), "the commit is loaded, so reveal finds it");
+    expect(scroller.scrollTop > 200 * 34, "the list scrolled down to it (scrollTop " + scroller.scrollTop + ")");
+    const selected = graph.shadowRoot.querySelector(".row.selected");
+    expect(!!selected && selected.dataset.sha === sha(300), "and its row is painted, selected (" + (selected && selected.dataset.sha) + ")");
+  `,
+    { css: `#root{height:600px;display:flex;flex-direction:column} gitstudio-graph{flex:1;min-height:0}` },
+  );
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });

@@ -340,7 +340,14 @@ export class CommitRail extends LitElement {
         user-select: none;
         -webkit-user-select: none;
         --gs-graph-node-hole: var(--gs-bg);
-        content-visibility: auto;
+        /* No content-visibility: auto here. renderRows() builds every row
+           anew, and Chrome skips a fresh auto row's CONTENTS in hit testing
+           until a rendering update has found it on screen: until the next
+           frame, a click on a ref chip or a Copy/Open button landed on the
+           bare .row and selected it instead (the chip-click check failed
+           that way on a loaded CI runner). The virtualizer already keeps
+           the rows to the window and its overscan; there was nothing left
+           for it to skip. */
       }
       .row:hover {
         background: var(--gs-hover);
@@ -1480,7 +1487,7 @@ export class CommitRail extends LitElement {
     const move = (to: number): void => {
       const i = Math.max(0, Math.min(this.rows.length - 1, to));
       this.selectedSha = this.rows[i].sha;
-      this.virtualizer?.scrollToIndex(i, { align: "auto" });
+      this.scrollToRow(i, "auto");
       this.renderRows();
     };
     switch (e.key) {
@@ -1594,8 +1601,26 @@ export class CommitRail extends LitElement {
       this.flashSha = "";
       this.renderRows();
     }, 1300);
-    this.virtualizer.scrollToIndex(idx, { align: "center" });
+    this.scrollToRow(idx, "center");
     this.renderRows();
+  }
+
+  /**
+   * Scroll to a row, and tell the virtualizer at once. It learns its offset
+   * from scroll events, which the browser sends at its next rendering update
+   * (and not at all to an occluded webview, or to a headless page that gets
+   * no frame), so the paint after a bare scrollToIndex drew the OLD window
+   * at the new offset: a jump far down the list — a reveal, End, a search
+   * match — left the row it jumped to out of the DOM until that event came.
+   * scrollToTop tells it the same way.
+   */
+  private scrollToRow(index: number, align: "auto" | "center"): void {
+    const v = this.virtualizer;
+    if (!v) return;
+    const s = this.boundScroller;
+    const from = s?.scrollTop;
+    v.scrollToIndex(index, { align });
+    if (s && s.scrollTop !== from) s.dispatchEvent(new Event("scroll"));
   }
 
   /** Open the host-built commit actions menu as a popover at (x, y). */
@@ -1752,7 +1777,7 @@ export class CommitRail extends LitElement {
       }
     }
     if (jump && this.searchMatches.length) {
-      this.virtualizer?.scrollToIndex(this.searchMatches[0], { align: "auto" });
+      this.scrollToRow(this.searchMatches[0], "auto");
     }
   }
 
@@ -1761,9 +1786,7 @@ export class CommitRail extends LitElement {
     this.matchIdx =
       (this.matchIdx + delta + this.searchMatches.length) %
       this.searchMatches.length;
-    this.virtualizer?.scrollToIndex(this.searchMatches[this.matchIdx], {
-      align: "center",
-    });
+    this.scrollToRow(this.searchMatches[this.matchIdx], "center");
     this.requestUpdate();
     this.renderRows();
   }
