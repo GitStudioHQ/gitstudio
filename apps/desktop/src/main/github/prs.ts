@@ -74,6 +74,30 @@ async function prRefs(
 }
 
 /**
+ * The merge base of `base` and `head` — the commit GitHub counts a PR's patch
+ * from — or undefined when GitHub can't say (the caller falls back to the
+ * base tip). `per_page=1`: the compare answer lists commits too.
+ */
+async function mergeBaseOf(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+): Promise<string | undefined> {
+  try {
+    const raw = await client.request<{ merge_base_commit?: { sha?: string } | null }>(
+      "GET",
+      `/repos/${enc(owner)}/${enc(repo)}/compare/${enc(base)}...${enc(head)}?per_page=1`,
+    );
+    const sha = raw?.merge_base_commit?.sha;
+    return typeof sha === "string" && sha.length > 0 ? sha : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The text of a file at a given ref via the Contents API, or "" when the path
  * doesn't exist on that side (404 = added/removed) or can't be read as text.
  *
@@ -327,6 +351,13 @@ export async function prReviewers(
  * Contents API. A side that 404s (added on head / removed on base) comes back as
  * "" so the diff still renders one-sided. Throws on a real API failure so the
  * renderer can show an errorState with Retry.
+ *
+ * The base side is the MERGE BASE of the PR's base and head, not `base.sha`.
+ * GitHub's patch for a PR is the three-dot diff: its hunks, and a LEFT review
+ * comment's line, count lines in the merge base. base.sha is the base
+ * branch's tip, which moves on as others merge — read there, the left pane
+ * showed the base branch's own new work as if the PR removed it, and a LEFT
+ * comment was sent with a line number GitHub reads against other content.
  */
 export async function fileDiff(
   client: GitHubClient,
@@ -334,7 +365,8 @@ export async function fileDiff(
   repo: string,
   req: { number: number; path: string },
 ): Promise<FileDiff | undefined> {
-  const { baseSha, headSha } = await prRefs(client, owner, repo, req.number);
+  const { baseSha: tip, headSha } = await prRefs(client, owner, repo, req.number);
+  const baseSha = (await mergeBaseOf(client, owner, repo, tip, headSha)) ?? tip;
   const [left, right] = await Promise.all([
     fileTextAt(client, owner, repo, req.path, baseSha),
     fileTextAt(client, owner, repo, req.path, headSha),

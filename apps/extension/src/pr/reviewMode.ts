@@ -1,41 +1,75 @@
 import * as vscode from "vscode";
-import { promptInput, promptPick } from "../ui/dialogs";
-import { GitHubApi, GitHubApiError, type PullRequest, type PrFile, type ReviewComment, type ReviewEvent } from "./githubApi";
+import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
+import { GitHubApi, GitHubApiError, type PullRequest, type PrFile, type ReviewEvent } from "./githubApi";
 import type { GitHubAuth } from "./githubAuth";
 import type { GitHubRepoContext } from "./repoContext";
-import { openPrFileDiff } from "./reviewDiff";
-import { PR_SCHEME } from "./prContentProvider";
+import { diffBase, openPrFileDiff } from "./reviewDiff";
+import { fromPrContentUri, PR_SCHEME } from "./prContentProvider";
+import {
+  commentsOutsideHunks,
+  hunkSpans,
+  prKey,
+  reviewPayload,
+  type QueuedComment,
+  type ReviewSide,
+} from "./prModel";
 
 // Review mode (the VS Code Comments API). One CommentController for the whole
 // extension drives inline commenting on a PR's changed files. Because the
 // Comments API gives us NO way to enumerate the threads it owns, we keep a
-// SELF-MANAGED registry of every CommentThread we create, keyed by
-// `${path}:${line}` — that registry is the single source of truth for the
-// pending draft review. On submit we collect each thread's pending comments
+// SELF-MANAGED registry of every CommentThread we create — that registry is
+// the pending review. On submit we collect each thread's pending comments
 // into the `comments[]` array of one `POST .../reviews` call, then dispose every
 // thread and clear the registry.
 //
 // A "pending" comment is a draft: the user authors it locally, it never hits
-// GitHub until they pick Comment / Approve / Request changes. We mark such
-// comments with a distinct context value so the thread's "Add to review" action
-// can promote a freshly-typed input into the registry.
+// GitHub until they pick Comment / Approve / Request changes.
+//
+// WHERE A COMMENT CAN GO. GitHub takes a review comment only on a line inside
+// a diff hunk, and one comment anywhere else fails the WHOLE review. So the
+// commentable lines are each file's hunks (from its patch): the head pane's
+// for the code as proposed (RIGHT), the base pane's for the lines being
+// removed (LEFT) — the only side a deleted file has.
+//
+// THE QUEUE IS ONE PR's, keyed owner/repo#n — a number alone is not a PR.
+// Starting a review of another PR, or cancelling, asks before a non-empty
+// queue is thrown away, and nothing is cleared before the new PR has loaded.
 
-/** A pending review comment plus the thread it lives on. */
+/** A pending review thread: where on the diff it sits. */
 interface PendingThread {
-  thread: vscode.CommentThread;
   path: string;
-  /** 1-based line on the RIGHT (head) side. */
+  side: ReviewSide;
+  /** 1-based last line. */
   line: number;
+  /** 1-based first line of a multi-line comment. */
+  startLine?: number;
 }
 
-/** Our Comment implementation (the API only specifies the interface). */
+const PENDING = "gitstudio.prReviewComment";
+const POSTED = "gitstudio.prPostedComment";
+
+/**
+ * Our Comment implementation (the API only specifies the interface). It keeps
+ * its `parent` thread: VS Code hands a comment/title action the COMMENT, and
+ * without the thread it lives on, Delete had nothing to delete.
+ */
 class ReviewComment_ implements vscode.Comment {
-  contextValue = "gitstudio.prReviewComment";
   constructor(
     public body: string | vscode.MarkdownString,
     public mode: vscode.CommentMode,
     public author: vscode.CommentAuthorInformation,
+    public parent: vscode.CommentThread,
+    public contextValue: string = PENDING,
   ) {}
+}
+
+interface ActiveReview {
+  key: string;
+  pr: PullRequest;
+  ctx: GitHubRepoContext;
+  files: PrFile[];
+  /** The diffs' left side: the merge base GitHub counts the patch from (reviewDiff.ts). */
+  baseSha: string;
 }
 
 export class ReviewController implements vscode.Disposable {
@@ -43,12 +77,10 @@ export class ReviewController implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
 
   /** The PR currently under review, if any. */
-  private active:
-    | { pr: PullRequest; ctx: GitHubRepoContext; files: PrFile[] }
-    | undefined;
+  private active: ActiveReview | undefined;
 
-  /** Self-managed thread registry, keyed by `${path}:${line}`. */
-  private readonly threads = new Map<string, PendingThread>();
+  /** Self-managed pending-thread registry for the active review. */
+  private readonly threads = new Map<vscode.CommentThread, PendingThread>();
 
   private login: string | undefined;
 
@@ -60,30 +92,45 @@ export class ReviewController implements vscode.Disposable {
       "gitstudio.prReview",
       "GitStudio PR Review",
     );
-    // Allow commenting on any line of a head-side PR file once review is active.
     this.controller.commentingRangeProvider = {
       provideCommentingRanges: (document) => this.commentingRanges(document),
     };
     this.disposables.push(this.controller);
   }
 
+  /** Which PR file, and which side of it, a `gitstudio-pr` document is. */
+  private locate(uri: vscode.Uri): { file: PrFile; side: ReviewSide } | undefined {
+    const a = this.active;
+    if (!a || uri.scheme !== PR_SCHEME) {
+      return undefined;
+    }
+    const { owner, repo, sha, path } = fromPrContentUri(uri);
+    if (owner !== a.ctx.owner || repo !== a.ctx.repo) {
+      return undefined;
+    }
+    if (sha === a.pr.head.sha) {
+      const file = a.files.find((f) => f.filename === path);
+      return file ? { file, side: "RIGHT" } : undefined;
+    }
+    if (sha === a.baseSha) {
+      const file = a.files.find((f) => (f.previousFilename ?? f.filename) === path);
+      return file ? { file, side: "LEFT" } : undefined;
+    }
+    return undefined;
+  }
+
   private commentingRanges(
     document: vscode.TextDocument,
   ): vscode.Range[] | undefined {
-    if (!this.active || document.uri.scheme !== PR_SCHEME) {
+    const at = this.locate(document.uri);
+    if (!at) {
       return undefined;
     }
-    // Only the head-side blob of a file in this PR is commentable.
-    const path = headPathOf(document.uri, this.active.pr.head.sha);
-    if (!path) {
-      return undefined;
-    }
-    const isChanged = this.active.files.some((f) => f.filename === path);
-    if (!isChanged) {
-      return undefined;
-    }
+    const spans = hunkSpans(at.file.patch);
     const last = Math.max(document.lineCount - 1, 0);
-    return [new vscode.Range(0, 0, last, 0)];
+    return (at.side === "LEFT" ? spans.left : spans.right).map(
+      ([a, b]) => new vscode.Range(Math.min(a - 1, last), 0, Math.min(b - 1, last), 0),
+    );
   }
 
   /** True when a review is in progress. */
@@ -96,35 +143,104 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /**
-   * Enter review mode for a PR: fetch its changed files, open them as diffs,
-   * enable commenting, and flip the `gitstudio.pr.reviewing` context key.
+   * Open a changed file of the PR under review AS THE REVIEW SEES IT — at its
+   * head, with its files. The PR's page keeps the head it loaded: after a push
+   * it opened the OLD commit, where the review (pinned to the new one) offers
+   * no line to comment on — and the review's toast sends you to that page for
+   * every file after the first. False when `owner/repo#n` isn't under review,
+   * or the review has no such file; the caller opens it its own way.
+   */
+  async openReviewedFile(owner: string, repo: string, n: number, path: string): Promise<boolean> {
+    const a = this.active;
+    if (!a || a.key !== prKey(owner, repo, n)) {
+      return false;
+    }
+    const file = a.files.find((f) => f.filename === path);
+    if (!file) {
+      return false;
+    }
+    await openPrFileDiff(a.ctx, a.pr, file, a.baseSha);
+    return true;
+  }
+
+  /**
+   * Enter review mode for a PR: fetch its current head and changed files, open
+   * the first as a diff, enable commenting, and flip the
+   * `gitstudio.pr.reviewing` context key. The same PR again just reopens it —
+   * its queue stays.
    */
   async startReview(
     ctx: GitHubRepoContext,
-    pr: PullRequest,
+    requested: PullRequest,
   ): Promise<void> {
-    // Re-entering: clear any prior review first.
-    this.clearThreads();
+    const key = prKey(ctx.owner, ctx.repo, requested.number);
+    if (this.active?.key === key) {
+      const first = this.active.files[0];
+      if (first) {
+        await openPrFileDiff(this.active.ctx, this.active.pr, first, this.active.baseSha).catch(() => undefined);
+      }
+      void vscode.window.showInformationMessage(
+        `Still reviewing PR #${requested.number} — ${this.pendingWords()} waiting to be submitted.`,
+      );
+      return;
+    }
 
+    // Load the new PR BEFORE anything of the current review is touched: a
+    // failed load must leave the queue exactly as it was.
+    //
+    // Its head is read again with its files. The PR handed in may be a list
+    // row loaded long ago; its head, pushed past since, would open diffs of
+    // the OLD code while the files' hunks — which decide where a comment can
+    // go — are the new code's, and pin the review to a commit that is no
+    // longer the PR's.
+    let pr: PullRequest;
     let files: PrFile[];
     try {
-      files = await this.api.getPullFiles(ctx.owner, ctx.repo, pr.number);
+      const [detail, listed] = await Promise.all([
+        this.api.getPull(ctx.owner, ctx.repo, requested.number),
+        this.api.getPullFiles(ctx.owner, ctx.repo, requested.number),
+      ]);
+      pr = detail;
+      files = listed.items;
     } catch (err) {
       void this.warn(err, "Couldn't load the PR's changed files.");
       return;
     }
-    this.login = (await this.api.currentLogin())?.login ?? this.auth.accountLabel();
-    this.active = { pr, ctx, files };
+    const baseSha = await diffBase(this.api, ctx, pr);
+
+    if (this.active && this.pendingCount() > 0) {
+      const old = this.active.pr.number;
+      const choice = await promptPick({
+        title: `Discard ${this.pendingWords()} on #${old}?`,
+        hint: `You're starting a review of #${pr.number}. The comments you queued on #${old} haven't been sent to GitHub.`,
+        choices: [
+          { id: "submit", label: `Submit the Review of #${old} First`, icon: "check", description: "Send them with a verdict, then start this review." },
+          { id: "discard", label: "Discard Them", icon: "trash", danger: true, description: "They are deleted. Nothing is sent." },
+          { id: "keep", label: `Keep Reviewing #${old}`, icon: "close", description: "Nothing changes." },
+        ],
+      });
+      if (choice === "submit") {
+        if (!(await this.submitReview())) {
+          return;
+        }
+      } else if (choice === "discard") {
+        this.clearThreads();
+      } else {
+        return;
+      }
+    } else {
+      this.clearThreads();
+    }
+
+    this.login ??= (await this.api.currentLogin())?.login ?? this.auth.accountLabel();
+    this.active = { key, pr, ctx, files, baseSha };
     await this.setReviewing(true);
 
-    // Open the first few files as diffs so the user lands in the code.
-    const toOpen = files.slice(0, 5);
-    for (const f of toOpen) {
-      try {
-        await openPrFileDiff(ctx, pr, f);
-      } catch {
-        // best-effort
-      }
+    // One file: every diff opens as a preview, so opening five replaced each
+    // with the next and left only the last.
+    const first = files[0];
+    if (first) {
+      await openPrFileDiff(ctx, pr, first, baseSha).catch(() => undefined);
     }
     if (files.length === 0) {
       void vscode.window.showInformationMessage(
@@ -132,9 +248,25 @@ export class ReviewController implements vscode.Disposable {
       );
     } else {
       void vscode.window.showInformationMessage(
-        `Reviewing PR #${pr.number}. Click the + in the gutter of a changed file to leave a comment, then Submit Review.`,
+        `Reviewing PR #${pr.number}. Click the + beside a changed line to leave a comment, then Submit Review. Open other files from the PR's page.`,
       );
     }
+  }
+
+  /** Where a new thread sits, or why it can't be commented on. */
+  private anchor(thread: vscode.CommentThread): PendingThread | undefined {
+    const at = this.locate(thread.uri);
+    if (!at || !thread.range) {
+      return undefined;
+    }
+    const start = thread.range.start.line + 1; // 1-based for GitHub.
+    const end = thread.range.end.line + 1;
+    return {
+      path: at.file.filename,
+      side: at.side,
+      line: end,
+      ...(end !== start ? { startLine: start } : {}),
+    };
   }
 
   /**
@@ -146,57 +278,123 @@ export class ReviewController implements vscode.Disposable {
       return;
     }
     const thread = reply.thread;
-    const path = headPathOf(thread.uri, this.active.pr.head.sha);
-    if (!path) {
+    const where = this.threads.get(thread) ?? this.anchor(thread);
+    if (!where) {
       return;
     }
-    const line = thread.range.start.line + 1; // 1-based for GitHub.
     const comment = new ReviewComment_(
       new vscode.MarkdownString(reply.text),
       vscode.CommentMode.Preview,
       { name: this.login ? `@${this.login}` : "You" },
+      thread,
     );
     thread.comments = [...thread.comments, comment];
     thread.label = "Pending review comment";
     thread.contextValue = "gitstudio.prPendingThread";
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
-
-    this.threads.set(`${path}:${line}`, { thread, path, line });
-  }
-
-  /** Drop a single pending thread (the "Delete comment" action). */
-  removeThread(thread: vscode.CommentThread): void {
-    for (const [key, pending] of this.threads) {
-      if (pending.thread === thread) {
-        this.threads.delete(key);
-        break;
-      }
-    }
-    thread.dispose();
-  }
-
-  /** Count of pending draft comments. */
-  pendingCount(): number {
-    return this.threads.size;
+    this.threads.set(thread, where);
   }
 
   /**
-   * Submit the pending review: a modal Comment / Approve / Request changes,
-   * optional summary, then one `POST .../reviews` with all collected comments.
+   * The Delete action. VS Code hands a comment/title action the COMMENT; a
+   * thread may come from elsewhere. One pending comment goes — the thread
+   * goes with its last one, and leaves the queue with its last PENDING one:
+   * a thread that also holds a comment already posted stayed queued, so
+   * Cancel asked to "Discard 1 pending comment" when none was, and discarding
+   * took the posted comment off the editor too.
    */
-  async submitReview(): Promise<void> {
+  deleteComment(arg: unknown): void {
+    if (arg instanceof ReviewComment_) {
+      const thread = arg.parent;
+      thread.comments = thread.comments.filter((c) => c !== arg);
+      if (thread.comments.length === 0) {
+        this.threads.delete(thread);
+        thread.dispose();
+      } else if (pendingIn(thread) === 0) {
+        this.unqueue(thread);
+      }
+      return;
+    }
+    const thread = arg as vscode.CommentThread | undefined;
+    if (thread && typeof thread.dispose === "function" && "comments" in thread) {
+      this.threads.delete(thread);
+      thread.dispose();
+    }
+  }
+
+  /** A thread left with only comments already on GitHub: out of the queue, as posted. */
+  private unqueue(thread: vscode.CommentThread): void {
+    this.threads.delete(thread);
+    thread.label = "Comment posted";
+    thread.contextValue = undefined;
+  }
+
+  /** Count of pending draft comments — comments, not the lines they are on. */
+  pendingCount(): number {
+    let n = 0;
+    for (const thread of this.threads.keys()) {
+      n += pendingIn(thread);
+    }
+    return n;
+  }
+
+  private pendingWords(): string {
+    const n = this.pendingCount();
+    return `${n} pending comment${n === 1 ? "" : "s"}`;
+  }
+
+  /** The queue, as GitHub will be sent it. */
+  private queued(): QueuedComment[] {
+    const out: QueuedComment[] = [];
+    for (const [thread, where] of this.threads) {
+      const body = thread.comments
+        .filter((c) => c.contextValue !== POSTED)
+        .map((c) => mdToString(c.body))
+        .filter((t) => t.length > 0)
+        .join("\n\n");
+      if (body.length > 0) {
+        out.push({ ...where, body });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Submit the pending review: Comment / Approve / Request changes, an
+   * optional summary, then one `POST .../reviews` with every queued comment,
+   * pinned to the head the diffs showed. True when it was sent.
+   */
+  async submitReview(): Promise<boolean> {
     if (!this.active) {
       void vscode.window.showInformationMessage(
         "Start a review first (open a PR and choose Start Review).",
       );
-      return;
+      return false;
     }
-    const { pr, ctx } = this.active;
+    const { pr, ctx, files } = this.active;
+    const comments = this.queued();
+
+    // Anything GitHub would refuse fails every comment with it: say which,
+    // before a verdict is even asked for.
+    const outside = commentsOutsideHunks(
+      comments,
+      (path) => files.find((f) => f.filename === path)?.patch,
+    );
+    if (outside.length > 0) {
+      void vscode.window.showWarningMessage(
+        `GitHub takes review comments only on lines that are part of the diff, and ${outside.join(", ")} ${
+          outside.length === 1 ? "isn't" : "aren't"
+        }. Delete ${outside.length === 1 ? "that comment" : "those comments"} or move ${
+          outside.length === 1 ? "it" : "them"
+        } onto a changed line, then submit again.`,
+      );
+      return false;
+    }
 
     // Submitting a review is a three-way verdict, not a search.
     const pick = await promptPick({
       title: `Submit review for PR #${pr.number}`,
-      hint: `${this.threads.size} inline comment${this.threads.size === 1 ? "" : "s"} will be submitted with it.`,
+      hint: `${comments.length} inline comment${comments.length === 1 ? "" : "s"} will be submitted with it.`,
       choices: [
         { id: "COMMENT", label: "Comment", icon: "comment", description: "General feedback, no explicit approval." },
         { id: "APPROVE", label: "Approve", icon: "check", description: "Approve these changes." },
@@ -204,7 +402,7 @@ export class ReviewController implements vscode.Disposable {
       ],
     });
     if (!pick) {
-      return;
+      return false;
     }
     const event = pick as ReviewEvent;
 
@@ -217,23 +415,7 @@ export class ReviewController implements vscode.Disposable {
     });
     // Escape (undefined) cancels; an empty string is a valid no-summary submit.
     if (summary === undefined) {
-      return;
-    }
-
-    const comments: ReviewComment[] = [];
-    for (const pending of this.threads.values()) {
-      const body = pending.thread.comments
-        .map((c) => mdToString(c.body))
-        .filter((t) => t.length > 0)
-        .join("\n\n");
-      if (body.length > 0) {
-        comments.push({
-          path: pending.path,
-          line: pending.line,
-          side: "RIGHT",
-          body,
-        });
-      }
+      return false;
     }
 
     // A COMMENT review with neither a body nor comments is rejected by GitHub.
@@ -241,73 +423,108 @@ export class ReviewController implements vscode.Disposable {
       void vscode.window.showWarningMessage(
         "Add a comment or a summary before submitting a Comment review.",
       );
-      return;
+      return false;
     }
 
     try {
-      await this.api.submitReview(ctx.owner, ctx.repo, pr.number, {
-        event,
-        body: summary,
-        comments,
-      });
+      await this.api.submitReview(
+        ctx.owner,
+        ctx.repo,
+        pr.number,
+        reviewPayload({ event, body: summary, commitId: pr.head.sha, comments }),
+      );
     } catch (err) {
+      // The queue stays: nothing was sent.
       void this.warn(err, "Couldn't submit the review.");
-      return;
+      return false;
     }
 
-    this.clearThreads();
+    this.clearThreads({ keepPosted: false });
     await this.setReviewing(false);
     this.active = undefined;
     void vscode.window.showInformationMessage(
       `Review submitted for PR #${pr.number} (${pick}).`,
     );
+    return true;
   }
 
   /**
-   * A one-off single comment, independent of a draft review: prompt for line +
-   * body and POST a one-comment COMMENT review. Used by gitstudio.pr.addSingleComment.
+   * A one-off comment, independent of the pending review: POST a one-comment
+   * COMMENT review at once. Used by gitstudio.pr.addSingleComment.
    */
   async addSingleComment(reply: vscode.CommentReply): Promise<void> {
     if (!this.active) {
       return;
     }
     const { pr, ctx } = this.active;
-    const path = headPathOf(reply.thread.uri, pr.head.sha);
-    if (!path) {
+    const where = this.threads.get(reply.thread) ?? this.anchor(reply.thread);
+    if (!where) {
       return;
     }
-    const line = reply.thread.range.start.line + 1;
     try {
-      await this.api.submitReview(ctx.owner, ctx.repo, pr.number, {
-        event: "COMMENT",
-        body: "",
-        comments: [{ path, line, side: "RIGHT", body: reply.text }],
-      });
+      await this.api.submitReview(
+        ctx.owner,
+        ctx.repo,
+        pr.number,
+        reviewPayload({
+          event: "COMMENT",
+          commitId: pr.head.sha,
+          comments: [{ ...where, body: reply.text }],
+        }),
+      );
     } catch (err) {
       void this.warn(err, "Couldn't post the comment.");
       return;
     }
-    // Reflect it as a submitted (non-pending) comment on the thread.
+    // Reflect it as a posted comment on the thread. It is on GitHub now, so
+    // it carries no Delete — removing it here would not remove it there.
     const comment = new ReviewComment_(
       new vscode.MarkdownString(reply.text),
       vscode.CommentMode.Preview,
       { name: this.login ? `@${this.login}` : "You" },
+      reply.thread,
+      POSTED,
     );
     reply.thread.comments = [...reply.thread.comments, comment];
-    reply.thread.label = "Comment posted";
+    if (!this.threads.has(reply.thread)) {
+      reply.thread.label = "Comment posted";
+    }
     void vscode.window.showInformationMessage("Comment posted to GitHub.");
   }
 
-  /** Abandon the in-progress review and clear all pending threads. */
+  /** Abandon the in-progress review — asking first when comments are queued. */
   async cancelReview(): Promise<void> {
+    if (this.active && this.pendingCount() > 0) {
+      const ok = await promptConfirm({
+        title: `Discard ${this.pendingWords()} on #${this.active.pr.number}?`,
+        message: "They haven't been sent to GitHub, and discarding them can't be undone.",
+        confirmLabel: "Discard",
+        danger: true,
+      });
+      if (!ok) {
+        return;
+      }
+    }
     this.clearThreads();
     await this.setReviewing(false);
     this.active = undefined;
   }
 
-  private clearThreads(): void {
-    for (const pending of this.threads.values()) {
-      pending.thread.dispose();
+  /**
+   * Drop the queue: every pending comment goes. Discarded, a thread that also
+   * holds a comment already on GitHub keeps that one — removing it here would
+   * not remove it there. Sent (or shutting down), every thread goes, as ever.
+   */
+  private clearThreads(opts: { keepPosted: boolean } = { keepPosted: true }): void {
+    for (const thread of this.threads.keys()) {
+      const posted = opts.keepPosted ? thread.comments.filter((c) => c.contextValue === POSTED) : [];
+      if (posted.length > 0) {
+        thread.comments = posted;
+        thread.label = "Comment posted";
+        thread.contextValue = undefined;
+      } else {
+        thread.dispose();
+      }
     }
     this.threads.clear();
   }
@@ -326,7 +543,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   dispose(): void {
-    this.clearThreads();
+    this.clearThreads({ keepPosted: false });
     for (const d of this.disposables) {
       d.dispose();
     }
@@ -334,19 +551,9 @@ export class ReviewController implements vscode.Disposable {
   }
 }
 
-/**
- * Given a `gitstudio-pr` URI, returns its file path iff it is the HEAD-side blob
- * for `headSha` (so we never treat the base/left pane as commentable).
- */
-function headPathOf(uri: vscode.Uri, headSha: string): string | undefined {
-  if (uri.scheme !== PR_SCHEME) {
-    return undefined;
-  }
-  const params = new URLSearchParams(uri.query);
-  if (params.get("sha") !== headSha) {
-    return undefined;
-  }
-  return uri.path.replace(/^\/+/, "");
+/** How many of a thread's comments are pending (not yet on GitHub). */
+function pendingIn(thread: vscode.CommentThread): number {
+  return thread.comments.filter((c) => c.contextValue !== POSTED).length;
 }
 
 /** Render a Comment body (string | MarkdownString) to plain text. */

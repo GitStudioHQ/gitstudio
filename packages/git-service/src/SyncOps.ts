@@ -37,6 +37,16 @@ export interface PushOptions extends GitRunOptions {
   lease?: string;
   /** `--tags` — also push tags. */
   tags?: boolean;
+  /**
+   * With `remote` and `branch`: the name the branch gets ON that remote, as
+   * the CALLER decided it. The push is then exactly
+   * `refs/heads/<branch>:refs/heads/<dest>` to `remote` — never resolved
+   * through the upstream, which names ANOTHER branch, often on another remote,
+   * when the branch tracks the one it was started from
+   * (`git checkout -b feature origin/main`) or is pushed to a fork it does not
+   * pull from. Not for a force push: its lease is the upstream's.
+   */
+  dest?: string;
 }
 
 export interface PushResult extends SyncOpResult {
@@ -402,7 +412,16 @@ export class SyncOps {
      */
     let refspec: string | undefined;
 
-    if (!remote && !branch) {
+    if (opts?.dest !== undefined) {
+      // The caller named the destination: push exactly there.
+      if (!remote || !branch || !opts.dest || opts.force) {
+        return {
+          ok: false,
+          stderr: "A push to a named destination needs its remote and branch, and is never forced.",
+        };
+      }
+      refspec = `refs/heads/${branch}:refs/heads/${opts.dest}`;
+    } else if (!remote && !branch) {
       const upstream = await this.currentUpstream({ signal: opts?.signal });
       if (upstream === null) {
         const target = await this.publishTarget(opts?.signal);

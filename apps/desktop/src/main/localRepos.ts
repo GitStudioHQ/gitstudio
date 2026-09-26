@@ -17,7 +17,7 @@
 import { execFile } from "node:child_process";
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { parseGitHubRemote } from "./githubRemote";
+import { githubRepoOfRemote } from "./githubRemote";
 import { MAX_LOCAL_REPOS } from "../shared/repoGrouping";
 import type { LocalCopy, LocalRepoStatus } from "../shared/ipc";
 
@@ -61,8 +61,10 @@ function originOf(root: string): Promise<string | undefined> {
       { timeout: PROBE_TIMEOUT_MS },
       (err, stdout) => {
         if (err) return res(undefined);
-        const parsed = parseGitHubRemote(stdout.trim());
-        res(parsed ? `${parsed.owner}/${parsed.repo}` : undefined);
+        githubRepoOfRemote(stdout.trim()).then(
+          (parsed) => res(parsed ? `${parsed.owner}/${parsed.repo}` : undefined),
+          () => res(undefined),
+        );
       },
     );
   });

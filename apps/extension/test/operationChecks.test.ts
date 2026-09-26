@@ -121,12 +121,20 @@ test("every door that runs a git verb which can stop on conflicts can say so thr
   // means is for the caller to say, and the caller is what this counts.
   const VERB =
     /\bsync\.pull\(|\bbranches\.(?:merge|rebaseOnto)\(|\bstashes\.(?:apply|pop)\(|\[\s*"(?:cherry-pick|revert)"|\bpullOrAsk\(|\bkind:\s*"(?:merge|rebase|cherry-pick|revert|stash)"/;
+  // A merge op run `--ff-only` fast-forwards or refuses — git never leaves it
+  // stopped on conflicts — so it is no verb that can stop (checking out a
+  // pull request again moves a checked-out pr/<n> that way). Only an op whose
+  // own argv says --ff-only is set aside, and the rule is pinned below.
+  const ffOnlyAside = (code: string) => code.replace(/\bkind:\s*"merge"(?=[^}]*"--ff-only")/g, "fast-forward");
+  assert.equal(VERB.test(ffOnlyAside(`{ kind: "merge", target: s, args: ["merge", "--ff-only", s] }`)), false);
+  assert.equal(VERB.test(ffOnlyAside(`{ kind: "merge", target: s, args: ["merge", s] }`)), true, "a merge that can stop still counts");
+  assert.equal(VERB.test(ffOnlyAside(`{ kind: "merge", target: s, args } ; x = ["--ff-only"]`)), true, "…even beside an unrelated --ff-only");
   const THE_DOOR = "git/inTheWay.ts";
   const silent: string[] = [];
   for (const file of await tsFiles(SRC)) {
     const rel = relative(SRC, file).split("\\").join("/");
     if (rel === THE_DOOR) continue;
-    const code = stripComments(await readFile(file, "utf8"));
+    const code = ffOnlyAside(stripComments(await readFile(file, "utf8")));
     if (VERB.test(code) && !/\bnotifyPaused\(/.test(code)) {
       silent.push(rel);
     }

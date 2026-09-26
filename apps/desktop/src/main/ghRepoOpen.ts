@@ -16,7 +16,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { CloneProgress } from "../shared/ipc";
 import { startClone } from "./cloneBridge";
-import { parseGitHubRemote } from "./githubRemote";
+import { githubRepoOfRemote } from "./githubRemote";
 import type { RepoStore } from "./repoStore";
 
 /** Where implicit clones live. Fixed and predictable (GitHub Desktop keeps
@@ -32,7 +32,10 @@ function originOf(root: string): Promise<{ owner: string; repo: string } | undef
       "git",
       ["-C", root, "remote", "get-url", "origin"],
       { timeout: 5_000 },
-      (err, stdout) => resolve(err ? undefined : parseGitHubRemote(stdout.trim())),
+      (err, stdout) => {
+        if (err) return resolve(undefined);
+        githubRepoOfRemote(stdout.trim()).then(resolve, () => resolve(undefined));
+      },
     );
   });
 }

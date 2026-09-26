@@ -2165,27 +2165,27 @@
         },
         {
           "command": "gitstudio.pr.checkout",
-          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
           "group": "inline@1"
         },
         {
           "command": "gitstudio.pr.openOnGitHub",
-          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
           "group": "inline@2"
         },
         {
           "command": "gitstudio.pr.checkout",
-          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
           "group": "1_pr@1"
         },
         {
           "command": "gitstudio.pr.openDescription",
-          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
           "group": "1_pr@2"
         },
         {
           "command": "gitstudio.pr.startReview",
-          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
           "group": "1_pr@3"
         },
         {
@@ -2195,12 +2195,12 @@
         },
         {
           "command": "gitstudio.pr.openOnGitHub",
-          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
           "group": "2_pr@1"
         },
         {
           "command": "gitstudio.pr.copyUrl",
-          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
           "group": "2_pr@2"
         }
       ],

@@ -1,12 +1,17 @@
 import * as vscode from "vscode";
-import type { GitHubAuth } from "./githubAuth";
+import type { GitHubApi } from "./githubApi";
 
 // Serves the content of a file at a given commit SHA from a GitHub repo, so
 // `vscode.diff` can render base-vs-head for a PR's changed files without first
 // fetching the refs locally. Backed by the GitHub "contents" API
-// (`GET /repos/{owner}/{repo}/contents/{path}?ref={sha}`), returning the decoded
-// blob. A missing file (added/deleted side) yields an empty document rather than
-// an error, so the diff just shows an empty pane.
+// (`GET /repos/{owner}/{repo}/contents/{path}?ref={sha}`, via GitHubApi.fileAt).
+//
+// Only a path that does not EXIST at that commit (the added / deleted side)
+// is an empty document. Any other failure — signed out, a rate limit, offline,
+// GitHub down — throws, so VS Code says the file couldn't be opened and why:
+// an empty pane there read as "this file was added" (or deleted), which it
+// wasn't. A binary or very large file is a one-line note naming its size, not
+// its bytes decoded as text.
 
 export const PR_SCHEME = "gitstudio-pr";
 
@@ -30,7 +35,7 @@ export function toPrContentUri(ref: PrContentRef): vscode.Uri {
   });
 }
 
-function fromPrContentUri(uri: vscode.Uri): PrContentRef {
+export function fromPrContentUri(uri: vscode.Uri): PrContentRef {
   const params = new URLSearchParams(uri.query);
   return {
     owner: params.get("owner") ?? "",
@@ -40,10 +45,18 @@ function fromPrContentUri(uri: vscode.Uri): PrContentRef {
   };
 }
 
+function size(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    : bytes >= 1024
+      ? `${Math.round(bytes / 1024)} KB`
+      : `${bytes} bytes`;
+}
+
 export class PrContentProvider
   implements vscode.TextDocumentContentProvider
 {
-  constructor(private readonly auth: GitHubAuth) {}
+  constructor(private readonly api: GitHubApi) {}
 
   async provideTextDocumentContent(
     uri: vscode.Uri,
@@ -53,36 +66,20 @@ export class PrContentProvider
     if (!owner || !repo || !sha || !path) {
       return "";
     }
-    const accessToken = await this.auth.getToken({ interactive: false });
-    if (!accessToken) {
-      return "";
-    }
     const ac = new AbortController();
     token.onCancellationRequested(() => ac.abort());
-    try {
-      const res = await fetch(
-        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path
-          .split("/")
-          .map(encodeURIComponent)
-          .join("/")}?ref=${encodeURIComponent(sha)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            // Raw media type returns the file bytes directly.
-            Accept: "application/vnd.github.raw+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "GitStudio",
-          },
-          signal: ac.signal,
-        },
-      );
-      if (!res.ok) {
-        // 404 → the file doesn't exist on that side (added/deleted). Empty pane.
+    // Throws GitHubApiError (with the sentence to show) on anything but a
+    // missing path.
+    const content = await this.api.fileAt(owner, repo, path, sha, { signal: ac.signal });
+    switch (content.kind) {
+      case "text":
+        return content.text;
+      case "missing":
         return "";
-      }
-      return await res.text();
-    } catch {
-      return "";
+      case "binary":
+        return `Binary file (${size(content.bytes)}) at ${sha.slice(0, 7)} — its content isn't shown.`;
+      case "too-large":
+        return `File too large to show (${size(content.bytes)}) at ${sha.slice(0, 7)}.`;
     }
   }
 }

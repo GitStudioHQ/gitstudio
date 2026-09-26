@@ -117,6 +117,20 @@ but they share the same engine, so most Git behaviour lands in both at once.
   **Checkout** does the same when its `pr/<number>` branch is checked out in
   another worktree; it showed git's *refusing to fetch into branch* in red.
   When that worktree's folder is gone, it says to forget the worktree first.
+- **Checking out a pull request again brings `pr/<n>` up to date.** It failed
+  while `pr/<n>` was checked out. When `pr/<n>` has commits the pull request
+  doesn't — yours, or the ones a force-push to the pull request replaced — it
+  is left exactly as it is and the app says why, and how to get the pull
+  request's version, where git's refusal was reported as an error. The same
+  rule as the VS Code extension's.
+- Repositories whose GitHub remote uses `ssh.github.com` (SSH over port 443),
+  `www.github.com`, or a host alias of `~/.ssh/config` whose HostName is
+  github.com (`git@work:owner/repo`) are recognised as GitHub repositories —
+  the alias, as the VS Code extension already did.
+- **A pull request's file diff starts where its branch left the base.** Its
+  left side was the base branch as it is now: once others had merged, it
+  showed their new work as if the pull request removed it, and a comment on
+  a removed line was sent for the wrong line.
 
 ## [2.1.0] - 2026-09-25
 

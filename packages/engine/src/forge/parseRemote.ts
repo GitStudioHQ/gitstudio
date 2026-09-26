@@ -80,7 +80,123 @@ export function parseRemote(url: string): ParsedRemote | null {
   return { host: normalizedHost, owner, repo };
 }
 
-/** True when a parsed remote points at github.com (the only forge M11 supports). */
+/**
+ * True when `host` (lowercased) is github.com under any name a real remote
+ * uses for it:
+ *   github.com
+ *   www.github.com                — what a browser's address bar gives you
+ *   ssh.github.com                — SSH over port 443, for networks that block 22
+ *   github.com-work               — an SSH host ALIAS: the multi-account
+ *                                   ~/.ssh/config pattern (`Host github.com-work`)
+ * Host-anchored: "evilnotgithub.com" and "github.com.evil.io" never match, and
+ * GitHub Enterprise hosts (github.example.com) are not github.com.
+ */
+export function isGitHubHost(host: string): boolean {
+  const h = host.toLowerCase();
+  return (
+    h === "github.com" ||
+    h === "www.github.com" ||
+    h === "ssh.github.com" ||
+    /^github\.com-[\w.-]+$/.test(h)
+  );
+}
+
+/**
+ * True when a parsed remote points at github.com (the only forge M11
+ * supports), under any of the names {@link isGitHubHost} knows.
+ */
 export function isGitHubRemote(remote: ParsedRemote | null): remote is ParsedRemote {
-  return remote !== null && remote.host === "github.com";
+  return remote !== null && isGitHubHost(remote.host);
+}
+
+/**
+ * A remote URL → the github.com repository it names, or undefined when it
+ * isn't one. Exactly `owner/repo`: github.com has no deeper namespaces, so
+ * `https://github.com/o/r/extra` is not a repository.
+ *
+ * `resolveHost` maps an SSH host alias to the host it stands for — the
+ * `HostName` of a `Host` block in ~/.ssh/config (see sshConfigHostName) — so
+ * `git@work:o/r` with `Host work / HostName github.com` is github.com too.
+ */
+export function parseGitHubRemote(
+  url: string,
+  resolveHost?: (host: string) => string | undefined,
+): { owner: string; repo: string } | undefined {
+  const trimmed = url.trim();
+  const parsed = parseRemote(trimmed);
+  if (!parsed) {
+    return undefined;
+  }
+  const host = isGitHubHost(parsed.host)
+    ? parsed.host
+    : (resolveHost?.(parsed.host) ?? parsed.host);
+  if (!isGitHubHost(host)) {
+    return undefined;
+  }
+  // parseRemote keeps first and last segments; github.com wants exactly two.
+  const path = trimmed.includes("://")
+    ? (() => {
+        try {
+          return new URL(trimmed).pathname;
+        } catch {
+          return "";
+        }
+      })()
+    : trimmed.slice(trimmed.indexOf(":") + 1);
+  const segments = path
+    .replace(/\.git\/?$/i, "")
+    .split("/")
+    .filter((s) => s.length > 0);
+  if (segments.length !== 2) {
+    return undefined;
+  }
+  return { owner: parsed.owner, repo: parsed.repo };
+}
+
+/**
+ * The `HostName` an SSH config gives `alias`, or undefined when no `Host`
+ * block matching it sets one. The first match wins, as in ssh itself, and a
+ * `Host` line's patterns may use `*` and `?` and be negated with `!`.
+ * `Match` blocks and `Include`d files are not followed — an alias defined only
+ * there stays unresolved, never wrongly resolved.
+ */
+export function sshConfigHostName(configText: string, alias: string): string | undefined {
+  const wanted = alias.toLowerCase();
+  let matching = false;
+  for (const raw of configText.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+    const m = /^(\S+?)\s*(?:=\s*|\s+)(.*)$/.exec(line);
+    if (!m) {
+      continue;
+    }
+    const key = m[1].toLowerCase();
+    const value = m[2].trim();
+    if (key === "host") {
+      const patterns = value.split(/\s+/).filter(Boolean);
+      const hit = (p: string) => globMatch(p.toLowerCase(), wanted);
+      matching =
+        patterns.some((p) => !p.startsWith("!") && hit(p)) &&
+        !patterns.some((p) => p.startsWith("!") && hit(p.slice(1)));
+      continue;
+    }
+    if (key === "match") {
+      matching = false;
+      continue;
+    }
+    if (matching && key === "hostname" && value) {
+      return value.replace(/^"(.*)"$/, "$1").toLowerCase();
+    }
+  }
+  return undefined;
+}
+
+/** ssh_config(5) patterns: `*` any run, `?` one character, nothing else special. */
+function globMatch(pattern: string, text: string): boolean {
+  const re = new RegExp(
+    `^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".")}$`,
+  );
+  return re.test(text);
 }
