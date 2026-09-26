@@ -84,7 +84,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   the workspace: the reason a squash was refused is shown just above **Start
   Rebase**, on screen however long the plan is; the commit the keyboard moves
   to is never hidden under the header or the footer; and **Reset plan** no
-  longer has a grey button face.
+  longer has a grey button face. (#32)
 - **Interactive Rebase: a paused rebase keeps Continue, Skip and Abort.**
   While a rebase is paused on a conflict or an edit, the workspace's banner
   holds its way out. A refused squash or **Reset plan** took that banner away
@@ -94,10 +94,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   operation that left the branch on an older, already-pushed commit — a reset
   to it, or dropping your last local commit — offered to revert an empty range
   and failed with git's "empty commit set passed". Going back is a
-  fast-forward that rewrites nothing, so Undo now simply does it.
+  fast-forward that rewrites nothing, so Undo now simply does it. (#32)
 - Blame in a repository nested inside another's folder (a vendored checkout,
   a submodule) no longer runs in the outer repository when the outer one is
-  the repository on screen.
+  the repository on screen. (#32)
 
 ## [1.14.0] - 2026-09-25
 
