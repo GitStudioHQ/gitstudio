@@ -249,6 +249,8 @@ class App {
   /** The "N commits selected" summary asks only once the selection settles,
    *  and only for the newest one — see showSelection. */
   private readonly selectionSummary = new SettleLatest();
+  /** What waits for this tab to be in front again — see whenInFront. */
+  private frontWaiters: Array<() => void> = [];
   /** Bumped per right-click; see openCommitMenu. */
   private commitMenuSeq = 0;
 
@@ -805,6 +807,10 @@ class App {
     setCacheScope(this.info?.root);
     setUndoScope(this.session.id);
     setFocusTab(this.session.id);
+    // What waited for this tab to be in front again goes on now — as
+    // microtasks, after this switch has finished (the shell made this tab's
+    // session the active one before calling here).
+    for (const go of this.frontWaiters.splice(0)) go();
     // A question held open through refreshes (repoEpoch) is about the tab it
     // was asked in — and none can be open across a switch (the shell refuses
     // to switch under a modal) — but the epoch is what `whileSameRepo` reads.
@@ -10810,8 +10816,16 @@ class App {
     // Settle first: Shift+Down held over twenty rows is twenty selections, and
     // each would walk the branch three ways. Only the one it stops on is asked
     // — through the SettleLatest the extension's summary uses too.
+    //
+    // The settle is a timer, and a timer runs in the back too: a question it
+    // asked from there would be stamped with the tab in FRONT (bridge.ts
+    // stamps a call when it is made) and asked of that repository. So it
+    // waits for this tab to be in front again.
     void this.selectionSummary
-      .run(() => host.invoke("commits:menu", { shas }).catch(() => ({ apply: false, drop: false, squash: false })))
+      .run(async () => {
+        await this.whenInFront();
+        return host.invoke("commits:menu", { shas }).catch(() => ({ apply: false, drop: false, squash: false }));
+      })
       .then((can) => {
         if (!can || !panel.selection) return;
         panel.selection = {
@@ -10819,6 +10833,17 @@ class App {
           actions: manyMenuRows(shas.length, can).map((r) => ({ id: r.action, label: r.label, icon: r.icon, danger: r.danger })),
         };
       });
+  }
+
+  /**
+   * Resolves once this tab is in front — at once when it is. For work a TIMER
+   * starts (a settle, a debounce): a call made while the tab is in the back
+   * would be stamped with the tab in front and go to its repository. An answer
+   * already asked for is held by the bridge instead; this is for the asking.
+   */
+  private whenInFront(): Promise<void> {
+    if (currentSession()?.id === this.session.id) return Promise.resolve();
+    return new Promise((resolve) => this.frontWaiters.push(resolve));
   }
 
   /** An item of the several-commit menu or summary — see renderer/multiCommit.ts. */

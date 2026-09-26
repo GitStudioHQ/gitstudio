@@ -9664,6 +9664,46 @@
     },
 
     /**
+     * The same settle, with the tab switched away inside it (repository tabs,
+     * #32). The settle is a timer, and a call made when it fires in the back
+     * is stamped with the tab in FRONT: it asked the other repository about
+     * this one's commits, and painted that answer into this pane. It waits for
+     * its tab, then asks its own repository.
+     */
+    "a-selection-summary-asks-its-own-tab-once-it-is-back": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      if (!sr) return c.ok(false, "the graph is mounted");
+      const S = ["3c0ffee1a2b3c4d5e6f7", "2c0ffee1a2b3c4d5e6f7", "1c0ffee1a2b3c4d5e6f7"];
+      sr.querySelector(`.row[data-sha="${S[0]}"]`)?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      await settle(400);
+      const asked = () => window.__GS_INVOKED.filter((r) => r.channel === "commits:menu");
+      const before = asked().length;
+      const sc = sr.querySelector(".scroller");
+      sc?.focus();
+      for (let i = 0; i < 2; i++) {
+        (sr.activeElement || sc)?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", shiftKey: true, bubbles: true, composed: true, cancelable: true }));
+      }
+      // Away before the selection has settled.
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(700);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: the other tab is in front");
+      const away = asked().slice(before);
+      c.eq(away.length, 0, `nothing is asked while its tab is in the back (${away.map((r) => r.root || "?").join(", ")})`);
+      tabEl(GS_ROOT)?.click();
+      await settle(700);
+      const now = asked().slice(before);
+      c.eq(now.length, 1, "back in front, it asks once");
+      c.eq(now[0]?.root, GS_ROOT, "of its own repository");
+      c.eq((now[0]?.payload?.shas || []).join(","), S.join(","), "about the selection it settled on");
+      const psr = $(".graph-details gitstudio-commit-details")?.shadowRoot;
+      c.eq(text(psr?.querySelector(".sum-title")), "3 commits selected", "the pane still describes it");
+      c.ok($$(".actions .act", psr).some((b) => text(b) === "Cherry-pick 3 commits"), "and its answer landed in the pane");
+    },
+
+    /**
      * Right-click inside a selection of several keeps it and opens ONE menu for
      * all of them — only the items main says apply, Drop in the danger colour;
      * outside it, just that row and its own menu. Drop N asks once, listing

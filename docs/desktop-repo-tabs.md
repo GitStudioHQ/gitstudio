@@ -101,7 +101,10 @@ their answers wait at the door.**
   finishes in A shows its toast when you are back in A, and a flow with two
   steps (Stash & Retry, a discard's `stash create` then `restore`) cannot make
   its second call against B. The tab-changing calls themselves (open, close,
-  activate) are not deferred.
+  activate) are not deferred. A call a TIMER makes is the one gap: made while
+  its tab is in the back, it would be stamped with the tab in front. So work a
+  timer starts — the "N commits selected" summary's settle — waits for its tab
+  (`App.whenInFront`) before it asks (`a-selection-summary-asks-its-own-tab-once-it-is-back`).
 - A route asked of a background App right after an open (`await
   openPath(); nav("code")` — "land in the repository I just opened") goes to
   the active tab; any other route asked of a background App is dropped.

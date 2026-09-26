@@ -641,6 +641,7 @@ const CASES = [
   ["several-commits-are-selected-and-summarised", "graph", { extra: "stack=1" }],
   ["several-commits-are-selected-and-summarised", "graph", { extra: "stack=1", theme: "light" }],
   ["a-held-shift-arrow-asks-main-once-for-where-it-stops", "graph", { extra: "stack=1" }],
+  ["a-selection-summary-asks-its-own-tab-once-it-is-back", "graph", { extra: "stack=1&tabs=2" }],
   ["the-menu-for-several-commits-runs-for-all-of-them", "graph", { extra: "stack=1" }],
   ["the-menu-for-several-commits-runs-for-all-of-them", "graph", { extra: "stack=1", theme: "light" }],
   ["the-squash-message-editor-takes-the-message-the-user-writes", "graph", { extra: "stack=1" }],
