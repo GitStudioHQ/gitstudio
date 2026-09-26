@@ -198,6 +198,39 @@ test("checkout: on the PR's own branch already, it says so instead of moving you
   assert.match(said("info").join("\n"), /already on feature-7, the branch of PR #7/);
 });
 
+test("checkout: the toast's Open Description opens THAT pull request — not the same number in the repository active when it is clicked", async () => {
+  const w = world();
+  let active: any = w.entry;
+  const changed = new vscode.EventEmitter();
+  const context = { subscriptions: [] as { dispose(): void }[], extensionUri: vscode.Uri.file("/ext") };
+  registerPrFeature(context as any, { onDidChange: changed.event, getActive: () => active } as any, { isEnabled: async () => false } as any);
+  contexts.push({ dispose: () => context.subscriptions.forEach((d) => d.dispose()) });
+  // A second repository, acme/other on github.com.
+  const other = mkdtempSync(join(scratch, "o-"));
+  execFileSync("git", ["init", "-q", "-b", "main", other]);
+  at(other)("remote", "add", "origin", "https://github.com/acme/other.git");
+  const otherCtx = new GitContext({ root: other });
+  contexts.push({ dispose: () => otherCtx.dispose() });
+  fake = installFakeGitHub([
+    ["GET", /^\/repos\/[^/]+\/[^/]+\/pulls\/7$/, () => ({ body: rawPull(7) })],
+    ["GET", /\/files/, () => ({ body: [] })],
+    ["GET", /\/check-runs|\/status/, () => ({ body: { check_runs: [], statuses: [] } })],
+  ]);
+  // The toast waits until clicked; the user switched repositories meanwhile.
+  pr.answer = (_kind: string, _message: string, items: string[]) => {
+    if (items.includes("Open Description")) {
+      active = { root: other, ctx: otherCtx };
+      return "Open Description";
+    }
+    return undefined;
+  };
+  await checkout(w);
+  await new Promise((r) => setTimeout(r, 200));
+  const paths = fake.requests.map((r) => r.path);
+  assert.ok(paths.includes("/repos/acme/app/pulls/7"), `acme/app#7 opens (asked: ${paths.join(", ")})`);
+  assert.deepEqual(paths.filter((p) => p.startsWith("/repos/acme/other/")), [], "never acme/other#7");
+});
+
 // ── Create pull request ─────────────────────────────────────────────────────
 
 /** A clone of acme/app with a `mine` fork remote the feature branch is pushed to. */

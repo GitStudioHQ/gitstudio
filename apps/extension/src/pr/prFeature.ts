@@ -162,11 +162,7 @@ export function registerPrFeature(
           return;
         }
         // The open-PR list doesn't change with a checkout: nothing to reload.
-        await checkoutPullRequest(
-          resolved.ctx.entry,
-          resolved.ctx.remoteName,
-          resolved.pr,
-        );
+        await checkoutPullRequest(resolved.ctx, resolved.pr);
       },
     ),
     vscode.commands.registerCommand(

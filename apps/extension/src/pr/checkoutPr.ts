@@ -8,6 +8,7 @@ import {
 } from "@gitstudio/git-service/prCheckout";
 import type { RepoEntry } from "../git/repoManager";
 import type { PullRequest } from "./githubApi";
+import type { GitHubRepoContext } from "./repoContext";
 import { applyOrAsk, checkoutOp, type Applied } from "../git/inTheWay";
 import { promptPick } from "../ui/dialogs";
 
@@ -25,11 +26,11 @@ import { promptPick } from "../ui/dialogs";
 // ended: awaited inside it, the spinner ran until the toast was dismissed.
 
 export async function checkoutPullRequest(
-  entry: RepoEntry,
-  remoteName: string,
+  ctx: GitHubRepoContext,
   pr: PullRequest,
   onCheckedOut?: () => void,
 ): Promise<void> {
+  const { entry, remoteName } = ctx;
   // The PR's own branch is already here: moving to a pr/<n> copy of it would
   // take the user off the branch they work on. Same repository only — a fork's
   // branch of the same name is a different branch.
@@ -70,7 +71,9 @@ export async function checkoutPullRequest(
   onCheckedOut?.();
   const open = await vscode.window.showInformationMessage(done, "Open Description");
   if (open === "Open Description") {
-    void vscode.commands.executeCommand("gitstudio.pr.openDescription", { pr });
+    // With its repository: the toast waits until clicked, and a number alone
+    // is resolved against the repository active THEN — #7 of another one.
+    void vscode.commands.executeCommand("gitstudio.pr.openDescription", { pr, ctx });
   }
 }
 
