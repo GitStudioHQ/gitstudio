@@ -63,6 +63,7 @@ const CASES = [
   ["a-branch-name-git-would-refuse-is-caught-before-git", "branches"],
   ["a-rename-refuses-a-name-git-would-refuse", "branches"],
   ["renaming-a-published-branch-offers-to-rename-it-on-the-remote", "branches"],
+  ["undoing-a-rename-on-origin-tracks-its-own-remote-branch-again", "branches"],
   ["the-rename-question-outlives-the-refresh-the-rename-causes", "branches"],
   ["renaming-an-unpublished-branch-asks-nothing", "branches"],
   // Branch ops by FULL name, and a branch named like an option (issue #30's follow-up).

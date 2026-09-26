@@ -14536,6 +14536,40 @@
         "each option explains what will actually happen",
       );
     },
+    /**
+     * "Rename on origin", then Undo: the branch is renamed back — and
+     * `git branch -m` carries its tracking with it, so it came back tracking
+     * the NEW name on the remote. The "publish" variant's undo re-pointed the
+     * upstream; this one did not. Now both do, after the rename.
+     */
+    "undoing-a-rename-on-origin-tracks-its-own-remote-branch-again": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const done = await renameFirstBranch("feat/line-staging", "feat/line-staging-v2");
+      c.ok(done, "the rename dialog was driven");
+      if (!done) return;
+      await settle(700);
+      const onOrigin = $$(".modal-choice").find((r) => /^Rename on origin$/.test(text($$(".modal-choice-label", r)[0]) || ""));
+      c.ok(!!onOrigin, "the remote question offers Rename on origin");
+      if (!onOrigin) return;
+      onOrigin.click();
+      await settle(900);
+      const undo = $$(".toast-action").find((b) => text(b) === "Undo");
+      c.ok(!!undo, "the rename is offered an Undo");
+      if (!undo) return;
+      const from = (window.__GS_INVOKED || []).length;
+      undo.click();
+      await settle(900);
+      const after = (window.__GS_INVOKED || []).slice(from);
+      const order = after.map((r) => r.channel);
+      c.ok(order.includes("branch:restoreRemote"), `the remote branch is put back first (${order.join(", ")})`);
+      const rn = order.indexOf("branch:rename");
+      const up = order.lastIndexOf("branch:setUpstream");
+      c.ok(rn >= 0 && up > rn, `renamed back, THEN re-pointed (${order.join(", ")})`);
+      const sent = after.filter((r) => r.channel === "branch:setUpstream").at(-1)?.payload;
+      c.eq(sent?.fullName, "refs/heads/feat/line-staging", "the branch under its old name");
+      c.eq(sent?.upstream, "origin/feat/line-staging", "tracks its own remote branch again, not the new name's");
+    },
     /** The sibling of the pull question: this one is asked right after the
      *  rename MOVED A REF, so the watcher's refresh (250 ms after the write,
      *  emitted here as the real watcher would) lands while it is on screen —

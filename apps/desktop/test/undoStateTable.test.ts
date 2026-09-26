@@ -563,6 +563,9 @@ cell({
         }
         const u = await f.bridge.branchRename(back);
         if (!u.ok) return u.message || "Couldn't rename feat2 back.";
+        // …and, as the "publish" variant's closure does, points the branch
+        // at its own remote branch again (renderer.ts renameBranchFlow).
+        await f.bridge.branchSetUpstream({ fullName: "refs/heads/feature", upstream: "origin/feature" });
         return undefined;
       },
     };

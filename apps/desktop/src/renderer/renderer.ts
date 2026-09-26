@@ -4208,6 +4208,11 @@ class App {
           }
           const u = await host.invoke("branch:rename", back);
           if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
+          // The rename took `${to}`'s tracking with it — the rename made the
+          // branch track `${fixed.remote}/${to}` — so renaming back left it
+          // tracking the new name. Point it at its own remote branch again,
+          // as the "publish" variant's undo does.
+          if (b.upstream) await host.invoke("branch:setUpstream", { fullName: b.fullName, upstream: b.upstream });
           bust();
           return undefined;
         },
