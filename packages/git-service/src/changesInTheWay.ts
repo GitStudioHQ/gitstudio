@@ -1,7 +1,7 @@
 import { refShortName } from "./checkoutRef";
 import type { GitProcess, GitRunOptions, GitRunResult } from "./GitProcess";
 import { rebaseInProgress } from "./rebaseInProgress";
-import { literalPathspec as literally, StashProvider } from "./StashProvider";
+import { isStashSha, literalPathspec as literally, StashProvider, stashBranchNameRefusal } from "./StashProvider";
 import { parseV2 } from "./StatusProvider";
 import { pick, sameStop, stoppedIn, type OperationInTheWay, type StoppedHere } from "./stoppedOperation";
 import type { PullDirty, PullResult } from "./SyncOps";
@@ -74,10 +74,34 @@ export type ApplyOp =
     }
   | {
       kind: "stash";
-      /** The stash to apply, e.g. `stash@{1}` or its sha. */
+      /**
+       * The stash to apply: its full sha, or `stash@{1}`. By sha it is found
+       * in the list immediately before git runs (a pop needs the selector),
+       * so a list renumbered meanwhile cannot make it pop another stash — and
+       * a stash that has left the list is not run at all (`stashGone`).
+       */
       stash: string;
       /** `pop` rather than `apply`. */
       pop?: boolean;
+      /**
+       * `--index`: stage again what was staged when the stash was made
+       * (StashProvider.holdsStaged). Never run over an index with staged
+       * changes of the user's — git resets the index before it merges, then
+       * refuses, and those changes come out unstaged — so that answers
+       * `indexBusy` without running; and when git refuses the staged half
+       * itself ("conflicts in index"), having changed nothing, the answer is
+       * `indexRefused`. Either way the caller may run it again without.
+       */
+      index?: boolean;
+      /**
+       * `git stash branch <branch>` instead of an apply: a new branch at the
+       * stash's base, switched to, the stash applied there with its staging,
+       * and dropped once it applies. It switches before it applies, so a
+       * refusal of the apply would leave the switch done: what is in its way
+       * is asked BEFORE git runs (stashBranchAhead), never read from the
+       * failure. A name git cannot use is refused before anything else.
+       */
+      branch?: string;
     };
 
 /** What the user's uncommitted work was in the way of: a command that applies
@@ -115,8 +139,38 @@ export function checkoutOp(args: string[]): ApplyOp {
 
 /** The argv an op runs. */
 export function applyArgs(op: ApplyOp): string[] {
-  return op.kind === "stash" ? ["stash", op.pop ? "pop" : "apply", op.stash] : op.args;
+  return op.kind === "stash" ? stashArgs(op, op.stash) : op.args;
 }
+
+/** `git stash apply|pop [--index] <stash>`, or `git stash branch <name>
+ *  <stash>` — the one place a stash op's argv is written, so the first run
+ *  and Stash & Retry's run cannot differ. */
+function stashArgs(op: StashOp, stash: string): string[] {
+  if (op.branch !== undefined) return ["stash", "branch", op.branch, stash];
+  return ["stash", op.pop ? "pop" : "apply", ...(op.index ? ["--index"] : []), stash];
+}
+
+type StashOp = Extract<ApplyOp, { kind: "stash" }>;
+
+/** Is this a `git stash branch`? */
+const isStashBranch = (op: ApplyOp): op is StashOp & { branch: string } =>
+  op.kind === "stash" && op.branch !== undefined;
+
+/**
+ * The argv to run NOW: a stash named by sha is looked up in the list at this
+ * moment — a pop or a branch (which drop it) is handed its current
+ * `stash@{n}` — or null when it has left the list. Everything else is
+ * applyArgs.
+ */
+async function argsNow(proc: GitProcess, op: ApplyOp, signal?: AbortSignal): Promise<string[] | null> {
+  if (op.kind !== "stash" || !isStashSha(op.stash)) return applyArgs(op);
+  const ref = await stashRefOf(new StashProvider(proc), op.stash, signal);
+  if (!ref) return null;
+  return stashArgs(op, op.pop || op.branch !== undefined ? ref : op.stash);
+}
+
+/** A command that was not run. */
+const NOT_RUN: GitRunResult = { code: 1, stdout: "", stderr: "" };
 
 /** The operation's name, for a sentence. */
 const THE: Record<InTheWayKind, string> = {
@@ -177,19 +231,41 @@ export async function runApplying(
   proc: GitProcess,
   op: ApplyOp,
   opts?: GitRunOptions,
-): Promise<{ result: GitRunResult; inTheWay?: ChangesInTheWay; blocked?: OperationInTheWay }> {
+): Promise<AppliedRun> {
   const signal = opts?.signal;
+  // A new branch's name git will not take is refused before git looks at a
+  // file — and before anything below could offer to stash the user's work
+  // for a command that can never run.
+  if (isStashBranch(op)) {
+    const refused = await stashBranchNameRefusal(proc, op.branch, signal);
+    if (refused) {
+      return { result: { code: 1, stdout: "", stderr: refused } };
+    }
+  }
   const before = await where(proc, signal);
   const stop = await stoppedIn(proc, signal);
+  // `git stash branch` switches first: over a stop, a checkout.
+  if (stop && endsOrMoves(isStashBranch(op) ? "checkout" : op.kind, stop)) {
+    return { result: NOT_RUN, blocked: { kind: op.kind, ...pick(stop) } };
+  }
+  // `--index` over staged changes of the user's would cost them their staging
+  // (see ApplyOp's `index`), so it is not run there at all. Over files left
+  // unmerged git refuses every stash before it writes a thing, `--index` or
+  // not ("needs merge"): that is the stop's to say, below — not a question
+  // about the stash's staging.
+  if (op.kind === "stash" && op.index && !(stop && stop.unmerged > 0) && !(await indexMatchesHead(proc, signal))) {
+    return { result: NOT_RUN, indexBusy: true };
+  }
   if (stop) {
     const blocked: OperationInTheWay = { kind: op.kind, ...pick(stop) };
-    if (endsOrMoves(op.kind, stop)) {
-      return { result: { code: 1, stdout: "", stderr: "" }, blocked };
-    }
     // Asked before git runs: whether the stop has anything uncommitted — its
     // conflicts, or the resolution staged for its Continue.
     const busy = stop.unmerged > 0 || (await touchedTree(proc, signal));
-    const result = await proc.run(applyArgs(op), { signal });
+    const args = await argsNow(proc, op, signal);
+    if (!args) {
+      return { result: NOT_RUN, stashGone: true };
+    }
+    const result = await proc.run(args, { signal });
     if (result.code === 0) {
       return { result };
     }
@@ -201,13 +277,26 @@ export async function runApplying(
     }
     return { result };
   }
-  // A stash made with -u is asked about BEFORE git runs: its refusal is the
-  // one here that is not "nothing happened" (see untrackedStashAhead).
-  const ahead = op.kind === "stash" ? await untrackedStashAhead(proc, op.stash, signal) : null;
+  // A stash made with -u, and every `git stash branch`, is asked about BEFORE
+  // git runs: their refusals are the ones here that are not "nothing
+  // happened" (see untrackedStashAhead and stashBranchAhead).
+  const ahead =
+    op.kind !== "stash"
+      ? null
+      : isStashBranch(op)
+        ? await stashBranchAhead(proc, op, signal)
+        : await untrackedStashAhead(proc, op.stash, signal);
   if (ahead?.inTheWay) {
-    return { result: { code: 1, stdout: "", stderr: "" }, inTheWay: ahead.inTheWay };
+    return { result: NOT_RUN, inTheWay: ahead.inTheWay };
   }
-  const result = await proc.run(applyArgs(op), { signal });
+  // The tree as it was, for telling a refused `--index` from a run that did
+  // something (a -u stash has already read it).
+  const tree = op.kind === "stash" && op.index ? (ahead?.status ?? (await porcelain(proc, signal))) : null;
+  const args = await argsNow(proc, op, signal);
+  if (!args) {
+    return { result: NOT_RUN, stashGone: true };
+  }
+  const result = await proc.run(args, { signal });
   if (result.code === 0) {
     return { result };
   }
@@ -218,7 +307,46 @@ export async function runApplying(
     return { result };
   }
   const inTheWay = await changesInTheWay(proc, op, before, signal);
-  return inTheWay ? { result, inTheWay } : { result };
+  if (inTheWay) {
+    return { result, inTheWay };
+  }
+  // Refused with nothing in the way and nothing changed: the staged half no
+  // longer applies to the index ("conflicts in index" — HEAD has moved under
+  // those files). The stash can still come back, unstaged; the caller asks.
+  if (tree !== null && (await nothingHappened(proc, before, tree, signal))) {
+    return { result, indexRefused: true };
+  }
+  return { result };
+}
+
+/** What runApplying answers: git's run, and — when it was not simply run —
+ *  why. */
+export interface AppliedRun {
+  result: GitRunResult;
+  /** Refused over the user's uncommitted work, having changed nothing. */
+  inTheWay?: ChangesInTheWay;
+  /** Refused because git is stopped in an operation. */
+  blocked?: OperationInTheWay;
+  /** A stash op whose stash, named by sha, has left the list: not run. */
+  stashGone?: true;
+  /** A stash op with `index` over staged changes of the user's: not run. */
+  indexBusy?: true;
+  /** A stash op with `index` whose staged half git refused: nothing changed. */
+  indexRefused?: true;
+}
+
+/** Does the index hold nothing staged — the only index `stash apply --index`
+ *  leaves alone when it refuses? */
+async function indexMatchesHead(proc: GitProcess, signal?: AbortSignal): Promise<boolean> {
+  return (await proc.run(["diff", "--cached", "--quiet", "HEAD", "--"], { signal })).code === 0;
+}
+
+/** HEAD and its branch where they were, nothing stopped, and the tree exactly
+ *  as `tree` read it. */
+async function nothingHappened(proc: GitProcess, before: string, tree: string, signal?: AbortSignal): Promise<boolean> {
+  if ((await where(proc, signal)) !== before) return false;
+  if (await stoppedIn(proc, signal)) return false;
+  return (await porcelain(proc, signal)) === tree;
 }
 
 /**
@@ -314,6 +442,38 @@ async function untrackedStashAhead(
   for (const f of s.unstaged) {
     if (f.status === "U" ? writes.has(f.path) || restores.has(f.path) : writes.has(f.path)) inWay.add(f.path);
   }
+  if (inWay.size === 0) return { status };
+  const paths = [...inWay].sort();
+  return { status, inTheWay: { kind: "stash", paths, untracked: paths.filter((p) => untracked.has(p)) } };
+}
+
+/**
+ * `git stash branch`, asked before it runs. It switches to the stash's base
+ * first and applies the stash there after, so git refusing the apply over the
+ * user's work leaves the switch done — HEAD on the new branch, the stash still
+ * in the list — and nothing afterwards reads as "nothing happened".
+ *
+ * So everything of theirs where it will write is in the way, asked up front:
+ * a change — staged, unstaged or untracked — to a file that differs between
+ * HEAD and the stash's base (the switch), or that the stash changes, stages
+ * or restores (the apply; touchedBy). Staged changes anywhere else are carried
+ * along, and git's `--index` stages them again. Null when git cannot say;
+ * otherwise `status` is the tree as it was asked, as for untrackedStashAhead.
+ */
+async function stashBranchAhead(
+  proc: GitProcess,
+  op: StashOp,
+  signal?: AbortSignal,
+): Promise<{ status: string; inTheWay?: ChangesInTheWay } | null> {
+  const status = await porcelain(proc, signal);
+  if (status === null) return null;
+  const s = parseV2(status);
+  // Unmerged: git refuses the switch before it writes a thing.
+  if (s.merge.length > 0) return { status };
+  const touched = await touchedBy(proc, op, signal);
+  if (!touched) return { status };
+  const untracked = new Set(s.unstaged.filter((f) => f.status === "U").map((f) => f.path));
+  const inWay = new Set([...s.staged, ...s.unstaged].map((f) => f.path).filter((p) => touched.has(p)));
   if (inWay.size === 0) return { status };
   const paths = [...inWay].sort();
   return { status, inTheWay: { kind: "stash", paths, untracked: paths.filter((p) => untracked.has(p)) } };
@@ -490,6 +650,16 @@ async function touchedBy(proc: GitProcess, op: ApplyOp, signal?: AbortSignal): P
       // Untracked files a stash made with -u restores, from its third parent.
       const third = await proc.run(["ls-tree", "-r", "--name-only", "-z", `${op.stash}^3`], { signal });
       if (third.code === 0) for (const p of nameSet(third.stdout)) own.add(p);
+      if (op.branch !== undefined) {
+        // `git stash branch` switches to the stash's base first, and stages
+        // the stash's staged half again (its index commit, ^2) — which can
+        // name a file its working tree left as the base had it.
+        for (const [from, to] of [["HEAD", `${op.stash}^1`], [`${op.stash}^1`, `${op.stash}^2`]]) {
+          const more = await diff(from, to);
+          if (!more) return null;
+          for (const p of more) own.add(p);
+        }
+      }
       return own;
     }
   }
@@ -525,6 +695,12 @@ export interface StashRetryOutcome {
   inTheWay?: ChangesInTheWay;
   /** Refused because git is stopped in an operation — nothing was stashed. */
   blocked?: OperationInTheWay;
+  /** A stash op with `index` over staged changes of the user's (runApplying):
+   *  nothing was stashed or run. */
+  indexBusy?: true;
+  /** A stash op with `index` whose staged half git refused — on the first
+   *  run, or on the retry, after which the stashed changes were put back. */
+  indexRefused?: true;
 }
 
 /** The message a stash-and-retry's stash carries, so it can be found again. */
@@ -544,7 +720,9 @@ function stashMessage(op: ApplyOp): string {
     case "checkout":
       return `GitStudio: before checking out ${short(op.target)}`;
     case "stash":
-      return "GitStudio: before applying a stash";
+      return op.branch !== undefined
+        ? "GitStudio: before creating a branch from a stash"
+        : "GitStudio: before applying a stash";
   }
 }
 
@@ -584,6 +762,12 @@ export async function stashAndRetry(
   if (first.blocked) {
     return { result: first.result, blocked: first.blocked };
   }
+  if (first.stashGone) {
+    return { result: first.result, stashFailed: "That stash no longer exists.", stashGone: true };
+  }
+  if (first.indexBusy || first.indexRefused) {
+    return { result: first.result, ...(first.indexBusy ? { indexBusy: true } : { indexRefused: true }) };
+  }
   if (first.result.code === 0 || !first.inTheWay) {
     return { result: first.result };
   }
@@ -607,16 +791,23 @@ export async function stashAndRetry(
         stashGone: true,
       };
     }
-    args = ["stash", op.pop ? "pop" : "apply", now];
+    args = stashArgs(op, now);
   }
   const at = await where(proc, signal);
+  const tree = op.kind === "stash" && op.index ? await porcelain(proc, signal) : null;
   const result = await proc.run(args, { signal });
   if (result.code !== 0 && (await stoppedPartWay(proc, signal))) {
     return { result, stashed, fate: "waiting" };
   }
+  // The staged half refused, now that nothing of the user's is in the way —
+  // said as that, not as their changes being in the way all over again.
+  const indexRefused = result.code !== 0 && tree !== null && (await nothingHappened(proc, at, tree, signal));
   // Done — or failed outright, in which case this puts the tree back as it
   // was before anything was tried.
   const fate = await putBack(proc, stashes, saved, signal);
+  if (indexRefused) {
+    return { result, stashed, fate, indexRefused: true };
+  }
   if (result.code !== 0 && fate === "restored") {
     // Refused AGAIN over the user's work — something the stash did not cover,
     // or changed since. That is still their state, not git failing: said as

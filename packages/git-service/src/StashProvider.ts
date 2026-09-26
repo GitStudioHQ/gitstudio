@@ -47,6 +47,32 @@ export interface StashSaveOptions extends GitRunOptions {
 export interface StashOpResult {
   ok: boolean;
   stderr: string;
+  /**
+   * The stash, named by its sha, is no longer in the list (popped or dropped
+   * since it was shown), so nothing ran. The user's state, not a failure.
+   */
+  gone?: true;
+}
+
+/** What the user is told when the stash they acted on has left the list. */
+export const STASH_GONE_MESSAGE = "That stash is no longer in the list, so nothing was changed.";
+
+/**
+ * A stash's full sha. A stash is ADDRESSED by it: `stash@{n}` is a position,
+ * and every push, pop or drop renumbers the list under a row that still shows
+ * the old number.
+ */
+export function isStashSha(s: string): boolean {
+  return /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(s);
+}
+
+/**
+ * The only two ways a stash is named here: its full sha, or a `stash@{n}`
+ * selector from the list. Anything else — a name that looks like an option,
+ * a revision expression — never reaches git.
+ */
+export function isStashName(s: string): boolean {
+  return isStashSha(s) || /^stash@\{\d+\}$/.test(s);
 }
 
 /**
@@ -289,49 +315,180 @@ export class StashProvider {
     return countPaths(r) > 0;
   }
 
-  /** `git stash apply <ref>` — apply without dropping. */
-  async apply(ref: string, opts?: GitRunOptions): Promise<StashOpResult> {
-    const r = await this.proc.run(["stash", "apply", ref], {
+  /**
+   * The stash with this sha, where the list holds it NOW, or undefined when it
+   * has left the list.
+   */
+  async find(sha: string, opts?: GitRunOptions): Promise<StashEntry | undefined> {
+    if (!isStashSha(sha)) {
+      return undefined;
+    }
+    return (await this.list(opts)).find((e) => e.sha === sha);
+  }
+
+  /**
+   * The `stash@{n}` to hand git for a stash named by sha, read from the list
+   * just before git runs; a selector is taken as it is. Undefined for a sha
+   * that has left the list, and for anything that is not a stash's name.
+   *
+   * `pop`, `drop` and `branch` need the selector — git refuses them a bare
+   * commit ("is not a stash reference"), and `branch` would not drop it.
+   */
+  private async selectorFor(stash: string, opts?: GitRunOptions): Promise<string | undefined> {
+    if (!isStashName(stash)) {
+      return undefined;
+    }
+    return isStashSha(stash) ? (await this.find(stash, opts))?.ref : stash;
+  }
+
+  /** `git stash apply <stash>` — apply without dropping. A sha is applied as
+   *  itself: git needs no selector for this one. */
+  async apply(stash: string, opts?: GitRunOptions): Promise<StashOpResult> {
+    if (!isStashName(stash)) {
+      return notAStash(stash);
+    }
+    const r = await this.proc.run(["stash", "apply", stash], {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, stderr: r.stderr };
   }
 
-  /** `git stash pop <ref>` — apply then drop on success. */
-  async pop(ref: string, opts?: GitRunOptions): Promise<StashOpResult> {
+  /** `git stash pop <stash>` — apply then drop on success. */
+  async pop(stash: string, opts?: GitRunOptions): Promise<StashOpResult> {
+    const ref = await this.selectorFor(stash, opts);
+    if (!ref) {
+      return isStashName(stash) ? gone() : notAStash(stash);
+    }
     const r = await this.proc.run(["stash", "pop", ref], {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, stderr: r.stderr };
   }
 
-  /** `git stash drop <ref>` — discard a stash entry. */
-  async drop(ref: string, opts?: GitRunOptions): Promise<StashOpResult> {
+  /**
+   * `git stash drop <stash>` — discard a stash entry. Named by sha, the entry
+   * is found in the list immediately before git runs, so a list that was
+   * renumbered while the user was being asked cannot make it drop another.
+   */
+  async drop(stash: string, opts?: GitRunOptions): Promise<StashOpResult> {
+    const ref = await this.selectorFor(stash, opts);
+    if (!ref) {
+      return isStashName(stash) ? gone() : notAStash(stash);
+    }
     const r = await this.proc.run(["stash", "drop", ref], {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, stderr: r.stderr };
   }
 
-  /** `git stash show -p <ref>` — the stash's diff text (empty on failure). */
-  async show(ref: string, opts?: GitRunOptions): Promise<string> {
-    const r = await this.proc.run(["stash", "show", "-p", ref], {
-      signal: opts?.signal,
-    });
-    return r.code === 0 ? r.stdout : "";
+  /**
+   * The stash as a patch — everything it holds, empty on failure.
+   *
+   * `git stash show -p` alone leaves out the files a stash made with `-u`
+   * holds (its third parent), so a stash of new files read as an empty
+   * document: easy to drop believing there was nothing in it. They are added
+   * as new files, read from that parent with plumbing that every git has
+   * (`stash show --include-untracked` needs 2.32).
+   */
+  async show(stash: string, opts?: GitRunOptions): Promise<string> {
+    if (!isStashName(stash)) {
+      return "";
+    }
+    // `stash.showIncludeUntracked` (git 2.32+) makes `stash show` list those
+    // files itself, and then they were listed twice. Set off for this run:
+    // older git ignores a key it does not know.
+    const tracked = await this.proc.run(
+      ["-c", "stash.showIncludeUntracked=false", "stash", "show", "-p", stash],
+      { signal: opts?.signal },
+    );
+    if (tracked.code !== 0) {
+      return "";
+    }
+    const untracked = await this.proc.run(
+      ["diff-tree", "-p", "-r", "--root", "--no-commit-id", `${stash}^3`, "--"],
+      { signal: opts?.signal },
+    );
+    // No third parent (no -u): git exits non-zero, and there is nothing to add.
+    return untracked.code === 0 ? tracked.stdout + untracked.stdout : tracked.stdout;
   }
 
-  /** `git stash branch <name> <ref>` — create a branch from a stash. */
+  /**
+   * Was anything STAGED when this stash was made? Then a plain apply brings
+   * those changes back unstaged, and where the staged version differed from
+   * the working copy (`MM`), the staged version is gone once the stash is
+   * popped. Such a stash is applied with `--index` (ApplyOp's `index`).
+   */
+  async holdsStaged(stash: string, opts?: GitRunOptions): Promise<boolean> {
+    if (!isStashName(stash)) {
+      return false;
+    }
+    // The stash's index commit (^2) against its base (^1): the same tree
+    // means nothing was staged. (Both revisions are built from a checked
+    // stash name, so neither can read as an option.)
+    const trees = await this.proc.run(
+      ["rev-parse", `${stash}^1^{tree}`, `${stash}^2^{tree}`],
+      { signal: opts?.signal },
+    );
+    const [base, index] = trees.stdout.split("\n").filter((l) => l.length > 0);
+    return trees.code === 0 && !!base && !!index && base !== index;
+  }
+
+  /**
+   * `git stash branch <name> <stash>` — create a branch at the stash's base,
+   * apply it there and drop it. A name git cannot use, or one a branch already
+   * has, is refused before git runs (see stashBranchNameRefusal).
+   *
+   * This runs git as it is. The extension's Create Branch goes through the
+   * shared door instead (changesInTheWay.ts, a stash op with `branch`), which
+   * asks about uncommitted work in its way first.
+   */
   async branch(
-    ref: string,
+    stash: string,
     name: string,
     opts?: GitRunOptions,
   ): Promise<StashOpResult> {
+    const refused = await stashBranchNameRefusal(this.proc, name, opts?.signal);
+    if (refused) {
+      return { ok: false, stderr: refused };
+    }
+    const ref = await this.selectorFor(stash, opts);
+    if (!ref) {
+      return isStashName(stash) ? gone() : notAStash(stash);
+    }
     const r = await this.proc.run(["stash", "branch", name, ref], {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, stderr: r.stderr };
   }
+}
+
+/**
+ * Why `git stash branch <name>` cannot take this name, or undefined when it
+ * can. Asked before git runs: a name like an option would be read as one, and
+ * git refuses a name that is no branch name, or that a branch already has,
+ * only after it has looked — in its own words.
+ */
+export async function stashBranchNameRefusal(
+  proc: GitProcess,
+  name: string,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  if (name.length === 0 || name.startsWith("-")) {
+    return `“${name}” is not a branch name git can use.`;
+  }
+  if ((await proc.run(["check-ref-format", "--branch", name], { signal })).code !== 0) {
+    return `“${name}” is not a branch name git can use.`;
+  }
+  const exists = await proc.run(["rev-parse", "--verify", "--quiet", `refs/heads/${name}`], { signal });
+  return exists.code === 0 ? `A branch named “${name}” already exists.` : undefined;
+}
+
+function gone(): StashOpResult {
+  return { ok: false, gone: true, stderr: STASH_GONE_MESSAGE };
+}
+
+function notAStash(name: string): StashOpResult {
+  return { ok: false, stderr: `“${name}” is not a stash.` };
 }
 
 /**
