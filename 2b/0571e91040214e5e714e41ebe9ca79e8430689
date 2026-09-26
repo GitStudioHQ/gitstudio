@@ -1,0 +1,22 @@
+packages/webview-ui/test/conflictsInPlace.test.ts
+  s_26f5e669d3043c::t_d96d28a8f541c1 302,306,321
+  s_26f5e669d3043c::t_fed62c8eb8d830 303-305,307-312,314-315,317-320,322,326-329
+  s_26f5e669d3043c::t_ce3beb15cb8467 325,330
+  s_26f5e669d3043c::t_267d60423a6c71 323-324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2b0571e91040214e5e714e41ebe9ca79e8430689",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
