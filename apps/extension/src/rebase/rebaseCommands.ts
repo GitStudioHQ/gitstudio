@@ -7,6 +7,7 @@ import type { UndoLedger } from "../undo/undoLedger";
 import { operationInProgressMessage } from "../git/pausedForUser";
 import { detectOperation } from "../git/pauseNotice";
 import { abortRebaseLike, nothingToAbortText } from "./rebaseAbort";
+import { describeRebaseBase } from "./rebaseBase";
 
 // Launching & aborting interactive rebases.
 //
@@ -80,7 +81,7 @@ export async function startInteractiveRebase(
           .catch(() => undefined);
   await undo.runWithUndo(
     active,
-    `Interactive rebase onto ${short(base)}`,
+    `Interactive rebase onto ${describeRebaseBase(base)}`,
     async () => {
       launchRebaseTerminal(active, base);
     },
@@ -172,10 +173,4 @@ function launchRebaseTerminal(active: RepoEntry, base: string): void {
 async function isDirty(ctx: GitContext): Promise<boolean> {
   const result = await ctx.process.run(["status", "--porcelain"]);
   return result.stdout.trim().length > 0;
-}
-
-/** A sha (or a sha's parent, "<sha>^") shortened for the label; any other ref as typed. */
-function short(ref: string): string {
-  const m = /^([0-9a-f]{40,64})(\^?)$/i.exec(ref);
-  return m ? `${m[1].slice(0, 7)}${m[2]}` : ref;
 }

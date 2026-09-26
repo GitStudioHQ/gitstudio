@@ -87,7 +87,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   rebase, instead of leaving it half-open on a detached HEAD. An interactive
   rebase you quit without running changed nothing, so Undo says so; it no
   longer resets the branch to where it was at launch, dropping the commits
-  you made since.
+  you made since. Its Undo names the base as a short sha, not all forty
+  characters.
 - **Undo after reordering or dropping commits with "move those branches"**
   puts those branches back too, not just the current one.
 - **Undo of an amend** brings your staged changes back staged. Once the

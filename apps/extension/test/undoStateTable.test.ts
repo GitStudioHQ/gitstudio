@@ -1266,9 +1266,12 @@ cell({
     await startInteractiveRebase(f.repos, f.ledger, sha(f, "main~1"));
     runTerminal(f, sequenceEditor(f, "1s/^pick/drop/"));
   },
-  expect: (f) => {
+  expect: (f, _s, { undoAsked }) => {
     isAt(f, "refs/heads/main", "B", "main back at B");
     assert.deepEqual(f.git("log", "--format=%s", "main").split("\n"), ["B", "A", "base"]);
+    // The label names the base as a short sha — it was the full 40 plus "^".
+    const q = undoAsked.find((a) => a.kind === "confirm");
+    assert.match(q?.title ?? "", /^Undo "Interactive rebase onto [0-9a-f]{7}\^"\?$/, "the question names the base briefly");
   },
 });
 
