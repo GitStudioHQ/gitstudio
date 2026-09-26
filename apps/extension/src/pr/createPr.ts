@@ -11,8 +11,9 @@ import { PrDescriptionPanel } from "./prDescriptionPanel";
 //   1. Resolve the GitHub repo + the current branch; ensure it's pushed (offer
 //      to push w/ upstream when it isn't tracked / is ahead).
 //   2. Pick the base branch (default the repo's default branch).
-//   3. Prefill title from the last commit subject, body from the commit list;
-//      offer an ✨ AI-drafted body when GitBrain is enabled.
+//   3. Prefill the title as GitHub does — a single commit's subject, else the
+//      branch name in words — and the body from the commit list; offer an ✨
+//      AI-drafted body when GitBrain is enabled.
 //   4. Choose draft vs. ready, POST /pulls, and open the new PR's description.
 // "PR already exists" (422) opens the PR that exists.
 //
@@ -69,7 +70,7 @@ export async function createPullRequest(
 
   // Commit list base..head, for the title + body.
   const commits = await commitSubjects(entry.ctx, ctx.remoteName, base, headBranch);
-  const defaultTitle = commits[0] ?? headBranch;
+  const defaultTitle = defaultPrTitle(commits, headBranch);
 
   const title = await promptInput({
     title: "Pull request title",
@@ -177,6 +178,20 @@ export async function createPullRequest(
 }
 
 /**
+ * The title GitHub itself proposes: the subject of the branch's only commit,
+ * or — with several — the branch name in words ("fix-login_page" → "Fix login
+ * page"). `commits` is `git log` order, newest first: its first entry, used
+ * before, was the LAST commit's subject, standing for the whole branch.
+ */
+export function defaultPrTitle(commits: readonly string[], branch: string): string {
+  if (commits.length === 1) {
+    return commits[0];
+  }
+  const words = branch.replace(/[-_]+/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : branch;
+}
+
+/**
  * Where the branch is (or will be) pushed, and its name there — git's own
  * push-remote rule, so the PR's head is the branch that was actually pushed.
  */
@@ -185,10 +200,12 @@ async function headLocation(
   fallbackRemote: string,
   branch: string,
 ): Promise<{ remote: string; branch: string }> {
+  // A value that reads as an option is no remote or branch name: it never
+  // reaches git's command line (the push takes the remote as an argument).
   const get = async (key: string): Promise<string | undefined> => {
     const r = await ctx.process.run(["config", "--get", key]);
     const v = r.stdout.trim();
-    return r.code === 0 && v ? v : undefined;
+    return r.code === 0 && v && !v.startsWith("-") ? v : undefined;
   };
   const tracking = await get(`branch.${branch}.remote`);
   const remote =
@@ -281,6 +298,9 @@ async function pickBase(
   const OTHER = "gitstudio:other";
   const pick = await promptPick({
     title: `Base branch to merge "${headBranch}" into`,
+    // Which repository the PR opens on is the Pull Requests view's: said here
+    // too, where it is decided.
+    hint: `The pull request opens on ${owner}/${repo}.`,
     choices: [
       ...candidates.map((b) => ({
         id: b,

@@ -270,6 +270,22 @@ test("create: Draft creates a draft; a branch in your fork is sent as owner:bran
   assert.equal(sent.draft, false);
 });
 
+test("create: a push remote configured as an option-like word is no remote — it never decides the head", async () => {
+  const w = forkWorld();
+  w.git("config", "branch.feature.pushRemote", "--receive-pack=touch pwned");
+  let sent: any;
+  fake = installFakeGitHub(
+    createRoutes((body) => {
+      sent = body;
+      return { status: 201, body: rawPull(53) };
+    }),
+  );
+  mountWith(w.entry);
+  answer = wizard("ready");
+  await vscode.commands.executeCommand("gitstudio.pr.create");
+  assert.equal(sent?.head, "me:feature", "the branch's own remote, as if nothing were configured");
+});
+
 test("create: 'already exists' opens the PR that exists", async () => {
   const w = forkWorld();
   fake = installFakeGitHub(
@@ -284,6 +300,24 @@ test("create: 'already exists' opens the PR that exists", async () => {
   assert.ok(pr.panels.some((p: any) => p.title === "PR #44"), `the existing PR opens (said: ${JSON.stringify(pr.said)})`);
 });
 
+test("create: the title proposed is GitHub's — the one commit's subject, else the branch in words, never the newest commit's", async () => {
+  const w = forkWorld();
+  fake = installFakeGitHub(createRoutes(() => ({ status: 201, body: rawPull(52) })));
+  mountWith(w.entry);
+  answer = wizard("ready");
+  const proposed = () => asked.filter((a) => a.title === "Pull request title").at(-1)?.value;
+  await vscode.commands.executeCommand("gitstudio.pr.create");
+  assert.equal(proposed(), "Add b", "one commit: its subject");
+
+  writeFileSync(join(w.work, "c.txt"), "c\n");
+  w.git("add", ".");
+  w.git("commit", "-qm", "Fix a typo");
+  w.git("update-ref", "refs/remotes/mine/feature", "HEAD"); // pushed: nothing to ask
+  asked = [];
+  await vscode.commands.executeCommand("gitstudio.pr.create");
+  assert.equal(proposed(), "Feature", "two commits: the branch, not the last commit's \"Fix a typo\"");
+});
+
 test("create: the base question offers only branches the remote has", async () => {
   const w = forkWorld();
   fake = installFakeGitHub(createRoutes(() => ({ status: 201, body: rawPull(51) })));
@@ -296,4 +330,5 @@ test("create: the base question offers only branches the remote has", async () =
     ["main"],
     "no master or develop that origin doesn't have",
   );
+  assert.equal(base.hint, "The pull request opens on acme/app.", "where the PR goes is said where it is decided");
 });
