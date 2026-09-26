@@ -64,6 +64,17 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - Blame in a repository nested inside another's folder (a vendored checkout,
   a submodule) no longer runs in the outer repository when the outer one is
   the repository on screen.
+- **A branch's actions in a narrow or short sidebar.** The actions a branch
+  opens in the branch menu no longer run off the right or bottom edge of the
+  view, where Reset and Delete could not be reached: they stay inside it and
+  scroll when there are more than fit, keeping the highlighted one in sight.
+  The actions menu a changed file opens does the same.
+- **The branch menu in a short or narrow sidebar** uses all the room below
+  the branch name rather than about three quarters of the view's height,
+  fits a sidebar narrower than itself, and stays inside the view — with a
+  branch's actions — when you resize the sidebar while it is open.
+- The branch menu keeps its width while you type, and a new search starts at
+  the top of the list with its first group heading in view.
 
 ## [1.14.0] - 2026-09-25
 

@@ -274,6 +274,15 @@ export class ChangesPage {
     await this.page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
   }
 
+  /** Resize the view, as dragging the sidebar's edge does, and wait for the
+   *  page's `resize` (it lands a frame after the new size). */
+  async resize(width: number, height: number, scale = 1): Promise<void> {
+    await this.page.eval(`window.__gsResized = false;
+      window.addEventListener("resize", function () { window.__gsResized = true; }, { once: true })`);
+    await this.page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: scale, mobile: false });
+    await this.page.waitFor(`window.__gsResized && innerWidth === ${width} && innerHeight === ${height}`);
+  }
+
   /** A PNG of the whole view. */
   async screenshot(path: string): Promise<void> {
     writeFileSync(path, await this.page.screenshot());

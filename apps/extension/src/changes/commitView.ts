@@ -2722,11 +2722,12 @@ export class CommitViewProvider
     .branch-menu {
       position: fixed;
       z-index: 50;
-      min-width: 248px;
+      min-width: min(248px, calc(100vw - 12px));
       /* Grow with the sidebar so a wider panel reveals more of long ref names
          (bounded so it never sprawls). The tooltip covers whatever still clips. */
       max-width: min(460px, calc(100vw - 12px));
-      max-height: 72vh;
+      /* placeBranchMenu sets the real limit: all the room below the pill. */
+      max-height: calc(100vh - 12px);
       display: flex;
       flex-direction: column;
       background: var(--vscode-menu-background, var(--gs-surface));
@@ -2865,11 +2866,15 @@ export class CommitViewProvider
     body.vscode-high-contrast-light .bm-backdrop { background: rgba(0, 0, 0, 0.16); }
     /* The per-branch submenu is a CHILD dialog — brand-tinted surface and a
        branded title band, so it never reads as "the same window again". */
+    /* Never wider or taller than the view, however narrow or short the
+       sidebar: past that its items scroll (the file rows' action menu is this
+       same popup). */
     .branch-submenu {
       position: fixed;
       z-index: 60;
-      min-width: 210px;
-      max-width: 320px;
+      min-width: min(210px, calc(100vw - 12px));
+      max-width: min(320px, calc(100vw - 12px));
+      max-height: calc(100vh - 12px);
       display: flex;
       flex-direction: column;
       padding: 4px;
@@ -2889,7 +2894,10 @@ export class CommitViewProvider
     }
     .bm-subhead .codicon { font-size: 13px; }
     .bm-subhead-name { font-size: 12px; font-weight: 600; color: var(--gs-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .bm-sublist { display: flex; flex-direction: column; }
+    .bm-sublist { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+    /* The list scrolls, so it clips: a focus ring drawn outside an item
+       would lose three sides. Drawn just inside, it keeps all four. */
+    .bm-subaction:focus-visible { outline-offset: -1px; }
     .bm-subaction {
       display: flex; align-items: center; gap: 9px;
       width: 100%;
@@ -5157,6 +5165,7 @@ export class CommitViewProvider
       document.removeEventListener("mousedown", onBranchDocDown, true);
       document.removeEventListener("keydown", onBranchKey, true);
       window.removeEventListener("blur", onBranchBlur, true);
+      window.removeEventListener("resize", onBranchResize);
     }
     function closeBranchSubmenu() {
       if (branchSubmenu) { branchSubmenu.remove(); branchSubmenu = null; }
@@ -5304,7 +5313,9 @@ export class CommitViewProvider
         if (row) {
           openBranchActions(sub.name, sub.kind, sub.current, row);
           bmSubActive = subActive;
-          paintBm(false);
+          // The rebuilt submenu starts scrolled to its top; a highlight
+          // further down a short view's submenu is brought back into sight.
+          paintBm(subActive >= 0);
         } else {
           subMenuFor = null; // the branch vanished (e.g. deleted)
         }
@@ -5687,6 +5698,9 @@ export class CommitViewProvider
           !remotes.length && !allTags.length) {
         list.appendChild(el("div", "bm-empty", "No matches"));
       }
+      // New rows can be wider (a longer name arrived, more tags shown): the
+      // box is kept inside the view.
+      placeBranchMenu();
       // The rows are new; the highlight finds its row again by key.
       paintBm(false);
     }
@@ -6357,6 +6371,10 @@ export class CommitViewProvider
         branchFilter = input.value.trim().toLowerCase();
         tagLimit = TAG_PAGE; // a new query starts from the first page again
         renderBranchMenu();
+        // A new query starts at the top, its first group header in view —
+        // not wherever the last one had been scrolled to.
+        const l = bmList();
+        if (l) l.scrollTop = 0;
         // Typing puts the highlight on the first match (none for an empty box),
         // so Enter runs what the search found.
         const rows = bmRows();
@@ -6387,21 +6405,42 @@ export class CommitViewProvider
       });
       branchMenu.appendChild(list);
       document.body.appendChild(branchMenu);
-      renderBranchMenu();
+      renderBranchMenu(); // placed by placeBranchMenu
       branchPill.setAttribute("aria-expanded", "true");
-      const r = branchPill.getBoundingClientRect();
-      branchMenu.style.left = Math.round(r.left) + "px";
-      branchMenu.style.top = Math.round(r.bottom + 4) + "px";
-      const mr = branchMenu.getBoundingClientRect();
-      if (mr.right > window.innerWidth - 6) {
-        branchMenu.style.left = Math.max(6, window.innerWidth - mr.width - 6) + "px";
-      }
+      // Keep the width it opened at while the query changes: fewer, shorter
+      // rows must not pull its edge in under the pointer. A longer name
+      // arriving can still widen it, and it never outgrows the view.
+      branchMenu.style.minWidth = "min(" + Math.ceil(branchMenu.getBoundingClientRect().width) + "px, calc(100vw - 12px))";
       input.focus();
+      window.addEventListener("resize", onBranchResize);
       setTimeout(() => {
         document.addEventListener("mousedown", onBranchDocDown, true);
         document.addEventListener("keydown", onBranchKey, true);
         window.addEventListener("blur", onBranchBlur, true);
       }, 0);
+    }
+    /** Under the pill, inside the view: moved in from the right edge when the
+     *  view is too narrow for it there, and as tall as the room below the
+     *  pill allows — a short panel's rows get all of it, not a fixed share. */
+    function placeBranchMenu() {
+      if (!branchMenu) return;
+      const PAD = 6;
+      const r = branchPill.getBoundingClientRect();
+      const top = Math.round(r.bottom + 4);
+      branchMenu.style.top = top + "px";
+      branchMenu.style.maxHeight = Math.max(0, window.innerHeight - top - 8) + "px";
+      branchMenu.style.left = Math.round(r.left) + "px";
+      const mr = branchMenu.getBoundingClientRect();
+      if (mr.right > window.innerWidth - PAD) {
+        branchMenu.style.left = Math.max(PAD, window.innerWidth - mr.width - PAD) + "px";
+      }
+    }
+    // The sidebar was resized with the menu open: it and its submenu are
+    // placed again, inside the view's new edges.
+    function onBranchResize() {
+      if (!branchMenu) return;
+      placeBranchMenu();
+      if (branchSubmenu) refreshOpenBranchUi();
     }
     branchPill.addEventListener("click", openBranchMenu);
     // Switch Repository: the host builds the list (it holds every repository's
