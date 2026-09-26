@@ -220,9 +220,27 @@ export interface GraphMenuItem {
 export interface GraphCommitMenuMessage {
   type: "commitMenu";
   sha: string;
+  /**
+   * The menu is for SEVERAL commits (issue #32): the selection it was asked
+   * for, newest first. The webview hands them back with the item picked
+   * (`commitMenuAction.shas`). Absent for one commit's menu.
+   */
+  shas?: string[];
   x: number;
   y: number;
   title: string;
+  items: GraphMenuItem[];
+}
+
+/**
+ * The details pane's answer to a multi-selection (issue #32): what the host
+ * offers for these commits — the same items as their right-click menu — for
+ * the "N commits selected" summary. `shas` is echoed so a late answer for a
+ * selection that has since changed is dropped rather than shown.
+ */
+export interface GraphCommitsSummaryMessage {
+  type: "commitsSummary";
+  shas: string[];
   items: GraphMenuItem[];
 }
 
@@ -234,6 +252,7 @@ export type GraphHostMessage =
   | GraphRevealMessage
   | GraphAuthorAvatarsMessage
   | GraphCommitMenuMessage
+  | GraphCommitsSummaryMessage
   | GraphCommitContainsMessage
   | GraphRebaseChainMessage
   | GraphErrorMessage;
@@ -289,8 +308,19 @@ export type GraphWebviewMessage =
   | { type: "openCommit"; sha: string }
   /** Single-click selection moved to this commit. */
   | { type: "selectCommit"; sha: string }
-  /** Right-click on a row: the host shows a context menu at (x, y). */
-  | { type: "contextMenu"; sha: string; x: number; y: number }
+  /**
+   * The selection is now SEVERAL commits — or none (issue #32): Cmd/Ctrl-click
+   * and Shift-click in the graph. Newest first, as the list shows them. The
+   * host answers `commitsSummary` for the details pane. One selected commit is
+   * still `selectCommit`.
+   */
+  | { type: "selectCommits"; shas: string[] }
+  /**
+   * Right-click on a row: the host shows a context menu at (x, y). `shas` is
+   * set when the row is part of a selection of two or more (issue #32) — the
+   * menu is then for all of them, newest first; `sha` is the row clicked.
+   */
+  | { type: "contextMenu"; sha: string; shas?: string[]; x: number; y: number }
   /** A direct action request (used by keyboard menu / fallbacks). */
   | { type: "action"; action: string; sha: string }
   /** Near the bottom of the loaded rows: please page in more. */
@@ -317,8 +347,10 @@ export type GraphWebviewMessage =
       /** Carry local branches pointing into the range along with the rewrite. */
       updateRefs: boolean;
     }
-  /** The user picked an item from the in-graph commit actions popover. */
-  | { type: "commitMenuAction"; sha: string; id: string }
+  /** The user picked an item from the in-graph commit actions popover — or
+   *  from the "N commits selected" summary. `shas` carries the commits of a
+   *  several-commit menu (issue #32), newest first; absent for one commit. */
+  | { type: "commitMenuAction"; sha: string; shas?: string[]; id: string }
   /** Copy text to the clipboard (host-side, CSP-safe). */
   | { type: "copyText"; text: string }
   /** Request CHANGES-column stats for these (visible) shas. */

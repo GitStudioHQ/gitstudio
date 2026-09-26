@@ -354,6 +354,13 @@ export interface CommitActionRequest {
   fullName?: string;
   /** See StashFirst: this request again, after the user chose Stash & Retry. */
   stashFirst?: string;
+  /**
+   * Cherry-pick or revert SEVERAL commits in one run (issue #32): all of them,
+   * newest first as the graph listed them — `sha` is the first. Main asks git
+   * for the order to run them in (oldest first for a pick, newest first for a
+   * revert) and refuses a merge among them. Only for "cherry-pick" and "revert".
+   */
+  shas?: string[];
 }
 
 /**
@@ -403,6 +410,20 @@ export interface CommitActionResult {
    * `fullName` (branch:rename), which only a LOCAL branch can take.
    */
   optionLike?: { fullName: string; name: string; local: boolean };
+  /**
+   * A cherry-pick or revert of several commits (issue #32): HEAD before the
+   * run, and after it when it FINISHED — the two tips its Undo moves between
+   * (commits:undo). Absent when it stopped or failed.
+   */
+  before?: string;
+  after?: string;
+  /**
+   * A cherry-pick or revert of several commits that git stopped part-way for
+   * the user — a conflict, an emptied commit — with the operation left open
+   * for Changes' Continue / Skip / Abort. (A pull's stop is PullActionResult's
+   * `stopped`.)
+   */
+  paused?: true;
 }
 
 /**
@@ -2038,9 +2059,13 @@ export interface DropRequest {
   carry?: boolean;
 }
 
-/** A branch a drop moved: full name, where it was, where the drop left it. */
-export interface DropMovedRef {
-  ref: string;
+/**
+ * A branch a rewrite carried along (the carry question's "move those
+ * branches"): where it was, and where the rewrite left it — git-service's
+ * CarriedBranch. Undo puts each one back.
+ */
+export interface CarriedBranchWire {
+  branch: string;
   before: string;
   after: string;
 }
@@ -2053,8 +2078,8 @@ export interface DropOutcomeWire extends RebaseOutcomeWire {
   after?: string;
   /** The branch it rewrote (refs/heads/…), null when HEAD was detached. */
   branch?: string | null;
-  /** The branches "Drop and move those branches" carried along. */
-  carried?: DropMovedRef[];
+  /** The other branches it carried, when it was asked to. */
+  carried?: CarriedBranchWire[];
 }
 
 /**
@@ -2066,7 +2091,78 @@ export interface UndoDropRequest {
   before: string;
   after: string;
   branch?: string | null;
-  carried?: DropMovedRef[];
+  carried?: CarriedBranchWire[];
+}
+
+/**
+ * Several commits at once (issue #32): what the graph's menu for a
+ * selection — and the "N commits selected" summary — may offer. Asked before
+ * the menu opens; an item that cannot apply is left out.
+ */
+export interface CommitsMenuWire {
+  /** Cherry-pick / Revert N: no merge among them. */
+  apply: boolean;
+  /** Drop N: all on the current branch's rewritable line. */
+  drop: boolean;
+  /** Squash N: that, and next to each other on it. */
+  squash: boolean;
+}
+
+/** Plan dropping or squashing several commits; `preflight` adds what stops it now. */
+export interface CommitsPlanRequest {
+  verb: "drop" | "squash";
+  /** Newest first, as the graph lists them. */
+  shas: string[];
+  preflight?: boolean;
+}
+
+export type CommitsPlanWire =
+  | {
+      ok: true;
+      verb: "drop" | "squash";
+      /** The selected commits, full shas, newest first along the branch. */
+      shas: string[];
+      /** Short sha and subject of each, in that order — what the question names. */
+      commits: Array<{ shortSha: string; subject: string }>;
+      /** HEAD when planned; the run refuses if it has moved. */
+      head: string;
+      branch: string | null;
+      /** Unselected commits replayed on top. */
+      replayed: number;
+      /** At least one of them is already on a remote. */
+      published: boolean;
+      /** Other local branches on a rewritten commit. */
+      carryable: string[];
+      /** Squash: the message pre-filled, every message in full, oldest first. */
+      message?: string;
+      /** With `preflight`: why it cannot start right now. */
+      blocked?: string;
+    }
+  | {
+      ok: false;
+      expected: true;
+      reason: string;
+      message: string;
+    };
+
+/** Run a confirmed drop or squash of several commits. */
+export interface CommitsRewriteRequest {
+  verb: "drop" | "squash";
+  shas: string[];
+  head: string;
+  carry?: boolean;
+  /** Squash: the new commit's message. */
+  message?: string;
+}
+
+/** Undo a rewrite of several commits (or their cherry-pick / revert). */
+export interface CommitsUndoRequest {
+  before: string;
+  after: string;
+  /** Names it in the refusal's words: "since the squash". */
+  what: "drop" | "squash" | "cherry-pick" | "revert";
+  /** The branches a drop or squash carried: they go back too. */
+  carried?: CarriedBranchWire[];
 }
 
 /**
@@ -2119,6 +2215,12 @@ export interface IpcChannels {
   "commit:dropPlan": [DropPlanRequest, DropPlanWire];
   "commit:drop": [DropRequest, DropOutcomeWire];
   "commit:undoDrop": [UndoDropRequest, CommitActionResult];
+  // ── Several commits at once from the graph (issue #32). Cherry-pick and
+  //    revert of several are commit:action with `shas`.
+  "commits:menu": [{ shas: string[] }, CommitsMenuWire];
+  "commits:plan": [CommitsPlanRequest, CommitsPlanWire];
+  "commits:rewrite": [CommitsRewriteRequest, DropOutcomeWire];
+  "commits:undo": [CommitsUndoRequest, CommitActionResult];
   // ── Working-tree staging + commit (Changes view) ──
   "stage": [string, CommitActionResult];
   "unstage": [string, CommitActionResult];

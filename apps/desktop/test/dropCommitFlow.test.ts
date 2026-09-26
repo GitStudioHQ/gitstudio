@@ -199,6 +199,14 @@ test("a failure is said in the tone main judged it", async () => {
   assert.deepEqual(broken.log.toasts, [{ message: "Couldn't drop a1b2c3d: Rebase failed.", kind: "error" }]);
 });
 
+test("a drop that carried branches hands them to its Undo, so they go back too", async () => {
+  const carried = [{ branch: "feature", before: "c".repeat(40), after: "d".repeat(40) }];
+  const { d, log } = deps({ plan: okPlan({ carryable: ["feature"] }), choose: "carry", outcome: { status: "done", before: HEAD, after: NEW, carried } });
+  assert.equal(await dropCommitFlow(SHA, d), "done");
+  await log.undoables[0].action.undo();
+  assert.deepEqual(log.undos, [{ before: HEAD, after: NEW, carried }]);
+});
+
 test("branches on replayed commits get the either/or; 'move' carries them", async () => {
   const { d, log } = deps({ plan: okPlan({ carryable: ["feature"] }), choose: "carry" });
   assert.equal(await dropCommitFlow(SHA, d), "done");

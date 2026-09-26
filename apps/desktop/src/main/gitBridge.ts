@@ -41,6 +41,9 @@ import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStagin
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import { stoppedIn } from "@gitstudio/git-service/stoppedOperation";
+import { applyManyArgs, mergesAmong, orderCommits } from "@gitstudio/git-service/multiCommit";
+import { applyManyMessage } from "@gitstudio/engine/rebase/many";
+import { selectedCommits } from "@gitstudio/host-bridge/graphSelection";
 import {
   pullBlockedMessage,
   pullDetachedMessage,
@@ -1814,10 +1817,13 @@ export class GitBridge {
     const leftPath = req.leftPath && safeArg(req.leftPath) ? req.leftPath : req.path;
     const left = await showAt(ctx, leftRef, leftPath);
     const right = await showAt(ctx, req.head, req.path);
+    // A side that is a commit (Compare these two commits, issue #32) by its
+    // short sha, as the pickers above name it; a ref by its name.
+    const side = (ref: string): string => (/^[0-9a-f]{40,64}$/i.test(ref) ? ref.slice(0, 7) : ref);
     return {
       path: req.path,
-      leftLabel: `${threeDot ? req.base + " (merge-base)" : req.base} ${leftPath}`,
-      rightLabel: `${req.head} ${req.path}`,
+      leftLabel: `${threeDot ? side(req.base) + " (merge-base)" : side(req.base)} ${leftPath}`,
+      rightLabel: `${side(req.head)} ${req.path}`,
       leftText: left.text,
       rightText: right.text,
       conflicted: false,
@@ -3012,6 +3018,10 @@ export class GitBridge {
     if (req.action === "checkout-ref") {
       return this.checkoutRef(ctx, req);
     }
+    // Several commits in one cherry-pick or revert (issue #32).
+    if ((req.action === "cherry-pick" || req.action === "revert") && Array.isArray(req.shas) && req.shas.length > 1) {
+      return this.applyMany(ctx, req.action, req);
+    }
     const args = actionArgs(req);
     if (!args) {
       // copy-sha is handled entirely in the renderer; nothing to run here.
@@ -3058,6 +3068,82 @@ export class GitBridge {
           };
         }
         return { ok: true, changed: true, ...withNote };
+      } catch (err) {
+        return { ok: false, changed: false, message: String(err) };
+      }
+    });
+  }
+
+  /**
+   * Cherry-pick or revert SEVERAL commits (issue #32): one git command over
+   * all of them, in the order git says — oldest first for a pick, newest
+   * first for a revert — through the one door for commit-applying commands,
+   * which asks about uncommitted changes in the way of ANY of them before git
+   * starts. A merge among them is refused (it needs a side chosen, one at a
+   * time). A run git stopped part-way (a conflict, an emptied commit) answers
+   * `stopped` for Changes' Continue / Skip / Abort; one that finished answers
+   * the two tips its Undo moves between.
+   */
+  private async applyMany(
+    ctx: GitContext,
+    verb: "cherry-pick" | "revert",
+    req: CommitActionRequest,
+  ): Promise<CommitActionResult> {
+    const shas = selectedCommits(req.shas);
+    if (shas.length < 2) return UNSAFE_REF_RESULT;
+    return this.serialize(async () => {
+      try {
+        const [merges, ordered] = await Promise.all([
+          mergesAmong(ctx.process, shas),
+          orderCommits(ctx.process, shas, verb === "cherry-pick" ? "oldest-first" : "newest-first"),
+        ]);
+        if (!merges || !ordered) {
+          return {
+            ok: false,
+            changed: false,
+            expected: true,
+            message: "Those commits could not be read any more — refresh the graph and try again.",
+          };
+        }
+        if (merges.length > 0) {
+          return {
+            ok: false,
+            changed: false,
+            expected: true,
+            message: `${merges[0].slice(0, 7)} is a merge commit — ${verb} it on its own, where you can choose which side to keep.`,
+          };
+        }
+        const head = async (): Promise<string> =>
+          (await ctx.process.run(["rev-parse", "--verify", "--quiet", "HEAD"])).stdout.trim();
+        const before = await head();
+        const op: ApplyOp = { kind: verb, commit: ordered[0], commits: ordered, args: applyManyArgs(verb, ordered) };
+        const applied = await applyForDoor(ctx, op, req.stashFirst);
+        if ("answer" in applied) return applied.answer;
+        const withNote = applied.stashNote ? { stashNote: applied.stashNote } : {};
+        const { code, stdout, stderr } = applied.result;
+        if (code === 0) {
+          const after = await head();
+          return { ok: true, changed: true, ...(before && after ? { before, after } : {}), ...withNote };
+        }
+        const stop = await stoppedIn(ctx.process);
+        if (stop?.operation === verb) {
+          // Neutral: nothing failed. The run waits on the user in Changes.
+          return {
+            ok: false,
+            changed: true,
+            expected: true,
+            paused: true,
+            message: applyManyMessage(verb, ordered.length, "stopped"),
+            ...withNote,
+          };
+        }
+        return {
+          ok: false,
+          changed: false,
+          message: stderr.trim() || stdout.trim() || "The operation failed.",
+          ...(declinedOnStdout(stdout.trim(), stderr.trim()) ? { expected: true } : {}),
+          ...withNote,
+        };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
       }

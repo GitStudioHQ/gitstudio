@@ -9,7 +9,8 @@ import "./commit-graph";
 import "../commit-details";
 import { applyGraphInitRefs } from "./graphInit";
 import type { CommitGraph, GraphAction } from "./commit-graph";
-import type { CommitDetails, RefMenuRequest } from "../commit-details";
+import type { CommitDetails, RefMenuRequest, SelectionActionRequest } from "../commit-details";
+import { summaryCommits } from "./selectionSummary";
 import type {
   GraphHostMessage,
   GraphWebviewMessage,
@@ -74,11 +75,27 @@ function start(root: HTMLElement): void {
   graph.onAction = (action: GraphAction) => {
     switch (action.type) {
       case "select":
+        // One commit again: its details, not a summary of a selection.
+        details.selection = null;
         vscode.postMessage({ type: "selectCommit", sha: action.sha });
         // Clicking a commit IS a request to see it, so it always reopens the
         // dock. Closing it used to be sticky, which left no way back short of
         // reloading the window.
         openDetails();
+        break;
+      case "selection":
+        // Several commits (issue #32): the dock says so and offers what can
+        // be done to all of them. The rows name them now; the host answers
+        // which actions apply (commitsSummary). None selected: the dock's
+        // empty state.
+        if (action.shas.length > 1) {
+          details.selection = { commits: summaryCommits(graph, action.shas) };
+          openDetails();
+        } else {
+          details.selection = null;
+          details.details = null;
+        }
+        vscode.postMessage({ type: "selectCommits", shas: action.shas });
         break;
       case "showDetails":
         // Same commit, dock closed: just bring it back. The host already has
@@ -86,7 +103,9 @@ function start(root: HTMLElement): void {
         openDetails();
         break;
       case "open":
-        // An explicit open (double-click) always shows the details.
+        // An explicit open (double-click) always shows the details — of one
+        // commit, so never under a summary of several.
+        details.selection = null;
         shell.dataset.detailsDismissed = "false";
         vscode.postMessage({ type: "selectCommit", sha: action.sha });
         openDetails();
@@ -95,12 +114,18 @@ function start(root: HTMLElement): void {
         vscode.postMessage({
           type: "contextMenu",
           sha: action.sha,
+          ...(action.shas ? { shas: action.shas } : {}),
           x: action.x,
           y: action.y,
         });
         break;
       case "menuAction":
-        vscode.postMessage({ type: "commitMenuAction", sha: action.sha, id: action.id });
+        vscode.postMessage({
+          type: "commitMenuAction",
+          sha: action.sha,
+          ...(action.shas ? { shas: action.shas } : {}),
+          id: action.id,
+        });
         break;
       case "reorder": {
         // Which local branches sit on the commits being rewritten. Sent with
@@ -172,11 +197,20 @@ function start(root: HTMLElement): void {
     vscode.postMessage({ type: "copyText", text: d.text });
   });
   details.addEventListener("gs-close", () => closeDetails());
+  // An action from the "N commits selected" summary: the same item the
+  // selection's right-click menu offers, run the same way (issue #32).
+  details.addEventListener("gs-selection-action", (e) => {
+    const d = (e as CustomEvent<SelectionActionRequest>).detail;
+    if (d.shas.length < 2) return;
+    vscode.postMessage({ type: "commitMenuAction", sha: d.shas[0], shas: d.shas, id: d.id });
+  });
   // Clicking a parent sha jumps to that commit. This was emitted by the details
   // pane but only ever handled by the DESKTOP app — in the extension the click
   // did nothing at all. Reveal it locally and ask the host for its details.
   details.addEventListener("gs-reveal", (e) => {
     const d = (e as CustomEvent).detail as { sha: string };
+    // From the "N commits selected" summary too: that commit, alone.
+    details.selection = null;
     graph.reveal(d.sha);
     openDetails();
     vscode.postMessage({ type: "selectCommit", sha: d.sha });
@@ -318,6 +352,11 @@ function handle(
       break;
     }
     case "revealCommit": {
+      // One commit, whatever was selected before: the reveal selects it alone,
+      // and a "N commits selected" summary left in the dock would go on
+      // offering Drop and Squash for commits the graph no longer shows as
+      // selected (and take the late answer for them, commitsSummary below).
+      details.selection = null;
       graph.reveal(message.sha);
       // An explicit reveal (e.g. clicking a parent) re-opens the dock.
       shell.dataset.detailsDismissed = "false";
@@ -337,7 +376,17 @@ function handle(
         message.y,
         message.title,
         message.items,
+        message.shas,
       );
+      break;
+    }
+    case "commitsSummary": {
+      // Only for the selection on screen: a late answer for one the user has
+      // since changed is dropped.
+      const on = details.selection?.commits.map((c) => c.sha) ?? [];
+      if (on.length === message.shas.length && on.every((sha, i) => sha === message.shas[i])) {
+        details.selection = { ...details.selection!, actions: message.items };
+      }
       break;
     }
     case "commitContains": {

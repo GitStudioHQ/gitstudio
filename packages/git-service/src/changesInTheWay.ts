@@ -51,8 +51,16 @@ export {
 export type ApplyOp =
   | {
       kind: "cherry-pick" | "revert";
-      /** The commit being picked or reverted. */
+      /** The commit being picked or reverted (the first, of several). */
       commit: string;
+      /**
+       * Several commits in one command (issue #32), in the order `args` runs
+       * them — `commit` among them. git refuses such a run commit by commit,
+       * so an edit in the way of the THIRD is refused after two were applied,
+       * with the sequencer left open: this op is asked about before git starts
+       * (aheadOfMany), never after.
+       */
+      commits?: readonly string[];
       /** `-m`: the parent a merge commit is taken against. */
       mainline?: number;
       args: string[];
@@ -302,6 +310,11 @@ export async function runApplying(
   if (ahead?.inTheWay) {
     return { result: NOT_RUN, inTheWay: ahead.inTheWay };
   }
+  // So are several commits in one pick or revert (aheadOfMany).
+  const many = await aheadOfMany(proc, op, signal);
+  if (many) {
+    return { result: NOT_RUN, inTheWay: many };
+  }
   // The tree as it was, for telling a refused `--index` from a run that did
   // something (a -u stash has already read it).
   const tree = op.kind === "stash" && op.index ? (ahead?.status ?? (await porcelain(proc, signal))) : null;
@@ -508,6 +521,36 @@ async function stashBranchAhead(
   };
 }
 
+/**
+ * Several commits in one cherry-pick or revert (issue #32) — asked BEFORE git
+ * runs. git refuses such a run commit by commit: an edit in the way of the
+ * third commit is refused after the first two were applied, git exits 128,
+ * and the sequencer is left open with no CHERRY_PICK_HEAD to say so (verified
+ * against git 2.49). Nothing afterwards reads as "nothing happened", so the
+ * question has to come first: every staged change (the index must match
+ * HEAD), and every unstaged or untracked file ANY of the commits touches.
+ * Null for a single commit — its refusal is recognised afterwards, as always —
+ * and when there is nothing in the way or git cannot say.
+ */
+async function aheadOfMany(proc: GitProcess, op: ApplyOp, signal?: AbortSignal): Promise<ChangesInTheWay | null> {
+  if ((op.kind !== "cherry-pick" && op.kind !== "revert") || (op.commits?.length ?? 0) < 2) return null;
+  const status = await porcelain(proc, signal);
+  if (status === null) return null;
+  const s = parseV2(status);
+  // Unmerged: git refuses the whole run before the first commit — a stop.
+  if (s.merge.length > 0) return null;
+  const staged = new Set(s.staged.map((f) => f.path));
+  const unstaged = new Set(s.unstaged.filter((f) => f.status !== "U").map((f) => f.path));
+  const untracked = new Set(s.unstaged.filter((f) => f.status === "U").map((f) => f.path));
+  if (staged.size + unstaged.size + untracked.size === 0) return null;
+  const touched = await touchedBy(proc, op, signal);
+  const inWay = new Set<string>(staged);
+  for (const p of [...unstaged, ...untracked]) if (touched?.has(p)) inWay.add(p);
+  if (inWay.size === 0) return null;
+  const paths = [...inWay].sort();
+  return { kind: op.kind, paths, untracked: paths.filter((p) => untracked.has(p)) };
+}
+
 /** HEAD's commit and the branch it is on — what a refusal leaves unchanged. */
 async function where(proc: GitProcess, signal?: AbortSignal): Promise<string> {
   const [sha, ref] = await Promise.all([
@@ -640,6 +683,16 @@ async function touchedBy(proc: GitProcess, op: ApplyOp, signal?: AbortSignal): P
   switch (op.kind) {
     case "cherry-pick":
     case "revert": {
+      // Several commits: every path any of them writes.
+      if ((op.commits?.length ?? 0) > 1) {
+        const all = new Set<string>();
+        for (const commit of op.commits ?? []) {
+          const one = await touchedBy(proc, { ...op, commit, commits: undefined }, signal);
+          if (!one) return null;
+          for (const p of one) all.add(p);
+        }
+        return all;
+      }
       const parents = await proc.run(["rev-list", "--parents", "-n", "1", op.commit, "--"], { signal });
       if (parents.code !== 0) return null;
       const ps = parents.stdout.trim().split(/\s+/).slice(1);

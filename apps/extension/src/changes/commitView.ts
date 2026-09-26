@@ -6586,7 +6586,14 @@ export class CommitViewProvider
       renderList();
       validate();
       input.focus();
-      if (input.select) input.select();
+      // A message to EDIT (selectOnOpen false) keeps its text: the caret goes
+      // to the start rather than selecting it all for the first keystroke.
+      if (spec.selectOnOpen === false) {
+        if (input.setSelectionRange) input.setSelectionRange(0, 0);
+        input.scrollTop = 0;
+      } else if (input.select) {
+        input.select();
+      }
     }
 
     /** Build one choice row (shared by pick and multiPick). */

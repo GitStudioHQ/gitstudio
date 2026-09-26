@@ -33,7 +33,18 @@ import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
 import { getRefFilterStore } from "./refFilterStore";
-import { commitMenuItems, commitMenuItemsFor, refActionId, refMenuItems, runCommitAction } from "./commitActions";
+import {
+  commitMenuItems,
+  commitMenuItemsFor,
+  multiCommitMenuItemsFor,
+  refActionId,
+  refMenuItems,
+  runCommitAction,
+  runMultiCommitAction,
+} from "./commitActions";
+import { menuTarget, selectedCommits } from "@gitstudio/host-bridge/graphSelection";
+import { SettleLatest } from "@gitstudio/host-bridge/settleLatest";
+import { ComparePanel } from "../compare/comparePanel";
 import type { MenuRef } from "./checkoutTarget";
 import { rowStatsReply } from "./rowStatsReply";
 import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
@@ -269,17 +280,30 @@ export class CommitGraphPanel {
       case "selectCommit":
       case "openCommit":
         this.shown = msg.sha;
+        // One commit now: a pending "N commits selected" answer is for a selection that is gone.
+        this.summary.cancel();
         void this.pushCommitDetails(msg.sha);
         break;
-      case "contextMenu":
-        void this.openCommitMenu(msg.sha, msg.x, msg.y);
+      case "selectCommits":
+        // Several commits (or none) — issue #32. No one commit is showing.
+        this.shown = undefined;
+        void this.pushCommitsSummary(selectedCommits(msg.shas));
         break;
+      case "contextMenu": {
+        // One commit's menu, or — with `shas` — the menu for a selection of
+        // several (issue #32). graphSelection decides which, for every door.
+        const t = menuTarget(msg);
+        void (t.kind === "many" ? this.openMultiMenu(t.shas, msg.x, msg.y) : this.openCommitMenu(msg.sha, msg.x, msg.y));
+        break;
+      }
       case "action":
         void this.openCommitMenu(msg.sha, -1, -1);
         break;
-      case "commitMenuAction":
-        void this.runCommitMenuAction(msg.sha, msg.id);
+      case "commitMenuAction": {
+        const t = menuTarget(msg);
+        void (t.kind === "many" ? this.runMultiMenuAction(t.shas, msg.id) : this.runCommitMenuAction(msg.sha, msg.id));
         break;
+      }
       case "openFile":
         void this.doOpenFile(msg.sha, msg.path, !!msg.wip, msg.oldPath, msg.status);
         break;
@@ -739,9 +763,10 @@ export class CommitGraphPanel {
         todo: built.todo,
         rewords: built.rewords,
       });
-    const outcome = ledger
-      ? await ledger.runWithUndo(active, `Reorder ${order.length} commits`, run)
-      : await run();
+    // The branches it carries go back with it on Undo: the envelope's scope
+    // records every local branch before the op and what it moved after
+    // (issue #32's sibling: Drop and Squash carry the same way).
+    const outcome = ledger ? await ledger.runWithUndo(active, `Reorder ${order.length} commits`, run) : await run();
 
     if (outcome.status === "done") {
       vscode.window.setStatusBarMessage("$(check) Reordered", 3000);
@@ -954,6 +979,67 @@ export class CommitGraphPanel {
   /** Bumped per menu request; see openCommitMenu. */
   private menuSeq = 0;
 
+  /**
+   * The menu for a selection of several commits (issue #32), at (x, y). What
+   * applies is asked of git; a later right-click wins, as for one commit.
+   */
+  private async openMultiMenu(shas: string[], x: number, y: number): Promise<void> {
+    const seq = ++this.menuSeq;
+    const active = this.repos.getActive();
+    if (!active) return;
+    const items = await multiCommitMenuItemsFor(active.ctx, shas);
+    if (seq !== this.menuSeq) return;
+    this.post({
+      type: "commitMenu",
+      sha: shas[0],
+      shas,
+      x,
+      y,
+      title: `${shas.length} commits selected`,
+      items,
+    });
+  }
+
+  /** Only the newest selection is answered, once it settles (host-bridge/settleLatest). */
+  private readonly summary = new SettleLatest();
+
+  /**
+   * The details pane's "N commits selected" summary (issue #32) asks what can
+   * be done to them: the same items as their right-click menu. Shift+Down held
+   * over twenty rows is twenty selections, and each would walk the branch
+   * three ways, so only the one it stops on is asked — the desktop's pane
+   * asks through the same SettleLatest.
+   */
+  private async pushCommitsSummary(shas: string[]): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active || shas.length < 2) {
+      this.summary.cancel();
+      return;
+    }
+    const items = await this.summary.run(() => multiCommitMenuItemsFor(active.ctx, shas));
+    if (items) this.post({ type: "commitsSummary", shas, items });
+  }
+
+  /** Run an item of the several-commit menu or summary. */
+  private async runMultiMenuAction(shas: string[], id: string): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active || !id) return;
+    const ledger = this.repos.getUndoLedger();
+    const undo = ledger
+      ? <T>(label: string, fn: () => Promise<T>, opts?: UndoOptions) => ledger.runWithUndo(active, label, fn, opts)
+      : undefined;
+    const changed = await runMultiCommitAction(
+      id,
+      active.ctx,
+      shas,
+      { compare: (base, head) => ComparePanel.show(this.repos, this.extensionUri, base, head) },
+      undo,
+    );
+    if (changed) {
+      this.scheduleRefresh();
+    }
+  }
+
   /** Run the action the user picked in the in-graph commit popover. */
   private async runCommitMenuAction(sha: string, id: string): Promise<void> {
     const active = this.repos.getActive();
@@ -1001,6 +1087,9 @@ export class CommitGraphPanel {
 
   /** Public: select + reveal a commit and show its details (from another view). */
   reveal(sha: string): void {
+    // One commit now (issue #32): a pending "N commits selected" answer is for
+    // a selection the reveal replaces — the webview selects this one alone.
+    this.summary.cancel();
     // `ready` only means the webview booted — its first page of rows arrives
     // later, and revealing into an empty graph silently no-ops. Queue until
     // graphInit has actually landed (`initialized`), or a reveal issued during

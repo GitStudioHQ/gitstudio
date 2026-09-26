@@ -41,6 +41,8 @@ function start(root: HTMLElement): void {
         vscode.postMessage({
           type: "contextMenu",
           sha: action.sha,
+          // A selection of several (issue #32): the menu is for all of them.
+          ...(action.shas ? { shas: action.shas } : {}),
           x: action.x,
           y: action.y,
         });
@@ -49,6 +51,7 @@ function start(root: HTMLElement): void {
         vscode.postMessage({
           type: "commitMenuAction",
           sha: action.sha,
+          ...(action.shas ? { shas: action.shas } : {}),
           id: action.id,
         });
         break;
@@ -111,6 +114,7 @@ function start(root: HTMLElement): void {
           message.y,
           message.title,
           message.items,
+          message.shas,
         );
         break;
       case "graphError":
@@ -124,6 +128,7 @@ function start(root: HTMLElement): void {
       // The sidebar renders no details dock or CHANGES bars — these host
       // pushes are for the editor-area graph.
       case "commitDetails":
+      case "commitsSummary":
       case "rowStats":
         break;
     }

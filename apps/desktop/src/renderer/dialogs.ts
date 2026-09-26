@@ -5,6 +5,7 @@
 // for prompt(), unsupported) in an Electron renderer.
 
 import { registerLayer, isMenuOpen, holdBackground } from "./overlays";
+import { deepActiveElement } from "./focusReturn";
 import { mdEditor } from "./mdEditor";
 import { wireDraft } from "./draftStore";
 import { refNameProblem, sanitizeRefName } from "../shared/refName";
@@ -133,7 +134,9 @@ const modalStack: symbol[] = [];
  * the dismissal contract can never drift between surfaces.
  */
 export function openModal(build: (close: () => void) => ModalSpec): void {
-  const prevFocus = document.activeElement as HTMLElement | null;
+  // Inside a shadow root when that is where focus is (the graph's list): its
+  // host has no tabindex, and handing focus back to it dropped it on <body>.
+  const prevFocus = deepActiveElement();
   const token = Symbol("modal");
   const overlay = mk("div", "modal-overlay");
   overlay.setAttribute("role", "dialog");
@@ -544,6 +547,98 @@ export function promptInline(
         label: title,
         // A half-typed branch name is work; openModal already knows what to do.
         hasUnsavedWork: () => input.value.trim() !== value.trim(),
+        onClose: () => {
+          if (!settled) resolve(null);
+        },
+      };
+    });
+  });
+}
+
+/**
+ * A commit message to EDIT (issue #32: Squash commits…, JetBrains' "Squash
+ * Commits" dialog): the title, what will happen, and a textarea pre-filled
+ * with the text — the caret at the START, so the first keystroke edits it
+ * rather than replacing it. The confirm button is off while the message is
+ * empty; Enter is a new line and ⌘/Ctrl+Enter confirms. Resolves the text,
+ * trimmed, or null when cancelled. `holdWhile` keeps it on screen through a
+ * repaint the user did not make (see confirmDialog).
+ */
+export function promptMessage(opts: {
+  title: string;
+  hint: string;
+  value: string;
+  okLabel: string;
+  /** Names the field for a screen reader. */
+  label?: string;
+  holdWhile?: () => boolean;
+}): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    modal((close) => {
+      const card = mk("div", "modal-card modal-card-form msg-editor-card");
+      const h = mk("div", "modal-title");
+      h.textContent = opts.title;
+      const hint = mk("div", "modal-message");
+      hint.id = "gs-msg-hint";
+      hint.textContent = opts.hint;
+      const area = document.createElement("textarea");
+      area.className = "modal-input modal-textarea msg-editor";
+      area.value = opts.value;
+      area.rows = 8;
+      area.spellcheck = true;
+      area.setAttribute("aria-label", opts.label ?? "Commit message");
+      area.setAttribute("aria-describedby", "gs-msg-hint");
+      area.setAttribute("aria-keyshortcuts", "Meta+Enter Control+Enter");
+      const actions = mk("div", "modal-actions");
+      const cancel = mk("button", "mini-btn");
+      cancel.textContent = "Cancel";
+      const ok = mk("button", "btn btn-primary modal-ok");
+      const okSpan = mk("span");
+      okSpan.textContent = opts.okLabel;
+      ok.appendChild(okSpan);
+      actions.append(cancel, ok);
+      card.append(h, hint, area, actions);
+
+      const sync = (): void => {
+        if (area.value.trim()) ok.removeAttribute("disabled");
+        else ok.setAttribute("disabled", "true");
+      };
+      area.addEventListener("input", sync);
+      sync();
+      const finish = (v: string | null): void => {
+        settled = true;
+        resolve(v);
+        close();
+      };
+      const done = (): void => {
+        const v = area.value.trim();
+        if (v) finish(v);
+      };
+      cancel.addEventListener("click", () => finish(null));
+      ok.addEventListener("click", done);
+      area.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          done();
+        }
+      });
+      // openModal focuses the field a tick after it mounts; a textarea given
+      // its value programmatically puts the caret at the END. Put it back.
+      area.addEventListener(
+        "focus",
+        () => {
+          area.setSelectionRange(0, 0);
+          area.scrollTop = 0;
+        },
+        { once: true },
+      );
+      return {
+        card,
+        focusEl: area,
+        label: opts.title,
+        // A message being written is work in progress; so is the question.
+        hasUnsavedWork: () => (opts.holdWhile?.() ?? false) || area.value.trim() !== opts.value.trim(),
         onClose: () => {
           if (!settled) resolve(null);
         },

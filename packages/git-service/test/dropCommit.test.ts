@@ -327,6 +327,27 @@ test("undo puts the branch back on the original tip", async () => {
   }
 });
 
+test("undo after a drop that carried a branch puts it back too", async () => {
+  const r = repo();
+  try {
+    r.commit("base"); const a = r.commit("A"); const b = r.commit("B"); r.commit("C");
+    r.git("branch", "feature", b);
+    const plan = await planOk(r, a);
+    const out = await dropCommit(r.ctx.process, { sha: plan.sha, head: plan.head, carry: true }, run(r));
+    assert.equal(out.status, "done", JSON.stringify(out));
+    assert.deepEqual(out.carried, [{ branch: "feature", before: b, after: r.git("rev-parse", "feature") }]);
+    assert.deepEqual(await undoDrop(r.ctx.process, { before: out.before!, after: out.after!, carried: out.carried }), { ok: true });
+    assert.equal(r.git("rev-parse", "feature"), b, "feature is back on B");
+    assert.deepEqual(r.subjects(), ["C", "B", "A", "base"]);
+    // Not carried: nothing to put back, and the outcome says so by saying nothing.
+    const only = await dropCommit(r.ctx.process, { sha: plan.sha, head: plan.head, carry: false }, run(r));
+    assert.equal(only.carried, undefined);
+    assert.equal(r.git("rev-parse", "feature"), b, "left where it was");
+  } finally {
+    r.dispose();
+  }
+});
+
 test("undo after dropping the tip goes forward again, even onto a published parent", async () => {
   const r = repo();
   try {

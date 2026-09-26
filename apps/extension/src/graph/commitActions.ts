@@ -19,6 +19,21 @@ import { dropBlocker, dropCommit, planDropCommit } from "@gitstudio/git-service/
 import { noCopyClause } from "@gitstudio/git-service/SnapshotProvider";
 import { dropOutcomeMessage, dropQuestion } from "@gitstudio/engine/rebase/drop";
 import { runRebasePlan } from "../rebase/rebaseRunner";
+import {
+  applyManyArgs,
+  manyBlocker,
+  mergesAmong,
+  orderCommits,
+  planMany,
+  rewriteMany,
+} from "@gitstudio/git-service/multiCommit";
+import {
+  applyManyMessage,
+  dropManyQuestion,
+  manyOutcomeMessage,
+  squashCarryQuestion,
+  squashQuestion,
+} from "@gitstudio/engine/rebase/many";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
  * / codicon markup) — the webview renders these; ids match runCommitAction.
@@ -171,8 +186,9 @@ function withUndo<T>(
   undo: UndoRunner | undefined,
   label: string,
   fn: () => Promise<T>,
+  opts?: UndoOptions,
 ): Promise<T> {
-  return undo ? undo(label, fn) : fn();
+  return undo ? undo(label, fn, opts) : fn();
 }
 
 export interface CommitActionItem extends vscode.QuickPickItem {
@@ -774,17 +790,21 @@ async function dropCommitHere(
     }
   }
 
-  const outcome = await withUndo(undo, `Drop ${plan.shortSha}`, async () => {
-    const out = await dropCommit(
-      ctx.process,
-      { sha: plan.sha, head: plan.head, carry },
-      (p) => runRebasePlan(ctx.process.cwd, p),
-    );
-    // A drop that failed changed nothing — every refusal comes before git
-    // writes, and a failed rebase ends where it began — so there is nothing
-    // for Undo to offer. `cancelled` is how the ledger is told exactly that.
-    return out.status === "failed" ? { ...out, cancelled: true as const } : out;
-  });
+  const outcome = await withUndo(
+    undo,
+    `Drop ${plan.shortSha}`,
+    async () => {
+      const out = await dropCommit(
+        ctx.process,
+        { sha: plan.sha, head: plan.head, carry },
+        (p) => runRebasePlan(ctx.process.cwd, p),
+      );
+      // A drop that failed changed nothing — every refusal comes before git
+      // writes, and a failed rebase ends where it began — so there is nothing
+      // for Undo to offer. `cancelled` is how the ledger is told exactly that.
+      return out.status === "failed" ? { ...out, cancelled: true as const } : out;
+    },
+  );
 
   const text = dropOutcomeMessage(plan.shortSha, outcome);
   if (outcome.status === "done") {
@@ -795,6 +815,286 @@ async function dropCommitHere(
     // The rebase is left open and the conflict flow takes it from here: the
     // notice's Resolve Conflicts… opens the dashboard, and the Changes view's
     // banner offers Continue, Skip and Abort.
+    notifyPaused(`GitStudio: ${text}`);
+    return true;
+  }
+  if (outcome.expected) {
+    void vscode.window.showWarningMessage(`GitStudio: ${text}`);
+  } else {
+    void vscode.window.showErrorMessage(`GitStudio: ${text}`);
+  }
+  return false;
+}
+
+// ── Several commits at once (issue #32) ──────────────────────────────────────
+
+/** What the several-commit menu can offer, as decided by git (see …For). */
+export interface ManyMenuOptions {
+  /** Cherry-Pick / Revert: no merge among them. */
+  apply: boolean;
+  /** Drop N: all on the current branch's rewritable line. */
+  drop: boolean;
+  /** Squash N: that, and contiguous on it. */
+  squash: boolean;
+}
+
+/**
+ * The menu for a selection of several commits — the graph's and the Commits
+ * list's right-click, and the "N commits selected" summary's buttons. Items
+ * that cannot apply are left out, as the one-commit menu leaves out Drop.
+ */
+export function multiCommitMenuItems(n: number, opts: ManyMenuOptions): GraphMenuItem[] {
+  const acts: GraphMenuItem[] = [
+    ...(opts.apply
+      ? [
+          { id: "cherryPickMany", label: `Cherry-Pick ${n} Commits`, icon: "git-pull-request" },
+          { id: "revertMany", label: `Revert ${n} Commits`, icon: "history" },
+        ]
+      : []),
+    ...(opts.squash ? [{ id: "squashMany", label: `Squash ${n} Commits…`, icon: "fold-down" }] : []),
+    ...(opts.drop ? [{ id: "dropMany", label: `Drop ${n} Commits…`, icon: "trash", danger: true }] : []),
+  ];
+  return [
+    ...acts,
+    // Between the two groups only: with none of the actions above (a merge
+    // among them) the menu opened on a divider right under its title.
+    ...(acts.length > 0 ? [{ id: "", label: "", sep: true }] : []),
+    ...(n === 2 ? [{ id: "compareTwo", label: "Compare These Two Commits", icon: "git-compare" }] : []),
+    { id: "copyShas", label: "Copy SHAs", icon: "copy" },
+  ];
+}
+
+/**
+ * The several-commit menu for `shas`, asking git what applies. A read that
+ * fails leaves that item out — never a menu that fails to open.
+ */
+export async function multiCommitMenuItemsFor(ctx: GitContext, shas: readonly string[]): Promise<GraphMenuItem[]> {
+  const [merges, drop, squash] = await Promise.all([
+    mergesAmong(ctx.process, shas).catch(() => undefined),
+    planMany(ctx.process, "drop", shas).catch(() => undefined),
+    planMany(ctx.process, "squash", shas).catch(() => undefined),
+  ]);
+  return multiCommitMenuItems(shas.length, {
+    apply: merges !== undefined && merges.length === 0,
+    drop: drop?.ok === true,
+    squash: squash?.ok === true,
+  });
+}
+
+/** What a several-commit action needs from the panel it runs in. */
+export interface ManyActionHost {
+  /** Open the compare view: what `head` has that `base` does not. */
+  compare(base: string, head: string): Promise<void>;
+}
+
+/**
+ * Run an item of the several-commit menu. `shas` are newest first, as the
+ * list showed them; nothing about their order is trusted — git is asked.
+ * Returns true when the graph should refresh.
+ */
+export async function runMultiCommitAction(
+  id: string,
+  ctx: GitContext,
+  shas: readonly string[],
+  host: ManyActionHost,
+  undo?: UndoRunner,
+): Promise<boolean> {
+  switch (id) {
+    case "cherryPickMany":
+      return applyMany("cherry-pick", ctx, shas, undo);
+    case "revertMany":
+      return applyMany("revert", ctx, shas, undo);
+    case "dropMany":
+      return rewriteManyHere("drop", ctx, shas, undo);
+    case "squashMany":
+      return rewriteManyHere("squash", ctx, shas, undo);
+    case "compareTwo": {
+      const ordered = shas.length === 2 ? await orderCommits(ctx.process, shas, "oldest-first") : undefined;
+      if (!ordered) {
+        void vscode.window.showWarningMessage("GitStudio: select exactly two commits to compare them.");
+        return false;
+      }
+      await host.compare(ordered[0], ordered[1]);
+      return false;
+    }
+    case "copyShas":
+      await vscode.env.clipboard.writeText(shas.join("\n"));
+      flash(`Copied ${shas.length} SHAs`);
+      return false;
+    default:
+      return false;
+  }
+}
+
+/** The warning for a menu that went stale before its item was chosen. */
+const MANY_UNREADABLE = "those commits could not be read any more — refresh the graph and try again.";
+
+/**
+ * Cherry-Pick N / Revert N: ONE git command over all of them — oldest first
+ * for a pick, newest first for a revert — through the commit-applying door,
+ * which asks about uncommitted changes in the way before git starts. A stop
+ * (a conflict, an empty pick) is the conflict flow's; abort undoes the run.
+ */
+async function applyMany(
+  verb: "cherry-pick" | "revert",
+  ctx: GitContext,
+  shas: readonly string[],
+  undo?: UndoRunner,
+): Promise<boolean> {
+  const [merges, ordered] = await Promise.all([
+    mergesAmong(ctx.process, shas),
+    orderCommits(ctx.process, shas, verb === "cherry-pick" ? "oldest-first" : "newest-first"),
+  ]);
+  if (!merges || !ordered) {
+    void vscode.window.showWarningMessage(`GitStudio: ${MANY_UNREADABLE}`);
+    return false;
+  }
+  if (merges.length > 0) {
+    void vscode.window.showWarningMessage(
+      `GitStudio: ${short(merges[0])} is a merge commit — ${verb === "cherry-pick" ? "cherry-pick" : "revert"} it on its own, where you can choose which side to keep.`,
+    );
+    return false;
+  }
+  const n = ordered.length;
+  const label = verb === "cherry-pick" ? `Cherry-pick ${n} commits` : `Revert ${n} commits`;
+  return withUndo(undo, label, async () => {
+    const applied = await applyOrAsk(ctx, {
+      kind: verb,
+      commit: ordered[0],
+      commits: ordered,
+      args: applyManyArgs(verb, ordered),
+    });
+    if (applied.cancelled || applied.settled) {
+      return !applied.cancelled;
+    }
+    const result = applied.result;
+    if (result.code === 0) {
+      flash(applyManyMessage(verb, n, "done"));
+      return true;
+    }
+    // Stopped, not failed: git leaves its marker whenever it waits on a
+    // conflict or an emptied commit — locale-independent, as for one commit.
+    if (await pausedForUser(ctx.process, result.code, verb === "cherry-pick" ? "CHERRY_PICK_HEAD" : "REVERT_HEAD")) {
+      notifyPaused(`GitStudio: ${applyManyMessage(verb, n, "stopped")}`);
+      return true;
+    }
+    await showGitError(ctx, `${verb === "cherry-pick" ? "Cherry-picking" : "Reverting"} ${n} commits failed`, result.stderr.trim());
+    return true;
+  });
+}
+
+/**
+ * Drop N Commits… / Squash N Commits…: the drop pipeline with several rows
+ * changed (git-service/multiCommit.ts), under the Undo envelope. Refusals
+ * first, so nobody agrees to a rewrite that is then refused; then one
+ * question — for a squash, the message editor pre-filled with every message
+ * (JetBrains' Squash Commits); then, when other branches point at rewritten
+ * commits, whether they come along.
+ */
+async function rewriteManyHere(
+  verb: "drop" | "squash",
+  ctx: GitContext,
+  shas: readonly string[],
+  undo?: UndoRunner,
+): Promise<boolean> {
+  // Re-read, never trust the menu: it may have been open while history moved.
+  const plan = await planMany(ctx.process, verb, shas);
+  if (!plan.ok) {
+    void vscode.window.showWarningMessage(`GitStudio: ${plan.message}`);
+    return false;
+  }
+  const blocked = await manyBlocker(ctx.process, verb);
+  if (blocked) {
+    void vscode.window.showWarningMessage(`GitStudio: ${blocked}`);
+    return false;
+  }
+  const n = plan.shas.length;
+  let message: string | undefined;
+  if (verb === "squash") {
+    const q = squashQuestion(plan);
+    message = (
+      await promptInput({
+        title: q.title,
+        hint: q.message,
+        value: plan.message ?? "",
+        multiline: true,
+        selectOnOpen: false,
+        validate: "nonEmpty",
+        confirmLabel: "Squash Commits",
+      })
+    )?.trim();
+    if (!message) {
+      return false;
+    }
+  }
+
+  let carry = false;
+  const Verb = verb === "drop" ? "Drop" : "Squash";
+  if (plan.carryable.length > 0) {
+    // A squash's own words here: the editor's "with the message below" is
+    // not what is below this question — its choices are.
+    const q = verb === "drop" ? dropManyQuestion(plan) : squashCarryQuestion(plan);
+    const picked = await promptPick({
+      title: q.title,
+      hint: q.message,
+      choices: [
+        {
+          id: "carry",
+          label: `${Verb} and move those branches`,
+          icon: "git-branch",
+          description: "They follow onto the rewritten commits.",
+          danger: true,
+        },
+        {
+          id: "only",
+          label: `${Verb} on this branch only`,
+          icon: "git-commit",
+          description: "They keep pointing at the commits as they are now.",
+          danger: true,
+        },
+        { id: "no", label: "Cancel", icon: "close" },
+      ],
+    });
+    if (picked !== "carry" && picked !== "only") {
+      return false;
+    }
+    carry = picked === "carry";
+  } else if (verb === "drop") {
+    const q = dropManyQuestion(plan);
+    const ok = await promptConfirm({
+      title: q.title,
+      message: q.message,
+      confirmLabel: "Drop Commits",
+      danger: true,
+    });
+    if (!ok) {
+      return false;
+    }
+  }
+
+  const outcome = await withUndo(
+    undo,
+    `${Verb} ${n} commits`,
+    async () => {
+      const out = await rewriteMany(
+        ctx.process,
+        verb,
+        { shas: plan.shas, head: plan.head, carry, ...(message ? { message } : {}) },
+        (p) => runRebasePlan(ctx.process.cwd, p),
+      );
+      // A rewrite that failed changed nothing — every refusal comes before git
+      // writes, and a failed rebase ends where it began — so there is nothing
+      // for Undo to offer. `cancelled` tells the ledger exactly that.
+      return out.status === "failed" ? { ...out, cancelled: true as const } : out;
+    },
+  );
+
+  const text = manyOutcomeMessage(verb, n, outcome);
+  if (outcome.status === "done") {
+    flash(text);
+    return true;
+  }
+  if (outcome.status === "stopped") {
     notifyPaused(`GitStudio: ${text}`);
     return true;
   }

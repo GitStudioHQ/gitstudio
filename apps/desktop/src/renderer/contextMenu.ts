@@ -7,6 +7,7 @@ import type { CommitActionRequest } from "../shared/ipc";
 import { confirmDialog, promptInline } from "./dialogs";
 import { refMenuItems, type RefMenuItem, type RowRef } from "./refMenuItems";
 import { registerLayer } from "./overlays";
+import { deepActiveElement } from "./focusReturn";
 
 interface MenuItem {
   label: string;
@@ -94,6 +95,40 @@ export function commitActionItem(action: string): MenuItem | undefined {
   return ITEMS.find((i) => i.action === action);
 }
 
+// ── Several commits at once (issue #32) ──────────────────────────────────────
+
+/** An action of the menu for a selection of several commits. */
+export type ManyAction = "cherry-pick-many" | "revert-many" | "squash-many" | "drop-many" | "compare-two" | "copy-shas";
+
+/** One row of that menu (and one button of the "N commits selected" summary). */
+export interface ManyMenuRow {
+  action: ManyAction;
+  label: string;
+  /** For the summary's buttons: a codicon the shared details pane has. */
+  icon: string;
+  danger?: boolean;
+}
+
+/**
+ * The menu for `n` selected commits — the same words as the extension's, in
+ * this app's sentence case. Items that cannot apply are left out, as the
+ * one-commit menu leaves out Drop; `opts` is main's answer (commits:menu).
+ */
+export function manyMenuRows(n: number, opts: { apply: boolean; drop: boolean; squash: boolean }): ManyMenuRow[] {
+  return [
+    ...(opts.apply
+      ? [
+          { action: "cherry-pick-many" as const, label: `Cherry-pick ${n} commits`, icon: "git-pull-request" },
+          { action: "revert-many" as const, label: `Revert ${n} commits`, icon: "history" },
+        ]
+      : []),
+    ...(opts.squash ? [{ action: "squash-many" as const, label: `Squash ${n} commits…`, icon: "fold-down" }] : []),
+    ...(opts.drop ? [{ action: "drop-many" as const, label: `Drop ${n} commits…`, icon: "trash", danger: true }] : []),
+    ...(n === 2 ? [{ action: "compare-two" as const, label: "Compare these two commits", icon: "git-compare" }] : []),
+    { action: "copy-shas" as const, label: "Copy SHAs", icon: "copy" },
+  ];
+}
+
 /** A "Checkout <ref>" row, from the shared builder's answer. */
 function refRow(r: RefMenuItem): MenuItem {
   return {
@@ -119,7 +154,68 @@ export class CommitContextMenu {
     public readonly resolve: (req: CommitActionRequest) => void,
     /** Runs "Drop commit…" for this sha — its own flow, not a commit:action. */
     private readonly drop?: (sha: string) => void,
+    /** Runs an item of the menu for several commits (issue #32). */
+    private readonly many?: (action: ManyAction, shas: string[]) => void,
   ) {}
+
+  /**
+   * The menu for a selection of several commits (issue #32), at (x, y):
+   * headed by how many, with only the items `opts` says apply (main's
+   * commits:menu). Keyboard and dismissal as for one commit's menu.
+   */
+  openMany(shas: string[], x: number, y: number, opts: { apply: boolean; drop: boolean; squash: boolean }): void {
+    this.close();
+    this.layer = registerLayer(() => this.close(false), "menu");
+    // Into the graph's shadow root: Escape gives the keyboard back to the list.
+    this.prevFocus = deepActiveElement();
+    const menu = document.createElement("div");
+    menu.className = "ctx-menu";
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", `Actions for ${shas.length} commits`);
+    const header = document.createElement("div");
+    // Words, not a sha: the extension's menu for several says the same.
+    header.className = "ctx-menu-header is-words";
+    header.textContent = `${shas.length} commits selected`;
+    menu.appendChild(header);
+
+    this.rows = [];
+    for (const row of manyMenuRows(shas.length, opts)) {
+      const button = document.createElement("button");
+      button.className = `ctx-menu-item${row.danger ? " ctx-danger" : ""}`;
+      button.dataset.action = row.action;
+      button.textContent = row.label;
+      button.setAttribute("role", "menuitem");
+      button.tabIndex = -1;
+      button.addEventListener("click", (e) => {
+        e.stopPropagation();
+        // Focus back on the list BEFORE the item runs, as ui.ts's menus do:
+        // the dialog it opens (Drop 3 commits?) returns the keyboard to what
+        // had focus when it opened — which was otherwise this removed row.
+        this.close();
+        this.many?.(row.action, shas);
+      });
+      menu.appendChild(button);
+      this.rows.push(button);
+    }
+    this.place(menu, x, y);
+  }
+
+  /** Mount a built menu at (x, y), kept on screen, first row focused. */
+  private place(menu: HTMLElement, x: number, y: number): void {
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    const left = Math.min(x, window.innerWidth - rect.width - 8);
+    const top = Math.min(y, window.innerHeight - rect.height - 8);
+    menu.style.left = `${Math.max(8, left)}px`;
+    menu.style.top = `${Math.max(8, top)}px`;
+    this.menu = menu;
+
+    document.addEventListener("keydown", this.onKey, true);
+    setTimeout(() => {
+      document.addEventListener("click", this.onDocClick);
+      this.rows[0]?.focus();
+    }, 0);
+  }
 
   /**
    * `refs` are the refs sitting ON this commit. They become "Checkout <name>"
@@ -139,7 +235,8 @@ export class CommitContextMenu {
   ): void {
     this.close();
     this.layer = registerLayer(() => this.close(false), "menu");
-    this.prevFocus = document.activeElement as HTMLElement | null;
+    // Into the graph's shadow root, as for several (deepActiveElement).
+    this.prevFocus = deepActiveElement();
     const menu = document.createElement("div");
     menu.className = "ctx-menu";
     menu.setAttribute("role", "menu");
@@ -161,26 +258,14 @@ export class CommitContextMenu {
       button.tabIndex = -1;
       button.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.close(false);
+        // Focus back on the list first, for the dialog the item may open.
+        this.close();
         void this.dispatch(item, sha);
       });
       menu.appendChild(button);
       this.rows.push(button);
     }
-
-    document.body.appendChild(menu);
-    const rect = menu.getBoundingClientRect();
-    const left = Math.min(x, window.innerWidth - rect.width - 8);
-    const top = Math.min(y, window.innerHeight - rect.height - 8);
-    menu.style.left = `${Math.max(8, left)}px`;
-    menu.style.top = `${Math.max(8, top)}px`;
-    this.menu = menu;
-
-    document.addEventListener("keydown", this.onKey, true);
-    setTimeout(() => {
-      document.addEventListener("click", this.onDocClick);
-      this.rows[0]?.focus();
-    }, 0);
+    this.place(menu, x, y);
   }
 
   private focusAt(i: number): void {

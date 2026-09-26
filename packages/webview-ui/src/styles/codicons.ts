@@ -29,6 +29,10 @@ export const codiconStyles = css`
   /* Cherry-Pick's icon in the graph context menu. Missing from this subset, so
      that one item rendered a blank 0px gap where every sibling had a glyph. */
   .codicon-git-pull-request::before { content: "\\ea64"; }
+  /* The several-commit menu (issue #32): Squash N Commits… and Compare
+     These Two Commits. */
+  .codicon-fold-down::before { content: "\\eaf3"; }
+  .codicon-git-compare::before { content: "\\eafd"; }
   .codicon-cloud::before { content: "\\ebaa"; }
   .codicon-tag::before { content: "\\ea66"; }
   .codicon-repo::before { content: "\\ea62"; }

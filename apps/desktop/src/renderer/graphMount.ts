@@ -8,13 +8,20 @@
 import "@gitstudio/webview-ui/graph/commit-graph";
 import type { CommitGraph, GraphAction } from "@gitstudio/webview-ui/graph/commit-graph";
 import { applyGraphInitRefs } from "@gitstudio/webview-ui/graph/graphInit";
+import { summaryCommits } from "@gitstudio/webview-ui/graph/selectionSummary";
+import type { SelectionCommit } from "@gitstudio/webview-ui/commit-details";
 import type { GraphRefEntry, GraphRefFilter, RefPreset, WireRef } from "@gitstudio/host-bridge/graphProtocol";
+import { menuTarget } from "@gitstudio/host-bridge/graphSelection";
 import { GraphHostAdapter, host } from "./bridge";
 
 export interface GraphCallbacks {
   onSelect(sha: string): void;
+  /** The selection is now several commits, or none (issue #32) — newest first. */
+  onSelection?(shas: string[]): void;
   onOpen(sha: string): void;
-  onContext(sha: string, x: number, y: number): void;
+  /** The commit menu for `sha` — or, with `shas`, for the selection of
+   *  several it is part of (issue #32), newest first. */
+  onContext(sha: string, x: number, y: number, shas?: string[]): void;
   /** The already-selected row was clicked again — reveal the details pane. */
   onShowDetails(sha: string): void;
   /** A branch/remote/tag chip on a row was clicked — navigate to that ref. */
@@ -43,15 +50,23 @@ export class GraphMount {
         case "select":
           cb.onSelect(action.sha);
           break;
+        case "selection":
+          cb.onSelection?.(action.shas);
+          break;
         case "showDetails":
           cb.onShowDetails(action.sha);
           break;
         case "open":
           cb.onOpen(action.sha);
           break;
-        case "context":
-          cb.onContext(action.sha, action.x, action.y);
+        case "context": {
+          // One commit's menu, or the menu for several: host-bridge decides,
+          // for this host as for the extension's (graphSelection.ts).
+          const t = menuTarget(action);
+          if (t.kind === "many") cb.onContext(action.sha, action.x, action.y, t.shas);
+          else cb.onContext(action.sha, action.x, action.y);
           break;
+        }
         case "refClick":
           cb.onRefClick(action.name, action.kind);
           break;
@@ -221,6 +236,16 @@ export class GraphMount {
    *  pages, and a commit further back cannot be revealed at all. */
   reveal(sha: string): boolean {
     return this.element.reveal(sha);
+  }
+
+  /** The selected commits, newest first (issue #32). */
+  get selectedShas(): string[] {
+    return this.element.selectedShas;
+  }
+
+  /** These commits as the "N commits selected" summary lists them. */
+  summaryCommits(shas: readonly string[]): SelectionCommit[] {
+    return summaryCommits(this.element, shas);
   }
 
   /** The branch filter the loaded rows were built under; null for all. */

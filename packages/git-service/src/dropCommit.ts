@@ -13,8 +13,6 @@ import {
   branchShort,
   headBranch,
   isBranchRef,
-  isSha,
-  localBranches,
   putRefBack,
   whyRefsNotRestorable,
   type RefMove,
@@ -71,7 +69,7 @@ function refused(reason: DropRefusal): DropRefused {
   return { ok: false, reason, message: dropRefusalMessage(reason) };
 }
 
-async function revParse(proc: GitProcess, rev: string, signal?: AbortSignal): Promise<string | undefined> {
+export async function revParse(proc: GitProcess, rev: string, signal?: AbortSignal): Promise<string | undefined> {
   // `rev` is always "HEAD" or a validated hex sha, never user text.
   const r = await proc.run(["rev-parse", "--verify", "--quiet", rev], { signal });
   const out = r.stdout.trim();
@@ -83,7 +81,7 @@ async function revParse(proc: GitProcess, rev: string, signal?: AbortSignal): Pr
  * it (`--not --remotes`), so "published" means the same thing at both doors:
  * the commit is listed only when no remote-tracking ref reaches it.
  */
-async function isPublished(proc: GitProcess, sha: string, signal?: AbortSignal): Promise<boolean> {
+export async function isPublished(proc: GitProcess, sha: string, signal?: AbortSignal): Promise<boolean> {
   const r = await proc.run(["rev-list", "--max-count=1", sha, "--not", "--remotes"], { signal });
   return r.code === 0 && r.stdout.trim() === "";
 }
@@ -210,17 +208,31 @@ export const DROP_DIRTY_MESSAGE = "You have uncommitted changes. Commit or stash
  * to tracked files, which git refuses a rebase over. Untracked files do not
  * stop a rebase and do not stop this. Undefined when the drop can go ahead.
  */
-export async function dropBlocker(proc: GitProcess, signal?: AbortSignal): Promise<string | undefined> {
+export function dropBlocker(proc: GitProcess, signal?: AbortSignal): Promise<string | undefined> {
+  return rewriteBlocker(proc, "drop", DROP_DIRTY_MESSAGE, signal);
+}
+
+/**
+ * dropBlocker's check for any rewrite of the current branch (issue #32: Drop
+ * and Squash of several commits too) — `door` names it in the stop's
+ * sentence, `dirty` is what is said over uncommitted changes.
+ */
+export async function rewriteBlocker(
+  proc: GitProcess,
+  door: "drop" | "drop-many" | "squash",
+  dirty: string,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
   const stop = await stoppedIn(proc, signal);
   if (stop) {
-    return operationInTheWayMessage({ ...pick(stop), kind: "drop" });
+    return operationInTheWayMessage({ ...pick(stop), kind: door });
   }
   const status = await proc.run(
     ["status", "--porcelain=v1", "-z", "--untracked-files=no", "--ignore-submodules=all"],
     { signal },
   );
   if (status.code === 0 && status.stdout.length > 0) {
-    return DROP_DIRTY_MESSAGE;
+    return dirty;
   }
   return undefined;
 }
@@ -235,6 +247,19 @@ export interface DropRequest {
   carry?: boolean;
 }
 
+/**
+ * A branch a rewrite carried along (`update-ref` in the todo): where it
+ * pointed before, and where the rewrite left it. The undo puts each one back —
+ * the question that offered to carry them says "Undo is available afterwards",
+ * and resetting HEAD alone left them on the rewritten commits.
+ */
+export interface CarriedBranch {
+  /** The branch's short name: refs/heads/<branch>. */
+  branch: string;
+  before: string;
+  after: string;
+}
+
 /** How a drop ended, plus what a host needs to offer its undo. */
 export type DropOutcome = RebaseOutcome & {
   /** HEAD before the drop. */
@@ -247,9 +272,26 @@ export type DropOutcome = RebaseOutcome & {
    * it was, and a branch made at the new tip since shares it.
    */
   branch?: string | null;
-  /** Branches "Drop and move those branches" carried onto the rewrite. */
-  carried?: RefMove[];
+  /** The other branches it carried, when it was asked to; absent otherwise. */
+  carried?: CarriedBranch[];
 };
+
+/**
+ * Where the branches on `rows` went, once a rewrite that carried them has
+ * finished: each is read again, and one the rewrite did not move is left out.
+ * `rows` are the plan the rewrite ran, so each branch's row is where it was.
+ */
+export async function carriedBranches(proc: GitProcess, rows: readonly RebasePlanRow[]): Promise<CarriedBranch[]> {
+  const out: CarriedBranch[] = [];
+  for (const row of rows) {
+    for (const branch of row.branches ?? []) {
+      // A name for-each-ref gave the plan, under refs/heads/: never an option.
+      const after = await revParse(proc, `refs/heads/${branch}`);
+      if (after && after !== row.sha) out.push({ branch, before: row.sha, after });
+    }
+  }
+  return out;
+}
 
 /** The refusal for a confirmation that went stale. */
 export const DROP_MOVED_MESSAGE =
@@ -284,26 +326,53 @@ export async function dropCommit(
     // Every row here is one this module wrote, so a refusal is ours: reported.
     return { status: "failed", message: built.message };
   }
-  // Where the branches it may carry are now, to put them back on undo.
-  const carriedBefore = req.carry && plan.carryable.length ? await localBranches(proc) : {};
   const branch = plan.branch ? `refs/heads/${plan.branch}` : null;
   const outcome = await run({ base: plan.base, todo: built.todo, rewords: built.rewords });
   const after = outcome.status === "done" ? await revParse(proc, "HEAD") : undefined;
-  let carried: RefMove[] | undefined;
-  if (outcome.status === "done" && req.carry && plan.carryable.length) {
-    const now = await localBranches(proc);
-    carried = plan.carryable
-      .map((name) => `refs/heads/${name}`)
-      .filter((ref) => carriedBefore[ref] && now[ref] && carriedBefore[ref] !== now[ref])
-      .map((ref) => ({ ref, before: carriedBefore[ref], after: now[ref] }));
-  }
+  const carried = after && req.carry ? await carriedBranches(proc, plan.rows) : [];
   return {
     ...outcome,
     before: plan.head,
     ...(after ? { after } : {}),
     ...(outcome.status === "done" ? { branch } : {}),
-    ...(carried?.length ? { carried } : {}),
+    ...(carried.length ? { carried } : {}),
   };
+}
+
+const FULL_SHA = /^[0-9a-f]{40,64}$/i;
+
+/**
+ * A branch name as for-each-ref gave the plan one — what an undo request may
+ * name. Nothing git would read as an option or a revision expression, and no
+ * whitespace or control character; git's own check-ref-format has the rest,
+ * at update-ref.
+ */
+function plainBranchName(name: unknown): name is string {
+  return (
+    typeof name === "string" &&
+    name.length > 0 &&
+    !name.startsWith("-") &&
+    !name.includes("..") &&
+    !name.includes("@{") &&
+    // eslint-disable-next-line no-control-regex
+    !/[\s\x00-\x1f\x7f~^:?*[\\]/.test(name)
+  );
+}
+
+/** Carried branches exactly as an outcome handed them out: plain names, full shas. */
+function validCarried(carried: unknown): carried is readonly CarriedBranch[] {
+  return (
+    Array.isArray(carried) &&
+    carried.every(
+      (c: Partial<CarriedBranch> | undefined) =>
+        plainBranchName(c?.branch) && FULL_SHA.test(String(c?.before)) && FULL_SHA.test(String(c?.after)),
+    )
+  );
+}
+
+/** A carried branch as refRestore moves it: by full name. */
+function carriedMove(c: CarriedBranch): RefMove {
+  return { ref: `refs/heads/${c.branch}`, before: c.before, after: c.after };
 }
 
 /**
@@ -317,7 +386,8 @@ export async function dropCommit(
  * changes nothing. With `branch` the drop's OWN branch is the one moved:
  * checking HEAD's commit alone reset whichever branch HEAD was on — one made
  * and checked out at the new tip after the drop, left the dropped branch
- * dropped, and reported success.
+ * dropped, and reported success. Without it (a caller that predates it), HEAD
+ * is put back as undoRewrite does.
  */
 export async function undoDrop(
   proc: GitProcess,
@@ -327,54 +397,33 @@ export async function undoDrop(
     /** The branch the drop rewrote (DropOutcome.branch); null: HEAD was detached. */
     branch?: string | null;
     /** The branches it carried (DropOutcome.carried). */
-    carried?: readonly RefMove[];
+    carried?: readonly CarriedBranch[];
   },
 ): Promise<{ ok: true } | { ok: false; expected?: true; message: string }> {
-  if (!/^[0-9a-f]{40,64}$/i.test(u.before) || !/^[0-9a-f]{40,64}$/i.test(u.after)) {
-    // The renderer only ever sends the two shas a drop answered with.
-    return { ok: false, message: "That isn't a drop this app made." };
-  }
   const carried = u.carried ?? [];
   if (
-    (u.branch !== undefined && u.branch !== null && !isBranchRef(u.branch)) ||
-    carried.some((m) => !isBranchRef(m.ref) || !isSha(m.before) || !isSha(m.after))
+    !FULL_SHA.test(u.before) ||
+    !FULL_SHA.test(u.after) ||
+    !validCarried(carried) ||
+    (u.branch !== undefined && u.branch !== null && !isBranchRef(u.branch))
   ) {
+    // The renderer only ever sends what a drop answered with.
     return { ok: false, message: "That isn't a drop this app made." };
   }
   if (u.branch) {
-    return undoDropOnBranch(proc, { before: u.before, after: u.after, branch: u.branch, carried });
+    return undoDropOnBranch(proc, { before: u.before, after: u.after, branch: u.branch, carried: carried.map(carriedMove) });
   }
-  // Detached (branch null), or a caller that predates `branch`: HEAD itself.
   if (u.branch === null && (await headBranch(proc))) {
-    // A branch made and checked out at the new tip has the same commit, and
-    // resetting it would move a branch the drop never touched.
+    // Detached when dropped. A branch made and checked out at the new tip has
+    // the same commit, and resetting it would move a branch the drop never
+    // touched.
     return {
       ok: false,
       expected: true,
       message: "HEAD was detached when the commit was dropped, and it's on a branch now. Detach it again, then undo.",
     };
   }
-  if (carried.length) {
-    const why = await whyRefsNotRestorable(proc, carried, "the drop");
-    if (why) return { ok: false, expected: true, message: why };
-  }
-  const head = await revParse(proc, "HEAD");
-  if (head !== u.after) {
-    return {
-      ok: false,
-      expected: true,
-      message: "The branch has moved since the drop, so undoing it now would throw that away too. Nothing was changed.",
-    };
-  }
-  const stop = await stoppedIn(proc);
-  if (stop) {
-    return { ok: false, expected: true, message: operationInTheWayMessage({ ...pick(stop), kind: "reset" }) };
-  }
-  const r = await proc.run(["reset", "--keep", u.before]);
-  if (r.code !== 0) {
-    return keepRefused(proc, r.stderr);
-  }
-  return putCarriedBack(proc, carried);
+  return undoRewrite(proc, { before: u.before, after: u.after, carried }, "drop");
 }
 
 /**
@@ -404,7 +453,7 @@ async function undoDropOnBranch(
   try {
     await putRefBack(proc, own, "GitStudio undo: drop commit", { here });
   } catch (err) {
-    return here ? keepRefused(proc, err instanceof Error ? err.message : String(err)) : { ok: false, message: String(err instanceof Error ? err.message : err) };
+    return here ? keepRefused(proc, err instanceof Error ? err.message : String(err), "drop") : { ok: false, message: String(err instanceof Error ? err.message : err) };
   }
   return putCarriedBack(proc, u.carried);
 }
@@ -426,14 +475,99 @@ async function putCarriedBack(
 }
 
 /** `reset --keep` refused: over the user's changes (said as such), or for a reason of git's. */
-async function keepRefused(proc: GitProcess, stderr: string): Promise<{ ok: false; expected?: true; message: string }> {
+async function keepRefused(proc: GitProcess, stderr: string, what: string): Promise<{ ok: false; expected?: true; message: string }> {
   const status = await proc.run(["status", "--porcelain=v1", "-z", "--untracked-files=no"]);
   if (status.code === 0 && status.stdout.length > 0) {
     return {
       ok: false,
       expected: true,
-      message: "Your uncommitted changes touch files the drop changed. Commit or stash them, then undo.",
+      message: `Your uncommitted changes touch files the ${what} changed. Commit or stash them, then undo.`,
     };
   }
   return { ok: false, message: stderr.trim() || "Couldn't put the branch back." };
+}
+
+/**
+ * The same way back for any operation that moved HEAD from `before` to
+ * `after` on the branch it is on — a drop, a squash, several commits
+ * cherry-picked or reverted (issue #32). `what` names it in the words: "the
+ * branch has moved since the squash".
+ *
+ * `carried` are the other branches the rewrite moved along with it: each goes
+ * back too, and only while it is still where the rewrite left it — checked
+ * for every one before anything moves, so a refusal changes nothing.
+ */
+export async function undoRewrite(
+  proc: GitProcess,
+  u: { before: string; after: string; carried?: readonly CarriedBranch[] },
+  what: string,
+): Promise<{ ok: true } | { ok: false; expected?: true; message: string }> {
+  const carried = u.carried ?? [];
+  if (!FULL_SHA.test(u.before) || !FULL_SHA.test(u.after) || !validCarried(carried)) {
+    // The renderer only ever sends the tips the operation answered with.
+    return { ok: false, message: `That isn't a ${what} this app made.` };
+  }
+  const head = await revParse(proc, "HEAD");
+  if (head !== u.after) {
+    return {
+      ok: false,
+      expected: true,
+      message: `The branch has moved since the ${what}, so undoing it now would throw that away too. Nothing was changed.`,
+    };
+  }
+  for (const c of carried) {
+    const now = await revParse(proc, `refs/heads/${c.branch}`);
+    if (now !== c.after) {
+      return {
+        ok: false,
+        expected: true,
+        message: `${c.branch} has moved since the ${what}, so undoing it now would throw that away too. Nothing was changed.`,
+      };
+    }
+  }
+  if (carried.length > 0) {
+    // Moved from here, a branch checked out in another worktree would leave
+    // that worktree's files describing a commit its branch is no longer on.
+    const wt = await proc.run([
+      "for-each-ref",
+      "--format=%(refname)%00%(worktreepath)",
+      ...carried.map((c) => `refs/heads/${c.branch}`),
+    ]);
+    for (const line of wt.code === 0 ? wt.stdout.split("\n") : []) {
+      const [ref, path] = line.split("\0");
+      if (ref && path) {
+        const name = ref.replace(/^refs\/heads\//, "");
+        return {
+          ok: false,
+          expected: true,
+          message: `${name} is checked out in another worktree now, at ${path}, so it can't be put back from here. Nothing was changed.`,
+        };
+      }
+    }
+  }
+  const stop = await stoppedIn(proc);
+  if (stop) {
+    return { ok: false, expected: true, message: operationInTheWayMessage({ ...pick(stop), kind: "reset" }) };
+  }
+  const r = await proc.run(["reset", "--keep", u.before]);
+  if (r.code !== 0) {
+    return keepRefused(proc, r.stderr, what);
+  }
+  // Each one compared-and-swapped against where the rewrite left it.
+  const stuck: string[] = [];
+  let why = "";
+  for (const c of carried) {
+    const moved = await proc.run(["update-ref", "-m", `GitStudio: undo ${what}`, `refs/heads/${c.branch}`, c.before, c.after]);
+    if (moved.code !== 0) {
+      stuck.push(c.branch);
+      why ||= moved.stderr.trim();
+    }
+  }
+  if (stuck.length > 0) {
+    return {
+      ok: false,
+      message: `The branch is back, but ${stuck.join(", ")} could not be put back${why ? `: ${why}` : "."}`,
+    };
+  }
+  return { ok: true };
 }

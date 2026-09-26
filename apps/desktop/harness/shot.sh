@@ -5,6 +5,7 @@
 #   open<N>          click the list row with data-num="<N>" (open a detail)
 #   click:<selector> click the first match (URL-encode [ ] = as %5B %5D %3D)
 #   rclick:<selector> right-click it (the graph row's commit menu)
+#   mclick:<selector> Cmd-click it; sclick:<selector> Shift-click it (select several)
 #   esc              dispatch Escape (detail → list)
 #   palette          open the ⌘K palette
 #   bell             open the notifications popover
