@@ -147,8 +147,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   longer resets the branch to where it was at launch, dropping the commits
   you made since — nor puts back a branch you rebased yourself afterwards.
   Its Undo names the base as a short sha, not all forty characters.
-- **Undo after reordering or dropping commits with "move those branches"**
-  puts those branches back too, not just the current one.
+- **Undo after reordering, dropping or squashing commits with "move those
+  branches"** puts those branches back too, not just the current one — as
+  long as nothing has been committed on them since; if something has, Undo
+  says so and changes nothing. (#32)
 - **Undo of an amend** brings your staged changes back staged. Once the
   amended commit has been pushed, Undo adds a commit that undoes just the
   amendment — it used to revert the whole commit. A commit you make while
@@ -194,10 +196,6 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   to it, or dropping your last local commit — offered to revert an empty range
   and failed with git's "empty commit set passed". Going back is a
   fast-forward that rewrites nothing, so Undo now simply does it. (#32)
-- **Undo after reordering commits with "Reorder and move those branches".**
-  Undo put your branch back but left the other branches on the reordered
-  commits. They go back too now, as long as nothing has been committed on
-  them since; if something has, Undo says so and changes nothing.
 - Blame in a repository nested inside another's folder (a vendored checkout,
   a submodule) no longer runs in the outer repository when the outer one is
   the repository on screen. (#32)
