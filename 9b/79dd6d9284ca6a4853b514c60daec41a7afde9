@@ -1,0 +1,31 @@
+apps/extension/test/changesTwisty.test.ts
+  s_26f5e669d3043c::t_bb57ab9088772f 1-111
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_5f6238a55ffe98 4676-4680
+apps/extension/CHANGELOG.md
+  s_5903145ca64678::t_358bc7bb598b15 67-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9b79dd6d9284ca6a4853b514c60daec41a7afde9",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_5903145ca64678": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-adb4697ee18b11b77",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
