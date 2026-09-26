@@ -1,0 +1,32 @@
+apps/desktop/src/renderer/tabState.ts
+  s_26f5e669d3043c::t_9c8c5c27ca0a88 1-42
+apps/desktop/test/tabState.test.ts
+  s_26f5e669d3043c::t_0e37aa11359265 1-67
+  s_26f5e669d3043c::t_5b196a7be61e6d 68-74
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_fb13a3bb8e8709 776-778
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_ad07125c02c689 16628-16668
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_3ff916913daca1 78,126,881-883,10750-10754,10828-10830,10908-10910
+apps/desktop/src/renderer/views/common.ts
+  s_26f5e669d3043c::t_50be4eb39d8443 2192-2200,2208-2216,2220-2222,2225,2228-2256
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_62de9f13fd4eda 16,95-139,188,232-238,247-248,253-255,258-259,295,313,338,341,358,367,369,389,454-455,552,567,574,587,609,616,627,633-634,660,662,693-694,697-700,744,769,794,807-808,812,893,928,959,1002-1003,1007,1101,1217,1229,1247,1250,1257,1289,1322,1344,1352,1389,1395,1435-1436,1458,1469,1497,1499,1561,1576,1583,1585,1588,1592,1595,1598,1608,1613,1622,1749,1941-1944,2114,2199,2327,2635
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b8543ffd46835f879ab190bfee656fcd2ccb8d02",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
