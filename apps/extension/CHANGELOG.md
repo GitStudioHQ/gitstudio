@@ -99,6 +99,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - Worktree and branch tooltips show paths and upstream names without stray
   backslashes, and a detached worktree's row uses the commit icon its tooltip
   does.
+- A worktree row's inline button is **Open in New Window**, and it opens the
+  worktree straight away; **Open in This Window** is in the row's menu. The
+  button was *Open Worktree* and asked which window first.
 
 ## [1.14.0] - 2026-09-25
 

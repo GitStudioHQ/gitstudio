@@ -434,7 +434,7 @@ test("the main worktree says so, offers no Remove, and a Remove that reaches it 
   assert.ok(!offered(main).inline.includes("remove"));
   assert.ok(!offered(main).menu.includes("remove"));
   assert.ok(!offered(main).menu.includes("lock"), "git cannot lock the main worktree either");
-  assert.ok(offered(main).inline.includes("open"));
+  assert.ok(offered(main).inline.includes("openInNewWindow"));
 
   await wt.removeWorktree(repos, main, noop);
   assert.equal(asked.length, 0);
@@ -474,8 +474,8 @@ test("a missing folder: no Open, the row says so, and Forget clears it (past its
     const node = await row(provider, name);
     assert.match(node.description ?? "", /folder missing/);
     assert.equal(node.command, undefined, "a click opens nothing");
-    assert.ok(!offered(node).inline.includes("open"));
-    assert.ok(!offered(node).menu.includes("open"));
+    assert.ok(!offered(node).inline.some((c) => c.startsWith("open")));
+    assert.ok(!offered(node).menu.some((c) => c.startsWith("open")));
     assert.ok(!offered(node).menu.includes("remove"));
     assert.ok(offered(node).inline.includes("forget"));
 
@@ -508,6 +508,36 @@ test("Open on the current worktree never offers to reopen it in this window", as
   const node = await row(provider, "feat-clean");
   assert.equal(node.command, undefined, "clicking the window's own worktree opens nothing");
   await wt.openWorktree(node);
+});
+
+test("the row's Open in New Window opens at once — no question — and Open in This Window is in its menu", async () => {
+  const s = scene();
+  const { provider } = windowAt(s.app);
+  answer = () => {
+    throw new Error("a button that says where it opens asks nothing");
+  };
+  const node = await row(provider, "feat-clean");
+  assert.deepEqual(offered(node).inline, ["openInNewWindow", "remove"]);
+  assert.deepEqual(offered(node).menu.slice(0, 2), ["openInNewWindow", "openHere"]);
+
+  await wt.openWorktreeIn(node, "new");
+  await wt.openWorktreeIn(node, "here");
+  assert.deepEqual(
+    executed.map((e) => [e.command, (e.args[0] as { fsPath: string }).fsPath, (e.args[1] as { forceNewWindow: boolean }).forceNewWindow]),
+    [
+      ["vscode.openFolder", s.path("feat-clean"), true],
+      ["vscode.openFolder", s.path("feat-clean"), false],
+    ],
+  );
+  assert.equal(asked.length, 0);
+
+  // The window's own worktree: neither is offered, and This Window reached anyway reopens nothing.
+  executed.length = 0;
+  const here = await row(windowAt(s.path("feat-clean")).provider, "feat-clean");
+  assert.ok(!offered(here).inline.some((c) => c.startsWith("open")));
+  assert.ok(!offered(here).menu.some((c) => c.startsWith("open")));
+  await wt.openWorktreeIn(here, "here");
+  assert.deepEqual(executed, []);
 });
 
 // ── Lock ─────────────────────────────────────────────────────────────────────

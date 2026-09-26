@@ -18,6 +18,7 @@ import { StashesWebviewViewProvider } from "./views/stashesWebview";
 import {
   WorktreesTreeProvider,
   openWorktree,
+  openWorktreeIn,
   addWorktree,
   removeWorktree,
   lockWorktree,
@@ -686,6 +687,15 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       vscode.commands.registerCommand(
         "gitstudio.worktree.open",
         (node: WorktreeNode) => void openWorktree(node),
+      ),
+      // The row's buttons and menu say where it opens, and open it there.
+      vscode.commands.registerCommand(
+        "gitstudio.worktree.openInNewWindow",
+        (node: WorktreeNode) => openWorktreeIn(node, "new"),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.worktree.openHere",
+        (node: WorktreeNode) => openWorktreeIn(node, "here"),
       ),
       vscode.commands.registerCommand("gitstudio.worktree.add", () =>
         addWorktree(repos, refreshWorktrees),

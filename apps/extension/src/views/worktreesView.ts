@@ -402,20 +402,45 @@ function active(repos: RepoManager): RepoEntry | undefined {
   return a;
 }
 
-/** `gitstudio.worktree.open` — open the worktree folder. */
+/**
+ * A window on a folder that is not there opens onto nothing. The row offers no
+ * Open then; this is the door a stale row (or a keybinding) still reaches.
+ * Says so and answers true when the folder is gone.
+ */
+function saidFolderGone(node: WorktreeNode): boolean {
+  if (existsSync(node.entry.path)) {
+    return false;
+  }
+  void vscode.window.showWarningMessage(
+    `GitStudio: ${worktreeLabel(node.entry)}'s folder is gone — ${node.entry.path}. Use Forget Worktree on its row to clear it from the list.`,
+  );
+  return true;
+}
+
+/**
+ * `gitstudio.worktree.openInNewWindow` / `gitstudio.worktree.openHere` — open
+ * the worktree's folder where the control says, with no question first. The
+ * row's inline button is Open in New Window; Open in This Window is in its
+ * menu, never on the row of the worktree this window already has open.
+ */
+export async function openWorktreeIn(node: WorktreeNode, where: "new" | "here"): Promise<void> {
+  if (!node || node.entry.bare || saidFolderGone(node)) {
+    return;
+  }
+  if (where === "here" && node.state.current) {
+    return; // it is the one open here
+  }
+  await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(node.entry.path), {
+    forceNewWindow: where === "new",
+  });
+}
+
+/** `gitstudio.worktree.open` — a row's click: asks which window. */
 export async function openWorktree(node: WorktreeNode): Promise<void> {
-  if (!node || node.entry.bare) {
+  if (!node || node.entry.bare || saidFolderGone(node)) {
     return;
   }
   const label = worktreeLabel(node.entry);
-  // A window on a folder that is not there opens onto nothing. The row offers
-  // no Open then; this is the door a stale row (or a keybinding) still reaches.
-  if (!existsSync(node.entry.path)) {
-    void vscode.window.showWarningMessage(
-      `GitStudio: ${label}'s folder is gone — ${node.entry.path}. Use Forget Worktree on its row to clear it from the list.`,
-    );
-    return;
-  }
   const uri = vscode.Uri.file(node.entry.path);
   const choices: DialogChoice[] = [{ id: "new", label: "Open in New Window", icon: "window" }];
   // Not on the worktree this window already has open: "This Window" would
