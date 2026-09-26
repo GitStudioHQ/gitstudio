@@ -13,7 +13,7 @@ import { optionLikeCheckout } from "@gitstudio/git-service/checkoutRef";
 import { tildify } from "./branchElsewhere";
 import { folderKey, sameFolder, type WorktreeRemoval } from "@gitstudio/git-service/WorktreeProvider";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
-import { worktreeRemovalQuestion, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
+import { worktreeChangedSinceAsked, worktreeRemovalQuestion, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
 import { bareName, shortNameOf, startPointOf, worktreeRefFor } from "./worktreeRefs";
 
 // The Worktrees pillar — also absent from free VS Code. Each row is a linked (or
@@ -849,11 +849,14 @@ async function askAndRemove(
     return;
   }
 
-  // What the question listed is lost, as it said. Clean when asked, it goes
-  // without --force: a change made since (an agent still at work in it) makes
-  // git refuse rather than delete it — see removeAsAgreed.
+  // What the question listed is lost, as it said — and only that. A change
+  // made since (an agent still at work in it) is never deleted unasked: clean
+  // when asked, it goes without --force and git refuses; dirty when asked, a
+  // path the question did not list runs nothing — see removeAsAgreed.
   const r = await a.ctx.worktrees.removeAsAgreed(entry.path, {
-    discardChanges: q.discardChanges,
+    discardChanges: q.discardChanges
+      ? { listed: removal.kind === "present" ? removal.changes : undefined }
+      : undefined,
     pastLock: entry.locked ? { reason: entry.lockReason } : undefined,
   });
   const verb = removal.kind === "missing" ? "forget" : "remove";
@@ -863,12 +866,17 @@ async function askAndRemove(
   }
   // Refused: when that is because it changed since the question, ask again
   // with what it holds now — once.
-  if (removal.kind === "present" && !q.discardChanges && !plan) {
+  if (removal.kind === "present" && !plan && (r.changedSince || !q.discardChanges)) {
     const now = await a.ctx.worktrees.removal(entry.path);
-    if (now.kind === "present" && (now.changes === undefined || now.changes.length > 0)) {
+    if (r.changedSince || (now.kind === "present" && (now.changes === undefined || now.changes.length > 0))) {
       await askAndRemove(a, entry.path, label, refresh, now);
       return;
     }
+  }
+  if (r.changedSince) {
+    void vscode.window.showInformationMessage(`GitStudio: ${worktreeChangedSinceAsked(label)}`);
+    refresh();
+    return;
   }
   reportRemoval(r, "", `${verb} ${label}`, refresh);
 }

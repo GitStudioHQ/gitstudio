@@ -48,6 +48,7 @@ import {
 } from "@gitstudio/git-service/SyncOps";
 import { GitProcess } from "@gitstudio/git-service/GitProcess";
 import { sameFolder } from "@gitstudio/git-service/WorktreeProvider";
+import { worktreeChangedSinceAsked } from "@gitstudio/host-bridge/worktreeRemoval";
 import type {
   CommitRecord,
   GitContext,
@@ -94,6 +95,7 @@ import type {
   TreeEntry,
   WorktreeInfo,
   WorktreeRemovalInfo,
+  WorktreeRemoveResult,
   CommitBranches,
   ConflictsSnapshot,
   JetBrainsIdeInfo,
@@ -308,6 +310,35 @@ function mustSucceed(result: { stdout: string; stderr?: string; code?: number },
     );
   }
   return result.stdout;
+}
+
+/**
+ * What removing the worktree at `path` takes, as the renderer's one question
+ * needs it (git-service's removal): refused outright — the main worktree, this
+ * window's own, one no longer listed — or the facts. Read fresh each time: for
+ * the question, and again when a remove was refused because it changed since.
+ */
+async function removalInfo(ctx: GitContext, path: string): Promise<WorktreeRemovalInfo> {
+  const r = await ctx.worktrees.removal(path);
+  if (r.kind === "notListed" || r.kind === "main") {
+    return { kind: r.kind };
+  }
+  if (sameFolder(r.entry.path, ctx.root)) {
+    return { kind: "current" };
+  }
+  return {
+    kind: r.kind,
+    branch: r.entry.branch,
+    head: r.entry.head,
+    locked: !!r.entry.locked,
+    lockReason: r.entry.lockReason,
+    ...(r.kind === "present" ? { changes: r.changes, operation: r.operation } : {}),
+  };
+}
+
+/** A worktree as the renderer names it: its branch, or "<sha> (detached)". */
+function worktreeLabelOf(e: { branch?: string; head: string; bare?: boolean }): string {
+  return e.branch ?? (e.bare ? "(bare)" : `${e.head.slice(0, 7)} (detached)`);
 }
 
 
@@ -1558,43 +1589,60 @@ export class GitBridge {
     if (!ctx) {
       return { kind: "notListed" };
     }
-    const r = await ctx.worktrees.removal(req.path);
-    if (r.kind === "notListed" || r.kind === "main") {
-      return { kind: r.kind };
-    }
-    if (sameFolder(r.entry.path, ctx.root)) {
-      return { kind: "current" };
-    }
-    return {
-      kind: r.kind,
-      branch: r.entry.branch,
-      head: r.entry.head,
-      locked: !!r.entry.locked,
-      lockReason: r.entry.lockReason,
-      ...(r.kind === "present" ? { changes: r.changes, operation: r.operation } : {}),
-    };
+    return removalInfo(ctx, req.path);
   }
 
+  /**
+   * Remove a worktree as the person agreed — and nothing it holds that the
+   * question did not name. A change made while the question was open (an
+   * agent still at work in it) runs nothing: clean when asked, git refuses
+   * the remove without --force; dirty when asked, removeAsAgreed finds a path
+   * `listed` never had. Either way the answer is `changedSince` with what it
+   * holds NOW, and `expected` — the renderer asks again from those facts, as
+   * the extension does. It used to hand git's refusal ("use --force to delete
+   * it") to a red toast and the crash reporter, or, dirty when asked, delete
+   * the new file with the rest.
+   */
   async worktreeRemove(opts: {
     path: string;
     discardChanges?: boolean;
+    listed?: string[];
     pastLock?: boolean;
-  }): Promise<CommitActionResult> {
+  }): Promise<WorktreeRemoveResult> {
     // The provider passes the path after `--` now; the guard stays, as on
     // every other mutation here that takes a renderer string.
     if (!safeArg(opts.path)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => {
+    let changedSince: WorktreeRemovalInfo | undefined;
+    const r = await this.staged(async (ctx) => {
       // Never the window's own worktree, whatever the renderer sent.
       if (sameFolder(opts.path, ctx.root)) {
         return { ok: false, expected: true, message: "This window has that worktree open, so it can't be removed from here." };
       }
       // The lock's reason, to put back if git refuses (see removeAsAgreed).
       const entry = (await ctx.worktrees.list()).find((e) => sameFolder(e.path, opts.path));
-      return ctx.worktrees.removeAsAgreed(opts.path, {
-        discardChanges: opts.discardChanges,
+      const label = entry ? worktreeLabelOf(entry) : "the worktree";
+      const done = await ctx.worktrees.removeAsAgreed(opts.path, {
+        discardChanges: opts.discardChanges ? { listed: opts.listed } : undefined,
         pastLock: opts.pastLock ? { reason: entry?.lockReason } : undefined,
       });
+      if (done.ok) {
+        return done;
+      }
+      const now = await removalInfo(ctx, opts.path);
+      const dirtyNow = now.kind === "present" && (now.changes === undefined || now.changes.length > 0);
+      if (done.changedSince || (!opts.discardChanges && dirtyNow)) {
+        changedSince = now;
+        return { ok: false, expected: true, message: worktreeChangedSinceAsked(label) };
+      }
+      // Anything else git refuses a remove over is the repository's state
+      // (a submodule in it, a lock put back in the meantime), said by git.
+      return {
+        ok: false,
+        expected: true,
+        message: `Couldn't remove worktree ${label}: ${done.stderr.trim() || "git worktree remove failed."}`,
+      };
     });
+    return changedSince ? { ...r, changedSince } : r;
   }
 
   // ── Compare (base…head) ───────────────────────────────────────────────────────

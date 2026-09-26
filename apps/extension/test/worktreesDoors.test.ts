@@ -389,6 +389,57 @@ test("a change made while the question was open is asked about, never deleted �
   assert.deepEqual(errors(), []);
 });
 
+test("dirty when asked, a file written while the question is open is asked about too, never deleted — locked or not", async () => {
+  for (const locked of [true, false]) {
+    const s = scene();
+    const { repos, provider } = windowAt(s.app);
+    // The owner's common case: an agent's worktree, locked and still at work.
+    if (locked) s.git("worktree", "lock", "--reason", "claude agent 7", s.path("feat-dirty"));
+    const late = join(s.path("feat-dirty"), "written-while-asking.txt");
+    asked = [];
+    answer = (spec) => {
+      if (spec.kind !== "confirm") return undefined;
+      if (asked.length === 1) {
+        writeFileSync(late, "agent output\n"); // the agent, mid-question
+        return "ok";
+      }
+      return undefined; // the second question: keep it
+    };
+    await wt.removeWorktree(repos, await row(provider, "feat-dirty"), noop);
+
+    const first = asked[0] as DialogSpec & { kind: "confirm" };
+    assert.match(first.message, /Its 3 uncommitted changes go with it/);
+    assert.doesNotMatch(first.message, /written-while-asking/);
+    assert.equal(asked.length, 2, `${locked ? "locked" : "unlocked"}: asked again, with what it holds now`);
+    const again = asked[1] as DialogSpec & { kind: "confirm" };
+    assert.match(again.message, /Its 4 uncommitted changes go with it/);
+    assert.match(again.message, /written-while-asking\.txt/);
+    assert.equal(readFileSync(late, "utf8"), "agent output\n", "the file the first question never named is still there");
+    assert.ok(existsSync(join(s.path("feat-dirty"), "new.txt")), "…and so is everything else");
+    if (locked) assert.match(s.git("worktree", "list", "--porcelain"), /locked claude agent 7/, "still locked, with its reason");
+    assert.deepEqual(errors(), []);
+  }
+});
+
+test("a worktree that keeps changing is asked about twice at most, then says nothing was removed", async () => {
+  const s = scene();
+  const { repos, provider } = windowAt(s.app);
+  let n = 0;
+  answer = (spec) => {
+    if (spec.kind !== "confirm") return undefined;
+    writeFileSync(join(s.path("feat-dirty"), `agent-${++n}.txt`), "more\n");
+    return "ok";
+  };
+  await wt.removeWorktree(repos, await row(provider, "feat-dirty"), noop);
+  assert.equal(asked.length, 2, "asked again once, not in a loop");
+  assert.ok(existsSync(join(s.path("feat-dirty"), "agent-2.txt")), "nothing deleted");
+  assert.deepEqual(errors(), []);
+  assert.match(
+    said.map((m) => m.message).join("\n"),
+    /feat-dirty has uncommitted changes it didn't have when you were asked, so nothing was removed/,
+  );
+});
+
 test("a worktree stopped in a merge: the question says removing it abandons the merge", async () => {
   const s = scene();
   const merging = s.path("feat-clean");

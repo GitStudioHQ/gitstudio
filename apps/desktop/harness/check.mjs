@@ -563,6 +563,7 @@ const CASES = [
   ["branch-people-yield-at-narrow-widths", "branches", { width: 1000 }],
   ["worktree-rows-share-the-table", "branches~click:.gh-seg-btn:nth-child(5)"],
   ["a-worktree-removal-says-what-it-takes", "branches~click:.gh-seg-btn:nth-child(5)"],
+  ["a-worktree-that-changed-while-asked-is-asked-again", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "wtchanged=1" }],
   ["the-tag-tooltip-survives-the-fallback-tile", "branches~click:.gh-seg-btn:nth-child(3)"],
   ["home-offers-sign-in-when-signed-out", "dashboard", { extra: "signedout=1" }],
   ["the-back-arrow-goes-where-it-says", "issues"],

@@ -7,7 +7,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
@@ -179,8 +179,58 @@ test("removeAsAgreed: past a lock without discarding, a change since the questio
   assert.equal(entry?.lockReason, "agent 7 (pid 42)", "locked again, with its reason");
 
   // Agreed with the change listed: it goes, lock and all.
-  const removed = await ctx.worktrees.removeAsAgreed(wt, { discardChanges: true, pastLock: {} });
+  const removed = await ctx.worktrees.removeAsAgreed(wt, { discardChanges: { listed: ["late.txt"] }, pastLock: {} });
   assert.ok(removed.ok, removed.stderr);
+  assert.equal(existsSync(wt), false);
+});
+
+test("removeAsAgreed: discarding what the question listed, a change it never listed stops it — nothing runs, nothing is deleted", async () => {
+  const { base, git, ctx } = repo();
+  // The owner's common case: a worktree an agent has locked, still at work,
+  // so it already has changes when the question is asked.
+  const wt = join(base, "wt", "agent");
+  git("worktree", "add", "-q", "-b", "agent", wt);
+  git("worktree", "lock", "--reason", "claude agent 7", wt);
+  writeFileSync(join(wt, "a.txt"), "changed\n");
+  writeFileSync(join(wt, "new.txt"), "n\n");
+  const asked = await ctx.worktrees.removal(wt);
+  const listed = asked.kind === "present" ? asked.changes : undefined;
+  assert.deepEqual([...(listed ?? [])].sort(), ["a.txt", "new.txt"]);
+
+  // The agent writes a file while the question is open.
+  writeFileSync(join(wt, "written-while-asking.txt"), "agent output\n");
+  const refused = await ctx.worktrees.removeAsAgreed(wt, { discardChanges: { listed }, pastLock: { reason: "claude agent 7" } });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.changedSince, true, "says it changed since the question");
+  assert.ok(existsSync(join(wt, "written-while-asking.txt")), "the file the question never named is still there");
+  assert.equal(readFileSync(join(wt, "a.txt"), "utf8"), "changed\n", "…and so is everything else");
+  const entry = (await ctx.worktrees.list()).find((e) => e.branch === "agent");
+  assert.equal(entry?.lockReason, "claude agent 7", "still locked, with its reason");
+
+  // Unlocked, the same: a --force never runs over a path nobody was told of.
+  git("worktree", "unlock", wt);
+  const unlocked = await ctx.worktrees.removeAsAgreed(wt, { discardChanges: { listed } });
+  assert.equal(unlocked.changedSince, true);
+  assert.ok(existsSync(join(wt, "written-while-asking.txt")));
+
+  // A listed change that is gone again, or changed further, is no news: asked
+  // again with all three listed, it goes.
+  rmSync(join(wt, "new.txt"));
+  writeFileSync(join(wt, "a.txt"), "changed again\n");
+  const now = await ctx.worktrees.removal(wt);
+  const all = [...(now.kind === "present" ? (now.changes ?? []) : []), "new.txt"];
+  const removed = await ctx.worktrees.removeAsAgreed(wt, { discardChanges: { listed: all } });
+  assert.ok(removed.ok, removed.stderr);
+  assert.equal(existsSync(wt), false);
+});
+
+test("removeAsAgreed: when the question could not read the changes, it said any go — and they do", async () => {
+  const { base, git, ctx } = repo();
+  const wt = join(base, "wt", "unread");
+  git("worktree", "add", "-q", "-b", "unread", wt);
+  writeFileSync(join(wt, "x.txt"), "x\n");
+  const r = await ctx.worktrees.removeAsAgreed(wt, { discardChanges: { listed: undefined } });
+  assert.ok(r.ok, r.stderr);
   assert.equal(existsSync(wt), false);
 });
 

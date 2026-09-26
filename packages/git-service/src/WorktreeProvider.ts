@@ -47,8 +47,12 @@ export interface WorktreeRemoveOptions extends GitRunOptions {
 }
 
 export interface WorktreeAgreedRemoveOptions extends GitRunOptions {
-  /** Its uncommitted changes go with it — the question listed them. */
-  discardChanges?: boolean;
+  /** Its uncommitted changes go with it — the ones the question listed:
+   *  `listed` is removal()'s `changes`, exactly as asked about. They are read
+   *  again just before the `--force`, and a path the question never named
+   *  stops it (see removeAsAgreed). `listed: undefined` — the question could
+   *  not read them, and said any it has go. */
+  discardChanges?: { listed: readonly string[] | undefined };
   /** It is locked and removing it anyway was agreed; `reason` is the lock's,
    *  put back if git refuses the remove. */
   pastLock?: { reason?: string };
@@ -82,6 +86,10 @@ export type WorktreeRemoval =
 export interface WorktreeOpResult {
   ok: boolean;
   stderr: string;
+  /** removeAsAgreed ran nothing: the worktree has uncommitted changes the
+   *  question never listed (or they could no longer be read), made since it
+   *  was asked. Read removal() again and ask again; `stderr` is empty. */
+  changedSince?: true;
 }
 
 /**
@@ -264,11 +272,16 @@ export class WorktreeProvider {
    * listed go too (`--force`). `pastLock`: it is locked, and removing it anyway
    * was agreed.
    *
-   * Without `discardChanges` there is no `--force`, so a change made SINCE the
-   * question — an agent still at work in it — makes git refuse rather than
-   * delete it. Past a lock that means unlocking first (a second `--force` would
-   * also delete changes), and locking it again, with its reason, when git
-   * refuses. With `discardChanges` a lock is passed with the second `--force`.
+   * A change made SINCE the question — an agent still at work in it — is never
+   * deleted unasked. Without `discardChanges` there is no `--force`, so git
+   * refuses it. Past a lock that means unlocking first (a second `--force`
+   * would also delete changes), and locking it again, with its reason, when
+   * git refuses. With `discardChanges` git would delete anything, so the
+   * changes are read again first: a path the question did not list runs
+   * nothing and answers `changedSince` — a worktree that was already dirty
+   * when asked (an agent's, typically) is the common case, not the rare one.
+   * Only the moment between that read and git's own is left uncovered. With
+   * `discardChanges` a lock is passed with the second `--force`.
    */
   async removeAsAgreed(
     path: string,
@@ -276,6 +289,14 @@ export class WorktreeProvider {
   ): Promise<WorktreeOpResult> {
     const signal = opts.signal;
     if (opts.discardChanges) {
+      const { listed } = opts.discardChanges;
+      if (listed) {
+        const now = await this.uncommitted(path, { signal });
+        const agreed = new Set(listed);
+        if (now === undefined || now.some((p) => !agreed.has(p))) {
+          return { ok: false, stderr: "", changedSince: true };
+        }
+      }
       return this.remove(path, { force: true, evenIfLocked: !!opts.pastLock, signal });
     }
     if (opts.pastLock) {

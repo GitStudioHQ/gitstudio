@@ -154,6 +154,7 @@ import type {
   SshKey,
   StashInfo,
   WorktreeInfo,
+  WorktreeRemovalInfo,
   SyncStatus,
   ConflictModel,
   FileDiff,
@@ -3259,10 +3260,16 @@ class App {
    * remove, and show git's refusal: a dirty worktree was never removed, a
    * locked one could not be, and the main one was offered at all. The words
    * are the extension's (host-bridge/worktreeRemoval).
+   *
+   * A change made while the question is open (an agent still at work in it)
+   * is never deleted unasked: the remove runs nothing and answers
+   * `changedSince` with what the worktree holds now, and the question is asked
+   * again from that — once, as the extension's is. It used to show git's
+   * refusal ("use --force to delete it") in a red toast, filed as a crash.
    */
-  private async removeWorktreeLive(w: WorktreeInfo): Promise<void> {
+  private async removeWorktreeLive(w: WorktreeInfo, again?: WorktreeRemovalInfo): Promise<void> {
     const label = w.branch ?? (w.bare ? "(bare)" : `${w.head.slice(0, 7)} (detached)`);
-    const plan = await host.invoke("worktree:removal", { path: w.path });
+    const plan = again ?? (await host.invoke("worktree:removal", { path: w.path }));
     if (plan.kind === "notListed" || plan.kind === "main" || plan.kind === "current") {
       toast(worktreeRemovalRefusal(plan.kind, label), "info");
       if (plan.kind === "notListed") await this.refreshBranchesSoft();
@@ -3290,9 +3297,15 @@ class App {
     const r = await host.invoke("worktree:remove", {
       path: w.path,
       discardChanges: q.discardChanges,
+      // Exactly what the question named: a path it did not stops the discard.
+      ...(q.discardChanges && plan.kind === "present" && plan.changes ? { listed: plan.changes } : {}),
       pastLock: plan.locked,
     });
     if (!r.ok) {
+      if (r.changedSince && !again) {
+        await this.removeWorktreeLive(w, r.changedSince);
+        return;
+      }
       toast(r.message ?? "Couldn't remove the worktree.", r.expected ? "info" : "error");
       await this.refreshBranchesSoft();
       return;

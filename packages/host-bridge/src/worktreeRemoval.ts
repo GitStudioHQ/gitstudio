@@ -118,6 +118,15 @@ export function worktreeRemovalQuestion(f: WorktreeRemovalFacts): WorktreeRemova
 }
 
 /**
+ * Said when the remove ran nothing because the worktree changed while the
+ * question was open (an agent still at work in it) and it has already been
+ * asked about again once: nothing it holds was deleted unasked.
+ */
+export function worktreeChangedSinceAsked(label: string): string {
+  return `${label} has uncommitted changes it didn't have when you were asked, so nothing was removed. Remove it again to see what it holds now.`;
+}
+
+/**
  * Why a worktree is not removed at all, said before anything runs: the main
  * worktree (git never removes it), the one this window has open (its folder
  * would go from under the window), or one no longer listed.

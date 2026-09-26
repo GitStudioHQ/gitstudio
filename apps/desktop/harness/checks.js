@@ -8051,6 +8051,42 @@
       c.ok(!!remove && (remove.disabled || remove.getAttribute("aria-disabled") === "true"), "the main worktree's Remove is disabled");
     },
 
+    /**
+     * A worktree that changed while its question was open (an agent still at
+     * work in it) is asked about AGAIN, from what it holds now — never removed
+     * with a file nobody was told of, and never a red toast of git's refusal
+     * filed as a crash. The remove sends exactly the paths the question named.
+     */
+    "a-worktree-that-changed-while-asked-is-asked-again": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const agent = $$(".ref-row").find((r) => (r.dataset.ref || "").endsWith("/gitstudio-agent"));
+      if (!agent) return c.ok(false, "the locked worktree lists");
+      $$(".lv-menu-btn", agent)[0]?.click();
+      await settle(350);
+      $$(".dropdown .dropdown-item").find((i) => text(i) === "Remove this worktree…")?.click();
+      await settle(600);
+      let card = $(".modal-card");
+      if (!card) return c.ok(false, "Remove asks");
+      c.match(text($$(".modal-message", card)[0]), /Its 2 uncommitted changes go with it/, "the first question names two");
+      $$(".modal-ok", card)[0].click();
+      await settle(900);
+      const first = window.__gsWorktrees.removes[0];
+      c.eq(JSON.stringify(first && first.listed), JSON.stringify(["src/agent-notes.md", "tmp/scratch.txt"]), "the remove sends exactly what the question named");
+      card = $(".modal-card");
+      if (!card) return c.ok(false, "asked again when it changed since");
+      const msg = text($$(".modal-message", card)[0]);
+      c.match(msg, /Its 3 uncommitted changes go with it/, "…with what it holds now");
+      c.match(msg, /src\/agent-output\.ts/, "…naming the file written while asking");
+      c.eq(text($$(".modal-ok", card)[0]), "Unlock, Discard Changes and Remove", "…on the same honest button");
+      c.ok(!$$(".toast").some((t) => /error/.test(t.className)), "no error toast");
+      $$(".modal-ok", card)[0].click();
+      await settle(900);
+      const second = window.__gsWorktrees.removes[1];
+      c.eq(second && second.listed && second.listed.length, 3, "the second remove names all three");
+      c.eq(window.__gsWorktrees.removes.length, 2, "asked again once, not in a loop");
+    },
+
     // The words that answer "wtf is lightweight/annotated" survive the avatar
     // 404 fallback — gravatar answers d=404 on purpose, so MOST authors take
     // that path, and the fallback tile used to reset the tooltip to "@Name".

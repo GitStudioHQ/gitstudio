@@ -553,6 +553,16 @@ export type WorktreeRemovalInfo =
       operation?: WorktreeOperation;
     };
 
+/**
+ * A worktree:remove answer. `changedSince`: nothing ran, because the worktree
+ * has uncommitted changes the question did not name — made while it was open,
+ * an agent still at work in it — and these are its facts NOW, to ask again
+ * from (once; `message` says so when it changes again). Always `expected`.
+ */
+export type WorktreeRemoveResult = CommitActionResult & {
+  changedSince?: WorktreeRemovalInfo;
+};
+
 /** One commit in a Compare result. */
 export interface CompareCommit {
   sha: string;
@@ -2148,11 +2158,16 @@ export interface IpcChannels {
   "worktree:removal": [{ path: string }, WorktreeRemovalInfo];
   /**
    * Remove a worktree as the person agreed (git-service's removeAsAgreed):
-   * `discardChanges` — the uncommitted changes the question listed go too;
-   * `pastLock` — it is locked, and removing it anyway was agreed. Without
-   * `discardChanges`, a change made since the question makes git refuse.
+   * `discardChanges` — the uncommitted changes the question listed go too,
+   * `listed` being exactly those (worktree:removal's `changes`; absent when
+   * they could not be read and the question said any go); `pastLock` — it is
+   * locked, and removing it anyway was agreed. A change made since the
+   * question, listed nowhere, runs nothing and answers `changedSince`.
    */
-  "worktree:remove": [{ path: string; discardChanges?: boolean; pastLock?: boolean }, CommitActionResult];
+  "worktree:remove": [
+    { path: string; discardChanges?: boolean; listed?: string[]; pastLock?: boolean },
+    WorktreeRemoveResult,
+  ];
   "worktree:open": [string, RepoInfo | undefined];
   // ── Sync (control remote changes) ──
   "sync:status": [void, SyncStatus];

@@ -70,9 +70,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **Removing a worktree says what goes with it.** The question names the
   worktree by its branch, lists the uncommitted files that are deleted (five,
   then how many more) and says the branch and its commits stay; the button
-  reads **Discard Changes and Remove** when there are any. A worktree that was
-  clean when you were asked but changed before you answered — an agent still
-  at work in it — is asked about again instead of deleted, and keeps its lock.
+  reads **Discard Changes and Remove** when there are any. A worktree that
+  changed before you answered — an agent still at work in it — is asked about
+  again instead of deleted, and keeps its lock: a file the question didn't
+  name is never deleted with the rest, whether the worktree was clean or
+  already had changes when you were asked.
 - **The worktree this window has open is never removed from under it.** Remove
   deleted the window's own folder; it is no longer offered there (a worktree
   open as another folder of the workspace counts too), and says why if

@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { worktreeRemovalQuestion, worktreeRemovalRefusal, type WorktreeRemovalFacts } from "../src/worktreeRemoval";
+import { worktreeChangedSinceAsked, worktreeRemovalQuestion, worktreeRemovalRefusal, type WorktreeRemovalFacts } from "../src/worktreeRemoval";
 
 const base: WorktreeRemovalFacts = {
   kind: "present",
@@ -57,6 +57,13 @@ test("missing: Forget, nothing on disk changes, never a discard", () => {
   const locked = worktreeRemovalQuestion({ ...base, kind: "missing", locked: true, lockReason: "agent 42" });
   assert.equal(locked.confirmLabel, "Unlock and Forget");
   assert.match(locked.message, /“agent 42”\. Forgetting it unlocks it\./);
+});
+
+test("changed since it was asked: says nothing was removed, and how to see what it holds", () => {
+  assert.equal(
+    worktreeChangedSinceAsked("feat"),
+    "feat has uncommitted changes it didn't have when you were asked, so nothing was removed. Remove it again to see what it holds now.",
+  );
 });
 
 test("detached: names the commit instead of a branch", () => {

@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
+import { reportableResultMessage } from "../src/main/expectedError";
 
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "gs-desktop-wt-")));
 after(() => removeTempRepo(scratch));
@@ -115,6 +116,50 @@ test("a dirty worktree goes when its changes were agreed to — and is refused, 
   assert.ok(existsSync(join(s.path("dirty"), "new.txt")));
   const r = await bridge.worktreeRemove({ path: s.path("dirty"), discardChanges: true });
   assert.ok(r.ok, r.message);
+  assert.equal(existsSync(s.path("dirty")), false);
+});
+
+test("a change made while the question was open: nothing is deleted, the lock goes back, and the fresh facts come back to ask again — not a crash report", async () => {
+  const s = scene();
+  const bridge = await bridgeOn(s.app);
+  // Clean and locked when asked (an agent's worktree between writes).
+  const plan = await bridge.worktreeRemoval({ path: s.path("locked") });
+  assert.deepEqual(plan.kind === "present" && plan.changes, []);
+  writeFileSync(join(s.path("locked"), "agent.txt"), "work\n");
+  const r = await bridge.worktreeRemove({ path: s.path("locked"), discardChanges: false, pastLock: true });
+  assert.equal(r.ok, false);
+  assert.equal(r.expected, true, "the person's state, not a failure");
+  assert.equal(reportableResultMessage(r), undefined, "never filed as a crash report");
+  assert.doesNotMatch(r.message ?? "", /fatal|--force/, "not git's words");
+  const now = r.changedSince;
+  assert.equal(now?.kind, "present", "the facts it holds now, for the question asked again");
+  assert.deepEqual(now?.kind === "present" && now.changes, ["agent.txt"]);
+  assert.equal(now?.kind === "present" && now.lockReason, "on a USB drive");
+  assert.ok(existsSync(join(s.path("locked"), "agent.txt")), "nothing deleted");
+  assert.match(s.git("worktree", "list", "--porcelain"), /locked on a USB drive/, "locked again, with its reason");
+});
+
+test("dirty when asked: a file the question never listed stops the discard — nothing runs, and the fresh facts come back", async () => {
+  const s = scene();
+  const bridge = await bridgeOn(s.app);
+  const plan = await bridge.worktreeRemoval({ path: s.path("dirty") });
+  const listed = plan.kind === "present" ? plan.changes : undefined;
+  assert.deepEqual(listed, ["new.txt"]);
+  writeFileSync(join(s.path("dirty"), "written-while-asking.txt"), "agent output\n");
+  const r = await bridge.worktreeRemove({ path: s.path("dirty"), discardChanges: true, listed });
+  assert.equal(r.ok, false);
+  assert.equal(r.expected, true);
+  assert.equal(reportableResultMessage(r), undefined);
+  assert.deepEqual(r.changedSince?.kind === "present" && [...(r.changedSince.changes ?? [])].sort(), ["new.txt", "written-while-asking.txt"]);
+  assert.ok(existsSync(join(s.path("dirty"), "written-while-asking.txt")), "the file nobody was told of is still there");
+
+  // Asked again with all of it listed, it goes.
+  const again = await bridge.worktreeRemove({
+    path: s.path("dirty"),
+    discardChanges: true,
+    listed: r.changedSince?.kind === "present" ? r.changedSince.changes : undefined,
+  });
+  assert.ok(again.ok, again.message);
   assert.equal(existsSync(s.path("dirty")), false);
 });
 
