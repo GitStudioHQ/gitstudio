@@ -56,6 +56,50 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   checkout just switches to it, as before. (#32)
 
 ### Fixed
+- **Undo puts back what the operation changed — and only that.** Undo used to
+  reset whichever branch you were on to the commit HEAD had been at. Undoing
+  *Checkout feature* moved `feature` onto your previous branch's commit
+  instead of switching back — and when `feature` was pushed, it committed a
+  revert of it; undoing *Checkout main* from a branch ahead of it
+  fast-forwarded `main`; undoing a tag checkout or *Detach HEAD Here* left
+  you detached. Undo now switches back to the branch (or detached commit) you
+  were on — your uncommitted changes come along, and it refuses rather than
+  overwrite them — and deletes the local branch a *Checkout origin/x* created.
+  Its question says what will happen, in words: "Switch back to 'main'",
+  "Bring back branch 'feature' at 1a2b3c4".
+- **Delete branch, Drop stash and Pop stash can really be undone.** Their
+  questions promised Undo could bring the branch or the stash back; Undo said
+  it had and restored nothing, and undoing a pop threw the popped changes
+  away. Undo now brings a deleted branch back at its commit, tracking what it
+  tracked, and a dropped or popped stash back where it was in the list.
+  Cancelling at "not fully merged" no longer offers "Undid? Delete branch".
+- **Undo never throws away work you did after the operation without saying
+  so.** With a commit made since, Undo says the branch has moved and changes
+  nothing. Uncommitted edits made since are kept when they don't touch the
+  files going back, and named as discarded when they do; a new untracked file
+  where Undo would put a file back is never overwritten — Undo names it and
+  waits.
+- **The *Reset --hard* question said Undo could not bring your uncommitted
+  edits back.** It can, and does: undoing the reset puts the branch back and
+  the edits with it. The question now says so.
+- **Undo of a rebase that stopped** — Rebase onto…, the Interactive Rebase
+  workspace, or *Start Interactive Rebase Here* while paused — abandons the
+  rebase, instead of leaving it half-open on a detached HEAD. An interactive
+  rebase you quit without running changed nothing, so Undo says so; it no
+  longer resets the branch to where it was at launch, dropping the commits
+  you made since.
+- **Undo after reordering or dropping commits with "move those branches"**
+  puts those branches back too, not just the current one.
+- **Undo of an amend** brings your staged changes back staged. Once the
+  amended commit has been pushed, Undo adds a commit that undoes just the
+  amendment — it used to revert the whole commit.
+- **Undo no longer reverts commits that were already on the remote.** After a
+  fast-forward merge, a rebase that fast-forwarded, or a reset forward onto
+  your remote's newer commits, Undo moves the branch back rather than offering
+  to commit a revert of them. Revert instead of rewrite is kept for a result
+  you pushed after the operation.
+- **Undo History** undoes an older entry after every newer one, newest first,
+  each asking its own question.
 - **Undo after moving a branch back onto pushed history.** Undoing an
   operation that left the branch on an older, already-pushed commit — a reset
   to it, or dropping your last local commit — offered to revert an empty range

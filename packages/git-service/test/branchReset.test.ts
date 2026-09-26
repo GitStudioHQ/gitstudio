@@ -473,7 +473,7 @@ test("Undo refuses where putting the branch back would lose something, or land i
       await runReset(f.ctx.process, p);
       await f.ctx.snapshot.settle(snap);
       f.git("checkout", "-q", "main");
-      assert.match((await f.ctx.snapshot.whyNotRestorable(snap)) ?? "", /was checked out here when it was reset, and it isn't now/);
+      assert.match((await f.ctx.snapshot.whyNotRestorable(snap)) ?? "", /was checked out here when "Reset" ran, and it isn't now\. Check it out again, then undo\./);
     } finally {
       f.ctx.dispose();
     }

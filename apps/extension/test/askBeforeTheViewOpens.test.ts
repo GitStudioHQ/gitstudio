@@ -55,14 +55,22 @@ test("nothing ran — a cancel — records no undo entry and shows no 'Undid?' t
   const ledger = new UndoLedger(repos as never, context as never);
   const repo = {
     root: "/r",
-    ctx: { snapshot: { capture: async (label: string) => ({ label, headSha: "a".repeat(40) }) } },
+    // settle + changed: the envelope records only an op that changed something;
+    // this one says it did, so what is under test is the cancel alone.
+    ctx: {
+      snapshot: {
+        capture: async (label: string) => ({ label, headSha: "a".repeat(40) }),
+        settle: async () => {},
+        changed: () => true,
+      },
+    },
   };
   vscode.__said.length = 0;
 
   assert.equal(await ledger.runWithUndo(repo as never, "Revert 1a2b3c4", async () => false), false);
   assert.equal(await ledger.runWithUndo(repo as never, "Pop stash@{0}", async () => ({ cancelled: true as const })).then((r) => r.cancelled), true);
   assert.deepEqual(vscode.__said.filter((s) => /Undid\?/.test(s.message)), [], "nothing is offered to undo");
-  assert.equal((state.get("gitstudio.undoLedger.v1") as Record<string, unknown[]> | undefined)?.["/r"], undefined);
+  assert.equal((state.get("gitstudio.undoLedger.v2") as Record<string, unknown[]> | undefined)?.["/r"], undefined);
 
   assert.equal(await ledger.runWithUndo(repo as never, "Revert 1a2b3c4", async () => true), true);
   assert.deepEqual(

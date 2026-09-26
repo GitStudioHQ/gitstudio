@@ -66,11 +66,26 @@ export async function startInteractiveRebase(
   }
 
   // Snapshot before launching so Undo can restore the pre-rebase state. The
-  // terminal launch is fire-and-forget (we can't await the terminal), so we
-  // record the snapshot immediately; the user's Undo resets HEAD to it.
-  await undo.runWithUndo(active, `Interactive rebase onto ${short(base)}`, async () => {
-    launchRebaseTerminal(active, base);
-  });
+  // terminal launch is fire-and-forget (we can't await the terminal), so the
+  // entry is recorded now as DEFERRED: Undo reads what the rebase went on to
+  // change from the branches' reflogs — a move "onto <base>" — so a rebase
+  // the user quit changes nothing, and a commit made since is never thrown
+  // away as if the rebase had made it. Paused mid-way, Undo abandons it.
+  const onto =
+    base.startsWith("-")
+      ? undefined
+      : await active.ctx.process
+          .run(["rev-parse", "--verify", "--quiet", `${base}^{commit}`])
+          .then((r) => (r.code === 0 ? r.stdout.trim() || undefined : undefined))
+          .catch(() => undefined);
+  await undo.runWithUndo(
+    active,
+    `Interactive rebase onto ${short(base)}`,
+    async () => {
+      launchRebaseTerminal(active, base);
+    },
+    { deferred: onto ? { onto } : {} },
+  );
 }
 
 /**
@@ -159,6 +174,8 @@ async function isDirty(ctx: GitContext): Promise<boolean> {
   return result.stdout.trim().length > 0;
 }
 
+/** A sha (or a sha's parent, "<sha>^") shortened for the label; any other ref as typed. */
 function short(ref: string): string {
-  return ref.length === 40 ? ref.slice(0, 7) : ref;
+  const m = /^([0-9a-f]{40,64})(\^?)$/i.exec(ref);
+  return m ? `${m[1].slice(0, 7)}${m[2]}` : ref;
 }

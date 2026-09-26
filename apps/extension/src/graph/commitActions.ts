@@ -666,9 +666,14 @@ async function resetTo(
   if (mode.value === "--hard") {
     // A second gate, because this is the one reset that destroys work git has
     // never seen — the reflog can restore the commits, but not your edits.
+    // GitStudio's Undo can: its snapshot (`stash create`) holds them, and
+    // undoing the reset puts them back with the branch. Said as such — this
+    // used to say Undo could NOT bring them back.
     const ok = await promptConfirm({
       title: `Discard all uncommitted changes?`,
-      message: `Hard-resetting to ${short(commit.sha)} throws away every uncommitted edit in the working tree and the index. Undo can move the branch back, but it cannot bring those edits back — git never recorded them.`,
+      message: undo
+        ? `Hard-resetting to ${short(commit.sha)} throws away every uncommitted edit in the working tree and the index. GitStudio's Undo can put the branch back and bring those edits back with it — git itself keeps no copy of them.`
+        : `Hard-resetting to ${short(commit.sha)} throws away every uncommitted edit in the working tree and the index. git keeps no copy of them, so nothing can bring them back.`,
       confirmLabel: "Reset --hard",
       danger: true,
     });

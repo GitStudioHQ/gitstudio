@@ -723,11 +723,20 @@ cell({
   },
   op: async (f) => {
     answer = yes("--hard");
-    return runCommitAction("reset", f.ctx, { sha: sha(f, "main~1"), subject: "M1" }, f.undoRunner);
+    const done = await runCommitAction("reset", f.ctx, { sha: sha(f, "main~1"), subject: "M1" }, f.undoRunner);
+    // The second gate said Undo could NOT bring the edits back; it does.
+    const gate = asked.find((a) => a.title === "Discard all uncommitted changes?");
+    assert.match(
+      gate && "message" in gate ? (gate.message ?? "") : "",
+      /Undo can put the branch back and bring those edits back/,
+      "the hard-reset question says what Undo will do",
+    );
+    return done;
   },
   expect: (f, _s, { row }) => {
     isAt(f, "refs/heads/main", "M2", "main back at M2");
-    row.extra = { editAfterUndo: f.read("f.txt"), hardResetCopy: asked.length ? undefined : "see op" };
+    row.extra = { editAfterUndo: f.read("f.txt") };
+    assert.equal(f.read("f.txt"), "uncommitted edit\n", "the edit is back, as the question said");
   },
 });
 
