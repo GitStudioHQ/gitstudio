@@ -16666,5 +16666,24 @@
       c.ok(!b.view.isConnected, "precondition: routed away inside the tab");
       c.eq(b.view.querySelectorAll(".monaco-editor, .log-line").length, 0, "leaving the page for real still lets its editor or log go");
     },
+
+    /** …and the other half of it: a tab CLOSED in the back lets go of what
+     *  its pages were keeping. Nothing mutates inside a detached screen, so no
+     *  detach watch would ever fire for it on its own. */
+    "closing-a-tab-in-the-back-lets-its-diff-or-log-go": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const view = $(".view-host")?.firstElementChild;
+      const held = () => (view ? view.querySelectorAll(".monaco-editor, .log-line").length : 0);
+      c.ok(held() > 0, `precondition: a diff or a log on screen (${held()})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(900);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: the other tab is in front");
+      c.ok(held() > 0, "kept while the tab is only in the back");
+      tabEl(GS_ROOT)?.querySelector(".repo-tab-close")?.click();
+      await settle(900);
+      c.ok(!tabEl(GS_ROOT), "precondition: the tab closed");
+      c.eq(held(), 0, "closing the tab disposed its diff or log");
+    },
   };
 })();

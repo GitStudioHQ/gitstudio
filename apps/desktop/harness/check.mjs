@@ -776,6 +776,8 @@ const CASES = [
   ["a-tab-round-trip-keeps-its-diff-or-log", "prs~open106~text:Files", { extra: "tabs=2", arg: "diff" }],
   ["a-tab-round-trip-keeps-its-diff-or-log", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail", { extra: "tabs=2", arg: "diff" }],
   ["a-tab-round-trip-keeps-its-diff-or-log", "actions~open9100~click:.gh-job-log", { extra: "tabs=2", arg: "log" }],
+  ["closing-a-tab-in-the-back-lets-its-diff-or-log-go", "prs~open106~text:Files", { extra: "tabs=2" }],
+  ["closing-a-tab-in-the-back-lets-its-diff-or-log-go", "actions~open9100~click:.gh-job-log", { extra: "tabs=2" }],
 ];
 
 function run(scene, checkId, opts = {}) {
