@@ -1,0 +1,28 @@
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_8e69b8b73021c5 367
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_441afabeea0511 119
+apps/extension/test/undoStateTable.test.ts
+  s_26f5e669d3043c::t_8e69b8b73021c5 312,400-403,1000,1010,1559
+  s_26f5e669d3043c::t_4cb432fc360243 263-264
+apps/extension/test/undoHistory.test.ts
+  s_26f5e669d3043c::t_8e69b8b73021c5 134,138,151
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_8e69b8b73021c5 132,180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fca91b920812bd7c319920a7bf67fbcf460a6473",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
