@@ -98,7 +98,7 @@ Everything ships in one extension (`gitstudio.gitstudio`) and one desktop app, b
 | **Rewrite** | Drag-to-reorder interactive rebase (pick · reword · edit · squash · fixup · drop); a universal, reflog-powered **Undo** safety net (never hijacks `Ctrl/Cmd+Z`). |
 | **Manage** | Branches (live ↑/↓ badges, fetch-in-place, pull without checkout), remotes, tags, first-class stashes, worktrees; GitHub-style branch compare; status-bar sync with in-view Push/Pull. |
 | **Collaborate** | In-editor GitHub pull-request review — list, check out, diff, comment inline, submit, merge, create. |
-| **Assist** | GitBrain — optional, bring-your-own-key (Anthropic or any OpenAI-compatible endpoint, including local Ollama / LM Studio) or zero-key (Copilot): AI commit messages, explain-diff, summaries. Off by default; keys live in SecretStorage; AI never gates a Git operation. |
+| **Assist** | GitBrain — optional, bring-your-own-key (Anthropic or any OpenAI-compatible endpoint, including local Ollama / LM Studio) or zero-key (Copilot): AI commit messages, explain-diff, summaries. With Copilot it works with nothing to set up, otherwise it is off until you connect a provider; keys live in SecretStorage; AI never gates a Git operation. |
 
 ## The desktop app
 

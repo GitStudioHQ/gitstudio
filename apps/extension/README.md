@@ -35,7 +35,7 @@ Free on public *and* private repos. No account, no sign-up, no analytics, no fea
 | **Rewrite** | Drag-to-reorder interactive rebase (pick · reword · edit · squash · fixup · drop) · a reflog-powered **Undo** for every destructive operation |
 | **Manage** | Branches with live ↑/↓ badges, fetch-in-place and pull-without-checkout · remotes · tags · stashes · worktrees · GitHub-style branch compare |
 | **Collaborate** | GitHub pull requests in the editor — list, check out, diff, comment inline, submit, merge, create |
-| **Assist** | Optional AI: commit messages, explain-diff, summaries, code review. Bring your own key, use Copilot for free, or point it at a local model. Off by default. |
+| **Assist** | Optional AI: commit messages, explain-diff, summaries, code review. Bring your own key, use Copilot for free, or point it at a local model. Never gates a Git operation. |
 
 ## The commit graph
 
@@ -92,7 +92,7 @@ Free on public *and* private repos. No account, no sign-up, no analytics, no fea
 
 ## Optional AI, on your terms
 
-**Off until you turn it on, and it never gates a Git operation.** GitBrain adds **Generate Commit Message**, **Explain Diff**, **Summarize Changes**, and **Review Changes** — a structured review of your working tree with a customizable prompt — plus a ✨ button in the commit box that drafts a message from your staged diff.
+**Optional, and it never gates a Git operation.** With GitHub Copilot (or Cursor's models) it works with nothing to set up; otherwise it stays off until you connect a provider, and *GitStudio: Disable AI Features* turns it off entirely. GitBrain adds **Generate Commit Message**, **Explain Diff**, **Summarize Changes**, and **Review Changes** — a structured review of your working tree with a customizable prompt — plus a ✨ button in the commit box that drafts a message from your staged diff.
 
 Connect it however you already pay for AI:
 
@@ -133,9 +133,10 @@ Everything lives under one conflict-free chord — `Ctrl+Alt+G` (`Cmd+Alt+G` on 
 | Open changes vs HEAD | `Ctrl+Alt+G` `D` | `Cmd+Alt+G` `D` |
 | Stage selected lines | `Ctrl+Alt+G` `S` | `Cmd+Alt+G` `S` |
 | Unstage selected lines | `Ctrl+Alt+G` `U` | `Cmd+Alt+G` `U` |
+| Stage or unstage the change at the cursor's line | `Ctrl+Alt+G` `T` | `Cmd+Alt+G` `T` |
 | Undo last Git operation | `Ctrl+Alt+G` `Z` | `Cmd+Alt+G` `Z` |
 
-In the commit box, `Enter` commits and `Shift+Enter` inserts a newline. All bindings are remappable in *Keyboard Shortcuts*.
+In the commit box, `Enter` starts a new line; commit with the **Commit** button. All bindings are remappable in *Keyboard Shortcuts*.
 
 ## Settings
 
