@@ -346,22 +346,39 @@ export class PullRequestsTreeProvider
     this.redraw();
   }
 
+  /**
+   * Is the view still drawing for the repository `key`? An answer from GitHub
+   * arrives whenever it arrives: one for a repository the user has switched
+   * away from painted its rows — or its "Couldn't refresh" — over the list of
+   * the repository now on screen.
+   */
+  private showing(key: string): boolean {
+    return this.shown?.key === key;
+  }
+
   private revalidating = false;
   private async revalidate(): Promise<void> {
     if (this.revalidating) {
       return;
     }
     this.revalidating = true;
+    let key: string | undefined;
     try {
       const ctx = await resolveGitHubContext(this.repos);
       if (ctx && (await this.auth.isConnected())) {
-        this.data = await this.load(ctx);
-        this.lastError = undefined;
+        key = identity(ctx);
+        const data = await this.load(ctx);
+        if (this.showing(key)) {
+          this.data = data;
+          this.lastError = undefined;
+        }
       } else {
         this.data = undefined;
       }
     } catch (err) {
-      this.lastError = describe(err);
+      if (key !== undefined && this.showing(key)) {
+        this.lastError = describe(err);
+      }
     } finally {
       this.revalidating = false;
       this.redraw();
@@ -451,10 +468,20 @@ export class PullRequestsTreeProvider
       this.data = undefined;
     }
     if (!this.data) {
+      // The same rule as revalidate(): answered after a switch, this load is
+      // another repository's and paints nothing — the view has drawn since.
+      const key = identity(ctx);
       try {
-        this.data = await this.load(ctx);
+        const data = await this.load(ctx);
+        if (!this.showing(key)) {
+          return [];
+        }
+        this.data = data;
         this.lastError = undefined;
       } catch (err) {
+        if (!this.showing(key)) {
+          return [];
+        }
         this.lastError = describe(err);
         return [this.errorRow(this.lastError)];
       }

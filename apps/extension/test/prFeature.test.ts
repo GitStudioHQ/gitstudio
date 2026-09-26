@@ -302,6 +302,58 @@ test("a refresh that fails says so above the rows it kept; a first load that fai
   assert.equal(signIn.command?.command, "gitstudio.pr.signIn", signIn.label);
 });
 
+const OTHER = () => entryFor("/work/other", [{ name: "origin", fetchUrl: "https://github.com/acme/other.git", pushUrl: "" }]);
+const openNumbers = async (tree: any) => (await rows(tree)).filter((x) => x.group === "open").map((x) => x.node.pr.number);
+
+test("a refresh of one repository that answers after a switch to another paints nothing over it", async () => {
+  let down = false;
+  const gh = github([
+    ["GET", /^\/repos\/acme\/app\/pulls\?state=open/, () => (down ? { status: 502, body: { message: "Server Error (acme/app)" } } : { body: PULLS() })],
+    ["GET", /^\/repos\/acme\/other\/pulls\?state=open/, () => ({ body: [rawPull(9, { title: "Other repo PR" })] })],
+    ...acmeRoutes(),
+  ]);
+  const repos = fakeRepos(ORIGIN);
+  const m = mount(repos);
+  await rows(m.tree);
+  down = true;
+  const slow = gh.hold(/^\/repos\/acme\/app\/pulls\?state=open/);
+  await vscode.commands.executeCommand("gitstudio.pr.refresh"); // acme/app's refresh, in flight
+  await until(() => slow.held() > 0, "acme/app's refresh to be in flight");
+  repos.switchTo(OTHER());
+  repos.fire();
+  await sleep(600);
+  assert.deepEqual(await openNumbers(m.tree), [9]);
+  slow.release();
+  await until(() => pr.said.some((s: any) => s.kind === "progress-end"), "acme/app's refresh to end");
+  await sleep(50);
+  assert.deepEqual(await openNumbers(m.tree), [9], "acme/other's rows");
+  assert.equal(m.view.description, "acme/other");
+  assert.equal(m.view.message, undefined, "no \"Couldn't refresh\" of acme/app's over acme/other's list");
+});
+
+test("a first load of one repository that answers after a switch to another paints nothing over it", async () => {
+  const gh = github([
+    ["GET", /^\/repos\/acme\/app\/pulls\?state=open/, () => ({ status: 502, body: { message: "Server Error (acme/app)" } })],
+    ["GET", /^\/repos\/acme\/other\/pulls\?state=open/, () => ({ body: [rawPull(9, { title: "Other repo PR" })] })],
+    ...acmeRoutes(),
+  ]);
+  const repos = fakeRepos(ORIGIN);
+  const m = mount(repos);
+  const slow = gh.hold(/^\/repos\/acme\/app\/pulls\?state=open/);
+  const first = m.tree.getChildren(); // acme/app's first load, in flight
+  await until(() => slow.held() > 0, "acme/app's first load to be in flight");
+  repos.switchTo(OTHER());
+  repos.fire();
+  await sleep(600);
+  assert.deepEqual(await openNumbers(m.tree), [9]);
+  slow.release();
+  await first;
+  await sleep(50);
+  assert.deepEqual(await openNumbers(m.tree), [9], "acme/other's rows");
+  assert.equal(m.view.description, "acme/other");
+  assert.equal(m.view.message, undefined, "no \"Couldn't refresh\" of acme/app's over acme/other's list");
+});
+
 test("a GitHub remote added, or a switch away from an error or a repo with none: the view draws the repository now active", async () => {
   github([
     ["GET", /^\/repos\/acme\/broken\/pulls\?state=open/, () => ({ status: 502, body: { message: "Server Error" } })],
