@@ -1,0 +1,47 @@
+apps/extension/test/paletteManifest.test.ts
+  s_26f5e669d3043c::t_fe0b8e80c32bbe 1-76
+apps/extension/package.json
+  s_26f5e669d3043c::t_fca512da3818b1 1586-1605,1712,1716,1720,1744,2068
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_b245c82c08830a 142-145
+apps/extension/src/merge/gitstudioMerge.ts
+  s_26f5e669d3043c::t_dc83a2a7ed1c18 64-66
+apps/merge-studio/package.json
+  s_26f5e669d3043c::t_4ec3b46c3c0e92 528,532,536
+apps/merge-studio/src/ids.ts
+  s_26f5e669d3043c::t_7d9216357643d5 51-56
+apps/merge-studio/src/msProduct.ts
+  s_26f5e669d3043c::t_02a87a99a96190 22,51
+apps/merge-studio/test/manifest.test.ts
+  s_26f5e669d3043c::t_8395022cf52557 11,84-93
+packages/merge-vscode/src/register.ts
+  s_26f5e669d3043c::t_c444bebd5db375 13,116-118,124,163-164,179-183
+packages/merge-vscode/test/operationContextKey.test.ts
+  s_26f5e669d3043c::t_63c5340e680552 1-153
+packages/merge-vscode/src/product.ts
+  s_3704f18affede0::t_df190698d81a2c 210-216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "37ab93f11953ddebd7706467b752bdfb524ed746",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_3704f18affede0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0da1a4474623c7a3",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
