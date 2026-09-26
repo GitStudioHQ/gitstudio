@@ -797,17 +797,9 @@ export class CommitViewProvider
           await this.memento.update(LAYOUT_KEY, msg.layout);
         }
         return;
-      case "stage": {
-        const [path] = await this.withoutMarkedConflicts([msg.path ?? ""]);
-        if (!path) {
-          return;
-        }
-        await this.mutate((entry) => entry.ctx.staging.stageFile(path), {
-          verb: "stage",
-          paths: [path],
-        });
+      case "stage":
+        await this.stageHoldingConflicts([msg.path ?? ""]);
         return;
-      }
       case "unstage":
         await this.mutate(
           (entry) => entry.ctx.staging.unstageFile(msg.path ?? ""),
@@ -822,17 +814,9 @@ export class CommitViewProvider
       // index locked and failed, and a multi-selection Discard opened one
       // confirm per file, each dismissing the last, so only the final file was
       // discarded.
-      case "stagePaths": {
-        const paths = await this.withoutMarkedConflicts(msg.paths ?? []);
-        if (paths.length === 0) {
-          return;
-        }
-        await this.mutate((entry) => entry.ctx.staging.stageFiles(paths), {
-          verb: "stage",
-          paths,
-        });
+      case "stagePaths":
+        await this.stageHoldingConflicts(msg.paths ?? []);
         return;
-      }
       case "unstagePaths": {
         const paths = (msg.paths ?? []).filter((p) => p);
         await this.mutate((entry) => entry.ctx.staging.unstageFiles(paths), {
@@ -865,17 +849,9 @@ export class CommitViewProvider
       case "discardAll":
         await this.doDiscardAll();
         return;
-      case "stageFolder": {
-        const paths = await this.withoutMarkedConflicts(msg.paths ?? []);
-        if (paths.length === 0) {
-          return;
-        }
-        await this.mutate((entry) => entry.ctx.staging.stageFiles(paths), {
-          verb: "stage",
-          paths,
-        });
+      case "stageFolder":
+        await this.stageHoldingConflicts(msg.paths ?? []);
         return;
-      }
       case "unstageFolder":
         await this.mutate(
           (entry) => entry.ctx.staging.unstageFiles(msg.paths ?? []),
@@ -947,21 +923,25 @@ export class CommitViewProvider
   }
 
   /**
-   * `paths` without the unmerged files that still carry conflict markers.
+   * Stage `paths`, holding back the unmerged files that still carry conflict
+   * markers.
    *
    * `git add` on an unmerged file is how git is told the conflict is resolved,
    * and it does not look inside: staging one with `<<<<<<<` still in it marked
    * it resolved, and the next commit carried the markers into the tree. Every
    * Stage in this view (a row's +, a tick, a folder, a selection, Stage All,
    * the checklist's check-all) comes through here. The held-back rows go back
-   * on the page, and the user is told which files and why, in the words the
-   * desktop app's Stage uses for the same refusal.
+   * on the page at once; the user is told which files and why, in the words
+   * the desktop app's Stage uses for the same refusal, once the rest has been
+   * staged — "Staged everything else" was said before the stage ran, and a
+   * stage git then refused was reported twice, the second toast contradicting
+   * the first.
    */
-  private async withoutMarkedConflicts(paths: string[]): Promise<string[]> {
+  private async stageHoldingConflicts(paths: string[]): Promise<void> {
     const wanted = paths.filter((p) => p);
     const entry = this.repos.getActive();
     if (!entry || wanted.length === 0) {
-      return wanted;
+      return;
     }
     let held: string[] = [];
     try {
@@ -969,15 +949,22 @@ export class CommitViewProvider
     } catch {
       held = [];
     }
-    if (held.length === 0) {
-      return wanted;
-    }
     const keep = wanted.filter((p) => !held.includes(p));
-    void this.view?.webview.postMessage({ type: "opFailed", paths: held });
-    void vscode.window.showWarningMessage(
-      `GitStudio: ${markedConflictsMessage(held, keep.length > 0)}`,
-    );
-    return keep;
+    if (held.length > 0) {
+      void this.view?.webview.postMessage({ type: "opFailed", paths: held });
+    }
+    let staged = false;
+    if (keep.length > 0) {
+      staged = await this.mutate(
+        (e) => (keep.length === 1 ? e.ctx.staging.stageFile(keep[0]) : e.ctx.staging.stageFiles(keep)),
+        { verb: "stage", paths: keep },
+      );
+    }
+    if (held.length > 0) {
+      void vscode.window.showWarningMessage(
+        `GitStudio: ${markedConflictsMessage(held, staged)}`,
+      );
+    }
   }
 
   /**
@@ -990,14 +977,17 @@ export class CommitViewProvider
    * fire-and-forget + read-STALE-state — is the fix that made staging feel slow:
    * the real lists now land the moment git finishes, not a debounce cycle later,
    * and (crucially) we never repaint the pre-stage state over the optimistic row.
+   *
+   * Resolves whether the op went through: false when git refused it (already
+   * said) or no repository is active.
    */
   private async mutate(
     op: (entry: RepoEntry) => Promise<unknown>,
     what?: { verb: "stage" | "unstage" | "discard"; paths: string[] },
-  ): Promise<void> {
+  ): Promise<boolean> {
     const entry = this.repos.getActive();
     if (!entry) {
-      return;
+      return false;
     }
     // A failure is SAID, and the rows it moved go back at once. This used to
     // ignore the op's result entirely: a refused `git add` left its row sitting
@@ -1029,6 +1019,7 @@ export class CommitViewProvider
     }
     this.onCommitted();
     await this.pushState();
+    return failure === undefined;
   }
 
   /**
@@ -1383,11 +1374,7 @@ export class CommitViewProvider
       return;
     }
     const { merge, unstaged } = await this.resolveState(active);
-    const rels = await this.withoutMarkedConflicts([...merge, ...unstaged].map((e) => e.path));
-    if (rels.length === 0) {
-      return;
-    }
-    await this.mutate((e) => e.ctx.staging.stageFiles(rels), { verb: "stage", paths: rels });
+    await this.stageHoldingConflicts([...merge, ...unstaged].map((e) => e.path));
   }
 
   /**
@@ -1401,13 +1388,7 @@ export class CommitViewProvider
       return;
     }
     const { merge, unstaged } = await this.resolveState(active);
-    const rels = await this.withoutMarkedConflicts(
-      (group === "merge" ? merge : unstaged).map((e) => e.path),
-    );
-    if (rels.length === 0) {
-      return;
-    }
-    await this.mutate((e) => e.ctx.staging.stageFiles(rels), { verb: "stage", paths: rels });
+    await this.stageHoldingConflicts((group === "merge" ? merge : unstaged).map((e) => e.path));
   }
 
   private async doBulkUnstage(): Promise<void> {

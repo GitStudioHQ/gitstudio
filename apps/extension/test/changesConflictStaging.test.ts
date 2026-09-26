@@ -17,7 +17,7 @@
 
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { answerWith, asked, changesHost, scratchRepo, vscode } from "./changesHost";
 
@@ -96,6 +96,34 @@ test("a selection stages everything but the file with markers, and names it", as
   assert.deepEqual(warnings(), [
     "GitStudio: Staged everything else. 1 file still contains conflict markers (c.txt) — staging a file with markers in it tells git the conflict is settled. Resolve them first.",
   ]);
+});
+
+// "Staged everything else." was said BEFORE the stage ran: when git then
+// refused it (another git holding the index past the retries), a second toast
+// said "couldn't stage", contradicting the first. The held-back files are
+// named after the stage, and "everything else" is claimed only once it is.
+test("a bulk stage git refuses never claims it staged everything else", async () => {
+  const repo = stoppedMerge();
+  const host = changesHost(repo.dir);
+  cleanups.push(host.dispose);
+  const lock = join(repo.dir, ".git", "index.lock");
+  writeFileSync(lock, "");
+  vscode.__said.length = 0;
+  try {
+    await host.send({ type: "stagePaths", paths: ["c.txt", "o.txt"] });
+  } finally {
+    if (existsSync(lock)) unlinkSync(lock);
+  }
+  assert.ok(!stagedNames(repo).includes("o.txt"), "git refused the stage");
+  const said = vscode.__said.map((s) => `${s.kind}: ${s.message}`);
+  assert.deepEqual(said.filter((m) => /Staged everything else/.test(m)), [], said.join(" | "));
+  assert.ok(said.some((m) => /^error: GitStudio: couldn't stage o\.txt — /.test(m)), said.join(" | "));
+  assert.ok(
+    said.includes(
+      "warning: GitStudio: c.txt still contains conflict markers. Staging it would mark the conflict resolved and commit the markers — resolve them first.",
+    ),
+    said.join(" | "),
+  );
 });
 
 test("Stage All on the Merge Conflicts group holds back the file with markers", async () => {
