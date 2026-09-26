@@ -385,8 +385,13 @@ export interface CommitActionResult {
    */
   inTheWay?: InTheWayInfo;
   /** After a Stash & Retry: what became of the stashed changes, when it is
-   *  anything but "back where they were". Said in the neutral tone. */
+   *  anything but "back where they were". Said in the neutral tone. Also a
+   *  stash applied without the staging git could not restore (applyForDoor). */
   stashNote?: string;
+  /** A Pop that APPLIED its stash and kept it in the list: git could not
+   *  stage its staged changes again, and dropping it would lose them
+   *  (applyForDoor). `stashNote` says so; the page words its own toast by it. */
+  stashKept?: true;
   /** The renderer asked about changes in the way and the user cancelled:
    *  nothing ran, nothing failed, nothing to say. Never sent by main. */
   cancelled?: true;

@@ -2089,7 +2089,21 @@
     // Apply / pop from the stash list or a stash's page: the ref, or — sent
     // again after Stash & Retry — `{ ref, stashFirst }`.
     "stash:apply": (req) => throughTheDoor(req, "stash", () => ({ ok: true, changed: true })),
-    "stash:pop": (req) => throughTheDoor(req, "stash", () => ({ ok: true, changed: true })),
+    // ?stashkept=1 → the Pop git could not restore the staging of: main
+    // applied it and KEPT it (applyForDoor), and says why in the note.
+    "stash:pop": (req) =>
+      throughTheDoor(req, "stash", () =>
+        params.get("stashkept")
+          ? {
+              ok: true,
+              changed: true,
+              stashKept: true,
+              stashNote:
+                "The stash's staged changes came back unstaged — git couldn't stage them again here — so it was " +
+                "applied, not popped: it stays in the list, still holding them as they were staged.",
+            }
+          : { ok: true, changed: true },
+      ),
     // A pull request fetched and checked out: the number, or `{ number, stashFirst }`.
     "pr:checkout": (req) => throughTheDoor(req, "checkout", () => ({ ok: true, changed: true })),
     // A rename carries the tracking over UNCHANGED, exactly as `git branch -m`
@@ -2170,11 +2184,20 @@
     // Stash drop, and the restore that undoes it. Mutating, for the same
     // reason the discard fixtures are.
     "stash:list": () => stashes,
+    // By sha (what the list and the stash page send), or a ref, as main
+    // takes it; a stash that has left the list is the user's state.
     "stash:drop": (ref) => {
-      const hit = stashes.find((s) => s.ref === ref);
-      if (!hit) return { ok: false, changed: false, message: "no such stash" };
+      const hit = stashes.find((s) => s.sha === ref || s.ref === ref);
+      if (!hit) {
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: "That stash is no longer in the list, so nothing was changed.",
+        };
+      }
       dropped.set(hit.sha, hit);
-      stashes = stashes.filter((s) => s.ref !== ref);
+      stashes = stashes.filter((s) => s.sha !== hit.sha);
       return { ok: true, changed: true };
     },
     "stash:restore": ({ sha }) => {

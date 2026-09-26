@@ -15,10 +15,10 @@ import { fileURLToPath } from "node:url";
 // graph, Checkout / Merge / Rebase / Create and Switch in the Branches view,
 // a tag and a remote branch checked out, a pull request checked out (which
 // matched git's ENGLISH, "local changes|overwritten", and so said nothing on a
-// localised git), the Changes view's Checkout Revision, a stash applied or
-// popped — and a pull. git/inTheWay.ts's applyOrAsk / pullOrAsk recognise it
-// from git's state and ask Stash & Retry or Cancel; a door that runs its git
-// command directly is the next report #18. The engine half is pinned against
+// localised git), the Changes view's Checkout Revision, a stash applied,
+// popped or made into a branch — and a pull. git/inTheWay.ts's applyOrAsk /
+// pullOrAsk recognise it from git's state and ask Stash & Retry or Cancel; a
+// door that runs its git command directly is the next report #18. The engine half is pinned against
 // real git in packages/git-service/test/changesInTheWay.test.ts and
 // pullStashRetry.test.ts, and the doors themselves are driven through real git
 // in inTheWayStateTable.test.ts; this is the census that catches the SIBLING
@@ -30,16 +30,16 @@ import { fileURLToPath } from "node:url";
 // The rule, per code line in apps/extension/src:
 //   · no direct `branches.checkout(` / `branches.merge(` / `branches.rebaseOnto(`
 //     / `branches.checkoutNew(` / `stashes.apply(` / `stashes.pop(` /
-//     `sync.pull(`, and no `process.run(plan.args` (nor `c.plan.args` — a
-//     plan by any name) — those run git past the door;
+//     `stashes.branch(` / `sync.pull(`, and no `process.run(plan.args` (nor
+//     `c.plan.args` — a plan by any name) — those run git past the door;
 //   · BranchOps' merge argv (`branches.mergeArgs(`, which carries the
 //     message a full-name merge records) and the engine's new branch at HEAD
 //     (`newBranchAtHead(` — nothing of the user's is in its way, but a stopped
 //     operation is) are handed to the door the same way a literal argv is;
 //   · an argv that starts a cherry-pick, revert, merge, rebase, checkout or
 //     switch (not its --abort / --continue / --skip / --quit, and not
-//     `checkout --`, which restores files), or a stash apply / pop, is handed
-//     to `applyOrAsk(` or `runCheckout(` in the lines around it;
+//     `checkout --`, which restores files), or a stash apply / pop / branch,
+//     is handed to `applyOrAsk(` or `runCheckout(` in the lines around it;
 //   · or the line carries an `in-the-way-reviewed:` note saying why it cannot
 //     be refused.
 
@@ -47,9 +47,9 @@ const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const SRC = join(ROOT, "apps/extension/src");
 const COMMENT = /^\s*(?:\/\/|\*|\/\*)/;
 const DIRECT =
-  /\b(?:branches\.(?:checkout|checkoutNew|merge|rebaseOnto)|stashes\.(?:apply|pop)|sync\.pull)\(|process\.run\(\s*(?:[\w.]+\.)?plan\.args/;
+  /\b(?:branches\.(?:checkout|checkoutNew|merge|rebaseOnto)|stashes\.(?:apply|pop|branch)|sync\.pull)\(|process\.run\(\s*(?:[\w.]+\.)?plan\.args/;
 const ARGV = /\[\s*"(cherry-pick|revert|merge|rebase|checkout|switch)"(?:\s*,\s*"([^"]*)")?/;
-const STASH_ARGV = /\[\s*"stash"\s*,\s*"(?:apply|pop)"/;
+const STASH_ARGV = /\[\s*"stash"\s*,\s*"(?:apply|pop|branch)"/;
 // The engine's new-branch-at-HEAD op is an argv built for the door too:
 // nothing of the user's is in its way, but `git checkout -b` over a stopped
 // merge, cherry-pick or revert ends it, and the door refuses it there.
@@ -123,7 +123,12 @@ test("every door that applies commits hands the door its own op", async () => {
       /async function runRefCheckout\([\s\S]*?applyOrAsk\(a\.ctx, checkoutOp\(plan\.args\)\)/,
       /checkoutOp\(\["checkout", "-b"/,
     ],
-    "views/stashesView.ts": [/kind:\s*"stash",\s*stash:\s*ref\s*\}/, /kind:\s*"stash",\s*stash:\s*ref,\s*pop:\s*true/],
+    // By SHA, never the stash@{n} the row showed: a position that renumbers.
+    "views/stashesView.ts": [
+      /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: entry\.sha, pop, index \}\)/,
+      /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: entry\.sha, pop \}\)/,
+      /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: entry\.sha, branch: name \}\)/,
+    ],
     "changes/commitView.ts": [/checkoutOp\(\["checkout", "--detach", r\]\)/, /pullOrAsk\(entry\.ctx/],
     "pr/checkoutPr.ts": [/checkoutOp\(\["checkout", local\]\)/],
     "statusBar/syncStatus.ts": [/pullOrAsk\(active\.ctx\)/, /pullOrAsk\(active\.ctx, mode\)/],

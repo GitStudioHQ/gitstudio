@@ -70,22 +70,30 @@ export const STASH_AND_RETRY: Readonly<Record<string, (payload: unknown, root: s
  *
  * Asked once per request: an answer to the retry that is STILL in the way
  * (something the stash could not cover) goes to the door as it is, to be said.
+ *
+ * A `stashNote` on the answer the door gets is said here too, whether or not
+ * a question was asked: a stash applied without the staging git could not
+ * restore carries one on its first answer.
  */
 async function invokeAsking(channel: string, payload: unknown): Promise<unknown> {
   const invoke = raw.invoke as (c: string, p: unknown) => Promise<unknown>;
   const first = await invoke(channel, payload);
   const way = (first as { inTheWay?: InTheWayInfo } | undefined)?.inTheWay;
   const retry = Object.hasOwn(STASH_AND_RETRY, channel) ? STASH_AND_RETRY[channel] : undefined;
-  if (!way || !askInTheWay || !retry) return first;
+  if (!way || !askInTheWay || !retry) return noted(first);
   const again = retry(payload, way.root);
   if (again === undefined) return first;
   if (!(await askInTheWay(way, (first as { message?: string }).message))) {
     return { ok: false, changed: false, expected: true, cancelled: true };
   }
-  const second = await invoke(channel, again);
-  const note = (second as { stashNote?: string } | undefined)?.stashNote;
-  if (note) sayStashNote?.(note);
-  return second;
+  return noted(await invoke(channel, again));
+}
+
+/** Say an answer's `stashNote`, and hand the answer on. */
+function noted(answer: unknown): unknown {
+  const note = (answer as { stashNote?: unknown } | undefined)?.stashNote;
+  if (typeof note === "string" && note) sayStashNote?.(note);
+  return answer;
 }
 
 export const host: GitStudioBridge = {

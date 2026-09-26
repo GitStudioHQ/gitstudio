@@ -21,7 +21,7 @@ import {
 import { DEFAULT_MERGE_SETTINGS } from "@gitstudio/host-bridge/conflictsProtocol";
 import { stageOf } from "@gitstudio/engine/conflict/sides";
 import { ExpectedError } from "./expectedError";
-import { applyForDoor, checkoutOp, pullForDoor, type DoorApplied } from "./inTheWay";
+import { applyForDoor, checkoutOp, pullForDoor, stashGoneAnswer, type DoorApplied } from "./inTheWay";
 import { newBranchAtHead, type ApplyOp } from "@gitstudio/git-service/changesInTheWay";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -720,6 +720,16 @@ export class GitBridge {
     let files: CommitFileChange[];
     try {
       files = await ctx.commitDetails.getCommitFiles(sha, record.parents[0]);
+      // A stash made with -u keeps its new files in a third parent, which the
+      // first-parent diff leaves out: a stash of only new files read as an
+      // empty commit — easy to drop believing there was nothing in it. They
+      // are listed as added, and fileDiff reads them from there.
+      const untracked = record.parents.length === 3 ? await stashUntrackedParent(ctx, sha) : undefined;
+      if (untracked) {
+        const seen = new Set(files.map((f) => f.path));
+        const added = await ctx.commitDetails.getCommitFiles(untracked);
+        files = [...files, ...added.filter((f) => !seen.has(f.path))];
+      }
     } catch {
       files = [];
     }
@@ -825,7 +835,12 @@ export class GitBridge {
     const rel = req.path;
 
     if (req.sha) {
-      const right = await showAt(ctx, req.sha, rel);
+      let right = await showAt(ctx, req.sha, rel);
+      // A new file a -u stash holds is in its third parent (see commitDetails).
+      if (right.absent) {
+        const untracked = await stashUntrackedParent(ctx, req.sha);
+        if (untracked) right = await showAt(ctx, untracked, rel);
+      }
       const parent = await parentOf(ctx, req.sha);
       // The parent side under the name the file had THERE. A commit that
       // renamed the file has nothing at the new name in its parent, and
@@ -1400,31 +1415,43 @@ export class GitBridge {
   /**
    * Apply / pop, through the one door for commit-applying commands: refused
    * over uncommitted work in the stash's way, they say which files and the
-   * renderer offers Stash & Retry. The request is the ref, or — sent again
-   * after Stash & Retry — `{ ref, stashFirst }`.
+   * renderer offers Stash & Retry. The request names the stash — by its sha,
+   * which the engine finds in the list just before git runs (a `stash@{n}`
+   * is a position the list renumbers while a question is up) — or, sent
+   * again after Stash & Retry, `{ ref, stashFirst }`.
    */
   async stashApply(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
     const { ref, stashFirst } = stashRequest(req);
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) =>
-      stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: false }, stashFirst)),
-    );
+    // `index`: a stash that holds staged changes brings them back staged
+    // where git can (see applyForDoor). A plain apply unstaged them, and a pop
+    // then lost a staged version that differed from the file.
+    return this.staged(async (ctx) => {
+      const index = await ctx.stashes.holdsStaged(ref);
+      return stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: false, index }, stashFirst));
+    });
   }
   async stashPop(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
     const { ref, stashFirst } = stashRequest(req);
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) =>
-      stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: true }, stashFirst)),
-    );
+    return this.staged(async (ctx) => {
+      const index = await ctx.stashes.holdsStaged(ref);
+      return stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: true, index }, stashFirst));
+    });
   }
   async stashDrop(ref: string): Promise<CommitActionResult> {
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
+    // By sha, a stash that has left the list drops nothing: the user's state,
+    // said, never filed.
     return this.staged(async (ctx) => {
-      // Where it sits, read before it goes: the undo puts it back there.
+      // Where it sits, read before it goes: the undo puts it back there. The
+      // list and the stash page name it by its sha; an older caller may still
+      // send its stash@{n}.
       const stack = await stashStack(ctx.process);
       const at = /^stash@\{(\d+)\}$/.exec(ref);
-      const index = at ? Number(at[1]) : -1;
+      const index = at ? Number(at[1]) : stack.findIndex((s) => s.sha === ref);
       const r = await ctx.stashes.drop(ref);
+      if (r.gone) return { ...stashGoneAnswer(), stderr: r.stderr };
       if (r.ok && index >= 0 && stack[index]) {
         const key = `${ctx.root}\0${stack[index].sha}`;
         this.droppedStashes.delete(key);
@@ -2777,6 +2804,7 @@ export class GitBridge {
       /** Carried through untouched — see applyForDoor. */
       inTheWay?: CommitActionResult["inTheWay"];
       stashNote?: string;
+      stashKept?: true;
     }>,
   ): Promise<CommitActionResult> {
     const ctx = this.ctx();
@@ -2788,7 +2816,12 @@ export class GitBridge {
         const r = await op(ctx);
         const ok = r.ok ?? r.code === 0;
         if (ok) {
-          return { ok, changed: true, ...(r.stashNote ? { stashNote: r.stashNote } : {}) };
+          return {
+            ok,
+            changed: true,
+            ...(r.stashNote ? { stashNote: r.stashNote } : {}),
+            ...(r.stashKept ? { stashKept: true as const } : {}),
+          };
         }
         const stderr = r.stderr?.trim() ?? "";
         const stdout = r.stdout?.trim() ?? "";
@@ -3939,13 +3972,20 @@ function stagedFrom(applied: DoorApplied): {
   expected?: boolean;
   inTheWay?: CommitActionResult["inTheWay"];
   stashNote?: string;
+  stashKept?: true;
 } {
   if ("answer" in applied) return applied.answer;
   const { code, stdout, stderr } = applied.result;
-  return { code, stdout, stderr, ...(applied.stashNote ? { stashNote: applied.stashNote } : {}) };
+  return {
+    code,
+    stdout,
+    stderr,
+    ...(applied.stashNote ? { stashNote: applied.stashNote } : {}),
+    ...(applied.stashKept ? { stashKept: true as const } : {}),
+  };
 }
 
-/** stash:apply / stash:pop take the ref, or `{ ref, stashFirst }` when sent again after Stash & Retry. */
+/** stash:apply / stash:pop take the stash (its sha, or a ref), or `{ ref, stashFirst }` when sent again after Stash & Retry. */
 function stashRequest(req: unknown): { ref: unknown; stashFirst?: unknown } {
   if (typeof req === "string") return { ref: req };
   if (req && typeof req === "object") {
@@ -4120,6 +4160,18 @@ export function parseLsTree(stdout: string): TreeEntry[] {
     out.push({ name, path, type: rawType, ...(size !== undefined ? { size } : {}) });
   }
   return out;
+}
+
+/**
+ * The commit holding the untracked files of a stash made with -u — its third
+ * parent — when `sha` is a stash in the list and has one. Only a listed stash:
+ * an octopus merge has a third parent too, and it is no stash's new files.
+ */
+async function stashUntrackedParent(ctx: GitContext, sha: string): Promise<string | undefined> {
+  if (!(await ctx.stashes.find(sha))) return undefined;
+  const r = await ctx.process.run(["rev-parse", "--verify", "--quiet", `${sha}^3`]);
+  const third = r.stdout.trim();
+  return r.code === 0 && third.length > 0 ? third : undefined;
 }
 
 async function parentOf(ctx: GitContext, sha: string): Promise<string | undefined> {

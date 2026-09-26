@@ -186,8 +186,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   item in words ("Branch main: 1 commit to pull, 2 commits to push"). On a
   detached HEAD the item says "Detached HEAD at abc1234", and no longer shows
   the publish cloud or offers Publish Branch, which cannot work there.
-- The Changes view's chevrons point down when open and right when closed
-  (they showed ">" open and "^" closed).
+- **The Changes view's arrows point the way they open**: › when closed and ˅
+  when open, as everywhere else in VS Code, for groups, folders and a file's
+  changes toggle (a closed one showed ˄ and an open one ›).
 - Before the Changes view has read anything it says "Reading changes…", not
   "Working tree clean"; while repositories are still being found, it, the
   Commit Graph and the Commits view say "Looking for a repository…", not "No
@@ -219,6 +220,43 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   that AI is off by default (with Copilot it works with nothing to set up),
   or that the graph is at the top of the sidebar or in an editor tab; the
   shortcut table lists Ctrl/Cmd+Alt+G T.
+- **Stashes: Drop, Pop, Apply and Create Branch act on the stash you picked.**
+  They named it by its place in the list (`stash@{2}`), and a stash made
+  while a question was open — a pull that stashes by itself, Stash & Retry, a
+  terminal — moved every number down, so Drop could drop a different stash.
+  They now find the stash you picked just before git runs; if it has left the
+  list, they say so and change nothing. The Drop question names the stash by
+  its message.
+- **A stash of new files opened as an empty document.** Clicking a stash made
+  with untracked files (the Stash dialog makes one whenever a new file is
+  ticked) left those files out, so a stash of only new files looked empty.
+  They are shown now, beside the edits.
+- **Apply and Pop keep what the stash had staged.** Its staged changes came
+  back unstaged, and popping a file that was staged and then edited further
+  lost the staged version for good. They come back staged now. When your own
+  staged changes are in the way, or the staged part no longer applies, it asks
+  first whether to apply the stash unstaged.
+- **The Stash dialog listed a partly staged file twice**, and unticking one of
+  its two rows still stashed it. Each file has one row now.
+- **Create Branch from a stash asks about changes in its way.** Over an
+  uncommitted edit — or, for a stash with staged changes, over anything you
+  had staged — git switched to the new branch, then refused to apply the
+  stash and showed its error in red, leaving you on the new branch without
+  your stash. Now it asks first, Stash & Retry or Cancel, as Apply and Pop do,
+  naming the branch it is in the way of, and a name a branch already has is
+  said before anything runs.
+- **The Stashes view: Cancel on a Drop no longer freezes every row for six
+  seconds.** Only the row you pressed waits — its right-click menu too — and
+  only until its action is over.
+- **The Stashes view keeps your place.** Every file save redrew all the rows
+  and threw keyboard focus out of the list; now only rows that changed are
+  touched, and a stash popped or dropped from its buttons or its menu hands
+  the keyboard to the next one. Up, Down, Home and End move between stashes,
+  and Delete (on a Mac, the delete key or Cmd+Delete) asks to drop one. A
+  click previews a stash without taking the keyboard, and a double-click
+  opens its menu without opening the stash twice.
+- Apply and Pop in the Stashes view use the stash-apply and stash-pop icons,
+  and the empty view says "Stash", not "Shelve".
 
 ## [1.14.0] - 2026-09-25
 

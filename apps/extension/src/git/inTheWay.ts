@@ -13,15 +13,16 @@ import {
   type ChangesInTheWay,
   type OperationInTheWay,
 } from "@gitstudio/git-service/changesInTheWay";
+import { STASH_GONE_MESSAGE } from "@gitstudio/git-service/StashProvider";
 import { promptPick } from "../ui/dialogs";
 import { notifyPaused } from "./pauseNotice";
 
 /**
  * Every extension door that applies commits — the graph's Cherry-Pick, Revert
  * and Checkout, the Branches view's Checkout, Merge, Rebase and Create and
- * Switch, the Changes view's Checkout Revision, the Stashes view's Apply and
- * Pop — runs its git command through here, and every pull door its pull
- * (`pullOrAsk`).
+ * Switch, the Changes view's Checkout Revision, the Stashes view's Apply, Pop
+ * and Create Branch — runs its git command through here, and every pull door
+ * its pull (`pullOrAsk`).
  *
  * Crash report #18 was a revert refused over the user's uncommitted edit:
  * "Your local changes to the following files would be overwritten by merge …
@@ -43,12 +44,25 @@ export interface Applied {
    *  stopped in an operation that refused it). The caller reports nothing
    *  more. */
   settled?: true;
+  /**
+   * A stash op run with `index` that could not stage the stash's staged
+   * changes again — `busy`: the user's own staged changes are in the way;
+   * `refused`: git refused the staged half. The stash was not applied; the
+   * caller asks whether to run it without (see ApplyOp's `index`).
+   */
+  staging?: "busy" | "refused";
 }
 
 export async function applyOrAsk(ctx: GitContext, op: ApplyOp): Promise<Applied> {
   const first = await runApplying(ctx.process, op);
   if (first.blocked) {
     return sayBlocked(first.result, first.blocked);
+  }
+  if (first.stashGone) {
+    return sayStashGone(first.result);
+  }
+  if (first.indexBusy || first.indexRefused) {
+    return { result: first.result, staging: first.indexBusy ? "busy" : "refused" };
   }
   if (first.result.code === 0 || !first.inTheWay) {
     return { result: first.result };
@@ -59,6 +73,12 @@ export async function applyOrAsk(ctx: GitContext, op: ApplyOp): Promise<Applied>
   const out = await stashAndRetry(ctx.process, op);
   if (out.blocked) {
     return sayBlocked(out.result, out.blocked);
+  }
+  if (out.stashGone) {
+    return sayStashGone(out.result);
+  }
+  if (out.indexBusy) {
+    return { result: out.result, staging: "busy" };
   }
   if (out.stashFailed) {
     void vscode.window.showWarningMessage(
@@ -77,7 +97,16 @@ export async function applyOrAsk(ctx: GitContext, op: ApplyOp): Promise<Applied>
   if (note) {
     void vscode.window.showWarningMessage(`GitStudio: ${note}`);
   }
+  if (out.indexRefused) {
+    return { result: out.result, staging: "refused" };
+  }
   return { result: out.result };
+}
+
+/** A stash named by sha that left the list before git ran: nothing ran. */
+function sayStashGone(result: GitRunResult): Applied {
+  void vscode.window.showInformationMessage(`GitStudio: ${STASH_GONE_MESSAGE}`);
+  return { result, settled: true };
 }
 
 /**

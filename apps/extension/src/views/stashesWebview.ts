@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { StashEntry } from "@gitstudio/git-service/index";
+import { isStashSha } from "@gitstudio/git-service/StashProvider";
 import type { RepoManager } from "../git/repoManager";
 import { getNonce } from "../webview/html";
 import { relativeTime } from "../util/relativeTime";
@@ -18,23 +19,39 @@ import {
 
 /** One stash row, as sent to the webview (host formats the display strings). */
 interface StashDto {
+  /** The stash's FULL sha — what every action names it by. */
+  sha: string;
+  /** Its short sha, for display. */
+  short: string;
+  /** Its `stash@{n}` as the list stands now, for display only. */
   ref: string;
   message: string;
-  sha: string;
   timeRel: string;
   timeAbs: string;
 }
 
-/** Messages the stashes webview posts back to the host. */
+/**
+ * Messages the stashes webview posts back to the host. Every action names the
+ * stash by its full sha, never by `stash@{n}`: that is a position, and a list
+ * renumbered while a question was up made Drop and Pop act on another stash.
+ */
 type StashMessage =
   | { type: "ready" }
   | { type: "save" }
   | { type: "refresh" }
-  | { type: "show"; ref: string; sha?: string }
-  | { type: "apply"; ref: string }
-  | { type: "pop"; ref: string }
-  | { type: "drop"; ref: string }
-  | { type: "branch"; ref: string };
+  | { type: "show"; sha: string; focus?: boolean }
+  | { type: "apply"; sha: string }
+  | { type: "pop"; sha: string }
+  | { type: "drop"; sha: string }
+  | { type: "branch"; sha: string };
+
+/** The row actions, by the message that asks for them. */
+const ACTIONS = {
+  apply: applyStash,
+  pop: popStash,
+  drop: dropStash,
+  branch: branchFromStash,
+} as const;
 
 /**
  * The Stashes pillar as a branded webview view (replacing the native tree). Each
@@ -109,20 +126,30 @@ export class StashesWebviewViewProvider
         await saveStash(this.repos, refresh);
         return;
       case "show":
-        await showStash(this.repos, msg.ref, msg.sha);
+        // A row for a stash that has since left the list goes with it.
+        if (!(await showStash(this.repos, msg.sha, msg.focus === true))) {
+          await this.postList();
+        }
         return;
       case "apply":
-        await applyStash(this.repos, msg.ref, refresh);
-        return;
       case "pop":
-        await popStash(this.repos, msg.ref, refresh);
-        return;
       case "drop":
-        await dropStash(this.repos, msg.ref, refresh);
+      case "branch": {
+        if (typeof msg.sha !== "string" || !isStashSha(msg.sha)) {
+          return;
+        }
+        try {
+          // The list is re-posted once the action is over, whatever its
+          // outcome; the page patches only the rows that changed.
+          await ACTIONS[msg.type](this.repos, msg.sha, () => {});
+          await this.postList();
+        } finally {
+          // The row went busy when it was clicked; this releases it — at
+          // once on a Cancel, rather than after a timer.
+          void this.view?.webview.postMessage({ type: "done", sha: msg.sha });
+        }
         return;
-      case "branch":
-        await branchFromStash(this.repos, msg.ref, refresh);
-        return;
+      }
     }
   }
 
@@ -145,9 +172,10 @@ export class StashesWebviewViewProvider
     try {
       const entries: StashEntry[] = await active.ctx.stashes.list();
       const items: StashDto[] = entries.map((e) => ({
+        sha: e.sha,
+        short: e.sha.slice(0, 7),
         ref: e.ref,
         message: e.message || e.ref,
-        sha: e.sha.slice(0, 7),
         timeRel: relativeTime(e.time),
         timeAbs: new Date(e.time * 1000).toLocaleString(),
       }));
@@ -212,6 +240,10 @@ export class StashesWebviewViewProvider
   }
   .row:hover, .row:focus-within { background: var(--row-hover); }
   .row:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
+  /* A row whose action is running: dimmed, its buttons off, until the host
+     says it is over. Only that row; the rest of the list stays usable. */
+  .row.busy { opacity: 0.55; cursor: progress; }
+  .row.busy .icon-btn { cursor: progress; }
   .row .sicon {
     flex: 0 0 auto; width: 16px; height: 16px;
     display: inline-flex; align-items: center; justify-content: center;
@@ -308,10 +340,10 @@ export class StashesWebviewViewProvider
       <span>Stash Changes</span>
     </button>
   </div>
-  <div class="list" id="list"></div>
+  <div class="list" id="list" role="list"></div>
   <div class="empty" id="empty" hidden>
     <span class="title" id="empty-title">No stashes</span>
-    <span class="hint" id="empty-hint">Shelve your working changes with the button above — they'll show up here to apply, pop, or branch.</span>
+    <span class="hint" id="empty-hint">Stash your working changes with the button above — they'll show up here to apply, pop, or branch.</span>
   </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -330,7 +362,40 @@ export class StashesWebviewViewProvider
       if (html != null) n.innerHTML = html;
       return n;
     }
-    function iconBtn(icon, title, cls, onClick) {
+
+    // One row per stash, keyed by its full sha. A stash never changes, so a
+    // row belongs to its sha for life: the host re-posts the list on every
+    // repository change (every save), and an identical list touches nothing,
+    // while a pop or a drop removes one row and leaves the others, and the
+    // keyboard focus, where they were. Every action names the stash by that
+    // sha; the host finds it in the list just before git runs.
+    const rows = new Map();
+    let lastSig = "";
+
+    /**
+     * Ask the host to act on a stash. Only THAT row goes busy, until the host
+     * says the action is over (a "done" message, which a Cancel sends at
+     * once): a second press on it, from its buttons, its menu or a key, is
+     * ignored meanwhile, and every other row stays usable.
+     */
+    function act(type, sha) {
+      const row = rows.get(sha);
+      if (!row || row.classList.contains("busy")) return;
+      // The keyboard waits on the row while it is busy. Going busy disables
+      // the button that had it (a mouse press focuses it, as Tab does), and
+      // it fell to the page: a Pop that then removed the row had no row to
+      // hand it on from.
+      const at = document.activeElement;
+      if (at && at !== row && row.contains(at)) row.focus();
+      setBusy(row, true);
+      vscode.postMessage({ type: type, sha: sha });
+    }
+    function setBusy(row, on) {
+      row.classList.toggle("busy", on);
+      row.setAttribute("aria-busy", on ? "true" : "false");
+      row.querySelectorAll(".row-actions button").forEach((b) => { b.disabled = on; });
+    }
+    function iconBtn(icon, title, cls, type, row) {
       const b = el("button", "icon-btn" + (cls ? " " + cls : ""),
         '<i class="codicon codicon-' + icon + '" aria-hidden="true"></i>');
       b.type = "button";
@@ -338,26 +403,90 @@ export class StashesWebviewViewProvider
       b.setAttribute("aria-label", title);
       b.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        // Stash actions key on the volatile stash@{n} index. A drop/pop reindexes
-        // the remaining stashes, so a second click before the list refreshes would
-        // hit a DIFFERENT stash than the user sees. Latch the whole list busy on
-        // the first action and ignore further clicks until render() rebuilds it
-        // with fresh refs. (A 6s safety timer re-enables if no refresh arrives.)
-        if (listEl.dataset.busy === "1") return;
-        listEl.dataset.busy = "1";
-        listEl.querySelectorAll(".row-actions button").forEach((x) => { x.disabled = true; });
-        setTimeout(() => { if (listEl.dataset.busy === "1") { listEl.dataset.busy = ""; listEl.querySelectorAll(".row-actions button").forEach((x) => { x.disabled = false; }); } }, 6000);
-        onClick();
+        act(type, row.dataset.sha);
       });
       return b;
     }
 
+    /** Arrow keys move the keyboard to the next or previous row; Home and End to the first or last. */
+    function focusRow(from, key) {
+      const all = Array.from(listEl.children);
+      const i = all.indexOf(from);
+      const j = key === "Home" ? 0
+        : key === "End" ? all.length - 1
+        : key === "ArrowDown" ? Math.min(all.length - 1, i + 1)
+        : Math.max(0, i - 1);
+      if (all[j]) all[j].focus();
+    }
+
+    function makeRow(sha) {
+      const row = el("div", "row");
+      row.tabIndex = 0;
+      row.setAttribute("role", "listitem");
+      row.dataset.sha = sha;
+
+      const sicon = el("span", "sicon", '<i class="codicon codicon-git-stash" aria-hidden="true"></i>');
+      const body = el("div", "body");
+      body.append(el("div", "msg"), el("div", "meta"));
+
+      const actions = el("span", "row-actions");
+      actions.appendChild(iconBtn("git-stash-apply", "Apply", "", "apply", row));
+      actions.appendChild(iconBtn("git-stash-pop", "Pop (apply & drop)", "", "pop", row));
+      actions.appendChild(iconBtn("git-branch", "Create branch from stash", "", "branch", row));
+      actions.appendChild(iconBtn("trash", "Drop", "danger", "drop", row));
+
+      // A click previews the stash and leaves the keyboard here; Enter opens
+      // it and moves the keyboard to it.
+      const open = (focus) => vscode.postMessage({ type: "show", sha: sha, focus: focus });
+      const menu = (ev) => {
+        ev.preventDefault();
+        openStashMenu(row);
+      };
+      row.addEventListener("click", (ev) => {
+        // The second click of a double-click belongs to the menu it opens,
+        // not to a second preview of the same stash.
+        if (ev.detail > 1) return;
+        open(false);
+      });
+      // Double-click OR right-click a stash: an actions menu (Apply/Pop/Branch/Drop).
+      row.addEventListener("dblclick", menu);
+      row.addEventListener("contextmenu", menu);
+      row.addEventListener("keydown", (ev) => {
+        if (ev.target !== row) return;
+        if (ev.key === "Enter") { ev.preventDefault(); open(true); }
+        else if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) menu(ev);
+        // Delete; and on macOS the delete key, Backspace, and VS Code's
+        // list delete, Cmd+Backspace. The Drop question still comes first.
+        else if (ev.key === "Delete" || (ev.key === "Backspace" && !ev.altKey && !ev.ctrlKey && !ev.shiftKey)) {
+          ev.preventDefault();
+          act("drop", sha);
+        }
+        else if (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "Home" || ev.key === "End") {
+          ev.preventDefault();
+          focusRow(row, ev.key);
+        }
+      });
+
+      row.append(sicon, body, actions);
+      return row;
+    }
+
+    function fillRow(row, s) {
+      row.stash = s;
+      row.title = s.message + " — " + s.timeAbs;
+      row.querySelector(".msg").textContent = s.message;
+      row.querySelector(".meta").textContent = s.ref + " · " + s.timeRel + " · " + s.short;
+    }
+
     function render(items, hasRepo, ok) {
-      // A fresh list means any in-flight stash op finished; clear the busy latch
-      // so the rebuilt rows (with up-to-date refs) are actionable again.
-      listEl.dataset.busy = "";
-      listEl.textContent = "";
-      const n = items ? items.length : 0;
+      const list = items || [];
+      // The same list again (what every save posts) changes nothing on screen,
+      // so nothing is rebuilt: the row with the keyboard keeps it.
+      const sig = JSON.stringify([list, hasRepo, ok]);
+      if (sig === lastSig) return;
+      lastSig = sig;
+
+      const n = list.length;
       if (ok === false && n === 0) {
         // A read failed and we have nothing cached — say so, don't imply "empty".
         emptyEl.hidden = false;
@@ -368,43 +497,37 @@ export class StashesWebviewViewProvider
         emptyTitle.textContent = "No stashes";
         emptyHint.innerHTML = EMPTY_HINT;
       }
-      if (!items) return;
-      for (const s of items) {
-        const row = el("div", "row");
-        row.tabIndex = 0;
-        row.title = s.message + " — " + s.timeAbs;
 
-        const sicon = el("span", "sicon", '<i class="codicon codicon-git-stash" aria-hidden="true"></i>');
-        const body = el("div", "body");
-        const msg = el("div", "msg");
-        msg.textContent = s.message;
-        const meta = el("div", "meta");
-        meta.textContent = s.ref + " · " + s.timeRel + " · " + s.sha;
-        body.append(msg, meta);
-
-        const actions = el("span", "row-actions");
-        actions.appendChild(iconBtn("arrow-down", "Apply", "", () => vscode.postMessage({ type: "apply", ref: s.ref })));
-        actions.appendChild(iconBtn("inbox", "Pop (apply & drop)", "", () => vscode.postMessage({ type: "pop", ref: s.ref })));
-        actions.appendChild(iconBtn("git-branch", "Create branch from stash", "", () => vscode.postMessage({ type: "branch", ref: s.ref })));
-        actions.appendChild(iconBtn("trash", "Drop", "danger", () => vscode.postMessage({ type: "drop", ref: s.ref })));
-
-        const open = () => vscode.postMessage({ type: "show", ref: s.ref, sha: s.sha });
-        const menu = (ev) => {
-          ev.preventDefault();
-          openStashMenu(s, row);
-        };
-        row.addEventListener("click", open);
-        // Double-click OR right-click a stash → an actions menu (Apply/Pop/Branch/Drop).
-        row.addEventListener("dblclick", menu);
-        row.addEventListener("contextmenu", menu);
-        row.addEventListener("keydown", (ev) => {
-          if (ev.target !== row) return;
-          if (ev.key === "Enter") { ev.preventDefault(); open(); }
-          else if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) menu(ev);
-        });
-
-        row.append(sicon, body, actions);
-        listEl.appendChild(row);
+      // Rows whose stash has left the list go; when one of them had the
+      // keyboard, the row that takes its place gets it.
+      const keep = new Set(list.map((s) => s.sha));
+      const active = document.activeElement;
+      const focused = active && active.closest ? active.closest(".row") : null;
+      let focusAt = -1;
+      Array.from(listEl.children).forEach((row, i) => {
+        if (keep.has(row.dataset.sha)) return;
+        if (row === focused) focusAt = i;
+        if (menuEl && menuRow === row) closeMenu();
+        rows.delete(row.dataset.sha);
+        row.remove();
+      });
+      // The rest are patched in place, and a new stash is inserted where it
+      // belongs; a row already in its place is never moved (moving the row
+      // with the keyboard would drop it).
+      let prev = null;
+      for (const s of list) {
+        let row = rows.get(s.sha);
+        if (!row) {
+          row = makeRow(s.sha);
+          rows.set(s.sha, row);
+        }
+        fillRow(row, s);
+        const want = prev ? prev.nextSibling : listEl.firstChild;
+        if (row !== want) listEl.insertBefore(row, want);
+        prev = row;
+      }
+      if (focusAt >= 0 && listEl.children.length > 0) {
+        listEl.children[Math.min(focusAt, listEl.children.length - 1)].focus();
       }
     }
 
@@ -443,38 +566,55 @@ export class StashesWebviewViewProvider
 
     // ---- In-sidebar action popover (double/right-click a stash) --------------
     let menuEl = null;
+    let menuRow = null;
     function closeMenu() {
       if (menuEl) { menuEl.remove(); menuEl = null; }
+      menuRow = null;
       document.removeEventListener("mousedown", onMenuDown, true);
       document.removeEventListener("keydown", onMenuKey, true);
     }
     function onMenuDown(e) { if (menuEl && !menuEl.contains(e.target)) closeMenu(); }
     function onMenuKey(e) {
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        const back = menuRow;
+        closeMenu();
+        if (back && back.isConnected) back.focus();
+      }
     }
-    function openStashMenu(s, anchor) {
+    function openStashMenu(anchor) {
       closeMenu();
       hideTip();
+      const s = anchor.stash;
       const menu = el("div", "gs-menu");
       const head = el("div", "gs-menu-head");
       head.appendChild(el("i", "codicon codicon-git-stash"));
-      const nm = el("span"); nm.textContent = s.message; head.appendChild(nm);
+      const nm = el("span"); nm.textContent = s ? s.message : ""; head.appendChild(nm);
       menu.appendChild(head);
-      const item = (icon, label, danger, act) => {
+      const item = (icon, label, danger, type) => {
         const b = el("button", "gs-menu-item" + (danger ? " danger" : ""),
           '<i class="codicon codicon-' + icon + '" aria-hidden="true"></i><span></span>');
         b.type = "button";
         b.querySelector("span").textContent = label;
-        b.addEventListener("click", () => { closeMenu(); vscode.postMessage({ type: act, ref: s.ref }); });
+        // Through act(), like the row's buttons: a busy row takes no second
+        // action from its menu either. The item that had the keyboard goes
+        // with the menu, so the keyboard goes back to the row, as on Escape.
+        b.addEventListener("click", () => {
+          closeMenu();
+          if (anchor.isConnected) anchor.focus();
+          act(type, anchor.dataset.sha);
+        });
         menu.appendChild(b);
       };
-      item("arrow-down", "Apply", false, "apply");
-      item("inbox", "Pop (apply & drop)", false, "pop");
+      item("git-stash-apply", "Apply", false, "apply");
+      item("git-stash-pop", "Pop (apply & drop)", false, "pop");
       item("git-branch", "Create branch from stash", false, "branch");
       menu.appendChild(el("div", "gs-menu-sep"));
       item("trash", "Drop", true, "drop");
       document.body.appendChild(menu);
       menuEl = menu;
+      menuRow = anchor;
       const PAD = 6, r = menu.getBoundingClientRect(), a = anchor.getBoundingClientRect();
       const left = Math.max(PAD, Math.min(a.left, window.innerWidth - r.width - PAD));
       let top = a.bottom + 2;
@@ -489,7 +629,12 @@ export class StashesWebviewViewProvider
 
     window.addEventListener("message", (e) => {
       const m = e.data;
-      if (m && m.type === "stashes") render(m.items, m.hasRepo, m.ok);
+      if (!m) return;
+      if (m.type === "stashes") render(m.items, m.hasRepo, m.ok);
+      else if (m.type === "done") {
+        const row = rows.get(m.sha);
+        if (row) setBusy(row, false);
+      }
     });
     vscode.postMessage({ type: "ready" });
   </script>

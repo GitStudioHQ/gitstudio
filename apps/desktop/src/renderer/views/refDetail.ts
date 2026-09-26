@@ -158,8 +158,9 @@ export async function renderRefDetail(
     act("Delete…", "trash", `Delete ${name} from this clone`, () => void deleteTag());
   }
   if (kind === "stash") {
-    act("Apply", "arrow-down", `Apply ${name}, keeping it in the list`, () => void stashAct("apply"), true);
-    act("Pop", "arrow-up", `Apply ${name} and remove it`, () => void stashAct("pop"));
+    // codicon's own stash glyphs, as the extension's Stashes view wears them.
+    act("Apply", "git-stash-apply", `Apply ${name}, keeping it in the list`, () => void stashAct("apply"), true);
+    act("Pop", "git-stash-pop", `Apply ${name} and remove it`, () => void stashAct("pop"));
     act("Drop…", "trash", `Delete ${name} permanently`, () => void stashAct("drop"));
   }
   if (sha) {
@@ -328,9 +329,12 @@ export async function renderRefDetail(
       nav("branches", { list: true });
       return;
     }
+    // By SHA — the check above holds only until the request leaves, and a
+    // Stash & Retry sends it again after its question (see the stash list's
+    // stashActLive, the same door).
     const r = await host.invoke(
       action === "apply" ? "stash:apply" : action === "pop" ? "stash:pop" : "stash:drop",
-      name!,
+      still.sha || name!,
     );
     // Uncommitted changes in the stash's way were asked about (Stash & Retry
     // or Cancel — bridge.ts), and the user cancelled: nothing ran.
@@ -339,10 +343,17 @@ export async function renderRefDetail(
       toast(r.message ?? `Couldn't ${action} ${name}.`, r.expected ? "info" : "error");
       return;
     }
+    // A Pop whose staging git could not restore was applied and KEPT (the
+    // note bridge.ts says gives the reason): the stash, and this page, stay.
+    const kept = action === "pop" && r.stashKept === true;
     toast(
-      action === "apply" ? `Applied ${name}.` : action === "pop" ? `Popped ${name}.` : `Dropped ${name}.`,
+      action === "apply" || kept
+        ? `Applied ${name}${kept ? " — it stays in the list" : ""}.`
+        : action === "pop"
+          ? `Popped ${name}.`
+          : `Dropped ${name}.`,
       "success",
     );
-    if (action !== "apply") nav("branches", { list: true });
+    if (action !== "apply" && !kept) nav("branches", { list: true });
   }
 }
