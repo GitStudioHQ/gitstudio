@@ -116,7 +116,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **The status bar items have names of their own.** The branch, Commit Graph,
   terminal and blame items each have an id and a name, so the status bar's
   menu lists and hides them one by one; a screen reader hears the branch
-  item in words ("Branch main: 1 commit to pull, 2 commits to push").
+  item in words ("Branch main: 1 commit to pull, 2 commits to push"). On a
+  detached HEAD the item says "Detached HEAD at abc1234", and no longer shows
+  the publish cloud or offers Publish Branch, which cannot work there.
 - The Changes view's chevrons point down when open and right when closed
   (they showed ">" open and "^" closed).
 - Before the Changes view has read anything it says "Reading changes…", not

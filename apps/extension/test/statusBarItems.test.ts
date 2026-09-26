@@ -131,3 +131,57 @@ test("the words for the other states", () => {
     "Branch feature: 1 commit to push. Opens the branch menu.",
   );
 });
+
+// A detached HEAD is not an unpublished branch: there is no branch to publish.
+// The item said "Branch abc1234 (detached): not published" to a screen reader,
+// showed the publish cloud, and its hover offered Publish Branch — which
+// answers "cannot publish a detached HEAD".
+test("a detached HEAD reads as one: no publishing, in words, icon or hover", async () => {
+  const detached = {
+    root: "/r",
+    ctx: {
+      ...entry.ctx,
+      refs: { getHead: async () => ({ detached: true, branch: undefined, fullName: undefined, sha: "b".repeat(40) }) },
+      sync: { currentUpstream: async () => null, aheadBehind: async () => ({ ahead: 0, behind: 0 }) },
+    },
+  };
+  const api = vscode as unknown as { MarkdownString: unknown };
+  const real = api.MarkdownString;
+  const hovers: { value: string }[] = [];
+  api.MarkdownString = class {
+    value = "";
+    constructor() {
+      hovers.push(this);
+    }
+    appendMarkdown(md: string) {
+      this.value += md;
+      return this;
+    }
+  };
+  created.length = 0;
+  const sync = new SyncStatusItem({ onDidChange: () => noop, getActive: () => detached, getAll: () => [detached] } as never);
+  try {
+    const item = created[0];
+    for (let i = 0; i < 100 && !item.visible; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(item.text, "$(git-branch) bbbbbbb (detached) $(pencil)3", "no publish cloud");
+    assert.equal(
+      item.accessibilityInformation?.label,
+      "Detached HEAD at bbbbbbb: 3 changed files. Opens the branch menu.",
+    );
+    const hover = hovers.at(-1)?.value ?? "";
+    assert.doesNotMatch(hover, /Publish|No upstream/, hover);
+    assert.match(hover, /Detached HEAD/, hover);
+  } finally {
+    sync.dispose();
+    api.MarkdownString = real;
+  }
+});
+
+test("the words for a detached HEAD, with and without changes", () => {
+  const base = { branch: "abc1234 (detached)", detachedAt: "abc1234", upstream: false, ahead: 0, behind: 0, dirty: 0 };
+  assert.equal(syncAccessibleLabel(base), "Detached HEAD at abc1234. Opens the branch menu.");
+  assert.equal(
+    syncAccessibleLabel({ ...base, dirty: 2 }),
+    "Detached HEAD at abc1234: 2 changed files. Opens the branch menu.",
+  );
+});

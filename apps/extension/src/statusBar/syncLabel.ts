@@ -22,6 +22,11 @@ const count = (n: number, one: string, many: string): string => `${n} ${n === 1 
 /** What the status item's icons and numbers say, in words, for a screen reader. */
 export function syncAccessibleLabel(s: {
   branch: string;
+  /**
+   * HEAD is detached, at this short sha. There is no branch then, so nothing
+   * is "not published": it reads "Detached HEAD at abc1234".
+   */
+  detachedAt?: string;
   /** Whether the branch tracks an upstream (else it is not published). */
   upstream: boolean;
   ahead: number;
@@ -30,13 +35,15 @@ export function syncAccessibleLabel(s: {
   dirty: number;
 }): string {
   const parts: string[] = [];
-  if (!s.upstream) {
+  // A detached HEAD has no branch: nothing to publish, pull or push.
+  if (!s.detachedAt && !s.upstream) {
     parts.push("not published");
-  } else {
+  } else if (!s.detachedAt) {
     if (s.behind > 0) parts.push(`${count(s.behind, "commit", "commits")} to pull`);
     if (s.ahead > 0) parts.push(`${count(s.ahead, "commit", "commits")} to push`);
     if (s.behind === 0 && s.ahead === 0) parts.push("nothing to pull or push");
   }
   if (s.dirty > 0) parts.push(count(s.dirty, "changed file", "changed files"));
-  return `Branch ${s.branch}: ${parts.join(", ")}. Opens the branch menu.`;
+  const what = s.detachedAt ? `Detached HEAD at ${s.detachedAt}` : `Branch ${s.branch}`;
+  return `${what}${parts.length ? `: ${parts.join(", ")}` : ""}. Opens the branch menu.`;
 }
