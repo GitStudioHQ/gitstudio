@@ -1,0 +1,31 @@
+packages/host-bridge/test/settleLatest.test.ts
+  s_26f5e669d3043c::t_8da61bc7642ff6 1-104
+packages/host-bridge/src/settleLatest.ts
+  s_26f5e669d3043c::t_546b2efdd01d51 1-37
+apps/extension/test/summarySettle.test.ts
+  s_26f5e669d3043c::t_78408ad0c162be 1-48
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_894935e12d8f6a 608
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_683c394de7d66a 9341-9373
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_334635fae50a90 24,203-205,10021,10468,10491-10493,10495
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_517929befe060f 46,284-285,988-989,993-996,1000-1005
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "273a6d74d2fc7783db198ec1def6958436f06e72",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
