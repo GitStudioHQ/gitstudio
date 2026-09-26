@@ -4,7 +4,7 @@ import type { BlameResult, BlameCommit } from "@gitstudio/git-service/index";
 import { UNCOMMITTED_SHA } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
-import { commitWebUrl } from "../util/remoteUrl";
+import { commitWebUrlIn } from "../util/remoteUrl";
 import { blameChangeSides, openSidesDiff, toRevisionUri } from "../history/revisionContentProvider";
 
 // How long after the selection settles before we run a blame — fast enough to
@@ -728,15 +728,12 @@ export class BlameController implements vscode.Disposable {
     if (!at) {
       return;
     }
-    const remote = await at.entry.ctx.process.run(["remote", "get-url", "origin"]);
-    const url = commitWebUrl(remote.stdout.trim(), at.commit.sha);
-    if (!url) {
-      void vscode.window.showInformationMessage(
-        "GitStudio: this repo's origin isn't a recognised GitHub/GitLab remote.",
-      );
+    const found = await commitWebUrlIn(at.entry.ctx, at.commit.sha);
+    if ("reason" in found) {
+      void vscode.window.showInformationMessage(`GitStudio: ${found.reason}`);
       return;
     }
-    await vscode.env.openExternal(vscode.Uri.parse(url));
+    await vscode.env.openExternal(vscode.Uri.parse(found.url));
   }
 
   /** Register the two titled variants (checked / unchecked) of every option. */

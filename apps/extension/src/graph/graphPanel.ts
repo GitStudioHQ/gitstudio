@@ -42,7 +42,7 @@ import { runRebasePlan, isRebaseInProgress, reportRebaseFailure } from "../rebas
 import { promptPick } from "../ui/dialogs";
 // EMPTY_TREE: git's empty tree — the "parent" of a root commit's diff.
 import { commitChangeSides, EMPTY_TREE, openSidesDiff } from "../history/revisionContentProvider";
-import { commitWebUrl } from "../util/remoteUrl";
+import { commitWebUrlIn } from "../util/remoteUrl";
 import { relativePath, statusLetter } from "../changes/changesView";
 import type { Change } from "../git/git";
 import { notifyPaused } from "../git/pauseNotice";
@@ -1298,15 +1298,12 @@ export class CommitGraphPanel {
       return;
     }
     if (action === "open-remote") {
-      const remote = await active.ctx.process.run(["remote", "get-url", "origin"]);
-      const url = commitWebUrl(remote.stdout.trim(), sha);
-      if (!url) {
-        void vscode.window.showInformationMessage(
-          "GitStudio: origin isn't a recognised GitHub/GitLab/Bitbucket remote.",
-        );
+      const found = await commitWebUrlIn(active.ctx, sha);
+      if ("reason" in found) {
+        void vscode.window.showInformationMessage(`GitStudio: ${found.reason}`);
         return;
       }
-      await vscode.env.openExternal(vscode.Uri.parse(url));
+      await vscode.env.openExternal(vscode.Uri.parse(found.url));
       return;
     }
     // The visual Interactive Rebase workspace opens via its command (needs the
