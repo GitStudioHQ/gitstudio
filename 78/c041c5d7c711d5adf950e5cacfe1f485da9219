@@ -1,0 +1,25 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_8e9b6d15242580 119-121
+apps/extension/src/statusBar/syncLabel.ts
+  s_26f5e669d3043c::t_9e9f2479255d15 25-29,38-39,41,47-48
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_ee6a2bcaa09aab 96-98,105,121-128,131,166,181-185,188-190
+apps/extension/test/statusBarItems.test.ts
+  s_26f5e669d3043c::t_7590a01f5ad491 134-187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "78c041c5d7c711d5adf950e5cacfe1f485da9219",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
