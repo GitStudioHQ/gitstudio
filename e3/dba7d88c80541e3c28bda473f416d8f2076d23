@@ -1,0 +1,50 @@
+apps/extension/test/branchMenuCommand.test.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 1-35
+apps/extension/test/branchMenuHost.test.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 1-206
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 643-651
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 219-231,247-249,251,253-254,302-304,306-309
+apps/extension/test/branchesTreeLabels.test.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 131-133,138-141
+apps/extension/package.json
+  s_26f5e669d3043c::t_338bcded6b6f3f 287-291,1831-1832
+  s_26f5e669d3043c::t_e3058ca3955a17 286,1833-1834
+apps/extension/test/branchMenuStates.test.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 1-222
+apps/extension/src/changes/branchMenuData.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 1-114
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_338bcded6b6f3f 42-51,325-361
+apps/extension/test/branchMenuKeyboard.test.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 21-29,177,373,406-651
+  s_26f5e669d3043c::t_6cc1d1d74bdfa2 652
+apps/extension/test/changesPage.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 47-48,59-62,76-77,89-90,170-171,217-221,224-227,275-276,279-280,299-305
+  s_26f5e669d3043c::t_2ddd71ed2a59e6 306-307
+apps/extension/test/mergeRebaseAskDetached.test.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 1-141
+apps/extension/test/branchMenuData.test.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 1-67
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 12,1656,1858,1860,2544-2554,2573,2601,2611-2612,2908,2912-2913,2980,2986-2991,3004-3005,3008-3015,3036,3039-3048,3077-3079,3083-3085,3105-3108,3129-3130,3136,3142-3143,4867-4869,4879-4899,5342-5343,5352-5353,5420-5421,5427,5436,5439-5443,5462-5467,5474-5488,5541,5574-5576,5579-5597,5617-5622,5624-5625,5628,5634-5637,5651-5658,5661-5665,5674,5726-5728,5809-5815,5818,5839,5841,5843-5844,5851-5856,5865,5868,5874-5875,5877-5879,5881,5887,5889-5890,5892,5897,5903,5910-5911,5914,5929-5930,5932-5934,5985-5986,6000,6075,6087-6089,6123-6125,6130-6135,6139-6145,6149-6180,6848-6851,6876-6883,6885-6886,6889,6896-6921,8187-8188,8195-8197
+apps/extension/test/branchMenuFit.test.ts
+  s_26f5e669d3043c::t_338bcded6b6f3f 1-489
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e3dba7d88c80541e3c28bda473f416d8f2076d23",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
