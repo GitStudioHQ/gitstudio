@@ -3858,8 +3858,13 @@ export class CommitViewProvider
       text-overflow: ellipsis;
     }
     .row.is-deleted .name { text-decoration: line-through; opacity: 0.85; }
+    /* The directory gives way first (a far larger shrink factor), so the file
+       name is cut only once the directory has nothing left to give. It clips
+       from the START (direction: rtl) so its tail — the folder the file is in
+       — stays; the path inside is a <bdi>, an isolated left-to-right run, so
+       its characters keep their order (a leading "." stays at the start). */
     .row .dir {
-      flex: 1 1 auto;
+      flex: 1 1000 auto;
       min-width: 0;
       font-size: 11.5px;
       color: var(--gs-fg-muted);
@@ -4114,7 +4119,7 @@ export class CommitViewProvider
     .pm-file.clickable:hover .name { text-decoration: underline; text-underline-offset: 2px; }
     .pm-file .st { flex: 0 0 auto; width: 13px; text-align: center; font-family: var(--gs-font-mono); font-weight: 700; font-size: 11px; }
     .pm-file .name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pm-file .dir { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--gs-fg-muted);
+    .pm-file .dir { flex: 1 1000 auto; min-width: 0; font-size: 11px; color: var(--gs-fg-muted);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
     .pm-file .nums { flex: 0 0 auto; font-family: var(--gs-font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
     .pm-file .nums .add { color: var(--gs-status-added); }
@@ -6733,7 +6738,11 @@ export class CommitViewProvider
           const name = f.path.split("/").pop() || f.path;
           const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
           const nm = el("span", "name"); nm.textContent = name; row.appendChild(nm);
-          const dd = el("span", "dir"); dd.textContent = dir; row.appendChild(dd);
+          const dd = el("span", "dir");
+          const ddText = document.createElement("bdi");
+          ddText.textContent = dir;
+          dd.appendChild(ddText);
+          row.appendChild(dd);
           row.title = "Open diff — " + f.path + (f.oldPath ? "  (was " + f.oldPath + ")" : "");
           if (f.additions > 0 || f.deletions > 0) {
             const nums = el("span", "nums");
@@ -7566,11 +7575,13 @@ export class CommitViewProvider
       row.appendChild(name);
 
       if (dir != null && dir !== "") {
+        // The box clips from the start (CSS direction: rtl) to keep the tail;
+        // the path is an isolated left-to-right run inside it. Setting the
+        // box itself to ltr (as it was) cancelled the clip.
         const dirEl = el("span", "dir");
-        // RTL trick keeps the tail visible; wrap so it reads left-to-right.
-        dirEl.textContent = dir;
-        dirEl.setAttribute("dir", "ltr");
-        dirEl.style.direction = "ltr";
+        const dirText = document.createElement("bdi");
+        dirText.textContent = dir;
+        dirEl.appendChild(dirText);
         row.appendChild(dirEl);
       } else {
         row.appendChild(el("span", "spacer"));
