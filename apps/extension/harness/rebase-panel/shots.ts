@@ -9,6 +9,8 @@
 //                          toolbar showing what they are set to
 //   squash-all-<theme>.png every commit squashed at once, the oldest kept,
 //                          and the footer saying so
+//   paused-<theme>.png     a paused rebase's banner (Continue, Skip, Abort),
+//                          handed back after a refused squash borrowed it
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -37,6 +39,12 @@ async function main(): Promise<void> {
       await page.key("s");
       await page.settle(200);
       await page.screenshot(join(OUT, `squash-all-${theme}.png`));
+
+      await page.eval(`window.__send({ type: "result", outcome: { status: "stopped", reason: "conflict", message: "" }, stop: { conflicts: 1, canSkip: true } })`);
+      await page.clickRow(11);
+      await page.key("s");
+      await page.settle(4300); // the refusal's flash, over
+      await page.screenshot(join(OUT, `paused-${theme}.png`));
       console.log(`wrote ${theme}`);
     } finally {
       await page.close();
