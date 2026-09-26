@@ -612,7 +612,13 @@ export class RebaseView extends LitElement {
 
   render() {
     const total = this.rows.length;
-    const kept = this.rows.filter((r) => r.action !== "drop").length;
+    // What the plan ends with: a squash or fixup is folded into another
+    // commit, not kept as one — the count the workspace and the desktop give
+    // for the same plan. It said "12 of 12 kept" for twelve commits squashed
+    // into one.
+    const kept = this.rows.filter((r) => r.action === "pick" || r.action === "reword" || r.action === "edit").length;
+    const folded = this.rows.filter((r) => r.action === "squash" || r.action === "fixup").length;
+    const dropped = this.rows.filter((r) => r.action === "drop").length;
     const selectedRows = this.rows.filter((r) => this.selection.selected.includes(RebaseView.key(r)));
     const selectedCount = selectedRows.length;
     // The action every selected row shares, if they share one.
@@ -682,7 +688,9 @@ export class RebaseView extends LitElement {
       <footer>
         <span class="count" aria-live="polite">
           <span class="mono">${kept}</span> of
-          <span class="mono">${total}</span> commit${total === 1 ? "" : "s"} kept
+          <span class="mono">${total}</span> commit${total === 1 ? "" : "s"} kept${folded
+            ? html` · <span class="mono">${folded}</span> folded`
+            : ""}${dropped ? html` · <span class="mono">${dropped}</span> dropped` : ""}
         </span>
         <span class="note" role="status">
           ${this.note

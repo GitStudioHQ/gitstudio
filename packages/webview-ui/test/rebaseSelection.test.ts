@@ -77,6 +77,7 @@ const MOUNT = (bodyClass: string, lines = 12, init: Init = {}): string => `
   const actions = () => rows().map((r) => r.querySelector("select.action").value).join(",");
   const order = () => rows().map((r) => Number(r.dataset.key) / 2).join(",");
   const count = () => ($(".selcount") || {}).textContent || "";
+  const footer = () => (($("footer .count") || {}).textContent || "").replace(/\\s+/g, " ").trim();
   const mac = /mac/i.test(navigator.platform);
   const MOD = mac ? { metaKey: true } : { ctrlKey: true };
   const key = async (k, mods) => {
@@ -183,6 +184,7 @@ const ACTIONS = `
   let acts = actions().split(",");
   expect(acts.slice(N - 3).join(",") === "drop,drop,drop", "D drops every selected line (" + acts.slice(N - 3) + ")");
   expect(acts.slice(0, N - 3).every((a) => a === "pick"), "and nothing else");
+  expect(footer() === (N - 3) + " of " + N + " commits kept · 3 dropped", "the footer counts the drops (" + footer() + ")");
   expect(selected() === range(N - 3, N - 1), "the selection survives (" + selected() + ")");
   expect(focusIdx() === N - 1, "and so does the keyboard (" + focusIdx() + ")");
 
@@ -231,6 +233,9 @@ const SQUASH = `
   expect(acts.slice(1).every((a) => a === "squash"), "every later line folds (" + acts + ")");
   expect(new RegExp("Squash set on " + (N - 1) + " commits\\\\. The first one stays Pick").test(note()), "the footer says what happened (" + note() + ")");
   expect(start().disabled === false, "and the plan can be started");
+  // A fold is not a commit kept: the plan ends in one commit, and says so,
+  // as the workspace and the desktop do for the same plan.
+  expect(footer() === "1 of " + N + " commits kept · " + (N - 1) + " folded", "the footer counts what the plan ends with (" + footer() + ")");
   // A fold dragged to the top is a plan git refuses: Start closes and says why.
   const dt = new DataTransfer();
   const fire = (type, target, y) => { const e = new DragEvent(type, { bubbles: true, composed: true, cancelable: true, clientY: y }); Object.defineProperty(e, "dataTransfer", { value: dt }); target.dispatchEvent(e); };
