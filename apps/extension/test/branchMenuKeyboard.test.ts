@@ -172,7 +172,7 @@ test("Right opens a branch's submenu on its first item; Up/Down move there; Left
   await page.key("ArrowUp");
   assert.equal((await snap(page)).sub, "Checkout", "clamped at the submenu's top");
   await page.key("ArrowDown");
-  assert.equal((await snap(page)).sub, "Pull 1 into 'feature'");
+  assert.equal((await snap(page)).sub, "Pull 1 Commit into 'feature'");
 
   await page.key("ArrowLeft");
   s = await snap(page);
@@ -368,7 +368,7 @@ test("the pointer moves the highlight — but not a list scrolling under a still
   assert.equal((await snap(page)).sub, "Checkout", "Down after a click goes into the open submenu");
   const second = await centre(`.branch-submenu #bm-sub-1`);
   await page.mouseMove(second.x, second.y);
-  assert.equal((await snap(page)).sub, "Pull 1 into 'feature'", "hovering an item highlights it");
+  assert.equal((await snap(page)).sub, "Pull 1 Commit into 'feature'", "hovering an item highlights it");
 });
 
 test("the highlight scrolls into view, and survives the host repainting the menu", { skip }, async () => {

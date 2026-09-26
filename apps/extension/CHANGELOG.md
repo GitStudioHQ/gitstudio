@@ -93,6 +93,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - A branch whose upstream was deleted from the remote — what a merged pull
   request leaves behind — shows that upstream struck through and marked
   **gone** in the branch menu, instead of looking like a live one.
+- The branch menu's words and icons: **Push…** says it asks before pushing,
+  *Pull 2 Commits into 'feature'* says what the number counts, and Checkout
+  and New Worktree have icons of their own — Checkout no longer wears the
+  check that marks the branch you're on, nor New Worktree the Changes view's
+  tree/list toggle.
 
 ## [1.14.0] - 2026-09-25
 

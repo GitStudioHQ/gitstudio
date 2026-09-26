@@ -1,5 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { ChangesPage, stateMessage, type LocalBranch } from "./changesPage";
 
 // The Changes view's branch menu before its branches arrive, and on a HEAD
@@ -10,7 +12,10 @@ import { ChangesPage, stateMessage, type LocalBranch } from "./changesPage";
 //     shows a repository with no branches — and the rows replace that as
 //     soon as they arrive, even when there are none;
 //   · a submenu names what it acts on: the current branch, or on a detached
-//     HEAD the commit HEAD is at, never a branch called "current branch".
+//     HEAD the commit HEAD is at, never a branch called "current branch";
+//   · the words say what happens — "Push…" asks more, a count has its unit —
+//     and every glyph is a codicon this build ships, none of them the check
+//     that marks the checked-out branch or the view's tree/list toggle.
 
 const chrome = ChangesPage.chrome();
 const skip = chrome ? false : "no windowless Chrome on this machine (set GS_CHROME)";
@@ -122,4 +127,58 @@ test("a submenu names what it acts on: the current branch, or the commit a detac
   await openMenu();
   labels = await labelsFor("origin/main");
   assert.ok(labels.includes("Merge 'origin/main' into 'main'"), labels.join(" | "));
+});
+
+/** Every glyph the codicon stylesheet this build ships can draw. */
+const SHIPPED = new Set(
+  [...readFileSync(fileURLToPath(new URL("../../../node_modules/@vscode/codicons/dist/codicon.css", import.meta.url)), "utf8")
+    .matchAll(/\.codicon-([a-z0-9-]+):before/g)].map((m) => m[1]),
+);
+
+test("the menu's words say what happens, and its glyphs are real and mean one thing", { skip }, async () => {
+  const local: LocalBranch[] = [
+    { name: "main", current: true, upstream: "origin/main", upstreamOnRemote: true },
+    { name: "feature", upstream: "origin/feature", upstreamOnRemote: true, behind: 2 },
+    { name: "hotfix", upstream: "origin/hotfix", upstreamOnRemote: true, behind: 1 },
+    { name: "synced", upstream: "origin/synced", upstreamOnRemote: true },
+  ];
+  await page.send(stateMessage({ local, remote: ["origin/main", "origin/feature"], tags: ["v1.0"] }));
+  await openMenu();
+  const glyphs = (sel: string): Promise<{ label: string; icons: string[] }[]> =>
+    page.eval(`Array.prototype.map.call(document.querySelectorAll(${JSON.stringify(sel)}), function (n) {
+      return {
+        label: n.textContent.trim(),
+        icons: Array.prototype.concat.apply([], Array.prototype.map.call(n.querySelectorAll(".codicon"), function (i) {
+          return Array.prototype.filter.call(i.classList, function (c) { return /^codicon-/.test(c) && !/^codicon-modifier-/.test(c); })
+            .map(function (c) { return c.slice(8); });
+        })),
+      };
+    })`);
+  const top = await glyphs(".bm-list .bm-action");
+  assert.ok(top.some((a) => a.label === "Push…"), `the top Push asks more before it pushes: ${top.map((a) => a.label).join(" | ")}`);
+  const seen = [...top, ...(await glyphs(".bm-list .bm-branch"))];
+
+  const subs: Record<string, { label: string; icons: string[] }[]> = {};
+  for (const q of ["main", "feature", "hotfix", "synced", "origin/feature", "v1.0"]) {
+    await page.eval(`(function () { var i = document.querySelector(".bm-search input"); i.value = ""; i.dispatchEvent(new Event("input")); })()`);
+    await page.type(q);
+    await page.key("ArrowRight");
+    subs[q] = await glyphs(".branch-submenu .bm-subaction");
+    await page.key("ArrowLeft");
+  }
+  const labels = (q: string) => subs[q].map((i) => i.label);
+  assert.ok(labels("feature").includes("Pull 2 Commits into 'feature'"), labels("feature").join(" | "));
+  assert.ok(labels("hotfix").includes("Pull 1 Commit into 'hotfix'"), labels("hotfix").join(" | "));
+  assert.ok(labels("synced").includes("Pull into 'synced'"), labels("synced").join(" | "));
+
+  for (const [q, items] of Object.entries(subs)) {
+    for (const it of items) {
+      assert.ok(!it.icons.includes("check"), `${q}: '${it.label}' does not wear the checked-out branch's check`);
+      assert.ok(!it.icons.includes("list-tree"), `${q}: '${it.label}' does not wear the view's tree/list toggle`);
+    }
+    seen.push(...items);
+  }
+  for (const it of seen) {
+    for (const g of it.icons) assert.ok(SHIPPED.has(g), `'${it.label}': codicon-${g} is not in the codicons this build ships`);
+  }
 });

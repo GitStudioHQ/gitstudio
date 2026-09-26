@@ -5453,9 +5453,9 @@ export class CommitViewProvider
       // The row this submenu belongs to holds the main list's highlight.
       if (anchor && anchor.dataset && anchor.dataset.bmkey) bmActiveKey = anchor.dataset.bmkey;
       if (kind === "tag") {
-        subItem(list, "check", "Checkout Tag (detached)", () => subAct("gitstudio.tag.checkout", name, "tag"));
+        subItem(list, "arrow-swap", "Checkout Tag (detached)", () => subAct("gitstudio.tag.checkout", name, "tag"));
         subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, "tag"));
-        subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, "tag"));
+        subItem(list, "worktree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, "tag"));
         subSep(list);
         subItem(list, "git-compare", "Compare with " + cur, () => subAct("gitstudio.branch.compare", name, "tag"));
         subItem(list, "git-merge", "Merge '" + name + "' into " + cur, () => subAct("gitstudio.branch.merge", name, "tag"));
@@ -5475,7 +5475,7 @@ export class CommitViewProvider
         });
         subSep(list);
         subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType));
-        subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
+        subItem(list, "worktree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
         subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
         subItem(list, "copy", "Copy Branch Name", () => branchAct("copyName", name));
         favoriteItem(list, name, bd);
@@ -5484,12 +5484,13 @@ export class CommitViewProvider
           resetToUpstreamItem(list, name, bd);
         }
       } else {
-        subItem(list, kind === "remote" ? "cloud-download" : "check", "Checkout", () =>
+        // Not the check: in this menu that marks the branch that IS checked out.
+        subItem(list, kind === "remote" ? "cloud-download" : "arrow-swap", "Checkout", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.checkout" : "gitstudio.branch.checkout", name, refType));
         if (kind === "local" && bd && bd.upstream) {
           // Fast-forward this branch from its upstream WITHOUT checking it out.
           subItemLive(list, "arrow-down",
-            "Pull " + (bd.behind ? bd.behind + " " : "") + "into '" + name + "'",
+            "Pull " + (bd.behind ? bd.behind + (bd.behind === 1 ? " Commit " : " Commits ") : "") + "into '" + name + "'",
             "Pulling…", "pullFf", name,
             "Fast-forwards '" + name + "' from " + bd.upstream + " — no checkout");
         }
@@ -5500,7 +5501,7 @@ export class CommitViewProvider
         subItem(list, "git-merge", "Merge '" + name + "' into " + cur, () => subAct("gitstudio.branch.merge", name, refType));
         subItem(list, "git-pull-request", "Rebase " + cur + " onto '" + name + "'", () => subAct("gitstudio.branch.rebase", name, refType));
         subSep(list);
-        subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
+        subItem(list, "worktree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
         if (kind === "local") {
           subSep(list);
           subItem(list, "arrow-up", "Push…", () => subAct("gitstudio.branch.push", name, refType));
@@ -5589,7 +5590,8 @@ export class CommitViewProvider
       const actions = [
         { a: "fetch", icon: "sync", label: "Fetch" },
         { a: "pull", icon: "arrow-down", label: "Update (pull)" },
-        { a: "push", icon: "arrow-up", label: "Push" },
+        // It opens the push review first, so it asks for more, as "…" says.
+        { a: "push", icon: "arrow-up", label: "Push…" },
         { a: "new", icon: "add", label: "New Branch…" },
         { a: "checkoutRef", icon: "tag", label: "Checkout Tag or Revision…" },
       ];
