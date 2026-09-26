@@ -1,0 +1,30 @@
+apps/extension/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_0812e72fae01ac 398,419-422,424
+packages/git-service/test/snapshot.test.ts
+  s_26f5e669d3043c::t_6b23f907e750fc 141-143,156
+  s_26f5e669d3043c::t_82d2dc93bf8051 148-149
+packages/git-service/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_6b23f907e750fc 395
+apps/extension/test/graphNoRepo.test.ts
+  s_26f5e669d3043c::t_4a76eddd3e8ae3 16
+  s_26f5e669d3043c::t_00024a5997f8f8 24-29
+apps/extension/test/multiCommitActions.test.ts
+  s_26f5e669d3043c::t_0812e72fae01ac 69-70
+  s_26f5e669d3043c::t_899f1b3d0f2075 432-435
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "feeca6c681c55a1a5ddde55b9bc632686e7a3e09",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
