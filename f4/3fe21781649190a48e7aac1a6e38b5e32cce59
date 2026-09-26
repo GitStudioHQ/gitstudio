@@ -1,0 +1,32 @@
+packages/git-service/test/conflictOps.test.ts
+  s_26f5e669d3043c::t_6e0ff653fb1d57 703-726
+packages/git-service/src/ConflictOps.ts
+  s_26f5e669d3043c::t_7d588837b46667 372-385
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_74148e7c87173c 1102-1126,1131
+  s_26f5e669d3043c::t_fc1f1ab8307283 1127-1130,1133
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_1e9bdf05c5b362 8054-8058
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_761bbfe47d70f6 63-67
+apps/desktop/test/discardUndo.test.ts
+  s_26f5e669d3043c::t_34ce1e55d90704 87-120
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_48d289d5664bb2 106-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f43fe21781649190a48e7aac1a6e38b5e32cce59",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
