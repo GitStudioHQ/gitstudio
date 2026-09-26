@@ -1,0 +1,90 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_b354cff9a72d3f 260-315
+apps/extension/src/pr/checkoutPr.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 5,22-27
+  s_26f5e669d3043c::t_efe52afe727889 28
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 19,155-159,464-468
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_b354cff9a72d3f 98-119
+apps/extension/src/ui/markdownCode.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-17
+packages/git-service/src/branchElsewhere.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-49
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 8-9,12-14,16,22-74,80,82,85,89-92,97,105-107,110-120,126,135-136,138,140,144-146,154-181,183-184,186-196,200-201,304-305,329,395-428,430,433,435-445,447,449,520-523,529,580-611,627,633-641,656,665-705,708-710,716-717,724-728,742-753,755-773,782,798-805,815-852,854-857,862-883,887-892,895-912,923-937,940-946,955,957-976
+apps/extension/test/branchInAnotherWorktree.test.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-186
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 536,834
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_b354cff9a72d3f 12335-12361
+packages/host-bridge/src/branchElsewhere.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-30
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 16,526-527,531-536,539-570,2181-2193
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_b354cff9a72d3f 7215-7219,7225-7227,7245,7981-8121,13923-13969
+  s_26f5e669d3043c::t_3a4c39c12d6a51 13970
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_b354cff9a72d3f 684-687,753-754,756,758-765,1989-2033
+apps/extension/src/views/branchesView.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 5,122
+packages/git-service/src/checkoutRef.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 39-42,138,144-149
+packages/git-service/test/worktreeSafety.test.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-316
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 10,36-37,51-52,98-99,316-344,1640,1646,1649-1651,1661-1695,1697-1728,2723-2733,2818-2828
+packages/git-service/src/GitProcess.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 158-173
+packages/host-bridge/src/worktreeRemoval.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-153
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 21,690-698,706-709,711
+  s_26f5e669d3043c::t_6377e5ed307926 710
+apps/extension/src/views/branchElsewhere.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-69
+packages/host-bridge/test/worktreeRemoval.test.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-108
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 60-61,157,3022,3156-3157,3174-3175,3178-3183,3196-3212,3241,3243,3265-3298,3300-3304,3307-3313,3315-3318,3320,3323,4393-4401,4432-4434
+apps/extension/package.json
+  s_26f5e669d3043c::t_b354cff9a72d3f 434-445,458-463,466,1797-1804,1809-1812,2112-2113,2122-2128,2132-2133,2136-2140,2143-2144,2151-2153,2155
+  s_26f5e669d3043c::t_ad762f4678e692 2154
+packages/git-service/src/WorktreeProvider.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1,3,17-19,40-41,43-46,49-85,89-92,115,131-133,136,140-143,145,147-151,153-155,159-191,210-318,324-327,330,335,341,355-361,365,367,426-430,445-501
+apps/desktop/src/main/githubBridge.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 10,27,400-413
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_b354cff9a72d3f 566-573,686
+packages/git-service/src/checkoutRemote.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 31-33,82,90
+apps/extension/test/worktreesDoors.test.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-822
+packages/git-service/src/index.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 65-70,75-77
+packages/git-service/test/branchElsewhere.test.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-106
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 13,279-281
+  s_26f5e669d3043c::t_6cba7700253da7 282-283
+apps/desktop/test/worktreeRemoval.test.ts
+  s_26f5e669d3043c::t_b354cff9a72d3f 1-249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4740122d71eb7526614704a267c3fa7432d24b36",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
