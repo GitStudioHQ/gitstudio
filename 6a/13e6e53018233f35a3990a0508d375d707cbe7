@@ -1,0 +1,23 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_28e124d507fcd8 103-105
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_c4200d76da7045 103,131,145,148,150,153,158-174
+apps/extension/test/undoHistory.test.ts
+  s_26f5e669d3043c::t_3c6d3515f21910 23-26,67,128-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6a13e6e53018233f35a3990a0508d375d707cbe7",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
