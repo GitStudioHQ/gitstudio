@@ -20,7 +20,10 @@ resolver._resolveFilename = function (request: unknown, ...rest: unknown[]) {
 };
 
 /* eslint-disable @typescript-eslint/no-require-imports -- loaded after the stand-in is in place */
-const vscode = require("vscode") as { __said: { kind: string; message: string }[] };
+const vscode = require("vscode") as {
+  __said: { kind: string; message: string }[];
+  window: { showInformationMessage: (message: string, ...items: string[]) => Thenable<string | undefined> };
+};
 const { registerDialogHost } = require("../src/ui/dialogs") as typeof import("../src/ui/dialogs");
 const { UndoLedger } = require("../src/undo/undoLedger") as typeof import("../src/undo/undoLedger");
 const { GitContext } = require("@gitstudio/git-service/GitContext") as typeof import("@gitstudio/git-service/GitContext");
@@ -61,7 +64,7 @@ function fixture() {
   const entry = { root: dir, ctx };
   const state = new Map<string, unknown>();
   const context = { workspaceState: { get: (k: string) => state.get(k), update: async (k: string, v: unknown) => void state.set(k, v) } };
-  const ledger = new UndoLedger({ getActive: () => entry } as never, context as never);
+  const ledger = new UndoLedger({ getActive: () => entry, getAll: () => [entry] } as never, context as never);
   const run = <T>(label: string, fn: () => Promise<T>) => ledger.runWithUndo(entry as never, label, fn);
   return { dir, git, commit, ctx, ledger, run };
 }
@@ -119,6 +122,40 @@ test("a confirm answered after the repository moved is not acted on", async () =
     );
     assert.equal(f.git("rev-parse", "HEAD~1"), x, "the commit made meanwhile is still there");
   } finally {
+    f.ctx.dispose();
+  }
+});
+
+test("the toast's Undo undoes ITS operation — after the newer ones, each asked — not whatever is newest", async () => {
+  const f = fixture();
+  // Hold every "Undid? …" toast open, to press its Undo later.
+  const toasts = new Map<string, () => void>();
+  const shown = vscode.window.showInformationMessage;
+  vscode.window.showInformationMessage = (message: string, ...items: string[]) =>
+    message.startsWith("Undid? ")
+      ? new Promise<string | undefined>((resolve) => void toasts.set(message, () => resolve("Undo")))
+      : shown(message, ...items);
+  try {
+    f.commit("base");
+    f.git("branch", "feature");
+    const m = f.commit("M");
+    await f.run("Commit X", async () => void f.commit("X"));
+    await f.run("Checkout feature", async () => void f.git("checkout", "-q", "feature"));
+
+    asked = [];
+    answer = (spec) => (spec.kind === "confirm" ? "ok" : undefined);
+    // The OLDER toast's Undo, pressed after the newer op.
+    toasts.get("Undid? Commit X")!();
+    for (let i = 0; i < 200 && f.git("rev-parse", "main") !== m; i++) await new Promise((r) => setTimeout(r, 25));
+    assert.deepEqual(
+      asked.filter((a) => a.kind === "confirm").map((a) => a.title),
+      [`Undo "Checkout feature"? (1 of 2)`, `Undo "Commit X"? (2 of 2)`],
+      "the newer op first, then the one whose toast it was",
+    );
+    assert.equal(f.git("symbolic-ref", "HEAD"), "refs/heads/main");
+    assert.equal(f.git("rev-parse", "main"), m, "X is undone");
+  } finally {
+    vscode.window.showInformationMessage = shown;
     f.ctx.dispose();
   }
 });

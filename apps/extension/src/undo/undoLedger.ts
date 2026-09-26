@@ -100,8 +100,7 @@ export class UndoLedger {
         return result;
       }
       if (await this.settle(repo, snapshot)) {
-        this.record(repo.root, snapshot);
-        this.offerUndoToast(label);
+        this.offerUndoToast(repo.root, this.record(repo.root, snapshot));
       }
       return result;
     } catch (err) {
@@ -129,7 +128,7 @@ export class UndoLedger {
     return repo.ctx.snapshot.changed(snapshot);
   }
 
-  private record(root: string, snapshot: Snapshot): void {
+  private record(root: string, snapshot: Snapshot): UndoEntry {
     const entry: UndoEntry = {
       snapshot,
       label: snapshot.label,
@@ -143,16 +142,34 @@ export class UndoLedger {
     }
     this.ledgers.set(root, buffer);
     void this.save();
+    return entry;
   }
 
-  private offerUndoToast(label: string): void {
+  private offerUndoToast(root: string, entry: UndoEntry): void {
     void vscode.window
-      .showInformationMessage(`Undid? ${label}`, "Undo")
+      .showInformationMessage(`Undid? ${entry.label}`, "Undo")
       .then((choice) => {
         if (choice === "Undo") {
-          void this.undoLast();
+          void this.undoThrough(root, entry);
         }
       });
+  }
+
+  /**
+   * The toast's Undo: undo THAT entry. It used to undo whatever was newest,
+   * so after another op the "Undid? Commit X" toast undid the op after X.
+   * Newer entries go first, newest first, each asked — as Undo History does:
+   * an op's plan is only right in the state the ones after it left.
+   */
+  private async undoThrough(root: string, entry: UndoEntry): Promise<void> {
+    const repo = this.repos.getAll().find((r) => r.root === root);
+    const buffer = this.ledgers.get(root) ?? [];
+    const index = buffer.indexOf(entry);
+    if (!repo || index < 0) {
+      void vscode.window.showInformationMessage(`"${entry.label}" isn't in the undo history any more.`);
+      return;
+    }
+    await this.undoChain(repo, buffer.slice(index).reverse());
   }
 
   // ── Undo commands ────────────────────────────────────────────────────────
