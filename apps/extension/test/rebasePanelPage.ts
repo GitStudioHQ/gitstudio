@@ -24,6 +24,7 @@ import ts from "typescript";
 import { findChrome } from "../../../packages/webview-ui/test/headless";
 import { Browser, type Page } from "../../../scripts/merge-e2e/cdp";
 import { BODY_CLASS, VSCODE_THEMES, type VsCodeTheme } from "../../../scripts/merge-e2e/themes";
+import { describeRebaseBase } from "../src/rebase/rebaseBase";
 
 export type { VsCodeTheme };
 
@@ -177,7 +178,8 @@ export async function rebasePanelHtml(
     tokensCss: readFileSync(TOKENS, "utf8"),
     REBASE_CSS: cssNode.text,
     "esc(this.branch)": esc(data.branch),
-    "esc(shortRef(this.base))": esc(data.base),
+    // The header names the base as the page does: a sha shortened (rebaseBase.ts).
+    "esc(describeRebaseBase(this.base))": esc(describeRebaseBase(data.base)),
     planUri: pathToFileURL(planFile).href,
     dataJson: JSON.stringify({ base: data.base, branch: data.branch, baseCommit: data.baseCommit, commits: data.commits }).replace(/</g, "\\u003c"),
     REBASE_JS: js,
