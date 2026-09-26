@@ -1,0 +1,36 @@
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_2158db3957020e 51-66
+  s_26f5e669d3043c::t_e8890f07d35b4b 9352-9357,9359-9362,9470-9475,9607-9723
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_2c28a61352cce7 2824-2848
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_fb5bc6de2348d3 614-616
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_38c1f322b2e4af 1639-1641,1644-1645
+apps/desktop/src/renderer/contextMenu.ts
+  s_26f5e669d3043c::t_205e9f04927d30 10,169-170,191-194,238-239,261-262
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_cf4dab6ab1a536 8,137-139
+apps/desktop/src/renderer/focusReturn.ts
+  s_26f5e669d3043c::t_a6f5c56d73966f 104-116
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_26460c0e777f93 4494-4503,4566-4572,4603,4615,4659-4662,4664,4726,4745,4760,4783,4798,4803
+apps/desktop/test/multiCommit.test.ts
+  s_26f5e669d3043c::t_d7c22ec3047956 158-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b538490620fb50faefbea483c15a0262ed3a5f04",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
