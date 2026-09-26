@@ -27,6 +27,7 @@ import { GitBridge } from "../src/main/gitBridge";
 import { RebaseBridge } from "../src/main/rebaseBridge";
 import { RepoStore } from "../src/main/repoStore";
 import { dropCommitFlow } from "../src/renderer/dropCommit";
+import { runManyAction } from "../src/renderer/multiCommit";
 import type { Undoable, UndoResult } from "../src/renderer/undo";
 
 const ROOT = process.env.UNDO_AUDIT_SCRATCH || tmpdir();
@@ -751,6 +752,56 @@ cell({
     assert.ok(mainBack || refused, "main is back, or nothing moved");
   },
 });
+
+// ══ Drop N / Squash N (#32) — the renderer's own several-commit flow ════════
+
+async function manyLikeRenderer(f: Fx, action: "drop-many" | "squash-many", targets: string[]): Promise<Undoable | undefined> {
+  let offered: Undoable | undefined;
+  const result = await runManyAction(action, targets.map((t) => sha(f, t)), {
+    plan: (req) => f.rebase.commitsPlan(req),
+    rewrite: (req) => f.rebase.commitsRewrite(req),
+    undo: (req) => f.rebase.commitsUndo(req),
+    apply: async () => ({ ok: false, changed: false, message: "not in this table" }),
+    confirm: async () => true,
+    choose: async () => "cancel",
+    message: async (o) => o.value,
+    toast: () => {},
+    undoable: (_message, action) => {
+      offered = action;
+    },
+    refresh: async () => {},
+    landOnConflicts: async () => {},
+    copy: async () => {},
+    compare: () => {},
+  });
+  assert.equal(result, "done", `the rewrite ran (${result})`);
+  return offered;
+}
+
+for (const [id, action, verb] of [
+  ["D15b", "squash-many", "Squash"],
+  ["D15c", "drop-many", "Drop"],
+] as const) {
+  cell({
+    id,
+    operation: `${verb} 2 commits A, B (graph menu for a selection), then 'Create branch here' + switch (topic at the new tip)`,
+    state: "on main (base, A, B, C); after the rewrite the user makes and checks out topic at HEAD; Undo",
+    expected: "main back at C; topic untouched (or Undo refuses)",
+    setup: (f) => abc(f),
+    op: (f) => manyLikeRenderer(f, action, ["main~1", "main~2"]),
+    between: (f) => {
+      f.memo.rewritten = sha(f, "main");
+      f.git("checkout", "-q", "-b", "topic");
+    },
+    expect: (f, _s, { row }) => {
+      row.extra = { topicAfterUndo: subjectOf(f, sha(f, "topic")), mainAfterUndo: subjectOf(f, sha(f, "main")) };
+      assert.equal(sha(f, "refs/heads/topic"), f.memo.rewritten, "topic — made after the rewrite — is untouched");
+      const mainBack = sha(f, "refs/heads/main") === f.memo.C;
+      const refused = !mainBack && sha(f, "refs/heads/main") === f.memo.rewritten;
+      assert.ok(mainBack || refused, "main is back, or nothing moved");
+    },
+  });
+}
 
 // ══ Discard changes (Changes view) ══════════════════════════════════════════
 

@@ -268,9 +268,18 @@ export async function rewriteMany(
   }
   const outcome = await run({ base: plan.base, todo: built.todo, rewords: built.rewords });
   const after = outcome.status === "done" ? await revParse(proc, "HEAD") : undefined;
-  // The branches it carried, so the undo can put them back as well.
+  // The branches it carried, so the undo can put them back as well — and the
+  // branch it rewrote, by full name, so the undo puts back THAT one (as a
+  // drop's does), not whichever branch HEAD is on by then.
   const carried = after && req.carry ? await carriedBranches(proc, plan.rows) : [];
-  return { ...outcome, before: plan.head, ...(after ? { after } : {}), ...(carried.length ? { carried } : {}) };
+  const branch = plan.branch ? `refs/heads/${plan.branch}` : null;
+  return {
+    ...outcome,
+    before: plan.head,
+    ...(after ? { after } : {}),
+    ...(outcome.status === "done" ? { branch } : {}),
+    ...(carried.length ? { carried } : {}),
+  };
 }
 
 /**

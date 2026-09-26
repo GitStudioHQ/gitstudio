@@ -735,6 +735,9 @@ export class RebaseBridge {
       {
         before: String(req?.before ?? ""),
         after: String(req?.after ?? ""),
+        // The branch the rewrite answered with (a cherry-pick or revert of
+        // several names none): git-service checks it is a full branch name.
+        ...(req?.branch === null ? { branch: null } : typeof req?.branch === "string" ? { branch: req.branch } : {}),
         // As the renderer holds them; git-service checks every name and sha.
         ...(req?.carried !== undefined ? { carried: req.carried } : {}),
       },

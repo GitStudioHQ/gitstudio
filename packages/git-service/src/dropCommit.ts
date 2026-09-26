@@ -411,7 +411,7 @@ export async function undoDrop(
     return { ok: false, message: "That isn't a drop this app made." };
   }
   if (u.branch) {
-    return undoDropOnBranch(proc, { before: u.before, after: u.after, branch: u.branch, carried: carried.map(carriedMove) });
+    return undoOnBranch(proc, { before: u.before, after: u.after, branch: u.branch, carried: carried.map(carriedMove) }, "drop");
   }
   if (u.branch === null && (await headBranch(proc))) {
     // Detached when dropped. A branch made and checked out at the new tip has
@@ -427,19 +427,20 @@ export async function undoDrop(
 }
 
 /**
- * Undo a drop that rewrote `branch`: put THAT branch back — and the ones it
- * carried — each only while it is still where the drop left it. The branch
- * moves with `reset --keep` when it is checked out here (its files move too,
- * uncommitted work is kept or the reset refuses), and with a compare-and-swap
- * `update-ref` when it isn't — so a branch made and checked out at the new tip
- * since stays exactly where it is.
+ * Undo a rewrite (`what`: a drop, a squash…) of `branch`: put THAT branch
+ * back — and the ones it carried — each only while it is still where the
+ * rewrite left it. The branch moves with `reset --keep` when it is checked
+ * out here (its files move too, uncommitted work is kept or the reset
+ * refuses), and with a compare-and-swap `update-ref` when it isn't — so a
+ * branch made and checked out at the new tip since stays exactly where it is.
  */
-async function undoDropOnBranch(
+async function undoOnBranch(
   proc: GitProcess,
   u: { before: string; after: string; branch: string; carried: readonly RefMove[] },
+  what: string,
 ): Promise<{ ok: true } | { ok: false; expected?: true; message: string }> {
   const own: RefMove = { ref: u.branch, before: u.before, after: u.after };
-  const why = await whyRefsNotRestorable(proc, [own, ...u.carried], "the drop");
+  const why = await whyRefsNotRestorable(proc, [own, ...u.carried], `the ${what}`);
   if (why) {
     return { ok: false, expected: true, message: why };
   }
@@ -450,25 +451,29 @@ async function undoDropOnBranch(
       return { ok: false, expected: true, message: operationInTheWayMessage({ ...pick(stop), kind: "reset" }) };
     }
   }
+  const reflog = what === "drop" ? "GitStudio undo: drop commit" : `GitStudio undo: ${what}`;
   try {
-    await putRefBack(proc, own, "GitStudio undo: drop commit", { here });
+    await putRefBack(proc, own, reflog, { here });
   } catch (err) {
-    return here ? keepRefused(proc, err instanceof Error ? err.message : String(err), "drop") : { ok: false, message: String(err instanceof Error ? err.message : err) };
+    return here ? keepRefused(proc, err instanceof Error ? err.message : String(err), what) : { ok: false, message: String(err instanceof Error ? err.message : err) };
   }
-  return putCarriedBack(proc, u.carried);
+  return putCarriedBack(proc, u.carried, what, reflog);
 }
 
 /** The carried branches back, each by compare-and-swap. */
 async function putCarriedBack(
   proc: GitProcess,
   carried: readonly RefMove[],
+  what: string,
+  reflog: string,
 ): Promise<{ ok: true } | { ok: false; expected?: true; message: string }> {
   const head = await headBranch(proc);
   for (const m of carried) {
     try {
-      await putRefBack(proc, m, "GitStudio undo: drop commit", { here: head === m.ref });
+      await putRefBack(proc, m, reflog, { here: head === m.ref });
     } catch (err) {
-      return { ok: false, message: `The dropped commit is back, but ${branchShort(m.ref)} isn't: ${err instanceof Error ? err.message : String(err)}` };
+      const back = what === "drop" ? "The dropped commit is back" : "The branch is back";
+      return { ok: false, message: `${back}, but ${branchShort(m.ref)} isn't: ${err instanceof Error ? err.message : String(err)}` };
     }
   }
   return { ok: true };
@@ -493,19 +498,42 @@ async function keepRefused(proc: GitProcess, stderr: string, what: string): Prom
  * cherry-picked or reverted (issue #32). `what` names it in the words: "the
  * branch has moved since the squash".
  *
+ * With `branch` (the rewrite's own, as rewriteMany names it) THAT branch goes
+ * back, as undoDrop's does: HEAD's commit alone can't say which branch it was,
+ * and one made and checked out at the new tip since shares it. Without it,
+ * HEAD's branch goes back from `after`.
+ *
  * `carried` are the other branches the rewrite moved along with it: each goes
  * back too, and only while it is still where the rewrite left it — checked
  * for every one before anything moves, so a refusal changes nothing.
  */
 export async function undoRewrite(
   proc: GitProcess,
-  u: { before: string; after: string; carried?: readonly CarriedBranch[] },
+  u: { before: string; after: string; branch?: string | null; carried?: readonly CarriedBranch[] },
   what: string,
 ): Promise<{ ok: true } | { ok: false; expected?: true; message: string }> {
   const carried = u.carried ?? [];
-  if (!FULL_SHA.test(u.before) || !FULL_SHA.test(u.after) || !validCarried(carried)) {
+  if (
+    !FULL_SHA.test(u.before) ||
+    !FULL_SHA.test(u.after) ||
+    !validCarried(carried) ||
+    (u.branch !== undefined && u.branch !== null && !isBranchRef(u.branch))
+  ) {
     // The renderer only ever sends the tips the operation answered with.
     return { ok: false, message: `That isn't a ${what} this app made.` };
+  }
+  if (u.branch) {
+    return undoOnBranch(proc, { before: u.before, after: u.after, branch: u.branch, carried: carried.map(carriedMove) }, what);
+  }
+  if (u.branch === null && (await headBranch(proc))) {
+    // Detached when it ran: a branch made and checked out at the new tip has
+    // the same commit, and resetting it would move a branch the rewrite never
+    // touched.
+    return {
+      ok: false,
+      expected: true,
+      message: `HEAD was detached when the ${what} ran, and it's on a branch now. Detach it again, then undo.`,
+    };
   }
   const head = await revParse(proc, "HEAD");
   if (head !== u.after) {

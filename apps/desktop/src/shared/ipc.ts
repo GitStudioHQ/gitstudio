@@ -2161,6 +2161,9 @@ export interface CommitsUndoRequest {
   after: string;
   /** Names it in the refusal's words: "since the squash". */
   what: "drop" | "squash" | "cherry-pick" | "revert";
+  /** The branch a drop or squash rewrote (refs/heads/…), null when HEAD was
+   *  detached: that branch goes back, not whichever HEAD is on by then. */
+  branch?: string | null;
   /** The branches a drop or squash carried: they go back too. */
   carried?: CarriedBranchWire[];
 }
