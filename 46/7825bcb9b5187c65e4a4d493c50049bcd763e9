@@ -1,0 +1,25 @@
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_cc32f634038787 65-68
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_55c74f978be975 108-109
+packages/git-service/src/ConflictOps.ts
+  s_26f5e669d3043c::t_84db888b366f9b 120-126,215,250-254,265-271,351,407-423,442,486,538-555,793
+packages/git-service/test/conflictOps.test.ts
+  s_26f5e669d3043c::t_8597213201debd 717-718,720-727,736-795
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "467825bcb9b5187c65e4a4d493c50049bcd763e9",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
