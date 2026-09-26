@@ -160,6 +160,44 @@ test("the toast's Undo undoes ITS operation — after the newer ones, each asked
   }
 });
 
+// ── The pushed-history Revert ────────────────────────────────────────────────
+
+test("the 'already pushed — Revert' question answered after a commit made meanwhile: nothing is reverted, the commit stays", async () => {
+  const f = fixture();
+  try {
+    const remote = mkdtempSync(join(tmpdir(), "gs-undo-history-origin-"));
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
+    f.git("remote", "add", "origin", remote);
+    f.commit("base");
+    f.commit("M");
+    f.git("push", "-q", "-u", "origin", "refs/heads/main:refs/heads/main");
+    await f.run("Amend commit", async () => {
+      writeFileSync(join(f.dir, "base.txt"), "amended in\n");
+      f.git("add", "base.txt");
+      f.git("commit", "-q", "--amend", "--no-edit");
+    });
+    f.git("push", "-q", "-f", "origin", "refs/heads/main:refs/heads/main");
+    asked = [];
+    vscode.__said.length = 0;
+    let C = "";
+    answer = (spec) => {
+      if (spec.kind !== "confirm") return undefined;
+      C = f.commit("C meanwhile");
+      return "ok";
+    };
+    await f.ledger.undoLast();
+    assert.equal(asked[0]?.title, `"Amend commit" has already been pushed`);
+    assert.ok(
+      vscode.__said.some((s) => s.kind === "warning" && /changed while you were being asked/.test(s.message)),
+      JSON.stringify(vscode.__said),
+    );
+    assert.equal(f.git("rev-parse", "HEAD"), C, "the commit made meanwhile is still the tip");
+    assert.equal(f.git("log", "-1", "--format=%s"), "C meanwhile");
+  } finally {
+    f.ctx.dispose();
+  }
+});
+
 // ── A question open inside the op ────────────────────────────────────────────
 
 test("an edit saved while the op's own question was open: its Undo says it takes that too, in red", async () => {

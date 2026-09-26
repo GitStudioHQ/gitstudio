@@ -742,3 +742,31 @@ test("an op that asked a question inside the envelope: an undo that rewrites the
     r.dispose();
   }
 });
+
+test("the pushed-history revert never moves HEAD from anywhere but where the op left it", async () => {
+  const r = repo();
+  try {
+    const remote = mkdtempSync(join(tmpdir(), "gs-undo-scope-origin-"));
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote], { env: ENV });
+    r.git("remote", "add", "origin", remote);
+    r.commit("base");
+    r.commit("M");
+    r.git("push", "-q", "-u", "origin", "refs/heads/main:refs/heads/main");
+    const snap = await around(r, "Amend commit", () => {
+      writeFileSync(join(r.dir, "base.txt"), "amended in\n");
+      r.git("add", "base.txt");
+      r.git("commit", "-q", "--amend", "--no-edit");
+    });
+    r.git("push", "-q", "-f", "origin", "refs/heads/main:refs/heads/main");
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.equal(plan.kind, "revert", JSON.stringify(plan));
+    const c = r.commit("C meanwhile");
+    const out = await r.ctx.snapshot.revert(snap, plan as Extract<typeof plan, { kind: "revert" }>);
+    assert.notEqual(out.code, 0);
+    assert.match(out.stderr, /'main' moved while you were being asked/);
+    assert.equal(r.git("rev-parse", "HEAD"), c, "C is still the tip");
+    removeTempRepo(remote);
+  } finally {
+    r.dispose();
+  }
+});

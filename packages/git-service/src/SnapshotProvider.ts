@@ -797,6 +797,18 @@ export class SnapshotProvider {
     const msg = `Revert "${snap.label}"\n\nThis puts back the files as they were before "${snap.label}" (${shortSha(p.from)}), which had already been pushed as ${shortSha(p.to)}.\n`;
     const made = await this.process.run(["commit-tree", `${p.from}^{tree}`, "-p", p.to, "-F", "-"], { ...opts, input: msg });
     if (made.code !== 0) return made;
+    // The new commit's parent is `p.to`: moving HEAD onto it from anywhere
+    // else would drop whatever HEAD has gained since (a commit made while the
+    // question was open) from the branch, and its files from the tree.
+    const [head, ref] = await Promise.all([this.process.run(["rev-parse", "--verify", "--quiet", "HEAD"], opts), headBranch(this.process, opts)]);
+    if (head.stdout.trim() !== p.to || ref !== p.branch) {
+      const where = ref === p.branch ? `it is at ${shortSha(head.stdout.trim())} now` : "a different branch is checked out now";
+      return {
+        code: 1,
+        stdout: "",
+        stderr: `${p.branch ? `'${branchShort(p.branch)}'` : "HEAD"} moved while you were being asked (${where}), so nothing was reverted. Try Undo again.`,
+      };
+    }
     return this.process.run(["reset", "--keep", made.stdout.trim()], opts);
   }
 

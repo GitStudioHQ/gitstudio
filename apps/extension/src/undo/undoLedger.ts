@@ -290,7 +290,7 @@ export class UndoLedger {
         await this.save();
         return true;
       case "revert":
-        return this.offerRevertInstead(active, entry, plan);
+        return this.offerRevertInstead(active, entry, plan, progress);
       case "restore":
         break;
     }
@@ -335,9 +335,10 @@ export class UndoLedger {
     active: RepoEntry,
     entry: UndoEntry,
     plan: Extract<RestorePlan, { kind: "revert" }>,
+    progress?: { step: number; of: number },
   ): Promise<boolean> {
     const ok = await promptConfirm({
-      title: `"${entry.label}" has already been pushed`,
+      title: `"${entry.label}" has already been pushed${progress ? ` (${progress.step} of ${progress.of})` : ""}`,
       message:
         plan.mode === "range"
           ? "Rewriting published history would break everyone who has already pulled it. GitStudio will Revert instead — a new commit that undoes the change, leaving the original in place."
@@ -347,7 +348,22 @@ export class UndoLedger {
     if (!ok) {
       return false;
     }
-    const result = await active.ctx.snapshot.revert(entry.snapshot, plan);
+    // Asked again, as a restore is: a commit made while the question was up
+    // would otherwise be dropped from the branch by the revert's reset.
+    const again = await active.ctx.snapshot.plan(entry.snapshot).catch(() => undefined);
+    if (
+      again?.kind !== "revert" ||
+      again.mode !== plan.mode ||
+      again.from !== plan.from ||
+      again.to !== plan.to ||
+      again.branch !== plan.branch
+    ) {
+      void vscode.window.showWarningMessage(
+        `The repository changed while you were being asked, so "${entry.label}" wasn't undone. Try Undo again.`,
+      );
+      return false;
+    }
+    const result = await active.ctx.snapshot.revert(entry.snapshot, again);
     if (result.code === 0) {
       flash(`Reverted ${entry.label}`);
       // The op is now logically undone; drop its entry.

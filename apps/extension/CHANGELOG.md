@@ -104,7 +104,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   puts those branches back too, not just the current one.
 - **Undo of an amend** brings your staged changes back staged. Once the
   amended commit has been pushed, Undo adds a commit that undoes just the
-  amendment — it used to revert the whole commit.
+  amendment — it used to revert the whole commit. A commit you make while
+  that question is open is kept: nothing is reverted, and Undo says why.
 - **Undo no longer reverts commits that were already on the remote.** After a
   fast-forward merge, a rebase that fast-forwarded, or a reset forward onto
   your remote's newer commits, Undo moves the branch back rather than offering
