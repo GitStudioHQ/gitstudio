@@ -20,6 +20,9 @@ const CASES: Array<[string, { owner: string; repo: string } | undefined]> = [
   ["ssh://git@github.com:22/org/repo.git", { owner: "org", repo: "repo" }],
   ["ssh://git@github.com/org/repo.git", { owner: "org", repo: "repo" }],
   ["git://github.com/org/repo.git", { owner: "org", repo: "repo" }],
+  // SSH over port 443, and the address a browser gives.
+  ["ssh://git@ssh.github.com:443/org/repo.git", { owner: "org", repo: "repo" }],
+  ["https://www.github.com/org/repo", { owner: "org", repo: "repo" }],
   // Not GitHub — must all be rejected.
   ["https://evilnotgithub.com/a/b", undefined],
   ["https://github.mycorp.com/org/repo.git", undefined],
