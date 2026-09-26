@@ -1,0 +1,27 @@
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_c7cba47a00de19 405-427,430-440,443
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_9f7a2d01490bc7 102-104
+apps/extension/package.json
+  s_26f5e669d3043c::t_e7ba82ddc5e8bf 434-445,1780-1787,2095,2110,2114-2118,2122,2127
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_fdca6abc28d0ae 21,691-699
+apps/extension/test/worktreesDoors.test.ts
+  s_26f5e669d3043c::t_aeebf811535541 437,477-478,513-542
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3e81a6aacf3ea479d9e2c274f9cdd5e62541510b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
