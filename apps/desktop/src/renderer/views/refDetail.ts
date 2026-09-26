@@ -158,8 +158,9 @@ export async function renderRefDetail(
     act("Delete…", "trash", `Delete ${name} from this clone`, () => void deleteTag());
   }
   if (kind === "stash") {
-    act("Apply", "arrow-down", `Apply ${name}, keeping it in the list`, () => void stashAct("apply"), true);
-    act("Pop", "arrow-up", `Apply ${name} and remove it`, () => void stashAct("pop"));
+    // codicon's own stash glyphs, as the extension's Stashes view wears them.
+    act("Apply", "git-stash-apply", `Apply ${name}, keeping it in the list`, () => void stashAct("apply"), true);
+    act("Pop", "git-stash-pop", `Apply ${name} and remove it`, () => void stashAct("pop"));
     act("Drop…", "trash", `Delete ${name} permanently`, () => void stashAct("drop"));
   }
   if (sha) {

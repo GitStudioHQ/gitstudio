@@ -55,12 +55,35 @@ export async function applyForDoor(
   op: ApplyOp,
   stashFirst: unknown,
 ): Promise<DoorApplied> {
+  const applied = await applyOnce(ctx, op, stashFirst);
+  if (!("staging" in applied)) return applied;
+  // A stash applied with its staging (`index`) where git could not stage it
+  // again — the user's own staged changes in the way, or its staged half no
+  // longer applying at HEAD. Nothing of it ran, so it runs as it always did,
+  // everything unstaged: never worse than before. (The extension asks first;
+  // the desktop has no question for this yet.)
+  const plain: ApplyOp = op.kind === "stash" ? { kind: "stash", stash: op.stash, pop: op.pop } : op;
+  const again = await applyOnce(ctx, plain, stashFirst);
+  if ("staging" in again) return { result: again.result };
+  const notes = [applied.stashNote, "stashNote" in again ? again.stashNote : undefined].filter(Boolean);
+  return "result" in again && notes.length > 0 ? { ...again, stashNote: notes.join(" ") } : again;
+}
+
+/** One run through the door; `staging` when a stash's `index` was refused. */
+async function applyOnce(
+  ctx: GitContext,
+  op: ApplyOp,
+  stashFirst: unknown,
+): Promise<DoorApplied | { staging: true; result: GitRunResult; stashNote?: string }> {
   if (stashFirst !== undefined) {
     const refused = await retryRefused(ctx, stashFirst);
     if (refused) return { answer: refused };
     const out = await stashAndRetry(ctx.process, op);
     if (out.blocked) {
       return { answer: blockedAnswer(out.blocked) };
+    }
+    if (out.indexBusy) {
+      return { staging: true, result: out.result };
     }
     if (out.stashFailed) {
       return { answer: stashFailedAnswer(out) };
@@ -69,10 +92,14 @@ export async function applyForDoor(
       return { answer: inTheWayAnswer(ctx, out.inTheWay) };
     }
     const note = stashRetryNote(out);
+    if (out.indexRefused) {
+      return note ? { staging: true, result: out.result, stashNote: note } : { staging: true, result: out.result };
+    }
     return note ? { result: out.result, stashNote: note } : { result: out.result };
   }
-  const { result, inTheWay, blocked } = await runApplying(ctx.process, op);
+  const { result, inTheWay, blocked, indexBusy, indexRefused } = await runApplying(ctx.process, op);
   if (blocked) return { answer: blockedAnswer(blocked) };
+  if (indexBusy || indexRefused) return { staging: true, result };
   return inTheWay ? { answer: inTheWayAnswer(ctx, inTheWay) } : { result };
 }
 

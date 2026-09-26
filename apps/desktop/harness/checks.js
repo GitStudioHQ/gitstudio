@@ -9812,6 +9812,37 @@
     },
 
     /**
+     * Apply and Pop wear codicon's own stash glyphs, as the extension's
+     * Stashes view does — not arrow-down and arrow-up, which say "download"
+     * and "upload" and nowhere say "stash".
+     */
+    "a-stash-page-applies-and-pops-with-the-stash-glyphs": (f) => {
+      const c = check(f);
+      const btn = (label) => $$(".mini-btn, .btn").find((b) => text(b) === label);
+      const glyphOf = (b) => b && b.querySelector(".codicon");
+      const apply = glyphOf(btn("Apply"));
+      const pop = glyphOf(btn("Pop"));
+      c.ok(!!apply && apply.classList.contains("codicon-git-stash-apply"), `Apply: ${apply && apply.className}`);
+      c.ok(!!pop && pop.classList.contains("codicon-git-stash-pop"), `Pop: ${pop && pop.className}`);
+      const drawn = (g) => (g ? getComputedStyle(g, "::before").content : "none");
+      c.ok(drawn(apply) !== "none" && drawn(apply) !== drawn(pop), "two distinct glyphs the font has");
+    },
+
+    "a-stash-rows-pop-wears-the-stash-glyph": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const row = $$(".sec-row")[0];
+      c.ok(!!row, "a stash is listed");
+      if (!row) return;
+      row.querySelector(".lv-menu-btn")?.click();
+      await settle(300);
+      const pop = $$(".dropdown-item").find((i) => /^pop/i.test(text(i) || ""));
+      c.ok(!!pop, "the row's menu offers Pop");
+      const g = pop && pop.querySelector(".codicon");
+      c.ok(!!g && g.classList.contains("codicon-git-stash-pop"), `Pop: ${g && g.className}`);
+    },
+
+    /**
      * The palette does not throw away your arrow keys when a search lands.
      *
      * Search groups are PREPENDED, and to stop the highlight sliding downward

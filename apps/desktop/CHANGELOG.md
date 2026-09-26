@@ -58,6 +58,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on
   paints now. (#32)
+- **Apply and Pop keep what a stash had staged.** Its staged changes came back
+  unstaged, and popping a file that was staged and then edited further lost
+  the staged version for good. They come back staged now. When your own staged
+  changes are in the way, or the staged part no longer applies, the stash is
+  applied as before, unstaged.
+- Apply and Pop on a stash use the stash-apply and stash-pop icons, as the VS
+  Code extension does.
 
 ## [2.1.0] - 2026-09-25
 

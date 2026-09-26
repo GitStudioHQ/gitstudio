@@ -2778,7 +2778,7 @@ class App {
     more.appendChild(glyph("ellipsis"));
     const menu = (): void =>
       openMenu(more, [
-        { label: "Pop — apply and remove", icon: "arrow-up", onClick: () => void this.stashActLive("pop", st, more) },
+        { label: "Pop — apply and remove", icon: "git-stash-pop", onClick: () => void this.stashActLive("pop", st, more) },
         { separator: true },
         {
           label: "Drop this stash…",

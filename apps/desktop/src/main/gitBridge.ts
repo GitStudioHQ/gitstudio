@@ -1364,16 +1364,21 @@ export class GitBridge {
   async stashApply(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
     const { ref, stashFirst } = stashRequest(req);
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) =>
-      stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: false }, stashFirst)),
-    );
+    // `index`: a stash that holds staged changes brings them back staged
+    // where git can (see applyForDoor). A plain apply unstaged them, and a pop
+    // then lost a staged version that differed from the file.
+    return this.staged(async (ctx) => {
+      const index = await ctx.stashes.holdsStaged(ref);
+      return stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: false, index }, stashFirst));
+    });
   }
   async stashPop(req: string | { ref: string; stashFirst?: string }): Promise<CommitActionResult> {
     const { ref, stashFirst } = stashRequest(req);
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) =>
-      stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: true }, stashFirst)),
-    );
+    return this.staged(async (ctx) => {
+      const index = await ctx.stashes.holdsStaged(ref);
+      return stagedFrom(await applyForDoor(ctx, { kind: "stash", stash: ref, pop: true, index }, stashFirst));
+    });
   }
   async stashDrop(ref: string): Promise<CommitActionResult> {
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
