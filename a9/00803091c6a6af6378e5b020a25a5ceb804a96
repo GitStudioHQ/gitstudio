@@ -1,0 +1,25 @@
+packages/host-bridge/src/worktreeRemoval.ts
+  s_26f5e669d3043c::t_c4b6dd9a255fae 76-82,86
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_a44231dcbdb363 68-73
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_3812384291a572 86-88
+packages/host-bridge/test/worktreeRemoval.test.ts
+  s_26f5e669d3043c::t_8bc5b206c1cf05 62-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a900803091c6a6af6378e5b020a25a5ceb804a96",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
