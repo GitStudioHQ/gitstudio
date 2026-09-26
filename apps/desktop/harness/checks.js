@@ -7212,13 +7212,19 @@
     "a-deleted-branch-can-be-restored": async (f) => {
       const c = check(f);
       await settle(1300);
-      const row = $$(".sec-row").find((r) => /fix\/log-stream/.test(text(r) || ""));
+      // feat/line-staging: no worktree has it checked out. (fix/log-stream,
+      // which this used, is the hotfix worktree's — git refuses to delete a
+      // branch a worktree holds, even one whose folder is gone, and the app
+      // now says so before asking.)
+      const row = $$(".sec-row").find((r) => /feat\/line-staging/.test(text(r) || ""));
       c.ok(!!row, "the branch to delete is listed");
       if (!row) return;
       const before = $$(".sec-row").length;
       row.querySelector(".lv-menu-btn")?.click();
       await settle(350);
-      const del = $$(".dropdown-item").find((i) => /^delete /i.test(text(i) || ""));
+      // Exactly the local branch's Delete — a tracking branch's menu also
+      // offers "Delete remote branch", which is not this.
+      const del = $$(".dropdown-item").find((i) => text(i) === "Delete feat/line-staging");
       c.ok(!!del, "the branch offers Delete");
       if (!del) return;
       del.click();
@@ -7236,7 +7242,7 @@
       undo.click();
       await settle(1200);
       c.ok(
-        $$(".sec-row").some((r) => /fix\/log-stream/.test(text(r) || "")),
+        $$(".sec-row").some((r) => /feat\/line-staging/.test(text(r) || "")),
         "Undo puts the branch back",
       );
     },
@@ -7972,6 +7978,147 @@
         rows.some((r) => /this window/.test(text(r.querySelector(".br-state-col")) || "")),
         "and the state pills ride the state column",
       );
+      // Two pills on a row (this window + main worktree) fit, unclipped.
+      const clipped = rows
+        .map((r) => r.querySelector(".br-state-col"))
+        .filter((s) => s && s.scrollWidth > s.clientWidth + 1)
+        .map((s) => text(s));
+      c.eq(clipped.join(" | "), "", "no state pill is clipped");
+    },
+
+    /**
+     * Every worktree row's verbs stay inside the list, down to the app's
+     * minimum width (880). The 220px state slot that lets a row's two pills
+     * both show outranked the narrow-window rule that makes the slot
+     * content-sized, so below 1180 it stayed 220px and pushed every row's ⋯
+     * (the only way to Remove or Forget) and Open past the right edge — while
+     * a case run only at 1600 passed.
+     */
+    "worktree-row-verbs-stay-in-the-list": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(1500);
+      const rows = $$(".ref-row.worktree-row");
+      c.ok(rows.length >= 4, `worktrees render (${rows.length})`);
+      const edge = Math.min(
+        document.documentElement.clientWidth,
+        ...rows.map((r) => Math.round(r.parentElement.getBoundingClientRect().right)),
+      );
+      const out = [];
+      for (const r of rows) {
+        for (const b of $$("button", r)) {
+          const right = Math.round(b.getBoundingClientRect().right);
+          if (right > edge + 1) out.push(`${text(r.querySelector(".sec-row-title")) || r.dataset.ref}: ${b.getAttribute("aria-label") || text(b)} ends at ${right} > ${edge}`);
+        }
+      }
+      c.eq(out.join(" | "), "", `every row's Open and ⋯ inside the list at ${window.innerWidth}px`);
+      // …and no state pill is clipped to fit (the main row carries two).
+      const clipped = rows
+        .map((r) => r.querySelector(".br-state-col"))
+        .filter((s) => s && s.scrollWidth > s.clientWidth + 1)
+        .map((s) => text(s));
+      c.eq(clipped.join(" | "), "", "no state pill is clipped");
+    },
+
+    /**
+     * Removing a worktree asks ONE question, built from what removing it takes
+     * (worktree:removal), and sends exactly what it said. It used to promise
+     * "any uncommitted work goes with it" and send a plain remove, which git
+     * refuses for a dirty worktree and a locked one alike; and a worktree
+     * whose folder was gone offered Open.
+     */
+    "a-worktree-removal-says-what-it-takes": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const rowAt = (end) => $$(".ref-row").find((r) => (r.dataset.ref || "").endsWith(end));
+      const menuOf = async (row) => {
+        $$(".lv-menu-btn", row)[0]?.click();
+        await settle(350);
+        return $$(".dropdown .dropdown-item");
+      };
+
+      // Its folder gone: nothing to open, it says so, and the verb is Forget.
+      const gone = rowAt("/gitstudio-hotfix");
+      if (!gone) return c.ok(false, "the worktree whose folder is gone lists");
+      c.ok(!$$("button", gone).some((b) => text(b) === "Open"), "no Open on a folder that is gone");
+      c.match(text(gone.querySelector(".br-state-col")), /folder missing/, "…and the row says why");
+      const forget = (await menuOf(gone)).find((i) => text(i) === "Forget this worktree…");
+      if (!forget) return c.ok(false, `its menu forgets it (${$$(".dropdown .dropdown-item").map(text).join(" | ")})`);
+      forget.click();
+      await settle(600);
+      let card = $(".modal-card");
+      if (!card) return c.ok(false, "Forget asks");
+      c.eq(text($$(".modal-title", card)[0]), "Forget worktree fix/log-stream?", "…by name");
+      c.match(text($$(".modal-message", card)[0]), /nothing on disk changes/, "…saying nothing on disk changes");
+      c.eq(text($$(".modal-ok", card)[0]), "Forget", "…on a button that says so");
+      $$(".modal-ok", card)[0].click();
+      await settle(800);
+      const forgot = window.__gsWorktrees.removes[0];
+      c.eq(forgot && forgot.discardChanges, false, "forgetting discards nothing");
+
+      // Locked by an agent, with uncommitted work: the reason and the files
+      // are in the one question, and the answer goes past both.
+      const agent = rowAt("/gitstudio-agent");
+      if (!agent) return c.ok(false, "the locked worktree lists");
+      (await menuOf(agent)).find((i) => text(i) === "Remove this worktree…")?.click();
+      await settle(600);
+      card = $(".modal-card");
+      if (!card) return c.ok(false, "Remove asks");
+      const msg = text($$(".modal-message", card)[0]);
+      c.match(msg, /It is locked: “claude agent agent-a2c9ae27 \(pid 73264\)”\./, "naming the lock's reason");
+      c.match(msg, /Its 2 uncommitted changes go with it/, "…and what is lost");
+      c.match(msg, /src\/agent-notes\.md/, "…file by file");
+      c.match(msg, /A merge is in progress in it\. Removing the worktree abandons the merge\./, "…and the merge it abandons");
+      c.match(msg, /The branch agent\/wave3 and its commits stay\./, "…and what stays");
+      c.eq(text($$(".modal-ok", card)[0]), "Unlock, Discard Changes and Remove", "…on a button that says what happens");
+      $$(".modal-ok", card)[0].click();
+      await settle(800);
+      const sent = window.__gsWorktrees.removes[1];
+      c.eq(sent && sent.path, "/Users/anton/Developer/GitStudioHQ/gitstudio-agent", "the remove goes to that worktree");
+      c.eq(sent && sent.discardChanges, true, "…agreeing to discard what was listed");
+      c.eq(sent && sent.pastLock, true, "…past the lock");
+
+      // The main worktree (here also this window's) says so, and never offers Remove.
+      const main = rowAt("/GitStudioHQ/gitstudio");
+      c.match(text(main && main.querySelector(".br-state-col")), /main worktree/, "the main worktree is named");
+      const remove = main && (await menuOf(main)).find((i) => /Remove this worktree/.test(text(i)));
+      c.ok(!!remove && (remove.disabled || remove.getAttribute("aria-disabled") === "true"), "the main worktree's Remove is disabled");
+    },
+
+    /**
+     * A worktree that changed while its question was open (an agent still at
+     * work in it) is asked about AGAIN, from what it holds now — never removed
+     * with a file nobody was told of, and never a red toast of git's refusal
+     * filed as a crash. The remove sends exactly the paths the question named.
+     */
+    "a-worktree-that-changed-while-asked-is-asked-again": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const agent = $$(".ref-row").find((r) => (r.dataset.ref || "").endsWith("/gitstudio-agent"));
+      if (!agent) return c.ok(false, "the locked worktree lists");
+      $$(".lv-menu-btn", agent)[0]?.click();
+      await settle(350);
+      $$(".dropdown .dropdown-item").find((i) => text(i) === "Remove this worktree…")?.click();
+      await settle(600);
+      let card = $(".modal-card");
+      if (!card) return c.ok(false, "Remove asks");
+      c.match(text($$(".modal-message", card)[0]), /Its 2 uncommitted changes go with it/, "the first question names two");
+      $$(".modal-ok", card)[0].click();
+      await settle(900);
+      const first = window.__gsWorktrees.removes[0];
+      c.eq(JSON.stringify(first && first.listed), JSON.stringify(["src/agent-notes.md", "tmp/scratch.txt"]), "the remove sends exactly what the question named");
+      card = $(".modal-card");
+      if (!card) return c.ok(false, "asked again when it changed since");
+      const msg = text($$(".modal-message", card)[0]);
+      c.match(msg, /Its 3 uncommitted changes go with it/, "…with what it holds now");
+      c.match(msg, /src\/agent-output\.ts/, "…naming the file written while asking");
+      c.eq(text($$(".modal-ok", card)[0]), "Unlock, Discard Changes and Remove", "…on the same honest button");
+      c.ok(!$$(".toast").some((t) => /error/.test(t.className)), "no error toast");
+      $$(".modal-ok", card)[0].click();
+      await settle(900);
+      const second = window.__gsWorktrees.removes[1];
+      c.eq(second && second.listed && second.listed.length, 3, "the second remove names all three");
+      c.eq(window.__gsWorktrees.removes.length, 2, "asked again once, not in a loop");
     },
 
     // The words that answer "wtf is lightweight/annotated" survive the avatar
@@ -13771,6 +13918,54 @@
       c.ok(!!none && !none.some((i) => /^Reset to/.test(text(i))), "a branch with no upstream has nothing to reset to");
       const gone = await menuOf("redesign/wave-1");
       c.ok(!!gone && !gone.some((i) => /^Reset to/.test(text(i))), "…nor one whose upstream is gone");
+    },
+
+    /**
+     * A branch another worktree has checked out cannot be deleted — git
+     * refuses. Delete used to ask "Delete branch" first and then toast git's
+     * "cannot delete branch … used by worktree at …". It says where the branch
+     * is now, BEFORE asking, and deletes nothing; a branch no worktree has
+     * still asks. (worktree:list has redesign/issues-detail in gitstudio-wave2.)
+     */
+    "deleting-a-branch-another-worktree-has-says-where-before-asking": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      const menuOf = async (name) => {
+        const k = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === `More actions for ${name}`);
+        if (!k) return null;
+        k.click();
+        await settle(350);
+        return $$(".dropdown .dropdown-item");
+      };
+      const held = await menuOf("redesign/issues-detail");
+      const del = (held || []).find((i) => text(i) === "Delete redesign/issues-detail");
+      if (!del) return c.ok(false, `its menu offers Delete (${(held || []).map((i) => text(i)).join(" | ")})`);
+      del.click();
+      await settle(800);
+      c.ok(!$(".modal-card"), "nothing is asked for a delete git refuses");
+      c.match(
+        $$(".toast-msg").map((t) => text(t)).join(" | "),
+        /'redesign\/issues-detail' is checked out in the worktree at \/Users\/anton\/Developer\/GitStudioHQ\/gitstudio-wave2, so it can't be deleted\./,
+        "…it says where the branch is, in words",
+      );
+      c.ok($$(".lv-menu-btn").some((b) => b.getAttribute("aria-label") === "More actions for redesign/issues-detail"), "…and the branch is still listed");
+
+      // Held by the worktree whose folder is gone: git still refuses, and
+      // the way out is to forget that worktree.
+      const orphan = await menuOf("fix/log-stream");
+      (orphan || []).find((i) => text(i) === "Delete fix/log-stream")?.click();
+      await settle(800);
+      c.ok(!$(".modal-card"), "nothing is asked for the missing worktree's branch either");
+      c.match(
+        $$(".toast-msg").map((t) => text(t)).join(" | "),
+        /'fix\/log-stream' is checked out in the worktree at \/Users\/anton\/Developer\/GitStudioHQ\/gitstudio-hotfix, whose folder is gone — git still keeps the branch for it\. Forget that worktree in Worktrees, then delete it\./,
+        "…it says to forget that worktree",
+      );
+
+      const free = await menuOf("feat/line-staging");
+      (free || []).find((i) => text(i) === "Delete feat/line-staging")?.click();
+      await settle(600);
+      c.ok(!!$(".modal-card"), "a branch no worktree has still asks first");
     },
 
     /** The branch you are on: the question says what goes — the local commits

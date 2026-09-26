@@ -5,44 +5,96 @@ import {
   promptPick,
   type DialogChoice,
 } from "../ui/dialogs";
-import { homedir } from "node:os";
+import { codeSpan } from "../ui/markdownCode";
+import { existsSync, readdirSync } from "node:fs";
 import * as path from "node:path";
 import type { WorktreeEntry, GitRef } from "@gitstudio/git-service/index";
+import { optionLikeCheckout } from "@gitstudio/git-service/checkoutRef";
+import { tildify } from "./branchElsewhere";
+import { folderKey, sameFolder, type WorktreeRemoval } from "@gitstudio/git-service/WorktreeProvider";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { worktreeChangedSinceAsked, worktreeRemovalQuestion, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
 import { bareName, shortNameOf, startPointOf, worktreeRefFor } from "./worktreeRefs";
 
 // The Worktrees pillar — also absent from free VS Code. Each row is a linked (or
 // the main) worktree; actions cover open / add / remove / lock / unlock / prune.
+
+/** Where a row stands, beyond what `git worktree list` says about it. */
+export interface WorktreeRowState {
+  /** Open in this window: the active repository's root, or the worktree a
+   *  folder of this window's workspace lies in. Its folder is never removed
+   *  from under the window. */
+  current: boolean;
+  /** The main worktree — git lists it first. It holds the repository itself,
+   *  so git never removes (or locks) it. */
+  main: boolean;
+  /** Its folder is gone. A locked one never reads `prunable` in git's list,
+   *  so this is the filesystem's answer. */
+  missing: boolean;
+}
+
+/** How a worktree is named: its branch, its detached commit, or "(bare)". */
+function worktreeLabel(entry: WorktreeEntry): string {
+  return entry.bare ? "(bare)" : entry.branch ?? `${entry.head.slice(0, 7)} (detached)`;
+}
+
+/** The words that say where a row stands, in the order the row shows them. */
+function rowFlags(entry: WorktreeEntry, state: WorktreeRowState): string[] {
+  const flags: string[] = [];
+  if (state.current) flags.push("current");
+  if (state.main && !entry.bare) flags.push("main worktree");
+  if (entry.locked) flags.push("locked");
+  if (entry.bare) flags.push("bare");
+  if (state.missing) flags.push("folder missing");
+  else if (entry.prunable) flags.push("prunable");
+  return flags;
+}
+
+/**
+ * The row's contextValue — what package.json's menus key on. Built from the
+ * row's state so each menu entry can name exactly the rows it belongs to:
+ * `gitstudio.worktree[.current][.main][.missing][.locked]`, or
+ * `gitstudio.worktree.bare` for a bare repository's entry, which offers nothing.
+ * A plain linked row stays `gitstudio.worktree` / `gitstudio.worktree.locked`.
+ */
+function rowContext(entry: WorktreeEntry, state: WorktreeRowState): string {
+  if (entry.bare) {
+    return "gitstudio.worktree.bare";
+  }
+  return [
+    "gitstudio.worktree",
+    state.current ? "current" : "",
+    state.main ? "main" : "",
+    state.missing ? "missing" : "",
+    entry.locked ? "locked" : "",
+  ]
+    .filter(Boolean)
+    .join(".");
+}
 
 /** One worktree row. */
 export class WorktreeNode extends vscode.TreeItem {
   readonly kind = "worktree" as const;
   constructor(
     readonly entry: WorktreeEntry,
-    isCurrent: boolean,
+    readonly state: WorktreeRowState,
   ) {
-    const label = entry.bare
-      ? "(bare)"
-      : entry.branch ?? `${entry.head.slice(0, 7)} (detached)`;
-    super(label, vscode.TreeItemCollapsibleState.None);
+    super(worktreeLabel(entry), vscode.TreeItemCollapsibleState.None);
 
     // Description leads with status flags (current first), then the path.
-    const flags: string[] = [];
-    if (isCurrent) flags.push("current");
-    if (entry.locked) flags.push("locked");
-    if (entry.bare) flags.push("bare");
-    if (entry.prunable) flags.push("prunable");
+    const flags = rowFlags(entry, state);
     const path = tildify(entry.path);
     this.description = flags.length > 0 ? `${flags.join(" · ")} · ${path}` : path;
 
-    // Icon conveys status: current worktree gets an accent, prunable warns,
-    // locked shows a lock, otherwise branch / detached folder.
-    if (isCurrent) {
+    // Icon conveys status: current worktree gets an accent, a missing folder
+    // warns, locked shows a lock, otherwise the branch, the detached commit
+    // (the symbol its tooltip leads with), or the bare repository.
+    if (state.current) {
       this.iconPath = new vscode.ThemeIcon(
         "check",
         new vscode.ThemeColor("gitDecoration.modifiedResourceForeground"),
       );
-    } else if (entry.prunable) {
+    } else if (state.missing || entry.prunable) {
       this.iconPath = new vscode.ThemeIcon(
         "warning",
         new vscode.ThemeColor("charts.yellow"),
@@ -50,45 +102,47 @@ export class WorktreeNode extends vscode.TreeItem {
     } else if (entry.locked) {
       this.iconPath = new vscode.ThemeIcon("lock");
     } else {
-      this.iconPath = new vscode.ThemeIcon(entry.branch ? "git-branch" : "folder");
+      this.iconPath = new vscode.ThemeIcon(
+        entry.bare ? "archive" : entry.branch ? "git-branch" : "git-commit",
+      );
     }
     this.resourceUri = vscode.Uri.file(entry.path);
-    this.contextValue = entry.locked
-      ? "gitstudio.worktree.locked"
-      : "gitstudio.worktree";
-    this.tooltip = buildTooltip(entry, isCurrent);
-    this.command = {
-      command: "gitstudio.worktree.open",
-      title: "Open Worktree",
-      arguments: [this],
-    };
+    this.contextValue = rowContext(entry, state);
+    this.tooltip = buildTooltip(entry, state);
+    // A click opens the worktree — only one there is a folder to open, and not
+    // the one this window already has open.
+    if (!entry.bare && !state.current && !state.missing) {
+      this.command = {
+        command: "gitstudio.worktree.open",
+        title: "Open Worktree",
+        arguments: [this],
+      };
+    }
   }
 }
 
 function buildTooltip(
   entry: WorktreeEntry,
-  isCurrent: boolean,
+  state: WorktreeRowState,
 ): vscode.MarkdownString {
   const md = new vscode.MarkdownString(undefined, true);
   md.supportThemeIcons = true;
-  const head = entry.branch ?? `${entry.head.slice(0, 7)} (detached)`;
   const headIcon = entry.bare
     ? "$(archive)"
     : entry.branch
       ? "$(git-branch)"
       : "$(git-commit)";
-  md.appendMarkdown(`${headIcon} **${escapeMarkdown(head)}**\n\n`);
-  md.appendMarkdown(`$(folder) \`${escapeMarkdown(entry.path)}\``);
+  md.appendMarkdown(`${headIcon} **${escapeMarkdown(worktreeLabel(entry))}**\n\n`);
+  md.appendMarkdown(`$(folder) ${codeSpan(entry.path)}`);
   if (entry.head) {
-    md.appendMarkdown(`\n\n$(git-commit) \`${entry.head.slice(0, 7)}\``);
+    md.appendMarkdown(`\n\n$(git-commit) ${codeSpan(entry.head.slice(0, 7))}`);
   }
-  const flags: string[] = [];
-  if (isCurrent) flags.push("current");
-  if (entry.locked) flags.push("locked");
-  if (entry.bare) flags.push("bare");
-  if (entry.prunable) flags.push("prunable");
+  const flags = rowFlags(entry, state);
   if (flags.length > 0) {
     md.appendMarkdown(`\n\n${flags.join(" · ")}`);
+  }
+  if (entry.lockReason) {
+    md.appendMarkdown(`\n\n$(lock) Locked: ${escapeMarkdown(entry.lockReason)}`);
   }
   return md;
 }
@@ -97,20 +151,54 @@ function escapeMarkdown(text: string): string {
   return text.replace(/[\\`*_{}[\]()#+\-.!|>]/g, "\\$&");
 }
 
-/** Replace a leading home dir with "~" for compact display. */
-function tildify(p: string): string {
-  const home = homedir();
-  if (p === home) {
-    return "~";
+
+/**
+ * The worktrees this window has open, by their listed path: the one the active
+ * repository's root is, and the one each workspace folder lies in — the
+ * DEEPEST that holds it, since a linked worktree can live inside the main one
+ * (…/app/.claude/worktrees/x). Compared by folderKey, so a window opened
+ * through a symlink still finds the worktree git lists by its real path.
+ */
+export function worktreesOpenHere(
+  list: readonly WorktreeEntry[],
+  activeRoot: string | undefined,
+): Set<string> {
+  const keyed = list.filter((e) => !e.bare).map((e) => ({ path: e.path, key: folderKey(e.path) }));
+  const open = new Set<string>();
+  const claim = (folder: string): void => {
+    const f = folderKey(folder);
+    let best: { path: string; key: string } | undefined;
+    for (const k of keyed) {
+      if ((f === k.key || f.startsWith(k.key + "/")) && (!best || k.key.length > best.key.length)) {
+        best = k;
+      }
+    }
+    if (best) {
+      open.add(best.path);
+    }
+  };
+  if (activeRoot) {
+    claim(activeRoot);
   }
-  if (p.startsWith(home + "/")) {
-    return "~" + p.slice(home.length);
+  for (const f of vscode.workspace.workspaceFolders ?? []) {
+    claim(f.uri.fsPath);
   }
-  return p;
+  return open;
+}
+
+/** Each listed worktree's row state, for a window whose active root is `root`. */
+function rowStates(list: readonly WorktreeEntry[], root: string): WorktreeRowState[] {
+  const here = worktreesOpenHere(list, root);
+  return list.map((e, i) => ({
+    current: here.has(e.path),
+    main: i === 0,
+    missing: !e.bare && !existsSync(e.path),
+  }));
 }
 
 /**
- * Feeds the Worktrees tree. The active repo's own root is flagged as current.
+ * Feeds the Worktrees tree. The worktrees this window has open (the active
+ * repo's root, and the workspace's folders) are flagged as current.
  * Refreshes on RepoManager.onDidChange.
  */
 export class WorktreesTreeProvider
@@ -213,7 +301,8 @@ export class WorktreesTreeProvider
   }
 
   private buildNodes(list: WorktreeEntry[], root: string): WorktreeNode[] {
-    return list.map((e) => new WorktreeNode(e, samePath(e.path, root)));
+    const states = rowStates(list, root);
+    return list.map((e, i) => new WorktreeNode(e, states[i]));
   }
 
   /** Dedup the git spawn: concurrent callers for the same root share one list. */
@@ -237,7 +326,7 @@ export class WorktreesTreeProvider
     return list
       .map(
         (e) =>
-          `${e.path}\u0000${e.head}\u0000${e.branch ?? ""}\u0000${e.bare ? 1 : 0}${e.locked ? 1 : 0}${e.prunable ? 1 : 0}`,
+          `${e.path}\u0000${e.head}\u0000${e.branch ?? ""}\u0000${e.lockReason ?? ""}\u0000${e.bare ? 1 : 0}${e.locked ? 1 : 0}${e.prunable ? 1 : 0}`,
       )
       .join("");
   }
@@ -293,18 +382,6 @@ export class WorktreesTreeProvider
   }
 }
 
-/** Loose path equality: tolerant of trailing slashes AND of git's forward-slash
- * worktree paths vs vscode fsPath backslashes on Windows (and of case on
- * macOS/Windows). Without the separator/case unification the current worktree
- * was never matched on Windows. */
-function samePath(a: string, b: string): boolean {
-  const norm = (p: string) => {
-    const unified = p.replace(/[\\/]+/g, "/").replace(/\/+$/, "");
-    return process.platform === "linux" ? unified : unified.toLowerCase();
-  };
-  return norm(a) === norm(b);
-}
-
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 function active(repos: RepoManager): RepoEntry | undefined {
@@ -315,19 +392,61 @@ function active(repos: RepoManager): RepoEntry | undefined {
   return a;
 }
 
-/** `gitstudio.worktree.open` — open the worktree folder. */
-export async function openWorktree(node: WorktreeNode): Promise<void> {
-  if (!node) {
+/**
+ * A window on a folder that is not there opens onto nothing. The row offers no
+ * Open then; this is the door a stale row (or a keybinding) still reaches.
+ * Says so and answers true when the folder is gone.
+ */
+function saidFolderGone(node: WorktreeNode): boolean {
+  if (existsSync(node.entry.path)) {
+    return false;
+  }
+  void vscode.window.showWarningMessage(
+    `GitStudio: ${worktreeLabel(node.entry)}'s folder is gone — ${node.entry.path}. Use Forget Worktree on its row to clear it from the list.`,
+  );
+  return true;
+}
+
+/**
+ * `gitstudio.worktree.openInNewWindow` / `gitstudio.worktree.openHere` — open
+ * the worktree's folder where the control says, with no question first. The
+ * row's inline button is Open in New Window; Open in This Window is in its
+ * menu, never on the row of the worktree this window already has open.
+ */
+export async function openWorktreeIn(node: WorktreeNode, where: "new" | "here"): Promise<void> {
+  if (!node || node.entry.bare || saidFolderGone(node)) {
     return;
   }
+  if (where === "here" && node.state.current) {
+    return; // it is the one open here
+  }
+  await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(node.entry.path), {
+    forceNewWindow: where === "new",
+  });
+}
+
+/** `gitstudio.worktree.open` — a row's click: asks which window. */
+export async function openWorktree(node: WorktreeNode): Promise<void> {
+  if (!node || node.entry.bare || saidFolderGone(node)) {
+    return;
+  }
+  const label = worktreeLabel(node.entry);
   const uri = vscode.Uri.file(node.entry.path);
+  const choices: DialogChoice[] = [{ id: "new", label: "Open in New Window", icon: "window" }];
+  // Not on the worktree this window already has open: "This Window" would
+  // only reopen it.
+  if (!node.state.current) {
+    choices.push({
+      id: "here",
+      label: "Open in This Window",
+      icon: "arrow-right",
+      description: "Replaces what is currently open.",
+    });
+  }
   const choice = await promptPick({
-    title: `Open worktree ${node.label}`,
+    title: `Open worktree ${label}`,
     hint: node.entry.path,
-    choices: [
-      { id: "new", label: "Open in New Window", icon: "window" },
-      { id: "here", label: "Open in This Window", icon: "arrow-right", description: "Replaces what is currently open." },
-    ],
+    choices,
   });
   if (choice === undefined) {
     return;
@@ -398,19 +517,16 @@ export async function addWorktree(
   }
 
   if (picked === NEW) {
-    const name = await promptInput({
-      title: "New worktree branch",
-      hint: "The branch is created at the current HEAD and checked out in the new worktree.",
-      placeholder: "feature/worktree",
-      confirmLabel: "Continue",
-      validate: "refName",
-    });
+    const name = await askNewBranchName(
+      a,
+      "The branch is created at the current HEAD and checked out in the new worktree.",
+    );
     if (!name) {
       return;
     }
     await pickFolderAndCreate(
       a,
-      { branchName: name, newBranch: true },
+      { branchName: name, folderName: name, newBranch: true },
       refresh,
     );
     return;
@@ -461,26 +577,38 @@ export async function worktreeFromRef(
   const isLocal = resolved.type === "head";
   // Named as a person names it — "release", not git's "heads/release".
   const label = bareName(resolved);
-  const mode = await promptPick({
-    title: `Worktree from '${label}'`,
-    hint: "Check it out directly, or as a new named branch?",
-    choices: [
-      {
-        id: "direct",
-        label: isLocal ? label : `${label} (detached)`,
-        icon: isLocal ? "git-branch" : "git-commit",
-        description: isLocal
-          ? `Check out the existing local branch ${label}.`
-          : `Check out ${label} as a detached HEAD.`,
-      },
-      {
-        id: "new",
-        label: "New branch…",
-        icon: "add",
-        description: `Create a new local branch starting from ${label}.`,
-      },
-    ],
-  });
+  // A branch is checked out in one worktree at a time: git refuses a second
+  // ("already used by worktree at …"). When another worktree has it, the only
+  // worktree to make from it is a new branch — so that is the one offered.
+  const holder = isLocal
+    ? (await a.ctx.worktrees.list()).find((e) => e.branch === label)
+    : undefined;
+  // A branch named like an option ("-x"): git would read it as one, and past
+  // the `--` it takes it for a revision and DETACHES instead of checking the
+  // branch out. A new branch from it (by its full name) is the one to make.
+  const optionLike = isLocal ? optionLikeCheckout(resolved.fullName ?? "") : undefined;
+  const mode = holder || optionLike
+    ? "new"
+    : await promptPick({
+        title: `Worktree from '${label}'`,
+        hint: "Check it out directly, or as a new named branch?",
+        choices: [
+          {
+            id: "direct",
+            label: isLocal ? label : `${label} (detached)`,
+            icon: isLocal ? "git-branch" : "git-commit",
+            description: isLocal
+              ? `Check out the existing local branch ${label}.`
+              : `Check out ${label} as a detached HEAD.`,
+          },
+          {
+            id: "new",
+            label: "New branch…",
+            icon: "add",
+            description: `Create a new local branch starting from ${label}.`,
+          },
+        ],
+      });
   if (!mode) {
     return;
   }
@@ -496,19 +624,21 @@ export async function worktreeFromRef(
         : (startPointOf(resolved) ?? bareName(resolved));
     await pickFolderAndCreate(
       a,
-      { branchName: directRef, newBranch: false },
+      { branchName: directRef, folderName: label, newBranch: false },
       refresh,
     );
     return;
   }
 
-  const name = await promptInput({
-    title: "New worktree branch",
-    hint: `A new local branch is created from ${label} and checked out in the new worktree.`,
-    placeholder: "feature/worktree",
-    confirmLabel: "Continue",
-    validate: "refName",
-  });
+  const created = `A new local branch is created from ${label} and checked out in the new worktree.`;
+  const name = await askNewBranchName(
+    a,
+    holder
+      ? `${label} is checked out in the worktree at ${tildify(holder.path)}, and a branch can be checked out in only one worktree at a time. ${created}`
+      : optionLike
+        ? `${optionLike.message} ${created}`
+        : created,
+  );
   if (!name) {
     return;
   }
@@ -523,6 +653,7 @@ export async function worktreeFromRef(
     a,
     {
       branchName: name,
+      folderName: name,
       newBranch: true,
       startPoint,
       noTrack: !!startPoint && short !== undefined && name !== short,
@@ -532,37 +663,69 @@ export async function worktreeFromRef(
 }
 
 /**
+ * Ask for the new branch's name — again, saying why, while the name is one
+ * refs/heads/ already has: git would refuse it ("a branch named … already
+ * exists") only after the folder was picked.
+ */
+async function askNewBranchName(a: RepoEntry, hint: string): Promise<string | undefined> {
+  let why = hint;
+  let value: string | undefined;
+  for (;;) {
+    const name = await promptInput({
+      title: "New worktree branch",
+      hint: why,
+      placeholder: "feature/worktree",
+      value,
+      confirmLabel: "Continue",
+      validate: "refName",
+    });
+    if (!name) {
+      return undefined;
+    }
+    const taken = await a.ctx.process.run(["rev-parse", "--verify", "--quiet", `refs/heads/${name}`]);
+    if (taken.code !== 0) {
+      return name;
+    }
+    why = `A branch named ${name} already exists — choose another name. ${hint}`;
+    value = name;
+  }
+}
+
+/** A folder `git worktree add` can create the worktree in: absent, or empty. */
+function folderIsFree(p: string): boolean {
+  if (!existsSync(p)) {
+    return true;
+  }
+  try {
+    return readdirSync(p).length === 0;
+  } catch {
+    return false; // a file, or unreadable
+  }
+}
+
+/**
  * Pick a parent folder, then add the worktree in a subfolder named after the
- * branch's last segment and report the outcome. Shared by every create route so
- * the folder/dir-naming logic stays in exactly one place.
+ * whole branch (feature/login → feature-login, so bugfix/login beside it is
+ * bugfix-login rather than a second "login") and report the outcome. Shared by
+ * every create route so the folder/dir-naming logic stays in exactly one place.
  */
 async function pickFolderAndCreate(
   a: RepoEntry,
   opts: {
     branchName: string;
+    /** What the folder is named for: the branch, or the ref checked out. */
+    folderName: string;
     newBranch: boolean;
     startPoint?: string;
     noTrack?: boolean;
   },
   refresh: () => void,
 ): Promise<void> {
-  const folders = await vscode.window.showOpenDialog({
-    canSelectFolders: true,
-    canSelectFiles: false,
-    canSelectMany: false,
-    openLabel: "Create Worktree Here",
-    title: "Pick a parent folder for the new worktree",
-  });
-  const parent = folders?.[0];
-  if (!parent) {
-    return;
-  }
-  // Place the worktree in a subfolder named after the ref's last segment. When
-  // gitstudio.worktrees.prefixWithProjectName is on, prefix it with the MAIN
-  // repository's folder name — resolved from `git worktree list` (whose first
-  // entry is always the main checkout), so the prefix is stable no matter which
-  // (possibly linked) worktree initiated the add.
-  const leaf = opts.branchName.split("/").pop() ?? opts.branchName;
+  // When gitstudio.worktrees.prefixWithProjectName is on, prefix it with the
+  // MAIN repository's folder name — resolved from `git worktree list` (whose
+  // first entry is always the main checkout), so the prefix is stable no
+  // matter which (possibly linked) worktree initiated the add.
+  const leaf = opts.folderName.replace(/\//g, "-");
   let dirName = leaf;
   const prefixEnabled = vscode.workspace
     .getConfiguration("gitstudio")
@@ -576,7 +739,38 @@ async function pickFolderAndCreate(
       }
     }
   }
+
+  const folders = await vscode.window.showOpenDialog({
+    canSelectFolders: true,
+    canSelectFiles: false,
+    canSelectMany: false,
+    openLabel: `Create '${dirName}' Here`,
+    title: `Choose the folder to create the new worktree's folder, '${dirName}', in`,
+  });
+  const parent = folders?.[0];
+  if (!parent) {
+    return;
+  }
   const target = vscode.Uri.joinPath(parent, dirName);
+  // git refuses a folder that has anything in it — and with -b it has made
+  // the branch by then. Say it before anything runs.
+  if (!folderIsFree(target.fsPath)) {
+    void vscode.window.showWarningMessage(
+      `GitStudio: ${target.fsPath} already exists, so nothing was created. Choose another folder for the worktree.`,
+    );
+    return;
+  }
+  // Free on disk, but still a worktree to git — the "folder missing" row this
+  // view shows. git refuses it ("a missing but already registered worktree;
+  // use 'add -f'", advice this view does not offer), so say whose it is.
+  const holder = (await a.ctx.worktrees.list()).find((e) => sameFolder(e.path, target.fsPath));
+  if (holder) {
+    const gone = !existsSync(holder.path);
+    void vscode.window.showWarningMessage(
+      `GitStudio: git still has a worktree at ${target.fsPath} (${worktreeLabel(holder)})${gone ? ", though its folder is gone," : ","} so nothing was created. ${gone ? "Forget" : "Remove"} that worktree in Worktrees, or choose another folder.`,
+    );
+    return;
+  }
 
   const result = await a.ctx.worktrees.add(target.fsPath, opts.branchName, {
     newBranch: opts.newBranch,
@@ -585,7 +779,7 @@ async function pickFolderAndCreate(
   });
   if (!result.ok) {
     void vscode.window.showErrorMessage(
-      result.stderr.trim() || "GitStudio: worktree add failed.",
+      `GitStudio: couldn't create the worktree — ${result.stderr.trim() || "git worktree add failed."}`,
     );
     return;
   }
@@ -601,7 +795,14 @@ async function pickFolderAndCreate(
   }
 }
 
-/** `gitstudio.worktree.remove` — confirm + remove. */
+/**
+ * `gitstudio.worktree.remove` and `gitstudio.worktree.forget` — ask, then
+ * remove. What removing takes is read BEFORE git runs (WorktreeProvider's
+ * removal): the main worktree and the one this window has open are refused in
+ * words; a missing folder is forgotten; a locked or dirty one says so — its
+ * lock's reason, the files that will be lost — in the one question asked, and
+ * the answer runs exactly what it said.
+ */
 export async function removeWorktree(
   repos: RepoManager,
   node: WorktreeNode,
@@ -611,34 +812,104 @@ export async function removeWorktree(
   if (!a || !node) {
     return;
   }
+  await askAndRemove(a, node.entry.path, worktreeLabel(node.entry), refresh);
+}
+
+async function askAndRemove(
+  a: RepoEntry,
+  at: string,
+  label: string,
+  refresh: () => void,
+  plan?: WorktreeRemoval,
+): Promise<void> {
+  const list = await a.ctx.worktrees.list();
+  const openHere = [...worktreesOpenHere(list, a.root)].some((p) => sameFolder(p, at));
+  const removal = plan ?? (await a.ctx.worktrees.removal(at));
+  if (removal.kind === "notListed") {
+    void vscode.window.showInformationMessage(`GitStudio: ${worktreeRemovalRefusal("notListed", label)}`);
+    refresh();
+    return;
+  }
+  const entry = removal.entry;
+  label = worktreeLabel(entry);
+  if (removal.kind === "main" || openHere) {
+    void vscode.window.showInformationMessage(
+      `GitStudio: ${worktreeRemovalRefusal(removal.kind === "main" ? "main" : "current", label)}`,
+    );
+    return;
+  }
+
+  const q = worktreeRemovalQuestion({
+    kind: removal.kind,
+    label,
+    shownPath: tildify(entry.path),
+    branch: entry.branch,
+    head: entry.head,
+    locked: !!entry.locked,
+    lockReason: entry.lockReason,
+    changes: removal.kind === "present" ? removal.changes : [],
+    operation: removal.kind === "present" ? removal.operation : undefined,
+  });
   const ok = await promptConfirm({
-    title: `Remove worktree at ${node.entry.path}?`,
-    message:
-      "The worktree's directory and its files are deleted from disk. The branch it had checked out is left alone.",
-    confirmLabel: "Remove",
-    danger: true,
+    title: q.title,
+    message: q.message,
+    confirmLabel: q.confirmLabel,
+    danger: q.danger,
   });
   if (!ok) {
     return;
   }
-  let result = await a.ctx.worktrees.remove(node.entry.path);
-  if (!result.ok && /dirty|locked|use --force/i.test(result.stderr)) {
-    const force = await promptConfirm({
-      title: "The worktree is dirty or locked",
-      message:
-        "Forcing removal deletes it anyway, discarding any uncommitted changes inside it. Those edits were never committed, so nothing can bring them back.",
-      confirmLabel: "Force Remove",
-      danger: true,
-    });
-    if (!force) {
+
+  // What the question listed is lost, as it said — and only that. A change
+  // made since (an agent still at work in it) is never deleted unasked: clean
+  // when asked, it goes without --force and git refuses; dirty when asked, a
+  // path the question did not list runs nothing — see removeAsAgreed.
+  const r = await a.ctx.worktrees.removeAsAgreed(entry.path, {
+    discardChanges: q.discardChanges
+      ? { listed: removal.kind === "present" ? removal.changes : undefined }
+      : undefined,
+    pastLock: entry.locked ? { reason: entry.lockReason } : undefined,
+  });
+  const verb = removal.kind === "missing" ? "forget" : "remove";
+  if (r.ok) {
+    reportRemoval(r, `${removal.kind === "missing" ? "Forgot" : "Removed"} worktree ${label}`, "", refresh);
+    return;
+  }
+  // Refused: when that is because it changed since the question, ask again
+  // with what it holds now — once.
+  if (removal.kind === "present" && !plan && (r.changedSince || !q.discardChanges)) {
+    const now = await a.ctx.worktrees.removal(entry.path);
+    if (r.changedSince || (now.kind === "present" && (now.changes === undefined || now.changes.length > 0))) {
+      await askAndRemove(a, entry.path, label, refresh, now);
       return;
     }
-    result = await a.ctx.worktrees.remove(node.entry.path, { force: true });
   }
-  report(result, "Removed worktree", refresh);
+  if (r.changedSince) {
+    void vscode.window.showInformationMessage(`GitStudio: ${worktreeChangedSinceAsked(label)}`);
+    refresh();
+    return;
+  }
+  reportRemoval(r, "", `${verb} ${label}`, refresh);
 }
 
-/** `gitstudio.worktree.lock` / `.unlock`. */
+function reportRemoval(
+  result: { ok: boolean; stderr: string },
+  success: string,
+  doing: string,
+  refresh: () => void,
+): void {
+  if (result.ok) {
+    flash(success);
+    refresh();
+    return;
+  }
+  void vscode.window.showErrorMessage(
+    `GitStudio: couldn't ${doing} — ${result.stderr.trim() || "git worktree failed."}`,
+  );
+  refresh();
+}
+
+/** `gitstudio.worktree.lock` / `.unlock`. Lock asks why (optional). */
 export async function lockWorktree(
   repos: RepoManager,
   node: WorktreeNode,
@@ -649,13 +920,30 @@ export async function lockWorktree(
   if (!a || !node) {
     return;
   }
-  const result = lock
-    ? await a.ctx.worktrees.lock(node.entry.path)
-    : await a.ctx.worktrees.unlock(node.entry.path);
-  report(result, lock ? "Locked worktree" : "Unlocked worktree", refresh);
+  const label = worktreeLabel(node.entry);
+  if (!lock) {
+    report(await a.ctx.worktrees.unlock(node.entry.path), `Unlocked worktree ${label}`, refresh);
+    return;
+  }
+  const reason = await promptInput({
+    title: `Lock worktree ${label}`,
+    hint: "Git won't prune, move or remove it until it is unlocked. Say why, so whoever sees the lock knows — or leave it empty.",
+    placeholder: "Reason (optional)",
+    confirmLabel: "Lock",
+  });
+  if (reason === undefined) {
+    return;
+  }
+  report(await a.ctx.worktrees.lock(node.entry.path, { reason }), `Locked worktree ${label}`, refresh);
 }
 
-/** `gitstudio.worktree.prune`. */
+/**
+ * `gitstudio.worktree.prune` — git forgets the worktrees whose folders are
+ * gone. Says which it forgot, or that there were none: git exits 0 either way,
+ * and "Pruned worktrees" over nothing pruned was a claim, not a report. A
+ * LOCKED worktree is never pruned; one whose folder is gone is named, with
+ * where to forget it.
+ */
 export async function pruneWorktrees(
   repos: RepoManager,
   refresh: () => void,
@@ -664,8 +952,28 @@ export async function pruneWorktrees(
   if (!a) {
     return;
   }
+  const before = await a.ctx.worktrees.list();
   const result = await a.ctx.worktrees.prune();
-  report(result, "Pruned worktrees", refresh);
+  if (!result.ok) {
+    report(result, "", refresh);
+    return;
+  }
+  const after = await a.ctx.worktrees.list();
+  const pruned = before.filter((e) => !after.some((x) => x.path === e.path));
+  const kept = after.filter((e, i) => i > 0 && !e.bare && e.locked && !existsSync(e.path));
+  const names = (list: WorktreeEntry[]) => list.map(worktreeLabel).join(", ");
+  const said =
+    pruned.length > 0
+      ? `Pruned ${pruned.length} worktree${pruned.length === 1 ? "" : "s"} whose folder was gone: ${names(pruned)}.`
+      : "Nothing to prune: every worktree's folder is still there.";
+  if (kept.length > 0) {
+    void vscode.window.showInformationMessage(
+      `GitStudio: ${pruned.length > 0 ? said : "Nothing was pruned."} ${names(kept)} ${kept.length === 1 ? "is" : "are"} locked, so prune keeps ${kept.length === 1 ? "it" : "them"} though the folder is gone — use Forget Worktree on ${kept.length === 1 ? "its row" : "their rows"}.`,
+    );
+  } else {
+    flash(said);
+  }
+  refresh();
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

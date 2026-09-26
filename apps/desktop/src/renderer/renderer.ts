@@ -57,6 +57,8 @@ import { editorsCard } from "./views/editorsCard";
 import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled } from "./aiAssist";
 import { toast, confirmDialog, promptInline, promptChoice, openModal, type ToastAction } from "./dialogs";
 import { refLabel, revealCandidate, storedFilterOf, withRef } from "@gitstudio/host-bridge/graphRefFilter";
+import { worktreeRemovalQuestion, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
+import { checkedOutElsewhereMessage } from "@gitstudio/host-bridge/branchElsewhere";
 import { createBranchFlow } from "./branchCreate";
 import type { BranchStart } from "../shared/branchStart";
 import { TerminalDock } from "./terminalDock";
@@ -152,6 +154,7 @@ import type {
   SshKey,
   StashInfo,
   WorktreeInfo,
+  WorktreeRemovalInfo,
   SyncStatus,
   ConflictModel,
   FileDiff,
@@ -3016,7 +3019,7 @@ class App {
           done.length
             ? `Deleted ${done.join(", ")}. Stopped at ${branchName(b)}: ${r?.message ?? "git refused."}`
             : `${branchName(b)} was not deleted: ${r?.message ?? "git refused."}`,
-          "error",
+          r?.expected ? "info" : "error",
         );
         break;
       }
@@ -3150,7 +3153,8 @@ class App {
    *  contract with no caller in any view — the cheapest capability in the app. */
   private worktreeRow(w: WorktreeInfo): HTMLElement {
     const actions: HTMLElement[] = [];
-    if (!w.current) {
+    // Nothing to open when its folder is gone, or for a bare repository's entry.
+    if (!w.current && !w.missing && !w.bare) {
       const open = el("button", "row-btn") as HTMLButtonElement;
       open.textContent = "Open";
       open.setAttribute("aria-label", `Open the worktree at ${w.path}`);
@@ -3167,11 +3171,16 @@ class App {
         { label: "Copy path", icon: "copy", onClick: () => void copyText(w.path, "Copied the path.") },
         { separator: true },
         {
-          label: "Remove this worktree…",
+          // Its folder gone, removing it only forgets git's record of it.
+          label: w.missing ? "Forget this worktree…" : "Remove this worktree…",
           icon: "trash",
           danger: true,
-          disabled: w.current,
-          title: w.current ? "This is the worktree you are in" : undefined,
+          disabled: w.current || w.main,
+          title: w.current
+            ? "This is the worktree you are in"
+            : w.main
+              ? "The main worktree holds the repository itself — git never removes it"
+              : undefined,
           onClick: () => void this.removeWorktreeLive(w),
         },
       ]);
@@ -3184,10 +3193,23 @@ class App {
       p.title = "The worktree this window has open";
       pills.push(p);
     }
-    if (w.locked) pills.push(span("locked", "ab-pill unpublished"));
-    if (w.prunable) {
-      const p = span("prunable", "ab-pill gone");
-      p.title = "Its directory is gone — git would prune this entry";
+    // Named, as the extension names it: it holds the repository itself, and
+    // was told apart only by "this window" — when this window had it open.
+    if (w.main && !w.bare) {
+      const p = span("main worktree", "ab-pill default");
+      p.title = "The main worktree holds the repository itself — git never removes it";
+      pills.push(p);
+    }
+    if (w.locked) {
+      const p = span("locked", "ab-pill unpublished");
+      p.title = w.lockReason ? `Locked: ${w.lockReason}` : "Locked, with no reason given";
+      pills.push(p);
+    }
+    // Not only `prunable`: git never calls a LOCKED worktree prunable, even
+    // with its folder gone.
+    if (w.missing || w.prunable) {
+      const p = span("folder missing", "ab-pill gone");
+      p.title = "Its folder is gone — Forget it from the ⋯ menu";
       pills.push(p);
     }
 
@@ -3216,9 +3238,9 @@ class App {
         w.branch
           ? this.routeView("refdetail", false, { ref: w.branch, id: "head" })
           : this.routeView("commit", false, { sha: w.head }),
-      ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${w.path}${w.current ? ", this window" : ""}`,
+      ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${w.path}${w.current ? ", this window" : ""}${w.main && !w.bare ? ", main worktree" : ""}`,
     });
-    row.classList.add("ref-row");
+    row.classList.add("ref-row", "worktree-row");
     row.dataset.ref = w.path;
     row.title = w.path;
     row.addEventListener("contextmenu", (e) => {
@@ -3240,23 +3262,65 @@ class App {
     });
   }
 
-  /** Remove a worktree — the directory goes with it, so say so. */
-  private async removeWorktreeLive(w: WorktreeInfo): Promise<void> {
-    const ok = await confirmDialog({
-      title: `Remove the worktree at ${w.path}?`,
-      message:
-        `git removes the directory as well as the entry. Any uncommitted work inside ` +
-        `${w.path} goes with it. The branch ${w.branch ?? "it holds"} is not deleted.`,
-      confirmLabel: "Remove",
-      danger: true,
-    });
-    if (!ok) return;
-    const r = await host.invoke("worktree:remove", { path: w.path, force: false });
-    if (!r.ok) {
-      toast(r.message ?? "Couldn't remove the worktree.", r.expected ? "info" : "error");
+  /**
+   * Remove (or, its folder gone, forget) a worktree. What that takes is read
+   * FIRST (`worktree:removal`), so the one question names it — a lock's
+   * reason, the uncommitted files that go — and the answer runs exactly that.
+   * It used to promise "any uncommitted work goes with it", run a plain
+   * remove, and show git's refusal: a dirty worktree was never removed, a
+   * locked one could not be, and the main one was offered at all. The words
+   * are the extension's (host-bridge/worktreeRemoval).
+   *
+   * A change made while the question is open (an agent still at work in it)
+   * is never deleted unasked: the remove runs nothing and answers
+   * `changedSince` with what the worktree holds now, and the question is asked
+   * again from that — once, as the extension's is. It used to show git's
+   * refusal ("use --force to delete it") in a red toast, filed as a crash.
+   */
+  private async removeWorktreeLive(w: WorktreeInfo, again?: WorktreeRemovalInfo): Promise<void> {
+    const label = w.branch ?? (w.bare ? "(bare)" : `${w.head.slice(0, 7)} (detached)`);
+    const plan = again ?? (await host.invoke("worktree:removal", { path: w.path }));
+    if (plan.kind === "notListed" || plan.kind === "main" || plan.kind === "current") {
+      toast(worktreeRemovalRefusal(plan.kind, label), "info");
+      if (plan.kind === "notListed") await this.refreshBranchesSoft();
       return;
     }
-    toast("Worktree removed.", "success");
+    const q = worktreeRemovalQuestion({
+      kind: plan.kind,
+      label,
+      shownPath: w.path,
+      branch: plan.branch,
+      head: plan.head,
+      locked: plan.locked,
+      lockReason: plan.lockReason,
+      changes: plan.changes,
+      operation: plan.operation,
+    });
+    const ok = await confirmDialog({
+      title: q.title,
+      message: q.message,
+      confirmLabel: q.confirmLabel,
+      danger: q.danger,
+      holdWhile: this.whileThisRepo(),
+    });
+    if (!ok) return;
+    const r = await host.invoke("worktree:remove", {
+      path: w.path,
+      discardChanges: q.discardChanges,
+      // Exactly what the question named: a path it did not stops the discard.
+      ...(q.discardChanges && plan.kind === "present" && plan.changes ? { listed: plan.changes } : {}),
+      pastLock: plan.locked,
+    });
+    if (!r.ok) {
+      if (r.changedSince && !again) {
+        await this.removeWorktreeLive(w, r.changedSince);
+        return;
+      }
+      toast(r.message ?? "Couldn't remove the worktree.", r.expected ? "info" : "error");
+      await this.refreshBranchesSoft();
+      return;
+    }
+    toast(plan.kind === "missing" ? `Forgot worktree ${label}.` : `Removed worktree ${label}.`, "success");
     await this.refreshBranchesSoft();
   }
 
@@ -4326,6 +4390,15 @@ class App {
     // refs/heads/. The short "heads/x" (beside a tag "x") names no branch to
     // delete, and restored as a branch literally called "heads/x".
     const name = branchName(b);
+    // Another worktree has it checked out: git refuses the delete. Say where
+    // BEFORE asking — the bridge refuses it too, in the same words, should
+    // this list be stale.
+    const worktreeList = await host.invoke("worktree:list", undefined).catch((): WorktreeInfo[] => []);
+    const holder = worktreeList.find((w) => !w.current && !w.bare && w.branch === name);
+    if (holder) {
+      toast(checkedOutElsewhereMessage(name, holder.path, "delete", !!(holder.missing || holder.prunable)), "info");
+      return;
+    }
     // Confirm FIRST. This sits a few pixels from Checkout in a hover-revealed
     // row cluster, and every other destructive action in the app asks before
     // acting — deleting a branch outright was the one that did not. The
@@ -4356,7 +4429,9 @@ class App {
       r = await host.invoke("branch:delete", { fullName: b.fullName, force: true });
     }
     if (!r.ok) {
-      toast(r.message || `Couldn't delete branch '${name}'.`, "error");
+      // `expected`: the person's state (another worktree has it checked out),
+      // said in words — not a failure.
+      toast(r.message || `Couldn't delete branch '${name}'.`, r.expected ? "info" : "error");
       return; // branch still exists — don't refresh as if it were gone
     }
     // A branch is a name and a commit, so putting one back is genuinely

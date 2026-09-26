@@ -95,6 +95,28 @@ but they share the same engine, so most Git behaviour lands in both at once.
   with their contents.
 - Apply and Pop on a stash use the stash-apply and stash-pop icons, as the VS
   Code extension does.
+- **Removing a worktree in Branches ▸ Worktrees.** The question promised that
+  uncommitted work would go with it, then git refused any worktree with
+  changes — and a locked one could not be removed at all. The question now
+  says what removing takes — the lock's reason, the uncommitted files that
+  go, that the branch stays — and its button does exactly that (**Unlock and
+  Remove**, **Discard Changes and Remove**). The main worktree reads *main
+  worktree* and its Remove is disabled; a worktree whose folder is gone reads
+  *folder missing*, has no Open, and offers **Forget this worktree…** — for a
+  locked one, the question says that a folder on a drive that isn't connected
+  is no longer a worktree when the drive comes back. A worktree that changes
+  while the question is open — an agent still at work in it — is asked about
+  again with what it holds now; nothing the question didn't name is deleted,
+  and it keeps its lock. The same words as the VS Code extension's.
+- **Removing a worktree that is stopped in a merge, rebase, cherry-pick or
+  revert says so**, and that removing it abandons the operation — a worktree
+  stopped in a rebase with nothing uncommitted went without a word.
+- **Checking out or deleting a branch that another worktree has checked out
+  says where it is**, instead of git's *already used by worktree* — and
+  Delete says so before asking, rather than after. A pull request's
+  **Checkout** does the same when its `pr/<number>` branch is checked out in
+  another worktree; it showed git's *refusing to fetch into branch* in red.
+  When that worktree's folder is gone, it says to forget the worktree first.
 
 ## [2.1.0] - 2026-09-25
 

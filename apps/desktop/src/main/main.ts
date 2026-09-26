@@ -533,6 +533,7 @@ function actionLabel(channel: string): string {
     "stash:save": "Stash",
     "worktree:list": "List worktrees",
     "worktree:add": "Add worktree",
+    "worktree:removal": "Check worktree removal",
     "worktree:remove": "Remove worktree",
     "sync:status": "Check sync",
     "sync:fetch": "Fetch",
@@ -830,6 +831,7 @@ function registerIpc(): void {
   // Worktrees.
   handle("worktree:list", () => bridge.worktreeList());
   handle("worktree:add", (req) => worktreeAddDialog(req));
+  handle("worktree:removal", (req) => bridge.worktreeRemoval(req));
   handle("worktree:remove", (req) => bridge.worktreeRemove(req));
   handle("worktree:open", (path) => openRepoPath(path));
 

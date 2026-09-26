@@ -12332,6 +12332,33 @@ body.vscode-light .log-pane {
 }
 .br-state-col .ab-pill.gone { border-color: var(--status-warn); }
 
+/* A worktree's state is often TWO pills (this window + main worktree, locked
+   + folder missing); the 118px slot clipped the second. Still one fixed
+   width down the table, so the path column keeps its single x — on a window
+   wide enough for the path column at all. Below 1181px the ≤1180 rule's
+   content-sized slot must win, as it does on the other four tabs: outside
+   this media query the doubled selector outranked it, the slot stayed 220px,
+   and every row's ⋯ (the only way to Remove or Forget) and Open were pushed
+   past the right edge of a narrow window. */
+@media (min-width: 1181px) {
+  .worktree-row .br-state-col {
+    width: 220px;
+    flex-basis: 220px;
+  }
+}
+/* Below that, the row needs every pixel it has for the verbs at the app's
+   880px minimum. A worktree row has no time, so its empty 58px time slot
+   goes. And the name gives, not the verbs: 16ch of floor padded a four-letter
+   "main" to 137px beside its two pills, while the cap (the room the pills,
+   sha and verbs need) keeps a long name to what is left, ellipsised. */
+@media (max-width: 1180px) {
+  .worktree-row .sec-row-time:empty { display: none; }
+  .ref-row.worktree-row .sec-row-title {
+    min-width: 0;
+    max-width: max(12ch, calc(100% - 470px));
+  }
+}
+
 /* The meta CLUSTER must yield or nothing inside it can: shrink factors only
    compete within one flex container, and the title lives one level up. The
    cluster shrinks hard; inside it the subject (0 30) absorbs every lost pixel

@@ -257,6 +257,62 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   opens its menu without opening the stash twice.
 - Apply and Pop in the Stashes view use the stash-apply and stash-pop icons,
   and the empty view says "Stash", not "Shelve".
+- **Removing a locked worktree works.** Remove asked twice and then failed
+  with git's "cannot remove a locked working tree". It now asks once, quoting
+  the lock's reason, and **Unlock and Remove** removes it.
+- **Removing a worktree says what goes with it.** The question names the
+  worktree by its branch, lists the uncommitted files that are deleted (five,
+  then how many more) and says the branch and its commits stay; the button
+  reads **Discard Changes and Remove** when there are any. A worktree that
+  changed before you answered — an agent still at work in it — is asked about
+  again instead of deleted, and keeps its lock: a file the question didn't
+  name is never deleted with the rest, whether the worktree was clean or
+  already had changes when you were asked.
+- **The worktree this window has open is never removed from under it.** Remove
+  deleted the window's own folder; it is no longer offered there (a worktree
+  open as another folder of the workspace counts too), and says why if
+  reached. The main worktree, which git never removes, now reads *main
+  worktree* and offers no Remove.
+- **A worktree whose folder is gone** reads *folder missing* — locked ones too,
+  which git never calls prunable — opens nothing when clicked, and offers
+  **Forget Worktree**, which clears git's record of it (past its lock, when it
+  has one). For a locked one the question says that a folder on a drive that
+  isn't connected is no longer a worktree when the drive comes back. It used
+  to open a window onto the missing folder.
+- **New Worktree no longer leaves a stray branch behind when it fails**, so
+  trying again with the same name works. Folders are named for the whole
+  branch (`feature/login` → `feature-login`), so `bugfix/login` beside it no
+  longer lands in the same folder; a folder that already exists is refused
+  before anything runs, and so is one git still keeps for a worktree whose
+  folder is gone (with where to forget it); a branch name that's taken is
+  asked for again; and a branch another worktree has checked out goes
+  straight to a new branch from it, saying where it's checked out. The folder
+  picker names the folder it creates.
+- The *current* marker in Worktrees survives opening the repository through a
+  symlink, and clicking the current worktree no longer offers to reopen it.
+- **Lock Worktree…** asks why (optional); the reason shows in the row's tooltip
+  and in the Remove question.
+- **Prune Worktrees** says which worktrees it pruned, or that there was nothing
+  to prune — it reported success either way.
+- Worktree and branch tooltips show paths and upstream names without stray
+  backslashes, and a detached worktree's row uses the commit icon its tooltip
+  does.
+- A worktree row's inline button is **Open in New Window**, and it opens the
+  worktree straight away; **Open in This Window** is in the row's menu. The
+  button was *Open Worktree* and asked which window first.
+- **Removing a worktree that is stopped in a merge, rebase, cherry-pick or
+  revert says so**, and that removing it abandons the operation. A worktree
+  stopped in a rebase with nothing uncommitted used to go without a word.
+- **Checking out or deleting a branch that another worktree has checked out
+  says where it is** — from the Branches view, the branch menu, the Commit
+  Graph and a pull request's Checkout — with **Open Worktree in New
+  Window**. Each used to run git and show its refusal (*already used by
+  worktree*); Delete asked first, and the graph reported it as an error.
+  When that worktree's folder is gone — git still keeps the branch for it —
+  it says to forget that worktree first.
+- New Worktree from a branch whose name starts with "-" makes a new branch
+  from it, saying why, instead of offering a checkout that git would turn
+  into a detached HEAD.
 
 ## [1.14.0] - 2026-09-25
 

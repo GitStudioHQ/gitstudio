@@ -7,6 +7,7 @@
 
 import { app } from "electron";
 import { githubStatus } from "./githubStatus";
+import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { SecretStore } from "@gitstudio/secret-store/secretStore";
@@ -23,6 +24,7 @@ import { parseGitHubRemote } from "./githubRemote";
 export { parseGitHubRemote } from "./githubRemote";
 import { errorFields } from "./githubErrors";
 import { applyForDoor, checkoutOp } from "./inTheWay";
+import { checkedOutElsewhere, checkedOutElsewhereMessage } from "@gitstudio/git-service/branchElsewhere";
 import type {
   CheckRun,
   CommitActionResult,
@@ -395,6 +397,20 @@ export class GitHubBridge {
       return { ok: false, changed: false, message: "That isn't a pull request number." };
     }
     try {
+      // pr/<n> is checked out in another worktree: git refuses the fetch into
+      // it ("refusing to fetch into branch … checked out at …") and the
+      // checkout alike, and its words went to a red toast and the crash
+      // reporter. Said where, before anything runs — as the extension's
+      // checkoutPr and this app's branch checkout do.
+      const where = await checkedOutElsewhere(ctx.process, `refs/heads/pr/${n}`);
+      if (where) {
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: checkedOutElsewhereMessage(`pr/${n}`, where, "checkout", !existsSync(where)),
+        };
+      }
       const f = await ctx.process.run(["fetch", "origin", `pull/${n}/head:pr/${n}`]);
       if (f.code !== 0) {
         return { ok: false, changed: false, message: f.stderr.trim() };

@@ -16,6 +16,7 @@ import {
   type DialogChoice,
 } from "../ui/dialogs";
 import { worktreeFromRef } from "./worktreesView";
+import { saidCheckedOutElsewhere } from "./branchElsewhere";
 import { pruneOnFetch } from "../git/fetchOptions";
 import {
   askOverLocalBranch,
@@ -149,6 +150,11 @@ async function runRefCheckout(
     void vscode.window.showErrorMessage(
       `GitStudio: ${ref.name} is not in this repository any more — refresh and try again.`,
     );
+    return;
+  }
+  // The branch it lands on is checked out in another worktree: git refuses
+  // ("already used by worktree at …"). Said where, before anything is asked.
+  if (await saidCheckedOutElsewhere(a.ctx, c.plan.branch, "checkout")) {
     return;
   }
   if (c.fullName.startsWith("refs/remotes/")) {
@@ -454,6 +460,11 @@ export async function deleteBranch(
   const ref = await listedRef(a, arg0);
   const name = ref && localName(ref);
   if (!ref || !name) {
+    return;
+  }
+  // Another worktree has it checked out: git refuses the delete. Said where,
+  // instead of asking "Delete branch x?" and then showing git's refusal.
+  if (await saidCheckedOutElsewhere(a.ctx, ref.fullName, "delete")) {
     return;
   }
   const ok = await confirm(

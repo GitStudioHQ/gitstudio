@@ -13,6 +13,7 @@ import type {
   RefPreset,
 } from "@gitstudio/host-bridge/graphProtocol";
 import type { CommitDetailsPayload } from "@gitstudio/host-bridge/commitDetailsProtocol";
+import type { WorktreeOperation } from "@gitstudio/host-bridge/worktreeRemoval";
 import type {
   ConflictShape,
   ConflictsSnapshot,
@@ -522,10 +523,50 @@ export interface WorktreeInfo {
   branch?: string;
   bare?: boolean;
   locked?: boolean;
+  /** Why it is locked, when it was locked with a reason. */
+  lockReason?: string;
   prunable?: boolean;
   /** True when this worktree is the one the app currently has open. */
   current?: boolean;
+  /** The main worktree (git lists it first): it holds the repository, and git
+   *  never removes it. */
+  main?: boolean;
+  /** Its folder is gone — whether or not git calls it prunable (a locked one
+   *  never is). */
+  missing?: boolean;
 }
+
+/**
+ * What removing a worktree takes, read before anything is asked (git-service's
+ * WorktreeProvider.removal): refused outright (`main`, `current`, `notListed`),
+ * or the facts the one question is built from (host-bridge's
+ * worktreeRemovalQuestion).
+ */
+export type WorktreeRemovalInfo =
+  | { kind: "notListed" }
+  | { kind: "main" }
+  | { kind: "current" }
+  | {
+      kind: "missing" | "present";
+      branch?: string;
+      head: string;
+      locked: boolean;
+      lockReason?: string;
+      /** Uncommitted paths removing it deletes; undefined when unreadable. */
+      changes?: string[];
+      /** What git is stopped in there; removing the worktree abandons it. */
+      operation?: WorktreeOperation;
+    };
+
+/**
+ * A worktree:remove answer. `changedSince`: nothing ran, because the worktree
+ * has uncommitted changes the question did not name — made while it was open,
+ * an agent still at work in it — and these are its facts NOW, to ask again
+ * from (once; `message` says so when it changes again). Always `expected`.
+ */
+export type WorktreeRemoveResult = CommitActionResult & {
+  changedSince?: WorktreeRemovalInfo;
+};
 
 /** One commit in a Compare result. */
 export interface CompareCommit {
@@ -2137,7 +2178,19 @@ export interface IpcChannels {
   // ── Worktrees ──
   "worktree:list": [void, WorktreeInfo[]];
   "worktree:add": [{ ref: string; newBranch?: boolean }, CommitActionResult];
-  "worktree:remove": [{ path: string; force?: boolean }, CommitActionResult];
+  "worktree:removal": [{ path: string }, WorktreeRemovalInfo];
+  /**
+   * Remove a worktree as the person agreed (git-service's removeAsAgreed):
+   * `discardChanges` — the uncommitted changes the question listed go too,
+   * `listed` being exactly those (worktree:removal's `changes`; absent when
+   * they could not be read and the question said any go); `pastLock` — it is
+   * locked, and removing it anyway was agreed. A change made since the
+   * question, listed nowhere, runs nothing and answers `changedSince`.
+   */
+  "worktree:remove": [
+    { path: string; discardChanges?: boolean; listed?: string[]; pastLock?: boolean },
+    WorktreeRemoveResult,
+  ];
   "worktree:open": [string, RepoInfo | undefined];
   // ── Sync (control remote changes) ──
   "sync:status": [void, SyncStatus];

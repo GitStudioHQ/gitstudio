@@ -1,4 +1,6 @@
+import { existsSync, realpathSync } from "node:fs";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
+import { stoppedIn, type StoppedOperation } from "./stoppedOperation";
 
 /** One linked worktree as reported by `git worktree list --porcelain`. */
 export interface WorktreeEntry {
@@ -12,6 +14,9 @@ export interface WorktreeEntry {
   bare?: boolean;
   /** True when the worktree is locked. */
   locked?: boolean;
+  /** Why it is locked — the `--reason` it was locked with; absent when it was
+   *  locked without one. An agent's lock names the agent and its pid here. */
+  lockReason?: string;
   /** True when git considers the worktree prunable (its path is gone). */
   prunable?: boolean;
 }
@@ -32,13 +37,59 @@ export interface WorktreeAddOptions extends GitRunOptions {
 }
 
 export interface WorktreeRemoveOptions extends GitRunOptions {
-  /** `--force` — remove even with a dirty/locked worktree. */
+  /** `--force`: remove it even with uncommitted changes, which are deleted
+   *  with the folder. It does NOT get past a lock — see `evenIfLocked`. */
   force?: boolean;
+  /** `--force` twice: git's only way to remove a LOCKED worktree (one
+   *  `--force` is refused: "cannot remove a locked working tree"). Like
+   *  `force`, it also deletes uncommitted changes. */
+  evenIfLocked?: boolean;
 }
+
+export interface WorktreeAgreedRemoveOptions extends GitRunOptions {
+  /** Its uncommitted changes go with it — the ones the question listed:
+   *  `listed` is removal()'s `changes`, exactly as asked about. They are read
+   *  again just before the `--force`, and a path the question never named
+   *  stops it (see removeAsAgreed). `listed: undefined` — the question could
+   *  not read them, and said any it has go. */
+  discardChanges?: { listed: readonly string[] | undefined };
+  /** It is locked and removing it anyway was agreed; `reason` is the lock's,
+   *  put back if git refuses the remove. */
+  pastLock?: { reason?: string };
+}
+
+export interface WorktreeLockOptions extends GitRunOptions {
+  /** `--reason <text>`: why, kept by git and shown with the lock. */
+  reason?: string;
+}
+
+/**
+ * What removing a worktree takes, read before git runs — so the question a
+ * host asks can name what will be lost (and refuse what git would refuse)
+ * instead of relaying git's refusal after the person already said yes.
+ */
+export type WorktreeRemoval =
+  /** Not a worktree of this repository (any more): nothing to remove. */
+  | { kind: "notListed" }
+  /** The main worktree, or the bare repository itself: git never removes it. */
+  | { kind: "main"; entry: WorktreeEntry }
+  /** Its folder is gone. Removing it only forgets git's record of it — past
+   *  its lock, when it has one (`entry.locked`). */
+  | { kind: "missing"; entry: WorktreeEntry }
+  /** Its folder is there. `changes` are the paths git counts as uncommitted
+   *  there, which removing it deletes; undefined when they could not be read.
+   *  `operation`: what git is stopped in THERE — removing the worktree
+   *  abandons it, and git says nothing (a clean worktree mid-rebase goes
+   *  with a plain remove, exit 0). */
+  | { kind: "present"; entry: WorktreeEntry; changes?: string[]; operation?: StoppedOperation };
 
 export interface WorktreeOpResult {
   ok: boolean;
   stderr: string;
+  /** removeAsAgreed ran nothing: the worktree has uncommitted changes the
+   *  question never listed (or they could no longer be read), made since it
+   *  was asked. Read removal() again and ask again; `stderr` is empty. */
+  changedSince?: true;
 }
 
 /**
@@ -61,7 +112,7 @@ export class WorktreeProvider {
   }
 
   /**
-   * `git worktree add [-b <ref>] <path> <ref>` — check out `ref` (or a new
+   * `git worktree add [-b <ref>] -- <path> <ref>` — check out `ref` (or a new
    * branch named `ref`) into a fresh worktree at `path`.
    *
    * A new branch's upstream is decided HERE, not left to the user's
@@ -77,20 +128,65 @@ export class WorktreeProvider {
     ref: string,
     opts?: WorktreeAddOptions,
   ): Promise<WorktreeOpResult> {
+    // The path and the ref after `--`: a branch named "-x" (update-ref makes
+    // one, and a fetch can bring one in) is otherwise read as an option. So
+    // every option goes BEFORE it — `--no-track` after `--` would be a path.
     const args = ["worktree", "add"];
     if (opts?.newBranch) {
-      args.push("-b", ref, path);
-      if (opts.startPoint) {
-        args.push(opts.startPoint);
-      }
+      args.push("-b", ref);
       if (opts.noTrack) {
         args.push("--no-track");
       }
+      args.push("--", path);
+      if (opts.startPoint) {
+        args.push(opts.startPoint);
+      }
     } else {
-      args.push(path, ref);
+      args.push("--", path, ref);
     }
+    // `-b` makes the branch BEFORE git looks at the folder, and a failed add
+    // leaves it behind — so retrying with the same name then fails on the
+    // name. Note the commit a new branch starts at, and drop it again if the
+    // add fails (only a branch this call made: absent before, still there).
+    const madeAt = opts?.newBranch ? await this.newBranchStart(ref, opts) : undefined;
     const r = await this.proc.run(args, { signal: opts?.signal });
+    if (r.code !== 0 && madeAt) {
+      await this.dropBranchLeftAt(ref, madeAt);
+    }
     return { ok: r.code === 0, stderr: r.stderr };
+  }
+
+  /** The commit `git worktree add -b <name>` would create the branch at, or
+   *  undefined when refs/heads/<name> already exists (git then refuses, and
+   *  that branch is not this call's to delete). */
+  private async newBranchStart(
+    name: string,
+    opts: WorktreeAddOptions,
+  ): Promise<string | undefined> {
+    const existing = await this.proc.run(
+      ["rev-parse", "--verify", "--quiet", `refs/heads/${name}`],
+      { signal: opts.signal },
+    );
+    if (existing.code === 0) {
+      return undefined;
+    }
+    const start = await this.proc.run(
+      ["rev-parse", "--verify", "--quiet", `${opts.startPoint ?? "HEAD"}^{commit}`],
+      { signal: opts.signal },
+    );
+    return start.code === 0 ? start.stdout.trim() || undefined : undefined;
+  }
+
+  /** Delete refs/heads/<name> when it still sits where a failed add made it.
+   *  `git branch -D` rather than `update-ref -d`: it also drops the
+   *  branch.<name>.* tracking config the add may have written, which a later
+   *  branch of the same name would otherwise inherit. */
+  private async dropBranchLeftAt(name: string, sha: string): Promise<void> {
+    const now = await this.proc.run(["rev-parse", "--verify", "--quiet", `refs/heads/${name}`]);
+    if (now.code !== 0 || now.stdout.trim() !== sha) {
+      return;
+    }
+    await this.proc.run(["branch", "-D", "--", name]);
   }
 
   /**
@@ -111,27 +207,138 @@ export class WorktreeProvider {
     return entries[0]?.path;
   }
 
-  /** `git worktree remove [--force] <path>`. */
+  /**
+   * What removing the worktree at `path` takes, read fresh: refused (the main
+   * worktree), forgotten (its folder is gone), or removed along with the
+   * uncommitted changes listed. See WorktreeRemoval.
+   */
+  async removal(path: string, opts?: GitRunOptions): Promise<WorktreeRemoval> {
+    const list = await this.list(opts);
+    const at = list.findIndex((e) => sameFolder(e.path, path));
+    if (at < 0) {
+      return { kind: "notListed" };
+    }
+    const entry = list[at];
+    // `git worktree list` always reports the main worktree first.
+    if (at === 0 || entry.bare) {
+      return { kind: "main", entry };
+    }
+    // Not `entry.prunable`: git never marks a LOCKED worktree prunable, even
+    // with its folder gone — the folder itself is the answer.
+    if (!existsSync(entry.path)) {
+      return { kind: "missing", entry };
+    }
+    // Read in THAT worktree: its index and its operation markers are its own.
+    const [changes, stop] = await Promise.all([
+      this.uncommitted(entry.path, opts),
+      stoppedIn(this.proc.at(entry.path), opts?.signal),
+    ]);
+    return { kind: "present", entry, changes, ...(stop?.operation ? { operation: stop.operation } : {}) };
+  }
+
+  /**
+   * The paths `git worktree remove` counts as uncommitted in the worktree at
+   * `path` — git's own check (`status --porcelain --ignore-submodules=none`):
+   * staged, unstaged and untracked, never ignored. Undefined when git could
+   * not say (then git would refuse a plain remove too).
+   */
+  async uncommitted(path: string, opts?: GitRunOptions): Promise<string[] | undefined> {
+    const r = await this.proc.run(
+      ["-C", path, "status", "--porcelain", "-z", "--ignore-submodules=none"],
+      { signal: opts?.signal },
+    );
+    if (r.code !== 0) {
+      return undefined;
+    }
+    const names: string[] = [];
+    const fields = r.stdout.split("\0");
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      if (f.length < 4) {
+        continue;
+      }
+      names.push(f.slice(3));
+      // A rename or copy is followed by the field naming where it came from.
+      if (/[RC]/.test(f.slice(0, 2))) {
+        i++;
+      }
+    }
+    return names;
+  }
+
+  /**
+   * Remove a worktree the way the person agreed to, after the question
+   * `removal()` let a host ask. `discardChanges`: the uncommitted changes it
+   * listed go too (`--force`). `pastLock`: it is locked, and removing it anyway
+   * was agreed.
+   *
+   * A change made SINCE the question — an agent still at work in it — is never
+   * deleted unasked. Without `discardChanges` there is no `--force`, so git
+   * refuses it. Past a lock that means unlocking first (a second `--force`
+   * would also delete changes), and locking it again, with its reason, when
+   * git refuses. With `discardChanges` git would delete anything, so the
+   * changes are read again first: a path the question did not list runs
+   * nothing and answers `changedSince` — a worktree that was already dirty
+   * when asked (an agent's, typically) is the common case, not the rare one.
+   * Only the moment between that read and git's own is left uncovered — and
+   * a new file inside an untracked folder the question already named whole
+   * (`tmp/`, as git reports one), which is inside what was agreed to. With
+   * `discardChanges` a lock is passed with the second `--force`.
+   */
+  async removeAsAgreed(
+    path: string,
+    opts: WorktreeAgreedRemoveOptions,
+  ): Promise<WorktreeOpResult> {
+    const signal = opts.signal;
+    if (opts.discardChanges) {
+      const { listed } = opts.discardChanges;
+      if (listed) {
+        const now = await this.uncommitted(path, { signal });
+        const agreed = new Set(listed);
+        if (now === undefined || now.some((p) => !agreed.has(p))) {
+          return { ok: false, stderr: "", changedSince: true };
+        }
+      }
+      return this.remove(path, { force: true, evenIfLocked: !!opts.pastLock, signal });
+    }
+    if (opts.pastLock) {
+      const unlocked = await this.unlock(path, { signal });
+      if (!unlocked.ok) {
+        return unlocked;
+      }
+    }
+    const r = await this.remove(path, { signal });
+    if (!r.ok && opts.pastLock) {
+      await this.lock(path, { reason: opts.pastLock.reason, signal });
+    }
+    return r;
+  }
+
+  /** `git worktree remove [--force [--force]] -- <path>` — see
+   *  WorktreeRemoveOptions for what each force gets past. */
   async remove(
     path: string,
     opts?: WorktreeRemoveOptions,
   ): Promise<WorktreeOpResult> {
     const args = ["worktree", "remove"];
-    if (opts?.force) {
+    if (opts?.force || opts?.evenIfLocked) {
       args.push("--force");
     }
-    args.push(path);
+    if (opts?.evenIfLocked) {
+      args.push("--force");
+    }
+    args.push("--", path);
     const r = await this.proc.run(args, { signal: opts?.signal });
     return { ok: r.code === 0, stderr: r.stderr };
   }
 
-  /** `git worktree move <from> <to>`. */
+  /** `git worktree move -- <from> <to>`. */
   async move(
     from: string,
     to: string,
     opts?: GitRunOptions,
   ): Promise<WorktreeOpResult> {
-    const r = await this.proc.run(["worktree", "move", from, to], {
+    const r = await this.proc.run(["worktree", "move", "--", from, to], {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, stderr: r.stderr };
@@ -145,17 +352,19 @@ export class WorktreeProvider {
     return { ok: r.code === 0, stderr: r.stderr };
   }
 
-  /** `git worktree lock <path>`. */
-  async lock(path: string, opts?: GitRunOptions): Promise<WorktreeOpResult> {
-    const r = await this.proc.run(["worktree", "lock", path], {
-      signal: opts?.signal,
-    });
+  /** `git worktree lock [--reason <text>] -- <path>`. */
+  async lock(path: string, opts?: WorktreeLockOptions): Promise<WorktreeOpResult> {
+    const reason = opts?.reason?.trim();
+    const r = await this.proc.run(
+      ["worktree", "lock", ...(reason ? ["--reason", reason] : []), "--", path],
+      { signal: opts?.signal },
+    );
     return { ok: r.code === 0, stderr: r.stderr };
   }
 
-  /** `git worktree unlock <path>`. */
+  /** `git worktree unlock -- <path>`. */
   async unlock(path: string, opts?: GitRunOptions): Promise<WorktreeOpResult> {
-    const r = await this.proc.run(["worktree", "unlock", path], {
+    const r = await this.proc.run(["worktree", "unlock", "--", path], {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, stderr: r.stderr };
@@ -214,6 +423,11 @@ export function parseWorktreePorcelain(text: string): WorktreeEntry[] {
       case "locked":
         if (current) {
           current.locked = true;
+          // `locked <reason>`, C-quoted by git when the reason holds a
+          // newline, a quote, a backslash or (core.quotePath) non-ASCII.
+          if (value) {
+            current.lockReason = unquoteC(value);
+          }
         }
         break;
       case "prunable":
@@ -227,4 +441,61 @@ export function parseWorktreePorcelain(text: string): WorktreeEntry[] {
   }
   flush();
   return entries;
+}
+
+/**
+ * Undo git's C-style quoting (quote_c_style): a value wrapped in double quotes
+ * with \\, \", \n, \t… and octal \ooo byte escapes, the bytes UTF-8. Anything
+ * not wrapped in quotes is returned as it is.
+ */
+export function unquoteC(value: string): string {
+  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) {
+    return value;
+  }
+  const named: Record<string, number> = {
+    a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92,
+  };
+  const chars = Array.from(value.slice(1, -1));
+  const encoder = new TextEncoder();
+  const bytes: number[] = [];
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const next = chars[i + 1];
+    if (ch !== "\\" || next === undefined) {
+      bytes.push(...encoder.encode(ch));
+    } else if (/[0-7]/.test(next)) {
+      const octal = /^[0-7]{1,3}/.exec(chars.slice(i + 1, i + 4).join(""))?.[0] ?? next;
+      bytes.push(parseInt(octal, 8) & 0xff);
+      i += octal.length;
+    } else if (next in named) {
+      bytes.push(named[next]);
+      i += 1;
+    } else {
+      bytes.push(...encoder.encode(ch));
+    }
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+/**
+ * The key two paths compare equal by when they name the same folder: symlinks
+ * resolved (when the path exists), separators unified, no trailing slash, and
+ * case folded on the case-insensitive file systems macOS and Windows default
+ * to. A window opened through a symlink keeps the path it was opened by while
+ * git reports the resolved one — without the realpath they never matched.
+ */
+export function folderKey(path: string): string {
+  let real = path;
+  try {
+    real = realpathSync.native(path);
+  } catch {
+    // Gone (or unreadable): compare it as written.
+  }
+  const unified = real.replace(/[\\/]+/g, "/").replace(/\/+$/, "");
+  return process.platform === "linux" ? unified : unified.toLowerCase();
+}
+
+/** Whether two paths name the same folder — see folderKey. */
+export function sameFolder(a: string, b: string): boolean {
+  return folderKey(a) === folderKey(b);
 }

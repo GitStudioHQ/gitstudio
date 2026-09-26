@@ -62,11 +62,19 @@ export type {
   StashSaveOptions,
   StashOpResult,
 } from "./StashProvider";
-export { WorktreeProvider, parseWorktreePorcelain } from "./WorktreeProvider";
+export {
+  WorktreeProvider,
+  parseWorktreePorcelain,
+  folderKey,
+  sameFolder,
+} from "./WorktreeProvider";
 export type {
   WorktreeEntry,
   WorktreeAddOptions,
   WorktreeRemoveOptions,
+  WorktreeAgreedRemoveOptions,
+  WorktreeLockOptions,
+  WorktreeRemoval,
   WorktreeOpResult,
 } from "./WorktreeProvider";
 export { BranchOps } from "./BranchOps";

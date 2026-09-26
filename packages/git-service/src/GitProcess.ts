@@ -155,6 +155,22 @@ export class GitProcess {
     this.onRun = opts.onRun;
   }
 
+  /**
+   * The same git — binary, run hook, pool size — in another folder: for a
+   * read about ANOTHER worktree of this repository, whose index and operation
+   * markers are its own, without a GitContext for it. It has its own pool and
+   * its own children, so dispose() here does not reach them; keep it to short
+   * reads that end by themselves.
+   */
+  at(cwd: string): GitProcess {
+    return new GitProcess({
+      cwd,
+      gitPath: this.gitPath,
+      maxConcurrent: this.maxConcurrent,
+      onRun: this.onRun,
+    });
+  }
+
   /** Fire the onRun observer for a completed invocation (best-effort). */
   private report(
     args: string[],

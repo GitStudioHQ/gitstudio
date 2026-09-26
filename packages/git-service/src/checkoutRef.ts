@@ -36,6 +36,10 @@ export interface RefCheckoutPlan {
   undoLabel: string;
   /** The checkout leaves HEAD detached (a tag), so a host asks first. */
   detaches: boolean;
+  /** The EXISTING local branch the checkout switches to (refs/heads/…);
+   *  absent when it creates one or detaches. A door asks whether another
+   *  worktree has it checked out (branchElsewhere) before git refuses. */
+  branch?: string;
 }
 
 /** `refs/heads/x` → `x`, `refs/remotes/origin/x` → `origin/x`, `refs/tags/v1` → `v1`. */
@@ -131,12 +135,18 @@ export async function planRefCheckout(
       success: `Switched to ${name}`,
       undoLabel: `Checkout ${name}`,
       detaches: false,
+      branch: fullName,
     };
   }
   if (fullName.startsWith("refs/remotes/")) {
     // Tracked by the FULL name: a local branch called "origin/x" makes the
     // short one ambiguous (see planRemoteCheckout's trackRef).
-    return { ...(await planRemoteCheckout(proc, name, fullName)), detaches: false };
+    const remote = await planRemoteCheckout(proc, name, fullName);
+    return {
+      ...remote,
+      detaches: false,
+      ...(remote.existing ? { branch: `refs/heads/${remote.local}` } : {}),
+    };
   }
   return {
     // The full name, so the detach lands on the tag and never on a branch of

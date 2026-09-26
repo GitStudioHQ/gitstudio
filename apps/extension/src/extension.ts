@@ -18,6 +18,7 @@ import { StashesWebviewViewProvider } from "./views/stashesWebview";
 import {
   WorktreesTreeProvider,
   openWorktree,
+  openWorktreeIn,
   addWorktree,
   removeWorktree,
   lockWorktree,
@@ -686,11 +687,26 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
         "gitstudio.worktree.open",
         (node: WorktreeNode) => void openWorktree(node),
       ),
+      // The row's buttons and menu say where it opens, and open it there.
+      vscode.commands.registerCommand(
+        "gitstudio.worktree.openInNewWindow",
+        (node: WorktreeNode) => openWorktreeIn(node, "new"),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.worktree.openHere",
+        (node: WorktreeNode) => openWorktreeIn(node, "here"),
+      ),
       vscode.commands.registerCommand("gitstudio.worktree.add", () =>
         addWorktree(repos, refreshWorktrees),
       ),
       vscode.commands.registerCommand(
         "gitstudio.worktree.remove",
+        (node: WorktreeNode) => removeWorktree(repos, node, refreshWorktrees),
+      ),
+      // A worktree whose folder is gone: the same door, which reads that the
+      // folder is missing and asks to forget git's record of it.
+      vscode.commands.registerCommand(
+        "gitstudio.worktree.forget",
         (node: WorktreeNode) => removeWorktree(repos, node, refreshWorktrees),
       ),
       vscode.commands.registerCommand(

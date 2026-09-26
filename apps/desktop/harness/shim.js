@@ -681,6 +681,10 @@
   const resetState = { plans: [], resets: [], undos: [], was: new Map() };
   window.__gsResets = resetState;
 
+  /** Worktree removal: what was asked about, and what was removed, as sent. */
+  const worktreeState = { removals: [], removes: [] };
+  window.__gsWorktrees = worktreeState;
+
   const pullState = {
     /** The first pull fetched: the remote is further ahead than the badge said. */
     fetched: false,
@@ -746,10 +750,19 @@
     // More than one, so the Worktrees segment exists at all — the four
     // worktree channels have been in the IPC contract since it was written
     // with no caller in any view, and no fixture either.
+    // The main worktree says so; hotfix's folder is gone; agent is locked
+    // by a Claude agent with uncommitted work (see worktree:removal).
     "worktree:list": [
-      { path: "/Users/anton/Developer/GitStudioHQ/gitstudio", head: "9f8e7d6aa11", branch: "main", current: true },
+      { path: "/Users/anton/Developer/GitStudioHQ/gitstudio", head: "9f8e7d6aa11", branch: "main", current: true, main: true },
       { path: "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2", head: "a1b2c3d4e5f", branch: "redesign/issues-detail" },
-      { path: "/Users/anton/Developer/GitStudioHQ/gitstudio-hotfix", head: "77aa88b9c0d", branch: "fix/log-stream", prunable: true },
+      { path: "/Users/anton/Developer/GitStudioHQ/gitstudio-hotfix", head: "77aa88b9c0d", branch: "fix/log-stream", prunable: true, missing: true },
+      {
+        path: "/Users/anton/Developer/GitStudioHQ/gitstudio-agent",
+        head: "5e6f7a8b9c0",
+        branch: "agent/wave3",
+        locked: true,
+        lockReason: "claude agent agent-a2c9ae27 (pid 73264)",
+      },
     ],
     // NOTE: `branches:list` lives in `dynamic` — deleting one replaces the
     // array, and a value captured here would keep answering with the old list.
@@ -1973,6 +1986,51 @@
         ],
       },
     }),
+    // What removing a worktree takes, answered the way the bridge's
+    // worktreeRemoval does from the worktree:list fixture: main and this
+    // window's own are refused; the agent's worktree is stopped in a merge,
+    // with two uncommitted files.
+    "worktree:removal": (req) => {
+      worktreeState.removals.push(req);
+      const w = (fixtures["worktree:list"] || []).find((x) => x.path === (req && req.path));
+      if (!w) return { kind: "notListed" };
+      if (w.main) return { kind: "main" };
+      if (w.current) return { kind: "current" };
+      const facts = { branch: w.branch, head: w.head, locked: !!w.locked, lockReason: w.lockReason };
+      if (w.missing) return { kind: "missing", ...facts };
+      const agent = w.branch === "agent/wave3";
+      const changes = agent ? ["src/agent-notes.md", "tmp/scratch.txt"] : [];
+      return { kind: "present", ...facts, changes, ...(agent ? { operation: "merge" } : {}) };
+    },
+    // Removed as sent; the row leaves the list, as git's would.
+    // ?wtchanged=1: the agent wrote a file while the question was open, so
+    // the first remove of its worktree runs nothing and answers what it holds
+    // now — as gitBridge's worktreeRemove does — and the renderer asks again.
+    "worktree:remove": (req) => {
+      worktreeState.removes.push(req);
+      if (params.get("wtchanged") && !worktreeState.changedOnce && /gitstudio-agent$/.test((req && req.path) || "")) {
+        worktreeState.changedOnce = true;
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: "agent/wave3 has uncommitted changes it didn't have when you were asked, so nothing was removed. Remove it again to see what it holds now.",
+          changedSince: {
+            kind: "present",
+            branch: "agent/wave3",
+            head: "5e6f7a8b9c0",
+            locked: true,
+            lockReason: "claude agent agent-a2c9ae27 (pid 73264)",
+            changes: ["src/agent-notes.md", "tmp/scratch.txt", "src/agent-output.ts"],
+            operation: "merge",
+          },
+        };
+      }
+      const list = fixtures["worktree:list"] || [];
+      const at = list.findIndex((x) => x.path === (req && req.path));
+      if (at >= 0) list.splice(at, 1);
+      return { ok: true, changed: true };
+    },
     // Reset to upstream (#32), answered the way main/branchReset.ts answers:
     // the plan FETCHES first (so the watcher reports a moved ref 250 ms later,
     // while the question is on screen), refuses a branch with no upstream, one
