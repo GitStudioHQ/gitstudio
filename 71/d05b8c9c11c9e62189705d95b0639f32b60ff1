@@ -1,0 +1,27 @@
+apps/extension/test/aiProviderSchema.test.ts
+  s_26f5e669d3043c::t_afe7536c873e96 1-40
+apps/extension/test/commandReferences.test.ts
+  s_26f5e669d3043c::t_7d4e9161b87be1 1-72
+apps/extension/README.md
+  s_26f5e669d3043c::t_06cefc38fbd180 148
+apps/extension/package.json
+  s_26f5e669d3043c::t_43a2ee59177218 1159,1165,1167,1391,1402
+apps/extension/src/ai/anthropicProvider.ts
+  s_26f5e669d3043c::t_2436cf53392b1f 131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "71d05b8c9c11c9e62189705d95b0639f32b60ff1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
