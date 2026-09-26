@@ -177,7 +177,7 @@ test("drop N: a refusal or a blocker is said instead of the question; No runs no
 test("drop N over published history: the force push is said", async () => {
   const { d, log } = deps({ plan: okPlan("drop", { published: true }) });
   await runManyAction("drop-many", [B, A], d);
-  assert.match(log.confirms[0].message, /Already pushed\. Dropping it would rewrite history other people have\. The next push will need to be a force push\./);
+  assert.match(log.confirms[0].message, /Some of these commits are already pushed\. Dropping them would rewrite history other people have\. The next push will need to be a force push\./);
 });
 
 test("drop N with branches on replayed commits: the either/or IS the confirmation", async () => {
@@ -232,7 +232,10 @@ test("squash N with a branch on a squashed commit asks whether it comes along, a
   const { d, log } = deps({ plan: okPlan("squash", { carryable: ["feature"] }), choose: "only" });
   assert.equal(await runManyAction("squash-many", [B, A], d), "done");
   assert.deepEqual(log.events.slice(0, 4), ["plan:squash:preflight", "message", "choose", "rewrite"]);
-  assert.match(log.choices[0].title, /move the branches too\?/);
+  assert.equal(log.choices[0].title, "Squash 2 commits — move the branches too?");
+  // Its choices are below it, not a message: the editor's words are the editor's.
+  assert.doesNotMatch(log.choices[0].hint, /message below/);
+  assert.match(log.choices[0].hint, /^bbbbbbb and aaaaaaa on main will become one commit\. .*feature points at a commit that will be rewritten\./);
 });
 
 // Cherry-pick N / Revert N ──────────────────────────────────────────────────

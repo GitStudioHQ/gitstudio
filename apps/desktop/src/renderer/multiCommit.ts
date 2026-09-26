@@ -24,7 +24,7 @@
 // Everything it touches comes in through `ManyDeps`, so the flow is tested
 // without a DOM or an Electron (test/multiCommitFlow.test.ts).
 
-import { applyManyMessage, dropManyQuestion, manyOutcomeMessage, squashQuestion } from "@gitstudio/engine/rebase/many";
+import { applyManyMessage, dropManyQuestion, manyOutcomeMessage, squashCarryQuestion, squashQuestion } from "@gitstudio/engine/rebase/many";
 import type {
   CommitActionRequest,
   CommitActionResult,
@@ -155,9 +155,11 @@ async function rewriteManyFlow(verb: "drop" | "squash", shas: string[], d: ManyD
   const Verb = verb === "drop" ? "Drop" : "Squash";
   if (plan.carryable.length > 0) {
     // The question names the branches; the choice IS the confirmation.
-    const q = verb === "drop" ? dropManyQuestion(plan) : squashQuestion(plan);
+    // A squash's own words here: the editor's "with the message below" is
+    // not what is below this question — its choices are.
+    const q = verb === "drop" ? dropManyQuestion(plan) : squashCarryQuestion(plan);
     const picked = await d.choose({
-      title: verb === "drop" ? q.title : `Squash ${n} commits — move the branches too?`,
+      title: q.title,
       hint: q.message,
       cancelId: "cancel",
       choices: [

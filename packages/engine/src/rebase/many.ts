@@ -199,9 +199,25 @@ export function dropManyQuestion(s: ManySummary): { title: string; message: stri
   ];
   const carry = carrySentence(s.carryable ?? []);
   if (carry) parts.push(carry);
-  if (s.published) parts.push(`${publishedWarning("Dropping")} The next push will need to be a force push.`);
+  if (s.published) parts.push(`${publishedWarning("Dropping", n)} The next push will need to be a force push.`);
   parts.push("Undo is available afterwards.");
   return { title: `Drop ${n} commits?`, message: parts.join(" ") };
+}
+
+/** A squash's sentences after its first: what is replayed, the branches on
+ *  rewritten commits, the pushed-history warning, the undo. */
+function squashRest(s: ManySummary): string[] {
+  const parts = [replayedSentence(s.replayed)];
+  const carry = carrySentence(s.carryable ?? []);
+  if (carry) parts.push(carry);
+  if (s.published) parts.push(`${publishedWarning("Squashing", s.commits.length)} The next push will need to be a force push.`);
+  parts.push("Undo is available afterwards.");
+  return parts;
+}
+
+/** "3333333, 2222222 and 1111111 on main" — the commits a squash makes one. */
+function squashWhat(s: ManySummary): string {
+  return `${listInWords(s.commits.map((c) => c.shortSha))} on ${s.branch ?? "the detached HEAD"}`;
 }
 
 /**
@@ -211,15 +227,21 @@ export function dropManyQuestion(s: ManySummary): { title: string; message: stri
  */
 export function squashQuestion(s: ManySummary): { title: string; message: string } {
   const n = s.commits.length;
-  const parts = [
-    `${listInWords(s.commits.map((c) => c.shortSha))} on ${s.branch ?? "the detached HEAD"} will become one commit with the message below.`,
-    replayedSentence(s.replayed),
-  ];
-  const carry = carrySentence(s.carryable ?? []);
-  if (carry) parts.push(carry);
-  if (s.published) parts.push(`${publishedWarning("Squashing")} The next push will need to be a force push.`);
-  parts.push("Undo is available afterwards.");
+  const parts = [`${squashWhat(s)} will become one commit with the message below.`, ...squashRest(s)];
   return { title: `Squash ${n} commits`, message: parts.join(" ") };
+}
+
+/**
+ * The squash's second question, when other branches point at rewritten
+ * commits: whether they come along. Its choices are what is below it, not a
+ * message — the editor's "with the message below" read as nonsense here — so
+ * it says the rest in its own words: what becomes one, what is replayed,
+ * which branches are on the rewrite, the pushed warning and the undo.
+ */
+export function squashCarryQuestion(s: ManySummary): { title: string; message: string } {
+  const n = s.commits.length;
+  const parts = [`${squashWhat(s)} will become one commit.`, ...squashRest(s)];
+  return { title: `Squash ${n} commits — move the branches too?`, message: parts.join(" ") };
 }
 
 /** A commit's whole message, as git stores it. */

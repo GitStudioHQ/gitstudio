@@ -29,6 +29,7 @@ import {
   applyManyMessage,
   dropManyQuestion,
   manyOutcomeMessage,
+  squashCarryQuestion,
   squashQuestion,
 } from "@gitstudio/engine/rebase/many";
 
@@ -820,7 +821,7 @@ export interface ManyMenuOptions {
  * that cannot apply are left out, as the one-commit menu leaves out Drop.
  */
 export function multiCommitMenuItems(n: number, opts: ManyMenuOptions): GraphMenuItem[] {
-  return [
+  const acts: GraphMenuItem[] = [
     ...(opts.apply
       ? [
           { id: "cherryPickMany", label: `Cherry-Pick ${n} Commits`, icon: "git-pull-request" },
@@ -829,7 +830,12 @@ export function multiCommitMenuItems(n: number, opts: ManyMenuOptions): GraphMen
       : []),
     ...(opts.squash ? [{ id: "squashMany", label: `Squash ${n} Commits…`, icon: "fold-down" }] : []),
     ...(opts.drop ? [{ id: "dropMany", label: `Drop ${n} Commits…`, icon: "trash", danger: true }] : []),
-    { id: "", label: "", sep: true },
+  ];
+  return [
+    ...acts,
+    // Between the two groups only: with none of the actions above (a merge
+    // among them) the menu opened on a divider right under its title.
+    ...(acts.length > 0 ? [{ id: "", label: "", sep: true }] : []),
     ...(n === 2 ? [{ id: "compareTwo", label: "Compare These Two Commits", icon: "git-compare" }] : []),
     { id: "copyShas", label: "Copy SHAs", icon: "copy" },
   ];
@@ -1002,9 +1008,11 @@ async function rewriteManyHere(
   let carry = false;
   const Verb = verb === "drop" ? "Drop" : "Squash";
   if (plan.carryable.length > 0) {
-    const q = verb === "drop" ? dropManyQuestion(plan) : squashQuestion(plan);
+    // A squash's own words here: the editor's "with the message below" is
+    // not what is below this question — its choices are.
+    const q = verb === "drop" ? dropManyQuestion(plan) : squashCarryQuestion(plan);
     const picked = await promptPick({
-      title: verb === "drop" ? q.title : `Squash ${n} commits — move the branches too?`,
+      title: q.title,
       hint: q.message,
       choices: [
         {

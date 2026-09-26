@@ -89,8 +89,12 @@ export function rewritableChain(
  * Commit's confirmation (issue #32). One sentence, so the two doors cannot
  * drift into describing the same risk two different ways.
  */
-export function publishedWarning(verbing: string): string {
-  return `Already pushed. ${verbing} it would rewrite history other people have.`;
+export function publishedWarning(verbing: string, n = 1): string {
+  // Several commits (issue #32) are "them", and not necessarily all pushed:
+  // "published" there means the oldest is, and so everything below it.
+  return n > 1
+    ? `Some of these commits are already pushed. ${verbing} them would rewrite history other people have.`
+    : `Already pushed. ${verbing} it would rewrite history other people have.`;
 }
 
 /** Human wording for why a row cannot be dragged. Shown on hover, not in a dialog. */

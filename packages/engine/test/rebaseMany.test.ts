@@ -10,6 +10,7 @@ import {
   manyRefusalMessage,
   manyTarget,
   squashMessage,
+  squashCarryQuestion,
   squashQuestion,
   squashTarget,
   type ManyRefusal,
@@ -99,17 +100,20 @@ test("Drop N's question lists every commit it removes, and what is replayed", ()
   assert.match(dropManyQuestion({ commits: three, replayed: 0, published: false, branch: null }).message, /from the detached HEAD:/);
 });
 
-test("pushed history is warned about, with the force push, in both questions", () => {
+test("pushed history is warned about, with the force push, in both questions — about them, not it", () => {
   const s = { commits: three, replayed: 2, published: true, branch: "main" };
-  assert.match(dropManyQuestion(s).message, /Already pushed\. Dropping it would rewrite history other people have\. The next push will need to be a force push\./);
-  assert.match(squashQuestion(s).message, /Already pushed\. Squashing it would rewrite history other people have\. The next push will need to be a force push\./);
+  assert.match(dropManyQuestion(s).message, /Some of these commits are already pushed\. Dropping them would rewrite history other people have\. The next push will need to be a force push\./);
+  assert.match(squashQuestion(s).message, /Some of these commits are already pushed\. Squashing them would rewrite history other people have\. The next push will need to be a force push\./);
+  for (const m of [dropManyQuestion(s).message, squashQuestion(s).message, squashCarryQuestion({ ...s, carryable: ["feature"] }).message]) {
+    assert.doesNotMatch(m, /\bit would\b/, "one pronoun for several commits");
+  }
 });
 
 test("branches on rewritten commits are named, before the warnings", () => {
   const s = { commits: three, replayed: 1, published: true, branch: "main" };
   const one = dropManyQuestion({ ...s, carryable: ["feature"] }).message;
   assert.match(one, /feature points at a commit that will be rewritten\./);
-  assert.ok(one.indexOf("feature points") < one.indexOf("Already pushed"));
+  assert.ok(one.indexOf("feature points") < one.indexOf("already pushed"));
   const many = squashQuestion({ ...s, carryable: ["a", "b", "c", "d", "e"] }).message;
   assert.match(many, /a, b, c and 2 more point at a commit that will be rewritten\./);
 });
@@ -119,6 +123,19 @@ test("Squash N's question names the commits that become one", () => {
   assert.equal(q.title, "Squash 3 commits");
   assert.match(q.message, /^3333333, 2222222 and 1111111 on main will become one commit with the message below\./);
   assert.match(q.message, /Nothing else changes\./);
+});
+
+test("Squash N's carry question says what the branches choice is about — not the message editor's words", () => {
+  const s = { commits: three, replayed: 2, published: false, branch: "main", carryable: ["feature"] };
+  const q = squashCarryQuestion(s);
+  assert.equal(q.title, "Squash 3 commits — move the branches too?");
+  assert.doesNotMatch(q.message, /message below/, "no message is below this question: its choices are");
+  assert.match(q.message, /^3333333, 2222222 and 1111111 on main will become one commit\./);
+  assert.match(q.message, /The 2 later commits will be replayed on top, with new SHAs\./);
+  assert.match(q.message, /feature points at a commit that will be rewritten\./);
+  assert.match(q.message, /Undo is available afterwards\.$/);
+  // The editor's own question keeps its words.
+  assert.match(squashQuestion(s).message, /will become one commit with the message below\./);
 });
 
 test("the squash message is every message in full, oldest first, repeats kept once", () => {

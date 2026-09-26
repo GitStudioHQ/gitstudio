@@ -181,7 +181,17 @@ test("the menu for a selection offers exactly what can apply to it", async () =>
       ["three across branches", [top2, s2, b], ["cherryPickMany", "revertMany", "copyShas"]],
     ];
     for (const [what, shas, want] of TABLE) {
-      assert.deepEqual(ids(await multiCommitMenuItemsFor(r.ctx, shas)), want, what);
+      const items = await multiCommitMenuItemsFor(r.ctx, shas);
+      assert.deepEqual(ids(items), want, what);
+      // The raw list, separators included — ids() drops them, and a menu
+      // opening on a divider right under its title passed that way.
+      const acts = want.filter((id) => id !== "compareTwo" && id !== "copyShas");
+      const rest = want.filter((id) => id === "compareTwo" || id === "copyShas");
+      assert.deepEqual(
+        items.map((i: { id: string; sep?: boolean }) => (i.sep ? "—" : i.id)),
+        [...acts, ...(acts.length ? ["—"] : []), ...rest],
+        `${what}: a separator only between the actions and compare/copy`,
+      );
     }
     void a;
   } finally {
@@ -323,7 +333,7 @@ test("pushed commits: the question says so, with the force push; No keeps everyt
     r.git("update-ref", "refs/remotes/origin/main", b);
     reset({ confirm: false });
     await runMultiCommitAction("dropMany", r.ctx, [b, a], host);
-    assert.match(asked[0].text, /Already pushed\. Dropping it would rewrite history other people have\. The next push will need to be a force push\./);
+    assert.match(asked[0].text, /Some of these commits are already pushed\. Dropping them would rewrite history other people have\. The next push will need to be a force push\./);
     assert.deepEqual(r.subjects(), ["B", "A", "base"], "declined: nothing dropped");
   } finally {
     r.dispose();
@@ -394,7 +404,9 @@ test("Squash N with a branch on a rewritten commit asks whether it comes along",
     await runMultiCommitAction("squashMany", r.ctx, [b, a], host);
     const pick = asked.find((x) => x.kind === "pick");
     assert.deepEqual(pick?.choices?.map((x) => x.id), ["carry", "only", "no"]);
+    assert.equal(pick?.title, "Squash 2 commits — move the branches too?");
     assert.match(pick?.text ?? "", /feature points at a commit that will be rewritten/);
+    assert.doesNotMatch(pick?.text ?? "", /message below/, "its choices are below it, not a message");
     assert.equal(r.git("merge-base", "--is-ancestor", "feature", "HEAD"), "", "feature followed the rewrite");
     assert.deepEqual(r.subjects(), ["D", "C", "AB", "base"]);
   } finally {
