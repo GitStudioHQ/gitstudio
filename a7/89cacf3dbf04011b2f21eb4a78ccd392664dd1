@@ -1,0 +1,21 @@
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_eab3c332897579 676-679,991,1000,1004,1009,1014
+packages/git-service/test/undoScope.test.ts
+  s_26f5e669d3043c::t_bf5d380917bfc2 773-797
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a789cacf3dbf04011b2f21eb4a78ccd392664dd1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
