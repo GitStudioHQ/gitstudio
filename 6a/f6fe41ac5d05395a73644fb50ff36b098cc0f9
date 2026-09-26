@@ -1,0 +1,29 @@
+apps/extension/src/pr/createPr.ts
+  s_26f5e669d3043c::t_c29a24e766c34a 244-249,252,255-263,266-268,278-281,285-286,288,290-291
+  s_26f5e669d3043c::t_6e6834c630992b 202-207,209-212,218-220,232
+  s_26f5e669d3043c::t_f9cc8aeef22a27 59-60,62
+  s_26f5e669d3043c::t_7f7547348b1962 20,22-32
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_ecd8bfb88dc452 415-424
+  s_26f5e669d3043c::t_d1971c0dfb3bf4 40-49
+apps/extension/test/prCreateCheckout.test.ts
+  s_26f5e669d3043c::t_57c5f203df3cd7 321-406
+packages/git-service/test/pushDest.test.ts
+  s_26f5e669d3043c::t_9b617c056cfab2 1-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6af6fe41ac5d05395a73644fb50ff36b098cc0f9",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
