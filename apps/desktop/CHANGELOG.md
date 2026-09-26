@@ -19,10 +19,12 @@ but they share the same engine, so most Git behaviour lands in both at once.
   in it, and a close button. **+** opens another (Open…, Clone…, your recent
   repositories); opening one that already has a tab switches to it. Each tab
   keeps its own place: the view you were on, Back and Forward, how far you had
-  scrolled, the commit message you had started, its terminals, and a stopped
-  rebase or merge — switching back finds everything as you left it, and
-  nothing from one tab ever shows up in another. A push that finishes in a tab
-  you are not looking at tells you when you go back to it. **Ctrl+Tab** and
+  scrolled, its searches and filters, the diff or log you had open, the
+  commit message you had started, its terminals, and a stopped rebase or
+  merge — switching back finds them as you left them, and a running CI page
+  or a log you were following picks up again. One tab's search never filters
+  another's list. A push that finishes in a tab you are not looking at tells
+  you when you go back to it. **Ctrl+Tab** and
   **Ctrl+Shift+Tab** move between tabs, **⌃1–⌃9** (Alt+1–9 on Windows and
   Linux) jump to one, and **⌘W** (Ctrl+W) closes the tab in front — asking
   first if something is still running in it; an unsent commit message is kept
@@ -31,8 +33,8 @@ but they share the same engine, so most Git behaviour lands in both at once.
   are more than fit, the list button shows them all. The tabs you had open come
   back when you restart GitStudio. Up to ten repositories can be open at once.
   A tab whose folder is moved or deleted stays, its name struck through, and
-  says so when you go to it — put the folder back and it carries on where it
-  was, or close the tab. (#32)
+  when you go to it one screen says so, with **Look again** and **Close Tab**
+  — put the folder back and it carries on where it was. (#32)
 - **Open a repository in your editor from its row.** Every repository under
   *On this machine* has the editor button beside **Open** — the same one the
   top bar and Home carry, the primary half opening your default editor, its

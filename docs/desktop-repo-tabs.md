@@ -81,7 +81,19 @@ their answers wait at the door.**
   - *Why detached rather than `display: none`:* every "is my view still on
     screen" guard in the app is `isConnected` — the pollers in Actions and
     PRs, the account chip, the log tail. Detached, a background tab's pollers
-    stop by the rules that already stop a parked view's.
+    ask nothing. But "detached" is not "left": the shell marks the screen it
+    parks (`parkScreen`, views/common.ts), and `pageState` tells a page whose
+    whole tab is in the back (`away`) from one that was left (`gone`). An away
+    poller asks nothing — a call made from the back would be stamped with the
+    tab in FRONT — and carries on when its tab is back; `disposeOnDetach`
+    keeps an away page's Monaco diff or log pane; a closed tab releases them
+    (`releaseScreen`).
+- **Module state is per tab.** What a section view remembers — a search, a
+  segment, a sort, facet ticks, a sub-tab, the live PR diff, the reply box
+  Quote writes into, the Assistant's permission — is one copy per repository
+  (`perTab`, tabState.ts), read where the view is built and kept in its
+  closures; a closed tab's copies go with it. A section's router is never
+  module state: every control uses the `nav` its own page was built with.
 - **The bridge defers answers by owner.** `bridge.ts` stamps each call with
   the tab that was active when it was made, and an answer for a tab that is
   not active now is held until that tab is shown again (and dropped if it is
@@ -93,18 +105,34 @@ their answers wait at the door.**
 - A route asked of a background App right after an open (`await
   openPath(); nav("code")` — "land in the repository I just opened") goes to
   the active tab; any other route asked of a background App is dropped.
+  `worktree:open` is an open like the others. An open whose own dialog was up
+  when main announced its tab (a clone's progress card) had its switch
+  deferred for that dialog; its landing (`gs:go`, carrying the opened root)
+  makes the switch at once, routes only that tab, and its toast is said after
+  it — a switch clears the toasts of the tab you leave.
+- **Boot.** main starts the launch restore BEFORE the window loads, and the
+  window's first `repo:tabs` read is answered only once it is done
+  (`RepoStore.settledState`). The restore announces the same tabs a moment
+  before that answer, so until it arrives the renderer ignores `repo:tabs`
+  events: every tab in the answer is one the window is bringing back — a
+  macOS window reopened from the dock included.
+- **Menus with no window.** Menu items hand their work to the renderer, and
+  on macOS the app runs on with its window closed. Open Recent, Open… and
+  Clone… bring the window back and are delivered once it has loaded
+  (`menuCommand`, main/menuDelivery.ts); the rest need a window to act on.
 
 ## Per tab vs global
 
 | Per tab | Global |
 | --- | --- |
-| route + target, history (⌘[ / ⌘]), kept-alive views and their scroll | theme, rail width / collapsed, terminal height |
+| route + target, history (⌘[ / ⌘]), kept-alive views and their scroll | theme, rail width / collapsed |
 | SWR cache entries (namespaced by root; a switch no longer wipes) | GitHub account (sign-out drops every tab's GitHub caches and kept views) |
 | undo stack (⌘Z acts on the active tab only; an entry refuses to run in another) | notifications badge, Assistant sessions list |
 | composer draft (kept on close, restored on reopen) | toasts (cleared on switch — they are about the tab you left) |
-| terminal sessions + Output log (filtered by root) | menus, peeks, palette (dismissed on switch) |
+| terminal dock: its sessions, Output log (filtered by root), open or closed, height — a new tab starts with the last one's | menus, peeks, palette (dismissed on switch) |
 | Changes panel / conflicts dashboard / stopped operation chip | the tab row itself |
 | focus-return memory, repo epoch (confirms) | |
+| section state: searches, segments, sorts, facets, sub-tabs, the live PR diff, the Assistant's chips (tabState.ts) | |
 
 ## The state table (what each cell must do)
 
@@ -127,11 +155,19 @@ Every one of them was seen to fail with the code it guards reverted.
 | 11 | Close a tab with an unsent commit message | nothing asked; the message is kept and comes back when the repository is reopened | `each-tab-keeps-its-own-commit-message` |
 | 12 | Open a repository that already has a tab (any spelling) | switches to it; no second tab | `opening-a-repository-that-has-a-tab-switches-to-it`; repoTabs.test "row 12" |
 | 13 | Open an eleventh | refused with the notice above | repoTabs.test "row 13" |
-| 14 | A background repository is deleted or moved on disk | its tab stays, its name struck through ("folder not found" in words); nothing runs git in it; brought to the front it says so once, with Close Tab; put back, it is whole again at the row's next look and re-reads the disk; closing it works | `a-tab-whose-folder-is-gone-says-so-and-closes`, `a-gone-folder-put-back-makes-its-tab-whole-again`; repoTabs.test "row 14"; tabModel.test "row 14" |
+| 14 | A repository is deleted or moved on disk | its tab stays, its name struck through ("folder not found" in words). Nothing runs git in it, in the back or in front: brought to the front, ONE screen says so in place of its own — where it was, Look again, Close Tab — and no view, refresh, focus, disk event, menu or key reaches the tab. Found gone while in front, the same. Put back, it is whole again at the row's next look (or Look again) and re-reads the disk. Closing it works. Anything that still runs git there hears "The folder … is not there any more", not Node's `spawn git ENOENT` | `a-tab-whose-folder-is-gone-says-so-and-closes`, `a-gone-folder-put-back-makes-its-tab-whole-again`; repoTabs.test "row 14"; tabModel.test "row 14" |
 | 15 | Undo | per tab; an entry recorded in A cannot run while B is active | tabUndo.test |
-| 16 | Boot | the open tabs come back in order with the active one, each on its own view (Search included); a tab whose folder is gone is dropped with one quiet notice naming it | repoTabs.test "row 16"; `each-restored-tab-comes-back-on-its-own-view`, `a-restored-tab-comes-back-to-search-and-a-new-one-lands-on-its-code` |
+| 16 | Boot | the open tabs come back in order with the active one, each on its own view (Search included) — in main's order too, where the restore announces the tabs before the window's first read is answered; a tab whose folder is gone is dropped with one quiet notice naming it | repoTabs.test "row 16"; `each-restored-tab-comes-back-on-its-own-view`, `a-restored-tab-comes-back-to-search-and-a-new-one-lands-on-its-code` (each also under `?latetabs=1`, the shim's model of main's order) |
+| 17 | A kept page with a Monaco diff or a log (a PR's Files, a commit, a job log); switch away and back | the same diff or log, not the page around an empty pane; a tab closed in the back lets them go | `a-tab-round-trip-keeps-its-diff-or-log`, `closing-a-tab-in-the-back-lets-its-diff-or-log-go` |
+| 18 | The same section kept in two tabs | each keeps its own search, filters, sort and sub-tab, and routes its own tab; a repaint never reads the other's (Issues' GitHub search hits were another repository's) | `each-tab-keeps-its-own-list-state`, `a-kept-page-routes-its-own-tab-after-a-visit-to-another`, `quote-reply-lands-in-its-own-tabs-box`, `the-org-filter-filters-its-own-tabs-page`, `each-tab-keeps-its-own-filter-through-a-rebuild`, `each-tab-keeps-its-own-search`, `a-home-still-loading-when-you-switch-away-paints-when-you-are-back`, `a-board-still-loading-when-you-switch-away-paints-when-you-are-back`, `an-assistant-run-uses-its-own-tabs-permission`; tabState.test |
+| 19 | A live page (a running CI run, a following log) whose tab goes to the back | asks nothing while in the back; polls again when it is in front | `a-live-page-keeps-polling-after-a-tab-round-trip` |
+| 20 | An open whose dialog is up when main announces its tab (a clone's progress card) | the switch waits for the dialog; the open's landing makes it, routes only the new tab, and says its toast there — the tab it was started from keeps its page | `a-slow-clone-lands-in-its-new-tab-and-says-so` (`?clonems=`), `a-cloned-repository-says-so-in-its-new-tab`, `opening-a-worktree-opens-a-tab-and-says-so-there` |
+| 21 | A tab closed while an open is still finding its repository | the open goes on — unless it is for the repository just closed, which stays closed and is not reported as opened | repoTabs.test "closing another tab…", "…the LAST tab…", "closing the repository an open is still finding…" |
+| 22 | macOS with the window closed: Open Recent, Open…, Clone… | the window comes back and the open goes through it | menuDelivery.test |
 
-Also per tab, and pinned: the terminal dock (`each-tab-has-its-own-terminal-dock`),
+Also per tab, and pinned: the terminal dock (`each-tab-has-its-own-terminal-dock`;
+its open state and height are read when the tab is built, so a new tab starts
+with the last one's and each keeps its own after),
 the route, scroll and kept-alive DOM (`switching-tabs-keeps-each-tabs-place`),
 and the graph's position (`the-graph-keeps-its-place-across-a-tab-switch`;
 webview-ui graphReattach.test).
@@ -153,8 +189,18 @@ The tab row asks main about every open tab (`repo:tabStatus`): its change
 count, or `gone` when the folder is not there or has no `.git` any more. Gone
 is a `stat` asked afresh every time (never cached), and a gone folder is never
 handed to git to count. The row asks when the tabs change, when an operation
-ends, on a watcher event, and on a window focus at most once a minute. A gone
-tab is not closed for you: the folder may be on a drive that is coming back.
+ends, on a watcher event, on a window focus at most once a minute, and when
+the gone screen's Look again is pressed. A gone tab is not closed for you: the
+folder may be on a drive that is coming back.
+
+The tab in front with its folder gone shows the gone screen instead of its
+own (`TabShell.showGone`): its own screen stays parked (or unbuilt), its
+session is not made active — answers still owed to it stay held — and the
+shell hands it no key, menu command, focus or disk event. ⌘Z there undoes
+nothing. In main, a spawn ENOENT (thrown or returned) in a tab whose folder is
+missing is said as "The folder … is not there any more — it was moved or
+deleted.", an expected condition rather than a crash report
+(`missingFolderError` / `missingFolderResult`, repoNotice.ts).
 
 ## The graph's position
 
