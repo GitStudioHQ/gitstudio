@@ -1,0 +1,25 @@
+apps/extension/test/browseRemote.test.ts
+  s_26f5e669d3043c::t_6e4cf7a922cacf 1-95
+apps/extension/src/blame/blameController.ts
+  s_26f5e669d3043c::t_dd3fb90a7d1699 7,731-733,736
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_42bd2c2f0e4846 45,1301-1303,1306
+apps/extension/src/util/remoteUrl.ts
+  s_26f5e669d3043c::t_ae0d0bcad69411 3-61,64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "96fc15e7c7fe2e2487f814771999a4a4fb7c1fe0",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
