@@ -10,7 +10,7 @@ import { stoppedIn } from "@gitstudio/git-service/stoppedOperation";
 import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { explainOptionLikeCheckout } from "../views/optionLikeBranch";
 import { askOverLocalBranch, isCheckedOutHere, resetBranchTo } from "../views/branchReset";
-import { saidCheckedOutElsewhere } from "../views/worktreesView";
+import { saidCheckedOutElsewhere } from "../views/branchElsewhere";
 import type { UndoOptions } from "../git/repoManager";
 import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";

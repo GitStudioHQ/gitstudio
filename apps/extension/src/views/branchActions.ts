@@ -15,7 +15,8 @@ import {
   promptPick,
   type DialogChoice,
 } from "../ui/dialogs";
-import { saidCheckedOutElsewhere, worktreeFromRef } from "./worktreesView";
+import { worktreeFromRef } from "./worktreesView";
+import { saidCheckedOutElsewhere } from "./branchElsewhere";
 import { pruneOnFetch } from "../git/fetchOptions";
 import {
   askOverLocalBranch,

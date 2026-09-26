@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { RepoEntry } from "../git/repoManager";
 import type { PullRequest } from "./githubApi";
 import { applyOrAsk, checkoutOp } from "../git/inTheWay";
-import { saidCheckedOutElsewhere } from "../views/worktreesView";
+import { saidCheckedOutElsewhere } from "../views/branchElsewhere";
 
 // Check out a pull request's branch locally. We fetch the universal
 // `pull/<n>/head` ref (which works for cross-fork PRs too) into a local
