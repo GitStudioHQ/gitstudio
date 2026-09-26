@@ -9,6 +9,9 @@
 //   selection-<theme>.png  the three fixup! lines set to Fixup at once
 //   refused-<theme>.png    every line squashed at once: the first stays, and
 //                          the footer says why
+//   edit-todo-<theme>.png  a paused rebase's `git rebase --edit-todo`: the
+//                          todo starts with fixups of the commit git stopped
+//                          at, and Start rebase is open
 
 import { build } from "esbuild";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -120,6 +123,16 @@ async function main(): Promise<void> {
         await key(page, "s");
         await new Promise((r) => setTimeout(r, 250));
         writeFileSync(join(OUT, `refused-${theme}.png`), await page.screenshot());
+        // Stopped (edit) at "staging: keep the selection across a refresh",
+        // with its three fixup! lines still to go: git keeps the commit it
+        // stopped at above the first line, so they fold into it.
+        const rest = rows.slice(9).map((r) => ({ ...r, action: "fixup" }));
+        // A fresh editor, as a new --edit-todo opens one.
+        await browser.goto(page, pathToFileURL(file).href);
+        await page.eval(`window.dispatchEvent(new MessageEvent("message", { data: { type: "rebaseInit", headerComment: null, continuing: true, rows: ${JSON.stringify(rest)} } }))`);
+        await page.waitFor(`document.querySelector("gitstudio-rebase").shadowRoot.querySelectorAll(".row").length === ${rest.length}`);
+        await new Promise((r) => setTimeout(r, 250));
+        writeFileSync(join(OUT, `edit-todo-${theme}.png`), await page.screenshot());
         console.log(`wrote ${theme}`);
       } finally {
         await browser.close();
