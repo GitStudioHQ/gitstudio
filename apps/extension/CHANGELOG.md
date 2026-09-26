@@ -145,7 +145,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   characters turns the warning colour instead of blue.
 - A screen reader hears every tick and icon button in the Changes view by
   name (a file's tick: "Include README.md in the commit"), and whether a
-  group is expanded.
+  group, or a folder in the tree view, is expanded.
 - The README and the Get Started walkthrough no longer say Enter commits,
   that AI is off by default (with Copilot it works with nothing to set up),
   or that the graph is at the top of the sidebar or in an editor tab; the

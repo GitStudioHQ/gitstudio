@@ -62,6 +62,34 @@ test("the split model: every button has a name, and a group header says whether 
   assert.equal(await expanded(), "false");
 });
 
+// A folder row in the tree layout collapses like a group header, and said
+// nothing about it: no role, no expanded state. It says both now, as the
+// header does (until rows become a tree of treeitems).
+test("the tree layout: a folder row is a button that says whether it is open", { skip }, async () => {
+  const page = await ChangesPage.open("dark", { width: 420, height: 640 });
+  opened.push(page);
+  await page.send({ ...stateMessage({ local: [{ name: "main", current: true }] }), unstaged: FILES, layout: "tree" });
+  const folder = () =>
+    page.eval<{ role: string | null; expanded: string | null; name: string } | null>(`(function () {
+      var rows = document.querySelectorAll(".group--unstaged .row:not(.is-file)");
+      for (var i = 0; i < rows.length; i++) {
+        var n = rows[i].querySelector(".name");
+        if (n && n.textContent === "src") {
+          return { role: rows[i].getAttribute("role"), expanded: rows[i].getAttribute("aria-expanded"), name: n.textContent };
+        }
+      }
+      return null;
+    })()`);
+  assert.deepEqual(await folder(), { role: "button", expanded: "true", name: "src" });
+  await page.eval(`(function () {
+    var rows = document.querySelectorAll(".group--unstaged .row:not(.is-file)");
+    for (var i = 0; i < rows.length; i++) if (rows[i].querySelector(".name").textContent === "src") rows[i].click();
+  })()`);
+  assert.deepEqual(await folder(), { role: "button", expanded: "false", name: "src" });
+  const buttons = await named(page, "button");
+  assert.deepEqual(buttons.filter((n) => n === ""), [], `unnamed buttons among ${JSON.stringify(buttons)}`);
+});
+
 test("the push review's close is the close codicon, named Close", { skip }, async () => {
   const page = await ChangesPage.open("dark", { width: 420, height: 640 });
   opened.push(page);

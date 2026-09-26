@@ -7557,6 +7557,10 @@ export class CommitViewProvider
         const row = el("div", "row" + (isCollapsed ? " collapsed" : ""));
         row.style.paddingLeft = (depth * 12) + "px";
         row.tabIndex = 0;
+        // It collapses like a group header, so it says so like one (until the
+        // rows become a tree of treeitems).
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
         row.appendChild(el("span", "twisty", ICON_CHEVRON));
         row.appendChild(el("span", "file-icon folder-icon", ICON_FOLDER));
         const name = el("span", "name");
