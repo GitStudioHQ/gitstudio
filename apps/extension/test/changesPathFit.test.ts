@@ -48,9 +48,14 @@ test("the name stays whole, and the directory keeps its tail in the path's order
       var dot = range.getBoundingClientRect();
       range.setStart(node, 1); range.setEnd(node, 2);
       var next = range.getBoundingClientRect();
+      // The text's natural width against the box, in FRACTIONAL pixels: an
+      // ellipsis is drawn for any overflow at all, and scrollWidth and
+      // clientWidth round a sub-pixel one away.
+      var nameRange = document.createRange();
+      nameRange.selectNodeContents(name);
       return {
         name: name.textContent,
-        nameCut: name.scrollWidth > name.clientWidth + 0.5,
+        nameCut: nameRange.getBoundingClientRect().width > name.getBoundingClientRect().width + 0.01,
         dirWidth: Math.round(d.width),
         tail: shown,
         firstIsDot: text[0] === "." ? dot.left < next.left : null,
@@ -66,4 +71,29 @@ test("the name stays whole, and the directory keeps its tail in the path's order
   const dot = rows.find((r) => r.name === "release.yml")!;
   assert.ok(DOT_DIR.endsWith(dot.tail), `the tail, in order: "${dot.tail}"`);
   assert.equal(dot.firstIsDot, true, "a leading '.' stays at the start (it is not moved to the end by the right-to-left clip)");
+});
+
+test("a name too long for the row is cut inside it, and the row's buttons stay in view", { skip }, async () => {
+  const p = await ChangesPage.open("dark", { width: 300, height: 480 });
+  try {
+    await p.send({
+      ...stateMessage({ local: [{ name: "main", current: true }] }),
+      unstaged: [{ path: "src/a-really-long-file-name-that-cannot-possibly-fit-in-a-sidebar-row.ts", status: "M" }],
+    });
+    const r = await p.eval<{ rowOverflow: number; nameCut: boolean; statusInside: boolean }>(`(function () {
+      var row = document.querySelector(".row.is-file"), name = row.querySelector(".name"), st = row.querySelector(".status");
+      var range = document.createRange(); range.selectNodeContents(name);
+      var rb = row.getBoundingClientRect();
+      return {
+        rowOverflow: row.scrollWidth - row.clientWidth,
+        nameCut: range.getBoundingClientRect().width > name.getBoundingClientRect().width + 0.01,
+        statusInside: st.getBoundingClientRect().right <= rb.right + 0.5,
+      };
+    })()`);
+    assert.equal(r.nameCut, true, "the name is cut");
+    assert.equal(r.rowOverflow, 0, "and the row does not overflow");
+    assert.equal(r.statusInside, true, "its status letter stays in the row");
+  } finally {
+    await p.close();
+  }
 });

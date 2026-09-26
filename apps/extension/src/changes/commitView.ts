@@ -3874,13 +3874,16 @@ export class CommitViewProvider
       text-overflow: ellipsis;
     }
     .row.is-deleted .name { text-decoration: line-through; opacity: 0.85; }
-    /* The directory gives way first (a far larger shrink factor), so the file
-       name is cut only once the directory has nothing left to give. It clips
-       from the START (direction: rtl) so its tail — the folder the file is in
-       — stays; the path inside is a <bdi>, an isolated left-to-right run, so
-       its characters keep their order (a leading "." stays at the start). */
+    /* The directory takes only the width left over (basis 0, then grows), so
+       the file name is cut only once there is none. A larger shrink factor
+       was not enough: shrinking is shared out by weight, so the name still
+       lost a fraction of a pixel, and any overflow at all draws an ellipsis.
+       It clips from the START (direction: rtl) so its tail — the folder the
+       file is in — stays; the path inside is a <bdi>, an isolated
+       left-to-right run, so its characters keep their order (a leading "."
+       stays at the start). */
     .row .dir {
-      flex: 1 1000 auto;
+      flex: 1 1 0;
       min-width: 0;
       font-size: 11.5px;
       color: var(--gs-fg-muted);
@@ -4135,7 +4138,7 @@ export class CommitViewProvider
     .pm-file.clickable:hover .name { text-decoration: underline; text-underline-offset: 2px; }
     .pm-file .st { flex: 0 0 auto; width: 13px; text-align: center; font-family: var(--gs-font-mono); font-weight: 700; font-size: 11px; }
     .pm-file .name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pm-file .dir { flex: 1 1000 auto; min-width: 0; font-size: 11px; color: var(--gs-fg-muted);
+    .pm-file .dir { flex: 1 1 0; min-width: 0; font-size: 11px; color: var(--gs-fg-muted);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
     .pm-file .nums { flex: 0 0 auto; font-family: var(--gs-font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
     .pm-file .nums .add { color: var(--gs-status-added); }
