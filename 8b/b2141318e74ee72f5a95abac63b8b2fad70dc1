@@ -1,0 +1,27 @@
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_60e0f0cc8fb62e 66
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_92c0f71ace1f8d 14539-14572
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_761bbfe47d70f6 68-69
+apps/desktop/test/undoStateTable.test.ts
+  s_26f5e669d3043c::t_f355a29876dd5a 566-568
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_705903f2ca7877 4211-4215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8bb2141318e74ee72f5a95abac63b8b2fad70dc1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
