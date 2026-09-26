@@ -1,0 +1,41 @@
+apps/extension/test/repoDiscovering.test.ts
+  s_26f5e669d3043c::t_a396fa3629171a 1-69
+packages/webview-ui/test/graphNoRepo.test.ts
+  s_26f5e669d3043c::t_881040fcc07394 1-56
+apps/extension/test/graphNoRepo.test.ts
+  s_26f5e669d3043c::t_b8a44918493c0e 1-57
+apps/extension/test/changesLoadingState.test.ts
+  s_26f5e669d3043c::t_eac960b6288800 1-72
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_61d14a8aa3b227 108-112,2545,3973-3985,4407-4413,4452-4456,6906-6909,6959,7825-7832
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_8c0e1fa25a96cb 109-115,153,262,267-270,277-293
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_946b7d03ccfe87 392-393
+packages/host-bridge/src/graphProtocol.ts
+  s_26f5e669d3043c::t_c4aec9af0a5f01 121-126
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_506bf2acfe684b 1687-1688,4239-4245
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_7dd310ea16e987 905-906,1847-1851,2293-2302
+packages/webview-ui/src/graph/main.ts
+  s_26f5e669d3043c::t_0c61b7de8a9ff4 278
+packages/webview-ui/src/graph/sidebar-main.ts
+  s_26f5e669d3043c::t_28942c3727af82 88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5d9383e230eb74734e721484b0067a2ed3d7e4e6",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
