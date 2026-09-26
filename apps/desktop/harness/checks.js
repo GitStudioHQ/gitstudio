@@ -16143,6 +16143,90 @@
       c.ok(!subm() && !$(".dropdown"), "a click outside closes the switcher and its actions");
     },
 
+    // A small repository's switcher filters too (#32 review): openMenu turned
+    // the filter on only above nine rows, so two branches and a remote had no
+    // filter and typing did nothing, where the extension's menu always has one.
+    "the-small-switcher-still-filters": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const label = (n) => text(n?.querySelector?.(".dropdown-label") ?? n);
+      const rows = () => $$(".dropdown:not(.dropdown-submenu) .dropdown-item");
+      c.ok(!!$(".dropdown:not(.dropdown-submenu)"), "the switcher is open");
+      c.ok(rows().length <= 9, `on a small repository (${rows().map(label).join(", ")})`);
+      const box = $(".dropdown .dropdown-search");
+      c.ok(!!box, "it still has its filter");
+      if (!box) return;
+      c.eq(document.activeElement, box, "with the keyboard in it");
+      box.value = "feat";
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(150);
+      c.eq(rows().filter((r) => !r.hidden).map(label).join(","), "feat/line-staging", "typing filters the list");
+      box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      await settle(150);
+      c.eq(label(document.activeElement), "feat/line-staging", "Down lands on the match");
+      document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+      await settle(150);
+      c.eq(document.activeElement, box, "a key typed on a row goes back to the filter");
+      c.eq(box.value, "fea", "and edits it");
+    },
+
+    // Fetch from a branch's actions in the switcher runs IN PLACE: the item
+    // spins, both menus stay open, a second press does not fetch twice, and
+    // the Pull beside it says what the fetch found. And Enter, Enter with no
+    // filter lands on the first match — your own branch — whose first action
+    // is this Fetch, not a checkout (the keyboard sheet says so).
+    "the-switchers-fetch-runs-in-place": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const top = () => $(".dropdown:not(.dropdown-submenu)");
+      const subm = () => $(".dropdown-submenu");
+      const label = (n) => text(n?.querySelector?.(".dropdown-label") ?? n);
+      const subItem = (re) => $$(".dropdown-submenu .dropdown-item").find((r) => re.test(label(r)));
+      const fetches = () => (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:fetch").length;
+      const key = async (k, mods = {}) => {
+        const t = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+        if (!t) return null;
+        const e = new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...mods });
+        t.dispatchEvent(e);
+        await settle(200);
+        return e.defaultPrevented;
+      };
+      c.ok(!!top(), "the switcher is open");
+      if (!top()) return;
+
+      // Enter, Enter with nothing typed: your branch, then its first action.
+      await key("Enter");
+      c.eq(subm()?.getAttribute("aria-label"), "Actions for main", "Enter opens the first match's actions: the branch you're on");
+      c.eq(label(document.activeElement), "Fetch", "whose first action is Fetch — no checkout of where you are");
+      await key("Escape");
+
+      // Another branch's Fetch, from the pointer.
+      const row = $$(".dropdown:not(.dropdown-submenu) .dropdown-item").find((r) => label(r) === "redesign/issues-detail");
+      c.ok(!!row, "the switcher lists redesign/issues-detail");
+      if (!row) return;
+      row.querySelector(".dropdown-more").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await settle(300);
+      const pull = () => subItem(/^Pull /);
+      c.eq(label(pull()), "Pull latest into redesign/issues-detail", "its Pull, before the fetch");
+      const fetch = subItem(/^Fetch$/);
+      c.ok(!!fetch, "and its Fetch");
+      if (!fetch) return;
+      const before = fetches();
+      fetch.click();
+      await settle(80);
+      c.eq(fetches(), before + 1, "Fetch asked main to fetch");
+      c.ok(fetch.classList.contains("is-busy-item"), "the item is busy while it runs");
+      c.ok(!!fetch.querySelector(".glyph.spin, .spin"), "and spins");
+      c.ok(!!top() && !!subm(), "both menus stay open");
+      fetch.click();
+      await settle(80);
+      c.eq(fetches(), before + 1, "a second press while it runs fetches nothing");
+      await settle(700);
+      c.ok(!fetch.classList.contains("is-busy-item"), "done, it stops");
+      c.ok(!!top() && !!subm(), "and both menus are still open");
+      c.eq(label(pull()), "Pull 2 into redesign/issues-detail", "the Pull says what the fetch found");
+    },
+
     // ── #32: select several commits in the rebase plan and set them at once ──
     //
     // The state table for the keyboard: from each selection, each key, the
@@ -16504,6 +16588,12 @@
       const branches = group("Branches");
       const bk = branches ? keysOf(branches) : [];
       for (const k of ["→ or Enter", "← or Esc", "Enter Enter"]) c.ok(bk.includes(k), `Branches names the switcher's ${k} (${bk.join(" | ")})`);
+      // …and says what Enter Enter does: the first ACTION, which is not a
+      // checkout on your own branch (the-switchers-fetch-runs-in-place).
+      const ee = branches ? $$(".shortcuts-row", branches).find((r) => text(r.querySelector(".shortcuts-keys")).replace(/\s+/g, " ").trim() === "Enter Enter") : null;
+      const eeSays = text(ee?.querySelector(".shortcuts-what"));
+      c.match(eeSays, /first action/i, `Enter Enter is the first action (${eeSays})`);
+      c.match(eeSays, /Checkout, unless it's yours/i, "which is Checkout only for a branch you're not on");
       // The layout: every row of groups holds more than one.
       const tops = $$(".shortcuts-group", sheet).map((g) => Math.round(g.getBoundingClientRect().top));
       const perRow = [...new Set(tops)].map((y) => tops.filter((x) => x === y).length);

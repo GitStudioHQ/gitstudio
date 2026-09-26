@@ -9997,9 +9997,11 @@ class App {
         onClick: () => this.routeView("branches"),
       });
     }
-    // No `searchable` override: openMenu already turns the filter on above 9
-    // rows, which every repo large enough to need it will exceed.
-    openMenu(anchor, items);
+    // The filter always: type-to-filter is how the switcher is driven (#32),
+    // as the extension's branch menu always has its search field. openMenu
+    // turns it on by itself only above nine rows, so a small repository's
+    // switcher had no filter and the letters typed into it did nothing.
+    openMenu(anchor, items, { searchable: true });
   }
 
   /**
@@ -10594,9 +10596,12 @@ function openShortcutsHelp(): void {
         ["Shift+F", "Fetch from every remote"],
         // #32: the top bar's switcher — IntelliJ's branch popup, and the
         // extension's branch menu.
-        ["→  or  Enter", "Switcher: a branch's actions, Checkout first"],
+        ["→  or  Enter", "Switcher: a branch's actions"],
         ["←  or  Esc", "Switcher: back to the branch"],
-        ["Enter  Enter", "Switcher: check out the first match"],
+        // The first ACTION, which is Checkout for every branch but the one
+        // you're on — whose actions start with Fetch. It said "check out the
+        // first match", and with no filter typed the first match IS yours.
+        ["Enter  Enter", "Switcher: a branch's first action — Checkout, unless it's yours"],
       ],
     },
     {

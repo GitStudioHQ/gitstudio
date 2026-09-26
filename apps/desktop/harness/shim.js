@@ -693,6 +693,14 @@
     },
   };
 
+  // `sync:fetch` had no fixture: it answered the shim's generic `{ ok: true }`
+  // at once, so no check could see a Fetch run IN PLACE (the switcher's and
+  // the Branches list's menus keep it open, spinning) or what it found. It
+  // still answers at once; ?fetchfinds=1 makes it take a moment and find two
+  // new commits on origin/redesign/issues-detail, so the branch reads
+  // "behind 2" afterwards.
+  const fetchState = { fetches: 0, found: false };
+
   const fixtures = {
     // ?norepo=1 → NO repository open, which is the welcome screen: the first
     // thing anyone sees, the only screen shown after closing a repo, and
@@ -953,6 +961,20 @@
     "ssh:keys": [],
     // (the real fixture is above — an empty array here shadowed it)
   };
+
+  // ?fewrefs=1 → a small repository: two branches, one remote, no tags. The
+  // switcher turned its filter on only above nine rows, so here it had none
+  // and typed letters did nothing (#32 review).
+  if (params.get("fewrefs")) {
+    const keep = new Set(["main", "feat/line-staging"]);
+    branches = branches.filter((b) => keep.has(b.name));
+    fixtures["refs:list"] = fixtures["refs:list"].filter(
+      (r) =>
+        (r.type === "head" && keep.has(r.name)) ||
+        r.fullName === "refs/remotes/origin/HEAD" ||
+        r.fullName === "refs/remotes/origin/main",
+    );
+  }
 
   // ?collide=1 (see the branches above): the refs git lists beside them, under
   // the short names git gives them — the tags "main" and "release", the
@@ -1958,8 +1980,18 @@
                 ahead: pullState.done ? 3 : 2,
                 behind: pullState.done ? 0 : pullState.behind(),
               }
-            : b,
+            : fetchState.found && b.name === "redesign/issues-detail"
+              ? { ...b, behind: b.behind + 2 }
+              : b,
         ),
+    "sync:fetch": () => {
+      fetchState.fetches++;
+      if (!params.get("fetchfinds")) return { ok: true };
+      return late(400).then(() => {
+        fetchState.found = true;
+        return { ok: true };
+      });
+    },
     // The per-branch log walk's answer. feat/line-staging is the interesting
     // one: created by one person, carried by three — a number-only "last
     // commit by" could never say that.

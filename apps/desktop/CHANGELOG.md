@@ -65,9 +65,10 @@ but they share the same engine, so most Git behaviour lands in both at once.
   extension's. (#32)
 - **The branch switcher works from the keyboard.** Type to filter; **↑**/**↓**
   move through the branches, and letters you type on one keep filtering;
-  **→** or **Enter** opens a branch's actions — **Checkout** first, then
-  Fetch, Push, Pull, Merge, Rebase, Rename, Reset to its remote and the rest
-  of the Branches list's menu for it — with the keyboard on the first;
+  **→** or **Enter** opens a branch's actions — **Checkout** first (for any
+  branch but the one you're on), then Fetch, Push, Pull, Merge, Rebase,
+  Rename, Reset to its remote and the rest of the Branches list's menu for
+  it — with the keyboard on the first;
   **←** or **Escape** goes back to the branch, and **Escape** again closes.
   Remote branches and tags have their actions too, and the arrow at the end
   of every row opens them with the mouse; a plain click still switches.

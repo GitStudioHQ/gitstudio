@@ -139,6 +139,8 @@ const CASES = [
   ["the-branch-switcher-works-from-the-keyboard", "code~click:.topbar-branch"],
   ["the-branch-switcher-works-from-the-keyboard", "code~click:.topbar-branch", { theme: "light" }],
   ["the-branch-switchers-remotes-and-tags-have-actions", "code~click:.topbar-branch"],
+  ["the-small-switcher-still-filters", "code~click:.topbar-branch", { extra: "fewrefs=1" }],
+  ["the-switchers-fetch-runs-in-place", "code~click:.topbar-branch", { extra: "fetchfinds=1" }],
   ["the-branch-actions-sit-level-with-their-branch", "code~click:.topbar-branch"],
   // #32: several commits selected, one action set on all of them — the long
   // plan the issue is about, in both themes where the selection is painted.
