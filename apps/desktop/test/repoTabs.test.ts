@@ -187,6 +187,69 @@ test("an older open that loses the race touches nothing", async () => {
   assert.deepEqual(roots(store), ["/r/fast"], "the loser did not add a tab behind the winner's back");
 });
 
+test("closing another tab while an open is still finding its repository does not cancel the open", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const store = new RepoStore([], {
+    discover: async (cwd) => {
+      if (cwd === "/r/new") await gate; // a slow `git rev-parse` (a network drive, a big repository)
+      return cwd;
+    },
+    realpath: (p) => p,
+    createContext: (root) => ({ root, dispose() {} }) as unknown as GitContext,
+  });
+  await store.openTab("/r/a");
+  await store.openTab("/r/b");
+  const pending = store.openTab("/r/new");
+  store.closeTab("/r/a"); // an unrelated tab, closed meanwhile
+  release();
+  const out = await pending;
+  assert.equal(out.kind, "opened", "the open the user asked for still happens");
+  assert.deepEqual(roots(store), ["/r/b", "/r/new"]);
+  assert.equal(store.state().active, "/r/new");
+});
+
+test("…and closing the LAST tab meanwhile does not cancel it either", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const store = new RepoStore([], {
+    discover: async (cwd) => {
+      if (cwd === "/r/new") await gate;
+      return cwd;
+    },
+    realpath: (p) => p,
+    createContext: (root) => ({ root, dispose() {} }) as unknown as GitContext,
+  });
+  await store.openTab("/r/a");
+  const pending = store.openTab("/r/new");
+  store.closeTab("/r/a");
+  release();
+  assert.equal((await pending).kind, "opened");
+  assert.deepEqual(roots(store), ["/r/new"]);
+});
+
+test("closing the repository an open is still finding IS the later word: it stays closed", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const store = new RepoStore([], {
+    discover: async (cwd) => {
+      if (cwd === "/r/a/sub") await gate; // opening a folder INSIDE /r/a, which already has a tab
+      return cwd.startsWith("/r/a") ? "/r/a" : cwd;
+    },
+    realpath: (p) => p,
+    createContext: (root) => ({ root, dispose() {} }) as unknown as GitContext,
+  });
+  await store.openTab("/r/a");
+  await store.openTab("/r/b");
+  const pending = store.openTab("/r/a/sub");
+  store.closeTab("/r/a");
+  release();
+  const out = await pending;
+  assert.equal(out.kind, "superseded");
+  assert.equal("info" in out ? out.info : undefined, undefined, "and it does not claim the tab in front as what it opened");
+  assert.deepEqual(roots(store), ["/r/b"], "the tab closed while it was being found is not brought back");
+});
+
 // ── The scope every bridge reads ─────────────────────────────────────────────
 
 test("a call stamped with a tab answers for that tab, whichever tab is in front", async () => {

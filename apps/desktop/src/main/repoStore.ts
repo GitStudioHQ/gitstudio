@@ -116,6 +116,12 @@ export class RepoStore {
   private activeRoot: string | undefined;
   /** Monotonic token so an out-of-order `open()` can't clobber a newer one. */
   private openSeq = 0;
+  /**
+   * The roots closed while each open in flight was still finding its
+   * repository — one set per open (see openTab). A close is the later word
+   * only about the repository it closed.
+   */
+  private readonly closedDuringOpen = new Set<Set<string>>();
   private recent: string[] = [];
   /** Observer wired by main.ts: fires for every git command any open repo runs,
    *  with the repository it ran in, so each tab's Output log shows its own. */
@@ -248,7 +254,14 @@ export class RepoStore {
    */
   async openTab(cwd: string): Promise<OpenOutcome> {
     const seq = ++this.openSeq;
-    const root = await this.discover(cwd);
+    const closed = new Set<string>();
+    this.closedDuringOpen.add(closed);
+    let root: string | undefined;
+    try {
+      root = await this.discover(cwd);
+    } finally {
+      this.closedDuringOpen.delete(closed);
+    }
     // A newer open() began while we were discovering the root — let it win, and
     // touch no shared state here (otherwise we'd leave the UI on one repo and the
     // active context on another).
@@ -264,6 +277,13 @@ export class RepoStore {
       return { kind: "superseded", info: this.active() ?? toInfo(root) };
     }
     if (!root) return { kind: "notRepo" };
+    // Its own tab was closed while it was being found: the close came later,
+    // and wins. It opens nothing, and does not claim the tab in front either —
+    // no caller may report it as opened.
+    if (closed.size) {
+      const real = this.realpath(root);
+      if ([...closed].some((r) => sameRoot(r, root) || this.realpath(r) === real)) return { kind: "superseded" };
+    }
     const existing = this.find(root);
     if (existing) {
       this.promoteRecent(existing.root);
@@ -331,9 +351,14 @@ export class RepoStore {
    * a far worse outcome than one that finishes with nobody watching.
    */
   closeTab(root: string): boolean {
-    this.openSeq++; // supersede any in-flight open() so it can't resurrect state
     const tab = this.find(root);
     if (!tab) return false;
+    // An open still finding its repository is superseded only if it turns out
+    // to be for THIS one (openTab checks). Closing any tab used to supersede
+    // every open in flight — a leftover of "closing means the one repository
+    // goes away" — so closing an unrelated background tab silently cancelled
+    // an open, and its caller then reported the tab in front as opened.
+    for (const closed of this.closedDuringOpen) closed.add(tab.root);
     const i = this.tabs.indexOf(tab);
     this.tabs.splice(i, 1);
     if (this.activeRoot === tab.root) {
