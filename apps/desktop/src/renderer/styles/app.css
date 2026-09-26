@@ -12332,6 +12332,14 @@ body.vscode-light .log-pane {
 }
 .br-state-col .ab-pill.gone { border-color: var(--status-warn); }
 
+/* A worktree's state is often TWO pills (this window + main worktree, locked
+   + folder missing); the 118px slot clipped the second. Still one fixed
+   width down the table, so the path column keeps its single x. */
+.worktree-row .br-state-col {
+  width: 220px;
+  flex-basis: 220px;
+}
+
 /* The meta CLUSTER must yield or nothing inside it can: shrink factors only
    compete within one flex container, and the title lives one level up. The
    cluster shrinks hard; inside it the subject (0 30) absorbs every lost pixel

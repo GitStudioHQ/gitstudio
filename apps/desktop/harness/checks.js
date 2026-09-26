@@ -7972,6 +7972,12 @@
         rows.some((r) => /this window/.test(text(r.querySelector(".br-state-col")) || "")),
         "and the state pills ride the state column",
       );
+      // Two pills on a row (this window + main worktree) fit, unclipped.
+      const clipped = rows
+        .map((r) => r.querySelector(".br-state-col"))
+        .filter((s) => s && s.scrollWidth > s.clientWidth + 1)
+        .map((s) => text(s));
+      c.eq(clipped.join(" | "), "", "no state pill is clipped");
     },
 
     /**
@@ -8032,8 +8038,9 @@
       c.eq(sent && sent.discardChanges, true, "…agreeing to discard what was listed");
       c.eq(sent && sent.pastLock, true, "…past the lock");
 
-      // The main worktree (here also this window's) never offers Remove.
+      // The main worktree (here also this window's) says so, and never offers Remove.
       const main = rowAt("/GitStudioHQ/gitstudio");
+      c.match(text(main && main.querySelector(".br-state-col")), /main worktree/, "the main worktree is named");
       const remove = main && (await menuOf(main)).find((i) => /Remove this worktree/.test(text(i)));
       c.ok(!!remove && (remove.disabled || remove.getAttribute("aria-disabled") === "true"), "the main worktree's Remove is disabled");
     },

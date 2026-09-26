@@ -63,10 +63,10 @@ but they share the same engine, so most Git behaviour lands in both at once.
   changes — and a locked one could not be removed at all. The question now
   says what removing takes — the lock's reason, the uncommitted files that
   go, that the branch stays — and its button does exactly that (**Unlock and
-  Remove**, **Discard Changes and Remove**). The main worktree's Remove is
-  disabled; a worktree whose folder is gone reads *folder missing*, has no
-  Open, and offers **Forget this worktree…**. The same words as the VS Code
-  extension's.
+  Remove**, **Discard Changes and Remove**). The main worktree reads *main
+  worktree* and its Remove is disabled; a worktree whose folder is gone reads
+  *folder missing*, has no Open, and offers **Forget this worktree…**. The
+  same words as the VS Code extension's.
 - **Removing a worktree that is stopped in a merge, rebase, cherry-pick or
   revert says so**, and that removing it abandons the operation — a worktree
   stopped in a rebase with nothing uncommitted went without a word.

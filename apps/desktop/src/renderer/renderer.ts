@@ -3182,6 +3182,13 @@ class App {
       p.title = "The worktree this window has open";
       pills.push(p);
     }
+    // Named, as the extension names it: it holds the repository itself, and
+    // was told apart only by "this window" — when this window had it open.
+    if (w.main && !w.bare) {
+      const p = span("main worktree", "ab-pill default");
+      p.title = "The main worktree holds the repository itself — git never removes it";
+      pills.push(p);
+    }
     if (w.locked) {
       const p = span("locked", "ab-pill unpublished");
       p.title = w.lockReason ? `Locked: ${w.lockReason}` : "Locked, with no reason given";
@@ -3220,9 +3227,9 @@ class App {
         w.branch
           ? this.routeView("refdetail", false, { ref: w.branch, id: "head" })
           : this.routeView("commit", false, { sha: w.head }),
-      ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${w.path}${w.current ? ", this window" : ""}`,
+      ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${w.path}${w.current ? ", this window" : ""}${w.main && !w.bare ? ", main worktree" : ""}`,
     });
-    row.classList.add("ref-row");
+    row.classList.add("ref-row", "worktree-row");
     row.dataset.ref = w.path;
     row.title = w.path;
     row.addEventListener("contextmenu", (e) => {
