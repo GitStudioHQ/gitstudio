@@ -1,0 +1,75 @@
+apps/desktop/src/renderer/views/refDetail.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 161-163,332-334,337,346-348,350-354,357
+apps/extension/test/stashesDoors.test.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 1-429
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_f35ad184a02fb9 2092-2106,2187-2188,2190-2198,2200
+apps/extension/src/views/stashesWebview.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 3,22-26,33-37,42-54,129-132,137-150,152,175-176,243-246,343,346,365-398,406,411-480,482-489,501-530,569,572,578-584,586,589,593,595,600-607,610-611,617,632-637
+apps/extension/test/stashesWebview.test.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 1-339
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 4,77-82,86-104,121-124,146,149-178,210-218,247,249-257,260-271,277-281,293-301,303-310,312,323-362,463-510,595-600,687-696,732-737,757-759,771-773,801-806,830,833,838-840,844-846,1050-1064,1072-1085,1087-1090,1095-1134
+  s_26f5e669d3043c::t_6435d26b2e9f71 1135
+packages/git-service/src/StashProvider.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 50-75,318-350,356-361,368-377,384-433,436-444,446,450-457,465-492
+  s_26f5e669d3043c::t_1a9c822b78d320 493
+packages/git-service/test/stashIdentity.test.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 1-540
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_f35ad184a02fb9 615-618
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 24,723-732,838-843,1418-1421,1426-1432,1437-1440,2807,2819-2824,3975,3979-3985,3988,4165-4174
+  s_26f5e669d3043c::t_d34b29ece35017 1444-1445,1447-1449,1452,1454
+  s_26f5e669d3043c::t_aaa106bdfe4c31 4175-4176
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 2782,2911-2915,2918,2945-2946,2951-2953
+apps/desktop/src/main/inTheWay.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 43,51-62,69-94,102-104,112-114,117,119-123,263-264,267,275-279
+  s_26f5e669d3043c::t_3a7bac9c813437 280
+apps/extension/src/git/inTheWay.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 16,23-25,47-53,61-66,77-82,100-102,106-109
+  s_26f5e669d3043c::t_a9e0fa4c8e9ec1 110-111
+apps/desktop/test/stashStaging.test.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 1-98
+apps/extension/test/changesTwisty.test.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 1-111
+apps/extension/src/views/stashesView.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 4-11,13,38-40,44-46,51,89-99,102-104,106-113,115,118-169,201-204,207-208,347-350,353,357,360-370,373,376,380-385,388-449,480-487,490,494,497-499,502-514,516,518-520,523,526,530,533-535,538-565,576,584-588
+  s_26f5e669d3043c::t_aadb70bf5f4b86 515,517
+apps/desktop/test/inTheWayDoors.test.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 429-430
+apps/desktop/test/stashIdentity.test.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 1-204
+apps/desktop/src/renderer/bridge.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 73-76,83,89-96
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 388-389,391-394
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_db99ddf373befe 189-191
+  s_26f5e669d3043c::t_f35ad184a02fb9 223-259
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_f35ad184a02fb9 9814-9884,15922-15925
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_f35ad184a02fb9 81-97
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 4951-4955
+apps/extension/test/inTheWayCallSites.test.ts
+  s_26f5e669d3043c::t_f35ad184a02fb9 18-21,33-34,41-42,50,52,126-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3f1725db37c97355c8563c02f81c635f9fd7fd64",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
