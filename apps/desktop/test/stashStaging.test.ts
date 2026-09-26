@@ -16,8 +16,9 @@ import { removeTempRepo } from "./tmpRepo";
 // differed from its working copy (`MM`), a pop then dropped the only copy of
 // the staged one. Where git cannot restore the staging — the user has staged
 // changes of their own, or the staged half no longer applies at HEAD —
-// nothing of it has run, and the desktop applies it as it always did,
-// everything unstaged: never worse than before.
+// nothing of it has run, and the desktop applies it unstaged. A Pop there is
+// an APPLY: the stash stays in the list, still holding the staged version,
+// and the answer says so (stashNote, stashKept).
 
 let repo: string;
 let ctx: GitContext;
@@ -68,20 +69,30 @@ for (const pop of [false, true]) {
     assert.equal(git("stash", "list").trim() === "", pop);
   });
 
-  test(`${verb}: over the user's own staged change, as before — unstaged, their staging kept`, async () => {
+  // A pop there used to run as a plain pop: the stash dropped, and with it the
+  // only copy of util.ts's staged version (a = 2) — the working copy is a = 3.
+  test(`${verb}: over the user's own staged change — applied unstaged, their staging kept, and the stash KEPT with its staging`, async () => {
     write("other.ts", "mine, staged\n");
     git("add", "other.ts");
+    const stash = git("rev-parse", "stash@{0}").trim();
     const r = await run();
-    assert.notEqual(r.ok, false, r.message);
+    assert.equal(r.ok, true, r.message);
     assert.equal(status(), "M  other.ts\n M util.ts");
     assert.equal(git("show", ":other.ts"), "mine, staged\n", "never unstaged by an --index run");
+    assert.equal(git("stash", "list", "--format=%H").trim(), stash, "the stash is still in the list");
+    assert.equal(git("show", `${stash}^2:util.ts`), "export const a = 2;\n", "…holding the staged version");
+    assert.match(r.stashNote ?? "", /staged changes came back unstaged/, "and it says so");
+    assert.match(r.stashNote ?? "", /stays in the list/);
+    assert.equal(r.stashKept, pop ? true : undefined, "a Pop that kept its stash says so, for the page to word it");
   });
 
-  test(`${verb}: a staged half that no longer applies at HEAD is applied as before, unstaged`, async () => {
+  test(`${verb}: a staged half that no longer applies at HEAD is applied as before, unstaged — the stash kept`, async () => {
+    const stash = git("rev-parse", "stash@{0}").trim();
     write("util.ts", "export const a = 7;\n");
     git("commit", "-q", "-am", "HEAD moves under the staged file");
     const r = await run();
     // What a plain apply does here: a conflict to resolve (both changed util.ts).
     assert.match(status(), /^UU util\.ts$/m, `${JSON.stringify(r)}\n${status()}`);
+    assert.equal(git("stash", "list", "--format=%H").trim(), stash, "git keeps a stash that conflicts");
   });
 }

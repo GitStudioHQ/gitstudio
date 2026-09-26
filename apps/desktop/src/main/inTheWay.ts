@@ -40,6 +40,7 @@ import {
   type OperationInTheWay,
   type StashRetryOutcome,
 } from "@gitstudio/git-service/changesInTheWay";
+import { STASH_GONE_MESSAGE } from "@gitstudio/git-service/StashProvider";
 import type { CommitActionResult } from "../shared/ipc";
 
 /** What a door gets back: a final answer, or git's run to handle as it always has. */
@@ -47,8 +48,18 @@ export type DoorApplied =
   /** Said here — changes in the way, a stash that failed, another repository. */
   | { answer: CommitActionResult }
   /** git ran (again, after a stash, when `stashFirst` was set): the door
-   *  handles the result as before and passes `stashNote` on. */
-  | { result: GitRunResult; stashNote?: string };
+   *  handles the result as before and passes `stashNote` on — and
+   *  `stashKept`: a Pop that applied its stash and kept it (applyForDoor). */
+  | { result: GitRunResult; stashNote?: string; stashKept?: true };
+
+/** A stash applied without its staging, because git could not stage it again. */
+export const STASH_UNSTAGED_NOTE =
+  "The stash's staged changes came back unstaged — git couldn't stage them again here. " +
+  "It stays in the list, still holding them as they were staged.";
+/** …and a Pop that therefore kept its stash. */
+export const STASH_KEPT_NOTE =
+  "The stash's staged changes came back unstaged — git couldn't stage them again here — so it was " +
+  "applied, not popped: it stays in the list, still holding them as they were staged.";
 
 export async function applyForDoor(
   ctx: GitContext,
@@ -60,13 +71,19 @@ export async function applyForDoor(
   // A stash applied with its staging (`index`) where git could not stage it
   // again — the user's own staged changes in the way, or its staged half no
   // longer applying at HEAD. Nothing of it ran, so it runs as it always did,
-  // everything unstaged: never worse than before. (The extension asks first;
-  // the desktop has no question for this yet.)
-  const plain: ApplyOp = op.kind === "stash" ? { kind: "stash", stash: op.stash, pop: op.pop } : op;
+  // everything unstaged — but APPLIED, even for a Pop: popping drops the
+  // stash, and with it the only copy of a staged version that differed from
+  // its file (issue #4's loss). So it stays in the list, and the note says
+  // why. (The extension asks first; the desktop has no question for this yet.)
+  const plain: ApplyOp = op.kind === "stash" ? { kind: "stash", stash: op.stash } : op;
   const again = await applyOnce(ctx, plain, stashFirst);
   if ("staging" in again) return { result: again.result };
-  const notes = [applied.stashNote, "stashNote" in again ? again.stashNote : undefined].filter(Boolean);
-  return "result" in again && notes.length > 0 ? { ...again, stashNote: notes.join(" ") } : again;
+  if (!("result" in again)) return again;
+  const ran = op.kind === "stash" && again.result.code === 0;
+  const kept = ran && op.pop === true;
+  const notes = [applied.stashNote, again.stashNote, ran ? (kept ? STASH_KEPT_NOTE : STASH_UNSTAGED_NOTE) : undefined];
+  const said = notes.filter(Boolean).join(" ");
+  return { ...again, ...(said ? { stashNote: said } : {}), ...(kept ? { stashKept: true as const } : {}) };
 }
 
 /** One run through the door; `staging` when a stash's `index` was refused. */
@@ -97,8 +114,12 @@ async function applyOnce(
     }
     return note ? { result: out.result, stashNote: note } : { result: out.result };
   }
-  const { result, inTheWay, blocked, indexBusy, indexRefused } = await runApplying(ctx.process, op);
+  const { result, inTheWay, blocked, indexBusy, indexRefused, stashGone } = await runApplying(ctx.process, op);
   if (blocked) return { answer: blockedAnswer(blocked) };
+  // Named by sha, and gone from the list between the page's check and git
+  // running: nothing ran. It answered git's empty "not run" before, which
+  // read as "The operation failed." and was filed.
+  if (stashGone) return { answer: stashGoneAnswer() };
   if (indexBusy || indexRefused) return { staging: true, result };
   return inTheWay ? { answer: inTheWayAnswer(ctx, inTheWay) } : { result };
 }
@@ -239,16 +260,22 @@ export async function sameRepository(
 /**
  * The stash a Stash & Retry needed could not be made (or, for a stash applied
  * over changes, the stash it named is gone). Nothing was run. A stash that is
- * gone is the user's state; git failing to stash is a genuine failure, and
- * stays reportable.
+ * gone is the user's state, said as the extension says it; git failing to
+ * stash is a genuine failure, and stays reportable.
  */
 function stashFailedAnswer(out: StashRetryOutcome): CommitActionResult {
+  if (out.stashGone) return stashGoneAnswer();
   return {
     ok: false,
     changed: false,
-    ...(out.stashGone ? { expected: true } : {}),
     message: `Couldn't stash your changes, so nothing ran — ${out.stashFailed}`,
   };
+}
+
+/** The stash the request named has left the list (popped or dropped since
+ *  the page drew it): nothing ran. The user's state. */
+export function stashGoneAnswer(): CommitActionResult {
+  return { ok: false, changed: false, expected: true, message: STASH_GONE_MESSAGE };
 }
 
 /** The refusal, as the renderer needs it: said, not filed, and answerable. */

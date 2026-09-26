@@ -9828,6 +9828,46 @@
       c.ok(drawn(apply) !== "none" && drawn(apply) !== drawn(pop), "two distinct glyphs the font has");
     },
 
+    /**
+     * A Pop whose staging git could not restore is applied and KEPT (main's
+     * applyForDoor): the toast says so rather than "Popped", the note says
+     * why, and the stash's page stays open on a stash that is still there.
+     */
+    "a-pop-that-keeps-its-stash-says-applied": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const row = $$(".sec-row")[0];
+      c.ok(!!row, "a stash is listed");
+      if (!row) return;
+      row.querySelector(".lv-menu-btn")?.click();
+      await settle(300);
+      const pop = $$(".dropdown-item").find((i) => /^pop/i.test(text(i) || ""));
+      if (!pop) return c.ok(false, "no Pop to press");
+      pop.click();
+      await settle(900);
+      const pops = (window.__GS_INVOKED || []).filter((r) => r.channel === "stash:pop").map((r) => r.payload);
+      c.eq(pops.length, 1, "one Pop");
+      const all = text("#toast-stack");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /^Applied stash@\{0\} — it stays in the list\.$/.test(text(t))), `said as applied and kept (${all})`);
+      c.ok(!/Popped/.test(all), `never "Popped" (${all})`);
+      const note = $$("#toast-stack .toast").find((t) => /applied, not popped/.test(text(t)));
+      c.ok(!!note && note.classList.contains("toast-info"), `and why, in the neutral tone (${all})`);
+    },
+    "a-pop-that-keeps-its-stash-leaves-its-page-open": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $$("#toast-stack .toast").forEach((t) => t.remove());
+      const btn = $$(".mini-btn, .btn").find((b) => text(b) === "Pop");
+      if (!btn) return c.ok(false, "the stash page offers Pop");
+      const page = $(".rd-history");
+      btn.click();
+      await settle(900);
+      const all = text("#toast-stack");
+      c.ok(!!$$("#toast-stack .toast-success").find((t) => /^Applied stash@\{0\} — it stays in the list\.$/.test(text(t))), `said as applied and kept (${all})`);
+      c.ok(!!page && page.isConnected, "the page of the stash that is still there stays open");
+    },
+
     "a-stash-rows-pop-wears-the-stash-glyph": async (f) => {
       const c = check(f);
       await settle(1200);
@@ -15845,7 +15885,10 @@
       await settle(900);
       const applies = (window.__GS_INVOKED || []).filter((r) => r.channel === "stash:apply").map((r) => r.payload);
       c.eq(applies.length, 2, "the apply, then its retry");
-      c.eq(typeof applies[0], "string", "the first request is the ref, as it always was");
+      // By SHA: a stash pushed while the question is up renumbers the list,
+      // and the retry sent stash@{n} again — popping the newcomer.
+      const listed = await window.gitstudio.invoke("stash:list");
+      c.eq(applies[0], listed[0]?.sha, "the first request names the stash by its sha, not its place in the list");
       c.eq(applies[1]?.ref, applies[0], "the retry names the same stash");
       c.eq(applies[1]?.stashFirst, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…and stashes first");
       c.ok(!!$$("#toast-stack .toast-success").find((t) => /Applied/.test(text(t))), `and it is applied (${text("#toast-stack")})`);

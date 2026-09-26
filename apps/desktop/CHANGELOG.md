@@ -62,7 +62,17 @@ but they share the same engine, so most Git behaviour lands in both at once.
   unstaged, and popping a file that was staged and then edited further lost
   the staged version for good. They come back staged now. When your own staged
   changes are in the way, or the staged part no longer applies, the stash is
-  applied as before, unstaged.
+  applied unstaged, and a Pop keeps it in the list, still holding what was
+  staged, and says so.
+- **Stash & Retry on Apply or Pop acts on the stash you picked.** A stash made
+  while its question was open (from a terminal, or a pull that stashes by
+  itself) moved every number in the list down, and the retry popped that
+  stash instead of yours. A stash that has left the list is said as that, not
+  as "The operation failed."
+- **A stash of new files showed an empty commit.** On a stash's page, *The
+  commit it holds* left out the new files a stash keeps (the Stash dialog
+  makes one whenever a new file is ticked). They are listed now, and open
+  with their contents.
 - Apply and Pop on a stash use the stash-apply and stash-pop icons, as the VS
   Code extension does.
 

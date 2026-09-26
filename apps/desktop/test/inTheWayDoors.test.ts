@@ -426,7 +426,8 @@ test("a retry whose stash is gone is the user's state — said, and not filed", 
   // No refusal came first; `root` is what one in this repository would name.
   const r = await bridge.stashApply({ ref: "stash@{0}", stashFirst: root });
   assert.equal(r.ok, false);
-  assert.match(r.message ?? "", /no longer exists/);
+  // In the extension's words (STASH_GONE_MESSAGE), as a first request's is.
+  assert.match(r.message ?? "", /^That stash is no longer in the list, so nothing was changed\.$/);
   assert.equal(filed(r), undefined);
   assert.equal(stashes(git), "");
 });

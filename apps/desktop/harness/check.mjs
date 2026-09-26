@@ -613,6 +613,8 @@ const CASES = [
   ["a-stash-page-holds-one-commit", "branches~click:.gh-seg-btn:nth-child(4)~click:.sec-row"],
   ["a-stash-page-applies-and-pops-with-the-stash-glyphs", "branches~click:.gh-seg-btn:nth-child(4)~click:.sec-row"],
   ["a-stash-rows-pop-wears-the-stash-glyph", "branches~click:.gh-seg-btn:nth-child(4)"],
+  ["a-pop-that-keeps-its-stash-says-applied", "branches~click:.gh-seg-btn:nth-child(4)", { extra: "stashkept=1" }],
+  ["a-pop-that-keeps-its-stash-leaves-its-page-open", "branches~click:.gh-seg-btn:nth-child(4)~click:.sec-row", { extra: "stashkept=1" }],
   ["the-palette-keeps-your-place-when-results-arrive", "branches~palette"],
   ["one-key-press-closes-one-layer", "branches"],
   ["one-key-press-closes-one-layer", "issues"],

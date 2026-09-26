@@ -2907,9 +2907,14 @@ class App {
         await this.refreshBranchesSoft();
         return;
       }
+      // By SHA, not st.ref: the check above holds only until the request
+      // leaves. A Stash & Retry sends it again after its question, and a stash
+      // pushed while the question was up renumbered the list — the old
+      // stash@{n} then popped, and dropped, the newcomer. Main finds the sha
+      // in the list just before git runs.
       const r = await host.invoke(
         action === "apply" ? "stash:apply" : action === "pop" ? "stash:pop" : "stash:drop",
-        st.ref,
+        st.sha || st.ref,
       );
       // Uncommitted changes in the stash's way were asked about (Stash &
       // Retry or Cancel — bridge.ts), and the user cancelled: nothing ran.
@@ -2936,11 +2941,15 @@ class App {
           after: () => this.refreshBranchesSoft(),
         });
       } else {
+        // A Pop whose staging git could not restore was applied and KEPT
+        // (main's stashNote, said by bridge.ts, says why) — not "Popped".
         toast(
           action === "apply"
             ? `Applied ${st.ref}.`
             : action === "pop"
-              ? `Popped ${st.ref}.`
+              ? r.stashKept
+                ? `Applied ${st.ref} — it stays in the list.`
+                : `Popped ${st.ref}.`
               : `Dropped ${st.ref}.`,
           "success",
         );
