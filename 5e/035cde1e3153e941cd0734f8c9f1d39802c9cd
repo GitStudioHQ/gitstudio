@@ -1,0 +1,47 @@
+packages/git-service/src/GitProcess.ts
+  s_26f5e669d3043c::t_a4822b86c7e94c 158-173
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_a69631085b83eb 70-72
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_77358aa80af77d 8025
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_5892281fa2a6ab 1991-1992,2001-2003
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_83b4c962b7fd5e 1573
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_cd87f73192e693 3272
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_1e0c3e326b4aee 16,552-553
+apps/desktop/test/worktreeRemoval.test.ts
+  s_26f5e669d3043c::t_507f840e189db4 89-101
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_d1e7f0ae097565 105-107
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_708ff3c01914cd 844
+apps/extension/test/worktreesDoors.test.ts
+  s_26f5e669d3043c::t_7f247a90cfda6e 392-409
+packages/git-service/src/WorktreeProvider.ts
+  s_26f5e669d3043c::t_63b58a2ffe5043 3,76-80,223-228
+packages/git-service/test/worktreeSafety.test.ts
+  s_26f5e669d3043c::t_0f600220e9b949 207-266
+packages/host-bridge/src/worktreeRemoval.ts
+  s_26f5e669d3043c::t_825c9bda197fe5 27-30,33-45,61-63,66-68,106
+packages/host-bridge/test/worktreeRemoval.test.ts
+  s_26f5e669d3043c::t_4ce10b8df4b611 72-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5e035cde1e3153e941cd0734f8c9f1d39802c9cd",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
