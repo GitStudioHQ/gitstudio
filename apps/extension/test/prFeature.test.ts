@@ -186,9 +186,11 @@ async function row(tree: any, n: number): Promise<any> {
 
 // ── The list ───────────────────────────────────────────────────────────────
 
-test("every row's checks colour its icon — drafts too — from check runs AND statuses, and no row reads `$(…)`", async () => {
+test("every row's checks show as its icon — a glyph AND a colour, drafts too — from check runs AND statuses, and no row reads `$(…)`", async () => {
   github(acmeRoutes());
   const m = mount(fakeRepos(ORIGIN));
+  const first = await row(m.tree, 36);
+  assert.equal(first.iconPath.id, "git-pull-request-draft", "before the checks are known: the PR's own icon");
   await until(async () => (await row(m.tree, 3))?.iconPath?.color !== undefined, "the checks to colour the rows");
   const r37 = await row(m.tree, 37);
   const r36 = await row(m.tree, 36);
@@ -196,11 +198,13 @@ test("every row's checks colour its icon — drafts too — from check runs AND 
   for (const r of [r37, r36, r3]) {
     assert.doesNotMatch(String(r.description), /\$\(/, "a TreeItem description is plain text");
   }
-  // GitHub's combined status said "pending" for all three; the runs say what happened.
-  assert.equal(r37.iconPath.color?.id, "charts.red", "#37's run failed");
-  assert.equal(r3.iconPath.color?.id, "charts.green", "#3's checks passed");
-  assert.equal(r36.iconPath.id, "git-pull-request-draft");
-  assert.equal(r36.iconPath.color?.id, "charts.yellow", "a draft's running checks are shown too");
+  // GitHub's combined status said "pending" for all three; the runs say what
+  // happened. Each state is its own glyph: red and green alone are one colour
+  // to a red-green colour-blind eye.
+  assert.deepEqual([r37.iconPath.id, r37.iconPath.color?.id], ["error", "charts.red"], "#37's run failed");
+  assert.deepEqual([r3.iconPath.id, r3.iconPath.color?.id], ["pass", "charts.green"], "#3's checks passed");
+  assert.deepEqual([r36.iconPath.id, r36.iconPath.color?.id], ["clock", "charts.yellow"], "a draft's running checks are shown too");
+  assert.match(String(r36.description), /^Draft · /, "…and the row still says it is a draft");
   assert.match(r37.tooltip.value, /Checks failed/);
   assert.match(r37.accessibilityInformation.label, /checks failed/);
   // Sorted by last update, so the age shown is the update's — and says so.

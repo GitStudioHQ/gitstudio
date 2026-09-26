@@ -64,11 +64,15 @@ class GroupNode extends vscode.TreeItem {
   }
 }
 
-/** The colour a row's PR icon takes from its checks. */
-const CI_COLORS: Partial<Record<CiState, string>> = {
-  success: "charts.green",
-  failure: "charts.red",
-  pending: "charts.yellow",
+/**
+ * A row's icon once its checks are known: a glyph AND a colour per state.
+ * Colour alone — the same PR icon tinted green, red or yellow — is one colour
+ * to a red-green colour-blind eye; the glyph says it without hovering.
+ */
+const CI_ICONS: Partial<Record<CiState, { icon: string; color: string }>> = {
+  success: { icon: "pass", color: "charts.green" },
+  failure: { icon: "error", color: "charts.red" },
+  pending: { icon: "clock", color: "charts.yellow" },
 };
 
 /** A single pull request row. */
@@ -86,16 +90,18 @@ export class PrNode extends vscode.TreeItem {
     // The list is sorted by LAST UPDATE, so that is the age the row shows —
     // and says so. The creation age beside it made a busy old PR look stale.
     //
-    // The PR icon carries the checks' state as a themed colour, drafts
-    // included, so the row stays one clean line. A TreeItem description is
-    // plain text — `$(check)` there showed as those eight characters — so the
-    // words live in the tooltip and the accessible label.
-    const color = ci && CI_COLORS[ci] ? new vscode.ThemeColor(CI_COLORS[ci]!) : undefined;
-    this.iconPath = new vscode.ThemeIcon(
-      pr.draft ? "git-pull-request-draft" : "git-pull-request",
-      color,
-    );
-    this.description = `${author} · updated ${ago(Date.parse(pr.updatedAt))}`;
+    // The icon is the checks' state — its own glyph, in a themed colour —
+    // drafts included, so the row stays one clean line; until they are known,
+    // or when there are none, it is the PR's icon. A draft says so in words
+    // too, since its draft icon gives way to the checks'. A TreeItem
+    // description is plain text — `$(check)` there showed as those eight
+    // characters — so the checks' words live in the tooltip and the
+    // accessible label.
+    const state = ci ? CI_ICONS[ci] : undefined;
+    this.iconPath = state
+      ? new vscode.ThemeIcon(state.icon, new vscode.ThemeColor(state.color))
+      : new vscode.ThemeIcon(pr.draft ? "git-pull-request-draft" : "git-pull-request");
+    this.description = `${pr.draft ? "Draft · " : ""}${author} · updated ${ago(Date.parse(pr.updatedAt))}`;
     this.accessibilityInformation = {
       label: `Pull request ${pr.number}, ${pr.title}${pr.draft ? ", draft" : ""}, by ${author}${
         ci ? `, ${ciWords(ci).toLowerCase()}` : ""
