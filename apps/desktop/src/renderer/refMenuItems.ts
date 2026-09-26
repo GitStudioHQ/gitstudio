@@ -7,6 +7,7 @@
 // right-click means the same thing in both products.
 
 import type { CommitActionRequest } from "../shared/ipc";
+import { isRemoteHead } from "./branchRequests";
 
 /** A ref decoration on a commit row, as the renderer knows it. */
 export interface RowRef {
@@ -47,7 +48,9 @@ export function refMenuItems(refs: readonly RowRef[]): RefMenuItem[] {
     if (ref.kind === "head" && ref.current) {
       continue;
     }
-    if (ref.name.endsWith("/HEAD")) {
+    // By its full name (isRemoteHead): git calls it "origin", so the short
+    // name never ended in "/HEAD" and the guard never fired.
+    if (ref.kind === "remote" && isRemoteHead(ref)) {
       continue;
     }
     const full = ref.fullName ? { fullName: ref.fullName } : {};

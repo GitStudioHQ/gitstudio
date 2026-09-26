@@ -16,6 +16,7 @@
 // askable, and publish-vs-draft is two named buttons rather than a checkbox.
 
 import { host } from "../bridge";
+import { isRemoteHead } from "../branchRequests";
 import { el, span, glyph, cleanErr, errorState, skeletonList } from "../ui";
 import { toast } from "../dialogs";
 import { detailPage, comboField, type SectionTarget, type SectionNav } from "./common";
@@ -33,9 +34,10 @@ async function refOptions(): Promise<{ branches: string[]; tags: string[] }> {
     const tags = new Set<string>();
     for (const r of refs) {
       if (r.type === "head") branches.add(r.name);
-      else if (r.type === "remote") {
+      else if (r.type === "remote" && !isRemoteHead(r)) {
+        // Not the remote's HEAD, which git names "origin" (see isRemoteHead).
         const short = r.name.replace(/^[^/]+\//, "");
-        if (short && short !== "HEAD") branches.add(short);
+        if (short) branches.add(short);
       } else if (r.type === "tag") tags.add(r.name);
     }
     const cmp = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });

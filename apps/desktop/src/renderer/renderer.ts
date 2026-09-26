@@ -107,7 +107,7 @@ import { askPullMode, pullWithChoice, pullVerdict, type PullOutcome, type PullVe
 import { resetItemLabel, resetToUpstream } from "./resetToUpstream";
 import { installInTheWayAsker } from "./inTheWayAsk";
 import { refCheckoutRequest, refDisplay, type RowRef } from "./refMenuItems";
-import { branchName, remoteRefParts, tagName, upstreamLabel, upstreamParts } from "./branchRequests";
+import { branchName, isRemoteHead, remoteRefParts, tagName, upstreamLabel, upstreamParts } from "./branchRequests";
 import { explainRefusedCheckout } from "./optionLikeRename";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
@@ -1899,8 +1899,8 @@ class App {
     // not "origin/HEAD" — so the old `endsWith("/HEAD")` guard never fired and
     // the list carried a phantom row called "origin" offering to check out a
     // branch that does not exist. Its symref names the DEFAULT branch, which is
-    // worth keeping; the row is not.
-    const isRemoteHead = (r: RefInfo): boolean => !!r.symref || !r.name.includes("/");
+    // worth keeping; the row is not (isRemoteHead, shared with the switcher and
+    // the graph's ref menu).
     let remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
     let tags = this.refs.filter((r) => r.type === "tag");
     let defaultBranch = this.defaultBranchName(locals);
@@ -4502,7 +4502,7 @@ class App {
       // remote-tracking branch and tag in the repo. The upstream is the base
       // anyone actually wants there.
       this.refs.find((r) => r.type === "remote" && r.name.endsWith(`/${head}`))?.name ??
-      this.refs.find((r) => r.type === "remote")?.name;
+      this.refs.find((r) => r.type === "remote" && !isRemoteHead(r))?.name;
 
     const wrap = el("div", "compare-view");
 
@@ -5067,7 +5067,7 @@ class App {
       }
     };
     add("Branches", this.refs.filter((r) => r.type === "head"), "git-branch");
-    add("Remotes", this.refs.filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD")), "cloud");
+    add("Remotes", this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r)), "cloud");
     add("Tags", this.refs.filter((r) => r.type === "tag"), "tag");
     if (items.length === 0) items.push({ label: "No refs", disabled: true });
     openMenu(anchor, items);
@@ -9528,7 +9528,7 @@ class App {
    */
   private refsOn(sha: string): RowRef[] {
     return this.refs
-      .filter((r) => r.sha === sha && r.type !== "stash" && !r.name.endsWith("/HEAD"))
+      .filter((r) => r.sha === sha && r.type !== "stash" && !(r.type === "remote" && isRemoteHead(r)))
       .map((r) => ({
         name: r.name,
         kind: r.type === "remote" ? "remote" : r.type === "tag" ? "tag" : "head",
@@ -9904,7 +9904,10 @@ class App {
    */
   private openBranchMenu(anchor: HTMLElement): void {
     const locals = this.refs.filter((r) => r.type === "head");
-    const remotes = this.refs.filter((r) => r.type === "remote");
+    // Not the remote's own HEAD: its row offered "Check out as a local
+    // branch", "Compare with HEAD" (with origin's default branch) and "Copy
+    // name" (copying "origin"), for a ref every other list leaves out.
+    const remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
     const tags = this.refs.filter((r) => r.type === "tag");
     const items: MenuItem[] = [];
     // Every entry is NAMED by its full name under the namespace — "release",

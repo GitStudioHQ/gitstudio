@@ -16112,6 +16112,12 @@
       const rowNamed = (name) => $$(".dropdown:not(.dropdown-submenu) .dropdown-item").find((r) => label(r) === name);
       const actions = () => $$(".dropdown-submenu .dropdown-item").map((r) => label(r));
 
+      // The remote's own HEAD is not a branch: its row offered to check out,
+      // compare and copy "origin", as the Branches view has never listed it.
+      const remoteRows = $$(".dropdown:not(.dropdown-submenu) .dropdown-item").filter((r) => r.querySelector(".codicon-cloud"));
+      c.ok(remoteRows.length > 0, "the switcher lists the remote branches");
+      c.ok(!remoteRows.some((r) => /(^|\/)HEAD$/.test(label(r)) || label(r) === "origin"), `but not the remote's HEAD (${remoteRows.map(label).join(", ")})`);
+
       const remote = rowNamed("origin/main");
       c.ok(!!remote, "the switcher lists origin/main");
       if (!remote) return;

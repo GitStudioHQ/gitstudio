@@ -81,6 +81,11 @@ but they share the same engine, so most Git behaviour lands in both at once.
   written under the list, below the fold of any plan long enough to scroll;
   it is shown just above **Start rebase** now. The commit the keyboard moves
   to is never hidden under the header or the footer either. (#32)
+- **A remote's own HEAD is no longer offered as a branch.** git calls
+  `refs/remotes/origin/HEAD` "origin", and the branch switcher, the Commits
+  graph's menu ("Checkout origin/HEAD"), Compare's branch picker and the
+  branch fields of Actions and Releases listed it, where acting on it acts on
+  whatever it points at. Only the Branches view had left it out. (#32)
 - **Repositories: switching to *On GitHub* and straight back showed GitHub's
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on
