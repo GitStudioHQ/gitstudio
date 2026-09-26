@@ -1,0 +1,36 @@
+apps/extension/test/prFeature.test.ts
+  s_26f5e669d3043c::t_63fa4cb971c0a6 698-737
+apps/extension/src/pr/reviewDiff.ts
+  s_26f5e669d3043c::t_b7076db18b3ddb 2,6-20,36-39,43,48,53-68,73,80
+apps/desktop/src/main/github/prs.ts
+  s_26f5e669d3043c::t_4f4c94aa67fcd2 354-360,368-369
+  s_26f5e669d3043c::t_fa7599dcd3de40 77-99
+  s_26f5e669d3043c::t_730973adf6e18d 76
+apps/extension/src/pr/githubApi.ts
+  s_26f5e669d3043c::t_0b2b12608837de 386-402
+  s_26f5e669d3043c::t_75d5baaf2bdd23 385
+apps/extension/src/pr/prDescriptionPanel.ts
+  s_26f5e669d3043c::t_61e0c2c0367881 191-209
+  s_26f5e669d3043c::t_dd9a872d86785c 15
+  s_26f5e669d3043c::t_12350364a28a57 290-291
+apps/desktop/test/prFileDiffBase.test.ts
+  s_26f5e669d3043c::t_cf4b4ebbff8c12 1-63
+apps/extension/src/pr/reviewMode.ts
+  s_26f5e669d3043c::t_e3b279e135966e 6,71-72,115,162,180,209,236,243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0edc9f909cfacdfb5edd5f12290d4826b2390b88",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
