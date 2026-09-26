@@ -417,6 +417,9 @@ test("the page counts the PR's files from GitHub's total, names a rename's old p
   assert.match(html, /Changed files \(61\)/, "not the count of the files fetched");
   assert.match(html, /Showing 3 of 61 files/);
   assert.match(html, /<span class="ffrom">src\/old\.ts → <\/span>/);
+  // A side with no lines isn't drawn: a deleted file's "+0", a new line's red "−0".
+  assert.doesNotMatch(html, /[+−]0</, "no zero counts");
+  assert.match(html, /data-path="docs\/gone\.md"[\s\S]*?<span class="fstat gs-mono"><span class="del">−3<\/span><\/span>/);
   // A same-repository head reads as its branch, without the owner.
   assert.match(html, /branch--head">[^<]*<i class="codicon codicon-git-branch"[^>]*><\/i>feature-37</);
   page.receive({ type: "openFile", path: "src/new.ts" });
@@ -460,6 +463,50 @@ test("Merge from the page flips it to Merged in place, drops the row, and offers
   const open = (await rows(m.tree)).filter((x) => x.group === "open").map((x) => x.node.pr.number);
   assert.deepEqual(open, [36, 3], "the merged PR left the open list");
   assert.equal(gh.count(/pulls\?state=open/), listLoads, "…without reloading it");
+});
+
+test("a PR's files follow GitHub's pages: all 130 are listed, and the 130th takes a review comment", async () => {
+  const many = Array.from({ length: 130 }, (_, i) => ({
+    filename: `src/f${i}.ts`,
+    status: "modified",
+    additions: 1,
+    deletions: 0,
+    changes: 1,
+    patch: "@@ -1,1 +1,2 @@\n a\n+b",
+  }));
+  const path = "/repos/acme/app/pulls/37/files?per_page=100";
+  github([
+    [
+      "GET",
+      /^\/repos\/acme\/app\/pulls\/37\/files/,
+      (req) => {
+        const page = Number(/[?&]page=(\d+)/.exec(req.path)?.[1] ?? 1);
+        return { body: many.slice((page - 1) * 100, page * 100), headers: linkHeader(path, page, 2) };
+      },
+    ],
+    ["GET", /^\/repos\/acme\/app\/pulls\/37$/, () => ({ body: { ...PULLS()[0], changed_files: 130 } })],
+    ...acmeRoutes(),
+  ]);
+  const m = mount(fakeRepos(ORIGIN));
+  const page = await openPage(m, 37);
+  const html: string = page.webview.html;
+  assert.match(html, /Changed files \(130\)/);
+  assert.doesNotMatch(html, /Showing \d+ of/, "nothing is missing, so nothing says so");
+  assert.equal((html.match(/class="filerow"/g) ?? []).length, 130);
+  await startReview(m, 37);
+  assert.deepEqual(ranges(m, "src/f129.ts", HEAD_37, 5), [[0, 1]], "a file past the first 100 is commentable");
+});
+
+test("files that couldn't be loaded are said to be so — not \"Showing 0 of 61\"", async () => {
+  github([
+    ["GET", /^\/repos\/acme\/app\/pulls\/41\/files/, () => ({ status: 502, body: { message: "Server Error" } })],
+    ["GET", /^\/repos\/acme\/app\/pulls\/41$/, () => ({ body: rawPull(41, { changed_files: 61 }) })],
+    ...acmeRoutes(),
+  ]);
+  const m = mount(fakeRepos(ORIGIN));
+  const html: string = (await openPage(m, 41)).webview.html;
+  assert.match(html, /Couldn't load the changed files\. Server Error/);
+  assert.doesNotMatch(html, /Showing 0 of|at most 3,000/, "no limit was hit");
 });
 
 // ── The diff panes ─────────────────────────────────────────────────────────

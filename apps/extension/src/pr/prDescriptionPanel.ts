@@ -86,6 +86,8 @@ export class PrDescriptionPanel {
   private disposed = false;
   private pr: PullRequest;
   private files: PrFile[] = [];
+  /** Why the last read of the files failed; the files shown are the last good ones. */
+  private filesError: string | undefined;
   private ci: CiRollup | undefined;
 
   private constructor(
@@ -125,7 +127,10 @@ export class PrDescriptionPanel {
         (p) => ({ ok: true as const, p }),
         (err: unknown) => ({ ok: false as const, err }),
       ),
-      api.getPullFiles(ctx.owner, ctx.repo, n).catch(() => undefined),
+      api.getPullFiles(ctx.owner, ctx.repo, n).then(
+        (f) => ({ ok: true as const, items: f.items }),
+        (err: unknown) => ({ ok: false as const, err }),
+      ),
       ciFor(knownSha),
     ]);
     if (detail.ok) {
@@ -135,7 +140,13 @@ export class PrDescriptionPanel {
     } else {
       void this.showLoadError(detail.err);
     }
-    this.files = files?.items ?? [];
+    if (files.ok) {
+      this.files = files.items;
+      this.filesError = undefined;
+    } else {
+      this.filesError =
+        files.err instanceof GitHubApiError ? files.err.message : "GitHub didn't answer.";
+    }
     this.ci = this.pr.head.sha === knownSha ? ci : await ciFor(this.pr.head.sha);
     this.render();
   }
@@ -179,6 +190,7 @@ export class PrDescriptionPanel {
       this.pr,
       this.files,
       this.ci,
+      this.filesError,
     );
   }
 
@@ -240,6 +252,7 @@ function renderHtml(
   pr: PullRequest,
   files: PrFile[],
   ci: CiRollup | undefined,
+  filesError: string | undefined,
 ): string {
   const nonce = getNonce();
   const codiconUri = webview.asWebviewUri(
@@ -288,12 +301,17 @@ function renderHtml(
 
   // The PR's own totals: `files` may be a partial list (GitHub lists at most
   // 3,000), and counting it said "Changed files (100)" for a 400-file PR.
+  // A list that failed to load says so — never "Showing 0 of 61", which
+  // blamed a limit that wasn't hit.
   const totalFiles = pr.changedFiles ?? files.length;
   const totalAdd = pr.additions ?? files.reduce((n, f) => n + f.additions, 0);
   const totalDel = pr.deletions ?? files.reduce((n, f) => n + f.deletions, 0);
-  const partial =
-    files.length < totalFiles
-      ? `<p class="files-note">Showing ${files.length} of ${totalFiles} files — GitHub lists at most 3,000. Open on GitHub for the rest.</p>`
+  const partial = filesError
+    ? `<p class="files-note">Couldn't load the changed files. ${esc(filesError)}</p>`
+    : files.length < totalFiles
+      ? `<p class="files-note">Showing ${files.length} of ${totalFiles} files${
+          totalFiles > 3000 ? " — GitHub lists at most 3,000" : ""
+        }. Open on GitHub for the rest.</p>`
       : "";
 
   const fileRows = files
@@ -314,7 +332,7 @@ function renderHtml(
       return `<li><button class="filerow" data-path="${esc(f.filename)}" title="${esc(title)}">
         <span class="fstatus fstatus--${esc(fileStatusClass(f.status))}" aria-hidden="true">${fileStatusGlyph(f.status)}</span>
         <span class="fname">${path}</span>
-        <span class="fstat gs-mono"><span class="add">+${f.additions}</span><span class="del">−${f.deletions}</span></span>
+        <span class="fstat gs-mono">${lineCounts(f.additions, f.deletions)}</span>
       </button></li>`;
     })
     .join("");
@@ -582,9 +600,9 @@ function renderHtml(
   </div>
 
   <div class="section">
-    <h2>Changed files (${totalFiles})${totalFiles > 0 ? `<span class="files-summary gs-mono"><span class="add">+${totalAdd}</span><span class="del">−${totalDel}</span></span>` : ""}</h2>
+    <h2>Changed files (${totalFiles})${totalFiles > 0 ? `<span class="files-summary gs-mono">${lineCounts(totalAdd, totalDel)}</span>` : ""}</h2>
     ${partial}
-    ${files.length > 0 ? `<ul class="files">${fileRows}</ul>` : `<span class="empty">No file data.</span>`}
+    ${files.length > 0 ? `<ul class="files">${fileRows}</ul>` : filesError ? "" : `<span class="empty">No changed files.</span>`}
   </div>
 
   <script nonce="${nonce}">
@@ -622,6 +640,17 @@ function renderHtml(
   </script>
 </body>
 </html>`;
+}
+
+/**
+ * "+120 −14" — each side only when it has lines: a new file's red "−0" read as
+ * a deletion it didn't have.
+ */
+function lineCounts(additions: number, deletions: number): string {
+  return (
+    (additions > 0 ? `<span class="add">+${additions}</span>` : "") +
+    (deletions > 0 ? `<span class="del">−${deletions}</span>` : "")
+  );
 }
 
 /** The checks pill's colour: none is neutral, never the amber of "running". */
