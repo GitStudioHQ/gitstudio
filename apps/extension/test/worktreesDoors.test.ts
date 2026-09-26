@@ -664,6 +664,26 @@ test("New worktree from a branch another worktree has checked out never offers t
   assert.ok(existsSync(join(parent, "feat-clean-copy")));
 });
 
+test("New worktree from a branch named like an option never offers it directly — git would detach, not check it out", async () => {
+  const s = scene();
+  s.git("update-ref", "refs/heads/-x", "HEAD");
+  const { repos } = windowAt(s.app);
+  const parent = join(s.base, "wt6");
+  mkdirSync(parent);
+  pickFolder = parent;
+  answer = (spec) => {
+    if (spec.kind === "pick") return spec.choices.some((c) => c.id === "direct") ? "direct" : undefined;
+    if (spec.kind === "input") return "x-copy";
+    return undefined;
+  };
+  await wt.worktreeFromRef(repos, { name: "-x", type: "head", sha: "" } as never, noop);
+  assert.ok(!asked.some((q) => q.kind === "pick" && q.choices.some((c) => c.id === "direct")), "no direct checkout offered");
+  assert.match(asked.find((q) => q.kind === "input")?.hint ?? "", /starts with "-"/);
+  assert.deepEqual(errors(), []);
+  const made = at(join(parent, "x-copy"));
+  assert.equal(made("symbolic-ref", "HEAD"), "refs/heads/x-copy", "on the new branch, not detached");
+});
+
 // ── The rows' words and symbols ──────────────────────────────────────────────
 
 test("tooltip paths are code spans with no backslash escapes", async () => {

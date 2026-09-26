@@ -15,7 +15,7 @@ import {
   checkedOutElsewhereMessage,
   type ElsewhereDoor,
 } from "@gitstudio/git-service/branchElsewhere";
-import { refShortName } from "@gitstudio/git-service/checkoutRef";
+import { optionLikeCheckout, refShortName } from "@gitstudio/git-service/checkoutRef";
 import { folderKey, sameFolder, type WorktreeRemoval } from "@gitstudio/git-service/WorktreeProvider";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { worktreeRemovalQuestion, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
@@ -639,7 +639,11 @@ export async function worktreeFromRef(
   const holder = isLocal
     ? (await a.ctx.worktrees.list()).find((e) => e.branch === label)
     : undefined;
-  const mode = holder
+  // A branch named like an option ("-x"): git would read it as one, and past
+  // the `--` it takes it for a revision and DETACHES instead of checking the
+  // branch out. A new branch from it (by its full name) is the one to make.
+  const optionLike = isLocal ? optionLikeCheckout(resolved.fullName ?? "") : undefined;
+  const mode = holder || optionLike
     ? "new"
     : await promptPick({
         title: `Worktree from '${label}'`,
@@ -687,7 +691,9 @@ export async function worktreeFromRef(
     a,
     holder
       ? `${label} is checked out in the worktree at ${tildify(holder.path)}, and a branch can be checked out in only one worktree at a time. ${created}`
-      : created,
+      : optionLike
+        ? `${optionLike.message} ${created}`
+        : created,
   );
   if (!name) {
     return;

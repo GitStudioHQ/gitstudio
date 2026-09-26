@@ -110,6 +110,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Graph and a pull request's Checkout — with **Open Worktree in New
   Window**. Each used to run git and show its refusal (*already used by
   worktree*); Delete asked first, and the graph reported it as an error.
+- New Worktree from a branch whose name starts with "-" makes a new branch
+  from it, saying why, instead of offering a checkout that git would turn
+  into a detached HEAD.
 
 ## [1.14.0] - 2026-09-25
 
