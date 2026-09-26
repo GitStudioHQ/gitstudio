@@ -16962,5 +16962,27 @@
       c.eq(sent.length, 1, "precondition: B's turn went out");
       c.eq(sent[0]?.allowDestructive, false, `B's run cannot destroy — its chip says ${bWas}`);
     },
+
+    /** Opening another worktree opens a TAB (main's openRepoPath): its words
+     *  say so, the new tab is in front with the answer's "Opened …", and
+     *  nothing is left waiting for the tab it was clicked in — no stale toast
+     *  when you go back, no button still busy. */
+    "opening-a-worktree-opens-a-tab-and-says-so-there": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const WT = "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2";
+      const btn = $$(".view-host button.row-btn").find((b) => (b.getAttribute("aria-label") || "").includes("gitstudio-wave2"));
+      c.ok(!!btn, "precondition: the worktree's Open button");
+      if (!btn) return;
+      c.match(btn.title, /in its own tab/, "the button says it opens a tab");
+      btn.click();
+      await settle(1200);
+      c.eq(activeTabRoot(), WT, "the worktree's tab is in front");
+      c.match(text("#toast-stack"), /Opened/, "…and says it opened there");
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.ok(!/Opened/.test(text("#toast-stack")), `no "Opened" held for the tab it was clicked in (${text("#toast-stack")})`);
+      c.ok(!btn.disabled && !btn.classList.contains("is-busy"), "its Open button is not left busy");
+    },
   };
 })();

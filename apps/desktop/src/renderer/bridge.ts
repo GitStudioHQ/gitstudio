@@ -131,9 +131,11 @@ const TAB_CHANNELS = new Set([
   "repo:moveTab",
   "ghrepo:open",
   "clone:start",
+  // main's openRepoPath, like repo:openPath: another worktree opens as a tab.
+  "worktree:open",
 ]);
 /** Of those, the ones that OPEN a repository — see inOpenLanding. */
-const OPENING = new Set(["repo:open", "repo:openPath", "ghrepo:open", "clone:start"]);
+const OPENING = new Set(["repo:open", "repo:openPath", "ghrepo:open", "clone:start", "worktree:open"]);
 
 /**
  * The operations a tab shows as running (its spinner) and a close asks about,

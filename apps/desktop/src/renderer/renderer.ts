@@ -2771,11 +2771,14 @@ class App {
     try {
       await run();
     } finally {
-      if (btn.isConnected) {
-        (btn as HTMLButtonElement).disabled = false;
-        btn.classList.remove("is-busy");
-        btn.querySelector(".codicon")?.classList.remove("spin");
-      } else if (hadFocus && host_?.isConnected && nth >= 0) {
+      // The button's own state goes back whether or not it is on screen: one
+      // rebuilt away takes it with it, but one kept in a tab that went to the
+      // back meanwhile (an open lands in its new tab — #32) comes back with it,
+      // and it must not come back still busy.
+      (btn as HTMLButtonElement).disabled = false;
+      btn.classList.remove("is-busy");
+      btn.querySelector(".codicon")?.classList.remove("spin");
+      if (!btn.isConnected && hadFocus && host_?.isConnected && nth >= 0) {
         (host_.children[nth] as HTMLElement | undefined)?.focus?.();
       }
     }
@@ -3337,7 +3340,9 @@ class App {
       const open = el("button", "row-btn") as HTMLButtonElement;
       open.textContent = "Open";
       open.setAttribute("aria-label", `Open the worktree at ${w.path}`);
-      open.title = `Switch this window to ${w.path}`;
+      // An open, like any other (issue #32): the worktree gets a tab of its
+      // own, or the one it already has is brought to the front.
+      open.title = `Open the worktree at ${w.path} in its own tab`;
       open.addEventListener("click", () => void this.openWorktreeLive(w, open));
       actions.push(open);
     }
@@ -3411,7 +3416,9 @@ class App {
     return row;
   }
 
-  /** Point this window at another worktree. */
+  /** Open another worktree of this repository in a tab of its own (or switch
+   *  to the tab it has). Its answer lands with that tab in front, so the toast
+   *  is said there. */
   private async openWorktreeLive(w: WorktreeInfo, btn: HTMLButtonElement): Promise<void> {
     await this.refreshInPlace(btn, async () => {
       const repo = await host.invoke("worktree:open", w.path);

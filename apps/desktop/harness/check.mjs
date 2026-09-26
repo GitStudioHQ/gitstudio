@@ -800,6 +800,7 @@ const CASES = [
   ["each-tab-keeps-its-own-search", "explore", { extra: "tabs=2" }],
   ["a-board-still-loading-when-you-switch-away-paints-when-you-are-back", "projects", { extra: "tabs=2&slow=project:board@gitstudio:1500" }],
   ["an-assistant-run-uses-its-own-tabs-permission", "assistant~click:.topbar-assistant", { extra: "tabs=2&ai=1" }],
+  ["opening-a-worktree-opens-a-tab-and-says-so-there", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "tabs=1" }],
 ];
 
 function run(scene, checkId, opts = {}) {
