@@ -18,7 +18,8 @@ import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from ".
 //   · a branch's name keeps the row's room — its upstream label gives way
 //     first, and its ↑/↓ counts before the name falls under 45% of the row;
 //   · an upstream deleted from its remote says so;
-//   · the upstream label and the group counts are readable text (4.5:1);
+//   · the upstream label and the group counts are readable text (4.5:1), and
+//     an empty star reads as a control (3:1);
 //   · the highlighted row still shows what matched, and its star.
 
 const chrome = ChangesPage.chrome();
@@ -443,6 +444,20 @@ for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
     })`);
     assert.ok(r.up >= 4.5, `the upstream label: ${r.up.toFixed(2)}:1`);
     assert.ok(r.count >= 4.5, `a group count: ${r.count.toFixed(2)}:1`);
+    await closeMenu(p);
+  });
+
+  // The hollow star is a control on every local row: 3:1, as a control needs.
+  test(`${theme}: an empty star on a plain row reads at 3:1`, { skip }, async () => {
+    const p = await open(theme, 400, 640);
+    await p.eval(COLOUR);
+    await openMenu(p, stateMessage({ local: FEW }));
+    const r = await p.eval<{ on: boolean; ratio: number }>(`(function () {
+      var s = document.querySelector('.bm-list .bm-branch[data-bname="spike/cache"] .bm-star');
+      return { on: s.classList.contains("on"), ratio: __textContrast(s) };
+    })()`);
+    assert.ok(!r.on, "the row is not starred");
+    assert.ok(r.ratio >= 3, `the empty star: ${r.ratio.toFixed(2)}:1`);
     await closeMenu(p);
   });
 

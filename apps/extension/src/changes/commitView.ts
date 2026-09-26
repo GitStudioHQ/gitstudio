@@ -2902,12 +2902,14 @@ export class CommitViewProvider
     .bm-subaction.danger .codicon { color: var(--vscode-errorForeground, #e15a5a); }
     .bm-subaction.danger:hover { background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 14%, transparent); }
     .bm-subsep { height: 1px; margin: 4px 6px; background: var(--gs-border); }
+    /* An empty star is a control on every local row, so it is drawn at a
+       control's contrast (3:1) in the muted text colour, not the subtle one. */
     .bm-star, .bm-star-spacer {
       flex: 0 0 auto;
       width: 22px; height: 22px;
       display: inline-flex; align-items: center; justify-content: center;
       border: none; background: transparent; border-radius: var(--gs-radius-sm);
-      color: var(--gs-fg-subtle); cursor: pointer; padding: 0;
+      color: var(--gs-fg-muted); cursor: pointer; padding: 0;
     }
     .bm-star:hover { background: color-mix(in srgb, var(--gs-fg) 10%, transparent); color: var(--gs-fg); }
     .bm-star.on { color: var(--vscode-charts-yellow, #d7ba00); }
