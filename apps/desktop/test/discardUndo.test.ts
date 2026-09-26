@@ -84,6 +84,40 @@ test("undo restores only the paths it is given", async () => {
   assert.equal(read("b.txt"), "committed b\n", "b was not asked for and was not touched");
 });
 
+test("undo refuses a file changed since the discard — edited again, or edited and staged — and changes nothing", async () => {
+  write("a.txt", "the discarded work\n");
+  write("b.txt", "more discarded work\n");
+  const snap = await bridge.discardSnapshot();
+  await bridge.discard("a.txt");
+  await bridge.discard("b.txt");
+
+  // Typed again: bringing the old text back would overwrite it.
+  write("a.txt", "typed since\n");
+  const edited = await bridge.discardUndo({ sha: snap.sha!, paths: ["a.txt", "b.txt"] });
+  assert.equal(edited.ok, false);
+  assert.equal(edited.expected, true);
+  assert.match(edited.message ?? "", /^a\.txt has changed since its changes were discarded/);
+  assert.equal(read("a.txt"), "typed since\n", "the new text is untouched");
+  assert.equal(read("b.txt"), "committed b\n", "and so is everything else it was asked for");
+
+  // Typed and STAGED: the working copy matches the index, but the index isn't
+  // what the discard left — putting the old text over the working copy would
+  // quietly contradict what was staged.
+  git("add", "a.txt");
+  const staged = await bridge.discardUndo({ sha: snap.sha!, paths: ["a.txt"] });
+  assert.equal(staged.ok, false);
+  assert.match(staged.message ?? "", /^a\.txt has changed since/);
+  assert.equal(read("a.txt"), "typed since\n");
+
+  // Put back as it was by hand: nothing to overwrite, so the undo goes ahead.
+  git("reset", "-q", "--", "a.txt");
+  write("a.txt", "the discarded work\n");
+  const back = await bridge.discardUndo({ sha: snap.sha!, paths: ["a.txt", "b.txt"] });
+  assert.equal(back.ok, true, back.message);
+  assert.equal(read("a.txt"), "the discarded work\n");
+  assert.equal(read("b.txt"), "more discarded work\n");
+});
+
 test("a clean tree yields no restore point, so no undo is offered", async () => {
   const snap = await bridge.discardSnapshot();
   assert.equal(snap.sha, undefined);

@@ -369,6 +369,22 @@ export class ConflictOps {
     if (!stages) {
       return refuse(`There is no earlier conflict to bring back for ${path}.`);
     }
+    // Edits made in the working copy SINCE the resolution are not part of it,
+    // and bringing the conflict back rewrites the file — `checkout -m` puts
+    // the markers over them without a word, and an Undo of Accept Yours
+    // followed by a hand edit reported success having thrown the edit away.
+    // The working copy has to be what the resolution staged. A submodule's
+    // checkout is not an edit — it comes back untouched (below), whatever
+    // commit it has checked out — so it is not compared.
+    const since = await this.git(["diff", "--quiet", "--no-ext-diff", "--ignore-submodules=all", "--", path], opts?.signal);
+    if (since.code === 1) {
+      return refuse(
+        `${path} has changes since it was resolved, and bringing the conflict back would overwrite them. Nothing was changed.`,
+      );
+    }
+    if (since.code !== 0) {
+      return refuse(`Couldn't tell whether ${path} has changed since it was resolved. Nothing was changed.`);
+    }
     // `checkout -m` re-merges the sides' TEXT: a gitlink has none ("unable to
     // read blob object"), and a symlink would get the marker text as its
     // target. Those come back through the index, with the link as git first

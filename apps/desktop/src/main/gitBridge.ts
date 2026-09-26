@@ -1099,7 +1099,38 @@ export class GitBridge {
     if (!safeArg(req.sha)) return { ok: false, message: "That restore point is not usable." };
     const paths = req.paths.filter((p) => p);
     if (!paths.length) return { ok: false, expected: true, message: "Nothing to restore." };
+    // Put back only what the discard took. It left each path as the index has
+    // it; a path that differs from the index now was edited AGAIN since, and
+    // restoring the old changes over it threw the new ones away under a
+    // success toast. Say which instead, and change nothing. (A path already
+    // back as it was is fine either way.) Likewise a path whose STAGED copy
+    // has changed since — the index then is the snapshot's second parent.
+    // Three git calls for the lot, however many files the discard took.
+    const names = async (args: string[]): Promise<Set<string> | undefined> => {
+      const r = await ctx.process.run(["--literal-pathspecs", "diff", "--name-only", "-z", "--no-ext-diff", "--no-renames", ...args, "--", ...paths]);
+      return r.code === 0 ? new Set(r.stdout.split("\0").filter(Boolean)) : undefined;
+    };
+    const [edited, notAsTaken, restaged] = await Promise.all([
+      names([]),
+      names([req.sha]),
+      names(["--cached", `${req.sha}^2`]),
+    ]);
+    if (!edited || !notAsTaken || !restaged) {
+      return { ok: false, message: "Couldn't tell whether those files have changed since. Nothing was changed." };
+    }
+    const since = paths.filter((p) => (edited.has(p) && notAsTaken.has(p)) || restaged.has(p));
+    if (since.length) {
+      return {
+        ok: false,
+        expected: true,
+        message:
+          since.length === 1
+            ? `${since[0]} has changed since its changes were discarded, and bringing them back would overwrite that. Nothing was changed.`
+            : `${since.length} files have changed since their changes were discarded (${since.join(", ")}), and bringing them back would overwrite that. Nothing was changed.`,
+      };
+    }
     const r = await ctx.process.run([
+      "--literal-pathspecs",
       "restore",
       `--source=${req.sha}`,
       "--worktree",

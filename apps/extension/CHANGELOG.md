@@ -103,6 +103,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **The Undo on an "Undid? …" notification undoes that operation.** Pressed
   after you had done something else, it undid the newer operation instead;
   now the newer ones are undone first, each asked, then the one it names.
+- **Undoing Accept Yours / Accept Theirs** in the Conflicts panel no longer
+  writes the conflict markers over edits you made to that file since; it says
+  so and leaves the file alone.
 - **Undo after moving a branch back onto pushed history.** Undoing an
   operation that left the branch on an older, already-pushed commit — a reset
   to it, or dropping your last local commit — offered to revert an empty range

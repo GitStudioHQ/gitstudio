@@ -8051,7 +8051,11 @@ class App {
       label: n === 1 ? "Bring the changes back" : `Bring ${n} files' changes back`,
       undo: async () => {
         const r = await host.invoke("discard:undo", restore);
-        return r.ok ? undefined : (r.message ?? "Couldn't bring them back.");
+        if (r.ok) return undefined;
+        const why = r.message ?? "Couldn't bring them back.";
+        // Edited again since the discard: refused, and said as the user's
+        // state (an info toast) rather than as an error.
+        return r.expected ? { info: why } : why;
       },
       after: () => this.repaintChanges(),
     });

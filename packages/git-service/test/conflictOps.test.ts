@@ -700,6 +700,30 @@ test("restore refuses a path git holds no conflict for — and leaves its edits 
   }
 });
 
+test("restore refuses over a hand edit made since the resolution — the markers would overwrite it", async () => {
+  // Accept Yours, then polish the file by hand, then Undo: `checkout -m` put
+  // the conflict markers over the edit and the undo reported success.
+  const r = manyShapes();
+  try {
+    const ctx = r.ctx();
+    assert.equal((await ctx.conflictOps.takeRole("both.txt", "yours")).ok, true);
+    r.write("both.txt", "mine, polished by hand\n");
+    const out = await ctx.conflictOps.restore("both.txt");
+    assert.equal(out.ok, false);
+    assert.equal(out.expected, true);
+    assert.match(out.message ?? "", /both\.txt has changes since it was resolved/);
+    assert.equal(r.read("both.txt"), "mine, polished by hand\n", "the edit is untouched");
+    assert.equal(porcelainXY(r).has("both.txt") && porcelainXY(r).get("both.txt") === "UU", false, "and nothing is conflicted again");
+    // Staged, the edit IS the resolution now; the undo of it is allowed.
+    r.git("add", "both.txt");
+    const again = await ctx.conflictOps.restore("both.txt");
+    assert.equal(again.ok, true, again.message);
+    assert.equal(porcelainXY(r).get("both.txt"), "UU");
+  } finally {
+    r.cleanup();
+  }
+});
+
 test("restore refuses once the operation is over — a committed merge gets no conflict back", async () => {
   // git keeps the resolve-undo record after the merge commit, and
   // `checkout -m` then re-creates the conflict in a finished repository —
