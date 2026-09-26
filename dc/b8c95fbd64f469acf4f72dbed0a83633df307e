@@ -1,0 +1,30 @@
+apps/desktop/src/renderer/multiCommit.ts
+  s_26f5e669d3043c::t_14da323d91dddd 186-193
+packages/git-service/src/multiCommit.ts
+  s_26f5e669d3043c::t_14da323d91dddd 271-273,275-282
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_14da323d91dddd 738-740
+packages/git-service/src/dropCommit.ts
+  s_26f5e669d3043c::t_14da323d91dddd 414,430-435,437,440,443,454,456,458,460,467-468,473,475-476,501-505,512,516-521,525-537
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_14da323d91dddd 2164-2166
+apps/desktop/test/undoStateTable.test.ts
+  s_26f5e669d3043c::t_aeceaaf1b0fd15 756-805
+  s_26f5e669d3043c::t_a9065e1eb18239 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dcb8c95fbd64f469acf4f72dbed0a83633df307e",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
