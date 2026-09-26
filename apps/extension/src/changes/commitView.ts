@@ -148,6 +148,11 @@ interface StatePayload {
   lastMessage?: string;
   signoffDefault: boolean;
   aiEnabled: boolean;
+  /**
+   * The user turned AI off (gitstudio.ai.provider = "off", which "Disable AI
+   * Features" sets): the composer offers no Connect-AI plug then.
+   */
+  aiOff?: boolean;
   layout: "tree" | "list";
   busy: boolean;
   /**
@@ -380,7 +385,11 @@ export class CommitViewProvider
     // the other model until something unrelated happens to refresh it.
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("gitstudio.changes.stagingModel")) {
+        if (
+          event.affectsConfiguration("gitstudio.changes.stagingModel") ||
+          // Turned off (or back on) with nothing else changing: the plug follows.
+          event.affectsConfiguration("gitstudio.ai.provider")
+        ) {
           void this.pushState();
         }
       }),
@@ -2564,6 +2573,7 @@ export class CommitViewProvider
       lastMessage,
       signoffDefault,
       aiEnabled: sent.aiEnabled,
+      aiOff: vscode.workspace.getConfiguration("gitstudio").get<string>("ai.provider") === "off",
       layout,
       busy: this.busy,
     };
@@ -7875,7 +7885,9 @@ export class CommitViewProvider
         renderOpBanner(msg.hasRepo ? msg.operation : undefined);
         generateBtn.classList.toggle("visible", !!msg.aiEnabled);
         reviewBtn.classList.toggle("visible", !!msg.aiEnabled);
-        connectAiBtn.classList.toggle("visible", !msg.aiEnabled);
+        // Not while the user has turned AI off: that plug invited them to
+        // connect what they had just switched off.
+        connectAiBtn.classList.toggle("visible", !msg.aiEnabled && !msg.aiOff);
         if (msg.layout && msg.layout !== layout) {
           layout = msg.layout;
           applyLayoutClass();
