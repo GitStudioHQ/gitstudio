@@ -3,7 +3,7 @@ import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 import { GitHubApi, GitHubApiError, type PullRequest, type PrFile, type ReviewEvent } from "./githubApi";
 import type { GitHubAuth } from "./githubAuth";
 import type { GitHubRepoContext } from "./repoContext";
-import { openPrFileDiff } from "./reviewDiff";
+import { diffBase, openPrFileDiff } from "./reviewDiff";
 import { fromPrContentUri, PR_SCHEME } from "./prContentProvider";
 import {
   commentsOutsideHunks,
@@ -68,6 +68,8 @@ interface ActiveReview {
   pr: PullRequest;
   ctx: GitHubRepoContext;
   files: PrFile[];
+  /** The diffs' left side: the merge base GitHub counts the patch from (reviewDiff.ts). */
+  baseSha: string;
 }
 
 export class ReviewController implements vscode.Disposable {
@@ -110,7 +112,7 @@ export class ReviewController implements vscode.Disposable {
       const file = a.files.find((f) => f.filename === path);
       return file ? { file, side: "RIGHT" } : undefined;
     }
-    if (sha === a.pr.base.sha) {
+    if (sha === a.baseSha) {
       const file = a.files.find((f) => (f.previousFilename ?? f.filename) === path);
       return file ? { file, side: "LEFT" } : undefined;
     }
@@ -157,7 +159,7 @@ export class ReviewController implements vscode.Disposable {
     if (!file) {
       return false;
     }
-    await openPrFileDiff(a.ctx, a.pr, file);
+    await openPrFileDiff(a.ctx, a.pr, file, a.baseSha);
     return true;
   }
 
@@ -175,7 +177,7 @@ export class ReviewController implements vscode.Disposable {
     if (this.active?.key === key) {
       const first = this.active.files[0];
       if (first) {
-        await openPrFileDiff(this.active.ctx, this.active.pr, first).catch(() => undefined);
+        await openPrFileDiff(this.active.ctx, this.active.pr, first, this.active.baseSha).catch(() => undefined);
       }
       void vscode.window.showInformationMessage(
         `Still reviewing PR #${requested.number} — ${this.pendingWords()} waiting to be submitted.`,
@@ -204,6 +206,7 @@ export class ReviewController implements vscode.Disposable {
       void this.warn(err, "Couldn't load the PR's changed files.");
       return;
     }
+    const baseSha = await diffBase(this.api, ctx, pr);
 
     if (this.active && this.threads.size > 0) {
       const old = this.active.pr.number;
@@ -230,14 +233,14 @@ export class ReviewController implements vscode.Disposable {
     }
 
     this.login ??= (await this.api.currentLogin())?.login ?? this.auth.accountLabel();
-    this.active = { key, pr, ctx, files };
+    this.active = { key, pr, ctx, files, baseSha };
     await this.setReviewing(true);
 
     // One file: every diff opens as a preview, so opening five replaced each
     // with the next and left only the last.
     const first = files[0];
     if (first) {
-      await openPrFileDiff(ctx, pr, first).catch(() => undefined);
+      await openPrFileDiff(ctx, pr, first, baseSha).catch(() => undefined);
     }
     if (files.length === 0) {
       void vscode.window.showInformationMessage(

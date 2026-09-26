@@ -383,6 +383,24 @@ export class GitHubApi {
   }
 
   /**
+   * The commit a PR's diff is counted from: the merge base of its base and
+   * head. GitHub's patch for a PR is the three-dot diff — its left-hand line
+   * numbers, and a LEFT review comment's `line`, are the MERGE BASE's — while
+   * `base.sha` is the base branch's tip, which moves on as others merge. The
+   * base side of a diff drawn at base.sha put the hunks on the wrong lines and
+   * showed the base branch's own new work as if the PR removed it.
+   * `per_page=1`: the answer lists commits too, and only this one is wanted.
+   */
+  async mergeBase(owner: string, repo: string, base: string, head: string): Promise<string | undefined> {
+    const raw = await this.request<{ merge_base_commit?: { sha?: string } | null }>(
+      "GET",
+      `/repos/${enc(owner)}/${enc(repo)}/compare/${enc(base)}...${enc(head)}?per_page=1`,
+    );
+    const sha = raw?.merge_base_commit?.sha;
+    return typeof sha === "string" && sha.length > 0 ? sha : undefined;
+  }
+
+  /**
    * A PR's changed files, every page GitHub has (it lists at most 3,000).
    * Mapped field by field: the raw answer says `previous_filename`, and cast
    * as is, every rename lost the path it was renamed from.

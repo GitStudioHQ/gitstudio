@@ -695,6 +695,46 @@ test("review: the submitted review is pinned to the head the diffs showed, with 
   assert.equal(sent.body, "Looks close.");
 });
 
+test("review: the left side is the MERGE BASE — the file GitHub's hunks count its lines in — not the base branch's tip", async () => {
+  // main moved on since #37 branched: GitHub's patch (a three-dot diff) counts
+  // its left lines in the merge base, which is not base.sha any more.
+  let sent: any;
+  const gh = github([
+    ["GET", /^\/repos\/acme\/app\/compare\/basesha\.\.\.037head/, () => ({ body: { merge_base_commit: { sha: "mergebase" } } })],
+    [
+      "POST",
+      /^\/repos\/acme\/app\/pulls\/37\/reviews$/,
+      (req) => {
+        sent = req.body;
+        return { body: { id: 1 } };
+      },
+    ],
+    ...acmeRoutes(),
+  ]);
+  const m = mount(fakeRepos(ORIGIN));
+
+  // The page, outside a review: its diffs are drawn from the merge base too.
+  const page = await openPage(m, 37);
+  page.receive({ type: "openFile", path: "src/new.ts" });
+  await until(() => pr.executed.some((e: any) => e.id === "vscode.diff"), "the page's diff to open");
+  const [pageLeft] = pr.executed.find((e: any) => e.id === "vscode.diff").args;
+  assert.match(pageLeft.query, /sha=mergebase/, "the page's diff: base side at the merge base");
+  assert.equal(pageLeft.path, "/src/old.ts");
+
+  pr.executed.length = 0;
+  await startReview(m, 37);
+  const [left] = pr.executed.find((e: any) => e.id === "vscode.diff").args;
+  assert.match(left.query, /sha=mergebase/, "the review's diff: base side at the merge base");
+  assert.deepEqual(ranges(m, "src/a.ts", "mergebase", 120), [[0, 2], [39, 43]], "the removed lines, where they are in that file");
+  assert.equal(ranges(m, "src/a.ts", "basesha", 120), undefined, "the base branch's tip is not the diff's left side");
+  const removed = vscode.__makeThread(prUri("docs/gone.md", "mergebase"), new vscode.Range(1, 0, 1, 0));
+  await vscode.commands.executeCommand("gitstudio.pr.addReviewComment", { thread: removed, text: "why?" });
+  answer = (spec) => (spec.kind === "pick" ? "COMMENT" : spec.kind === "input" ? "" : undefined);
+  await vscode.commands.executeCommand("gitstudio.pr.submitReview");
+  assert.deepEqual(sent?.comments, [{ path: "docs/gone.md", line: 2, side: "LEFT", body: "why?" }]);
+  assert.equal(gh.count(/\/compare\//), 2, "asked once for the page, once for the review");
+});
+
 test("review: a row loaded before a push reviews the PR's head NOW — the diffs, the hunks and commit_id agree", async () => {
   // The list was read at 037head; the contributor has pushed since. The files
   // GitHub lists (and their hunks) are the new head's.

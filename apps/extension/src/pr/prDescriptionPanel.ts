@@ -12,7 +12,7 @@ import {
 } from "./githubApi";
 import { ciWords, prKey, prKind, PR_STATES, type CiRollup, type PrKind } from "./prModel";
 import type { GitHubRepoContext } from "./repoContext";
-import { openPrFileDiff } from "./reviewDiff";
+import { diffBase, openPrFileDiff } from "./reviewDiff";
 
 // A read-clean PR description panel (editor area, strict CSP + nonce). All
 // dynamic text is HTML-escaped on the host before it reaches the DOM — the PR
@@ -188,6 +188,25 @@ export class PrDescriptionPanel {
     this.render();
   }
 
+  /** The merge base last asked for, and the base/head pair it is for. */
+  private mergeBase: { pair: string; sha: string } | undefined;
+
+  /**
+   * The commit this PR's diffs are drawn from — its merge base (reviewDiff.ts)
+   * — asked of GitHub once per base/head pair, when a file is first opened.
+   */
+  private async diffBaseOf(pr: PullRequest): Promise<string> {
+    const pair = `${pr.base.sha}...${pr.head.sha}`;
+    if (this.mergeBase?.pair === pair) {
+      return this.mergeBase.sha;
+    }
+    const sha = await diffBase(this.deps.api, this.deps.ctx, pr);
+    if (sha !== pr.base.sha) {
+      this.mergeBase = { pair, sha };
+    }
+    return sha;
+  }
+
   /** Tell the page the PR's state changed (badge + which actions apply). */
   private postState(): void {
     if (this.disposed) {
@@ -268,7 +287,8 @@ export class PrDescriptionPanel {
           }
           const file = this.files.find((f) => f.filename === m.path);
           if (file) {
-            void openPrFileDiff(this.deps.ctx, this.pr, file);
+            const pr = this.pr;
+            void openPrFileDiff(this.deps.ctx, pr, file, await this.diffBaseOf(pr));
           }
         }
         return;
