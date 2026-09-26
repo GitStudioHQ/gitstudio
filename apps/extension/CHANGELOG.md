@@ -90,6 +90,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   loses a letter. The upstream and the group counts are drawn in your theme's
   secondary text colour, readable in light themes, and the highlighted row
   still shows which letters matched your search, and its star.
+- A branch whose upstream was deleted from the remote — what a merged pull
+  request leaves behind — shows that upstream struck through and marked
+  **gone** in the branch menu, instead of looking like a live one.
 
 ## [1.14.0] - 2026-09-25
 

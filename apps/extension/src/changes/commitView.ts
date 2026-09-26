@@ -6,10 +6,10 @@ import { applyOrAsk, checkoutOp, pullOrAsk } from "../git/inTheWay";
 import { newBranchAtHead } from "@gitstudio/git-service/changesInTheWay";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
-import { resettableBranches } from "@gitstudio/git-service/branchReset";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import { slowStateChanged, type SlowState } from "./slowState";
+import { branchesPayload, type BranchesPayload } from "./branchMenuData";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { repoName as repoNameOf, switchRepository, workspacePathOf } from "../git/repoPicker";
 import { pruneOnFetch } from "../git/fetchOptions";
@@ -73,32 +73,6 @@ import { detectOperation, notifyPaused } from "../git/pauseNotice";
 interface FileEntry {
   path: string;
   status: string;
-}
-
-/** A local branch row for the branch menu (folds in the old Branches view). */
-interface BranchRefPayload {
-  name: string;
-  current: boolean;
-  upstream?: string;
-  favorite: boolean;
-  /** Commits ahead/behind the upstream — drives the menu's ↑/↓ badges. */
-  ahead?: number;
-  behind?: number;
-  /**
-   * The upstream is a remote-tracking branch this repository has — what
-   * "Reset to '<upstream>'…" resets to. False for no upstream, one that is a
-   * local branch, and one gone from the remote.
-   */
-  upstreamOnRemote?: boolean;
-}
-
-/** Everything the branch menu needs: local branches (with favorites), remotes, recents, tags. */
-interface BranchesPayload {
-  local: BranchRefPayload[];
-  remote: string[];
-  recent: string[];
-  /** Tag names, newest-looking first (numeric-desc sort). */
-  tags: string[];
 }
 
 interface StatePayload {
@@ -1486,35 +1460,7 @@ export class CommitViewProvider
   /** Local branches (with favorites), remotes, recents, and tags for the branch menu. */
   private async collectBranches(entry: RepoEntry): Promise<BranchesPayload> {
     const refs = await this.listRefsCached(entry);
-    const favs = new Set(this.favorites(entry));
-    // Where the submenu offers "Reset to '<upstream>'…" (#32).
-    const resettable = resettableBranches(refs);
-    const local: BranchRefPayload[] = refs
-      .filter((r) => r.type === "head")
-      .map((r) => ({
-        name: r.name,
-        current: r.isCurrent,
-        upstream: r.upstream,
-        favorite: favs.has(r.name),
-        ahead: r.ahead,
-        behind: r.behind,
-        upstreamOnRemote: resettable.has(r.name),
-      }));
-    // Not a remote's HEAD pointer. git shortens refs/remotes/origin/HEAD to
-    // the bare remote name ("origin"), so the "/HEAD" test never matched it:
-    // the menu listed a remote branch called "origin" whose checkout could
-    // only fail. `symref` is what marks it (the Branches tree's twin).
-    const remote = refs
-      .filter((r) => r.type === "remote" && !r.symref && !r.name.endsWith("/HEAD"))
-      .map((r) => r.name);
-    // Tags sorted so "newest" (highest version) floats up — a numeric-aware
-    // descending compare puts v1.10 above v1.9 and v2 above v1.
-    const tags = refs
-      .filter((r) => r.type === "tag")
-      .map((r) => r.name)
-      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-    const recent = this.memento.get<string[]>(this.recentKey(entry), []);
-    return { local, remote, recent, tags };
+    return branchesPayload(refs, this.favorites(entry), this.memento.get<string[]>(this.recentKey(entry), []));
   }
 
   /**
@@ -2823,6 +2769,10 @@ export class CommitViewProvider
        up to its own width: it is cut, or gone, before the name loses a letter
        (the row's tooltip and its spoken label still carry it). */
     .bm-bup { flex: 1 1 0; min-width: 0; max-width: max-content; font-size: 10.5px; color: var(--gs-fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* An upstream deleted from its remote: struck through, and a word that
+       stays when the row is too narrow for the name beside it. */
+    .bm-bup.is-gone { text-decoration: line-through; }
+    .bm-gone { flex: 0 0 auto; font-size: 10.5px; color: var(--gs-fg-muted); }
     .bm-bmore { flex: 0 0 auto; font-size: 13px; color: var(--gs-fg-subtle); opacity: 0; transition: opacity 100ms; }
     .bm-branch:hover .bm-bmore { opacity: 0.8; }
 
@@ -2843,6 +2793,7 @@ export class CommitViewProvider
     .bm-branch.is-active .bm-bicon,
     .bm-branch.is-active.is-current .bm-bname,
     .bm-branch.is-active .bm-bup,
+    .bm-branch.is-active .bm-gone,
     .bm-subaction.is-active .codicon { color: inherit; }
     .bm-branch.is-active .bm-bmore { opacity: 0.9; color: inherit; }
     .bm-branch.is-active .bm-star:not(.on) { color: inherit; }
@@ -5294,7 +5245,7 @@ export class CommitViewProvider
       return name ? "'" + name + "'" : "HEAD";
     }
 
-    function branchRow(name, kind, up, fav, current, ahead, behind) {
+    function branchRow(name, kind, up, fav, current, ahead, behind, gone) {
       const row = el("div", "bm-branch" + (current ? " is-current" : ""));
       if (kind === "local") {
         const star = el("button", "bm-star" + (fav ? " on" : ""),
@@ -5317,11 +5268,18 @@ export class CommitViewProvider
       // Unpushed/unpulled counts per branch — the payoff of the in-menu Fetch.
       if (ahead) row.appendChild(el("span", "bm-ab up", "↑" + ahead));
       if (behind) row.appendChild(el("span", "bm-ab down", "↓" + behind));
-      if (up) { const u = el("span", "bm-bup"); u.textContent = up; row.appendChild(u); }
+      if (up) {
+        const u = el("span", "bm-bup" + (gone ? " is-gone" : ""));
+        u.textContent = up;
+        row.appendChild(u);
+        // A deleted upstream says so, and keeps saying it where a narrow
+        // row has no room left for the upstream's name.
+        if (gone) row.appendChild(el("span", "bm-gone", "gone"));
+      }
       row.appendChild(el("i", "codicon codicon-chevron-right bm-bmore"));
       // Full ref name on hover — a narrow sidebar ellipsis-clips the row, so the
       // tooltip is how the whole name (esp. long remote refs) is always readable.
-      row.title = name + (up ? "  ↔ " + up : "");
+      row.title = name + (up ? "  ↔ " + up + (gone ? ", which no longer exists on the remote" : "") : "");
       row.dataset.bmkey = "b:" + kind + ":" + name;
       bmOption(row);
       // What a screen reader says when the highlight lands here — the badges
@@ -5330,7 +5288,7 @@ export class CommitViewProvider
         (current ? ", current branch" : kind === "remote" ? ", remote branch" : kind === "tag" ? ", tag" : "") +
         (ahead ? ", " + ahead + " to push" : "") +
         (behind ? ", " + behind + " to pull" : "") +
-        (up ? ", tracks " + up : ""));
+        (up ? ", tracks " + up + (gone ? ", which no longer exists on the remote" : "") : ""));
       row.addEventListener("click", () => openBranchActions(name, kind, current, row));
       return row;
     }
@@ -5768,9 +5726,9 @@ export class CommitViewProvider
       const tagsShown = allTags.slice(0, tagLimit);
       const tagsHidden = allTags.length - tagsShown.length;
 
-      group("Favorites", favs, (b) => branchRow(b.name, "local", b.upstream, true, b.current, b.ahead, b.behind));
-      group("Recents", recents, (b) => branchRow(b.name, "local", b.upstream, false, b.current, b.ahead, b.behind));
-      group("Local", others, (b) => branchRow(b.name, "local", b.upstream, b.favorite, b.current, b.ahead, b.behind));
+      group("Favorites", favs, (b) => branchRow(b.name, "local", b.upstream, true, b.current, b.ahead, b.behind, b.gone));
+      group("Recents", recents, (b) => branchRow(b.name, "local", b.upstream, false, b.current, b.ahead, b.behind, b.gone));
+      group("Local", others, (b) => branchRow(b.name, "local", b.upstream, b.favorite, b.current, b.ahead, b.behind, b.gone));
       group("Remote", remotes, (n) => branchRow(n, "remote", "", false, false));
       group("Tags", tagsShown, (n) => branchRow(n, "tag", "", false, false),
         { count: allTags.length, more: tagsHidden });

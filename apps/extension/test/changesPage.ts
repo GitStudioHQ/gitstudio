@@ -167,6 +167,8 @@ export interface LocalBranch {
   favorite?: boolean;
   ahead?: number;
   behind?: number;
+  /** The upstream was deleted from its remote. */
+  gone?: boolean;
 }
 
 /** A host "state" push carrying `branches`, with an ordinary repo around it. */

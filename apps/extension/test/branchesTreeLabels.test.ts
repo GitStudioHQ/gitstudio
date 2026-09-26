@@ -128,14 +128,15 @@ test("the tree names each ref by its full name under the namespace, and lists no
 });
 
 test("the Changes view's branch menu leaves the HEAD pointer out of its remotes too", async () => {
-  // Its twin, pinned at source level (the view imports vscode throughout):
-  // the pointer's short name is the bare remote ("origin"), so the menu's old
-  // `!name.endsWith("/HEAD")` never matched it.
+  // Its twin, fed the same listing: the pointer's short name is the bare
+  // remote ("origin"), so the menu's old `!name.endsWith("/HEAD")` never
+  // matched it.
   const listed = await ctx.refs.listRefs();
   const pointer = listed.find((r) => r.fullName === "refs/remotes/origin/HEAD");
   assert.equal(pointer?.name, "origin", "what git calls it");
   assert.ok(pointer?.symref, "and what marks it");
-  const { readFileSync } = await import("node:fs");
-  const src = readFileSync(new URL("../src/changes/commitView.ts", import.meta.url), "utf8");
-  assert.match(src, /\.filter\(\(r\) => r\.type === "remote" && !r\.symref && !r\.name\.endsWith\("\/HEAD"\)\)/);
+  const { branchesPayload } = await import("../src/changes/branchMenuData");
+  const menu = branchesPayload(listed, [], []);
+  assert.ok(!menu.remote.includes("origin"), `no remote branch called "origin": ${JSON.stringify(menu.remote)}`);
+  assert.ok(menu.remote.includes("origin/main"), "the remote branches are there");
 });

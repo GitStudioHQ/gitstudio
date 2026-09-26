@@ -14,6 +14,7 @@ import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from ".
 //     least width, and is placed again (with its submenu) when the view is
 //     resized while it is open;
 //   · a branch's name keeps the row's room — its upstream label gives way first;
+//   · an upstream deleted from its remote says so;
 //   · the upstream label and the group counts are readable text (4.5:1);
 //   · the highlighted row still shows what matched, and its star.
 
@@ -261,6 +262,44 @@ test("a branch's name keeps the row's room: its upstream label gives way first",
         assert.ok(r.upShown <= 0.5, `${width}px: '${r.name}' is cut to ${r.nameShown}px of ${r.nameWants}px while its upstream label keeps ${r.upShown}px`);
       }
     }
+    await closeMenu(p);
+  }
+});
+
+test("an upstream deleted from its remote says so, even in a row too narrow for its name", { skip }, async () => {
+  for (const width of [560, 260]) {
+    const p = await open("dark", width, 640);
+    const local: LocalBranch[] = [
+      { name: "main", current: true, upstream: "origin/main", upstreamOnRemote: true },
+      { name: "merged-pr", upstream: "origin/merged-pr", gone: true },
+      { name: LONG, upstream: "origin/" + LONG, gone: true },
+    ];
+    await openMenu(p, stateMessage({ local }));
+    const rows = await p.eval<Record<string, { gone: string; goneShown: boolean; struck: boolean; label: string; tip: string }>>(`(function () {
+      var out = {};
+      document.querySelectorAll(".bm-list .bm-branch").forEach(function (r) {
+        var g = r.querySelector(".bm-gone"), u = r.querySelector(".bm-bup");
+        var gr = g && g.getBoundingClientRect(), rr = r.getBoundingClientRect();
+        out[r.dataset.bname] = {
+          gone: g ? g.textContent : "",
+          goneShown: !!g && gr.width > 0 && gr.left >= rr.left && gr.right <= rr.right + 0.5,
+          struck: !!u && getComputedStyle(u).textDecorationLine.indexOf("line-through") >= 0,
+          label: r.getAttribute("aria-label"),
+          tip: r.title || r.dataset.tip || "", // the page turns a title into its own tooltip
+        };
+      });
+      return out;
+    })()`);
+    for (const name of ["merged-pr", LONG]) {
+      const r = rows[name];
+      assert.equal(r.gone, "gone", `${width}px: '${name}' says gone`);
+      assert.ok(r.goneShown, `${width}px: and it can be seen: ${JSON.stringify(r)}`);
+      assert.ok(r.struck, `${width}px: its upstream is struck through`);
+      assert.match(r.label, /no longer exists/, "a screen reader hears it");
+      assert.match(r.tip, /no longer exists/, "and the tooltip says it");
+    }
+    const live = rows["main"];
+    assert.ok(!live.gone && !live.struck && !/no longer exists/.test(live.label + live.tip), `a live upstream is not: ${JSON.stringify(live)}`);
     await closeMenu(p);
   }
 });
