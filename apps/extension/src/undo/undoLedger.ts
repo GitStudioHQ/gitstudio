@@ -10,7 +10,7 @@ import { notifyPaused } from "../git/pauseNotice";
 //
 // Every destructive operation is wrapped by runWithUndo(): we snapshot the
 // repo (HEAD + any dirty work) BEFORE the op, run it, then push a ledger entry
-// and surface a subtle "Undid? <label> · [Undo]" toast. `gitstudio.undo` pops
+// and surface a subtle "<label> — done. · [Undo]" toast. `gitstudio.undo` pops
 // the most recent entry; if the resulting commit was never pushed we offer a
 // hard reset back to the snapshot, but if it's already published we offer a
 // Revert instead so we never rewrite shared history.
@@ -59,7 +59,7 @@ export class UndoLedger {
 
   /**
    * Capture a pre-op snapshot, run `fn`, then record an undo entry and show the
-   * subtle "Undid? <label> · [Undo]" toast. On failure we STILL record the
+   * subtle "<label> — done. · [Undo]" toast. On failure we STILL record the
    * entry (so the user can undo a half-finished op back to the snapshot) and
    * rethrow. `fn`'s return value is passed through untouched.
    */
@@ -85,13 +85,13 @@ export class UndoLedger {
       const result = await fn();
       if (nothingRan(result)) {
         // Cancelled at a question (Stash & Retry's Cancel, a dismissed
-        // dialog): nothing ran, so there is nothing to undo — an "Undid?
-        // Revert …" toast with Undo said the opposite.
+        // dialog): nothing ran, so there is nothing to undo — a toast
+        // offering Undo for "Revert …" said the opposite.
         return result;
       }
       await this.settle(repo, snapshot);
       this.record(repo.root, snapshot);
-      this.offerUndoToast(label);
+      this.offerUndoToast(label, reportsFailure(result));
       return result;
     } catch (err) {
       // The op threw mid-flight; still record so the snapshot is reachable.
@@ -126,9 +126,14 @@ export class UndoLedger {
     void this.save();
   }
 
-  private offerUndoToast(label: string): void {
+  /**
+   * Say what happened — the operation is done (it read "Undid? <label>", as if
+   * it had been undone) — or, for a result that reports a failure, that it did
+   * not finish; either way its snapshot is one Undo away.
+   */
+  private offerUndoToast(label: string, failed: boolean): void {
     void vscode.window
-      .showInformationMessage(`Undid? ${label}`, "Undo")
+      .showInformationMessage(failed ? `${label} did not finish.` : `${label} — done.`, "Undo")
       .then((choice) => {
         if (choice === "Undo") {
           void this.undoLast();
@@ -468,6 +473,11 @@ export class UndoLedger {
  * ("nothing changed" — a cancel), or a door's `{ cancelled: true }`
  * (applyOrAsk's Applied, when the Stash & Retry question was cancelled).
  */
+/** A result that ran but says it failed (`{ ok: false }`, as GitResult does). */
+function reportsFailure(result: unknown): boolean {
+  return typeof result === "object" && result !== null && (result as { ok?: unknown }).ok === false;
+}
+
 export function nothingRan(result: unknown): boolean {
   if (result === false) return true;
   return typeof result === "object" && result !== null && (result as { cancelled?: unknown }).cancelled === true;

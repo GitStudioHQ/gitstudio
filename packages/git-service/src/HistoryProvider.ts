@@ -23,11 +23,27 @@ export interface FileHistoryEntry {
   subject: string;
   body: string;
   /**
-   * The file's path at that commit. With rename-following this can differ from
-   * the queried path when derivable; otherwise it is the queried path.
+   * The file's path AT that commit. With rename-following, a commit older
+   * than a rename names the old path here — and a diff or a read built from
+   * today's name finds nothing at that commit.
    */
   path: string;
+  /**
+   * When this commit renamed the file: its path in the first parent. The
+   * parent side of this commit's diff is read under this name.
+   */
+  oldPath?: string;
 }
+
+/**
+ * The file-history format: the record separator FIRST, then the fields, each
+ * followed by %x1f. `--name-status -z` output for the commit follows the last
+ * separator, inside the same record — which is where the path at that commit
+ * comes from.
+ */
+const FILE_HISTORY_FORMAT =
+  `--pretty=format:${RECORD_SEP}%H${FIELD_SEP}%an${FIELD_SEP}%ae${FIELD_SEP}%at` +
+  `${FIELD_SEP}%s${FIELD_SEP}%b${FIELD_SEP}`;
 
 export interface LineHistoryEntry {
   sha: string;
@@ -74,14 +90,14 @@ export class HistoryProvider {
     relPath: string,
     opts?: FileHistoryOptions,
   ): Promise<FileHistoryEntry[]> {
-    const args = ["log", "--date-order"];
+    const args = ["log", "--date-order", "--name-status", "-z"];
     if (opts?.follow !== false) {
       args.push("--follow");
     }
     if (opts?.maxCount !== undefined) {
       args.push(`--max-count=${opts.maxCount}`);
     }
-    args.push(HISTORY_FORMAT);
+    args.push(FILE_HISTORY_FORMAT);
     args.push(opts?.rev ?? "HEAD");
     args.push("--", relPath);
 
@@ -92,15 +108,7 @@ export class HistoryProvider {
           `${result.stderr.trim()}`,
       );
     }
-
-    const entries: FileHistoryEntry[] = [];
-    for (const raw of splitRecords(result.stdout)) {
-      const rec = parseRecord(raw);
-      if (rec) {
-        entries.push({ ...rec, path: relPath });
-      }
-    }
-    return entries;
+    return parseFileHistory(result.stdout, relPath);
   }
 
   /**
@@ -174,6 +182,43 @@ export class HistoryProvider {
     }
     return result.stdout;
   }
+}
+
+/**
+ * Parse FILE_HISTORY_FORMAT output: per record, seven fields, the seventh
+ * holding that commit's `--name-status -z` entries for the file ("M\0path"
+ * or "R100\0old\0new"). A commit with none (a merge shows no diff) takes the
+ * path the newer commit had in ITS parent, which is this commit's path.
+ */
+export function parseFileHistory(stdout: string, relPath: string): FileHistoryEntry[] {
+  const entries: FileHistoryEntry[] = [];
+  for (const chunk of stdout.split(RECORD_SEP)) {
+    const fields = chunk.split(FIELD_SEP);
+    if (fields.length < 7 || !/^[0-9a-f]{40}$/.test(fields[0])) continue;
+    const newer = entries[entries.length - 1];
+    let path = newer ? (newer.oldPath ?? newer.path) : relPath;
+    let oldPath: string | undefined;
+    const status = fields[6].replace(/^\s+/, "").split("\0").filter((t) => t.length > 0);
+    if (status.length >= 3 && /^[RC]/.test(status[0])) {
+      oldPath = status[1];
+      path = status[2];
+    } else if (status.length >= 2) {
+      path = status[1];
+    }
+    const sha = fields[0];
+    entries.push({
+      sha,
+      shortSha: sha.slice(0, 7),
+      author: fields[1],
+      authorEmail: fields[2],
+      authorDate: Number(fields[3]),
+      subject: fields[4],
+      body: fields[5],
+      path,
+      ...(oldPath !== undefined && oldPath !== path ? { oldPath } : {}),
+    });
+  }
+  return entries;
 }
 
 function maxCountArgs(opts?: LineHistoryOptions): string[] {

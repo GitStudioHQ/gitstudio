@@ -7,7 +7,7 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { stoppedByThisCommand } from "../git/pausedForUser";
 import { detectOperation, notifyPaused } from "../git/pauseNotice";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
-import { syncBranchLabel } from "./syncLabel";
+import { syncAccessibleLabel, syncBranchLabel } from "./syncLabel";
 
 // A compact left status-bar segment for the active repo's sync state:
 //   $(git-branch) <branch> $(arrow-down)<behind> $(arrow-up)<ahead>
@@ -34,11 +34,15 @@ export class SyncStatusItem implements vscode.Disposable {
     },
   ) {
     this.item = vscode.window.createStatusBarItem(
+      // Its own id and name: without one every GitStudio item shares the
+      // extension's, and the status bar's menu cannot hide one alone.
+      "gitstudio.sync",
       vscode.StatusBarAlignment.Left,
       // A small negative priority keeps us just to the right of vscode.git's
       // own SCM segment rather than fighting it for the leftmost slot.
       -5,
     );
+    this.item.name = "GitStudio Branch Sync";
     this.item.command = COMMAND_ID;
 
     this.disposables.push(
@@ -89,14 +93,16 @@ export class SyncStatusItem implements vscode.Disposable {
       }
 
       const parts = [`$(git-branch) ${branch}`];
-      if (upstream) {
+      // A detached HEAD has no branch, so no publish cloud: it offered a
+      // Publish that answers "cannot publish a detached HEAD".
+      if (upstream && !head.detached) {
         if (counts.behind > 0) {
           parts.push(`$(arrow-down)${counts.behind}`);
         }
         if (counts.ahead > 0) {
           parts.push(`$(arrow-up)${counts.ahead}`);
         }
-      } else {
+      } else if (!head.detached) {
         parts.push("$(cloud-upload)");
       }
       // A dirty marker rather than a segment of its own. It belongs to the
@@ -111,7 +117,18 @@ export class SyncStatusItem implements vscode.Disposable {
         parts.push(`$(pencil)${dirty}`);
       }
       this.item.text = parts.join(" ");
-      this.setTooltip(branch, upstream, counts.ahead, counts.behind);
+      this.item.accessibilityInformation = {
+        label: syncAccessibleLabel({
+          branch,
+          detachedAt: head.detached ? head.sha.slice(0, 7) : undefined,
+          upstream: !!upstream,
+          ahead: counts.ahead,
+          behind: counts.behind,
+          dirty,
+        }),
+        role: "button",
+      };
+      this.setTooltip(branch, upstream, counts.ahead, counts.behind, head.detached);
       this.item.show();
     } catch {
       if (token === this.updateToken) {
@@ -146,6 +163,7 @@ export class SyncStatusItem implements vscode.Disposable {
     upstream: string | null | undefined,
     ahead: number,
     behind: number,
+    detached = false,
   ): void {
     const md = new vscode.MarkdownString(undefined, true);
     md.isTrusted = {
@@ -160,12 +178,16 @@ export class SyncStatusItem implements vscode.Disposable {
     md.supportThemeIcons = true;
     md.appendMarkdown(`**${branch}**\n\n`);
     md.appendMarkdown(
-      upstream
-        ? `$(git-branch) tracking \`${upstream}\` · ${behind} in, ${ahead} out\n\n`
-        : "No upstream set\n\n",
+      detached
+        ? "Detached HEAD: commits made here are on no branch\n\n"
+        : upstream
+          ? `$(git-branch) tracking \`${upstream}\` · ${behind} in, ${ahead} out\n\n`
+          : "No upstream set\n\n",
     );
     md.appendMarkdown("---\n\n");
-    if (upstream) {
+    if (detached) {
+      md.appendMarkdown("[$(repo-fetch) Fetch](command:gitstudio.sync.fetch)");
+    } else if (upstream) {
       md.appendMarkdown("[$(sync) Sync](command:gitstudio.sync.sync) &nbsp; ");
       md.appendMarkdown("[$(repo-fetch) Fetch](command:gitstudio.sync.fetch) &nbsp; ");
       md.appendMarkdown("[$(arrow-down) Pull](command:gitstudio.sync.pull) &nbsp; ");
@@ -520,9 +542,6 @@ export class SyncStatusItem implements vscode.Disposable {
   }
 
   private async askForce(): Promise<boolean | undefined> {
-    const forceDefault = vscode.workspace
-      .getConfiguration("gitstudio")
-      .get<boolean>("push.forceWithLease", true);
     const choice = await promptPick({
       title: "Push to the upstream branch?",
       choices: [
@@ -537,9 +556,8 @@ export class SyncStatusItem implements vscode.Disposable {
           label: "Force push",
           icon: "warning",
           danger: true,
-          description: forceDefault
-            ? "Uses --force-with-lease, which still refuses to overwrite remote work you haven't seen."
-            : "Overwrites the remote branch, including work you haven't seen.",
+          // Every force push is leased (SyncOps.push) — there is no raw --force.
+          description: "Uses --force-with-lease, which still refuses to overwrite remote work you haven't seen.",
         },
       ],
     });

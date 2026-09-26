@@ -61,6 +61,9 @@ export function registerGitStudioMerge(
     viewTypes: GITSTUDIO_MERGE_VIEW_TYPES,
     commands: GITSTUDIO_MERGE_COMMANDS,
     ideAvailableContextKey: GITSTUDIO_IDE_CONTEXT_KEY,
+    // Lists Continue / Skip / Abort Operation and Abort Rebase in the palette
+    // only while there is something for them to act on (package.json).
+    operationContextKey: "gitstudio.operationInProgress",
     statusItemId: "gitstudio.conflicts",
     // Asked (non-modally) the first time a conflict appears, so someone who
     // never merges is never asked about merge tools.

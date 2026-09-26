@@ -1684,7 +1684,9 @@ export class CommitGraph extends LitElement {
   /** Whether more pages remain to be loaded on scroll. */
   declare hasMore: boolean;
   /** Lifecycle phase for the placeholder states. */
-  declare status: "loading" | "ready" | "empty" | "error";
+  /** "no-repo": no repository is open (GraphInitMessage.noRepo) — not an empty history.
+   *  "discovering": none YET — the host is still looking (GraphInitMessage.discovering). */
+  declare status: "loading" | "ready" | "empty" | "error" | "no-repo" | "discovering";
   /** Message for the error placeholder — a git failure, NOT an empty repo
       (an empty/fresh repo stays in the "empty" state with its own guidance). */
   declare errorMessage: string;
@@ -3835,7 +3837,9 @@ export class CommitGraph extends LitElement {
 
   private headerHtml() {
     const branch = this.currentBranchName();
-    const n = this.rows.length;
+    // Commits only: the "Uncommitted changes" row the host puts on top of a
+    // dirty tree is not one, and counting it made 17 commits read "18".
+    const n = this.rows.reduce((k, r) => (ZERO_SHA_RE.test(r.sha) ? k : k + 1), 0);
     const count =
       n === 0
         ? ""
@@ -4245,6 +4249,21 @@ export class CommitGraph extends LitElement {
           <button class="ph-retry" @click=${() => this.onAction({ type: "refresh" })}>
             <span class="codicon codicon-refresh"></span> Retry
           </button>
+        </div>${nothing}`;
+    }
+    if (this.status === "no-repo") {
+      return html`${header}<div class="placeholder">
+          <span class="ph-icon codicon codicon-source-control"></span>
+          <div class="ph-title">No repository open</div>
+          <div class="ph-detail">Open a folder that's under Git and its history will appear here.</div>
+        </div>${nothing}`;
+    }
+    if (this.status === "discovering") {
+      // What the Changes view above says at the same moment — never "No
+      // repository open" while one may still be found.
+      return html`${header}<div class="placeholder" role="status">
+          <div class="spinner" aria-hidden="true"></div>
+          <div class="ph-title">Looking for a repository…</div>
         </div>${nothing}`;
     }
     if (this.status === "empty") {

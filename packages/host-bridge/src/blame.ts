@@ -17,6 +17,11 @@ export interface BlameCommit {
   summary: string;
   /** Where this content lived before the blamed commit, when known. */
   previous?: { sha: string; filename: string };
+  /**
+   * The blamed file's path in THIS commit (porcelain `filename`). Differs from
+   * today's path for a commit older than a rename.
+   */
+  filename?: string;
   /** True for a boundary commit (the history limit / first commit). */
   isBoundary: boolean;
 }

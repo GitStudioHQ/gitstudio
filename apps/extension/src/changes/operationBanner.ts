@@ -36,6 +36,14 @@ export interface OperationBannerData {
   continueBlocked?: string;
   skipLabel?: string;
   abortLabel: string;
+  /**
+   * A rebase: the branch it is rebasing, which its commits land on when it
+   * finishes. Absent for a rebase begun on a detached HEAD (git names the
+   * commit it started from then, and there is no branch to land on). Set by
+   * the host, which checks the name is a branch; the Push button's reason
+   * reads it (commitView's detachedPushReason).
+   */
+  rebaseBranch?: string;
 }
 
 /**

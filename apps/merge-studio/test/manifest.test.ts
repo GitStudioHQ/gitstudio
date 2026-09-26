@@ -8,6 +8,7 @@ import {
   MS_DEFERS_CONTEXT_KEY,
   MS_IDE_CONTEXT_KEY,
   MS_MERGE_VIEW_TYPES,
+  MS_OPERATION_CONTEXT_KEY,
   MS_WALKTHROUGH_ID,
 } from "../src/ids";
 
@@ -81,6 +82,16 @@ test("the JetBrains commands stay out of the palette without an IDE", () => {
     const e = pkg.contributes.menus.commandPalette.find((x) => x.command === id);
     assert.ok(e?.when?.includes(MS_IDE_CONTEXT_KEY), `${id}: ${e?.when}`);
   }
+});
+
+test("Continue / Skip / Abort Operation are in the palette only while something is stopped", () => {
+  // With nothing in progress each one only answered "nothing is in progress".
+  // The shared watcher sets the key (packages/merge-vscode register.ts).
+  for (const id of ["jbMerge.operation.continue", "jbMerge.operation.skip", "jbMerge.operation.abort"]) {
+    const e = pkg.contributes.menus.commandPalette.find((x) => x.command === id);
+    assert.ok(e?.when?.includes(MS_OPERATION_CONTEXT_KEY), `${id}: ${e?.when}`);
+  }
+  assert.match(read("src/msProduct.ts"), /operationContextKey: MS_OPERATION_CONTEXT_KEY/);
 });
 
 test("the launcher path is user-only: a workspace can never set the program Merge Studio launches", () => {

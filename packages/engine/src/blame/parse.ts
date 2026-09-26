@@ -139,8 +139,14 @@ export function parseIncrementalBlame(output: string): BlameResult {
         }
         break;
       }
-      // `filename`, `committer-tz`, and any future keys are ignored — the
-      // header already gave us everything line-mapping needs.
+      case "filename":
+        // The file's path IN THIS COMMIT. Blame follows renames, so a line
+        // older than a rename names the old path here — and a diff or a
+        // revision read built from today's path finds nothing at that commit.
+        // Without -C a commit carries one name for the blamed file.
+        current.filename = value;
+        break;
+      // `committer-tz` and any future keys are ignored.
       default:
         break;
     }

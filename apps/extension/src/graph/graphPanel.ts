@@ -40,14 +40,13 @@ import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import { runRebasePlan, isRebaseInProgress, reportRebaseFailure } from "../rebase/rebaseRunner";
 import { promptPick } from "../ui/dialogs";
-import { openRevisionDiff } from "../history/revisionContentProvider";
-import { commitWebUrl } from "../util/remoteUrl";
+// EMPTY_TREE: git's empty tree — the "parent" of a root commit's diff.
+import { commitChangeSides, EMPTY_TREE, openSidesDiff } from "../history/revisionContentProvider";
+import { commitWebUrlIn } from "../util/remoteUrl";
 import { relativePath, statusLetter } from "../changes/changesView";
 import type { Change } from "../git/git";
 import { notifyPaused } from "../git/pauseNotice";
 
-/** git's canonical empty-tree object — the "parent" of a root commit's diff. */
-const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /** Map the details-panel action ids to runCommitAction's ids. */
 const ACTION_ID_MAP: Record<string, string> = {
@@ -282,7 +281,7 @@ export class CommitGraphPanel {
         void this.runCommitMenuAction(msg.sha, msg.id);
         break;
       case "openFile":
-        void this.doOpenFile(msg.sha, msg.path, !!msg.wip);
+        void this.doOpenFile(msg.sha, msg.path, !!msg.wip, msg.oldPath, msg.status);
         break;
       case "commitAction":
         void this.doCommitAction(msg.action, msg.sha);
@@ -390,7 +389,22 @@ export class CommitGraphPanel {
       this.walk = { refs: null, head: true };
       this.nextSkip = 0;
       this.hasMore = false;
-      this.postInit({ rows: [], head: "", totalColumns: 1, hasMore: false, refFilter: null }, []);
+      // Not "No commits yet": there is no repository to have any. And while
+      // discovery is still running, not "No repository open" either — the
+      // Changes view above the rail says "Looking for a repository…" at that
+      // moment, and settling fires onDidChange, which lands back here.
+      const discovering = this.repos.isDiscovering();
+      this.postInit(
+        {
+          rows: [],
+          head: "",
+          totalColumns: 1,
+          hasMore: false,
+          ...(discovering ? { discovering: true } : { noRepo: true }),
+          refFilter: null,
+        },
+        [],
+      );
       return;
     }
 
@@ -1197,12 +1211,18 @@ export class CommitGraphPanel {
     const st = active.repo.state;
     const now = Math.floor(Date.now() / 1000);
     const toFiles = (changes: Change[] | undefined) =>
-      (changes ?? []).map((c) => ({
-        path: relativePath(active.root, c.uri.fsPath),
-        status: statusLetter(c.status),
-        additions: 0,
-        deletions: 0,
-      }));
+      (changes ?? []).map((c) => {
+        const path = relativePath(active.root, c.uri.fsPath);
+        // A staged rename's HEAD side is under its old name (openFile reads it there).
+        const oldPath = c.originalUri ? relativePath(active.root, c.originalUri.fsPath) : path;
+        return {
+          path,
+          ...(oldPath !== path ? { oldPath } : {}),
+          status: statusLetter(c.status),
+          additions: 0,
+          deletions: 0,
+        };
+      });
     const staged = toFiles(st.indexChanges);
     const unstaged = [
       ...toFiles(st.mergeChanges),
@@ -1239,24 +1259,37 @@ export class CommitGraphPanel {
     sha: string,
     path: string,
     wip: boolean,
+    oldPath?: string,
+    status?: string,
   ): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
       return;
     }
+    const fileName = path.split("/").pop() || path;
     if (wip) {
-      // Working-tree file: HEAD ↔ the live file on disk.
-      await openRevisionDiff(active.root, path, "HEAD");
+      // Working-tree file: HEAD ↔ the live file on disk — HEAD under the old
+      // name for a rename, and nothing on the right for a deletion (the file
+      // URI of a path that is not on disk is not an empty file).
+      await openSidesDiff(
+        active.root,
+        path,
+        {
+          left: status === "A" || status === "U" ? { rev: EMPTY_TREE } : { rev: "HEAD", path: oldPath || path },
+          right: status === "D" ? { rev: EMPTY_TREE } : { rev: undefined },
+        },
+        `${fileName} (HEAD ↔ Working Tree)`,
+      );
       return;
     }
     const record = this.records.get(sha);
     const parent = record?.parents[0] ?? EMPTY_TREE;
-    const fileName = path.split("/").pop() || path;
-    await openRevisionDiff(
+    // The parent side under the name the file had THERE: a rename commit's
+    // parent has no file at the new name, so it used to show as all-added.
+    await openSidesDiff(
       active.root,
       path,
-      parent,
-      sha,
+      commitChangeSides({ sha, parent, path, oldPath, status }),
       `${fileName} (${sha.slice(0, 7)})`,
     );
   }
@@ -1279,15 +1312,12 @@ export class CommitGraphPanel {
       return;
     }
     if (action === "open-remote") {
-      const remote = await active.ctx.process.run(["remote", "get-url", "origin"]);
-      const url = commitWebUrl(remote.stdout.trim(), sha);
-      if (!url) {
-        void vscode.window.showInformationMessage(
-          "GitStudio: origin isn't a recognised GitHub/GitLab/Bitbucket remote.",
-        );
+      const found = await commitWebUrlIn(active.ctx, sha);
+      if ("reason" in found) {
+        void vscode.window.showInformationMessage(`GitStudio: ${found.reason}`);
         return;
       }
-      await vscode.env.openExternal(vscode.Uri.parse(url));
+      await vscode.env.openExternal(vscode.Uri.parse(found.url));
       return;
     }
     // The visual Interactive Rebase workspace opens via its command (needs the

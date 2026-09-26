@@ -11,8 +11,17 @@ import {
   openCompareFileDiff,
   pickRef,
   type CompareResult,
+  type RefKind,
 } from "./refCompare";
 import type { GitRef } from "@gitstudio/host-bridge/git";
+
+/** Each ref pill's icon, by what the ref names. */
+const REF_ICON: Record<RefKind, string> = {
+  branch: "git-branch",
+  remote: "cloud",
+  tag: "tag",
+  commit: "git-commit",
+};
 
 /** Messages the compare webview posts back to the host. */
 type CompareMessage =
@@ -324,9 +333,9 @@ export class ComparePanel {
 </head>
 <body>
   <div class="cmp-bar">
-    <button class="ref-pick" id="pick-base" title="Change base ref"><i class="codicon codicon-git-branch"></i><span class="nm">${esc(this.base)}</span></button>
+    <button class="ref-pick" id="pick-base" title="Change base ref"><i class="codicon codicon-${REF_ICON[result.baseKind]}"></i><span class="nm">${esc(this.base)}</span></button>
     <span class="cmp-dots" title="${this.threeDot ? "Three-dot: changes since the merge-base" : "Two-dot: direct difference"}">${this.threeDot ? "..." : ".."}</span>
-    <button class="ref-pick" id="pick-head" title="Change compare ref"><i class="codicon codicon-git-branch"></i><span class="nm">${esc(this.head)}</span></button>
+    <button class="ref-pick" id="pick-head" title="Change compare ref"><i class="codicon codicon-${REF_ICON[result.headKind]}"></i><span class="nm">${esc(this.head)}</span></button>
     <button class="icon-btn" id="swap" title="Swap base and compare"><i class="codicon codicon-arrow-swap"></i></button>
     <div class="cmp-mode" role="group" aria-label="Comparison mode">
       <button id="mode-3" class="${this.threeDot ? "on" : ""}" title="Commits and changes ${esc(this.head)} adds on top of the merge-base">What ${esc(this.head)} adds</button>
@@ -341,9 +350,9 @@ export class ComparePanel {
       <b class="ds-base">${esc(this.base)}</b>
     </div>
     <div class="ds-metrics">
-      <span class="ds-metric"><b id="m-commits">${result.ahead}</b> commits</span>
+      <span class="ds-metric"><b id="m-commits">${result.ahead}</b> ${result.ahead === 1 ? "commit" : "commits"}</span>
       <span class="ds-sep">·</span>
-      <span class="ds-metric"><b id="m-files">${result.files.length}</b> files changed</span>
+      <span class="ds-metric"><b id="m-files">${result.files.length}</b> ${result.files.length === 1 ? "file" : "files"} changed</span>
       <span class="ds-sep">·</span>
       <span class="ds-metric ds-add">+${result.additions}</span>
       <span class="ds-metric ds-del">−${result.deletions}</span>

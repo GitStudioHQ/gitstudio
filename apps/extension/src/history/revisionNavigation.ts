@@ -5,6 +5,8 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
 import {
   openRevisionDiff,
+  openSidesDiff,
+  historyChangeSides,
   fromRevisionUri,
   REVISION_SCHEME,
 } from "./revisionContentProvider";
@@ -78,11 +80,10 @@ export class RevisionNavigator implements vscode.Disposable {
       return;
     }
     this.cursors.set(this.key(root, rel), picked.index);
-    await openRevisionDiff(
+    await openSidesDiff(
       root,
       rel,
-      `${picked.entry.sha}~1`,
-      picked.entry.sha,
+      historyChangeSides(picked.entry),
       `${baseName(rel)} (${picked.entry.shortSha})`,
     );
   }
@@ -144,11 +145,10 @@ export class RevisionNavigator implements vscode.Disposable {
 
     this.cursors.set(key, next);
     const target = history[next];
-    await openRevisionDiff(
+    await openSidesDiff(
       root,
       rel,
-      `${target.sha}~1`,
-      target.sha,
+      historyChangeSides(target),
       `${baseName(rel)} (${target.shortSha})`,
     );
   }

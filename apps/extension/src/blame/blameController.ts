@@ -4,8 +4,8 @@ import type { BlameResult, BlameCommit } from "@gitstudio/git-service/index";
 import { UNCOMMITTED_SHA } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
-import { commitWebUrl } from "../util/remoteUrl";
-import { openRevisionDiff, toRevisionUri } from "../history/revisionContentProvider";
+import { commitWebUrlIn } from "../util/remoteUrl";
+import { blameChangeSides, openSidesDiff, toRevisionUri } from "../history/revisionContentProvider";
 
 // How long after the selection settles before we run a blame — fast enough to
 // feel live, slow enough not to spawn git on every cursor twitch.
@@ -73,9 +73,11 @@ export class BlameController implements vscode.Disposable {
     private readonly log?: (m: string) => void,
   ) {
     this.statusBar = vscode.window.createStatusBarItem(
+      "gitstudio.blame",
       vscode.StatusBarAlignment.Left,
       -10,
     );
+    this.statusBar.name = "GitStudio Blame";
     this.statusBar.command = "gitstudio.blame.showLineActions";
 
     void this.maybeDisableNativeBlame();
@@ -669,18 +671,22 @@ export class BlameController implements vscode.Disposable {
     void vscode.window.showInformationMessage(`Copied ${short(at.commit.sha)}`);
   }
 
-  /** Diff THIS file as the line's commit changed it (parent ↔ commit). */
+  /**
+   * Diff THIS file as the line's commit changed it (parent ↔ commit), under
+   * the names it had there. Blame follows renames, so a line older than a
+   * rename belongs to a commit where the file had another name; built from
+   * today's name, both sides were empty.
+   */
   private async showRevisionDiff(): Promise<void> {
     const at = await this.commitAtCursor();
     if (!at) {
       return;
     }
     const rel = relative(at.entry.root, at.editor.document.uri.fsPath);
-    await openRevisionDiff(
+    await openSidesDiff(
       at.entry.root,
       rel,
-      `${at.commit.sha}^`,
-      at.commit.sha,
+      blameChangeSides(at.commit, rel),
       `${rel.split("/").pop()} (${short(at.commit.sha)})`,
     );
   }
@@ -692,8 +698,17 @@ export class BlameController implements vscode.Disposable {
       return;
     }
     const rel = relative(at.entry.root, at.editor.document.uri.fsPath);
+    const previous = at.commit.previous;
+    if (!previous) {
+      // The commit added the file: there is no earlier version to open, and
+      // an empty editor would say there was one with nothing in it.
+      void vscode.window.showInformationMessage(
+        `GitStudio: ${rel.split("/").pop()} was added by ${short(at.commit.sha)}, so there is no earlier revision of it.`,
+      );
+      return;
+    }
     const doc = await vscode.workspace.openTextDocument(
-      toRevisionUri(at.entry.root, `${at.commit.sha}^`, rel),
+      toRevisionUri(at.entry.root, previous.sha, rel, previous.filename),
     );
     await vscode.window.showTextDocument(doc, { preview: true });
   }
@@ -713,15 +728,12 @@ export class BlameController implements vscode.Disposable {
     if (!at) {
       return;
     }
-    const remote = await at.entry.ctx.process.run(["remote", "get-url", "origin"]);
-    const url = commitWebUrl(remote.stdout.trim(), at.commit.sha);
-    if (!url) {
-      void vscode.window.showInformationMessage(
-        "GitStudio: this repo's origin isn't a recognised GitHub/GitLab remote.",
-      );
+    const found = await commitWebUrlIn(at.entry.ctx, at.commit.sha);
+    if ("reason" in found) {
+      void vscode.window.showInformationMessage(`GitStudio: ${found.reason}`);
       return;
     }
-    await vscode.env.openExternal(vscode.Uri.parse(url));
+    await vscode.env.openExternal(vscode.Uri.parse(found.url));
   }
 
   /** Register the two titled variants (checked / unchecked) of every option. */

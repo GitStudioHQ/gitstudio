@@ -118,6 +118,19 @@ export interface GraphInitMessage {
   totalColumns: number;
   /** True while more pages remain to be loaded on demand. */
   hasMore: boolean;
+  /**
+   * No repository is open: the rows are empty because there is nothing to
+   * read, not because the history is. The graph says so, instead of "No
+   * commits yet".
+   */
+  noRepo?: boolean;
+  /**
+   * No repository YET: none is active, but the first discovery has not
+   * settled (vscode.git's scan can still find one below the opened folder).
+   * The graph says it is looking, as the Changes view above the rail does;
+   * the host sends `noRepo` instead once discovery settles with nothing.
+   */
+  discovering?: boolean;
   /** The filter these rows were built under, RESOLVED to full names (see
    *  GraphRefFilter) — what the picker ticks. */
   refFilter: GraphRefFilter;
@@ -284,8 +297,13 @@ export type GraphWebviewMessage =
   | { type: "loadMore" }
   /** Toolbar refresh — reload the graph from the first page. */
   | { type: "refresh" }
-  /** Open a changed file from the details panel as a diff. */
-  | { type: "openFile"; sha: string; path: string; wip?: boolean }
+  /**
+   * Open a changed file from the details panel as a diff. `oldPath` is the
+   * file's name in the parent when the commit renamed it (the parent side is
+   * read under that name); `status` is git's letter (A has no parent side, D
+   * no commit side).
+   */
+  | { type: "openFile"; sha: string; path: string; oldPath?: string; status?: string; wip?: boolean }
   /** A commit action from the details panel's toolbar. */
   | { type: "commitAction"; action: string; sha: string }
   /**

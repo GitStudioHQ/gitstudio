@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 import type { LineHistoryEntry } from "@gitstudio/git-service/index";
-import type { RepoManager } from "../git/repoManager";
+import type { RepoEntry, RepoManager } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
-import { openRevisionDiff } from "./revisionContentProvider";
+import { commitChangeSides, openSidesDiff } from "./revisionContentProvider";
 import { resolveActiveFile } from "./historyContext";
 import { promptPick } from "../ui/dialogs";
 
@@ -67,15 +67,36 @@ export async function showLineHistory(repos: RepoManager): Promise<void> {
       keepWalking = false;
       break;
     }
-    await openRevisionDiff(
+    // `git log -L` follows the lines through renames, so the picked commit
+    // may know the file by an older name. Its name there, and in its parent,
+    // come from the file's own history; built from today's name, a commit
+    // before a rename opened as an empty diff.
+    const at = await pathsAt(active.entry, active.rel, picked.sha);
+    await openSidesDiff(
       active.entry.root,
       active.rel,
-      `${picked.sha}~1`,
-      picked.sha,
+      commitChangeSides({ sha: picked.sha, parent: `${picked.sha}~1`, ...at }),
       `${fileName} (${picked.shortSha})`,
     );
     revealRange(startLine, endLine);
   }
+}
+
+/** The file's path in `sha`, and in its parent when `sha` renamed it (today's name when not found). */
+async function pathsAt(
+  entry: RepoEntry,
+  rel: string,
+  sha: string,
+): Promise<{ path: string; oldPath?: string }> {
+  try {
+    const hit = (await entry.ctx.history.fileHistory(rel, { follow: true })).find((h) => h.sha === sha);
+    if (hit) {
+      return { path: hit.path, oldPath: hit.oldPath };
+    }
+  } catch {
+    // Fall through to today's name.
+  }
+  return { path: rel };
 }
 
 async function pickCommit(

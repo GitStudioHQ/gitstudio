@@ -388,7 +388,7 @@ test("Undo restores the original tip after dropping a middle commit", async () =
     reset();
     await runCommitAction("drop", r.ctx, { sha: a, subject: "A" }, undo);
     assert.deepEqual(r.subjects(), ["B", "base"]);
-    assert.ok(said.some((s) => s.kind === "info" && s.text === `Undid? Drop ${a.slice(0, 7)}`), JSON.stringify(said));
+    assert.ok(said.some((s) => s.kind === "info" && s.text === `Drop ${a.slice(0, 7)} — done.`), JSON.stringify(said));
     reset();
     await ledger.undoLast();
     assert.equal(r.git("rev-parse", "HEAD"), tip, "back on the original tip");

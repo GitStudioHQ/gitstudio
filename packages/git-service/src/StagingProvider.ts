@@ -1,6 +1,8 @@
-import { lstat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { hasConflictMarkers } from "@gitstudio/engine/conflict/documentText";
 import type { GitProcess } from "./GitProcess";
+import { runIndexWrite } from "./indexWrites";
 
 export interface StagingOptions {
   signal?: AbortSignal;
@@ -93,7 +95,7 @@ export class StagingProvider {
 
   /** `git add -- <rel>` — stage the whole working-tree version of a file. */
   async stageFile(rel: string, opts?: StagingOptions): Promise<CommitResult> {
-    const r = await this.proc.run(["add", "--", rel], { signal: opts?.signal });
+    const r = await runIndexWrite(this.proc, ["add", "--", rel], { signal: opts?.signal });
     return { ok: r.code === 0, stderr: r.stderr };
   }
 
@@ -108,19 +110,54 @@ export class StagingProvider {
   }
 
   /**
+   * Which of `rels` are UNMERGED and still carry conflict markers.
+   *
+   * `git add` on an unmerged file is how git is told the conflict is resolved;
+   * it does not look inside. Staging one that still has `<<<<<<<` in it marks
+   * it resolved with the markers in, and the next commit carries them into
+   * the tree. Only unmerged paths are checked: an ordinary file that happens
+   * to contain marker-shaped lines (a merge tool's fixture, docs about
+   * conflicts) must stay stageable. An unreadable file is not reported — git
+   * decides when it is staged.
+   */
+  async markedConflicts(rels: string[], opts?: StagingOptions): Promise<string[]> {
+    if (rels.length === 0) return [];
+    // Every unmerged entry, filtered here: no pathspec, so no path of the
+    // user's is ever read by git as anything but a path.
+    const r = await this.proc.run(["ls-files", "-u", "-z"], { signal: opts?.signal });
+    if (r.code !== 0) return [];
+    const unmerged = new Set<string>();
+    for (const rec of r.stdout.split("\0")) {
+      const tab = rec.indexOf("\t");
+      if (tab !== -1) unmerged.add(rec.slice(tab + 1));
+    }
+    const marked: string[] = [];
+    for (const rel of new Set(rels)) {
+      if (!unmerged.has(rel)) continue;
+      try {
+        if (hasConflictMarkers(await readFile(join(this.proc.cwd, rel), "utf8"))) marked.push(rel);
+      } catch {
+        // Deleted by one side, a directory, unreadable: not a file with markers.
+      }
+    }
+    return marked;
+  }
+
+  /**
    * Unstage a file. `git reset -q HEAD -- <rel>` on a repo with commits; on an
    * unborn branch (no HEAD yet) `reset` fails, so fall back to
    * `git rm --cached --force` to remove the entry from the index.
    */
   async unstageFile(rel: string, opts?: StagingOptions): Promise<CommitResult> {
-    const reset = await this.proc.run(["reset", "-q", "HEAD", "--", rel], {
+    const reset = await runIndexWrite(this.proc, ["reset", "-q", "HEAD", "--", rel], {
       signal: opts?.signal,
     });
     if (reset.code === 0) {
       return { ok: true, stderr: reset.stderr };
     }
     // No HEAD (initial commit) — drop the staged entry from the index instead.
-    const rm = await this.proc.run(
+    const rm = await runIndexWrite(
+      this.proc,
       ["rm", "--cached", "--force", "--quiet", "--", rel],
       { signal: opts?.signal },
     );
@@ -161,7 +198,7 @@ export class StagingProvider {
     rel: string,
     opts?: StagingOptions,
   ): Promise<CommitResult> {
-    const r = await this.proc.run(["checkout", "--", rel], {
+    const r = await runIndexWrite(this.proc, ["checkout", "--", rel], {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, stderr: r.stderr };
@@ -222,7 +259,7 @@ export class StagingProvider {
     }
     let failure: CommitResult | undefined;
     for (const chunk of chunkPaths(rels)) {
-      const r = await this.proc.run(build(chunk), { signal: opts?.signal });
+      const r = await runIndexWrite(this.proc, build(chunk), { signal: opts?.signal });
       if (r.code !== 0 && !failure) {
         failure = { ok: false, stderr: r.stderr };
       }
@@ -264,7 +301,8 @@ export class StagingProvider {
     const blobSha = hashed.stdout.trim();
 
     const mode = await this.indexMode(rel, signal);
-    const updated = await this.proc.run(
+    const updated = await runIndexWrite(
+      this.proc,
       ["update-index", "--add", "--cacheinfo", `${mode},${blobSha},${rel}`],
       { signal },
     );
@@ -318,6 +356,28 @@ export class StagingProvider {
     return r.stdout.trim() !== "false";
   }
 
+  /**
+   * The HEAD-side name of a staged rename whose NEW name is `rel`, or
+   * undefined when `rel` is not the destination of one.
+   *
+   * NO pathspec: limiting the diff to the destination filters the rename's
+   * source out, and `-M` then has nothing to pair it with — git reports
+   * `A new` instead of `R old new`.
+   */
+  async renamedFrom(rel: string, opts?: StagingOptions): Promise<string | undefined> {
+    const r = await this.proc.run(["diff", "--cached", "--name-status", "-M", "-z"], {
+      signal: opts?.signal,
+    });
+    if (r.code !== 0) return undefined;
+    const tok = r.stdout.split("\0").filter((t) => t.length > 0);
+    for (let i = 0; i < tok.length; ) {
+      const renamed = /^[RC]/.test(tok[i]);
+      if (renamed && tok[i + 2] === rel) return tok[i + 1];
+      i += renamed ? 3 : 2;
+    }
+    return undefined;
+  }
+
   /** The staged (index) version of a file via `git show :<rel>`, or "". */
   async indexContent(rel: string, opts?: StagingOptions): Promise<string> {
     const r = await this.proc.run(["show", `:${rel}`], { signal: opts?.signal });
@@ -362,9 +422,13 @@ export class StagingProvider {
       args.push("-F", "-");
     }
 
-    const r = await this.proc.run(args, {
+    // Queued with the other index writes, but never retried: a commit runs the
+    // repository's hooks before it writes anything, and running them twice is
+    // not the same as running them once.
+    const r = await runIndexWrite(this.proc, args, {
       signal: opts?.signal,
       input: reuseMessage ? undefined : message,
+      retryOnLock: false,
     });
     return { ok: r.code === 0, stderr: r.stderr, stdout: r.stdout };
   }

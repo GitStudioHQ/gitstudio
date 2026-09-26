@@ -810,7 +810,7 @@ export class GitBridge {
    * version. Reuses StagingProvider.headContent / ConflictProvider.getHeadVersion
    * — the same content readers the extension's diff panel uses.
    */
-  async fileDiff(req: { path: string; sha?: string }): Promise<FileDiff | undefined> {
+  async fileDiff(req: { path: string; sha?: string; oldPath?: string }): Promise<FileDiff | undefined> {
     const ctx = this.ctx();
     if (!ctx) {
       return undefined;
@@ -820,10 +820,14 @@ export class GitBridge {
     if (req.sha) {
       const right = await showAt(ctx, req.sha, rel);
       const parent = await parentOf(ctx, req.sha);
-      const left = parent ? await showAt(ctx, parent, rel) : { text: "", absent: true };
+      // The parent side under the name the file had THERE. A commit that
+      // renamed the file has nothing at the new name in its parent, and
+      // reading it there showed the rename as a brand-new file.
+      const before = req.oldPath || rel;
+      const left = parent ? await showAt(ctx, parent, before) : { text: "", absent: true };
       return {
         path: rel,
-        leftLabel: parent ? `${parent.slice(0, 7)} ${rel}` : `(new) ${rel}`,
+        leftLabel: parent ? `${parent.slice(0, 7)} ${before}` : `(new) ${rel}`,
         rightLabel: `${req.sha.slice(0, 7)} ${rel}`,
         leftText: left.text,
         rightText: right.text,

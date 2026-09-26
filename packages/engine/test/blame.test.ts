@@ -115,6 +115,33 @@ test("real sample: previous is parsed", () => {
   });
 });
 
+test("each commit carries the file's path in THAT commit (a line older than a rename names the old path)", () => {
+  // `git blame --incremental -- new.ts` after `git mv old.ts new.ts`: the
+  // line from before the rename names old.ts, the newer one new.ts.
+  const OLD = "7f42fed3ead18098ef74928ecf6ab7e7dc7615ba";
+  const NEW = "e7a34df75b1020d26075eacab357c1b19f6d95a5";
+  const out = [
+    `${NEW} 8 8 1`,
+    "author A",
+    "summary edit new",
+    "previous 005ef8eb3533d6722828460409669496f5a79739 new.ts",
+    "filename new.ts",
+    `${OLD} 2 2 1`,
+    "author A",
+    "summary edit old",
+    "previous 50707f025946f4b5c994e4f00888d565aa541220 old.ts",
+    "filename old.ts",
+    "",
+  ].join("\n");
+  const result = parseIncrementalBlame(out);
+  assert.equal(result.commits.get(NEW)!.filename, "new.ts");
+  assert.equal(result.commits.get(OLD)!.filename, "old.ts");
+  assert.deepEqual(result.commits.get(OLD)!.previous, {
+    sha: "50707f025946f4b5c994e4f00888d565aa541220",
+    filename: "old.ts",
+  });
+});
+
 test("real sample: boundary commit is flagged", () => {
   const result = parseIncrementalBlame(REAL_INCREMENTAL);
   const alice = result.commits.get(ALICE)!;

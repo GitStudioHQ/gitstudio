@@ -45,6 +45,29 @@ export interface CompareResult {
    * refs (GitHub's "what head introduced"); for 2-dot it's `base` directly.
    */
   filesLeftRef: string;
+  /** What `base` and `head` name, as git resolves them — for each pill's icon. */
+  baseKind: RefKind;
+  headKind: RefKind;
+}
+
+/** What a ref names: a local branch, a remote branch, a tag, or a commit. */
+export type RefKind = "branch" | "remote" | "tag" | "commit";
+
+/**
+ * What `ref` names, resolved the way git resolves it for the comparison
+ * (`rev-parse --symbolic-full-name`). A sha, `HEAD~2` or anything else that
+ * is not a ref is a commit. An option-like name never reaches git.
+ */
+export async function refKind(repo: RepoEntry, ref: string): Promise<RefKind> {
+  if (!ref || ref.startsWith("-")) {
+    return "commit";
+  }
+  const r = await repo.ctx.process.run(["rev-parse", "--symbolic-full-name", ref]);
+  const full = r.code === 0 ? (r.stdout.trim().split("\n")[0] ?? "") : "";
+  if (full.startsWith("refs/heads/")) return "branch";
+  if (full.startsWith("refs/remotes/")) return "remote";
+  if (full.startsWith("refs/tags/")) return "tag";
+  return "commit";
 }
 
 /** Collect up to `limit` commits from a `git log` invocation. */
@@ -228,12 +251,14 @@ export async function compareRefsData(
   // Fail loudly on an unknown ref (the panel's catch turns the throw into an
   // error view) instead of silently rendering an all-empty "identical" result.
   await Promise.all([assertRef(repo, base), assertRef(repo, head)]);
-  const [commits, files, ahead, behind, mb] = await Promise.all([
+  const [commits, files, ahead, behind, mb, baseKind, headKind] = await Promise.all([
     collectCommits(repo, [`${base}..${head}`], []),
     collectCompareFiles(repo, base, head, threeDot),
     countRange(repo, base, head), // ahead: commits head has, base lacks
     countRange(repo, head, base), // behind: commits base has, head lacks
     threeDot ? mergeBase(repo, base, head) : Promise.resolve(undefined),
+    refKind(repo, base),
+    refKind(repo, head),
   ]);
   let additions = 0;
   let deletions = 0;
@@ -249,6 +274,8 @@ export async function compareRefsData(
     ahead,
     behind,
     filesLeftRef: threeDot ? (mb ?? base) : base,
+    baseKind,
+    headKind,
   };
 }
 

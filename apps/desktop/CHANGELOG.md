@@ -57,6 +57,11 @@ but they share the same engine, so most Git behaviour lands in both at once.
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on
   paints now. (#32)
+- **A renamed file's diff on a commit page showed the whole file as added.**
+  The commit's parent was read at the file's new name, where it has nothing;
+  it is read under the name the file had there.
+- The Commit Graph's header counted the *Uncommitted changes* row as a
+  commit ("18 commits" for 17).
 
 ## [2.1.0] - 2026-09-25
 

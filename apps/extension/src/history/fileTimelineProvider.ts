@@ -3,7 +3,7 @@ import { relative } from "node:path";
 import type { FileHistoryEntry } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
-import { toRevisionUri } from "./revisionContentProvider";
+import { historyChangeSides, revisionSideUri } from "./revisionContentProvider";
 import {
   createTimelineItem,
   type Timeline,
@@ -121,15 +121,17 @@ export class FileTimelineProvider implements TimelineProvider {
     item.detail = tooltip;
 
     const fileName = baseName(rel);
-    // Diff this commit vs its parent for THIS file. `<sha>~1` is the parent;
-    // RevisionContentProvider yields "" when the parent lacks the file (the
-    // commit that introduced it), so the left side is empty — exactly right.
+    // Diff this commit vs its parent for THIS file, under the names it had
+    // there (a commit older than a rename knows it by its old name). `<sha>~1`
+    // is the parent; RevisionContentProvider yields "" when the parent lacks
+    // the file (the commit that introduced it), so the left side is empty.
+    const sides = historyChangeSides(e);
     item.command = {
       title: "Open Changes",
       command: "vscode.diff",
       arguments: [
-        toRevisionUri(root, `${e.sha}~1`, rel),
-        toRevisionUri(root, e.sha, rel),
+        revisionSideUri(root, rel, sides.left),
+        revisionSideUri(root, rel, sides.right),
         `${fileName} (${e.shortSha})`,
         { preview: true } satisfies vscode.TextDocumentShowOptions,
       ],

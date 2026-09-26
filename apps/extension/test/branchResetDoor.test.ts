@@ -163,7 +163,7 @@ test("the menu's Reset on a branch that is not checked out: asks, resets it alon
     assert.equal(c.git("symbolic-ref", "HEAD"), "refs/heads/main");
     assert.equal(readFileSync(join(c.dir, "f.txt"), "utf8"), "my edit on main\n");
     assert.ok(said("status").some((m) => /Reset feature to origin\/feature/.test(m)), said("status").join(" | "));
-    assert.ok(said("info").some((m) => /Undid\? Reset feature to origin\/feature/.test(m)), "the Undo toast");
+    assert.ok(said("info").includes("Reset feature to origin/feature — done."), "the Undo toast");
     assert.deepEqual(said("error"), []);
 
     reset();

@@ -128,7 +128,7 @@ export class AnthropicProvider implements GitBrainProvider {
   private friendlyFor(status: number): string {
     switch (status) {
       case 401:
-        return "GitBrain: the Anthropic API key is missing or invalid. Run “GitStudio: Set AI API Key”.";
+        return "GitBrain: the Anthropic API key is missing or invalid. Run “GitStudio: Set Anthropic API Key…”.";
       case 429:
         return "GitBrain: Anthropic rate limit hit — try again in a moment.";
       case 529:

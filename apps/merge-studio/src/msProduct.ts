@@ -19,6 +19,7 @@ import {
 import {
   MS_COEXISTENCE_PROMPT_KEY,
   MS_IDE_CONTEXT_KEY,
+  MS_OPERATION_CONTEXT_KEY,
   MS_MERGE_COMMANDS,
   MS_MERGE_VIEW_TYPES,
   MS_OUTDATED_GITSTUDIO_NOTICE_KEY,
@@ -47,6 +48,7 @@ export function buildMsProduct(parts: MsProductParts): MergeProduct {
     viewTypes: MS_MERGE_VIEW_TYPES,
     commands: MS_MERGE_COMMANDS,
     ideAvailableContextKey: MS_IDE_CONTEXT_KEY,
+    operationContextKey: MS_OPERATION_CONTEXT_KEY,
     statusItemId: MS_STATUS_ITEM_ID,
     coexistencePromptKey: MS_COEXISTENCE_PROMPT_KEY,
     supportLinks: parts.supportLinks,

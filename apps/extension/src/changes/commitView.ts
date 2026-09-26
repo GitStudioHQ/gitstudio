@@ -105,6 +105,11 @@ interface StatePayload {
   type: "state";
   /** Whether a repository is open — drives the no-repo onboarding state. */
   hasRepo: boolean;
+  /**
+   * No repository yet, and discovery has not settled (RepoManager
+   * .isDiscovering): the page says it is looking, not that there is none.
+   */
+  discovering?: boolean;
   merge: FileEntry[];
   staged: FileEntry[];
   unstaged: FileEntry[];
@@ -143,6 +148,11 @@ interface StatePayload {
   lastMessage?: string;
   signoffDefault: boolean;
   aiEnabled: boolean;
+  /**
+   * The user turned AI off (gitstudio.ai.provider = "off", which "Disable AI
+   * Features" sets): the composer offers no Connect-AI plug then.
+   */
+  aiOff?: boolean;
   layout: "tree" | "list";
   busy: boolean;
   /**
@@ -151,6 +161,11 @@ interface StatePayload {
    * Abort). Absent when nothing is in progress.
    */
   operation?: OperationBannerData;
+  /**
+   * With `detached`: why a push cannot start from here, in the words the push
+   * review and a refused push use (detachedPushReason). The Push button's tip.
+   */
+  detachedReason?: string;
 }
 
 interface FromWebview {
@@ -161,6 +176,9 @@ interface FromWebview {
     | "stage"
     | "unstage"
     | "discard"
+    | "stagePaths"
+    | "unstagePaths"
+    | "discardPaths"
     | "openDiff"
     | "stageAll"
     | "stageAllForCommit"
@@ -204,7 +222,7 @@ interface FromWebview {
   oldPath?: string;
   staged?: boolean;
   group?: GroupKind;
-  /** File paths targeted by a folder-level stage/unstage/discard. */
+  /** File paths targeted by a folder-level or multi-selection stage/unstage/discard. */
   paths?: string[];
   /** Which hunk of `path` a stageHunk targets (index from the last requestHunks). */
   hunkIndex?: number;
@@ -278,6 +296,50 @@ const LAYOUT_KEY = "gitstudio.commit.layout";
  * list still reads as live rather than manually refreshed.
  */
 const EXTERNAL_REFRESH_DEBOUNCE_MS = 300;
+
+/** Why a push cannot start on a detached HEAD — host and page say the same. */
+const DETACHED_PUSH_REASON =
+  "HEAD is detached, so these commits are on no branch and there is nothing to push them to. Create a branch here to push them.";
+/** Why a push cannot start in a repository with no remote. */
+const NO_REMOTE_PUSH_REASON = "No remote is configured for this repository.";
+
+/** An operation stopped on a detached HEAD, as the subject of a sentence. */
+const STOPPED_OPERATION: Record<string, string> = {
+  merge: "A merge",
+  rebase: "A rebase",
+  "rebase-merge-step": "A rebase",
+  "cherry-pick": "A cherry-pick",
+  revert: "A revert",
+  am: "A git am session",
+};
+
+/**
+ * Why a push cannot start on a detached HEAD, given what is stopped there.
+ *
+ * Every stopped rebase is a detached HEAD, and "create a branch here" is the
+ * wrong advice in one: a branch made mid-rebase points at a half-rebased
+ * commit. The commits reach the branch being rebased when the rebase
+ * finishes, so that is what it says. Any other operation stopped on a
+ * detached HEAD (a rebase begun on one, a cherry-pick) leaves its commits on
+ * no branch even when it finishes, and a branch cannot be made over the stop
+ * (New branch… is refused there: `git checkout -b` would end or move out
+ * from under it) — so it is finish, then branch. Only a plain detached HEAD
+ * gets the plain advice. The page shows the host's words
+ * (StatePayload.detachedReason), so the tip, the review and a refused push
+ * give the same reason.
+ */
+function detachedPushReason(op: OperationBannerData | undefined): string {
+  const stopped = op ? STOPPED_OPERATION[op.kind] : undefined;
+  if (!op || !stopped) {
+    return DETACHED_PUSH_REASON;
+  }
+  const finish = `Finish it with ${op.continueLabel || "Continue"}`;
+  return op.rebaseBranch
+    ? `A rebase of ${op.rebaseBranch} is in progress, so there is no branch to push until it finishes. ` +
+        `${finish} and these commits land on ${op.rebaseBranch}.`
+    : `${stopped} is in progress on a detached HEAD, so these commits are on no branch. ` +
+        `${finish}, then create a branch to push them.`;
+}
 
 /** Git's canonical empty-tree object — the "before" side when previewing the
  *  push of a branch whose oldest unpushed commit is a root commit. */
@@ -366,7 +428,11 @@ export class CommitViewProvider
     // the other model until something unrelated happens to refresh it.
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("gitstudio.changes.stagingModel")) {
+        if (
+          event.affectsConfiguration("gitstudio.changes.stagingModel") ||
+          // Turned off (or back on) with nothing else changing: the plug follows.
+          event.affectsConfiguration("gitstudio.ai.provider")
+        ) {
           void this.pushState();
         }
       }),
@@ -746,20 +812,38 @@ export class CommitViewProvider
         }
         return;
       case "stage":
-        await this.mutate((entry) =>
-          entry.ctx.staging.stageFile(msg.path ?? ""),
-        );
+        await this.stageHoldingConflicts([msg.path ?? ""]);
         return;
       case "unstage":
-        await this.mutate((entry) =>
-          entry.ctx.staging.unstageFile(msg.path ?? ""),
+        await this.mutate(
+          (entry) => entry.ctx.staging.unstageFile(msg.path ?? ""),
+          { verb: "unstage", paths: [msg.path ?? ""] },
         );
         return;
       case "discard":
-        await this.doDiscard(msg.path ?? "");
+        await this.doDiscardPaths([msg.path ?? ""]);
+        return;
+      // A multi-selection is ONE message and one git call. It used to be one
+      // "stage" per file, all at once: every git after the first found the
+      // index locked and failed, and a multi-selection Discard opened one
+      // confirm per file, each dismissing the last, so only the final file was
+      // discarded.
+      case "stagePaths":
+        await this.stageHoldingConflicts(msg.paths ?? []);
+        return;
+      case "unstagePaths": {
+        const paths = (msg.paths ?? []).filter((p) => p);
+        await this.mutate((entry) => entry.ctx.staging.unstageFiles(paths), {
+          verb: "unstage",
+          paths,
+        });
+        return;
+      }
+      case "discardPaths":
+        await this.doDiscardPaths(msg.paths ?? []);
         return;
       case "openDiff":
-        this.doOpenDiff(msg.path ?? "", !!msg.staged, msg.line);
+        await this.doOpenDiff(msg.path ?? "", !!msg.staged, msg.line);
         return;
       case "stageAll":
         await this.doBulkStage(msg.group);
@@ -780,13 +864,12 @@ export class CommitViewProvider
         await this.doDiscardAll();
         return;
       case "stageFolder":
-        await this.mutate((entry) =>
-          entry.ctx.staging.stageFiles(msg.paths ?? []),
-        );
+        await this.stageHoldingConflicts(msg.paths ?? []);
         return;
       case "unstageFolder":
-        await this.mutate((entry) =>
-          entry.ctx.staging.unstageFiles(msg.paths ?? []),
+        await this.mutate(
+          (entry) => entry.ctx.staging.unstageFiles(msg.paths ?? []),
+          { verb: "unstage", paths: msg.paths ?? [] },
         );
         return;
       case "discardFolder":
@@ -854,6 +937,51 @@ export class CommitViewProvider
   }
 
   /**
+   * Stage `paths`, holding back the unmerged files that still carry conflict
+   * markers.
+   *
+   * `git add` on an unmerged file is how git is told the conflict is resolved,
+   * and it does not look inside: staging one with `<<<<<<<` still in it marked
+   * it resolved, and the next commit carried the markers into the tree. Every
+   * Stage in this view (a row's +, a tick, a folder, a selection, Stage All,
+   * the checklist's check-all) comes through here. The held-back rows go back
+   * on the page at once; the user is told which files and why, in the words
+   * the desktop app's Stage uses for the same refusal, once the rest has been
+   * staged — "Staged everything else" was said before the stage ran, and a
+   * stage git then refused was reported twice, the second toast contradicting
+   * the first.
+   */
+  private async stageHoldingConflicts(paths: string[]): Promise<void> {
+    const wanted = paths.filter((p) => p);
+    const entry = this.repos.getActive();
+    if (!entry || wanted.length === 0) {
+      return;
+    }
+    let held: string[] = [];
+    try {
+      held = await entry.ctx.staging.markedConflicts(wanted);
+    } catch {
+      held = [];
+    }
+    const keep = wanted.filter((p) => !held.includes(p));
+    if (held.length > 0) {
+      void this.view?.webview.postMessage({ type: "opFailed", paths: held });
+    }
+    let staged = false;
+    if (keep.length > 0) {
+      staged = await this.mutate(
+        (e) => (keep.length === 1 ? e.ctx.staging.stageFile(keep[0]) : e.ctx.staging.stageFiles(keep)),
+        { verb: "stage", paths: keep },
+      );
+    }
+    if (held.length > 0) {
+      void vscode.window.showWarningMessage(
+        `GitStudio: ${markedConflictsMessage(held, staged)}`,
+      );
+    }
+  }
+
+  /**
    * Run a per-file staging op against the active repo, then reconcile.
    *
    * The webview has ALREADY moved the row optimistically (see the client's
@@ -863,19 +991,37 @@ export class CommitViewProvider
    * fire-and-forget + read-STALE-state — is the fix that made staging feel slow:
    * the real lists now land the moment git finishes, not a debounce cycle later,
    * and (crucially) we never repaint the pre-stage state over the optimistic row.
+   *
+   * Resolves whether the op went through: false when git refused it (already
+   * said) or no repository is active.
    */
   private async mutate(
     op: (entry: RepoEntry) => Promise<unknown>,
-  ): Promise<void> {
+    what?: { verb: "stage" | "unstage" | "discard"; paths: string[] },
+  ): Promise<boolean> {
     const entry = this.repos.getActive();
     if (!entry) {
-      return;
+      return false;
     }
+    // A failure is SAID, and the rows it moved go back at once. This used to
+    // ignore the op's result entirely: a refused `git add` left its row sitting
+    // in Staged until the optimistic move timed out four seconds later, then
+    // snapped back without a word.
+    let failure: string | undefined;
     try {
-      await op(entry);
-    } catch {
-      // A failed op leaves git untouched; the reconcile below repaints the real
-      // state, which quietly undoes the optimistic move.
+      const result = await op(entry);
+      if (isRefusal(result)) {
+        failure = result.stderr.trim() || "git gave no reason.";
+      }
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+    }
+    if (failure !== undefined && what) {
+      const paths = what.paths.filter((p) => p);
+      void this.view?.webview.postMessage({ type: "opFailed", paths, error: failure });
+      void vscode.window.showErrorMessage(
+        `GitStudio: couldn't ${what.verb} ${describePaths(paths)} — ${failure}`,
+      );
     }
     // Re-scan NOW so pushState reads fresh index/worktree state. (The old code
     // fired this and forgot, then immediately read STALE state — so the row only
@@ -887,6 +1033,7 @@ export class CommitViewProvider
     }
     this.onCommitted();
     await this.pushState();
+    return failure === undefined;
   }
 
   /**
@@ -905,14 +1052,14 @@ export class CommitViewProvider
     if (untracked.length === 0 && tracked.length === 0) {
       return;
     }
-    await this.mutate(async (e) => {
-      if (tracked.length > 0) {
-        await e.ctx.staging.discardFiles(tracked);
-      }
-      if (untracked.length > 0) {
-        await e.ctx.staging.cleanFiles(untracked);
-      }
-    });
+    await this.mutate(
+      async (e) => {
+        const checkedOut = tracked.length > 0 ? await e.ctx.staging.discardFiles(tracked) : undefined;
+        const cleaned = untracked.length > 0 ? await e.ctx.staging.cleanFiles(untracked) : undefined;
+        return [checkedOut, cleaned].find(isRefusal);
+      },
+      { verb: "discard", paths: files.map((f) => f.path) },
+    );
   }
 
   /**
@@ -920,44 +1067,58 @@ export class CommitViewProvider
    * Paths not currently in the unstaged/merge groups default to tracked ("M"),
    * so they still go through `git checkout --`.
    */
-  private async entriesForPaths(
+  /**
+   * The files a discard would touch, with their status letters, and how many
+   * of them ALSO have staged changes. `git checkout --` restores from the
+   * index, so for those the staged part survives: the confirm has to say so
+   * rather than promise a return to the committed version.
+   */
+  private async discardTargets(
     active: RepoEntry,
     paths: string[],
-  ): Promise<FileEntry[]> {
-    const wanted = paths.filter((p) => p);
+  ): Promise<{ files: FileEntry[]; partlyStaged: number }> {
+    const wanted = [...new Set(paths.filter((p) => p))];
     if (wanted.length === 0) {
-      return [];
+      return { files: [], partlyStaged: 0 };
     }
-    const { unstaged, merge } = await this.resolveState(active);
+    const { unstaged, merge, staged } = await this.resolveState(active);
     const byPath = new Map<string, string>();
     for (const f of [...unstaged, ...merge]) {
       byPath.set(f.path, f.status);
     }
-    return wanted.map((path) => ({ path, status: byPath.get(path) ?? "M" }));
+    const stagedPaths = new Set(staged.map((f) => f.path));
+    const files = wanted.map((path) => ({ path, status: byPath.get(path) ?? "M" }));
+    const partlyStaged = files.filter((f) => f.status !== "U" && stagedPaths.has(f.path)).length;
+    return { files, partlyStaged };
   }
 
-  private async doDiscard(path: string): Promise<void> {
-    if (!path) {
+  /**
+   * Discard one file or a multi-selection: ONE question naming what goes, then
+   * one git call per kind of file (see discardEntries).
+   */
+  private async doDiscardPaths(paths: string[]): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active) {
       return;
     }
+    const { files, partlyStaged } = await this.discardTargets(active, paths);
+    if (files.length === 0) {
+      return;
+    }
+    const n = files.length;
     const ok = await promptConfirm({
-      title: `Discard changes in ${path}?`,
-      message:
-        "The file goes back to its committed state. These edits were never committed, so nothing — not even Undo — can bring them back.",
-      confirmLabel: "Discard",
+      title: n === 1 ? `Discard changes in ${files[0].path}?` : `Discard changes in ${n} files?`,
+      message: discardConsequence(files, partlyStaged),
+      confirmLabel: n === 1 ? "Discard" : `Discard ${n} Files`,
       danger: true,
     });
     if (!ok) {
       return;
     }
-    const active = this.repos.getActive();
-    if (!active) {
-      return;
-    }
-    await this.discardEntries(await this.entriesForPaths(active, [path]));
+    await this.discardEntries(files);
   }
 
-  private doOpenDiff(path: string, staged: boolean, line?: number): void {
+  private async doOpenDiff(path: string, staged: boolean, line?: number): Promise<void> {
     const conflicted = this.repos.getActive();
     if (!staged && conflicted && path && this.merge && this.isConflictRow(conflicted, path)) {
       // A conflicted file opens where it can be RESOLVED — the merge editor or
@@ -998,13 +1159,17 @@ export class CommitViewProvider
     }
     // Eager window (or a not-yet-known file): openChangeDiff only needs the
     // working-tree URI, which we synthesize from the path — so the diff opens
-    // without waiting for vscode.git.
-    const uri = vscode.Uri.joinPath(
-      vscode.Uri.file(active.root),
-      ...path.split("/"),
-    );
+    // without waiting for vscode.git. A staged rename also needs its old name,
+    // which vscode.git's Change would have carried; git says what it is.
+    const at = (rel: string) => vscode.Uri.joinPath(vscode.Uri.file(active.root), ...rel.split("/"));
+    const renamedFrom = staged
+      ? await active.ctx.staging.renamedFrom(path).catch(() => undefined)
+      : undefined;
     void openChangeDiff(
-      new ChangeFileNode(kind, active.root, { uri } as unknown as Change),
+      new ChangeFileNode(kind, active.root, {
+        uri: at(path),
+        ...(renamedFrom ? { originalUri: at(renamedFrom) } : {}),
+      } as unknown as Change),
     );
   }
 
@@ -1023,7 +1188,23 @@ export class CommitViewProvider
       if (detected.kind === "none" && detected.unmerged === 0) {
         return undefined;
       }
-      return operationBanner(await entry.ctx.operation.view(), detected);
+      const view = await entry.ctx.operation.view();
+      const banner = operationBanner(view, detected);
+      if (banner && (view.kind === "rebase" || view.kind === "rebase-merge-step") && view.yours.name) {
+        // `yours` is the branch being rebased — or, for a rebase begun on a
+        // detached HEAD, the commit it began from. Only a branch is one the
+        // commits land on.
+        const r = await entry.ctx.process.run([
+          "show-ref",
+          "--verify",
+          "--quiet",
+          `refs/heads/${view.yours.name}`,
+        ]);
+        if (r.code === 0) {
+          banner.rebaseBranch = view.yours.name;
+        }
+      }
+      return banner;
     } catch {
       return undefined;
     }
@@ -1063,7 +1244,20 @@ export class CommitViewProvider
     if (staged.length > 0) {
       return "ok"; // normal path — commit what is staged, as always
     }
-    const candidates = [...merge, ...unstaged];
+    // Conflicted files are never swept into "everything". This used to stage
+    // them with the rest, and `git add` on a conflicted file marks it resolved
+    // whatever is in it, so a stopped rebase could be committed with the
+    // conflict markers inside. git will not commit while files are unmerged
+    // anyway; say so before touching the index rather than after.
+    if (merge.length > 0) {
+      const n = merge.length;
+      void vscode.window.showWarningMessage(
+        `GitStudio: ${n === 1 ? `${merge[0].path} still has` : `${n} files still have`} conflicts. ` +
+          "Resolve and stage them first — git can't commit while files are unmerged.",
+      );
+      return "cancelled";
+    }
+    const candidates = unstaged;
     if (candidates.length === 0) {
       return "ok"; // nothing anywhere; the commit will explain itself
     }
@@ -1194,21 +1388,21 @@ export class CommitViewProvider
       return;
     }
     const { merge, unstaged } = await this.resolveState(active);
-    const rels = [...merge, ...unstaged].map((e) => e.path);
-    if (rels.length === 0) {
-      return;
-    }
-    await this.mutate((e) => e.ctx.staging.stageFiles(rels));
+    await this.stageHoldingConflicts([...merge, ...unstaged].map((e) => e.path));
   }
 
+  /**
+   * A group header's Stage All, or (no group) the toolbar's, which is the
+   * Changes group's: it never marks a conflict resolved, and the page keeps it
+   * disabled while only conflicted files are left.
+   */
   private async doBulkStage(group?: GroupKind): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
       return;
     }
     const { merge, unstaged } = await this.resolveState(active);
-    const rels = (group === "merge" ? merge : unstaged).map((e) => e.path);
-    await this.mutate((e) => e.ctx.staging.stageFiles(rels));
+    await this.stageHoldingConflicts((group === "merge" ? merge : unstaged).map((e) => e.path));
   }
 
   private async doBulkUnstage(): Promise<void> {
@@ -1218,7 +1412,7 @@ export class CommitViewProvider
     }
     const { staged } = await this.resolveState(active);
     const rels = staged.map((e) => e.path);
-    await this.mutate((e) => e.ctx.staging.unstageFiles(rels));
+    await this.mutate((e) => e.ctx.staging.unstageFiles(rels), { verb: "unstage", paths: rels });
   }
 
   private async doDiscardAll(): Promise<void> {
@@ -1231,10 +1425,10 @@ export class CommitViewProvider
     if (rels.length === 0) {
       return;
     }
+    const { partlyStaged } = await this.discardTargets(active, rels);
     const ok = await promptConfirm({
       title: `Discard all ${rels.length} working-tree change${rels.length === 1 ? "" : "s"}?`,
-      message:
-        "Every unstaged edit goes back to its committed state. These edits were never committed, so nothing — not even Undo — can bring them back.",
+      message: discardConsequence(unstaged, partlyStaged),
       confirmLabel: "Discard All",
       danger: true,
     });
@@ -1245,25 +1439,24 @@ export class CommitViewProvider
   }
 
   private async doDiscardFolder(paths: string[]): Promise<void> {
-    const rels = paths.filter((p) => p);
-    if (rels.length === 0) {
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+    const { files, partlyStaged } = await this.discardTargets(active, paths);
+    if (files.length === 0) {
       return;
     }
     const ok = await promptConfirm({
-      title: `Discard changes in ${rels.length} file${rels.length === 1 ? "" : "s"}?`,
-      message:
-        "Every edit under this folder goes back to its committed state. These edits were never committed, so nothing — not even Undo — can bring them back.",
+      title: `Discard changes in ${files.length} file${files.length === 1 ? "" : "s"}?`,
+      message: discardConsequence(files, partlyStaged),
       confirmLabel: "Discard",
       danger: true,
     });
     if (!ok) {
       return;
     }
-    const active = this.repos.getActive();
-    if (!active) {
-      return;
-    }
-    await this.discardEntries(await this.entriesForPaths(active, rels));
+    await this.discardEntries(files);
   }
 
   /**
@@ -1883,7 +2076,9 @@ export class CommitViewProvider
         : oldest.parents[0] ?? COMMIT_EMPTY_TREE;
       const pushRemote =
         remotes.find((r) => r.name === "origin")?.name ?? remotes[0]?.name;
-      target = pushRemote ? `${pushRemote}/${branch}` : branch;
+      target = head.detached
+        ? "no branch (detached HEAD)"
+        : pushRemote ? `${pushRemote}/${branch}` : branch;
     }
     // A tracked branch with nothing ahead really has nothing to preview.
     if (upstream && commitRecords.length === 0) {
@@ -1901,7 +2096,11 @@ export class CommitViewProvider
       if (f.additions > 0) additions += f.additions;
       if (f.deletions > 0) deletions += f.deletions;
     }
-    const canPush = upstream ? true : remotes.length > 0;
+    // A detached HEAD (every stopped rebase is one) has no branch to push:
+    // there is nothing on the remote side to update. It used to count as a
+    // publish to "origin/<sha>" and fail only once Push was pressed, blaming a
+    // missing remote.
+    const canPush = head.detached ? false : upstream ? true : remotes.length > 0;
     // Diverged in BOTH directions means our tip is not a descendant of the
     // upstream, which is exactly when git refuses a fast-forward. Derived from
     // the ahead/behind we already have — no fetch, no network.
@@ -1925,7 +2124,11 @@ export class CommitViewProvider
       branch,
       base,
       canPush,
-      reason: canPush ? undefined : "No remote is configured for this repository.",
+      reason: canPush
+        ? undefined
+        : head.detached
+          ? detachedPushReason(await this.readOperation(entry))
+          : NO_REMOTE_PUSH_REASON,
       ahead: upstream ? ab.ahead : commitRecords.length,
       behind: upstream ? ab.behind : 0,
       needsForce,
@@ -2056,8 +2259,13 @@ export class CommitViewProvider
         // Published as refs/heads/<branch> (SyncOps) — the name under
         // refs/heads/, not "heads/release", which named nothing there.
         const branch = headBranchName(head);
-        if (!remote || !branch) {
-          result = { ok: false, stderr: "No remote is configured to publish to." };
+        if (head.detached || !branch) {
+          result = {
+            ok: false,
+            stderr: head.detached ? detachedPushReason(await this.readOperation(entry)) : DETACHED_PUSH_REASON,
+          };
+        } else if (!remote) {
+          result = { ok: false, stderr: NO_REMOTE_PUSH_REASON };
         } else {
           // push-force-reviewed: publishes a branch the remote does not have
           // yet, so there is nothing to fast-forward over and nothing to force.
@@ -2395,6 +2603,7 @@ export class CommitViewProvider
     const base: StatePayload = {
       type: "state",
       hasRepo,
+      discovering: !active && this.repos.isDiscovering(),
       merge,
       staged,
       unstaged,
@@ -2405,6 +2614,7 @@ export class CommitViewProvider
       // Only when it belongs to the repo now on screen.
       branches: sameRepo ? this.lastBranches : undefined,
       operation: sameRepo ? this.lastOperation : undefined,
+      detachedReason: detached ? detachedPushReason(sameRepo ? this.lastOperation : undefined) : undefined,
       upstream,
       ahead,
       behind,
@@ -2416,6 +2626,7 @@ export class CommitViewProvider
       lastMessage,
       signoffDefault,
       aiEnabled: sent.aiEnabled,
+      aiOff: vscode.workspace.getConfiguration("gitstudio").get<string>("ai.provider") === "off",
       layout,
       busy: this.busy,
     };
@@ -2435,7 +2646,7 @@ export class CommitViewProvider
         : Promise.resolve(false),
       active ? this.collectBranches(active) : Promise.resolve(undefined),
       active
-        ? this.countUnpushed(active, upstream, ahead)
+        ? this.countUnpushed(active, upstream, ahead, !!detached)
         : Promise.resolve({ unpushed: 0, canPublish: false }),
       active ? this.readOperation(active) : Promise.resolve(undefined),
     ]);
@@ -2461,6 +2672,7 @@ export class CommitViewProvider
       unpushed: pushInfo.unpushed,
       canPublish: pushInfo.canPublish,
       operation,
+      detachedReason: base.detached ? detachedPushReason(operation) : undefined,
     });
   }
 
@@ -2474,9 +2686,15 @@ export class CommitViewProvider
     entry: RepoEntry,
     upstream: string | undefined,
     ahead: number | undefined,
+    detached = false,
   ): Promise<{ unpushed: number; canPublish: boolean }> {
     if (upstream) {
       return { unpushed: ahead ?? 0, canPublish: true };
+    }
+    if (detached) {
+      // Commits on a detached HEAD belong to no branch: there is nothing to
+      // publish them AS until a branch is made.
+      return { unpushed: 0, canPublish: false };
     }
     try {
       const commits = await collectCommits(entry, ["HEAD", "--not", "--remotes"]);
@@ -3013,8 +3231,12 @@ export class CommitViewProvider
       background: var(--gs-accent); border-color: var(--gs-accent);
       color: var(--vscode-button-foreground, #fff);
     }
+    /* A FILL for a destructive button. --gs-danger is the theme's error TEXT
+       colour (Dark+: #f48771), and a white label on it read 2.5:1; darkened
+       toward black it carries one at 4.5:1 or more in every built-in theme. */
+    :root { --gs-danger-fill: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 62%, #000000); }
     .rp-foot button.primary.danger {
-      background: var(--gs-danger, #f14c4c); border-color: var(--gs-danger, #f14c4c);
+      background: var(--gs-danger-fill); border-color: var(--gs-danger-fill);
     }
     .rp-foot button:disabled { opacity: 0.5; cursor: default; }
     /* A multi-line answer (a PR body, a review summary). Same frame as the
@@ -3112,7 +3334,9 @@ export class CommitViewProvider
       color: var(--gs-fg-subtle);
       transition: color var(--gs-motion) var(--gs-ease);
     }
-    .counter.warn { color: var(--gs-status-modified); }
+    /* A warning, in the theme's warning colour for text in lists — it was
+       --gs-status-modified, the charts-blue this view uses for information. */
+    .counter.warn { color: var(--vscode-list-warningForeground, var(--gs-amber)); }
     .counter.over { color: var(--gs-status-deleted); }
 
     /* ---- Sparkle / generate button (crisp SVG, never emoji) ----------- */
@@ -3382,6 +3606,8 @@ export class CommitViewProvider
     }
     .icon-btn:active { background: color-mix(in srgb, var(--gs-fg) 12%, transparent); }
     .icon-btn:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+    .icon-btn:disabled { opacity: 0.4; cursor: default; }
+    .icon-btn:disabled:hover { color: var(--gs-fg-muted); background: transparent; }
     .icon-btn.collapse-all { display: none; }
     body.layout-tree .icon-btn.collapse-all { display: inline-flex; }
 
@@ -3538,10 +3764,11 @@ export class CommitViewProvider
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      transform: rotate(-90deg);
       transition: transform var(--gs-motion-fast) var(--gs-ease);
     }
-    .hunk-twisty.open { transform: none; }
+    /* The glyph is chevron-right (ICON_CHEVRON): right while closed, turned
+       to point down while open, as every tree in the editor does. */
+    .hunk-twisty.open { transform: rotate(90deg); }
     .hunk-twisty .codicon { font-size: 11px; line-height: 1; }
     .hunks {
       display: flex;
@@ -3596,9 +3823,11 @@ export class CommitViewProvider
       display: inline-flex; align-items: center; justify-content: center;
       color: var(--gs-fg-subtle);
       flex: 0 0 auto;
+      transform: rotate(90deg);
       transition: transform var(--gs-motion) var(--gs-ease);
     }
-    .group.collapsed .group-header .twisty { transform: rotate(-90deg); }
+    /* chevron-right: down (turned) while open, right when collapsed. */
+    .group.collapsed .group-header .twisty { transform: none; }
     .group-header .twisty svg { width: 12px; height: 12px; }
     /* Per-group identity dot (staged = green, unstaged = amber, merge = red). */
     .group-header .gdot {
@@ -3681,10 +3910,12 @@ export class CommitViewProvider
       display: inline-flex; align-items: center; justify-content: center;
       color: var(--gs-fg-muted);
       flex: 0 0 auto;
+      transform: rotate(90deg);
       transition: transform var(--gs-motion) ease;
     }
     .row .twisty svg { width: 12px; height: 12px; }
-    .row.collapsed .twisty { transform: rotate(-90deg); }
+    /* chevron-right: down (turned) while open, right when collapsed. */
+    .row.collapsed .twisty { transform: none; }
     .row .file-icon {
       width: 16px; height: 16px;
       display: inline-flex; align-items: center; justify-content: center;
@@ -3702,8 +3933,16 @@ export class CommitViewProvider
       text-overflow: ellipsis;
     }
     .row.is-deleted .name { text-decoration: line-through; opacity: 0.85; }
+    /* The directory takes only the width left over (basis 0, then grows), so
+       the file name is cut only once there is none. A larger shrink factor
+       was not enough: shrinking is shared out by weight, so the name still
+       lost a fraction of a pixel, and any overflow at all draws an ellipsis.
+       It clips from the START (direction: rtl) so its tail — the folder the
+       file is in — stays; the path inside is a <bdi>, an isolated
+       left-to-right run, so its characters keep their order (a leading "."
+       stays at the start). */
     .row .dir {
-      flex: 1 1 auto;
+      flex: 1 1 0;
       min-width: 0;
       font-size: 11.5px;
       color: var(--gs-fg-muted);
@@ -3816,6 +4055,19 @@ export class CommitViewProvider
     body.no-repo .groups,
     body.no-repo #empty-state { display: none !important; }
     body.no-repo #no-repo { display: flex; }
+    /* Before the first state arrives, and while repositories are still being
+       discovered: a neutral "reading" state, never "Working tree clean" or
+       "No repository open" said before anything was read. */
+    #loading-state .badge {
+      color: var(--gs-fg-muted);
+      background: color-mix(in srgb, var(--gs-fg-muted) 12%, transparent);
+    }
+    body.no-repo #loading-state { display: none !important; }
+    body.discovering .repo-bar,
+    body.discovering .composer,
+    body.discovering .changes-toolbar,
+    body.discovering .groups,
+    body.discovering #empty-state { display: none !important; }
 
     @media (prefers-reduced-motion: reduce) {
       textarea, .author-row input, .sparkle, button.gs-commit, .link .chev,
@@ -3911,7 +4163,7 @@ export class CommitViewProvider
       font-weight: 600;
     }
     .pm-btn.primary.danger {
-      background: var(--gs-danger, #c74e39);
+      background: var(--gs-danger-fill);
       border-color: transparent;
       color: #fff;
     }
@@ -3945,7 +4197,7 @@ export class CommitViewProvider
     .pm-file.clickable:hover .name { text-decoration: underline; text-underline-offset: 2px; }
     .pm-file .st { flex: 0 0 auto; width: 13px; text-align: center; font-family: var(--gs-font-mono); font-weight: 700; font-size: 11px; }
     .pm-file .name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pm-file .dir { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--gs-fg-muted);
+    .pm-file .dir { flex: 1 1 0; min-width: 0; font-size: 11px; color: var(--gs-fg-muted);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
     .pm-file .nums { flex: 0 0 auto; font-family: var(--gs-font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
     .pm-file .nums .add { color: var(--gs-status-added); }
@@ -4181,7 +4433,7 @@ export class CommitViewProvider
     <span class="toolbar-spacer"></span>
     <span class="toolbar-actions">
       <button class="icon-btn layout" id="layout-toggle" type="button"
-        title="Toggle tree / list view" aria-label="Toggle tree / list view">
+        title="View as Tree" aria-label="View as Tree">
         <i class="codicon codicon-list-tree to-tree" aria-hidden="true"></i>
         <i class="codicon codicon-list-flat to-list" aria-hidden="true"></i>
       </button>
@@ -4237,6 +4489,13 @@ export class CommitViewProvider
     <span class="es">No changes to commit.</span>
   </div>
 
+  <div class="empty-state visible" id="loading-state" role="status">
+    <span class="badge">
+      <i class="codicon codicon-loading codicon-modifier-spin" aria-hidden="true"></i>
+    </span>
+    <span class="et" id="loading-text">Reading changes…</span>
+  </div>
+
   <div class="no-repo" id="no-repo">
     <span class="badge">
       <i class="codicon codicon-source-control" aria-hidden="true"></i>
@@ -4275,6 +4534,11 @@ export class CommitViewProvider
     const stashDropEl = $("stash-drop");
     const stashDropLabel = $("stash-drop-label");
     const emptyEl = $("empty-state");
+    const loadingEl = $("loading-state");
+    const loadingText = $("loading-text");
+    // Nothing has been read until the host's first state: until then the
+    // list is not "clean", it is unknown (the reading state shows instead).
+    let stateSeen = false;
     const layoutToggle = $("layout-toggle");
     const modelToggle = $("model-toggle");
     const collapseAllBtn = $("collapse-all");
@@ -4452,23 +4716,25 @@ export class CommitViewProvider
       items.push({ icon: "archive", label: "Stash " + label,
         fn: () => { vscode.postMessage({ type: "stashPaths", paths: paths }); clearSelection(); } });
       items.push({ sep: true });
+      // ONE message per action, never one per file. Per-file messages ran
+      // their git commands together, so all but one found the index locked and
+      // failed; and each Discard opened its own confirm, which dismissed the
+      // one before it, so only the last file was ever discarded.
       if (stageable.length > 0) {
         items.push({ icon: "add", label: "Stage " + (stageable.length === 1 ? "1 File" : String(stageable.length) + " Files"),
           fn: () => {
-            for (let i = 0; i < stageable.length; i++) {
-              queueOp(stageable[i].path, "stage");
-              vscode.postMessage({ type: "stage", path: stageable[i].path });
-            }
+            const paths = stageable.map((en) => en.path);
+            queueFiles(paths, "stage");
+            vscode.postMessage({ type: "stagePaths", paths: paths });
             clearSelection();
           } });
       }
       if (unstageable.length > 0) {
         items.push({ icon: "remove", label: "Unstage " + (unstageable.length === 1 ? "1 File" : String(unstageable.length) + " Files"),
           fn: () => {
-            for (let i = 0; i < unstageable.length; i++) {
-              queueOp(unstageable[i].path, "unstage");
-              vscode.postMessage({ type: "unstage", path: unstageable[i].path });
-            }
+            const paths = unstageable.map((en) => en.path);
+            queueFiles(paths, "unstage");
+            vscode.postMessage({ type: "unstagePaths", paths: paths });
             clearSelection();
           } });
       }
@@ -4478,9 +4744,7 @@ export class CommitViewProvider
         // The host confirms before discarding; this only asks for it.
         items.push({ icon: "discard", label: "Discard " + (discardable.length === 1 ? "1 File" : String(discardable.length) + " Files"), danger: true,
           fn: () => {
-            for (let i = 0; i < discardable.length; i++) {
-              vscode.postMessage({ type: "discard", path: discardable[i].path });
-            }
+            vscode.postMessage({ type: "discardPaths", paths: discardable.map((en) => en.path) });
             clearSelection();
           } });
       }
@@ -4539,13 +4803,13 @@ export class CommitViewProvider
       clearSelection();
     });
     $("selbar-stage").addEventListener("click", () => {
-      const entries = selectionEntries();
-      for (let i = 0; i < entries.length; i++) {
-        const en = entries[i];
-        // Staged rows are already where this would put them.
-        if (en.kind === "staged") continue;
-        queueOp(en.path, "stage");
-        vscode.postMessage({ type: "stage", path: en.path });
+      // Staged rows are already where this would put them.
+      const paths = selectionEntries()
+        .filter((en) => en.kind !== "staged")
+        .map((en) => en.path);
+      if (paths.length > 0) {
+        queueFiles(paths, "stage");
+        vscode.postMessage({ type: "stagePaths", paths: paths });
       }
       clearSelection();
     });
@@ -4580,6 +4844,12 @@ export class CommitViewProvider
     groupsEl.addEventListener("click", (ev) => {
       if (ev.target === groupsEl && selectedRows.size > 0) clearSelection();
     });
+    // The host's DETACHED_PUSH_REASON / NO_REMOTE_PUSH_REASON, word for word:
+    // the button's tip and the push dialog must give the same reason. On a
+    // detached HEAD the state carries the host's reason (detachedReason),
+    // which knows whether a rebase is what detached it; this is the fallback.
+    const DETACHED_PUSH_REASON = "HEAD is detached, so these commits are on no branch and there is nothing to push them to. Create a branch here to push them.";
+    const NO_REMOTE_PUSH_REASON = "No remote is configured for this repository.";
     let aheadCount = 0;     // commits a push would send (drives the button label)
     let canPublish = false; // there IS somewhere to push/publish those commits
     let onUpstream = false; // branch tracks an upstream (Push) vs not (Publish)
@@ -4724,6 +4994,12 @@ export class CommitViewProvider
       counterEl.textContent = String(subject);
       counterEl.classList.toggle("warn", subject > 50 && subject <= 72);
       counterEl.classList.toggle("over", subject > 72);
+      // What the number is, and what the 50/72 convention asks of it.
+      counterEl.dataset.tip = subject > 72
+        ? "Subject line: " + subject + " characters, over 72. GitHub cuts a longer subject short."
+        : subject > 50
+          ? "Subject line: " + subject + " characters, over 50. Aim for 50; 72 at most."
+          : "Subject line: " + subject + (subject === 1 ? " character" : " characters") + ". Keep it to 50.";
     }
     message.addEventListener("input", () => { autoGrow(); updateComposer(); });
 
@@ -4745,8 +5021,11 @@ export class CommitViewProvider
       // everything after confirming (issue #16), so the button must be reachable —
       // it used to be disabled, which is how a stale list could make it look like
       // there was nothing to do.
+      // Conflicted files are not part of "all": the host never sweeps them in
+      // (staging one marks it resolved, markers and all), so counting them
+      // offered "Commit all 1" for a commit that could not include it.
       const totalChanges =
-        (lastState ? lastState.merge.length + lastState.staged.length + lastState.unstaged.length : 0);
+        (lastState ? lastState.staged.length + lastState.unstaged.length : 0);
       const canCommit = hasStaged || totalChanges > 0;
       // Commit button label + state.
       if (!committing) {
@@ -4760,10 +5039,17 @@ export class CommitViewProvider
       // unpushed commits — OR the branch has no upstream yet (publish), where the
       // ahead count reads 0 but there IS local work to send. Only a tracked
       // branch that's fully up to date leaves nothing to push.
+      //
+      // A push that cannot work is never offered: on a detached HEAD (every
+      // stopped rebase is one) there is no branch to push, and with no remote
+      // there is nowhere to push it. Those used to show "Commit & Push" or
+      // "Publish N", enabled, and fail only after the commit — blaming a
+      // missing remote even when the HEAD was the problem.
+      const blocked = pushBlockedReason();
       let mode, label;
-      if (hasStaged) {
+      if (hasStaged && !blocked) {
         mode = "commitpush"; label = (amend.checked ? "Amend" : "Commit") + " & Push";
-      } else if (canPublish && (aheadCount > 0 || !onUpstream)) {
+      } else if (!blocked && canPublish && (aheadCount > 0 || !onUpstream)) {
         // An unpublished branch is always actionable: "Publish" even with a
         // zero ahead-count. Only a TRACKED branch that is up to date has
         // genuinely nothing to do.
@@ -4777,6 +5063,20 @@ export class CommitViewProvider
       pushBtn.dataset.mode = mode;
       if (!pushBtn.classList.contains("is-busy")) mainLabel.textContent = label;
       pushBtn.disabled = committing || hostBusy || mode === "none";
+      if (blocked) pushBtn.dataset.tip = blocked;
+      else delete pushBtn.dataset.tip;
+      pushBtn.setAttribute("aria-label", blocked ? label + " — " + blocked : label);
+    }
+
+    /** Why a push from here cannot work right now, or "" when it can. */
+    function pushBlockedReason() {
+      const st = lastHeaderState;
+      if (st && st.detached) return st.detachedReason || DETACHED_PUSH_REASON;
+      // Only once the host has LOOKED for a remote: the first post of an
+      // unpublished branch does not know yet, and a disabled button that then
+      // re-enables is a flicker, not information.
+      if (st && !st.upstream && st.canPublish === false) return NO_REMOTE_PUSH_REASON;
+      return "";
     }
     // Back-compat alias — older call sites still call renderCount().
     function renderCount() { renderCommitButtons(); }
@@ -4932,6 +5232,11 @@ export class CommitViewProvider
     function applyLayoutClass() {
       document.body.classList.toggle("layout-tree", layout === "tree");
       document.body.classList.toggle("layout-list", layout !== "tree");
+      // Where the toggle takes you (its icon is that layout's), as the model
+      // toggle beside it says — "Toggle tree / list view" said neither.
+      const label = layout === "tree" ? "View as List" : "View as Tree";
+      layoutToggle.dataset.tip = label;
+      layoutToggle.setAttribute("aria-label", label);
     }
     layoutToggle.addEventListener("click", () => {
       layout = layout === "tree" ? "list" : "tree";
@@ -6480,7 +6785,7 @@ export class CommitViewProvider
       title.innerHTML = "Push to <b></b>";
       title.querySelector("b").textContent = data.target;
       head.appendChild(title);
-      const close = el("button", "pm-close", "&times;");
+      const close = el("button", "pm-close", '<i class="codicon codicon-close" aria-hidden="true"></i>');
       close.setAttribute("aria-label", "Close");
       close.addEventListener("click", () => { if (!pushBusy) closePushModal(); });
       head.appendChild(close);
@@ -6534,7 +6839,11 @@ export class CommitViewProvider
           const name = f.path.split("/").pop() || f.path;
           const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
           const nm = el("span", "name"); nm.textContent = name; row.appendChild(nm);
-          const dd = el("span", "dir"); dd.textContent = dir; row.appendChild(dd);
+          const dd = el("span", "dir");
+          const ddText = document.createElement("bdi");
+          ddText.textContent = dir;
+          dd.appendChild(ddText);
+          row.appendChild(dd);
           row.title = "Open diff — " + f.path + (f.oldPath ? "  (was " + f.oldPath + ")" : "");
           if (f.additions > 0 || f.deletions > 0) {
             const nums = el("span", "nums");
@@ -6618,7 +6927,8 @@ export class CommitViewProvider
       pushModal = modal;
       pushBusy = false;
       document.addEventListener("keydown", onPushKey, true);
-      if (data.canPush) pushB.focus(); else cancel.focus();
+      // A destructive action never starts focused: Enter must not force-push.
+      if (data.canPush && !data.needsForce) pushB.focus(); else cancel.focus();
     }
     function pushModalError(text) {
       if (!pushModal) return;
@@ -6710,8 +7020,10 @@ export class CommitViewProvider
       // The staging model belongs in the signature: it changes how these exact
       // files are ARRANGED, and without it a model switch made in Settings —
       // where the file list is identical — is skipped as "nothing changed" and
-      // the view keeps showing the other model.
-      let s = layout + "|" + stagingModel;
+      // the view keeps showing the other model. And whether anything has been
+      // read yet: a first state with no files must still paint "Working tree
+      // clean" over the reading state's empty list.
+      let s = (stateSeen ? "read" : "unread") + "|" + layout + "|" + stagingModel;
       for (const k of ["merge", "staged", "unstaged"]) {
         const list = lastState[k] || [];
         s += "|" + k + ":";
@@ -6761,7 +7073,16 @@ export class CommitViewProvider
       };
       const total =
         data.merge.length + data.staged.length + data.unstaged.length;
-      emptyEl.classList.toggle("visible", total === 0);
+      emptyEl.classList.toggle("visible", stateSeen && total === 0);
+      // Nothing for them to take: Stage All has no unstaged file, Stash no
+      // change at all. They looked (and posted) the same on a clean tree.
+      // Conflicted files do not count for Stage All: it is the Changes
+      // group's (VS Code's "Stage All Changes"), and the host never marks a
+      // conflict resolved for it — the Merge Changes header's Stage All does,
+      // past the marker check. Lit over conflicted files alone, a click
+      // staged nothing and said nothing.
+      stageAllTopBtn.disabled = data.unstaged.length === 0;
+      stashChangesBtn.disabled = total === 0;
       changesTotal.textContent = String(total);
       changesTotal.classList.toggle("visible", total > 0);
 
@@ -6956,6 +7277,9 @@ export class CommitViewProvider
         const state = stateByPath.get(f.entry.path) || "unstaged";
         const ck = el("input", "ck");
         ck.type = "checkbox";
+        // Named by its file: a list of ticks all called "Not included — click
+        // to include it" does not say which is which.
+        ck.setAttribute("aria-label", "Include " + f.entry.path + " in the commit");
         ck.checked = state === "staged";
         // Some of this file is staged and some is not. An empty box would claim
         // none of it is and a ticked one that all of it is; both are false, and
@@ -7161,6 +7485,7 @@ export class CommitViewProvider
       const header = el("div", "group-header");
       header.tabIndex = 0;
       header.setAttribute("role", "button");
+      header.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
       const twisty = el("span", "twisty", ICON_CHEVRON);
       const gdot = el("span", "gdot");
       const glabel = el("span", "glabel");
@@ -7266,6 +7591,10 @@ export class CommitViewProvider
         const row = el("div", "row" + (isCollapsed ? " collapsed" : ""));
         row.style.paddingLeft = (depth * 12) + "px";
         row.tabIndex = 0;
+        // It collapses like a group header, so it says so like one (until the
+        // rows become a tree of treeitems).
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
         row.appendChild(el("span", "twisty", ICON_CHEVRON));
         row.appendChild(el("span", "file-icon folder-icon", ICON_FOLDER));
         const name = el("span", "name");
@@ -7359,11 +7688,13 @@ export class CommitViewProvider
       row.appendChild(name);
 
       if (dir != null && dir !== "") {
+        // The box clips from the start (CSS direction: rtl) to keep the tail;
+        // the path is an isolated left-to-right run inside it. Setting the
+        // box itself to ltr (as it was) cancelled the clip.
         const dirEl = el("span", "dir");
-        // RTL trick keeps the tail visible; wrap so it reads left-to-right.
-        dirEl.textContent = dir;
-        dirEl.setAttribute("dir", "ltr");
-        dirEl.style.direction = "ltr";
+        const dirText = document.createElement("bdi");
+        dirText.textContent = dir;
+        dirEl.appendChild(dirText);
         row.appendChild(dirEl);
       } else {
         row.appendChild(el("span", "spacer"));
@@ -7442,6 +7773,8 @@ export class CommitViewProvider
       row.addEventListener("click", (ev) => {
         // A modifier click selects; a plain one opens, as it always has.
         if (handleSelectionClick(ev, key)) return;
+        // The second click of a double-click: the first one opened the diff.
+        if (ev.detail > 1) return;
         open();
       });
       // Double-click OR right-click a file → an actions menu (open / stage / discard).
@@ -7627,12 +7960,21 @@ export class CommitViewProvider
       }
       if (msg.type === "state") {
         setBusy(!!msg.busy);
-        document.body.classList.toggle("no-repo", !msg.hasRepo);
+        stateSeen = true;
+        // No repository YET (discovery still running) is not "none": keep
+        // the reading state up, and say what it is doing.
+        const discovering = !msg.hasRepo && !!msg.discovering;
+        document.body.classList.toggle("no-repo", !msg.hasRepo && !discovering);
+        document.body.classList.toggle("discovering", discovering);
+        loadingEl.classList.toggle("visible", discovering);
+        if (discovering) loadingText.textContent = "Looking for a repository…";
         renderHeader(msg);
         renderOpBanner(msg.hasRepo ? msg.operation : undefined);
         generateBtn.classList.toggle("visible", !!msg.aiEnabled);
         reviewBtn.classList.toggle("visible", !!msg.aiEnabled);
-        connectAiBtn.classList.toggle("visible", !msg.aiEnabled);
+        // Not while the user has turned AI off: that plug invited them to
+        // connect what they had just switched off.
+        connectAiBtn.classList.toggle("visible", !msg.aiEnabled && !msg.aiOff);
         if (msg.layout && msg.layout !== layout) {
           layout = msg.layout;
           applyLayoutClass();
@@ -7700,6 +8042,13 @@ export class CommitViewProvider
         // Commit finished (ok or not) — clear the in-button spinner. A successful
         // Commit & Push then opens the review modal via a separate pushPreview.
         clearCommitBusy();
+      } else if (msg.type === "opFailed") {
+        // git refused a stage / unstage / discard: put the rows it moved back
+        // now, rather than leaving them where they were dropped until the
+        // optimistic move times out. The host has already said why.
+        const failed = msg.paths || [];
+        for (let i = 0; i < failed.length; i++) pending.delete(failed[i]);
+        applyOptimistic();
       } else if (msg.type === "generateDone") {
         setGenerating(false);
       } else if (msg.type === "operationDone") {
@@ -7729,16 +8078,30 @@ export class CommitViewProvider
     let tipTimer = 0;
     function upgradeTips(node) {
       if (!node || node.nodeType !== 1) return;
-      if (node.hasAttribute && node.hasAttribute("title")) {
-        node.dataset.tip = node.getAttribute("title");
-        node.removeAttribute("title");
+      if (node.hasAttribute && node.hasAttribute("title")) moveTitle(node);
+      if (node.querySelectorAll) node.querySelectorAll("[title]").forEach(moveTitle);
+    }
+    /**
+     * A title moves into data-tip (the view draws its own tooltip) WITHOUT
+     * taking the accessible name along: the title is what named every tick
+     * and icon-only button, and deleting it left them nameless to a screen
+     * reader. What it gave stays in ARIA — the name of an element with no
+     * text of its own (a tick, an icon button), else the description. A name
+     * the element carries itself is kept; the tip becomes its description.
+     */
+    function moveTitle(c) {
+      const tip = c.getAttribute("title");
+      c.dataset.tip = tip;
+      c.removeAttribute("title");
+      const ownName = c.hasAttribute("aria-labelledby") ||
+        (c.hasAttribute("aria-label") && c.dataset.tipNamed !== "1");
+      const namedByText = !/^(INPUT|SELECT|TEXTAREA)$/.test(c.tagName) && c.textContent.trim() !== "";
+      if (ownName || namedByText) {
+        if (tip !== c.getAttribute("aria-label")) c.setAttribute("aria-description", tip);
+        return;
       }
-      if (node.querySelectorAll) {
-        node.querySelectorAll("[title]").forEach((c) => {
-          c.dataset.tip = c.getAttribute("title");
-          c.removeAttribute("title");
-        });
-      }
+      c.setAttribute("aria-label", tip);
+      c.dataset.tipNamed = "1";
     }
     function hideTip() { clearTimeout(tipTimer); tipTarget = null; tipEl.classList.remove("show"); }
     function showTip() {
@@ -7819,6 +8182,82 @@ export class CommitViewProvider
     }
     this.disposables.length = 0;
   }
+}
+
+/** A staging op's `{ ok: false, stderr }`: git refused it. */
+function isRefusal(result: unknown): result is { ok: false; stderr: string } {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    (result as { ok?: unknown }).ok === false &&
+    typeof (result as { stderr?: unknown }).stderr === "string"
+  );
+}
+
+/**
+ * Why some files were not staged: they are unmerged and still carry conflict
+ * markers. The one-file sentence is the desktop app's Stage refusal, word for
+ * word, so the same refusal reads the same in both.
+ */
+function markedConflictsMessage(held: string[], stagedTheRest: boolean): string {
+  if (held.length === 1 && !stagedTheRest) {
+    return (
+      `${held[0]} still contains conflict markers. Staging it would mark the conflict ` +
+      "resolved and commit the markers — resolve them first."
+    );
+  }
+  const head = held.slice(0, 3).join(", ");
+  const list = held.length > 3 ? `${head} and ${held.length - 3} more` : head;
+  const count = held.length === 1 ? "1 file still contains" : `${held.length} files still contain`;
+  return (
+    (stagedTheRest ? "Staged everything else. " : "") +
+    `${count} conflict markers (${list}) — staging a file with markers in it tells git ` +
+    "the conflict is settled. Resolve them first."
+  );
+}
+
+/** "src/a.ts", or "3 files" — what a failed stage/unstage/discard was about. */
+function describePaths(paths: string[]): string {
+  if (paths.length === 1) return paths[0];
+  if (paths.length === 0) return "the changes";
+  return `${paths.length} files`;
+}
+
+/**
+ * What a discard does, in words that match what git does.
+ *
+ * `git checkout -- <file>` restores from the INDEX, not from HEAD: a file with
+ * staged edits keeps them. The old sentence ("goes back to its committed
+ * state") was only true for files with nothing staged. An untracked file is
+ * deleted (`git clean`), which is its own sentence.
+ */
+function discardConsequence(files: FileEntry[], partlyStaged: number): string {
+  const untracked = files.filter((f) => f.status === "U").length;
+  const tracked = files.length - untracked;
+  const gone = "These edits were never committed, so nothing — not even Undo — can bring them back.";
+  if (files.length === 1) {
+    if (untracked === 1) {
+      return "The file is deleted. Git has never tracked it, so nothing — not even Undo — can bring it back.";
+    }
+    return partlyStaged === 1
+      ? `Its unstaged edits are lost; the part you staged stays staged. ${gone}`
+      : `The file goes back to its committed version. ${gone}`;
+  }
+  const parts: string[] = [];
+  if (tracked > 0) {
+    parts.push(
+      partlyStaged > 0
+        ? `Unstaged edits are lost; ${partlyStaged === 1 ? "the file that has staged changes keeps them" : `the ${partlyStaged} files that have staged changes keep them`}.`
+        : tracked === 1
+          ? "The changed file goes back to its committed version."
+          : `All ${tracked} changed files go back to their committed version.`,
+    );
+  }
+  if (untracked > 0) {
+    parts.push(untracked === 1 ? "The untracked file is deleted." : `The ${untracked} untracked files are deleted.`);
+  }
+  parts.push(gone);
+  return parts.join(" ");
 }
 
 /** Find the Change whose repo-relative path matches `path`. */

@@ -2,8 +2,8 @@
 // Commit Graph's Revert over an uncommitted edit, with the GitStudio Changes
 // view never opened in the window. `<view>.focus` returns before VS Code
 // resolves a never-opened view, so the Stash & Retry question found no view,
-// counted as Cancel, and nothing ran — then the Undo envelope said "Undid?
-// Revert <sha>" with an Undo, as if something had.
+// counted as Cancel, and nothing ran — then the Undo envelope offered Undo
+// for "Revert <sha>", as if something had.
 //
 // - Arrival: the asker waits for the view to arrive (it used to look once).
 // - UndoLedger: a result that says nothing ran records no entry and says
@@ -43,7 +43,7 @@ test("a view resolved AFTER .focus returned is still the one the dialog is shown
   assert.equal(await arrival.wait(30), undefined);
 });
 
-test("nothing ran — a cancel — records no undo entry and shows no 'Undid?' toast; a real run does", async () => {
+test("nothing ran — a cancel — records no undo entry and offers no Undo; a real run does", async () => {
   const state = new Map<string, unknown>();
   const context = {
     workspaceState: {
@@ -61,13 +61,23 @@ test("nothing ran — a cancel — records no undo entry and shows no 'Undid?' t
 
   assert.equal(await ledger.runWithUndo(repo as never, "Revert 1a2b3c4", async () => false), false);
   assert.equal(await ledger.runWithUndo(repo as never, "Pop stash@{0}", async () => ({ cancelled: true as const })).then((r) => r.cancelled), true);
-  assert.deepEqual(vscode.__said.filter((s) => /Undid\?/.test(s.message)), [], "nothing is offered to undo");
+  assert.deepEqual(vscode.__said, [], "nothing is offered to undo");
   assert.equal((state.get("gitstudio.undoLedger.v1") as Record<string, unknown[]> | undefined)?.["/r"], undefined);
 
+  // It says what happened — the operation is DONE — not "Undid? Revert …",
+  // which read as if it had been undone.
   assert.equal(await ledger.runWithUndo(repo as never, "Revert 1a2b3c4", async () => true), true);
   assert.deepEqual(
-    vscode.__said.filter((s) => /Undid\?/.test(s.message)).map((s) => s.message),
-    ["Undid? Revert 1a2b3c4"],
+    vscode.__said.map((s) => s.message),
+    ["Revert 1a2b3c4 — done."],
+  );
+  // A run that reports a failure still ran something (its snapshot stays
+  // reachable), but is not "done".
+  vscode.__said.length = 0;
+  assert.deepEqual(await ledger.runWithUndo(repo as never, "Pop stash@{0}", async () => ({ ok: false })), { ok: false });
+  assert.deepEqual(
+    vscode.__said.map((s) => s.message),
+    ["Pop stash@{0} did not finish."],
   );
 
   assert.equal(nothingRan(false), true);
