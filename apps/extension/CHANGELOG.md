@@ -86,8 +86,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - On a detached HEAD, a branch's actions name the commit they act on —
   *Merge 'origin/main' into HEAD (a1b2c3d)* — rather than a branch called
   'current branch'.
-- The branch menu keeps its width while you type, and a new search starts at
-  the top of the list with its first group heading in view.
+- The branch menu keeps its width while you type — the width its branches
+  need, also when they arrive after the menu opened or the sidebar is widened
+  under it — and a new search starts at the top of the list with its first
+  group heading in view.
 - A branch's name keeps its room in the branch menu: in a narrow sidebar the
   upstream beside it is shortened, or left to the tooltip, before the name
   loses a letter. The upstream and the group counts are drawn in your theme's

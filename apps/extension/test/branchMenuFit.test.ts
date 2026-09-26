@@ -8,7 +8,9 @@ import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from ".
 //   · a branch's submenu stays inside the view, however narrow or short it
 //     is — every item reachable, the highlighted one scrolled into view, and
 //     the same for the file rows' action menu, which is the same popup;
-//   · the menu keeps its width while you type;
+//   · the menu keeps its width while you type: the width its whole list
+//     needs, also when the branches arrive after it opened and when the view
+//     is widened under it;
 //   · a new query starts the list at the top, its first group header in view;
 //   · the menu takes the room below the pill, fits a view narrower than its
 //     least width, and is placed again (with its submenu) when the view is
@@ -223,6 +225,47 @@ test("the menu keeps its width while you type", { skip }, async () => {
     const w = (await box(p, ".branch-menu")).width;
     assert.ok(Math.abs(w - w0) < 0.5, `the same width with '${q}' in the box: ${w}px, opened at ${w0}px`);
   }
+  await closeMenu(p);
+});
+
+// The width it keeps is what its whole list needs, not whatever it held the
+// moment it opened: the branches can arrive after it (a Changes view not yet
+// shown, a repository just switched to), and the view can be widened under it.
+test("the menu keeps the width its branches need while you type, when they arrive after it opened", { skip }, async () => {
+  const p = await open("dark", 560, 640);
+  const first = stateMessage({ local: FEW });
+  delete first.branches; // the host's first post for a repository carries none
+  await openMenu(p, first);
+  const loading = (await box(p, ".branch-menu")).width;
+  await p.send(stateMessage({ local: [...FEW, { name: LONG, upstream: "origin/" + LONG }], remote: ["origin/main"] }));
+  const w1 = (await box(p, ".branch-menu")).width;
+  assert.ok(w1 > loading + 50, `the branches widened it: ${loading}px while loading, ${w1}px with them`);
+  for (const q of ["zzzq", "main", "", "re"]) {
+    await query(p, q);
+    const w = (await box(p, ".branch-menu")).width;
+    assert.ok(Math.abs(w - w1) < 0.5, `the same width with '${q}' in the box: ${w}px, ${w1}px when the branches arrived`);
+  }
+  await closeMenu(p);
+});
+
+test("the menu keeps the width its branches need while you type, after the view was widened under it", { skip }, async () => {
+  const p = await open("dark", 280, 640);
+  await openMenu(p, stateMessage({ local: [...FEW, { name: LONG, upstream: "origin/" + LONG }] }));
+  const opened = (await box(p, ".branch-menu")).width;
+  await p.resize(560, 640);
+  const wide = (await box(p, ".branch-menu")).width;
+  assert.ok(wide > opened + 50, `widening the view widened it: ${opened}px → ${wide}px`);
+  for (const q of ["main", "zzzq", ""]) {
+    await query(p, q);
+    const w = (await box(p, ".branch-menu")).width;
+    assert.ok(Math.abs(w - wide) < 0.5, `the same width with '${q}' in the box: ${w}px, ${wide}px after the resize`);
+  }
+  // Narrowed again: it fits the view, and still holds while you type.
+  await p.resize(300, 640);
+  const narrow = (await box(p, ".branch-menu")).width;
+  assertInside(await box(p, ".branch-menu"), await viewport(p), "the menu after narrowing");
+  await query(p, "main");
+  assert.ok(Math.abs((await box(p, ".branch-menu")).width - narrow) < 0.5, "and holds its width there too");
   await closeMenu(p);
 });
 

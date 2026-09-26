@@ -4969,6 +4969,8 @@ export class CommitViewProvider
     const TAG_PAGE = 40;
     let tagLimit = TAG_PAGE;
     let branchSubmenu = null;
+    // The width the open menu holds while the query changes (see holdBranchMenuWidth).
+    let bmHeldWidth = 0;
     // Per-category collapse memory (Favorites / Recents / Local / Remote / Tags).
     const collapsedCats = Object.create(null);
 
@@ -5744,11 +5746,28 @@ export class CommitViewProvider
           !remotes.length && !allTags.length) {
         list.appendChild(el("div", "bm-empty", "No matches"));
       }
+      // The whole list is showing: the width it needs is the width to keep
+      // while a query narrows it (the branches may have just arrived).
+      if (!branchFilter) holdBranchMenuWidth();
       // New rows can be wider (a longer name arrived, more tags shown): the
       // box is kept inside the view.
       placeBranchMenu();
       // The rows are new; the highlight finds its row again by key.
       paintBm(false);
+    }
+    /**
+     * The width the menu keeps while you type, so fewer, shorter rows never
+     * pull its edge in under the pointer: what its whole list needs, never
+     * less than it had. Taken with the box empty (on open, when the branches
+     * arrive, when the box is cleared) and when the view is resized, so
+     * branches that arrive after it opened, or a view widened under it, widen
+     * it for good. It never outgrows the view.
+     */
+    function holdBranchMenuWidth() {
+      if (!branchMenu) return;
+      branchMenu.style.minWidth = "";
+      bmHeldWidth = Math.max(bmHeldWidth, Math.ceil(branchMenu.getBoundingClientRect().width));
+      branchMenu.style.minWidth = "min(" + bmHeldWidth + "px, calc(100vw - 12px))";
     }
 
     // ── GitStudio dialogs ─────────────────────────────────────────────────
@@ -6451,12 +6470,9 @@ export class CommitViewProvider
       });
       branchMenu.appendChild(list);
       document.body.appendChild(branchMenu);
-      renderBranchMenu(); // placed by placeBranchMenu
+      bmHeldWidth = 0;
+      renderBranchMenu(); // its width held and placed there (holdBranchMenuWidth, placeBranchMenu)
       branchPill.setAttribute("aria-expanded", "true");
-      // Keep the width it opened at while the query changes: fewer, shorter
-      // rows must not pull its edge in under the pointer. A longer name
-      // arriving can still widen it, and it never outgrows the view.
-      branchMenu.style.minWidth = "min(" + Math.ceil(branchMenu.getBoundingClientRect().width) + "px, calc(100vw - 12px))";
       input.focus();
       window.addEventListener("resize", onBranchResize);
       setTimeout(() => {
@@ -6485,6 +6501,7 @@ export class CommitViewProvider
     // placed again, inside the view's new edges.
     function onBranchResize() {
       if (!branchMenu) return;
+      holdBranchMenuWidth();
       placeBranchMenu();
       if (branchSubmenu) refreshOpenBranchUi();
     }
