@@ -3582,6 +3582,12 @@
           ? document.activeElement
           : window;
         target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods }));
+      } else if (step.startsWith("wait:")) {
+        // Hold the scene. shot.sh captures when its virtual-time budget runs
+        // out, long after the last step — so a state that lasts only a few
+        // seconds (a banner's flash) is caught by waiting BEFORE the step
+        // that raises it.
+        await wait(Number(step.slice(5)) || 0);
       }
       await wait(350);
     }
