@@ -40,8 +40,10 @@ export interface GitPeekHost {
   revealInGraph(sha: string): void;
   /** Jump to a ref's row in the Branches view (scroll + flash). */
   openBranch(ref: string): void;
-  /** Open one commit file's diff in the bottom dock (after a graph reveal). */
-  openCommitFile(file: { path: string; status: string }, sha: string): void;
+  /** Open one commit file's diff in the bottom dock (after a graph reveal).
+   *  `oldPath`: the name a renamed file had in the parent, which its diff
+   *  reads the left side under (as the commit page's opener does). */
+  openCommitFile(file: { path: string; status: string; oldPath?: string }, sha: string): void;
   /** A stash was applied/popped/dropped — refresh whatever shows stashes. */
   stashesChanged(): void;
 }
@@ -134,7 +136,7 @@ function fileRow(
     row.addEventListener("click", () => {
       ctx.close();
       gp.revealInGraph(sha);
-      gp.openCommitFile({ path: f.path, status: f.status }, sha);
+      gp.openCommitFile({ path: f.path, status: f.status, oldPath: f.oldPath }, sha);
     });
   }
   row.appendChild(side);

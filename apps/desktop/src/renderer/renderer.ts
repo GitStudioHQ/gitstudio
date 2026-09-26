@@ -2547,7 +2547,8 @@ class App {
       },
       revealInGraph: (sha) => this.revealInGraph(sha),
       openBranch: (ref) => this.routeView("branches", false, { ref }),
-      openCommitFile: (file, sha) => void this.openFile({ path: file.path, status: file.status }, sha),
+      openCommitFile: (file, sha) =>
+        void this.openFile({ path: file.path, status: file.status, oldPath: file.oldPath }, sha),
       stashesChanged: () => {
         // Applying/popping a stash changes the working tree; dropping changes
         // the list. Bust the SWR cache and refresh whatever's showing.
