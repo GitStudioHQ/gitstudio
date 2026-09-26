@@ -83,7 +83,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **A worktree whose folder is gone** reads *folder missing* — locked ones too,
   which git never calls prunable — opens nothing when clicked, and offers
   **Forget Worktree**, which clears git's record of it (past its lock, when it
-  has one). It used to open a window onto the missing folder.
+  has one). For a locked one the question says that a folder on a drive that
+  isn't connected is no longer a worktree when the drive comes back. It used
+  to open a window onto the missing folder.
 - **New Worktree no longer leaves a stray branch behind when it fails**, so
   trying again with the same name works. Folders are named for the whole
   branch (`feature/login` → `feature-login`), so `bugfix/login` beside it no

@@ -73,10 +73,17 @@ export function worktreeRemovalQuestion(f: WorktreeRemovalFacts): WorktreeRemova
     : "";
 
   if (f.kind === "missing") {
+    // A lock is git's answer for a worktree on a drive or share that is not
+    // always there. Forgotten while it is unplugged, the folder that comes
+    // back points at a record that is gone — "not a git repository" — so
+    // "nothing on disk changes" is only true of an unlocked one.
+    const gone = f.locked
+      ? `Its folder isn't there: ${f.shownPath}. Forgetting it removes git's record of the worktree. If the folder is on a drive that isn't connected, it is no longer a worktree when the drive comes back.`
+      : `Its folder is gone: ${f.shownPath}. Forgetting it removes git's record of the worktree; nothing on disk changes.`;
     return {
       title: `Forget worktree ${f.label}?`,
       message: [
-        `Its folder is gone: ${f.shownPath}. Forgetting it removes git's record of the worktree; nothing on disk changes.`,
+        gone,
         lock && `${lock} Forgetting it unlocks it.`,
         stays,
       ]

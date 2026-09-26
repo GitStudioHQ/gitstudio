@@ -59,6 +59,21 @@ test("missing: Forget, nothing on disk changes, never a discard", () => {
   assert.match(locked.message, /“agent 42”\. Forgetting it unlocks it\./);
 });
 
+test("missing and locked: never 'nothing on disk changes' — a folder on a drive that isn't connected stops being a worktree", () => {
+  // git's lock is for exactly this: a worktree on a drive or share that is not
+  // always mounted. Forgotten while unplugged, the folder that comes back has
+  // a .git file pointing at a record that is gone ("not a git repository").
+  const q = worktreeRemovalQuestion({ ...base, kind: "missing", locked: true, lockReason: "on a USB drive" });
+  assert.doesNotMatch(q.message, /nothing on disk changes/);
+  assert.match(
+    q.message,
+    /^Its folder isn't there: ~\/wt\/feat\. Forgetting it removes git's record of the worktree\. If the folder is on a drive that isn't connected, it is no longer a worktree when the drive comes back\./,
+  );
+  assert.match(q.message, /It is locked: “on a USB drive”\. Forgetting it unlocks it\./);
+  assert.equal(q.confirmLabel, "Unlock and Forget");
+  assert.equal(q.danger, true);
+});
+
 test("changed since it was asked: says nothing was removed, and how to see what it holds", () => {
   assert.equal(
     worktreeChangedSinceAsked("feat"),
