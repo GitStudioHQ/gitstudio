@@ -44,6 +44,8 @@ const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
     "--vscode-list-focusOutline": "#007fd4",
     "--vscode-list-inactiveSelectionBackground": "#37373d",
     "--vscode-toolbar-hoverBackground": "rgba(90, 93, 94, 0.31)",
+    "--vscode-list-highlightForeground": "#2aaaff",
+    "--vscode-list-focusHighlightForeground": "#2aaaff",
   },
   light: {
     "--vscode-menu-background": "#ffffff",
@@ -54,6 +56,10 @@ const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
     "--vscode-list-focusOutline": "#0090f1",
     "--vscode-list-inactiveSelectionBackground": "#e4e6f1",
     "--vscode-toolbar-hoverBackground": "rgba(184, 184, 184, 0.31)",
+    "--vscode-list-highlightForeground": "#0066bf",
+    // Light+ leaves list.activeSelectionBackground to the default, so the
+    // registry resolves this to its own light blue for the blue row.
+    "--vscode-list-focusHighlightForeground": "#bbe7ff",
   },
   // The high-contrast themes define no selection background at all — a
   // selection is its outline (list.focusOutline = contrastActiveBorder).
@@ -67,6 +73,8 @@ const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
     "--vscode-list-focusOutline": "#f38518",
     "--vscode-contrastActiveBorder": "#f38518",
     "--vscode-contrastBorder": "#6fc3df",
+    "--vscode-list-highlightForeground": "#f38518",
+    "--vscode-list-focusHighlightForeground": "#f38518",
   },
   "hc-light": {
     "--vscode-menu-background": "#ffffff",
@@ -78,6 +86,8 @@ const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
     "--vscode-list-focusOutline": "#006bbd",
     "--vscode-contrastActiveBorder": "#006bbd",
     "--vscode-contrastBorder": "#0f4a85",
+    "--vscode-list-highlightForeground": "#006bbd",
+    "--vscode-list-focusHighlightForeground": "#006bbd",
   },
 };
 
@@ -157,6 +167,8 @@ export interface LocalBranch {
   favorite?: boolean;
   ahead?: number;
   behind?: number;
+  /** The upstream was deleted from its remote. */
+  gone?: boolean;
 }
 
 /** A host "state" push carrying `branches`, with an ordinary repo around it. */
@@ -202,7 +214,16 @@ const KEYS: Record<string, { code: string; vk: number }> = {
   ArrowRight: { code: "ArrowRight", vk: 39 },
   Enter: { code: "Enter", vk: 13 },
   Escape: { code: "Escape", vk: 27 },
+  Tab: { code: "Tab", vk: 9 },
+  PageUp: { code: "PageUp", vk: 33 },
+  PageDown: { code: "PageDown", vk: 34 },
+  Home: { code: "Home", vk: 36 },
+  End: { code: "End", vk: 35 },
 };
+
+/** The DevTools protocol's modifier bits. */
+const MODIFIERS = { alt: 1, ctrl: 2, meta: 4, shift: 8 } as const;
+export type Modifier = keyof typeof MODIFIERS;
 
 /** The Changes view in a browser tab, with the ways a person reaches it. */
 export class ChangesPage {
@@ -251,11 +272,12 @@ export class ChangesPage {
     return this.page.eval("window.__posted");
   }
 
-  /** A real key press on whatever has focus. `repeat` marks it as a held key's repeat. */
-  async key(name: keyof typeof KEYS | string, opts: { repeat?: boolean } = {}): Promise<void> {
+  /** A real key press on whatever has focus. `repeat` marks it as a held key's repeat; `with` holds modifiers down. */
+  async key(name: keyof typeof KEYS | string, opts: { repeat?: boolean; with?: Modifier[] } = {}): Promise<void> {
     const k = KEYS[name];
     if (!k) throw new Error(`no key mapping for ${name}`);
-    const base = { key: name, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk, autoRepeat: !!opts.repeat };
+    const modifiers = (opts.with ?? []).reduce((m, x) => m | MODIFIERS[x], 0);
+    const base = { key: name, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk, autoRepeat: !!opts.repeat, modifiers };
     await this.page.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });
     await this.page.send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
   }
@@ -272,6 +294,15 @@ export class ChangesPage {
   async click(x: number, y: number): Promise<void> {
     await this.page.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
     await this.page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+  }
+
+  /** Resize the view, as dragging the sidebar's edge does, and wait for the
+   *  page's `resize` (it lands a frame after the new size). */
+  async resize(width: number, height: number, scale = 1): Promise<void> {
+    await this.page.eval(`window.__gsResized = false;
+      window.addEventListener("resize", function () { window.__gsResized = true; }, { once: true })`);
+    await this.page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: scale, mobile: false });
+    await this.page.waitFor(`window.__gsResized && innerWidth === ${width} && innerHeight === ${height}`);
   }
 
   /** A PNG of the whole view. */

@@ -39,7 +39,16 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   back — as in IntelliJ's branch popup. The highlighted row is drawn in your
   theme's selection colours (with the focus outline in high-contrast themes),
   follows the mouse too, and is read out by screen readers. Holding Enter never
-  runs a second action, nor answers the question the first one asked. (#32)
+  runs a second action, nor answers the question the first one asked.
+  **PageUp** and **PageDown** move a page at a time, **Ctrl/Cmd+Home** and
+  **End** go to the first and last row, and **Tab** leaves you in the search
+  box, as does a click anywhere in the menu. A local branch's actions include
+  **Add to Favorites** (or **Remove from Favorites**), so the star can be set
+  from the keyboard; from there or from the star, the branch moves to or from
+  Favorites at once, and stays there. (#32)
+- **GitStudio: Branches…** in the Command Palette opens the branch menu, as
+  the branch name in the Changes view and the status bar do — bind a key to it
+  to open the menu without the mouse.
 - **Reset a branch to its remote.** A local branch that tracks a remote branch
   has **Reset to 'origin/feature'…** in its branch-menu actions. GitStudio
   fetches first, then says exactly what the reset would take away — the commits
@@ -313,6 +322,43 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - New Worktree from a branch whose name starts with "-" makes a new branch
   from it, saying why, instead of offering a checkout that git would turn
   into a detached HEAD.
+- **A branch's actions in a narrow or short sidebar.** The actions a branch
+  opens in the branch menu no longer run off the right or bottom edge of the
+  view, where Reset and Delete could not be reached: they stay inside it and
+  scroll when there are more than fit, keeping the highlighted one in sight.
+  The actions menu a changed file opens does the same.
+- **The branch menu in a short or narrow sidebar** uses all the room below
+  the branch name rather than about three quarters of the view's height,
+  fits a sidebar narrower than itself, and stays inside the view — with a
+  branch's actions — when you resize the sidebar while it is open.
+- The branch menu says **Loading branches…** until the branches arrive,
+  instead of showing a repository with none.
+- On a detached HEAD, a branch's actions name the commit they act on —
+  *Merge 'origin/main' into HEAD (a1b2c3d)* — rather than a branch called
+  'current branch', and so does the question Merge or Rebase then asks,
+  which says the result is on no branch rather than warning about a push.
+- The branch menu keeps its width while you type — the width its branches
+  need, also when they arrive after the menu opened or the sidebar is widened
+  under it — and a new search starts at the top of the list with its first
+  group heading in view.
+- A branch's name keeps its room in the branch menu: in a narrow sidebar the
+  upstream beside it is shortened, or left to the tooltip, before the name
+  loses a letter, and the ↑/↓ counts step aside, to the tooltip, before the
+  name is cut to under half the row. The upstream, the group counts and the
+  empty stars are drawn in your theme's secondary text colour, readable in
+  light themes, and the highlighted row still shows which letters matched
+  your search, and its star.
+- A branch whose upstream was deleted from the remote — what a merged pull
+  request leaves behind — shows that upstream struck through and marked
+  **gone** in the branch menu, instead of looking like a live one, and its
+  actions no longer offer a pull from it that could only fail.
+- A branch-menu action that fails is named as you chose it — *Pull into
+  'feature' failed* — rather than by an internal name.
+- The branch menu's words and icons: **Push…** says it asks before pushing,
+  *Pull 2 Commits into 'feature'* says what the number counts, and Checkout
+  and New Worktree have icons of their own — Checkout no longer wears the
+  check that marks the branch you're on, nor New Worktree the Changes view's
+  tree/list toggle.
 
 ## [1.14.0] - 2026-09-25
 

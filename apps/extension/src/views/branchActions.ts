@@ -216,6 +216,19 @@ function localName(ref: { fullName: string; name: string }): string | undefined 
   return name;
 }
 
+/**
+ * HEAD as a merge or rebase question names it when it is on no branch —
+ * "HEAD (a1b2c3d)", as the branch menu's item does — or undefined on a branch.
+ */
+async function detachedHead(a: RepoEntry): Promise<string | undefined> {
+  try {
+    const head = await a.ctx.refs.getHead();
+    return head.detached && head.sha ? `HEAD (${head.sha.slice(0, 7)})` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function mergeBranchIntoCurrent(
   repos: RepoManager,
   arg: unknown,
@@ -231,10 +244,14 @@ export async function mergeBranchIntoCurrent(
     return;
   }
   const name = shown(ref);
+  // On a detached HEAD there is no current branch to name, and the merge
+  // commit lands on no branch.
+  const detached = await detachedHead(a);
   const ok = await promptConfirm({
-    title: `Merge ${name} into the current branch?`,
+    title: detached ? `Merge ${name} into ${detached}?` : `Merge ${name} into the current branch?`,
     message:
-      "Its commits join your history. If the two sides touched the same lines you'll get conflicts to resolve, and Undo can take you back either way.",
+      "Its commits join your history. If the two sides touched the same lines you'll get conflicts to resolve, and Undo can take you back either way." +
+      (detached ? " HEAD is on no branch, so the merge is on no branch either: create a branch from it to keep it." : ""),
     confirmLabel: "Merge",
   });
   if (!ok) {
@@ -282,9 +299,14 @@ export async function rebaseCurrentOnto(
     return;
   }
   const name = shown(ref);
+  // On a detached HEAD there is no current branch to name, and nothing to
+  // push: the rewritten commits land on no branch.
+  const detached = await detachedHead(a);
   const ok = await promptConfirm({
-    title: `Rebase the current branch onto ${name}?`,
-    message: `Your local commits are rewritten on top of ${name}, so they get new shas. If you have already pushed them, the next push needs a force. Undo can take you back.`,
+    title: detached ? `Rebase ${detached} onto ${name}?` : `Rebase the current branch onto ${name}?`,
+    message: detached
+      ? `The commits HEAD has that ${name} does not are rewritten on top of it, so they get new shas. HEAD is on no branch, so they are on no branch either: create a branch from them to keep them. Undo can take you back.`
+      : `Your local commits are rewritten on top of ${name}, so they get new shas. If you have already pushed them, the next push needs a force. Undo can take you back.`,
     confirmLabel: "Rebase",
   });
   if (!ok) {

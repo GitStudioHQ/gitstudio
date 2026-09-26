@@ -18,8 +18,15 @@ import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from ".
 //   · Enter on a top action runs it;
 //   · a held key's repeat runs nothing — not in the menu, and not in the
 //     confirm a menu item raised;
-//   · the search box keeps focus throughout, and its aria-activedescendant
-//     names the highlighted option;
+//   · PageUp/PageDown move a page of rows, Ctrl/Cmd+Home/End go to either
+//     end, and plain Home/End are left to the box's caret;
+//   · the search box keeps focus throughout — Tab included, since nothing
+//     else in the menu takes a Tab stop, and a press anywhere in the menu or
+//     a submenu — and its aria-activedescendant names the highlighted option;
+//   · a local branch's submenu has the star as an item, and starring — from
+//     there or the star — moves the row at once, before the host answers;
+//     a host post sent before the star does not move it back, and the
+//     host's agreeing post rebuilds nothing;
 //   · the pointer moves the highlight, but a list scrolling under a pointer
 //     that did not move does not, and nor does crossing rows on the way to
 //     an open submenu.
@@ -167,7 +174,7 @@ test("Right opens a branch's submenu on its first item; Up/Down move there; Left
   await page.key("ArrowUp");
   assert.equal((await snap(page)).sub, "Checkout", "clamped at the submenu's top");
   await page.key("ArrowDown");
-  assert.equal((await snap(page)).sub, "Pull 1 into 'feature'");
+  assert.equal((await snap(page)).sub, "Pull 1 Commit into 'feature'");
 
   await page.key("ArrowLeft");
   s = await snap(page);
@@ -363,7 +370,7 @@ test("the pointer moves the highlight — but not a list scrolling under a still
   assert.equal((await snap(page)).sub, "Checkout", "Down after a click goes into the open submenu");
   const second = await centre(`.branch-submenu #bm-sub-1`);
   await page.mouseMove(second.x, second.y);
-  assert.equal((await snap(page)).sub, "Pull 1 into 'feature'", "hovering an item highlights it");
+  assert.equal((await snap(page)).sub, "Pull 1 Commit into 'feature'", "hovering an item highlights it");
 });
 
 test("the highlight scrolls into view, and survives the host repainting the menu", { skip }, async () => {
@@ -394,6 +401,253 @@ test("the highlight scrolls into view, and survives the host repainting the menu
   assert.ok(s.subOpen, "the submenu is rebuilt, not lost");
   assert.equal(s.sub, before, "with the same item highlighted");
   assert.ok(s.activeDescendantIsHighlighted);
+});
+
+test("Tab and Shift+Tab leave focus in the search box; nothing in the menu is in the tab order", { skip }, async () => {
+  const tabbable = (): Promise<string[]> =>
+    page.eval<string[]>(`Array.prototype.filter.call(
+      document.querySelectorAll(".branch-menu button, .branch-menu [tabindex], .branch-submenu button, .branch-submenu [tabindex]"),
+      function (n) { return n.tabIndex >= 0; }).map(function (n) { return n.className + ": " + n.textContent.trim(); })`);
+  // Enough tags for a "Show more" row.
+  const tags = Array.from({ length: 45 }, (_, i) => `v1.${i}`);
+  await openMenu(page, stateMessage({ local: LOCAL, remote: ["origin/main", "origin/feature"], tags }));
+  assert.ok(await page.eval(`!!document.querySelector(".bm-more") && !!document.querySelector(".bm-action") && !!document.querySelector(".bm-star")`));
+  assert.deepEqual(await tabbable(), [], "top actions, rows, stars, group headers and 'Show more' take no Tab stop");
+  await page.key("Tab");
+  assert.ok((await snap(page)).focusIsSearch, "Tab keeps focus in the search box");
+  await page.key("ArrowDown");
+  assert.equal((await snap(page)).main, "a:fetch", "and the arrows still work");
+  await page.key("Tab", { with: ["shift"] });
+  assert.ok((await snap(page)).focusIsSearch, "Shift+Tab too");
+  await page.type("feature");
+  await page.key("ArrowRight");
+  await page.key("Tab");
+  const s = await snap(page);
+  assert.ok(s.focusIsSearch && s.subOpen, "and with a submenu open");
+  assert.deepEqual(await tabbable(), [], "nor do the submenu's items");
+  await page.key("Escape");
+  await page.key("Escape");
+});
+
+test("a local branch's submenu stars it, and so does the star — at once, before the host answers", { skip }, async () => {
+  const groupOf = (name: string): Promise<string | null> =>
+    page.eval(`(function () {
+      var r = document.querySelector('.bm-list .bm-branch[data-bname="${name}"]');
+      var g = r && r.closest(".bm-group-body");
+      return g ? g.getAttribute("aria-label") : null;
+    })()`);
+  const starOn = (name: string): Promise<boolean> =>
+    page.eval(`document.querySelector('.bm-list .bm-branch[data-bname="${name}"] .bm-star').classList.contains("on")`);
+
+  await openMenu(page);
+  await page.type("topic");
+  await page.key("ArrowRight");
+  const labels = await submenuLabels(page);
+  assert.ok(labels.includes("Add to Favorites"), labels.join(" | "));
+  for (let i = 0; i < labels.indexOf("Add to Favorites"); i++) await page.key("ArrowDown");
+  assert.equal((await snap(page)).sub, "Add to Favorites");
+  await page.key("Enter");
+  assert.deepEqual((await page.posted()).filter((m) => m.type === "branchAction"), [
+    { type: "branchAction", action: "favorite", ref: "topic" },
+  ]);
+  let s = await snap(page);
+  assert.ok(s.menuOpen && s.subOpen, "the menu and its submenu stay open");
+  assert.equal(s.sub, "Remove from Favorites", "the same item, highlighted, now says what it will do");
+  assert.equal(await groupOf("topic"), "Favorites", "the row is in Favorites before any reply");
+  assert.ok(await starOn("topic"));
+
+  // The host's own push agrees: nothing moves.
+  const starred = LOCAL.map((b) => (b.name === "topic" ? { ...b, favorite: true } : b));
+  await page.send(stateMessage({ local: starred, remote: ["origin/main", "origin/feature"], tags: ["v1.0"] }));
+  s = await snap(page);
+  assert.equal(s.sub, "Remove from Favorites");
+  assert.equal(await groupOf("topic"), "Favorites");
+
+  // The star, by mouse: un-starred at once, too.
+  await page.key("Escape");
+  await page.eval(`document.querySelector('.bm-list .bm-branch[data-bname="topic"] .bm-star').click()`);
+  assert.equal(await groupOf("topic"), "Local", "back in Local before any reply");
+  assert.ok(!(await starOn("topic")));
+  assert.deepEqual((await page.posted()).filter((m) => m.type === "branchAction").slice(-1), [
+    { type: "branchAction", action: "favorite", ref: "topic" },
+  ]);
+
+  // The current branch has the item; a remote branch and a tag do not.
+  await page.eval(`(function () { var i = document.querySelector(".bm-search input"); i.value = ""; i.dispatchEvent(new Event("input")); })()`);
+  await page.type("main");
+  await page.key("ArrowRight");
+  assert.ok((await submenuLabels(page)).includes("Add to Favorites"), "the current branch");
+  await page.key("ArrowLeft");
+  for (const q of ["origin/main", "v1.0"]) {
+    await page.eval(`(function () { var i = document.querySelector(".bm-search input"); i.value = ""; i.dispatchEvent(new Event("input")); })()`);
+    await page.type(q);
+    await page.key("ArrowRight");
+    assert.ok(!(await submenuLabels(page)).some((l) => /Favorites/.test(l)), `${q}: no favourites item`);
+    await page.key("ArrowLeft");
+  }
+  await page.key("Escape");
+});
+
+// Only rows and submenu items kept focus on a press; the rest of the menu let
+// it fall to the page, where the arrows did nothing and Tab went to the branch
+// pill behind the scrim with the menu still open.
+test("a press anywhere in the menu or a submenu leaves focus in the search box", { skip }, async () => {
+  /** A real mouse press on `sel` — its centre, or just inside its left edge (its padding). */
+  const pressOn = async (sel: string, at: "centre" | "edge" = "centre"): Promise<Snap> => {
+    const c = await page.eval<{ x: number; y: number } | null>(`(function () {
+      var n = document.querySelector(${JSON.stringify(sel)}); if (!n) return null;
+      var r = n.getBoundingClientRect();
+      return { x: ${at === "edge" ? "r.left + 2" : "r.left + r.width / 2"}, y: r.top + r.height / 2 };
+    })()`);
+    assert.ok(c, `${sel} is on screen`);
+    await page.click(c.x, c.y);
+    return snap(page);
+  };
+  const clear = () => page.eval(`(function () { var i = document.querySelector(".bm-search input"); i.value = ""; i.dispatchEvent(new Event("input")); })()`);
+
+  await openMenu(page);
+  let s = await pressOn(".branch-menu .bm-search", "edge");
+  assert.ok(s.menuOpen && s.focusIsSearch, "the search row's padding");
+
+  await page.type("feature");
+  await page.key("ArrowRight");
+  for (const [sel, at] of [
+    [".branch-submenu .bm-subhead", "centre"],
+    [".branch-submenu .bm-subsep", "centre"],
+    [".branch-submenu", "edge"],
+  ] as const) {
+    s = await pressOn(sel, at);
+    assert.ok(s.subOpen && s.focusIsSearch, `a press on ${sel} (${at})`);
+  }
+  // After a press on the submenu's title band the arrows still move in it.
+  s = await pressOn(".branch-submenu .bm-subhead");
+  const was = s.sub;
+  await page.key("ArrowDown");
+  assert.notEqual((await snap(page)).sub, was, `Down moved on from '${was}'`);
+  await page.key("ArrowLeft");
+
+  await clear();
+  await page.type("zzzq");
+  s = await pressOn(".bm-list .bm-empty");
+  assert.ok(s.menuOpen && s.focusIsSearch, "the 'No matches' row");
+  await page.key("Tab");
+  s = await snap(page);
+  assert.ok(s.menuOpen && s.focusIsSearch, "and Tab after it stays in the box, the menu open");
+
+  // The loading row too.
+  const first = stateMessage({ local: LOCAL });
+  delete first.branches;
+  await openMenu(page, first);
+  s = await pressOn(".bm-list .bm-loading");
+  assert.ok(s.menuOpen && s.focusIsSearch, "the 'Loading branches…' row");
+  await page.key("Escape");
+});
+
+// The host answers a star with a state post, and the first of those carries
+// the list it had before the star (the fast post). A post like that must not
+// put the row back where it was, and the host's own answer, which agrees,
+// must not rebuild the list the click already rebuilt.
+test("a star holds through a host post sent before it, and the host's agreeing post rebuilds nothing", { skip }, async () => {
+  const groupOf = (name: string): Promise<string | null> =>
+    page.eval(`(function () {
+      var r = document.querySelector('.bm-list .bm-branch[data-bname="${name}"]');
+      var g = r && r.closest(".bm-group-body");
+      return g ? g.getAttribute("aria-label") : null;
+    })()`);
+  const rebuilds = (): Promise<number> => page.eval(`window.__bmRebuilds`);
+  await openMenu(page);
+  await page.eval(`window.__bmRebuilds = 0;
+    new MutationObserver(function (ms) { ms.forEach(function (m) { if (m.removedNodes.length > 3) window.__bmRebuilds++; }); })
+      .observe(document.querySelector(".bm-list"), { childList: true })`);
+  const star = await page.eval<{ x: number; y: number }>(`(function () {
+    var r = document.querySelector('.bm-list .bm-branch[data-bname="topic"] .bm-star').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+  await page.click(star.x, star.y);
+  assert.equal(await groupOf("topic"), "Favorites", "starred at once");
+  assert.deepEqual((await page.posted()).filter((m) => m.type === "branchAction"), [
+    { type: "branchAction", action: "favorite", ref: "topic" },
+  ]);
+  const afterClick = await rebuilds();
+
+  // The host's fast post, with the list from before the star.
+  await page.send(STATE);
+  assert.equal(await groupOf("topic"), "Favorites", "a post from before the star does not un-star it");
+  assert.equal(await rebuilds(), afterClick, "nor rebuild the list");
+  await page.type("t");
+  assert.equal(await groupOf("topic"), "Favorites", "nor does the next repaint");
+  const afterType = await rebuilds();
+
+  // The host's own answer: the same list, starred.
+  const starred = stateMessage({
+    local: LOCAL.map((b) => (b.name === "topic" ? { ...b, favorite: true } : b)),
+    remote: ["origin/main", "origin/feature"],
+    tags: ["v1.0"],
+  });
+  await page.send(starred);
+  assert.equal(await groupOf("topic"), "Favorites");
+  assert.equal(await rebuilds(), afterType, "the host's agreeing post rebuilds nothing");
+
+  // Once it has answered, the host's list is the truth again (starred elsewhere, un-starred elsewhere).
+  await page.send(STATE);
+  assert.equal(await groupOf("topic"), "Local", "a later post that un-stars it is taken");
+  await page.key("Escape");
+});
+
+test("PageUp/PageDown move a page of rows and Ctrl+Home/End go to the ends; plain Home/End stay in the box", { skip }, async () => {
+  const many: LocalBranch[] = [
+    ...LOCAL,
+    ...Array.from({ length: 60 }, (_, i) => ({ name: `work/item-${String(i).padStart(2, "0")}` })),
+  ];
+  await openMenu(page, stateMessage({ local: many, remote: ["origin/main", "origin/feature"] }));
+  const order = await page.eval<string[]>(
+    `Array.prototype.map.call(document.querySelectorAll(".bm-list [data-bmkey]"), function (n) { return n.dataset.bmkey; })`,
+  );
+  const at = async (): Promise<number> => order.indexOf((await snap(page)).main!);
+  const inView = (): Promise<boolean> =>
+    page.eval(`(function () {
+      var l = document.querySelector(".bm-list").getBoundingClientRect(), r = document.querySelector(".bm-list .is-active").getBoundingClientRect();
+      return r.top >= l.top - 1 && r.bottom <= l.bottom + 1;
+    })()`);
+
+  await page.key("ArrowDown");
+  assert.equal(await at(), 0);
+  await page.key("PageDown");
+  const page1 = await at();
+  assert.ok(page1 > 3, `PageDown moves more than a row (to ${page1})`);
+  assert.ok(await inView(), "and the row is in view");
+  await page.key("PageDown");
+  assert.ok((await at()) > page1, "again");
+  for (let i = 0; i < 20; i++) await page.key("PageDown");
+  assert.equal(await at(), order.length - 1, "clamped at the last row");
+  await page.key("PageUp");
+  const up = await at();
+  assert.ok(up < order.length - 4, `PageUp moves more than a row (to ${up})`);
+  assert.ok(await inView());
+
+  await page.key("Home", { with: ["ctrl"] });
+  assert.equal(await at(), 0, "Ctrl+Home: the first row");
+  await page.key("End", { with: ["ctrl"] });
+  assert.equal(await at(), order.length - 1, "Ctrl+End: the last row");
+  assert.ok(await inView());
+  await page.key("Home", { with: ["meta"] });
+  assert.equal(await at(), 0, "Cmd+Home as well");
+  await page.key("End");
+  assert.equal(await at(), 0, "plain End moves the caret, not the highlight");
+
+  // The same keys in a submenu.
+  await page.type("feature");
+  await page.key("ArrowRight");
+  await page.key("End", { with: ["ctrl"] });
+  assert.equal((await snap(page)).sub, "Delete", "Ctrl+End: the submenu's last item");
+  await page.key("Home", { with: ["ctrl"] });
+  assert.equal((await snap(page)).sub, "Checkout");
+  await page.key("PageDown");
+  assert.equal((await snap(page)).sub, "Delete", "PageDown: a page down, clamped — the whole submenu is one page");
+  await page.key("PageUp");
+  assert.equal((await snap(page)).sub, "Checkout");
+  await page.key("Escape");
+  await page.key("Escape");
 });
 
 /** The highlighted row against its neighbour, per theme — does it stand out? */
