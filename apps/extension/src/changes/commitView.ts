@@ -303,27 +303,41 @@ const DETACHED_PUSH_REASON =
 /** Why a push cannot start in a repository with no remote. */
 const NO_REMOTE_PUSH_REASON = "No remote is configured for this repository.";
 
+/** An operation stopped on a detached HEAD, as the subject of a sentence. */
+const STOPPED_OPERATION: Record<string, string> = {
+  merge: "A merge",
+  rebase: "A rebase",
+  "rebase-merge-step": "A rebase",
+  "cherry-pick": "A cherry-pick",
+  revert: "A revert",
+  am: "A git am session",
+};
+
 /**
  * Why a push cannot start on a detached HEAD, given what is stopped there.
  *
  * Every stopped rebase is a detached HEAD, and "create a branch here" is the
  * wrong advice in one: a branch made mid-rebase points at a half-rebased
  * commit. The commits reach the branch being rebased when the rebase
- * finishes, so that is what it says. A rebase begun on a detached HEAD has no
- * branch to reach: finish, then branch. Any other stop on a detached HEAD (a
- * cherry-pick, say) keeps the plain advice. The page shows the host's words
+ * finishes, so that is what it says. Any other operation stopped on a
+ * detached HEAD (a rebase begun on one, a cherry-pick) leaves its commits on
+ * no branch even when it finishes, and a branch cannot be made over the stop
+ * (New branch… is refused there: `git checkout -b` would end or move out
+ * from under it) — so it is finish, then branch. Only a plain detached HEAD
+ * gets the plain advice. The page shows the host's words
  * (StatePayload.detachedReason), so the tip, the review and a refused push
  * give the same reason.
  */
 function detachedPushReason(op: OperationBannerData | undefined): string {
-  if (!op || (op.kind !== "rebase" && op.kind !== "rebase-merge-step")) {
+  const stopped = op ? STOPPED_OPERATION[op.kind] : undefined;
+  if (!op || !stopped) {
     return DETACHED_PUSH_REASON;
   }
-  const finish = `Finish it (${op.continueLabel || "Continue"})`;
+  const finish = `Finish it with ${op.continueLabel || "Continue"}`;
   return op.rebaseBranch
     ? `A rebase of ${op.rebaseBranch} is in progress, so there is no branch to push until it finishes. ` +
         `${finish} and these commits land on ${op.rebaseBranch}.`
-    : `A rebase is in progress on a detached HEAD, so these commits are on no branch. ` +
+    : `${stopped} is in progress on a detached HEAD, so these commits are on no branch. ` +
         `${finish}, then create a branch to push them.`;
 }
 

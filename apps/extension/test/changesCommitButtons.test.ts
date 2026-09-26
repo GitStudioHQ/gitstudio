@@ -84,7 +84,7 @@ test("unpushed commits on a detached HEAD: no 'Publish N'", { skip }, async () =
 // tip and the button's name are the host's words.
 const REBASING =
   "A rebase of topic is in progress, so there is no branch to push until it finishes. " +
-  "Finish it (Continue Rebase) and these commits land on topic.";
+  "Finish it with Continue Rebase and these commits land on topic.";
 
 test("staged work during a stopped rebase: the reason is to finish it, never to create a branch", { skip }, async () => {
   const b = await buttonsFor({

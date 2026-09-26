@@ -80,7 +80,7 @@ test("the state tells the page a detached HEAD has nowhere to publish", async ()
 // that is what the reason says — in the review, in a confirmed push's error,
 // and in the state the page takes the button's tip from.
 
-const REBASING = /^A rebase of topic is in progress.*Finish it \(Continue Rebase\) and these commits land on topic\.$/;
+const REBASING = /^A rebase of topic is in progress.*Finish it with Continue Rebase and these commits land on topic\.$/;
 
 /** topic's two commits rebased onto main: the first applies, the second stops on a conflict. */
 function stoppedRebaseWithRemote(): ReturnType<typeof scratchRepo> {
@@ -168,6 +168,40 @@ test("a rebase that started on a detached HEAD: finish it, THEN create a branch"
   const preview = host.posted.find((m) => m.type === "pushPreview");
   assert.match(
     String(preview?.reason),
-    /^A rebase is in progress on a detached HEAD.*Finish it \(Continue Rebase\), then create a branch to push them\.$/,
+    /^A rebase is in progress on a detached HEAD.*Finish it with Continue Rebase, then create a branch to push them\.$/,
+  );
+});
+
+// Not only a rebase: any operation stopped on a detached HEAD holds it there,
+// and GitStudio's own New branch… is refused over a stop (it would end or
+// move out from under it). So it is finish, then branch — named.
+test("a cherry-pick stopped on a detached HEAD: finish it, then create a branch", async () => {
+  const repo = scratchRepo("push-picking");
+  cleanups.push(repo.done);
+  const w = (n: string, t: string) => writeFileSync(join(repo.dir, n), t);
+  w("a.txt", "base\n");
+  repo.git("add", ".");
+  repo.git("commit", "-qm", "base");
+  repo.git("checkout", "-q", "-b", "side");
+  w("a.txt", "side\n");
+  repo.git("commit", "-qam", "side: a");
+  repo.git("checkout", "-q", "main");
+  w("a.txt", "main\n");
+  repo.git("commit", "-qam", "main: a");
+  repo.git("checkout", "-q", "--detach");
+  try {
+    repo.git("cherry-pick", "refs/heads/side");
+  } catch {
+    // stops on the conflict in a.txt
+  }
+  const host = changesHost(repo.dir);
+  cleanups.push(host.dispose);
+  host.posted.length = 0;
+  await host.send({ type: "requestPushPreview" });
+  const preview = host.posted.find((m) => m.type === "pushPreview");
+  assert.equal(
+    preview?.reason,
+    "A cherry-pick is in progress on a detached HEAD, so these commits are on no branch. " +
+      "Finish it with Continue Cherry-pick, then create a branch to push them.",
   );
 });

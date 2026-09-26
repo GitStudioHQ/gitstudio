@@ -86,7 +86,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   detached HEAD says that is why it cannot push, and it never starts with
   **Force push** focused. In a stopped rebase the reason is to finish it —
   the commits then land on the branch being rebased — never to create a
-  branch at a half-rebased commit.
+  branch at a half-rebased commit; any other operation stopped on a detached
+  HEAD is named, and finished before a branch is made.
 - **Diffs of a renamed file show the change, not an empty or all-new file.**
   Blame's Show Diff and Open Previous Revision on a line older than the
   rename, a rename commit in the Commit Graph's details, a staged rename in
