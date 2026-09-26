@@ -556,6 +556,37 @@ test("review: the submitted review is pinned to the head the diffs showed, with 
   assert.equal(sent.body, "Looks close.");
 });
 
+test("review: a row loaded before a push reviews the PR's head NOW — the diffs, the hunks and commit_id agree", async () => {
+  // The list was read at 037head; the contributor has pushed since. The files
+  // GitHub lists (and their hunks) are the new head's.
+  const NEW_HEAD = "037new";
+  let sent: any;
+  github([
+    ["GET", /^\/repos\/acme\/app\/pulls\/37$/, () => ({ body: { ...PULLS()[0], head: { ...(PULLS()[0].head as object), sha: NEW_HEAD } } })],
+    [
+      "POST",
+      /^\/repos\/acme\/app\/pulls\/37\/reviews$/,
+      (req) => {
+        sent = req.body;
+        return { body: { id: 1 } };
+      },
+    ],
+    ...acmeRoutes(),
+  ]);
+  const m = mount(fakeRepos(ORIGIN));
+  assert.equal((await row(m.tree, 37)).pr.head.sha, HEAD_37, "the row is the old head");
+  await startReview(m, 37);
+  const [, right] = pr.executed.find((e: any) => e.id === "vscode.diff").args;
+  assert.match(right.query, /sha=037new/, "the diff shows the code the hunks describe");
+  assert.deepEqual(ranges(m, "src/a.ts", NEW_HEAD, 120), [[0, 3], [40, 41]]);
+  assert.equal(ranges(m, "src/a.ts", HEAD_37, 120), undefined, "the old head isn't this review's");
+  const thread = vscode.__makeThread(prUri("src/a.ts", NEW_HEAD), new vscode.Range(1, 0, 1, 0));
+  await vscode.commands.executeCommand("gitstudio.pr.addReviewComment", { thread, text: "hm" });
+  answer = (spec) => (spec.kind === "pick" ? "COMMENT" : spec.kind === "input" ? "" : undefined);
+  await vscode.commands.executeCommand("gitstudio.pr.submitReview");
+  assert.equal(sent?.commit_id, NEW_HEAD, "pinned to the commit the diffs showed");
+});
+
 test("review: queued comments are never thrown away without asking — keyed to their PR", async () => {
   github([["GET", /^\/repos\/acme\/app\/pulls\/36\/files/, () => ({ status: 502, body: { message: "Bad Gateway" } })], ...acmeRoutes()]);
   const m = mount(fakeRepos(ORIGIN));

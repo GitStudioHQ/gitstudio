@@ -141,31 +141,44 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /**
-   * Enter review mode for a PR: fetch its changed files, open the first as a
-   * diff, enable commenting, and flip the `gitstudio.pr.reviewing` context key.
-   * The same PR again just reopens it — its queue stays.
+   * Enter review mode for a PR: fetch its current head and changed files, open
+   * the first as a diff, enable commenting, and flip the
+   * `gitstudio.pr.reviewing` context key. The same PR again just reopens it —
+   * its queue stays.
    */
   async startReview(
     ctx: GitHubRepoContext,
-    pr: PullRequest,
+    requested: PullRequest,
   ): Promise<void> {
-    const key = prKey(ctx.owner, ctx.repo, pr.number);
+    const key = prKey(ctx.owner, ctx.repo, requested.number);
     if (this.active?.key === key) {
       const first = this.active.files[0];
       if (first) {
         await openPrFileDiff(this.active.ctx, this.active.pr, first).catch(() => undefined);
       }
       void vscode.window.showInformationMessage(
-        `Still reviewing PR #${pr.number} — ${this.pendingWords()} waiting to be submitted.`,
+        `Still reviewing PR #${requested.number} — ${this.pendingWords()} waiting to be submitted.`,
       );
       return;
     }
 
     // Load the new PR BEFORE anything of the current review is touched: a
     // failed load must leave the queue exactly as it was.
+    //
+    // Its head is read again with its files. The PR handed in may be a list
+    // row loaded long ago; its head, pushed past since, would open diffs of
+    // the OLD code while the files' hunks — which decide where a comment can
+    // go — are the new code's, and pin the review to a commit that is no
+    // longer the PR's.
+    let pr: PullRequest;
     let files: PrFile[];
     try {
-      files = (await this.api.getPullFiles(ctx.owner, ctx.repo, pr.number)).items;
+      const [detail, listed] = await Promise.all([
+        this.api.getPull(ctx.owner, ctx.repo, requested.number),
+        this.api.getPullFiles(ctx.owner, ctx.repo, requested.number),
+      ]);
+      pr = detail;
+      files = listed.items;
     } catch (err) {
       void this.warn(err, "Couldn't load the PR's changed files.");
       return;
