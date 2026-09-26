@@ -73,9 +73,11 @@ export class BlameController implements vscode.Disposable {
     private readonly log?: (m: string) => void,
   ) {
     this.statusBar = vscode.window.createStatusBarItem(
+      "gitstudio.blame",
       vscode.StatusBarAlignment.Left,
       -10,
     );
+    this.statusBar.name = "GitStudio Blame";
     this.statusBar.command = "gitstudio.blame.showLineActions";
 
     void this.maybeDisableNativeBlame();

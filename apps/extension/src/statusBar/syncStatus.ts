@@ -7,7 +7,7 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { stoppedByThisCommand } from "../git/pausedForUser";
 import { detectOperation, notifyPaused } from "../git/pauseNotice";
 import { headBranchName } from "@gitstudio/git-service/RefProvider";
-import { syncBranchLabel } from "./syncLabel";
+import { syncAccessibleLabel, syncBranchLabel } from "./syncLabel";
 
 // A compact left status-bar segment for the active repo's sync state:
 //   $(git-branch) <branch> $(arrow-down)<behind> $(arrow-up)<ahead>
@@ -34,11 +34,15 @@ export class SyncStatusItem implements vscode.Disposable {
     },
   ) {
     this.item = vscode.window.createStatusBarItem(
+      // Its own id and name: without one every GitStudio item shares the
+      // extension's, and the status bar's menu cannot hide one alone.
+      "gitstudio.sync",
       vscode.StatusBarAlignment.Left,
       // A small negative priority keeps us just to the right of vscode.git's
       // own SCM segment rather than fighting it for the leftmost slot.
       -5,
     );
+    this.item.name = "GitStudio Branch Sync";
     this.item.command = COMMAND_ID;
 
     this.disposables.push(
@@ -111,6 +115,10 @@ export class SyncStatusItem implements vscode.Disposable {
         parts.push(`$(pencil)${dirty}`);
       }
       this.item.text = parts.join(" ");
+      this.item.accessibilityInformation = {
+        label: syncAccessibleLabel({ branch, upstream: !!upstream, ahead: counts.ahead, behind: counts.behind, dirty }),
+        role: "button",
+      };
       this.setTooltip(branch, upstream, counts.ahead, counts.behind);
       this.item.show();
     } catch {

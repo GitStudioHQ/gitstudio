@@ -20,10 +20,13 @@ import { terminalIcon, terminalLabel, terminalTooltip } from "./terminalBadge";
 
 const UPDATE_DEBOUNCE_MS = 500;
 
-/** Each segment, its setting key, and where it sits relative to sync (-5). */
+/**
+ * Each segment, its setting key, where it sits relative to sync (-5), and the
+ * name the status bar's menu lists it by (its id is `gitstudio.<segment>`).
+ */
 const SEGMENTS = {
-  graph: { setting: "showGraph", priority: -8 },
-  terminal: { setting: "showTerminal", priority: -9 },
+  graph: { setting: "showGraph", priority: -8, name: "GitStudio Commit Graph" },
+  terminal: { setting: "showTerminal", priority: -9, name: "GitStudio Terminal" },
 } as const;
 
 type SegmentId = keyof typeof SEGMENTS;
@@ -42,9 +45,11 @@ export class StatusCluster implements vscode.Disposable {
   constructor(private readonly repos: RepoManager) {
     for (const [id, spec] of Object.entries(SEGMENTS) as [SegmentId, (typeof SEGMENTS)[SegmentId]][]) {
       const item = vscode.window.createStatusBarItem(
+        `gitstudio.${id}`,
         vscode.StatusBarAlignment.Left,
         spec.priority,
       );
+      item.name = spec.name;
       this.items.set(id, item);
       this.disposables.push(item);
     }
@@ -57,6 +62,8 @@ export class StatusCluster implements vscode.Disposable {
     graph.text = "$(git-commit)";
     graph.command = "gitstudio.showCommitGraph";
     graph.tooltip = "GitStudio: Commit Graph";
+    // An icon alone: say what it is.
+    graph.accessibilityInformation = { label: "Show Commit Graph", role: "button" };
 
     const terminal = this.items.get("terminal")!;
     terminal.command = "gitstudio.openTerminal";
