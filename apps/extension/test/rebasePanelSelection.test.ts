@@ -359,3 +359,77 @@ test("VS Code's own Select All does not paint the page after Cmd/Ctrl+A", { skip
   assert.equal(await page.eval(`window.getSelection().isCollapsed`), true, "no page text is left selected");
   assert.equal((await snap()).selected, range(0, N - 1), "the rows are");
 });
+
+// A rebase that stops (a conflict, an edit) leaves the list editable and puts
+// the way out — Continue Rebase, Skip, Abort Rebase — in the banner. The
+// refusals the Set action bar and the P R S F E D keys made one keystroke away
+// borrow that same banner: each must give it BACK, never leave a paused
+// rebase with no way out on the page. The flash lasts 4 s, so these wait.
+// (Last in the file: it leaves the page paused.)
+test("a refusal borrows a paused rebase's banner and gives it back", { skip }, async () => {
+  await fresh();
+  const stopped = `window.__send({ type: "result", outcome: { status: "stopped", reason: "conflict", message: "" }, stop: { conflicts: 1, canSkip: true } })`;
+  const banner = () =>
+    page.eval<{ shown: boolean; text: string; buttons: string[] }>(`(function () {
+      var b = document.getElementById("rb-banner");
+      return { shown: !b.hidden && b.getBoundingClientRect().height > 0, text: b.textContent,
+        buttons: Array.prototype.map.call(b.querySelectorAll("button"), function (x) { return x.textContent; }) };
+    })()`);
+  const wayOut = ["Resolve Conflicts…", "Continue Rebase", "Skip this commit", "Abort Rebase"];
+
+  await page.eval(stopped);
+  await page.settle();
+  let b = await banner();
+  assert.ok(b.shown, "the paused rebase's banner is up");
+  assert.deepEqual(b.buttons, wayOut, "with its way out");
+
+  // [what happens, then the banner once the flash is over]
+  // 1 · a refused squash borrows it…
+  await page.clickRow(N - 1);
+  await page.key("s");
+  b = await banner();
+  assert.match(b.text, /oldest commit you keep can't be a squash/, "a refusal is said in its place");
+  await page.settle(4300);
+  b = await banner();
+  assert.ok(b.shown, "…and when it is over the banner is back up");
+  assert.deepEqual(b.buttons, wayOut, "with Continue, Skip and Abort");
+  assert.match(b.text, /Rebase paused on a conflict/, "saying why the rebase paused");
+
+  // 2 · a flash that is still running when the rebase stops (again) must not
+  // hide the stop banner when its timer ends — nor rebuild it from under a
+  // keyboard that went to its Continue Rebase.
+  await page.key("s");
+  await page.eval(stopped);
+  await page.eval(`Array.prototype.find.call(document.querySelectorAll("#rb-banner button"), function (x) { return x.textContent === "Continue Rebase"; }).focus()`);
+  await page.settle(4300);
+  b = await banner();
+  assert.ok(b.shown, "a stop that lands during a flash outlives the flash's timer");
+  assert.deepEqual(b.buttons, wayOut);
+  assert.equal(
+    await page.eval(`document.activeElement && document.activeElement.isConnected ? document.activeElement.textContent : ""`),
+    "Continue Rebase",
+    "and the keyboard is still on Continue Rebase",
+  );
+
+  // 3 · Reset plan, mid-pause, resets the rows — the rebase is still paused.
+  await page.eval(`document.getElementById("rb-reset").click()`);
+  await page.settle();
+  b = await banner();
+  assert.ok(b.shown, "Reset plan keeps the paused rebase's way out");
+  assert.deepEqual(b.buttons, wayOut);
+
+  // 4 · Handing the banner back moves nobody's keyboard — not even to the
+  // verb used last, where the next Enter would run it. (A NEW stop does go
+  // back to that verb; this is the same stop, returned.)
+  await page.eval(`Array.prototype.find.call(document.querySelectorAll("#rb-banner button"), function (x) { return x.textContent === "Continue Rebase"; }).click()`);
+  await page.eval(stopped); // Continue ran, and the rebase paused again
+  await page.settle();
+  await page.clickRow(N - 1);
+  await page.key("s");
+  assert.match((await banner()).text, /can't be a squash/);
+  await page.eval(`document.activeElement.blur()`);
+  await page.settle(4300);
+  b = await banner();
+  assert.deepEqual(b.buttons, wayOut, "the banner is handed back");
+  assert.equal(await page.eval(`document.activeElement === document.body`), true, "and the keyboard is left where it was");
+});

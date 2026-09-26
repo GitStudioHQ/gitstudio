@@ -1033,6 +1033,18 @@ function updatePreview() {
 }
 
 let bannerTimer = null;
+// The paused rebase's banner (showStopBanner), while the rebase is paused:
+// its Continue, Skip and Abort are the page's way out, and the list stays
+// editable under it — so a refused squash, one key away (#32), borrows the
+// banner. A flash hands it BACK; hiding the banner when the flash ended left
+// a paused rebase with no way out on the page.
+let stopShown = null;
+/** The banner as it is when nothing transient is on it. */
+function restoreBanner() {
+  clearTimeout(bannerTimer);
+  if (stopShown) showStopBanner(stopShown.text, stopShown.stop, true);
+  else $("rb-banner").hidden = true;
+}
 function flashBanner(text, kind) {
   const b = $("rb-banner");
   b.className = "rb-banner " + (kind || "warn");
@@ -1040,17 +1052,23 @@ function flashBanner(text, kind) {
   b.appendChild(document.createTextNode(text));
   b.hidden = false;
   clearTimeout(bannerTimer);
-  if (kind !== "err") bannerTimer = setTimeout(() => { b.hidden = true; }, 4000);
+  if (kind !== "err") bannerTimer = setTimeout(restoreBanner, 4000);
 }
 // The stop banner. "stop" says what git allows at this stop (the host asks
 // OperationProvider): Skip only where git names it as the way out, and the
 // Conflicts dashboard while files are unmerged. Labels are set as TEXT, in
 // the operation's own words (the dashboard's "Continue Rebase", not a bare
 // "Continue"). A verb rebuilds the banner under the button that ran it; the
-// keyboard goes back to that verb instead of falling to the page.
+// keyboard goes back to that verb instead of falling to the page — unless
+// the banner is only being handed back after a flash ("restored"), which
+// moves nobody's keyboard.
 function textButton(cls, label) { const n = el("button", cls); n.textContent = label; return n; }
 let lastVerb = "";
-function showStopBanner(text, stop) {
+function showStopBanner(text, stop, restored) {
+  // The rebase is paused for as long as this says so, and a flash that was
+  // still running when it paused must not hide it when its timer ends.
+  stopShown = { text: text, stop: stop };
+  clearTimeout(bannerTimer);
   const b = $("rb-banner");
   const active = document.activeElement;
   const keyboardHere = !active || active === document.body || (b.contains ? b.contains(active) : false);
@@ -1072,7 +1090,7 @@ function showStopBanner(text, stop) {
   const abort = textButton("rb-btn secondary", "Abort Rebase"); abort.addEventListener("click", () => { lastVerb = "abort"; vscode.postMessage({ type: "abort" }); });
   acts.appendChild(abort); b.appendChild(acts); verbs.abort = abort;
   b.hidden = false;
-  const back = keyboardHere && lastVerb ? (verbs[lastVerb] || cont) : null;
+  const back = keyboardHere && lastVerb && !restored ? (verbs[lastVerb] || cont) : null;
   if (back && back.focus) back.focus();
 }
 let lastStopText = "";
@@ -1113,7 +1131,8 @@ $("rb-apply").addEventListener("click", () => {
   vscode.postMessage({ type: "apply", rows: rows.map((r) => ({ sha: r.sha, action: r.action, subject: r.subject, message: r.action === "reword" ? (r.message || r.subject) : undefined })) });
 });
 $("rb-cancel").addEventListener("click", () => vscode.postMessage({ type: "cancel" }));
-$("rb-reset").addEventListener("click", () => { rows = ORIGINAL.map((c) => ({ ...c })); $("rb-banner").hidden = true; renderList(); });
+// Reset puts the rows back; a paused rebase is still paused, and keeps its way out.
+$("rb-reset").addEventListener("click", () => { rows = ORIGINAL.map((c) => ({ ...c })); restoreBanner(); renderList(); });
 $("rb-explain-x").addEventListener("click", () => $("rb-explain").classList.add("hidden"));
 
 window.addEventListener("message", (e) => {

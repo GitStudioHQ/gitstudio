@@ -90,12 +90,15 @@ function drive(
     },
     body: doc.body,
   };
+  // The page's own top-level state that the banner reads and writes: the
+  // verb used last, and (#32) the flash timer a stop clears and the paused
+  // banner a flash hands back.
   const fn = new Function(
     "document",
     "$",
     "vscode",
     "setBusy",
-    `let lastVerb = "";\n${extract("el")}\n${extract("textButton")}\n${extract("showStopBanner")}\nreturn showStopBanner;`,
+    `let lastVerb = "";\nlet bannerTimer = null;\nlet stopShown = null;\n${extract("el")}\n${extract("textButton")}\n${extract("showStopBanner")}\nreturn showStopBanner;`,
   )(document, () => banner, { postMessage: (m: unknown) => posted.push(m) }, () => {}) as (
     t: string,
     s: unknown,

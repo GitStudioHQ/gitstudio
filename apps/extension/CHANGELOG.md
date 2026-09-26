@@ -75,11 +75,15 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   could put the commit one row away from the line drawn for it — dragging up
   in the workspace, dragging down in the terminal rebase's editor. The line is
   drawn on the side you are pointing at, and the commit lands there. Also in
-  the workspace: the
-  reason a squash was refused is shown just above **Start Rebase**, on screen
-  however long the plan is; the commit the keyboard moves to is never hidden
-  under the header or the footer; and **Reset plan** no longer has a grey
-  button face.
+  the workspace: the reason a squash was refused is shown just above **Start
+  Rebase**, on screen however long the plan is; the commit the keyboard moves
+  to is never hidden under the header or the footer; and **Reset plan** no
+  longer has a grey button face.
+- **Interactive Rebase: a paused rebase keeps Continue, Skip and Abort.**
+  While a rebase is paused on a conflict or an edit, the workspace's banner
+  holds its way out. A refused squash or **Reset plan** took that banner away
+  for good; now the reason shows for a few seconds and the banner comes back,
+  without moving the keyboard. (#32)
 - **Undo after moving a branch back onto pushed history.** Undoing an
   operation that left the branch on an older, already-pushed commit — a reset
   to it, or dropping your last local commit — offered to revert an empty range
