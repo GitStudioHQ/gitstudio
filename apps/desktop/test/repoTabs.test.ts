@@ -13,7 +13,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_TABS, RepoStore, repoScope } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
-import { droppedTabsNotice, tabsFullNotice } from "../src/main/repoNotice";
+import { droppedTabsNotice, missingFolderError, missingFolderResult, tabsFullNotice } from "../src/main/repoNotice";
+import { isExpectedError } from "../src/main/expectedError";
+import { spawn } from "node:child_process";
 import { tabStatuses, trashRefusal } from "../src/main/localRepos";
 import { removeTempRepo } from "./tmpRepo";
 import type { GitContext } from "@gitstudio/git-service/index";
@@ -447,4 +449,32 @@ test("row 14: a tab whose folder is gone still switches and closes, by any spell
   assert.equal(store.closeTab("/nowhere/gs-gone-a/"), true, "it closes");
   assert.deepEqual(roots(store), ["/nowhere/gs-gone-b"]);
   assert.equal(store.state().active, "/nowhere/gs-gone-b");
+});
+
+test("row 14: git in a folder that is gone says the folder is gone — not Node's spawn ENOENT", async () => {
+  const missing = join(tmpdir(), `gs-gone-${process.pid}-${Date.now()}`);
+  // The error the real app gets: GitProcess spawns git with the tab's folder as
+  // its working directory, and Node answers `spawn git ENOENT` — the words it
+  // uses when git itself is not installed.
+  const err = await new Promise<Error>((resolve) => {
+    const child = spawn("git", ["status"], { cwd: missing });
+    child.on("error", resolve);
+  });
+  assert.match(err.message, /^spawn \S*git ENOENT$/, "precondition: Node's own error");
+  const said = missingFolderError(err, missing);
+  assert.ok(said, "mapped");
+  assert.equal(said?.message, `The folder ${missing} is not there any more — it was moved or deleted.`);
+  assert.ok(isExpectedError(said), "a state of the user's disk, not a crash to report");
+
+  // With the folder THERE, ENOENT means git is missing: left alone.
+  assert.equal(missingFolderError(err, tmpdir()), undefined);
+  // Anything else is left alone too.
+  assert.equal(missingFolderError(new Error("fatal: not a git repository"), missing), undefined);
+  assert.equal(missingFolderError(err, undefined), undefined);
+
+  // …and a handler that RETURNS the failure.
+  const r = missingFolderResult({ ok: false, message: err.message }, missing);
+  assert.deepEqual(r, { ok: false, message: `The folder ${missing} is not there any more — it was moved or deleted.`, expected: true });
+  assert.equal(missingFolderResult({ ok: false, message: err.message }, tmpdir()), undefined);
+  assert.equal(missingFolderResult({ ok: true }, missing), undefined);
 });

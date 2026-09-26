@@ -16556,33 +16556,55 @@
       noAnimation();
       const WEB = "/Users/anton/Code/webapp";
       const struck = (root) => (getComputedStyle(tabEl(root)?.querySelector(".repo-tab-name")).textDecorationLine || "").includes("line-through");
-      const saysGone = () => $$("#toast-stack .toast").filter((t) => /^webapp's folder was moved or deleted/.test(text(t.querySelector(".toast-msg"))));
+      const gone = () => $(".tab-stage > .tab-gone");
+      // Everything the tab asked of main about ITS folder; the row's own
+      // bookkeeping (repo:*) is main's, and is allowed.
+      const ranIn = (root) =>
+        (window.__GS_INVOKED || []).filter(
+          (r) => r.scoped && (r.root === root || (r.root === undefined && activeTabRoot() === root)) && !String(r.channel).startsWith("repo:"),
+        );
       c.eq(activeTabRoot(), GS_ROOT, "precondition: the tab in front is another");
       c.ok(struck(WEB), "the gone tab's name is struck through");
       c.ok(!struck(GS_ROOT) && !struck(GS_DEV_ROOT), "…and no other tab's");
       c.eq(tabEl(WEB)?.getAttribute("aria-label"), "webapp, folder not found", "…and it says so in words");
       c.match(tabEl(WEB)?.title || "", /\nNot found: the folder was moved or deleted/, "…in its tooltip too");
       c.eq(getComputedStyle(tabEl(WEB).querySelector(".repo-tab-mark")).display, "none", "a folder that is gone has no change count");
-      c.eq(saysGone().length, 0, "nothing is said over the tab in front");
-      c.eq((window.__GS_INVOKED || []).filter((r) => r.root === WEB).length, 0, "…and nothing ran in the gone folder while it was in the back");
+      c.ok(!gone(), "nothing is said over the tab in front");
+      c.eq(ranIn(WEB).length, 0, "…and nothing ran in the gone folder while it was in the back");
       tabEl(WEB)?.click();
-      await settle(900);
+      await settle(1200);
       c.eq(activeTabRoot(), WEB, "it still comes to the front");
-      c.eq(saysGone().length, 1, "and says, once, that its folder is gone");
-      c.match(text(saysGone()[0]?.querySelector(".toast-msg")), /: \/Users\/anton\/Code\/webapp\. Put it back to carry on where you were, or close the tab\.$/, "…where it was, and what to do");
-      tabEl(GS_ROOT)?.click();
+      c.ok(!!gone(), "ONE screen says its folder is gone, in place of the tab's own");
+      c.count(".tab-stage .screen.repo", 0, "…not a screen of views that each fail to read it");
+      c.match(text(gone()), /webapp's folder is not there/, "…in words");
+      c.match(text(gone()), /\/Users\/anton\/Code\/webapp was moved or deleted\. Put it back and this tab carries on where you left it/, "…where it was, and what to do");
+      c.eq(ranIn(WEB).map((r) => r.channel).join(",") || "nothing", "nothing", "and nothing runs git in the folder that is not there");
+      // ⌘Z, a menu's Refresh, a window focus: none of them reach the tab.
+      window.__gsEmit("menu:command", { command: "refresh" });
+      window.dispatchEvent(new Event("focus"));
       await settle(600);
-      c.eq(saysGone().length, 0, "leaving it takes the notice with it");
+      c.eq(ranIn(WEB).map((r) => r.channel).join(",") || "nothing", "nothing", "…not even a Refresh or a window focus");
+      tabEl(GS_ROOT)?.click();
+      await settle(700);
+      c.ok(!gone(), "leaving it takes the gone screen with it");
+      c.count(".tab-stage .screen.repo", 1, "…and the tab you go to has its own screen back");
       tabEl(WEB)?.click();
       await settle(900);
-      c.eq(saysGone().length, 1, "coming back says it again, once");
-      const close = saysGone()[0] && [...saysGone()[0].querySelectorAll(".toast-action")].find((b) => text(b) === "Close Tab");
-      c.ok(!!close, "the notice offers Close Tab");
+      c.ok(!!gone(), "coming back says it again");
+      const look = gone() && [...gone().querySelectorAll("button")].find((b) => /Look again/.test(text(b)));
+      c.ok(!!look, "it offers Look again");
+      look?.click();
+      await settle(900);
+      c.match(text("#toast-stack"), /webapp is still not there/, "…which says so when the folder is still missing");
+      c.ok(!!gone(), "…and the gone screen stays");
+      const close = gone() && [...gone().querySelectorAll("button")].find((b) => text(b) === "Close Tab");
+      c.ok(!!close, "it offers Close Tab");
       close?.click();
       await settle(900);
       c.ok(!$(".modal-card"), "a gone tab closes without a question");
       c.ok(!tabEl(WEB), "…and closes");
       c.eq(activeTabRoot(), GS_DEV_ROOT, "its left-hand neighbour comes to the front");
+      c.ok(!gone(), "…with its own screen");
     },
 
     /** Row 14, the other way: the folder comes back — a drive remounted, a
@@ -16593,16 +16615,41 @@
       tabEl(GS_DEV_ROOT)?.click();
       await settle(1200);
       const name = () => tabEl(GS_DEV_ROOT)?.querySelector(".repo-tab-name");
+      const gone = () => $(".tab-stage > .tab-gone");
       c.ok((getComputedStyle(name()).textDecorationLine || "").includes("line-through"), "precondition: its folder is gone");
-      c.ok(/Couldn't read the working tree/.test(text(".view-host")), "precondition: its view could not read it");
+      c.ok(!!gone(), "precondition: the gone screen is up");
       window.__gsGone.delete("gistudio.dev");
-      // No disk event: the watcher follows a folder that was gone. The row's
-      // next look (here, a reorder of the row) is what finds it back.
-      window.__gsTabs.move(GS_DEV_ROOT, 0);
+      [...gone().querySelectorAll("button")].find((b) => /Look again/.test(text(b)))?.click();
       await settle(1800);
       c.eq(getComputedStyle(name()).textDecorationLine, "none", "back on disk, its name is whole");
       c.eq(tabEl(GS_DEV_ROOT)?.getAttribute("aria-label"), "gistudio.dev, 3 changed files", "…and it counts its changes again");
-      c.ok(!/Couldn't read the working tree/.test(text(".view-host")), "and its view reads the folder again");
+      c.ok(!gone(), "the gone screen gives way");
+      c.eq(text(".topbar-branch .switch-name"), "site/pricing", "…to the tab's own screen, reading its folder");
+
+      // …and the other way round: the folder goes while its tab is IN FRONT.
+      window.__gsGone.add("gistudio.dev");
+      // The watcher on the tab in front notices; the row looks again.
+      window.__gsEmit("repo:filesChanged", { root: GS_DEV_ROOT, gitDir: true });
+      await settle(1800);
+      c.ok(!!gone(), "a folder that goes while its tab is in front brings the gone screen up");
+      // Its App is built this time — and still nothing reaches it.
+      // A call from a tab with no session in front goes out for NO repository:
+      // counted too, since only the gone tab's screen could have made it.
+      const ranIn = () =>
+        (window.__GS_INVOKED || []).filter(
+          (r) => r.scoped && (r.root === GS_DEV_ROOT || r.root === undefined) && !String(r.channel).startsWith("repo:"),
+        ).length;
+      const before = ranIn();
+      window.__gsEmit("menu:command", { command: "refresh" });
+      window.dispatchEvent(new Event("focus"));
+      window.__gsEmit("repo:filesChanged", { root: GS_DEV_ROOT, gitDir: true });
+      await settle(1200);
+      c.eq(ranIn() - before, 0, "…and no Refresh, focus or disk event runs git in it");
+      window.__gsGone.delete("gistudio.dev");
+      window.__gsTabs.move(GS_DEV_ROOT, 0); // the row's next look
+      await settle(1800);
+      c.ok(!gone(), "…and put back, the tab is whole again");
+      c.eq(text(".topbar-branch .switch-name"), "site/pricing", "…on its own screen");
     },
 
     /** Row 16 and Search: a tab brought back at launch comes back to Search if

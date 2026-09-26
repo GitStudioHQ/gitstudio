@@ -13380,6 +13380,19 @@ html.is-mac .repo-tabs { padding-left: 80px; }
   display: flex;
   flex-direction: column;
 }
+/* Row 14: the tab in front has no folder. One screen says so, in place of
+   the tab's own (docs/desktop-repo-tabs.md). */
+.tab-gone {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  /* The panel surface, not the page: on the page the soft Close Tab button's
+     label measured 4.42:1 in light theme, short of AA. */
+  background: var(--app-panel);
+}
 /* "working in <repo>": the clause is a label, the name after it is the name. */
 .topbar-working {
   display: inline-flex;

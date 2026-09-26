@@ -22,7 +22,7 @@ import { join, basename, extname, dirname, resolve as resolvePath } from "node:p
 import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "node:fs/promises";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore, repoScope } from "./repoStore";
-import { cannotOpenNotice, droppedTabsNotice, tabsFullNotice } from "./repoNotice";
+import { cannotOpenNotice, droppedTabsNotice, tabsFullNotice, missingFolderError, missingFolderResult } from "./repoNotice";
 import { menuDelivery, type MenuCommand } from "./menuDelivery";
 import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
@@ -638,7 +638,10 @@ function handle<C extends IpcChannel>(
     // caller) means the active tab, as before.
     runInRepoScope(scope, () => actionCtx.run({ id: ++actionSeq, label: actionLabel(channel) }, async () => {
       try {
-        const result = await fn(payload as IpcRequest<C>, event);
+        let result = await fn(payload as IpcRequest<C>, event);
+        // A repository whose folder is gone fails at spawn with Node's
+        // "spawn git ENOENT" — git-is-not-installed words (row 14).
+        result = missingFolderResult(result, repos.scopedRoot()) ?? result;
         // A handled failure carrying a message (e.g. a non-zero git command) is
         // the desktop analog of the extension's showGitError — report it too.
         //
@@ -661,6 +664,8 @@ function handle<C extends IpcChannel>(
         // Unless it is an answer rather than a fault: "you have not connected
         // GitHub" is a state the user is allowed to be in, and filing it as a
         // crash produced reports for people who had simply not signed in.
+        const gone = missingFolderError(err, repos.scopedRoot());
+        if (gone) throw gone;
         if (!isExpectedError(err)) {
           ErrorReporter.current?.captureError(`ipc:${channel}`, err);
         }

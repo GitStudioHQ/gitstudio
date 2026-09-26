@@ -10666,8 +10666,12 @@ class TabShell {
   private tabsRead = false;
   /** Tabs whose folder is gone (row 14): moved, deleted, no longer a repository. */
   private readonly gone = new Set<string>();
-  /** The gone tab already told about since it last came to the front. */
-  private goneSaid: string | undefined;
+  /**
+   * The tab in front has no folder: the stage shows the gone screen, and the
+   * tab's own screen stays parked (or unbuilt) — so nothing of it runs git in
+   * the folder that is not there, not a view, not a refresh, not a key.
+   */
+  private goneScreenEl?: HTMLElement;
   private sessionSeq = 0;
   /** Switches told to main and not yet answered. */
   private activations = 0;
@@ -10735,8 +10739,8 @@ class TabShell {
       this.active?.syncDock();
     });
     window.addEventListener("keydown", (e) => this.onKey(e));
-    window.addEventListener("keydown", (e) => this.active?.handleHelpKey(e));
-    window.addEventListener("mouseup", (e) => this.active?.handleMouseUp(e));
+    window.addEventListener("keydown", (e) => this.live()?.handleHelpKey(e));
+    window.addEventListener("mouseup", (e) => this.live()?.handleMouseUp(e));
     installUndoKey();
     this.wireHostEvents();
     // A tab's spinner follows the operations running in it.
@@ -10779,7 +10783,7 @@ class TabShell {
 
   /** A route asked of a background tab by the landing after an open. */
   routeActive(id: string, force: boolean, target?: SectionTarget): void {
-    this.active?.route(id, force, target);
+    this.live()?.route(id, force, target);
   }
 
   openRoots(): string[] {
@@ -10841,25 +10845,9 @@ class TabShell {
     closeMenu();
     dismissLayers();
     clearToasts();
-    if (prev) {
-      prev.deactivate();
-      // In the back, whole: the pages on it are kept, not left — their Monaco
-      // diffs and log panes must not dispose themselves on the detach.
-      if (prev.screenEl) parkScreen(prev.screenEl);
-      prev.screenEl?.remove();
-    }
+    if (prev) this.putAway(prev);
     this.active = next;
-    // BEFORE the screen is built: every call it makes is stamped with it. The
-    // answers it was owed while in the back are delivered as microtasks, after
-    // this switch has finished attaching and activating it.
-    setActiveSession(next.session);
-    if (!next.screenEl) {
-      next.activate(true);
-      next.mount();
-    } else {
-      this.stage.replaceChildren(next.screenEl);
-      next.activate(false);
-    }
+    this.bringIn(next);
     // The no-repository screen is rebuilt when it is needed again.
     if (prev && prev === this.noRepo && next !== prev) {
       this.noRepo = undefined;
@@ -10869,28 +10857,83 @@ class TabShell {
       dropFocusTab(prev.session.id);
     }
     this.renderStrip();
-    // A tab whose folder is gone says so each time it comes to the front.
-    this.goneSaid = undefined;
-    this.sayIfGone();
+  }
+
+  /** The tab in front goes to the back: its screen is detached, whole. */
+  private putAway(app: App): void {
+    if (this.goneScreenEl) {
+      // Its own screen was never up (row 14): nothing to put away.
+      this.goneScreenEl.remove();
+      this.goneScreenEl = undefined;
+      return;
+    }
+    app.deactivate();
+    // In the back, whole: the pages on it are kept, not left — their Monaco
+    // diffs and log panes must not dispose themselves on the detach.
+    if (app.screenEl) parkScreen(app.screenEl);
+    app.screenEl?.remove();
+  }
+
+  /** The tab in front shows its screen — or, when its folder is gone, says so. */
+  private bringIn(app: App): void {
+    const root = app.repo?.root;
+    if (root && this.gone.has(root)) {
+      this.showGone(root);
+      return;
+    }
+    // BEFORE the screen is built: every call it makes is stamped with it. The
+    // answers it was owed while in the back are delivered as microtasks, after
+    // this switch has finished attaching and activating it.
+    setActiveSession(app.session);
+    if (!app.screenEl) {
+      app.activate(true);
+      app.mount();
+    } else {
+      this.stage.replaceChildren(app.screenEl);
+      app.activate(false);
+    }
   }
 
   /**
-   * Row 14: the tab in front has no folder any more. Said once each time it
-   * comes to the front (and when it is found gone while in front), in words,
-   * with the one thing to do about it — its tab stays until it is closed,
-   * because the folder may be on a drive that is coming back.
+   * Row 14: the tab in front has no folder any more. ONE screen says so, in
+   * place of the tab's own — where it was, and the two things to do about it.
+   * Its tab stays until it is closed, because the folder may be on a drive
+   * that is coming back. The tab's own session is not made active: answers
+   * still owed to it stay held, and it makes no new calls.
    */
-  private sayIfGone(): void {
-    const root = this.activeRoot();
-    if (!root || !this.gone.has(root) || this.goneSaid === root) return;
-    this.goneSaid = root;
+  private showGone(root: string): void {
+    setActiveSession(undefined);
+    // ⌘Z here has nothing to undo: an entry of this tab's would run git in
+    // the folder that is not there.
+    setUndoScope(0);
     const name = this.state.tabs.find((t) => t.root === root)?.name ?? root;
-    toast(
-      `${name}'s folder was moved or deleted: ${root}. Put it back to carry on where you were, or close the tab.`,
-      "info",
-      12000,
-      { label: "Close Tab", onClick: () => void this.requestClose(root) },
+    const screen = el("div", "tab-gone");
+    screen.setAttribute("role", "region");
+    screen.setAttribute("aria-label", `${name}: folder not found`);
+    screen.appendChild(
+      emptyState(
+        `${name}'s folder is not there`,
+        `${root} was moved or deleted. Put it back and this tab carries on where you left it — or close the tab.`,
+        {
+          icon: "warning",
+          action: { label: "Look again", icon: "refresh", onClick: () => void this.lookAgain(root) },
+          secondary: { label: "Close Tab", onClick: () => void this.requestClose(root) },
+        },
+      ),
     );
+    this.goneScreenEl = screen;
+    this.stage.replaceChildren(screen);
+  }
+
+  /** "Look again": ask the disk now, rather than at the row's next look. */
+  private async lookAgain(root: string): Promise<void> {
+    await this.refreshMarks();
+    if (this.activeRoot() === root && this.gone.has(root)) toast(`${root} is still not there.`, "info");
+  }
+
+  /** The App in front, when its own screen is up — not the gone screen. */
+  private live(): App | undefined {
+    return this.goneScreenEl ? undefined : this.active;
   }
 
   private newSession(root: string | undefined): TabSession {
@@ -11053,12 +11096,21 @@ class TabShell {
         else this.dirty.delete(r);
       }
       this.renderStrip();
-      this.sayIfGone();
-      // The folder in front came back: whatever is on screen was read before
-      // it went, so ask the disk what it holds now.
-      if (cameBack) {
-        this.goneSaid = undefined;
-        this.active?.onWindowFocus();
+      const app = this.active;
+      if (front && app && this.gone.has(front) && !this.goneScreenEl && !isModalOpen()) {
+        // Found gone while in front: its screen goes to the back, and the gone
+        // screen takes its place.
+        closePeek();
+        closeMenu();
+        dismissLayers();
+        this.putAway(app);
+        this.showGone(front);
+      } else if (cameBack && app && this.goneScreenEl) {
+        // The folder in front came back: its own screen returns — and re-reads
+        // the disk, since whatever it last showed was read before it went.
+        this.putAway(app);
+        this.bringIn(app);
+        app.onFilesChanged(true);
       }
     } catch {
       /* the marks are a courtesy: a failed read leaves the last known */
@@ -11083,7 +11135,7 @@ class TabShell {
       else void this.requestClose(this.activeRoot());
       return;
     }
-    this.active?.handleAppKey(e);
+    this.live()?.handleAppKey(e);
   }
 
   private wireHostEvents(): void {
@@ -11094,9 +11146,9 @@ class TabShell {
     });
     window.addEventListener("gs:unread", (e) => {
       const n = (e as CustomEvent<number>).detail;
-      if (typeof n === "number") this.active?.onUnread(n);
+      if (typeof n === "number") this.live()?.onUnread(n);
     });
-    host.on("repo:recentChanged", () => this.active?.onRecentChanged());
+    host.on("repo:recentChanged", () => this.live()?.onRecentChanged());
     host.on("app:notice", (n) => {
       // A warning is a state the user is in — a folder that is not a
       // repository, a repository this account cannot read — not a failure of
@@ -11107,11 +11159,11 @@ class TabShell {
       // About the tab you LEFT, if it landed after a switch: that tab re-asks
       // the disk when it comes back, and this one did not change.
       const about = info?.root;
-      if (!about || about === this.activeRoot()) this.active?.onFilesChanged(info?.gitDir ?? true);
+      if (!about || about === this.activeRoot()) this.live()?.onFilesChanged(info?.gitDir ?? true);
       this.scheduleMarks(800);
     });
     window.addEventListener("focus", () => {
-      this.active?.onWindowFocus();
+      this.live()?.onWindowFocus();
       // Your editor may have changed a background tab's files — but a focus
       // is not news, and the marks cost one `git status` per open tab. At
       // most once a minute from focus; everything else that changes a count
@@ -11119,7 +11171,7 @@ class TabShell {
       if (Date.now() - this.marksAt > 60_000) this.scheduleMarks(0);
     });
     window.addEventListener("gs:sync", (e) => {
-      this.active?.onSyncRequest((e as CustomEvent<{ action?: string }>).detail?.action);
+      this.live()?.onSyncRequest((e as CustomEvent<{ action?: string }>).detail?.action);
     });
     // "Take me to the repository that just became the open one." Used by the
     // clone flow, which otherwise leaves you on whatever view was current when
@@ -11132,7 +11184,7 @@ class TabShell {
       this.makeDeferredSwitch();
       // Only the repository it opened: never the tab it was started from.
       if (root && root !== this.activeRoot()) return;
-      this.active?.route(view);
+      this.live()?.route(view);
     });
     host.on("menu:command", (msg) => {
       // The tab-row commands are the shell's; the rest belong to the tab in front.
@@ -11145,9 +11197,11 @@ class TabShell {
       } else if (msg.command === "closeTab" || msg.command === "closeRepo") {
         void this.requestClose(this.activeRoot());
       } else {
-        this.active?.onMenuCommand(msg.command);
+        this.live()?.onMenuCommand(msg.command);
       }
     });
+    // The update prompts are the window's dialogs, not the tab's screen — a
+    // tab whose folder is gone still hears them.
     host.on("update:available", (u) => this.active?.onUpdateAvailable(u));
     host.on("update:ready", (r) => this.active?.onUpdateReady(r));
     host.on("update:progress", (p) => this.active?.onUpdateProgress(p.percent));
@@ -11195,7 +11249,7 @@ class TabShell {
       label: "All repositories",
       icon: "repo",
       title: "Every repository on this machine and on GitHub",
-      onClick: () => this.active?.route("repositories"),
+      onClick: () => this.live()?.route("repositories"),
     });
     openMenu(anchor, items);
   }

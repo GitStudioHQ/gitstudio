@@ -3486,9 +3486,12 @@
       return Promise.reject(new Error(`${channel} failed (harness ?fail=)`));
     }
     // A gone tab's folder: git has nowhere to run (the tab row's own calls
-    // are main's bookkeeping, and still answer).
+    // are main's bookkeeping, and still answer). In the app git fails at
+    // SPAWN — Node's "spawn git ENOENT", git never runs to say anything — and
+    // main says it plainly (repoNotice.ts missingFolderError). This used to
+    // invent a git-style "fatal: cannot change to …" the app never produces.
     if (root && goneTabs.has(tabName(root)) && !String(channel).startsWith("repo:")) {
-      return Promise.reject(new Error(`fatal: cannot change to '${root}': No such file or directory`));
+      return Promise.reject(new Error(`The folder ${root} is not there any more — it was moved or deleted.`));
     }
     // Per-repository answers. Every tab fixture but gitstudio has its own
     // branch, which is what the tab checks read to tell whose answer landed.
