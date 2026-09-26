@@ -42,9 +42,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   runs a second action, nor answers the question the first one asked.
   **PageUp** and **PageDown** move a page at a time, **Ctrl/Cmd+Home** and
   **End** go to the first and last row, and **Tab** leaves you in the search
-  box. A local branch's actions include **Add to Favorites** (or **Remove
-  from Favorites**), so the star can be set from the keyboard; from there or
-  from the star, the branch moves to or from Favorites at once. (#32)
+  box, as does a click anywhere in the menu. A local branch's actions include
+  **Add to Favorites** (or **Remove from Favorites**), so the star can be set
+  from the keyboard; from there or from the star, the branch moves to or from
+  Favorites at once. (#32)
 - **GitStudio: Branches…** in the Command Palette opens the branch menu, as
   the branch name in the Changes view and the status bar do — bind a key to it
   to open the menu without the mouse.

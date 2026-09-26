@@ -21,8 +21,8 @@ import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from ".
 //   · PageUp/PageDown move a page of rows, Ctrl/Cmd+Home/End go to either
 //     end, and plain Home/End are left to the box's caret;
 //   · the search box keeps focus throughout — Tab included, since nothing
-//     else in the menu takes a Tab stop — and its aria-activedescendant
-//     names the highlighted option;
+//     else in the menu takes a Tab stop, and a press anywhere in the menu or
+//     a submenu — and its aria-activedescendant names the highlighted option;
 //   · a local branch's submenu has the star as an item, and starring — from
 //     there or the star — moves the row at once, before the host answers;
 //   · the pointer moves the highlight, but a list scrolling under a pointer
@@ -483,6 +483,61 @@ test("a local branch's submenu stars it, and so does the star — at once, befor
     assert.ok(!(await submenuLabels(page)).some((l) => /Favorites/.test(l)), `${q}: no favourites item`);
     await page.key("ArrowLeft");
   }
+  await page.key("Escape");
+});
+
+// Only rows and submenu items kept focus on a press; the rest of the menu let
+// it fall to the page, where the arrows did nothing and Tab went to the branch
+// pill behind the scrim with the menu still open.
+test("a press anywhere in the menu or a submenu leaves focus in the search box", { skip }, async () => {
+  /** A real mouse press on `sel` — its centre, or just inside its left edge (its padding). */
+  const pressOn = async (sel: string, at: "centre" | "edge" = "centre"): Promise<Snap> => {
+    const c = await page.eval<{ x: number; y: number } | null>(`(function () {
+      var n = document.querySelector(${JSON.stringify(sel)}); if (!n) return null;
+      var r = n.getBoundingClientRect();
+      return { x: ${at === "edge" ? "r.left + 2" : "r.left + r.width / 2"}, y: r.top + r.height / 2 };
+    })()`);
+    assert.ok(c, `${sel} is on screen`);
+    await page.click(c.x, c.y);
+    return snap(page);
+  };
+  const clear = () => page.eval(`(function () { var i = document.querySelector(".bm-search input"); i.value = ""; i.dispatchEvent(new Event("input")); })()`);
+
+  await openMenu(page);
+  let s = await pressOn(".branch-menu .bm-search", "edge");
+  assert.ok(s.menuOpen && s.focusIsSearch, "the search row's padding");
+
+  await page.type("feature");
+  await page.key("ArrowRight");
+  for (const [sel, at] of [
+    [".branch-submenu .bm-subhead", "centre"],
+    [".branch-submenu .bm-subsep", "centre"],
+    [".branch-submenu", "edge"],
+  ] as const) {
+    s = await pressOn(sel, at);
+    assert.ok(s.subOpen && s.focusIsSearch, `a press on ${sel} (${at})`);
+  }
+  // After a press on the submenu's title band the arrows still move in it.
+  s = await pressOn(".branch-submenu .bm-subhead");
+  const was = s.sub;
+  await page.key("ArrowDown");
+  assert.notEqual((await snap(page)).sub, was, `Down moved on from '${was}'`);
+  await page.key("ArrowLeft");
+
+  await clear();
+  await page.type("zzzq");
+  s = await pressOn(".bm-list .bm-empty");
+  assert.ok(s.menuOpen && s.focusIsSearch, "the 'No matches' row");
+  await page.key("Tab");
+  s = await snap(page);
+  assert.ok(s.menuOpen && s.focusIsSearch, "and Tab after it stays in the box, the menu open");
+
+  // The loading row too.
+  const first = stateMessage({ local: LOCAL });
+  delete first.branches;
+  await openMenu(page, first);
+  s = await pressOn(".bm-list .bm-loading");
+  assert.ok(s.menuOpen && s.focusIsSearch, "the 'Loading branches…' row");
   await page.key("Escape");
 });
 

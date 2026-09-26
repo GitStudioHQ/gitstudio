@@ -5540,8 +5540,12 @@ export class CommitViewProvider
         bmSubActive = i;
         paintBm(false);
       });
+      // Nor does a press anywhere in the submenu: an item, its title band, a
+      // separator, the padding.
       menu.addEventListener("mousedown", (e) => {
-        if (e.target.closest && e.target.closest(".bm-subaction")) e.preventDefault();
+        e.preventDefault();
+        const box = branchMenu && branchMenu.querySelector(".bm-search input");
+        if (box && document.activeElement !== box) box.focus();
       });
 
       document.body.appendChild(menu);
@@ -6463,12 +6467,15 @@ export class CommitViewProvider
         bmActiveKey = row.dataset.bmkey;
         paintBm(false);
       });
-      // A press on a row never takes focus from the search box, so the keys
-      // keep working after a click.
-      list.addEventListener("mousedown", (e) => {
-        if (e.target.closest && e.target.closest("[data-bmkey], .bm-sep")) e.preventDefault();
-      });
       branchMenu.appendChild(list);
+      // A press anywhere in the menu but the box itself — a row, a group
+      // header, the padding, the 'No matches' line — never takes focus from
+      // the box, so the keys keep working after a click and Tab stays here.
+      branchMenu.addEventListener("mousedown", (e) => {
+        if (e.target === input) return;
+        e.preventDefault();
+        if (document.activeElement !== input) input.focus();
+      });
       document.body.appendChild(branchMenu);
       bmHeldWidth = 0;
       renderBranchMenu(); // its width held and placed there (holdBranchMenuWidth, placeBranchMenu)
