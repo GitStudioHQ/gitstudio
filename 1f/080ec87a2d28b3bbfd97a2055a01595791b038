@@ -1,0 +1,57 @@
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_9b3b1ecccda67a 4,613,626-631,716,730-739,749-758
+apps/desktop/src/renderer/dropCommit.ts
+  s_26f5e669d3043c::t_c20942c41a5079 99,104-105
+apps/desktop/src/renderer/multiCommit.ts
+  s_26f5e669d3043c::t_89774741a5ec0f 181,186-187
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_c945e546d07965 2016-2027,2033-2034,2037-2038,2042,2112-2113
+apps/desktop/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_27ece9b90f9b88 144-159
+apps/desktop/test/dropCommitFlow.test.ts
+  s_26f5e669d3043c::t_43c9933e5771a3 202-209
+apps/desktop/test/multiCommit.test.ts
+  s_26f5e669d3043c::t_10476cb8f838c8 139-157
+apps/desktop/test/multiCommitFlow.test.ts
+  s_26f5e669d3043c::t_ccfaf7ba625eeb 191-201
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_05e8283fa2a982 45-51
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_485744357df853 187,189-195,781-796,1064-1080
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_9ecd7228cac58b 752-753,755
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_cc04b93ec602d0 76-81,224-240,270-273,276
+apps/extension/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_bf55a11cf22ed2 378,382-423
+apps/extension/test/multiCommitActions.test.ts
+  s_26f5e669d3043c::t_47e159e44cb850 156,417-439
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_6a4bf8bee86975 34-51,84-85,114-129,137-142,165-177,247-263
+packages/git-service/src/dropCommit.ts
+  s_26f5e669d3043c::t_0319d71e2932e5 242-255,261-262,265-281,317-318,332,337-356,362-365,369,372-379,390-419,425-434,436-446,449,452
+packages/git-service/src/multiCommit.ts
+  s_26f5e669d3043c::t_f3133c5149013a 14,271-273
+packages/git-service/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_6cac5e909b976c 330-350
+packages/git-service/test/multiCommit.test.ts
+  s_26f5e669d3043c::t_48b977eb16c150 373-433
+packages/git-service/test/snapshot.test.ts
+  s_26f5e669d3043c::t_5bf9cb5aabc061 136-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1f080ec87a2d28b3bbfd97a2055a01595791b038",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
