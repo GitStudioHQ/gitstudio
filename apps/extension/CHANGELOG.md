@@ -39,7 +39,12 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   back — as in IntelliJ's branch popup. The highlighted row is drawn in your
   theme's selection colours (with the focus outline in high-contrast themes),
   follows the mouse too, and is read out by screen readers. Holding Enter never
-  runs a second action, nor answers the question the first one asked. (#32)
+  runs a second action, nor answers the question the first one asked.
+  **PageUp** and **PageDown** move a page at a time, **Ctrl/Cmd+Home** and
+  **End** go to the first and last row, and **Tab** leaves you in the search
+  box. A local branch's actions include **Add to Favorites** (or **Remove
+  from Favorites**), so the star can be set from the keyboard; from there or
+  from the star, the branch moves to or from Favorites at once. (#32)
 - **Reset a branch to its remote.** A local branch that tracks a remote branch
   has **Reset to 'origin/feature'…** in its branch-menu actions. GitStudio
   fetches first, then says exactly what the reset would take away — the commits

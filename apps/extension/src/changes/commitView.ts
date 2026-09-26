@@ -5004,7 +5004,8 @@ export class CommitViewProvider
     // the visible rows (top actions, branches, "Show more" — never a group
     // header), Right or Enter on a branch opens its submenu with the highlight
     // on its first item, Up/Down move there, Enter runs it, Left or Escape
-    // goes back to the branch. The box is a combobox whose
+    // goes back to the branch. PageUp/PageDown move a page, Ctrl/Cmd+Home/End
+    // go to either end, and Tab does nothing. The box is a combobox whose
     // aria-activedescendant follows the highlight, so a screen reader reads
     // each row as it is reached.
     //
@@ -5071,13 +5072,14 @@ export class CommitViewProvider
         input.removeAttribute("aria-activedescendant");
       }
     }
-    /** Move the main-list highlight, clamped at both ends. */
+    /** Move the main-list highlight, clamped at both ends. With none yet, it
+     *  starts just above the first row: one step either way lands there. */
     function moveBm(delta) {
       const rows = bmRows();
       if (!rows.length) return;
       let i = -1;
       for (let k = 0; k < rows.length; k++) if (rows[k].dataset.bmkey === bmActiveKey) i = k;
-      i = i < 0 ? 0 : Math.max(0, Math.min(rows.length - 1, i + delta));
+      i = Math.max(0, Math.min(rows.length - 1, i + delta));
       // An open submenu belongs to the row it was opened on.
       if (branchSubmenu) { closeBranchSubmenu(); subMenuFor = null; }
       bmActiveKey = rows[i].dataset.bmkey;
@@ -5086,8 +5088,13 @@ export class CommitViewProvider
     function moveBmSub(delta) {
       const items = bmSubItems();
       if (!items.length) return;
-      bmSubActive = bmSubActive < 0 ? 0 : Math.max(0, Math.min(items.length - 1, bmSubActive + delta));
+      bmSubActive = Math.max(0, Math.min(items.length - 1, bmSubActive + delta));
       paintBm(true);
+    }
+    /** One page for PageUp/PageDown: as many rows as the scrolling box shows. */
+    function bmPageRows(box, row) {
+      const h = row ? row.getBoundingClientRect().height : 0;
+      return box && h > 0 ? Math.max(1, Math.floor(box.clientHeight / h)) : 1;
     }
     /** Open a branch row's submenu, the highlight on its first item. */
     function openBmSub(row) {
@@ -5107,10 +5114,31 @@ export class CommitViewProvider
     function onBmInputKey(e) {
       if (e.isComposing) return;
       const k = e.key;
+      // Focus stays here: nothing else in the menu takes a Tab stop, and a
+      // Tab that left would strand the arrows until a click brought it back.
+      if (k === "Tab") {
+        e.preventDefault();
+        return;
+      }
       if (k === "ArrowDown" || k === "ArrowUp") {
         e.preventDefault();
         const d = k === "ArrowDown" ? 1 : -1;
         if (branchSubmenu) moveBmSub(d); else moveBm(d);
+        return;
+      }
+      // A page of rows at a time, and Ctrl/Cmd+Home/End to either end. Plain
+      // Home/End are the caret's, as in any text box.
+      const toEnd = (k === "Home" || k === "End") && (e.ctrlKey || e.metaKey);
+      if (k === "PageDown" || k === "PageUp" || toEnd) {
+        e.preventDefault();
+        const d = k === "PageDown" || k === "End" ? 1 : -1;
+        if (branchSubmenu) {
+          const n = toEnd ? Infinity : bmPageRows(branchSubmenu.querySelector(".bm-sublist"), bmSubItems()[0]);
+          moveBmSub(d * n);
+        } else {
+          const n = toEnd ? Infinity : bmPageRows(bmList(), bmRowByKey(bmActiveKey) || bmRows()[0]);
+          moveBm(d * n);
+        }
         return;
       }
       if (k === "ArrowRight") {
@@ -5198,12 +5226,22 @@ export class CommitViewProvider
         closeBranchMenu(); branchPill.focus();
       }
     }
-    // A branch action that closes the menu — except the star, which toggles in
-    // place. The in-place sync actions (fetch/pull/push) post directly from
-    // their own handlers and never come through here.
+    // A branch action that closes the menu. The in-place sync actions
+    // (fetch/pull/push) post directly from their own handlers, and starring
+    // goes through toggleFavorite; neither comes through here.
     function branchAct(action, ref) {
       vscode.postMessage({ type: "branchAction", action: action, ref: ref });
-      if (action !== "favorite") closeBranchMenu();
+      closeBranchMenu();
+    }
+    // Star or unstar a local branch — the row's star and its submenu's item.
+    // The row moves between Favorites and its group at once, with the menu,
+    // the open submenu and the highlight left where they are; the host keeps
+    // the list and its next push carries the same answer.
+    function toggleFavorite(name) {
+      const b = (branchData.local || []).find((x) => x.name === name);
+      if (b) b.favorite = !b.favorite;
+      vscode.postMessage({ type: "branchAction", action: "favorite", ref: name });
+      refreshOpenBranchUi();
     }
     function matchF(s) { return !branchFilter || s.toLowerCase().indexOf(branchFilter) !== -1; }
 
@@ -5234,7 +5272,10 @@ export class CommitViewProvider
         const star = el("button", "bm-star" + (fav ? " on" : ""),
           bIcon(fav ? "star-full" : "star-empty"));
         star.title = fav ? "Remove from favorites" : "Add to favorites";
-        star.addEventListener("click", (e) => { e.stopPropagation(); branchAct("favorite", name); });
+        // No Tab stop: focus stays in the search box. The keyboard's way to
+        // a star is the branch's submenu (Add to Favorites).
+        star.tabIndex = -1;
+        star.addEventListener("click", (e) => { e.stopPropagation(); toggleFavorite(name); });
         row.appendChild(star);
       } else {
         row.appendChild(el("span", "bm-star-spacer"));
@@ -5396,6 +5437,13 @@ export class CommitViewProvider
         "' exactly. Asks first, and says what would be lost.");
     }
 
+    /** "Add to Favorites" / "Remove from Favorites" — the star, from the keyboard. */
+    function favoriteItem(list, name, bd) {
+      const on = !!(bd && bd.favorite);
+      subItem(list, on ? "star-full" : "star-empty", on ? "Remove from Favorites" : "Add to Favorites",
+        () => toggleFavorite(name));
+    }
+
     function openBranchActions(name, kind, current, anchor) {
       closeBranchSubmenu();
       const cur = currentBranchName();
@@ -5444,6 +5492,7 @@ export class CommitViewProvider
         subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
         subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
         subItem(list, "copy", "Copy Branch Name", () => branchAct("copyName", name));
+        favoriteItem(list, name, bd);
         if (bd && bd.upstreamOnRemote) {
           subSep(list);
           resetToUpstreamItem(list, name, bd);
@@ -5476,15 +5525,18 @@ export class CommitViewProvider
         }
         if (kind === "local") subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
         subItem(list, "copy", "Copy Branch Name", () => branchAct("copyName", name));
+        if (kind === "local") favoriteItem(list, name, bd);
         subSep(list);
         if (kind === "local") resetToUpstreamItem(list, name, bd);
         subItem(list, "trash", "Delete", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.delete" : "gitstudio.branch.delete", name, refType), true);
       }
 
-      // Options of the submenu's listbox, for aria-activedescendant.
+      // Options of the submenu's listbox, for aria-activedescendant. None
+      // takes a Tab stop: focus stays in the search box.
       list.querySelectorAll(".bm-subaction").forEach((b, i) => {
         b.id = "bm-sub-" + i;
+        b.tabIndex = -1;
         b.setAttribute("role", "option");
         b.setAttribute("aria-selected", "false");
       });
@@ -5565,6 +5617,7 @@ export class CommitViewProvider
           bIcon(spinning ? "loading codicon-modifier-spin" : it.icon) + "<span></span>");
         b.querySelector("span").innerHTML = spinning ? busyLabels[it.a] : hl(it.label);
         b.dataset.bmkey = "a:" + it.a;
+        b.tabIndex = -1; // the arrows reach it; Tab never leaves the search box
         bmOption(b);
         b.addEventListener("click", () => {
           if (live) {
@@ -5639,6 +5692,7 @@ export class CommitViewProvider
         head.querySelector(".bm-sep-count").textContent =
           String(opts && opts.count != null ? opts.count : rows.length);
         head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        head.tabIndex = -1; // a click folds it; Tab never leaves the search box
         const body = el("div", "bm-group-body");
         body.setAttribute("role", "group");
         body.setAttribute("aria-label", label);
@@ -5650,7 +5704,9 @@ export class CommitViewProvider
             " more of " + opts.more);
           more.dataset.bmkey = "more:" + label;
           bmOption(more);
-          more.setAttribute("tabindex", "0");
+          // The arrows reach it and Enter runs it from the search box, which
+          // keeps focus: no Tab stop of its own.
+          more.setAttribute("tabindex", "-1");
           const grow = (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
@@ -5658,9 +5714,6 @@ export class CommitViewProvider
             renderBranchMenu();
           };
           more.addEventListener("click", grow);
-          more.addEventListener("keydown", (ev) => {
-            if (ev.key === "Enter" || ev.key === " ") grow(ev);
-          });
           body.appendChild(more);
         }
         head.addEventListener("click", () => {

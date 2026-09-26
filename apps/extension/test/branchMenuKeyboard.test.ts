@@ -18,8 +18,13 @@ import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from ".
 //   · Enter on a top action runs it;
 //   · a held key's repeat runs nothing — not in the menu, and not in the
 //     confirm a menu item raised;
-//   · the search box keeps focus throughout, and its aria-activedescendant
+//   · PageUp/PageDown move a page of rows, Ctrl/Cmd+Home/End go to either
+//     end, and plain Home/End are left to the box's caret;
+//   · the search box keeps focus throughout — Tab included, since nothing
+//     else in the menu takes a Tab stop — and its aria-activedescendant
 //     names the highlighted option;
+//   · a local branch's submenu has the star as an item, and starring — from
+//     there or the star — moves the row at once, before the host answers;
 //   · the pointer moves the highlight, but a list scrolling under a pointer
 //     that did not move does not, and nor does crossing rows on the way to
 //     an open submenu.
@@ -394,6 +399,147 @@ test("the highlight scrolls into view, and survives the host repainting the menu
   assert.ok(s.subOpen, "the submenu is rebuilt, not lost");
   assert.equal(s.sub, before, "with the same item highlighted");
   assert.ok(s.activeDescendantIsHighlighted);
+});
+
+test("Tab and Shift+Tab leave focus in the search box; nothing in the menu is in the tab order", { skip }, async () => {
+  const tabbable = (): Promise<string[]> =>
+    page.eval<string[]>(`Array.prototype.filter.call(
+      document.querySelectorAll(".branch-menu button, .branch-menu [tabindex], .branch-submenu button, .branch-submenu [tabindex]"),
+      function (n) { return n.tabIndex >= 0; }).map(function (n) { return n.className + ": " + n.textContent.trim(); })`);
+  // Enough tags for a "Show more" row.
+  const tags = Array.from({ length: 45 }, (_, i) => `v1.${i}`);
+  await openMenu(page, stateMessage({ local: LOCAL, remote: ["origin/main", "origin/feature"], tags }));
+  assert.ok(await page.eval(`!!document.querySelector(".bm-more") && !!document.querySelector(".bm-action") && !!document.querySelector(".bm-star")`));
+  assert.deepEqual(await tabbable(), [], "top actions, rows, stars, group headers and 'Show more' take no Tab stop");
+  await page.key("Tab");
+  assert.ok((await snap(page)).focusIsSearch, "Tab keeps focus in the search box");
+  await page.key("ArrowDown");
+  assert.equal((await snap(page)).main, "a:fetch", "and the arrows still work");
+  await page.key("Tab", { with: ["shift"] });
+  assert.ok((await snap(page)).focusIsSearch, "Shift+Tab too");
+  await page.type("feature");
+  await page.key("ArrowRight");
+  await page.key("Tab");
+  const s = await snap(page);
+  assert.ok(s.focusIsSearch && s.subOpen, "and with a submenu open");
+  assert.deepEqual(await tabbable(), [], "nor do the submenu's items");
+  await page.key("Escape");
+  await page.key("Escape");
+});
+
+test("a local branch's submenu stars it, and so does the star — at once, before the host answers", { skip }, async () => {
+  const groupOf = (name: string): Promise<string | null> =>
+    page.eval(`(function () {
+      var r = document.querySelector('.bm-list .bm-branch[data-bname="${name}"]');
+      var g = r && r.closest(".bm-group-body");
+      return g ? g.getAttribute("aria-label") : null;
+    })()`);
+  const starOn = (name: string): Promise<boolean> =>
+    page.eval(`document.querySelector('.bm-list .bm-branch[data-bname="${name}"] .bm-star').classList.contains("on")`);
+
+  await openMenu(page);
+  await page.type("topic");
+  await page.key("ArrowRight");
+  const labels = await submenuLabels(page);
+  assert.ok(labels.includes("Add to Favorites"), labels.join(" | "));
+  for (let i = 0; i < labels.indexOf("Add to Favorites"); i++) await page.key("ArrowDown");
+  assert.equal((await snap(page)).sub, "Add to Favorites");
+  await page.key("Enter");
+  assert.deepEqual((await page.posted()).filter((m) => m.type === "branchAction"), [
+    { type: "branchAction", action: "favorite", ref: "topic" },
+  ]);
+  let s = await snap(page);
+  assert.ok(s.menuOpen && s.subOpen, "the menu and its submenu stay open");
+  assert.equal(s.sub, "Remove from Favorites", "the same item, highlighted, now says what it will do");
+  assert.equal(await groupOf("topic"), "Favorites", "the row is in Favorites before any reply");
+  assert.ok(await starOn("topic"));
+
+  // The host's own push agrees: nothing moves.
+  const starred = LOCAL.map((b) => (b.name === "topic" ? { ...b, favorite: true } : b));
+  await page.send(stateMessage({ local: starred, remote: ["origin/main", "origin/feature"], tags: ["v1.0"] }));
+  s = await snap(page);
+  assert.equal(s.sub, "Remove from Favorites");
+  assert.equal(await groupOf("topic"), "Favorites");
+
+  // The star, by mouse: un-starred at once, too.
+  await page.key("Escape");
+  await page.eval(`document.querySelector('.bm-list .bm-branch[data-bname="topic"] .bm-star').click()`);
+  assert.equal(await groupOf("topic"), "Local", "back in Local before any reply");
+  assert.ok(!(await starOn("topic")));
+  assert.deepEqual((await page.posted()).filter((m) => m.type === "branchAction").slice(-1), [
+    { type: "branchAction", action: "favorite", ref: "topic" },
+  ]);
+
+  // The current branch has the item; a remote branch and a tag do not.
+  await page.eval(`(function () { var i = document.querySelector(".bm-search input"); i.value = ""; i.dispatchEvent(new Event("input")); })()`);
+  await page.type("main");
+  await page.key("ArrowRight");
+  assert.ok((await submenuLabels(page)).includes("Add to Favorites"), "the current branch");
+  await page.key("ArrowLeft");
+  for (const q of ["origin/main", "v1.0"]) {
+    await page.eval(`(function () { var i = document.querySelector(".bm-search input"); i.value = ""; i.dispatchEvent(new Event("input")); })()`);
+    await page.type(q);
+    await page.key("ArrowRight");
+    assert.ok(!(await submenuLabels(page)).some((l) => /Favorites/.test(l)), `${q}: no favourites item`);
+    await page.key("ArrowLeft");
+  }
+  await page.key("Escape");
+});
+
+test("PageUp/PageDown move a page of rows and Ctrl+Home/End go to the ends; plain Home/End stay in the box", { skip }, async () => {
+  const many: LocalBranch[] = [
+    ...LOCAL,
+    ...Array.from({ length: 60 }, (_, i) => ({ name: `work/item-${String(i).padStart(2, "0")}` })),
+  ];
+  await openMenu(page, stateMessage({ local: many, remote: ["origin/main", "origin/feature"] }));
+  const order = await page.eval<string[]>(
+    `Array.prototype.map.call(document.querySelectorAll(".bm-list [data-bmkey]"), function (n) { return n.dataset.bmkey; })`,
+  );
+  const at = async (): Promise<number> => order.indexOf((await snap(page)).main!);
+  const inView = (): Promise<boolean> =>
+    page.eval(`(function () {
+      var l = document.querySelector(".bm-list").getBoundingClientRect(), r = document.querySelector(".bm-list .is-active").getBoundingClientRect();
+      return r.top >= l.top - 1 && r.bottom <= l.bottom + 1;
+    })()`);
+
+  await page.key("ArrowDown");
+  assert.equal(await at(), 0);
+  await page.key("PageDown");
+  const page1 = await at();
+  assert.ok(page1 > 3, `PageDown moves more than a row (to ${page1})`);
+  assert.ok(await inView(), "and the row is in view");
+  await page.key("PageDown");
+  assert.ok((await at()) > page1, "again");
+  for (let i = 0; i < 20; i++) await page.key("PageDown");
+  assert.equal(await at(), order.length - 1, "clamped at the last row");
+  await page.key("PageUp");
+  const up = await at();
+  assert.ok(up < order.length - 4, `PageUp moves more than a row (to ${up})`);
+  assert.ok(await inView());
+
+  await page.key("Home", { with: ["ctrl"] });
+  assert.equal(await at(), 0, "Ctrl+Home: the first row");
+  await page.key("End", { with: ["ctrl"] });
+  assert.equal(await at(), order.length - 1, "Ctrl+End: the last row");
+  assert.ok(await inView());
+  await page.key("Home", { with: ["meta"] });
+  assert.equal(await at(), 0, "Cmd+Home as well");
+  await page.key("End");
+  assert.equal(await at(), 0, "plain End moves the caret, not the highlight");
+
+  // The same keys in a submenu.
+  await page.type("feature");
+  await page.key("ArrowRight");
+  await page.key("End", { with: ["ctrl"] });
+  assert.equal((await snap(page)).sub, "Delete", "Ctrl+End: the submenu's last item");
+  await page.key("Home", { with: ["ctrl"] });
+  assert.equal((await snap(page)).sub, "Checkout");
+  await page.key("PageDown");
+  assert.equal((await snap(page)).sub, "Delete", "PageDown: a page down, clamped — the whole submenu is one page");
+  await page.key("PageUp");
+  assert.equal((await snap(page)).sub, "Checkout");
+  await page.key("Escape");
+  await page.key("Escape");
 });
 
 /** The highlighted row against its neighbour, per theme — does it stand out? */

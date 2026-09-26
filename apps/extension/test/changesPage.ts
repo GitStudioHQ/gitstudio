@@ -202,7 +202,16 @@ const KEYS: Record<string, { code: string; vk: number }> = {
   ArrowRight: { code: "ArrowRight", vk: 39 },
   Enter: { code: "Enter", vk: 13 },
   Escape: { code: "Escape", vk: 27 },
+  Tab: { code: "Tab", vk: 9 },
+  PageUp: { code: "PageUp", vk: 33 },
+  PageDown: { code: "PageDown", vk: 34 },
+  Home: { code: "Home", vk: 36 },
+  End: { code: "End", vk: 35 },
 };
+
+/** The DevTools protocol's modifier bits. */
+const MODIFIERS = { alt: 1, ctrl: 2, meta: 4, shift: 8 } as const;
+export type Modifier = keyof typeof MODIFIERS;
 
 /** The Changes view in a browser tab, with the ways a person reaches it. */
 export class ChangesPage {
@@ -251,11 +260,12 @@ export class ChangesPage {
     return this.page.eval("window.__posted");
   }
 
-  /** A real key press on whatever has focus. `repeat` marks it as a held key's repeat. */
-  async key(name: keyof typeof KEYS | string, opts: { repeat?: boolean } = {}): Promise<void> {
+  /** A real key press on whatever has focus. `repeat` marks it as a held key's repeat; `with` holds modifiers down. */
+  async key(name: keyof typeof KEYS | string, opts: { repeat?: boolean; with?: Modifier[] } = {}): Promise<void> {
     const k = KEYS[name];
     if (!k) throw new Error(`no key mapping for ${name}`);
-    const base = { key: name, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk, autoRepeat: !!opts.repeat };
+    const modifiers = (opts.with ?? []).reduce((m, x) => m | MODIFIERS[x], 0);
+    const base = { key: name, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk, autoRepeat: !!opts.repeat, modifiers };
     await this.page.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });
     await this.page.send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
   }
