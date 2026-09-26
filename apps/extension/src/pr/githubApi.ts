@@ -125,6 +125,13 @@ export class GitHubApiError extends Error {
       | "network"
       | "server",
     readonly status?: number,
+    /**
+     * Where on github.com the user can put it right, when GitHub names a
+     * place: a 403 from an organization's SAML single sign-on carries the
+     * page that authorizes this sign-in for it (`X-GitHub-SSO: required;
+     * url=…`).
+     */
+    readonly helpUrl?: string,
   ) {
     super(message);
     this.name = "GitHubApiError";
@@ -657,10 +664,14 @@ async function toError(res: Response): Promise<GitHubApiError> {
     );
   }
   if (res.status === 403) {
+    // Signed in, and refused: a permission, or an organization's SAML SSO —
+    // which names the page that authorizes this sign-in for it.
+    const sso = /\burl=(https:\/\/github\.com\/\S+)/.exec(res.headers.get("x-github-sso") ?? "")?.[1];
     return new GitHubApiError(
       detail || "GitHub denied the request (insufficient permissions).",
       "auth",
       403,
+      sso,
     );
   }
   if (res.status === 404) {

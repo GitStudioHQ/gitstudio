@@ -58,31 +58,38 @@ class Range {
 }
 
 class Uri {
-  constructor(scheme, path, query, fragment) {
+  constructor(scheme, path, query, fragment, authority) {
     this.scheme = scheme;
+    this.authority = authority ?? "";
     this.path = path;
     this.query = query ?? "";
     this.fragment = fragment ?? "";
     this.fsPath = path;
   }
   static from(c) {
-    return new Uri(c.scheme, c.path ?? "", c.query, c.fragment);
+    return new Uri(c.scheme, c.path ?? "", c.query, c.fragment, c.authority);
   }
   static parse(s) {
     const u = new URL(s);
-    return new Uri(u.protocol.replace(/:$/, ""), u.pathname, u.search.replace(/^\?/, ""));
+    return new Uri(u.protocol.replace(/:$/, ""), u.pathname, u.search.replace(/^\?/, ""), "", u.host);
   }
   static file(p) {
     return new Uri("file", p, "");
   }
   static joinPath(base, ...parts) {
-    return new Uri(base?.scheme ?? "file", [base?.path ?? "", ...parts].join("/"), "");
+    return new Uri(base?.scheme ?? "file", [base?.path ?? "", ...parts].join("/"), "", "", base?.authority);
   }
   with(change) {
-    return new Uri(change.scheme ?? this.scheme, change.path ?? this.path, change.query ?? this.query);
+    return new Uri(
+      change.scheme ?? this.scheme,
+      change.path ?? this.path,
+      change.query ?? this.query,
+      change.fragment ?? this.fragment,
+      change.authority ?? this.authority,
+    );
   }
   toString() {
-    return `${this.scheme}:${this.path}${this.query ? `?${this.query}` : ""}`;
+    return `${this.scheme}:${this.authority ? `//${this.authority}` : ""}${this.path}${this.query ? `?${this.query}` : ""}`;
   }
 }
 

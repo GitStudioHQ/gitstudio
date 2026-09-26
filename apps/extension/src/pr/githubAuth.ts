@@ -67,6 +67,32 @@ export class GitHubAuth implements vscode.Disposable {
     }
   }
 
+  /**
+   * Sign in AGAIN, for a session GitHub refused (401). VS Code keeps a revoked
+   * or expired session: `createIfNone` hands that same session back without a
+   * prompt, and the next request is refused again. `forceNewSession` asks the
+   * user to sign in anew (and signs in, when there is no session at all).
+   * Never throws; a declined sign-in yields undefined.
+   */
+  async signInAgain(detail: string): Promise<string | undefined> {
+    try {
+      const session = await vscode.authentication.getSession("github", SCOPES, {
+        forceNewSession: { detail },
+      });
+      const wasConnected = this.session !== undefined;
+      this.session = session;
+      if (!wasConnected) {
+        await vscode.commands.executeCommand("setContext", "gitstudio.github.connected", true);
+      }
+      // Another token, whether or not "connected" changed: what was read
+      // with the refused one is to be read again.
+      this.changeEmitter.fire();
+      return session.accessToken;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** True when a GitHub session is currently available (silent check). */
   async isConnected(): Promise<boolean> {
     return (await this.getToken({ interactive: false })) !== undefined;

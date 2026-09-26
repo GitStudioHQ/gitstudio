@@ -215,7 +215,7 @@ export class PullRequestsTreeProvider
 
   private readonly api: GitHubApi;
   private data: LoadedData | undefined;
-  private lastError: { message: string; kind?: GitHubApiError["kind"] } | undefined;
+  private lastError: LoadError | undefined;
   /** The login, read once per sign-in (GET /user was re-sent on every load). */
   private login: string | undefined;
   private view: vscode.TreeView<PrTreeNode> | undefined;
@@ -483,7 +483,7 @@ export class PullRequestsTreeProvider
           return [];
         }
         this.lastError = describe(err);
-        return [this.errorRow(this.lastError)];
+        return [this.errorRow(this.lastError, ctx)];
       }
     }
 
@@ -535,16 +535,33 @@ export class PullRequestsTreeProvider
     this.view.message = message;
   }
 
-  private errorRow(err: { message: string; kind?: GitHubApiError["kind"] }): MessageNode {
-    return err.kind === "auth"
-      ? new MessageNode(`${err.message} Click to sign in.`, "warning", {
-          command: "gitstudio.pr.signIn",
-          title: "Sign in to GitHub",
-        })
-      : new MessageNode(`${err.message} Click to retry.`, "warning", {
-          command: "gitstudio.pr.refresh",
-          title: "Retry",
-        });
+  /**
+   * A list that failed to load, and the one thing that can put it right.
+   * Signing in helps only when GitHub refused the SIGN-IN (401) — and then
+   * only as a NEW sign-in: VS Code hands the refused session straight back.
+   * A 403 is a signed-in user refused (a permission, an organization's SSO):
+   * GitHub's page for it, where it names one, else the pull requests there.
+   */
+  private errorRow(err: LoadError, ctx: GitHubRepoContext): MessageNode {
+    if (err.kind === "auth" && err.status === 403) {
+      const url = err.helpUrl ?? `https://github.com/${ctx.owner}/${ctx.repo}/pulls`;
+      return new MessageNode(
+        `${err.message} Click to ${err.helpUrl ? "authorize this sign-in on GitHub" : "open them on GitHub"}.`,
+        "warning",
+        { command: "vscode.open", title: "Open on GitHub", arguments: [vscode.Uri.parse(url)] },
+      );
+    }
+    if (err.kind === "auth") {
+      return new MessageNode(`${err.message} Click to sign in.`, "warning", {
+        command: "gitstudio.pr.signIn",
+        title: "Sign in to GitHub",
+        arguments: [{ again: true }],
+      });
+    }
+    return new MessageNode(`${err.message} Click to retry.`, "warning", {
+      command: "gitstudio.pr.refresh",
+      title: "Retry",
+    });
   }
 
   private async load(ctx: GitHubRepoContext): Promise<LoadedData> {
@@ -610,9 +627,16 @@ function ago(ms: number): string {
   return r === "now" ? "just now" : `${r} ago`;
 }
 
-function describe(err: unknown): { message: string; kind?: GitHubApiError["kind"] } {
+interface LoadError {
+  message: string;
+  kind?: GitHubApiError["kind"];
+  status?: number;
+  helpUrl?: string;
+}
+
+function describe(err: unknown): LoadError {
   if (err instanceof GitHubApiError) {
-    return { message: err.message, kind: err.kind };
+    return { message: err.message, kind: err.kind, status: err.status, helpUrl: err.helpUrl };
   }
   return { message: "Couldn't load pull requests from GitHub." };
 }

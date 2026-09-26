@@ -128,8 +128,12 @@ export function registerPrFeature(
     vscode.commands.registerCommand("gitstudio.pr.refresh", () => {
       tree.refresh();
     }),
-    vscode.commands.registerCommand("gitstudio.pr.signIn", async () => {
-      const token = await auth.getToken({ interactive: true });
+    vscode.commands.registerCommand("gitstudio.pr.signIn", async (arg?: { again?: boolean }) => {
+      // `again`: GitHub refused the session there is (the list's 401 row).
+      // Asked plainly, VS Code would hand that same session back.
+      const token = arg?.again
+        ? await auth.signInAgain("GitHub no longer accepts this sign-in. Sign in again to see pull requests.")
+        : await auth.getToken({ interactive: true });
       if (token) {
         tree.refresh();
       }

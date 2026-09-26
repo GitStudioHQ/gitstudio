@@ -354,6 +354,64 @@ test("a first load of one repository that answers after a switch to another pain
   assert.equal(m.view.message, undefined, "no \"Couldn't refresh\" of acme/app's over acme/other's list");
 });
 
+test("an expired sign-in's row signs in AGAIN — a new session, not the one GitHub just refused", async () => {
+  // VS Code keeps the revoked session: getSession with createIfNone hands it
+  // straight back, so "Click to sign in" re-sent the token GitHub refused.
+  let token = "revoked";
+  const asks: any[] = [];
+  const original = vscode.authentication.getSession;
+  vscode.authentication.getSession = async (_id: string, _scopes: string[], opts: any) => {
+    asks.push(opts);
+    if (opts?.forceNewSession) token = "fresh";
+    return { ...pr.session, accessToken: token };
+  };
+  mounted.push({ dispose: () => (vscode.authentication.getSession = original) });
+  github([
+    [
+      "GET",
+      /^\/repos\/acme\/app\/pulls\?state=open/,
+      (req) => (req.headers.authorization === "Bearer fresh" ? { body: PULLS() } : { status: 401, body: { message: "Bad credentials" } }),
+    ],
+    ...acmeRoutes(),
+  ]);
+  const m = mount(fakeRepos(ORIGIN));
+  const [row] = await m.tree.getChildren();
+  assert.equal(row.command?.command, "gitstudio.pr.signIn", String(row.label));
+  await vscode.commands.executeCommand(row.command.command, ...(row.command.arguments ?? []));
+  assert.ok(
+    asks.some((o) => o?.forceNewSession),
+    `a new session is asked for (asked: ${JSON.stringify(asks)})`,
+  );
+  assert.deepEqual(await openNumbers(m.tree), [37, 36, 3], "and the list loads with it");
+});
+
+test("a 403 is not a sign-in problem: its row opens GitHub — its SSO authorization when it names one", async () => {
+  let sso = false;
+  github([
+    [
+      "GET",
+      /^\/repos\/acme\/app\/pulls\?state=open/,
+      () =>
+        sso
+          ? {
+              status: 403,
+              body: { message: "Resource protected by organization SAML enforcement." },
+              headers: { "x-github-sso": "required; url=https://github.com/orgs/acme/sso?authorization_request=abc" },
+            }
+          : { status: 403, body: { message: "Must have push access to view repository collaborators." } },
+    ],
+    ...acmeRoutes(),
+  ]);
+  const [plain] = await mount(fakeRepos(ORIGIN, "/work/app1")).tree.getChildren();
+  assert.equal(plain.command?.command, "vscode.open", String(plain.label));
+  assert.equal(String(plain.command.arguments[0]), "https://github.com/acme/app/pulls", "the repository's pull requests");
+  assert.doesNotMatch(String(plain.label), /sign in/i);
+  sso = true;
+  const [saml] = await mount(fakeRepos(ORIGIN, "/work/app2")).tree.getChildren();
+  assert.equal(saml.command?.command, "vscode.open");
+  assert.match(String(saml.command.arguments[0]), /\/orgs\/acme\/sso/, "GitHub's own authorization page");
+});
+
 test("a GitHub remote added, or a switch away from an error or a repo with none: the view draws the repository now active", async () => {
   github([
     ["GET", /^\/repos\/acme\/broken\/pulls\?state=open/, () => ({ status: 502, body: { message: "Server Error" } })],
