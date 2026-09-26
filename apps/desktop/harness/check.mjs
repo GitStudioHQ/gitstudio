@@ -135,13 +135,13 @@ const CASES = [
   ["create-pull-request-comes-back", "compare"],
   ["a-plan-that-keeps-nothing-cannot-be-started", "rebase"],
   ["a-dragged-commit-lands-where-the-line-says", "rebase"],
-  // #32: several commits selected, one action set on all of them — the long
-  // plan the issue is about, in both themes where the selection is painted.
   // #32: the branch switcher from the keyboard, and its per-ref actions.
   ["the-branch-switcher-works-from-the-keyboard", "code~click:.topbar-branch"],
   ["the-branch-switcher-works-from-the-keyboard", "code~click:.topbar-branch", { theme: "light" }],
   ["the-branch-switchers-remotes-and-tags-have-actions", "code~click:.topbar-branch"],
   ["the-branch-actions-sit-level-with-their-branch", "code~click:.topbar-branch"],
+  // #32: several commits selected, one action set on all of them — the long
+  // plan the issue is about, in both themes where the selection is painted.
   ["rebase-selection-follows-the-keyboard", "rebase", { extra: "rbmany=1" }],
   ["rebase-selection-follows-the-keyboard", "rebase", { extra: "rbmany=1", theme: "light" }],
   // A laptop's height: the list runs under both sticky bars.
@@ -154,6 +154,9 @@ const CASES = [
   // written under it is written nowhere.
   ["rebase-squash-across-a-selection-keeps-the-oldest", "rebase", { extra: "rbmany=1", height: 760 }],
   ["rebase-moves-the-selection-together", "rebase", { extra: "rbmany=1" }],
+  // The host's own note shares that footer banner with the refusals.
+  ["rebase-keeps-the-hosts-note-on-screen", "rebase", { extra: "rbmany=1&rbnote=1", height: 700 }],
+  ["rebase-keeps-the-hosts-note-on-screen", "rebase", { extra: "rbmany=1&rbnote=1", height: 700, theme: "light" }],
   ["a-background-refresh-does-not-kill-forward", "changes"],
   ["a-kept-view-comes-back-where-you-left-it", "issues", { extra: "many=1" }],
   ["a-refresh-keeps-you-on-the-job-you-were-reading", "actions~open9100~click:.gh-job-log"],

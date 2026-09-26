@@ -804,6 +804,11 @@
       // its Continue / Skip / Abort, instead of the planner.
       inProgress: params.get("rebasing") === "1",
       baseCommit: { shortSha: "9f8e7d6", subject: "release: extension 1.11.1" },
+      // `?rbnote=1`: the host's own note (rebaseBridge), the persistent line
+      // the banner keeps above Start rebase.
+      ...(params.get("rbnote") === "1"
+        ? { message: "A merge commit in this range isn't listed — a rebase replays the merged-in commits one by one and the merge itself disappears." }
+        : {}),
       // NEWEST FIRST, the order `loadCommits` returns (`git log --topo-order`,
       // no --reverse) and the order the hint bar promises. Listed oldest-first
       // this fixture put every fold target on the wrong side: a `fixup!` row

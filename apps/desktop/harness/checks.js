@@ -16397,5 +16397,57 @@
       c.eq(order().split(",")[0], beforeOne[6], "and lands at the top");
       c.eq(rbSelected(), "0", "it is the selection now");
     },
+
+    // The host's own note ("a merge commit in this range isn't listed", "the
+    // list was capped") shares the banner with the refusals #32 made one
+    // keystroke away — and now rides in the sticky footer with it. The note is
+    // the only thing saying the plan is not the whole story, so: it is on
+    // screen for as long as the plan is; a refusal borrows the banner and
+    // gives it BACK; a newer refusal is not cut short by an older one's timer;
+    // and the taller footer still leaves the oldest commit clear of it.
+    "rebase-keeps-the-hosts-note-on-screen": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list (${n})`);
+      if (n < 8) return;
+      const banner = () => $(".rb-banner");
+      const NOTE = /merge commit in this range isn't listed/;
+      const onScreen = () => {
+        const b = banner();
+        if (!b || b.hidden) return false;
+        const r = b.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return r.height > 0 && r.bottom <= window.innerHeight && !!hit && b.contains(hit);
+      };
+
+      c.match(text(banner()), NOTE, "the host's note is shown");
+      c.ok(!!banner() && $(".rb-foot").contains(banner()), "in the sticky footer, above Start rebase");
+      c.ok(onScreen(), "on screen and uncovered, with the list running past the fold");
+      c.ok(getComputedStyle(banner()).backgroundColor !== "rgba(0, 0, 0, 0)", "painted as a note, not bare text");
+
+      // The footer is taller by the note: End still lands clear of it.
+      rbRows()[0].focus();
+      await rbKey("End");
+      const endRow = document.activeElement.getBoundingClientRect();
+      const footTop = $(".rb-foot").getBoundingClientRect().top;
+      c.ok(endRow.bottom <= footTop + 1, `End: the oldest commit clears the footer and its note (${Math.round(endRow.bottom)} vs ${Math.round(footTop)})`);
+
+      // A refusal borrows the banner…
+      await rbKey("s");
+      c.match(text(banner()), /oldest commit you keep can't be a squash/, "a refused squash says why, in the note's place");
+      c.ok(onScreen(), "where it can be read");
+      // …a newer one two seconds later is not cut short by the first's timer…
+      await settle(2000);
+      await rbKey("f");
+      c.match(text(banner()), /can't be a fixup/, "a second refusal replaces the first");
+      await settle(2600); // past the FIRST flash's 4.2 s, inside the second's
+      c.match(text(banner()), /can't be a fixup/, "and stays its full time: the first flash's timer does not restore over it");
+      // …and when the last one is done, the note is back.
+      await settle(2000);
+      c.match(text(banner()), NOTE, "then the host's note comes back");
+      c.ok(onScreen(), "on screen, as before");
+      c.eq(rbActions()[n - 1], "pick", "(and the oldest commit was left a pick throughout)");
+    },
   };
 })();
