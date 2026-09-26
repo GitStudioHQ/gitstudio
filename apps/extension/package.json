@@ -1144,11 +1144,6 @@
           "default": false,
           "description": "Enable the Sign-off toggle by default in the GitStudio commit box (adds a Signed-off-by trailer)."
         },
-        "gitstudio.push.forceWithLease": {
-          "type": "boolean",
-          "default": true,
-          "description": "When force-pushing from GitStudio, use the safer --force-with-lease (which refuses to overwrite remote work you haven't seen) instead of a raw --force."
-        },
         "gitstudio.worktrees.prefixWithProjectName": {
           "type": "boolean",
           "default": false,

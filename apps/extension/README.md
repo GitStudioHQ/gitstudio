@@ -145,7 +145,6 @@ In the commit box, `Enter` commits and `Shift+Enter` inserts a newline. All bind
 | `gitstudio.blame.inlineEnabled` | `true` | Inline current-line blame at the end of the line |
 | `gitstudio.blame.heatmap` | `true` | Code-age heatmap on full-file blame annotations |
 | `gitstudio.merge.autoOpen` | `true` | Auto-open conflicted files in the 3-pane merge editor |
-| `gitstudio.push.forceWithLease` | `true` | Use `--force-with-lease` when force-pushing |
 | `gitstudio.ai.provider` | `auto` | `auto` · `copilot` · `anthropic` · `openai` · `off` |
 | `gitstudio.ai.commitStyle` | `conventional` | `conventional` · `concise` · `descriptive` |
 | `gitstudio.pr.defaultMergeMethod` | `squash` | `merge` · `squash` · `rebase` |

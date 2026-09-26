@@ -520,9 +520,6 @@ export class SyncStatusItem implements vscode.Disposable {
   }
 
   private async askForce(): Promise<boolean | undefined> {
-    const forceDefault = vscode.workspace
-      .getConfiguration("gitstudio")
-      .get<boolean>("push.forceWithLease", true);
     const choice = await promptPick({
       title: "Push to the upstream branch?",
       choices: [
@@ -537,9 +534,8 @@ export class SyncStatusItem implements vscode.Disposable {
           label: "Force push",
           icon: "warning",
           danger: true,
-          description: forceDefault
-            ? "Uses --force-with-lease, which still refuses to overwrite remote work you haven't seen."
-            : "Overwrites the remote branch, including work you haven't seen.",
+          // Every force push is leased (SyncOps.push) — there is no raw --force.
+          description: "Uses --force-with-lease, which still refuses to overwrite remote work you haven't seen.",
         },
       ],
     });
