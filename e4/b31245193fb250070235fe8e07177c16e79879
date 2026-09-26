@@ -1,0 +1,28 @@
+apps/desktop/test/prCheckoutUpdate.test.ts
+  s_26f5e669d3043c::t_c8a9c47fef88e7 1-90
+packages/git-service/test/prCheckout.test.ts
+  s_26f5e669d3043c::t_097782818f902a 1-39,41-44,46-50,52-126
+  s_26f5e669d3043c::t_c958af0d411a80 40,45,51
+apps/desktop/src/main/githubBridge.ts
+  s_26f5e669d3043c::t_d148b518b4430f 405-448,455
+  s_26f5e669d3043c::t_60322f7833c473 26-32
+packages/git-service/src/prCheckout.ts
+  s_26f5e669d3043c::t_041b124d1aa8d8 1-178,183-187,189-197
+  s_26f5e669d3043c::t_85a3999bd0c836 179-182,188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e4b31245193fb250070235fe8e07177c16e79879",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
