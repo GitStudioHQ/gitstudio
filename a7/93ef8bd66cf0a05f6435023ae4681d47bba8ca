@@ -1,0 +1,61 @@
+packages/git-service/src/stashRestore.ts
+  s_26f5e669d3043c::t_25102a96b0292d 1-133
+apps/extension/test/undoHistory.test.ts
+  s_26f5e669d3043c::t_dcee9afb0f1eae 1-124
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_27b2eb53c05a09 394
+  s_26f5e669d3043c::t_4138321fa6ac1a 413
+  s_26f5e669d3043c::t_1e940b9ccf7890 419
+  s_26f5e669d3043c::t_3446f31cba4696 385-386
+  s_26f5e669d3043c::t_49e3b9d4d66fca 1-3,5-14,17-19,21-36,44-49,52-54,69-171,175-180,182-184,190-192,199-200,203-205,209-210,217,222-240,244-247,250-252,254-260,264-285,288-309,311-338,340-347,349-384,387-393,395-404,406-412,414-418,420-473,475-489,491-514,516-533,537-539,542-610,613,615-624,626-629,634,637,646-672,674-691,694-949,966,971-991,993-994
+  s_26f5e669d3043c::t_0f02b2a581d215 173-174
+  s_26f5e669d3043c::t_de21f34705bf64 405
+  s_26f5e669d3043c::t_365ffbe2afad3e 172,992,995-1049
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_26644d0640bde8 45-50
+packages/git-service/src/refRestore.ts
+  s_26f5e669d3043c::t_e6fef4b88fa94f 1-148
+packages/git-service/test/branchReset.test.ts
+  s_26f5e669d3043c::t_125eb329129d26 476
+apps/extension/src/rebase/rebaseCommands.ts
+  s_26f5e669d3043c::t_208fb93a5faa8f 69-74,76-88
+  s_26f5e669d3043c::t_d5a742545317c3 75
+  s_26f5e669d3043c::t_4470ac16307d46 177,179-180
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_d317db11444c51 3,11-24,30-32,39,71-74,84-87,89-90,102-105,108-111,116-123,127,129,173,176,189,194,200,207,218,222-224,226-231,236-238,240,243-244,246,248,250-251,253-265,267,269-270,272,275,278-287,290-291,293,295,299-302,307-308,312-314,318,320,324,326,334,349,362-369,389
+  s_26f5e669d3043c::t_831827f73cc798 390,397
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_f072fdee2446ee 59-97
+  s_26f5e669d3043c::t_cae39df52533c3 98-102
+apps/extension/test/askBeforeTheViewOpens.test.ts
+  s_26f5e669d3043c::t_96d827756d286d 73
+  s_26f5e669d3043c::t_32563232402381 58-66
+packages/git-service/src/index.ts
+  s_26f5e669d3043c::t_9c76ffbfdfd197 58
+packages/git-service/test/undoScope.test.ts
+  s_26f5e669d3043c::t_632670cba63519 1-3,5-111,113-169,241-289,294-296,317-320,323-325
+  s_26f5e669d3043c::t_4e02b090bededa 4
+  s_26f5e669d3043c::t_bfc05bc3b04404 170-240
+  s_26f5e669d3043c::t_8e6b41858034a1 112
+  s_26f5e669d3043c::t_89622a2c9a431c 290-293,297-316,321-322,326-334
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_65ec25c2193a6b 669-671,674-676
+apps/extension/test/undoStateTable.test.ts
+  s_26f5e669d3043c::t_e353d3ec8b2d92 726-734,738-739
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a793ef8bd66cf0a05f6435023ae4681d47bba8ca",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
