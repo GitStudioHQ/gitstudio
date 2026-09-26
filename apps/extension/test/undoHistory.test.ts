@@ -24,7 +24,7 @@ const vscode = require("vscode") as {
   __said: { kind: string; message: string }[];
   window: { showInformationMessage: (message: string, ...items: string[]) => Thenable<string | undefined> };
 };
-const { registerDialogHost } = require("../src/ui/dialogs") as typeof import("../src/ui/dialogs");
+const { registerDialogHost, promptConfirm } = require("../src/ui/dialogs") as typeof import("../src/ui/dialogs");
 const { UndoLedger } = require("../src/undo/undoLedger") as typeof import("../src/undo/undoLedger");
 const { GitContext } = require("@gitstudio/git-service/GitContext") as typeof import("@gitstudio/git-service/GitContext");
 /* eslint-enable @typescript-eslint/no-require-imports */
@@ -156,6 +156,34 @@ test("the toast's Undo undoes ITS operation — after the newer ones, each asked
     assert.equal(f.git("rev-parse", "main"), m, "X is undone");
   } finally {
     vscode.window.showInformationMessage = shown;
+    f.ctx.dispose();
+  }
+});
+
+// ── A question open inside the op ────────────────────────────────────────────
+
+test("an edit saved while the op's own question was open: its Undo says it takes that too, in red", async () => {
+  const f = fixture();
+  try {
+    f.commit("base");
+    writeFileSync(join(f.dir, "g.txt"), "stashed\n");
+    f.git("add", "g.txt");
+    f.git("stash", "push", "-q", "-m", "work");
+    answer = (spec) => {
+      if (spec.kind !== "confirm") return undefined;
+      writeFileSync(join(f.dir, "base.txt"), "typed while the question was open\n");
+      return "ok";
+    };
+    await f.run("Pop stash@{0}", async () => {
+      if (await promptConfirm({ title: "Pop it?", message: "", confirmLabel: "Pop" })) f.git("stash", "pop", "-q");
+    });
+    asked = [];
+    answer = () => undefined;
+    await f.ledger.undoLast();
+    const q = asked.find((a) => a.kind === "confirm");
+    assert.ok(q && q.kind === "confirm" && q.danger, JSON.stringify(q));
+    assert.match(q && "message" in q ? (q.message ?? "") : "", /Anything you changed while its question was open is discarded too\./);
+  } finally {
     f.ctx.dispose();
   }
 });

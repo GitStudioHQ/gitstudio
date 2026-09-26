@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
-import type { RepoManager, RepoEntry } from "../git/repoManager";
+import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
 import { pausedForUser, type OperationMarker } from "../git/pausedForUser";
 import { notifyPaused } from "../git/pauseNotice";
 import { applyOrAsk, checkoutOp, type Applied } from "../git/inTheWay";
@@ -245,7 +245,9 @@ export async function mergeBranchIntoCurrent(
     const applied = await applyOrAsk(a.ctx, { kind: "merge", target: ref.fullName, args });
     if (applied.cancelled || applied.settled) {
       if (applied.settled) refresh();
-      return;
+      // Cancelled: nothing ran, and the envelope must not record an edit
+      // saved while the question was open as the merge's.
+      return applied.cancelled ? { cancelled: true } : undefined;
     }
     const result = { ok: applied.result.code === 0, code: applied.result.code, stderr: applied.result.stderr };
     await reportMergeLike(
@@ -290,7 +292,8 @@ export async function rebaseCurrentOnto(
     const applied = await applyOrAsk(a.ctx, { kind: "rebase", onto: ref.fullName, args: ["rebase", ref.fullName] });
     if (applied.cancelled || applied.settled) {
       if (applied.settled) refresh();
-      return;
+      // Cancelled: nothing ran (see Merge).
+      return applied.cancelled ? { cancelled: true } : undefined;
     }
     const result = { ok: applied.result.code === 0, code: applied.result.code, stderr: applied.result.stderr };
     await reportMergeLike(
@@ -461,22 +464,31 @@ export async function deleteBranch(
   if (!ok) {
     return;
   }
-  await withUndo(repos, a, `Delete branch ${name}`, async () => {
-    // The name under refs/heads/ — git's "heads/release" names no branch.
-    let result = await a.ctx.branches.delete(name);
-    if (!result.ok && /not fully merged/i.test(result.stderr)) {
-      const force = await confirm(
-        `${name} is not fully merged`,
-        "Some of its commits are not on any other branch, so deleting it may leave them unreachable. Undo can still recover them.",
-        "Force Delete",
-      );
-      if (!force) {
-        return;
+  // Refs only: the second question below is open while the envelope is,
+  // and what the user saves meanwhile is theirs, not the delete's.
+  await withUndo(
+    repos,
+    a,
+    `Delete branch ${name}`,
+    async () => {
+      // The name under refs/heads/ — git's "heads/release" names no branch.
+      let result = await a.ctx.branches.delete(name);
+      if (!result.ok && /not fully merged/i.test(result.stderr)) {
+        const force = await confirm(
+          `${name} is not fully merged`,
+          "Some of its commits are not on any other branch, so deleting it may leave them unreachable. Undo can still recover them.",
+          "Force Delete",
+        );
+        if (!force) {
+          return { cancelled: true };
+        }
+        result = await a.ctx.branches.delete(name, { force: true });
       }
-      result = await a.ctx.branches.delete(name, { force: true });
-    }
-    report(result, `Deleted ${name}`, refresh);
-  });
+      report(result, `Deleted ${name}`, refresh);
+      return undefined;
+    },
+    { refsOnly: true },
+  );
 }
 
 /**
@@ -1044,15 +1056,20 @@ async function pickRemote(
   return promptPick({ title, choices });
 }
 
+/**
+ * Run a door's op under the Undo envelope. `fn` returns `{ cancelled: true }`
+ * when a question inside it was cancelled and nothing ran.
+ */
 async function withUndo(
   repos: RepoManager,
   repo: RepoEntry,
   label: string,
-  fn: () => Promise<void>,
+  fn: () => Promise<{ cancelled: true } | undefined>,
+  opts?: UndoOptions,
 ): Promise<void> {
   const ledger = repos.getUndoLedger();
   if (ledger) {
-    await ledger.runWithUndo(repo, label, fn);
+    await ledger.runWithUndo(repo, label, fn, opts);
   } else {
     await fn();
   }

@@ -332,3 +332,225 @@ test("a dropped stash goes back where it was — and on top when the stack has c
     r.dispose();
   }
 });
+
+// ── While a conflict is unresolved ───────────────────────────────────────────
+//
+// `git stash create` refuses an index with unmerged entries ("Cannot save the
+// current index state"), and the capture used to throw with it — so an op run
+// during a stopped merge ran unguarded and recorded nothing, while its
+// question promised Undo. The branches and stashes are still recorded now;
+// what can't be copied is said, and never "put back".
+
+/** main (M) and other (O) both edit f.txt: merging other stops on it. */
+function mergeStops(r: Repo): { m: string } {
+  r.commit("base", "f.txt", "base\n");
+  r.git("checkout", "-q", "-b", "other");
+  r.commit("O", "f.txt", "other\n");
+  r.git("checkout", "-q", "main");
+  const m = r.commit("M", "f.txt", "main\n");
+  try {
+    r.git("merge", "other");
+    assert.fail("the merge was meant to stop");
+  } catch {
+    /* stopped on the conflict */
+  }
+  return { m };
+}
+
+test("during a conflict a force-deleted branch still comes back — the snapshot records it though git won't copy the tree", async () => {
+  const r = repo();
+  try {
+    r.commit("seed", "seed.txt");
+    r.git("branch", "feature");
+    r.git("checkout", "-q", "feature");
+    const f = r.commit("F", "only-here.txt");
+    r.git("checkout", "-q", "main");
+    mergeStops(r);
+    writeFileSync(join(r.dir, "f.txt"), "my hand resolution\n");
+    const snap = await around(r, "Delete branch feature", () => void r.git("branch", "-D", "feature"));
+    assert.equal(r.ctx.snapshot.changed(snap), true);
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.deepEqual(plan.kind === "restore" && plan.lines, [`Bring back branch 'feature' at ${f.slice(0, 7)}.`], JSON.stringify(plan));
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.git("rev-parse", "refs/heads/feature"), f);
+    assert.equal(r.read("f.txt"), "my hand resolution\n", "the resolution in progress is untouched");
+    assert.ok(existsSync(join(r.dir, ".git", "MERGE_HEAD")), "and the merge is still stopped");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("a dropped stash during a conflict comes back", async () => {
+  const r = repo();
+  try {
+    r.commit("seed", "seed.txt", "seed\n");
+    writeFileSync(join(r.dir, "seed.txt"), "stashed\n");
+    r.git("stash", "push", "-q", "-m", "keep me");
+    mergeStops(r);
+    const before = await stashStack(r.ctx.process);
+    const snap = await around(r, "Drop stash@{0}", () => void r.git("stash", "drop", "-q"));
+    assert.equal(r.ctx.snapshot.changed(snap), true);
+    await r.ctx.snapshot.restore(snap);
+    assert.deepEqual(await stashStack(r.ctx.process), before);
+  } finally {
+    r.dispose();
+  }
+});
+
+test("a hard reset during a conflict: Undo puts the branch back and says the edits it threw away can't come back", async () => {
+  const r = repo();
+  try {
+    const { m } = mergeStops(r);
+    writeFileSync(join(r.dir, "f.txt"), "my hand resolution\n");
+    const snap = await around(r, "Reset to base (--hard)", () => void r.git("reset", "-q", "--hard", "HEAD~1"));
+    assert.equal(snap.stashSha, null);
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.equal(plan.kind, "restore", JSON.stringify(plan));
+    assert.deepEqual(plan.kind === "restore" && plan.lines, [
+      `'main' goes back to ${m.slice(0, 7)}.`,
+      "The uncommitted changes you had before it can't come back — git couldn't keep a copy of them while a conflict was unresolved.",
+    ]);
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.git("rev-parse", "main"), m);
+    assert.equal(r.git("status", "--porcelain"), "");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("a mixed reset during a conflict: Undo puts the branch back and leaves the working tree — the resolution in it — alone", async () => {
+  const r = repo();
+  try {
+    const { m } = mergeStops(r);
+    writeFileSync(join(r.dir, "f.txt"), "my hand resolution\n");
+    const snap = await around(r, "Reset to base (--mixed)", () => void r.git("reset", "-q", "--mixed", "HEAD~1"));
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.equal(plan.kind, "restore", JSON.stringify(plan));
+    assert.equal(plan.kind === "restore" && plan.danger, false);
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.git("rev-parse", "main"), m);
+    assert.equal(r.read("f.txt"), "my hand resolution\n", "a reset that kept the files is undone without touching them");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("an op that changed only an uncopied tree records nothing — there is nothing Undo could put back", async () => {
+  const r = repo();
+  try {
+    mergeStops(r);
+    const snap = await around(r, "Accept Yours: f.txt", () => {
+      r.git("checkout", "--ours", "--", "f.txt");
+      r.git("add", "f.txt");
+    });
+    assert.equal(r.ctx.snapshot.changed(snap), false);
+  } finally {
+    r.dispose();
+  }
+});
+
+// ── An op that moves only refs ───────────────────────────────────────────────
+//
+// Delete branch, Drop stash and a reset of a branch that isn't checked out
+// never touch the working tree — but their doors can ask a question inside the
+// envelope ("not fully merged — Force Delete?"), and an edit saved while it
+// was open was taken as the op's own: a CANCELLED delete was recorded, and
+// its Undo ran `reset --hard HEAD` over the edit.
+
+test("a refs-only op doesn't own an edit made while it ran: a cancel records nothing, and Undo never touches the tree", async () => {
+  const r = repo();
+  try {
+    r.commit("base", "f.txt", "base\n");
+    r.git("branch", "feature");
+    const cancelled = await r.ctx.snapshot.capture("Delete branch feature", { refsOnly: true });
+    writeFileSync(join(r.dir, "f.txt"), "typed while the question was open\n");
+    await r.ctx.snapshot.settle(cancelled);
+    assert.equal(r.ctx.snapshot.changed(cancelled), false, "the delete was cancelled: nothing to undo");
+
+    const deleted = await r.ctx.snapshot.capture("Delete branch feature", { refsOnly: true });
+    writeFileSync(join(r.dir, "f.txt"), "typed again\n");
+    r.git("branch", "-D", "feature");
+    await r.ctx.snapshot.settle(deleted);
+    const plan = await r.ctx.snapshot.plan(deleted);
+    assert.equal(plan.kind === "restore" && plan.steps.some((s) => s.do === "tree"), false, JSON.stringify(plan));
+    await r.ctx.snapshot.restore(deleted);
+    assert.ok(r.git("rev-parse", "--verify", "refs/heads/feature"));
+    assert.equal(r.read("f.txt"), "typed again\n", "the edit is the user's, and stays");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("a reset of a branch that isn't checked out never takes back the working tree — work from before it included", async () => {
+  const r = repo();
+  try {
+    r.commit("base", "f.txt", "base\n");
+    r.git("branch", "x");
+    r.commit("M", "m.txt");
+    writeFileSync(join(r.dir, "f.txt"), "work from before the op\n");
+    const snap = await r.ctx.snapshot.capture("Reset x to origin/x", { branch: "refs/heads/x" });
+    r.git("update-ref", "refs/heads/x", "HEAD");
+    writeFileSync(join(r.dir, "m.txt"), "saved by the editor meanwhile\n");
+    await r.ctx.snapshot.settle(snap);
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.deepEqual(plan.kind === "restore" && plan.steps.map((s) => s.do), ["ref"], JSON.stringify(plan));
+    await r.ctx.snapshot.restore(snap);
+    assert.equal(r.read("f.txt"), "work from before the op\n");
+    assert.equal(r.read("m.txt"), "saved by the editor meanwhile\n");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("a tree step never runs without a copy of the tree it replaces — refused instead", async () => {
+  const r = repo();
+  try {
+    mergeStops(r);
+    r.git("branch", "side");
+    // Both a branch deleted and the tree changed, during a conflict: the
+    // branch can come back; the tree can't, and Undo says so rather than
+    // resetting it.
+    const snap = await around(r, "Something", () => {
+      r.git("branch", "-D", "side");
+      r.git("checkout", "--theirs", "--", "f.txt");
+      r.git("add", "f.txt");
+    });
+    assert.equal(r.ctx.snapshot.changed(snap), true);
+    const why = await r.ctx.snapshot.whyNotRestorable(snap);
+    assert.match(why ?? "", /couldn't keep a copy of your uncommitted changes/);
+    assert.equal(r.read("f.txt"), "other\n", "nothing was reset");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("an op that asked a question inside the envelope: an undo that rewrites the tree says it takes edits made meanwhile, in red", async () => {
+  // The question is DOM, not modal: an edit saved while it was open lands
+  // inside the op's window and can't be told from the op's own changes.
+  const r = repo();
+  try {
+    r.commit("base", "f.txt", "base\n");
+    writeFileSync(join(r.dir, "g.txt"), "stashed\n");
+    r.git("add", "g.txt");
+    r.git("stash", "push", "-q", "-m", "work");
+    const snap = await r.ctx.snapshot.capture("Pop stash@{0}");
+    writeFileSync(join(r.dir, "f.txt"), "typed while the question was open\n");
+    r.git("stash", "pop", "-q");
+    r.ctx.snapshot.markAsked(snap);
+    await r.ctx.snapshot.settle(snap);
+    const plan = await r.ctx.snapshot.plan(snap);
+    assert.equal(plan.kind === "restore" && plan.danger, true, JSON.stringify(plan));
+    assert.ok(plan.kind === "restore" && plan.lines.includes("Anything you changed while its question was open is discarded too."), JSON.stringify(plan));
+
+    // Without a question there is no window: the same undo is not red.
+    r.git("reset", "-q", "--hard");
+    writeFileSync(join(r.dir, "g.txt"), "stashed\n");
+    r.git("add", "g.txt");
+    r.git("stash", "push", "-q", "-m", "work");
+    const quiet = await around(r, "Pop stash@{0}", () => void r.git("stash", "pop", "-q"));
+    const calm = await r.ctx.snapshot.plan(quiet);
+    assert.equal(calm.kind === "restore" && calm.danger, false, JSON.stringify(calm));
+  } finally {
+    r.dispose();
+  }
+});

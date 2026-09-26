@@ -121,6 +121,33 @@ export interface SnapshotScope {
    * (a move by "rebase … onto <onto>").
    */
   deferred?: { onto?: string };
+  /**
+   * The uncommitted state before could not be copied — `git stash create`
+   * refuses an index with unmerged entries (a conflict in progress) or a file
+   * marked with `git add -N` — and why. Undo can't put that state back: it
+   * says so, and never rewrites the tree as though it could.
+   */
+  uncopied?: NoCopy;
+  /**
+   * Only for an uncopied tree: the working-tree files that differed from
+   * HEAD before, by content digest. When they are all still so, the op left
+   * the files alone (a mixed reset) and moving the branch back without
+   * touching them undoes it exactly.
+   */
+  files?: Record<string, string>;
+  /**
+   * The op moves only refs and stashes — Delete branch, Drop stash, a reset
+   * of a branch that isn't checked out. The uncommitted state is not its to
+   * change, so whatever changes it while the op runs (an edit saved while its
+   * question was open) is the user's: not recorded, and never put back.
+   */
+  refsOnly?: true;
+  /**
+   * A question was open while the op ran. What it left uncommitted may hold
+   * edits made meanwhile, which can't be told from its own — so an undo that
+   * rewrites the tree says it takes those too.
+   */
+  asked?: true;
   /** What the op changed, filled in by `settle`. */
   settled?: SettledScope;
 }
@@ -148,7 +175,7 @@ export interface SettledScope {
 export type RestoreStep =
   | { do: "abort-rebase" }
   | { do: "switch"; ref: string | null; sha: string }
-  | { do: "reset"; to: string; mode: "hard" | "keep"; stash: string | null }
+  | { do: "reset"; to: string; mode: "hard" | "keep" | "mixed"; stash: string | null }
   | { do: "tree"; stash: string | null }
   | { do: "ref"; move: MovedRef; here: boolean }
   | { do: "stash"; entry: DroppedStash };
@@ -171,6 +198,52 @@ export type RestorePlan =
 
 /** The fingerprint of a working tree and index with nothing uncommitted. */
 export const CLEAN_TREE = "clean";
+
+/** A refs-only op's "fingerprint": the uncommitted state is not its to change, so it isn't read. */
+const NOT_THE_OPS = "not the op's";
+
+/** Why git won't copy the uncommitted state (`stash create` refuses it). */
+export type NoCopy = "conflict" | "intent-to-add" | "other";
+
+/** The words after "git couldn't keep a copy of them …", as things are now or were then. */
+export function noCopyClause(why: NoCopy, when: "now" | "then"): string {
+  const now = when === "now";
+  switch (why) {
+    case "conflict":
+      return now ? "while a conflict is unresolved" : "while a conflict was unresolved";
+    case "intent-to-add":
+      return now ? "while a file is only marked to be added (git add -N)" : "while a file was only marked to be added (git add -N)";
+    default:
+      return now ? "as they are" : "as they were";
+  }
+}
+
+/**
+ * Whether a copy of the uncommitted state can be kept right now — the one
+ * an Undo would put back — and if not, why. Undefined when it can, or when
+ * there is nothing uncommitted. `stash create` writes objects only.
+ */
+export async function whyNoCopy(proc: GitProcess, opts?: GitRunOptions): Promise<NoCopy | undefined> {
+  const st = await proc.run(["status", "--porcelain"], opts);
+  if (st.code === 0 && st.stdout.trim().length === 0) return undefined;
+  const made = await proc.run(["stash", "create"], opts);
+  return made.code === 0 ? undefined : noCopyKind(proc, opts);
+}
+
+/** Why `stash create` just refused. */
+async function noCopyKind(proc: GitProcess, opts?: GitRunOptions): Promise<NoCopy> {
+  const [unmerged, st] = await Promise.all([
+    proc.run(["ls-files", "-u", "-z"], opts),
+    proc.run(["status", "--porcelain=v2", "-z", "--untracked-files=no"], opts),
+  ]);
+  if (unmerged.code === 0 && unmerged.stdout.length > 0) return "conflict";
+  // `1 .A …`: added in the working tree only — an intent-to-add entry.
+  if (st.code === 0 && st.stdout.split("\0").some((r) => r.startsWith("1 .A "))) return "intent-to-add";
+  return "other";
+}
+
+/** An undo that rewrites the tree after a question was open while the op ran. */
+const ASKED_LINE = "Anything you changed while its question was open is discarded too.";
 
 /** A file this big is fingerprinted by size and time rather than read. */
 const DIGEST_LIMIT = 16 * 1024 * 1024;
@@ -198,6 +271,8 @@ export class SnapshotProvider {
       branch?: string;
       /** The op goes on after it returns — see `SnapshotScope.deferred`. */
       deferred?: { onto?: string };
+      /** The op moves only refs and stashes — see `SnapshotScope.refsOnly`. */
+      refsOnly?: boolean;
     },
   ): Promise<Snapshot> {
     const headSha = (await this.run(["rev-parse", "HEAD"], opts)).trim();
@@ -210,21 +285,31 @@ export class SnapshotProvider {
       branch = { ref: opts.branch, sha, checkedOut: headRef === opts.branch };
     }
 
-    let stashSha: string | null = null;
     // A branch that is not checked out is all such an op touches — the
-    // working tree here is another branch's — so none of it is captured.
-    if ((!branch || branch.checkedOut) && (await this.isDirty(opts))) {
-      const created = (await this.run(["stash", "create", label], opts)).trim();
-      // `stash create` prints nothing (empty) when there's nothing to stash.
-      stashSha = created.length > 0 ? created : null;
+    // working tree here is another branch's — so it moves refs only.
+    const refsOnly = !!opts?.refsOnly || (!!branch && !branch.checkedOut);
+    let stashSha: string | null = null;
+    let uncopied: NoCopy | undefined;
+    if (!refsOnly && (await this.isDirty(opts))) {
+      const created = await this.process.run(["stash", "create", label], opts);
+      if (created.code === 0) {
+        // `stash create` prints nothing (empty) when there's nothing to stash.
+        stashSha = created.stdout.trim() || null;
+      } else {
+        // A conflict in progress (or a `git add -N` file): git won't copy the
+        // index. The op is still recorded — its branches and stashes can go
+        // back — and the words say the tree can't.
+        uncopied = await noCopyKind(this.process, opts);
+      }
     }
 
-    const [tree, branches, config, stashes, op] = await Promise.all([
-      this.fingerprint(opts),
+    const [tree, branches, config, stashes, op, files] = await Promise.all([
+      refsOnly ? Promise.resolve(NOT_THE_OPS) : this.fingerprint(opts),
       localBranches(this.process, opts),
       this.branchConfig(opts),
       stashStack(this.process, opts),
       this.opMark(opts),
+      uncopied ? this.fileDigests("HEAD", opts) : Promise.resolve(undefined),
     ]);
     const scope: SnapshotScope = {
       v: 2,
@@ -236,6 +321,8 @@ export class SnapshotProvider {
       config,
       stashes,
       ...(opts?.deferred ? { deferred: opts.deferred.onto ? { onto: opts.deferred.onto } : {} } : {}),
+      ...(uncopied ? { uncopied, ...(files ? { files } : {}) } : {}),
+      ...(refsOnly ? { refsOnly: true as const } : {}),
     };
     return branch ? { headSha, stashSha, ref, label, branch, scope } : { headSha, stashSha, ref, label, scope };
   }
@@ -275,9 +362,24 @@ export class SnapshotProvider {
       t.headSha !== snap.headSha ||
       t.moved.length > 0 ||
       t.stashes.length > 0 ||
-      t.tree !== s.tree ||
+      // A tree nobody could copy can't be put back: a change to it alone is
+      // nothing Undo could do (and a refs-only op's tree is never its own).
+      (t.tree !== s.tree && !s.uncopied) ||
       !!t.op
     );
+  }
+
+  /**
+   * Note that a question was open while the op ran (see `SnapshotScope.asked`).
+   * Called by the envelope before `settle`.
+   */
+  markAsked(snap: Snapshot): void {
+    if (snap.scope) snap.scope.asked = true;
+  }
+
+  /** Whether a copy of the uncommitted state can be kept now — see `whyNoCopy`. */
+  whyNoCopy(opts?: GitRunOptions): Promise<NoCopy | undefined> {
+    return whyNoCopy(this.process, opts);
   }
 
   /**
@@ -432,12 +534,41 @@ export class SnapshotProvider {
           );
         }
         lines.push(`${said} goes back to ${shortSha(to)}.`);
-        if (now.tree === settled.tree || now.tree === CLEAN_TREE) {
+        if (!snap.stashSha && s.tree !== CLEAN_TREE) {
+          // Something was uncommitted before and there is no copy of it (git
+          // won't copy a conflict in progress). Nothing uncommitted now may be
+          // discarded, since some of it may be that work.
+          if (now.tree === CLEAN_TREE) {
+            steps.push({ do: "reset", to, mode: "hard", stash: null });
+          } else if (s.files && sameDigests(await this.fileDigests(to, opts), s.files)) {
+            // Every file is as it was before the op (a mixed reset leaves
+            // them): the branch goes back and the files stay, exactly.
+            steps.push({ do: "reset", to, mode: "mixed", stash: null });
+            lines.push("Your uncommitted changes are kept.");
+          } else if (!(await this.overlaps(after, to, opts))) {
+            steps.push({ do: "reset", to, mode: "keep", stash: null });
+            lines.push("Your uncommitted changes are kept.");
+          } else {
+            return refuse(
+              `Putting ${said} back would overwrite uncommitted changes, and some of them you had before "${label}" — ` +
+                `git couldn't keep a copy of those ${noCopyClause(s.uncopied ?? "other", "then")}. Commit or stash them, then undo.`,
+            );
+          }
+          if (s.uncopied) {
+            lines.push(
+              `The uncommitted changes you had before it can't come back — git couldn't keep a copy of them ${noCopyClause(s.uncopied, "then")}.`,
+            );
+          }
+        } else if (now.tree === settled.tree || now.tree === CLEAN_TREE) {
           // Nothing uncommitted has changed since (or nothing is uncommitted
           // at all — then there is nothing to lose): the op's own changes to
           // the tree go, and what was uncommitted before comes back.
           steps.push({ do: "reset", to, mode: "hard", stash: snap.stashSha });
           if (snap.stashSha) lines.push("The uncommitted changes you had then come back too.");
+          if (s.asked && now.tree !== CLEAN_TREE) {
+            lines.push(ASKED_LINE);
+            danger = true;
+          }
         } else if (!snap.stashSha && settled.tree === CLEAN_TREE && !(await this.overlaps(after, to, opts))) {
           // Everything uncommitted is new since the op, and none of it is in
           // a file going back: `reset --keep` keeps it.
@@ -458,8 +589,16 @@ export class SnapshotProvider {
           `HEAD has moved since "${label}" (it is at ${shortSha(N.sha)} now), so the changes it made to your working tree can't be taken back safely.`,
         );
       }
-      if (oursStop) lines.push(`The ${settled.op!.kind} in progress is abandoned.`);
       if (now.tree !== s.tree || oursStop) {
+        if (!snap.stashSha && s.tree !== CLEAN_TREE) {
+          // Taking the op's changes back means putting the tree back as it
+          // was — and there is no copy of that to put back.
+          return refuse(
+            `When "${label}" ran, git couldn't keep a copy of your uncommitted changes ${noCopyClause(s.uncopied ?? "other", "then")}, ` +
+              `so Undo can't put them back. Nothing was changed.`,
+          );
+        }
+        if (oursStop) lines.push(`The ${settled.op!.kind} in progress is abandoned.`);
         steps.push({ do: "tree", stash: snap.stashSha });
         lines.push(
           snap.stashSha
@@ -468,6 +607,9 @@ export class SnapshotProvider {
         );
         if (now.tree !== settled.tree && now.tree !== CLEAN_TREE) {
           lines.push("Uncommitted changes you have made since are discarded.");
+          danger = true;
+        } else if (s.asked && now.tree !== CLEAN_TREE) {
+          lines.push(ASKED_LINE);
           danger = true;
         }
       }
@@ -681,7 +823,8 @@ export class SnapshotProvider {
     return {
       headRef: now.headRef,
       headSha: now.headSha,
-      tree: now.tree,
+      // A refs-only op never changes it: whatever did is not the op's.
+      tree: s.refsOnly ? s.tree : now.tree,
       moved,
       stashes,
       ...(now.op && !sameOp(s.op, now.op) ? { op: now.op } : {}),
@@ -778,6 +921,23 @@ export class SnapshotProvider {
       out.push(e);
     }
     return was === null ? out : undefined;
+  }
+
+  /**
+   * The working-tree files that differ from `commit`, by content digest —
+   * what a reset to `commit` that leaves the files alone would leave
+   * uncommitted.
+   */
+  private async fileDigests(commit: string, opts?: GitRunOptions): Promise<Record<string, string> | undefined> {
+    const [top, changed] = await Promise.all([
+      this.process.run(["rev-parse", "--show-toplevel"], opts),
+      this.process.run(["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", commit, "--"], opts),
+    ]);
+    if (changed.code !== 0) return undefined;
+    const root = top.code === 0 ? top.stdout.trim() : this.process.cwd;
+    const out: Record<string, string> = {};
+    for (const p of changed.stdout.split("\0").filter(Boolean)) out[p] = fileDigest(join(root, p));
+    return out;
   }
 
   /**
@@ -983,6 +1143,13 @@ const REVERT_NOT_RESTORE =
 
 function refuse(reason: string): { kind: "refuse"; reason: string } {
   return { kind: "refuse", reason };
+}
+
+/** The same files with the same contents? */
+function sameDigests(a: Record<string, string> | undefined, b: Record<string, string>): boolean {
+  if (!a) return false;
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => b[k] === a[k]);
 }
 
 function sameOp(a: OpMark | undefined, b: OpMark | undefined): boolean {

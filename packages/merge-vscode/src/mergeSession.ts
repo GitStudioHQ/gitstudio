@@ -136,8 +136,9 @@ export class MergeSession {
    * back (`checkout -m`), in every product: the product's own envelope
    * (GitStudio's ledger) snapshots with `git stash create`, which git refuses
    * while any path is unmerged ("Cannot save the current index state"), so
-   * around a conflict it records nothing and offers nothing. The envelope
-   * still wraps an Apply on a file with no conflict ("Reopen With…").
+   * around a conflict it holds no copy of the file to put back, and records
+   * nothing for a change to it alone. The envelope still wraps an Apply on a
+   * file with no conflict ("Reopen With…").
    */
   async apply(text: string): Promise<void> {
     const d = this.deps;

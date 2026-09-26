@@ -71,8 +71,15 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   questions promised Undo could bring the branch or the stash back; Undo said
   it had and restored nothing, and undoing a pop threw the popped changes
   away. Undo now brings a deleted branch back at its commit, tracking what it
-  tracked, and a dropped or popped stash back where it was in the list.
-  Cancelling at "not fully merged" no longer offers "Undid? Delete branch".
+  tracked, and a dropped or popped stash back where it was in the list — also
+  while a merge or rebase is stopped on a conflict, where nothing was
+  recorded at all. Cancelling at "not fully merged" no longer offers "Undid?
+  Delete branch", and a file you save while that question is open is yours:
+  Undo of the delete brings the branch back and leaves the file alone.
+- **A file saved while an operation's question is open** is no longer taken
+  as the operation's. Cancelling *Stash & Retry* on a merge or rebase records
+  nothing, and where an Undo would put the working tree back over such an
+  edit, its question says so, in red.
 - **Undo never throws away work you did after the operation without saying
   so.** With a commit made since, Undo says the branch has moved and changes
   nothing. Uncommitted edits made since are kept when they don't touch the
@@ -81,7 +88,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   waits.
 - **The *Reset --hard* question said Undo could not bring your uncommitted
   edits back.** It can, and does: undoing the reset puts the branch back and
-  the edits with it. The question now says so.
+  the edits with it. The question now says so — except while a conflict is
+  unresolved, when git can't keep a copy of them: then it says Undo can put
+  the branch back but not those edits, and Undo says the same. *Reset to
+  'origin/x'* words its question the same way.
 - **Undo of a rebase that stopped** — Rebase onto…, the Interactive Rebase
   workspace, or *Start Interactive Rebase Here* while paused — abandons the
   rebase, instead of leaving it half-open on a detached HEAD. An interactive

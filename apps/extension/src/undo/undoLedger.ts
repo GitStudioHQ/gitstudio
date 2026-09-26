@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { promptConfirm, promptPick } from "../ui/dialogs";
+import { promptConfirm, promptPick, questionsAsked } from "../ui/dialogs";
 import type { RestorePlan, Snapshot } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
@@ -84,15 +84,27 @@ export class UndoLedger {
       snapshot = await repo.ctx.snapshot.capture(label, {
         ...(opts?.branch ? { branch: opts.branch } : {}),
         ...(opts?.deferred ? { deferred: opts.deferred } : {}),
+        ...(opts?.refsOnly ? { refsOnly: true } : {}),
       });
     } catch {
-      // If we can't even snapshot (an unborn HEAD, an index git can't stash
-      // over), run the op unguarded rather than block it.
+      // If we can't even snapshot (an unborn HEAD), run the op unguarded
+      // rather than block it. (An index git won't copy — a conflict in
+      // progress — is still snapshotted: its branches and stashes can go
+      // back, and the tree's plan says it can't.)
       return fn();
     }
 
+    // The op's own questions are DOM, not modal: what the user saves while
+    // one is open lands inside the op's window, and can't be told from the
+    // op's own changes. The snapshot says so, so an undo that would rewrite
+    // the tree says it takes those too.
+    const questions = questionsAsked();
+    const noteAsked = (): void => {
+      if (questionsAsked() !== questions) repo.ctx.snapshot.markAsked(snapshot);
+    };
     try {
       const result = await fn();
+      noteAsked();
       if (nothingRan(result)) {
         // Cancelled at a question (Stash & Retry's Cancel, a dismissed
         // dialog): nothing ran, so there is nothing to undo — an "Undid?
@@ -105,6 +117,7 @@ export class UndoLedger {
       return result;
     } catch (err) {
       // The op threw mid-flight; still record whatever it changed.
+      noteAsked();
       if (await this.settle(repo, snapshot)) {
         this.record(repo.root, snapshot);
       }

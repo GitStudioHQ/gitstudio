@@ -426,6 +426,32 @@ test("untracked files the target has at their path are counted — reset --hard 
   }
 });
 
+test("uncommitted changes git won't copy (a `git add -N` file): the question doesn't promise them back", async () => {
+  // `stash create` refuses an intent-to-add entry, so Undo can put the branch
+  // back and nothing more. (An unmerged index is refused up front: "still
+  // conflicted".) The question has to say so.
+  const f = fixture();
+  try {
+    shape(f, "diverged");
+    f.git("checkout", "-q", "feature");
+    writeFileSync(join(f.dir, "f.txt"), "my edit\n");
+    writeFileSync(join(f.dir, "new.txt"), "to be added\n");
+    f.git("add", "-N", "new.txt");
+    const t = await target(f);
+    await fetchResetTarget(f.ctx.process, t);
+    const p = await plan(f, t);
+    assert.equal(p.uncopied, "intent-to-add");
+    const q = resetQuestion(p);
+    assert.match(
+      q.kind === "confirm" ? q.message : "",
+      /GitStudio's Undo can put the branch back, but not your uncommitted changes — git can't keep a copy of them while a file is only marked to be added \(git add -N\)\./,
+    );
+    assert.doesNotMatch(q.kind === "confirm" ? q.message : "", /with your uncommitted changes/);
+  } finally {
+    f.ctx.dispose();
+  }
+});
+
 test("a door's own target: 'Checkout origin/x' resets x to the ref it names", async () => {
   const f = fixture();
   try {

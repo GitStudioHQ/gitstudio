@@ -430,11 +430,21 @@ test("an Apply that RESOLVES a conflict offers the conflict-restoring Undo in ev
   assert.ok(calls.includes("offer:resolved file saved and staged."), calls.join(" | "));
 });
 
-test("REAL git: the ledger's snapshot cannot be taken while a path is unmerged (why a resolution is not wrapped in it)", async () => {
+test("REAL git: the ledger's snapshot holds no copy of the tree while a path is unmerged (why a resolution is not wrapped in it)", async () => {
+  // git refuses `stash create` over an unmerged index. The snapshot is still
+  // taken — the ledger records a branch deleted or a stash dropped mid-merge —
+  // but it has no copy of the file to put back, so a resolution wrapped in it
+  // changes only what can't be restored, and nothing is recorded.
   const r = mergeConflict();
   const ctx = new GitContext({ root: r.repo });
   try {
-    await assert.rejects(ctx.snapshot.capture("Apply merge resolution"), /stash create/);
+    const snap = await ctx.snapshot.capture("Apply merge resolution");
+    assert.equal(snap.stashSha, null);
+    assert.equal(snap.scope?.uncopied, "conflict");
+    writeFileSync(join(r.repo, "a.txt"), "one\ntwo\nthree-resolved\nfour\n");
+    git(r.repo, "add", "a.txt");
+    await ctx.snapshot.settle(snap);
+    assert.equal(ctx.snapshot.changed(snap), false, "nothing the ledger could undo, so no entry");
   } finally {
     ctx.dispose();
     removeTemp(r.dir);

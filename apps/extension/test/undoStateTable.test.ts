@@ -1379,7 +1379,7 @@ cell({
   op: (f) =>
     f.ledger.runWithUndo(f.entry as never, "Accept Yours: f.txt", () => f.ctx.conflictOps.takeRole("f.txt", "yours")),
   expect: (_f, s, { row, undoSaid }) => {
-    row.extra = { note: "capture's `git stash create` is refused over an unmerged index, so runWithUndo runs the op unguarded" };
+    row.extra = { note: "`git stash create` is refused over an unmerged index: the tree it changed can't be put back, so a change to it alone is not recorded" };
     assert.equal(row.opRecordedUndo, false, "no ledger entry was offered");
     assert.ok(undoSaid.includes("info: Nothing to undo."), undoSaid.join(" / "));
     assert.equal(s.op, "merge", "the merge is still in progress");
@@ -1432,5 +1432,197 @@ cell({
     isAt(f, "refs/heads/feature", "L", "feature back at L");
     onBranch(f, "feature", "on feature");
     assert.equal(f.read("f.txt"), "my edit\n", "the edit is back");
+  },
+});
+
+// ══ 11. While a merge is stopped on a conflict ═══════════════════════════════
+//
+// `git stash create` refuses an unmerged index, and the capture used to throw
+// with it: the op ran unguarded and recorded nothing — while the questions
+// promised Undo ("Undo can still recover them", "bring those edits back").
+
+/** main (M1, M2) and other (O) both edit f.txt; merging other stops on it. */
+function mergeStopped(f: Fx): void {
+  f.commit("M1", "m1.txt");
+  f.git("checkout", "-q", "-b", "other");
+  f.commit("O", "f.txt", "other\n");
+  f.git("checkout", "-q", "main");
+  f.commit("M2", "f.txt", "main\n");
+  try {
+    f.git("merge", "other");
+  } catch {
+    /* stopped on f.txt */
+  }
+  // A hand resolution in progress, and a new file staged with it.
+  f.write("f.txt", "my careful hand resolution\n");
+  f.write("g.txt", "a staged new file\n");
+  f.git("add", "g.txt");
+}
+
+cell({
+  id: "E52",
+  operation: "Reset Current Branch to Here — Hard, backwards to M1",
+  state: "a merge stopped on f.txt, hand-resolved, with a new file staged",
+  expected: "the question doesn't promise the edits back; Undo puts main back at M2 and says the edits can't come back",
+  setup: (f) => mergeStopped(f),
+  op: async (f) => {
+    answer = yes("--hard");
+    const done = await runCommitAction("reset", f.ctx, { sha: sha(f, "main~1"), subject: "M1" }, f.undoRunner);
+    const gate = asked.find((a) => a.title === "Discard all uncommitted changes?");
+    const text = gate && "message" in gate ? (gate.message ?? "") : "";
+    assert.doesNotMatch(text, /bring those edits back/, "git can't copy them, so Undo can't bring them back");
+    assert.match(text, /git can't keep a copy of them while a conflict is unresolved, so GitStudio's Undo can put the branch back, but not those edits\./);
+    return done;
+  },
+  expect: (f, s, { undoAsked }) => {
+    isAt(f, "refs/heads/main", "M2", "main back at M2");
+    assert.deepEqual(s.status, [], "nothing uncommitted is made up");
+    const q = undoAsked.find((a) => a.kind === "confirm");
+    assert.match(q && "message" in q ? (q.message ?? "") : "", /can't come back — git couldn't keep a copy of them while a conflict was unresolved/);
+  },
+});
+
+cell({
+  id: "E53",
+  operation: "Delete branch feature (Branches view) — NOT merged, Force Delete",
+  state: "a merge stopped on f.txt, hand-resolved; feature has unmerged F",
+  expected: "feature recreated at F; the merge and its resolution untouched",
+  setup: (f) => {
+    f.git("checkout", "-q", "-b", "feature");
+    f.memo.F = f.commit("F", "only-here.txt");
+    f.git("checkout", "-q", "main");
+    mergeStopped(f);
+  },
+  op: async (f) => {
+    answer = yes();
+    await branchActions.deleteBranch(f.repos, node("feature"), noop);
+    assert.ok(asked.some((a) => "message" in a && /Undo can still recover them/.test(a.message ?? "")), "the force question promised it");
+  },
+  expect: (f, s) => {
+    assert.equal(sha(f, "refs/heads/feature"), f.memo.F, "feature is back at F");
+    assert.equal(s.op, "merge", "the merge is still stopped");
+    assert.equal(f.read("f.txt"), "my careful hand resolution\n", "and the resolution in progress is as it was");
+  },
+});
+
+cell({
+  id: "E54",
+  operation: "Drop stash@{0} (Stashes view)",
+  state: "a merge stopped on f.txt; one stash",
+  expected: "the stash is back",
+  setup: (f) => {
+    f.write("f.txt", "stashed work\n");
+    f.git("stash", "push", "-q", "-m", "my work");
+    mergeStopped(f);
+  },
+  op: (f) => stashesView.dropStash(f.repos, "stash@{0}", noop),
+  expect: (_f, s) => {
+    assert.deepEqual(s.stashes, ["On main: my work"], "the stash is back");
+    assert.equal(s.op, "merge");
+  },
+});
+
+// ══ 12. An edit saved while the op's own question is open ════════════════════
+//
+// GitStudio's questions are DOM, not modal: the user can go to the editor and
+// save while one is up. That edit is theirs, not the op's.
+
+/** Answer "yes" to confirms and `pick` to picks, saving f.txt at the `at`-th question. */
+function editWhileAsked(f: Fx, at: number, answerThere: string | undefined, pick?: string): (spec: DialogSpec) => string | undefined {
+  let n = 0;
+  return (spec) => {
+    n++;
+    if (n === at) {
+      f.write("f.txt", "typed while the question was open\n");
+      return answerThere;
+    }
+    return spec.kind === "confirm" ? "ok" : spec.kind === "pick" ? pick : undefined;
+  };
+}
+
+cell({
+  id: "E55",
+  operation: "Delete branch feature (Branches view) — NOT merged, Force Delete CANCELLED",
+  state: "on main; f.txt saved in the editor while 'not fully merged' is open",
+  expected: "nothing recorded, no toast; the edit stays",
+  setup: (f) => mainAndFeature(f),
+  op: async (f) => {
+    answer = editWhileAsked(f, 2, undefined);
+    return branchActions.deleteBranch(f.repos, node("feature"), noop);
+  },
+  expect: (f, _s, { row, undoSaid }) => {
+    assert.equal(row.opRecordedUndo, false, "no 'Undid? Delete branch' for a delete that didn't happen");
+    assert.ok(undoSaid.includes("info: Nothing to undo."), undoSaid.join(" / "));
+    assert.equal(f.read("f.txt"), "typed while the question was open\n");
+    assert.ok(hasRef(f, "refs/heads/feature"));
+  },
+});
+
+cell({
+  id: "E56",
+  operation: "Delete branch feature (Branches view) — NOT merged, Force Delete",
+  state: "on main; f.txt saved in the editor while 'not fully merged' is open",
+  expected: "Undo brings feature back and leaves the edit alone — its question never mentions the tree",
+  setup: (f) => {
+    mainAndFeature(f);
+    f.memo.F = sha(f, "feature");
+  },
+  op: async (f) => {
+    answer = editWhileAsked(f, 2, "ok");
+    return branchActions.deleteBranch(f.repos, node("feature"), noop);
+  },
+  expect: (f, _s, { undoAsked }) => {
+    assert.equal(sha(f, "refs/heads/feature"), f.memo.F, "feature is back");
+    assert.equal(f.read("f.txt"), "typed while the question was open\n", "the edit is the user's");
+    const q = undoAsked.find((a) => a.kind === "confirm");
+    assert.equal(q && "message" in q ? q.message : "", `Bring back branch 'feature' at ${f.memo.F.slice(0, 7)}.`);
+  },
+});
+
+cell({
+  id: "E57",
+  operation: "Merge feature (Branches view) — Stash & Retry CANCELLED",
+  state: "on main with an edit in the merge's way; f.txt saved while the question is open",
+  expected: "nothing ran, so nothing is recorded; the edits stay",
+  setup: (f) => {
+    f.git("checkout", "-q", "-b", "feature");
+    f.commit("F", "g.txt", "feature\n");
+    f.git("checkout", "-q", "main");
+    f.commit("G", "g.txt", "g\n");
+    f.git("checkout", "-q", "feature");
+    f.git("checkout", "-q", "main");
+    f.write("g.txt", "in the way\n");
+  },
+  op: async (f) => {
+    answer = editWhileAsked(f, 2, "cancel");
+    return branchActions.mergeBranchIntoCurrent(f.repos, node("feature"), noop);
+  },
+  expect: (f, _s, { row, undoSaid }) => {
+    assert.equal(row.opRecordedUndo, false, "a cancelled merge offers no Undo");
+    assert.ok(undoSaid.includes("info: Nothing to undo."), undoSaid.join(" / "));
+    assert.equal(f.read("f.txt"), "typed while the question was open\n");
+    assert.equal(f.read("g.txt"), "in the way\n");
+  },
+});
+
+cell({
+  id: "E58",
+  operation: "Rebase onto main (Branches view) — Stash & Retry CANCELLED",
+  state: "on feature with an uncommitted edit; f.txt saved while the question is open",
+  expected: "nothing ran, so nothing is recorded; the edits stay",
+  setup: (f) => {
+    mainAndFeature(f);
+    f.git("checkout", "-q", "feature");
+    f.write("feat.txt", "uncommitted\n");
+  },
+  op: async (f) => {
+    answer = editWhileAsked(f, 2, "cancel");
+    return branchActions.rebaseCurrentOnto(f.repos, node("main"), noop);
+  },
+  expect: (f, _s, { row, undoSaid }) => {
+    assert.equal(row.opRecordedUndo, false, "a cancelled rebase offers no Undo");
+    assert.ok(undoSaid.includes("info: Nothing to undo."), undoSaid.join(" / "));
+    assert.equal(f.read("f.txt"), "typed while the question was open\n");
+    assert.equal(f.read("feat.txt"), "uncommitted\n");
   },
 });

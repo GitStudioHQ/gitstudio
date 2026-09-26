@@ -48,6 +48,12 @@ export interface UndoOptions {
    * `onto` (the rebase's base, a sha) tells its moves from any other rebase.
    */
   deferred?: { onto?: string };
+  /**
+   * The op moves only refs and stashes — Delete branch, Drop stash — never
+   * the working tree. An edit saved while its question was open is then the
+   * user's: a cancel records nothing, and Undo never takes the edit back.
+   */
+  refsOnly?: boolean;
 }
 
 /** A live repository: its root, our data context, and (once vscode.git has
