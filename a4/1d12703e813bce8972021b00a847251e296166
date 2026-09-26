@@ -1,0 +1,92 @@
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_26644d0640bde8 45-50
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_761bbfe47d70f6 57-71
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_88f96d59637596 1995-2002,2008-2011,2014-2018,2022-2023
+packages/git-service/test/branchReset.test.ts
+  s_26f5e669d3043c::t_125eb329129d26 476
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_4138321fa6ac1a 413
+  s_26f5e669d3043c::t_1e940b9ccf7890 419
+  s_26f5e669d3043c::t_27b2eb53c05a09 394
+  s_26f5e669d3043c::t_49e3b9d4d66fca 1-3,5-14,17-19,21-36,44-49,52-54,69-171,175,177-179,185-187,194-195,198-200,204-205,212,217-235,239-242,245-247,249-255,259-280,283-304,306-333,335-342,344-384,387-393,395-404,406-412,414-418,420-457,459-473,475-498,500-514,516-517,521-523,526-594,597,599-608,610-613,618,621,630-656,658-673,676-894,911,916-961,965-994
+  s_26f5e669d3043c::t_48e7ba68437e8e 962-964
+  s_26f5e669d3043c::t_de21f34705bf64 405
+  s_26f5e669d3043c::t_3446f31cba4696 385-386
+  s_26f5e669d3043c::t_0f02b2a581d215 173-174
+  s_26f5e669d3043c::t_f957a3be406d07 515
+  s_26f5e669d3043c::t_da3aba16c067a5 172
+packages/git-service/src/index.ts
+  s_26f5e669d3043c::t_9c76ffbfdfd197 58
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_60e0f0cc8fb62e 66
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_f072fdee2446ee 59-100
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_ed27c39b60e149 620-623,629-637
+  s_26f5e669d3043c::t_7b40b2b76f2978 609-612
+apps/extension/test/askBeforeTheViewOpens.test.ts
+  s_26f5e669d3043c::t_96d827756d286d 73
+  s_26f5e669d3043c::t_32563232402381 58-66
+packages/git-service/test/conflictOps.test.ts
+  s_26f5e669d3043c::t_6e0ff653fb1d57 703-726
+packages/git-service/src/refRestore.ts
+  s_26f5e669d3043c::t_e6fef4b88fa94f 1-148
+packages/git-service/src/ConflictOps.ts
+  s_26f5e669d3043c::t_7d588837b46667 372-385
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_0c1cec7c3650ae 353-358
+  s_26f5e669d3043c::t_98b6c4db09efce 35
+  s_26f5e669d3043c::t_deb8262d92c640 1411-1426,1432-1435,1441-1450
+  s_26f5e669d3043c::t_74148e7c87173c 1109-1131,1133
+apps/desktop/src/renderer/dropCommit.ts
+  s_26f5e669d3043c::t_3940d87d4fb499 101-107,111
+packages/git-service/src/dropCommit.ts
+  s_26f5e669d3043c::t_8da1a86119e538 12-21
+  s_26f5e669d3043c::t_220fc31b17c109 238,244-251
+  s_26f5e669d3043c::t_f8429649d341ac 324-331,337-345
+  s_26f5e669d3043c::t_52ea2c3c3414c7 287-289,292-306
+  s_26f5e669d3043c::t_d5ddc964840e71 310-313,315-320
+  s_26f5e669d3043c::t_643f31122f37f0 346-360,374-375,377-429,438
+apps/desktop/test/undoStateTable.test.ts
+  s_26f5e669d3043c::t_e27b59ce674140 23
+  s_26f5e669d3043c::t_2b46ef8b621c82 34-37
+  s_26f5e669d3043c::t_f355a29876dd5a 566-568
+apps/extension/src/rebase/rebaseCommands.ts
+  s_26f5e669d3043c::t_208fb93a5faa8f 69-74,76-88
+  s_26f5e669d3043c::t_d5a742545317c3 75
+  s_26f5e669d3043c::t_4470ac16307d46 177,179-180
+packages/git-service/src/stashRestore.ts
+  s_26f5e669d3043c::t_25102a96b0292d 1-133
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_d317db11444c51 3,11-24,30-32,39,71-74,84-87,89-90,102-105,108-111,116-123,127,129,173,176,189,194,200,207,218-225,230-232,234,237-238,240,242,244-245,247-259,261,263-264,266,269,272-281,284-285,287,289,293-296,301-302,306-308,312,314,318,320,328,343,356-363,383-384,391
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_92c0f71ace1f8d 14539-14572
+apps/extension/test/undoHistory.test.ts
+  s_26f5e669d3043c::t_dcee9afb0f1eae 1-124
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_705903f2ca7877 4211-4215
+  s_26f5e669d3043c::t_1e9bdf05c5b362 8059-8063
+packages/git-service/test/undoScope.test.ts
+  s_26f5e669d3043c::t_632670cba63519 1-3,5-113,115-171,243-355
+  s_26f5e669d3043c::t_bfc05bc3b04404 172-242
+  s_26f5e669d3043c::t_4e02b090bededa 4
+  s_26f5e669d3043c::t_8e6b41858034a1 114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a41d12703e813bce8972021b00a847251e296166",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
