@@ -58,6 +58,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on
   paints now. (#32)
+- **Checking out a pull request again brings `pr/<n>` up to date.** It failed
+  while `pr/<n>` was checked out. When `pr/<n>` has commits the pull request
+  doesn't — yours, or the ones a force-push to the pull request replaced — it
+  is left exactly as it is and the app says why, where git's refusal was
+  reported as an error. The same rule as the VS Code extension's.
+- Repositories whose GitHub remote uses `ssh.github.com` (SSH over port 443)
+  or `www.github.com` are recognised as GitHub repositories.
 
 ## [2.1.0] - 2026-09-25
 

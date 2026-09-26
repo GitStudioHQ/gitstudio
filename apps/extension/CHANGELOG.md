@@ -64,6 +64,77 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - Blame in a repository nested inside another's folder (a vendored checkout,
   a submodule) no longer runs in the outer repository when the outer one is
   the repository on screen.
+- **Pull requests: checks from GitHub Actions.** The Pull Requests list and a
+  PR's page said "running" or "No checks" for every repository on GitHub
+  Actions, whether its runs had failed or passed. They read the runs now, with
+  any legacy statuses: a failure reads as failed, a pass as passed, "No
+  checks" only when there are none. Every row shows it — drafts too, not just
+  the first eight — as the colour of its icon, with the words in its tooltip;
+  rows no longer show the literal text `$(check)`, `$(x)` or
+  `$(circle-filled)`.
+- **Create Pull Request: Draft creates a draft.** Every pull request was
+  created ready for review, whichever you picked. A branch that lives in your
+  fork is now sent to GitHub as `owner:branch` — as a bare name, GitHub looked
+  for it in the target repository — and is pushed where git itself pushes it.
+  The title proposed is the branch's one commit subject, or with several
+  commits the branch name, as GitHub proposes it (it was the newest commit's
+  subject). The base branch question offers only branches the remote has
+  (`master` and `develop` were offered everywhere) and says which repository
+  the pull request opens on. "A pull request already exists" opens that pull
+  request, not the list.
+- **Renamed files in a pull request** diff against the file as it was, under
+  its old name — the whole file showed as added — and the page says what each
+  was renamed from.
+- **Review comments GitHub accepts.** Only lines inside the diff take a
+  comment: one comment anywhere else made GitHub refuse the whole review with
+  just "Unprocessable Entity". Removed lines, and deleted files, take comments
+  on their left side. A review is pinned to the commit its diffs show, so a
+  push during the review no longer moves its comments onto other code, and a
+  comment on several lines is sent as that range. Start Review reads the pull
+  request's current head and opens its first file (it opened five previews,
+  each replacing the last). A comment GitHub would still refuse is named before
+  anything is sent, and when GitHub refuses, its reason is shown.
+- **Delete Comment on a pending review comment** deletes that comment. It
+  threw and deleted nothing. A comment already posted to GitHub no longer
+  offers it.
+- **Pending review comments are no longer thrown away.** Starting a review of
+  another pull request, or Cancel Review, asks first — submit them, discard
+  them, or keep reviewing — and a pull request whose files fail to load leaves
+  your queued comments alone.
+- **Check Out on a pull request you already have** brings `pr/<n>` up to
+  date. It failed while `pr/<n>` was checked out, and it silently threw away
+  any commits you had made on it; now a `pr/<n>` with commits the pull request
+  doesn't have is never moved without asking. On the pull request's own
+  branch already, it says so instead of moving you to a `pr/<n>` copy. The
+  progress notification ends before "Checked out" appears.
+- **A pull request's page:** label chips wear their colours (the page's own
+  security policy dropped them, and every label was grey); a merged pull
+  request reads **Merged** in purple and one closed without merging reads
+  **Closed** in red (both read a purple "Closed"); after **Merge…** the page
+  flips to Merged at once, and the row leaves the list, without a reload or a
+  second Merge. Merge… offers only the methods the repository allows, and
+  isn't offered on a draft. A same-repository branch reads without its owner,
+  and a file's line counts no longer show a red "−0".
+- **The Pull Requests list no longer asks GitHub on every file save**, even
+  while collapsed. It refreshes when it comes into view after two minutes,
+  every two minutes while in view in a focused window, on Refresh, and when
+  the repository or your sign-in changes. It names the repository it shows,
+  drops another repository's pull requests as soon as you switch, and says why
+  there is no list — no repository, no remote, or remotes not on github.com —
+  instead of staying blank. A refresh that fails keeps the list and says so; a
+  list that fails to load offers Retry or Sign in. Rows show when each pull
+  request was last updated, the order they are in.
+- **No more silent 100-item limits.** Every open pull request is listed, not
+  the first 100, and every changed file (GitHub lists up to 3,000), each one
+  commentable in a review. A page's "Changed files" count is the pull
+  request's own, and a list that is partial, or failed to load, says so.
+- **github.com under another name.** Remotes using an SSH host alias
+  (`git@github.com-work:…`, or any `~/.ssh/config` Host whose HostName is
+  github.com), `ssh.github.com` (SSH over port 443) or `www.github.com` turned
+  the pull request features off without a word. They are github.com now.
+- **A pull request's diff that can't be loaded says why** — signed out, rate
+  limited, offline — instead of an empty pane that claimed the file was added
+  or deleted. A binary or very large file shows a note, not its bytes.
 
 ## [1.14.0] - 2026-09-25
 

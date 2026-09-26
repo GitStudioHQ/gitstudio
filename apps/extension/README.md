@@ -84,7 +84,7 @@ Free on public *and* private repos. No account, no sign-up, no analytics, no fea
 
 ## GitHub pull requests, in-editor
 
-**Review where the code is.** Sign in once with VS Code's built-in GitHub account — no extra token — and the Pull Requests view lists open PRs for the current repo. Open the description, check the PR out, start a review, comment inline on the diff, submit, and merge with your preferred method. Create new PRs from the editor too. Not a GitHub repo, or not signed in? The view shows a quiet connect prompt; nothing breaks.
+**Review where the code is.** Sign in once with VS Code's built-in GitHub account — no extra token — and the Pull Requests view lists open PRs for the current repo. Open the description, check the PR out, start a review, comment inline on the diff, submit, and merge with your preferred method. Create new PRs from the editor too. Not signed in? The view shows a quiet connect prompt. Not a GitHub repo? The view says so, naming the remotes it found; nothing breaks.
 
 ## Branch compare
 
