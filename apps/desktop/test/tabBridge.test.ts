@@ -205,3 +205,31 @@ test("Stash & Retry sends its second call for the SAME tab", async () => {
   await flush();
   assert.equal(w.settled(), true);
 });
+
+test("…even if another tab came to the front while the question was up", async () => {
+  // No switch happens under a modal (the shell refuses it) — this is the
+  // belt to that brace: the retry is stamped with the tab that ASKED, not
+  // with whichever tab is in front when the answer comes.
+  const G = { id: 106, root: "/repos/g" };
+  const H = { id: 107, root: "/repos/h" };
+  b.setActiveSession(G);
+  b.answerInTheWayWith(async () => {
+    b.setActiveSession(H);
+    return true;
+  }, () => {});
+  const w = watch(b.host.invoke("sync:pull", undefined as never));
+  calls.at(-1)!.resolve({ ok: false, message: "in the way", inTheWay: { kind: "pull", files: ["x"], root: "/repos/g" } });
+  await flush();
+  await flush();
+  const retry = calls.at(-1)!;
+  assert.equal(retry.channel, "sync:pull");
+  assert.deepEqual(retry.scope, { root: "/repos/g" }, "the retry goes to G, the tab that asked — not H");
+  retry.resolve({ ok: true });
+  await flush();
+  assert.equal(w.settled(), false, "G's answer waits while H is in front");
+  b.setActiveSession(G);
+  await flush();
+  assert.equal(w.settled(), true, "and is G's when G is back");
+  b.endSession(G.id);
+  b.endSession(H.id);
+});

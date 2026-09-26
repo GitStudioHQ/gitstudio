@@ -16482,6 +16482,70 @@
       c.eq(scroller().scrollTop, 120, "a trip to another view keeps it too");
     },
 
+    /** Row 6: a switch with a menu or the palette open. They are about the
+     *  tab being left, so they close — and the switch happens, whether you
+     *  asked from the keyboard or main put another tab in front. */
+    "a-switch-takes-the-menus-and-the-palette-with-it": async (f) => {
+      const c = check(f);
+      await settle(900);
+      // A menu is position: fixed, so it has no offsetParent even when shown.
+      const menuOpen = () => $$(".dropdown").some((d) => d.isConnected && d.getBoundingClientRect().width > 0);
+      const paletteOpen = () => document.body.classList.contains("cmdk-open") || !!$(".cmdk-card");
+      $(".topbar-branch")?.click();
+      await settle(400);
+      c.ok(menuOpen(), "precondition: the branch menu is open");
+      press("Tab", { ctrl: true });
+      await settle(700);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "Ctrl+Tab from an open menu switches");
+      c.ok(!menuOpen(), "…and the menu, which was about the tab it left, is closed");
+      press("k", { meta: true });
+      await settle(500);
+      c.ok(paletteOpen(), "precondition: the palette is open");
+      press("Tab", { ctrl: true });
+      await settle(700);
+      c.eq(activeTabRoot(), GS_ROOT, "Ctrl+Tab from the palette switches");
+      c.ok(!paletteOpen(), "…and the palette is closed");
+      $(".topbar-branch")?.click();
+      await settle(400);
+      c.ok(menuOpen(), "precondition: a menu again");
+      window.__gsTabs.open(GS_DEV_ROOT); // main: Open Recent ▸ gistudio.dev
+      await settle(800);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "a switch main makes happens too");
+      c.ok(!menuOpen(), "…and takes the menu with it");
+      c.ok(!$("[inert]"), "nothing is left inert behind a surface that closed");
+      $(".topbar-branch")?.click();
+      await settle(400);
+      c.ok(menuOpen(), "and the tab in front opens its own menus as before");
+    },
+
+    /** Row 6: a peek is a surface over the tab it was opened in. */
+    "a-switch-takes-an-open-peek-with-it": async (f) => {
+      const c = check(f);
+      await settle(900);
+      $(".gh-detail .gh-meta-author, .det-main .gh-meta-author")?.click();
+      await settle(900);
+      c.ok(!!$(".peek-overlay"), "precondition: a peek is open over the pull request");
+      press("Tab", { ctrl: true });
+      await settle(800);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "Ctrl+Tab from inside a peek switches");
+      c.ok(!$(".peek-overlay"), "…and the peek is closed");
+      c.ok(!$("[inert]"), "nothing is left inert behind it");
+      tabEl(GS_ROOT)?.click();
+      await settle(800);
+      c.ok(!$(".peek-overlay"), "coming back does not bring back a peek that was closed");
+      c.ok(!!$(".gh-detail, .det-main"), "the pull request it was over is still there");
+      // The app menu's Open Recent reaches past the page: main puts another
+      // tab in front with the peek still open.
+      $(".gh-detail .gh-meta-author, .det-main .gh-meta-author")?.click();
+      await settle(900);
+      c.ok(!!$(".peek-overlay"), "precondition: the peek again");
+      window.__gsTabs.open(GS_DEV_ROOT);
+      await settle(800);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "a switch main makes happens");
+      c.ok(!$(".peek-overlay"), "…and closes the peek too");
+      c.ok(!$("[inert]"), "…leaving nothing inert");
+    },
+
     /** Row 14: a background tab's folder is moved or deleted. Its tab stays
      *  (the folder may come back), says so in the row, costs the front tab
      *  nothing, says so in words when it is brought to the front, and closes
