@@ -1,0 +1,21 @@
+apps/desktop/harness/shot.sh
+  s_26f5e669d3043c::t_4ca11520ac8acb 8-11
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_44345b98b48c47 807-811
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fcf1312d68cfe6917de91199628ebdcdd008528d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
