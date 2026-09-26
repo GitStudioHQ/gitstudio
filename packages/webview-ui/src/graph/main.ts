@@ -275,7 +275,13 @@ function handle(
       graph.totalColumns = message.totalColumns;
       graph.hasMore = message.hasMore;
       applyGraphInitRefs(graph, message);
-      graph.status = message.noRepo ? "no-repo" : message.rows.length === 0 ? "empty" : "ready";
+      graph.status = message.noRepo
+        ? "no-repo"
+        : message.discovering
+          ? "discovering"
+          : message.rows.length === 0
+            ? "empty"
+            : "ready";
       break;
     }
     case "graphAppend": {

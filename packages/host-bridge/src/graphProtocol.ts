@@ -124,6 +124,13 @@ export interface GraphInitMessage {
    * commits yet".
    */
   noRepo?: boolean;
+  /**
+   * No repository YET: none is active, but the first discovery has not
+   * settled (vscode.git's scan can still find one below the opened folder).
+   * The graph says it is looking, as the Changes view above the rail does;
+   * the host sends `noRepo` instead once discovery settles with nothing.
+   */
+  discovering?: boolean;
   /** The filter these rows were built under, RESOLVED to full names (see
    *  GraphRefFilter) — what the picker ticks. */
   refFilter: GraphRefFilter;

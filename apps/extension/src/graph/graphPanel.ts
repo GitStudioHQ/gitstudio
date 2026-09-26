@@ -389,8 +389,22 @@ export class CommitGraphPanel {
       this.walk = { refs: null, head: true };
       this.nextSkip = 0;
       this.hasMore = false;
-      // Not "No commits yet": there is no repository to have any.
-      this.postInit({ rows: [], head: "", totalColumns: 1, hasMore: false, noRepo: true, refFilter: null }, []);
+      // Not "No commits yet": there is no repository to have any. And while
+      // discovery is still running, not "No repository open" either — the
+      // Changes view above the rail says "Looking for a repository…" at that
+      // moment, and settling fires onDidChange, which lands back here.
+      const discovering = this.repos.isDiscovering();
+      this.postInit(
+        {
+          rows: [],
+          head: "",
+          totalColumns: 1,
+          hasMore: false,
+          ...(discovering ? { discovering: true } : { noRepo: true }),
+          refFilter: null,
+        },
+        [],
+      );
       return;
     }
 

@@ -118,9 +118,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - The Changes view's chevrons point down when open and right when closed
   (they showed ">" open and "^" closed).
 - Before the Changes view has read anything it says "Reading changes…", not
-  "Working tree clean"; while repositories are still being found it says
-  "Looking for a repository…", not "No repository open". With no repository,
-  the Commit Graph and Commits view say so instead of "No commits yet".
+  "Working tree clean"; while repositories are still being found, it, the
+  Commit Graph and the Commits view say "Looking for a repository…", not "No
+  repository open". With no repository, the Commit Graph and Commits view say
+  so instead of "No commits yet".
 - GitStudio's AI sparkle no longer appears in VS Code's own commit box while
   AI is off, and the Connect-AI plug leaves the commit box once you turn AI
   off.

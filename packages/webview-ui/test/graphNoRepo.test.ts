@@ -9,6 +9,10 @@ import { findChrome, runInChrome } from "./headless";
  * empty graphInit it sends for a repository without history. The host now
  * marks it (`noRepo`), and both say no repository is open. An empty history
  * still reads "No commits yet". Driven through the real entries.
+ *
+ * While the host is still DISCOVERING repositories it says so (`discovering`),
+ * and both read "Looking for a repository…" — what the Changes view above the
+ * rail says at that moment — never "No repository open".
  */
 const GRAPH = fileURLToPath(new URL("../src/graph/main.ts", import.meta.url));
 const RAIL = fileURLToPath(new URL("../src/graph/sidebar-main.ts", import.meta.url));
@@ -27,10 +31,14 @@ const HOST = `
 
 const skip = !CHROME && "no Chrome on this machine";
 
-test("the Commit Graph: 'No repository open' without a repository, 'No commits yet' for an empty one", { skip }, async () => {
+test("the Commit Graph: 'Looking for a repository…' while discovering, 'No repository open' without one, 'No commits yet' for an empty one", { skip }, async () => {
   const v = await runInChrome(CHROME!, GRAPH, HOST + `
     const graph = () => document.querySelector("gitstudio-graph");
     const title = async () => { await graph().updateComplete; const t = graph().shadowRoot.querySelector(".ph-title"); return t ? t.textContent.trim() : ""; };
+    await host({ ...empty, discovering: true });
+    const looking = await title();
+    expect(looking === "Looking for a repository…", "discovery still running (" + looking + ")");
+    expect(!!graph().shadowRoot.querySelector('[role="status"]'), "announced as a status");
     await host({ ...empty, noRepo: true });
     const none = await title();
     expect(none === "No repository open", "no repository (" + none + ")");
@@ -41,10 +49,14 @@ test("the Commit Graph: 'No repository open' without a repository, 'No commits y
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
-test("the sidebar rail: the same two states", { skip }, async () => {
+test("the sidebar rail: the same three states", { skip }, async () => {
   const v = await runInChrome(CHROME!, RAIL, HOST + `
     const rail = () => document.querySelector("gitstudio-commit-rail");
     const title = async () => { await rail().updateComplete; const t = rail().shadowRoot.querySelector(".state .t"); return t ? t.textContent.trim() : ""; };
+    await host({ ...empty, discovering: true });
+    const looking = await title();
+    expect(looking === "Looking for a repository…", "discovery still running (" + looking + ")");
+    expect(!!rail().shadowRoot.querySelector('.state[role="status"]'), "announced as a status");
     await host({ ...empty, noRepo: true });
     const none = await title();
     expect(none === "No repository open", "no repository (" + none + ")");

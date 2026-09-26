@@ -665,6 +665,20 @@ export class CommitRail extends LitElement {
       .state .codicon { font-size: 22px; color: var(--gs-fg-subtle); }
       .state .t { font-size: 12px; color: var(--gs-fg-muted); }
       .state .s { font-size: 11px; color: var(--gs-fg-subtle); max-width: 220px; }
+      .state .spinner {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 2px solid color-mix(in srgb, var(--gs-fg-subtle) 30%, transparent);
+        border-top-color: var(--gs-fg-subtle);
+        animation: state-spin 0.8s linear infinite;
+      }
+      @keyframes state-spin {
+        to { transform: rotate(360deg); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .state .spinner { animation: none; }
+      }
       .state button {
         margin-top: 6px;
         padding: 3px 12px;
@@ -902,8 +916,9 @@ export class CommitRail extends LitElement {
   declare head: string;
   declare totalColumns: number;
   declare hasMore: boolean;
-  /** "no-repo": no repository is open (GraphInitMessage.noRepo) — not an empty history. */
-  declare status: "loading" | "ready" | "empty" | "error" | "no-repo";
+  /** "no-repo": no repository is open (GraphInitMessage.noRepo) — not an empty history.
+   *  "discovering": none YET — the host is still looking (GraphInitMessage.discovering). */
+  declare status: "loading" | "ready" | "empty" | "error" | "no-repo" | "discovering";
   declare errorMessage: string;
   /** The branch filter the rows were built under (issue #30); null = all. */
   declare refFilter: GraphRefFilter;
@@ -1846,6 +1861,8 @@ export class CommitRail extends LitElement {
           ? this.emptyTpl()
           : this.status === "no-repo"
             ? this.noRepoTpl()
+            : this.status === "discovering"
+              ? this.discoveringTpl()
             : this.status === "error"
               ? this.errorTpl()
               : this.listTpl()}
@@ -2286,6 +2303,17 @@ export class CommitRail extends LitElement {
             </span>
           </div>
         `)}
+      </div>
+    `;
+  }
+
+  /** The Changes view above the rail says "Looking for a repository…" while
+   *  discovery runs; the rail must not say "No repository open" under it. */
+  private discoveringTpl() {
+    return html`
+      <div class="state" role="status">
+        <span class="spinner" aria-hidden="true"></span>
+        <span class="t">Looking for a repository…</span>
       </div>
     `;
   }
