@@ -73,3 +73,16 @@ export function branchesPayload(
     .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   return { local, remote, recent, tags };
 }
+
+/**
+ * `payload` with each local branch's star as `favorites` has it now — the same
+ * object when nothing differs. The host's instant first post re-sends the list
+ * it last built, and a star set since would otherwise go out unset: the menu
+ * moved the row at once, and that post moved it back.
+ */
+export function withFavorites(payload: BranchesPayload, favorites: readonly string[]): BranchesPayload {
+  const favs = new Set(favorites);
+  if (payload.local.every((b) => b.favorite === favs.has(b.name))) return payload;
+  return { ...payload, local: payload.local.map((b) => ({ ...b, favorite: favs.has(b.name) })) };
+}
+

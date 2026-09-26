@@ -25,6 +25,8 @@ import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from ".
 //     a submenu — and its aria-activedescendant names the highlighted option;
 //   · a local branch's submenu has the star as an item, and starring — from
 //     there or the star — moves the row at once, before the host answers;
+//     a host post sent before the star does not move it back, and the
+//     host's agreeing post rebuilds nothing;
 //   · the pointer moves the highlight, but a list scrolling under a pointer
 //     that did not move does not, and nor does crossing rows on the way to
 //     an open submenu.
@@ -538,6 +540,57 @@ test("a press anywhere in the menu or a submenu leaves focus in the search box",
   await openMenu(page, first);
   s = await pressOn(".bm-list .bm-loading");
   assert.ok(s.menuOpen && s.focusIsSearch, "the 'Loading branches…' row");
+  await page.key("Escape");
+});
+
+// The host answers a star with a state post, and the first of those carries
+// the list it had before the star (the fast post). A post like that must not
+// put the row back where it was, and the host's own answer, which agrees,
+// must not rebuild the list the click already rebuilt.
+test("a star holds through a host post sent before it, and the host's agreeing post rebuilds nothing", { skip }, async () => {
+  const groupOf = (name: string): Promise<string | null> =>
+    page.eval(`(function () {
+      var r = document.querySelector('.bm-list .bm-branch[data-bname="${name}"]');
+      var g = r && r.closest(".bm-group-body");
+      return g ? g.getAttribute("aria-label") : null;
+    })()`);
+  const rebuilds = (): Promise<number> => page.eval(`window.__bmRebuilds`);
+  await openMenu(page);
+  await page.eval(`window.__bmRebuilds = 0;
+    new MutationObserver(function (ms) { ms.forEach(function (m) { if (m.removedNodes.length > 3) window.__bmRebuilds++; }); })
+      .observe(document.querySelector(".bm-list"), { childList: true })`);
+  const star = await page.eval<{ x: number; y: number }>(`(function () {
+    var r = document.querySelector('.bm-list .bm-branch[data-bname="topic"] .bm-star').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+  await page.click(star.x, star.y);
+  assert.equal(await groupOf("topic"), "Favorites", "starred at once");
+  assert.deepEqual((await page.posted()).filter((m) => m.type === "branchAction"), [
+    { type: "branchAction", action: "favorite", ref: "topic" },
+  ]);
+  const afterClick = await rebuilds();
+
+  // The host's fast post, with the list from before the star.
+  await page.send(STATE);
+  assert.equal(await groupOf("topic"), "Favorites", "a post from before the star does not un-star it");
+  assert.equal(await rebuilds(), afterClick, "nor rebuild the list");
+  await page.type("t");
+  assert.equal(await groupOf("topic"), "Favorites", "nor does the next repaint");
+  const afterType = await rebuilds();
+
+  // The host's own answer: the same list, starred.
+  const starred = stateMessage({
+    local: LOCAL.map((b) => (b.name === "topic" ? { ...b, favorite: true } : b)),
+    remote: ["origin/main", "origin/feature"],
+    tags: ["v1.0"],
+  });
+  await page.send(starred);
+  assert.equal(await groupOf("topic"), "Favorites");
+  assert.equal(await rebuilds(), afterType, "the host's agreeing post rebuilds nothing");
+
+  // Once it has answered, the host's list is the truth again (starred elsewhere, un-starred elsewhere).
+  await page.send(STATE);
+  assert.equal(await groupOf("topic"), "Local", "a later post that un-stars it is taken");
   await page.key("Escape");
 });
 

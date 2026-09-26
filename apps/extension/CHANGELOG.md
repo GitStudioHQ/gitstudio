@@ -45,7 +45,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   box, as does a click anywhere in the menu. A local branch's actions include
   **Add to Favorites** (or **Remove from Favorites**), so the star can be set
   from the keyboard; from there or from the star, the branch moves to or from
-  Favorites at once. (#32)
+  Favorites at once, and stays there. (#32)
 - **GitStudio: Branches…** in the Command Palette opens the branch menu, as
   the branch name in the Changes view and the status bar do — bind a key to it
   to open the menu without the mouse.

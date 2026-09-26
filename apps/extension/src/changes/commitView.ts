@@ -9,7 +9,7 @@ import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import { slowStateChanged, type SlowState } from "./slowState";
-import { branchesPayload, type BranchesPayload } from "./branchMenuData";
+import { branchesPayload, withFavorites, type BranchesPayload } from "./branchMenuData";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { repoName as repoNameOf, switchRepository, workspacePathOf } from "../git/repoPicker";
 import { pruneOnFetch } from "../git/fetchOptions";
@@ -2332,6 +2332,17 @@ export class CommitViewProvider
     // countUnpushed gives below; only a never-pushed branch waits for the
     // rev-list. Carried here so the common case has nothing left to correct.
     const sameRepo = this.lastBranchesRoot === active?.root;
+    // The last list built, with each star as it is NOW: a star set since
+    // (handleBranchAction's "favorite" re-pushes at once) would otherwise go
+    // out unset, and move back the row the menu had already moved.
+    let lastBranches = sameRepo ? this.lastBranches : undefined;
+    if (active && lastBranches) {
+      const starred = withFavorites(lastBranches, this.favorites(active));
+      if (starred !== lastBranches) {
+        this.lastBranches = lastBranches = starred;
+        this.lastBranchesSig = JSON.stringify(starred);
+      }
+    }
     const sent: SlowState = {
       aiEnabled: this.lastAiEnabled,
       branchesSig: sameRepo ? this.lastBranchesSig : undefined,
@@ -2349,7 +2360,7 @@ export class CommitViewProvider
       branch,
       detached,
       // Only when it belongs to the repo now on screen.
-      branches: sameRepo ? this.lastBranches : undefined,
+      branches: lastBranches,
       operation: sameRepo ? this.lastOperation : undefined,
       upstream,
       ahead,
@@ -2375,7 +2386,7 @@ export class CommitViewProvider
     // button + branch menu without a re-render; but it is still the whole
     // payload crossing the webview boundary, and during a staging burst or the
     // onDidChange firehose the answer is the one already on screen.
-    const [aiEnabled, branches, pushInfo, operation] = await Promise.all([
+    const [aiEnabled, listed, pushInfo, operation] = await Promise.all([
       this.generator
         ? this.generator.isEnabled().catch(() => false)
         : Promise.resolve(false),
@@ -2385,6 +2396,8 @@ export class CommitViewProvider
         : Promise.resolve({ unpushed: 0, canPublish: false }),
       active ? this.readOperation(active) : Promise.resolve(undefined),
     ]);
+    // A star set while the rest was being read is on it too.
+    const branches = listed && active ? withFavorites(listed, this.favorites(active)) : listed;
     const resolved: SlowState = {
       aiEnabled,
       branchesSig: branches ? JSON.stringify(branches) : undefined,
@@ -4582,6 +4595,27 @@ export class CommitViewProvider
     const PENDING_TTL = 4000;
     const has = (list, path) => list.some((e) => e.path === path);
 
+    // name -> { favorite, at: ms }: a star the host has not answered yet.
+    // Dropped once a post agrees, or after PENDING_TTL, so a star the host
+    // never took does not stick.
+    const pendingFavorites = new Map();
+    /** The host's branch list with every still-pending star laid over it. */
+    function applyPendingFavorites(data) {
+      if (!pendingFavorites.size || !data || !data.local) return data;
+      const now = Date.now();
+      let local = data.local;
+      for (const [name, p] of pendingFavorites) {
+        const i = local.findIndex((b) => b.name === name);
+        if (i < 0 || local[i].favorite === p.favorite || now - p.at > PENDING_TTL) {
+          pendingFavorites.delete(name);
+          continue;
+        }
+        if (local === data.local) local = local.slice();
+        local[i] = Object.assign({}, local[i], { favorite: p.favorite });
+      }
+      return local === data.local ? data : Object.assign({}, data, { local: local });
+    }
+
     // Drop pending ops the authoritative state already reflects (or that have
     // aged out), so they stop being re-applied.
     function reconcilePending(auth) {
@@ -5210,12 +5244,20 @@ export class CommitViewProvider
     }
     // Star or unstar a local branch — the row's star and its submenu's item.
     // The row moves between Favorites and its group at once, with the menu,
-    // the open submenu and the highlight left where they are; the host keeps
-    // the list and its next push carries the same answer.
+    // the open submenu and the highlight left where they are. Until a host
+    // post agrees, the star is laid over whatever the host sends
+    // (applyPendingFavorites): a post it sent before it saw the star still
+    // carries the old list, and must not move the row back.
     function toggleFavorite(name) {
       const b = (branchData.local || []).find((x) => x.name === name);
-      if (b) b.favorite = !b.favorite;
+      if (b) {
+        b.favorite = !b.favorite;
+        pendingFavorites.set(name, { favorite: b.favorite, at: Date.now() });
+      }
       vscode.postMessage({ type: "branchAction", action: "favorite", ref: name });
+      // The list below is the one this change makes: the host's agreeing
+      // post then has nothing to repaint.
+      lastBranchSig = JSON.stringify([branchesLoading, branchData]);
       refreshOpenBranchUi();
     }
     function matchF(s) { return !branchFilter || s.toLowerCase().indexOf(branchFilter) !== -1; }
@@ -7740,7 +7782,7 @@ export class CommitViewProvider
         // out of the three file lists, so anything else on the payload is dropped.
         stagingModel = msg.stagingModel || "split";
         applyModelToggleLabel();
-        branchData = msg.branches || { local: [], remote: [], recent: [], tags: [] };
+        branchData = applyPendingFavorites(msg.branches) || { local: [], remote: [], recent: [], tags: [] };
         branchesLoading = !!msg.hasRepo && !msg.branches;
         // Only rebuild an OPEN branch menu when the branch data actually
         // changed. Every state push (and now the redundant 2nd post) would
