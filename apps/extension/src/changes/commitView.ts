@@ -7649,6 +7649,8 @@ export class CommitViewProvider
       row.addEventListener("click", (ev) => {
         // A modifier click selects; a plain one opens, as it always has.
         if (handleSelectionClick(ev, key)) return;
+        // The second click of a double-click: the first one opened the diff.
+        if (ev.detail > 1) return;
         open();
       });
       // Double-click OR right-click a file → an actions menu (open / stage / discard).
