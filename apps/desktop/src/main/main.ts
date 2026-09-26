@@ -23,6 +23,7 @@ import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "no
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore, repoScope } from "./repoStore";
 import { cannotOpenNotice, droppedTabsNotice, tabsFullNotice } from "./repoNotice";
+import { menuDelivery, type MenuCommand } from "./menuDelivery";
 import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
 import { RebaseBridge } from "./rebaseBridge";
@@ -125,6 +126,25 @@ async function saveState(): Promise<void> {
 function send<E extends keyof IpcEvents>(event: E, data: IpcEvents[E]): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(event, data);
+  }
+}
+
+/**
+ * Hand a menu item's work to the renderer — once there is a renderer to hear
+ * it. On macOS the app runs on with its window closed, and `send` to no window
+ * is a no-op: Open Recent, Open… and Clone… did nothing there. Those bring the
+ * window back and are delivered when it has loaded (see menuDelivery.ts).
+ */
+function menuCommand(msg: MenuCommand): void {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const how = menuDelivery(!win ? "none" : win.webContents.isLoading() ? "loading" : "ready", msg.command);
+  if (how === "send") send("menu:command", msg);
+  else if (how === "afterLoad") win?.webContents.once("did-finish-load", () => send("menu:command", msg));
+  else if (how === "createThenSend") {
+    void createWindow().then(
+      () => send("menu:command", msg),
+      () => undefined,
+    );
   }
 }
 
@@ -278,12 +298,13 @@ function buildMenu(): void {
   // Opens go THROUGH the renderer (menu:command), never straight to the store:
   // the renderer is what knows whether a dialog is open in the tab in front,
   // and a switch under an open dialog would let its verb run in another tab.
+  // menuCommand brings the window back first when there is none (macOS).
   const recentSubmenu: MenuItemConstructorOptions[] = repos
     .recentRepos()
     .map((r) => ({
       label: r.name,
       sublabel: r.root,
-      click: () => send("menu:command", { command: "openPath", root: r.root }),
+      click: () => menuCommand({ command: "openPath", root: r.root }),
     }));
   if (recentSubmenu.length === 0) {
     recentSubmenu.push({ label: "No recent repositories", enabled: false });
@@ -312,14 +333,14 @@ function buildMenu(): void {
         {
           label: "Open Repository…",
           accelerator: "CmdOrCtrl+O",
-          click: () => send("menu:command", { command: "openRepo" }),
+          click: () => menuCommand({ command: "openRepo" }),
         },
         { label: "Open Recent", submenu: recentSubmenu },
         { type: "separator" },
         {
           label: "Clone repository…",
           accelerator: "CmdOrCtrl+Shift+O",
-          click: () => send("menu:command", { command: "cloneRepo" }),
+          click: () => menuCommand({ command: "cloneRepo" }),
         },
         { type: "separator" },
         {
@@ -336,7 +357,7 @@ function buildMenu(): void {
           // came down to menu order. Both dev roles are explicitly re-bound
           // below, so neither can reclaim a chord by default ever again.
           accelerator: "CmdOrCtrl+R",
-          click: () => send("menu:command", { command: "refresh" }),
+          click: () => menuCommand({ command: "refresh" }),
         },
         {
           // Repositories are TABS now (issue #32), and ⌘W is what every tabbed
@@ -350,7 +371,7 @@ function buildMenu(): void {
           // The renderer asks first when an operation is still running.
           label: "Close Tab",
           accelerator: "CmdOrCtrl+W",
-          click: () => send("menu:command", { command: "closeTab" }),
+          click: () => menuCommand({ command: "closeTab" }),
         },
         ...(isMac
           ? []
@@ -371,7 +392,7 @@ function buildMenu(): void {
         {
           label: "Undo",
           accelerator: "CmdOrCtrl+Z",
-          click: () => send("menu:command", { command: "undo" }),
+          click: () => menuCommand({ command: "undo" }),
         },
         // NOT `role: "redo"` either, for the same reason: that role is a text
         // redo, so in the merge editor ⇧⌘Z from the MENU redid typing under
@@ -381,7 +402,7 @@ function buildMenu(): void {
         {
           label: "Redo",
           accelerator: process.platform === "win32" ? "Ctrl+Y" : "Shift+CmdOrCtrl+Z",
-          click: () => send("menu:command", { command: "redo" }),
+          click: () => menuCommand({ command: "redo" }),
         },
         { type: "separator" },
         { role: "cut" },
@@ -399,17 +420,17 @@ function buildMenu(): void {
         {
           label: "Toggle Sidebar",
           accelerator: "CmdOrCtrl+B",
-          click: () => send("menu:command", { command: "toggleSidebar" }),
+          click: () => menuCommand({ command: "toggleSidebar" }),
         },
         {
           label: "Toggle Terminal",
           accelerator: "CmdOrCtrl+`",
-          click: () => send("menu:command", { command: "toggleTerminal" }),
+          click: () => menuCommand({ command: "toggleTerminal" }),
         },
         {
           label: "Command Palette…",
           accelerator: "CmdOrCtrl+K",
-          click: () => send("menu:command", { command: "palette" }),
+          click: () => menuCommand({ command: "palette" }),
         },
         { type: "separator" },
         { role: "resetZoom" },
