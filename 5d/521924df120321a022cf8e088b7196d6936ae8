@@ -1,0 +1,51 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_1578d87d9be350 74-82,91-94
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_e930580e4ab068 51-56
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_6f8cd2b24f7ff1 18,671-676,679-683
+apps/extension/src/ui/dialogs.ts
+  s_26f5e669d3043c::t_c1b92763b2b74c 121-132,159
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_bcdcf841f9c8aa 2,87,90-93,97-104,107,120
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_fcbc15b4e43866 4,248-250,295-296,467-485,487-491,1059-1062,1067-1068,1072
+apps/extension/src/views/stashesView.ts
+  s_26f5e669d3043c::t_40f016fda31841 352,354
+apps/extension/test/checkoutCommitOptionLike.test.ts
+  s_26f5e669d3043c::t_d44b53aced0ac6 52-53
+apps/extension/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_a2444e86e862b7 64-65
+apps/extension/test/undoHistory.test.ts
+  s_26f5e669d3043c::t_7afe3a82e7c9d3 27,162-189
+apps/extension/test/undoStateTable.test.ts
+  s_26f5e669d3043c::t_ddf3e4fdbfff87 1382,1437-1628
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_d072d0b17060c0 124-150,178,202-247,274-275,289-303,306-307,312,324-325,365-367,372-384,537-562,568-571,593-601,611-613,826-827,926-942,1148-1154
+packages/git-service/src/branchReset.ts
+  s_26f5e669d3043c::t_67f2d08ed8b282 34,83-88,273,285,302,390-395,397
+packages/git-service/test/branchReset.test.ts
+  s_26f5e669d3043c::t_7c380b50eefd43 429-454
+packages/git-service/test/undoScope.test.ts
+  s_26f5e669d3043c::t_f2869f7e2a2dbe 335-556
+packages/merge-vscode/src/mergeSession.ts
+  s_26f5e669d3043c::t_dfa6c5e0e376df 139-141
+packages/merge-vscode/test/mergeSession.test.ts
+  s_26f5e669d3043c::t_8728813318c8ab 433-437,441-447
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5d521924df120321a022cf8e088b7196d6936ae8",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
