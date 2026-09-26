@@ -42,8 +42,8 @@ test("the desktop's pane asks through the same SettleLatest", async () => {
   assert.match(renderer, /import \{ SettleLatest \} from "@gitstudio\/host-bridge\/settleLatest";/);
   assert.match(
     renderer,
-    /private showSelection\([\s\S]*?this\.selectionSummary\s*\.run\(\(\) => host\.invoke\("commits:menu", \{ shas \}\)/,
-    "showSelection's question goes through the settle",
+    /private showSelection\([\s\S]*?this\.selectionSummary\s*\.run\(async \(\) => \{\s*await this\.whenInFront\(\);\s*return host\.invoke\("commits:menu", \{ shas \}\)/,
+    "showSelection's question goes through the settle — and, a timer's, waits for its repository tab to be in front (a-selection-summary-asks-its-own-tab-once-it-is-back)",
   );
   assert.match(
     renderer,
