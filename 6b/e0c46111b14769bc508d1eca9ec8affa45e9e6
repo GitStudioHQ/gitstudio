@@ -1,0 +1,26 @@
+packages/engine/test/parseRemote.test.ts
+  s_26f5e669d3043c::t_20b47f357e4691 97-172
+  s_26f5e669d3043c::t_50632d8b8d2e6e 6-7
+apps/desktop/src/main/githubRemote.ts
+  s_26f5e669d3043c::t_1055bbaa693d3d 4-19
+apps/desktop/test/parseGitHubRemote.test.ts
+  s_26f5e669d3043c::t_6c00548cf628be 23-25
+packages/engine/src/forge/parseRemote.ts
+  s_26f5e669d3043c::t_da26b2c46b4d65 83-107,109-201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6be0c46111b14769bc508d1eca9ec8affa45e9e6",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
