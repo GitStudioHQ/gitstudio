@@ -3162,8 +3162,12 @@ export class CommitViewProvider
       background: var(--gs-accent); border-color: var(--gs-accent);
       color: var(--vscode-button-foreground, #fff);
     }
+    /* A FILL for a destructive button. --gs-danger is the theme's error TEXT
+       colour (Dark+: #f48771), and a white label on it read 2.5:1; darkened
+       toward black it carries one at 4.5:1 or more in every built-in theme. */
+    :root { --gs-danger-fill: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 62%, #000000); }
     .rp-foot button.primary.danger {
-      background: var(--gs-danger, #f14c4c); border-color: var(--gs-danger, #f14c4c);
+      background: var(--gs-danger-fill); border-color: var(--gs-danger-fill);
     }
     .rp-foot button:disabled { opacity: 0.5; cursor: default; }
     /* A multi-line answer (a PR body, a review summary). Same frame as the
@@ -4085,7 +4089,7 @@ export class CommitViewProvider
       font-weight: 600;
     }
     .pm-btn.primary.danger {
-      background: var(--gs-danger, #c74e39);
+      background: var(--gs-danger-fill);
       border-color: transparent;
       color: #fff;
     }
