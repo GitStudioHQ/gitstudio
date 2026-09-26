@@ -1,0 +1,25 @@
+apps/extension/src/pr/prFeature.ts
+  s_26f5e669d3043c::t_d0b16fe62e5706 165
+apps/extension/test/prCreateCheckout.test.ts
+  s_26f5e669d3043c::t_04f4b7922b2472 201-233
+apps/extension/src/pr/checkoutPr.ts
+  s_26f5e669d3043c::t_1250936d3fd483 11
+  s_26f5e669d3043c::t_03588199ec42ca 29,33
+  s_26f5e669d3043c::t_432beb0495c3ef 74-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1b4ab8fa26c37862305dfc0f51262e6a59df3fd1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
