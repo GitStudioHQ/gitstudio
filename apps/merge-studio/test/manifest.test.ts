@@ -48,11 +48,14 @@ test("the extension id, publisher and repository are Merge Studio's", () => {
   assert.match(pkg.repository.url, /GitStudioHQ\/merge-studio/);
 });
 
-test("the committed version is the release version, never a test build's", () => {
-  // The first release on the shared packages is 1.0.0 (the owner's call, not
+test("the committed version is a release version, never a test build's", () => {
+  // The first release on the shared packages was 1.0.0 (the owner's call, not
   // 0.4.0). Test VSIXs are packaged as 1.0.9001, 1.0.9002, … and package.json
-  // is restored after.
-  assert.equal(pkg.version, "1.0.0");
+  // is restored after: a patch number of 9000 or more is a test build.
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(pkg.version);
+  assert.ok(m, `a plain x.y.z version (${pkg.version})`);
+  assert.ok(Number(m[1]) >= 1, `1.0.0 or later (${pkg.version})`);
+  assert.ok(Number(m[3]) < 9000, `not a test build's number (${pkg.version})`);
 });
 
 test("keywords: at most 30, and none that only name other editors (POLISH B1)", () => {
@@ -221,10 +224,16 @@ test("the dashboard captures' words are the dashboard's own, as the 1.0 build sa
 // ── CHANGELOG (POLISH B5) ───────────────────────────────────────────────────
 
 const changelog = read("CHANGELOG.md");
-const entry100 = changelog.split(/\n## /)[1] ?? "";
+const entries = changelog.split(/\n## /).slice(1);
+// Found by version: a later release's entry sits above it.
+const entry100 = entries.find((e) => /^1\.0\.0\b/.test(e)) ?? "";
 const sectionsOf = (entry: string) => entry.split(/\n### /).slice(1);
 
-test("the 1.0.0 entry comes first and leads with the heads-up about Yours in a rebase", () => {
+test("the newest CHANGELOG entry is the version package.json ships", () => {
+  assert.match(entries[0] ?? "", new RegExp(`^${pkg.version.replace(/\./g, "\\.")}\\b`), `the first entry is ${pkg.version}`);
+});
+
+test("the 1.0.0 entry leads with the heads-up about Yours in a rebase", () => {
   assert.match(entry100, /^1\.0\.0\b/);
   const firstLine = entry100.split("\n").slice(1).find((l) => l.trim() !== "") ?? "";
   assert.match(firstLine, /^\*\*Heads-up: during a rebase, Yours is now your commit, on the left\.\*\*/);
