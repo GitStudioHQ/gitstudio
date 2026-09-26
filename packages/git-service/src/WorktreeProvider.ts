@@ -280,7 +280,9 @@ export class WorktreeProvider {
    * changes are read again first: a path the question did not list runs
    * nothing and answers `changedSince` — a worktree that was already dirty
    * when asked (an agent's, typically) is the common case, not the rare one.
-   * Only the moment between that read and git's own is left uncovered. With
+   * Only the moment between that read and git's own is left uncovered — and
+   * a new file inside an untracked folder the question already named whole
+   * (`tmp/`, as git reports one), which is inside what was agreed to. With
    * `discardChanges` a lock is passed with the second `--force`.
    */
   async removeAsAgreed(

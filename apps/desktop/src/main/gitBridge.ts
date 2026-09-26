@@ -1636,10 +1636,11 @@ export class GitBridge {
       }
       // Anything else git refuses a remove over is the repository's state
       // (a submodule in it, a lock put back in the meantime), said by git.
+      const verb = now.kind === "missing" ? "forget" : "remove";
       return {
         ok: false,
         expected: true,
-        message: `Couldn't remove worktree ${label}: ${done.stderr.trim() || "git worktree remove failed."}`,
+        message: `Couldn't ${verb} worktree ${label}: ${done.stderr.trim() || "git worktree remove failed."}`,
       };
     });
     return changedSince ? { ...r, changedSince } : r;
