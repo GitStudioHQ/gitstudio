@@ -7987,6 +7987,40 @@
     },
 
     /**
+     * Every worktree row's verbs stay inside the list, down to the app's
+     * minimum width (880). The 220px state slot that lets a row's two pills
+     * both show outranked the narrow-window rule that makes the slot
+     * content-sized, so below 1180 it stayed 220px and pushed every row's ⋯
+     * (the only way to Remove or Forget) and Open past the right edge — while
+     * a case run only at 1600 passed.
+     */
+    "worktree-row-verbs-stay-in-the-list": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(1500);
+      const rows = $$(".ref-row.worktree-row");
+      c.ok(rows.length >= 4, `worktrees render (${rows.length})`);
+      const edge = Math.min(
+        document.documentElement.clientWidth,
+        ...rows.map((r) => Math.round(r.parentElement.getBoundingClientRect().right)),
+      );
+      const out = [];
+      for (const r of rows) {
+        for (const b of $$("button", r)) {
+          const right = Math.round(b.getBoundingClientRect().right);
+          if (right > edge + 1) out.push(`${text(r.querySelector(".sec-row-title")) || r.dataset.ref}: ${b.getAttribute("aria-label") || text(b)} ends at ${right} > ${edge}`);
+        }
+      }
+      c.eq(out.join(" | "), "", `every row's Open and ⋯ inside the list at ${window.innerWidth}px`);
+      // …and no state pill is clipped to fit (the main row carries two).
+      const clipped = rows
+        .map((r) => r.querySelector(".br-state-col"))
+        .filter((s) => s && s.scrollWidth > s.clientWidth + 1)
+        .map((s) => text(s));
+      c.eq(clipped.join(" | "), "", "no state pill is clipped");
+    },
+
+    /**
      * Removing a worktree asks ONE question, built from what removing it takes
      * (worktree:removal), and sends exactly what it said. It used to promise
      * "any uncommitted work goes with it" and send a plain remove, which git
