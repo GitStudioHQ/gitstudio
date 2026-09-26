@@ -35,19 +35,26 @@ import {
 } from "./common";
 import type { MyWorkItem } from "../../shared/ipc";
 import { openExternalItem } from "./notifications";
+import { perTab } from "../tabState";
 
-/** The live filter — survives re-renders like every section's query does. */
-let query = "";
-/**
- * Where to look. "all" is the default on purpose: the Home door that leads
- * here shows work from every repository, and a page that silently narrows to
- * the one open repo answers the door's number with a shorter list — the same
- * item count disagreement the Inbox bell was fixed for. "repo" is the narrow
- * lens, one click away and remembered for the session.
- */
-let scope: "all" | "repo" = "all";
-/** My Work facets (kind / type), kept across refreshes. */
-const myWorkFacets: FacetState = {};
+/** What My Work remembers, for ONE tab (issue #32; tabState.ts): every tab
+ *  keeps its own My Work page, and a shared filter was what another tab's page
+ *  rebuilt with. */
+interface MyWorkTabState {
+  /** The live filter — survives re-renders like every section's query does. */
+  query: string;
+  /**
+   * Where to look. "all" is the default on purpose: the Home door that leads
+   * here shows work from every repository, and a page that silently narrows to
+   * the one open repo answers the door's number with a shorter list — the same
+   * item count disagreement the Inbox bell was fixed for. "repo" is the narrow
+   * lens, one click away and remembered for the session.
+   */
+  scope: "all" | "repo";
+  /** My Work facets (kind / type), kept across refreshes. */
+  myWorkFacets: FacetState;
+}
+const myWorkTab = perTab<MyWorkTabState>(() => ({ query: "", scope: "all", myWorkFacets: {} }));
 
 const GROUPS: ReadonlyArray<{ kind: MyWorkItem["kind"]; label: string; icon: string }> = [
   { kind: "review-requested", label: "Review requested", icon: "eye" },
@@ -61,8 +68,9 @@ export const renderMyWork: SectionRender = (wrap, nav) => {
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
+  const S = myWorkTab();
   const payload = (): { scope: "all" } | undefined =>
-    scope === "all" ? { scope: "all" } : undefined;
+    S.scope === "all" ? { scope: "all" } : undefined;
   const refresh = (): void => {
     bust("github:myWork");
     renderMyWork(wrap, nav);
@@ -71,16 +79,16 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // repo, so walling it behind "this repo must have a GitHub remote" (or any
   // repo at all) turned Home's My Work door into a dead click on a fresh
   // launch. Only the narrow scope needs the repo.
-  const gate = await ghGate(wrap, nav, scope === "repo", refresh);
+  const gate = await ghGate(wrap, nav, S.scope === "repo", refresh);
   if (!gate) return;
   const { view, listEl } = sectionList();
   const header = ghHeader("My Work", gate.login, refresh);
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
       placeholder: "Filter my work…",
-      initial: query,
+      initial: S.query,
       onInput: (q) => {
-        query = q;
+        S.query = q;
         renderList();
       },
     }),
@@ -92,10 +100,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
         { value: "all", label: "Everywhere", icon: "globe" },
         { value: "repo", label: "This repository", icon: "repo" },
       ],
-      value: scope,
+      value: S.scope,
       ariaLabel: "Where to look for your work",
       onChange: (v) => {
-        scope = v;
+        S.scope = v;
         renderMyWork(wrap, nav);
       },
     }),
@@ -130,7 +138,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
         predicate: (it, v) => it.type === v,
       },
     ],
-    state: myWorkFacets,
+    state: S.myWorkFacets,
     items: items ?? [],
     onChange: () => renderList(),
   });
@@ -188,7 +196,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       },
     });
     // WHERE, when the list spans repositories — the title alone cannot say.
-    if (scope === "all" && it.repo) {
+    if (S.scope === "all" && it.repo) {
       const t = row.querySelector(".sec-row-title");
       if (t) {
         const from = span(it.repo.name, "mywork-repo-chip sec-mono");
@@ -210,7 +218,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
 
   const renderList = (): void => {
     if (!items) return;
-    const q = query.trim().toLowerCase();
+    const q = S.query.trim().toLowerCase();
     const shown = items.filter(
       (it) =>
         facets.passes(it) &&
@@ -223,7 +231,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       listEl.appendChild(
         emptyState(
           "All clear",
-          scope === "all"
+          S.scope === "all"
             ? "Nothing anywhere needs you right now — no review requests, assignments, or mentions."
             : "Nothing in this repository needs you right now — no review requests, assignments, or mentions.",
           { icon: "pass" },
@@ -235,7 +243,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       listEl.appendChild(
         emptyState(
           "No matches",
-          query.trim() ? `Nothing matches “${query.trim()}”.` : "Nothing matches these filters.",
+          S.query.trim() ? `Nothing matches “${S.query.trim()}”.` : "Nothing matches these filters.",
           {
             icon: "search",
           anchor: "inline",

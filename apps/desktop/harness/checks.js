@@ -16791,5 +16791,112 @@
       c.match(boxA.value || "", /said:\n>/, "the quote lands in A's box");
       c.eq(boxB?.value || "", "", "…not in B's");
     },
+
+    /** Organizations' filter repaints ITS page, after another tab has built an
+     *  Organizations page of its own (its repaint hook was module state). */
+    "the-org-filter-filters-its-own-tabs-page": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const rows = () => $$(".view-host .gh-org-grid .list-row").length;
+      const n0 = rows();
+      c.ok(n0 > 1, `precondition: A lists several repositories (${n0})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      c.ok(rows() > 0, "precondition: B built its own Organizations page");
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      const b = $(".view-host .gh-search input");
+      b.focus();
+      b.value = "design";
+      b.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(900);
+      c.eq(rows(), 1, "A's filter narrows A's page");
+    },
+
+    /** The account-wide lists are kept per tab too (issue #32): My Work, Gists,
+     *  the Inbox and Repositories. Filter in A, filter differently in B, come
+     *  back to A and rebuild it (its header's refresh) — A keeps A's words and
+     *  A's rows. Each rebuilt from module state another tab had written. */
+    "each-tab-keeps-its-own-filter-through-a-rebuild": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const word = window.__GS_ARG || "stream";
+      const box = () => $(".view-host .gh-search input, .view-host input[type=search]");
+      const typeIn = (v) => {
+        const b = box();
+        b.focus();
+        b.value = v;
+        b.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      const rows = () => $$(".view-host .sec-row, .view-host .notif-row").map((r) => text(r).slice(0, 30)).join(" | ");
+      c.ok(!!box(), "precondition: A's filter box");
+      if (!box()) return;
+      typeIn(word);
+      await settle(1200);
+      const aRows = rows();
+      c.ok(aRows.length > 0, `precondition: A's filter finds something (${aRows})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      c.ok(!!box(), "precondition: B is on the same view");
+      if (!box()) return;
+      typeIn("zz-nothing");
+      await settle(1200);
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      $(".view-host .gh-refresh")?.click();
+      await settle(1800);
+      c.eq(box()?.value, word, "A's box keeps A's words through the rebuild");
+      c.eq(rows(), aRows, "…and A's rows");
+    },
+
+    /** Home's fills are held for a tab in the back and painted when it comes
+     *  back — unless another tab's Home, built meanwhile, has taken the render
+     *  token they check (it was module state). */
+    "a-home-still-loading-when-you-switch-away-paints-when-you-are-back": async (f) => {
+      const c = check(f);
+      await settle(150);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1800);
+      c.ok($$(".view-host .dash-col").length > 0, "precondition: B built its Home");
+      tabEl(GS_ROOT)?.click();
+      // Its second fill (My Work, after the account) is asked only now.
+      await settle(4000);
+      const sk = $$(".view-host .skeleton, .view-host .sk-row").length;
+      c.eq(sk, 0, "A's Home finished painting");
+    },
+
+    /** A search belongs to the tab it was typed in (issue #32): search in A,
+     *  search in B, come back to A and switch A's result kind — A searches A's
+     *  words again, not B's. */
+    "each-tab-keeps-its-own-search": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const box = () => $(".view-host .explore-search input");
+      const typeIn = (v) => {
+        const b = box();
+        b.focus();
+        b.value = v;
+        b.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      c.ok(!!box(), "precondition: A's search box");
+      if (!box()) return;
+      typeIn("graph");
+      await settle(1200);
+      tabEl(GS_DEV_ROOT)?.click();
+      await settle(1500);
+      c.ok(!!box(), "precondition: B is on Search too");
+      if (!box()) return;
+      typeIn("rebase");
+      await settle(1200);
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.eq(box()?.value, "graph", "precondition: A's box still says A's words");
+      const before = (window.__GS_ROUTES || []).length;
+      $$(".view-host .explore-tab").find((b) => /People/.test(text(b)))?.click();
+      await settle(1500);
+      const ids = (window.__GS_ROUTES || []).slice(before).map((r) => r.target?.id || "").join(" ");
+      c.ok(/graph/.test(ids) && !/rebase/.test(ids), `A's People search is for A's words (routed: ${ids})`);
+      c.eq(box()?.value, "graph", "…and its box says so");
+    },
   };
 })();

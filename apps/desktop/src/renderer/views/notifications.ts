@@ -44,13 +44,20 @@ import {
   type SectionNav,
 } from "./common";
 import type { NotificationThread } from "../../shared/ipc";
+import { perTab } from "../tabState";
 
-/** Persisted across re-renders of this view: include already-read threads? */
-let notifAll = false;
-/** Inbox text query — the only one of the four lists that had no search. */
-let notifQuery = "";
-/** Inbox facets (type / reason / repo), kept across refreshes. */
-const notifFacets: FacetState = {};
+/** What the Inbox remembers, for ONE tab (issue #32; tabState.ts): every tab
+ *  keeps its own Inbox page, and a shared query was what another tab's page
+ *  rebuilt with. */
+interface InboxTabState {
+  /** Persisted across re-renders of this view: include already-read threads? */
+  notifAll: boolean;
+  /** Inbox text query — the only one of the four lists that had no search. */
+  notifQuery: string;
+  /** Inbox facets (type / reason / repo), kept across refreshes. */
+  notifFacets: FacetState;
+}
+const inboxTab = perTab<InboxTabState>(() => ({ notifAll: false, notifQuery: "", notifFacets: {} }));
 
 /** The dismiss handle for the open notifications popover (so the bell toggles). */
 let closePanel: ((restoreFocus?: boolean) => void) | null = null;
@@ -60,6 +67,7 @@ export const renderNotifications: SectionRender = (wrap, nav) => {
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
+  const S = inboxTab();
   const refresh = (): void => renderNotifications(wrap, nav);
   // Gate first (NEEDS_REPO = false — the inbox is account-wide).
   const gate = await ghGate(wrap, nav, false, refresh);
@@ -95,10 +103,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       { value: "unread", label: "Unread" },
       { value: "all", label: "All" },
     ],
-    value: notifAll ? "all" : "unread",
+    value: S.notifAll ? "all" : "unread",
     ariaLabel: "Which notifications to show",
     onChange: (v) => {
-      notifAll = v === "all";
+      S.notifAll = v === "all";
       refresh();
     },
   });
@@ -123,8 +131,8 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // requested" silently made the bell hide every other unread thread, with
   // nothing on screen to say why or any way to clear it. The bell is a glance
   // at what is unread; it keeps its own (empty) filters.
-  const facetState: FacetState = inPopover ? {} : notifFacets;
-  let query = inPopover ? "" : notifQuery;
+  const facetState: FacetState = inPopover ? {} : S.notifFacets;
+  let query = inPopover ? "" : S.notifQuery;
 
   // Type / reason facets over the fetched inbox — triage is exactly "show me
   // only the review requests", and scrolling for them is not triage.
@@ -169,7 +177,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
         initial: query,
         onInput: (q) => {
           query = q;
-          notifQuery = q;
+          S.notifQuery = q;
           renderThreads();
         },
       }),
@@ -214,7 +222,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   body.replaceChildren(skeletonList(6));
   let threads: NotificationThread[];
   try {
-    threads = await host.invoke("notifications:list", { all: notifAll, participating: false });
+    threads = await host.invoke("notifications:list", { all: S.notifAll, participating: false });
   } catch (e) {
     // The gate already confirmed a connection; a throw here is a real API error
     // (auth / rate limit / network) — show an error state with Retry, never a
@@ -261,12 +269,12 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       const filtered = facets.activeCount() > 0 || !!q;
       body.appendChild(
         emptyState(
-          filtered ? "No matching notifications" : notifAll ? "Inbox zero" : "You're all caught up",
+          filtered ? "No matching notifications" : S.notifAll ? "Inbox zero" : "You're all caught up",
           filtered
             ? q
               ? `Nothing in your inbox matches “${query.trim()}”.`
               : "Nothing in your inbox matches these filters."
-            : notifAll
+            : S.notifAll
               ? "You have no notifications."
               : "No unread notifications right now — nothing needs your attention.",
           {
@@ -300,8 +308,8 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   if (threads.length === 0) {
     body.replaceChildren(
       emptyState(
-        notifAll ? "Inbox zero" : "You're all caught up",
-        notifAll
+        S.notifAll ? "Inbox zero" : "You're all caught up",
+        S.notifAll
           ? "You have no notifications."
           : "No unread notifications right now — nothing needs your attention.",
         { icon: "bell" },
@@ -754,7 +762,7 @@ async function markRead(
     row.querySelectorAll<HTMLElement>(".row-actions .row-btn").forEach((b) => {
       if (b.textContent === "Mark read") b.setAttribute("hidden", "");
     });
-    if (!notifAll) {
+    if (!inboxTab().notifAll) {
       row.classList.add("notif-leaving");
       row.title = "Marked read — leaves this list on the next refresh";
     }

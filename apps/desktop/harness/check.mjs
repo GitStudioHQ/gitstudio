@@ -787,6 +787,13 @@ const CASES = [
   ["a-kept-page-routes-its-own-tab-after-a-visit-to-another", "actions~open9100", { extra: "tabs=2", arg: ".gh-job-log|joblog" }],
   ["a-kept-page-routes-its-own-tab-after-a-visit-to-another", "releases~open52", { extra: "tabs=2", arg: ".det-tb-actions > .mini-btn:first-child|releasenew" }],
   ["quote-reply-lands-in-its-own-tabs-box", "issues~open31", { extra: "tabs=2" }],
+  ["the-org-filter-filters-its-own-tabs-page", "orgs", { extra: "tabs=2" }],
+  ["each-tab-keeps-its-own-filter-through-a-rebuild", "mywork", { extra: "tabs=2", arg: "stream" }],
+  ["each-tab-keeps-its-own-filter-through-a-rebuild", "gists", { extra: "tabs=2", arg: "aliases" }],
+  ["each-tab-keeps-its-own-filter-through-a-rebuild", "notifications", { extra: "tabs=2", arg: "xterm" }],
+  ["each-tab-keeps-its-own-filter-through-a-rebuild", "repositories", { extra: "tabs=2", arg: "design" }],
+  ["a-home-still-loading-when-you-switch-away-paints-when-you-are-back", "dashboard", { extra: "tabs=2&slow=*@gitstudio:800" }],
+  ["each-tab-keeps-its-own-search", "explore", { extra: "tabs=2" }],
 ];
 
 function run(scene, checkId, opts = {}) {

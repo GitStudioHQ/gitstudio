@@ -36,6 +36,7 @@ import type {
   SyncStatus,
   WorkflowRun,
 } from "../../shared/ipc";
+import { perTab } from "../tabState";
 
 /**
  * The search draft, kept OUTSIDE the DOM. The file watcher re-routes this view
@@ -44,19 +45,25 @@ import type {
  * through typing is the page stealing from its user. The draft and its focus
  * survive here; the rebuild puts both back.
  */
-let searchDraft = "";
-let searchHadFocus = false;
-
-/** Bumped per mount, so a slow fill from the previous repo paints nothing. */
-let gen = 0;
+/** Per tab (issue #32; tabState.ts): every tab keeps its own Home, and a
+ *  shared draft was what another tab's Home rebuilt its box with. */
+const dashTab = perTab(() => ({
+  searchDraft: "",
+  searchHadFocus: false,
+  /** Bumped per mount, so a slow fill from a previous mount paints nothing.
+   *  Per tab too: a shared token let another tab's Home supersede this one's
+   *  fills while they were held for it, and it never finished painting. */
+  gen: 0,
+}));
 
 export const renderDashboard: SectionRender = (wrap, nav) => {
   void mount(wrap, nav);
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
-  const g = ++gen;
-  const live = (): boolean => g === gen && wrap.isConnected;
+  const S = dashTab();
+  const g = ++S.gen;
+  const live = (): boolean => g === S.gen && wrap.isConnected;
 
   const view = el("div", "dash");
   const head = el("div", "dash-head");
@@ -98,24 +105,25 @@ function greeting(): string {
 /** A door into the one search system — never a fourth engine. Enter routes to
  *  the Search page's free local scope, one click from flipping to GitHub. */
 function searchBox(nav: SectionNav): HTMLElement {
+  const S = dashTab();
   const wrap = el("div", "dash-search");
   const input = document.createElement("input");
   input.type = "search";
   input.placeholder = "Search your repositories — or GitHub  (⌘K for everything)";
   input.setAttribute("aria-label", "Search repositories");
-  input.value = searchDraft;
-  input.addEventListener("input", () => (searchDraft = input.value));
-  input.addEventListener("focus", () => (searchHadFocus = true));
-  input.addEventListener("blur", () => (searchHadFocus = false));
+  input.value = S.searchDraft;
+  input.addEventListener("input", () => (S.searchDraft = input.value));
+  input.addEventListener("focus", () => (S.searchHadFocus = true));
+  input.addEventListener("blur", () => (S.searchHadFocus = false));
   input.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     const q = input.value.trim();
     if (!q) return;
-    searchDraft = "";
+    S.searchDraft = "";
     nav("explore", { id: `q/local/${q}` });
   });
   wrap.append(glyph("search"), input);
-  if (searchHadFocus) {
+  if (S.searchHadFocus) {
     // After the watcher-triggered rebuild, the keyboard goes back where the
     // user had it. rAF because focus before layout is a silent no-op.
     requestAnimationFrame(() => input.focus());
