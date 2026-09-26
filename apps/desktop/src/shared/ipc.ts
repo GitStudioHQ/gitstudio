@@ -399,6 +399,73 @@ export interface CommitActionResult {
   optionLike?: { fullName: string; name: string; local: boolean };
 }
 
+/**
+ * What resetting a local branch to its upstream would cost — read AFTER a
+ * fetch of that upstream, BEFORE anything is asked (#32, "make it 1:1 with
+ * origin"). `ok:false` is a refusal said in `message`: no upstream, the branch
+ * checked out in another worktree, an operation in progress, an untracked file
+ * the reset would overwrite.
+ */
+export interface BranchResetPlan {
+  ok: boolean;
+  message?: string;
+  expected?: boolean;
+  /** The branch as a person reads it (the part under refs/heads/). */
+  branch?: string;
+  /** "origin/feature" — the upstream as a person reads it. */
+  upstream?: string;
+  /** The remote the upstream lives on. */
+  remote?: string;
+  /** The branch is the one checked out here: its working tree resets too. */
+  current?: boolean;
+  /** The branch's tip now, and the upstream's tip it would move to. Sent back
+   *  with the reset, which runs only against exactly this state. */
+  from?: string;
+  to?: string;
+  /** Commits on the branch that are not on the upstream — what leaves it. */
+  lost?: number;
+  /** Their subjects, newest first, at most five. */
+  lostSubjects?: string[];
+  /** Commits the upstream has that the branch does not — what arrives. */
+  gained?: number;
+  /** Checked-out branch only: tracked files with uncommitted changes, staged
+   *  or not, which the reset discards. Untracked files are never counted:
+   *  `git reset --hard` leaves them where they are. */
+  dirty?: number;
+  /** The fetch failed (offline, say): the plan is against the upstream as it
+   *  was last fetched, and the confirm says so. */
+  fetchError?: string;
+}
+
+/** Run the reset a plan described — refused if either tip has moved since. */
+export interface BranchResetRequest {
+  /** The repository the plan was read in; refused in any other. */
+  root: string;
+  fullName: string;
+  from: string;
+  to: string;
+}
+
+export type BranchResetResult = CommitActionResult & {
+  /** Where the branch was, for the undo. */
+  was?: string;
+  /** A `git stash create` of the uncommitted changes the reset discarded —
+   *  absent when there were none. */
+  snapshot?: string;
+  current?: boolean;
+};
+
+/** Put a reset back: the branch to `was` (only while it is still at `now`),
+ *  and for the checked-out branch the discarded changes from `snapshot`. */
+export interface BranchResetUndoRequest {
+  root: string;
+  fullName: string;
+  was: string;
+  now: string;
+  snapshot?: string;
+  current: boolean;
+}
+
 /** See CommitActionResult.inTheWay. */
 export interface InTheWayInfo {
   kind: "cherry-pick" | "revert" | "merge" | "rebase" | "checkout" | "stash" | "pull";
@@ -1878,6 +1945,68 @@ export interface RebaseOutcomeWire {
 }
 
 /**
+ * Drop Commit (issue #32): can this commit be dropped from the current branch,
+ * and what would dropping it mean? The graph's menu asks before it opens and
+ * leaves the item out on `ok: false`; the drop asks again with `preflight`,
+ * which adds what stops it right now (an operation in progress, uncommitted
+ * changes) so that is said before the confirmation, not after it.
+ */
+export interface DropPlanRequest {
+  sha: string;
+  preflight?: boolean;
+}
+
+export type DropPlanWire =
+  | {
+      ok: true;
+      /** Full sha of the commit to drop. */
+      sha: string;
+      shortSha: string;
+      subject: string;
+      /** HEAD when planned; the drop refuses if it has moved. */
+      head: string;
+      /** The branch it is dropped from; null on a detached HEAD. */
+      branch: string | null;
+      /** How many later commits are replayed. */
+      replayed: number;
+      /** Already on a remote: dropping it rewrites pushed history. */
+      published: boolean;
+      /** Other local branches pointing at a replayed commit. */
+      carryable: string[];
+      /** With `preflight`: why it cannot start right now. */
+      blocked?: string;
+    }
+  | {
+      ok: false;
+      expected: true;
+      reason: "not-on-branch" | "merge" | "past-merge" | "only-commit" | "too-far" | "no-repo";
+      message: string;
+    };
+
+export interface DropRequest {
+  /** The commit, as the confirmed plan named it. */
+  sha: string;
+  /** HEAD as the confirmed plan saw it. */
+  head: string;
+  /** Carry `carryable` along with the rewrite. */
+  carry?: boolean;
+}
+
+/** How a drop ended, plus the two tips its Undo needs. */
+export interface DropOutcomeWire extends RebaseOutcomeWire {
+  /** HEAD before the drop. */
+  before?: string;
+  /** HEAD after a drop that finished. */
+  after?: string;
+}
+
+/** Undo a drop: back from `after` to `before`, only while HEAD is still `after`. */
+export interface UndoDropRequest {
+  before: string;
+  after: string;
+}
+
+/**
  * The full channel map: channel name -> [request, response]. Used to make the
  * preload's `invoke` and the main handlers strongly typed end to end.
  */
@@ -1922,6 +2051,10 @@ export interface IpcChannels {
   //    mid-operation channels further down — they drive the same git state.
   "rebase:load": [{ base?: string; sha?: string }, RebasePlanState];
   "rebase:apply": [RebaseApplyRequest, RebaseOutcomeWire];
+  // ── Drop Commit from the graph's menu (issue #32) — the same shared runner.
+  "commit:dropPlan": [DropPlanRequest, DropPlanWire];
+  "commit:drop": [DropRequest, DropOutcomeWire];
+  "commit:undoDrop": [UndoDropRequest, CommitActionResult];
   // ── Working-tree staging + commit (Changes view) ──
   "stage": [string, CommitActionResult];
   "unstage": [string, CommitActionResult];
@@ -2042,6 +2175,15 @@ export interface IpcChannels {
   /** Fast-forward a local branch straight from its upstream WITHOUT checking
    *  it out (`git fetch <remote> <remoteBranch>:<localBranch>`) — by FULL name. */
   "branch:pullFf": [{ fullName: string }, CommitActionResult];
+  /** Fetch a local branch's upstream and say what resetting to it would cost
+   *  (#32). Writes nothing but the remote-tracking ref the fetch moves. */
+  "branch:resetPlan": [{ fullName: string }, BranchResetPlan];
+  /** Reset a local branch to its upstream: `git reset --hard` for the
+   *  checked-out branch, `git branch -f` for any other — only against the
+   *  state its plan described. */
+  "branch:resetToUpstream": [BranchResetRequest, BranchResetResult];
+  /** Undo a reset to upstream (the tip, and any discarded changes). */
+  "branch:resetUndo": [BranchResetUndoRequest, CommitActionResult];
   // ── Compare (base…head) ──
   "compare:refs": [{ base: string; head: string; mode?: CompareMode }, CompareResult | undefined];
   /**

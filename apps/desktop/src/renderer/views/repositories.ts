@@ -29,7 +29,8 @@ import { toast, confirmDialog } from "../dialogs";
 import { didUndoable } from "../undo";
 import { openCloneDialog } from "../cloneDialog";
 import { host } from "../bridge";
-import { editorItems, loadEditors, REVEAL_LABEL } from "../openIn";
+import { editorItems, hasEditor, loadEditors, openInButton, REVEAL_LABEL } from "../openIn";
+import { repoStateBits, repoStateWords } from "../repoState";
 import { gget, bust } from "../cache";
 import {
   ghHeader,
@@ -43,7 +44,7 @@ import {
   type SectionRender,
   type SectionNav,
 } from "./common";
-import type { GhRepoBrief, LocalCopy, RepoFolder } from "../../shared/ipc";
+import type { EditorsView, GhRepoBrief, LocalCopy, LocalRepoStatus, RepoFolder } from "../../shared/ipc";
 import { MAX_LOCAL_REPOS } from "../../shared/repoGrouping";
 import { splitBand } from "../../shared/repoGrouping";
 import { middlePath, openPath, openLocalCopy, localCopyIndex } from "../localCopy";
@@ -143,6 +144,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     const gen = ++paintGen;
     const current = (): boolean => gen === paintGen && listEl.isConnected;
     if (force) bust("repos");
+    // The count filler and the column measure belong to the paint that set
+    // them; a new paint (either side) starts without either.
+    (listEl as RepoList).fillCounts = undefined;
+    (listEl as RepoList).realign = undefined;
     listEl.replaceChildren(el("div", "skeleton"));
     try {
       if (side === "local") await paintLocal(listEl, nav, refresh, current);
@@ -186,10 +191,14 @@ async function paintLocal(
   refresh: () => Promise<void>,
   current: () => boolean,
 ): Promise<void> {
-  const [folders, copies, truncated] = await Promise.all([
+  // The editors come in the SAME wait as the rows, so every row paints with
+  // its final controls: a split button that arrived afterwards would push the
+  // Open beside it sideways under the pointer.
+  const [folders, copies, truncated, editors] = await Promise.all([
     gget("repos:folders", undefined, 5000),
     gget("repos:local", undefined, 5000),
     gget("repos:scanTruncated", undefined, 5000).catch(() => false),
+    loadEditors(),
   ]);
   if (!current()) return;
 
@@ -243,7 +252,7 @@ async function paintLocal(
     // The plain repositories first, at the band's own indent and outside every
     // fold — "there are plain repos there" was half of what was reported, and
     // burying them under the projects would answer only the other half.
-    for (const c of shownLoose) rows.push(localRow(c, nav, refresh, "band"));
+    for (const c of shownLoose) rows.push(localRow(c, nav, refresh, "band", editors));
 
     for (const g of shownGroups) {
       const tracked = trackedGroups.get(`${band.path}\u0000${g.label}`);
@@ -251,7 +260,7 @@ async function paintLocal(
       rows.push(head);
       const folded = !query.trim() && isFolded(g.path);
       for (const c of g.items) {
-        const row = localRow(c, nav, refresh, "group");
+        const row = localRow(c, nav, refresh, "group", editors);
         // Folding HIDES rather than removes: the page's own count must not
         // report that repositories ceased to exist because a folder was
         // closed, and list navigation already skips anything with no
@@ -270,7 +279,7 @@ async function paintLocal(
   const loose = copies.filter((c) => !c.band && matchesCopy(c));
   if (loose.length) {
     rows.push(groupLabel("Opened from elsewhere"));
-    for (const c of loose) rows.push(localRow(c, nav, refresh, "loose"));
+    for (const c of loose) rows.push(localRow(c, nav, refresh, "loose", editors));
   }
 
   // The scan stops at a cap, and a capped list must not present itself as an
@@ -302,6 +311,69 @@ async function paintLocal(
     return;
   }
   listEl.replaceChildren(...rows);
+  alignActions(listEl, current);
+
+  // The change counts, AFTER the list is on screen — "which of these has work
+  // in it" must never hold the list up for a git process per repository.
+  const fill = countFiller(listEl, current);
+  (listEl as RepoList).fillCounts = fill;
+  void fill();
+}
+
+/** How many roots one `repos:localStatus` request carries: main answers at
+ *  most this many (STATUS_ROOTS_CAP) and drops the rest. */
+const STATUS_BATCH = 16;
+
+/** The list, carrying what the paint on screen left behind for a folder that
+ *  unfolds: the count filler, to ask about the rows it has just revealed, and
+ *  the column measure, since hidden rows could not be measured. */
+type RepoList = HTMLElement & { fillCounts?: () => Promise<void>; realign?: () => void };
+
+/** A row's accessible name before any counts were added to it. */
+const baseLabels = new WeakMap<HTMLElement, string>();
+
+/**
+ * Fill in "●3 ↑1 ↓2" for the rows this paint RENDERED — not a folded
+ * folder's (they are asked for when it opens), not a missing clone (git has
+ * nothing to say about a folder that is gone) — in batches the main process
+ * will answer whole.
+ *
+ * Every write is guarded by `current()`: a newer paint owns the list, and its
+ * rows carry the same roots, so an answer that arrives late for THIS paint
+ * would otherwise land in them — older than what they already show.
+ */
+function countFiller(listEl: HTMLElement, current: () => boolean): () => Promise<void> {
+  const asked = new Set<string>();
+  return async () => {
+    const todo = [...listEl.querySelectorAll<HTMLElement>(".repo-row[data-root]")]
+      .filter((r) => !r.hidden && r.dataset.missing === undefined)
+      .map((r) => r.dataset.root ?? "")
+      .filter((root) => root && !asked.has(root));
+    for (const root of todo) asked.add(root);
+    for (let i = 0; i < todo.length; i += STATUS_BATCH) {
+      if (!current()) return;
+      const batch = todo.slice(i, i + STATUS_BATCH);
+      let status: Record<string, LocalRepoStatus | undefined>;
+      try {
+        status = await gget("repos:localStatus", batch, 10_000);
+      } catch {
+        continue; // a bonus, never a failure — the rows already say what you have
+      }
+      if (!current()) return;
+      for (const root of batch) paintCounts(listEl, root, status?.[root]);
+    }
+  };
+}
+
+/** Write one repository's counts into its row's reserved slot. */
+function paintCounts(listEl: HTMLElement, root: string, st: LocalRepoStatus | undefined): void {
+  const row = listEl.querySelector<HTMLElement>(`.repo-row[data-root="${cssEscape(root)}"]`);
+  const slot = row?.querySelector<HTMLElement>(".repo-state");
+  if (!row || !slot) return;
+  slot.replaceChildren(...repoStateBits(st));
+  const words = repoStateWords(st);
+  const base = baseLabels.get(row) ?? row.getAttribute("aria-label") ?? "";
+  row.setAttribute("aria-label", words ? `${base}, ${words}` : base);
 }
 
 /** Does this copy survive the filter box? Its PATH counts too — searching
@@ -365,6 +437,12 @@ function applyFoldState(head: HTMLElement, path: string, on: boolean): void {
   if (!list) return;
   for (const row of list.querySelectorAll<HTMLElement>(`.sec-row[data-group="${cssEscape(path)}"]`)) {
     row.hidden = on;
+  }
+  // Rows a fold kept hidden were never asked about, nor measured; now they
+  // are on screen.
+  if (!on) {
+    void (list as RepoList).fillCounts?.();
+    (list as RepoList).realign?.();
   }
 }
 
@@ -749,6 +827,7 @@ function localRow(
   nav: SectionNav,
   refresh: () => Promise<void>,
   place: Place = "loose",
+  editors: EditorsView = { editors: [] },
 ): HTMLElement {
   // No chips. The origin used to sit in the chip cluster, which follows the
   // NAME — and since the name flexes, every row started its origin at a
@@ -791,6 +870,10 @@ function localRow(
     where.title = c.root;
     meta.push(where);
   }
+  // The change counts' place, reserved at paint: they arrive a moment later
+  // (see countFiller), and a slot that only appeared then would shove the
+  // columns to its left sideways. Empty for a clean or unreadable repository.
+  meta.push(el("span", "repo-state"));
 
   const actions: HTMLElement[] = [];
   if (!c.missing && !c.current) {
@@ -800,17 +883,29 @@ function localRow(
     open.addEventListener("click", () => void openPath(c.root, nav));
     actions.push(open);
   }
+  // "A quicker way to open the repository in the editor — a button next to
+  // Open instead of the three dots" (#32). The same split button the top bar
+  // and Home carry, sized for the row. Not on a clone whose folder is gone,
+  // and not at all without an editor: a control whose only answer is "No
+  // editors found" does not earn a place on every row (the … menu still says
+  // how to add one).
+  const split = !c.missing && hasEditor(editors);
+  if (split) {
+    actions.push(openInButton({ root: () => c.root, nav: (v) => nav(v), row: true, editors }));
+  }
   const more = el("button", "row-btn lv-menu-btn");
   more.setAttribute("aria-label", `More actions for ${c.name}`);
   more.setAttribute("aria-haspopup", "menu");
   more.appendChild(glyph("ellipsis"));
   more.addEventListener("click", async () => {
-    // The editors first — "open this one in Cursor" is what a row's menu is
-    // for far more often than forgetting it.
-    const editors = await loadEditors();
+    // The editors are the split button's now — its chevron lists every one,
+    // one control to the left. Listing them here too made two adjacent menus
+    // open with the same rows. Without the button (no editor found) this menu
+    // is still where "Add one in Settings" is said.
+    const menuEditors: MenuItem[] =
+      split || c.missing ? [] : [...editorItems(await loadEditors(), c.root, nav), { separator: true }];
     const items: MenuItem[] = [
-      ...editorItems(editors, c.root, nav),
-      { separator: true },
+      ...menuEditors,
       {
         label: REVEAL_LABEL,
         icon: "folder-opened",
@@ -914,7 +1009,9 @@ function localRow(
       if (!c.missing && !c.current) void openPath(c.root, nav);
     },
   });
+  baseLabels.set(row, row.getAttribute("aria-label") ?? c.name);
   if (c.worktreeOf) row.dataset.worktree = "1";
+  if (c.missing) row.dataset.missing = "1";
   // Tagged so the stylesheet can give the NAME priority over the
   // description beside it — see .repo-row in app.css, and so the indent can be
   // driven by where the row actually sits.
@@ -982,10 +1079,11 @@ async function paintRemote(
   refresh: () => Promise<void>,
   current: () => boolean,
 ): Promise<void> {
-  const [repos, copies, folders] = await Promise.all([
+  const [repos, copies, folders, editors] = await Promise.all([
     gget("github:repos", undefined, 30_000),
     gget("repos:local", undefined, 5000),
     gget("repos:folders", undefined, 30_000),
+    loadEditors(),
   ]);
   if (!current()) return;
 
@@ -1065,7 +1163,7 @@ async function paintRemote(
     const head = ownerHeader(g.label, g.kind, g.rows.length, g.key, filtering ? totals.get(g.key) : undefined);
     sec.appendChild(head);
     for (const r of g.rows) {
-      const row = remoteRow(r, have.get(r.fullName.toLowerCase()), folders, nav, refresh);
+      const row = remoteRow(r, have.get(r.fullName.toLowerCase()), folders, nav, refresh, editors);
       row.dataset.group = g.key;
       // Hidden, not removed — the page's own count must not report that
       // repositories ceased to exist because a section was closed.
@@ -1076,6 +1174,51 @@ async function paintRemote(
     out.push(sec);
   }
   listEl.replaceChildren(...out);
+  alignActions(listEl, current);
+}
+
+/**
+ * Every row's verbs take the width of the widest row's, so the columns to
+ * their left — the change counts, the language, the time — stay columns.
+ *
+ * The verbs are right-aligned, so a row with fewer of them (the repository
+ * you have open offers no Open; a clone whose folder is gone offers only its
+ * menu; on GitHub, a repository you have not cloned has no editor button)
+ * used to end its meta cluster further right than its neighbours, and "↑1"
+ * sat 50px out of line with the "●3" above it. Measured, not guessed: the
+ * editor button is as wide as your editor's name.
+ */
+function alignActions(listEl: HTMLElement, current: () => boolean): void {
+  const measure = (): void => {
+    let widest = 0;
+    for (const a of listEl.querySelectorAll<HTMLElement>(".repo-row .sec-row-actions")) {
+      widest = Math.max(widest, need(a));
+    }
+    if (widest) listEl.style.setProperty("--repo-actions-w", `${Math.ceil(widest)}px`);
+    // Nothing on screen to measure (every folder folded): the stylesheet's
+    // floor, never the width the OTHER side's paint left behind.
+    else listEl.style.removeProperty("--repo-actions-w");
+  };
+  measure();
+  (listEl as RepoList).realign = () => {
+    if (current()) measure();
+  };
+  // Again once the UI font is in: measured in the fallback face, a row whose
+  // editor button says "VSCode" came out 6px narrower than it then drew, and
+  // the columns it was meant to line up were 6px out on every such row.
+  void document.fonts?.ready.then(() => {
+    if (current()) measure();
+  });
+}
+
+/** What a verbs cluster NEEDS: its controls and the gaps between them. Not
+ *  its own width, which the reserved minimum has already floored. */
+function need(actions: HTMLElement): number {
+  const kids = [...actions.children] as HTMLElement[];
+  const shown = kids.filter((k) => k.offsetParent !== null);
+  if (!shown.length) return 0;
+  const gap = parseFloat(getComputedStyle(actions).columnGap) || 0;
+  return shown.reduce((sum, k) => sum + k.getBoundingClientRect().width, 0) + gap * (shown.length - 1);
 }
 
 /** "⌥" on a Mac, "Alt" elsewhere — named in the head's tooltip, which is the
@@ -1184,6 +1327,7 @@ function remoteRow(
   folders: RepoFolder[],
   nav: SectionNav,
   refresh: () => Promise<void>,
+  editors: EditorsView = { editors: [] },
 ): HTMLElement {
   const pills: HTMLElement[] = [];
   if (r.private) pills.push(span("private", "gh-pill"));
@@ -1211,6 +1355,14 @@ function remoteRow(
 
   const actions: HTMLElement[] = [];
   if (local) {
+    // Your copy of it, in your editor — the same control the row for this
+    // copy carries under "On this machine" (#32). It goes BEFORE the Open ⌄
+    // pair, not inside it: every row on this side ends in one verb and its
+    // ⌄ (Clone ⌄, Open ⌄), and an editor chevron between Open and its menu
+    // put two chevrons side by side that did different things.
+    if (!local.missing && hasEditor(editors)) {
+      actions.push(openInButton({ root: () => local.root, nav: (v) => nav(v), row: true, editors }));
+    }
     // Already here. Say WHERE, and offer the thing you actually want.
     const open = el("button", "row-btn");
     open.textContent = "Open";

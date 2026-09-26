@@ -11,6 +11,15 @@ import { isSamePathOrInside } from "../util/repoScope";
 // switch or commit.
 const REFRESH_DEBOUNCE_MS = 400;
 
+/** workspaceState key for the repository the user picked (issue #32). */
+export const PICKED_REPO_KEY = "gitstudio.pickedRepository";
+
+/** The one workspaceState surface RepoManager needs (a vscode.Memento). */
+export interface PickMemento {
+  get<T>(key: string): T | undefined;
+  update(key: string, value: unknown): Thenable<void>;
+}
+
 /**
  * The minimal Undo surface the RepoManager exposes to destructive-op sites,
  * kept structural so RepoManager never imports the concrete UndoLedger (which
@@ -21,7 +30,18 @@ export interface UndoLedgerLike {
     repo: RepoEntry,
     label: string,
     fn: () => Promise<T>,
+    opts?: UndoOptions,
   ): Promise<T>;
+}
+
+/** What an op tells the Undo envelope about itself, up front. */
+export interface UndoOptions {
+  /**
+   * The one branch the op moves, by full name (refs/heads/x) — "Reset 'x' to
+   * 'origin/x'". Undo then puts exactly that branch back, and only while it
+   * is still where the op left it (git-service's Snapshot.branch).
+   */
+  branch?: string;
 }
 
 /** A live repository: its root, our data context, and (once vscode.git has
@@ -45,16 +65,48 @@ interface RepoBinding {
 }
 
 /**
- * Owns the set of open repositories and the notion of the "active" one (the
- * repo containing the active editor's file, else the first). Surfaces a single
- * debounced `onDidChange` that the tree views subscribe to, firing on repo
- * open/close, active-editor moves across repos, vscode.git state changes, and
- * direct `.git` ref/op-state mutations (for instant refresh).
+ * Owns the set of open repositories and the notion of the "active" one.
+ * Surfaces a single debounced `onDidChange` that the tree views subscribe to,
+ * firing on repo open/close, active-editor moves across repos, vscode.git state
+ * changes, and direct `.git` ref/op-state mutations (for instant refresh).
+ *
+ * WHICH REPOSITORY IS ACTIVE (issue #32). Everything that shows "the" repo —
+ * the Changes view, the commit graph, worktrees, the sync status — reads
+ * getActive(), and the rule is:
+ *
+ *   · an explicit pick (setActive, from Switch Repository…) holds until you
+ *     pick again, or until that repository closes. Opening a file that lives
+ *     in another repository does NOT move it — the JetBrains / VS Code SCM
+ *     behaviour: a choice you made is not undone by where you click next.
+ *   · with no pick, the active repo follows the editor, as it always has: the
+ *     repo containing the active editor's file (longest root wins, so a repo
+ *     nested inside another's folder owns its own files), else the first.
+ *
+ * The pick is remembered per workspace (workspaceState), so a reload keeps it.
+ * A remembered pick whose repository is not found once discovery settles —
+ * deleted from disk, or removed from the workspace — is forgotten, and the
+ * view follows the editor again.
+ *
+ * Per-FILE features (blame, the staging gutter, the timeline, line staging,
+ * merge) resolve a file to the repository that OWNS it — the longest root, as
+ * findByPath does — never to the active one, so a pick cannot point them at
+ * the wrong repository.
  */
 export class RepoManager implements vscode.Disposable {
   private api: API | undefined;
   private readonly bindings = new Map<string, RepoBinding>();
   private activeRoot: string | undefined;
+  /**
+   * The repository the user picked, if any. May name a root that is not (yet)
+   * open: a pick restored from workspaceState waits for discovery to find its
+   * repo, and until then the editor rule applies (see settlePick).
+   */
+  private pickedRoot: string | undefined;
+  /** Where the pick is remembered across reloads (the workspace's Memento). */
+  private readonly pickStore: PickMemento | undefined;
+  /** Resolves when eager discovery has finished (one rev-parse per folder). */
+  private eagerDone: Promise<void> = Promise.resolve();
+  private disposed = false;
 
   private readonly disposables: vscode.Disposable[] = [];
   private readonly changeEmitter = new vscode.EventEmitter<void>();
@@ -63,7 +115,13 @@ export class RepoManager implements vscode.Disposable {
 
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
-  private constructor() {}
+  private constructor(pickStore?: PickMemento) {
+    this.pickStore = pickStore;
+    const remembered = pickStore?.get<string>(PICKED_REPO_KEY);
+    if (typeof remembered === "string" && remembered) {
+      this.pickedRoot = remembered; // judged once discovery settles (settlePick)
+    }
+  }
 
   /**
    * Constructs a RepoManager and kicks git-API activation in the BACKGROUND —
@@ -72,14 +130,17 @@ export class RepoManager implements vscode.Disposable {
    * repos are discovered so the views fill in. Awaiting git activation here
    * gated every GitStudio view behind vscode.git (0.5–2s on a cold start) — the
    * #1 cause of "the view takes seconds to appear on first open".
+   *
+   * `pickStore` is the workspace's Memento (context.workspaceState): where the
+   * repository picked with Switch Repository… is remembered across reloads.
    */
-  static async create(): Promise<RepoManager> {
-    const manager = new RepoManager();
+  static async create(pickStore?: PickMemento): Promise<RepoManager> {
+    const manager = new RepoManager(pickStore);
     // Discover repos from the workspace folders via OUR OWN git (one fast
     // `git rev-parse` each) so views get a root + git-service ctx INSTANTLY,
     // without waiting for vscode.git to activate + scan (the gate that made
     // every view take ~a second on first open).
-    void manager.eagerDiscover();
+    manager.eagerDone = manager.eagerDiscover().catch(() => undefined);
     void manager.init().catch(() => {
       // git unavailable — the views simply stay in their no-repo state.
     });
@@ -166,13 +227,14 @@ export class RepoManager implements vscode.Disposable {
       }),
     );
 
-    if (this.api) {
-      for (const repo of this.api.repositories) {
+    const api = this.api;
+    if (api) {
+      for (const repo of api.repositories) {
         this.addRepo(repo);
       }
       this.disposables.push(
-        this.api.onDidOpenRepository((repo) => this.addRepo(repo)),
-        this.api.onDidCloseRepository((repo) => this.removeRepo(repo)),
+        api.onDidOpenRepository((repo) => this.addRepo(repo)),
+        api.onDidCloseRepository((repo) => this.removeRepo(repo)),
       );
     }
 
@@ -182,6 +244,44 @@ export class RepoManager implements vscode.Disposable {
     // IMMEDIATELY (not via the 400ms debounce) so the views fill the instant git
     // is ready, since registration no longer waits for this.
     this.changeEmitter.fire();
+
+    // A remembered pick is judged once discovery has SETTLED: vscode.git scans
+    // the workspace for repositories after its API is handed out, so a repo
+    // missing from the first list may simply not be found yet.
+    if (!api || api.state === "initialized") {
+      await this.eagerDone;
+      this.settlePick();
+    } else {
+      const settled = api.onDidChangeState((state) => {
+        if (state === "initialized") {
+          settled.dispose();
+          void this.eagerDone.then(() => this.settlePick());
+        }
+      });
+      this.disposables.push(settled);
+    }
+  }
+
+  /**
+   * Discovery has finished: a remembered pick whose repository was not found is
+   * forgotten (the folder was removed from the workspace, or is no longer a
+   * repository). The active repo already follows the editor while the pick
+   * waits, so nothing on screen changes.
+   */
+  private settlePick(): void {
+    // A window closing mid-discovery has no repositories left to judge by, and
+    // must not wipe the pick the next window is about to restore.
+    if (this.disposed) {
+      return;
+    }
+    if (this.pickedRoot !== undefined && !this.bindings.has(this.pickedRoot)) {
+      this.forgetPick();
+    }
+  }
+
+  private forgetPick(): void {
+    this.pickedRoot = undefined;
+    void this.pickStore?.update(PICKED_REPO_KEY, undefined);
   }
 
   /** The git binary path. Prefers vscode.git's discovered path; before it has
@@ -300,6 +400,12 @@ export class RepoManager implements vscode.Disposable {
       d.dispose();
     }
     binding.entry.ctx.dispose();
+    // The picked repository closed: the pick ends with it, and the active repo
+    // follows the editor again. Kept, it would silently re-take the view if
+    // the repository ever reopened — long after anyone remembers picking it.
+    if (this.pickedRoot === root) {
+      this.forgetPick();
+    }
 
     this.recomputeActive();
     this.updateHasRepoContext();
@@ -307,9 +413,8 @@ export class RepoManager implements vscode.Disposable {
   }
 
   /**
-   * Recomputes the active repo from the active editor (the repo whose root is a
-   * prefix of the file's path, longest match wins), falling back to the first
-   * open repo. Fires a refresh only when the active repo actually changed.
+   * Recomputes the active repo (see the class comment for the rule). Fires a
+   * refresh only when the active repo actually changed.
    */
   private recomputeActive(): void {
     const previous = this.activeRoot;
@@ -321,23 +426,46 @@ export class RepoManager implements vscode.Disposable {
   }
 
   private computeActiveRoot(): string | undefined {
+    // An explicit pick wins while its repository is open.
+    if (this.pickedRoot !== undefined && this.bindings.has(this.pickedRoot)) {
+      return this.pickedRoot;
+    }
     const editorPath = vscode.window.activeTextEditor?.document.uri.fsPath;
     if (editorPath) {
-      let best: string | undefined;
-      for (const root of this.bindings.keys()) {
-        if (isPathInside(editorPath, root)) {
-          if (best === undefined || root.length > best.length) {
-            best = root;
-          }
-        }
-      }
-      if (best !== undefined) {
-        return best;
+      const owner = this.findRootFor(editorPath);
+      if (owner !== undefined) {
+        return owner;
       }
     }
     // Fall back to the first open repo (insertion order).
     const first = this.bindings.keys().next();
     return first.done ? undefined : first.value;
+  }
+
+  /** The open repo root containing `fsPath` — the longest one, so a repo nested
+   * inside another's folder owns its own files. */
+  private findRootFor(fsPath: string): string | undefined {
+    let best: string | undefined;
+    for (const root of this.bindings.keys()) {
+      if (isPathInside(fsPath, root)) {
+        if (best === undefined || root.length > best.length) {
+          best = root;
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The open repository a FILE belongs to (longest root wins), regardless of
+   * which repository is active. Per-file features must use this, not
+   * getActive(): with a picked repository the active one is not necessarily the
+   * file's — and for a repo nested in the picked one's folder, the picked root
+   * even CONTAINS the file while not owning it.
+   */
+  findByPath(fsPath: string): RepoEntry | undefined {
+    const root = this.findRootFor(fsPath);
+    return root === undefined ? undefined : this.bindings.get(root)?.entry;
   }
 
   /** The active repository, or undefined when no repo is open. */
@@ -351,6 +479,41 @@ export class RepoManager implements vscode.Disposable {
   /** All open repositories, in insertion order. */
   getAll(): RepoEntry[] {
     return Array.from(this.bindings.values(), (b) => b.entry);
+  }
+
+  /**
+   * Make `root` the active repository until the user picks again or it closes
+   * (Switch Repository…). `undefined` drops the pick, so the active repo
+   * follows the editor again. Returns false — and changes nothing — when
+   * `root` is not an open repository (it closed while the picker was up).
+   *
+   * Refreshes every subscriber at once rather than after the 400ms debounce:
+   * this is a click, and the views should answer it like one.
+   */
+  setActive(root: string | undefined): boolean {
+    if (root !== undefined && !this.bindings.has(root)) {
+      return false;
+    }
+    this.pickedRoot = root;
+    void this.pickStore?.update(PICKED_REPO_KEY, root);
+    const previous = this.activeRoot;
+    this.activeRoot = this.computeActiveRoot();
+    if (this.activeRoot !== previous) {
+      if (this.refreshTimer !== undefined) {
+        clearTimeout(this.refreshTimer);
+        this.refreshTimer = undefined;
+      }
+      this.changeEmitter.fire();
+    }
+    return true;
+  }
+
+  /** The root the user picked, while that repository is open; undefined when
+   * the active repo is following the editor. */
+  getPicked(): string | undefined {
+    return this.pickedRoot !== undefined && this.bindings.has(this.pickedRoot)
+      ? this.pickedRoot
+      : undefined;
   }
 
   /**
@@ -374,6 +537,13 @@ export class RepoManager implements vscode.Disposable {
       "gitstudio.hasRepo",
       this.bindings.size > 0,
     );
+    // Gates Switch Repository… in the Command Palette: with one repository
+    // there is nothing to switch to.
+    void vscode.commands.executeCommand(
+      "setContext",
+      "gitstudio.multiRepo",
+      this.bindings.size > 1,
+    );
   }
 
   private scheduleRefresh(): void {
@@ -387,6 +557,7 @@ export class RepoManager implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.disposed = true;
     if (this.refreshTimer !== undefined) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = undefined;

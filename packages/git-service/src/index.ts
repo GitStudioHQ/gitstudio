@@ -55,7 +55,7 @@ export type {
 export { StatusProvider, parseV2 as parseStatusV2 } from "./StatusProvider";
 export type { RepoStatus, StatusFile } from "./StatusProvider";
 export { SnapshotProvider } from "./SnapshotProvider";
-export type { Snapshot } from "./SnapshotProvider";
+export type { Snapshot, SnapshotBranch } from "./SnapshotProvider";
 export { StashProvider } from "./StashProvider";
 export type {
   StashEntry,

@@ -4,6 +4,67 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Drop Commit… in the commit menu.** Right-click a commit on your current
+  branch — in the Commit Graph or the Commits list — and choose **Drop
+  Commit…** to take it out of the branch; the commits after it are replayed
+  on top. It asks first, in words: which commit, how many later commits are
+  replayed, and — if the commit is already pushed — that this rewrites
+  history other people have and the next push will need to be a force push.
+  When other branches point at a replayed commit, it asks whether they move
+  with it, as reordering does. It is offered only where it can work: not for
+  a merge commit, a commit below a merge, a commit on another branch, or the
+  only commit on the branch. With uncommitted changes, or with a merge,
+  rebase, cherry-pick or revert still in progress, it says so before asking
+  anything. If a later commit conflicts, the rebase stops and **Resolve
+  Conflicts…** takes you to the Conflicts dashboard to continue, skip or
+  abort — abort puts the branch back as it was. Undo (Ctrl/Cmd+Alt+G Z)
+  restores the branch afterwards. (#32)
+- **Switch Repository.** When the folder you open holds more than one
+  repository — a parent folder of checkouts, a multi-root workspace, a repo
+  inside another's folder — the Changes view's header shows which one it is
+  showing, before the branch. Click it (or run *GitStudio: Switch
+  Repository…*) to pick another from a list of every repository, with its
+  path, its branch and how many files it has changed. The Changes view, the
+  commit graph, Worktrees and the sync status all follow your pick, and keep
+  it while you edit files in other repositories — until you pick again, or
+  that repository closes. The pick is remembered for the workspace; *Follow
+  the active editor* in the same list goes back to showing whichever
+  repository holds the file you're editing. (#32)
+- **The branch menu works from the keyboard.** Type to search, then **Up** and
+  **Down** move through the actions and branches, **Right** (or **Enter**) on a
+  branch opens its actions, **Enter** runs one, and **Left** or **Escape** goes
+  back — as in IntelliJ's branch popup. The highlighted row is drawn in your
+  theme's selection colours (with the focus outline in high-contrast themes),
+  follows the mouse too, and is read out by screen readers. Holding Enter never
+  runs a second action, nor answers the question the first one asked. (#32)
+- **Reset a branch to its remote.** A local branch that tracks a remote branch
+  has **Reset to 'origin/feature'…** in its branch-menu actions. GitStudio
+  fetches first, then says exactly what the reset would take away — the commits
+  on your branch that the remote doesn't have (with their messages), and, for
+  the branch you're on, how many files with uncommitted changes are discarded —
+  before anything happens. A branch that is only behind is fast-forwarded, and
+  says so. The branch you're on is reset with its working tree; any other branch
+  is moved without touching your files, and one checked out in another worktree
+  is left alone, with a message saying where. **Undo** (Ctrl/Cmd+Alt+G Z) puts
+  the branch back, with the uncommitted changes you had. (#32)
+- **Checkout 'origin/feature' when your local 'feature' has commits of its
+  own** now asks: switch to your local branch as it is, or reset it to
+  'origin/feature' first. When your local branch has nothing of its own, the
+  checkout just switches to it, as before. (#32)
+
+### Fixed
+- **Undo after moving a branch back onto pushed history.** Undoing an
+  operation that left the branch on an older, already-pushed commit — a reset
+  to it, or dropping your last local commit — offered to revert an empty range
+  and failed with git's "empty commit set passed". Going back is a
+  fast-forward that rewrites nothing, so Undo now simply does it.
+- Blame in a repository nested inside another's folder (a vendored checkout,
+  a submodule) no longer runs in the outer repository when the outer one is
+  the repository on screen.
+
 ## [1.14.0] - 2026-09-25
 
 GitStudio and Merge Studio now share one merge experience — the same merge

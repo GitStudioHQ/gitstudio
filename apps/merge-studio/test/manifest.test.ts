@@ -230,7 +230,9 @@ const entry100 = entries.find((e) => /^1\.0\.0\b/.test(e)) ?? "";
 const sectionsOf = (entry: string) => entry.split(/\n### /).slice(1);
 
 test("the newest CHANGELOG entry is the version package.json ships", () => {
-  assert.match(entries[0] ?? "", new RegExp(`^${pkg.version.replace(/\./g, "\\.")}\\b`), `the first entry is ${pkg.version}`);
+  // Compared as text: the heading is "1.0.1 — 2026-09-25".
+  const heading = (entries[0] ?? "").split("\n")[0];
+  assert.ok(heading === pkg.version || heading.startsWith(`${pkg.version} `), `the first entry is ${pkg.version} (it is "${heading}")`);
 });
 
 test("the 1.0.0 entry leads with the heads-up about Yours in a rebase", () => {

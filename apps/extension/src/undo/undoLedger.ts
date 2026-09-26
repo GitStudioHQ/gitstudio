@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { promptConfirm, promptPick } from "../ui/dialogs";
 import type { GitContext, Snapshot } from "@gitstudio/git-service/index";
-import type { RepoManager, RepoEntry } from "../git/repoManager";
+import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
 import { pausedForUser } from "../git/pausedForUser";
 import { notifyPaused } from "../git/pauseNotice";
@@ -67,10 +67,14 @@ export class UndoLedger {
     repo: RepoEntry,
     label: string,
     fn: () => Promise<T>,
+    opts?: UndoOptions,
   ): Promise<T> {
     let snapshot: Snapshot;
     try {
-      snapshot = await repo.ctx.snapshot.capture(label);
+      snapshot = await repo.ctx.snapshot.capture(
+        label,
+        opts?.branch ? { branch: opts.branch } : undefined,
+      );
     } catch {
       // If we can't even snapshot (e.g. unborn HEAD), run the op unguarded
       // rather than block it.
@@ -85,13 +89,24 @@ export class UndoLedger {
         // Revert …" toast with Undo said the opposite.
         return result;
       }
+      await this.settle(repo, snapshot);
       this.record(repo.root, snapshot);
       this.offerUndoToast(label);
       return result;
     } catch (err) {
       // The op threw mid-flight; still record so the snapshot is reachable.
+      await this.settle(repo, snapshot);
       this.record(repo.root, snapshot);
       throw err;
+    }
+  }
+
+  /** Note where a named branch landed (Snapshot.branch.after) — best effort. */
+  private async settle(repo: RepoEntry, snapshot: Snapshot): Promise<void> {
+    try {
+      await repo.ctx.snapshot.settle(snapshot);
+    } catch {
+      // Without `after` the undo still runs; it just cannot compare-and-swap.
     }
   }
 
@@ -197,13 +212,24 @@ export class UndoLedger {
     entry: UndoEntry,
     discardNewer: number,
   ): Promise<void> {
+    if (entry.snapshot.branch) {
+      await this.undoBranchMove(active, entry, discardNewer);
+      return;
+    }
     const currentHead = await this.currentHead(active.ctx);
     // The op's *result* is whatever HEAD is now (if the op moved HEAD). If that
     // commit is published, undoing by reset would rewrite shared history.
     const movedHead = currentHead !== null && currentHead !== entry.headBefore;
+    // …but only when going back would DISCARD it. An op that moved HEAD
+    // backwards — Drop Commit on the tip (issue #32), a reset to an older
+    // commit — leaves HEAD on a commit that is published because it was always
+    // there, and going back is a fast-forward that rewrites nothing. Read as
+    // "the result is pushed", that offered to revert `before..now`, an empty
+    // range, and the undo failed with git's "empty commit set passed".
     const resultPushed =
       movedHead && currentHead
-        ? await active.ctx.snapshot.isPushed(currentHead)
+        ? (await active.ctx.snapshot.isPushed(currentHead)) &&
+          !(await this.isAncestor(active.ctx, currentHead, entry.headBefore))
         : false;
 
     if (resultPushed) {
@@ -240,6 +266,86 @@ export class UndoLedger {
     }
 
     // Drop this entry and everything newer than it from the ledger.
+    this.truncateFrom(active.root, entry);
+    await this.save();
+  }
+
+  /**
+   * Undo an op that moved ONE named branch ("Reset 'x' to 'origin/x'"),
+   * putting exactly that branch back.
+   *
+   * No "already pushed" detour here. That safeguard exists for an op whose
+   * RESULT got published afterwards — reverting then keeps everyone else's
+   * history intact. This op moved the branch onto a commit the remote already
+   * had; putting the branch back publishes nothing and rewrites nothing
+   * anyone else has. (Routed through the generic path, HEAD now sits on a
+   * pushed commit, so it offered to REVERT the remote's commits instead.)
+   * whyNotRestorable has checked the branch is still exactly where the op
+   * left it, so nothing made since is at stake.
+   */
+  private async undoBranchMove(
+    active: RepoEntry,
+    entry: UndoEntry,
+    discardNewer: number,
+  ): Promise<void> {
+    const snap = entry.snapshot;
+    const b = snap.branch!;
+    const name = b.ref.replace(/^refs\/heads\//, "");
+    let why: string | undefined;
+    try {
+      why = await active.ctx.snapshot.whyNotRestorable(snap);
+    } catch (err) {
+      why = err instanceof Error ? err.message : String(err);
+    }
+    if (why) {
+      void vscode.window.showWarningMessage(`Can't undo "${entry.label}": ${why}`);
+      return;
+    }
+    // Checked out when it ran: it comes back with its working tree, which
+    // means `reset --hard` — anything uncommitted NOW is discarded, so say so.
+    let dirtyNow = false;
+    if (b.checkedOut) {
+      const st = await active.ctx.process.run(["status", "--porcelain"]);
+      dirtyNow = st.code === 0 && st.stdout.trim().length > 0;
+    }
+    const parts = [`'${name}' goes back to ${short(b.sha)}.`];
+    if (!b.checkedOut) {
+      // Checked out since (the checkout after "Checkout origin/x → Reset"):
+      // restore moves it with `reset --keep`, which keeps uncommitted edits.
+      const head = await active.ctx.process.run(["symbolic-ref", "--quiet", "HEAD"]);
+      if (head.code === 0 && head.stdout.trim() === b.ref) {
+        parts.push("It is checked out, so its files change with it; your uncommitted changes are kept.");
+      }
+    }
+    if (b.checkedOut && snap.stashSha) {
+      parts.push("The uncommitted changes you had then come back too.");
+    }
+    if (dirtyNow) {
+      parts.push("Uncommitted changes you have made since are discarded.");
+    }
+    if (discardNewer > 0) {
+      parts.push(
+        `This also discards ${discardNewer} newer operation${discardNewer === 1 ? "" : "s"}.`,
+      );
+    }
+    const ok = await promptConfirm({
+      title: `Undo "${entry.label}"?`,
+      message: parts.join(" "),
+      confirmLabel: "Undo",
+      danger: dirtyNow || discardNewer > 0,
+    });
+    if (!ok) {
+      return;
+    }
+    try {
+      await active.ctx.snapshot.restore(snap);
+      flash(`Undid ${entry.label}`);
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        err instanceof Error ? err.message : `Undo failed: ${String(err)}`,
+      );
+      return;
+    }
     this.truncateFrom(active.root, entry);
     await this.save();
   }
@@ -348,6 +454,12 @@ export class UndoLedger {
   private async currentHead(ctx: GitContext): Promise<string | null> {
     const result = await ctx.process.run(["rev-parse", "HEAD"]);
     return result.code === 0 ? result.stdout.trim() : null;
+  }
+
+  /** Is `a` an ancestor of (or equal to) `b`? A failed read says no. */
+  private async isAncestor(ctx: GitContext, a: string, b: string): Promise<boolean> {
+    const result = await ctx.process.run(["merge-base", "--is-ancestor", a, b]);
+    return result.code === 0;
   }
 }
 

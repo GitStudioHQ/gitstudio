@@ -4117,9 +4117,14 @@
         const more = acts?.querySelector(".lv-menu-btn");
         c.ok(!!more, `${who} has an overflow menu`);
         if (more) kebabs.push(more.getBoundingClientRect().right);
-        // No icon-only verb clusters: one labelled action plus the menu.
+        // No icon-only verb clusters: labelled actions plus menus. The editor
+        // button's chevron (#32) is a MENU with a name of its own, the same
+        // shape as the … beside it — not a bare icon that acts on a click.
         const bare = [...(acts?.querySelectorAll("button") || [])].filter(
-          (b) => !b.classList.contains("lv-menu-btn") && !b.textContent.trim(),
+          (b) =>
+            !b.classList.contains("lv-menu-btn") &&
+            !(b.getAttribute("aria-haspopup") === "menu" && b.getAttribute("aria-label")) &&
+            !b.textContent.trim(),
         );
         c.eq(bare.length, 0, `${who} offers no unlabelled icon buttons`);
       }
@@ -7593,7 +7598,7 @@
         $$(".dash-line").find((r) => text(r.querySelector(".dash-line-text")) === name);
       const busy = rowOf("gistudio.dev");
       c.ok(!!busy, "the busy repo is on the Home card");
-      const cluster = busy && busy.querySelector(".dash-repo-state");
+      const cluster = busy && busy.querySelector(".repo-state");
       c.ok(!!cluster, "and wears its signals");
       c.match(text(cluster) || "", /●3/, "3 changed files");
       c.match(text(cluster) || "", /↑1/, "1 unpushed commit");
@@ -7601,10 +7606,10 @@
       c.match((bit && bit.title) || "", /not pushed/i, "the hover says what the arrow means");
 
       const stale = rowOf("design");
-      const staleCluster = stale && stale.querySelector(".dash-repo-state");
+      const staleCluster = stale && stale.querySelector(".repo-state");
       c.match(text(staleCluster) || "", /↓2/, "the stale repo says it is behind");
 
-      const clean = $$(".dash-line .dash-repo-state").length;
+      const clean = $$(".dash-line .repo-state").length;
       c.eq(clean, 2, `clean repos show NOTHING (${clean} clusters for 2 newsworthy repos)`);
     },
 
@@ -8668,12 +8673,14 @@
       c.ok(rows.length > 1, `the remote list renders (${rows.length})`);
       for (const r of rows) {
         const name = text(r.querySelector(".sec-row-title"));
-        const verbs = [...r.querySelectorAll(".row-btn")];
+        // The row's OWN pair — a verb and its ⌄. A repository you have also
+        // carries the editor button (#32), a control of its own beside it.
+        const verbs = [...r.querySelectorAll(".sec-row-actions > .row-btn")];
         c.eq(verbs.length, 2, `${name} offers a verb and a menu`);
         c.ok(!!r.querySelector(".lv-menu-btn"), `${name} has a menu`);
       }
       // And the menu on a cloned row reaches the same places as the others.
-      const cloned = rows.find((r) => /Open/.test(text(r.querySelector(".row-btn")) || ""));
+      const cloned = rows.find((r) => /Open/.test(text(r.querySelector(".sec-row-actions > .row-btn")) || ""));
       c.ok(!!cloned, "a repository that is already on this machine is in the list");
       if (!cloned) return;
       cloned.querySelector(".lv-menu-btn").click();
@@ -9110,6 +9117,147 @@
       c.eq(sent?.payload?.action, "checkout-ref", "the checkout goes out as a ref checkout");
       c.eq(sent?.payload?.refKind, "remote", "…as a remote");
       c.eq(sent?.payload?.fullName, "refs/remotes/origin/chore/dependabot-bump", "…by its full name, never the chip's short one");
+    },
+
+    /**
+     * "Drop commit…" (issue #32) is offered only where it can work — the menu
+     * asks main first — sits after Revert in the danger colour, and choosing
+     * it asks main again with the preflight, confirms in words (the commit,
+     * the branch, the published-history warning and the force push), runs the
+     * drop with the head the question was about, and offers Undo with the two
+     * tips the drop answered with.
+     */
+    "the-graph-menu-offers-drop-only-where-it-can-work": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const TIP = "9f8e7d6c5b4a39281706";
+      const sent = (ch) => window.__GS_INVOKED.filter((r) => r.channel === ch);
+      const rclick = async (sha) => {
+        const row = sr.querySelector(`.row[data-sha="${sha}"]`);
+        if (!row) return false;
+        const r = row.getBoundingClientRect();
+        row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: r.left + 240, clientY: r.top + r.height / 2 }));
+        await settle(400);
+        return true;
+      };
+      const closeMenu = async () => {
+        const m = $(".ctx-menu");
+        if (!m) return;
+        (document.activeElement || m).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        await settle(200);
+      };
+      const dropRow = () => $(".ctx-menu [data-action=drop]");
+
+      // ── Offered on the tip, in its place ──
+      c.ok(await rclick(TIP), "the tip's row to right-click");
+      c.ok(!!$(".ctx-menu"), "the commit menu opens");
+      c.ok(sent("commit:dropPlan").some((r) => r.payload?.sha === TIP && !r.payload?.preflight), "the menu asked main before it opened");
+      const row = dropRow();
+      c.ok(!!row, "Drop commit… is offered for the tip");
+      if (!row) return;
+      c.eq(text(row), "Drop commit…", "its label");
+      c.ok(row.classList.contains("ctx-danger"), "danger-styled like Reset (hard)");
+      c.eq(row.previousElementSibling?.dataset.action, "revert", "right after Revert");
+      c.eq(row.nextElementSibling?.dataset.action, "reset-soft", "and before the resets");
+      const red = getComputedStyle(row).color;
+      const plain = getComputedStyle($(".ctx-menu [data-action=revert]")).color;
+      c.ok(red !== plain, `and it is painted as one (${red} vs Revert's ${plain})`);
+      await closeMenu();
+
+      // ── Not offered where it cannot work ──
+      for (const [sha, what] of [
+        ["a1b2c3d4e5f60718293a", "the merge commit"],
+        ["b2c3d4e5f6a71829304b", "a commit on another branch"],
+        ["d4e5f6a7b8c930415d6e", "a commit below the merge"],
+      ]) {
+        c.ok(await rclick(sha), `${what}'s row to right-click`);
+        c.ok(!!$(".ctx-menu"), `the menu still opens for ${what}`);
+        c.ok(!dropRow(), `…without Drop commit… for ${what}`);
+        c.ok(!!$(".ctx-menu [data-action=revert]"), `…and with everything else for ${what}`);
+        await closeMenu();
+      }
+
+      // ── Choosing it: preflight, then the question, in words ──
+      await rclick(TIP);
+      dropRow()?.click();
+      await settle(500);
+      c.ok(sent("commit:dropPlan").some((r) => r.payload?.sha === TIP && r.payload?.preflight === true), "it asks main again, with the preflight");
+      c.eq(sent("commit:drop").length, 0, "nothing runs before the answer");
+      const card = $(".modal-card");
+      c.ok(!!card, "a confirmation opens");
+      if (!card) return;
+      c.eq(text(card.querySelector(".modal-title")), "Drop 9f8e7d6?", "the title names the commit");
+      const said = text(card.querySelector(".modal-message"));
+      c.match(said, /9f8e7d6 "release: extension 1\.11\.1" will be removed from main\./, "which commit, from where");
+      c.match(said, /nothing else changes/, "how many later commits are replayed");
+      c.match(said, /Already pushed\. Dropping it would rewrite history other people have\./, "the published-history warning");
+      c.match(said, /force push/, "and the force push");
+      const ok = card.querySelector(".modal-ok");
+      c.ok(ok?.classList.contains("btn-danger"), "the confirm button is the danger one");
+      c.eq(text(ok), "Drop commit", "and says what it does");
+
+      // ── Confirmed: run with the head the question was about; Undo offered ──
+      ok?.click();
+      await settle(600);
+      const run = sent("commit:drop").at(-1)?.payload;
+      c.eq(run?.sha, TIP, "the drop names the commit");
+      c.eq(run?.head, TIP, "and the head the question was about");
+      c.eq(run?.carry, false, "no branches to carry");
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /Dropped 9f8e7d6\./, "it says so");
+      const undo = $$(".toast-action").find((b) => text(b) === "Undo");
+      c.ok(!!undo, "with Undo on the toast");
+      undo?.click();
+      await settle(500);
+      const back = sent("commit:undoDrop").at(-1)?.payload;
+      c.eq(back?.before, TIP, "Undo goes back to the old tip");
+      c.eq(back?.after, "a1b2c3d4e5f60718293a", "from the tip the drop left");
+    },
+
+    /** A preflight refusal (uncommitted changes) is said INSTEAD of the question. */
+    "a-drop-over-uncommitted-changes-is-refused-before-the-question": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      const row = sr?.querySelector('.row[data-sha="9f8e7d6c5b4a39281706"]');
+      c.ok(!!row, "the tip's row");
+      if (!row) return;
+      const r = row.getBoundingClientRect();
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: r.left + 240, clientY: r.top + r.height / 2 }));
+      await settle(400);
+      $(".ctx-menu [data-action=drop]")?.click();
+      await settle(500);
+      c.ok(!$(".modal-card"), "no question is asked");
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /uncommitted changes/, "the refusal is said");
+      c.eq(window.__GS_INVOKED.filter((x) => x.channel === "commit:drop").length, 0, "and nothing runs");
+    },
+
+    /** A drop that stops on a conflict lands on Changes, where the dashboard's Continue/Skip/Abort are. */
+    "a-drop-that-conflicts-lands-on-the-conflict-flow": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      const row = sr?.querySelector('.row[data-sha="9f8e7d6c5b4a39281706"]');
+      c.ok(!!row, "the tip's row");
+      if (!row) return;
+      const r = row.getBoundingClientRect();
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: r.left + 240, clientY: r.top + r.height / 2 }));
+      await settle(400);
+      $(".ctx-menu [data-action=drop]")?.click();
+      await settle(500);
+      $(".modal-ok")?.click();
+      await settle(900);
+      c.match($$(".toast-msg").map((t) => text(t)).join(" | "), /hit a conflict while replaying a later commit/, "it says what happened");
+      c.ok(!$$(".toast-error").length, "neutrally: nothing failed");
+      const changes = $('[data-view="changes"]');
+      c.ok(
+        !!changes && (changes.getAttribute("aria-current") === "page" || changes.classList.contains("active")),
+        `and takes you to Changes (current: ${$$("[data-view]").filter((n) => n.getAttribute("aria-current") === "page" || n.classList.contains("active")).map((n) => n.dataset.view).join(",")})`,
+      );
+      c.eq(window.__GS_INVOKED.filter((x) => x.channel === "commit:drop").length, 1, "the drop ran once");
     },
 
     /**
@@ -13240,18 +13388,480 @@
       if (!btn) return;
       c.eq(text($$(".openin-primary", btn)[0]), "VSCode", "…naming the default editor");
     },
-    /** A repository row's menu leads with the editors. */
+    // ── Repositories: the editor on the row, and what has changed (#32) ─────
+    //
+    // "I tend to switch repos a lot. I'd love a quicker way to open the
+    // repository in the editor (VS Code) from GitStudio's Repositories — a
+    // button next to Open instead of the three dots. And the number of
+    // changes per repo on this screen."
+
+    /**
+     * A repository row opens in your editor from the ROW: the same split
+     * button the top bar and Home carry, at the row's own size, right after
+     * Open. Its chevron lists every editor, so the … menu stops repeating
+     * them. The open repository has no Open but keeps the editor; a clone
+     * whose folder is gone has neither.
+     */
     "a-repository-row-opens-in-an-editor": async (f) => {
       const c = check(f);
+      await settle(600);
+      const rowOf = (name) => $$(".sec-row.repo-row").find((r) => text($$(".sec-row-title", r)[0]) === name);
+      const row = rowOf("gistudio.dev");
+      if (!row) return c.ok(false, "the gistudio.dev row renders");
+      const kids = [...$$(".sec-row-actions", row)[0].children];
+      const split = $$(".openin.is-row", row)[0];
+      c.ok(!!split, "the row carries the editor button");
+      if (!split) return;
+      const open = kids.find((k) => k.tagName === "BUTTON" && text(k) === "Open");
+      c.ok(!!open && kids.indexOf(split) === kids.indexOf(open) + 1, "…right after Open, which stays first");
+      c.ok(kids[kids.length - 1].classList.contains("lv-menu-btn"), "…and the … menu stays last");
+      const primary = $$(".openin-primary", split)[0];
+      c.eq(text(primary), "VSCode", "the primary half names the default editor");
+      c.eq(primary.getAttribute("aria-label"), "Open gistudio.dev in VSCode", "…and says which repository to a screen reader");
+      // The row's rhythm: Open's height and text size, not a toolbar control's.
+      const h = (b) => Math.round(b.getBoundingClientRect().height);
+      c.eq(h(primary), h(open), `the editor button is Open's height (${h(primary)} vs ${h(open)})`);
+      c.eq(getComputedStyle(primary).fontSize, getComputedStyle(open).fontSize, "…and Open's text size");
+
+      const from = window.__GS_INVOKED.length;
+      primary.click();
       await settle(300);
-      const kebab = $(".lv-menu-btn");
-      c.ok(!!kebab, "a repository row has a menu");
-      if (!kebab) return;
-      kebab.click();
+      const sent = window.__GS_INVOKED.slice(from);
+      const opened = sent.filter((r) => r.channel === "editors:open");
+      c.eq(opened.length, 1, "one press, one editors:open");
+      c.eq(opened[0] && opened[0].payload && opened[0].payload.root, "/Users/demo/GitStudio/gistudio.dev", "…for this row's folder");
+      c.eq(sent.filter((r) => r.channel === "repo:openPath").length, 0, "…without also opening it here (the row behind it)");
+
+      $$(".openin-more", split)[0].click();
       await settle(300);
-      const rows = $$(".dropdown .dropdown-item").map((r) => text(r));
-      c.ok(rows.some((r) => /^VSCode/.test(r)), `the menu opens the repository in your editor (${rows.join(" | ")})`);
-      c.ok(rows.some((r) => /^Zed/.test(r)), "…in any of them");
+      const chev = $$(".dropdown .dropdown-item").map((r) => text(r));
+      c.ok(chev.some((r) => /^VSCode/.test(r)) && chev.some((r) => /^Zed/.test(r)), `its chevron lists every editor (${chev.join(" | ")})`);
+      $$(".lv-menu-btn", row)[0].click();
+      await settle(300);
+      const kebab = $$(".dropdown .dropdown-item").map((r) => text(r));
+      c.ok(kebab.length > 0, "the … menu opens");
+      c.ok(!kebab.some((r) => /^(VSCode|Zed|Cursor)/.test(r)), `…and does not repeat the editors one control to its left (${kebab.join(" | ")})`);
+      c.ok(kebab.some((r) => /^Copy path/.test(r)), "…keeping the row's own verbs");
+
+      const cur = rowOf("gitstudio");
+      c.ok(!!$$(".openin.is-row", cur)[0], "the repository you have open keeps the editor button");
+      c.ok(!$$(".sec-row-actions button", cur).some((b) => text(b) === "Open"), "…and still offers no Open");
+      c.eq($$(".openin", rowOf("old-prototype")).length, 0, "a clone whose folder is gone has no editor button");
+    },
+
+    /** No editor found: no editor button at all — a control whose only answer
+     *  is "none found" does not earn a place on every row. The … menu still
+     *  says where to add one. */
+    "with-no-editor-a-repository-row-has-no-empty-control": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const rows = $$(".sec-row.repo-row");
+      c.ok(rows.length >= 4, `the list renders (${rows.length})`);
+      c.eq($$(".sec-row .openin").length, 0, "no row carries an editor button");
+      const row = rows.find((r) => text($$(".sec-row-title", r)[0]) === "gistudio.dev");
+      if (!row) return c.ok(false, "the gistudio.dev row renders");
+      $$(".lv-menu-btn", row)[0].click();
+      await settle(300);
+      const items = $$(".dropdown .dropdown-item").map((r) => text(r));
+      c.ok(items.some((r) => /No editors found/.test(r) && /Settings/.test(r)), `the … menu says how to add one (${items.join(" | ")})`);
+    },
+
+    /** The GitHub side: a repository you have carries the same editor button,
+     *  for your copy — ahead of its Open ⌄ pair, so every row still ends in
+     *  one verb and its ⌄. The columns to the left stay columns. */
+    "the-github-side-opens-your-copy-in-an-editor": async (f) => {
+      const c = check(f);
+      await settle(1600);
+      const rows = $$(".sec-row.repo-row");
+      const mine = rows.filter((r) => /on this machine/.test(text(r)));
+      const theirs = rows.filter((r) => !/on this machine/.test(text(r)));
+      c.ok(mine.length >= 1 && theirs.length >= 1, `precondition: both kinds of row (${mine.length} local, ${theirs.length} not)`);
+      for (const r of mine) {
+        const name = text($$(".sec-row-title", r)[0]);
+        const kids = [...$$(".sec-row-actions", r)[0].children];
+        const split = kids.findIndex((k) => k.classList.contains("openin"));
+        const open = kids.findIndex((k) => text(k) === "Open");
+        c.ok(split >= 0, `${name} offers your editor`);
+        c.ok(split >= 0 && open === split + 1 && kids[open + 1] && kids[open + 1].classList.contains("lv-menu-btn"),
+          `${name}: the editor, then Open and its ⌄ together`);
+      }
+      for (const r of theirs) {
+        c.eq($$(".openin", r).length, 0, `${text($$(".sec-row-title", r)[0])} (not on this machine) has no editor button`);
+      }
+      const rights = new Set(rows.map((r) => Math.round($$(".sec-row-time", r)[0].getBoundingClientRect().right)));
+      c.eq(rights.size, 1, `the time column ends at one x on every row (${[...rights].join(", ")})`);
+      const busy = mine.find((r) => /gistudio\.dev/.test(text($$(".sec-row-title", r)[0])));
+      if (!busy) return c.ok(false, "GitStudioHQ/gistudio.dev is one you have");
+      const from = window.__GS_INVOKED.length;
+      $$(".openin-primary", busy)[0].click();
+      await settle(300);
+      const opened = window.__GS_INVOKED.slice(from).filter((r) => r.channel === "editors:open");
+      c.eq(opened[0] && opened[0].payload && opened[0].payload.root, "/Users/demo/GitStudio/gistudio.dev", "it opens YOUR copy");
+    },
+
+    /**
+     * The number of changes per repository: ●changed files, ↑to push, ↓to pull
+     * — Home's cluster, with Home's hovers. A clean repository says nothing;
+     * one git could not answer for, or whose folder is gone, says nothing too
+     * — never "0", which would be a claim.
+     */
+    "repository-rows-say-what-has-changed": async (f) => {
+      const c = check(f);
+      await settle(800);
+      const rowOf = (name) => $$(".sec-row.repo-row").find((r) => text($$(".sec-row-title", r)[0]) === name);
+      const bits = (name) => $$(".repo-state .repo-state-bit", rowOf(name));
+      c.eq(bits("gistudio.dev").map((b) => text(b)).join(" "), "●3 ↑1", "a repository with work says so");
+      const [dirty, ahead] = bits("gistudio.dev");
+      c.eq(dirty && dirty.title, "3 changed files in the working tree", "…each symbol saying what it means on hover");
+      c.eq(ahead && ahead.title, "1 commit not pushed on main", "…as Home's do");
+      c.eq(bits("design").map((b) => text(b)).join(" "), "↓2", "a stale one says it is behind");
+      c.eq(bits("design")[0] && bits("design")[0].title, "2 commits behind the remote", "…in words on hover");
+      for (const quiet of ["experiments", "gitstudio-wt-design", "old-prototype"]) {
+        const slot = $$(".repo-state", rowOf(quiet))[0];
+        c.ok(!!slot && text(slot) === "", `${quiet} says nothing (${JSON.stringify(text(slot))})`);
+      }
+      c.ok(!$$(".repo-state").some((s) => /(^|[^\d])0([^\d]|$)/.test(text(s))), "no row says 0 of anything");
+      const asked = (window.__gsStatusCalls || []).flat();
+      c.ok(!asked.some((r) => r.endsWith("/old-prototype")), "a clone whose folder is gone is not asked about");
+      c.match(rowOf("gistudio.dev").getAttribute("aria-label") || "", /3 changed files, 1 commit to push$/, "the row says it in words too");
+      const colours = ["is-dirty", "is-ahead", "is-behind"].map((k) => getComputedStyle($$(`.repo-state-bit.${k}`)[0] || document.body).color);
+      c.eq(new Set(colours).size, 3, `changed, ahead and behind wear three colours (${colours.join(" / ")})`);
+      const widths = new Set($$(".sec-row.repo-row .repo-state").map((s) => Math.round(s.getBoundingClientRect().width)));
+      c.eq(widths.size, 1, `the counts column is one width on every row (${[...widths].join(", ")})`);
+      const rights = new Set($$(".sec-row.repo-row .repo-state").map((s) => Math.round(s.getBoundingClientRect().right)));
+      c.eq(rights.size, 1, `…ending at one x, the open repository's row included (${[...rights].join(", ")})`);
+    },
+
+    /** The counts arrive after the list — nothing already on screen moves when
+     *  they land. `slow=repos:localStatus` holds the answer back so the row can
+     *  be measured before and after. */
+    "counts-arrive-without-moving-the-row": async (f) => {
+      const c = check(f);
+      noAnimation();
+      for (let i = 0; i < 20 && !$(".sec-row.repo-row"); i++) await settle(100);
+      const rowOf = (name) => $$(".sec-row.repo-row").find((r) => text($$(".sec-row-title", r)[0]) === name);
+      const names = ["gistudio.dev", "one-off", "yugo-telegram-bot", "spool"];
+      const rows = names.map(rowOf);
+      if (rows.some((r) => !r)) return c.ok(false, `the rows render (${names.filter((_, i) => !rows[i]).join(", ")} missing)`);
+      c.eq($$(".repo-state-bit").length, 0, "precondition: the counts have not arrived yet");
+      const parts = [".sec-row-title", ".repo-origin-col", ".repo-path", ".gh-pill", ".sec-row-actions", ".openin"];
+      const snap = () =>
+        rows.map((r) =>
+          parts
+            .map((sel) => {
+              const e = $$(sel, r)[0];
+              if (!e) return `${sel}:-`;
+              const b = e.getBoundingClientRect();
+              return `${sel}:${Math.round(b.left)}-${Math.round(b.right)}`;
+            })
+            .join(" "),
+        );
+      const before = snap();
+      await settle(3600); // both batches, each held back 1.5 s
+      c.ok($$(".repo-state-bit", rowOf("one-off")).length > 0, "precondition: the counts arrived, the second batch's too");
+      const after = snap();
+      names.forEach((n, i) => c.eq(after[i], before[i], `${n} did not move when its counts arrived`));
+    },
+
+    /** More than sixteen rows: asked for in requests of at most sixteen (main
+     *  answers no more), each repository once, exactly the rows on screen —
+     *  and the later batches fill in too. */
+    "change-counts-come-in-batches-of-sixteen": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const calls = window.__gsStatusCalls || [];
+      c.ok(calls.length >= 2, `more than sixteen rows took more than one request (${calls.length})`);
+      c.ok(calls.every((b) => b.length <= 16), `no request carries more than sixteen (${calls.map((b) => b.length).join(", ")})`);
+      const asked = calls.flat();
+      c.eq(new Set(asked).size, asked.length, "no repository is asked about twice");
+      const shown = $$(".sec-row.repo-row").filter((r) => !r.hidden && r.dataset.missing === undefined).map((r) => r.dataset.root);
+      c.eq(asked.slice().sort().join("\n"), shown.slice().sort().join("\n"), "exactly the rows on screen were asked about");
+      const rowOf = (name) => $$(".sec-row.repo-row").find((r) => text($$(".sec-row-title", r)[0]) === name);
+      const said = (name) => $$(".repo-state-bit", rowOf(name)).map((b) => text(b)).join(" ");
+      c.eq(said("warp"), "↓5", "a row from the second batch filled in (behind)");
+      c.eq(said("backend"), "↑2 ↓1", "…and a diverged one says both");
+      c.eq(said("yugo-telegram-bot"), "●128 ↑34 ↓1207", "…and big numbers read whole");
+      c.eq(said("spool"), "●1", "a first-batch row too");
+    },
+
+    /** A folded folder's rows are not on screen, so they are not asked about —
+     *  until the folder opens. */
+    "a-folded-folder-is-asked-about-when-it-opens": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const headOf = () => $$(".repo-group-head").find((h) => text($$(".repo-group-name", h)[0]) === "Uncaged");
+      if (!headOf()) return c.ok(false, "the Uncaged folder is on screen");
+      headOf().click(); // fold it
+      await settle(300);
+      const n = (window.__gsStatusCalls || []).length;
+      $(".gh-refresh").click(); // repaint the list with it folded
+      await settle(1400);
+      const later = (window.__gsStatusCalls || []).slice(n).flat();
+      c.ok(later.length > 0, "precondition: the repaint asked about the rows it showed");
+      c.ok(!later.some((r) => r.includes("/Uncaged/")), `a folded folder's rows are not asked about (${later.filter((r) => r.includes("/Uncaged/")).length} were)`);
+      const inside = $$(".sec-row.repo-row").filter((r) => (r.dataset.root || "").includes("/Uncaged/"));
+      c.ok(inside.length === 5 && inside.every((r) => r.hidden), "precondition: its five rows are folded away");
+      const m = (window.__gsStatusCalls || []).length;
+      headOf().click(); // open it
+      await settle(700);
+      const opened = (window.__gsStatusCalls || []).slice(m).flat();
+      c.eq(opened.slice().sort().join("\n"), inside.map((r) => r.dataset.root).sort().join("\n"), "opening it asks about exactly the rows it revealed");
+      const warp = inside.find((r) => /\/warp$/.test(r.dataset.root || ""));
+      c.eq($$(".repo-state-bit", warp).map((b) => text(b)).join(" "), "↓5", "…and they fill in");
+    },
+
+    /**
+     * A batch that answers after the list was repainted writes NOTHING. The
+     * first request is held back 2.5 s (statusdelays) and answers from
+     * "before" — gistudio.dev dirty 9 — while the filter repaints the list and
+     * the new paint's own request says 3. The late answer must not land in the
+     * new row, and the superseded paint must ask for nothing more.
+     */
+    "a-stale-count-batch-writes-nothing": async (f) => {
+      const c = check(f);
+      for (let i = 0; i < 20 && !$(".sec-row.repo-row"); i++) await settle(100);
+      await settle(200);
+      c.eq((window.__gsStatusCalls || []).length, 1, "precondition: the first paint's first batch is in flight");
+      const box = $(".gh-head-tools input[type=search], .gh-head-tools input");
+      if (!box) return c.ok(false, "the filter box is there");
+      box.value = "gist";
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(700);
+      const slot = () => $$(".sec-row.repo-row .repo-state").find((s) => /gistudio\.dev$/.test(s.closest(".repo-row").dataset.root || ""));
+      c.eq($$(".sec-row.repo-row").length, 1, "precondition: the filter repainted the list to one row");
+      c.eq(text(slot()), "●3↑1", "the new paint's answer is on screen");
+      await settle(2600); // past the stale answer
+      c.eq(text(slot()), "●3↑1", "…and stays: the late answer from before the repaint wrote nothing");
+      c.eq((window.__gsStatusCalls || []).length, 2, `the superseded paint asked for nothing more (${(window.__gsStatusCalls || []).map((b) => b.length).join(", ")})`);
+    },
+
+    /** A name longer than any column ellipsizes; its counts and its three
+     *  controls stay whole, and the list never scrolls sideways. */
+    "a-long-repository-name-keeps-its-counts-and-controls": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(900);
+      const row = $$(".sec-row.repo-row").find((r) => /-past-any-column$/.test(r.dataset.root || ""));
+      if (!row) return c.ok(false, "the long-named repository renders");
+      const title = $$(".sec-row-title", row)[0];
+      c.ok(title.scrollWidth > title.clientWidth + 1, "precondition: the name is longer than its room");
+      c.eq(getComputedStyle(title).textOverflow, "ellipsis", "it ends in an ellipsis");
+      c.ok(title.clientWidth >= 150, `…and keeps a readable width (${title.clientWidth}px)`);
+      const rb = row.getBoundingClientRect();
+      for (const b of $$(".sec-row-actions button", row)) {
+        const r = b.getBoundingClientRect();
+        const name = b.getAttribute("aria-label") || text(b);
+        c.ok(r.width > 0 && r.left >= rb.left - 0.5 && r.right <= rb.right + 0.5, `${name} is whole inside the row`);
+      }
+      const primary = $$(".openin-primary", row)[0];
+      c.ok(!!primary && primary.scrollWidth <= primary.clientWidth + 1, "the editor's name is not clipped");
+      const slot = $$(".repo-state", row)[0];
+      c.eq(text(slot), "●12↑3↓7", "its counts are all there");
+      c.ok(slot.scrollWidth <= slot.clientWidth + 1, "…unclipped");
+      c.ok(row.scrollWidth <= row.clientWidth + 1, `the row does not overflow (${row.scrollWidth} > ${row.clientWidth})`);
+      const list = row.closest(".sec-list");
+      c.ok(!!list && list.scrollWidth <= list.clientWidth + 1, "the list never scrolls sideways");
+    },
+
+    // ── Reset a branch to its upstream (#32) ────────────────────────────────
+    //
+    // "When having a messy branch, in IDEA you can checkout the same branch
+    // from origin and it throws everything local away and makes it 1:1 with
+    // origin." The branch menu's `Reset to '<upstream>'…` — the VS Code
+    // extension's words — fetches, says what goes, and can be undone.
+
+    /** Offered on a local branch that tracks a remote branch that exists; red,
+     *  at the bottom with Delete; absent without an upstream or with a gone one. */
+    "the-branch-menu-offers-a-reset-to-its-upstream": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      const menuOf = async (name) => {
+        const k = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === `More actions for ${name}`);
+        if (!k) return null;
+        k.click();
+        await settle(350);
+        return $$(".dropdown .dropdown-item");
+      };
+      const main = await menuOf("main");
+      if (!main) return c.ok(false, "main's row has a menu");
+      const reset = main.find((i) => text(i) === "Reset to 'origin/main'…");
+      c.ok(!!reset, `the branch you are on offers Reset to 'origin/main'… (${main.map((i) => text(i)).join(" | ")})`);
+      if (!reset) return;
+      const copy = main.find((i) => /^Copy branch name/.test(text(i)));
+      const colour = (i) => getComputedStyle($$(".dropdown-label", i)[0] || i).color;
+      c.ok(reset.classList.contains("is-danger") && colour(reset) !== colour(copy), "…in the menu's red, like its other destructive items");
+      c.eq(main[main.length - 1], reset, "…at the bottom, with what takes something away");
+      const feat = await menuOf("feat/line-staging");
+      const labels = (feat || []).map((i) => text(i));
+      const at = labels.indexOf("Reset to 'origin/feat/line-staging'…");
+      c.ok(at >= 0, `another tracking branch offers it too (${labels.join(" | ")})`);
+      c.eq(labels[at + 1], "Delete feat/line-staging", "…right above its Delete");
+      const none = await menuOf("fix/log-stream");
+      c.ok(!!none && !none.some((i) => /^Reset to/.test(text(i))), "a branch with no upstream has nothing to reset to");
+      const gone = await menuOf("redesign/wave-1");
+      c.ok(!!gone && !gone.some((i) => /^Reset to/.test(text(i))), "…nor one whose upstream is gone");
+    },
+
+    /** The branch you are on: the question says what goes — the local commits
+     *  by subject, the files of uncommitted changes — outlives the refresh its
+     *  own fetch sets off, resets against exactly what it described, and Undo
+     *  puts back the tip AND the changes. */
+    "resetting-the-current-branch-says-what-goes-and-can-be-undone": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      const k = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for main");
+      if (!k) return c.ok(false, "main's row has a menu");
+      k.click();
+      await settle(350);
+      const item = $$(".dropdown .dropdown-item").find((i) => text(i) === "Reset to 'origin/main'…");
+      if (!item) return c.ok(false, "main offers the reset");
+      // Counted BEFORE the plan's fetch can wake the watcher (250 ms later).
+      const routes = (window.__GS_ROUTES || []).length;
+      item.click();
+      await settle(200);
+      const card = $(".modal-card");
+      c.ok(!!card, "it asks first");
+      if (!card) return;
+      c.eq(text($$(".modal-title", card)[0]), "Reset 'main' to 'origin/main'?", "the question names both");
+      const msg = text($$(".modal-message", card)[0]);
+      c.match(msg, /'main' will lose 2 commits that aren't on 'origin\/main':/, "it counts the commits that go");
+      c.match(msg, /• wip: try the rail without icons\n\s*• release notes, first pass/, "…and names them");
+      c.match(msg, /Uncommitted changes to 5 files will be discarded\. Untracked files are kept\./, "…and the files of uncommitted changes");
+      c.match(msg, /You can undo this straight afterwards\./, "…and that it can be undone");
+      c.eq($$(".btn-danger", card).length, 1, "a red button");
+      c.ok(card.contains(document.activeElement) && !document.activeElement.classList.contains("btn-danger"), "focus starts on Cancel, not on the reset");
+      c.eq(window.__gsResets.plans.length, 1, "one plan (with its fetch) was read");
+      await settle(1200);
+      c.ok((window.__GS_ROUTES || []).length > routes, "precondition: the watcher's refresh re-routed underneath");
+      c.ok(!!$(".modal-card"), "the question is still there after the refresh its fetch caused");
+      c.eq(window.__gsResets.resets.length, 0, "…and nothing was reset on the user's behalf");
+      const go = $$(".btn-danger", $(".modal-card") || document.body)[0];
+      if (!go) return c.ok(false, "the reset button is still there");
+      go.click();
+      await settle(900);
+      const sent = window.__gsResets.resets[0];
+      c.ok(!!sent, "Reset sends the reset");
+      c.eq(sent && sent.fullName, "refs/heads/main", "…by the branch's full name");
+      c.eq(sent && sent.root, "/Users/anton/Developer/GitStudioHQ/gitstudio", "…in the repository it was asked in");
+      c.eq(sent && `${sent.from}>${sent.to}`, "1a2b3c4d5e6f>9f8e7d6c5b4a", "…against exactly the state the question described");
+      c.ok($$(".toast-msg").some((t) => text(t) === "Reset 'main' to 'origin/main'."), `it says what it did (${$$(".toast-msg").map((t) => text(t)).join(" | ")})`);
+      const undo = $$(".toast-action").find((b) => text(b) === "Undo");
+      c.ok(!!undo, "…and offers Undo");
+      if (!undo) return;
+      undo.click();
+      await settle(900);
+      const u = window.__gsResets.undos[0];
+      c.eq(
+        JSON.stringify(u && [u.fullName, u.was, u.now, u.snapshot, u.current, u.root]),
+        JSON.stringify(["refs/heads/main", "1a2b3c4d5e6f", "9f8e7d6c5b4a", "5a4caeda8e55", true, "/Users/anton/Developer/GitStudioHQ/gitstudio"]),
+        "Undo puts back the tip AND the discarded changes, in this repository",
+      );
+      c.ok($$(".toast-msg").some((t) => /^Undone — put main back\.$/.test(text(t))), "…and says so");
+    },
+
+    /** Another branch: its commits go, your working tree does not — the question
+     *  says so and never mentions uncommitted changes. ⌘Z undoes it. */
+    "resetting-another-branch-leaves-your-working-tree-alone": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      const k = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for feat/line-staging");
+      if (!k) return c.ok(false, "feat/line-staging has a menu");
+      k.click();
+      await settle(350);
+      const item = $$(".dropdown .dropdown-item").find((i) => text(i) === "Reset to 'origin/feat/line-staging'…");
+      if (!item) return c.ok(false, "it offers the reset");
+      item.click();
+      await settle(400);
+      const card = $(".modal-card");
+      if (!card) return c.ok(false, "it asks first");
+      const msg = text($$(".modal-message", card)[0]);
+      c.match(msg, /'feat\/line-staging' will lose 3 commits that aren't on 'origin\/feat\/line-staging':/, "diverged: the commits that go");
+      c.match(msg, /• engine: split hunks at the selection\n\s*• wip\n\s*• engine: hunk splitting groundwork/, "…by name");
+      c.match(msg, /You're not on 'feat\/line-staging', so nothing in your working tree changes\./, "…and that your working tree is not touched");
+      c.ok(!/Uncommitted/.test(msg), "…never mentioning uncommitted changes");
+      $$(".btn-danger", card)[0].click();
+      await settle(900);
+      const sent = window.__gsResets.resets[0];
+      c.eq(sent && sent.fullName, "refs/heads/feat/line-staging", "the reset goes by the full name");
+      // ⌘Z, aimed where a keystroke lands.
+      const target = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body;
+      target.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true, bubbles: true, cancelable: true }));
+      await settle(900);
+      const u = window.__gsResets.undos[0];
+      c.ok(!!u, "⌘Z undoes it");
+      c.eq(u && u.current, false, "…as a branch move, with no working tree to restore");
+    },
+
+    /** Checked out in another worktree: refused BEFORE anything is asked, and
+     *  the refusal says where. */
+    "a-branch-checked-out-elsewhere-is-refused-before-anything-is-asked": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      const k = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for redesign/issues-detail");
+      if (!k) return c.ok(false, "redesign/issues-detail has a menu");
+      k.click();
+      await settle(350);
+      const item = $$(".dropdown .dropdown-item").find((i) => text(i) === "Reset to 'origin/redesign/issues-detail'…");
+      if (!item) return c.ok(false, "it offers the reset (it tracks a remote branch)");
+      item.click();
+      await settle(700);
+      c.ok(!$(".modal-card"), "no question is asked");
+      const t = $$("#toast-stack .toast").find((x) => /checked out in the worktree/.test(text(x)));
+      c.ok(!!t, `it says why (${$$(".toast-msg").map((x) => text(x)).join(" | ")})`);
+      c.match(text(t), /\/Users\/anton\/Developer\/GitStudioHQ\/gitstudio-wave2/, "…naming the worktree");
+      c.ok(!!t && t.classList.contains("toast-info"), "…in the neutral tone: a state, not a failure");
+      c.eq(window.__gsResets.resets.length, 0, "nothing was reset");
+    },
+
+    /** Already 1:1 with its upstream: nothing to ask, and it says so. */
+    "a-branch-that-already-matches-asks-nothing": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      const k = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for chore/tidy");
+      if (!k) return c.ok(false, "chore/tidy has a menu");
+      k.click();
+      await settle(350);
+      const item = $$(".dropdown .dropdown-item").find((i) => text(i) === "Reset to 'origin/chore/tidy'…");
+      if (!item) return c.ok(false, "it offers the reset");
+      item.click();
+      await settle(700);
+      c.ok(!$(".modal-card"), "no question is asked");
+      c.ok($$(".toast-msg").some((t) => text(t) === "'chore/tidy' already matches 'origin/chore/tidy' — there is nothing to reset."), `it says so (${$$(".toast-msg").map((t) => text(t)).join(" | ")})`);
+      c.eq(window.__gsResets.resets.length, 0, "nothing was reset");
+    },
+
+    /** Only behind: nothing is lost, the question says that plainly, and its
+     *  button is not the red one. */
+    "a-branch-only-behind-its-upstream-loses-nothing": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      const k = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for docs/readme");
+      if (!k) return c.ok(false, "docs/readme has a menu");
+      k.click();
+      await settle(350);
+      $$(".dropdown .dropdown-item").find((i) => text(i) === "Reset to 'origin/docs/readme'…")?.click();
+      await settle(500);
+      const card = $(".modal-card");
+      if (!card) return c.ok(false, "it asks (the branch moves)");
+      const msg = text($$(".modal-message", card)[0]);
+      c.match(msg, /^Nothing will be lost: 'docs\/readme' has no commits that aren't on 'origin\/docs\/readme'\. It will move forward 2 commits to match\.$/, "it says nothing is lost, and what happens");
+      c.eq($$(".btn-danger", card).length, 0, "no red button over a fast-forward");
+      c.ok(!!$$(".btn-primary", card)[0], "…an ordinary one");
+    },
+
+    /** A switch to another repository takes the question with it. */
+    "a-reset-question-does-not-follow-you-to-another-repository": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for main")?.click();
+      await settle(350);
+      $$(".dropdown .dropdown-item").find((i) => text(i) === "Reset to 'origin/main'…")?.click();
+      await settle(300);
+      c.ok(!!$(".modal-card"), "precondition: the question is up");
+      window.__gsEmit("repo:changed", { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" });
+      await settle(900);
+      c.ok(!$(".modal-card"), "switching repository takes the question with it");
+      c.eq(window.__gsResets.resets.length, 0, "…and resets nothing");
     },
     /**
      * Settings ▸ Editors: every editor found is listed; unticking hides it

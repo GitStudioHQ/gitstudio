@@ -45,6 +45,12 @@ const isMac = navigator.platform.toLowerCase().includes("mac");
 const isWin = navigator.platform.toLowerCase().startsWith("win");
 export const REVEAL_LABEL = isMac ? "Reveal in Finder" : isWin ? "Show in Explorer" : "Show in file manager";
 
+/** Is there an editor to open anything in? A control whose only possible
+ *  answer is "No editors found" is not worth a place on every row. */
+export function hasEditor(view: EditorsView): boolean {
+  return view.editors.some((e) => e.shown);
+}
+
 /** Just the editor rows — for a menu that already has its own reveal / copy
  *  rows (a repository row's kebab). */
 export function editorItems(view: EditorsView, root: string | undefined, nav?: (view: string) => void): MenuItem[] {
@@ -116,6 +122,18 @@ export interface OpenInOptions {
   /** Compact: a single button ("Open in Cursor ▾") rather than a split pair. */
   compact?: boolean;
   nav?: (view: string) => void;
+  /**
+   * Sized for a list ROW: the halves are the row's own `.row-btn`s, so the
+   * control keeps the height and rhythm of the Open beside it (Repositories,
+   * #32). The mini-btn pair is a toolbar control and stood a head taller.
+   */
+  row?: boolean;
+  /**
+   * The editors, already read. A row that paints with them has its final
+   * label ("VSCode") from the first frame; one that loads them afterwards
+   * paints "Open in…" and then changes width under the pointer.
+   */
+  editors?: EditorsView;
 }
 
 /**
@@ -152,20 +170,21 @@ function registerOpenIn(wrap: HTMLElement, load: () => void): void {
 }
 
 export function openInButton(opts: OpenInOptions = {}): HTMLElement {
-  const wrap = el("div", "openin" + (opts.compact ? " is-compact" : ""));
+  const wrap = el("div", "openin" + (opts.compact ? " is-compact" : "") + (opts.row ? " is-row" : ""));
   wrap.setAttribute("role", "group");
+  const btn = opts.row ? "row-btn" : "mini-btn";
 
-  const primary = el("button", "mini-btn openin-primary") as HTMLButtonElement;
+  const primary = el("button", `${btn} openin-primary`) as HTMLButtonElement;
   const mark = el("span", "openin-mark");
   mark.appendChild(glyph("code"));
   const label = span("Open in…", "openin-label");
   primary.append(mark, label);
-  const more = el("button", "mini-btn openin-more") as HTMLButtonElement;
+  const more = el("button", `${btn} openin-more`) as HTMLButtonElement;
   more.appendChild(glyph("chevron-down"));
   more.setAttribute("aria-haspopup", "menu");
   wrap.append(primary, more);
 
-  let view: EditorsView = { editors: [] };
+  let view: EditorsView = opts.editors ?? { editors: [] };
   const paint = (): void => {
     // `root` is a GETTER, so it has to be read here rather than when the button
     // was built: this same button lives in the top bar, where it stays mounted
@@ -181,11 +200,15 @@ export function openInButton(opts: OpenInOptions = {}): HTMLElement {
       mark.replaceChildren(editorMark(def));
       label.textContent = def.name;
       primary.title = def.location ? `Open ${repo} in ${def.name} — ${def.location}` : `Open ${repo} in ${def.name}`;
+      // In a row the visible word is only the editor's name, and thirty rows
+      // of buttons all called "VSCode" say nothing about which one is which.
+      if (opts.row) primary.setAttribute("aria-label", `Open ${repo} in ${def.name}`);
       primary.classList.remove("is-menu");
     } else {
       mark.replaceChildren(glyph("code"));
       label.textContent = "Open in…";
       primary.title = `Open ${repo} in an editor`;
+      if (opts.row) primary.setAttribute("aria-label", `Open ${repo} in an editor`);
       primary.classList.add("is-menu");
     }
   };
@@ -208,7 +231,9 @@ export function openInButton(opts: OpenInOptions = {}): HTMLElement {
   // Once now, so the button carries a label naming its repository from the
   // first frame rather than after the editor list comes back.
   paint();
-  load();
+  // Handed the list already, a row has nothing to wait for — it still listens
+  // for Settings changing it, like every other one.
+  if (!opts.editors) load();
   registerOpenIn(wrap, load);
   return wrap;
 }

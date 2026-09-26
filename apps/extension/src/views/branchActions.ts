@@ -17,6 +17,12 @@ import {
 } from "../ui/dialogs";
 import { worktreeFromRef } from "./worktreesView";
 import { pruneOnFetch } from "../git/fetchOptions";
+import {
+  askOverLocalBranch,
+  isCheckedOutHere,
+  resetBranchTo,
+  type BranchUndoRunner,
+} from "./branchReset";
 
 // Branch / remote / tag context-menu actions for the Branches view. Each runs a
 // real git op via the GitContext provider methods, confirms destructive ops, and
@@ -108,7 +114,7 @@ export async function checkoutBranch(
   if (!a || !ref) {
     return;
   }
-  await runRefCheckout(a, ref, refresh);
+  await runRefCheckout(repos, a, ref, refresh);
 }
 
 /**
@@ -121,8 +127,17 @@ export async function checkoutBranch(
  *
  * The planned switch runs through the shared door: uncommitted work in its
  * way is said, with Stash & Retry, instead of git's text in red.
+ *
+ * A remote branch whose local branch has commits of its own is asked about
+ * first — switch to the local one, or reset it to the remote's (#32; see
+ * askOverLocalBranch). The graph's chips ask the same (commitActions).
  */
-async function runRefCheckout(a: RepoEntry, ref: GitRef, refresh: () => void): Promise<void> {
+async function runRefCheckout(
+  repos: RepoManager,
+  a: RepoEntry,
+  ref: GitRef,
+  refresh: () => void,
+): Promise<void> {
   const c = await listedRefCheckout(a.ctx, ref);
   if (c.kind === "optionLike") {
     // The branch IS here — its name starts with "-", which git would read as
@@ -135,6 +150,21 @@ async function runRefCheckout(a: RepoEntry, ref: GitRef, refresh: () => void): P
       `GitStudio: ${ref.name} is not in this repository any more — refresh and try again.`,
     );
     return;
+  }
+  if (c.fullName.startsWith("refs/remotes/")) {
+    const over = await askOverLocalBranch(a.ctx, c.fullName);
+    if (over.choice === "cancel") {
+      return;
+    }
+    if (over.choice === "reset") {
+      if (!(await resetBranchTo(a.ctx, over.localFullName, c.fullName, branchUndo(repos, a)))) {
+        return; // backed out, refused, or nothing to reset — said there
+      }
+      refresh();
+      if (await isCheckedOutHere(a.ctx, over.localFullName)) {
+        return; // it was the checked-out branch: already where the checkout would land
+      }
+    }
   }
   const plan = c.plan;
   await reportApplied(await applyOrAsk(a.ctx, checkoutOp(plan.args)), plan.success, refresh);
@@ -449,6 +479,33 @@ export async function deleteBranch(
   });
 }
 
+/**
+ * `gitstudio.branch.resetToUpstream` — the branch menu's "Reset to
+ * 'origin/feature'…" (#32): make a local branch match the remote branch it
+ * tracks. Fetches, asks (saying what would be lost), and runs under Undo —
+ * see branchReset.ts.
+ */
+export async function resetBranchToUpstream(
+  repos: RepoManager,
+  arg: unknown,
+  refresh: () => void,
+): Promise<void> {
+  const a = active(repos);
+  const arg0 = refOf(arg);
+  if (!a || !arg0) {
+    return;
+  }
+  // The LISTED ref, by its full name: the menu sends a name and a type, and
+  // beside a tag of the same name the short one is the tag's.
+  const ref = await listedRef(a, arg0);
+  if (!ref || !localName(ref)) {
+    return;
+  }
+  if (await resetBranchTo(a.ctx, ref.fullName, undefined, branchUndo(repos, a))) {
+    refresh();
+  }
+}
+
 export async function pushBranch(
   repos: RepoManager,
   arg: unknown,
@@ -656,7 +713,7 @@ export async function checkoutRemoteBranch(
   // different name in one step. planRefCheckout hands a refs/remotes/ name to
   // planRemoteCheckout, which switches to a local branch of that name or
   // creates one tracking the remote.
-  await runRefCheckout(a, ref, refresh);
+  await runRefCheckout(repos, a, ref, refresh);
 }
 
 export async function deleteRemoteBranch(
@@ -726,7 +783,7 @@ export async function checkoutTag(
   }
   // `checkout --detach refs/tags/<name>`: by the full name, the detach lands
   // on the TAG even where a branch shares the name.
-  await runRefCheckout(a, ref, refresh);
+  await runRefCheckout(repos, a, ref, refresh);
 }
 
 export async function deleteTag(
@@ -999,6 +1056,12 @@ async function withUndo(
   } else {
     await fn();
   }
+}
+
+/** The Undo envelope for an op that names the branch it moves (branchReset.ts). */
+function branchUndo(repos: RepoManager, repo: RepoEntry): BranchUndoRunner | undefined {
+  const ledger = repos.getUndoLedger();
+  return ledger ? (label, fn, opts) => ledger.runWithUndo(repo, label, fn, opts) : undefined;
 }
 
 /**

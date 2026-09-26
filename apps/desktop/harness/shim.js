@@ -332,6 +332,17 @@
     if (m) { m.merged = true; m.aheadDefault = 0; m.behindDefault = 0; }
   }
 
+  // ?resetbranches=1 → two recent tracking branches for the reset to upstream
+  // (#32): chore/tidy already matches its upstream (nothing to ask), and
+  // docs/readme is strictly BEHIND it (nothing is lost, and the question must
+  // say so without a red button). Recent, so the default lens lists them.
+  if (params.get("resetbranches")) {
+    branches.push(
+      { name: "chore/tidy", current: false, aheadDefault: 1, behindDefault: 0, upstream: "origin/chore/tidy", ahead: 0, behind: 0, subject: "chore: tidy the scripts", date: S(2) },
+      { name: "docs/readme", current: false, aheadDefault: 0, behindDefault: 2, upstream: "origin/docs/readme", ahead: 0, behind: 2, subject: "docs: the readme, again", date: S(3) },
+    );
+  }
+
   // ?dashbranch=1 → a branch named "-f", which porcelain never makes but
   // `git update-ref refs/heads/-f` does. Its checkout is refused (git would
   // read "-f" as an option) — and the refusal has to say THAT, and offer the
@@ -659,6 +670,17 @@
    * `sync:status`, `branches:list` and `git:opState`, which all describe the
    * same repository and must move together.
    */
+  /** Every `repos:localStatus` request's roots, in order (see the fixture). */
+  const statusCalls = [];
+  window.__gsStatusCalls = statusCalls;
+
+  /**
+   * Reset to upstream (#32): what the plans, resets and undos were asked, and
+   * where each reset branch's counts were, so its undo can put them back.
+   */
+  const resetState = { plans: [], resets: [], undos: [], was: new Map() };
+  window.__gsResets = resetState;
+
   const pullState = {
     /** The first pull fetched: the remote is further ahead than the badge said. */
     fetched: false,
@@ -1246,6 +1268,25 @@
       // and one that really is from somewhere else, so the heading that used
       // to hold everything can be seen holding only what belongs in it.
       at("/Users/demo/scratch/one-off", { recent: true }),
+    ];
+  }
+
+  // `?longrepo=1` — a repository whose NAME is longer than any column: it
+  // must ellipsize while its counts and its buttons (Open, the editor, the
+  // menu) stay whole and the list never scrolls sideways (#32).
+  if (params.get("longrepo") === "1") {
+    const long = "an-extraordinarily-long-repository-name-that-keeps-going-well-past-any-column";
+    localCopies = [
+      ...localCopies,
+      {
+        root: `/Users/demo/Code/${long}`,
+        name: long,
+        origin: `antonarnaudov/${long}`,
+        managed: false,
+        recent: false,
+        current: false,
+        missing: false,
+      },
     ];
   }
 
@@ -1844,19 +1885,42 @@
     // The scan-cap truth. The dedupe pass in main pulls the list length back
     // under the cap even when truncation happened, so the note reads THIS.
     "repos:scanTruncated": () => params.get("manyrepos") === "1",
-    // Home-row working-tree signals. gistudio.dev has unpushed work, design
-    // is stale, everything else is clean and must show NOTHING.
-    "repos:localStatus": (roots) =>
-      Object.fromEntries(
-        (roots || []).map((r) => [
-          r,
-          r.endsWith("/gistudio.dev")
-            ? { branch: "main", dirty: 3, ahead: 1, behind: 0 }
-            : r.endsWith("/design")
-              ? { branch: "main", dirty: 0, ahead: 0, behind: 2 }
-              : { branch: "main", dirty: 0, ahead: 0, behind: 0 },
-        ]),
-      ),
+    // Working-tree signals, for Home's card and the Repositories rows (#32).
+    // gistudio.dev has unpushed work, design is stale, everything else is
+    // clean and must show NOTHING. A clone whose folder is gone, and the
+    // design worktree (standing in for "git could not answer"), answer
+    // undefined — as main does — and must show nothing either, never "0".
+    // ?nested=1 adds a dirty one, a diverged one, a behind one and one with
+    // big numbers, two of them past the first 16 rows so only a SECOND batch
+    // can fill them.
+    //
+    // Main answers at most 16 roots a request and drops the rest; so does
+    // this, so a renderer that asks for more loses rows here as it would
+    // there. Every request is recorded in `window.__gsStatusCalls`.
+    // ?statusdelays=2500,0 answers the Nth request that many ms late — the
+    // FIRST answer arriving LAST is the stale-batch race — and the first
+    // request is then answered from "before": gistudio.dev dirty 9, not 3.
+    "repos:localStatus": (roots) => {
+      const call = statusCalls.length;
+      statusCalls.push((roots || []).slice());
+      const delays = (params.get("statusdelays") || "").split(",").map((n) => Number(n) || 0);
+      const before = delays.some(Boolean) && call === 0;
+      const st = (r) => {
+        if (localCopies.some((c) => c.root === r && c.missing) || r.endsWith("/gitstudio-wt-design")) return undefined;
+        if (r.endsWith("/gistudio.dev")) return { branch: "main", dirty: before ? 9 : 3, ahead: 1, behind: 0 };
+        if (r.endsWith("/design")) return { branch: "main", dirty: 0, ahead: 0, behind: 2 };
+        if (r.endsWith("/spool")) return { branch: "main", dirty: 1, ahead: 0, behind: 0 };
+        if (r.endsWith("/backend")) return { branch: "develop", dirty: 0, ahead: 2, behind: 1 };
+        if (r.endsWith("/warp")) return { branch: "main", dirty: 0, ahead: 0, behind: 5 };
+        if (r.endsWith("/yugo-telegram-bot")) return { branch: "main", dirty: 128, ahead: 34, behind: 1207 };
+        if (r.endsWith("/one-off")) return { branch: "main", dirty: 2, ahead: 0, behind: 0 };
+        if (r.endsWith("-past-any-column")) return { branch: "main", dirty: 12, ahead: 3, behind: 7 };
+        return { branch: "main", dirty: 0, ahead: 0, behind: 0 };
+      };
+      const answer = Object.fromEntries((roots || []).slice(0, 16).map((r) => [r, st(r)]));
+      const ms = delays[call] || 0;
+      return ms ? new Promise((res) => setTimeout(() => res(answer), ms)) : answer;
+    },
     // The folders the Repositories view groups by. The clone folder leads and
     // cannot be untracked; ~/Code is the "I keep work here too" case; the last
     // is the one that has gone missing, which the row has to say out loud.
@@ -1909,6 +1973,74 @@
         ],
       },
     }),
+    // Reset to upstream (#32), answered the way main/branchReset.ts answers:
+    // the plan FETCHES first (so the watcher reports a moved ref 250 ms later,
+    // while the question is on screen), refuses a branch with no upstream, one
+    // whose upstream is gone and one another worktree has checked out (the
+    // worktree:list fixture has redesign/issues-detail in gitstudio-wave2),
+    // and otherwise describes the loss from the branch's own counts. The
+    // checked-out branch counts the status fixture's tracked files as dirty.
+    // ?resetbranches=1 adds one branch that already matches and one strictly
+    // behind. A reset zeroes the counts; its undo restores them.
+    "branch:resetPlan": (req) => {
+      resetState.plans.push(req);
+      const fullName = req && req.fullName;
+      const name = typeof fullName === "string" && fullName.startsWith("refs/heads/") ? fullName.slice(11) : undefined;
+      if (!name) return { ok: false, message: "Couldn't tell which branch to reset — refresh and try again." };
+      const b = branches.find((x) => (x.fullName || "refs/heads/" + x.name) === fullName);
+      const refused = (message) => ({ ok: false, expected: true, message });
+      if (!b) return refused(`'${name}' no longer exists.`);
+      if (!b.upstream || b.gone) return refused(`'${name}' doesn't track a branch on a remote, so there is nothing to reset it to.`);
+      const wt = !b.current && (fixtures["worktree:list"] || []).find((w) => !w.current && w.branch === name);
+      if (wt) return refused(`'${name}' is checked out in the worktree at ${wt.path}. Reset it there, or switch that worktree to another branch first.`);
+      setTimeout(() => window.__gsEmit("repo:filesChanged", { gitDir: true }), 250);
+      const subjects = {
+        main: ["wip: try the rail without icons", "release notes, first pass"],
+        "feat/line-staging": ["engine: split hunks at the selection", "wip", "engine: hunk splitting groundwork"],
+      };
+      const lost = b.ahead || 0;
+      const named = (subjects[name] || []).slice(0, Math.min(5, lost));
+      const tracked = new Set(
+        (params.get("clean") ? [] : changedFiles).filter((f) => !(f.status === "A" && !f.staged)).map((f) => f.path),
+      );
+      return {
+        ok: true,
+        branch: name,
+        upstream: String(b.upstream).replace(/^remotes\//, ""),
+        remote: "origin",
+        current: !!b.current,
+        from: "1a2b3c4d5e6f",
+        to: "9f8e7d6c5b4a",
+        lost,
+        lostSubjects: named,
+        gained: b.behind || 0,
+        ...(b.current ? { dirty: tracked.size } : {}),
+      };
+    },
+    "branch:resetToUpstream": (req) => {
+      resetState.resets.push(req);
+      const name = req && typeof req.fullName === "string" && req.fullName.startsWith("refs/heads/") ? req.fullName.slice(11) : "";
+      const b = branches.find((x) => (x.fullName || "refs/heads/" + x.name) === req.fullName);
+      if (!b) return { ok: false, changed: false, message: "Couldn't tell which branch to reset — refresh and try again." };
+      if (!fixtures["repo:current"] || req.root !== fixtures["repo:current"].root) {
+        return { ok: false, changed: false, expected: true, message: "Another repository is open now — nothing was changed." };
+      }
+      resetState.was.set(name, { ahead: b.ahead, behind: b.behind });
+      b.ahead = 0;
+      b.behind = 0;
+      setTimeout(() => window.__gsEmit("repo:filesChanged", { gitDir: true }), 250);
+      return { ok: true, changed: true, was: req.from, current: !!b.current, ...(b.current ? { snapshot: "5a4caeda8e55" } : {}) };
+    },
+    "branch:resetUndo": (req) => {
+      resetState.undos.push(req);
+      const name = req && typeof req.fullName === "string" ? req.fullName.slice(11) : "";
+      const b = branches.find((x) => (x.fullName || "refs/heads/" + x.name) === req.fullName);
+      const was = resetState.was.get(name);
+      if (!b || !was) return { ok: false, changed: false, expected: true, message: `'${name}' has moved since the reset — undoing it now would throw that away, so nothing was changed.` };
+      Object.assign(b, was);
+      resetState.was.delete(name);
+      return { ok: true, changed: true };
+    },
     // Branch delete returns the tip it deleted, which is the whole reason the
     // delete can be undone — `?nowas=1` is the case where the tip could not be
     // read and no undo may be offered.
@@ -2972,6 +3104,51 @@
     const ended = mp.state.op === mp.NONE && invoked.some((r) => /^op:(continue|skip|abort)$/.test(r.channel));
     return { ...fixtures["rebase:load"], inProgress: fixtures["rebase:load"].inProgress && !ended };
   };
+
+  // ── Drop Commit (issue #32) ────────────────────────────────────────────────
+  // What main answers for the graph fixture: HEAD's first-parent line runs
+  // tip → merge → …, so only the tip can be dropped — and it is published
+  // (origin/main sits on it), which is the confirmation with the most to say.
+  // The merge is refused as a merge, the redesign branch's own commits as not
+  // on this branch, and everything under the merge as past it. Switches:
+  //   ?dropblocked=1   the preflight finds uncommitted changes
+  //   ?dropcarry=1     a branch points at a replayed commit (the either/or)
+  //   ?dropconflict=1  the run stops on a conflict
+  const DROP_TIP = "9f8e7d6c5b4a39281706";
+  const DROP_AFTER = "a1b2c3d4e5f60718293a";
+  dynamic["commit:dropPlan"] = (req) => {
+    const sha = (req && req.sha) || "";
+    if (sha !== DROP_TIP) {
+      const off = sha === "b2c3d4e5f6a71829304b" || sha === "c3d4e5f6a7b829304c5d" || sha === "77aa88b9c0d1e2f3a4b5";
+      const reason = sha === DROP_AFTER ? "merge" : off ? "not-on-branch" : "past-merge";
+      const message = {
+        merge: "That's a merge commit — dropping it would flatten the history it joined. Revert it instead.",
+        "not-on-branch": "That commit isn't on the current branch, so there's nothing to drop it from.",
+        "past-merge":
+          "There's a merge between that commit and the tip of the branch — replaying the commits after it would flatten the merge.",
+      }[reason];
+      return { ok: false, expected: true, reason, message };
+    }
+    return {
+      ok: true,
+      sha: DROP_TIP,
+      shortSha: DROP_TIP.slice(0, 7),
+      subject: "release: extension 1.11.1",
+      head: DROP_TIP,
+      branch: "main",
+      replayed: params.get("dropcarry") ? 1 : 0,
+      published: true,
+      carryable: params.get("dropcarry") ? ["release/1.11"] : [],
+      ...(req && req.preflight && params.get("dropblocked")
+        ? { blocked: "You have uncommitted changes. Commit or stash them, then drop the commit." }
+        : {}),
+    };
+  };
+  dynamic["commit:drop"] = (req) =>
+    params.get("dropconflict")
+      ? { status: "stopped", reason: "conflict", message: "could not apply 9f8e7d6", before: req.head }
+      : { status: "done", before: req.head, after: DROP_AFTER };
+  dynamic["commit:undoDrop"] = () => ({ ok: true, changed: true });
   const IDE = { id: "webstorm", name: "WebStorm", command: "/Applications/WebStorm.app/Contents/MacOS/webstorm" };
   dynamic["jetbrains:detect"] = () => (params.get("noide") === "1" ? undefined : IDE);
   dynamic["jetbrains:merge"] = (req) => {
@@ -3306,6 +3483,18 @@
         const sel = decodeURIComponent(step.slice(6));
         const elx = await until(() => q(sel));
         elx.click();
+      } else if (step.startsWith("rclick:")) {
+        // A right-click, for the graph row's commit menu: `contextmenu` at a
+        // point inside the match, composed so it leaves the shadow root.
+        const sel = decodeURIComponent(step.slice(7));
+        const elx = await until(() => q(sel));
+        const r = elx.getBoundingClientRect();
+        elx.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true, composed: true, cancelable: true,
+            clientX: Math.round(r.left + Math.min(240, r.width / 2)), clientY: Math.round(r.top + r.height / 2),
+          }),
+        );
       } else if (step.startsWith("scroll:")) {
         const sel = decodeURIComponent(step.slice(7));
         const target = await until(() => q(sel));

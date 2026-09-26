@@ -763,16 +763,12 @@ export class BlameController implements vscode.Disposable {
     if (document.uri.scheme !== "file") {
       return undefined;
     }
-    const active = this.repos.getActive();
-    if (active && isInside(document.uri.fsPath, active.root)) {
-      return active;
-    }
-    for (const entry of this.repos.getAll()) {
-      if (isInside(document.uri.fsPath, entry.root)) {
-        return entry;
-      }
-    }
-    return undefined;
+    // The repository that OWNS the file — longest root wins — never "the active
+    // one if it contains the file". Those differ for a repo nested inside
+    // another's folder: with the outer one active (picked, issue #32, or
+    // following another editor), the old shortcut blamed the inner repo's
+    // files in the outer repository.
+    return this.repos.findByPath(document.uri.fsPath);
   }
 
   async getBlame(
@@ -1156,10 +1152,4 @@ function isoDate(epochSeconds: number): string {
 /** Escapes the markdown control characters that show up in commit text. */
 function escapeMarkdown(text: string): string {
   return text.replace(/[\\`*_{}[\]()#+\-.!|>]/g, "\\$&");
-}
-
-/** True when `filePath` sits at or below `dir` (path-boundary aware). */
-function isInside(filePath: string, dir: string): boolean {
-  const rel = relative(dir, filePath);
-  return rel.length > 0 && !rel.startsWith("..") && !rel.startsWith("/");
 }
