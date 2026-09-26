@@ -375,9 +375,51 @@ test("branches on replayed commits: the reorder's carry question, and 'move' mov
 function ledgerFor(r: Repo) {
   const active = { root: r.dir, ctx: r.ctx };
   const ledger = new UndoLedger({ getActive: () => active }, { workspaceState: { get: () => undefined, update: async () => {} } });
-  const undo = (label: string, fn: () => Promise<unknown>) => ledger.runWithUndo(active, label, fn);
+  const undo = (label: string, fn: () => Promise<unknown>, opts?: unknown) => ledger.runWithUndo(active, label, fn, opts);
   return { ledger, undo };
 }
+
+test("Undo after a drop that carried a branch puts the branch back too — and refuses once it moved", async () => {
+  const r = mkRepo();
+  try {
+    r.commit("base"); const a = r.commit("A"); const b = r.commit("B"); r.commit("C");
+    r.git("branch", "feature", b);
+    const tip = r.git("rev-parse", "HEAD");
+    const { ledger, undo } = ledgerFor(r);
+    reset({ confirm: true, pick: "carry" });
+    await runCommitAction("drop", r.ctx, { sha: a, subject: "A" }, undo);
+    const carried = r.git("rev-parse", "feature");
+    assert.notEqual(carried, b, "feature followed the drop");
+    reset();
+    await ledger.undoLast();
+    const q = asked.find((x) => x.kind === "confirm");
+    assert.match(q?.text ?? "", /feature goes back too\./, "the question says the branch comes back with it");
+    assert.equal(r.git("rev-parse", "HEAD"), tip, "back on the original tip");
+    assert.equal(r.git("rev-parse", "feature"), b, "and feature back on B");
+
+    // Again, and work lands on feature before the undo.
+    reset({ confirm: true, pick: "carry" });
+    await runCommitAction("drop", r.ctx, { sha: a, subject: "A" }, undo);
+    const after = r.git("rev-parse", "HEAD");
+    const more = r.git("commit-tree", "-p", "feature", "-m", "more", "feature^{tree}");
+    r.git("update-ref", "refs/heads/feature", more);
+    reset();
+    await ledger.undoLast();
+    assert.match(said.find((x) => x.kind === "warning")?.text ?? "", /'feature' has moved since .*would throw that away/);
+    assert.equal(r.git("rev-parse", "HEAD"), after, "nothing changed: HEAD");
+    assert.equal(r.git("rev-parse", "feature"), more, "nothing changed: feature");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("the reorder's carry is undone with its branches too (graphPanel cannot load here: pinned at source)", () => {
+  const src = readFileSync(join(__dirname, "../src/graph/graphPanel.ts"), "utf8");
+  assert.match(
+    src,
+    /ledger\.runWithUndo\(active, `Reorder \$\{order\.length\} commits`, run, carry \? \{ carried: branches\.map\(\(b\) => `refs\/heads\/\$\{b\}`\) \} : undefined\)/,
+  );
+});
 
 test("Undo restores the original tip after dropping a middle commit", async () => {
   const r = mkRepo();

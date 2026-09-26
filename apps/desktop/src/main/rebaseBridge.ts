@@ -1,7 +1,7 @@
 import { runRebasePlan, isRebaseInProgress } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
-import { dropBlocker, dropCommit, planDropCommit, undoDrop, undoRewrite } from "@gitstudio/git-service/dropCommit";
+import { dropBlocker, dropCommit, planDropCommit, undoDrop, undoRewrite, type DropOutcome } from "@gitstudio/git-service/dropCommit";
 import { manyBlocker, mergesAmong, planMany, rewriteMany } from "@gitstudio/git-service/multiCommit";
 import { selectedCommits } from "@gitstudio/host-bridge/graphSelection";
 import type { RepoStore } from "./repoStore";
@@ -610,11 +610,7 @@ export class RebaseBridge {
         { sha: String(req?.sha ?? ""), head: String(req?.head ?? ""), carry: req?.carry === true },
         (plan) => runRebasePlan(root, plan, this.repos.runnerOptions()),
       );
-      const tips = {
-        ...(out.before ? { before: out.before } : {}),
-        ...(out.after ? { after: out.after } : {}),
-      };
-      return { ...onTheWire(out), ...tips };
+      return { ...onTheWire(out), ...undoTips(out) };
     } catch (err) {
       return { status: "failed", ok: false, message: err instanceof Error ? err.message : String(err) };
     }
@@ -627,7 +623,12 @@ export class RebaseBridge {
     if (!ctx) {
       return { ok: false, changed: false, expected: true, message: "Open a repository first." };
     }
-    const r = await undoDrop(ctx.process, { before: String(req?.before ?? ""), after: String(req?.after ?? "") });
+    const r = await undoDrop(ctx.process, {
+      before: String(req?.before ?? ""),
+      after: String(req?.after ?? ""),
+      // As the renderer holds them; git-service checks every name and sha.
+      ...(req?.carried !== undefined ? { carried: req.carried } : {}),
+    });
     if (r.ok) {
       return { ok: true, changed: true };
     }
@@ -712,11 +713,7 @@ export class RebaseBridge {
         },
         (plan) => runRebasePlan(root, plan, this.repos.runnerOptions()),
       );
-      const tips = {
-        ...(out.before ? { before: out.before } : {}),
-        ...(out.after ? { after: out.after } : {}),
-      };
-      return { ...onTheWire(out), ...tips };
+      return { ...onTheWire(out), ...undoTips(out) };
     } catch (err) {
       return { status: "failed", ok: false, message: err instanceof Error ? err.message : String(err) };
     }
@@ -730,7 +727,16 @@ export class RebaseBridge {
       return { ok: false, changed: false, expected: true, message: "Open a repository first." };
     }
     const what = ["drop", "squash", "cherry-pick", "revert"].includes(String(req?.what)) ? String(req.what) : "change";
-    const r = await undoRewrite(ctx.process, { before: String(req?.before ?? ""), after: String(req?.after ?? "") }, what);
+    const r = await undoRewrite(
+      ctx.process,
+      {
+        before: String(req?.before ?? ""),
+        after: String(req?.after ?? ""),
+        // As the renderer holds them; git-service checks every name and sha.
+        ...(req?.carried !== undefined ? { carried: req.carried } : {}),
+      },
+      what,
+    );
     if (r.ok) {
       return { ok: true, changed: true };
     }
@@ -738,6 +744,16 @@ export class RebaseBridge {
       ? { ok: false, changed: false, expected: true, message: r.message }
       : { ok: false, changed: false, message: r.message };
   }
+}
+
+/** What a finished rewrite hands the renderer for its Undo: the two tips of
+ *  HEAD, and the branches it carried (which go back too). */
+function undoTips(out: DropOutcome): Pick<DropOutcomeWire, "before" | "after" | "carried"> {
+  return {
+    ...(out.before ? { before: out.before } : {}),
+    ...(out.after ? { after: out.after } : {}),
+    ...(out.carried?.length ? { carried: out.carried.map((c) => ({ branch: c.branch, before: c.before, after: c.after })) } : {}),
+  };
 }
 
 /** Compact humanized age, matching the graph's relative times. */

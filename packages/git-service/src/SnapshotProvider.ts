@@ -31,6 +31,24 @@ export interface Snapshot {
    * is still where the op left it (see `whyNotRestorable`).
    */
   branch?: SnapshotBranch;
+  /**
+   * Other branches the op moves ALONG with HEAD's — the ones a rewrite
+   * carries (Drop, Squash and Reorder's "move those branches", issue #32):
+   * where each pointed before, and (after `settle`) where the op left it.
+   * Restored with HEAD, each by compare-and-swap, and only while every one is
+   * still where the op left it (see `whyNotRestorable`).
+   */
+  carried?: SnapshotCarried[];
+}
+
+/** See `Snapshot.carried`. */
+export interface SnapshotCarried {
+  /** refs/heads/<name>. */
+  ref: string;
+  /** Where it pointed before the op. */
+  sha: string;
+  /** Where the op left it. */
+  after?: string;
 }
 
 /** See `Snapshot.branch`. */
@@ -63,6 +81,8 @@ export class SnapshotProvider {
     opts?: GitRunOptions & {
       /** The one branch the op moves, by full name — see `Snapshot.branch`. */
       branch?: string;
+      /** Branches the op carries along with HEAD's, by full name — see `Snapshot.carried`. */
+      carried?: readonly string[];
     },
   ): Promise<Snapshot> {
     const headSha = (
@@ -91,7 +111,22 @@ export class SnapshotProvider {
       stashSha = created.length > 0 ? created : null;
     }
 
-    return branch ? { headSha, stashSha, ref, label, branch } : { headSha, stashSha, ref, label };
+    const carried: SnapshotCarried[] = [];
+    for (const full of opts?.carried ?? []) {
+      // Full names under refs/heads/, as the op's own plan named them.
+      if (!full.startsWith("refs/heads/")) continue;
+      const sha = await this.commitOf(full, opts);
+      if (sha) carried.push({ ref: full, sha });
+    }
+
+    return {
+      headSha,
+      stashSha,
+      ref,
+      label,
+      ...(branch ? { branch } : {}),
+      ...(carried.length ? { carried } : {}),
+    };
   }
 
   /**
@@ -99,6 +134,12 @@ export class SnapshotProvider {
    * run. A no-op for a snapshot that names no branch.
    */
   async settle(snap: Snapshot, opts?: GitRunOptions): Promise<void> {
+    for (const c of snap.carried ?? []) {
+      const now = await this.commitOf(c.ref, opts);
+      if (now) {
+        c.after = now;
+      }
+    }
     if (!snap.branch) {
       return;
     }
@@ -121,6 +162,19 @@ export class SnapshotProvider {
    * under a worktree that has it checked out.
    */
   async whyNotRestorable(snap: Snapshot, opts?: GitRunOptions): Promise<string | undefined> {
+    // A branch the op carried goes back with HEAD: only from where the op
+    // left it, or whatever landed on it since would be thrown away.
+    for (const c of snap.carried ?? []) {
+      if (!c.after || c.after === c.sha) continue;
+      const name = c.ref.replace(/^refs\/heads\//, "");
+      const now = await this.commitOf(c.ref, opts);
+      if (!now) {
+        return `'${name}' is not in this repository any more.`;
+      }
+      if (now !== c.after) {
+        return `'${name}' has moved since (it is at ${now.slice(0, 7)} now), and putting it back would throw that away.`;
+      }
+    }
     const b = snap.branch;
     if (!b) {
       return undefined;
@@ -188,6 +242,23 @@ export class SnapshotProvider {
       throw new Error(
         `Undo failed: could not reset to ${snap.headSha}: ${reset.stderr.trim()}`,
       );
+    }
+
+    // The branches the op carried along, each compared-and-swapped against
+    // where the op left it — before the stash, which can conflict and throw.
+    const stuck: string[] = [];
+    for (const c of snap.carried ?? []) {
+      if (!c.after || c.after === c.sha) continue;
+      const moved = await this.process.run(
+        ["update-ref", "-m", `GitStudio undo: ${snap.label}`, c.ref, c.sha, c.after],
+        opts,
+      );
+      if (moved.code !== 0) {
+        stuck.push(`${c.ref.replace(/^refs\/heads\//, "")}: ${moved.stderr.trim()}`);
+      }
+    }
+    if (stuck.length) {
+      throw new Error(`Undo restored the commit but could not move ${stuck.join("; ")}`);
     }
 
     if (snap.stashSha) {

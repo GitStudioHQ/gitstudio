@@ -141,6 +141,22 @@ test("drop a middle commit, then Undo restores the original tip", async () => {
   }
 });
 
+test("a drop that carried a branch: Undo puts the branch back too", async () => {
+  const w = await workspace();
+  try {
+    w.commit("base"); const a = w.commit("A"); const b = w.commit("B"); w.commit("C");
+    w.git("branch", "feature", b);
+    const p = await plan(w, a, true);
+    const out = await w.bridge.drop({ sha: p.sha, head: p.head, carry: true });
+    assert.equal(out.status, "done", JSON.stringify(out));
+    assert.deepEqual(out.carried?.map((x) => [x.branch, x.before]), [["feature", b]]);
+    assert.deepEqual(await w.bridge.undoDrop({ before: out.before!, after: out.after!, carried: out.carried }), { ok: true, changed: true });
+    assert.equal(w.git("rev-parse", "feature"), b, "feature is back on B");
+  } finally {
+    w.cleanup();
+  }
+});
+
 test("drop the oldest commit on the branch (the root)", async () => {
   const w = await workspace();
   try {

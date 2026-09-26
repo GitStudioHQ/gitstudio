@@ -749,8 +749,10 @@ export class CommitGraphPanel {
         todo: built.todo,
         rewords: built.rewords,
       });
+    // The branches it carries go back with it on Undo (issue #32's sibling:
+    // Drop and Squash carry the same way).
     const outcome = ledger
-      ? await ledger.runWithUndo(active, `Reorder ${order.length} commits`, run)
+      ? await ledger.runWithUndo(active, `Reorder ${order.length} commits`, run, carry ? { carried: branches.map((b) => `refs/heads/${b}`) } : undefined)
       : await run();
 
     if (outcome.status === "done") {

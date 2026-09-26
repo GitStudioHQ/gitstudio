@@ -178,12 +178,13 @@ async function rewriteManyFlow(verb: "drop" | "squash", shas: string[], d: ManyD
   const out = await d.rewrite({ verb, shas: plan.shas, head: plan.head, carry, ...(message ? { message } : {}) });
   const text = manyOutcomeMessage(verb, n, out);
   if (out.status === "done") {
-    const { before, after } = out;
+    const { before, after, carried } = out;
     if (before && after) {
       d.undoable(text, {
         label: verb === "drop" ? `Put the ${n} dropped commits back` : `Put the ${n} squashed commits back`,
         undo: async () => {
-          const back = await d.undo({ before, after, what: verb });
+          // The branches it carried go back with it.
+          const back = await d.undo({ before, after, what: verb, ...(carried?.length ? { carried } : {}) });
           if (back.ok) return undefined;
           const why = back.message ?? "Couldn't put the branch back.";
           return back.expected ? { info: why } : why;

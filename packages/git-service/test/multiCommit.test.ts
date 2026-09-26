@@ -370,6 +370,67 @@ test("undo puts a squash back — and refuses, in the squash's words, once the b
   }
 });
 
+test("undo after a squash that CARRIED branches puts them back too", async () => {
+  const r = repo();
+  try {
+    r.commit("base"); const a = r.commit("A"); const b = r.commit("B"); const c = r.commit("C");
+    r.git("branch", "on-a", a);
+    r.git("branch", "on-c", c);
+    const plan = await planOk(r, "squash", [a, b]);
+    const out = await rewriteMany(r.ctx.process, "squash", { shas: plan.shas, head: plan.head, message: "AB", carry: true }, run(r));
+    assert.equal(out.status, "done", JSON.stringify(out));
+    assert.deepEqual(
+      (out.carried ?? []).map((x) => [x.branch, x.before, x.after]).sort(),
+      [["on-a", a, r.git("rev-parse", "on-a")], ["on-c", c, r.git("rev-parse", "on-c")]],
+      "the outcome says where each carried branch was, and where it went",
+    );
+    assert.deepEqual(await undoRewrite(r.ctx.process, { before: out.before!, after: out.after!, carried: out.carried }, "squash"), { ok: true });
+    assert.equal(r.git("rev-parse", "HEAD"), c, "main is back");
+    assert.equal(r.git("rev-parse", "on-a"), a, "on-a is back on A");
+    assert.equal(r.git("rev-parse", "on-c"), c, "on-c is back on C");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("a carried branch that moved since refuses the undo, and nothing changes — HEAD included", async () => {
+  const r = repo();
+  try {
+    r.commit("base"); const a = r.commit("A"); const b = r.commit("B"); r.commit("C");
+    r.git("branch", "feature", "HEAD");
+    const plan = await planOk(r, "squash", [a, b]);
+    const out = await rewriteMany(r.ctx.process, "squash", { shas: plan.shas, head: plan.head, message: "AB", carry: true }, run(r));
+    assert.equal(out.carried?.length, 1);
+    // Work lands on feature after the squash — without checking it out.
+    const more = r.git("commit-tree", "-p", "feature", "-m", "more on feature", "feature^{tree}");
+    r.git("update-ref", "refs/heads/feature", more);
+    const back = await undoRewrite(r.ctx.process, { before: out.before!, after: out.after!, carried: out.carried }, "squash");
+    assert.equal(back.ok, false);
+    assert.equal(!back.ok && back.expected, true);
+    assert.match(back.ok ? "" : back.message, /feature has moved since the squash, so undoing it now would throw that away too\. Nothing was changed\./);
+    assert.equal(r.git("rev-parse", "HEAD"), out.after, "HEAD stays where the squash left it");
+    assert.equal(r.git("rev-parse", "feature"), more, "and so does feature");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("an undo request naming a carried branch that is not a plain branch name is refused before git sees it", async () => {
+  const r = repo();
+  try {
+    r.commit("base"); const a = r.commit("A"); r.commit("B");
+    const head = r.git("rev-parse", "HEAD");
+    for (const branch of ["-d", "a b", "x..y", "x\ny", ""]) {
+      const back = await undoRewrite(r.ctx.process, { before: a, after: head, carried: [{ branch, before: a, after: head }] }, "drop");
+      assert.equal(back.ok, false, JSON.stringify(branch));
+      assert.match(back.ok ? "" : back.message, /isn't a drop this app made/);
+    }
+    assert.equal(r.git("rev-parse", "HEAD"), head);
+  } finally {
+    r.dispose();
+  }
+});
+
 // ── Order, merges, argv ──────────────────────────────────────────────────
 
 test("the order comes from the history, not the dates — a child committed 'earlier' still comes after its parent", async () => {

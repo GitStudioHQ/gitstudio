@@ -2013,18 +2013,33 @@ export interface DropRequest {
   carry?: boolean;
 }
 
-/** How a drop ended, plus the two tips its Undo needs. */
+/**
+ * A branch a rewrite carried along (the carry question's "move those
+ * branches"): where it was, and where the rewrite left it — git-service's
+ * CarriedBranch. Undo puts each one back.
+ */
+export interface CarriedBranchWire {
+  branch: string;
+  before: string;
+  after: string;
+}
+
+/** How a drop ended, plus the tips its Undo needs. */
 export interface DropOutcomeWire extends RebaseOutcomeWire {
   /** HEAD before the drop. */
   before?: string;
   /** HEAD after a drop that finished. */
   after?: string;
+  /** The other branches it carried, when it was asked to. */
+  carried?: CarriedBranchWire[];
 }
 
-/** Undo a drop: back from `after` to `before`, only while HEAD is still `after`. */
+/** Undo a drop: back from `after` to `before`, only while HEAD is still `after`
+ *  — and each carried branch too, only while it is where the drop left it. */
 export interface UndoDropRequest {
   before: string;
   after: string;
+  carried?: CarriedBranchWire[];
 }
 
 /**
@@ -2094,6 +2109,8 @@ export interface CommitsUndoRequest {
   after: string;
   /** Names it in the refusal's words: "since the squash". */
   what: "drop" | "squash" | "cherry-pick" | "revert";
+  /** The branches a drop or squash carried: they go back too. */
+  carried?: CarriedBranchWire[];
 }
 
 /**

@@ -96,12 +96,13 @@ export async function dropCommitFlow(sha: string, d: DropCommitDeps): Promise<Dr
   const out = await d.drop({ sha: plan.sha, head: plan.head, carry });
   const text = dropOutcomeMessage(plan.shortSha, out);
   if (out.status === "done") {
-    const { before, after } = out;
+    const { before, after, carried } = out;
     if (before && after) {
       d.undoable(text, {
         label: `Put ${plan.shortSha} back`,
         undo: async () => {
-          const back = await d.undo({ before, after });
+          // The branches it carried go back with it.
+          const back = await d.undo({ before, after, ...(carried?.length ? { carried } : {}) });
           if (back.ok) return undefined;
           const why = back.message ?? `Couldn't put ${plan.shortSha} back.`;
           return back.expected ? { info: why } : why;

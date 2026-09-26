@@ -42,6 +42,13 @@ export interface UndoOptions {
    * is still where the op left it (git-service's Snapshot.branch).
    */
   branch?: string;
+  /**
+   * Other branches the op moves along with HEAD's, by full name — the ones a
+   * rewrite carries (Drop, Squash and Reorder's "move those branches", issue
+   * #32). Undo puts each back too, and only while it is still where the op
+   * left it (git-service's Snapshot.carried).
+   */
+  carried?: readonly string[];
 }
 
 /** A live repository: its root, our data context, and (once vscode.git has

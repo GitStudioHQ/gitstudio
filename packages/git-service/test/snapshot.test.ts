@@ -133,3 +133,33 @@ test("capture on detached HEAD records a null ref", async () => {
     git(["checkout", "main"]);
   }
 });
+
+test("an op that carries other branches (a rewrite's update-ref) is undone with them — and not once one has moved", async () => {
+  const start = head();
+  git(["branch", "-f", "carried", start]);
+  try {
+    const snap = await ctx.snapshot.capture("Squash 2 commits", { carried: ["refs/heads/carried"] });
+    assert.deepEqual(snap.carried, [{ ref: "refs/heads/carried", sha: start }]);
+    // The op: main gets a new commit, and the branch it carried follows.
+    commit("a.txt", "1\n2\ncarried\n", "c-carry: the op");
+    git(["update-ref", "refs/heads/carried", head()]);
+    await ctx.snapshot.settle(snap);
+    assert.equal(snap.carried?.[0].after, head(), "settle notes where the op left it");
+    assert.equal(await ctx.snapshot.whyNotRestorable(snap), undefined);
+    await ctx.snapshot.restore(snap);
+    assert.equal(head(), start, "HEAD is back");
+    assert.equal(git(["rev-parse", "carried"]).trim(), start, "and so is the branch it carried");
+
+    // Again — and this time work lands on the carried branch after the op.
+    const again = await ctx.snapshot.capture("Squash 2 commits", { carried: ["refs/heads/carried"] });
+    commit("a.txt", "1\n2\ncarried again\n", "c-carry: the op, again");
+    git(["update-ref", "refs/heads/carried", head()]);
+    await ctx.snapshot.settle(again);
+    const more = git(["commit-tree", "-p", "carried", "-m", "more", "carried^{tree}"]).trim();
+    git(["update-ref", "refs/heads/carried", more]);
+    assert.match((await ctx.snapshot.whyNotRestorable(again)) ?? "", /'carried' has moved since \(it is at [0-9a-f]{7} now\), and putting it back would throw that away\./);
+    git(["reset", "--hard", start]);
+  } finally {
+    git(["branch", "-D", "carried"]);
+  }
+});

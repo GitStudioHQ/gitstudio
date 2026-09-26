@@ -136,6 +136,25 @@ test("squash N: the pre-filled message, the user's message used, Undo restores; 
   }
 });
 
+test("squash N that carried a branch: the outcome names it, and Undo puts it back too", async () => {
+  const w = await workspace();
+  try {
+    w.commit("base"); const a = w.commit("A"); const b = w.commit("B"); const c = w.commit("C");
+    w.git("branch", "feature", c);
+    const p = await plan(w, "squash", [b, a]);
+    assert.deepEqual(p.carryable, ["feature"]);
+    const out = await w.rebase.commitsRewrite({ verb: "squash", shas: p.shas, head: p.head, message: "AB", carry: true });
+    assert.equal(out.status, "done", JSON.stringify(out));
+    assert.deepEqual(out.carried, [{ branch: "feature", before: c, after: w.git("rev-parse", "feature") }], "the wire carries where it went");
+    const back = await w.rebase.commitsUndo({ before: out.before!, after: out.after!, what: "squash", carried: out.carried });
+    assert.deepEqual(back, { ok: true, changed: true });
+    assert.equal(w.git("rev-parse", "HEAD"), c);
+    assert.equal(w.git("rev-parse", "feature"), c, "feature is back on C");
+  } finally {
+    w.cleanup();
+  }
+});
+
 test("refusals are the user's state — expected, never filed: a gap, a stale head, an undo after the branch moved", async () => {
   const w = await workspace();
   try {

@@ -11,7 +11,7 @@ import {
 } from "@gitstudio/engine/rebase/many";
 import { buildRebasePlan, type RebasePlanRow } from "./rebasePlan";
 import type { RebaseOutcome, RebasePlan } from "./RebaseRunner";
-import { DROP_MAX_REPLAY, isPublished, revParse, rewriteBlocker, type DropOutcome } from "./dropCommit";
+import { DROP_MAX_REPLAY, carriedBranches, isPublished, revParse, rewriteBlocker, type DropOutcome } from "./dropCommit";
 
 // Several commits at once, for both products (issue #32): the graph's and the
 // Commits list's multi-selection menu.
@@ -268,7 +268,9 @@ export async function rewriteMany(
   }
   const outcome = await run({ base: plan.base, todo: built.todo, rewords: built.rewords });
   const after = outcome.status === "done" ? await revParse(proc, "HEAD") : undefined;
-  return { ...outcome, before: plan.head, ...(after ? { after } : {}) };
+  // The branches it carried, so the undo can put them back as well.
+  const carried = after && req.carry ? await carriedBranches(proc, plan.rows) : [];
+  return { ...outcome, before: plan.head, ...(after ? { after } : {}), ...(carried.length ? { carried } : {}) };
 }
 
 /**

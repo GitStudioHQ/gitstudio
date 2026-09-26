@@ -73,7 +73,12 @@ export class UndoLedger {
     try {
       snapshot = await repo.ctx.snapshot.capture(
         label,
-        opts?.branch ? { branch: opts.branch } : undefined,
+        opts?.branch || opts?.carried?.length
+          ? {
+              ...(opts.branch ? { branch: opts.branch } : {}),
+              ...(opts.carried?.length ? { carried: opts.carried } : {}),
+            }
+          : undefined,
       );
     } catch {
       // If we can't even snapshot (e.g. unborn HEAD), run the op unguarded
@@ -216,6 +221,23 @@ export class UndoLedger {
       await this.undoBranchMove(active, entry, discardNewer);
       return;
     }
+    // The branches the op carried along (a rewrite's "move those branches")
+    // go back with HEAD — only from where it left them, or work landed on one
+    // since would go too. Asked before anything else, so a refusal changes
+    // nothing.
+    const carried = (entry.snapshot.carried ?? []).filter((c) => c.after && c.after !== c.sha);
+    if (carried.length > 0) {
+      let why: string | undefined;
+      try {
+        why = await active.ctx.snapshot.whyNotRestorable(entry.snapshot);
+      } catch (err) {
+        why = err instanceof Error ? err.message : String(err);
+      }
+      if (why) {
+        void vscode.window.showWarningMessage(`Can't undo "${entry.label}": ${why}`);
+        return;
+      }
+    }
     const currentHead = await this.currentHead(active.ctx);
     // The op's *result* is whatever HEAD is now (if the op moved HEAD). If that
     // commit is published, undoing by reset would rewrite shared history.
@@ -245,9 +267,13 @@ export class UndoLedger {
     const dirtyNote = entry.snapshot.stashSha
       ? " Your uncommitted changes from that point will be restored."
       : "";
+    const names = carried.map((c) => c.ref.replace(/^refs\/heads\//, ""));
+    const carriedNote = names.length
+      ? ` ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`} ${names.length === 1 ? "goes" : "go"} back too.`
+      : "";
     const ok = await promptConfirm({
       title: `Undo "${entry.label}"?`,
-      message: `The repository goes back to ${short(entry.headBefore)}.${extra}${dirtyNote}`,
+      message: `The repository goes back to ${short(entry.headBefore)}.${carriedNote}${extra}${dirtyNote}`,
       confirmLabel: "Undo",
       danger: discardNewer > 0,
     });

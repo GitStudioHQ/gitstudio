@@ -153,7 +153,7 @@ const host = { compare: async (base: string, head: string) => { compared.push([b
 function ledgerFor(r: Repo) {
   const active = { root: r.dir, ctx: r.ctx };
   const ledger = new UndoLedger({ getActive: () => active }, { workspaceState: { get: () => undefined, update: async () => {} } });
-  const undo = (label: string, fn: () => Promise<unknown>) => ledger.runWithUndo(active, label, fn);
+  const undo = (label: string, fn: () => Promise<unknown>, opts?: unknown) => ledger.runWithUndo(active, label, fn, opts);
   return { ledger, undo };
 }
 
@@ -409,6 +409,29 @@ test("Squash N with a branch on a rewritten commit asks whether it comes along",
     assert.doesNotMatch(pick?.text ?? "", /message below/, "its choices are below it, not a message");
     assert.equal(r.git("merge-base", "--is-ancestor", "feature", "HEAD"), "", "feature followed the rewrite");
     assert.deepEqual(r.subjects(), ["D", "C", "AB", "base"]);
+  } finally {
+    r.dispose();
+  }
+});
+
+test("Squash N that carried branches: Undo puts them back too", async () => {
+  const r = mkRepo();
+  try {
+    r.commit("base"); const a = r.commit("A"); const b = r.commit("B"); const c = r.commit("C");
+    r.git("branch", "on-a", a);
+    r.git("branch", "on-c", c);
+    const { ledger, undo } = ledgerFor(r);
+    reset({ confirm: true, pick: "carry", input: () => "AB" });
+    await runMultiCommitAction("squashMany", r.ctx, [b, a], host, undo);
+    assert.deepEqual(r.subjects(), ["C", "AB", "base"]);
+    assert.notEqual(r.git("rev-parse", "on-c"), c, "on-c followed the squash");
+    reset();
+    await ledger.undoLast();
+    // Named in the plan's order, newest first — as the carry question named them.
+    assert.match(asked.find((x) => x.kind === "confirm")?.text ?? "", /on-c and on-a go back too\./);
+    assert.equal(r.git("rev-parse", "HEAD"), c);
+    assert.equal(r.git("rev-parse", "on-a"), a, "on-a is back");
+    assert.equal(r.git("rev-parse", "on-c"), c, "on-c is back");
   } finally {
     r.dispose();
   }

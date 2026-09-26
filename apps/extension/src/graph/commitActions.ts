@@ -184,8 +184,15 @@ function withUndo<T>(
   undo: UndoRunner | undefined,
   label: string,
   fn: () => Promise<T>,
+  opts?: UndoOptions,
 ): Promise<T> {
-  return undo ? undo(label, fn) : fn();
+  return undo ? undo(label, fn, opts) : fn();
+}
+
+/** The Undo envelope's word on the branches a rewrite carries: they go back
+ *  with it (the carry question says "Undo is available afterwards"). */
+function carriedUndo(carry: boolean, branches: readonly string[]): UndoOptions | undefined {
+  return carry && branches.length > 0 ? { carried: branches.map((b) => `refs/heads/${b}`) } : undefined;
 }
 
 export interface CommitActionItem extends vscode.QuickPickItem {
@@ -771,17 +778,22 @@ async function dropCommitHere(
     }
   }
 
-  const outcome = await withUndo(undo, `Drop ${plan.shortSha}`, async () => {
-    const out = await dropCommit(
-      ctx.process,
-      { sha: plan.sha, head: plan.head, carry },
-      (p) => runRebasePlan(ctx.process.cwd, p),
-    );
-    // A drop that failed changed nothing — every refusal comes before git
-    // writes, and a failed rebase ends where it began — so there is nothing
-    // for Undo to offer. `cancelled` is how the ledger is told exactly that.
-    return out.status === "failed" ? { ...out, cancelled: true as const } : out;
-  });
+  const outcome = await withUndo(
+    undo,
+    `Drop ${plan.shortSha}`,
+    async () => {
+      const out = await dropCommit(
+        ctx.process,
+        { sha: plan.sha, head: plan.head, carry },
+        (p) => runRebasePlan(ctx.process.cwd, p),
+      );
+      // A drop that failed changed nothing — every refusal comes before git
+      // writes, and a failed rebase ends where it began — so there is nothing
+      // for Undo to offer. `cancelled` is how the ledger is told exactly that.
+      return out.status === "failed" ? { ...out, cancelled: true as const } : out;
+    },
+    carriedUndo(carry, plan.carryable),
+  );
 
   const text = dropOutcomeMessage(plan.shortSha, outcome);
   if (outcome.status === "done") {
@@ -1049,18 +1061,23 @@ async function rewriteManyHere(
     }
   }
 
-  const outcome = await withUndo(undo, `${Verb} ${n} commits`, async () => {
-    const out = await rewriteMany(
-      ctx.process,
-      verb,
-      { shas: plan.shas, head: plan.head, carry, ...(message ? { message } : {}) },
-      (p) => runRebasePlan(ctx.process.cwd, p),
-    );
-    // A rewrite that failed changed nothing — every refusal comes before git
-    // writes, and a failed rebase ends where it began — so there is nothing
-    // for Undo to offer. `cancelled` tells the ledger exactly that.
-    return out.status === "failed" ? { ...out, cancelled: true as const } : out;
-  });
+  const outcome = await withUndo(
+    undo,
+    `${Verb} ${n} commits`,
+    async () => {
+      const out = await rewriteMany(
+        ctx.process,
+        verb,
+        { shas: plan.shas, head: plan.head, carry, ...(message ? { message } : {}) },
+        (p) => runRebasePlan(ctx.process.cwd, p),
+      );
+      // A rewrite that failed changed nothing — every refusal comes before git
+      // writes, and a failed rebase ends where it began — so there is nothing
+      // for Undo to offer. `cancelled` tells the ledger exactly that.
+      return out.status === "failed" ? { ...out, cancelled: true as const } : out;
+    },
+    carriedUndo(carry, plan.carryable),
+  );
 
   const text = manyOutcomeMessage(verb, n, outcome);
   if (outcome.status === "done") {

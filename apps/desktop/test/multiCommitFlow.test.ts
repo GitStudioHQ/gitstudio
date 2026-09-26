@@ -188,6 +188,17 @@ test("drop N with branches on replayed commits: the either/or IS the confirmatio
   assert.equal((log.rewrites[0] as { carry: boolean }).carry, true);
 });
 
+test("a rewrite that carried branches hands them to its Undo, so they go back too", async () => {
+  const carried = [{ branch: "feature", before: "c".repeat(40), after: "d".repeat(40) }];
+  for (const verb of ["drop-many", "squash-many"] as const) {
+    const v = verb === "drop-many" ? "drop" : "squash";
+    const { d, log } = deps({ plan: okPlan(v, { carryable: ["feature"] }), choose: "carry", outcome: { status: "done", before: HEAD, after: NEW, carried } });
+    assert.equal(await runManyAction(verb, [B, A], d), "done");
+    await log.undoables[0].action.undo();
+    assert.deepEqual(log.undos[0], { before: HEAD, after: NEW, what: v, carried }, verb);
+  }
+});
+
 test("a rewrite that stops on a conflict goes to the conflict flow, neutrally", async () => {
   const { d, log } = deps({ outcome: { status: "stopped", reason: "conflict", message: "could not apply" } });
   assert.equal(await runManyAction("drop-many", [B, A], d), "stopped");
