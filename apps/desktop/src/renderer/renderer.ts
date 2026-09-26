@@ -222,6 +222,9 @@ class App {
     readonly session: TabSession,
     /** The repository, or undefined for the no-repository screen. */
     private readonly info: RepoInfo | undefined,
+    /** A tab the last session had open, brought back at launch — it comes back
+     *  where it was left, Search included — rather than one opened since. */
+    private readonly restoredAtLaunch = false,
   ) {}
 
   /** This tab's whole screen — attached while it is in front, detached otherwise. */
@@ -690,8 +693,11 @@ class App {
     if (known(remembered)) this.currentView = remembered;
     else if (known(prefs.currentView)) this.currentView = prefs.currentView;
     // Search is identified by its target, and that target belongs to the tab
-    // it was searched in: a repository tab asked for it lands in its code.
-    if (this.currentView === "explore" && this.info) this.currentView = "code";
+    // it was searched in: a NEW tab opened from Search lands in its code
+    // (showRepoScreen's staleBrowse rule, for a tab that never had a target).
+    // A tab brought back at launch is not new — it comes back to Search, the
+    // place it was left, as the single window always did.
+    if (this.currentView === "explore" && this.info && !this.restoredAtLaunch) this.currentView = "code";
     // An unsent commit message this repository's tab was closed with.
     if (this.info) {
       const kept = takeDraftIn(this.info.root, "commit", "message");
@@ -10637,6 +10643,8 @@ class TabShell {
   private readonly strip: RepoTabStrip;
   private readonly stage: HTMLElement;
   private readonly dirty = new Map<string, number>();
+  /** Tabs from the launch state whose App is not built yet (see appFor). */
+  private readonly launchRoots = new Set<string>();
   private sessionSeq = 0;
   /** Switches told to main and not yet answered. */
   private activations = 0;
@@ -10720,6 +10728,8 @@ class TabShell {
     } catch (e) {
       toast(cleanErr(e) || "Couldn't open the repository.", "error");
     }
+    // The tabs the last session left open, restored by main before this asked.
+    for (const t of st?.tabs ?? []) this.launchRoots.add(t.root);
     this.apply(st ?? { tabs: [] });
     this.active?.syncDock();
   }
@@ -10834,8 +10844,11 @@ class TabShell {
     if (!app) {
       const info = this.state.tabs.find((t) => t.root === root) ?? { root, name: root.split(/[\\/]/).pop() || root };
       // Where it starts is the App's to decide (mount): where this
-      // repository was left, else the view the window was last on.
-      app = new App(this, this.newSession(root), info);
+      // repository was left, else the view the window was last on. A tab
+      // from the launch state is a restore — once: closed and opened again,
+      // it is a new tab like any other.
+      const restored = this.launchRoots.delete(root);
+      app = new App(this, this.newSession(root), info, restored);
       this.apps.set(root, app);
     }
     return app;

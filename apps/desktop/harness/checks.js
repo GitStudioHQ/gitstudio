@@ -16443,5 +16443,26 @@
       await settle(600);
       c.ok(dockA.isConnected, "and come back with it");
     },
+
+    /** Row 16 and Search: a tab brought back at launch comes back to Search if
+     *  that is where it was left — the single window always did — while a NEW
+     *  tab opened from Search lands in its own code, not on an empty search
+     *  that belongs to the tab it was opened from. */
+    "a-restored-tab-comes-back-to-search-and-a-new-one-lands-on-its-code": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const onSearch = () => !!$(".view-host .explore-tabs");
+      const lastView = () => ((window.__GS_ROUTES || []).at(-1) || {}).view;
+      c.ok(onSearch(), "the restored tab is back on Search");
+      c.eq(lastView(), "explore", "…routed there, not to its code");
+      window.__gsEmit("menu:command", { command: "openPath", root: GS_DEV_ROOT });
+      await settle(1200);
+      c.eq(activeTabRoot(), GS_DEV_ROOT, "precondition: the new tab is in front");
+      c.eq(text(".nav-item.active"), "Code", "a new tab opened from Search lands in its code");
+      c.ok(!onSearch(), "…not on an empty search");
+      tabEl(GS_ROOT)?.click();
+      await settle(800);
+      c.ok(onSearch(), "the tab it was opened from is still on Search");
+    },
   };
 })();
