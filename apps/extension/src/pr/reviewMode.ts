@@ -141,6 +141,27 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /**
+   * Open a changed file of the PR under review AS THE REVIEW SEES IT — at its
+   * head, with its files. The PR's page keeps the head it loaded: after a push
+   * it opened the OLD commit, where the review (pinned to the new one) offers
+   * no line to comment on — and the review's toast sends you to that page for
+   * every file after the first. False when `owner/repo#n` isn't under review,
+   * or the review has no such file; the caller opens it its own way.
+   */
+  async openReviewedFile(owner: string, repo: string, n: number, path: string): Promise<boolean> {
+    const a = this.active;
+    if (!a || a.key !== prKey(owner, repo, n)) {
+      return false;
+    }
+    const file = a.files.find((f) => f.filename === path);
+    if (!file) {
+      return false;
+    }
+    await openPrFileDiff(a.ctx, a.pr, file);
+    return true;
+  }
+
+  /**
    * Enter review mode for a PR: fetch its current head and changed files, open
    * the first as a diff, enable commenting, and flip the
    * `gitstudio.pr.reviewing` context key. The same PR again just reopens it —

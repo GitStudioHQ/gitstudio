@@ -30,6 +30,12 @@ interface PanelDeps {
   api: GitHubApi;
   ctx: GitHubRepoContext;
   extensionUri: vscode.Uri;
+  /**
+   * Opens a file of this PR through its review, when it is the PR under
+   * review (ReviewController.openReviewedFile): the review's head, not the
+   * one this page loaded. False when it isn't.
+   */
+  openReviewed?: (n: number, path: string) => Promise<boolean>;
 }
 
 interface WebviewMessage {
@@ -224,6 +230,11 @@ export class PrDescriptionPanel {
         return;
       case "openFile":
         if (m.path) {
+          // During a review of this PR, the file opens as the review sees it
+          // — a head pushed past since this page loaded would take no comment.
+          if (await this.deps.openReviewed?.(this.pr.number, m.path).catch(() => false)) {
+            return;
+          }
           const file = this.files.find((f) => f.filename === m.path);
           if (file) {
             void openPrFileDiff(this.deps.ctx, this.pr, file);

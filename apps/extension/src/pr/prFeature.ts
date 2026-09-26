@@ -113,7 +113,12 @@ export function registerPrFeature(
 
   const openDescription = async (pr: PullRequest, ctx: GitHubRepoContext) => {
     await PrDescriptionPanel.show(
-      { api, ctx, extensionUri: context.extensionUri },
+      {
+        api,
+        ctx,
+        extensionUri: context.extensionUri,
+        openReviewed: (n, path) => review.openReviewedFile(ctx.owner, ctx.repo, n, path),
+      },
       pr,
     );
   };

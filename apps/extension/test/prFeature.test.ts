@@ -115,6 +115,10 @@ function github(routes: Route[]): FakeGitHub {
 }
 afterEach(() => {
   for (const m of mounted) m.dispose();
+  // A PR page outlives nothing: closed with its test, as VS Code closes every
+  // webview with the extension. Kept, the next test's page of the same PR was
+  // this one — wired to this test's review and API.
+  for (const p of pr.panels.splice(0)) p.dispose();
   for (const f of fakes) f.restore();
   mounted = [];
   fakes = [];
@@ -632,6 +636,36 @@ test("review: a row loaded before a push reviews the PR's head NOW — the diffs
   answer = (spec) => (spec.kind === "pick" ? "COMMENT" : spec.kind === "input" ? "" : undefined);
   await vscode.commands.executeCommand("gitstudio.pr.submitReview");
   assert.equal(sent?.commit_id, NEW_HEAD, "pinned to the commit the diffs showed");
+});
+
+test("review: a page loaded before a push opens its files as the review sees them — each one takes comments", async () => {
+  const NEW_HEAD = "037new";
+  let pushed = false;
+  github([
+    [
+      "GET",
+      /^\/repos\/acme\/app\/pulls\/37$/,
+      () => ({ body: pushed ? { ...PULLS()[0], head: { ...(PULLS()[0].head as object), sha: NEW_HEAD } } : PULLS()[0] }),
+    ],
+    ...acmeRoutes(),
+  ]);
+  const m = mount(fakeRepos(ORIGIN));
+  const page = await openPage(m, 37);
+  assert.match(page.webview.html, /src\/new\.ts/, "the page has its files");
+  pushed = true; // the contributor pushes; the page still shows 037head
+  page.receive({ type: "startReview" });
+  await until(() => pr.contexts["gitstudio.pr.reviewing"] === true, "the review to start");
+  pr.executed.length = 0;
+  // As the review's own toast says: "Open other files from the PR's page."
+  for (const path of ["src/a.ts", "src/new.ts"]) {
+    pr.executed.length = 0;
+    page.receive({ type: "openFile", path });
+    await until(() => pr.executed.some((e: any) => e.id === "vscode.diff"), `${path} to open`);
+    const [, right] = pr.executed.find((e: any) => e.id === "vscode.diff").args;
+    assert.match(right.query, /sha=037new/, `${path} opens at the head under review`);
+    const r = m.controller.commentingRangeProvider.provideCommentingRanges({ uri: right, lineCount: 120 });
+    assert.ok(r && r.length > 0, `${path}, opened from the page during the review, takes comments`);
+  }
 });
 
 test("review: queued comments are never thrown away without asking — keyed to their PR", async () => {
