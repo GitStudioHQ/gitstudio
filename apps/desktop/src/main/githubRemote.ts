@@ -16,4 +16,11 @@
 //   ssh://git@ssh.github.com:443/o/r.git — SSH over port 443
 //   git://github.com/o/r
 // Host-anchored: "evilnotgithub.com" never matches.
+//
+// And a `Host` alias of ~/.ssh/config whose HostName is github.com
+// (`git@work:o/r.git`): the app's readers of a remote ask through
+// `githubRepoOfRemote`, which reads the config — the same helper the
+// extension uses (packages/git-service/src/sshAliases.ts). Only the extension
+// resolved aliases, so one clone was a GitHub repository there and not here.
 export { parseGitHubRemote } from "@gitstudio/engine/forge/parseRemote";
+export { githubRepoOfRemote } from "@gitstudio/git-service/sshAliases";

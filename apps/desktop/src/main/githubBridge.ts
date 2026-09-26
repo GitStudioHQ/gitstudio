@@ -17,7 +17,7 @@ import { GitHubClient } from "./githubClient";
 import { requestDeviceCode, pollForToken } from "./githubAuth";
 import type { RepoStore } from "./repoStore";
 import { ExpectedError } from "./expectedError";
-import { parseGitHubRemote } from "./githubRemote";
+import { githubRepoOfRemote } from "./githubRemote";
 
 // Re-exported so existing importers (and their tests) keep their seam.
 export { parseGitHubRemote } from "./githubRemote";
@@ -119,7 +119,8 @@ export class GitHubBridge {
     const tryRemote = async (name: string): Promise<{ owner: string; repo: string } | undefined> => {
       try {
         const r = await ctx.process.run(["remote", "get-url", name]);
-        return r.code === 0 ? parseGitHubRemote(r.stdout.trim()) : undefined;
+        // Through ~/.ssh/config's aliases too, as the extension reads it.
+        return r.code === 0 ? await githubRepoOfRemote(r.stdout.trim()) : undefined;
       } catch {
         return undefined;
       }

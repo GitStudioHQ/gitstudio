@@ -1,11 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import {
-  parseGitHubRemote,
-  parseRemote,
-  sshConfigHostName,
-} from "@gitstudio/engine/forge/parseRemote";
+import { parseGitHubRemote, parseRemote } from "@gitstudio/engine/forge/parseRemote";
+import { sshAliasResolver } from "@gitstudio/git-service/sshAliases";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
 // Resolves the active repository's GitHub coordinates ({owner, repo}) from its
@@ -18,7 +12,8 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 // github.com under another name counts: an SSH host alias (`github.com-work`,
 // or any `Host` in ~/.ssh/config whose HostName is github.com), SSH over port
 // 443 (ssh.github.com), www.github.com. Each used to turn the whole feature
-// off without a word.
+// off without a word. ~/.ssh/config is read by git-service's sshAliases —
+// the desktop app's readers of a remote use the same.
 
 export interface GitHubRepoContext {
   owner: string;
@@ -40,20 +35,6 @@ export interface GitHubRemote {
   name: string;
   owner: string;
   repo: string;
-}
-
-/**
- * The HostName ~/.ssh/config gives an SSH alias — read on each call (it is a
- * few lines, and a user who just added an alias should not need a reload).
- */
-async function sshAliasResolver(): Promise<(host: string) => string | undefined> {
-  let text = "";
-  try {
-    text = await readFile(join(homedir(), ".ssh", "config"), "utf8");
-  } catch {
-    // No config: aliases stay unresolved.
-  }
-  return (host) => (text ? sshConfigHostName(text, host) : undefined);
 }
 
 /** Every remote of `entry` that names a github.com repository, origin first. */
