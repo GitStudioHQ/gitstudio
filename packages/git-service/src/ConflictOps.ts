@@ -117,6 +117,13 @@ interface EpisodeMemory {
   order: string[];
   facts: Map<string, ConflictFileFacts>;
   choices: Map<string, SideRole | "merged">;
+  /**
+   * What each resolution made here left in the index at the path — its
+   * stage-0 entry ("<mode> <sha>"), or "" for none (a delete). Undoing that
+   * resolution is only undoing IT while the entry is still this: a change
+   * staged since is a newer resolution, the user's (see `restore`).
+   */
+  resolved: Map<string, string>;
 }
 
 export class ConflictOps {
@@ -205,6 +212,7 @@ export class ConflictOps {
       mem.facts.set(f.path, f);
       // Unmerged again (hold-to-undo, or a checkout -m elsewhere): no choice stands.
       mem.choices.delete(f.path);
+      mem.resolved.delete(f.path);
     }
     const rows: ConflictFileView[] = [];
     for (const path of mem.order) {
@@ -239,8 +247,11 @@ export class ConflictOps {
    */
   async takeRole(path: string, role: SideRole, opts?: ConflictReadOpts): Promise<ConflictOpResult> {
     const op = opts?.op ?? (await this.operation.view({ signal: opts?.signal }));
-    const res = await this.takeStage(path, stageOf(op, role), opts);
-    if (res.ok) this.remember(op.episode, path, role);
+    const res = await this.takeStageOnly(path, stageOf(op, role), opts);
+    if (res.ok) {
+      this.remember(op.episode, path, role);
+      await this.noteResolved(path, opts?.signal);
+    }
     return res;
   }
 
@@ -251,6 +262,13 @@ export class ConflictOps {
    * guard the other has.
    */
   async takeStage(path: string, stage: 2 | 3, opts?: { signal?: AbortSignal }): Promise<ConflictOpResult> {
+    const res = await this.takeStageOnly(path, stage, opts);
+    if (res.ok) await this.noteResolved(path, opts?.signal);
+    return res;
+  }
+
+  /** takeStage without noting the resolution — takeRole notes it after remembering the row. */
+  private async takeStageOnly(path: string, stage: 2 | 3, opts?: { signal?: AbortSignal }): Promise<ConflictOpResult> {
     const guard = await this.guardPath(path);
     if (!guard.ok) return guard.result;
     const listing = await this.stageListing(opts?.signal);
@@ -330,6 +348,7 @@ export class ConflictOps {
     if (rm.code !== 0) return failed(rm.stderr, `Couldn't delete ${path}.`);
     const op = opts?.op ?? (await this.operation.view({ signal: opts?.signal }).catch(() => undefined));
     this.remember(op?.episode, path, undefined);
+    await this.noteResolved(path, opts?.signal);
     return done();
   }
 
@@ -385,6 +404,23 @@ export class ConflictOps {
     if (since.code !== 0) {
       return refuse(`Couldn't tell whether ${path} has changed since it was resolved. Nothing was changed.`);
     }
+    // Staged ones too. Staging is how a conflict is marked resolved, so a
+    // file polished and staged since is a NEW resolution — the user's, not
+    // the one being undone — and the markers would go over it just the same.
+    // Known only for a resolution made here; one made elsewhere (a `git add`
+    // in a terminal) is itself what is staged, and undoing it is the ask.
+    const made = this.memory.resolved.get(path);
+    if (made !== undefined) {
+      const now = await this.stageZero(path, opts?.signal);
+      if (now === undefined) {
+        return refuse(`Couldn't tell whether ${path} has changed since it was resolved. Nothing was changed.`);
+      }
+      if (now !== made) {
+        return refuse(
+          `${path} has changes since it was resolved, and bringing the conflict back would overwrite them. Nothing was changed.`,
+        );
+      }
+    }
     // `checkout -m` re-merges the sides' TEXT: a gitlink has none ("unable to
     // read blob object"), and a symlink would get the marker text as its
     // target. Those come back through the index, with the link as git first
@@ -403,6 +439,7 @@ export class ConflictOps {
       }
     }
     this.memory.choices.delete(path);
+    this.memory.resolved.delete(path);
     return done();
   }
 
@@ -446,6 +483,7 @@ export class ConflictOps {
     if (add.code !== 0) return failed(add.stderr, `Saved ${path}, but couldn't stage it.`);
     const op = opts?.op ?? (await this.operation.view({ signal: opts?.signal }).catch(() => undefined));
     this.remember(op?.episode, path, "merged");
+    await this.noteResolved(path, opts?.signal);
     return done();
   }
 
@@ -496,6 +534,24 @@ export class ConflictOps {
   }
 
   // ── Internals ───────────────────────────────────────────────────────────────
+
+  /** Note what a resolution just made here left at `path` in the index (see EpisodeMemory.resolved). */
+  private async noteResolved(path: string, signal?: AbortSignal): Promise<void> {
+    const entry = await this.stageZero(path, signal);
+    if (entry === undefined) this.memory.resolved.delete(path);
+    else this.memory.resolved.set(path, entry);
+  }
+
+  /** `path`'s stage-0 index entry as "<mode> <sha>", "" when it has none; undefined when git could not say. */
+  private async stageZero(path: string, signal?: AbortSignal): Promise<string | undefined> {
+    const r = await this.git(["ls-files", "-s", "-z", "--", path], signal);
+    if (r.code !== 0) return undefined;
+    for (const rec of r.stdout.split("\0")) {
+      const m = /^(\d{6}) ([0-9a-f]+) 0\t([\s\S]*)$/.exec(rec);
+      if (m && m[3] === path) return `${m[1]} ${m[2]}`;
+    }
+    return "";
+  }
 
   /** `ls-files -u -z` as path → stages; undefined when git could not answer. */
   private async stageListing(signal?: AbortSignal): Promise<Map<string, StageMap> | undefined> {
@@ -734,7 +790,7 @@ export class ConflictOps {
 // ── Pure helpers (exported for the hosts' tests) ─────────────────────────────
 
 function freshMemory(episode: string | undefined): EpisodeMemory {
-  return { episode, order: [], facts: new Map(), choices: new Map() };
+  return { episode, order: [], facts: new Map(), choices: new Map(), resolved: new Map() };
 }
 
 /** `ls-files -u -z` (or `--resolve-undo -z`) → path → stage → {mode, sha}, in listing order. */

@@ -62,9 +62,10 @@ but they share the same engine, so most Git behaviour lands in both at once.
   while it is still where the drop left it. (#32)
 - **Undo of *Discard changes*, and ⌘Z after *Accept Yours / Theirs*, no longer
   overwrite edits you made since.** Discard, type something new, Undo: the new
-  text was replaced by the discarded one; resolve a conflict, polish the file,
-  ⌘Z: the conflict markers went over the polish. Both now say the file has
-  changed since and leave it alone.
+  text was replaced by the discarded one; resolve a conflict, polish the file
+  (and stage it, as marking it resolved does), ⌘Z: the conflict markers went
+  over the polish. Both now say the file has changed since and leave it
+  alone, staged or not.
 - **Undo of *Rename on origin*** leaves the branch tracking its own remote
   branch again — it came back tracking the new name.
 - **Undo of *Drop stash*** puts the stash back where it was in the list, not
