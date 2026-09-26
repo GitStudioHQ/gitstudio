@@ -140,8 +140,13 @@ const SHIPPED = {
 };
 function shippedEntry(rel) {
   const text = readFileSync(join(GITSTUDIO_ROOT, rel), "utf8");
-  const heading = new RegExp(`^\\[?${SHIPPED[rel].replace(/\./g, "\\.")}\\]?[ \\n]`);
-  const entry = text.split(/\n## /).find((section) => heading.test(section));
+  // Compared as text: "[2.1.0] - 2026-09-25" in GitStudio's changelogs,
+  // "1.0.0 — 2026-09-25" in Merge Studio's.
+  const version = SHIPPED[rel];
+  const entry = text.split(/\n## /).find((section) => {
+    const heading = section.split("\n")[0];
+    return heading.startsWith(`[${version}]`) || heading === version || heading.startsWith(`${version} `);
+  });
   assert.ok(entry, `${rel}: has a ## ${SHIPPED[rel]} entry`);
   return entry;
 }
