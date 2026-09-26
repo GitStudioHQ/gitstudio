@@ -1,0 +1,46 @@
+packages/git-service/src/branchElsewhere.ts
+  s_26f5e669d3043c::t_6a48621e1c51d2 1-56
+packages/git-service/test/branchElsewhere.test.ts
+  s_26f5e669d3043c::t_e05f1031c368c5 1-91
+apps/extension/test/branchInAnotherWorktree.test.ts
+  s_26f5e669d3043c::t_f5aae181fac346 1-146
+  s_26f5e669d3043c::t_372e072753336f 147-172
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_050821b76ee35d 73-74
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_94cdf1ded11618 35-36,2592-2597,2682-2692
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_450adee5a634e3 3010,4387-4389
+apps/desktop/test/worktreeRemoval.test.ts
+  s_26f5e669d3043c::t_5a77aa5330d1ef 141-168
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_3e1c64489673fb 108-112
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_ca45ae6f631875 13,278-282
+apps/extension/src/pr/checkoutPr.ts
+  s_26f5e669d3043c::t_af038a53ae3a9d 5,22-28
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_3b561ac3fbae6c 18,154-158,461-465
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_d9db8707a75200 12-18,159-198
+packages/git-service/src/checkoutRef.ts
+  s_26f5e669d3043c::t_53d60fd13c918a 39-42,138,144-149
+packages/git-service/src/checkoutRemote.ts
+  s_26f5e669d3043c::t_fb4d0c12fbaea2 31-33,82,90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9b32f046d001b2b5e21f30142fb400b362b0f62f",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
