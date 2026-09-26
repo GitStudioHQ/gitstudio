@@ -64,6 +64,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - Blame in a repository nested inside another's folder (a vendored checkout,
   a submodule) no longer runs in the outer repository when the outer one is
   the repository on screen.
+- **The Changes view's arrows point the way they open.** A closed group or
+  folder showed ˄ and an open one ›; they now show › when closed and ˅ when
+  open, as everywhere else in VS Code.
 
 ## [1.14.0] - 2026-09-25
 

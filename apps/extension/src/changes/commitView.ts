@@ -4673,7 +4673,11 @@ export class CommitViewProvider
     // ---- Icon glyphs: the real VS Code codicon font ----------------------
     const ICON_FILE = '<i class="codicon codicon-file" aria-hidden="true"></i>';
     const ICON_FOLDER = '<i class="codicon codicon-folder" aria-hidden="true"></i>';
-    const ICON_CHEVRON = '<i class="codicon codicon-chevron-right" aria-hidden="true"></i>';
+    // DOWN, because every twisty that wears it (group headers, folder rows,
+    // a file's changes toggle) turns it -90deg when closed and leaves it
+    // alone when open. chevron-right here pointed up when closed and right
+    // when open.
+    const ICON_CHEVRON = '<i class="codicon codicon-chevron-down" aria-hidden="true"></i>';
     const ICON_STAGE = '<i class="codicon codicon-add" aria-hidden="true"></i>';
     // codicon-remove (a full-width minus) not codicon-dash (a short thin
     // stroke) so Unstage visually balances the Stage "+".
