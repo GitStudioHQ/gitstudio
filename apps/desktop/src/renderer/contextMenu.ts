@@ -7,6 +7,7 @@ import type { CommitActionRequest } from "../shared/ipc";
 import { confirmDialog, promptInline } from "./dialogs";
 import { refMenuItems, type RefMenuItem, type RowRef } from "./refMenuItems";
 import { registerLayer } from "./overlays";
+import { deepActiveElement } from "./focusReturn";
 
 interface MenuItem {
   label: string;
@@ -165,7 +166,8 @@ export class CommitContextMenu {
   openMany(shas: string[], x: number, y: number, opts: { apply: boolean; drop: boolean; squash: boolean }): void {
     this.close();
     this.layer = registerLayer(() => this.close(false), "menu");
-    this.prevFocus = document.activeElement as HTMLElement | null;
+    // Into the graph's shadow root: Escape gives the keyboard back to the list.
+    this.prevFocus = deepActiveElement();
     const menu = document.createElement("div");
     menu.className = "ctx-menu";
     menu.setAttribute("role", "menu");
@@ -186,7 +188,10 @@ export class CommitContextMenu {
       button.tabIndex = -1;
       button.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.close(false);
+        // Focus back on the list BEFORE the item runs, as ui.ts's menus do:
+        // the dialog it opens (Drop 3 commits?) returns the keyboard to what
+        // had focus when it opened — which was otherwise this removed row.
+        this.close();
         this.many?.(row.action, shas);
       });
       menu.appendChild(button);
@@ -230,7 +235,8 @@ export class CommitContextMenu {
   ): void {
     this.close();
     this.layer = registerLayer(() => this.close(false), "menu");
-    this.prevFocus = document.activeElement as HTMLElement | null;
+    // Into the graph's shadow root, as for several (deepActiveElement).
+    this.prevFocus = deepActiveElement();
     const menu = document.createElement("div");
     menu.className = "ctx-menu";
     menu.setAttribute("role", "menu");
@@ -252,7 +258,8 @@ export class CommitContextMenu {
       button.tabIndex = -1;
       button.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.close(false);
+        // Focus back on the list first, for the dialog the item may open.
+        this.close();
         void this.dispatch(item, sha);
       });
       menu.appendChild(button);

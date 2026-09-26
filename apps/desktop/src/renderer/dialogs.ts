@@ -5,6 +5,7 @@
 // for prompt(), unsupported) in an Electron renderer.
 
 import { registerLayer, isMenuOpen, holdBackground } from "./overlays";
+import { deepActiveElement } from "./focusReturn";
 import { mdEditor } from "./mdEditor";
 import { wireDraft } from "./draftStore";
 import { refNameProblem, sanitizeRefName } from "../shared/refName";
@@ -133,7 +134,9 @@ const modalStack: symbol[] = [];
  * the dismissal contract can never drift between surfaces.
  */
 export function openModal(build: (close: () => void) => ModalSpec): void {
-  const prevFocus = document.activeElement as HTMLElement | null;
+  // Inside a shadow root when that is where focus is (the graph's list): its
+  // host has no tabindex, and handing focus back to it dropped it on <body>.
+  const prevFocus = deepActiveElement();
   const token = Symbol("modal");
   const overlay = mk("div", "modal-overlay");
   overlay.setAttribute("role", "dialog");

@@ -48,6 +48,22 @@
     return (n?.textContent ?? "").trim();
   };
   const left = (el) => Math.round(el.getBoundingClientRect().left);
+  /**
+   * Whether a computed paint — a background's image and colour, as one string
+   * — has a red in it: a destructive button's face, asserted by what it looks
+   * like. A class name passes over a rule that no longer paints anything.
+   * Reads rgb()/rgba() and the color(srgb …) a color-mix() computes to.
+   */
+  const isReddish = (paint) => {
+    const colours = [];
+    for (const m of String(paint).matchAll(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)/g)) {
+      colours.push([+m[1] / 255, +m[2] / 255, +m[3] / 255, m[4] === undefined ? 1 : +m[4]]);
+    }
+    for (const m of String(paint).matchAll(/color\(srgb\s+([\d.e-]+)\s+([\d.e-]+)\s+([\d.e-]+)(?:\s*\/\s*([\d.]+))?\s*\)/g)) {
+      colours.push([+m[1], +m[2], +m[3], m[4] === undefined ? 1 : +m[4]]);
+    }
+    return colours.some(([r, g, b, a]) => a > 0.5 && r > 0.5 && r - Math.max(g, b) > 0.2);
+  };
 
   /**
    * Every --gs-* token the shared merge stylesheets (packages/webview-ui
@@ -9333,9 +9349,17 @@
       (sr.activeElement || sc)?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
       await settle(600);
       c.eq(selected().join(","), S[0], "Escape keeps only the focused row");
-      c.ok(!$(".graph-details gitstudio-commit-details")?.shadowRoot?.querySelector(".sum-title"), "and the pane is that commit's again");
+      const one = $(".graph-details gitstudio-commit-details")?.shadowRoot;
+      c.ok(!one?.querySelector(".sum-title"), "and the pane is no longer the summary");
+      // Its details, read off the pane — not the absence of a summary, which
+      // an error card ("Couldn't load this commit") satisfies just as well.
+      c.eq(text(one?.querySelector(".subject")), "graph: keep the anchor where Shift-click started", "the pane is that commit's again: its subject");
+      c.ok(!/Couldn't load this commit/.test(text($(".graph-details"))), "not an error card");
       c.ok(sent("commit:details").slice(asked).some((r) => r.payload === S[0]), "its details were asked for, after the Escape");
-      c.ok(!!$(".graph-split") && !$(".graph-split").classList.contains("details-hidden"), "the Escape did not also close the pane");
+      // Computed, not a class: a pane hidden any other way must fail this too.
+      const column = $(".graph-details");
+      c.ok(!!column && getComputedStyle(column).display !== "none" && column.getBoundingClientRect().width > 0,
+        `the Escape did not also close the pane (${column ? getComputedStyle(column).display + " " + Math.round(column.getBoundingClientRect().width) + "px" : "none"})`);
     },
 
     /**
@@ -9443,7 +9467,12 @@
         "every commit it removes, by name");
       c.match(text(card.querySelector(".modal-message")), /Nothing else changes\./, "and what is replayed");
       c.eq(text(card.querySelector(".modal-ok")), "Drop commits", "the button says what it does");
-      c.ok(card.querySelector(".modal-ok")?.classList.contains("btn-danger"), "in the danger style");
+      // Painted red, as computed — a class name passes over a dead rule.
+      const okBtn = card.querySelector(".modal-ok");
+      const cancelBtn = $$("button", card).find((b) => text(b) === "Cancel");
+      const face = (b) => (b ? `${getComputedStyle(b).backgroundImage} ${getComputedStyle(b).backgroundColor}` : "");
+      c.ok(isReddish(face(okBtn)), `in the danger colour (${face(okBtn).slice(0, 140)})`);
+      c.ok(!!cancelBtn && !isReddish(face(cancelBtn)), `and Cancel is not (${face(cancelBtn).slice(0, 100)})`);
       card.querySelector(".modal-ok")?.click();
       await settle(700);
       const run = sent("commits:rewrite").at(-1)?.payload;
@@ -9575,6 +9604,123 @@
       c.eq(refs?.head, NEWER, "the newer one is compared");
       const picks = $$(".compare-bar .ref-pick").map((b) => text(b));
       c.eq(picks.join(" | "), "f6a7b8c | 9f8e7d6", "the pickers name them by short sha");
+      // …and so do the words: never forty hex characters in a sentence.
+      const summary = text($(".cmp-summary"));
+      c.ok(!!summary, `the summary is written (${summary})`);
+      c.ok(!/[0-9a-f]{12,}/.test(summary), `the summary names them by short sha (${summary})`);
+      c.match(summary, /only on f6a7b8c$/, "the base, as its picker names it");
+      // Two commits are not a pull request: the button is not offered.
+      const pr = $(".cmp-pr-btn");
+      c.ok(!pr || getComputedStyle(pr).display === "none", `no "Create pull request" for two commits (${pr ? getComputedStyle(pr).display : "absent"})`);
+      c.eq(text($$(".cmp-mode-btn").find((b) => /adds/.test(text(b)))), "What 9f8e7d6 adds", "the mode says what the compare COMMIT adds, not a branch");
+      // Swapped, the words follow the sides.
+      $(".cmp-swap")?.click();
+      await settle(900);
+      c.eq($$(".compare-bar .ref-pick").map((b) => text(b)).join(" | "), "9f8e7d6 | f6a7b8c", "swap exchanges them");
+      c.eq(text($$(".cmp-mode-btn").find((b) => /adds/.test(text(b)))), "What f6a7b8c adds", "and the mode names the new compare side");
+      c.ok(!/[0-9a-f]{12,}/.test(text($(".cmp-summary")) + text($(".cmp-body .list-empty, .cmp-body .loading-state"))), `still no long shas (${text($(".cmp-summary"))})`);
+      const pr2 = $(".cmp-pr-btn");
+      c.ok(!pr2 || getComputedStyle(pr2).display === "none", "and still no pull request");
+    },
+
+    /**
+     * The menu key's menu in the desktop's graph (issue #32): Shift+F10 opens
+     * the commit menu for the selection with the keyboard on its first item,
+     * and Escape hands the keyboard back to the LIST — inside the graph's
+     * shadow root, where the arrows work — not to <body>. For one row and for
+     * several.
+     */
+    "the-menu-key-menu-gives-the-keyboard-back-to-the-list": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      if (!sr) return c.ok(false, "the graph is mounted");
+      const S = ["3c0ffee1a2b3c4d5e6f7", "2c0ffee1a2b3c4d5e6f7", "1c0ffee1a2b3c4d5e6f7"];
+      const sc = sr.querySelector(".scroller");
+      const selected = () => $$('.row[aria-selected="true"]', sr).map((r) => r.dataset.sha);
+      /** A key where a person's lands: the element that really has focus. */
+      const deep = () => { let a = document.activeElement; while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement; return a; };
+      const key = async (k, o = {}, ms = 400) => {
+        (deep() || document.body).dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, composed: true, cancelable: true, ...o }));
+        await settle(ms);
+      };
+      sr.querySelector(`.row[data-sha="${S[0]}"]`)?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      await settle(400);
+      sc?.focus();
+
+      // One row.
+      await key("F10", { shiftKey: true }, 700);
+      c.eq(text($(".ctx-menu .ctx-menu-header")), "3c0ffee", "Shift+F10 opens the focused row's menu");
+      c.ok(deep()?.classList?.contains("ctx-menu-item"), `with the keyboard on its first item (${deep()?.className})`);
+      await key("Escape");
+      c.ok(!$(".ctx-menu"), "Escape closes it");
+      c.eq(deep(), sc, `and the list has the keyboard again (${deep()?.tagName}.${deep()?.className})`);
+      await key("ArrowDown");
+      c.eq(selected().join(","), S[1], "so ↓ moves the selection, as before the menu");
+
+      // Several.
+      await key("ArrowUp");
+      await key("ArrowDown", { shiftKey: true });
+      await key("ArrowDown", { shiftKey: true }, 700);
+      c.eq(selected().join(","), S.join(","), "Shift+↓ twice: three selected");
+      await key("F10", { shiftKey: true }, 700);
+      c.eq(text($(".ctx-menu .ctx-menu-header")), "3 commits selected", "the menu for all three");
+      c.ok(deep()?.classList?.contains("ctx-menu-item"), "with the keyboard on its first item");
+      await key("ArrowDown", {}, 200);
+      c.eq(selected().join(","), S.join(","), "↓ walks the menu, not the list under it");
+      await key("Escape");
+      c.ok(!$(".ctx-menu"), "Escape closes it");
+      c.eq(deep(), sc, `and hands the keyboard back to the list (${deep()?.tagName}.${deep()?.className})`);
+      c.eq(selected().join(","), S.join(","), "with the three still selected");
+      c.eq(text($(".graph-details gitstudio-commit-details")?.shadowRoot?.querySelector(".sum-title")), "3 commits selected", "and the pane still says so");
+
+      // An item that asks first: its dialog hands the keyboard back to the list too.
+      await key("F10", { shiftKey: true }, 700);
+      for (let i = 0; i < 3; i++) await key("ArrowDown", {}, 150);
+      c.eq(text(deep()), "Drop 3 commits…", "↓ reaches Drop");
+      await key("Enter", {}, 900);
+      c.ok(!!$(".modal-card"), "Drop asks first");
+      await key("Escape", {}, 500);
+      c.ok(!$(".modal-card"), "Escape cancels it");
+      c.eq(deep(), sc, `and the keyboard is back on the list (${deep()?.tagName}.${deep()?.className})`);
+      c.eq(window.__GS_INVOKED.filter((x) => x.channel === "commits:rewrite").length, 0, "nothing ran");
+    },
+
+    /**
+     * Enter with several selected opens the row the keyboard is on — alone
+     * (issue #32). It used to open it with the rest still selected: the pane
+     * showed that one commit's details beside a list showing three.
+     */
+    "enter-on-several-opens-the-focused-one-alone": async (f) => {
+      const c = check(f);
+      noAnimation();
+      await settle(600);
+      const sr = $("gitstudio-graph")?.shadowRoot;
+      if (!sr) return c.ok(false, "the graph is mounted");
+      const S = ["3c0ffee1a2b3c4d5e6f7", "2c0ffee1a2b3c4d5e6f7", "1c0ffee1a2b3c4d5e6f7"];
+      const sc = sr.querySelector(".scroller");
+      const selected = () => $$('.row[aria-selected="true"]', sr).map((r) => r.dataset.sha);
+      const key = async (k, o = {}, ms = 400) => {
+        (sr.activeElement || sc).dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, composed: true, cancelable: true, ...o }));
+        await settle(ms);
+      };
+      sr.querySelector(`.row[data-sha="${S[0]}"]`)?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true }));
+      await settle(400);
+      sc?.focus();
+      await key("ArrowDown", { shiftKey: true });
+      await key("ArrowDown", { shiftKey: true }, 700);
+      c.eq(selected().join(","), S.join(","), "three selected");
+      c.eq(text($(".graph-details gitstudio-commit-details")?.shadowRoot?.querySelector(".sum-title")), "3 commits selected", "the pane says so");
+      const asked = window.__GS_INVOKED.filter((x) => x.channel === "commit:details").length;
+      await key("Enter", {}, 900);
+      c.eq(selected().join(","), S[2], "Enter keeps only the focused row");
+      const pane = $(".graph-details gitstudio-commit-details")?.shadowRoot;
+      c.ok(!pane?.querySelector(".sum-title"), "the pane is no longer the summary");
+      c.eq(text(pane?.querySelector(".subject")), "graph: select several commits with Cmd and Shift", "it is that commit's details");
+      const now = window.__GS_INVOKED.filter((x) => x.channel === "commit:details").slice(asked).map((x) => x.payload);
+      c.eq(now.join(","), S[2], `asked for once (${now.length})`);
     },
 
     /**

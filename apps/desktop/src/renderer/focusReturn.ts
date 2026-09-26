@@ -101,6 +101,19 @@ function tick(): void {
  * anywhere else simply changes the scope, so the next row focused is recorded
  * against the right view.
  */
+/**
+ * The element that really has focus: through every open shadow root, down to
+ * the one inside it. The graph's rows live in <gitstudio-graph>'s shadow root,
+ * so `document.activeElement` is only the host — which has no tabindex — and
+ * a menu or a dialog that handed focus back to it dropped the keyboard on
+ * <body>, where the arrows move nothing.
+ */
+export function deepActiveElement(doc: Document = document): HTMLElement | null {
+  let el = doc.activeElement as HTMLElement | null;
+  while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
+  return el;
+}
+
 export function setFocusScope(view: string): void {
   wire();
   scope = view;

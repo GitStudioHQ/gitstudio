@@ -155,6 +155,25 @@ test("squash N that carried a branch: the outcome names it, and Undo puts it bac
   }
 });
 
+test("comparing two commits: a file's diff names each side by its short sha, as the pickers do", async () => {
+  const w = await workspace();
+  try {
+    w.commit("base", "f.txt", "0\n"); const a = w.commit("A", "f.txt", "1\n"); const b = w.commit("B", "f.txt", "2\n");
+    for (const mode of ["two-dot", "three-dot"] as const) {
+      const d = await w.bridge.compareFileDiff({ base: a, head: b, path: "f.txt", mode });
+      assert.ok(d, mode);
+      assert.ok(!/[0-9a-f]{12,}/.test(`${d!.leftLabel} ${d!.rightLabel}`), `${mode}: no long shas (${d!.leftLabel} | ${d!.rightLabel})`);
+      assert.match(d!.leftLabel, new RegExp(`^${a.slice(0, 7)}\\b`), mode);
+      assert.equal(d!.rightLabel, `${b.slice(0, 7)} f.txt`, mode);
+    }
+    // A branch keeps its name.
+    const d = await w.bridge.compareFileDiff({ base: a, head: "main", path: "f.txt", mode: "two-dot" });
+    assert.equal(d?.rightLabel, "main f.txt");
+  } finally {
+    w.cleanup();
+  }
+});
+
 test("refusals are the user's state — expected, never filed: a gap, a stale head, an undo after the branch moved", async () => {
   const w = await workspace();
   try {

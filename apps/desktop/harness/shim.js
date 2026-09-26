@@ -2821,6 +2821,31 @@
     graphBase.rows = [...stackRows, ...graphBase.rows];
     graphBase.head = STACK[0].sha;
   }
+  // …and their details, so one of them selected ALONE shows it. Without these
+  // commit:details answered undefined — "Couldn't load this commit" — and a
+  // check that the pane was "that commit's again" passed on the error card.
+  // Rows carry 20-char prefixes of the details' 40-char shas, as everywhere.
+  const stackFull = (sha) => `${sha}8091a2b3c4d5e6f70819`;
+  STACK.forEach((s, i) => {
+    const when = Math.floor(Date.now() / 1000) - Math.round(s.h * 3600);
+    commits[s.sha.slice(0, 8)] = {
+      kind: "commit",
+      sha: stackFull(s.sha),
+      shortSha: s.sha.slice(0, 7),
+      parents: [i + 1 < STACK.length ? stackFull(STACK[i + 1].sha) : "9f8e7d6c5b4a392817068091a2b3c4d5e6f70819"],
+      author: s.author || me,
+      authorEmail: s.author ? "mira@gitstudio.dev" : "anton@gitstudio.dev",
+      authorDate: when,
+      committer: s.author || me,
+      committerEmail: s.author ? "mira@gitstudio.dev" : "anton@gitstudio.dev",
+      committerDate: when,
+      subject: s.subject,
+      body: "",
+      refs: [],
+      files: commitFiles([["M", "packages/webview-ui/src/graph/multiSelect.ts", 12 + i, 3]]),
+      hasRemote: false,
+    };
+  });
   /** sha → the refs that ALONE reach it; every other row is on main's line. */
   const reachOnly = { "77aa88b9c0d1e2f3a4b5": ["refs/remotes/origin/chore/dependabot-bump"] };
   const mainLine = new Set(graphBase.rows.map((r) => r.sha).filter((sha) => !reachOnly[sha]));

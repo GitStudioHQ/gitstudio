@@ -4491,6 +4491,16 @@ class App {
 
     const wrap = el("div", "compare-view");
 
+    /** A side as the view names it in words: a commit (Compare these two
+     *  commits, issue #32) by its short sha — as its picker does — a ref by
+     *  its name. Forty hex characters in a sentence named the same commit two
+     *  ways, one line under the other. */
+    const sideLabel = (ref: string | undefined): string =>
+      ref && this.compareCommits.has(ref) ? ref.slice(0, 7) : (ref ?? "");
+    /** Either side is a commit, not a ref: a pull request needs two branches. */
+    const comparingCommits = (): boolean =>
+      [this.compareBase, this.compareHead].some((r) => !!r && this.compareCommits.has(r));
+
     // ── Toolbar: base ⇄ compare pickers + the dot-mode toggle. ────────────────
     const bar = el("div", "compare-bar");
     const baseBtn = el("button", "ref-pick");
@@ -4553,7 +4563,13 @@ class App {
     };
     const modeWrap = el("div", "cmp-mode");
     const dot3 = el("button", "cmp-mode-btn");
-    dot3.textContent = "What this branch adds";
+    /** "What this branch adds" — or, when the compare side is a commit, what
+     *  THAT commit adds: its short sha, so the words stay right after a swap. */
+    const syncModeLabel = (): void => {
+      const head = this.compareHead;
+      dot3.textContent = head && this.compareCommits.has(head) ? `What ${sideLabel(head)} adds` : "What this branch adds";
+    };
+    syncModeLabel();
     dot3.title = "Three-dot (base...compare): changes introduced since the common ancestor — GitHub's default";
     const dot2 = el("button", "cmp-mode-btn");
     dot2.textContent = "Everything different";
@@ -4584,7 +4600,7 @@ class App {
         () => {
           const b = this.compareBase, h = this.compareHead;
           openAssistantTab({
-            title: `Explain ${b}…${h}`,
+            title: `Explain ${sideLabel(b)}…${sideLabel(h)}`,
             goal: `Explain what changes between \`${b}\` and \`${h}\`. Run \`git diff ${b}..${h}\` to see the changes, then give a clear, structured summary of what changed and why it matters.`,
             nav,
           });
@@ -4596,7 +4612,7 @@ class App {
         () => {
           const b = this.compareBase, h = this.compareHead;
           openAssistantTab({
-            title: `Review ${b}…${h}`,
+            title: `Review ${sideLabel(b)}…${sideLabel(h)}`,
             goal: `Review the changes between \`${b}\` and \`${h}\` for correctness bugs, security issues and risky changes. Run \`git diff ${b}..${h}\` to see them. Be specific and cite files.`,
             nav,
           });
@@ -4640,9 +4656,12 @@ class App {
      *  rest of the session — the view's whole purpose, gone, with no way back
      *  short of a reload. */
     let canPr = false;
-    /** The two conditions, kept apart and re-asserted on every exit. */
+    /** The conditions, kept apart and re-asserted on every exit. Two
+     *  COMMITS are not a pull request's base and head: openCreatePr resolves
+     *  those against branch names, found neither sha, and opened a form for
+     *  the default branch and some other branch — nothing on this screen. */
     const syncPrBtn = (): void => {
-      prBtn.hidden = !(canPr && !!this.compareBase && this.compareBase !== this.compareHead);
+      prBtn.hidden = !(canPr && !!this.compareBase && this.compareBase !== this.compareHead && !comparingCommits());
     };
     prBtn.addEventListener("click", () =>
       void openCreatePr(() => this.routeView("prs", true), {
@@ -4704,7 +4723,7 @@ class App {
           ? { base: this.compareBase, head: this.compareHead, mode: this.compareMode }
           : undefined;
       if (!cmpKey || peek("compare:refs", cmpKey) === undefined) {
-        body.replaceChildren(loadingState(`Comparing ${this.compareBase} … ${this.compareHead}`));
+        body.replaceChildren(loadingState(`Comparing ${sideLabel(this.compareBase)} … ${sideLabel(this.compareHead)}`));
       }
       // The previous comparison's answer is no longer an answer to anything.
       // `last` was only reassigned on the success path, so the early return
@@ -4723,6 +4742,7 @@ class App {
       filesCount.textContent = "";
       syncPrBtn();
       syncSwap();
+      syncModeLabel();
       // Nothing to compare yet (a single-branch repo, or base === head):
       // prompt for a second ref instead of running a doomed comparison.
       if (!this.compareBase || this.compareBase === this.compareHead) {
@@ -4737,7 +4757,7 @@ class App {
           emptyState(
             "Pick two refs to compare",
             this.compareBase
-              ? `Base and compare are both ${this.compareHead}. Choose a different ref on either side.`
+              ? `Base and compare are both ${sideLabel(this.compareHead)}. Choose a different ref on either side.`
               : "This repository has only one branch. Compare needs a second ref — create or fetch one first.",
             { icon: "git-compare" },
           ),
@@ -4760,7 +4780,7 @@ class App {
         body.replaceChildren(
           errorState(
             "Couldn't compare these refs",
-            `Make sure ${this.compareBase} and ${this.compareHead} both exist.`,
+            `Make sure ${sideLabel(this.compareBase)} and ${sideLabel(this.compareHead)} both exist.`,
             () => void runCompare(),
           ),
         );
@@ -4775,12 +4795,12 @@ class App {
       filesCount.textContent = String(m);
       summary.textContent =
         n === 0 && m === 0
-          ? `${this.compareHead} is up to date with ${this.compareBase}.`
+          ? `${sideLabel(this.compareHead)} is up to date with ${sideLabel(this.compareBase)}.`
           : `${n} commit${n === 1 ? "" : "s"} · ${m} file${m === 1 ? "" : "s"} changed` +
             // "redesign/issues-detail is 2 ahead" made the reader work out
             // whose commits those were; say it straight.
             (res.behind > 0
-              ? ` · ${res.behind} commit${res.behind === 1 ? "" : "s"} only on ${this.compareBase}`
+              ? ` · ${res.behind} commit${res.behind === 1 ? "" : "s"} only on ${sideLabel(this.compareBase)}`
               : "");
       renderBody();
     };

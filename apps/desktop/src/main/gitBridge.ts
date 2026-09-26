@@ -1636,10 +1636,13 @@ export class GitBridge {
     const leftPath = req.leftPath && safeArg(req.leftPath) ? req.leftPath : req.path;
     const left = await showAt(ctx, leftRef, leftPath);
     const right = await showAt(ctx, req.head, req.path);
+    // A side that is a commit (Compare these two commits, issue #32) by its
+    // short sha, as the pickers above name it; a ref by its name.
+    const side = (ref: string): string => (/^[0-9a-f]{40,64}$/i.test(ref) ? ref.slice(0, 7) : ref);
     return {
       path: req.path,
-      leftLabel: `${threeDot ? req.base + " (merge-base)" : req.base} ${leftPath}`,
-      rightLabel: `${req.head} ${req.path}`,
+      leftLabel: `${threeDot ? side(req.base) + " (merge-base)" : side(req.base)} ${leftPath}`,
+      rightLabel: `${side(req.head)} ${req.path}`,
       leftText: left.text,
       rightText: right.text,
       conflicted: false,
