@@ -1992,18 +1992,35 @@ export interface DropRequest {
   carry?: boolean;
 }
 
-/** How a drop ended, plus the two tips its Undo needs. */
+/** A branch a drop moved: full name, where it was, where the drop left it. */
+export interface DropMovedRef {
+  ref: string;
+  before: string;
+  after: string;
+}
+
+/** How a drop ended, plus what its Undo needs. */
 export interface DropOutcomeWire extends RebaseOutcomeWire {
   /** HEAD before the drop. */
   before?: string;
   /** HEAD after a drop that finished. */
   after?: string;
+  /** The branch it rewrote (refs/heads/…), null when HEAD was detached. */
+  branch?: string | null;
+  /** The branches "Drop and move those branches" carried along. */
+  carried?: DropMovedRef[];
 }
 
-/** Undo a drop: back from `after` to `before`, only while HEAD is still `after`. */
+/**
+ * Undo a drop: `branch` (or, detached, HEAD) back from `after` to `before`,
+ * and every `carried` branch back too — each only while it is still where the
+ * drop left it.
+ */
 export interface UndoDropRequest {
   before: string;
   after: string;
+  branch?: string | null;
+  carried?: DropMovedRef[];
 }
 
 /**

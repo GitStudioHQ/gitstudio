@@ -9,6 +9,16 @@ import {
 import { buildRebasePlan, type RebasePlanRow } from "./rebasePlan";
 import type { RebaseOutcome, RebasePlan } from "./RebaseRunner";
 import { operationInTheWayMessage, pick, stoppedIn } from "./stoppedOperation";
+import {
+  branchShort,
+  headBranch,
+  isBranchRef,
+  isSha,
+  localBranches,
+  putRefBack,
+  whyRefsNotRestorable,
+  type RefMove,
+} from "./refRestore";
 
 // Drop Commit (issue #32), for both products.
 //
@@ -225,12 +235,20 @@ export interface DropRequest {
   carry?: boolean;
 }
 
-/** How a drop ended, plus the two tips a host needs to offer its undo. */
+/** How a drop ended, plus what a host needs to offer its undo. */
 export type DropOutcome = RebaseOutcome & {
   /** HEAD before the drop. */
   before?: string;
   /** HEAD after a drop that finished. */
   after?: string;
+  /**
+   * The branch the drop rewrote, by full name — null when HEAD was detached.
+   * An undo puts THIS branch back: HEAD's commit alone can't say which branch
+   * it was, and a branch made at the new tip since shares it.
+   */
+  branch?: string | null;
+  /** Branches "Drop and move those branches" carried onto the rewrite. */
+  carried?: RefMove[];
 };
 
 /** The refusal for a confirmation that went stale. */
@@ -266,27 +284,79 @@ export async function dropCommit(
     // Every row here is one this module wrote, so a refusal is ours: reported.
     return { status: "failed", message: built.message };
   }
+  // Where the branches it may carry are now, to put them back on undo.
+  const carriedBefore = req.carry && plan.carryable.length ? await localBranches(proc) : {};
+  const branch = plan.branch ? `refs/heads/${plan.branch}` : null;
   const outcome = await run({ base: plan.base, todo: built.todo, rewords: built.rewords });
   const after = outcome.status === "done" ? await revParse(proc, "HEAD") : undefined;
-  return { ...outcome, before: plan.head, ...(after ? { after } : {}) };
+  let carried: RefMove[] | undefined;
+  if (outcome.status === "done" && req.carry && plan.carryable.length) {
+    const now = await localBranches(proc);
+    carried = plan.carryable
+      .map((name) => `refs/heads/${name}`)
+      .filter((ref) => carriedBefore[ref] && now[ref] && carriedBefore[ref] !== now[ref])
+      .map((ref) => ({ ref, before: carriedBefore[ref], after: now[ref] }));
+  }
+  return {
+    ...outcome,
+    before: plan.head,
+    ...(after ? { after } : {}),
+    ...(outcome.status === "done" ? { branch } : {}),
+    ...(carried?.length ? { carried } : {}),
+  };
 }
 
 /**
- * Put the branch back where it was before a drop: HEAD moves from `after` to
- * `before` with `reset --keep`, so uncommitted work made since is kept, or the
- * reset refuses rather than overwrite it.
+ * Put the branch back where it was before a drop: from `after` to `before`
+ * with `reset --keep` where it is checked out, so uncommitted work made since
+ * is kept, or the reset refuses rather than overwrite it — and the branches
+ * the drop carried along back too.
  *
- * Only while HEAD is still exactly where the drop left it. If anything has
- * moved it since, going back would throw that away too, so this says so and
- * changes nothing.
+ * Only while each is still exactly where the drop left it. If anything has
+ * moved one since, going back would throw that away too, so this says so and
+ * changes nothing. With `branch` the drop's OWN branch is the one moved:
+ * checking HEAD's commit alone reset whichever branch HEAD was on — one made
+ * and checked out at the new tip after the drop, left the dropped branch
+ * dropped, and reported success.
  */
 export async function undoDrop(
   proc: GitProcess,
-  u: { before: string; after: string },
+  u: {
+    before: string;
+    after: string;
+    /** The branch the drop rewrote (DropOutcome.branch); null: HEAD was detached. */
+    branch?: string | null;
+    /** The branches it carried (DropOutcome.carried). */
+    carried?: readonly RefMove[];
+  },
 ): Promise<{ ok: true } | { ok: false; expected?: true; message: string }> {
   if (!/^[0-9a-f]{40,64}$/i.test(u.before) || !/^[0-9a-f]{40,64}$/i.test(u.after)) {
     // The renderer only ever sends the two shas a drop answered with.
     return { ok: false, message: "That isn't a drop this app made." };
+  }
+  const carried = u.carried ?? [];
+  if (
+    (u.branch !== undefined && u.branch !== null && !isBranchRef(u.branch)) ||
+    carried.some((m) => !isBranchRef(m.ref) || !isSha(m.before) || !isSha(m.after))
+  ) {
+    return { ok: false, message: "That isn't a drop this app made." };
+  }
+  if (u.branch) {
+    return undoDropOnBranch(proc, { before: u.before, after: u.after, branch: u.branch, carried });
+  }
+  // Detached (branch null), or a caller that predates `branch`: HEAD itself.
+  if (u.branch === null && (await headBranch(proc))) {
+    // A branch made and checked out at the new tip has the same commit, and
+    // resetting it would move a branch the drop never touched.
+    return {
+      ok: false,
+      expected: true,
+      message: "HEAD was detached when the commit was dropped, and it's on a branch now. Detach it again, then undo.",
+    };
+  }
+  if (carried.length) {
+    const why = await whyRefsNotRestorable(proc, carried, "the drop");
+    if (why) return { ok: false, expected: true, message: why };
   }
   const head = await revParse(proc, "HEAD");
   if (head !== u.after) {
@@ -301,9 +371,62 @@ export async function undoDrop(
     return { ok: false, expected: true, message: operationInTheWayMessage({ ...pick(stop), kind: "reset" }) };
   }
   const r = await proc.run(["reset", "--keep", u.before]);
-  if (r.code === 0) {
-    return { ok: true };
+  if (r.code !== 0) {
+    return keepRefused(proc, r.stderr);
   }
+  return putCarriedBack(proc, carried);
+}
+
+/**
+ * Undo a drop that rewrote `branch`: put THAT branch back — and the ones it
+ * carried — each only while it is still where the drop left it. The branch
+ * moves with `reset --keep` when it is checked out here (its files move too,
+ * uncommitted work is kept or the reset refuses), and with a compare-and-swap
+ * `update-ref` when it isn't — so a branch made and checked out at the new tip
+ * since stays exactly where it is.
+ */
+async function undoDropOnBranch(
+  proc: GitProcess,
+  u: { before: string; after: string; branch: string; carried: readonly RefMove[] },
+): Promise<{ ok: true } | { ok: false; expected?: true; message: string }> {
+  const own: RefMove = { ref: u.branch, before: u.before, after: u.after };
+  const why = await whyRefsNotRestorable(proc, [own, ...u.carried], "the drop");
+  if (why) {
+    return { ok: false, expected: true, message: why };
+  }
+  const here = (await headBranch(proc)) === u.branch;
+  if (here) {
+    const stop = await stoppedIn(proc);
+    if (stop) {
+      return { ok: false, expected: true, message: operationInTheWayMessage({ ...pick(stop), kind: "reset" }) };
+    }
+  }
+  try {
+    await putRefBack(proc, own, "GitStudio undo: drop commit", { here });
+  } catch (err) {
+    return here ? keepRefused(proc, err instanceof Error ? err.message : String(err)) : { ok: false, message: String(err instanceof Error ? err.message : err) };
+  }
+  return putCarriedBack(proc, u.carried);
+}
+
+/** The carried branches back, each by compare-and-swap. */
+async function putCarriedBack(
+  proc: GitProcess,
+  carried: readonly RefMove[],
+): Promise<{ ok: true } | { ok: false; expected?: true; message: string }> {
+  const head = await headBranch(proc);
+  for (const m of carried) {
+    try {
+      await putRefBack(proc, m, "GitStudio undo: drop commit", { here: head === m.ref });
+    } catch (err) {
+      return { ok: false, message: `The dropped commit is back, but ${branchShort(m.ref)} isn't: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+  return { ok: true };
+}
+
+/** `reset --keep` refused: over the user's changes (said as such), or for a reason of git's. */
+async function keepRefused(proc: GitProcess, stderr: string): Promise<{ ok: false; expected?: true; message: string }> {
   const status = await proc.run(["status", "--porcelain=v1", "-z", "--untracked-files=no"]);
   if (status.code === 0 && status.stdout.length > 0) {
     return {
@@ -312,5 +435,5 @@ export async function undoDrop(
       message: "Your uncommitted changes touch files the drop changed. Commit or stash them, then undo.",
     };
   }
-  return { ok: false, message: r.stderr.trim() || "Couldn't put the branch back." };
+  return { ok: false, message: stderr.trim() || "Couldn't put the branch back." };
 }

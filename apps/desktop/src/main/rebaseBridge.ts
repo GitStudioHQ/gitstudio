@@ -606,6 +606,10 @@ export class RebaseBridge {
       const tips = {
         ...(out.before ? { before: out.before } : {}),
         ...(out.after ? { after: out.after } : {}),
+        ...(out.branch !== undefined ? { branch: out.branch } : {}),
+        ...(out.carried?.length
+          ? { carried: out.carried.map((m) => ({ ref: m.ref, before: m.before ?? "", after: m.after ?? "" })) }
+          : {}),
       };
       return { ...onTheWire(out), ...tips };
     } catch (err) {
@@ -613,14 +617,24 @@ export class RebaseBridge {
     }
   }
 
-  /** Put the branch back where a drop found it — only while HEAD is still
-   *  where the drop left it (git-service's undoDrop says why otherwise). */
+  /** Put the branch a drop rewrote back where the drop found it — and the
+   *  branches it carried — only while each is still where the drop left it
+   *  (git-service's undoDrop says why otherwise; it checks every name and sha
+   *  it is handed, so nothing the renderer sends reaches git unchecked). */
   async undoDrop(req: UndoDropRequest): Promise<CommitActionResult> {
     const ctx = this.repos.getContext();
     if (!ctx) {
       return { ok: false, changed: false, expected: true, message: "Open a repository first." };
     }
-    const r = await undoDrop(ctx.process, { before: String(req?.before ?? ""), after: String(req?.after ?? "") });
+    const carried = Array.isArray(req?.carried)
+      ? req.carried.map((m) => ({ ref: String(m?.ref ?? ""), before: String(m?.before ?? ""), after: String(m?.after ?? "") }))
+      : undefined;
+    const r = await undoDrop(ctx.process, {
+      before: String(req?.before ?? ""),
+      after: String(req?.after ?? ""),
+      ...(req?.branch === null ? { branch: null } : typeof req?.branch === "string" ? { branch: req.branch } : {}),
+      ...(carried ? { carried } : {}),
+    });
     if (r.ok) {
       return { ok: true, changed: true };
     }

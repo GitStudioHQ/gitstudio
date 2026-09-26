@@ -357,6 +357,70 @@ test("undo refuses once the branch has moved on, and changes nothing", async () 
   }
 });
 
+test("undoDrop puts back the DROP's branch — a branch made at the new tip since is left alone", async () => {
+  const r = repo();
+  try {
+    r.commit("base");
+    const a = r.commit("A");
+    const b = r.commit("B");
+    r.git("branch", "side", b);
+    const c = r.commit("C");
+    const plan = await planDropCommit(r.ctx.process, a);
+    assert.ok(plan.ok);
+    if (!plan.ok) return;
+    const out = await dropCommit(r.ctx.process, { sha: plan.sha, head: plan.head, carry: true }, (p) => runRebasePlan(r.dir, p));
+    assert.equal(out.status, "done");
+    assert.equal(out.branch, "refs/heads/main");
+    assert.deepEqual(out.carried?.map((m) => [m.ref, m.before]), [["refs/heads/side", b]]);
+    const dropped = r.git("rev-parse", "main");
+    r.git("checkout", "-q", "-b", "topic");
+
+    const back = await undoDrop(r.ctx.process, { before: out.before!, after: out.after!, branch: out.branch, carried: out.carried });
+    assert.deepEqual(back, { ok: true });
+    assert.equal(r.git("rev-parse", "main"), c, "the dropped branch is back");
+    assert.equal(r.git("rev-parse", "side"), b, "and the one it carried");
+    assert.equal(r.git("rev-parse", "topic"), dropped, "topic, made since, untouched");
+    assert.equal(r.git("symbolic-ref", "HEAD"), "refs/heads/topic");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("undoDrop refuses a carried branch that moved since, and changes nothing", async () => {
+  const r = repo();
+  try {
+    r.commit("base");
+    const a = r.commit("A");
+    r.commit("B");
+    r.git("branch", "side");
+    r.commit("C");
+    const plan = await planDropCommit(r.ctx.process, a);
+    if (!plan.ok) return assert.fail(plan.message);
+    const out = await dropCommit(r.ctx.process, { sha: plan.sha, head: plan.head, carry: true }, (p) => runRebasePlan(r.dir, p));
+    const main = r.git("rev-parse", "main");
+    r.git("update-ref", "refs/heads/side", r.git("commit-tree", `${main}^{tree}`, "-p", main, "-m", "on side since"));
+    const back = await undoDrop(r.ctx.process, { before: out.before!, after: out.after!, branch: out.branch, carried: out.carried });
+    assert.equal(back.ok, false);
+    assert.match(!back.ok ? back.message : "", /'side' has moved since/);
+    assert.equal(r.git("rev-parse", "main"), main, "main untouched too");
+  } finally {
+    r.dispose();
+  }
+});
+
+test("undoDrop refuses a ref name it didn't hand out", async () => {
+  const r = repo();
+  try {
+    const a = r.commit("base");
+    const b = r.commit("B");
+    const back = await undoDrop(r.ctx.process, { before: a, after: b, branch: "--force" });
+    assert.equal(back.ok, false);
+    assert.equal(r.git("rev-parse", "HEAD"), b);
+  } finally {
+    r.dispose();
+  }
+});
+
 test("the planner's all-drop guard still stands unless the drop asks past it", () => {
   const rows = [{ sha: "a1b2c3d", action: "drop", subject: "tip" }];
   assert.equal(buildRebasePlan(rows).ok, false, "the Rebase view keeps its refusal");

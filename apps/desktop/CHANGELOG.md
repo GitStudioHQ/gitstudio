@@ -54,6 +54,12 @@ but they share the same engine, so most Git behaviour lands in both at once.
 
 ### Fixed
 
+- **Undo of *Drop commit* put back the wrong branch.** If you made and
+  switched to a branch at the new tip after dropping, Undo reset THAT branch
+  to the old commits, left the dropped one as it was, and said it had undone
+  the drop. Undo now puts back the branch the drop rewrote — and, after
+  *Drop and move those branches*, the branches it carried too — each only
+  while it is still where the drop left it. (#32)
 - **Repositories: switching to *On GitHub* and straight back showed GitHub's
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on
