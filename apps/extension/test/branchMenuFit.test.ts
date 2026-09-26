@@ -15,7 +15,8 @@ import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from ".
 //   · the menu takes the room below the pill, fits a view narrower than its
 //     least width, and is placed again (with its submenu) when the view is
 //     resized while it is open;
-//   · a branch's name keeps the row's room — its upstream label gives way first;
+//   · a branch's name keeps the row's room — its upstream label gives way
+//     first, and its ↑/↓ counts before the name falls under 45% of the row;
 //   · an upstream deleted from its remote says so;
 //   · the upstream label and the group counts are readable text (4.5:1);
 //   · the highlighted row still shows what matched, and its star.
@@ -307,6 +308,61 @@ test("a branch's name keeps the row's room: its upstream label gives way first",
     }
     await closeMenu(p);
   }
+});
+
+// Beside ↑/↓ counts as wide as ↑1204 ↓37 a long name came down to "bugfix…"
+// at 260px, the upstream label already gone. The counts give way too: the
+// name keeps at least 45% of the row, or all of itself when it is shorter
+// than that, and the counts are still in the tooltip and the spoken label.
+test("a branch's name stays readable beside ↑/↓ counts: they give way before it falls under 45% of the row", { skip }, async () => {
+  const BUGFIX = "bugfix/very-long-branch-name-that-keeps-going-and-going-to-see-the-ellipsis";
+  const JIRA = "feature/JIRA-48213-migrate-the-authentication-flow-to-oauth2-with-pkce-and-refresh-tokens";
+  const local: LocalBranch[] = [
+    { name: "main", upstream: "origin/main", upstreamOnRemote: true, behind: 12 },
+    { name: JIRA, current: true, upstream: "origin/" + JIRA, upstreamOnRemote: true, ahead: 3, behind: 118 },
+    { name: BUGFIX, upstream: "upstream/" + BUGFIX, upstreamOnRemote: true, ahead: 1204, behind: 37, favorite: true },
+    { name: "wip", upstream: "origin/wip" },
+    { name: "short", upstream: "origin/short", upstreamOnRemote: true, ahead: 2, behind: 1 },
+  ];
+  type Row = { name: string; shown: number; wants: number; row: number; counts: number; label: string; tip: string };
+  const measure = (p: ChangesPage): Promise<Row[]> =>
+    p.eval<Row[]>(`Array.prototype.map.call(document.querySelectorAll(".bm-list .bm-branch"), function (r) {
+      var n = r.querySelector(".bm-bname");
+      var counts = Array.prototype.filter.call(r.querySelectorAll(".bm-ab"), function (a) { return a.getBoundingClientRect().width > 0; }).length;
+      return { name: r.dataset.bname, shown: n.clientWidth, wants: n.scrollWidth, row: r.getBoundingClientRect().width,
+        counts: counts, label: r.getAttribute("aria-label"), tip: r.title || r.dataset.tip || "" };
+    })`);
+  const check = (rows: Row[], at: string): void => {
+    for (const r of rows) {
+      const floor = Math.min(r.wants, 0.45 * r.row);
+      assert.ok(r.shown >= floor - 0.5, `${at}: '${r.name.slice(0, 24)}…' shows ${r.shown}px of ${r.wants}px in a ${r.row}px row (at least ${Math.round(floor)}px)`);
+    }
+    const jira = rows.find((r) => r.name === JIRA)!;
+    assert.match(jira.label, /3 to push, 118 to pull/, `${at}: the counts are still spoken`);
+    assert.match(jira.tip, /3 to push, 118 to pull/, `${at}: and in the tooltip`);
+  };
+  for (const width of [260, 300, 340]) {
+    const p = await open("dark", width, 640);
+    await openMenu(p, stateMessage({ local, remote: ["origin/main"], recent: ["main", "wip"] }));
+    const rows = await measure(p);
+    check(rows, `${width}px`);
+    // A short name beside its counts keeps them: only a name that needs the room takes it.
+    assert.equal(rows.find((r) => r.name === "short")!.counts, 2, `${width}px: 'short' keeps its counts`);
+    await closeMenu(p);
+  }
+  // Wide enough for both: the counts stay beside the long names.
+  const p = await open("dark", 560, 640);
+  await openMenu(p, stateMessage({ local, remote: ["origin/main"] }));
+  const wide = await measure(p);
+  check(wide, "560px");
+  for (const r of wide) if (r.name === JIRA || r.name === BUGFIX) assert.equal(r.counts, 2, `560px: '${r.name.slice(0, 24)}…' keeps its counts`);
+  // Narrowed with the menu open: the rows are fitted again.
+  await p.resize(260, 640);
+  check(await measure(p), "560px narrowed to 260px");
+  await p.resize(560, 640);
+  const again = await measure(p);
+  for (const r of again) if (r.name === JIRA || r.name === BUGFIX) assert.equal(r.counts, 2, `widened again: '${r.name.slice(0, 24)}…' has its counts back`);
+  await closeMenu(p);
 });
 
 test("an upstream deleted from its remote says so, even in a row too narrow for its name", { skip }, async () => {

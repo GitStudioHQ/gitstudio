@@ -93,9 +93,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   group heading in view.
 - A branch's name keeps its room in the branch menu: in a narrow sidebar the
   upstream beside it is shortened, or left to the tooltip, before the name
-  loses a letter. The upstream and the group counts are drawn in your theme's
-  secondary text colour, readable in light themes, and the highlighted row
-  still shows which letters matched your search, and its star.
+  loses a letter, and the ↑/↓ counts step aside, to the tooltip, before the
+  name is cut to under half the row. The upstream and the group counts are
+  drawn in your theme's secondary text colour, readable in light themes, and
+  the highlighted row still shows which letters matched your search, and its
+  star.
 - A branch whose upstream was deleted from the remote — what a merged pull
   request leaves behind — shows that upstream struck through and marked
   **gone** in the branch menu, instead of looking like a live one.

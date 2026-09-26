@@ -2759,10 +2759,11 @@ export class CommitViewProvider
     .bm-branch { padding: 4px 8px 4px 4px; }
     .bm-branch.is-current .bm-bname { color: var(--gs-accent-text); font-weight: 600; }
     .bm-branch.is-current .bm-bicon { color: var(--gs-accent-text); }
-    /* The name is the row: it keeps its whole width while anything else can
-       give way. It takes no share of spare room (its auto right margin does,
-       which keeps the counts and the upstream at the right edge), and it is
-       the only thing on the row that shrinks when the row is too narrow. */
+    /* The name is the row. It takes no share of spare room (its auto right
+       margin does, which keeps the counts and the upstream at the right
+       edge), and it is the only thing on the row that shrinks when the row is
+       too narrow: the upstream gives way before it (below), and the counts
+       before it falls under 45% of the row (fitBranchRows). */
     .bm-bname { flex: 0 1 auto; min-width: 0; margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* Per-branch unpushed/unpulled badges — refreshed live by the in-menu Fetch. */
     .bm-ab {
@@ -2776,6 +2777,8 @@ export class CommitViewProvider
     }
     .bm-ab.up { color: var(--gs-status-added); background: color-mix(in srgb, var(--gs-status-added) 14%, transparent); }
     .bm-ab.down { color: var(--gs-status-modified); background: color-mix(in srgb, var(--gs-status-modified) 16%, transparent); }
+    /* A row too narrow for its name and its counts: the counts go, whole. */
+    .bm-branch.is-cramped .bm-ab { display: none; }
     /* In-flight items keep the normal cursor — the spinner lives IN the item. */
     .bm-action.is-busy, .bm-subaction.is-busy { opacity: 0.8; cursor: default; }
     /* The upstream starts from nothing and grows into the room the name left,
@@ -5322,8 +5325,11 @@ export class CommitViewProvider
       }
       row.appendChild(el("i", "codicon codicon-chevron-right bm-bmore"));
       // Full ref name on hover — a narrow sidebar ellipsis-clips the row, so the
-      // tooltip is how the whole name (esp. long remote refs) is always readable.
-      row.title = name + (up ? "  ↔ " + up + (gone ? ", which no longer exists on the remote" : "") : "");
+      // tooltip is how the whole name (esp. long remote refs) is always readable,
+      // and the counts, which a row too narrow for them drops (fitBranchRows).
+      const counts = [ahead ? ahead + " to push" : "", behind ? behind + " to pull" : ""].filter(Boolean).join(", ");
+      row.title = name + (up ? "  ↔ " + up + (gone ? ", which no longer exists on the remote" : "") : "") +
+        (counts ? " — " + counts : "");
       row.dataset.bmkey = "b:" + kind + ":" + name;
       bmOption(row);
       // What a screen reader says when the highlight lands here — the badges
@@ -5798,6 +5804,7 @@ export class CommitViewProvider
       // New rows can be wider (a longer name arrived, more tags shown): the
       // box is kept inside the view.
       placeBranchMenu();
+      fitBranchRows();
       // The rows are new; the highlight finds its row again by key.
       paintBm(false);
     }
@@ -5814,6 +5821,24 @@ export class CommitViewProvider
       branchMenu.style.minWidth = "";
       bmHeldWidth = Math.max(bmHeldWidth, Math.ceil(branchMenu.getBoundingClientRect().width));
       branchMenu.style.minWidth = "min(" + bmHeldWidth + "px, calc(100vw - 12px))";
+    }
+    /**
+     * A branch's name keeps at least 45% of its row, or all of itself when it
+     * is shorter than that. The upstream label gives way first, by its own
+     * CSS; the ↑/↓ counts are next, whole — never cut to a smaller number —
+     * and stay in the row's tooltip and spoken label. Only rows with counts
+     * are measured: one layout, then the reads, then the writes.
+     */
+    function fitBranchRows() {
+      const list = bmList();
+      if (!list) return;
+      const rows = Array.prototype.filter.call(list.querySelectorAll(".bm-branch"),
+        (r) => !!r.querySelector(".bm-ab") && !r.classList.contains("is-cramped"));
+      const cramped = rows.filter((r) => {
+        const n = r.querySelector(".bm-bname");
+        return n.scrollWidth > n.clientWidth + 0.5 && n.clientWidth < 0.45 * r.clientWidth;
+      });
+      cramped.forEach((r) => r.classList.add("is-cramped"));
     }
 
     // ── GitStudio dialogs ─────────────────────────────────────────────────
@@ -6550,9 +6575,11 @@ export class CommitViewProvider
     // placed again, inside the view's new edges.
     function onBranchResize() {
       if (!branchMenu) return;
+      // Measured on whole rows: the counts a narrower view hid come back first.
+      branchMenu.querySelectorAll(".bm-branch.is-cramped").forEach((r) => r.classList.remove("is-cramped"));
       holdBranchMenuWidth();
       placeBranchMenu();
-      if (branchSubmenu) refreshOpenBranchUi();
+      if (branchSubmenu) refreshOpenBranchUi(); else fitBranchRows();
     }
     branchPill.addEventListener("click", openBranchMenu);
     // Switch Repository: the host builds the list (it holds every repository's
