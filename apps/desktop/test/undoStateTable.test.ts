@@ -505,6 +505,38 @@ cell({
 });
 
 cell({
+  id: "D09b",
+  operation: "Drop stash (Stashes list / stash page) — the MIDDLE of three, named by SHA as both send it",
+  state: "stash@{0}=three, stash@{1}=two, stash@{2}=one; drop two by its sha",
+  expected: "'two' back — at stash@{1}, where it was, not on top",
+  setup: (f) => {
+    for (const m of ["one", "two", "three"]) {
+      f.write("f.txt", `${m}\n`);
+      f.git("stash", "push", "-q", "-m", m);
+    }
+  },
+  op: async (f) => {
+    const list = await f.bridge.stashList();
+    const st = list.find((x) => x.ref === "stash@{1}")!;
+    // What renderer.ts stashActLive and refDetail.ts stashAct send: the sha.
+    const r = await f.bridge.stashDrop(st.sha);
+    assert.equal(r.ok, true, r.message);
+    return {
+      label: "Put the stash back",
+      undo: async () => {
+        const back = await f.bridge.stashRestore({ sha: st.sha, message: st.message });
+        return back.ok ? undefined : (back.message ?? "Couldn't put the stash back.");
+      },
+    };
+  },
+  expect: (_f, s, { row }) => {
+    row.extra = { stashOrderAfterUndo: s.stashes };
+    assert.ok(s.stashes.some((l) => /\btwo$/.test(l)), "two is back");
+    assert.match(s.stashes[1] ?? "", /\btwo$/, "at stash@{1}, where it was");
+  },
+});
+
+cell({
   id: "D10",
   operation: "Rename branch (Branches view) — local only",
   state: "feature (tracks nothing) renamed to feat2",
