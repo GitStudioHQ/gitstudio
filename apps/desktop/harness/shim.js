@@ -1811,11 +1811,19 @@
     // The clone the browse page starts. Main emits repo:tabs from INSIDE the
     // handler, before the invoke resolves — mirror that, or the renderer's
     // landing hook is never exercised and a check passes over the bug.
+    // ?clonems=N is a clone that takes N ms, in main's order: the clone runs
+    // (the progress card comes up after 250 ms), THEN the tab opens and is
+    // announced, THEN the invoke answers — with the card still up. `?slow=`
+    // only delays the answer, after a tab announced at the START.
     "ghrepo:open": ({ fullName }) => {
       const name = String(fullName).split("/")[1];
       const root = `/Users/demo/GitStudio/${name}`;
-      window.__gsTabs.open(root);
-      return { ok: true, root, cloned: true };
+      const open = () => {
+        window.__gsTabs.open(root);
+        return { ok: true, root, cloned: true };
+      };
+      const ms = Number(params.get("clonems")) || 0;
+      return ms ? late(ms).then(open) : open();
     },
     // Opening another worktree is main's openRepoPath, like any open: a tab of
     // its own (or the one it has), announced before the invoke answers.

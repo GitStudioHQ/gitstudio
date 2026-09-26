@@ -595,7 +595,7 @@ function openRepoPeek(r: OrgRepo): void {
         title: "Clone this repository and open it in GitStudio",
         onClick: (ctx) => {
           ctx.close();
-          openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+          openCloneDialog((root) => host.invoke("repo:openPath", root), {
             url: `${r.htmlUrl}.git`,
           });
         },

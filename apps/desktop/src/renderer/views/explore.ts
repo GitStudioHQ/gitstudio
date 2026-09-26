@@ -659,7 +659,7 @@ function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
             sub: have ? `You already have this at ${have.root}` : undefined,
             icon: "repo-clone",
             onClick: () =>
-              openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+              openCloneDialog((root) => host.invoke("repo:openPath", root), {
                 url: `https://github.com/${r.fullName}.git`,
               }),
           },

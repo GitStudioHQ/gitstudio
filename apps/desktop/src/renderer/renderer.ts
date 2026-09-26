@@ -8998,7 +8998,7 @@ class App {
           {
             icon: "repo-clone",
             label: "Clone repository…",
-            run: () => openCloneDialog((root) => void this.openPath(root)),
+            run: () => openCloneDialog((root) => this.openPath(root)),
           },
           { icon: "folder-opened", label: "Open repository…", run: () => void this.openRepo() },
           // Search left the rail (it is a tool, not a destination) — this row
@@ -10936,18 +10936,32 @@ class TabShell {
     this.deferredTo = root;
     if (!first) return;
     const wait = (): void => {
+      // Already made — by the landing of the open that asked for it (gs:go).
+      if (this.deferredTo === null) return;
       if (isModalOpen()) {
         window.setTimeout(wait, 120);
         return;
       }
-      const to = this.deferredTo;
-      this.deferredTo = null;
-      if (to !== this.activeRoot()) this.show(to ?? undefined);
-      // Tabs closed while waiting go now that nothing shows them.
-      const open = new Set(this.state.tabs.map((t) => t.root));
-      for (const [r, app] of [...this.apps]) if (!open.has(r) && app !== this.active) this.disposeApp(r, app);
+      this.makeDeferredSwitch();
     };
     window.setTimeout(wait, 120);
+  }
+
+  /**
+   * Make the switch that waited for a dialog, now that none is open. The
+   * poll above gets there within 120 ms — too late for an open whose own
+   * dialog (the clone's progress card) is what it waited for: that open's
+   * answer closes the card and lands at once (gs:go), and must land in the
+   * tab it opened, not in the one it was started from.
+   */
+  private makeDeferredSwitch(): void {
+    if (this.deferredTo === null || isModalOpen()) return;
+    const to = this.deferredTo;
+    this.deferredTo = null;
+    if (to !== this.activeRoot()) this.show(to ?? undefined);
+    // Tabs closed while waiting go now that nothing shows them.
+    const open = new Set(this.state.tabs.map((t) => t.root));
+    for (const [r, app] of [...this.apps]) if (!open.has(r) && app !== this.active) this.disposeApp(r, app);
   }
 
   /** The user asked for a tab. Shown now; main is told. */
@@ -11111,15 +11125,21 @@ class TabShell {
     // clone flow, which otherwise leaves you on whatever view was current when
     // you started — a browse page that no longer has a target.
     window.addEventListener("gs:go", (e) => {
-      const view = (e as CustomEvent<{ view?: string }>).detail?.view;
-      if (view) this.active?.route(view);
+      const { view, root } = (e as CustomEvent<{ view?: string; root?: string }>).detail ?? {};
+      if (!view) return;
+      // The open this lands was announced while its progress card was up, so
+      // its switch may still be waiting for that card — which is closed by now.
+      this.makeDeferredSwitch();
+      // Only the repository it opened: never the tab it was started from.
+      if (root && root !== this.activeRoot()) return;
+      this.active?.route(view);
     });
     host.on("menu:command", (msg) => {
       // The tab-row commands are the shell's; the rest belong to the tab in front.
       if (msg.command === "openRepo") {
         if (!isModalOpen()) void this.openRepo();
       } else if (msg.command === "cloneRepo") {
-        if (!isModalOpen()) openCloneDialog((root) => void this.openPath(root));
+        if (!isModalOpen()) openCloneDialog((root) => this.openPath(root));
       } else if (msg.command === "openPath") {
         if (msg.root && !isModalOpen()) void this.openPath(msg.root);
       } else if (msg.command === "closeTab" || msg.command === "closeRepo") {
@@ -11151,7 +11171,7 @@ class TabShell {
         label: "Clone repository…",
         icon: "cloud-download",
         title: `Clone into a new tab  (${this.isMac ? "⌘⇧O" : "Ctrl+Shift+O"})`,
-        onClick: () => openCloneDialog((root) => void this.openPath(root)),
+        onClick: () => openCloneDialog((root) => this.openPath(root)),
       },
     ];
     // Recent repositories that do not already have a tab: the ones that do

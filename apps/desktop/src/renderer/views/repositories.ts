@@ -94,7 +94,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   cloneBtn.addEventListener("click", () =>
     openCloneDialog((root) => {
       bust("repos");
-      void host.invoke("repo:openPath", root).then((info) => {
+      return host.invoke("repo:openPath", root).then((info) => {
         if (info) nav("code");
       });
     }),

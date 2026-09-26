@@ -16984,5 +16984,45 @@
       c.ok(!/Opened/.test(text("#toast-stack")), `no "Opened" held for the tab it was clicked in (${text("#toast-stack")})`);
       c.ok(!btn.disabled && !btn.classList.contains("is-busy"), "its Open button is not left busy");
     },
+
+    /** A clone that takes long enough for its progress card lands in its NEW
+     *  tab (issue #32): the tab opens while the card is still up, so the switch
+     *  waits for the card — and the clone's own landing used to route the tab
+     *  it was started from (its browse page replaced by Code), and the switch
+     *  that followed cleared "Cloned … and opened it." */
+    "a-slow-clone-lands-in-its-new-tab-and-says-so": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const NEW = "/Users/demo/GitStudio/libgit2";
+      $(".det-split-main")?.click();
+      await settle(600);
+      c.ok(!!$(".modal-card.ghopen-card"), "precondition: the clone's progress card is up");
+      await settle(2200);
+      c.eq(activeTabRoot(), NEW, "the clone's tab is in front");
+      c.match(text("#toast-stack"), /Cloned libgit2\/libgit2/, "…and says the clone happened");
+      c.eq(text(".nav-item.active"), "Code", "…on its code");
+      tabEl(GS_ROOT)?.click();
+      await settle(900);
+      c.ok(!!$(".view-host .det-split-main"), `the tab it was started from is still on the browse page (it is on ${text(".nav-item.active") || "Search"})`);
+    },
+
+    /** The clone dialog's "Cloned …" is said in the tab the clone opened. It
+     *  was raised just BEFORE the open, and the switch to the new tab cleared
+     *  it (a switch clears the toasts of the tab you leave). */
+    "a-cloned-repository-says-so-in-its-new-tab": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const url = $(".clone-card .clone-url-input");
+      c.ok(!!url, "precondition: the clone dialog");
+      if (!url) return;
+      url.value = "https://github.com/libgit2/libgit2.git";
+      url.dispatchEvent(new Event("input", { bubbles: true }));
+      $(".clone-card .clone-choose")?.click();
+      await settle(500);
+      $(".clone-card .clone-go")?.click();
+      await settle(1500);
+      c.eq(activeTabRoot(), "/Users/demo/Code/libgit2", "the clone's tab is in front");
+      c.match(text("#toast-stack"), /Cloned libgit2/, "…and says the clone happened");
+    },
   };
 })();
