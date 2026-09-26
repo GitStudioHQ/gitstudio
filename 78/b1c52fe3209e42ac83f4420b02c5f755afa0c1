@@ -1,0 +1,29 @@
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_1fa6dc435433d0 160-161
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_3ab169eb8dd78d 10624,10626,10628
+  s_26f5e669d3043c::t_be7b9280fea979 10619-10623,10625,10627,10629-10630
+  s_26f5e669d3043c::t_8cd8b14a01ee8e 10592-10596
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_ad903da08f633d 16452-16486
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_59175058da2e8f 62-63,72-74
+apps/extension/test/rebaseStopBanner.test.ts
+  s_26f5e669d3043c::t_23b74adbee5df1 93-95,101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "78b1c52fe3209e42ac83f4420b02c5f755afa0c1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
