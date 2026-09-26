@@ -1072,6 +1072,9 @@ export class CommitGraphPanel {
 
   /** Public: select + reveal a commit and show its details (from another view). */
   reveal(sha: string): void {
+    // One commit now (issue #32): a pending "N commits selected" answer is for
+    // a selection the reveal replaces — the webview selects this one alone.
+    this.summary.cancel();
     // `ready` only means the webview booted — its first page of rows arrives
     // later, and revealing into an empty graph silently no-ops. Queue until
     // graphInit has actually landed (`initialized`), or a reveal issued during

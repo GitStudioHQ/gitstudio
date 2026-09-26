@@ -1757,7 +1757,17 @@ export class CommitGraph extends LitElement {
     y: number;
     title: string;
     items: CommitMenuItem[];
+    /** Opened from the keyboard: focus its first item once it renders, so
+     *  the arrows walk the menu rather than the list under it. */
+    focusFirst?: boolean;
   } | null;
+  /**
+   * The next commit menu the host sends answers the keyboard's menu key
+   * (Shift+F10 / ContextMenu), not a pointer. The key's request carries the
+   * focused row's position like a right-click's does — the desktop places
+   * its own menu there — so the position cannot say which it was.
+   */
+  private menuByKeyboard = false;
   /**
    * A ref chip's own menu (right-click or ⌥-click on a chip): the filter
    * shortcuts — show only this branch, add it, remove it — and the checkout
@@ -2023,6 +2033,14 @@ export class CommitGraph extends LitElement {
     // focus, so the arrows walk it and Escape brings focus back to the chip.
     if (changed.has("chipMenu") && this.chipMenu?.focusFirst) {
       const menu = this.renderRoot.querySelector<HTMLElement>(".gh-chip-menu");
+      (menu?.querySelector<HTMLElement>(".gh-menuitem:not([disabled])") ?? menu)?.focus();
+    }
+    // …and so does the commit menu the menu key opened (issue #32). Left on
+    // the list, ↓ moved and collapsed the selection under a "3 commits
+    // selected" menu that stayed open — and a pick then acted on three
+    // commits the list no longer showed as selected.
+    if (changed.has("commitMenu") && this.commitMenu?.focusFirst) {
+      const menu = this.renderRoot.querySelector<HTMLElement>(".gh-commit-menu");
       (menu?.querySelector<HTMLElement>(".gh-menuitem:not([disabled])") ?? menu)?.focus();
     }
     // …and on the side of its trigger that has the room — every update while
@@ -2711,7 +2729,18 @@ export class CommitGraph extends LitElement {
       px = r ? r.left + 24 : window.innerWidth / 2;
       py = r ? r.bottom : window.innerHeight / 2;
     }
-    this.commitMenu = { sha, ...(shas && shas.length > 1 ? { shas } : {}), x: px, y: py, title, items };
+    // x < 0 is the host's own keyboard door (its "action" message).
+    const focusFirst = this.menuByKeyboard || x < 0 || y < 0;
+    this.menuByKeyboard = false;
+    this.commitMenu = {
+      sha,
+      ...(shas && shas.length > 1 ? { shas } : {}),
+      x: px,
+      y: py,
+      title,
+      items,
+      ...(focusFirst ? { focusFirst } : {}),
+    };
   }
 
   /** Attach/detach the document click-outside/Escape listeners as popovers
@@ -3457,6 +3486,7 @@ export class CommitGraph extends LitElement {
     // Double-click opens the in-graph actions popover (same as right-click), so
     // every sidebar tab behaves the same — no native quick-pick.
     e.preventDefault();
+    this.menuByKeyboard = false;
     this.select(sha, false);
     this.onAction({ type: "context", sha, x: e.clientX, y: e.clientY });
   };
@@ -3475,6 +3505,7 @@ export class CommitGraph extends LitElement {
       return;
     }
     e.preventDefault();
+    this.menuByKeyboard = false;
     this.openMenuFor(sha, e.clientX, e.clientY);
   };
 
@@ -3780,6 +3811,16 @@ export class CommitGraph extends LitElement {
       go(this.rows[this.rows.length - 1].sha);
     } else if (e.key === "Enter" && this.selectedSha) {
       e.preventDefault();
+      if (isMany(this.sel)) {
+        // Enter opens the row the keyboard is on — alone (issue #32). Opened
+        // with the rest still selected, the host showed that one commit's
+        // details beside a list showing several: one commit standing in for
+        // all of them. Collapsing says "select" for it, which is what "open"
+        // does in both hosts (its details, the dock open) — both would ask
+        // for the same commit twice.
+        this.setSelection(collapse(this.sel));
+        return;
+      }
       this.onAction({ type: "open", sha: this.selectedSha });
     } else if (e.key === "Escape" && !typing && isMany(this.sel)) {
       // Several selected: Escape keeps only the focused row. This Escape is
@@ -3790,8 +3831,9 @@ export class CommitGraph extends LitElement {
       this.setSelection(collapse(this.sel));
     } else if (!typing && (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) && this.selectedSha) {
       // The keyboard's menu key: the same menu a right-click on the focused
-      // row opens, under that row.
+      // row opens, under that row — and, in this element, with the keyboard.
       e.preventDefault();
+      this.menuByKeyboard = true;
       const r = this.rowElementFor(this.selectedSha)?.getBoundingClientRect();
       this.openMenuFor(this.selectedSha, r ? Math.round(r.left + 24) : -1, r ? Math.round(r.bottom) : -1);
     }
@@ -4464,17 +4506,16 @@ export class CommitGraph extends LitElement {
         this.onAction({ type: "menuAction", sha, ...(shas ? { shas } : {}), id });
       }
     };
+    // The popovers' keyboard: ↑/↓ walk the items, Escape closes and hands
+    // the keyboard back to the list (closeAndRefocus). This used to handle
+    // Escape alone, so a menu opened from the keyboard could only be left.
     return html`<div
-      class="gh-pop gh-ctx"
+      class="gh-pop gh-ctx gh-commit-menu"
       role="menu"
+      tabindex="-1"
+      aria-label=${m.title}
       style="left:${Math.round(left)}px;top:${Math.round(top)}px"
-      @keydown=${(e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          e.stopPropagation();
-          this.commitMenu = null;
-        }
-      }}
+      @keydown=${this.onPopoverKeyDown}
     >
       <div class="gh-pop-title">${m.title}</div>
       ${m.items.map((it) =>

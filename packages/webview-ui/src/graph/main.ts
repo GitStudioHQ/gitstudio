@@ -103,7 +103,9 @@ function start(root: HTMLElement): void {
         openDetails();
         break;
       case "open":
-        // An explicit open (double-click) always shows the details.
+        // An explicit open (double-click) always shows the details — of one
+        // commit, so never under a summary of several.
+        details.selection = null;
         shell.dataset.detailsDismissed = "false";
         vscode.postMessage({ type: "selectCommit", sha: action.sha });
         openDetails();
@@ -343,6 +345,11 @@ function handle(
       break;
     }
     case "revealCommit": {
+      // One commit, whatever was selected before: the reveal selects it alone,
+      // and a "N commits selected" summary left in the dock would go on
+      // offering Drop and Squash for commits the graph no longer shows as
+      // selected (and take the late answer for them, commitsSummary below).
+      details.selection = null;
       graph.reveal(message.sha);
       // An explicit reveal (e.g. clicking a parent) re-opens the dock.
       shell.dataset.detailsDismissed = "false";

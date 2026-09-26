@@ -162,6 +162,44 @@ const BODY = (tag: string, ready: string, extra: string) => `
   await key(el, "ArrowDown");
   expect(eq(selectedRows(el), [5]), "a plain ↓ moves to one row");
 
+  // ── Enter on several: the focused row, alone — never one commit's details
+  //    beside a list that still shows several ──
+  await click(el, 3);
+  await key(el, "ArrowDown", { shiftKey: true });
+  actions.length = 0;
+  await key(el, "Enter");
+  expect(eq(selectedRows(el), [4]), "Enter with several keeps only the focused row: " + selectedRows(el));
+  ${tag === "gitstudio-graph"
+    ? `expect(last("select") && last("select").sha === sha(4) && !last("open"), "…and tells the host one commit is selected, once: " + JSON.stringify(actions));`
+    : `expect(last("open") && last("open").sha === sha(4), "…and opens it: " + JSON.stringify(actions));`}
+
+  // ── The menu key's menu takes the keyboard, and gives it back ──
+  /** A key on whatever has focus now — the menu's item, once it has it. */
+  const press = async (k) => {
+    (el.shadowRoot.activeElement || document.activeElement).dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, composed: true, cancelable: true }));
+    await settle(el);
+  };
+  await click(el, 3);
+  await key(el, "ArrowDown", { shiftKey: true });
+  actions.length = 0;
+  await key(el, "F10", { shiftKey: true });
+  const kc = last("context");
+  // The host answers with the position the list sent, as both hosts do.
+  el.showCommitMenu(kc.sha, kc.x, kc.y, "2 commits selected", [
+    { id: "cherryPickMany", label: "Cherry-Pick 2 Commits" },
+    { id: "revertMany", label: "Revert 2 Commits" },
+  ], kc.shas);
+  await settle(el);
+  const mi = [...el.shadowRoot.querySelectorAll('[role="menuitem"]')];
+  expect(mi.length === 2 && el.shadowRoot.activeElement === mi[0], "opened from the keyboard, the menu has focus: " + (el.shadowRoot.activeElement && el.shadowRoot.activeElement.className));
+  await press("ArrowDown");
+  expect(el.shadowRoot.activeElement === mi[1], "↓ walks the menu");
+  expect(eq(selectedRows(el), [3, 4]), "…and the selection under it stays: " + selectedRows(el));
+  await press("Escape");
+  expect(!el.shadowRoot.querySelector('[role="menuitem"]'), "Escape closes it");
+  expect(el.shadowRoot.activeElement === sc, "…and the list has the keyboard again: " + (el.shadowRoot.activeElement && el.shadowRoot.activeElement.className));
+  expect(eq(selectedRows(el), [3, 4]), "with both still selected: " + selectedRows(el));
+
   // ── The uncommitted-changes row never shares a selection ──
   await click(el, 2);
   await click(el, 0, { metaKey: true });

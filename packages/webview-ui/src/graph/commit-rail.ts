@@ -154,6 +154,8 @@ interface RailMenu {
   y: number;
   title: string;
   items: RailMenuItem[];
+  /** Opened from the keyboard: its first item takes focus once it renders. */
+  focusFirst?: boolean;
 }
 
 /** A folded, render-ready ref chip (remote twins folded into their local). */
@@ -1117,6 +1119,11 @@ export class CommitRail extends LitElement {
     if (changed.has("branchesOpen") && this.branchesOpen) {
       this.renderRoot.querySelector<HTMLInputElement>(".pop .flt input")?.focus();
     }
+    // The commit menu the menu key opened takes the keyboard, or ↓ moves the
+    // selection under a menu that is still open for the old one (issue #32).
+    if (changed.has("commitMenu") && this.commitMenu?.focusFirst) {
+      this.renderRoot.querySelector<HTMLElement>(".pop.commitmenu .mi:not([disabled])")?.focus();
+    }
 
     const scroller = this.renderRoot.querySelector<HTMLDivElement>(".scroller");
     if (scroller) {
@@ -1589,6 +1596,9 @@ export class CommitRail extends LitElement {
       case "Enter":
         if (this.selectedSha) {
           e.preventDefault();
+          // The row the keyboard is on opens, alone — as in the graph, the
+          // commit that opens is the one left selected (issue #32).
+          if (isMany(this.sel)) this.setSelection(collapse(this.sel));
           this.onAction({ type: "open", sha: this.selectedSha });
         }
         break;
@@ -1714,7 +1724,17 @@ export class CommitRail extends LitElement {
       items.reduce((n, i) => n + (i.sep ? 9 : 26), 0) + 30;
     px = Math.max(4, Math.min(px, window.innerWidth - estW - 4));
     py = Math.max(4, Math.min(py, window.innerHeight - Math.min(estH, 320) - 4));
-    this.commitMenu = { sha, ...(shas && shas.length > 1 ? { shas } : {}), x: px, y: py, title, items };
+    // x/y < 0 is the menu key's request coming back (onScrollerKeyDown).
+    const focusFirst = x < 0 || y < 0;
+    this.commitMenu = {
+      sha,
+      ...(shas && shas.length > 1 ? { shas } : {}),
+      x: px,
+      y: py,
+      title,
+      items,
+      ...(focusFirst ? { focusFirst } : {}),
+    };
   }
 
   // ── Popover dismissal ───────────────────────────────────────────────────
@@ -2297,7 +2317,7 @@ export class CommitRail extends LitElement {
   private menuPopTpl(menu: RailMenu) {
     return html`
       <div
-        class="pop"
+        class="pop commitmenu"
         role="menu"
         aria-label="Commit actions"
         style="left:${menu.x}px;top:${menu.y}px"

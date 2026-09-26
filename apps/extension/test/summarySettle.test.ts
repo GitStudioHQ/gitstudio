@@ -28,6 +28,11 @@ test("the graph panel's summary asks through SettleLatest, and a single commit c
     /case "selectCommit":\s*case "openCommit":\s*this\.shown = msg\.sha;\s*(?:\/\/[^\n]*\n\s*)*this\.summary\.cancel\(\);\s*void this\.pushCommitDetails\(msg\.sha\);/,
     "one commit selected: the pending summary is for a selection that is gone",
   );
+  assert.match(
+    host,
+    /\n  reveal\(sha: string\): void \{\s*(?:\/\/[^\n]*\n\s*)*this\.summary\.cancel\(\);/,
+    "a reveal is one commit too — the Commits list's Open in Commit Graph, a blame click — and cancels what is pending, before anything else",
+  );
   // The only other call is the right-click menu, which is one question per click.
   assert.equal((host.match(/multiCommitMenuItemsFor\(/g) ?? []).length, 2, "the menu and the summary ask, nothing else");
 });
