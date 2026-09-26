@@ -2236,6 +2236,22 @@ const detachWatches = new Set<DetachWatch>();
 const parkedScreens = new WeakSet<Node>();
 
 /**
+ * Where a page is, for a poller deciding whether to go on (issue #32):
+ * `shown`, in the document; `away`, detached with its whole tab, which is
+ * coming back; `gone`, left for real.
+ *
+ * Every poller in the app stopped the first time it found its page detached —
+ * right for a page that was left, wrong for one whose tab went to the back:
+ * the running CI page and the following log came back frozen. An `away` page
+ * asks for nothing (a call made from the back goes out as the tab in FRONT's
+ * — bridge.ts stamps it at the call) and looks again later.
+ */
+export function pageState(node: Node): "shown" | "away" | "gone" {
+  if (node.isConnected) return "shown";
+  return parkedScreens.has(node.getRootNode()) ? "away" : "gone";
+}
+
+/**
  * A tab's screen is going to the back (issue #32). Called by the tab shell
  * BEFORE it detaches the screen, so the pages in it are kept rather than left.
  */

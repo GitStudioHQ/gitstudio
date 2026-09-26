@@ -17071,5 +17071,33 @@
       c.eq(activeTabRoot(), "/Users/demo/Code/libgit2", "the clone's tab is in front");
       c.match(text("#toast-stack"), /Cloned libgit2/, "…and says the clone happened");
     },
+
+    /** A live page keeps itself live across a tab round trip (issue #32). Its
+     *  poller stopped for good the first time it found its page detached — and
+     *  a tab in the back is detached whole — so a running CI page or a
+     *  following log came back frozen. While its tab is in the back it asks for
+     *  nothing (a call from there would go out as the tab in FRONT's). */
+    "a-live-page-keeps-polling-after-a-tab-round-trip": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const [channel, row] = (window.__GS_ARG || "actions:runDetail").split("|");
+      if (row) {
+        $$(".view-host button, .view-host [role=button], .view-host .is-clickable").find((b) => text(b).includes(row))?.click();
+        await settle(1000);
+      }
+      const calls = () => (window.__GS_INVOKED || []).filter((r) => r.channel === channel);
+      const c0 = calls().length;
+      await settle(9000);
+      c.ok(calls().length > c0, `precondition: it polls while in front (${channel}: ${c0} → ${calls().length})`);
+      tabEl(GS_DEV_ROOT)?.click();
+      const away = calls().length;
+      await settle(10000);
+      const asked = calls().slice(away);
+      c.eq(asked.length, 0, `while its tab is in the back it asks nothing (${asked.map((r) => r.root || "?").join(", ")})`);
+      tabEl(GS_ROOT)?.click();
+      const back = calls().length;
+      await settle(9500);
+      c.ok(calls().length > back, `back in front, it polls again (${channel}: ${back} → ${calls().length})`);
+    },
   };
 })();

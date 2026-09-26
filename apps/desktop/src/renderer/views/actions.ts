@@ -55,6 +55,7 @@ import {
   type SectionRender,
   type SectionTarget,
   checkIcon,
+  pageState,
 } from "./common";
 import { prime } from "../cache";
 import { setPageLabel } from "../navStack";
@@ -481,7 +482,13 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const scheduleListPoll = (): void => {
     if (S.actionsTab !== "runs" || !runs?.some((r) => isLive(r.status))) return;
     window.setTimeout(() => {
-      if (!view.isConnected || S.actionsTab !== "runs") return;
+      const at = pageState(view);
+      if (at === "gone" || S.actionsTab !== "runs") return;
+      // Its tab is in the back: ask nothing, and look again (see pageState).
+      if (at === "away") {
+        scheduleListPoll();
+        return;
+      }
       // The poll must ask the SAME question the view is showing — polling
       // unfiltered would quietly replace a filtered list with everything.
       const f = runFilter();
@@ -621,7 +628,13 @@ function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number): void
   const schedulePoll = (current: WorkflowRunDetail): void => {
     if (!isLive(current.run.status)) return;
     window.setTimeout(() => {
-      if (!view.isConnected) return;
+      const at = pageState(view);
+      if (at === "gone") return;
+      // Its tab is in the back: ask nothing, and look again (see pageState).
+      if (at === "away") {
+        schedulePoll(current);
+        return;
+      }
       host
         .invoke("actions:runDetail", id)
         .then((fresh) => {

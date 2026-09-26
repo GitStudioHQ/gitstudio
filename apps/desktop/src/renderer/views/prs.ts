@@ -65,6 +65,7 @@ import {
   secRow,
   sectionList,
   disposeOnDetach,
+  pageState,
   type GhGate,
   type SectionRender,
   type SectionNav,
@@ -740,7 +741,13 @@ function showDetailPage(
   const schedulePoll = (current: PrDetail): void => {
     if (current.checks !== "pending") return;
     window.setTimeout(() => {
-      if (!view.isConnected) return;
+      const at = pageState(view);
+      if (at === "gone") return;
+      // Its tab is in the back: ask nothing, and look again (see pageState).
+      if (at === "away") {
+        schedulePoll(current);
+        return;
+      }
       if (S.activeSubTab === "files") {
         schedulePoll(current);
         return;
