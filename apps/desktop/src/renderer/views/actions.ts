@@ -11,6 +11,7 @@
 // re-render.
 
 import { host } from "../bridge";
+import { isRemoteHead } from "../branchRequests";
 import { peek as cachePeek, gget, bust, cacheScope } from "../cache";
 import {
   avatar,
@@ -1690,9 +1691,11 @@ async function loadRefOptions(): Promise<string[]> {
     const tags = new Set<string>();
     for (const r of refs) {
       if (r.type === "head") branches.add(r.name);
-      else if (r.type === "remote") {
+      else if (r.type === "remote" && !isRemoteHead(r)) {
+        // Not the remote's HEAD, which git names "origin": it has no slash to
+        // strip, and was offered as a branch called "origin".
         const short = r.name.replace(/^[^/]+\//, ""); // "origin/feat" → "feat"
-        if (short && short !== "HEAD") branches.add(short);
+        if (short) branches.add(short);
       } else if (r.type === "tag") tags.add(r.name);
     }
     const cmp = (a: string, b: string): number => a.localeCompare(b);

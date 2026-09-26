@@ -111,7 +111,7 @@ import { askPullMode, pullWithChoice, pullVerdict, type PullOutcome, type PullVe
 import { resetItemLabel, resetToUpstream } from "./resetToUpstream";
 import { installInTheWayAsker } from "./inTheWayAsk";
 import { refCheckoutRequest, refDisplay, type RowRef } from "./refMenuItems";
-import { branchName, remoteRefParts, tagName, upstreamLabel, upstreamParts } from "./branchRequests";
+import { branchName, isRemoteHead, remoteRefParts, tagName, upstreamLabel, upstreamParts } from "./branchRequests";
 import { explainRefusedCheckout } from "./optionLikeRename";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
@@ -1912,8 +1912,8 @@ class App {
     // not "origin/HEAD" — so the old `endsWith("/HEAD")` guard never fired and
     // the list carried a phantom row called "origin" offering to check out a
     // branch that does not exist. Its symref names the DEFAULT branch, which is
-    // worth keeping; the row is not.
-    const isRemoteHead = (r: RefInfo): boolean => !!r.symref || !r.name.includes("/");
+    // worth keeping; the row is not (isRemoteHead, shared with the switcher and
+    // the graph's ref menu).
     let remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
     let tags = this.refs.filter((r) => r.type === "tag");
     let defaultBranch = this.defaultBranchName(locals);
@@ -2602,6 +2602,36 @@ class App {
     }
   }
 
+  /** A remote branch's ⋯ menu — in the Branches list, and (after its
+   *  checkout) the branch switcher's submenu for it (#32). */
+  private remoteActionItems(r: RefInfo): MenuItem[] {
+    const { branch: short } = remoteRefParts(r);
+    return [
+      { label: `Compare with ${short}`, icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
+      { label: "View in Commits", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
+      { separator: true },
+      { label: "Copy name", icon: "copy", onClick: () => void copyText(r.name, `Copied “${r.name}”.`) },
+    ];
+  }
+
+  /** A tag's ⋯ menu — in the Branches list, and the branch switcher's
+   *  submenu for it (#32). */
+  private tagActionItems(r: RefInfo): MenuItem[] {
+    return [
+      { label: "View in Commits", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
+      { label: `Compare with ${r.name}`, icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
+      { separator: true },
+      { label: "Copy name", icon: "copy", onClick: () => void copyText(r.name, `Copied “${r.name}”.`) },
+      { separator: true },
+      {
+        label: "Delete tag…",
+        icon: "trash",
+        danger: true,
+        onClick: () => void this.deleteTagLive(tagName(r)),
+      },
+    ];
+  }
+
   /**
    * A remote branch.
    *
@@ -2635,13 +2665,7 @@ class App {
     more.setAttribute("aria-label", `More actions for ${said}`);
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
-    const menu = (): void =>
-      openMenu(more, [
-        { label: `Compare with ${short}`, icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
-        { label: "View in Commits", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
-        { separator: true },
-        { label: "Copy name", icon: "copy", onClick: () => void copyText(r.name, `Copied “${r.name}”.`) },
-      ]);
+    const menu = (): void => openMenu(more, this.remoteActionItems(r));
     more.addEventListener("click", menu);
     actions.push(more);
 
@@ -2713,20 +2737,7 @@ class App {
     more.setAttribute("aria-label", `More actions for ${said}`);
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
-    const menu = (): void =>
-      openMenu(more, [
-        { label: "View in Commits", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
-        { label: `Compare with ${r.name}`, icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
-        { separator: true },
-        { label: "Copy name", icon: "copy", onClick: () => void copyText(r.name, `Copied “${r.name}”.`) },
-        { separator: true },
-        {
-          label: "Delete tag…",
-          icon: "trash",
-          danger: true,
-          onClick: () => void this.deleteTagLive(tagName(r)),
-        },
-      ]);
+    const menu = (): void => openMenu(more, this.tagActionItems(r));
     more.addEventListener("click", menu);
     actions.push(more);
 
@@ -3738,6 +3749,20 @@ class App {
   /** The per-branch action menu: merge / rebase / rename / set-upstream / tag /
    *  delete-remote — the depth that makes Branches a real manager, not a list. */
   private openBranchActions(b: BranchInfo, anchor: HTMLElement): void {
+    openMenu(anchor, this.branchActionItems(b, anchor));
+  }
+
+  /**
+   * A local branch's actions — the Branches list's ⋯ menu, and the branch
+   * switcher's submenu for that branch (#32), which is the same list with
+   * Checkout moved to the top: the switcher is where you go to SWITCH, and
+   * Enter, Enter there is a checkout, as in IntelliJ's popup.
+   */
+  private branchActionItems(
+    b: BranchInfo,
+    anchor: HTMLElement,
+    opts: { checkoutFirst?: boolean } = {},
+  ): MenuItem[] {
     // Every op below reaches git by b.fullName (the main process refuses one
     // without it); every label names the branch by the part under refs/heads/
     // — git's short "heads/x" beside a tag "x" is neither (branchRequests.ts).
@@ -3769,6 +3794,12 @@ class App {
       await refresh();
     };
     const items: MenuItem[] = [];
+    const checkout: MenuItem = {
+      label: `Checkout ${bn}`,
+      icon: "check",
+      onClick: () => void this.checkoutRef(b.fullName),
+    };
+    if (opts.checkoutFirst && !b.current) items.push(checkout, { separator: true });
     // Fetch is pinned on top and runs IN PLACE: the menu stays open, the item
     // spins while the remotes refresh, and every row's ↓/↑ counts update live
     // behind it — so "what's unpulled where?" is one click, not a round trip.
@@ -3797,13 +3828,7 @@ class App {
         ),
     });
     items.push({ separator: true });
-    if (!b.current) {
-      items.push({
-        label: `Checkout ${bn}`,
-        icon: "check",
-        onClick: () => void this.checkoutRef(b.fullName),
-      });
-    }
+    if (!b.current && !opts.checkoutFirst) items.push(checkout);
     // Always offered while an upstream exists (a fetch from this very menu can
     // surface new commits): pulls WITHOUT checking the branch out. The current
     // branch gets a real pull instead, shown only when it's actually behind.
@@ -3998,7 +4023,7 @@ class App {
       });
     }
     if (tail.length) items.push({ separator: true }, ...tail);
-    openMenu(anchor, items);
+    return items;
   }
 
   /**
@@ -4577,7 +4602,7 @@ class App {
       // remote-tracking branch and tag in the repo. The upstream is the base
       // anyone actually wants there.
       this.refs.find((r) => r.type === "remote" && r.name.endsWith(`/${head}`))?.name ??
-      this.refs.find((r) => r.type === "remote")?.name;
+      this.refs.find((r) => r.type === "remote" && !isRemoteHead(r))?.name;
 
     const wrap = el("div", "compare-view");
 
@@ -5167,7 +5192,7 @@ class App {
       }
     };
     add("Branches", this.refs.filter((r) => r.type === "head"), "git-branch");
-    add("Remotes", this.refs.filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD")), "cloud");
+    add("Remotes", this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r)), "cloud");
     add("Tags", this.refs.filter((r) => r.type === "tag"), "tag");
     if (items.length === 0) items.push({ label: "No refs", disabled: true });
     openMenu(anchor, items);
@@ -9635,7 +9660,7 @@ class App {
    */
   private refsOn(sha: string): RowRef[] {
     return this.refs
-      .filter((r) => r.sha === sha && r.type !== "stash" && !r.name.endsWith("/HEAD"))
+      .filter((r) => r.sha === sha && r.type !== "stash" && !(r.type === "remote" && isRemoteHead(r)))
       .map((r) => ({
         name: r.name,
         kind: r.type === "remote" ? "remote" : r.type === "tag" ? "tag" : "head",
@@ -10011,7 +10036,10 @@ class App {
    */
   private openBranchMenu(anchor: HTMLElement): void {
     const locals = this.refs.filter((r) => r.type === "head");
-    const remotes = this.refs.filter((r) => r.type === "remote");
+    // Not the remote's own HEAD: its row offered "Check out as a local
+    // branch", "Compare with HEAD" (with origin's default branch) and "Copy
+    // name" (copying "origin"), for a ref every other list leaves out.
+    const remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
     const tags = this.refs.filter((r) => r.type === "tag");
     const items: MenuItem[] = [];
     // Every entry is NAMED by its full name under the namespace — "release",
@@ -10035,6 +10063,11 @@ class App {
             }
             void this.checkoutRef(b.fullName);
           },
+          // Its actions (#32) — Right or Enter from the keyboard, the arrow
+          // at the row's end from the pointer: the Branches list's own menu
+          // for it, Checkout first.
+          submenuLabel: `Actions for ${branchName(b)}`,
+          submenu: () => this.switcherBranchActions(b, anchor),
         });
       }
     }
@@ -10049,6 +10082,16 @@ class App {
           icon: "cloud",
           title: `Check out ${refDisplay(b.fullName)} as a local branch`,
           onClick: () => void this.checkoutRef(b.fullName),
+          submenuLabel: `Actions for ${refDisplay(b.fullName)}`,
+          submenu: () => [
+            {
+              label: "Check out as a local branch",
+              icon: "check",
+              onClick: () => void this.checkoutRef(b.fullName),
+            },
+            { separator: true },
+            ...this.remoteActionItems(b),
+          ],
         });
       }
     }
@@ -10066,6 +10109,8 @@ class App {
           icon: "tag",
           title: `Show ${tagName(t)} in Commits`,
           onClick: () => this.revealInGraph(t.sha),
+          submenuLabel: `Actions for ${tagName(t)}`,
+          submenu: () => this.tagActionItems(t),
         });
       }
     }
@@ -10084,9 +10129,32 @@ class App {
         onClick: () => this.routeView("branches"),
       });
     }
-    // No `searchable` override: openMenu already turns the filter on above 9
-    // rows, which every repo large enough to need it will exceed.
-    openMenu(anchor, items);
+    // The filter always: type-to-filter is how the switcher is driven (#32),
+    // as the extension's branch menu always has its search field. openMenu
+    // turns it on by itself only above nine rows, so a small repository's
+    // switcher had no filter and the letters typed into it did nothing.
+    openMenu(anchor, items, { searchable: true });
+  }
+
+  /**
+   * A branch's submenu in the switcher: the Branches list's menu for it, read
+   * from the branch list (which knows its upstream and counts), Checkout
+   * first. A branch the list no longer has — deleted from a terminal a moment
+   * ago — offers what its ref alone allows.
+   */
+  private async switcherBranchActions(ref: RefInfo, anchor: HTMLElement): Promise<MenuItem[]> {
+    let list: BranchInfo[] = [];
+    try {
+      list = await gget("branches:list", undefined);
+    } catch {
+      /* the fallback below */
+    }
+    const b = list.find((x) => x.fullName === ref.fullName);
+    if (b) return this.branchActionItems(b, anchor, { checkoutFirst: true });
+    const name = branchName(ref);
+    return ref.isCurrent
+      ? [{ label: `Show ${name} in Commits`, icon: "git-commit", onClick: () => this.revealInGraph(ref.sha) }]
+      : [{ label: `Checkout ${name}`, icon: "check", onClick: () => void this.checkoutRef(ref.fullName) }];
   }
 
   // ── Refs / HEAD (drives the branch switcher) ────────────────────────────────
@@ -10755,6 +10823,14 @@ function openShortcutsHelp(): void {
         ["/", "Filter the list"],
         [`${mod}Enter`, "Run the focused row's main action — checkout, pull, publish"],
         ["Shift+F", "Fetch from every remote"],
+        // #32: the top bar's switcher — IntelliJ's branch popup, and the
+        // extension's branch menu.
+        ["→  or  Enter", "Switcher: a branch's actions"],
+        ["←  or  Esc", "Switcher: back to the branch"],
+        // The first ACTION, which is Checkout for every branch but the one
+        // you're on — whose actions start with Fetch. It said "check out the
+        // first match", and with no filter typed the first match IS yours.
+        ["Enter  Enter", "Switcher: a branch's first action — Checkout, unless it's yours"],
       ],
     },
     {
@@ -10775,6 +10851,18 @@ function openShortcutsHelp(): void {
         ["n", "Jump to the next failure"],
         ["j / k", "Next / previous job in this run"],
         ["Enter  Shift+Enter", "Step through search matches"],
+      ],
+    },
+    {
+      // #32: several commits at once. The letters are git's own todo letters,
+      // the same ones the Rebase view's toolbar names in its tooltips.
+      title: "Interactive rebase",
+      rows: [
+        ["Shift+↑ ↓", "Select several (or Shift-click)"],
+        [`${mod}A`, "Select every commit"],
+        ["P R S F E D", "Set Pick, Reword, Squash, Fixup, Edit or Drop"],
+        ["Alt+↑ ↓", "Move the selected commits"],
+        ["Esc", "Back to one commit"],
       ],
     },
   ];

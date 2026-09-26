@@ -125,6 +125,66 @@
     },
   });
 
+  // ── the Rebase view's selection (#32) ────────────────────────────────────
+  // Driven the way a person drives it: keys land on the FOCUSED element
+  // (never on document — see harness-synthetic-events), and "selected" is read
+  // twice, from aria-selected AND from the painted background, because a
+  // class with no rule behind it fails silently.
+  const rbRows = () => $$(".rb-row:not(.rb-base)");
+  const rbActions = () => $$(".rb-row:not(.rb-base) .rb-action").map((s) => s.value);
+  const rbSelected = () =>
+    rbRows()
+      .map((r, i) => (r.getAttribute("aria-selected") === "true" ? i : -1))
+      .filter((i) => i >= 0)
+      .join(",");
+  const rbPaintedSelected = () =>
+    rbRows()
+      .map((r, i) => (getComputedStyle(r).backgroundColor !== "rgba(0, 0, 0, 0)" ? i : -1))
+      .filter((i) => i >= 0)
+      .join(",");
+  const rbFocus = () => rbRows().indexOf(document.activeElement);
+  const rbMod = navigator.platform.toLowerCase().includes("mac") ? { metaKey: true } : { ctrlKey: true };
+  /** A key on whatever has focus; says whether the page claimed it. */
+  const rbKey = async (key, mods = {}) => {
+    const t = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    if (!t) return null;
+    const e = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods });
+    t.dispatchEvent(e);
+    await settle(120);
+    return e.defaultPrevented;
+  };
+  /** A click on row i (on its subject, unless `part` says where). */
+  const rbClick = async (i, mods = {}, part = ".rb-subj") => {
+    const row = rbRows()[i];
+    const at = row?.querySelector(part) ?? row;
+    if (!at) return false;
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, ...mods });
+    at.dispatchEvent(down);
+    at.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...mods }));
+    await settle(120);
+    return down.defaultPrevented;
+  };
+  /** Drag row `from` onto the top ("before") or bottom ("after") half of row `onto`. */
+  const rbDrag = async (from, onto, where) => {
+    const rows = rbRows();
+    const dt = new DataTransfer();
+    const fire = (type, el, y) => {
+      const e = new DragEvent(type, { bubbles: true, cancelable: true, clientY: y });
+      Object.defineProperty(e, "dataTransfer", { value: dt });
+      el.dispatchEvent(e);
+    };
+    const r = rows[onto].getBoundingClientRect();
+    const y = r.top + r.height * (where === "before" ? 0.25 : 0.75);
+    fire("dragstart", rows[from], 0);
+    // What the drag LOOKS like it carries: the rows dimmed as they lift.
+    const carried = rbRows().filter((x) => parseFloat(getComputedStyle(x).opacity) < 1).length;
+    fire("dragover", rows[onto], y);
+    fire("drop", rows[onto], y);
+    fire("dragend", rows[from], 0);
+    await settle(300);
+    return carried;
+  };
+
   window.__GS_CHECKS = {
     // ── the count badge reports what is on screen ────────────────────────────
     "count-badge-filtered": (f) => {
@@ -16674,6 +16734,638 @@
       if (!note) return;
       c.match(text(note), /^1 review thread on this pull request could not be read from GitHub\.$/, "in plain words");
       c.ok(!note.closest(".pr-threads-body"), "outside the folding body, so a folded panel still says it");
+    },
+
+    // ── #32: the branch switcher from the keyboard ──────────────────────────
+    //
+    // "When branch selection is open I would love to use arrows… right arrow
+    // to show options for that branch" — IntelliJ's popup, and the
+    // extension's menu since the first #32 batch. The table: where the
+    // keyboard is (filter · branch · its actions) × the key (type · Down ·
+    // Up · Right · Enter · held Enter · Left · Escape · Tab), and what is
+    // open, focused and SENT afterwards. Keys go to the focused element.
+    "the-branch-switcher-works-from-the-keyboard": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const top = () => $(".dropdown:not(.dropdown-submenu)");
+      const subm = () => $(".dropdown-submenu");
+      const active = () => document.activeElement;
+      const label = (n) => text(n?.querySelector?.(".dropdown-label") ?? n);
+      const key = async (k, mods = {}) => {
+        const t = active() && active() !== document.body ? active() : null;
+        if (!t) return null;
+        const e = new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...mods });
+        t.dispatchEvent(e);
+        await settle(160);
+        return e.defaultPrevented;
+      };
+      const typeFilter = async (q) => {
+        const box = $(".dropdown .dropdown-search");
+        box.value = q;
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+        await settle(120);
+      };
+      const checkouts = () => (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action");
+      const sent = checkouts().length;
+
+      c.ok(!!top(), "the switcher is open");
+      if (!top()) return;
+      c.ok(active()?.classList.contains("dropdown-search"), "the filter has the keyboard");
+      // One height for every row, the ones with an arrow included.
+      const hs = new Set($$(".dropdown .dropdown-item").map((r) => Math.round(r.getBoundingClientRect().height)));
+      c.eq(hs.size, 1, `every row is one height, arrow or not (${[...hs].join(", ")})`);
+
+      // Type to filter, Down to the first match.
+      await typeFilter("feat");
+      await key("ArrowDown");
+      c.eq(label(active()), "feat/line-staging", "Down from the filter lands on the first match");
+      c.eq(active()?.getAttribute("aria-haspopup"), "menu", "which says it has a menu of its own");
+
+      // Right: its actions, the first one ready.
+      c.eq(await key("ArrowRight"), true, "Right is the menu's");
+      await settle(200);
+      c.ok(!!subm(), "Right opens the branch's actions");
+      c.eq(subm()?.getAttribute("aria-label"), "Actions for feat/line-staging", "named for the branch");
+      c.eq(label(active()), "Checkout feat/line-staging", "with Checkout first, and the keyboard on it");
+      const row = $$(".dropdown:not(.dropdown-submenu) .dropdown-item").find((r) => label(r) === "feat/line-staging");
+      c.eq(row?.getAttribute("aria-expanded"), "true", "the branch says its menu is open");
+      c.ok(getComputedStyle(row).backgroundColor !== getComputedStyle($$(".dropdown:not(.dropdown-submenu) .dropdown-item").find((r) => r !== row && !r.classList.contains("is-current"))).backgroundColor,
+        "and reads as the open one");
+      const subRect = subm().getBoundingClientRect();
+      c.ok(subRect.left >= top().getBoundingClientRect().right - 4, "the actions hang beside the menu, not over it");
+
+      await key("ArrowDown");
+      c.eq(label(active()), "Fetch", "Down walks the actions");
+      await key("ArrowUp");
+      await key("ArrowUp");
+      c.eq(label(active()), "Checkout feat/line-staging", "Up stops at the first");
+
+      // Left and Escape come back to the branch; neither closes the menu.
+      c.eq(await key("ArrowLeft"), true, "Left is the menu's");
+      c.ok(!subm(), "Left closes the actions");
+      c.eq(label(active()), "feat/line-staging", "and the keyboard is back on the branch");
+      c.eq(row?.getAttribute("aria-expanded"), "false", "which says so");
+      await key("Enter");
+      await settle(200);
+      c.ok(!!subm(), "Enter on a branch opens its actions too");
+      c.eq(checkouts().length, sent, "and checks nothing out");
+      c.eq(await key("Escape"), true, "Escape is the menu's");
+      c.ok(!subm() && !!top(), "Escape closes the actions, not the menu");
+      c.eq(label(active()), "feat/line-staging", "and the keyboard is back on the branch");
+
+      // Typing on a row keeps filtering: the keys go to the filter.
+      await key("Backspace");
+      c.ok(active()?.classList.contains("dropdown-search"), "Backspace on a row goes to the filter");
+      c.eq($(".dropdown .dropdown-search")?.value, "fea", "and takes a letter off it");
+      await key("ArrowDown");
+      c.eq(label(active()), "feat/line-staging", "(back on a row)");
+      await key("t");
+      c.ok(active()?.classList.contains("dropdown-search"), "a letter typed on a row goes to the filter");
+      c.eq($(".dropdown .dropdown-search")?.value, "feat", "added to what was there");
+
+      // A held Enter: the first opens the actions, the repeat runs nothing.
+      await typeFilter("fix");
+      await key("Enter");
+      await settle(200);
+      c.ok(!!subm(), "Enter from the filter opens the first match's actions");
+      c.eq(subm()?.getAttribute("aria-label"), "Actions for fix/log-stream", "the first match's");
+      await key("Enter", { repeat: true });
+      c.eq(checkouts().length, sent, "a held Enter's repeat checks nothing out");
+      c.ok(!!subm(), "and leaves the actions open");
+
+      // A fresh Enter runs the action — the switcher switches.
+      await key("Enter");
+      await settle(500);
+      c.ok(!top() && !subm(), "running an action closes both");
+      const last = checkouts().at(-1)?.payload;
+      c.eq(last?.fullName, "refs/heads/fix/log-stream", "Enter, Enter checked out the branch, by its full name");
+    },
+
+    // The first action sits level with its branch — measured in LAYOUT
+    // terms, with the menus' entrance left running (headless freezes it
+    // part-way, as a quick Right press finds it): placed from the moving
+    // rects, the actions landed off their row for good.
+    "the-branch-actions-sit-level-with-their-branch": async (f) => {
+      const c = check(f);
+      const t = document.activeElement;
+      const key = async (k) => {
+        const a = document.activeElement;
+        a.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+        await settle(200);
+      };
+      c.ok(t?.classList.contains("dropdown-search"), "the switcher is open, filter focused");
+      await key("ArrowDown");
+      await key("ArrowDown");
+      await key("ArrowRight");
+      const menu = $(".dropdown:not(.dropdown-submenu)");
+      const sub = $(".dropdown-submenu");
+      const row = $(".dropdown-item.is-open");
+      c.ok(!!sub && !!row, "a branch's actions are open");
+      if (!sub || !row || !menu) return;
+      const first = sub.querySelector(".dropdown-item");
+      const rowTop = menu.offsetTop + menu.clientTop + row.offsetTop - menu.scrollTop;
+      const firstTop = sub.offsetTop + sub.clientTop + first.offsetTop - sub.scrollTop;
+      c.ok(Math.abs(rowTop - firstTop) <= 1, `level: the first action's top ${firstTop} vs the branch's ${rowTop}`);
+      c.ok(sub.offsetLeft >= menu.offsetLeft + menu.offsetWidth - 4, "and beside the menu");
+    },
+
+    // Remotes and tags have actions too, and the pointer reaches them all.
+    "the-branch-switchers-remotes-and-tags-have-actions": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const subm = () => $(".dropdown-submenu");
+      const label = (n) => text(n?.querySelector?.(".dropdown-label") ?? n);
+      const rowNamed = (name) => $$(".dropdown:not(.dropdown-submenu) .dropdown-item").find((r) => label(r) === name);
+      const actions = () => $$(".dropdown-submenu .dropdown-item").map((r) => label(r));
+
+      // The remote's own HEAD is not a branch: its row offered to check out,
+      // compare and copy "origin", as the Branches view has never listed it.
+      const remoteRows = $$(".dropdown:not(.dropdown-submenu) .dropdown-item").filter((r) => r.querySelector(".codicon-cloud"));
+      c.ok(remoteRows.length > 0, "the switcher lists the remote branches");
+      c.ok(!remoteRows.some((r) => /(^|\/)HEAD$/.test(label(r)) || label(r) === "origin"), `but not the remote's HEAD (${remoteRows.map(label).join(", ")})`);
+
+      const remote = rowNamed("origin/main");
+      c.ok(!!remote, "the switcher lists origin/main");
+      if (!remote) return;
+      const arrow = remote.querySelector(".dropdown-more");
+      c.ok(!!arrow, "the row carries an arrow for its actions");
+      c.match(arrow?.title || "", /^Actions for origin\/main$/, "which says so in words");
+      arrow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await settle(250);
+      c.ok(!!$(".dropdown:not(.dropdown-submenu)"), "clicking the arrow leaves the switcher open");
+      c.eq(actions()[0], "Check out as a local branch", "a remote's actions lead with its checkout");
+      c.ok(actions().includes("Compare with main") && actions().includes("Copy name"), `and carry the Branches list's (${actions().join(" | ")})`);
+
+      const tag = rowNamed("ext-v1.11.1");
+      tag.querySelector(".dropdown-more").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await settle(250);
+      c.eq($$(".dropdown-submenu").length, 1, "one submenu at a time");
+      c.eq(subm()?.getAttribute("aria-label"), "Actions for ext-v1.11.1", "the tag's");
+      c.ok(actions().includes("View in Commits") && actions().includes("Delete tag…"), `a tag's are the Branches list's (${actions().join(" | ")})`);
+
+      // A click elsewhere closes both.
+      document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      await settle(250);
+      c.ok(!subm() && !$(".dropdown"), "a click outside closes the switcher and its actions");
+    },
+
+    // A small repository's switcher filters too (#32 review): openMenu turned
+    // the filter on only above nine rows, so two branches and a remote had no
+    // filter and typing did nothing, where the extension's menu always has one.
+    "the-small-switcher-still-filters": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const label = (n) => text(n?.querySelector?.(".dropdown-label") ?? n);
+      const rows = () => $$(".dropdown:not(.dropdown-submenu) .dropdown-item");
+      c.ok(!!$(".dropdown:not(.dropdown-submenu)"), "the switcher is open");
+      c.ok(rows().length <= 9, `on a small repository (${rows().map(label).join(", ")})`);
+      const box = $(".dropdown .dropdown-search");
+      c.ok(!!box, "it still has its filter");
+      if (!box) return;
+      c.eq(document.activeElement, box, "with the keyboard in it");
+      box.value = "feat";
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(150);
+      c.eq(rows().filter((r) => !r.hidden).map(label).join(","), "feat/line-staging", "typing filters the list");
+      box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      await settle(150);
+      c.eq(label(document.activeElement), "feat/line-staging", "Down lands on the match");
+      document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+      await settle(150);
+      c.eq(document.activeElement, box, "a key typed on a row goes back to the filter");
+      c.eq(box.value, "fea", "and edits it");
+    },
+
+    // Fetch from a branch's actions in the switcher runs IN PLACE: the item
+    // spins, both menus stay open, a second press does not fetch twice, and
+    // the Pull beside it says what the fetch found. And Enter, Enter with no
+    // filter lands on the first match — your own branch — whose first action
+    // is this Fetch, not a checkout (the keyboard sheet says so).
+    "the-switchers-fetch-runs-in-place": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const top = () => $(".dropdown:not(.dropdown-submenu)");
+      const subm = () => $(".dropdown-submenu");
+      const label = (n) => text(n?.querySelector?.(".dropdown-label") ?? n);
+      const subItem = (re) => $$(".dropdown-submenu .dropdown-item").find((r) => re.test(label(r)));
+      const fetches = () => (window.__GS_INVOKED || []).filter((r) => r.channel === "sync:fetch").length;
+      const key = async (k, mods = {}) => {
+        const t = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+        if (!t) return null;
+        const e = new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...mods });
+        t.dispatchEvent(e);
+        await settle(200);
+        return e.defaultPrevented;
+      };
+      c.ok(!!top(), "the switcher is open");
+      if (!top()) return;
+
+      // Enter, Enter with nothing typed: your branch, then its first action.
+      await key("Enter");
+      c.eq(subm()?.getAttribute("aria-label"), "Actions for main", "Enter opens the first match's actions: the branch you're on");
+      c.eq(label(document.activeElement), "Fetch", "whose first action is Fetch — no checkout of where you are");
+      await key("Escape");
+
+      // Another branch's Fetch, from the pointer.
+      const row = $$(".dropdown:not(.dropdown-submenu) .dropdown-item").find((r) => label(r) === "redesign/issues-detail");
+      c.ok(!!row, "the switcher lists redesign/issues-detail");
+      if (!row) return;
+      row.querySelector(".dropdown-more").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await settle(300);
+      const pull = () => subItem(/^Pull /);
+      c.eq(label(pull()), "Pull latest into redesign/issues-detail", "its Pull, before the fetch");
+      const fetch = subItem(/^Fetch$/);
+      c.ok(!!fetch, "and its Fetch");
+      if (!fetch) return;
+      const before = fetches();
+      fetch.click();
+      await settle(80);
+      c.eq(fetches(), before + 1, "Fetch asked main to fetch");
+      c.ok(fetch.classList.contains("is-busy-item"), "the item is busy while it runs");
+      c.ok(!!fetch.querySelector(".glyph.spin, .spin"), "and spins");
+      c.ok(!!top() && !!subm(), "both menus stay open");
+      fetch.click();
+      await settle(80);
+      c.eq(fetches(), before + 1, "a second press while it runs fetches nothing");
+      await settle(700);
+      c.ok(!fetch.classList.contains("is-busy-item"), "done, it stops");
+      c.ok(!!top() && !!subm(), "and both menus are still open");
+      c.eq(label(pull()), "Pull 2 into redesign/issues-detail", "the Pull says what the fetch found");
+    },
+
+    // ── #32: select several commits in the rebase plan and set them at once ──
+    //
+    // The state table for the keyboard: from each selection, each key, the
+    // selection and the row the keyboard is on afterwards. Plain arrows move
+    // and the selection follows; Shift grows from the anchor; Home/End jump;
+    // ⌘/Ctrl+A takes everything; Escape collapses to the focused row — and
+    // is left alone when there is nothing to collapse.
+    "rebase-selection-follows-the-keyboard": async (f) => {
+      const c = check(f);
+      // Deliberately WITH the page's transitions: headless Chrome never
+      // advances one, the way an occluded window does not, so a selection
+      // that eased in would read as unpainted here. It must land at once.
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list to select in (${n})`);
+      if (n < 8) return;
+      c.eq(rbSelected(), "0", "the newest commit starts selected");
+      c.eq(rbRows().filter((r) => r.tabIndex === 0).length, 1, "the list is ONE tab stop");
+      c.eq(text(".rb-selcount"), "1 selected", "the toolbar counts it");
+      rbRows()[0].focus();
+      const all = [...Array(n).keys()].join(",");
+      const from1 = [...Array(n - 1).keys()].map((i) => i + 1).join(",");
+      // [key, mods, selection after, focused row after]
+      const table = [
+        ["ArrowDown", {}, "1", 1],
+        ["ArrowDown", { shiftKey: true }, "1,2", 2],
+        ["ArrowDown", { shiftKey: true }, "1,2,3", 3],
+        ["ArrowUp", { shiftKey: true }, "1,2", 2],
+        ["ArrowUp", { shiftKey: true }, "1", 1],
+        ["ArrowUp", { shiftKey: true }, "0,1", 0],
+        ["ArrowUp", { shiftKey: true }, "0,1", 0],
+        ["End", { shiftKey: true }, from1, n - 1],
+        ["Home", {}, "0", 0],
+        ["ArrowUp", {}, "0", 0],
+        ["End", {}, String(n - 1), n - 1],
+        ["ArrowDown", {}, String(n - 1), n - 1],
+        ["Home", { shiftKey: true }, all, 0],
+        ["Escape", {}, "0", 0],
+        ["a", rbMod, all, 0],
+        ["ArrowDown", {}, "1", 1],
+      ];
+      for (const [key, mods, sel, focus] of table) {
+        const before = rbSelected();
+        const claimed = await rbKey(key, mods);
+        const what = `${Object.keys(mods).join("+")}${Object.keys(mods).length ? "+" : ""}${key} from [${before}]`;
+        c.eq(rbSelected(), sel, `${what}: the selection`);
+        c.eq(rbFocus(), focus, `${what}: the row the keyboard is on`);
+        c.eq(claimed, true, `${what}: the list took the key`);
+        c.eq(rbPaintedSelected(), sel, `${what}: exactly the selected rows are PAINTED selected`);
+      }
+      // The row the keyboard reaches is clear of both sticky bars: focus alone
+      // scrolls to the view's edge, under the header or the footer.
+      await rbKey("End");
+      const endRow = document.activeElement.getBoundingClientRect();
+      const footTop = $(".rb-foot").getBoundingClientRect().top;
+      c.ok(endRow.bottom <= footTop + 1, `End: the oldest commit clears the footer (${Math.round(endRow.bottom)} vs ${Math.round(footTop)})`);
+      await rbKey("Home");
+      const homeRow = document.activeElement.getBoundingClientRect();
+      const headBottom = $(".rb-head").getBoundingClientRect().bottom;
+      c.ok(homeRow.top >= headBottom - 1, `Home: the newest commit clears the header (${Math.round(homeRow.top)} vs ${Math.round(headBottom)})`);
+      c.eq(text(".rb-selcount"), "1 selected", "the count follows");
+      await rbKey("ArrowDown", { shiftKey: true });
+      await rbKey("ArrowDown", { shiftKey: true });
+      c.eq(text(".rb-selcount"), "3 selected", "…every time");
+      // Escape with one row selected is not the list's key.
+      await rbKey("Escape");
+      c.eq(await rbKey("Escape"), false, "Escape on a single selection is left to whoever else wants it");
+    },
+
+    // The same table for the pointer: plain, ⌘/Ctrl, Shift, both — and a
+    // row's own dropdown, which selects its row without collapsing a
+    // selection it is already in.
+    "rebase-selection-follows-the-mouse": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list to select in (${n})`);
+      if (n < 8) return;
+      const table = [
+        [1, {}, "1"],
+        [3, rbMod, "1,3"],
+        [5, { shiftKey: true }, "3,4,5"],
+        [0, { shiftKey: true, ...rbMod }, "0,1,2,3,4,5"],
+        [2, rbMod, "0,1,3,4,5"],
+        [4, {}, "4"],
+        [4, rbMod, ""],
+        [6, {}, "6"],
+      ];
+      for (const [i, mods, sel] of table) {
+        const noText = await rbClick(i, mods);
+        const what = `click row ${i} with ${JSON.stringify(mods)}`;
+        c.eq(rbSelected(), sel, `${what}: the selection`);
+        c.eq(rbPaintedSelected(), sel, `${what}: and what is painted`);
+        if (mods.shiftKey) c.ok(noText, `${what}: selects rows, not the text between them`);
+      }
+      c.eq(rbFocus(), 6, "the clicked row has the keyboard");
+      // A dropdown: focusing an unselected row's selects that row…
+      rbRows()[2].querySelector(".rb-action").focus();
+      await settle(120);
+      c.eq(rbSelected(), "2", "tabbing into a row's dropdown selects its row");
+      // …and inside a selection keeps it.
+      await rbClick(4, { shiftKey: true });
+      c.eq(rbSelected(), "2,3,4", "a range to test against");
+      rbRows()[3].querySelector(".rb-action").focus();
+      rbRows()[3].querySelector(".rb-action").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await settle(120);
+      c.eq(rbSelected(), "2,3,4", "a dropdown inside the selection leaves the selection alone");
+      // No selection: the toolbar says so and does nothing.
+      await rbClick(2);
+      await rbClick(2, rbMod);
+      c.eq(text(".rb-selcount"), "None selected", "an empty selection is said");
+      const btns = $$(".rb-set");
+      c.eq(btns.length, 6, "the toolbar offers the six actions");
+      c.ok(btns.every((b) => b.disabled), "and none of them with nothing selected");
+    },
+
+    // Setting the action: the keys (git's own todo letters), the toolbar, and
+    // what must NOT set it — a modifier held, a letter typed into a message.
+    "rebase-sets-the-action-of-every-selected-commit": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list (${n})`);
+      if (n < 8) return;
+      const picks = (i) => rbActions().slice(i).every((a) => a === "pick");
+      const words = $$(".rb-set").map((b) => text(b));
+      c.eq(words.join(","), "Pick,Reword,Squash,Fixup,Edit,Drop", "the toolbar names the six in words");
+      for (const [b, k] of $$(".rb-set").map((b, i) => [b, "PRSFED"[i]])) {
+        c.ok((b.title || "").endsWith(`(${k})`), `"${text(b)}" says its key in its tooltip (${b.title})`);
+      }
+      c.eq($$(".rb-hint .rb-kbd").map((k) => text(k)).join(""), "PRSFED", "and the hint names all six keys");
+
+      await rbClick(0);
+      await rbClick(2, { shiftKey: true });
+      c.eq(await rbKey("d"), true, "D is taken by the list");
+      c.eq(rbActions().slice(0, 3).join(","), "drop,drop,drop", "D drops every selected commit");
+      c.ok(picks(3), "and nothing else");
+      c.eq(rbSelected(), "0,1,2", "the selection survives the change");
+      c.eq(rbFocus(), 2, "and so does the keyboard");
+
+      $$(".rb-set").find((b) => text(b) === "Edit").click();
+      await settle(200);
+      c.eq(rbActions().slice(0, 3).join(","), "edit,edit,edit", "the toolbar's Edit sets all three");
+      c.ok(picks(3), "and nothing else");
+      const bg = (w) => getComputedStyle($$(".rb-set").find((b) => text(b) === w)).backgroundColor;
+      c.ok(bg("Edit") !== bg("Pick"), `the toolbar shows Edit as what they are set to (${bg("Edit")} vs ${bg("Pick")})`);
+
+      // One row's dropdown sets that row only.
+      const sel = rbRows()[1].querySelector(".rb-action");
+      sel.value = "reword";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle(200);
+      c.eq(rbActions().slice(0, 3).join(","), "edit,reword,edit", "a row's own dropdown changes that row");
+
+      // Keys that must not set anything.
+      rbRows()[0].focus();
+      await rbClick(0);
+      await rbClick(2, { shiftKey: true });
+      const before = rbActions().join(",");
+      // (⌘/Ctrl+P is the command palette's, so D: its letter is also git's.)
+      await rbKey("d", rbMod);
+      c.eq(rbActions().join(","), before, "⌘/Ctrl+D is not D");
+      await rbKey("p", { altKey: true });
+      c.eq(rbActions().join(","), before, "nor is Alt+P");
+      c.eq(await rbKey("x"), false, "a letter git has no action for is left alone");
+      const ta = rbRows()[1].querySelector(".rb-reword textarea");
+      ta.focus();
+      await rbKey("d");
+      c.eq(rbActions().join(","), before, "D typed into a message is a letter, not a drop");
+      rbRows()[2].focus();
+      c.eq(await rbKey("P"), true, "a capital P counts: git's letters, either case");
+      c.eq(rbActions().slice(0, 3).join(","), "pick,pick,pick", "P picks them all again");
+    },
+
+    // Squash across a selection: EVERY selected commit folds, into the kept
+    // commit below the selection. Only when nothing below it is kept does the
+    // oldest selected one stay as it was — the one squash git refuses
+    // outright, on the oldest commit you keep — and that is refused with the
+    // reason, from every door.
+    "rebase-squash-across-a-selection-folds-into-the-commit-below": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list (${n})`);
+      if (n < 8) return;
+      const start = () => $$(".rb-foot button").find((b) => /start rebase/i.test(text(b)));
+
+      // The ordinary case: a block in the middle of the plan.
+      const subj = (i) => text(rbRows()[i].querySelector(".rb-subj"));
+      const below = subj(6).slice(0, 24);
+      await rbClick(3);
+      await rbClick(5, { shiftKey: true });
+      await rbKey("s");
+      const mid = rbActions();
+      c.eq(mid.slice(3, 6).join(","), "squash,squash,squash", "every selected commit folds, the oldest of them too");
+      c.ok(mid.slice(0, 3).concat(mid.slice(6)).every((a) => a === "pick"), `and nothing else changes (${mid.join(",")})`);
+      c.ok(!$(".rb-banner") || $(".rb-banner").hidden, "nothing was refused, so nothing is said");
+      for (const i of [3, 4, 5]) {
+        const says = text(rbRows()[i].querySelector(".rb-consequence"));
+        c.ok(says.startsWith("Folds down into “" + below), `row ${i} folds into the kept commit below the selection (${says})`);
+      }
+      await rbKey("p");
+      c.ok(rbActions().every((a) => a === "pick"), "P puts them back");
+
+      // Nothing kept below: the oldest selected stays, for the rest to fold into.
+
+      await rbClick(n - 1);
+      await rbKey("s");
+      c.eq(rbActions()[n - 1], "pick", "S on the oldest commit alone changes nothing");
+      c.match(text(".rb-banner"), /oldest commit you keep can't be a squash/i, "and says why");
+
+      await rbKey("a", rbMod);
+      await rbKey("s");
+      const acts = rbActions();
+      c.ok(acts.slice(0, n - 1).every((a) => a === "squash"), `every newer commit folds (${acts.join(",")})`);
+      c.eq(acts[n - 1], "pick", "the oldest stays a pick for them to fold into");
+      c.match(text(".rb-banner"), new RegExp(`Squash set on ${n - 1} commits\\. The oldest one stays Pick`), "the banner says what happened");
+      // …where it can be read: a plan this long used to put the banner under
+      // the list, below the fold.
+      const b = $(".rb-banner").getBoundingClientRect();
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      c.ok(
+        b.height > 0 && b.bottom <= window.innerHeight && !!hit && $(".rb-banner").contains(hit),
+        `and it is on screen, uncovered (top ${Math.round(b.top)} of ${window.innerHeight})`,
+      );
+      c.eq(start()?.disabled, false, "and the plan can be started — git can run it");
+
+      // The toolbar is the same door.
+      await rbClick(n - 1);
+      $$(".rb-set").find((b) => text(b) === "Fixup").click();
+      await settle(200);
+      c.eq(rbActions()[n - 1], "pick", "the toolbar's Fixup on the oldest is refused too");
+      c.match(text(".rb-banner"), /can't be a fixup/, "with the fixup's own words");
+    },
+
+    // Alt+↑/↓ and a drag move the SELECTION, not one row of it.
+    "rebase-moves-the-selection-together": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list (${n})`);
+      if (n < 8) return;
+      // Subjects repeat in the fixture ("wip"), so rows are tracked by sha:
+      // each row's number is where it started.
+      const shas0 = rbRows().map((r) => r.dataset.sha);
+      const order = () => rbRows().map((r) => shas0.indexOf(r.dataset.sha)).join(",");
+
+      await rbClick(1);
+      await rbClick(2, { shiftKey: true });
+      c.eq(await rbKey("ArrowUp", { altKey: true }), true, "Alt+Up is the list's");
+      c.eq(order().split(",").slice(0, 4).join(","), "1,2,0,3", "the block moves up one, together");
+      c.eq(rbSelected(), "0,1", "still selected where it went");
+      c.eq(rbFocus(), 1, "and the keyboard went with it");
+      await rbKey("ArrowUp", { altKey: true });
+      c.eq(order().split(",").slice(0, 4).join(","), "1,2,0,3", "against the top it stays");
+      await rbKey("ArrowDown", { altKey: true });
+      await rbKey("ArrowDown", { altKey: true });
+      c.eq(order().split(",").slice(0, 4).join(","), "0,3,1,2", "and down again, together");
+
+      // Scattered rows each move one step.
+      await rbClick(0);
+      await rbClick(2, rbMod);
+      await rbKey("ArrowDown", { altKey: true });
+      c.eq(order().split(",").slice(0, 4).join(","), "3,0,2,1", "a scattered selection: each row one step");
+      c.eq(rbSelected(), "1,3", "still selected");
+
+      // A drag that picks up a selected row carries the whole selection…
+      const beforeDrag = order().split(",");
+      await rbClick(0);
+      await rbClick(1, { shiftKey: true });
+      const carried = await rbDrag(1, 3, "after");
+      c.eq(carried, 2, "picking up a selected row lifts the selection");
+      const want = [beforeDrag[2], beforeDrag[3], beforeDrag[0], beforeDrag[1], ...beforeDrag.slice(4)].join(",");
+      c.eq(order(), want, "and both land in the gap the line was drawn at, in order");
+      c.eq(rbSelected(), "2,3", "still selected");
+      // …and one that picks up any other row carries that row alone.
+      const beforeOne = order().split(",");
+      const lifted = await rbDrag(6, 0, "before");
+      c.eq(lifted, 1, "an unselected row is lifted alone");
+      c.eq(order().split(",")[0], beforeOne[6], "and lands at the top");
+      c.eq(rbSelected(), "0", "it is the selection now");
+    },
+
+    // The host's own note ("a merge commit in this range isn't listed", "the
+    // list was capped") shares the banner with the refusals #32 made one
+    // keystroke away — and now rides in the sticky footer with it. The note is
+    // the only thing saying the plan is not the whole story, so: it is on
+    // screen for as long as the plan is; a refusal borrows the banner and
+    // gives it BACK; a newer refusal is not cut short by an older one's timer;
+    // and the taller footer still leaves the oldest commit clear of it.
+    "rebase-keeps-the-hosts-note-on-screen": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const n = rbRows().length;
+      c.ok(n >= 8, `the plan has a long list (${n})`);
+      if (n < 8) return;
+      const banner = () => $(".rb-banner");
+      const NOTE = /merge commit in this range isn't listed/;
+      const onScreen = () => {
+        const b = banner();
+        if (!b || b.hidden) return false;
+        const r = b.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return r.height > 0 && r.bottom <= window.innerHeight && !!hit && b.contains(hit);
+      };
+
+      c.match(text(banner()), NOTE, "the host's note is shown");
+      c.ok(!!banner() && $(".rb-foot").contains(banner()), "in the sticky footer, above Start rebase");
+      c.ok(onScreen(), "on screen and uncovered, with the list running past the fold");
+      c.ok(getComputedStyle(banner()).backgroundColor !== "rgba(0, 0, 0, 0)", "painted as a note, not bare text");
+
+      // The footer is taller by the note: End still lands clear of it.
+      rbRows()[0].focus();
+      await rbKey("End");
+      const endRow = document.activeElement.getBoundingClientRect();
+      const footTop = $(".rb-foot").getBoundingClientRect().top;
+      c.ok(endRow.bottom <= footTop + 1, `End: the oldest commit clears the footer and its note (${Math.round(endRow.bottom)} vs ${Math.round(footTop)})`);
+
+      // A refusal borrows the banner…
+      await rbKey("s");
+      c.match(text(banner()), /oldest commit you keep can't be a squash/, "a refused squash says why, in the note's place");
+      c.ok(onScreen(), "where it can be read");
+      // …a newer one two seconds later is not cut short by the first's timer…
+      await settle(2000);
+      await rbKey("f");
+      c.match(text(banner()), /can't be a fixup/, "a second refusal replaces the first");
+      await settle(2600); // past the FIRST flash's 4.2 s, inside the second's
+      c.match(text(banner()), /can't be a fixup/, "and stays its full time: the first flash's timer does not restore over it");
+      // …and when the last one is done, the note is back.
+      await settle(2000);
+      c.match(text(banner()), NOTE, "then the host's note comes back");
+      c.ok(onScreen(), "on screen, as before");
+      c.eq(rbActions()[n - 1], "pick", "(and the oldest commit was left a pick throughout)");
+    },
+
+    // The "?" sheet calls itself every shortcut the app answers to — and a
+    // key nothing advertises is a key nobody has. #32's keys are on it: the
+    // rebase list's, read against the letters the Rebase view itself shows,
+    // and the branch switcher's. Six groups, none left alone on a row.
+    "the-shortcuts-sheet-names-the-rebase-and-switcher-keys": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const viewLetters = $$(".rb-hint .rb-kbd").map((k) => text(k)).join("");
+      c.eq(viewLetters, "PRSFED", "the Rebase view names its letters");
+      const t = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body;
+      t.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true, cancelable: true }));
+      await settle(500);
+      const sheet = $(".shortcuts-card");
+      c.ok(!!sheet, "? opens the sheet");
+      if (!sheet) return;
+      const group = (title) => $$(".shortcuts-group", sheet).find((g) => text(g.querySelector(".shortcuts-group-title")).toLowerCase() === title.toLowerCase());
+      const keysOf = (g) => $$(".shortcuts-keys", g).map((k) => text(k).replace(/\s+/g, " ").trim());
+      const rebase = group("Interactive rebase");
+      c.ok(!!rebase, "an Interactive rebase group");
+      const rk = rebase ? keysOf(rebase) : [];
+      const letters = rk.find((k) => /^[A-Z]( [A-Z])+$/.test(k)) ?? "";
+      c.eq(letters.replace(/ /g, ""), viewLetters, "its letters are the ones the view answers to");
+      const mac = navigator.platform.toLowerCase().includes("mac");
+      for (const k of ["Shift+↑ ↓", mac ? "⌘A" : "Ctrl+A", "Alt+↑ ↓", "Esc"]) c.ok(rk.includes(k), `it names ${k} (${rk.join(" | ")})`);
+      const branches = group("Branches");
+      const bk = branches ? keysOf(branches) : [];
+      for (const k of ["→ or Enter", "← or Esc", "Enter Enter"]) c.ok(bk.includes(k), `Branches names the switcher's ${k} (${bk.join(" | ")})`);
+      // …and says what Enter Enter does: the first ACTION, which is not a
+      // checkout on your own branch (the-switchers-fetch-runs-in-place).
+      const ee = branches ? $$(".shortcuts-row", branches).find((r) => text(r.querySelector(".shortcuts-keys")).replace(/\s+/g, " ").trim() === "Enter Enter") : null;
+      const eeSays = text(ee?.querySelector(".shortcuts-what"));
+      c.match(eeSays, /first action/i, `Enter Enter is the first action (${eeSays})`);
+      c.match(eeSays, /Checkout, unless it's yours/i, "which is Checkout only for a branch you're not on");
+      // The layout: every row of groups holds more than one.
+      const tops = $$(".shortcuts-group", sheet).map((g) => Math.round(g.getBoundingClientRect().top));
+      const perRow = [...new Set(tops)].map((y) => tops.filter((x) => x === y).length);
+      c.ok(perRow.every((m) => m > 1), `no group alone on a row (${perRow.join("+")})`);
+      const r = sheet.getBoundingClientRect();
+      c.ok(r.top >= 0 && r.bottom <= window.innerHeight, `the sheet fits the window (${Math.round(r.top)}–${Math.round(r.bottom)} of ${window.innerHeight})`);
     },
   };
 })();

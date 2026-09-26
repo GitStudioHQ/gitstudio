@@ -87,6 +87,20 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   own** now asks: switch to your local branch as it is, or reset it to
   'origin/feature' first. When your local branch has nothing of its own, the
   checkout just switches to it, as before. (#32)
+- **Set the action of several commits at once in an interactive rebase.** In
+  the Interactive Rebase workspace, click a commit, then Shift-click or
+  Cmd/Ctrl-click others — or use **Shift+Up/Down**, **Home**/**End** and
+  **Cmd/Ctrl+A**; **Escape** goes back to one — and choose **Pick**,
+  **Reword**, **Squash**, **Fixup**, **Edit** or **Drop** in the **Set
+  action** bar at the top, or press git's own letter for it: **P R S F E D**.
+  **Alt+Up/Down** and dragging move the whole selection. **Squash** or
+  **Fixup** folds each selected commit into the kept commit below it, so a
+  block of commits folds into the one under the block. When no kept commit is
+  below — the selection reaches the oldest commit you keep — that oldest
+  selected commit stays as it is, for the rest to fold into, and the plan
+  says why instead of letting the rebase fail. The editor that opens for a
+  `git rebase -i` run in a terminal does the same in git's own order, oldest
+  at the top, so there a commit folds into the kept one above it. (#32)
 
 ### Fixed
 - **Undo puts back what the operation changed — and only that.** Undo used to
@@ -155,18 +169,38 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **Undoing Accept Yours / Accept Theirs** in the Conflicts panel no longer
   writes the conflict markers over edits you made to that file since, staged
   or not; it says so and leaves the file alone.
+- **The editor for a `git rebase -i` run in a terminal listed no commits.**
+  It opened saying "No commits to rebase." over a todo full of them. It shows
+  the plan now, each line with the action the todo gives it, and a long one
+  scrolls with **Start rebase** kept on screen. It also opens for `git rebase
+  --edit-todo` on a paused rebase, where git has already applied a commit
+  above the first line: a first line that squashes into it is a plan git
+  runs, and the editor lets you start it. (#32)
+- **Interactive Rebase: a dragged commit lands where the line says.** A drag
+  could put the commit one row away from the line drawn for it — dragging up
+  in the workspace, dragging down in the terminal rebase's editor. The line is
+  drawn on the side you are pointing at, and the commit lands there. Also in
+  the workspace: the reason a squash was refused is shown just above **Start
+  Rebase**, on screen however long the plan is; the commit the keyboard moves
+  to is never hidden under the header or the footer; and **Reset plan** no
+  longer has a grey button face. (#32)
+- **Interactive Rebase: a paused rebase keeps Continue, Skip and Abort.**
+  While a rebase is paused on a conflict or an edit, the workspace's banner
+  holds its way out. A refused squash or **Reset plan** took that banner away
+  for good; now the reason shows for a few seconds and the banner comes back,
+  without moving the keyboard. (#32)
 - **Undo after moving a branch back onto pushed history.** Undoing an
   operation that left the branch on an older, already-pushed commit — a reset
   to it, or dropping your last local commit — offered to revert an empty range
   and failed with git's "empty commit set passed". Going back is a
-  fast-forward that rewrites nothing, so Undo now simply does it.
+  fast-forward that rewrites nothing, so Undo now simply does it. (#32)
 - **Undo after reordering commits with "Reorder and move those branches".**
   Undo put your branch back but left the other branches on the reordered
   commits. They go back too now, as long as nothing has been committed on
   them since; if something has, Undo says so and changes nothing.
 - Blame in a repository nested inside another's folder (a vendored checkout,
   a submodule) no longer runs in the outer repository when the outer one is
-  the repository on screen.
+  the repository on screen. (#32)
 - **Staging several files at once works.** Stage, Unstage or Discard on a
   multi-selection, the selection bar, or a few quick clicks sent one git
   command per file, all together, and most were refused ("Unable to create

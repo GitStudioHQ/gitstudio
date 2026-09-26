@@ -75,6 +75,31 @@ but they share the same engine, so most Git behaviour lands in both at once.
   in Changes, where the conflicts dashboard offers Continue, Skip and Abort —
   Abort puts the branch back as it was. **Undo** on the toast, or ⌘Z,
   restores the branch. The same drop as the VS Code extension's. (#32)
+- **Set the action of several commits at once in an interactive rebase.** In
+  the Rebase view, click a commit, then Shift-click or ⌘-click (Ctrl-click)
+  others — or use **Shift+↑/↓**, **Home**/**End** and **⌘A**; **Escape** goes
+  back to one — and choose **Pick**, **Reword**, **Squash**, **Fixup**,
+  **Edit** or **Drop** in the **Set action** bar at the top, or press git's
+  own letter for it: **P R S F E D**. **Alt+↑/↓** and dragging move the whole
+  selection. **Squash** or **Fixup** folds each selected commit into the kept
+  commit below it, so a block of commits folds into the one under the block.
+  When no kept commit is below — the selection reaches the oldest commit you
+  keep — that oldest selected commit stays as it is, for the rest to fold
+  into, and the plan says why instead of letting the rebase fail. The
+  keyboard sheet (**?**) lists these keys. The same as the VS Code
+  extension's. (#32)
+- **The branch switcher works from the keyboard.** Type to filter; **↑**/**↓**
+  move through the branches, and letters you type on one keep filtering;
+  **→** or **Enter** opens a branch's actions — **Checkout** first (for any
+  branch but the one you're on), then Fetch, Push, Pull, Merge, Rebase,
+  Rename, Reset to its remote and the rest of the Branches list's menu for
+  it — with the keyboard on the first;
+  **←** or **Escape** goes back to the branch, and **Escape** again closes.
+  Remote branches and tags have their actions too, and the arrow at the end
+  of every row opens them with the mouse; a plain click still switches.
+  Holding Enter never runs a second action; the keyboard sheet (**?**) lists
+  the keys. As in IntelliJ's branch popup and the VS Code extension's branch
+  menu. (#32)
 
 ### Fixed
 
@@ -94,6 +119,15 @@ but they share the same engine, so most Git behaviour lands in both at once.
   branch again — it came back tracking the new name.
 - **Undo of *Drop stash*** puts the stash back where it was in the list, not
   on top of it.
+- **Rebase: the reason a squash was refused could be off screen.** It was
+  written under the list, below the fold of any plan long enough to scroll;
+  it is shown just above **Start rebase** now. The commit the keyboard moves
+  to is never hidden under the header or the footer either. (#32)
+- **A remote's own HEAD is no longer offered as a branch.** git calls
+  `refs/remotes/origin/HEAD` "origin", and the branch switcher, the Commits
+  graph's menu ("Checkout origin/HEAD"), Compare's branch picker and the
+  branch fields of Actions and Releases listed it, where acting on it acts on
+  whatever it points at. Only the Branches view had left it out. (#32)
 - **Repositories: switching to *On GitHub* and straight back showed GitHub's
   list under *On this machine*.** The GitHub request kept running after the
   switch and painted its answer a second later. Only the side you're on

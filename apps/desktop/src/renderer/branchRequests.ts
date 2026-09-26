@@ -34,6 +34,24 @@ export function remoteRefParts(r: { fullName?: string; name: string }): { remote
   return slash > 0 ? { remote: path.slice(0, slash), branch: path.slice(slash + 1) } : { remote: path, branch: path };
 }
 
+/**
+ * A remote's own HEAD — refs/remotes/origin/HEAD, git's pointer at the
+ * remote's default branch. Not a branch anyone checks out, compares or copies:
+ * acting on it acts on whatever it points at, detached. Every list of refs
+ * leaves it out (the Branches view, the graph's ref menu, the switcher).
+ *
+ * Asked of the FULL name. git shortens refs/remotes/origin/HEAD to the bare
+ * remote name, "origin", so the guards that asked the short name to end in
+ * "/HEAD" never fired on a real repository. A `symref` (the default branch it
+ * names) says the same; the short name is the fallback for a ref without a
+ * full one.
+ */
+export function isRemoteHead(r: { name: string; fullName?: string; symref?: string }): boolean {
+  if (r.symref) return true;
+  if (r.fullName) return /^refs\/remotes\/.+\/HEAD$/.test(r.fullName);
+  return r.name.endsWith("/HEAD");
+}
+
 /** A local branch's upstream as the remote and the branch on it — from
  *  `upstreamRef` (%(upstream), full), else the short `upstream` for a payload
  *  without one. Undefined when it tracks nothing, or a local branch. */

@@ -697,6 +697,14 @@
     },
   };
 
+  // `sync:fetch` had no fixture: it answered the shim's generic `{ ok: true }`
+  // at once, so no check could see a Fetch run IN PLACE (the switcher's and
+  // the Branches list's menus keep it open, spinning) or what it found. It
+  // still answers at once; ?fetchfinds=1 makes it take a moment and find two
+  // new commits on origin/redesign/issues-detail, so the branch reads
+  // "behind 2" afterwards.
+  const fetchState = { fetches: 0, found: false };
+
   const fixtures = {
     // ?norepo=1 → NO repository open, which is the welcome screen: the first
     // thing anyone sees, the only screen shown after closing a repo, and
@@ -817,6 +825,11 @@
       // its Continue / Skip / Abort, instead of the planner.
       inProgress: params.get("rebasing") === "1",
       baseCommit: { shortSha: "9f8e7d6", subject: "release: extension 1.11.1" },
+      // `?rbnote=1`: the host's own note (rebaseBridge), the persistent line
+      // the banner keeps above Start rebase.
+      ...(params.get("rbnote") === "1"
+        ? { message: "A merge commit in this range isn't listed — a rebase replays the merged-in commits one by one and the merge itself disappears." }
+        : {}),
       // NEWEST FIRST, the order `loadCommits` returns (`git log --topo-order`,
       // no --reverse) and the order the hint bar promises. Listed oldest-first
       // this fixture put every fold target on the wrong side: a `fixup!` row
@@ -824,7 +837,22 @@
       // the "oldest commit has nothing below it" guard fired on the NEWEST
       // commit — while the screenshot ran 20h → 2h downward under a hint
       // reading "Newest first".
-      commits: [
+      // `?rbmany=1`: twelve commits — the "e.g. 10 commits" of issue #32,
+      // where setting each row's action one at a time is the chore.
+      commits: params.get("rbmany") === "1" ? [
+        { sha: "c1a1000000000000000000000000000000000001", shortSha: "c1a1000", author: "Anton Arnaudov", subject: "fixup! staging: keep the selection across a refresh", rel: "1h ago" },
+        { sha: "c1a1000000000000000000000000000000000002", shortSha: "c1a1001", author: "Anton Arnaudov", subject: "fixup! staging: keep the selection across a refresh", rel: "2h ago" },
+        { sha: "c1a1000000000000000000000000000000000003", shortSha: "c1a1002", author: "Anton Arnaudov", subject: "fixup! staging: keep the selection across a refresh", rel: "3h ago" },
+        { sha: "c1a1000000000000000000000000000000000004", shortSha: "c1a1003", author: "Sora Ohta", subject: "staging: keep the selection across a refresh", rel: "5h ago" },
+        { sha: "c1a1000000000000000000000000000000000005", shortSha: "c1a1004", author: "Anton Arnaudov", subject: "wip", rel: "6h ago" },
+        { sha: "c1a1000000000000000000000000000000000006", shortSha: "c1a1005", author: "Anton Arnaudov", subject: "wip", rel: "7h ago" },
+        { sha: "c1a1000000000000000000000000000000000007", shortSha: "c1a1006", author: "Mira Holt", subject: "changes: stage the lines a selection touches", rel: "9h ago" },
+        { sha: "c1a1000000000000000000000000000000000008", shortSha: "c1a1007", author: "Mira Holt", subject: "changes: a row per hunk", rel: "11h ago" },
+        { sha: "c1a1000000000000000000000000000000000009", shortSha: "c1a1008", author: "Anton Arnaudov", subject: "typo", rel: "14h ago" },
+        { sha: "c1a1000000000000000000000000000000000010", shortSha: "c1a1009", author: "Anton Arnaudov", subject: "engine: split a hunk on a selection boundary", rel: "18h ago" },
+        { sha: "c1a1000000000000000000000000000000000011", shortSha: "c1a100a", author: "Mira Holt", subject: "engine: hunk splitting groundwork", rel: "20h ago" },
+        { sha: "c1a1000000000000000000000000000000000012", shortSha: "c1a100b", author: "Sora Ohta", subject: "docs: the staging model", rel: "1d ago" },
+      ] : [
         { sha: "5485767869c930415263", shortSha: "5485767", author: "Anton Arnaudov", subject: "wip: notes to self", rel: "2h ago" },
         { sha: "45968797c9d041526374", shortSha: "4596879", author: "Sora Ohta", subject: "changes: stage the lines a selection touches", rel: "9h ago" },
         { sha: "36a7b8c9d0e152637485", shortSha: "36a7b8c", author: "Anton Arnaudov", subject: "fixup! engine: split a hunk on a selection boundary", rel: "16h ago" },
@@ -946,6 +974,20 @@
     "ssh:keys": [],
     // (the real fixture is above — an empty array here shadowed it)
   };
+
+  // ?fewrefs=1 → a small repository: two branches, one remote, no tags. The
+  // switcher turned its filter on only above nine rows, so here it had none
+  // and typed letters did nothing (#32 review).
+  if (params.get("fewrefs")) {
+    const keep = new Set(["main", "feat/line-staging"]);
+    branches = branches.filter((b) => keep.has(b.name));
+    fixtures["refs:list"] = fixtures["refs:list"].filter(
+      (r) =>
+        (r.type === "head" && keep.has(r.name)) ||
+        r.fullName === "refs/remotes/origin/HEAD" ||
+        r.fullName === "refs/remotes/origin/main",
+    );
+  }
 
   // ?collide=1 (see the branches above): the refs git lists beside them, under
   // the short names git gives them — the tags "main" and "release", the
@@ -1951,8 +1993,18 @@
                 ahead: pullState.done ? 3 : 2,
                 behind: pullState.done ? 0 : pullState.behind(),
               }
-            : b,
+            : fetchState.found && b.name === "redesign/issues-detail"
+              ? { ...b, behind: b.behind + 2 }
+              : b,
         ),
+    "sync:fetch": () => {
+      fetchState.fetches++;
+      if (!params.get("fetchfinds")) return { ok: true };
+      return late(400).then(() => {
+        fetchState.found = true;
+        return { ok: true };
+      });
+    },
     // The per-branch log walk's answer. feat/line-staging is the interesting
     // one: created by one person, carried by three — a number-only "last
     // commit by" could never say that.
@@ -3707,6 +3759,19 @@
         const sel = decodeURIComponent(step.slice(6));
         const elx = await until(() => q(sel));
         elx.click();
+      } else if (step.startsWith("shiftclick:") || step.startsWith("modclick:")) {
+        // A click with Shift, or with the platform's add-to-selection key
+        // (⌘ on a Mac, Ctrl elsewhere) — how a list is multi-selected.
+        const shift = step.startsWith("shiftclick:");
+        const sel = decodeURIComponent(step.slice(shift ? 11 : 9));
+        const elx = await until(() => q(sel));
+        const mac = navigator.platform.toLowerCase().includes("mac");
+        elx.dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true, cancelable: true,
+            shiftKey: shift, metaKey: !shift && mac, ctrlKey: !shift && !mac,
+          }),
+        );
       } else if (step.startsWith("rclick:")) {
         // A right-click, for the graph row's commit menu: `contextmenu` at a
         // point inside the match, composed so it leaves the shadow root.
@@ -3768,14 +3833,26 @@
       } else if (step === "esc") {
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
       } else if (step.startsWith("key:")) {
-        const key = decodeURIComponent(step.slice(4));
+        // `key:Shift+ArrowDown`, `key:Alt+ArrowUp`: modifiers before the key,
+        // each followed by "+". A lone "+" is the key itself.
+        let key = decodeURIComponent(step.slice(4));
+        const mods = { shiftKey: false, altKey: false, metaKey: false, ctrlKey: false };
+        for (let m; (m = /^(Shift|Alt|Meta|Ctrl)\+(?=.)/.exec(key)); key = key.slice(m[0].length)) {
+          mods[{ Shift: "shiftKey", Alt: "altKey", Meta: "metaKey", Ctrl: "ctrlKey" }[m[1]]] = true;
+        }
         // Dispatch on the FOCUSED element when there is one: a real keypress
         // goes to what has focus and bubbles up, which is what handlers on an
         // input (Enter-to-search) actually listen for.
         const target = document.activeElement && document.activeElement !== document.body
           ? document.activeElement
           : window;
-        target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+        target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods }));
+      } else if (step.startsWith("wait:")) {
+        // Hold the scene. shot.sh captures when its virtual-time budget runs
+        // out, long after the last step — so a state that lasts only a few
+        // seconds (a banner's flash) is caught by waiting BEFORE the step
+        // that raises it.
+        await wait(Number(step.slice(5)) || 0);
       }
       await wait(350);
     }

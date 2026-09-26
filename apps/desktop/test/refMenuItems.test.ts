@@ -53,6 +53,18 @@ test("origin/HEAD is never offered", () => {
   assert.deepEqual(items.map((i) => i.label), ["Checkout origin/main"]);
 });
 
+test("origin/HEAD as git actually names it is never offered either", () => {
+  // `%(refname:short)` of refs/remotes/origin/HEAD is the bare remote name,
+  // "origin" — so a guard on the short name ending in "/HEAD" never fired on
+  // a real repository, and the default branch's tip offered "Checkout
+  // origin/HEAD". Asked of the full name now.
+  const items = refMenuItems([
+    { name: "origin", kind: "remote", fullName: "refs/remotes/origin/HEAD" },
+    { name: "origin/main", kind: "remote", fullName: "refs/remotes/origin/main" },
+  ]);
+  assert.deepEqual(items.map((i) => i.label), ["Checkout origin/main"]);
+});
+
 test("a tag is offered, asks first, and says so with an ellipsis", () => {
   // The one case where detaching is correct — there is no branch to attach to.
   const items = refMenuItems([{ name: "v1.2.0", kind: "tag" }]);

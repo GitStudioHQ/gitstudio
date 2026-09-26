@@ -6,6 +6,8 @@
 // update-ref) are pinned to absolute positions, and would disagree with what
 // every other rebase editor shows. The hint text says which order this is.
 
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import * as vscode from "vscode";
 import { promptConfirm } from "../ui/dialogs";
 import {
@@ -83,6 +85,7 @@ export class RebaseTodoEditorProvider
         type: "rebaseInit",
         headerComment: summary.headerComment,
         rows,
+        continuing: todoIsContinuing(document.uri),
       };
       void webview.postMessage(message);
     };
@@ -200,6 +203,22 @@ export class RebaseTodoEditorProvider
 }
 
 // ── Pure-ish helpers (no vscode) ─────────────────────────────────────────────
+
+/**
+ * Has git already applied part of the rebase this todo belongs to?
+ *
+ * This editor opens for every `git-rebase-todo`, and that is two different
+ * moments: the plan of a rebase about to start, and `git rebase --edit-todo`
+ * on one that is paused. In the second, the commits git has applied are
+ * listed in `done` beside the todo, and the last of them is kept above the
+ * first line — so git lets that line be a squash or fixup, which it refuses
+ * in a fresh plan (sequencer.c: `fixup_okay = file_exists(rebase_path_done())`).
+ * The same test git makes: the file is there.
+ */
+function todoIsContinuing(uri: vscode.Uri): boolean {
+  if (uri.scheme !== "file") return false;
+  return existsSync(join(dirname(uri.fsPath), "done"));
+}
 
 /** Map parsed commit entries to wire rows (index === the row id). */
 function toRows(lines: RebaseLine[]): WireRebaseRow[] {

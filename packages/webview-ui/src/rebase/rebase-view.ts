@@ -10,14 +10,48 @@
 // Theme-native: every color is a --vscode-* token (or a token-derived accent),
 // so the editor blends with the host. The host serializes the final order via
 // the engine and writes the todo — this element only models intent.
+//
+// Several rows at once (#32): click, Shift/⌘-click, the arrows with and
+// without Shift, Home/End, ⌘A and Escape select; the toolbar and git's own
+// letters (p r s f e d) set every selected row; Alt+↑/↓, the move buttons and
+// a drag move the selection. The rules are the shared engine's
+// (engine/rebase/planEdit) — the same ones the extension's workspace and the
+// desktop's Rebase view run — in git's own order: oldest at the top, so a
+// squash folds into the row ABOVE it and the first row can never be one —
+// unless git is already past it: in a paused rebase's `--edit-todo` the last
+// commit git applied is kept above the first line (`continuing`).
 
 import { LitElement, html, css } from "lit";
 import { codiconStyles } from "../styles/codicons";
 import { hostTokens } from "../styles/hostTokens";
+import {
+  NO_SELECTION,
+  PLAN_ACTIONS,
+  actionForKey,
+  actionTooltip,
+  arrowRow,
+  clickRow,
+  collapseSelection,
+  dragKeys,
+  isOrphanFold,
+  moveKeysToGap,
+  moveSelected,
+  pruneSelection,
+  reachRow,
+  refusalText,
+  selectAll,
+  selectOnly,
+  selectedInOrder,
+  selectionCountText,
+  setActions,
+  type PlanSelection,
+} from "@gitstudio/engine/rebase/planEdit";
 import type {
   WireRebaseAction,
   WireRebaseRow,
 } from "@gitstudio/host-bridge/rebaseProtocol";
+
+const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
 
 export type RebaseIntent =
   | { type: "start"; rows: Array<{ id: number; action: WireRebaseAction }> }
@@ -42,17 +76,83 @@ export class RebaseView extends LitElement {
   static properties = {
     headerComment: { attribute: false },
     rows: { attribute: false },
+    continuing: { attribute: false },
     onIntent: { attribute: false },
     dragIndex: { state: true },
     overIndex: { state: true },
+    overSide: { state: true },
+    selection: { state: true },
+    note: { state: true },
   };
 
-  headerComment: string | null = null;
-  rows: Row[] = [];
-  onIntent: ((intent: RebaseIntent) => void) | null = null;
+  // Reactive properties are `declare`d, with no initializer, and given their
+  // defaults in the constructor — the commit graph's pattern. Under ES2022
+  // [[Define]] class fields an initializer REPLACES Lit's accessor with a
+  // plain property, so `view.rows = …` from the host re-rendered nothing:
+  // the editor opened for a terminal's `git rebase -i` said "No commits to
+  // rebase." over a todo full of them.
+  declare headerComment: string | null;
+  declare rows: Row[];
+  /** git has applied part of this rebase already (a paused rebase's
+   *  `--edit-todo`): a kept commit sits above the first line. */
+  declare continuing: boolean;
+  declare onIntent: ((intent: RebaseIntent) => void) | null;
 
-  private dragIndex: number | null = null;
-  private overIndex: number | null = null;
+  private declare dragIndex: number | null;
+  private declare overIndex: number | null;
+  /** Which half of the row under the pointer the drop line is on. */
+  private declare overSide: "before" | "after" | null;
+  /** Which rows the toolbar and the keys act on, by row key (its todo line id). */
+  private declare selection: PlanSelection;
+  /** A refusal the toolbar or a key just met, said until the next change. */
+  private declare note: string;
+  /** The rows a drag carries, by key. */
+  private dragging: string[] = [];
+  private noteTimer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor() {
+    super();
+    this.headerComment = null;
+    this.rows = [];
+    this.continuing = false;
+    this.onIntent = null;
+    this.dragIndex = null;
+    this.overIndex = null;
+    this.overSide = null;
+    this.selection = NO_SELECTION;
+    this.note = "";
+  }
+
+  private static key(row: Row): string {
+    return String(row.id);
+  }
+
+  private order(): string[] {
+    return this.rows.map(RebaseView.key);
+  }
+
+  /**
+   * The rows' actions as the fold rules must see them. In a paused rebase's
+   * `--edit-todo`, the last commit git applied sits above the first line,
+   * kept, and git runs a leading squash into it — so the rules are asked
+   * about the plan with that commit in front (the desktop's Rebase view does
+   * the same for the commits below its display cap). `lead` is how many rows
+   * that put in front: row i of the list is row i + lead of the plan.
+   */
+  private plan(): { actions: WireRebaseAction[]; lead: number } {
+    const actions = this.rows.map((r) => r.action);
+    return this.continuing ? { actions: ["pick", ...actions], lead: 1 } : { actions, lead: 0 };
+  }
+
+  protected willUpdate(changed: Map<string, unknown>): void {
+    if (!changed.has("rows")) return;
+    // A fresh todo (the host's init) starts with its first line selected, so
+    // the keys work from the first Tab; a reorder keeps the selection, which
+    // is named by key and moves with its rows.
+    const pruned = pruneSelection(this.selection, this.order());
+    this.selection =
+      pruned.selected.length || !this.rows.length ? pruned : selectOnly(RebaseView.key(this.rows[0]));
+  }
 
   // Chevron glyphs for the reorder hint — the real VS Code codicon font.
   private static readonly chevronUp = html`<span
@@ -170,12 +270,117 @@ export class RebaseView extends LitElement {
       outline: 1px solid var(--gs-accent);
       outline-offset: -1px;
     }
+    /* Selected (#32): VS Code's selection colour for a list that is not the
+     * focused widget — neutral, so the action chips stay legible — with the
+     * card's edge in the accent. It keeps under the pointer, as VS Code's
+     * lists do, and lands at once (.painting), as a selection does. */
+    .row.selected,
+    .row.selected:hover {
+      background: var(--vscode-list-inactiveSelectionBackground, color-mix(in srgb, var(--gs-accent) 16%, var(--gs-surface)));
+      border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--gs-border));
+      border-left-color: transparent;
+    }
+    :host-context(body.vscode-high-contrast) .row.selected {
+      outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: -1px;
+    }
+    :host-context(body.vscode-high-contrast) .row.selected:focus-visible {
+      outline-style: solid;
+    }
+    .list.painting .row {
+      transition: none;
+    }
+    /* A squash/fixup with nothing above it to fold into: git refuses the plan. */
+    .row.orphan select.action {
+      border-color: var(--vscode-errorForeground, #f14c4c);
+    }
+
+    /* The selection's toolbar, in the header. */
+    .tools {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .selcount {
+      min-width: 78px;
+      font-size: 12px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .tools-label {
+      font-size: 11.5px;
+      color: var(--gs-fg-muted);
+    }
+    .setgroup {
+      display: inline-flex;
+      align-items: stretch;
+      border: 1px solid var(--gs-border);
+      border-radius: var(--gs-radius);
+      overflow: hidden;
+      background: var(--gs-surface);
+    }
+    button.set {
+      --action-accent: var(--gs-fg-muted);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      padding: 3px 10px;
+      font-family: inherit;
+      font-size: 11.5px;
+      font-weight: 600;
+      line-height: 18px;
+      color: var(--gs-fg);
+    }
+    button.set + button.set {
+      border-left: 1px solid var(--gs-border);
+    }
+    button.set:hover:not(:disabled) {
+      background: var(--gs-hover);
+    }
+    button.set:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    button.set:focus-visible {
+      outline: 1px solid var(--gs-accent);
+      outline-offset: -1px;
+    }
+    button.set[data-action="pick"] { --action-accent: var(--vscode-charts-green, #89d185); }
+    button.set[data-action="reword"] { --action-accent: var(--vscode-charts-blue, #3794ff); }
+    button.set[data-action="edit"] { --action-accent: var(--vscode-charts-yellow, #cca700); }
+    button.set[data-action="squash"] { --action-accent: var(--vscode-charts-purple, #b180d7); }
+    button.set[data-action="fixup"] { --action-accent: var(--vscode-charts-orange, #d18616); }
+    button.set[data-action="drop"] { --action-accent: var(--vscode-charts-red, #f14c4c); }
+    /* Every selected commit is already set to this one: the row chips' own
+     * tint, and a bar in the action's hue. */
+    button.set.current {
+      background: color-mix(in srgb, var(--action-accent) 16%, var(--gs-surface));
+      box-shadow: inset 0 -2px 0 var(--action-accent);
+    }
+    .note {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--gs-fg);
+    }
+    .note .codicon {
+      color: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow, #cca700));
+      flex: 0 0 auto;
+    }
     .row.dragging {
       opacity: 0.5;
     }
-    .row.over {
-      border-color: var(--gs-accent);
+    /* The drop line, on the side of the row the drop will land. */
+    .row.over-before {
       box-shadow: inset 0 2px 0 var(--gs-accent);
+    }
+    .row.over-after {
+      box-shadow: inset 0 -2px 0 var(--gs-accent);
     }
     .row.drop {
       opacity: 0.55;
@@ -183,6 +388,9 @@ export class RebaseView extends LitElement {
 
     .grip {
       grid-column: 2;
+      /* It comes last in the row's markup: without a row of its own it is
+       * auto-placed AFTER the cursor, on a second line of every row. */
+      grid-row: 1;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -404,7 +612,21 @@ export class RebaseView extends LitElement {
 
   render() {
     const total = this.rows.length;
-    const kept = this.rows.filter((r) => r.action !== "drop").length;
+    // What the plan ends with: a squash or fixup is folded into another
+    // commit, not kept as one — the count the workspace and the desktop give
+    // for the same plan. It said "12 of 12 kept" for twelve commits squashed
+    // into one.
+    const kept = this.rows.filter((r) => r.action === "pick" || r.action === "reword" || r.action === "edit").length;
+    const folded = this.rows.filter((r) => r.action === "squash" || r.action === "fixup").length;
+    const dropped = this.rows.filter((r) => r.action === "drop").length;
+    const selectedRows = this.rows.filter((r) => this.selection.selected.includes(RebaseView.key(r)));
+    const selectedCount = selectedRows.length;
+    // The action every selected row shares, if they share one.
+    const shared = new Set(selectedRows.map((r) => r.action)).size === 1 ? selectedRows[0]?.action : undefined;
+    // A plan git refuses outright: a squash or fixup with nothing kept above it.
+    const plan = this.plan();
+    const orphans = this.rows.map((_, i) => isOrphanFold(plan.actions, i + plan.lead, "oldest-first"));
+    const orphan = orphans.includes(true);
     return html`
       <header>
         <p class="eyebrow">Interactive Rebase</p>
@@ -423,27 +645,64 @@ export class RebaseView extends LitElement {
           <kbd aria-label="Up arrow">${RebaseView.chevronUp}</kbd>
           <span aria-hidden="true">/</span>
           <kbd aria-label="Down arrow">${RebaseView.chevronDown}</kbd>
-          <span>to reorder. Topmost runs first — this is git's todo file, oldest at the top; set each commit's action.</span>
+          <span>to reorder. Topmost runs first — this is git's todo file, oldest at the top.</span>
+          <span>Shift- or ${IS_MAC ? "⌘" : "Ctrl"}-click selects several;</span>
+          ${PLAN_ACTIONS.map((a) => html`<kbd class="letter" title=${a.label}>${a.key}</kbd>`)}
+          <span>set their action.</span>
+        </div>
+        <div class="tools" role="group" aria-label="Set the action of the selected commits">
+          <span class="selcount" aria-live="polite">${selectionCountText(selectedCount)}</span>
+          <span class="tools-label">Set action</span>
+          <div class="setgroup">
+            ${PLAN_ACTIONS.map(
+              (a) => html`<button
+                class=${`set${selectedCount > 0 && shared === a.id ? " current" : ""}`}
+                type="button"
+                data-action=${a.id}
+                title=${actionTooltip(a.id)}
+                aria-keyshortcuts=${a.key}
+                ?disabled=${selectedCount === 0}
+                @click=${() => this.bulkSet(a.id, false)}
+              >
+                ${a.label}
+              </button>`,
+            )}
+          </div>
         </div>
       </header>
 
-      <div class="list" role="list" aria-label="Rebase commits">
+      <div
+        class="list"
+        role="grid"
+        aria-multiselectable="true"
+        aria-label="Rebase commits, oldest first"
+        @click=${this.onListClick}
+        @mousedown=${this.onListMousedown}
+        @focusin=${this.onListFocusin}
+      >
         ${total === 0
           ? html`<div class="empty">No commits to rebase.</div>`
-          : this.rows.map((row, index) => this.renderRow(row, index, total))}
+          : this.rows.map((row, index) => this.renderRow(row, index, orphans[index]))}
       </div>
 
       <footer>
         <span class="count" aria-live="polite">
           <span class="mono">${kept}</span> of
-          <span class="mono">${total}</span> commit${total === 1 ? "" : "s"} kept
+          <span class="mono">${total}</span> commit${total === 1 ? "" : "s"} kept${folded
+            ? html` · <span class="mono">${folded}</span> folded`
+            : ""}${dropped ? html` · <span class="mono">${dropped}</span> dropped` : ""}
         </span>
-        <span class="spacer"></span>
+        <span class="note" role="status">
+          ${this.note
+            ? html`<span class="codicon codicon-warning" aria-hidden="true"></span><span>${this.note}</span>`
+            : ""}
+        </span>
         <button class="cta danger" @click=${this.abort}>Abort</button>
         <button
           class="cta primary"
           @click=${this.start}
-          ?disabled=${total === 0}
+          ?disabled=${total === 0 || orphan}
+          title=${orphan ? "A squash or fixup has nothing above it to fold into — git can't run this plan." : ""}
         >
           Start rebase
         </button>
@@ -451,22 +710,37 @@ export class RebaseView extends LitElement {
     `;
   }
 
-  private renderRow(row: Row, index: number, total: number) {
-    const dragging = this.dragIndex === index;
-    const over = this.overIndex === index && this.dragIndex !== index;
+  private renderRow(row: Row, index: number, orphan: boolean) {
+    const key = RebaseView.key(row);
+    const dragging = this.dragging.includes(key);
+    const over = this.overIndex === index && !dragging;
+    const selected = this.selection.selected.includes(key);
+    const tabStop = (this.selection.focus ?? RebaseView.key(this.rows[0])) === key;
+    // A row's move buttons carry what a drag of it would: the selection when
+    // the row is in it, else the row.
+    const carried = selected ? this.selection.selected : [key];
+    const carriesMany = carried.length > 1;
+    const order = this.order();
+    const upBlocked = moveSelected(order, carried, -1) === null;
+    const downBlocked = moveSelected(order, carried, 1) === null;
     const classes = [
       "row",
       dragging ? "dragging" : "",
-      over ? "over" : "",
+      over && this.overSide === "before" ? "over-before" : "",
+      over && this.overSide === "after" ? "over-after" : "",
       row.action === "drop" ? "drop" : "",
+      selected ? "selected" : "",
+      orphan ? "orphan" : "",
     ]
       .filter(Boolean)
       .join(" ");
     return html`
       <div
         class=${classes}
-        role="listitem"
-        tabindex="0"
+        role="row"
+        tabindex=${tabStop ? "0" : "-1"}
+        aria-selected=${selected ? "true" : "false"}
+        data-key=${key}
         data-action=${row.action}
         aria-label=${`Commit ${row.shortSha}, ${row.subject}, action ${row.action}`}
         draggable="true"
@@ -481,13 +755,20 @@ export class RebaseView extends LitElement {
         <select
           class="action"
           aria-label=${`Action for ${row.shortSha}`}
+          aria-invalid=${orphan ? "true" : "false"}
+          title=${orphan ? "Nothing above it is kept to fold into — git can't run this" : ""}
           .value=${row.action}
           @change=${(e: Event) =>
             this.setAction(index, (e.target as HTMLSelectElement).value as WireRebaseAction)}
           @keydown=${(e: KeyboardEvent) => e.stopPropagation()}
         >
           ${ACTIONS.map(
-            (a) => html`<option value=${a.value} title=${a.hint}>
+            // `selected` as well as the select's `.value`: Lit sets `.value`
+            // before these options exist, so on the first render it matched
+            // nothing and every dropdown showed pick — a todo opened with
+            // fixups (`--autosquash`, a paused rebase's `--edit-todo`) read
+            // as all picks while Start wrote the fixups.
+            (a) => html`<option value=${a.value} title=${a.hint} ?selected=${a.value === row.action}>
               ${a.label}
             </option>`,
           )}
@@ -497,19 +778,19 @@ export class RebaseView extends LitElement {
         <span class="move">
           <button
             class="icon"
-            title="Move up (Alt+Up)"
-            aria-label="Move up"
-            ?disabled=${index === 0}
-            @click=${() => this.move(index, index - 1)}
+            title=${carriesMany ? "Move the selected commits up (Alt+Up)" : "Move up (Alt+Up)"}
+            aria-label=${carriesMany ? "Move the selected commits up" : "Move up"}
+            ?disabled=${upBlocked}
+            @click=${() => this.moveFrom(key, -1)}
           >
             <span class="codicon codicon-chevron-up" aria-hidden="true"></span>
           </button>
           <button
             class="icon"
-            title="Move down (Alt+Down)"
-            aria-label="Move down"
-            ?disabled=${index === total - 1}
-            @click=${() => this.move(index, index + 1)}
+            title=${carriesMany ? "Move the selected commits down (Alt+Down)" : "Move down (Alt+Down)"}
+            aria-label=${carriesMany ? "Move the selected commits down" : "Move down"}
+            ?disabled=${downBlocked}
+            @click=${() => this.moveFrom(key, 1)}
           >
             <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
           </button>
@@ -523,49 +804,200 @@ export class RebaseView extends LitElement {
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
-  private setAction(index: number, action: WireRebaseAction): void {
-    const next = this.rows.slice();
-    next[index] = { ...next[index], action };
-    this.rows = next;
+  /**
+   * Set `action` on the rows at `indices` — one row from its dropdown, or the
+   * selection from the toolbar and the keys. The shared rule (setActions):
+   * a squash or fixup is refused, row by row, where nothing above it is kept
+   * to fold into, which git refuses outright ("cannot 'squash' without a
+   * previous commit"). Across a selection every row folds into the kept
+   * line above it (for a block, the one over the block); only when none is
+   * kept above does the first selected line stay as it was, for the rest to
+   * fold into. What was refused is said in the footer.
+   */
+  private applyActions(indices: number[], action: WireRebaseAction): void {
+    const before = this.rows.map((r) => r.action);
+    const { actions: plan, lead } = this.plan();
+    const r = setActions(plan, indices.map((i) => i + lead), action, "oldest-first");
+    // Back to the list's own rows: the commit git already applied is not one.
+    const toRows = (xs: number[]): number[] => xs.map((i) => i - lead).filter((i) => i >= 0);
+    const next = r.actions.slice(lead);
+    const refused = toRows(r.refused);
+    this.rows = this.rows.map((row, i) => (next[i] === row.action ? row : { ...row, action: next[i] }));
+    this.say(
+      refusalText(
+        action,
+        { changed: toRows(r.changed), refused },
+        "oldest-first",
+        refused.length === 1 ? before[refused[0]] : undefined,
+      ),
+    );
   }
 
-  /** Move the row at `from` to `to`, clamping and re-focusing the moved row. */
-  private move(from: number, to: number): void {
-    if (to < 0 || to >= this.rows.length || from === to) {
-      return;
-    }
-    const next = this.rows.slice();
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    this.rows = next;
-    // Restore focus to the row at its new index after the re-render.
-    this.updateComplete.then(() => {
-      const items = this.renderRoot.querySelectorAll<HTMLElement>(".row");
-      items[to]?.focus();
+  private setAction(index: number, action: WireRebaseAction): void {
+    this.applyActions([index], action);
+    // A refused change leaves the model as it was, so Lit has nothing to
+    // re-render — put the dropdown back on the action the row still has.
+    void this.updateComplete.then(() => {
+      const sel = this.rowEl(RebaseView.key(this.rows[index]))?.querySelector("select");
+      if (sel && sel.value !== this.rows[index].action) sel.value = this.rows[index].action;
     });
   }
 
-  // ── Keyboard reorder (Alt+Up/Down) ───────────────────────────────────────
+  /** The toolbar and the keys: every selected row. */
+  private bulkSet(action: WireRebaseAction, keepFocusOnRow: boolean): void {
+    const order = this.order();
+    const indices = selectedInOrder(this.selection, order).map((k) => order.indexOf(k));
+    if (!indices.length) return;
+    this.applyActions(indices, action);
+    if (keepFocusOnRow) this.focusRow();
+  }
 
-  private onRowKeydown(e: KeyboardEvent, index: number): void {
-    if (e.altKey && e.key === "ArrowUp") {
+  /** Say a refusal in the footer until the next one, or for a few seconds. */
+  private say(text: string): void {
+    clearTimeout(this.noteTimer);
+    this.note = text;
+    if (text) this.noteTimer = setTimeout(() => (this.note = ""), 6000);
+  }
+
+  private rowEl(key: string | null | undefined): HTMLElement | null {
+    if (!key) return null;
+    return this.renderRoot.querySelector<HTMLElement>(`.row[data-key="${key}"]`);
+  }
+
+  /** After the re-render, put the keyboard on the row it is on. */
+  private focusRow(): void {
+    void this.updateComplete.then(() => {
+      const el = this.rowEl(this.selection.focus);
+      el?.focus();
+      el?.scrollIntoView?.({ block: "nearest" });
+    });
+  }
+
+  /** Point the selection somewhere; the keyboard follows it. */
+  private select(next: PlanSelection, focus = true): void {
+    // A selection lands at once, as in every list; only the hover eases.
+    this.renderRoot.querySelector(".list")?.classList.add("painting");
+    this.selection = next;
+    void this.updateComplete.then(() => {
+      const list = this.renderRoot.querySelector<HTMLElement>(".list");
+      void list?.offsetHeight;
+      list?.classList.remove("painting");
+    });
+    if (focus) this.focusRow();
+  }
+
+  /** Put the rows in this key order, if it is a different one. */
+  private reorder(keys: string[]): void {
+    if (keys.join("\n") === this.order().join("\n")) return;
+    const byKey = new Map(this.rows.map((r) => [RebaseView.key(r), r] as const));
+    this.rows = keys.map((k) => byKey.get(k)).filter((r): r is Row => !!r);
+    this.focusRow();
+  }
+
+  /** A row's move button: the selection when the row is in it, else the row. */
+  private moveFrom(key: string, delta: -1 | 1): void {
+    if (!this.selection.selected.includes(key)) this.select(selectOnly(key), false);
+    const next = moveSelected(this.order(), this.selection.selected, delta);
+    if (next) this.reorder(next);
+  }
+
+  // ── Selecting, from the mouse and the keyboard ───────────────────────────
+
+  private rowOf(t: EventTarget | null): HTMLElement | null {
+    const el = t as HTMLElement | null;
+    return el?.closest?.<HTMLElement>(".row") ?? null;
+  }
+
+  private onListMousedown = (e: MouseEvent): void => {
+    // A Shift-click selects rows, not the text between two clicks.
+    if (e.shiftKey && this.rowOf(e.target)) e.preventDefault();
+  };
+
+  private onListClick = (e: MouseEvent): void => {
+    const row = this.rowOf(e.target);
+    // A row's own controls keep their clicks: the dropdown opens, a move
+    // button moves. Focusing one selects its row (focusin, below).
+    if (!row || (e.target as HTMLElement).closest("select, button, input, a")) return;
+    this.select(
+      clickRow(this.selection, this.order(), row.dataset.key ?? "", {
+        range: e.shiftKey,
+        toggle: IS_MAC ? e.metaKey : e.ctrlKey,
+      }),
+    );
+  };
+
+  private onListFocusin = (e: FocusEvent): void => {
+    // Tabbing (or clicking) into a row's dropdown makes that row the one the
+    // keys act on. The row's own focus is the click's business: a ⌘-click
+    // must not collapse the selection on its way in.
+    const row = this.rowOf(e.target);
+    if (!row || e.target === row) return;
+    const key = row.dataset.key ?? "";
+    if (!this.selection.selected.includes(key)) this.select(selectOnly(key), false);
+    else if (this.selection.focus !== key) this.select({ ...this.selection, focus: key }, false);
+  };
+
+  private onRowKeydown(e: KeyboardEvent, _index: number): void {
+    const row = e.currentTarget as HTMLElement;
+    // Alt+↑/↓ moves the selection, as a block.
+    if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       e.preventDefault();
-      this.move(index, index - 1);
-    } else if (e.altKey && e.key === "ArrowDown") {
+      const next = moveSelected(this.order(), this.selection.selected, e.key === "ArrowUp" ? -1 : 1);
+      if (next) this.reorder(next);
+      return;
+    }
+    // Everything else only on the row itself: a control's keys are its own.
+    if (e.target !== row) return;
+    const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+    const order = this.order();
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !mod && !e.altKey) {
       e.preventDefault();
-      this.move(index, index + 1);
+      this.select(arrowRow(this.selection, order, e.key === "ArrowUp" ? -1 : 1, e.shiftKey));
+    } else if ((e.key === "Home" || e.key === "End") && !mod && !e.altKey) {
+      e.preventDefault();
+      this.select(reachRow(this.selection, order, e.key === "Home" ? 0 : order.length - 1, e.shiftKey));
+    } else if (e.key === "Escape") {
+      const next = collapseSelection(this.selection);
+      if (next === this.selection) return; // nothing to collapse: Escape is not ours
+      e.preventDefault();
+      e.stopPropagation();
+      this.select(next);
+    } else if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      this.select(selectAll(this.selection, order));
+    } else if (!e.altKey && !e.ctrlKey && !e.metaKey) {
+      // git's own todo letters: p r s f e d.
+      const action = actionForKey(e.key);
+      if (!action) return;
+      e.preventDefault();
+      this.bulkSet(action, true);
     }
   }
 
   // ── Drag-and-drop reorder ────────────────────────────────────────────────
+  //
+  // Picking up a SELECTED row carries the whole selection, in list order;
+  // picking up any other row selects it and carries it alone. The line is
+  // drawn on the half of the row the pointer is in, and the drop lands there
+  // — the old line sat on top of the row while a downward drop landed below
+  // it, one row off from what it promised.
 
   private onDragStart(e: DragEvent, index: number): void {
+    const key = RebaseView.key(this.rows[index]);
+    if (!this.selection.selected.includes(key)) this.select(selectOnly(key), false);
+    this.dragging = dragKeys(this.selection, this.order(), key);
     this.dragIndex = index;
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
       // Some browsers require data to be set for the drag to start.
-      e.dataTransfer.setData("text/plain", String(index));
+      e.dataTransfer.setData("text/plain", key);
     }
+    this.requestUpdate();
+  }
+
+  private sideOf(e: DragEvent): "before" | "after" {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    return e.clientY < r.top + r.height / 2 ? "before" : "after";
   }
 
   private onDragOver(e: DragEvent, index: number): void {
@@ -574,26 +1006,32 @@ export class RebaseView extends LitElement {
       e.dataTransfer.dropEffect = "move";
     }
     this.overIndex = index;
+    this.overSide = this.sideOf(e);
   }
 
   private onDragLeave(index: number): void {
     if (this.overIndex === index) {
       this.overIndex = null;
+      this.overSide = null;
     }
   }
 
   private onDrop(e: DragEvent, index: number): void {
     e.preventDefault();
-    if (this.dragIndex !== null && this.dragIndex !== index) {
-      this.move(this.dragIndex, index);
-    }
+    const side = this.sideOf(e);
+    const moving = this.dragging;
+    this.dragging = [];
     this.dragIndex = null;
     this.overIndex = null;
+    this.overSide = null;
+    if (moving.length) this.reorder(moveKeysToGap(this.order(), moving, side === "before" ? index : index + 1));
   }
 
   private onDragEnd = (): void => {
+    this.dragging = [];
     this.dragIndex = null;
     this.overIndex = null;
+    this.overSide = null;
   };
 
   // ── Actions ────────────────────────────────────────────────────────────────

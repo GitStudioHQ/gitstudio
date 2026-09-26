@@ -36,8 +36,13 @@ body {
   width: 100%;
 }
 
+/* A column, as the element's own :host rule says — but a page rule outranks
+ * :host, and "display: block" here made the header, list and footer stack
+ * as plain blocks: a long todo pushed Start rebase off the bottom of a body
+ * that does not scroll, instead of scrolling the list. */
 gitstudio-rebase {
-  display: block;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   width: 100%;
 }

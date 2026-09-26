@@ -6,6 +6,13 @@
 #   click:<selector> click the first match (URL-encode [ ] = as %5B %5D %3D)
 #   rclick:<selector> right-click it (the graph row's commit menu)
 #   mclick:<selector> Cmd-click it; sclick:<selector> Shift-click it (select several)
+#   shiftclick:<selector> / modclick:<selector>  click with Shift, or with
+#                    ⌘ (Mac) / Ctrl — how a list is multi-selected
+#   key:<key>        a key on the focused element; modifiers go first, each
+#                    followed by "+" (URL-encode it: key:Shift%2BArrowDown)
+#   wait:<ms>        hold the scene; the shot is taken when the time budget
+#                    (9 s) runs out, so wait BEFORE the step that raises a
+#                    state lasting only a few seconds (a banner's flash)
 #   esc              dispatch Escape (detail → list)
 #   palette          open the ⌘K palette
 #   bell             open the notifications popover
