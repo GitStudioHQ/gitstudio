@@ -1,0 +1,33 @@
+packages/git-service/src/sshAliases.ts
+  s_26f5e669d3043c::t_5ef0d4c5583597 1-45
+apps/desktop/test/sshAliasRemotes.test.ts
+  s_26f5e669d3043c::t_d3b92e791c144a 1-51
+packages/git-service/test/sshAliases.test.ts
+  s_26f5e669d3043c::t_a3832f1333d086 1-39
+apps/desktop/src/main/ghRepoOpen.ts
+  s_26f5e669d3043c::t_ab0f7bce74e300 19,35-38
+apps/desktop/src/main/githubBridge.ts
+  s_26f5e669d3043c::t_b7015ccb595a7c 20,122-123
+apps/desktop/src/main/githubRemote.ts
+  s_26f5e669d3043c::t_5eb4af9f20aeee 19-24,26
+apps/desktop/src/main/localRepos.ts
+  s_26f5e669d3043c::t_d8852933a8da00 20,64-67
+apps/extension/src/pr/repoContext.ts
+  s_26f5e669d3043c::t_3d26b6250e52a2 1-2,15-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "50228578aa3f13fc118f6eb78e40be3b47753eef",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
