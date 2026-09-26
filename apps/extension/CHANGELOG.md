@@ -85,6 +85,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   to it, or dropping your last local commit — offered to revert an empty range
   and failed with git's "empty commit set passed". Going back is a
   fast-forward that rewrites nothing, so Undo now simply does it.
+- **Undo after reordering commits with "Reorder and move those branches".**
+  Undo put your branch back but left the other branches on the reordered
+  commits. They go back too now, as long as nothing has been committed on
+  them since; if something has, Undo says so and changes nothing.
 - Blame in a repository nested inside another's folder (a vendored checkout,
   a submodule) no longer runs in the outer repository when the outer one is
   the repository on screen.
