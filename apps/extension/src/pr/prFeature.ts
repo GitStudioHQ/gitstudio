@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { notifyCopied } from "../ui/notify";
 import { promptConfirm, promptPick } from "../ui/dialogs";
 import type { RepoManager } from "../git/repoManager";
 import type { GitBrain } from "../ai/gitBrain";
@@ -287,7 +288,7 @@ export function registerPrFeature(
       const resolved = await resolvePr(arg);
       if (resolved) {
         await vscode.env.clipboard.writeText(resolved.pr.htmlUrl);
-        void vscode.window.showInformationMessage(`Copied the link to pull request #${resolved.pr.number}.`);
+        notifyCopied(`the link to pull request #${resolved.pr.number}`);
       }
     }),
     vscode.commands.registerCommand("gitstudio.pr.merge", async (arg?: PrCommandArg) => {

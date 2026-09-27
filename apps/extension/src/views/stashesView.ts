@@ -17,6 +17,7 @@ import { stoppedByThisCommand, type DetectedOperation } from "../git/pausedForUs
 import { detectOperation, notifyPaused } from "../git/pauseNotice";
 import { EMPTY_TREE, toRevisionUri } from "../history/revisionContentProvider";
 import { relativeTime } from "../util/relativeTime";
+import { failed, notice, NO_REPOSITORY } from "../ui/notify";
 
 // The stash OPERATIONS — save, apply, pop, drop, create branch, copy or move
 // some of a stash's files to Changes, open a file's diff — for the Stashes
@@ -85,7 +86,7 @@ export function stashDiffUri(
 function active(repos: RepoManager): RepoEntry | undefined {
   const a = repos.getActive();
   if (!a) {
-    void vscode.window.showInformationMessage("GitStudio: no active repository.");
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
   }
   return a;
 }
@@ -324,9 +325,7 @@ export async function saveStash(
     stagedOnly,
   });
   if (!result.ok) {
-    void vscode.window.showErrorMessage(
-      result.stderr.trim() || "GitStudio: stash failed.",
-    );
+    void vscode.window.showErrorMessage(failed("Stash", result.stderr));
     return;
   }
   // A zero exit is not proof anything was stashed: `git stash push` with nothing
@@ -400,7 +399,7 @@ export async function applyStash(
     const before = await detectOperation(a.ctx);
     // Through the shared door: uncommitted work in the stash's way is said, with
     // Stash & Retry, instead of git's "would be overwritten by merge" in red.
-    return settleApplied(a, before, await applyWithStaging(a, entry, false), "Applied stash", refresh);
+    return settleApplied(a, before, await applyWithStaging(a, entry, false), "Apply stash", "Applied stash", refresh);
   });
 }
 
@@ -428,7 +427,7 @@ export async function popStash(
     const applied = ledger
       ? await ledger.runWithUndo(a, `Pop “${stashLabel(entry)}”`, run)
       : await run();
-    return settleApplied(a, before, applied, "Popped stash", refresh);
+    return settleApplied(a, before, applied, "Pop stash", "Popped stash", refresh);
   });
 }
 
@@ -611,6 +610,7 @@ async function settleApplied(
   a: RepoEntry,
   before: DetectedOperation,
   applied: Applied,
+  action: string,
   success: string | undefined,
   refresh: () => void,
 ): Promise<StashOutcome> {
@@ -624,7 +624,7 @@ async function settleApplied(
   const ok = applied.result.code === 0;
   const paused = !ok && stoppedByThisCommand(before, await detectOperation(a.ctx));
   if (success !== undefined || !ok) {
-    reportStashOp({ ok, stderr: applied.result.stderr }, success ?? "", refresh, paused);
+    reportStashOp({ ok, stderr: applied.result.stderr }, action, success ?? "", refresh, paused);
   }
   return ok ? { kind: "done" } : paused ? { kind: "paused" } : KEPT;
 }
@@ -672,7 +672,7 @@ export async function dropStash(
     const result = ledger
       ? await ledger.runWithUndo(a, `Drop “${stashLabel(entry)}”`, run, { refsOnly: true })
       : await run();
-    reportStashOp(result, "Dropped stash", refresh);
+    reportStashOp(result, "Drop stash", "Dropped stash", refresh);
     return result.ok ? { kind: "done" } : result.gone ? GONE : KEPT;
   });
 }
@@ -720,7 +720,7 @@ export async function branchFromStash(
     // with the stash unapplied, and said so in red.
     const before = await detectOperation(a.ctx);
     const applied = await applyOrAsk(a.ctx, { kind: "stash", stash: entry.sha, branch: name });
-    return settleApplied(a, before, applied, `Created branch ${name}`, refresh);
+    return settleApplied(a, before, applied, "Create branch from stash", `Created branch ${name}`, refresh);
   });
 }
 
@@ -777,7 +777,7 @@ export async function copyStashFiles(
     }
     const before = await detectOperation(a.ctx);
     const applied = await applyPartWithStaging(a, entry, part.sha, false, picked);
-    return settleApplied(a, before, applied, `Copied ${countFiles(picked.length)} to Changes`, refresh);
+    return settleApplied(a, before, applied, "Copy to Changes", `Copied ${countFiles(picked.length)} to Changes`, refresh);
   });
 }
 
@@ -829,7 +829,7 @@ export async function moveStashFiles(
     const run = async (): Promise<Applied & { outcome: StashOutcome }> => {
       const before = await detectOperation(a.ctx);
       const applied = await applyPartWithStaging(a, entry, part.sha, true, picked);
-      const outcome = await settleApplied(a, before, applied, undefined, refresh);
+      const outcome = await settleApplied(a, before, applied, "Move to Changes", undefined, refresh);
       if (outcome.kind !== "done") {
         return { ...applied, outcome };
       }
@@ -837,9 +837,11 @@ export async function moveStashFiles(
       const replaced = await a.ctx.stashes.replace(entry.sha, rest.sha);
       if (!replaced.ok) {
         void vscode.window.showWarningMessage(
-          replaced.gone
-            ? `GitStudio: the files are in Changes, but “${stashLabel(entry)}” had left the stash list meanwhile, so nothing more was changed.`
-            : `GitStudio: the files are in Changes, but the stash couldn't be updated — ${replaced.stderr.trim()}`,
+          notice(
+            replaced.gone
+              ? `the files are in Changes, but “${stashLabel(entry)}” had left the stash list meanwhile, so nothing more was changed.`
+              : `the files are in Changes, but the stash couldn't be updated — ${replaced.stderr.trim()}`,
+          ),
         );
         return { ...applied, outcome: { kind: "done" } };
       }
@@ -964,6 +966,7 @@ export async function pickStash(repos: RepoManager, verb: string): Promise<strin
  */
 function reportStashOp(
   result: { ok: boolean; stderr: string; gone?: true },
+  action: string,
   success: string,
   refresh: () => void,
   paused = false,
@@ -982,9 +985,7 @@ function reportStashOp(
     notifyPaused("The stash hit conflicts. Resolve them, or cancel to put the files back — the stash is kept.");
     refresh();
   } else {
-    void vscode.window.showErrorMessage(
-      result.stderr.trim() || "GitStudio: stash operation failed.",
-    );
+    void vscode.window.showErrorMessage(failed(action, result.stderr));
     refresh();
   }
 }

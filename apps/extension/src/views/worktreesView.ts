@@ -27,6 +27,7 @@ import { bareName, shortNameOf, startPointOf, worktreeRefFor } from "./worktreeR
 import { worktreeEntry } from "../git/worktreeContext";
 import { pullOrAsk } from "../git/inTheWay";
 import { askPullMode } from "../git/pullMode";
+import { notice, NO_REPOSITORY } from "../ui/notify";
 
 // The Worktrees pillar's commands — also absent from free VS Code. The view
 // (worktreesWebview.ts) calls them with a worktree's folder; the palette with
@@ -108,7 +109,7 @@ export function worktreesOpenHere(
 function active(repos: RepoManager): RepoEntry | undefined {
   const a = repos.getActive();
   if (!a) {
-    void vscode.window.showInformationMessage("GitStudio: no active repository.");
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
   }
   return a;
 }
@@ -627,7 +628,7 @@ async function askFolderAndCreate(
   }
   refresh();
   const open = await vscode.window.showInformationMessage(
-    `Created the worktree ${path.basename(target)} at ${tildify(target)}`,
+    notice(`Created the worktree ${path.basename(target)} at ${tildify(target)}`),
     "Open in New Window",
   );
   if (open === "Open in New Window") {

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { notifyCopied } from "../ui/notify";
 import { fetchPrPage, fileStatusOf, markReadyForReview, mergeBoxOf } from "@gitstudio/engine/forge/prPage";
 import { isCheckedOut, PrListError, type GraphqlFn, type LocalHead } from "@gitstudio/engine/forge/prList";
 import { prKey, type ReviewEvent } from "@gitstudio/engine/forge/pullRequests";
@@ -498,7 +499,7 @@ export class PrPage {
       case "copyLink": {
         const url = this.detail?.url ?? `https://github.com/${this.repoId}/pull/${this.n}`;
         await vscode.env.clipboard.writeText(url);
-        void vscode.window.showInformationMessage(`Copied the link to pull request #${this.n}.`);
+        notifyCopied(`the link to pull request #${this.n}`);
         return;
       }
       case "openUrl":
