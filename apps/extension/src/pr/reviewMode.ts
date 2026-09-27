@@ -174,30 +174,23 @@ export class ReviewController implements vscode.Disposable {
     if (r && !r.files && r.headSha === k.headSha) r.files = k.files;
   }
 
-  /** Which PR file, and which side of it, a `gitstudio-pr` document is. */
+  /**
+   * Which PR file, and which side of it, a `gitstudio-pr` document is. Only
+   * a document that names its pull request (`pr=`) is one: a commit's diff
+   * names none — its lines are that commit's change, not the pull request's
+   * hunks, and a head commit two pull requests share would be either's.
+   */
   private locate(uri: vscode.Uri): { entry: Review | KnownPr; key: string; side: ReviewSide; path: string } | undefined {
     if (uri.scheme !== PR_SCHEME) return undefined;
     const { owner, repo, sha, path, pr } = fromPrContentUri(uri);
-    const sideOf = (e: { headSha: string; baseSha: string }): ReviewSide | undefined =>
-      sha === e.headSha ? "RIGHT" : sha === e.baseSha ? "LEFT" : undefined;
-    const candidates: [string, Review | KnownPr][] = [];
-    if (pr) {
-      const key = prKey(owner, repo, pr);
-      // A review pins its pull request to the head it was written on: the
-      // newer head's diffs take no comment until it is sent or discarded.
-      const r = this.reviews.get(key);
-      const k = this.known.get(key);
-      if (r) candidates.push([key, r]);
-      else if (k) candidates.push([key, k]);
-    } else {
-      for (const [key, r] of this.reviews) if (r.owner === owner && r.repo === repo) candidates.push([key, r]);
-      for (const [key, k] of this.known) if (k.owner === owner && k.repo === repo && !this.reviews.has(key)) candidates.push([key, k]);
-    }
-    for (const [key, e] of candidates) {
-      const side = sideOf(e);
-      if (side) return { entry: e, key, side, path };
-    }
-    return undefined;
+    if (!pr) return undefined;
+    const key = prKey(owner, repo, pr);
+    // A review pins its pull request to the head it was written on: the
+    // newer head's diffs take no comment until it is sent or discarded.
+    const e: Review | KnownPr | undefined = this.reviews.get(key) ?? this.known.get(key);
+    if (!e) return undefined;
+    const side: ReviewSide | undefined = sha === e.headSha ? "RIGHT" : sha === e.baseSha ? "LEFT" : undefined;
+    return side ? { entry: e, key, side, path } : undefined;
   }
 
   private fileOf(entry: Review | KnownPr, side: ReviewSide, path: string): PrFile | undefined {

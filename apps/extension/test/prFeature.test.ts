@@ -359,6 +359,11 @@ test("a commit expands to its files, and a file opens as that commit's diff — 
   assert.match(left.query, /sha=parent1/);
   assert.match(right.query, /sha=037head/);
   assert.doesNotMatch(right.query, /pr=/, "a commit's diff is not the review's: it names no pull request");
+  // …so neither side takes a comment — though 037head is the pull request's
+  // head, and its page has been read (the review would take the PR's hunks).
+  const provide = (uri: any) => m.controller.commentingRangeProvider.provideCommentingRanges({ uri, lineCount: 120 });
+  assert.equal(await provide(right), undefined, "the head commit's diff takes no comment");
+  assert.equal(await provide(left), undefined, "…nor its parent's side");
 });
 
 test("a reference in a body opens its page when it is this repository's pull request — anything else, GitHub's page", async () => {
@@ -453,11 +458,15 @@ test("review: only lines inside the diff's hunks take a comment — the head's, 
   github(acmeRoutes());
   const m = mount(fakeRepos(ORIGIN));
   await startReview(m, 37);
-  assert.deepEqual(await ranges(m, "src/a.ts", HEAD_37, 120), [[0, 3], [40, 41]], "the head side: its two hunks, not every line");
-  assert.deepEqual(await ranges(m, "src/a.ts", "basesha", 120), [[0, 2], [39, 43]], "the base side: the lines being removed");
-  assert.deepEqual(await ranges(m, "docs/gone.md", "basesha", 3), [[0, 2]], "a deleted file is commented on its LEFT side");
-  assert.deepEqual(await ranges(m, "docs/gone.md", HEAD_37, 0), [], "…and has no right side to comment on");
-  assert.deepEqual(await ranges(m, "src/old.ts", "basesha", 2), [[0, 1]], "a rename's base side is its old path");
+  assert.deepEqual(await ranges(m, "src/a.ts", HEAD_37, 120, 37), [[0, 3], [40, 41]], "the head side: its two hunks, not every line");
+  assert.deepEqual(await ranges(m, "src/a.ts", "basesha", 120, 37), [[0, 2], [39, 43]], "the base side: the lines being removed");
+  assert.deepEqual(await ranges(m, "docs/gone.md", "basesha", 3, 37), [[0, 2]], "a deleted file is commented on its LEFT side");
+  assert.deepEqual(await ranges(m, "docs/gone.md", HEAD_37, 0, 37), [], "…and has no right side to comment on");
+  assert.deepEqual(await ranges(m, "src/old.ts", "basesha", 2, 37), [[0, 1]], "a rename's base side is its old path");
+  // A document that names no pull request — a commit's diff, even of the
+  // head commit — is not the review's: no line of it takes a comment.
+  assert.equal(await ranges(m, "src/a.ts", HEAD_37, 120), undefined, "no pr=: no commenting ranges, even at the head's sha");
+  assert.equal(await ranges(m, "src/a.ts", "basesha", 120), undefined, "…nor at the base's");
   const opened = pr.executed.filter((e: any) => e.id === "vscode.diff");
   assert.equal(opened.length, 1, "one diff opens: a preview replaced by the next left only the last of five");
   assert.match(opened[0].args[1].query, /pr=37/, "the diff names its pull request");
@@ -693,7 +702,7 @@ test("review: Delete on a pending comment deletes that comment", async () => {
   github(acmeRoutes());
   const m = mount(fakeRepos(ORIGIN));
   await startReview(m, 37);
-  const thread = vscode.__makeThread(prUri("src/a.ts", HEAD_37), new vscode.Range(40, 0, 40, 0));
+  const thread = vscode.__makeThread(prUri("src/a.ts", HEAD_37, 37), new vscode.Range(40, 0, 40, 0));
   await vscode.commands.executeCommand("gitstudio.pr.addReviewComment", { thread, text: "first" });
   await vscode.commands.executeCommand("gitstudio.pr.addReviewComment", { thread, text: "second" });
   assert.equal(thread.comments.length, 2);
@@ -709,7 +718,7 @@ test("review: \"pending\" counts pending comments — a posted one is neither co
   github([["POST", /\/reviews$/, () => ({ body: { id: 1 } })], ...acmeRoutes()]);
   const m = mount(fakeRepos(ORIGIN));
   await startReview(m, 37);
-  const two = vscode.__makeThread(prUri("src/a.ts", HEAD_37), new vscode.Range(2, 0, 2, 0));
+  const two = vscode.__makeThread(prUri("src/a.ts", HEAD_37, 37), new vscode.Range(2, 0, 2, 0));
   await vscode.commands.executeCommand("gitstudio.pr.addReviewComment", { thread: two, text: "one" });
   await vscode.commands.executeCommand("gitstudio.pr.addReviewComment", { thread: two, text: "two" });
   await vscode.commands.executeCommand("gitstudio.pr.cancelReview");
@@ -737,8 +746,8 @@ test("review: the left side is the MERGE BASE — the file GitHub's hunks count 
   assert.match(pageLeft.query, /sha=mergebase/, "the page's diff: base side at the merge base");
   assert.equal(pageLeft.path, "/src/old.ts", "under a rename's old name");
   assert.equal(pageRight.path, "/src/new.ts");
-  assert.deepEqual(await ranges(m, "src/a.ts", "mergebase", 120), [[0, 2], [39, 43]], "the removed lines, where they are in that file");
-  assert.equal(await ranges(m, "src/a.ts", "basesha", 120), undefined, "the base branch's tip is not the diff's left side");
+  assert.deepEqual(await ranges(m, "src/a.ts", "mergebase", 120, 37), [[0, 2], [39, 43]], "the removed lines, where they are in that file");
+  assert.equal(await ranges(m, "src/a.ts", "basesha", 120, 37), undefined, "the base branch's tip is not the diff's left side");
   const removed = vscode.__makeThread(prUri("docs/gone.md", "mergebase", 37), new vscode.Range(1, 0, 1, 0));
   await vscode.commands.executeCommand("gitstudio.pr.addReviewComment", { thread: removed, text: "why?" });
   await submit(page, "COMMENT", "");
@@ -790,7 +799,7 @@ test("review: all 130 of a big pull request's files are listed, and the 130th ta
   const page = await startReview(m, 37);
   assert.equal(page.state().files.items.length, 130);
   assert.equal(page.state().files.truncated, false);
-  assert.deepEqual(await ranges(m, "src/f129.ts", HEAD_37, 5), [[0, 1]], "a file past the first 100 is commentable");
+  assert.deepEqual(await ranges(m, "src/f129.ts", HEAD_37, 5, 37), [[0, 1]], "a file past the first 100 is commentable");
 });
 
 test("review: the palette's Submit Review opens the review's page on its box — the only review, no question", async () => {
