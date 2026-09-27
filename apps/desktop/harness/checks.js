@@ -8112,10 +8112,10 @@
       }).filter((x) => x !== null))];
       c.eq(xs.length, 1, `the path column holds one x (${xs.join(", ")})`);
       c.ok(
-        rows.some((r) => /this window/.test(text(r.querySelector(".br-state-col")) || "")),
+        rows.some((r) => /this tab/.test(text(r.querySelector(".br-state-col")) || "")),
         "and the state pills ride the state column",
       );
-      // Two pills on a row (this window + main worktree) fit, unclipped.
+      // Two pills on a row (this tab + main worktree) fit, unclipped.
       const clipped = rows
         .map((r) => r.querySelector(".br-state-col"))
         .filter((s) => s && s.scrollWidth > s.clientWidth + 1)
@@ -12454,8 +12454,10 @@
       await settle(500);
       const rows = $$(".sec-row");
       c.ok(rows.length > 1, `they are listed (${rows.length})`);
-      const current = rows.find((r) => /this window/i.test(text(r)));
-      c.ok(!!current, "and the one this window has open says so");
+      // A window holds a repository per tab (#32): the mark is the tab's.
+      const current = rows.find((r) => /this tab/i.test(text(r)));
+      c.ok(!!current, "and the one this tab has open says so");
+      c.ok(!rows.some((r) => /this window/i.test(text(r))), "as this tab, not this window");
       for (const r of rows) {
         c.ok(!!r.querySelector(".sec-row-actions button"), "each carries its verbs");
         c.ok((r.dataset.ref || "").includes("/"), "and names the path it lives at");
@@ -18532,6 +18534,35 @@
       await settle(900);
       c.ok(!/Opened/.test(text("#toast-stack")), `no "Opened" held for the tab it was clicked in (${text("#toast-stack")})`);
       c.ok(!btn.disabled && !btn.classList.contains("is-busy"), "its Open button is not left busy");
+    },
+
+    /** A worktree another tab of this window has open is marked so on its row,
+     *  and its Remove says to close that tab first (#32). The row said
+     *  nothing, and only the front tab's own worktree was marked, as "this
+     *  window". */
+    "a-worktree-open-in-another-tab-says-so": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const rows = $$(".view-host .worktree-row");
+      const row = (p) => rows.find((r) => r.dataset.ref === p);
+      const WT = "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2";
+      const wave2 = row(WT);
+      c.ok(!!wave2, "precondition: the worktree's row");
+      if (!wave2) return;
+      c.eq(text(wave2.querySelector(".br-state-col")), "open in a tab", "its row says another tab has it open");
+      c.match(wave2.getAttribute("aria-label") || "", /, open in another tab$/, "and so does its name");
+      const own = row(GS_ROOT);
+      c.match(text(own?.querySelector(".br-state-col")), /^this tab/, "the front tab's own is this tab's");
+      c.eq(text(row("/Users/anton/Developer/GitStudioHQ/gitstudio-agent")?.querySelector(".br-state-col")), "locked", "a worktree no tab has open is not marked");
+      // Its Remove says why not, before anything is asked.
+      $$(".lv-menu-btn", wave2)[0]?.click();
+      await settle(350);
+      const remove = $$(".dropdown .dropdown-item").find((i) => text(i) === "Remove this worktree…");
+      c.ok(!!remove, `precondition: its menu removes it (${$$(".dropdown .dropdown-item").map(text).join(" | ")})`);
+      remove?.click();
+      await settle(600);
+      c.ok(!$(".modal-card"), "nothing is asked");
+      c.match(text("#toast-stack"), /is open in another tab of this window, so it can't be removed — .*Close that tab first\./, "it says to close that tab first");
     },
 
     /** Every tab taken: opening a worktree is refused, and said ONCE — main's

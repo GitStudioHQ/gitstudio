@@ -93,6 +93,18 @@ test("refusals say why, in words", () => {
   assert.match(worktreeRemovalRefusal("notListed", "feat"), /no longer a worktree/);
 });
 
+test("the desktop holds a repository per TAB: its 'current' words say this tab, and a way out that works there", () => {
+  const said = worktreeRemovalRefusal("current", "feat", "tab");
+  assert.equal(
+    said,
+    "This tab has feat open, so it can't be removed from here — its folder would be deleted from under the tab. Close this tab, then remove it from another worktree of the repository.",
+  );
+  // "Open something else in this one" opens a new TAB now, and removing it from
+  // there is the openInTab refusal: the desktop's words never send you there.
+  assert.doesNotMatch(said, /window/);
+  assert.equal(worktreeRemovalRefusal("current", "feat", "window"), worktreeRemovalRefusal("current", "feat"), "the extension's, by default");
+});
+
 test("an operation stopped in it is named, with what removing it abandons", () => {
   const merge = worktreeRemovalQuestion({ ...base, operation: "merge", changes: ["a.ts"] });
   assert.match(merge.message, /A merge is in progress in it\. Removing the worktree abandons the merge\./);

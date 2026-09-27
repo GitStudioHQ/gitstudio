@@ -1759,7 +1759,7 @@ export class GitBridge {
       // Never the window's own worktree, whatever the renderer sent — nor
       // one another of its tabs has open.
       if (sameFolder(opts.path, ctx.root)) {
-        return { ok: false, expected: true, message: "This window has that worktree open, so it can't be removed from here." };
+        return { ok: false, expected: true, message: worktreeRemovalRefusal("current", "that worktree", "tab") };
       }
       // One whose folder is gone deletes nothing from under its tab: forgetting it goes on.
       if (existsSync(opts.path) && this.otherTabRoots(ctx).some((root) => sameFolder(opts.path, root))) {

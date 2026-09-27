@@ -195,6 +195,12 @@ function ideMergeTag(model: ConflictModel): string {
   return `ide-merge:${model.path}:${model.op?.episode ?? ""}`;
 }
 
+/** One folder, however its path ends: a tab's root beside a worktree's path. */
+function samePath(a: string, b: string): boolean {
+  const trim = (p: string) => p.replace(/[\\/]+$/, "");
+  return trim(a) === trim(b);
+}
+
 function sameTargetContent(a: SectionTarget | undefined, b: SectionTarget | undefined): boolean {
   return (
     a?.number === b?.number &&
@@ -3413,13 +3419,20 @@ class App {
     actions.push(more);
 
     const pills: HTMLElement[] = [];
+    // A window holds a repository per TAB (#32): the mark is this tab's, and a
+    // worktree another tab has open says so — its Remove is refused for it.
+    const inTab = !w.current && !w.missing && this.shell.openRoots().some((root) => samePath(root, w.path));
     if (w.current) {
-      const p = span("this window", "ab-pill current");
-      p.title = "The worktree this window has open";
+      const p = span("this tab", "ab-pill current");
+      p.title = "The worktree this tab has open";
+      pills.push(p);
+    } else if (inTab) {
+      const p = span("open in a tab", "ab-pill default");
+      p.title = "Another tab of this window has it open — close that tab to remove it";
       pills.push(p);
     }
     // Named, as the extension names it: it holds the repository itself, and
-    // was told apart only by "this window" — when this window had it open.
+    // was told apart only by "this tab" — when this tab had it open.
     if (w.main && !w.bare) {
       const p = span("main worktree", "ab-pill default");
       p.title = "The main worktree holds the repository itself — git never removes it";
@@ -3463,7 +3476,7 @@ class App {
         w.branch
           ? this.routeView("refdetail", false, { ref: w.branch, id: "head" })
           : this.routeView("commit", false, { sha: w.head }),
-      ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${w.path}${w.current ? ", this window" : ""}${w.main && !w.bare ? ", main worktree" : ""}`,
+      ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${w.path}${w.current ? ", this tab" : inTab ? ", open in another tab" : ""}${w.main && !w.bare ? ", main worktree" : ""}`,
     });
     row.classList.add("ref-row", "worktree-row");
     row.dataset.ref = w.path;
@@ -3510,7 +3523,7 @@ class App {
     const label = w.branch ?? (w.bare ? "(bare)" : `${w.head.slice(0, 7)} (detached)`);
     const plan = again ?? (await host.invoke("worktree:removal", { path: w.path }));
     if (plan.kind === "notListed" || plan.kind === "main" || plan.kind === "current" || plan.kind === "openInTab") {
-      toast(worktreeRemovalRefusal(plan.kind, label), "info");
+      toast(worktreeRemovalRefusal(plan.kind, label, "tab"), "info");
       if (plan.kind === "notListed") await this.refreshBranchesSoft();
       return;
     }

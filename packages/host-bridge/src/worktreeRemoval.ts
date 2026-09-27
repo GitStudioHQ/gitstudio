@@ -139,16 +139,23 @@ export function worktreeChangedSinceAsked(label: string): string {
  * would go from under the window), one another of the window's repository
  * tabs has open (the desktop's, #32 — the same, under that tab), or one no
  * longer listed.
+ *
+ * `holds` is what has one repository open: a VS Code window, or a desktop
+ * tab (#32). "Open something else in this one" is no way out on the desktop:
+ * that opens a new tab, and this one still has the worktree.
  */
 export function worktreeRemovalRefusal(
   why: "main" | "current" | "openInTab" | "notListed",
   label: string,
+  holds: "window" | "tab" = "window",
 ): string {
   switch (why) {
     case "main":
       return `${label} is the main worktree — it holds the repository itself, so git never removes it.`;
     case "current":
-      return `This window has ${label} open, so it can't be removed from here — its folder would be deleted from under the window. Remove it from another window, or open something else in this one first.`;
+      return holds === "tab"
+        ? `This tab has ${label} open, so it can't be removed from here — its folder would be deleted from under the tab. Close this tab, then remove it from another worktree of the repository.`
+        : `This window has ${label} open, so it can't be removed from here — its folder would be deleted from under the window. Remove it from another window, or open something else in this one first.`;
     case "openInTab":
       return `${label} is open in another tab of this window, so it can't be removed — its folder would be deleted from under that tab. Close that tab first.`;
     case "notListed":

@@ -732,6 +732,9 @@
     tabs: TAB_FIXTURES.slice(0, tabCount).map((t) => ({ root: t.root, name: t.name })),
     active: undefined,
   };
+  // ?wttab=1: the repository's worktree gitstudio-wave2 is open in a tab of
+  // its own too, behind the repository's.
+  if (params.get("wttab")) tabState.tabs.push({ root: "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2", name: "gitstudio-wave2" });
   tabState.active = tabState.tabs[Math.max(0, (Number(params.get("active")) || 1) - 1)]?.root ?? tabState.tabs[0]?.root;
   /** Every `repo:tabStatus` request's roots, in order. */
   const tabStatusCalls = [];
@@ -2180,6 +2183,8 @@
       if (!w) return { kind: "notListed" };
       if (w.main) return { kind: "main" };
       if (w.current) return { kind: "current" };
+      // As main: another tab has it open (and its folder is there).
+      if (!w.missing && window.__gsTabs.state().tabs.some((t) => t.root === w.path)) return { kind: "openInTab" };
       const facts = { branch: w.branch, head: w.head, locked: !!w.locked, lockReason: w.lockReason };
       if (w.missing) return { kind: "missing", ...facts };
       const agent = w.branch === "agent/wave3";
