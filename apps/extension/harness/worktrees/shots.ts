@@ -83,6 +83,10 @@ async function shoot(theme: VsCodeTheme): Promise<string[]> {
 async function shootChanges(theme: VsCodeTheme): Promise<string[]> {
   const files: string[] = [];
   const page = await ChangesPage.open(theme, { width: 360, height: 640, scale: 2 });
+  // The review pops in over 170ms: a picture caught mid-way is see-through.
+  await page.eval(`(function () { var s = document.createElement("style");
+    s.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}";
+    document.head.appendChild(s); })()`);
   const snap = async (name: string): Promise<void> => {
     const file = join(OUT, `${name}-${theme}.png`);
     await page.eval(`new Promise(function (r) { setTimeout(r, 60); })`);
