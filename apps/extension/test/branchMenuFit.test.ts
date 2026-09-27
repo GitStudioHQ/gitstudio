@@ -147,17 +147,20 @@ test("the file rows' action menu — the same popup — stays inside a short vie
   await p.page.waitFor(`!!document.querySelector(".action-menu")`);
   const vp = await viewport(p);
   assertInside(await box(p, ".action-menu"), vp, "the file's action menu");
-  // Its first item has focus (Tab walks this menu): the ring is whole, not
-  // clipped by the list that now scrolls.
+  // Its first item has focus (Tab walks this menu), and shows it — lit, the
+  // menu's highlight (a ring only in high contrast) — whole, not clipped by
+  // the list that now scrolls.
   const ring = await p.eval<{ focused: boolean; drawn: boolean; out: number; item: Box; list: Box }>(`(function () {
     var a = document.activeElement, s = getComputedStyle(a);
     var r = a.getBoundingClientRect(), l = a.parentElement.getBoundingClientRect();
-    var out = parseFloat(s.outlineOffset) + parseFloat(s.outlineWidth);
-    return { focused: a.classList.contains("bm-subaction"), drawn: s.outlineStyle !== "none", out: out,
+    var ringed = s.outlineStyle !== "none";
+    var out = ringed ? parseFloat(s.outlineOffset) + parseFloat(s.outlineWidth) : 0;
+    var lit = !/^(transparent|rgba\\(0, 0, 0, 0\\))$/.test(s.backgroundColor);
+    return { focused: a.classList.contains("bm-subaction"), drawn: ringed || lit, out: out,
       item: { left: r.left - out, top: r.top - out, right: r.right + out, bottom: r.bottom + out, width: 0, height: 0 },
       list: { left: l.left, top: l.top, right: l.right, bottom: l.bottom, width: 0, height: 0 } };
   })()`);
-  assert.ok(ring.focused && ring.drawn, `the first item has focus, and its ring shows: ${JSON.stringify(ring)}`);
+  assert.ok(ring.focused && ring.drawn, `the first item has focus, and shows it: ${JSON.stringify(ring)}`);
   assert.ok(
     ring.item.left >= ring.list.left - 0.5 && ring.item.right <= ring.list.right + 0.5 && ring.item.top >= ring.list.top - 0.5,
     `its focus ring lies inside the list that clips it: ${JSON.stringify(ring)}`,

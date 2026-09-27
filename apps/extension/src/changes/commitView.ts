@@ -3315,7 +3315,9 @@ export class CommitViewProvider
       cursor: pointer;
     }
     .bm-action .codicon, .bm-bicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
-    .bm-action:hover, .bm-branch:hover { background: var(--gs-hover-strong); }
+    /* No hover colour of its own: the pointer MOVES the highlight (the
+       list's mousemove), so a row under the pointer is the lit row, and
+       there is never a second, differently lit one (see .is-active). */
     /* A collapsible category header: chevron + label + count, full-width
        button. It stays pinned at the top of the list while its group's rows
        scroll under it — the next group's heading pushes it off, because each
@@ -3393,10 +3395,6 @@ export class CommitViewProvider
       color: inherit;
       background: color-mix(in srgb, currentColor 20%, transparent);
     }
-    /* White on a lighter blue read 4.1:1 in Light+: there the band deepens. */
-    body.vscode-light .bm-branch.is-active .bm-ab {
-      background: color-mix(in srgb, #000000 20%, transparent);
-    }
     /* In-flight items keep the normal cursor — the spinner lives IN the item. */
     .bm-action.is-busy, .bm-subaction.is-busy { opacity: 0.8; cursor: default; }
     /* The upstream starts from nothing and grows into the room the name left,
@@ -3411,95 +3409,83 @@ export class CommitViewProvider
        menu does: a chevron at its end, always there, in the secondary
        colour — the room it takes is the hint. */
     .bm-bmore { flex: 0 0 auto; font-size: 13px; color: var(--gs-fg-muted); }
-    .bm-branch:hover .bm-bmore { color: var(--gs-fg); }
 
-    /* The keyboard highlight: the one row the arrow keys have reached (and
-       the mouse, which moves it too). It is lit with VS Code's own fill for a
-       focused selection, and never outlined in the light and dark themes (the
-       owner's rule: nothing chosen wears a line). The high-contrast themes
-       give a selection no background at all, so there, and only there, it is
-       VS Code's whole focus ring. */
+    /* The highlight: the one row the arrow keys or the pointer have reached
+       (the pointer moves it), and in a row's own menu the item that has the
+       keyboard (which the pointer moves too). ONE look for both: a tint of
+       the accent, rounded, and the words and icon at the menu's full ink —
+       no outline, and no second colour for a hover. It used to be VS Code's
+       selection blue with the focus outline around it; under the pointer a
+       submenu item took the hover's grey instead but kept the selection's
+       white words, which read faded, inside a blue ring. Declared on body,
+       where the theme's class is: --gs-danger is the light theme's deeper
+       red there, and a custom property resolves where it is declared. */
+    body {
+      --bm-lit: color-mix(in srgb, var(--gs-accent) 26%, transparent);
+      --bm-lit-soft: color-mix(in srgb, var(--gs-accent) 13%, transparent);
+      --bm-lit-danger: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 14%, transparent);
+      --bm-danger-ink: var(--gs-danger, var(--vscode-errorForeground, #e15a5a));
+    }
+    body.vscode-light {
+      --bm-lit: color-mix(in srgb, var(--gs-accent) 18%, transparent);
+      --bm-lit-soft: color-mix(in srgb, var(--gs-accent) 9%, transparent);
+    }
     .bm-action.is-active,
     .bm-branch.is-active,
     .bm-more.is-active,
-    .bm-subaction.is-active {
-      background: var(--vscode-list-activeSelectionBackground, var(--gs-hover-strong));
-      color: var(--vscode-list-activeSelectionForeground, var(--gs-fg));
-    }
-    body.vscode-high-contrast .bm-action.is-active,
-    body.vscode-high-contrast .bm-branch.is-active,
-    body.vscode-high-contrast .bm-more.is-active,
-    body.vscode-high-contrast .bm-subaction.is-active {
-      background: transparent;
-      outline: 1px solid var(--vscode-list-focusOutline, var(--vscode-focusBorder, transparent));
-      outline-offset: -1px;
+    .bm-subaction.is-active,
+    .action-menu .bm-subaction:focus {
+      background: var(--bm-lit);
+      color: var(--gs-fg);
+      outline: none;
     }
     .bm-action.is-active .codicon,
     .bm-branch.is-active .bm-bicon,
     .bm-branch.is-active.is-current .bm-bname,
     .bm-branch.is-active .bm-bup,
     .bm-branch.is-active .bm-gone,
-    .bm-subaction.is-active .codicon { color: inherit; }
+    .bm-subaction.is-active .codicon,
+    .action-menu .bm-subaction:focus .codicon { color: inherit; }
     .bm-branch.is-active .bm-bmore { color: inherit; }
     .bm-branch.is-active .bm-star:not(.on) { color: inherit; }
-    /* A match on the highlighted row: in the colour VS Code gives a match
-       on a focused list row, on a faint band of that same colour — the
-       letters alone (pale blue beside white, in Light+) were easy to miss. */
+    /* A search's letters on the lit row: the row's own ink, bold, on a band
+       of the match colour — the match colour itself read 3–4:1 on the tint. */
     .bm-action.is-active .bm-hl,
     .bm-branch.is-active .bm-hl {
-      background: color-mix(in srgb, var(--vscode-list-focusHighlightForeground, currentColor) 15%, transparent);
-      color: var(--vscode-list-focusHighlightForeground, inherit);
-      font-weight: 600;
-    }
-    /* …but on the light and dark themes' blue that colour read 3.6:1 (VS
-       Code's own pale blue beside white, in Light+). There a match is the
-       row's own white, bold, on a band that deepens the blue in light and
-       lifts it in dark (AA both). High contrast keeps the theme's colour on
-       its black or white ground. */
-    body.vscode-dark .bm-action.is-active .bm-hl,
-    body.vscode-dark .bm-branch.is-active .bm-hl {
       color: inherit;
-      background: color-mix(in srgb, #ffffff 16%, transparent);
+      background: color-mix(in srgb, var(--vscode-list-highlightForeground, var(--gs-accent)) 26%, transparent);
     }
+    /* Light+'s ink (#616161) is too pale for a band on a tint: deepened. */
     body.vscode-light .bm-action.is-active .bm-hl,
     body.vscode-light .bm-branch.is-active .bm-hl {
-      color: inherit;
-      background: color-mix(in srgb, #000000 22%, transparent);
+      color: color-mix(in srgb, var(--gs-fg) 60%, #000000);
+      background: color-mix(in srgb, var(--vscode-list-highlightForeground, var(--gs-accent)) 20%, transparent);
     }
-    body.vscode-high-contrast .bm-action.is-active .bm-hl,
-    body.vscode-high-contrast .bm-branch.is-active .bm-hl {
-      background: transparent;
+    /* The row whose submenu holds the highlight stays lit, more softly. */
+    .bm-branch.is-open { background: var(--bm-lit-soft); }
+    .bm-branch.is-open .bm-bmore { color: var(--gs-fg); }
+    /* A destructive item keeps its colour when highlighted: red on a red tint. */
+    .bm-subaction.danger.is-active,
+    .action-menu .bm-subaction.danger:focus {
+      background: var(--bm-lit-danger);
+      color: var(--bm-danger-ink);
     }
-    /* The row whose submenu holds the highlight (a menu wide enough to open
-       it beside the list) stays marked: lit with the calm selection tint,
-       and in High Contrast, which paints no tints, VS Code's whole dashed
-       ring. Its words read on the tint (AA). On the inactive-selection grey
-       it used to wear, the match read 3.65:1 in Dark+, the current branch
-       3.85:1, and the counts 2.45:1 in Light+. */
-    .bm-branch.is-open {
-      background: var(--gs-sel-fill);
-      outline: 1px dashed var(--vscode-contrastActiveBorder, transparent);
+    .bm-subaction.danger.is-active .codicon,
+    .action-menu .bm-subaction.danger:focus .codicon { color: inherit; }
+    /* The high-contrast themes paint a selection with no fill of its own but
+       VS Code's contrast border, drawn whole: there, and only there, the
+       highlight keeps that ring (dashed for the row whose submenu is open). */
+    body.vscode-high-contrast .bm-action.is-active,
+    body.vscode-high-contrast .bm-branch.is-active,
+    body.vscode-high-contrast .bm-more.is-active,
+    body.vscode-high-contrast .bm-subaction.is-active,
+    body.vscode-high-contrast .action-menu .bm-subaction:focus {
+      outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent));
       outline-offset: -1px;
     }
-    body.vscode-high-contrast .bm-branch.is-open { background: transparent; }
-    .bm-branch.is-open .bm-bmore,
-    .bm-branch.is-open .bm-bicon,
-    .bm-branch.is-open .bm-bup,
-    .bm-branch.is-open .bm-gone { color: var(--gs-fg); }
-    .bm-branch.is-open.is-current .bm-bname,
-    .bm-branch.is-open.is-current .bm-bicon { color: var(--gs-sel-ink); }
-    .bm-branch.is-open .bm-hl {
-      color: color-mix(in srgb, var(--vscode-list-highlightForeground, var(--gs-accent)) 58%, var(--gs-sel-lift));
-    }
-    .bm-branch.is-open .bm-ab.up { color: color-mix(in srgb, var(--gs-status-added) 55%, var(--gs-sel-lift)); }
-    .bm-branch.is-open .bm-ab.down { color: color-mix(in srgb, var(--gs-status-modified) 55%, var(--gs-sel-lift)); }
-    /* A destructive item keeps its colour when highlighted: red on red tint. */
-    .bm-subaction.danger.is-active {
-      background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 20%, transparent);
-      color: var(--vscode-errorForeground, #e15a5a);
-    }
-    body.vscode-high-contrast .bm-subaction.danger.is-active {
-      outline-color: var(--vscode-errorForeground, #e15a5a);
+    body.vscode-high-contrast .bm-branch.is-open {
+      outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: -1px;
     }
 
     /* Per-branch action submenu (flyout). */
@@ -3547,6 +3533,9 @@ export class CommitViewProvider
     /* The list scrolls, so it clips: a focus ring drawn outside an item
        would lose three sides. Drawn just inside, it keeps all four. */
     .bm-subaction:focus-visible { outline-offset: -1px; }
+    /* In a row's own menu the focused item IS the highlight (lit, above):
+       no ring on top of it, but in high contrast. */
+    body:not(.vscode-high-contrast) .action-menu .bm-subaction:focus-visible { outline: none; }
     .bm-subaction {
       display: flex; align-items: center; gap: 9px;
       width: 100%;
@@ -3562,15 +3551,9 @@ export class CommitViewProvider
     }
     .bm-subaction .codicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
     .bm-subaction span { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    /* The pointer moves the highlight, so the row under it IS the
-       highlighted one and looks exactly as the keyboard's does. These hover
-       fills are for a row the highlight has not reached (they were declared
-       after .is-active and replaced it: the highlight's white words on the
-       hover's grey, 1.39:1 in Light+). */
-    .bm-subaction:hover:not(.is-active) { background: var(--gs-hover-strong); }
-    .bm-subaction.danger { color: var(--vscode-errorForeground, #e15a5a); }
-    .bm-subaction.danger .codicon { color: var(--vscode-errorForeground, #e15a5a); }
-    .bm-subaction.danger:hover:not(.is-active) { background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 14%, transparent); }
+    /* No :hover colour: the pointer moves the highlight here too. */
+    .bm-subaction.danger { color: var(--bm-danger-ink); }
+    .bm-subaction.danger .codicon { color: var(--bm-danger-ink); }
     .bm-subsep { height: 1px; margin: 4px 6px; background: var(--gs-border); }
     /* Drilled in: a sidebar with no room beside the menu for a branch's
        actions shows them IN the menu, in place of the list, under a back row
@@ -3592,13 +3575,21 @@ export class CommitViewProvider
       border-radius: 0;
       box-shadow: none;
     }
+    /* The back row is a row of the menu: the pointer lights it as it
+       lights any row — the same tint, and the item below goes dark — with
+       no hover colour of its own and no rule under it. */
     .branch-submenu.is-drilled .bm-subhead {
       margin: 0 -3px 3px;
       padding: 6px 10px 6px 6px;
       border-radius: 0;
+      border-bottom: none;
       cursor: pointer;
     }
-    .branch-submenu.is-drilled .bm-subhead:hover { background: color-mix(in srgb, var(--gs-brand) 24%, transparent); }
+    .branch-submenu.is-drilled .bm-subhead.is-active { background: var(--bm-lit); }
+    body.vscode-high-contrast .branch-submenu.is-drilled .bm-subhead.is-active {
+      outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: -1px;
+    }
     .bm-subhead .bm-back { font-size: 14px; color: var(--gs-fg); }
     /* Words for a screen reader only: in the page, not on screen. */
     .bm-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -3774,7 +3765,7 @@ export class CommitViewProvider
       padding: 5px 8px 6px 34px; color: var(--gs-accent-text);
       font-size: 11px; cursor: pointer; user-select: none;
     }
-    .bm-more:hover:not(.is-active) { background: var(--gs-hover); text-decoration: underline; }
+    /* Under the pointer it is the highlighted row (lit, above) — never underlined. */
     .bm-more:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
 
     /* ---- Message composer -------------------------------------------------
@@ -4160,31 +4151,27 @@ export class CommitViewProvider
     .groups { margin: 0 0 2px; }
 
     /* ---- Multi-selection, drag-to-stash ---------------------------------- */
-    /* A selected file is lit: a calm, rounded accent tint (the row is
-       already rounded), with no glow because this is a dense list. It used
-       to be the inactive-selection grey with a 2px accent bar down its left
-       edge, and on hover the bar was the only cue left, which the owner's
-       rule bans. Hovered, it deepens rather than falling back to the
-       hover's grey. High contrast has no fills: VS Code's whole dashed ring
-       there. This is defined after the :hover rules below, so a selected
-       row stays visibly selected under the pointer. */
-    .row.is-file.is-selected { background: var(--gs-sel-fill); }
-    .row.is-file.is-selected:hover { background: var(--gs-sel-fill-strong); }
-    /* Its words are measured on the tint (AA), at rest and on the deeper
-       hover: the name and the path take the foreground leaned a little
-       further from the ground (Light+'s #616161 read 4.23:1 on the hover's
-       tint; the muted path 3.9:1 at rest), and the status letter keeps its
-       hue, lifted toward white in dark and black in light (Light+'s blue M
-       read 2.8:1). */
-    .row.is-file.is-selected .name,
-    .row.is-file.is-selected .dir { color: color-mix(in srgb, var(--gs-fg) 72%, var(--gs-sel-lift)); }
-    .row.is-file.is-selected.is-deleted .name { opacity: 1; }
-    .row.is-file.is-selected .status { color: color-mix(in srgb, var(--gs-row-accent, var(--gs-fg-muted)) 62%, var(--gs-sel-lift)); }
+    /* A selected row is lit, never barred: a tint of the accent that stands
+       apart from the view in every theme (the list's own inactive-selection
+       grey did not in Light+, and high contrast paints none), stronger under
+       the pointer; high contrast rings it, dashed, as its lists do. A 2px
+       bar down the left edge used to mark it. Declared on body, where the
+       theme's class is. */
+    body {
+      --sel-fill: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+      --sel-fill-hover: color-mix(in srgb, var(--gs-accent) 28%, transparent);
+    }
+    body.vscode-light {
+      --sel-fill: color-mix(in srgb, var(--gs-accent) 15%, transparent);
+      --sel-fill-hover: color-mix(in srgb, var(--gs-accent) 18%, transparent);
+    }
+    .row.is-file.is-selected { background: var(--sel-fill); }
+    .row.is-file.is-selected:hover { background: var(--sel-fill-hover); }
     body.vscode-high-contrast .row.is-file.is-selected {
       outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
       outline-offset: -1px;
     }
-    body.is-dragging-files .row.is-file { cursor: grabbing; }
+    body.vscode-high-contrast .row.is-file.is-selected:focus-visible { outline-style: solid; }
 
     .selbar {
       display: flex; align-items: center; gap: 8px;
@@ -4203,21 +4190,82 @@ export class CommitViewProvider
     .selbar-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
     .selbar-btn:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 
-    /* The drop target only exists mid-drag. A permanently visible strip would
-       cost vertical space in a view that is already short. */
-    .stash-drop {
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      margin: 6px 0; padding: 14px 10px;
-      border: 1px dashed var(--vscode-focusBorder);
-      border-radius: 6px;
-      color: var(--vscode-descriptionForeground);
-      font-size: 12px;
+    /* ---- Drag and drop: the working tree and the Stashes group ---------
+       One mechanism, both ways. A stash, some of its files or one of its
+       folders dragged onto the working tree (or the clean tree's note) comes
+       back, as it was stashed; working-tree files dragged onto the Stashes
+       header are stashed. While a drag is on, each place it can go is
+       faintly tinted; the one under the pointer is lit and says what a drop
+       does, and Alt/Option picks the other verb. No outline, no dashed box:
+       a tinted fill. */
+    body {
+      --drop-ready: color-mix(in srgb, var(--gs-accent) 7%, transparent);
+      --drop-over: color-mix(in srgb, var(--gs-accent) 20%, transparent);
+      --drop-over-solid: color-mix(in srgb, var(--gs-accent) 20%, var(--vscode-sideBar-background, var(--gs-bg)));
     }
-    .stash-drop[hidden] { display: none; }
-    .stash-drop.is-over {
-      background: var(--vscode-list-dropBackground, var(--vscode-list-hoverBackground));
-      color: var(--vscode-foreground);
-      border-style: solid;
+    body.vscode-light {
+      --drop-ready: color-mix(in srgb, var(--gs-accent) 5%, transparent);
+      --drop-over: color-mix(in srgb, var(--gs-accent) 14%, transparent);
+      --drop-over-solid: color-mix(in srgb, var(--gs-accent) 14%, var(--vscode-sideBar-background, var(--gs-bg)));
+    }
+    body.is-dragging { cursor: grabbing; }
+    .row.is-dragged { opacity: 0.55; }
+    .is-drop-ready { background: var(--drop-ready); border-radius: var(--gs-radius); }
+    .is-drop-over { background: var(--drop-over); border-radius: var(--gs-radius); }
+    /* Its words: what a drop does, and — where Alt/Option picks the other
+       verb — how. Each is whole or, where it cannot fit even on a line of
+       its own, cut at its end. */
+    .drop-hint { display: none; }
+    .drop-verb, .drop-alt {
+      flex: 0 1 auto; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      color: var(--gs-fg);
+    }
+    .drop-verb { font-size: 12px; font-weight: 600; }
+    .drop-alt { font-size: 11px; font-weight: 400; }
+    /* The Stashes header: the words in place of its name, count and buttons. */
+    .group-header.is-drop-over > .drop-hint {
+      display: flex; align-items: baseline; gap: 10px;
+      flex: 1 1 auto; min-width: 0; overflow: hidden;
+    }
+    .group-header.is-drop-over .glabel,
+    .group-header.is-drop-over .gcount,
+    .group-header.is-drop-over .group-actions { display: none; }
+    /* The working tree, every group of it one place: the words in a band
+       held at its top — in sight however far the list is scrolled — laid
+       over its first group's header on the lit tint made solid. The band
+       takes no room (nothing moves under the pointer). Too narrow for both
+       side by side, "Hold Option to pop" goes on a line of its own under
+       the verb rather than lose its end. */
+    #groups.is-drop-over > .drop-hint {
+      display: block;
+      position: sticky; top: 0; z-index: 3;
+      height: 0;
+    }
+    #groups.is-drop-over > .drop-hint > .drop-words {
+      position: absolute; left: 0; right: 0; top: 0;
+      box-sizing: border-box; min-height: 26px;
+      display: flex; flex-wrap: wrap; align-items: baseline; align-content: center;
+      justify-content: space-between; column-gap: 10px; row-gap: 1px;
+      padding: 5px 8px 5px 10px;
+      line-height: 16px;
+      background: var(--drop-over-solid);
+      border-radius: var(--gs-radius);
+    }
+    /* The clean tree's note: the words take the place of "No changes to
+       commit.", one under the other. */
+    #empty-state.is-drop-over .es { display: none; }
+    #empty-state.is-drop-over > .drop-hint {
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      max-width: 100%;
+    }
+    #empty-state.is-drop-over > .drop-hint > .drop-alt { white-space: normal; text-align: center; }
+    /* High contrast paints no tints: there the target is ringed, as VS Code
+       rings a drop target — just outside it, where the band of words held
+       in sight cannot paint over it. */
+    body.vscode-high-contrast .is-drop-over {
+      outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: 1px;
     }
     .group { margin-top: 4px; }
     /* An empty group is not drawn; the tree's keyboard skips it too (see
@@ -4424,9 +4472,7 @@ export class CommitViewProvider
       cursor: pointer;
       user-select: none;
     }
-    /* The hovered row is its fill alone. It used to reveal a 2px rail in the
-       file's status colour down its edge, which is a line. The status is
-       already its letter and its icon's colour. */
+    /* The row under the pointer: its fill, and no rail down its edge. */
     .row:hover { background: var(--gs-hover); }
     .row:focus-visible,
     .group-header:focus-visible { outline: 1px solid var(--vscode-list-focusOutline, var(--gs-accent)); outline-offset: -1px; }
@@ -4561,9 +4607,53 @@ export class CommitViewProvider
     .row.stash-note:hover { background: none; }
     .row.stash-note .file-icon { color: var(--gs-fg-muted); }
     /* "Show 200 more of N": it reads as an action, as the branch menu's
-       "Show more" does — its words in the link colour, underlined on hover. */
+       "Show more" does — its words in the link colour (the row's hover fill
+       under the pointer; never an underline). */
     .row.stash-more { color: var(--gs-accent-text); }
-    .row.stash-more:hover .name { text-decoration: underline; }
+    /* A stash's verbs, and its files' and folders', are WORDS — Apply and
+       Pop, Move and Copy: their two glyphs read alike ("apply and pop have
+       the same icon, it's confusing"). Small, calm and filled, shown on the
+       row the pointer or the keyboard is on; the tip says what each does. */
+    .row .row-actions .word-btn {
+      flex: 0 0 auto;
+      height: 20px;
+      margin-left: 3px;
+      padding: 0 7px;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 20px;
+      color: var(--word-ink);
+      background: var(--word-fill);
+      border: none;
+      border-radius: var(--gs-radius-sm);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .row .row-actions .word-btn:hover { background: var(--word-fill-hover); }
+    /* A fill of the ink darkens the ground in a light theme and lightens it
+       in a dark one — towards the ink either way — so the words are inked
+       past the view's own text colour, never faded by their button: 4.5:1
+       or more on the button at rest and under the pointer, and the button
+       stands apart from the row it is on. */
+    body {
+      --word-ink: color-mix(in srgb, var(--gs-fg) 55%, #ffffff);
+      --word-fill: color-mix(in srgb, var(--gs-fg) 11%, transparent);
+      --word-fill-hover: color-mix(in srgb, var(--gs-fg) 18%, transparent);
+    }
+    body.vscode-light {
+      --word-ink: color-mix(in srgb, var(--gs-fg) 55%, #000000);
+      --word-fill: color-mix(in srgb, var(--gs-fg) 13%, transparent);
+      --word-fill-hover: color-mix(in srgb, var(--gs-fg) 21%, transparent);
+    }
+    body.vscode-high-contrast { --word-ink: var(--gs-fg); }
+    body.vscode-high-contrast .row .row-actions .word-btn {
+      outline: 1px solid var(--vscode-contrastBorder, transparent);
+      outline-offset: -1px;
+    }
+    .row .row-actions .word-btn { display: none; }
+    .row:hover .row-actions .word-btn,
+    .row:focus-within .row-actions .word-btn { display: inline-block; }
     /* "staged" / "partly staged": the stash had it staged, in words. */
     .stash-staged {
       flex: 0 0 auto;
@@ -4572,13 +4662,20 @@ export class CommitViewProvider
       white-space: nowrap;
     }
     /* At the narrowest widths the words that name things keep their room: a
-       stash row keeps only More Actions (its menu has Apply and Pop), and a
-       file row drops the staged word (its status letter's tip says it). The
-       row is the container, so a deep row in the tree gives way sooner. */
+       stash row keeps only More Actions (its menu has Apply and Pop), a file
+       or folder row its name (its menu has Move and Copy, and it can be
+       dragged), and a file row drops the staged word (its status letter's
+       tip says it). The row is the container, so a deep row in the tree
+       gives way sooner. */
     .row.stash-row,
-    .row.stash-file { container-type: inline-size; }
+    .row.stash-file,
+    .row.stash-folder { container-type: inline-size; }
+    @container (max-width: 249px) {
+      .row.stash-row .row-actions .word-btn.stash-quick { display: none; }
+    }
     @container (max-width: 229px) {
-      .stash-row .row-actions .stash-quick { display: none; }
+      .row.stash-file .row-actions .word-btn.word-btn,
+      .row.stash-folder .row-actions .word-btn.word-btn { display: none; }
     }
     @container (max-width: 199px) {
       .stash-file .stash-staged { display: none; }
@@ -5094,19 +5191,10 @@ export class CommitViewProvider
     <span class="selbar-actions">
       <button type="button" class="selbar-btn" id="selbar-stash">Stash</button>
       <button type="button" class="selbar-btn" id="selbar-stage">Stage</button>
-      <button type="button" class="selbar-btn" id="selbar-move" hidden
-        title="Take these files out of the stash, into Changes">Move to Changes</button>
-      <button type="button" class="selbar-btn" id="selbar-copy" hidden
-        title="Bring these files into Changes and keep them in the stash">Copy to Changes</button>
+      <button type="button" class="selbar-btn" id="selbar-move" hidden>Move to Changes</button>
+      <button type="button" class="selbar-btn" id="selbar-copy" hidden>Copy to Changes</button>
       <button type="button" class="selbar-btn" id="selbar-clear">Clear</button>
     </span>
-  </div>
-
-  <!-- The stash drop target. Hidden until a drag starts, so it costs no layout
-       until it means something. -->
-  <div class="stash-drop" id="stash-drop" hidden>
-    <i class="codicon codicon-git-stash" aria-hidden="true"></i>
-    <span id="stash-drop-label">Drop to stash</span>
   </div>
 
   <div class="empty-state" id="empty-state">
@@ -5171,8 +5259,6 @@ export class CommitViewProvider
     const selbarStageBtn = $("selbar-stage");
     const selbarMoveBtn = $("selbar-move");
     const selbarCopyBtn = $("selbar-copy");
-    const stashDropEl = $("stash-drop");
-    const stashDropLabel = $("stash-drop-label");
     const emptyEl = $("empty-state");
     const loadingEl = $("loading-state");
     const loadingText = $("loading-text");
@@ -5585,9 +5671,6 @@ export class CommitViewProvider
       return false;
     }
 
-    /** Paths being dragged right now; empty when no drag is in progress. */
-    let dragPaths = [];
-
     /** The context menu for a multi-row selection. Counts are files, not rows. */
     function multiItems() {
       const entries = selectionEntries();
@@ -5653,6 +5736,12 @@ export class CommitViewProvider
         const s = authStashes.find((x) => x.sha === st.sha);
         selbarCount.textContent = (st.paths.length === 1 ? "1 file" : String(st.paths.length) + " files") +
           (s ? " from “" + s.text + "”" : "");
+        // Their tips say where these files come back, as the rows' do.
+        const files = stashFilesOf({ sha: st.sha }, st.paths);
+        for (const [b, tip] of [[selbarMoveBtn, tipMove(files)], [selbarCopyBtn, tipCopy(files)]]) {
+          b.dataset.tip = tip;
+          b.setAttribute("aria-description", tip);
+        }
         if (selbarEl.previousElementSibling !== stashesEl) stashesEl.after(selbarEl);
         return;
       }
@@ -5663,37 +5752,238 @@ export class CommitViewProvider
 
     function updateSelectionChrome() { syncStashButtonLabel(); }
 
-    function showDropZone(count) {
-      stashDropLabel.textContent =
-        count === 1 ? "Drop to stash 1 file" : "Drop to stash " + count + " files";
-      stashDropEl.hidden = false;
+    // ---- Drag and drop: the working tree and the Stashes group ------------
+    // Stashes and changes share this view, so a drag goes straight from one
+    // to the other — the menus' Apply, Pop, Move, Copy and Stash, by hand:
+    //   a stash               → the working tree (or its clean note): Apply (Alt: Pop)
+    //   its files, a folder   → the same place: Move (Alt: Copy)
+    //   working-tree files    → the Stashes header: stash exactly those
+    // The working tree is ONE place, however many groups it shows: what
+    // comes back comes back as it was stashed (staged changes staged), so no
+    // one group — Staged, say — may look like it decides where.
+    // It posts what the menus post, so the same doors answer (Stash & Retry,
+    // the staging question, conflicts, Undo). A single stash takes nothing:
+    // git cannot add to a stash, so a stash row is never a place to drop.
+    // drag is what is being dragged (null: nothing of ours); dropKey the
+    // place under the pointer, by name — the renders rebuild the elements.
+    let drag = null;
+    let dropKey = null;
+    let dropAlt = false;
+    const ALT_NAME = /Mac|iPhone|iPad/.test(navigator.platform || "") ? "Option" : "Alt";
+
+    /** The working tree's rows being dragged: the selection when the row is in it, else that row. Never a conflicted file — it cannot be stashed. */
+    function treeDragPaths(key, own) {
+      const conflicted = new Set((lastState.merge || []).map((e) => e.path));
+      let paths;
+      if (key && selectedRows.has(key)) {
+        paths = [];
+        const entries = selectionEntries();
+        for (let i = 0; i < entries.length; i++) {
+          if (entries[i].kind !== "merge" && paths.indexOf(entries[i].path) === -1) paths.push(entries[i].path);
+        }
+      } else {
+        paths = own.slice();
+      }
+      return paths.filter((p) => !conflicted.has(p));
     }
 
-    function hideDropZone() {
-      stashDropEl.hidden = true;
-      stashDropEl.classList.remove("is-over");
+    /** The places the drag in hand can go, by name. */
+    function dropKeys() {
+      if (!drag) return [];
+      if (drag.kind === "tree") return drag.paths.length ? ["stashes"] : [];
+      return ["tree", "empty"];
     }
-
-    // dragover must be cancelled for a drop to be allowed at all — without the
-    // preventDefault the browser refuses the drop and the whole gesture silently
-    // does nothing.
-    stashDropEl.addEventListener("dragover", (ev) => {
+    function dropEl(key) {
+      if (key === "stashes") return stashesEl.hidden ? null : stashesEl.querySelector(".group--stashes > .group-header");
+      if (key === "empty") return emptyEl.classList.contains("visible") ? emptyEl : null;
+      // The working tree: every group it shows, as one place.
+      return groupsEl.querySelector(":scope > .group:not(.empty)") ? groupsEl : null;
+    }
+    /** The place a node is in, when the drag in hand can go there. */
+    function dropKeyAt(node) {
+      const keys = dropKeys();
+      for (let i = 0; i < keys.length; i++) {
+        const t = dropEl(keys[i]);
+        if (t && node && t.contains(node)) return keys[i];
+      }
+      return null;
+    }
+    /** What a drop does, in words: [the verb, how Alt/Option picks the other]. */
+    function dropWords() {
+      if (drag.kind === "tree") return ["Drop to stash " + countWords(drag.paths.length), ""];
+      if (drag.kind === "stash") {
+        return dropAlt
+          ? ["Drop to pop", "Release " + ALT_NAME + " to apply"]
+          : ["Drop to apply", "Hold " + ALT_NAME + " to pop"];
+      }
+      const n = countWords(drag.paths.length);
+      return dropAlt
+        ? ["Drop to copy " + n, "Release " + ALT_NAME + " to move"]
+        : ["Drop to move " + n, "Hold " + ALT_NAME + " to copy"];
+    }
+    /**
+     * Where a place shows its words: the Stashes header and the clean note in
+     * themselves; the working tree in a band held at the top of it, in sight
+     * however far the list is scrolled, laid over its first group's header.
+     */
+    function hintOf(t) {
+      const band = t === groupsEl;
+      let h = t.querySelector(":scope > .drop-hint");
+      if (!h) {
+        h = el(band ? "div" : "span", "drop-hint");
+        h.setAttribute("aria-hidden", "true");
+        const words = band ? el("span", "drop-words") : h;
+        words.append(el("span", "drop-verb"), el("span", "drop-alt"));
+        if (band) h.appendChild(words);
+      }
+      if (band) {
+        if (groupsEl.firstChild !== h) groupsEl.insertBefore(h, groupsEl.firstChild);
+      } else if (!h.parentNode) {
+        t.appendChild(h);
+      }
+      return h;
+    }
+    /** Paint the drag onto the view: every place it can go faintly, the one under the pointer lit, with its words. */
+    function paintDrop() {
+      const keys = dropKeys();
+      document.querySelectorAll(".is-drop-ready, .is-drop-over").forEach((n) => {
+        n.classList.remove("is-drop-ready", "is-drop-over");
+      });
+      document.body.classList.toggle("is-dragging", !!drag);
+      // The working tree's band is not one of its groups: out, unless lit.
+      const band = groupsEl.querySelector(":scope > .drop-hint");
+      if (band && !(drag && dropKey === "tree")) band.remove();
+      if (!drag) return;
+      for (let i = 0; i < keys.length; i++) {
+        const t = dropEl(keys[i]);
+        if (!t) continue;
+        if (keys[i] !== dropKey) { t.classList.add("is-drop-ready"); continue; }
+        t.classList.add("is-drop-over");
+        const h = hintOf(t);
+        const words = dropWords();
+        const verb = h.querySelector(".drop-verb");
+        const alt = h.querySelector(".drop-alt");
+        verb.textContent = words[0];
+        alt.textContent = words[1];
+        alt.hidden = !words[1];
+        if (t === groupsEl) fitBand(h.firstChild);
+      }
+    }
+    /**
+     * The working tree's band covers its first group's header; where its
+     * words take two lines (a narrow sidebar) it reaches down to the next
+     * row's edge, never leaving half a row showing under it.
+     */
+    function fitBand(words) {
+      words.style.minHeight = "";
+      const need = words.offsetHeight;
+      const top = groupsEl.getBoundingClientRect().top;
+      const edges = groupsEl.querySelectorAll(":scope > .group > .group-header, :scope > .group .row");
+      for (let i = 0; i < edges.length; i++) {
+        const r = edges[i].getBoundingClientRect();
+        if (!r.height || r.bottom - top < need - 0.5) continue;
+        words.style.minHeight = Math.ceil(r.bottom - top) + "px";
+        return;
+      }
+    }
+    function setDrop(key, alt) {
+      if (key === dropKey && !!alt === dropAlt) return;
+      dropKey = key;
+      dropAlt = !!alt;
+      paintDrop();
+    }
+    /**
+     * A drag of ours starts: what it carries, and the rows that go with it
+     * (dimmed). Files carry their paths as plain text too, so a drop in a
+     * terminal or an editor pastes something sensible; a stash carries only
+     * its sha, in a type of its own — let go over an editor by mistake, it
+     * must not type its message into a file.
+     */
+    function beginDrag(ev, what, rows, text) {
+      drag = what;
+      dropKey = null;
+      dropAlt = false;
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = "copyMove";
+        if (what.kind === "stash") ev.dataTransfer.setData("application/x-gitstudio-stash", what.sha);
+        else ev.dataTransfer.setData("text/plain", text);
+      }
+      rows.forEach((r) => r.classList.add("is-dragged"));
+      // A drag of the working tree's files needs the Stashes header, even
+      // with no stash yet: it is where they go.
+      if (what.kind === "tree" && stashesEl.hidden) renderStashes();
+      paintDrop();
+    }
+    function endDrag() {
+      if (!drag) return;
+      const wasTree = drag.kind === "tree";
+      drag = null;
+      dropKey = null;
+      dropAlt = false;
+      document.querySelectorAll(".row.is-dragged").forEach((r) => r.classList.remove("is-dragged"));
+      paintDrop();
+      if (wasTree && shownStashes().length === 0) renderStashes();
+    }
+    /** The drag landed on key: do what the menus do. */
+    function dropOn(d, alt) {
+      if (d.kind === "tree") {
+        if (!d.paths.length) return;
+        vscode.postMessage({ type: "stashPaths", paths: d.paths });
+        if (d.selection) clearSelection();
+        return;
+      }
+      const s = authStashes.find((x) => x.sha === d.sha);
+      if (!s) return;
+      if (d.kind === "stash") stashAct(s, alt ? "pop" : "apply");
+      else stashFilesAct(s, d.paths, alt ? "copy" : "move");
+    }
+    /**
+     * The pointer's badge: copy where the source stays (Apply, Copy), move
+     * where it goes (Pop, Move, Stash) — but only an effect the drag still
+     * allows. A Mac narrows a drag to copy alone while Option is held, and
+     * the browser then refuses a drop that asks for move: an Option-drop to
+     * Pop did nothing at all. What a drop does is read from Alt at the drop,
+     * never from this.
+     */
+    function dropEffectFor(dt, want) {
+      const a = String(dt.effectAllowed || "all").toLowerCase();
+      const allows = (e) => a === "all" || a === "uninitialized" || a.indexOf(e) !== -1;
+      if (allows(want)) return want;
+      return ["copy", "move", "link"].find(allows) || want;
+    }
+    // dragover must be cancelled for a drop to be allowed at all: over a
+    // place the drag can go it is, and the pointer says copy or move; over
+    // anything else it is not, and the browser shows that nothing drops.
+    document.addEventListener("dragenter", (ev) => {
+      if (drag && dropKeyAt(ev.target)) ev.preventDefault();
+    });
+    document.addEventListener("dragover", (ev) => {
+      if (!drag) return;
+      const key = dropKeyAt(ev.target);
+      setDrop(key, ev.altKey);
+      if (!key) return;
       ev.preventDefault();
-      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
-      stashDropEl.classList.add("is-over");
+      if (ev.dataTransfer) {
+        const keeps = drag.kind === "stash" ? !ev.altKey : drag.kind === "stashFiles" ? ev.altKey : false;
+        ev.dataTransfer.dropEffect = dropEffectFor(ev.dataTransfer, keeps ? "copy" : "move");
+      }
     });
-    stashDropEl.addEventListener("dragleave", () => {
-      stashDropEl.classList.remove("is-over");
+    document.addEventListener("dragleave", (ev) => {
+      // Out of the view altogether: nothing under the pointer is ours.
+      if (drag && !ev.relatedTarget && (ev.clientX <= 0 || ev.clientY <= 0 ||
+          ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight)) setDrop(null, false);
     });
-    stashDropEl.addEventListener("drop", (ev) => {
+    document.addEventListener("drop", (ev) => {
+      if (!drag) return;
       ev.preventDefault();
-      const paths = dragPaths.slice();
-      hideDropZone();
-      document.body.classList.remove("is-dragging-files");
-      if (paths.length === 0) return;
-      vscode.postMessage({ type: "stashPaths", paths: paths });
-      clearSelection();
+      const d = drag;
+      const key = dropKeyAt(ev.target);
+      endDrag();
+      if (key) dropOn(d, ev.altKey);
     });
+    // Its source's end: dropped (above), cancelled with Escape, or let go
+    // outside the view.
+    document.addEventListener("dragend", () => endDrag());
 
     // The selection bar's actions operate on the whole selection.
     $("selbar-stash").addEventListener("click", () => {
@@ -6310,6 +6600,9 @@ export class CommitViewProvider
     // -1 when the highlight is in the main list.
     let bmActiveKey = "";
     let bmSubActive = -1;
+    // Drilled in, the pointer on the back row ('‹ feature') lights it: the
+    // one row lit, the actions' highlight dark until the arrows move on.
+    let bmBackLit = false;
     let bmOptSeq = 0;
     // Where the pointer last was: a mousemove at the same spot is the list
     // scrolling under a still mouse, not the mouse moving, and must not take
@@ -6339,6 +6632,11 @@ export class CommitViewProvider
     function bmSubItems() {
       return branchSubmenu ? Array.prototype.slice.call(branchSubmenu.querySelectorAll(".bm-subaction")) : [];
     }
+    /** Drilled in, the back row above the actions; otherwise none. */
+    function bmBackRow() {
+      return branchSubmenu && branchSubmenu.classList.contains("is-drilled")
+        ? branchSubmenu.querySelector(".bm-subhead") : null;
+    }
     /** Paint the highlight where the state says it is, and point the box at it. */
     function paintBm(scroll) {
       if (!branchMenu) return;
@@ -6357,6 +6655,14 @@ export class CommitViewProvider
       }
       if (input) {
         input.setAttribute("aria-controls", branchSubmenu ? "bm-list bm-sub" : "bm-list");
+      }
+      const back = bmBackLit ? bmBackRow() : null;
+      if (back) {
+        // Lit as any row is; not an option of the list, so the box points at none.
+        back.classList.add("is-active");
+        if (main) main.classList.add("is-open");
+        if (input) input.removeAttribute("aria-activedescendant");
+        return;
       }
       if (target) {
         target.classList.add("is-active");
@@ -6387,6 +6693,13 @@ export class CommitViewProvider
     function moveBmSub(delta) {
       const items = bmSubItems();
       if (!items.length) return;
+      if (bmBackLit) {
+        // From the back row, down goes into the actions from their top;
+        // up has nowhere to go.
+        if (delta < 0) return;
+        bmBackLit = false;
+        bmSubActive = -1;
+      }
       bmSubActive = Math.max(0, Math.min(items.length - 1, bmSubActive + delta));
       paintBm(true);
     }
@@ -6461,6 +6774,7 @@ export class CommitViewProvider
         // run its first item. Only a fresh press acts.
         if (e.repeat) return;
         if (branchSubmenu) {
+          if (bmBackLit) { closeBmSub(); return; }
           if (bmSubActive < 0) { moveBmSub(1); return; }
           const item = bmSubItems()[bmSubActive];
           if (item) item.click();
@@ -6498,6 +6812,7 @@ export class CommitViewProvider
     function closeBranchSubmenu() {
       if (branchSubmenu) { branchSubmenu.remove(); branchSubmenu = null; }
       bmSubActive = -1;
+      bmBackLit = false;
       // Drilled in: the list comes back, scrolled where it was.
       if (branchMenu && branchMenu.classList.contains("is-drilled")) {
         branchMenu.classList.remove("is-drilled");
@@ -6782,10 +7097,20 @@ export class CommitViewProvider
       vscode.postMessage({ type: "branchRefCommand", command: command, ref: refName, refType: refType });
       closeBranchMenu();
     }
+    /**
+     * An item's tip: a title that says more than its label (it becomes the
+     * item's description too), else the label itself — which the page's
+     * tooltip shows only while the label is cut short (tipAdds), never over
+     * a label that is there in full.
+     */
+    function itemTip(b, label, title) {
+      if (title) b.title = title;
+      else b.dataset.tip = label;
+    }
     function subItem(list, icon, label, fn, danger, title) {
       const b = el("button", "bm-subaction" + (danger ? " danger" : ""), bIcon(icon) + "<span></span>");
       b.querySelector("span").textContent = label;
-      b.title = title || label; // full text on hover when the label ellipsis-clips a long branch name
+      itemTip(b, label, title);
       b.addEventListener("click", fn);
       list.appendChild(b);
     }
@@ -6797,7 +7122,7 @@ export class CommitViewProvider
       const b = el("button", "bm-subaction" + (running ? " is-busy" : ""),
         bIcon(running ? "loading codicon-modifier-spin" : icon) + "<span></span>");
       b.querySelector("span").textContent = running ? busyLabel : label;
-      b.title = title || label;
+      itemTip(b, label, title);
       b.addEventListener("click", () => {
         if (subLive || syncBusy || menuSyncBusy) return;
         subLive = { action: action, ref: ref };
@@ -6831,6 +7156,7 @@ export class CommitViewProvider
       if (!branchMenu) return;
       const sub = subMenuFor;
       const keep = subKey !== undefined ? subKey : bmSubActiveKey();
+      const backLit = bmBackLit;
       // Drilled in, the list is hidden: it comes back where it was, under
       // the actions drilled in again below.
       const drillScroll = branchMenu.classList.contains("is-drilled") ? bmDrillScroll : -1;
@@ -6852,6 +7178,8 @@ export class CommitViewProvider
             const i = bmSubItems().findIndex((n) => n.dataset.sub === keep);
             bmSubActive = i >= 0 ? i : 0;
           }
+          // The back row the pointer rests on stays lit, drilled in again.
+          if (backLit && bmBackRow()) { bmBackLit = true; bmSubActive = -1; }
           // The rebuilt submenu starts scrolled to its top; a highlight
           // further down a short view's submenu is brought back into sight.
           paintBm(bmSubActive >= 0);
@@ -6956,11 +7284,21 @@ export class CommitViewProvider
       menu.appendChild(list);
       for (const it of items) {
         if (it.sep) { subSep(list); continue; }
-        subItem(list, it.icon, it.label, () => { closeActionMenu(true); it.fn(); }, it.danger);
+        subItem(list, it.icon, it.label, () => { closeActionMenu(true); it.fn(); }, it.danger, it.tip);
       }
       list.querySelectorAll(".bm-subaction").forEach((b) => {
         b.setAttribute("role", "menuitem");
         b.tabIndex = -1;
+      });
+      // The pointer moves the keyboard's item, as it moves the branch
+      // window's highlight: the focused item is the one lit item, under the
+      // pointer or the arrows alike. Only a pointer that really moved: the
+      // list scrolling under a still one (the arrows in a short view) must
+      // not take the item from the keys.
+      menu.addEventListener("mousemove", (e) => {
+        if (!bmPointerMoved(e)) return;
+        const item = e.target.closest ? e.target.closest(".bm-subaction") : null;
+        if (item && document.activeElement !== item) item.focus({ preventScroll: true });
       });
       list.querySelectorAll(".bm-subsep").forEach((s) => s.setAttribute("role", "separator"));
       document.body.appendChild(menu);
@@ -7147,9 +7485,19 @@ export class CommitViewProvider
       // from the search box, so the keys keep working after a click.
       menu.addEventListener("mousemove", (e) => {
         if (!bmPointerMoved(e)) return;
-        const item = e.target.closest ? e.target.closest(".bm-subaction") : null;
+        const on = e.target.closest ? e.target : null;
+        // Drilled in, the back row is one of the rows the pointer lights.
+        if (on && on.closest(".bm-subhead") && menu.classList.contains("is-drilled")) {
+          if (bmBackLit) return;
+          bmBackLit = true;
+          bmSubActive = -1;
+          paintBm(false);
+          return;
+        }
+        const item = on ? on.closest(".bm-subaction") : null;
         const i = item ? bmSubItems().indexOf(item) : -1;
-        if (i < 0 || i === bmSubActive) return;
+        if (i < 0 || (i === bmSubActive && !bmBackLit)) return;
+        bmBackLit = false;
         bmSubActive = i;
         paintBm(false);
       });
@@ -8899,6 +9247,7 @@ export class CommitViewProvider
       applyRoving();
       handFocusOn(was, groupsEl);
       updateSelectionBar();
+      if (drag) paintDrop();
     }
 
     /**
@@ -9732,6 +10081,14 @@ export class CommitViewProvider
         openActionMenu(name, items, row, "folder");
       };
       row.addEventListener("contextmenu", row.__menu);
+      // Dragged onto the Stashes header, its files are stashed (not a
+      // conflicted one: git cannot stash it).
+      row.draggable = true;
+      row.addEventListener("dragstart", (ev) => {
+        const paths = def.kind === "merge" ? [] : treeDragPaths(null, row.__paths || []);
+        beginDrag(ev, { kind: "tree", paths: paths }, [row], paths.length ? paths.join("\n") : path);
+      });
+      row.addEventListener("dragend", endDrag);
       return row;
     }
 
@@ -9905,33 +10262,19 @@ export class CommitViewProvider
       row.addEventListener("dblclick", menu);
       row.addEventListener("contextmenu", menu);
 
-      // Drag a row (or the whole selection) onto the stash target.
+      // Drag it — or the selection it is in — onto the Stashes header to
+      // stash them. An unselected row goes alone, and the selection is left
+      // as it was: a drag is not a click, and never takes files the user has
+      // forgotten selecting somewhere off screen.
       row.draggable = true;
       row.addEventListener("dragstart", (ev) => {
-        // Right-clicking or dragging an unselected row acts on THAT row, not on
-        // a selection the user has forgotten about somewhere off screen.
-        if (!selectedRows.has(key)) {
-          selectedRows.clear();
-          selectedRows.add(key);
-          selectionAnchor = key;
-          paintSelection();
-        }
-        const paths = selectionPaths();
-        dragPaths = paths;
-        if (ev.dataTransfer) {
-          ev.dataTransfer.effectAllowed = "move";
-          // Plain text too, so dragging into a terminal or editor pastes
-          // something sensible rather than nothing.
-          ev.dataTransfer.setData("text/plain", paths.join("\n"));
-        }
-        document.body.classList.add("is-dragging-files");
-        showDropZone(paths.length);
+        const inSelection = selectedRows.has(key);
+        const paths = treeDragPaths(key, [e.path]);
+        const rows = inSelection ? Array.from(groupsEl.querySelectorAll(".row.is-file.is-selected")) : [row];
+        beginDrag(ev, { kind: "tree", paths: paths, selection: inSelection }, rows, paths.length ? paths.join("\n") : e.path);
       });
-      row.addEventListener("dragend", () => {
-        dragPaths = [];
-        document.body.classList.remove("is-dragging-files");
-        hideDropZone();
-      });
+      // Its own, too: a row a render took out mid-drag hears its end, the page does not.
+      row.addEventListener("dragend", endDrag);
       row.__menu = menu;
       return row;
     }
@@ -9952,6 +10295,54 @@ export class CommitViewProvider
       const b = makeIconBtn(svg, title, onClick);
       b.tabIndex = -1;
       return b;
+    }
+
+    /**
+     * A row's verb in WORDS — a stash's Apply and Pop, a stash file's Move
+     * and Copy, whose glyphs read alike. The pointer's, out of the tab order
+     * like rowBtn (the row's menu has the same verbs for the keyboard); its
+     * tip says exactly what happens.
+     */
+    function wordBtn(label, tip, onClick) {
+      const b = el("button", "word-btn");
+      b.type = "button";
+      b.textContent = label;
+      b.dataset.tip = tip;
+      b.setAttribute("aria-description", tip);
+      b.tabIndex = -1;
+      b.addEventListener("click", onClick);
+      return b;
+    }
+    const TIP_APPLY = "Apply: put these changes back and keep the stash";
+    const TIP_POP = "Pop: put these changes back and delete the stash";
+    /**
+     * Where some of a stash's files come back, named as the groups on screen
+     * name it: a file comes back as it was stashed — staged if it was — so a
+     * staged one lands in Staged, not in "Changes" (in the split model no
+     * group is called that).
+     */
+    function landsIn(files) {
+      const staged = files.some((f) => f.staged);
+      const unstaged = files.some((f) => f.staged !== "all");
+      const asWas = " as " + (files.length === 1 ? "it was" : "they were") + " stashed";
+      if (stagingModel === "checkboxes") return "into Changes" + (staged ? ", staged" + asWas : "");
+      if (!staged) return "into Unstaged";
+      return (unstaged ? "into Staged and Unstaged" : "into Staged") + asWas;
+    }
+    /** Some of a stash's files, by path, as its list has them. */
+    function stashFilesOf(s, paths) {
+      const files = stashFiles.get(s.sha) || [];
+      return paths.map((p) => files.find((f) => f.path === p) || { path: p });
+    }
+    /** Move / Copy's tips, for the files they would bring back ("this file" for one). */
+    function tipMove(files) {
+      return "Move: take " + (files.length === 1 ? "this file" : "these " + files.length + " files") +
+        " out of the stash, back " + landsIn(files);
+    }
+    function tipCopy(files) {
+      const one = files.length === 1;
+      return "Copy: bring " + (one ? "this file" : "these " + files.length + " files") +
+        " back " + landsIn(files) + ", and keep " + (one ? "it" : "them") + " in the stash";
     }
 
     // ---- Stashes group ---------------------------------------------------
@@ -10107,8 +10498,9 @@ export class CommitViewProvider
      * they never change — so a post of a big stash costs no more than a small one.
      */
     function stashSig(list) {
+      // The staging model too: the Move and Copy tips name its groups.
       return JSON.stringify([
-        layout, stashGroupCollapsed, Array.from(stashOpen),
+        layout, stagingModel, stashGroupCollapsed, Array.from(stashOpen),
         list.map((s) => {
           const p = stashPending.get(s.sha);
           return [s.sha, s.text, s.branch || "", s.time, s.rel || "", countOf(s),
@@ -10133,8 +10525,11 @@ export class CommitViewProvider
       const was = focusPlace(stashesEl);
       stashesEl.textContent = "";
       stashRowOrder = [];
-      stashesEl.hidden = list.length === 0;
-      if (list.length > 0) stashesEl.appendChild(renderStashGroup(list));
+      // No stash, no group — but while the working tree's files are being
+      // dragged, its header is where they go, so it is there then.
+      const shown = list.length > 0 || (!!drag && drag.kind === "tree" && drag.paths.length > 0);
+      stashesEl.hidden = !shown;
+      if (shown) stashesEl.appendChild(renderStashGroup(list));
       paintSelection();
       applyRoving();
       handFocusOn(was, stashesEl, nearestAboveStashes);
@@ -10149,6 +10544,7 @@ export class CommitViewProvider
         selectionAnchor = null;
       }
       updateSelectionBar();
+      if (drag) paintDrop();
     }
 
     /**
@@ -10182,7 +10578,9 @@ export class CommitViewProvider
       const gcount = el("span", "gcount");
       gcount.textContent = String(list.length);
       header.title = "Stashes — click to " + (stashGroupCollapsed ? "show" : "hide") + " them";
-      header.append(el("span", "twisty", ICON_CHEVRON), el("span", "gdot"), glabel, el("span", "group-actions"), gcount);
+      header.append(el("span", "twisty", ICON_CHEVRON), el("span", "gdot"), glabel, el("span", "group-actions"));
+      // None yet (a drag of the working tree's files shows the header): no "0".
+      if (list.length > 0) header.appendChild(gcount);
       const setOpen = (open) => {
         if (stashGroupCollapsed === !open) return;
         stashGroupCollapsed = !open;
@@ -10323,8 +10721,8 @@ export class CommitViewProvider
         { icon: "diff-multiple", label: "Open All Changes",
           fn: () => vscode.postMessage({ type: "stashOpenAll", sha: s.sha }) },
         { sep: true },
-        { icon: "git-stash-apply", label: "Apply", fn: () => stashAct(s, "apply") },
-        { icon: "git-stash-pop", label: "Pop", fn: () => stashAct(s, "pop") },
+        { icon: "git-stash-apply", label: "Apply", tip: TIP_APPLY, fn: () => stashAct(s, "apply") },
+        { icon: "git-stash-pop", label: "Pop", tip: TIP_POP, fn: () => stashAct(s, "pop") },
         { icon: "git-branch", label: "Create Branch…", fn: () => stashAct(s, "branch") },
         { sep: true },
         { icon: "trash", label: "Drop…", danger: true, fn: () => stashAct(s, "drop") },
@@ -10357,12 +10755,12 @@ export class CommitViewProvider
       // The pointer's buttons, out of the tab order: the keyboard has them
       // in the row's menu (Shift+F10), as a file row's are.
       const actions = el("span", "row-actions");
-      const applyBtn = rowBtn('<i class="codicon codicon-git-stash-apply" aria-hidden="true"></i>',
-        "Apply — bring its changes back and keep the stash", (ev) => { ev.stopPropagation(); stashAct(s, "apply"); });
-      const popBtn = rowBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
-        "Pop — bring its changes back and remove the stash", (ev) => { ev.stopPropagation(); stashAct(s, "pop"); });
+      const applyBtn = wordBtn("Apply", TIP_APPLY, (ev) => { ev.stopPropagation(); stashAct(s, "apply"); });
+      const popBtn = wordBtn("Pop", TIP_POP, (ev) => { ev.stopPropagation(); stashAct(s, "pop"); });
       applyBtn.classList.add("stash-quick");
+      applyBtn.dataset.act = "apply";
       popBtn.classList.add("stash-quick");
+      popBtn.dataset.act = "pop";
       actions.append(applyBtn, popBtn);
       actions.appendChild(rowBtn('<i class="codicon codicon-ellipsis" aria-hidden="true"></i>',
         "More Actions…", (ev) => { ev.stopPropagation(); openActionMenu(s.text, stashItems(s), row, "git-stash"); }));
@@ -10406,6 +10804,13 @@ export class CommitViewProvider
         // Delete, and the Mac's delete key, ask to drop it.
         if (ev.key === "Delete" || ev.key === "Backspace") { ev.preventDefault(); stashAct(s, "drop"); }
       });
+      // Dragged onto the working tree (or its clean note): Apply (Alt: Pop).
+      row.draggable = !busy;
+      row.addEventListener("dragstart", (ev) => {
+        if (stashPending.has(s.sha)) { ev.preventDefault(); return; }
+        beginDrag(ev, { kind: "stash", sha: s.sha }, [row], "");
+      });
+      row.addEventListener("dragend", endDrag);
       return row;
     }
 
@@ -10419,7 +10824,7 @@ export class CommitViewProvider
       for (const dir of dirs) {
         const key = "stashfolder:" + s.sha + ":" + dir.path;
         const isCollapsed = collapsed[key] === true;
-        const row = el("div", "row" + (isCollapsed ? " collapsed" : ""));
+        const row = el("div", "row stash-folder" + (isCollapsed ? " collapsed" : ""));
         row.style.paddingLeft = (depth * 12) + "px";
         stashItem(row, key, depth + 1);
         row.dataset.sha = s.sha;
@@ -10431,12 +10836,23 @@ export class CommitViewProvider
         row.appendChild(name);
         row.appendChild(el("span", "spacer"));
         const under = dir.path + "/";
-        const inside = all.filter((f) => f.path.indexOf(under) === 0).map((f) => f.path);
+        const insideFiles = all.filter((f) => f.path.indexOf(under) === 0);
+        const inside = insideFiles.map((f) => f.path);
         row.setAttribute("aria-label", dir.name + ", folder, " + countWords(inside.length));
         const factions = el("span", "row-actions");
-        factions.appendChild(rowBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
-          "Move this folder's files to Changes", (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "move"); }));
+        const moveBtn = wordBtn("Move", tipMove(insideFiles), (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "move"); });
+        const copyBtn = wordBtn("Copy", tipCopy(insideFiles), (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "copy"); });
+        moveBtn.dataset.act = "move";
+        copyBtn.dataset.act = "copy";
+        factions.append(moveBtn, copyBtn);
         row.appendChild(factions);
+        // Dragged onto the working tree (or its clean note): Move its files (Alt: Copy).
+        row.draggable = true;
+        row.addEventListener("dragstart", (ev) => {
+          if (stashPending.has(s.sha)) { ev.preventDefault(); return; }
+          beginDrag(ev, { kind: "stashFiles", sha: s.sha, paths: inside.slice() }, [row], inside.join("\n"));
+        });
+        row.addEventListener("dragend", endDrag);
         const setOpen = (open) => { collapsed[key] = !open; renderStashes(); };
         row.addEventListener("click", () => setOpen(collapsed[key] === true));
         row.__expand = setOpen;
@@ -10446,8 +10862,8 @@ export class CommitViewProvider
           if (ev) ev.preventDefault();
           const n = countWords(inside.length);
           openActionMenu(dir.name, [
-            { icon: "git-stash-pop", label: "Move " + n + " to Changes", fn: () => stashFilesAct(s, inside, "move") },
-            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", fn: () => stashFilesAct(s, inside, "copy") },
+            { icon: "git-stash-pop", label: "Move " + n + " to Changes", tip: tipMove(insideFiles), fn: () => stashFilesAct(s, inside, "move") },
+            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", tip: tipCopy(insideFiles), fn: () => stashFilesAct(s, inside, "copy") },
           ], row, "folder");
         };
         row.addEventListener("contextmenu", row.__menu);
@@ -10505,8 +10921,11 @@ export class CommitViewProvider
         row.appendChild(w);
       }
       const actions = el("span", "row-actions");
-      actions.appendChild(rowBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
-        "Move to Changes — take it out of the stash", (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "move"); }));
+      const moveBtn = wordBtn("Move", tipMove([f]), (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "move"); });
+      const copyBtn = wordBtn("Copy", tipCopy([f]), (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "copy"); });
+      moveBtn.dataset.act = "move";
+      copyBtn.dataset.act = "copy";
+      actions.append(moveBtn, copyBtn);
       row.appendChild(actions);
       const status = el("span", "status " + statusClass(letter));
       status.setAttribute("aria-hidden", "true");
@@ -10535,8 +10954,8 @@ export class CommitViewProvider
         if (sel && sel.sha === s.sha && selectedRows.has(key) && sel.paths.length > 1) {
           const n = countFiles(sel.paths.length);
           openActionMenu(n + " from “" + s.text + "”", [
-            { icon: "git-stash-pop", label: "Move " + n + " to Changes", fn: () => stashFilesAct(s, sel.paths, "move") },
-            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", fn: () => stashFilesAct(s, sel.paths, "copy") },
+            { icon: "git-stash-pop", label: "Move " + n + " to Changes", tip: tipMove(stashFilesOf(s, sel.paths)), fn: () => stashFilesAct(s, sel.paths, "move") },
+            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", tip: tipCopy(stashFilesOf(s, sel.paths)), fn: () => stashFilesAct(s, sel.paths, "copy") },
             { sep: true },
             { icon: "close", label: "Clear Selection", fn: clearSelection },
           ], row);
@@ -10548,8 +10967,8 @@ export class CommitViewProvider
             fn: () => vscode.postMessage({ type: "stashOpenFile", sha: s.sha, path: f.path, staged: true }) });
         }
         items.push({ sep: true });
-        items.push({ icon: "git-stash-pop", label: "Move to Changes", fn: () => stashFilesAct(s, [f.path], "move") });
-        items.push({ icon: "git-stash-apply", label: "Copy to Changes", fn: () => stashFilesAct(s, [f.path], "copy") });
+        items.push({ icon: "git-stash-pop", label: "Move to Changes", tip: tipMove([f]), fn: () => stashFilesAct(s, [f.path], "move") });
+        items.push({ icon: "git-stash-apply", label: "Copy to Changes", tip: tipCopy([f]), fn: () => stashFilesAct(s, [f.path], "copy") });
         openActionMenu(name.textContent, items, row);
       };
       row.addEventListener("click", (ev) => {
@@ -10563,6 +10982,18 @@ export class CommitViewProvider
       // diff, Shift+F10 its menu.
       row.__activate = open;
       row.__menu = menu;
+      // Dragged onto the working tree (or its clean note) — with the files of
+      // this stash selected beside it, when it is one of them: Move (Alt: Copy).
+      row.draggable = !busy;
+      row.addEventListener("dragstart", (ev) => {
+        if (stashPending.has(s.sha) || !stashFiles.has(s.sha)) { ev.preventDefault(); return; }
+        const sel = stashSelection();
+        const many = !!sel && sel.sha === s.sha && selectedRows.has(key);
+        const paths = many ? sel.paths.slice() : [f.path];
+        const rows = many ? Array.from(stashesEl.querySelectorAll(".row.is-file.is-selected")) : [row];
+        beginDrag(ev, { kind: "stashFiles", sha: s.sha, paths: paths }, rows, paths.join("\n"));
+      });
+      row.addEventListener("dragend", endDrag);
       return row;
     }
 
@@ -10971,12 +11402,42 @@ export class CommitViewProvider
       c.dataset.tipNamed = "1";
     }
     function hideTip() { clearTimeout(tipTimer); tipTarget = null; tipEl.classList.remove("show"); }
+    /**
+     * Whether a tip says something the element does not already show: other
+     * words (an icon button's name, a folder, an explanation), or its own
+     * words while some of them are cut off. A tip repeating a label that is
+     * there in full ("Copy Branch Name" over Copy Branch Name) is noise.
+     */
+    function tipAdds(t, text) {
+      const norm = (s) => String(s || "").replace(/\s+/g, " ").trim();
+      const tip = norm(text);
+      const shown = norm(t.innerText);
+      if (!shown) return true;
+      const cut = (n) => n.scrollWidth > n.clientWidth + 1 && getComputedStyle(n).overflowX !== "visible";
+      const all = [t].concat(Array.prototype.slice.call(t.querySelectorAll("*")));
+      if (tip === shown) return all.some(cut);
+      // A row's own words, each shown in full on its own: a file's name, its
+      // folder. A tip that is one of them ("README.md" over README.md), or a
+      // path that is the folder and the name both there in full, repeats
+      // them; one that is cut short is still worth its tip.
+      const whole = new Set();
+      for (let i = 1; i < all.length; i++) {
+        const n = all[i];
+        if (!n.getClientRects().length || getComputedStyle(n).visibility === "hidden") continue;
+        let clipped = false;
+        for (let a = n; a && !clipped; a = a === t ? null : a.parentElement) clipped = cut(a);
+        if (!clipped) whole.add(norm(n.innerText));
+      }
+      if (whole.has(tip)) return false;
+      const slash = tip.lastIndexOf("/");
+      return !(slash > 0 && whole.has(tip.slice(slash + 1)) && whole.has(tip.slice(0, slash)));
+    }
     function showTip() {
       // The hovered node can be swapped out by a live dialog repaint before
       // the delay fires — a tip for a detached node would float orphaned.
       if (!tipTarget || !tipTarget.isConnected) { hideTip(); return; }
       const text = tipTarget.getAttribute("data-tip");
-      if (!text) return;
+      if (!text || !tipAdds(tipTarget, text)) return;
       tipEl.textContent = text;
       tipEl.classList.add("show");
       // Grow to the full single-line width, and ONLY wrap when that width
@@ -10989,15 +11450,20 @@ export class CommitViewProvider
       tipEl.style.right = "auto";
       tipEl.style.whiteSpace = "nowrap";
       tipEl.style.wordBreak = "normal";
+      tipEl.style.overflowWrap = "normal";
       tipEl.style.width = "auto";
       tipEl.style.maxWidth = "none";
       if (tipEl.offsetWidth > avail) {
-        // Genuinely too wide for the panel — wrap. Use break-all so each line
-        // fills COMPLETELY and the remainder just overflows to the next row,
-        // instead of break-word snapping at the last hyphen and leaving a ragged
-        // gap on line 1 (which reads as "there's still room, why did it wrap?").
+        // Genuinely too wide for the panel — wrap. A name (a path, a branch)
+        // breaks anywhere, so each line fills COMPLETELY and the remainder
+        // just overflows to the next row, instead of break-word snapping at
+        // the last hyphen and leaving a ragged gap on line 1 (which reads as
+        // "there's still room, why did it wrap?"). Words in a sentence wrap
+        // between them: "as it w / as stashed" read as broken.
+        const sentence = /\s/.test(text.trim());
         tipEl.style.whiteSpace = "normal";
-        tipEl.style.wordBreak = "break-all";
+        tipEl.style.wordBreak = sentence ? "normal" : "break-all";
+        tipEl.style.overflowWrap = sentence ? "anywhere" : "normal";
         tipEl.style.width = avail + "px";
         tipEl.style.maxWidth = avail + "px";
       }

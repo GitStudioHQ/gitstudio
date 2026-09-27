@@ -12,13 +12,16 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   main:"), the branch it was made on, how long ago, and how many files — and
   opens to every file it holds, staged and untracked ones too, as Changes
   rows. Click a file to see its diff against the commit the stash was made
-  on. **Move to Changes** (the button on a file's row) brings the file back as
-  it was stashed — staged, if it was — and takes it out of the stash; **Copy
-  to Changes** (in its menu) brings it back and leaves the stash as it is.
-  Ctrl/Cmd-click and Shift-click select several files to move or copy
-  together; in the tree view a folder moves too. A stash's row has **Apply**
-  and **Pop**, and its menu **Open All Changes**, **Create Branch…** and
-  **Drop…** (Delete asks too). A file you have changed yourself is never
+  on. **Move** (on a file's row) brings the file back as it was stashed —
+  staged, if it was — and takes it out of the stash; **Copy** brings it back
+  and leaves the stash as it is. Their tips name the group a file lands in
+  (*back into Staged as it was stashed*). Ctrl/Cmd-click and Shift-click select
+  several files to move or copy together; in the tree view a folder moves
+  too. A stash's row has **Apply** (its changes come back, the stash stays)
+  and **Pop** (they come back, the stash goes) — words, not look-alike icons,
+  on the row the pointer is on, each with a tip saying what happens — and its
+  menu **Open All Changes**, **Create Branch…** and **Drop…** (Delete asks
+  too). A file you have changed yourself is never
   overwritten: it asks, and Stash & Retry keeps both. What is left of a stash
   stays where the stash was in the list, and Undo (Ctrl/Cmd+Alt+G Z) puts the
   whole stash back. A row goes the moment you click and comes back if nothing
@@ -30,6 +33,20 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Stashes view is gone; the Command Palette has **Apply Stash…**, **Pop
   Stash…**, **Drop Stash…** and **Create Branch from Stash…**, which ask
   which stash.
+- **Drag between your changes and your stashes.** Drag a stash onto your
+  changes (or "Working tree clean") to apply it — hold Alt (Option on a
+  Mac) as you let go to pop it instead. It comes back as it was stashed,
+  staged changes staged, so your changes light up as one place rather than
+  Staged or Unstaged alone. Drag a stash's files (or the ones you've
+  selected, or a folder of them) there to move them out of the stash — Alt
+  or Option copies them. Drag changed files — one, your selection, or a
+  folder — onto the **Stashes** header to stash exactly those. The place
+  under the pointer lights up and says what letting go does ("Drop to
+  apply · Hold Option to pop"), on a line of its own under the verb in a
+  narrow sidebar rather than cut off; a stash itself takes no drop, since
+  git can't add to a stash. It runs what the menus run, so Stash & Retry,
+  the staging question, conflicts and Undo work as they do there. This
+  replaces the "Drop to stash" box.
 - **Checkout puts you on the pull request's own branch.** **Checkout** on a
   pull request — in the list, on its page, or in the Command Palette — checks
   out its real branch (`feature`, not a `pr/37` copy), tracking it where it
@@ -421,21 +438,32 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   a tint of the theme's accent, with a soft glow on a tab, a pill or a
   button, and no longer by a line. That covers the selected commit in the
   graph and in the Commits list (the commit the keyboard is on is lit a shade
-  deeper), selected files in Changes and in a stash, the branch menu's
-  highlighted row, a question's highlighted choice, the rebase selection and
-  the action it is set to, the Compare panel's tabs, a pull request's tab,
-  verdict and merge method, and the pull request checked out here. Search
-  matches in the graph and the Commits list are washed a soft yellow; a
-  result you select stays selected, its selection fill touched with that
-  yellow, and a selected commit the search does not match no longer fades
-  with the rest. The branch you're on, open in its pill, the row whose
-  actions are open beside a wide branch menu, and the merge editor's pressed
-  Synchronized scrolling toggle are lit too. Before, many of these were
-  marked by a bar down an edge, an underline or an accent outline. The words
-  on every tint are at least 4.5:1, under the pointer too: in the branch
-  menu's actions the row under the pointer is the highlighted one and looks
-  it. High Contrast themes keep VS Code's own whole ring around a selection,
-  and the keyboard's focus ring is unchanged.
+  deeper), selected files in Changes and in a stash (a little stronger under
+  the pointer, and the row under the pointer no longer grows a coloured
+  rail), a question's highlighted choice, the rebase selection and the action
+  it is set to, the Compare panel's tabs, a pull request's tab, verdict and
+  merge method, and the pull request checked out here. Search matches in the
+  graph and the Commits list are washed a soft yellow; a result you select
+  stays selected, its selection fill touched with that yellow, and a
+  selected commit the search does not match no longer fades with the rest.
+  The branch you're on, open in its pill, the row whose actions are open
+  beside a wide branch menu, and the merge editor's pressed Synchronized
+  scrolling toggle are lit too. Before, many of these were marked by a bar
+  down an edge, an underline or an accent outline. The words on every tint
+  are at least 4.5:1, under the pointer too. High Contrast themes keep VS
+  Code's own whole ring around a selection (dashed on a selected file), and
+  the keyboard's focus ring is unchanged.
+- **The branch menu's highlighted row is lit, not outlined.** The row the
+  arrow keys or the pointer are on — an action, a branch, one of a branch's
+  actions, a Delete — is a soft tint of your theme's accent with its words
+  at full strength, the same under the pointer as from the keyboard, and
+  only one row is lit at a time. Under the pointer, an item used to turn
+  grey inside a blue outline with its words faded. A row's own menu (a
+  file's, a stash's) highlights its items the same way. High contrast
+  themes keep their border. A tooltip now shows only when it adds
+  something — a name that is cut short, or an explanation — never the words
+  already on the row (a file at the root no longer shows its own name), and
+  one too wide for a narrow sidebar wraps between its words.
 - **A branch's actions are in one order for every kind of ref** — the
   branch you're on, any other, a remote branch, a tag: checkout and what
   starts from it, then compare, merge and rebase, then push and the tracked
@@ -754,8 +782,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - *This window* in Worktrees survives opening the repository through a
   symlink, and the worktree this window has open no longer offers to open
   itself again.
-- **Lock Worktree…** asks why (optional); the reason shows on the row and in
-  the Remove question.
+- **Lock Worktree…** asks why (optional); the reason shows in the row's
+  tooltip and in the Remove question.
 - **Prune Worktrees** says which worktrees it pruned, or that there was nothing
   to prune — it reported success either way.
 - Branch tooltips show upstream names without stray backslashes.

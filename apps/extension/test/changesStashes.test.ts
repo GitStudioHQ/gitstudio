@@ -198,7 +198,7 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
     try {
       await page.send(state());
       await clearPosted(page);
-      await page.eval(`${row(B)}.querySelectorAll(".row-actions .icon-btn")[1].click()`);
+      await page.eval(`${row(B)}.querySelector('.row-actions [data-act="pop"]').click()`);
       assert.deepEqual(await posted(page, "stashAct"), [{ type: "stashAct", sha: B, action: "pop" }]);
       assert.equal((await shown(page)).rows.length, 2, "gone at the click");
       // A state from before the pop (the firehose) does not bring it back.
@@ -208,7 +208,7 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
       await page.send({ type: "stashDone", sha: B, action: "pop", outcome: { kind: "kept" } });
       assert.equal((await shown(page)).rows.length, 3, "back when nothing happened");
       // Popped: gone, and the list read after it agrees.
-      await page.eval(`${row(B)}.querySelectorAll(".row-actions .icon-btn")[1].click()`);
+      await page.eval(`${row(B)}.querySelector('.row-actions [data-act="pop"]').click()`);
       await page.send({ type: "stashDone", sha: B, action: "pop", outcome: { kind: "done" } });
       const after = stashes().filter((s) => s.sha !== B);
       await page.send(state({ stashes: after }));
@@ -222,7 +222,7 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
     const page = await ChangesPage.open(theme, { width: 300, height: 900 });
     try {
       await page.send(state());
-      await page.eval(`${row(A)}.querySelectorAll(".row-actions .icon-btn")[0].click()`);
+      await page.eval(`${row(A)}.querySelector('.row-actions [data-act="apply"]').click()`);
       assert.equal(await page.eval<string>(`${row(A)}.getAttribute("aria-busy")`), "true");
       assert.ok(Number(await page.eval<string>(`getComputedStyle(${row(A)}).opacity`)) < 1, "dimmed while it runs");
       await page.send({ type: "stashDone", sha: A, action: "apply", outcome: { kind: "done" } });
@@ -250,7 +250,7 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
       await page.send(state());
       await page.eval(`${row(B)}.click()`);
       await clearPosted(page);
-      await page.eval(`${fileRow(B, "src/auth/login.ts")}.querySelector(".row-actions .icon-btn").click()`);
+      await page.eval(`${fileRow(B, "src/auth/login.ts")}.querySelector('.row-actions [data-act="move"]').click()`);
       assert.deepEqual(await posted(page, "stashFiles"), [{ type: "stashFiles", sha: B, action: "move", paths: ["src/auth/login.ts"] }]);
       assert.equal((await shown(page)).files.includes("login.ts M partly staged"), false, "gone at the click");
       assert.match((await shown(page)).rows[1], /5 files/);
@@ -263,13 +263,13 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
       assert.equal(s.rows[1], "Fix login redirect | main · 4h · 5 files | true", "still open");
       assert.equal(await page.eval<boolean>(`!!${fileRow(R, "src/routes.ts")}`), true);
       // A move that did not happen puts the file back.
-      await page.eval(`${fileRow(R, "src/routes.ts")}.querySelector(".row-actions .icon-btn").click()`);
+      await page.eval(`${fileRow(R, "src/routes.ts")}.querySelector('.row-actions [data-act="move"]').click()`);
       assert.equal((await shown(page)).files.length, 4);
       await page.send({ type: "stashDone", sha: R, action: "move", outcome: { kind: "kept" } });
       assert.equal((await shown(page)).files.length, 5);
       // Moving a stash's last file takes the stash with it.
       await page.eval(`${row(A)}.click()`);
-      await page.eval(`${fileRow(A, "src/app.ts")}.querySelector(".row-actions .icon-btn").click()`);
+      await page.eval(`${fileRow(A, "src/app.ts")}.querySelector('.row-actions [data-act="move"]').click()`);
       assert.deepEqual((await shown(page)).rows.map((r) => r.split(" | ")[0]), ["Fix login redirect", "Release notes"]);
     } finally {
       await page.close();
@@ -630,7 +630,7 @@ test("the tree layout pages too; a folder's Move takes every file under it, show
     assert.equal(await shownFiles(page, BIG), 200);
     assert.equal(await moreRow(page), "Show 200 more of 250");
     await clearPosted(page);
-    await page.eval(`document.querySelector('#stashes [data-tkey="stashfolder:${BIG}:deps"] .row-actions .icon-btn').click()`);
+    await page.eval(`document.querySelector('#stashes [data-tkey="stashfolder:${BIG}:deps"] .row-actions [data-act="move"]').click()`);
     const moves = await posted(page, "stashFiles");
     assert.equal(moves.length, 1);
     assert.equal((moves[0].paths as string[]).length, 450, "all of the folder, not the page on screen");
@@ -661,7 +661,7 @@ test("what is left after a move shows at once — its files are the stash's, les
     await page.eval(`${row(BIG)}.click()`);
     await page.send({ type: "stashFilesRead", sha: BIG, files: BIG_FILES });
     await clearPosted(page);
-    await page.eval(`${fileRow(BIG, "deps/pkg000.js")}.querySelector(".row-actions .icon-btn").click()`);
+    await page.eval(`${fileRow(BIG, "deps/pkg000.js")}.querySelector('.row-actions [data-act="move"]').click()`);
     assert.match((await shown(page)).rows[0], /449 files/);
     await page.send({ type: "stashDone", sha: BIG, action: "move", paths: ["deps/pkg000.js"], outcome: { kind: "done", rest: R } });
     const list = stashes();
@@ -733,7 +733,8 @@ for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
           // Apply / Pop give way to More Actions, the staged word to its tip.
           namesCut: Array.from(document.querySelectorAll("#stashes .row.is-file .name"))
             .filter((n) => n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent),
-          quick: Array.from(open.querySelectorAll(".row-actions .icon-btn")).map((b) => cs(b).display !== "none"),
+          // With the keyboard on the row, so its words would show if they fit.
+          quick: (open.focus(), Array.from(open.querySelectorAll(".row-actions .word-btn, .row-actions .icon-btn")).map((b) => cs(b).display !== "none")),
           stagedShown: Array.from(document.querySelectorAll("#stashes .stash-staged")).some((w) => cs(w).display !== "none"),
           stagedTip: ${fileRow(B, "src/auth/login.ts")}.querySelector(".status").dataset.tip,
         };

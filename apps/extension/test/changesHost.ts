@@ -43,7 +43,7 @@ process.env.GIT_OPTIONAL_LOCKS = "0";
 
 /** Every question the host asked, and the scripted answer it got. */
 export const asked: DialogSpec[] = [];
-let answer: (spec: DialogSpec) => string | undefined = () => "ok";
+let answer: (spec: DialogSpec) => string | string[] | undefined = () => "ok";
 registerDialogHost({
   show: async (spec) => {
     asked.push(spec);
@@ -52,8 +52,8 @@ registerDialogHost({
   },
 });
 
-/** How the next questions are answered ("ok" confirms; undefined dismisses). */
-export function answerWith(fn: (spec: DialogSpec) => string | undefined): void {
+/** How the next questions are answered ("ok" confirms; ids answer a multi-pick; undefined dismisses). */
+export function answerWith(fn: (spec: DialogSpec) => string | string[] | undefined): void {
   answer = fn;
 }
 
