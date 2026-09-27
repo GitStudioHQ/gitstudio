@@ -110,6 +110,14 @@ export type ApplyOp =
        * failure. A name git cannot use is refused before anything else.
        */
       branch?: string;
+      /**
+       * `stash` is not a stash of the list but a stash-shaped commit cut from
+       * this one, the listed stash's full sha (StashProvider.subset: some of
+       * its files). It is applied by its own sha and never popped; the stash
+       * it was cut from must still be in the list when git runs — a stash
+       * that has left it runs nothing (`stashGone`), as for any stash op.
+       */
+      cutFrom?: string;
     };
 
 /** What the user's uncommitted work was in the way of: a command that applies
@@ -176,9 +184,28 @@ const isStashBranch = (op: ApplyOp): op is StashOp & { branch: string } =>
  */
 async function argsNow(proc: GitProcess, op: ApplyOp, signal?: AbortSignal): Promise<string[] | null> {
   if (op.kind !== "stash" || !isStashSha(op.stash)) return applyArgs(op);
-  const ref = await stashRefOf(new StashProvider(proc), op.stash, signal);
+  return stashArgsNow(new StashProvider(proc), op, op.stash, signal);
+}
+
+/**
+ * A stash op's argv for the stash with sha `target`, where the list holds it
+ * NOW — or null when it has left the list. A part cut from a stash
+ * (`cutFrom`) is applied by its own sha, while the stash it came from is
+ * still listed.
+ */
+async function stashArgsNow(
+  stashes: StashProvider,
+  op: StashOp,
+  target: string | null,
+  signal?: AbortSignal,
+): Promise<string[] | null> {
+  if (op.cutFrom !== undefined) {
+    if (op.pop || op.branch !== undefined || !target) return null;
+    return (await stashRefOf(stashes, op.cutFrom, signal)) ? stashArgs(op, target) : null;
+  }
+  const ref = await stashRefOf(stashes, target, signal);
   if (!ref) return null;
-  return stashArgs(op, op.pop || op.branch !== undefined ? ref : op.stash);
+  return stashArgs(op, op.pop || op.branch !== undefined ? ref : (target as string));
 }
 
 /** A command that was not run. */
@@ -870,7 +897,7 @@ export async function stashAndRetry(
 
   let args = applyArgs(op);
   if (op.kind === "stash") {
-    const now = await stashRefOf(stashes, target, signal);
+    const now = await stashArgsNow(stashes, op, target, signal);
     if (!now) {
       return {
         result: { code: 1, stdout: "", stderr: "" },
@@ -880,7 +907,7 @@ export async function stashAndRetry(
         stashGone: true,
       };
     }
-    args = stashArgs(op, now);
+    args = now;
   }
   const at = await where(proc, signal);
   const tree = op.kind === "stash" && op.index ? await porcelain(proc, signal) : null;
