@@ -1,0 +1,21 @@
+apps/extension/test/undoStateTable.test.ts
+  s_26f5e669d3043c::t_2fe4378ca109c6 1744-1821
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_f0db4a31138180 277-279,924-925,939-940,957-959,976-1066
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c3ac3a6c73388a7d8a591b3940b126c0a9003abe",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
