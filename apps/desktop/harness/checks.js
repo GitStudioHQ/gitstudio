@@ -18632,6 +18632,43 @@
       c.eq(mark(), "open in a tab", "restored, its row gets the mark back when the tab opens again");
     },
 
+    /** A re-read the view never drew does not count as reading the tabs
+     *  (#32). The reload noted the tabs as read BEFORE it asked main for the
+     *  worktree list, and before the route check that drops an answer for a
+     *  view no longer in front: a tab closing in front of Branches started a
+     *  re-read, Branches was left while main answered (?slow= on
+     *  worktree:list), the answer was dropped with the rows unchanged — and the
+     *  restore, told the tabs had been read, did not read them. The row kept
+     *  "open in a tab" for a tab that was gone. */
+    "a-branches-view-left-mid-read-still-follows-the-tabs": async (f) => {
+      const c = check(f);
+      await settle(2500);
+      const WT = "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2";
+      const view = () => $(".view-host .branches-view");
+      const markIn = (root) => text($$(".worktree-row", root).find((r) => r.dataset.ref === WT)?.querySelector(".br-state-col"));
+      const reads = () => (window.__GS_INVOKED || []).filter((r) => r.channel === "worktree:list").length;
+      const built = view();
+      c.ok(!!built, "precondition: the Branches view");
+      if (!built) return;
+      c.eq(markIn(built), "open in a tab", "precondition: its row says another tab has it open");
+      // The worktree's tab closes in front of Branches: the list is read again…
+      const before = reads();
+      window.__gsTabs.close(WT);
+      for (let i = 0; i < 40 && reads() === before; i++) await settle(50);
+      c.ok(reads() > before, "precondition: the tab closing sends the list to be read again");
+      // …and Branches is left while main is still answering.
+      c.eq(markIn(built), "open in a tab", "precondition: the re-read has not answered when Branches is left");
+      $('.nav-item[data-view="changes"]')?.click();
+      await settle(2500);
+      c.ok(!built.isConnected, "precondition: left, the view is parked");
+      c.eq(markIn(built), "open in a tab", "precondition: the answer that landed while it was parked was not drawn");
+      // Back: the same view, from the keep-alive cache — and it reads the tabs.
+      $('.nav-item[data-view="branches"]')?.click();
+      await settle(3000);
+      c.ok(view() === built, "precondition: Branches came back from the cache, not rebuilt");
+      c.eq(markIn(built), "", "the row loses the mark of a tab that closed while its re-read was dropped");
+    },
+
     /** Which worktree another tab has open is main's to say (#32). The row
      *  compared a tab's root with git's path as TEXT, so a tab whose root is
      *  spelled another way — C:\\Users\\… (realpathSync.native) beside git's

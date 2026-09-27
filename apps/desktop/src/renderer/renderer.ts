@@ -2639,10 +2639,16 @@ class App {
       // refresh in the view goes through here, including `removeWorktreeLive`.
       // "Worktree removed." left the row and its count on screen, and pressing
       // Remove again ran git against a path that no longer existed.
-      tabsRead = this.tabsEpoch;
+      //
+      // The tabs open as main is asked: its answer is about THOSE. A tab that
+      // opens or closes while it answers bumps the epoch past this, and the
+      // next restore reads again.
+      const asked = this.tabsEpoch;
+      let read = false;
       try {
         worktrees = await host.invoke("worktree:list", undefined);
         worktreeFailed = false;
+        read = true;
       } catch {
         // KEEP the rows we have. Replacing them with [] on a failed refresh
         // deleted a list git never said was gone.
@@ -2654,6 +2660,12 @@ class App {
       tags = this.refs.filter((r) => r.type === "tag");
       defaultBranch = this.defaultBranchName(locals);
       render();
+      // Only now are the rows on screen main's answer for those tabs. Noted
+      // before the read and the route check, a re-read dropped because the
+      // view was left while main answered marked the tabs as seen — and the
+      // restore that should have read them again did not. A failed read
+      // leaves the old rows, and the old note with them.
+      if (read) tabsRead = asked;
     };
     this.reloadBranchRows = reload;
     // Restored from the keep-alive cache, the view is on screen again but its
