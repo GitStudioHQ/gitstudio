@@ -1,0 +1,21 @@
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_be387c2ba2c0e6 408-416,420
+apps/extension/test/repoChangeKinds.test.ts
+  s_26f5e669d3043c::t_948ba928b0ba34 10-12,21,164-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "071a5c5601b6751de552a4a2b33e4d82af9f2e6f",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
