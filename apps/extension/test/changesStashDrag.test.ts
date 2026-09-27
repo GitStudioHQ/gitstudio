@@ -5,23 +5,29 @@
 //
 // The owner: "since stashes and commits share the same window I want the
 // ability to drag and drop directly". One mechanism, both ways:
-//   a stash             → Staged / Changes / the clean tree: Apply (Alt: Pop)
-//   its files, a folder → the same places: Move (Alt: Copy)
+//   a stash             → the working tree / the clean tree: Apply (Alt: Pop)
+//   its files, a folder → the same place: Move (Alt: Copy)
 //   working-tree files  → the Stashes header: stash exactly those
 // and nowhere else — a stash row never takes a drop (git cannot add to a
 // stash), a stash never lands on the Stashes group, nor the working tree's
-// files on the working tree. The place under the pointer is lit (a tint, no
-// line) and says what a drop does, and how Alt/Option picks the other verb.
+// files on the working tree. The working tree is ONE place, whatever groups
+// it shows: what comes back comes back as it was stashed, so no group of it
+// (Staged, say) is lit on its own as if it decided where. The place under
+// the pointer is lit (a tint, no line) and says what a drop does, and how
+// Alt/Option picks the other verb — never cut, however narrow the sidebar.
+// The drop works whatever the OS allows while a modifier is held: a Mac
+// narrows a drag to copy alone while Option is held (real drags, below).
 //
 // The state table:
 //   source   stash row · a stash file · a stash's selected files · a stash
 //            file outside that selection · a stash folder · a working-tree
 //            file · a working-tree selection (staged and unstaged) · a
 //            working-tree folder · a conflicted file · a busy stash
-//   target   Changes (header or row) · Staged · the checkbox model's Changes ·
+//   target   Unstaged (header or row) · Staged · the checkbox model's Changes ·
 //            the clean tree's note · the Stashes header · a stash row · a
 //            stash file · the merge group · the commit box
-//   modifier none · Alt, changed mid-drag
+//   modifier none · Alt, changed mid-drag · Option on a Mac (copy only)
+//   width    360 · 300 · 280 · 250 (the words, whole)
 //   end      a drop · a cancelled drag · a repaint from the host mid-drag
 //   state    stashes · none (the header comes for a working-tree drag)
 //   door     (real git) apply · pop · move · copy · a conflict · uncommitted
@@ -124,7 +130,7 @@ window.__dnd = {
       allowed: e.defaultPrevented,
       effect: this.dt.dropEffect,
       lit: Array.prototype.map.call(lit, function (n) { return n.id || n.className.split(" ").filter(function (c) { return /^group--|^group-header$/.test(c); }).join(" ") || n.className; }),
-      words: hint ? Array.prototype.map.call(hint.children, function (c) { return c.hidden ? "" : c.textContent; }).filter(Boolean) : [],
+      words: hint ? Array.prototype.map.call(hint.querySelectorAll(".drop-verb, .drop-alt"), function (c) { return c.hidden ? "" : c.textContent; }).filter(Boolean) : [],
       ready: document.querySelectorAll(".is-drop-ready").length,
     };
   },
@@ -188,7 +194,7 @@ const openStash = (p: ChangesPage, sha: string) => p.eval(`${Q.stash(sha)}.click
 
 // ── Where a drag can go, and what the place says ────────────────────────────
 
-test("a stash: Changes, Staged and nothing else are places; the place under the pointer says Apply, and Alt says Pop", { skip }, async () => {
+test("a stash: the working tree is the one place — Staged and Unstaged lit together, never apart — and it says Apply, and Alt says Pop", { skip }, async () => {
   const p = await open();
   await p.send(state());
   assert.equal(await p.eval<boolean>(`!!document.getElementById("stash-drop")`), false, "one mechanism: the old drop box is gone");
@@ -200,13 +206,23 @@ test("a stash: Changes, Staged and nothing else are places; the place under the 
   let o = await over(p, Q.file("unstaged", "src/routes.ts"));
   assert.deepEqual(
     { allowed: o.allowed, effect: o.effect, lit: o.lit, words: o.words, ready: o.ready },
-    { allowed: true, effect: "copy", lit: ["group--unstaged"], words: ["Drop to apply", `Hold ${await altName(p)} to pop`], ready: 1 },
-    "over a row of Changes: the whole group is the place (the stash is kept: copy)",
+    { allowed: true, effect: "copy", lit: ["groups"], words: ["Drop to apply", `Hold ${await altName(p)} to pop`], ready: 0 },
+    "over a row of Unstaged: the whole working tree is the place (the stash is kept: copy)",
   );
   o = await over(p, Q.groupHeader("unstaged"), true);
-  assert.deepEqual([o.allowed, o.effect, o.words], [true, "move", ["Drop to pop", `Release ${await altName(p)} to apply`]], "Alt held: Pop (the stash goes: move)");
-  o = await over(p, Q.group("staged"));
-  assert.deepEqual([o.allowed, o.lit, o.words[0]], [true, ["group--staged"], "Drop to apply"], "Staged is a place too");
+  assert.deepEqual([o.allowed, o.effect, o.lit, o.words], [true, "move", ["groups"], ["Drop to pop", `Release ${await altName(p)} to apply`]], "Alt held: Pop (the stash goes: move)");
+  for (const t of [Q.group("staged"), Q.groupHeader("staged"), Q.file("staged", "src/index.ts")]) {
+    o = await over(p, t);
+    assert.deepEqual([o.allowed, o.lit, o.words[0]], [true, ["groups"], "Drop to apply"], "over Staged: the same one place, the same words — not a place of its own");
+  }
+  const groupsLit = await p.eval<string[]>(`Array.from(document.querySelectorAll("#groups .group.is-drop-over, #groups .group.is-drop-ready, #groups .group-header.is-drop-over")).map(function (n) { return n.className; })`);
+  assert.deepEqual(groupsLit, [], "no group of it is lit on its own");
+  const band = await p.eval<{ top: number; groupsTop: number; left: number; right: number; gl: number; gr: number }>(`(function () {
+    var w = document.querySelector("#groups > .drop-hint > .drop-words").getBoundingClientRect();
+    var g = document.getElementById("groups").getBoundingClientRect();
+    return { top: w.top, groupsTop: g.top, left: w.left, right: w.right, gl: g.left, gr: g.right };
+  })()`);
+  assert.deepEqual([band.top, band.left, band.right], [band.groupsTop, band.gl, band.gr], "its words head the whole of it, edge to edge, in a band of their own");
 
   for (const [what, t] of [
     ["the stash's own row", Q.stash(B)],
@@ -377,6 +393,7 @@ test("the clean tree and the checkbox model: the note, and the one Changes group
   await start(p, Q.stash(A));
   let o = await over(p, Q.empty);
   assert.deepEqual([o.allowed, o.lit, o.words[0]], [true, ["empty-state"], "Drop to apply"]);
+  assert.equal(await p.eval<boolean>(`!!document.querySelector("#groups > .drop-hint")`), false, "the clean tree has no band: the note says it");
   await drop(p, Q.empty);
   assert.deepEqual(await posted(p), [{ type: "stashAct", sha: A, action: "apply" }]);
   await p.send({ type: "stashDone", sha: A, action: "apply", outcome: { kind: "done" } });
@@ -385,7 +402,7 @@ test("the clean tree and the checkbox model: the note, and the one Changes group
   await p.send(state({ stagingModel: "checkboxes" }));
   await start(p, Q.stash(B));
   o = await over(p, `document.querySelector('#groups .group--all .row.is-file')`, true);
-  assert.deepEqual([o.allowed, o.lit, o.words[0]], [true, ["group--all"], "Drop to pop"]);
+  assert.deepEqual([o.allowed, o.lit, o.words[0]], [true, ["groups"], "Drop to pop"]);
   await drop(p, `document.querySelector('#groups .group--all .row.is-file')`, true);
   assert.deepEqual(await posted(p), [{ type: "stashAct", sha: B, action: "pop" }]);
 });
@@ -403,11 +420,99 @@ test("a busy stash is not dragged; a repaint from the host mid-drag keeps the pl
   await over(p, Q.group("unstaged"));
   // The firehose: a state post while the pointer is over Changes.
   await p.send(state({ unstaged: [{ path: "src/app.ts", status: "M" }, { path: "src/routes.ts", status: "M" }] }));
-  const lit = await p.eval<string[]>(`Array.from(document.querySelectorAll(".is-drop-over")).map(function (n) { return n.className; })`);
-  assert.equal(lit.length, 1, `still lit after the repaint: ${JSON.stringify(lit)}`);
-  assert.match(lit[0], /group--unstaged/);
+  const lit = await p.eval<string[]>(`Array.from(document.querySelectorAll(".is-drop-over")).map(function (n) { return n.id; })`);
+  assert.deepEqual(lit, ["groups"], `still lit after the repaint: ${JSON.stringify(lit)}`);
+  assert.deepEqual(
+    await p.eval<string[]>(`Array.from(document.querySelectorAll("#groups > .drop-hint .drop-verb, #groups > .drop-hint .drop-alt")).map(function (n) { return n.textContent; })`),
+    ["Drop to apply", `Hold ${await altName(p)} to pop`],
+    "and its band is back, first in it, with its words",
+  );
+  assert.equal(await p.eval<boolean>(`document.getElementById("groups").firstElementChild.classList.contains("drop-hint")`), true);
   await end(p);
   assert.ok(await clean(p));
+  assert.equal(await p.eval<boolean>(`!!document.querySelector("#groups > .drop-hint")`), false, "the drag over: no band left in the list");
+});
+
+// ── Real drags, as the OS delivers them ─────────────────────────────────────
+//
+// The drags above are synthetic: their DataTransfer is a stand-in, so the
+// browser never checks the effect the page asks for against what the drag
+// allows. These go through Chrome's own drag code (Input.setInterceptDrags,
+// then Input.dispatchDragEvent), where it does: a drop that asks for an
+// effect the drag no longer allows is refused, and no drop event fires. A Mac
+// narrows a drag to copy alone while Option is held — Option-dropping a stash
+// to Pop it lit the place, said "Drop to pop", and did nothing.
+
+const COPY = 1;
+const MOVE = 16;
+
+/** A real drag from src onto dst, the OS allowing `mask`, Alt/Option held or not. */
+async function realDrag(p: ChangesPage, src: string, dst: string, alt: boolean, mask: number) {
+  const page = p.page as ChangesPage["page"] & { __drag?: { data: Record<string, unknown> | null } };
+  if (!page.__drag) {
+    const box: { data: Record<string, unknown> | null } = { data: null };
+    page.__drag = box;
+    page.on("Input.dragIntercepted", (params) => { box.data = (params as { data: Record<string, unknown> }).data; });
+    // What the page asked the pointer to show, read after its own handler (window hears it last).
+    await p.eval(`window.addEventListener("dragover", function (e) { window.__effect = e.dataTransfer.dropEffect; })`);
+  }
+  const box = page.__drag;
+  box.data = null;
+  const centre = (el: string) => p.eval<{ x: number; y: number }>(`(function () { var b = ${el}.getBoundingClientRect(); return { x: Math.round(b.left + Math.min(40, b.width / 2)), y: Math.round(b.top + b.height / 2) }; })()`);
+  await page.send("Input.setInterceptDrags", { enabled: true });
+  try {
+    const s = await centre(src);
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: s.x, y: s.y });
+    await page.send("Input.dispatchMouseEvent", { type: "mousePressed", x: s.x, y: s.y, button: "left", clickCount: 1 });
+    for (let i = 1; i <= 6; i++) {
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: s.x + i * 3, y: s.y + i * 3, button: "left", buttons: 1 });
+    }
+    for (let i = 0; i < 40 && !box.data; i++) await new Promise((r) => setTimeout(r, 25));
+    // (Set by the listener meanwhile: not the null assigned above.)
+    const started = box.data as Record<string, unknown> | null;
+    assert.ok(started, "the drag started");
+    const data = { ...started, dragOperationsMask: mask };
+    const d = await centre(dst);
+    const modifiers = alt ? 1 : 0;
+    await p.eval("window.__effect = null");
+    await page.send("Input.dispatchDragEvent", { type: "dragEnter", x: d.x, y: d.y, data, modifiers });
+    await page.send("Input.dispatchDragEvent", { type: "dragOver", x: d.x, y: d.y, data, modifiers });
+    const effect = await p.eval<string | null>("window.__effect");
+    await page.send("Input.dispatchDragEvent", { type: "drop", x: d.x, y: d.y, data, modifiers });
+    await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: d.x, y: d.y, button: "left", clickCount: 1 });
+    await p.page.waitFor(`!document.body.classList.contains("is-dragging")`);
+    const sent = await posted(p);
+    await clearPosted(p);
+    return { effect, posted: sent };
+  } finally {
+    await page.send("Input.setInterceptDrags", { enabled: false });
+  }
+}
+
+test("real drags: every drop does what its words said, whatever the OS lets the drag do while Option is held", { skip }, async () => {
+  const tree = Q.file("unstaged", "src/routes.ts");
+  // source × what the OS allows × Alt: [what the drop posts, the pointer's badge]
+  const cells: [string, string, string, boolean, number, Record<string, unknown>, string][] = [
+    ["a stash, Option held on a Mac (copy only)", Q.stash(A), tree, true, COPY, { type: "stashAct", sha: A, action: "pop" }, "copy"],
+    ["a stash, Alt held elsewhere (copy or move)", Q.stash(A), tree, true, COPY | MOVE, { type: "stashAct", sha: A, action: "pop" }, "move"],
+    ["a stash, no modifier", Q.stash(A), tree, false, COPY | MOVE, { type: "stashAct", sha: A, action: "apply" }, "copy"],
+    ["a stash's file, Option held on a Mac", Q.stashFile(B, "README.md"), tree, true, COPY, { type: "stashFiles", sha: B, action: "copy", paths: ["README.md"] }, "copy"],
+    ["a stash's file, no modifier", Q.stashFile(B, "README.md"), tree, false, COPY | MOVE, { type: "stashFiles", sha: B, action: "move", paths: ["README.md"] }, "move"],
+    ["a changed file onto Stashes, Option held on a Mac", Q.file("unstaged", "src/app.ts"), Q.stashesHeader, true, COPY, { type: "stashPaths", paths: ["src/app.ts"] }, "copy"],
+    ["a changed file onto Stashes, no modifier", Q.file("unstaged", "src/app.ts"), Q.stashesHeader, false, COPY | MOVE, { type: "stashPaths", paths: ["src/app.ts"] }, "move"],
+  ];
+  for (const [what, src, dst, alt, mask, want, badge] of cells) {
+    // Each from the same view: a stash's own list, one open.
+    const p = await open("dark");
+    await p.send(state({ layout: "tree" }));
+    await openStash(p, B);
+    assert.ok(await p.eval<boolean>(`!!${src} && !!${dst}`), `${what}: the rows are there`);
+    const r = await realDrag(p, src, dst, alt, mask);
+    assert.deepEqual(r.posted, [want], `${what}: the drop happens (the page asked for ${r.effect})`);
+    assert.equal(r.effect, badge, `${what}: the pointer shows ${badge}`);
+    assert.ok(await clean(p), `${what}: nothing of the drag is left`);
+    assert.deepEqual(p.page.errors, []);
+  }
 });
 
 // ── What the lit place looks like ───────────────────────────────────────────
@@ -421,18 +526,26 @@ for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
     const p = await open(theme);
     await p.send(state());
     await start(p, Q.stash(B));
-    await over(p, Q.group("unstaged"));
     const hc = theme.startsWith("hc");
     type Look = { apart: number; text: number; lines: string[] };
-    const group = await p.eval<Look>(`window.__look(${Q.group("unstaged")}, { surface: document.getElementById("groups"), text: document.querySelector(".is-drop-over .drop-verb") })`);
-    const alt = await p.eval<Look>(`window.__look(document.querySelector(".is-drop-over > .group-header"), { surface: document.getElementById("groups"), text: document.querySelector(".is-drop-over .drop-alt") })`);
-    if (hc) assert.ok(group.lines.length === 1 && /^outline dashed/.test(group.lines[0]), `high contrast rings it, whole: ${JSON.stringify(group)}`);
-    else assert.deepEqual(group.lines, [], `no line: ${JSON.stringify(group)}`);
-    assert.ok(group.apart >= 1.15, `the place stands apart from the view (${group.apart}:1)`);
-    assert.ok(group.text >= 4.5, `"Drop to apply" reads at 4.5:1 or more (${group.text}:1)`);
-    assert.ok(alt.text >= 4.5, `"Hold Option to pop" too (${alt.text}:1)`);
-    const ready = await p.eval<Look>(`window.__look(${Q.group("staged")}, { surface: document.getElementById("groups") })`);
-    assert.deepEqual(ready.lines, [], "the other place, faintly tinted, wears no line either");
+    const view = `document.body`;
+    // Dragging, not yet over it: the working tree faintly tinted, no line.
+    const ready = await p.eval<Look>(`window.__look(document.getElementById("groups"), { surface: ${view} })`);
+    assert.deepEqual(ready.lines, [], `the place it can go, faintly tinted, wears no line (${JSON.stringify(ready)})`);
+    await over(p, Q.group("unstaged"));
+    const tree = await p.eval<Look>(`window.__look(document.getElementById("groups"), { surface: ${view}, text: document.querySelector("#groups .drop-verb") })`);
+    const band = await p.eval<Look>(`window.__look(document.querySelector("#groups .drop-words"), { surface: ${view}, text: document.querySelector("#groups .drop-alt") })`);
+    if (hc) assert.ok(tree.lines.length === 1 && /^outline dashed/.test(tree.lines[0]), `high contrast rings it, whole: ${JSON.stringify(tree)}`);
+    else assert.deepEqual(tree.lines, [], `no line: ${JSON.stringify(tree)}`);
+    assert.deepEqual(band.lines, [], `its band of words wears none either: ${JSON.stringify(band)}`);
+    assert.ok(tree.apart >= 1.15, `the place stands apart from the view (${tree.apart}:1)`);
+    assert.ok(tree.text >= 4.5, `"Drop to apply" reads at 4.5:1 or more (${tree.text}:1)`);
+    assert.ok(band.text >= 4.5, `"Hold Option to pop" too (${band.text}:1)`);
+    const rgb = (c: string) => (c.match(/\d+/g) ?? []).map(Number);
+    const bandFill = rgb(await p.eval<string>(`window.__look(document.querySelector("#groups .drop-words")).fill`));
+    const placeFill = rgb(await p.eval<string>(`window.__look(document.querySelector("#groups .group--unstaged .row.is-file")).fill`));
+    assert.ok(bandFill.every((c, i) => Math.abs(c - placeFill[i]) <= 1),
+      `the band is the lit tint itself, no seam between it and the rest of the place (${bandFill} / ${placeFill})`);
     await end(p);
 
     await start(p, Q.file("unstaged", "src/app.ts"));
@@ -443,6 +556,53 @@ for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
     await end(p);
   });
 }
+
+// ── The words, whole at any sidebar width ───────────────────────────────────
+
+test("the words are never cut: too narrow for both on one line, the Option line goes under the verb, and the band ends on a row's edge", { skip }, async () => {
+  for (const width of [360, 300, 280, 250]) {
+    const p = await open("light", width);
+    await p.send(state({ layout: "tree" }));
+    await openStash(p, B);
+    const cases: [string, string, boolean][] = [
+      ["a stash", Q.stash(A), false],
+      ["a stash, Alt", Q.stash(A), true],
+      ["a folder of 2 files", Q.stashFolder(B, "src/auth"), false],
+      ["a folder of 2 files, Alt", Q.stashFolder(B, "src/auth"), true],
+    ];
+    for (const [what, src, alt] of cases) {
+      await start(p, src);
+      await over(p, Q.group("unstaged"), alt);
+      const m = await p.eval<{ words: { text: string; cut: boolean; shown: boolean }[]; bandBottom: number; edges: number[] }>(`(function () {
+        var top = document.getElementById("groups").getBoundingClientRect().top;
+        var w = document.querySelector("#groups > .drop-hint > .drop-words");
+        return {
+          words: Array.prototype.map.call(w.children, function (n) {
+            return { text: n.textContent, cut: n.scrollWidth > n.clientWidth + 1, shown: n.getClientRects().length > 0 && !n.hidden };
+          }),
+          bandBottom: Math.round(w.getBoundingClientRect().bottom - top),
+          edges: Array.prototype.map.call(document.querySelectorAll("#groups > .group > .group-header, #groups > .group .row"), function (n) {
+            return Math.round(n.getBoundingClientRect().bottom - top);
+          }),
+        };
+      })()`);
+      const at = `${width}px, ${what}`;
+      assert.equal(m.words.length, 2, at);
+      for (const w of m.words) {
+        assert.ok(w.shown && !w.cut, `${at}: "${w.text}" is shown whole (${JSON.stringify(m.words)})`);
+      }
+      assert.ok(m.edges.includes(m.bandBottom), `${at}: the band ends on a row's edge, not across a row (${m.bandBottom} of ${JSON.stringify(m.edges)})`);
+      await end(p);
+    }
+    // The clean tree's note: its words stacked, whole too.
+    await p.send(state({ layout: "tree", staged: [], unstaged: [], stagedCount: 0 }));
+    await start(p, Q.stash(A));
+    await over(p, Q.empty, true);
+    const note = await p.eval<{ text: string; cut: boolean }[]>(`Array.prototype.map.call(document.querySelectorAll("#empty-state .drop-verb, #empty-state .drop-alt"), function (n) { return { text: n.textContent, cut: n.scrollWidth > n.clientWidth + 1 }; })`);
+    assert.ok(note.length === 2 && note.every((n) => !n.cut), `${width}px, the clean tree's note: ${JSON.stringify(note)}`);
+    await end(p);
+  }
+});
 
 // ── Words, not twin glyphs ──────────────────────────────────────────────────
 
@@ -457,11 +617,32 @@ test("a stash row says Apply and Pop in words, a stash's file and folder Move an
     { text: "Pop", tip: "Pop: put these changes back and delete the stash" },
   ]);
   assert.equal(await p.eval<number>(`${Q.stash(B)}.querySelectorAll(".codicon-git-stash-apply, .codicon-git-stash-pop").length`), 0, "no look-alike glyphs");
+  // Move and Copy say where a file comes back, as the groups on screen are
+  // named — as it was stashed: a staged one into Staged.
   assert.deepEqual(await words(Q.stashFile(B, "README.md")), [
-    { text: "Move", tip: "Move: take this file out of the stash, into Changes" },
-    { text: "Copy", tip: "Copy: bring this file into Changes and keep it in the stash" },
+    { text: "Move", tip: "Move: take this file out of the stash, back into Unstaged" },
+    { text: "Copy", tip: "Copy: bring this file back into Unstaged, and keep it in the stash" },
   ]);
-  assert.deepEqual((await words(Q.stashFolder(B, "src/auth"))).map((w) => w.text), ["Move", "Copy"]);
+  assert.deepEqual(await words(Q.stashFile(B, "src/auth/callback.ts")), [
+    { text: "Move", tip: "Move: take this file out of the stash, back into Staged as it was stashed" },
+    { text: "Copy", tip: "Copy: bring this file back into Staged as it was stashed, and keep it in the stash" },
+  ]);
+  assert.deepEqual(await words(Q.stashFolder(B, "src/auth")), [
+    { text: "Move", tip: "Move: take these 2 files out of the stash, back into Staged and Unstaged as they were stashed" },
+    { text: "Copy", tip: "Copy: bring these 2 files back into Staged and Unstaged as they were stashed, and keep them in the stash" },
+  ]);
+  // The checkbox model has one group, Changes; a staged file comes back ticked.
+  await p.send(state({ layout: "tree", stagingModel: "checkboxes" }));
+  assert.equal((await words(Q.stashFile(B, "README.md")))[0].tip, "Move: take this file out of the stash, back into Changes");
+  assert.equal((await words(Q.stashFile(B, "src/auth/callback.ts")))[1].tip,
+    "Copy: bring this file back into Changes, staged as it was stashed, and keep it in the stash");
+  // The selection bar's Move and Copy say the same of the files selected.
+  await cmdClick(p, Q.stashFile(B, "README.md"));
+  await cmdClick(p, Q.stashFile(B, "src/auth/login.ts"));
+  assert.equal(await p.eval<string>(`document.getElementById("selbar-move").dataset.tip`),
+    "Move: take these 2 files out of the stash, back into Changes");
+  await p.eval(`document.getElementById("selbar-clear").click()`);
+  await p.send(state({ layout: "tree" }));
   // Shown where the pointer (or the keyboard) is: the list at rest is calm.
   const shown = (el: string) => p.eval<boolean>(`getComputedStyle(${el}.querySelector(".word-btn")).display !== "none"`);
   await p.mouseMove(2, 2);

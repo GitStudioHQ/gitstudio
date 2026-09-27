@@ -14,7 +14,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   rows. Click a file to see its diff against the commit the stash was made
   on. **Move** (on a file's row) brings the file back as it was stashed —
   staged, if it was — and takes it out of the stash; **Copy** brings it back
-  and leaves the stash as it is. Ctrl/Cmd-click and Shift-click select
+  and leaves the stash as it is. Their tips name the group a file lands in
+  (*back into Staged as it was stashed*). Ctrl/Cmd-click and Shift-click select
   several files to move or copy together; in the tree view a folder moves
   too. A stash's row has **Apply** (its changes come back, the stash stays)
   and **Pop** (they come back, the stash goes) — words, not look-alike icons,
@@ -32,17 +33,20 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Stashes view is gone; the Command Palette has **Apply Stash…**, **Pop
   Stash…**, **Drop Stash…** and **Create Branch from Stash…**, which ask
   which stash.
-- **Drag between your changes and your stashes.** Drag a stash onto Staged,
-  Changes or "Working tree clean" to apply it — hold Alt (Option on a Mac)
-  as you let go to pop it instead. Drag a stash's files (or the ones you've
+- **Drag between your changes and your stashes.** Drag a stash onto your
+  changes (or "Working tree clean") to apply it — hold Alt (Option on a
+  Mac) as you let go to pop it instead. It comes back as it was stashed,
+  staged changes staged, so your changes light up as one place rather than
+  Staged or Unstaged alone. Drag a stash's files (or the ones you've
   selected, or a folder of them) there to move them out of the stash — Alt
   or Option copies them. Drag changed files — one, your selection, or a
   folder — onto the **Stashes** header to stash exactly those. The place
   under the pointer lights up and says what letting go does ("Drop to
-  apply · Hold Option to pop"); a stash itself takes no drop, since git
-  can't add to a stash. It runs what the menus run, so Stash & Retry, the
-  staging question, conflicts and Undo work as they do there. This replaces
-  the "Drop to stash" box.
+  apply · Hold Option to pop"), on a line of its own under the verb in a
+  narrow sidebar rather than cut off; a stash itself takes no drop, since
+  git can't add to a stash. It runs what the menus run, so Stash & Retry,
+  the staging question, conflicts and Undo work as they do there. This
+  replaces the "Drop to stash" box.
 - **Checkout puts you on the pull request's own branch.** **Checkout** on a
   pull request — in the list, on its page, or in the Command Palette — checks
   out its real branch (`feature`, not a `pr/37` copy), tracking it where it
