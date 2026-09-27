@@ -1,0 +1,50 @@
+packages/webview-ui/src/styles/tokens.css
+  s_26f5e669d3043c::t_f471948a50fba2 133-159
+  s_26f5e669d3043c::t_c144f046d650e8 197-204,209,356,367,377
+  s_26f5e669d3043c::t_4961f24910fbb3 160-164,205-208,210-212,366,370-376,378
+packages/webview-ui/test/selectionProbe.js
+  s_26f5e669d3043c::t_57092e5019ae85 1-174,177,182-381,387
+  s_26f5e669d3043c::t_6a658fe0036441 175-176,178-181
+  s_26f5e669d3043c::t_56c0fd0ff6b1b5 382-386
+  s_26f5e669d3043c::t_a99570862abc6e 388-434
+packages/webview-ui/test/selectionProbe.ts
+  s_26f5e669d3043c::t_7d2fae49c59bec 1-123
+  s_26f5e669d3043c::t_0d8658efebd668 124-129
+packages/webview-ui/test/selectionIsLit.test.ts
+  s_26f5e669d3043c::t_e0dc9e6e0dee3d 1-235
+  s_26f5e669d3043c::t_dba3e82985b50b 236-252
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_a98cbe7e8557a0 689-693,695-696,740-742,744-754,1036-1037,1245-1246,1256-1264,1266-1267,1269-1286,1288,1290-1301,1327,1675-1679
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_674dd6f4d849ea 376-383,385-395,402-419,493,646,672-675,677-679,683,900-903,905-906
+packages/webview-ui/src/rebase/rebase-view.ts
+  s_26f5e669d3043c::t_5a3789e68434a4 273-279,282-291,366-369,371-374,376-379
+packages/webview-ui/src/styles/hostTokens.ts
+  s_26f5e669d3043c::t_6346926f5412e4 70-77,89-100
+packages/webview-ui/src/styles/pr-list.css
+  s_26f5e669d3043c::t_8664ebfdb69a60 39-46,58-61,73-76,223-224,227,338-344,346-348,377,622-638,719-720
+packages/webview-ui/src/styles/pr-page.css
+  s_26f5e669d3043c::t_7bcfa449b7dfa5 38-41,58-59,77-78,437-439,441-447,454,569-570,574-576,749-753,756,758,769,772,780,785-786,788-792
+packages/webview-ui/src/worktrees/worktrees.css
+  s_26f5e669d3043c::t_bed71abe356dcc 27-34,139-148,600-602
+packages/webview-ui/test/multiSelectHeadless.test.ts
+  s_26f5e669d3043c::t_15ae6d7ad6c3a3 120-122,127-140
+packages/webview-ui/test/prList.test.ts
+  s_26f5e669d3043c::t_cdc4b9efd540fd 76-77,81-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8583f7038659a46da501a75359e41f4cf5a9d9f7",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
