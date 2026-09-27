@@ -1200,6 +1200,16 @@ export class PullRequestList {
     this.moreObserver?.disconnect();
     const s = this.state;
     if (!more || !s?.hasMore || s.loadingMore || this.autoAskedAt === s.rows.length) return;
+    // The end already in sight as the state is painted: asked now. An
+    // observer reports it only on a painted frame, and a view that paints
+    // none soon (a busy machine, a throttled webview) left the next page
+    // waiting — the observer is for the end scrolling into sight later.
+    const r = more.getBoundingClientRect();
+    if (r.height > 0 && r.top < window.innerHeight && r.bottom > 0) {
+      this.autoAskedAt = s.rows.length;
+      this.opts.post({ type: "loadMore" });
+      return;
+    }
     this.moreObserver = new IntersectionObserver((entries) => {
       const now = this.state;
       if (entries.some((x) => x.isIntersecting) && now?.hasMore && !now.loadingMore && this.autoAskedAt !== now.rows.length) {

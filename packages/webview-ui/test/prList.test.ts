@@ -288,9 +288,11 @@ test("a new state patches the rows in place: the rows that did not change keep t
 
 test("the end of the list: Load More asks for the next page — and by itself only once per length", { skip }, async () => {
   await check(`
-    // The real observer, first: the end in sight asks for the next page —
-    // on the frame after it is watched, which a loaded machine paints late.
+    // The end in sight as the state is painted asks for the next page at
+    // once — not on a frame an observer waits for, which a loaded machine
+    // (or a throttled webview) paints late or not at all.
     show({ ...S.open, rows: openRows().slice(0, 3) });
+    expect(posted.filter((p) => p.type === "loadMore").length === 1, "asked as it is painted, not a frame later");
     for (let i = 0; i < 50 && !posted.some((p) => p.type === "loadMore"); i++) await frame();
     await frame();
     const auto = posted.filter((p) => p.type === "loadMore").length;
