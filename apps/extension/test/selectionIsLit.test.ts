@@ -11,8 +11,9 @@
 // question's keyboard row and its focused checkbox, the Compare panel's tab,
 // mode and layout, the rebase workspace's selection and the action it is
 // set to, the picked AI provider's form, and the worktree this window has
-// open. The shared probe (packages/webview-ui/test/selectionProbe.js) then
-// judges every state element on the page. Outside High Contrast each one's
+// open (its bold name, judged for lines and contrast but not for a fill).
+// The shared probe (packages/webview-ui/test/selectionProbe.js) then judges
+// every state element on the page. Outside High Contrast each one's
 // fill must plainly differ from its unselected sibling's, and text on every
 // tint must measure AA. In High Contrast, which paints no fills, VS Code's
 // whole ring is the mark, and it is asserted to be there.
@@ -404,16 +405,24 @@ for (const theme of THEMES) {
 
 // ── The Worktrees view: this window's row ───────────────────────────────────
 
+// The owner's minimal Worktrees view marks the worktree this window has open
+// the way the branch menu marks the branch you're on: its name, bold. That is
+// no line, and no tint either, so its row is judged for lines and for its
+// words' contrast, at rest and under the pointer, and its mark is the weight.
 for (const theme of THEMES) {
-  test(`the Worktrees view: the worktree this window has open is lit, not lined (${theme})`, { skip }, async () => {
+  test(`the Worktrees view: the worktree this window has open is its bold name, never lined (${theme})`, { skip }, async () => {
     const page = await WorktreesPage.open(theme, { width: 320, height: 620 });
     cleanups.push(() => page.close());
     await page.send({ type: "rows", rows: fixtureRows(), state: "ok", labels: { reveal: "Reveal in Finder" } });
     await page.settle(80);
     await page.mouseMove(2, 600);
-    const hc = theme.startsWith("hc");
     assert.ok(await page.eval<boolean>(`!!document.querySelector(".wt-row.is-current")`), "a row is this window's");
-    const fails = await sweep(page, theme, "this window's worktree", hc ? {} : { targets: [".wt-row.is-current"] });
+    const weights = await page.eval<{ here: number; other: number }>(`(function () {
+      var w = function (sel) { return parseInt(getComputedStyle(document.querySelector(sel)).fontWeight, 10); };
+      return { here: w(".wt-row.is-current .wt-name"), other: w(".wt-row:not(.is-current) .wt-name") };
+    })()`);
+    assert.ok(weights.here >= 600 && weights.other < 600, `its name is bold and the others' are not: ${JSON.stringify(weights)}`);
+    const fails = await sweep(page, theme, "this window's worktree", { fillSkip: ".wt-row.is-current" });
     assert.deepEqual(fails, []);
   });
 }
