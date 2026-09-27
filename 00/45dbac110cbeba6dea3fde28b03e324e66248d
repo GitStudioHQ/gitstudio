@@ -1,0 +1,25 @@
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_9ed5b3881a895b 22,715-717,720
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_8a762eae5b0a67 642-674
+apps/extension/src/views/worktreesWebview.ts
+  s_26f5e669d3043c::t_8cab66c53c3ab8 37,334-336
+apps/extension/test/worktreesDoors.test.ts
+  s_26f5e669d3043c::t_7ff8204aab3dda 570-605
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0045dbac110cbeba6dea3fde28b03e324e66248d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
