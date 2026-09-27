@@ -84,8 +84,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   still fetches. Every matched letter is marked, on the highlighted row too,
   and a long name whose match is past the row's end is cut in the middle
   instead (`feature/…/billing-address-val…`), the whole name in its tooltip.
-  A query that matches no branch or tag offers **New Branch '<query>'…** and
-  **Checkout Revision '<query>'…**, each opening its dialog filled in. (#32)
+  A query that matches no branch or tag offers to make it — *New Branch
+  'fix/login'…* — or to check it out as a revision — *Checkout Revision
+  'a1b2c3d'…* — each opening its dialog with what you typed. (#32)
 - **A branch's actions fit a sidebar.** Where there is no room beside the
   branch menu, a branch's actions open in the menu itself, under a back row
   naming the branch (**‹ feature**); the back row, Left and Escape return to
