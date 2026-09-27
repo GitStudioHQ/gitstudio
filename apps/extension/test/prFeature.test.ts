@@ -306,6 +306,38 @@ test("a comment shows at once, as sending; GitHub's copy replaces it — and a r
   assert.match(page.state().notice.title, /Body is too long/);
 });
 
+test("a read that answers while a comment and a Resolve are on their way keeps both on the page", async () => {
+  const answer = graphqlWorld(
+    world({
+      "acme/app": {
+        pulls: PULLS,
+        page: { 37: { threads: [{ id: "T_1", path: "src/a.ts", line: 41, startLine: null, originalLine: 41, diffSide: "RIGHT", isResolved: false, isOutdated: false, viewerCanResolve: true, viewerCanUnresolve: false, viewerCanReply: true, resolvedBy: null, comments: { totalCount: 1, nodes: [{ id: "C_1", author: { login: "dana" }, body: "Why?", createdAt: "2026-09-26T10:00:00Z", url: "u" }] } }] } },
+      },
+    }),
+  );
+  const gh = github([
+    ["POST", /^\/repos\/acme\/app\/issues\/37\/comments$/, () => ({ status: 201, body: { node_id: "IC_7", html_url: "u7", created_at: "2026-09-27T10:00:00Z", user: { login: "me" } } })],
+    ["POST", /^\/graphql$/, (req) => (/resolveReviewThread/.test(String((req.body as any).query)) ? { body: { data: { resolveReviewThread: { thread: { id: "T_1", isResolved: true } } } } } : answer(req))],
+    ...acmeRoutes(),
+  ]);
+  const m = mount(fakeRepos(ORIGIN));
+  const page = await openPage(m, 37);
+  const slowComment = gh.hold(/\/issues\/37\/comments$/);
+  const slowResolve = gh.hold((req) => /resolveReviewThread/.test(String((req.body as any)?.query ?? "")));
+  page.receive({ type: "comment", body: "On its way" });
+  page.receive({ type: "resolve", threadId: "T_1", resolved: true });
+  await until(() => slowComment.held() > 0 && slowResolve.held() > 0, "both on their way");
+  // A read that knows of neither.
+  page.receive({ type: "refresh" });
+  await until(() => gh.requests.filter(isPageQuery).length === 2 && !page.state().refreshing, "the read");
+  const s = page.state();
+  assert.ok(s.pr.timeline.some((t: any) => t.body === "On its way" && t.sending), "the comment being sent stays");
+  assert.equal(s.pr.threads[0].resolved, true, "so does the Resolve");
+  slowComment.release();
+  slowResolve.release();
+  await until(() => page.state().pr.timeline.some((t: any) => t.id === "IC_7"), "GitHub's copy");
+});
+
 test("a commit expands to its files, and a file opens as that commit's diff — from its first parent, under the old name for a rename", async () => {
   github([
     [

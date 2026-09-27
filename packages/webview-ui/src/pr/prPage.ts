@@ -295,6 +295,8 @@ export class PullRequestPage {
     });
     window.addEventListener("blur", () => this.closeMore(false));
     window.addEventListener("resize", () => this.closeMore(false));
+    // The page scrolled from under the open menu: its button has moved away.
+    window.addEventListener("scroll", () => this.closeMore(false), true);
     opts.post({ type: "ready" });
   }
 

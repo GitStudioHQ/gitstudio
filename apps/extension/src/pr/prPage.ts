@@ -237,6 +237,8 @@ export class PrPage {
   private loading: Promise<void> | undefined;
   private mergeBase: { pair: string; sha: string } | undefined;
   private readonly poller: ReturnType<typeof setInterval>;
+  /** Resolves (and unresolves) on their way to GitHub, by thread id. */
+  private readonly resolving = new Map<string, boolean>();
   private sendSeq = 0;
 
   private constructor(
@@ -361,7 +363,7 @@ export class PrPage {
           void this.load();
           return;
         }
-        this.detail = d.value;
+        this.detail = this.withInFlight(d.value);
         this.status = "ready";
         this.message = undefined;
         this.loadedAt = Date.now();
@@ -398,6 +400,29 @@ export class PrPage {
     });
     this.loading = p;
     return p;
+  }
+
+  /**
+   * A read that answers while a comment, a reply or a Resolve is on its way
+   * doesn't know of it yet: what is being sent stays on the page until
+   * GitHub has answered for it.
+   */
+  private withInFlight(next: PrDetail): PrDetail {
+    const now = this.detail;
+    if (!now) return next;
+    const sending = now.timeline.filter((t) => "sending" in t && t.sending && !next.timeline.some((x) => x.id === t.id));
+    const threads = next.threads.map((t) => {
+      const had = now.threads.find((x) => x.id === t.id);
+      const replies = had?.comments.filter((c) => c.sending && !t.comments.some((x) => x.id === c.id)) ?? [];
+      const resolving = this.resolving.get(t.id);
+      if (replies.length === 0 && resolving === undefined) return t;
+      return {
+        ...t,
+        comments: [...t.comments, ...replies],
+        ...(resolving !== undefined ? { resolved: resolving, canResolve: !resolving, canUnresolve: resolving } : {}),
+      };
+    });
+    return { ...next, timeline: [...next.timeline, ...sending], threads };
   }
 
   /** What follows a read: its diffs take comments, its threads are drawn, "Checked out" is read. */
@@ -781,13 +806,16 @@ export class PrPage {
     if (!t || this.busy.has(busy) || t.resolved === resolved) return;
     this.patchThread({ ...t, resolved, canResolve: !resolved, canUnresolve: resolved, ...(resolved && this.viewer() ? { resolvedBy: this.viewer()!.login } : {}) });
     this.busy.add(busy);
+    this.resolving.set(threadId, resolved);
     this.post();
     try {
       await this.deps.review.resolveThread(this.key, t, resolved);
     } catch (err) {
+      this.resolving.delete(threadId);
       this.patchThread(t);
       this.failed(resolved ? "resolve the conversation" : "unresolve the conversation", err);
     } finally {
+      this.resolving.delete(threadId);
       this.busy.delete(busy);
       this.post();
     }

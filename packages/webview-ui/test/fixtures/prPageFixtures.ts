@@ -271,6 +271,6 @@ export function pageScenes(): Record<string, PrPageViewState> {
     checks: base({ tab: "checks" }),
     files: base({ tab: "files", review: PENDING }),
     filesEmpty: base({ tab: "files", pr: detail({ changedFiles: 0, additions: 0, deletions: 0 }), files: { items: [], truncated: false } }),
-    noDescription: base({ pr: detail({ body: "", timeline: [], threads: [], reviewers: [], labels: [], assignees: [], reviewDecision: "REVIEW_REQUIRED", ci: { state: "none", total: 0, failed: 0, pending: 0 }, checks: [], checksTotal: 0 }) }),
+    noDescription: base({ pr: detail({ body: "", timeline: [], timelineTotal: 0, threads: [], threadsTotal: 0, reviewers: [], labels: [], assignees: [], reviewDecision: "REVIEW_REQUIRED", ci: { state: "none", total: 0, failed: 0, pending: 0 }, checks: [], checksTotal: 0 }) }),
   };
 }

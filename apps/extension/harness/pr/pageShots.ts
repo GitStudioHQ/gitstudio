@@ -186,16 +186,19 @@ async function main(): Promise<void> {
         await page.eval(post(shot.state));
         await page.waitFor(`document.querySelector(".prp-head, .prp-message")`, 5000, "the page to paint");
         await new Promise((r) => setTimeout(r, 200));
+        // The whole page in one picture: the view grows to it first (a
+        // capture stops at the view's edge, and a resize closes a menu), then
+        // the scene is acted, then it is taken.
+        const fit = async () => {
+          const height = await page.eval<number>(`document.documentElement.scrollHeight`);
+          const h = Math.min(Math.max(Math.ceil(height), 300), 2600);
+          await page.send("Emulation.setDeviceMetricsOverride", { width, height: h, deviceScaleFactor: 1, mobile: false });
+          await new Promise((r) => setTimeout(r, 150));
+          return h;
+        };
+        await fit();
         await shot.act?.(page);
-        await page.eval(`window.scrollTo(0, 0)`);
-        const height = await page.eval<number>(
-          `Math.max(document.documentElement.scrollHeight, ...[...document.querySelectorAll(".prp-menu")].map((m) => m.getBoundingClientRect().bottom + 8))`,
-        );
-        const h = Math.min(Math.max(Math.ceil(height), 300), 2600);
-        // The whole page in one picture: the view grows to it (a capture
-        // stops at the view's edge), then it is taken.
-        await page.send("Emulation.setDeviceMetricsOverride", { width, height: h, deviceScaleFactor: 1, mobile: false });
-        await new Promise((r) => setTimeout(r, 150));
+        const h = shot.act && (await page.eval<boolean>(`!!document.querySelector(".prp-menu")`)) ? await page.eval<number>(`window.innerHeight`) : await fit();
         const png = join(OUT, `${shot.name}-${theme}.png`);
         writeFileSync(png, await page.screenshot({ x: 0, y: 0, width, height: h }));
         const problems = [...csp, ...page.errors];
