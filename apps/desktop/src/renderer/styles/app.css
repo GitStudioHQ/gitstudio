@@ -10874,8 +10874,12 @@ button.det-person:hover { background: var(--app-hover); }
 .gh-col-body .gh-col-empty:only-child { display: block; }
 
 /* ── The "?" keyboard cheat sheet ── */
-.shortcuts-card { width: min(var(--modal-lg), 92vw); }
-.shortcuts-cols { display: flex; gap: var(--sp-8); flex-wrap: wrap; }
+/* Never taller than the window: the title and Done stay on screen and the
+   groups scroll between them. (The overlay scrolled instead, and opened
+   scrolled down to Done — the title above the fold.) 48px: the overlay's
+   padding. */
+.shortcuts-card { width: min(var(--modal-lg), 92vw); max-height: calc(100vh - 48px); }
+.shortcuts-cols { display: flex; gap: var(--sp-8); flex-wrap: wrap; min-height: 0; overflow-y: auto; }
 .shortcuts-group { flex: 1 1 200px; min-width: 200px; display: flex; flex-direction: column; gap: 7px; }
 .shortcuts-group-title {
   margin-bottom: 3px;

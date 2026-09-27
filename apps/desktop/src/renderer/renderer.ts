@@ -11657,8 +11657,9 @@ function openShortcutsHelp(): void {
         // rebase keys' check holds it to rows of two or more).
         ["Ctrl+Tab  Ctrl+Shift+Tab", "Next / previous repository tab"],
         [mac ? "⌃1–8  ⌃9" : "Alt+1–8  Alt+9", "Go to a tab by position / the last tab"],
-        [`${mod}W`, "Close the tab in front"],
-        [`${mod}O`, "Open a repository in a new tab"],
+        // One row for the pair: with a row each, this group ran the sheet
+        // off the top of a 1280×800 window.
+        [`${mod}O  ${mod}W`, "Open a repository in a new tab / close the one in front"],
         [`${mod}\``, "Toggle the terminal dock"],
         [`${mod},`, "Settings"],
         ["?", "This cheat sheet"],
