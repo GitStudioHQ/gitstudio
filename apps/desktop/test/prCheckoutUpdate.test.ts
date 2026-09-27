@@ -13,7 +13,7 @@ import "./hermeticGit";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
@@ -105,10 +105,16 @@ test("the PR's head comes from the GitHub remote the list reads — upstream, wh
   const hub = w.git("remote", "get-url", "origin");
   w.git("remote", "set-url", "origin", mirror);
   w.git("remote", "add", "upstream", "git@github.com:acme/app.git");
-  const ssh = join(w.dir, "..", "fake-ssh.sh");
-  writeFileSync(ssh, `#!/bin/sh\nexec git-upload-pack '${hub}'\n`);
-  chmodSync(ssh, 0o755);
-  w.git("config", "core.sshCommand", ssh);
+  // A node script, named with forward slashes: git runs core.sshCommand
+  // through `sh -c`, which ate a Windows path's backslashes
+  // ("C:UsersRUNNER~1…fake-ssh.sh: command not found").
+  const ssh = join(w.dir, "..", "fake-ssh.cjs");
+  writeFileSync(
+    ssh,
+    `const r = require("child_process").spawnSync("git", ["upload-pack", ${JSON.stringify(hub)}], { stdio: "inherit" });\n` +
+      `process.exit(r.status ?? 1);\n`,
+  );
+  w.git("config", "core.sshCommand", `node "${ssh.replace(/\\/g, "/")}"`);
   const r = await w.github.prCheckout(7);
   assert.equal(r.ok, true, r.message);
   assert.equal(w.git("symbolic-ref", "--short", "HEAD"), "pr/7");

@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 type Resolver = { _resolveFilename: (request: unknown, ...rest: unknown[]) => string };
@@ -1255,11 +1255,21 @@ cell({
 
 // ══ 8. Interactive rebase: terminal launch / Rebase workspace ═══════════════
 
-function sequenceEditor(f: Fx, sedExpr: string): string {
-  const p = join(f.dir, "..", `seq-${seq}.sh`);
-  writeFileSync(p, `#!/bin/sh\nsed -i.bak '${sedExpr}' "$1"\n`);
-  chmodSync(p, 0o755);
-  return p;
+/**
+ * A todo editor for the terminal's `git rebase -i`: a node script that runs
+ * `edit` over the todo's `lines`, named with forward slashes. git runs a
+ * sequence editor through `sh -c`, and a Windows path's backslashes were
+ * eaten there — the editor never started, no rebase ran, and the cells that
+ * only check where main ends up passed over nothing.
+ */
+function sequenceEditor(f: Fx, edit: string): string {
+  const p = join(f.dir, "..", `seq-${seq}.cjs`);
+  writeFileSync(
+    p,
+    `const fs = require("fs"); const t = process.argv[2]; let lines = fs.readFileSync(t, "utf8").split("\\n");\n` +
+      `${edit}\nfs.writeFileSync(t, lines.join("\\n"));\n`,
+  );
+  return `node "${p.replace(/\\/g, "/")}"`;
 }
 
 /** Run what the launch sent to its terminal, with a scripted todo editor. */
@@ -1283,7 +1293,7 @@ cell({
   setup: (f) => twoLocal(f),
   op: async (f) => {
     await startInteractiveRebase(f.repos, f.ledger, sha(f, "main~1"));
-    runTerminal(f, sequenceEditor(f, "1s/^pick/drop/"));
+    assert.equal(runTerminal(f, sequenceEditor(f, `lines[0] = lines[0].replace(/^pick/, "drop");`)), 0, "the rebase ran");
   },
   expect: (f, _s, { undoAsked }) => {
     isAt(f, "refs/heads/main", "B", "main back at B");
@@ -1302,7 +1312,7 @@ cell({
   setup: (f) => twoLocal(f),
   op: async (f) => {
     await startInteractiveRebase(f.repos, f.ledger, sha(f, "main~1"));
-    runTerminal(f, sequenceEditor(f, "1s/^pick/edit/"));
+    assert.equal(runTerminal(f, sequenceEditor(f, `lines[0] = lines[0].replace(/^pick/, "edit");`)), 0, "the rebase stopped at A");
   },
   expect: (f, s) => {
     assert.equal(s.op, "none", "no rebase left in progress");
@@ -1320,7 +1330,7 @@ cell({
   setup: (f) => twoLocal(f),
   op: async (f) => {
     await startInteractiveRebase(f.repos, f.ledger, sha(f, "main~1"));
-    runTerminal(f, sequenceEditor(f, "/^pick/d"));
+    runTerminal(f, sequenceEditor(f, `lines = lines.filter((l) => !/^pick/.test(l));`));
   },
   between: (f) => void f.commit("C", "c.txt"),
   expect: (f, _s, { undoAsked }) => {
