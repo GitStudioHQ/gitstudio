@@ -405,9 +405,19 @@ export class RepoManager implements vscode.Disposable {
       return;
     }
     // The op-state entries include HEAD itself, so a checkout is a ref move too.
+    //
+    // packed-refs is a ref source of its own. A ref that lives only there —
+    // every tag and remote-tracking branch a clone made, every ref after a
+    // gc or pack-refs — is deleted (git branch -d, git tag -d, a push
+    // --delete, fetch --prune) by rewriting packed-refs alone: under refs/
+    // there is only a lock file, made and removed in one burst the watcher
+    // drops. vscode.git's own event reads such a delete as the working tree
+    // (HEAD, its upstream and the counts did not move), so without this the
+    // graph kept showing the deleted branch or tag.
     for (const [dir, glob, kinds] of [
       [targets.gitDir, targets.opStateGlob, ["operation", "refs"]],
       [targets.commonDir, targets.refsGlob, ["refs"]],
+      [targets.commonDir, "packed-refs", ["refs"]],
     ] as const) {
       const poke = () => this.scheduleRefresh(kinds);
       const watcher = vscode.workspace.createFileSystemWatcher(

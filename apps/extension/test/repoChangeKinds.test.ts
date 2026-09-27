@@ -7,9 +7,9 @@
 // dropped every cached file, the Timeline emptied. Only the working tree had
 // moved. Now the event carries kinds (repoChange.ts), from where it came:
 // vscode.git's state with HEAD / upstream / counts unchanged is the working
-// tree; a different HEAD, the refs/ watcher or HEAD's own file is a ref move;
-// the operation-state files are an operation; repositories opening, closing or
-// the active one moving is everything.
+// tree; a different HEAD, the refs/ and packed-refs watchers or HEAD's own
+// file is a ref move; the operation-state files are an operation;
+// repositories opening, closing or the active one moving is everything.
 //
 // Three halves: the classification (pure), RepoManager against a real
 // repository with vscode.git's events played through a stand-in, and the
@@ -18,7 +18,7 @@
 
 import Module from "node:module";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, after } from "node:test";
@@ -159,6 +159,150 @@ test("RepoManager: each source is told apart, and a burst inside the debounce is
   // The same state again is the working tree again — the signature moved on.
   repo.__fireState();
   assert.deepEqual(await next(), ["workingTree"]);
+});
+
+// ── Every way git moves a ref reaches a watcher ─────────────────────────────
+//
+// vscode.git's event is the working tree whenever HEAD, its upstream and the
+// counts are unchanged, so a ref move that does not touch them has only the
+// watchers to be seen by. A ref that lives only in packed-refs — every tag and
+// remote-tracking branch a clone made, everything after gc or pack-refs — is
+// deleted by rewriting packed-refs alone (plus a lock under refs/ that is made
+// and removed in one burst, which a file watcher drops). The refs/** watcher
+// never saw it, and the graph kept the deleted branch or tag.
+//
+// Each cell runs real git on a real clone, records which files under the git
+// directories really changed (and stayed changed: added, removed or
+// rewritten), and asks whether a watcher RepoManager made covers one of them —
+// then plays that watcher's event and expects a ref move.
+
+/** The subset of VS Code's glob the watchers use: {a,b} alternatives, ** and *. */
+function globMatches(glob: string, rel: string): boolean {
+  let re = "";
+  let depth = 0;
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*") {
+      re += ".*";
+      i++;
+    } else if (c === "*") re += "[^/]*";
+    else if (c === "{") {
+      depth++;
+      re += "(?:";
+    } else if (c === "}") {
+      depth--;
+      re += ")";
+    } else if (c === "," && depth > 0) re += "|";
+    else re += c.replace(/[.+^$()|[\]\\?]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`).test(rel);
+}
+
+/** Every file under dir, as path -> what would tell a rewrite (inode, size, mtime). */
+function snapshot(dir: string, out = new Map<string, string>()): Map<string, string> {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    const st = statSync(p);
+    if (st.isDirectory()) {
+      if (name !== "objects") snapshot(p, out);
+    } else out.set(p, `${st.ino}:${st.size}:${st.mtimeMs}`);
+  }
+  return out;
+}
+
+function changedBetween(a: Map<string, string>, b: Map<string, string>): string[] {
+  const out: string[] = [];
+  for (const [p, v] of b) if (a.get(p) !== v) out.push(p);
+  for (const p of a.keys()) if (!b.has(p)) out.push(p);
+  return out.sort();
+}
+
+test("every way git moves a ref reaches a watcher: a packed branch or tag deleted, a prune, and the loose moves", async () => {
+  const base = join(scratch, "packed");
+  const remote = join(base, "remote.git");
+  const seed = join(base, "seed");
+  const clone = join(base, "clone");
+  const run = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
+  execFileSync("git", ["init", "-q", "-b", "main", seed]);
+  for (const [k, v] of [["user.email", "t@example.com"], ["user.name", "t"], ["commit.gpgsign", "false"], ["gc.auto", "0"], ["tag.gpgsign", "false"]]) {
+    run(seed, "config", k, v);
+  }
+  writeFileSync(join(seed, "a.txt"), "a\n");
+  run(seed, "add", ".");
+  run(seed, "commit", "-q", "-m", "one");
+  run(seed, "branch", "gone-soon");
+  run(seed, "tag", "v1");
+  run(seed, "remote", "add", "origin", remote);
+  run(seed, "push", "-q", "origin", "main", "gone-soon", "v1");
+  execFileSync("git", ["clone", "-q", remote, clone], { stdio: "ignore" });
+  for (const [k, v] of [["user.email", "t@example.com"], ["user.name", "t"], ["commit.gpgsign", "false"], ["gc.auto", "0"]]) {
+    run(clone, "config", k, v);
+  }
+  const root = realpathSync(clone);
+  const gitDir = join(root, ".git");
+  assert.match(readFileSync(join(gitDir, "packed-refs"), "utf8"), /refs\/tags\/v1/, "a clone packs its tags and remote branches");
+
+  // One RepoManager, so the watchers and the events are this one's: the
+  // stand-in's vscode.git is shared, and an earlier manager would bind the
+  // clone too.
+  live.splice(0).forEach((x) => x.dispose());
+  vs.reset();
+  vs.setFolders([{ name: "clone", fsPath: root }]);
+  const m = await RepoManager.create();
+  live.push(m);
+  await settle(300);
+  const repo = vs.repository(root, { name: "main", commit: "a1", ahead: 0, behind: 0 });
+  vs.gitOpen(repo);
+  const mine = () => vs.watchers.filter((w) => !w.disposed && w.pattern.base.fsPath.startsWith(gitDir));
+  for (let i = 0; i < 50 && !mine().some((w) => w.pattern.pattern === "refs/**"); i++) await settle(20);
+  await settle(DEBOUNCED);
+  const events: string[][] = [];
+  m.onDidChange((e) => events.push([...e.kinds].sort()));
+
+  let snap = new Map<string, string>();
+  const cells: [string, () => void][] = [
+    ["delete a packed branch", () => {
+      run(clone, "branch", "packed-one");
+      run(clone, "pack-refs", "--all");
+      snap = snapshot(gitDir);
+      run(clone, "branch", "-D", "packed-one");
+    }],
+    // Before the tag goes: a fetch would bring a deleted v1 back as a loose ref.
+    ["fetch --prune drops a packed remote branch", () => {
+      run(seed, "push", "-q", "origin", "--delete", "gone-soon");
+      snap = snapshot(gitDir);
+      run(clone, "fetch", "-q", "--prune", "origin");
+    }],
+    ["delete a packed tag", () => run(clone, "tag", "-d", "v1")],
+    ["create a branch", () => run(clone, "branch", "fresh")],
+    ["delete a loose branch", () => run(clone, "branch", "-D", "fresh")],
+    ["commit on a branch whose ref is packed", () => {
+      run(clone, "pack-refs", "--all");
+      snap = snapshot(gitDir);
+      writeFileSync(join(root, "a.txt"), "b\n");
+      run(clone, "commit", "-q", "-am", "two");
+    }],
+    ["check out another branch", () => run(clone, "checkout", "-q", "-b", "other")],
+  ];
+  const failures: string[] = [];
+  for (const [name, act] of cells) {
+    snap = snapshot(gitDir);
+    act();
+    const changed = changedBetween(snap, snapshot(gitDir));
+    const hits = mine().filter((w) =>
+      changed.some((p) => p.startsWith(w.pattern.base.fsPath + "/") && globMatches(w.pattern.pattern, p.slice(w.pattern.base.fsPath.length + 1))),
+    );
+    if (hits.length === 0) {
+      failures.push(`${name}: no watcher covers what changed (${changed.map((p) => p.slice(gitDir.length + 1)).join(", ")})`);
+      continue;
+    }
+    events.length = 0;
+    hits[0].fire("change");
+    await settle(DEBOUNCED);
+    if (!events.some((k) => k.includes("refs"))) failures.push(`${name}: its watcher's event was ${JSON.stringify(events)}, not a ref move`);
+  }
+  assert.deepEqual(failures, []);
 });
 
 // ── The subscribers ──────────────────────────────────────────────────────────
