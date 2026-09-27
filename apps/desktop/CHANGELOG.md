@@ -12,7 +12,6 @@ but they share the same engine, so most Git behaviour lands in both at once.
 ## [Unreleased]
 
 ### Added
-
 - **Select several commits in the graph.** **Cmd/Ctrl+click** adds or removes
   a commit, **Shift+click** selects everything from the last one you clicked,
   and **Shift+Up/Down** extends the selection from the keyboard; **Escape**
@@ -128,7 +127,6 @@ but they share the same engine, so most Git behaviour lands in both at once.
   menu. (#32)
 
 ### Changed
-
 - **Closing a repository is closing its tab.** Repo ▸ **Close Tab** is ⌘W
   (Ctrl+W) — it was ⌘⇧W, and on macOS ⌘W did nothing. On Windows and Linux
   the window's own Close moves to Ctrl+Shift+W. The GitStudio mark in the top
@@ -136,7 +134,6 @@ but they share the same engine, so most Git behaviour lands in both at once.
   repository menu moved to the tab row's **+**. (#32)
 
 ### Fixed
-
 - **Undo of *Discard changes*, and ⌘Z after *Accept Yours / Theirs*, no longer
   overwrite edits you made since.** Discard, type something new, Undo: the new
   text was replaced by the discarded one; resolve a conflict, polish the file

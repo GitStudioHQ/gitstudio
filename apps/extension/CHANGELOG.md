@@ -175,6 +175,72 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   the top. Your choice is remembered for the workspace, and **New pull
   request** and the Command Palette's pull request commands use it too —
   even before the Pull Requests view has been opened.
+- **Worktrees, rebuilt: every worktree says what it holds.** Each row names
+  the worktree's folder and the branch it has checked out (or *detached at
+  1a2b3c4*, or the branch a stopped rebase is rebasing), where the folder is,
+  and — in words — what state it is in: *This window*, *Main worktree*,
+  *5 changed*, *2 to push*, *1 to pull*, *3 not pushed* (a branch with no
+  upstream), *2 not on main* (a repository with no remote), *Upstream gone*,
+  *Locked: on a USB drive* (its reason), *Merge in progress · 1 conflict*, *Rebase stopped*,
+  *Folder missing*. Badges that don't fit a narrow sidebar become *+2 more*,
+  naming them on hover. This window's worktree comes first, then the main
+  one, the rest by name and the missing ones last; past eight worktrees a
+  filter appears.
+- **Open a worktree's row to see its changes and its commits.** Click it (or
+  press Enter or →): its uncommitted files — staged ones tagged, each opening
+  its diff read from that worktree, not this window's — and its commits not
+  pushed (not on its upstream; with no upstream, not on any remote, as the
+  push review counts them; with no remote at all, not on the default branch),
+  plus what it has to pull. Each commit opens to the files it changed, as in
+  the push review.
+- **Pull and Push… for any worktree, from its row.** **Pull** runs in that
+  worktree's own folder, with the questions every Pull asks (Stash & Retry,
+  Merge or Rebase); a stop is said naming the worktree, with **Open in New
+  Window**. **Push…** opens the push review for that worktree — its commits,
+  its files, "From the worktree …" — and pushes its branch. Where either
+  can't work (a detached HEAD, a merge in progress, no upstream, no remote,
+  nothing to push) the button says why instead.
+- **Every worktree action says what it does.** A row has **Open in New
+  Window** (or **Forget Worktree…** when its folder is gone, or isn't a
+  worktree any more) and a **More** menu: Open in This Window, Reveal in
+  Finder, Open in Terminal, Copy Path, Pull, Push…, Lock… (or Unlock),
+  Remove Worktree…. An action a worktree can't take is shown with the
+  reason — "This window has it open.", "The main worktree holds the
+  repository itself, so git never removes it.", "A rebase is stopped in it —
+  continue or abort it first." The whole list works from the keyboard
+  (arrows, Home/End, Enter, the context-menu key, Delete — on a Mac also
+  Cmd+Delete), and a screen reader hears an open worktree's files and
+  commits as that worktree's. Unlock shows at once, and comes back if git
+  refuses. A row busy with an action says so ("Removing…") without fading
+  its words, and while a row is open, a status landing for it (or for any
+  other row) leaves its open commits and the keyboard where they are.
+- **Stash & Remove.** Removing a worktree with uncommitted changes offers
+  **Stash & Remove** first: its changes go into a stash you can apply from
+  any worktree, then its folder is deleted. **Discard Changes and Remove** is
+  still there, second. When its branch is fully merged into the default
+  branch, the question also offers **Also delete the branch**, unchecked;
+  it is deleted only if it is still fully merged when you answer — a commit
+  made on it meanwhile (an agent at work in the worktree) keeps it, and the
+  report says why. Undo (Ctrl/Cmd+Alt+G Z) brings a deleted branch back.
+- **Prune N missing.** When worktrees' folders are gone, Worktrees shows
+  **Prune N missing** with the count (**Prune N stale** when some of them
+  are folders that aren't worktrees any more); it asks first, naming them,
+  and says that a locked one is kept.
+- **New Worktree suggests where the folder goes**: beside your project,
+  named `<project>-<branch>` (`app-feature-login`), in the question itself,
+  ready to edit — a relative folder lands beside the project, `~` is home.
+  With the repository in a hidden folder inside the project (`project/.bare`,
+  its worktrees beside it) it suggests `project/feature-login`. It no longer
+  opens a system folder picker. A folder that is taken is asked for again
+  with why. The `gitstudio.worktrees.prefixWithProjectName` setting is no
+  longer used.
+- **The push review's commits open to their files.** Click a commit in the
+  review (or press Enter or →) to see the files that commit changed; click
+  one for what that commit did to it. The list of every file changed is
+  still below.
+- Worktrees reads only the rows you can see: a repository with dozens of
+  worktrees lists them all at once, and reads each one's changes as it
+  scrolls into view — and nothing while the view is collapsed.
 - **Select several commits.** In the Commit Graph and the Commits list,
   **Cmd/Ctrl+click** adds or removes a commit, **Shift+click** selects
   everything from the last one you clicked, and **Shift+Up/Down** extends the
@@ -316,7 +382,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   button on the row read out together. **Tab** reaches the first row you can
   see, also when nothing is staged. When a file you are on leaves the list
   (staged — from its menu too — or discarded), the keyboard moves to the next
-  one. The push review's files are
+  one. The Stashes group is part of the same tree: the arrows walk on from
+  your changes into it, **Right** opens a stash and steps into its files, and
+  **Delete** on a stash asks to drop it. The push review's files are
   reachable with **Tab** (**Enter** opens one's diff), and **Tab** stays in
   the dialog. A button reached with **Tab** shows its tip, as it does under
   the pointer.
@@ -357,74 +425,6 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   highlight — a set one always — and every row's chevron is shown, saying it
   has actions. On the highlighted row, the ↑/↓ counts take the selection's
   colour, so they stay readable in Light themes.
-- **Worktrees, rebuilt: every worktree says what it holds.** Each row names
-  the worktree's folder and the branch it has checked out (or *detached at
-  1a2b3c4*, or the branch a stopped rebase is rebasing), where the folder is,
-  and — in words — what state it is in: *This window*, *Main worktree*,
-  *5 changed*, *2 to push*, *1 to pull*, *3 not pushed* (a branch with no
-  upstream), *2 not on main* (a repository with no remote), *Upstream gone*,
-  *Locked: on a USB drive* (its reason), *Merge in progress · 1 conflict*, *Rebase stopped*,
-  *Folder missing*. Badges that don't fit a narrow sidebar become *+2 more*,
-  naming them on hover. This window's worktree comes first, then the main
-  one, the rest by name and the missing ones last; past eight worktrees a
-  filter appears.
-- **Open a worktree's row to see its changes and its commits.** Click it (or
-  press Enter or →): its uncommitted files — staged ones tagged, each opening
-  its diff read from that worktree, not this window's — and its commits not
-  pushed (not on its upstream; with no upstream, not on any remote, as the
-  push review counts them; with no remote at all, not on the default branch),
-  plus what it has to pull. Each commit opens to the files it changed, as in
-  the push review.
-- **Pull and Push… for any worktree, from its row.** **Pull** runs in that
-  worktree's own folder, with the questions every Pull asks (Stash & Retry,
-  Merge or Rebase); a stop is said naming the worktree, with **Open in New
-  Window**. **Push…** opens the push review for that worktree — its commits,
-  its files, "From the worktree …" — and pushes its branch. Where either
-  can't work (a detached HEAD, a merge in progress, no upstream, no remote,
-  nothing to push) the button says why instead.
-- **Every worktree action says what it does.** A row has **Open in New
-  Window** (or **Forget Worktree…** when its folder is gone, or isn't a
-  worktree any more) and a **More** menu: Open in This Window, Reveal in
-  Finder, Open in Terminal, Copy Path, Pull, Push…, Lock… (or Unlock),
-  Remove Worktree…. An action a worktree can't take is shown with the
-  reason — "This window has it open.", "The main worktree holds the
-  repository itself, so git never removes it.", "A rebase is stopped in it —
-  continue or abort it first." The whole list works from the keyboard
-  (arrows, Home/End, Enter, the context-menu key, Delete — on a Mac also
-  Cmd+Delete), and a screen reader hears an open worktree's files and
-  commits as that worktree's. Unlock shows at once, and comes back if git
-  refuses. A row busy with an action says so ("Removing…") without fading
-  its words, and while a row is open, a status landing for it (or for any
-  other row) leaves its open commits and the keyboard where they are.
-- **Stash & Remove.** Removing a worktree with uncommitted changes offers
-  **Stash & Remove** first: its changes go into a stash you can apply from
-  any worktree, then its folder is deleted. **Discard Changes and Remove** is
-  still there, second. When its branch is fully merged into the default
-  branch, the question also offers **Also delete the branch**, unchecked;
-  it is deleted only if it is still fully merged when you answer — a commit
-  made on it meanwhile (an agent at work in the worktree) keeps it, and the
-  report says why. Undo (Ctrl/Cmd+Alt+G Z) brings a deleted branch back.
-- **Prune N missing.** When worktrees' folders are gone, Worktrees shows
-  **Prune N missing** with the count (**Prune N stale** when some of them
-  are folders that aren't worktrees any more); it asks first, naming them,
-  and says that a locked one is kept.
-- **New Worktree suggests where the folder goes**: beside your project,
-  named `<project>-<branch>` (`app-feature-login`), in the question itself,
-  ready to edit — a relative folder lands beside the project, `~` is home.
-  With the repository in a hidden folder inside the project (`project/.bare`,
-  its worktrees beside it) it suggests `project/feature-login`. It no longer
-  opens a system folder picker. A folder that is taken is asked for again
-  with why. The `gitstudio.worktrees.prefixWithProjectName` setting is no
-  longer used.
-- **The push review's commits open to their files.** Click a commit in the
-  review (or press Enter or →) to see the files that commit changed; click
-  one for what that commit did to it. The list of every file changed is
-  still below.
-- Worktrees reads only the rows you can see: a repository with dozens of
-  worktrees lists them all at once, and reads each one's changes as it
-  scrolls into view — and nothing while the view is collapsed.
-
-### Changed
 - **Pull requests speak the GitStudio desktop app's words.** The list, a pull
   request's page and the new form use the desktop's words and icons for the
   same things — **Checkout**, **Approve**, **Review**, **Merge**, **Mark
@@ -441,9 +441,6 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   and before git sees it. A tag or branch picked from its list is checked
   out as exactly that ref, even when a tag and a branch share its name —
   git took the branch.
-- The branch menu keeps its width while you type a long name, and takes the
-  width all its branches need when they arrive after you started typing, or
-  when the view is resized while you type.
 - A branch's actions closed by typing in the branch menu no longer open again
   when the view refreshes, and a tag's actions stay on the tag's row when it
   refreshes — also when a branch has the same name.
@@ -672,10 +669,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   "On main: my work" and a stash@{n}.
 - **The Changes view keeps the keyboard where it was.** Opening a group or a
   folder with Enter, or anything that redrew the list, dropped the keyboard
-  to the top of the view; the same row keeps it now — the same tick or row
-  button, when one of those had it — and Escape or a choice in a row's menu
-  hands it back to the row. When the last stash leaves, the row above the
-  Stashes group takes the keyboard.
+  to the top of the view; the same row keeps it now. When the last stash
+  leaves, the row above the Stashes group takes the keyboard.
 - The Changes toolbar's title stays on one line in the tree view at sidebar
   width, and its Stash buttons wear the stash icon the stashes do.
 - The branch menu's last **Show more** row says its number once: "Show 5
@@ -765,7 +760,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   'current branch', and so does the question Merge or Rebase then asks,
   which says the result is on no branch rather than warning about a push.
 - The branch menu keeps its width while you type — the width its branches
-  need, also when they arrive after the menu opened or the sidebar is widened
+  need, also when they arrive after the menu opened or the sidebar is resized
   under it — and a new search starts at the top of the list with its first
   group heading in view.
 - A branch's name keeps its room in the branch menu: in a narrow sidebar the
