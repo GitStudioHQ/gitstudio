@@ -53,6 +53,9 @@ export interface PullRequestListOptions {
 
 // ── Small DOM helpers ────────────────────────────────────────────────────────
 
+/** The search box's placeholders, longest first: the one that fits whole is shown. */
+const SEARCH_PLACEHOLDERS = ["Search pull requests", "Search"];
+
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text?: string): HTMLElementTagNameMap[K] {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -205,6 +208,9 @@ export class PullRequestList {
   private searchTimer: number | undefined;
   /** The search box's words while typing outruns the host. */
   private typed: string | undefined;
+  /** The search box's placeholder, as last fitted to its width. */
+  private placeholder = SEARCH_PLACEHOLDERS[0];
+  private measure: CanvasRenderingContext2D | null | undefined;
   private menu: { anchor: HTMLElement; spec: () => MenuSpec; el: HTMLElement; at?: { x: number; y: number } } | undefined;
   private readonly timers: PrListTimers;
   private moreObserver: IntersectionObserver | undefined;
@@ -241,7 +247,13 @@ export class PullRequestList {
       if (this.menu && !this.menu.el.contains(e.target as Node) && !this.menu.anchor.contains(e.target as Node)) this.closeMenu(false);
     });
     window.addEventListener("blur", () => this.closeMenu(false));
-    window.addEventListener("resize", () => this.closeMenu(false));
+    window.addEventListener("resize", () => {
+      this.closeMenu(false);
+      this.fitSearch();
+    });
+    // The sidebar (a webview: its window) or the desktop's panel narrowed or
+    // widened: the search box's words, fitted again.
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => this.fitSearch()).observe(this.view);
     // The list scrolled from under an open menu: its anchor has moved away.
     // (A long menu scrolling its own items is not that.)
     window.addEventListener(
@@ -265,6 +277,7 @@ export class PullRequestList {
     this.build(fresh, state);
     patchChildren(this.view, fresh);
     this.syncSearchBox(prev);
+    this.fitSearch();
     this.watchMore();
     if (this.menu) {
       // The patch keeps the anchor's node but not an attribute the build
@@ -355,7 +368,7 @@ export class PullRequestList {
     const input = el("input", "prl-search-input");
     input.type = "search";
     input.dataset.key = "search";
-    input.placeholder = "Search pull requests";
+    input.placeholder = this.placeholder;
     input.setAttribute("aria-label", "Search pull requests");
     input.spellcheck = false;
     search.appendChild(input);
@@ -637,6 +650,25 @@ export class PullRequestList {
   }
 
   /** The box shows the host's words unless the user is typing ahead of them. */
+  /**
+   * The longest placeholder the search box shows whole: "Search pull
+   * requests", "Search" in a narrow sidebar — never words cut mid-way (its
+   * accessible name keeps them all). Measured in the box's own font.
+   */
+  private fitSearch(): void {
+    const input = this.searchInput();
+    if (!input) return;
+    const room = input.clientWidth;
+    if (room <= 0) return; // not laid out: kept as it is
+    this.measure ??= document.createElement("canvas").getContext("2d");
+    const ctx = this.measure;
+    if (!ctx) return;
+    ctx.font = getComputedStyle(input).font;
+    const want = SEARCH_PLACEHOLDERS.find((p) => ctx.measureText(p).width <= room) ?? "";
+    this.placeholder = want;
+    if (input.placeholder !== want) input.placeholder = want;
+  }
+
   private syncSearchBox(prev: PrListViewState | undefined): void {
     const input = this.searchInput();
     if (!input || !this.state) return;
@@ -654,6 +686,7 @@ export class PullRequestList {
     this.typed = t.value;
     const clear = this.view.querySelector<HTMLElement>(".prl-search-clear");
     if (clear) clear.hidden = t.value.length === 0;
+    this.fitSearch();
     if (this.searchTimer !== undefined) this.timers.clear(this.searchTimer);
     const send = () => {
       this.searchTimer = undefined;

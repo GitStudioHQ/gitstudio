@@ -144,6 +144,48 @@ test("narrow: the counts give way and every segment's word stays whole", { skip 
   );
 });
 
+test("the search box's words are whole at every width — Search pull requests, Search, never a word cut mid-way", { skip }, async () => {
+  await check(
+    `
+    show(S.open);
+    await frame();
+    const input = () => $(".prl-search-input");
+    const ctx = document.createElement("canvas").getContext("2d");
+    const fits = () => {
+      ctx.font = getComputedStyle(input()).font;
+      return ctx.measureText(input().placeholder).width <= input().clientWidth;
+    };
+    const seen = new Set();
+    for (let w = 340; w >= 150; w -= 3) {
+      root.style.width = w + "px";
+      // What VS Code does when the sidebar is resized: the webview's window
+      // resizes. (A ResizeObserver runs in the rendering step, which the
+      // headless shell's virtual time never reaches.)
+      window.dispatchEvent(new Event("resize"));
+      await new Promise((r) => setTimeout(r, 30));
+      seen.add(input().placeholder);
+      if (!fits()) expect(false, "cut at " + w + "px: " + JSON.stringify(input().placeholder) + " in " + input().clientWidth + "px");
+    }
+    expect(seen.has("Search pull requests") && seen.has("Search"), "both, each where it fits whole: " + [...seen].join(" | "));
+    expect(input().getAttribute("aria-label") === "Search pull requests", "its name keeps every word");
+    // Typing, then clearing, in a narrow box: still whole.
+    root.style.width = "170px";
+    window.dispatchEvent(new Event("resize"));
+    await new Promise((r) => setTimeout(r, 30));
+    input().focus();
+    input().value = "diff";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    input().value = "";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    expect(fits(), "after clearing: " + input().placeholder);
+    // A state from the host keeps what was fitted.
+    show(S.open);
+    expect(fits() && input().placeholder === "Search", "kept across a paint: " + input().placeholder);
+  `,
+    { frame: { width: 360, height: 700 } },
+  );
+});
+
 test("each situation says what it is and what to do — and each button asks the host for exactly that", { skip }, async () => {
   await check(`
     const say = (s) => { posted.length = 0; show(s); };
