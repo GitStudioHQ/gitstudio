@@ -18,6 +18,8 @@ import { ChangesPage, stateMessage, type LocalBranch } from "./changesPage";
 //     Enter makes it) and Checkout Revision '<query>'…, each opening its
 //     dialog with the query as typed; a revision starting with "-" is
 //     refused there, since git would read it as an option;
+//   · in Checkout Tag or Revision…, a ref picked from the list goes to the
+//     host with its kind, and what was typed goes as typed;
 //   · until the arrows or the pointer move it, a repaint from the host puts
 //     the highlight back on the best match (branches that arrived after the
 //     query was typed); after, it stays where they put it;
@@ -250,6 +252,61 @@ test("a query no ref matches offers a new branch by that name, and a revision to
   await page.key("Enter");
   assert.deepEqual((await page.posted()).filter((m) => m.type === "branchAction"), [], "Enter does not send it either");
   await page.key("Escape");
+});
+
+// Checkout Tag or Revision…: a branch, a remote branch and a tag can share a
+// short name — git names such twins heads/v1 and tags/v1 when it lists
+// them, but a list drawn before the tag was made still says v1 — and
+// `git checkout --detach v1` takes the branch whichever was picked. A ref
+// picked from the list goes with its kind (the host checks out that ref by
+// its full name); what was typed goes as typed.
+test("Checkout Tag or Revision…: a ref picked from the list goes with its kind, what was typed as typed", { skip }, async () => {
+  const twins = stateMessage({ local: [{ name: "main", current: true }, { name: "v1" }], remote: ["origin/v1"], tags: ["v1"] });
+  const dialog = async (typed: string): Promise<void> => {
+    await openMenu(twins);
+    await page.eval(`document.querySelector('.bm-list [data-bmkey="a:checkoutRef"]').click()`);
+    await page.page.waitFor(`!!document.querySelector(".rp-panel input")`);
+    await page.type(typed);
+  };
+  const rows = (): Promise<string[]> => page.eval<string[]>(`Array.prototype.map.call(document.querySelectorAll(".rp-panel .rp-row"), function (r) {
+    return r.querySelector(".rp-name").textContent + " " + r.querySelector(".rp-kind").textContent;
+  })`);
+  const sent = async (): Promise<Record<string, unknown>[]> => (await page.posted()).filter((m) => m.type === "branchAction");
+
+  // Picked by the pointer: the tag.
+  await dialog("v1");
+  assert.deepEqual(await rows(), ["v1 branch", "origin/v1 remote", "v1 tag"]);
+  const tag = await page.eval<{ x: number; y: number }>(`(function () {
+    var r = Array.prototype.find.call(document.querySelectorAll(".rp-panel .rp-row"), function (n) { return n.querySelector(".rp-kind").textContent === "tag"; }).getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+  await page.click(tag.x, tag.y);
+  assert.deepEqual(await sent(), [{ type: "branchAction", action: "checkoutRef", ref: "v1", refType: "tag" }]);
+
+  // Picked by the keys: the branch, then the remote branch.
+  await dialog("v1");
+  await page.key("ArrowDown");
+  await page.key("Enter");
+  assert.deepEqual(await sent(), [{ type: "branchAction", action: "checkoutRef", ref: "v1", refType: "head" }]);
+  await dialog("v1");
+  await page.key("ArrowDown");
+  await page.key("ArrowDown");
+  await page.key("Enter");
+  assert.deepEqual(await sent(), [{ type: "branchAction", action: "checkoutRef", ref: "origin/v1", refType: "remote" }]);
+
+  // Typed: as typed, with no kind — a revision git reads for itself, even
+  // when it is also a listed name.
+  for (const typed of ["v1~1", "v1"]) {
+    await dialog(typed);
+    await page.key("Enter");
+    assert.deepEqual(await sent(), [{ type: "branchAction", action: "checkoutRef", ref: typed }], `typed '${typed}'`);
+  }
+  // A pick undone by typing: typed again.
+  await dialog("v1");
+  await page.key("ArrowDown");
+  await page.key("ArrowUp");
+  await page.key("Enter");
+  assert.deepEqual(await sent(), [{ type: "branchAction", action: "checkoutRef", ref: "v1" }], "the highlight taken back off the list");
 });
 
 test("the highlight follows the best match through a repaint — until the arrows or the pointer move it", { skip }, async () => {

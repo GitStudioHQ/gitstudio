@@ -95,6 +95,24 @@ export function withFavorites(payload: BranchesPayload, favorites: readonly stri
 }
 
 /**
+ * The full name of a ref picked from a list by its short name and its kind,
+ * as git lists it now — undefined when there is none any more. A short name
+ * names one ref only while no other shares it: a tag made since the list was
+ * drawn with the name of the branch that was picked, and `git checkout
+ * --detach v1` lands on the branch (git prefers it), whichever was picked.
+ * git's own short name for a ref that shares one ("heads/v1") is found too.
+ */
+export function pickedRefName(
+  refs: readonly GitRef[],
+  name: string,
+  refType: "head" | "remote" | "tag",
+): string | undefined {
+  const prefix = refType === "head" ? "refs/heads/" : refType === "remote" ? "refs/remotes/" : "refs/tags/";
+  const same = refs.filter((r) => r.type === refType);
+  return (same.find((r) => r.name === name) ?? same.find((r) => r.fullName === prefix + name))?.fullName;
+}
+
+/**
  * A branch-menu action as the person chose it, for a message about it:
  * "Pull into 'feature'", not the message's action id ("pullFf").
  */

@@ -9,7 +9,7 @@ import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import { slowStateChanged, type SlowState } from "./slowState";
-import { branchActionWords, branchesPayload, withFavorites, type BranchesPayload } from "./branchMenuData";
+import { branchActionWords, branchesPayload, pickedRefName, withFavorites, type BranchesPayload } from "./branchMenuData";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { repoName as repoNameOf, switchRepository, workspacePathOf } from "../git/repoPicker";
 import { pruneOnFetch } from "../git/fetchOptions";
@@ -1771,9 +1771,25 @@ export class CommitViewProvider
             result = { ok: false, stderr: `'${r}' is not a revision: it starts with '-'.` };
             break;
           }
+          // Picked from the dialog's list — a branch, a remote branch, a tag —
+          // it is checked out as that ref, by its full name: the short name
+          // can be another ref's too by now (a tag made with a branch's name),
+          // and git would take the branch. Typed, it goes as typed: a
+          // revision git reads for itself (a sha, origin/main~3).
+          let target = r;
+          const picked = msg.refType;
+          if (picked === "head" || picked === "remote" || picked === "tag") {
+            const full = pickedRefName(await entry.ctx.refs.listRefs(), r, picked);
+            if (!full) {
+              const word = picked === "head" ? "branch" : picked === "remote" ? "remote branch" : "tag";
+              result = { ok: false, stderr: `there is no ${word} '${r}' any more.` };
+              break;
+            }
+            target = full;
+          }
           // Through the shared door: uncommitted work in the checkout's way is
           // said, with Stash & Retry, rather than as git's refusal in red.
-          const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", "--detach", r]));
+          const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", "--detach", target]));
           if (applied.cancelled) {
             cancelled = true;
             break;
@@ -6353,8 +6369,13 @@ export class CommitViewProvider
         allowFreeText: true,
         // git would read it as one of its options.
         validate: function (v) { return /^-/.test(v) ? "A revision can't start with '-'." : null; },
-        onConfirm: function (v) {
-          vscode.postMessage({ type: "branchAction", action: "checkoutRef", ref: v });
+        // A ref picked from the list goes with its kind, and the host checks
+        // out that ref by its full name: a tag and a branch can share the
+        // short one, and git would take the branch. What was typed goes as
+        // typed, a revision git reads for itself.
+        onConfirm: function (v, pick) {
+          const refType = pick ? { branch: "head", remote: "remote", tag: "tag" }[pick.kind] : undefined;
+          vscode.postMessage({ type: "branchAction", action: "checkoutRef", ref: v, refType: refType });
         },
       });
     }
@@ -6976,6 +6997,9 @@ export class CommitViewProvider
       var candidates = spec.candidates || [];
       var sel = -1;
       var shown = [];
+      // The candidate a click picked: its name alone may be another ref's
+      // too (a branch and a tag), so a local caller is handed the candidate.
+      var picked = null;
       var panel = beginDialog(spec);
 
       var wrap = el("div", "rp-inputwrap");
@@ -7006,6 +7030,11 @@ export class CommitViewProvider
       function currentValue() {
         if (sel >= 0 && shown[sel]) return shown[sel].name;
         return spec.multiline ? input.value : input.value.trim();
+      }
+      /** The candidate the value is, when one was picked (never one typed). */
+      function currentPick() {
+        if (sel >= 0 && shown[sel]) return shown[sel];
+        return picked && picked.name === currentValue() ? picked : null;
       }
 
       function problem(v) {
@@ -7126,6 +7155,7 @@ export class CommitViewProvider
           row.addEventListener("click", function () {
             input.value = c.name;
             sel = -1;
+            picked = c;
             renderList();
             if (validate()) confirm();
           });
@@ -7136,11 +7166,12 @@ export class CommitViewProvider
       function confirm() {
         var v = currentValue();
         if (!v || problem(v)) return;
+        var pick = currentPick();
         closeDialog(onConfirm ? undefined : v);
-        if (onConfirm) onConfirm(v);
+        if (onConfirm) onConfirm(v, pick);
       }
 
-      input.addEventListener("input", function () { sel = -1; renderList(); validate(); });
+      input.addEventListener("input", function () { sel = -1; picked = null; renderList(); validate(); });
       input.addEventListener("keydown", function (e) {
         if (e.key === "Escape") { e.preventDefault(); closeDialog(undefined); return; }
         if (e.key === "Enter") {
