@@ -1,0 +1,99 @@
+apps/extension/src/changes/stashRows.ts
+  s_26f5e669d3043c::t_72d3003e1c5c62 1-59
+  s_26f5e669d3043c::t_e224fa5928dcdc 60-67
+packages/git-service/test/stashFiles.test.ts
+  s_26f5e669d3043c::t_72d3003e1c5c62 1-445
+apps/extension/test/stashesInChanges.test.ts
+  s_26f5e669d3043c::t_72d3003e1c5c62 1-544
+apps/extension/harness/stashes/shots.ts
+  s_26f5e669d3043c::t_72d3003e1c5c62 1-249
+apps/extension/test/changesStashes.test.ts
+  s_26f5e669d3043c::t_72d3003e1c5c62 1-671
+  s_26f5e669d3043c::t_e7ea4af3f4e259 672-723
+apps/extension/test/stashesPayload.test.ts
+  s_26f5e669d3043c::t_72d3003e1c5c62 1-114
+apps/extension/test/stashWatch.test.ts
+  s_26f5e669d3043c::t_72d3003e1c5c62 1-47
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_c90fe88e90415a 149-151,194-197
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_e89e569630aeb1 666-667
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_cf5f7a7e7317d5 10646-10677
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_62e11a718c9396 2246,3023,3636,3756,6850-6852,6854,6920,8270,8300,8304,8333
+apps/desktop/src/renderer/views/refDetail.ts
+  s_26f5e669d3043c::t_64b7e6b739b7a6 161
+apps/desktop/test/expectedConditions.test.ts
+  s_26f5e669d3043c::t_505b4634fc8167 28-29
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_8c318a9bc20a99 10-32,425-428,433-436,446-461
+apps/extension/README.md
+  s_26f5e669d3043c::t_4e99bf55009884 81,121
+apps/extension/package.json
+  s_26f5e669d3043c::t_d10423710a4dca 422-445,1476,1901-1916
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_b57b0e3b1231a0 65-78,160-165,210-214,216-217,246-247,402-407,726-730,797-813,972-1106,2775-2781,2787,2818,2830,2839,2843,2849,2851,2869,3881-3886,3905-3906,4324-4401,4897,4913-4915,4924-4927,4935,4954-4959,4993,4996-4999,5091-5102,5168-5172,5175,5184-5185,5210,5215,5218,5227-5232,5235-5239,5241-5243,5246,5249,5272-5276,5318-5319,5323,5375-5385,5387-5389,5393,5426,5470-5485,5735-5744,6030,6060-6062,6064,6767,7291,8663-8664,8666,8669,8672,8676-8707,8712-8724,9012,9014,9303-9305,9354-9355,9485,9641,9643,9713-10335,10581-10633
+apps/extension/src/changes/slowState.ts
+  s_26f5e669d3043c::t_ff88b23cc11803 9-10,18-23,32-33
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_f182c22c33fab2 16-20,609-614,620,636-637,669-673,675,680-695
+apps/extension/src/git/inTheWay.ts
+  s_26f5e669d3043c::t_b50ce5579c45c4 24-26,48-50,113,195
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_0e9fa88abdb5ba 419-420
+apps/extension/src/statusBar/statusCluster.ts
+  s_26f5e669d3043c::t_657467c0c25c89 15-17
+apps/extension/src/views/branchesView.ts
+  s_26f5e669d3043c::t_5d8d304e616d5b 8-9
+apps/extension/src/views/stashesView.ts
+  s_26f5e669d3043c::t_462f4f7e8fca0b 10,12,18-19,21-25,150-151,153,164,166,170,351-380,389,392,397,399,403,412,415,420,422,426-427,429,431,451-452,455-523,527-532,546,562-603,605-608,610,614,616,618,622,625-629,644-645,648,653,655-656,660-661,666,668,673,676,685-686,689,694,696,705,712,714,723,727-957,972-974,988
+apps/extension/test/branchMenuKeyboard.test.ts
+  s_26f5e669d3043c::t_7390a6f5038452 425-426
+apps/extension/test/branchMenuLayout.test.ts
+  s_26f5e669d3043c::t_4bdc5862d7a757 450,466
+apps/extension/test/changesPage.ts
+  s_26f5e669d3043c::t_12abe2121aef49 94-98,104-105,111-116,159-162,237-238,260,272,298-313
+apps/extension/test/docsClaims.test.ts
+  s_26f5e669d3043c::t_aa04754dafa5ad 74-84
+apps/extension/test/inTheWayCallSites.test.ts
+  s_26f5e669d3043c::t_5f5daeef82506d 131-136
+apps/extension/test/inTheWayStateTable.test.ts
+  s_26f5e669d3043c::t_00d5acb91aa4cc 3
+apps/extension/test/operationInTheWayTable.test.ts
+  s_26f5e669d3043c::t_d9d147463b1ddd 3
+apps/extension/test/slowState.test.ts
+  s_26f5e669d3043c::t_0e6bb2d9e9d10d 44-52
+apps/extension/test/stashesDoors.test.ts
+  s_26f5e669d3043c::t_fdcdfa00330ec1 1-3,130-136
+apps/extension/test/undoStateTable.test.ts
+  s_26f5e669d3043c::t_7438c47c6e2176 1027,1031,1040,1049,1068,1079,1081-1127,1133,1144,1587
+packages/git-service/src/GitProcess.ts
+  s_26f5e669d3043c::t_0bca856bbfd2b6 62-69,232-235,239,282,382
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_2f65c91fcbb588 15,707-710,1116-1119,1122-1125,1135-1180
+packages/git-service/src/StashProvider.ts
+  s_26f5e669d3043c::t_5bb79ec33a6b74 1-3,5,64-173,268-270,553-803,854-942
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_8922894c4ee198 113-120,187-206,208,900,910
+packages/git-service/test/stashIdentity.test.ts
+  s_26f5e669d3043c::t_466e446cc706f3 3-4
+packages/git-service/test/undoScope.test.ts
+  s_26f5e669d3043c::t_eef5d5c9742d3f 318,337-362,816
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ff65651379fb16cf8322a6d696448ada41832293",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
