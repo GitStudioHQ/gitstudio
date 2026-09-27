@@ -4946,8 +4946,8 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
    one thing they must not be. */
 .dropdown-item .run-lead .glyph,
 .dropdown-item .gh-lead-icon .glyph { color: inherit; }
-.dropdown-item.is-current { color: var(--gs-accent-ink, var(--gs-accent)); font-weight: 600; background: var(--accent-soft); }
-.dropdown-item.is-current .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+.dropdown-item.is-current { color: var(--sel-ink); font-weight: 600; background: var(--accent-soft); }
+.dropdown-item.is-current .glyph { color: var(--sel-ink); }
 .dropdown-item.is-disabled { color: var(--app-muted); cursor: default; opacity: 0.5; }
 .dropdown-item.is-disabled:hover { background: transparent; }
 .dropdown-label {
@@ -9669,14 +9669,16 @@ body.vscode-light .rb-row.is-selected:hover { background: color-mix(in srgb, var
 /* On = lit: the accent fill and a soft glow; its edge stays the off one's. */
 .dc-toggle.is-on,
 .dc-toggle[aria-checked="true"] {
-  color: var(--gs-accent-ink, var(--gs-accent));
+  color: var(--sel-ink);
   background: color-mix(in srgb, var(--gs-accent) 14%, transparent);
   box-shadow: var(--sheen), var(--sel-glow-soft);
 }
+/* --sel-ink, not the plain accent ink: under the pointer the tint deepens to
+   20%, where "Sign off" in the accent ink read 4.26:1 in light. */
 .dc-toggle.is-on .glyph,
 .dc-toggle.is-on .codicon,
 .dc-toggle[aria-checked="true"] .glyph,
-.dc-toggle[aria-checked="true"] .codicon { color: var(--gs-accent-ink, var(--gs-accent)); }
+.dc-toggle[aria-checked="true"] .codicon { color: var(--sel-ink); }
 .dc-toggle.is-on:hover,
 .dc-toggle[aria-checked="true"]:hover {
   background: color-mix(in srgb, var(--gs-accent) 20%, transparent);
@@ -12797,11 +12799,31 @@ body.vscode-light .log-pane {
 /* Secondary words inside a selected thing. The tint that marks it lifts the
    ground toward the muted grey, so inside it, muted means --sel-muted: the
    verdict's hint (4.21:1 dark), the branch menu's "current" (4.36:1 dark), the
-   landed row's subject and time (4.47:1 light) all read now. */
+   landed row's subject and time (4.47:1 light) all read now. Under the
+   pointer the tint deepens further, so the lit rows whose words sit on it
+   take it too: a file's folder read 3.89:1 on the hovered Files row in light,
+   its +/− counts the same, a job's time 4.13:1, a rebase row's age and SHA
+   4.32:1. */
 .row-landed,
 .review-verdict.is-selected,
-.dropdown-item.is-current {
+.dropdown-item.is-current,
+.file-row.active,
+.dc-file.is-selected,
+.cmt-file.is-current,
+.joblog-job.is-current,
+.rb-row.is-selected {
   --app-muted: var(--sel-muted);
+}
+/* A changed file's status letter on a lit row in light, a step deeper: the
+   blue M read 4.25:1 on the hovered Files row. */
+body.vscode-light :is(.file-row.active, .dc-file.is-selected):is(.status-A, .status-C) .file-status {
+  color: color-mix(in srgb, var(--status-add) 82%, #000);
+}
+body.vscode-light :is(.file-row.active, .dc-file.is-selected):is(.status-M, .status-R) .file-status {
+  color: color-mix(in srgb, var(--status-mod) 82%, #000);
+}
+body.vscode-light :is(.file-row.active, .dc-file.is-selected).status-D .file-status {
+  color: color-mix(in srgb, var(--status-del) 82%, #000);
 }
 /* The landed row's ahead pill in light: its green one step deeper — on its
    own green wash over the accent wash it measured 3.77:1. */
@@ -13094,6 +13116,11 @@ body.vscode-light .gotofile-row.is-sel:hover {
 .editors-fav.is-on:hover,
 .log-tool.is-on:hover {
   background: color-mix(in srgb, currentColor 22%, transparent);
+}
+/* The lit facet's count sits on its own accent chip: under the pointer, in
+   light, that chip over the deeper tint read 4.11:1. It goes a step darker. */
+body.vscode-light .gh-facet-btn.is-active:hover .gh-facet-value {
+  color: color-mix(in srgb, var(--sel-ink) 78%, #000);
 }
 
 /* ── Controls that looked inert and were not ─────────────────────────────────
