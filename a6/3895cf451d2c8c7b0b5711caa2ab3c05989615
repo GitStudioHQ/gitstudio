@@ -1,0 +1,33 @@
+packages/webview-ui/src/pr/prPage.ts
+  s_26f5e669d3043c::t_097e3086f4e783 1-1696
+  s_26f5e669d3043c::t_16f6a15edf070a 1697-1738
+packages/webview-ui/test/prPage.test.ts
+  s_26f5e669d3043c::t_54b32769862eca 1-364
+  s_26f5e669d3043c::t_49bf7b81c1ec7c 365-378
+packages/webview-ui/test/fixtures/prPageFixtures.ts
+  s_26f5e669d3043c::t_07d0abce145798 1-273
+  s_26f5e669d3043c::t_9ed20b51bf5666 274-276
+packages/webview-ui/src/styles/pr-page.css
+  s_26f5e669d3043c::t_0034c5c949df7e 1-1515,1520-1521
+  s_26f5e669d3043c::t_38a5e46277ae22 1516-1519,1522-1627
+packages/webview-ui/src/pr/page-main.ts
+  s_26f5e669d3043c::t_0cb5708ede7e09 1-51
+packages/webview-ui/test/fixtures/prPageEntry.ts
+  s_26f5e669d3043c::t_e8a72f950d060a 1-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a63895cf451d2c8c7b0b5711caa2ab3c05989615",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
