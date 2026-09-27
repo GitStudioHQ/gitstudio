@@ -455,19 +455,19 @@ export const MERGE_METHODS: Record<
 > = {
   merge: {
     label: "Create a merge commit",
-    confirm: "Confirm Merge",
+    confirm: "Confirm merge",
     icon: "git-merge",
     what: (n, base) => `${n === 1 ? "The commit is" : `All ${n} commits are`} added to ${base}, joined by a merge commit.`,
   },
   squash: {
     label: "Squash and merge",
-    confirm: "Confirm Squash and Merge",
+    confirm: "Confirm squash and merge",
     icon: "git-commit",
     what: (n, base) => (n === 1 ? `The commit is added to ${base} as one new commit.` : `The ${n} commits become one commit on ${base}.`),
   },
   rebase: {
     label: "Rebase and merge",
-    confirm: "Confirm Rebase and Merge",
+    confirm: "Confirm rebase and merge",
     icon: "git-compare",
     what: (n, base) => `${n === 1 ? "The commit is" : `The ${n} commits are`} replayed onto ${base} one by one, with no merge commit.`,
   },

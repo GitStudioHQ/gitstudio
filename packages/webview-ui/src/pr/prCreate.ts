@@ -562,7 +562,7 @@ export class PullRequestCreate {
     box.setAttribute("aria-label", "What the pull request will have");
     const c = s.compare;
     if (c.status === "failed") {
-      box.appendChild(this.buildMessage({ icon: "warning", tone: "warning", title: "Couldn't compare the branches", detail: c.error, buttons: [{ label: "Try again", icon: "refresh", action: { kind: "retry" } }] }, "prp-notice", "compare-failed"));
+      box.appendChild(this.buildMessage({ icon: "warning", tone: "warning", title: "Couldn't compare the branches", detail: c.error, buttons: [{ label: "Retry", icon: "refresh", action: { kind: "retry" } }] }, "prp-notice", "compare-failed"));
       return box;
     }
     if (c.stale) {

@@ -403,6 +403,20 @@ test("merge methods: only the repository's, the preferred one first, each saying
   assert.equal(defaultMergeTitle(d, "rebase", "acme"), "", "a rebase makes no commit of its own");
 });
 
+test("the merge box's words: sentence case, as github.com's own — and as every other button here", () => {
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(MERGE_METHODS).map(([k, m]) => [k, [m.label, m.confirm]])),
+    {
+      merge: ["Create a merge commit", "Confirm merge"],
+      squash: ["Squash and merge", "Confirm squash and merge"],
+      rebase: ["Rebase and merge", "Confirm rebase and merge"],
+    },
+  );
+  // Every word after the first is lower case — but a name (GitHub).
+  const words = [...Object.values(MERGE_METHODS).flatMap((m) => [m.label, m.confirm]), ...Object.values(PR_PAGE_ACTION_WORDS).map((w) => w.label)];
+  for (const w of words) assert.ok(w.split(" ").slice(1).every((x) => x === "GitHub" || x === x.toLowerCase()), `sentence case: ${w}`);
+});
+
 test("a review's verdicts: Approve and Request changes are not the author's to give", () => {
   const mine = reviewVerdictsFor({ viewer: { isAuthor: true } } as never);
   assert.deepEqual(mine.map((v) => [v.event, v.allowed]), [["COMMENT", true], ["APPROVE", false], ["REQUEST_CHANGES", false]]);

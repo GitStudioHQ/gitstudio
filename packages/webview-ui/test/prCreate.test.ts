@@ -255,8 +255,9 @@ test("the preview: commits, and files that open their diff — each file named i
     expect($('[data-key="sk-commits"]')?.getAttribute("aria-label") === "Loading the commits" && text($(".prc-flow-sum")) === "Comparing…", "comparing");
     show(S.compareFailed);
     expect(/Couldn't compare the branches/.test(text($(".prc-preview"))) && /Could not resolve host/.test(text($(".prc-preview"))), "a failed compare says why");
+    expect(text($('.prc-preview [data-act="action"]')) === "Retry", "…with Retry, the word every other failed read uses: " + text($('.prc-preview [data-act="action"]')));
     $('.prc-preview [data-act="action"]').click();
-    expect(last("action")?.action?.kind === "retry", "…with Try again");
+    expect(last("action")?.action?.kind === "retry", "…which reads again");
     show(S.stale);
     expect(text($(".prc-stale")) === "Compared with main as last fetched: GitHub couldn't be reached.", text($(".prc-stale")));
   `);

@@ -145,7 +145,7 @@ test("the merge box: only the repository's methods, the preferred first, each sa
     mergeInput.click();
     await frame();
     expect($(".prp-merge-title").value === "Merge pull request #482 from acme/stream-diffs", "merge's title: " + $(".prp-merge-title").value);
-    expect(text($('[data-act="mergeConfirm"]')) === "Confirm Merge", "the button says which: " + text($('[data-act="mergeConfirm"]')));
+    expect(text($('[data-act="mergeConfirm"]')) === "Confirm merge", "the button says which, in sentence case as github.com does: " + text($('[data-act="mergeConfirm"]')));
     type($(".prp-merge-title"), "Merge the streaming diffs");
     const del = $(".prp-delete-branch");
     del.click();
@@ -463,6 +463,13 @@ test("tabs: a tablist the keyboard moves through; commits expand to their files,
     $$(".prp-commit-row")[0].click();
     $$(".prp-commit-row")[0].click();
     expect(posted.filter((m) => m.type === "expandCommit").length === asked, "loaded once: not asked again");
+    // A commit whose files couldn't be read: why, and Retry — the word every failed read uses.
+    show({ ...S.open, commitFiles: { ["1".repeat(40)]: { status: "failed", error: "GitHub didn't answer." } } });
+    const again = $('[data-act="commitRetry"]');
+    expect(text(again) === "Retry" && again.title === "Read its files again", "a failed commit's files: " + text(again));
+    again.click();
+    expect(last("expandCommit").sha === "1".repeat(40) && posted.filter((m) => m.type === "expandCommit").length === asked + 1, "Retry asks again");
+    show({ ...S.open, commitFiles: { ["1".repeat(40)]: { status: "loaded", files: FILES.slice(0, 3) } } });
     const shas = $$(".prp-sha").map((s) => Math.round(s.getBoundingClientRect().right));
     expect(new Set(shas).size === 1, "every sha lines up, with or without checks: " + shas);
     // Checks.

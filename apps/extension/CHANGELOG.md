@@ -566,7 +566,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   fork is now sent to GitHub as `owner:branch` — as a bare name, GitHub looked
   for it in the target repository. The branch is pushed to the remote git
   pushes it to, under its own name: one started from `origin/main` tracks
-  `main`, and Create Pull Request pushed its commits into `main` — or, with a
+  `main`, and creating the pull request pushed its commits into `main` — or, with a
   push remote set to your fork, into the original repository's `main`, and
   nothing reached the fork. It is pushed only when it isn't there yet or has
   commits that aren't, and what the branch tracks is left alone. The title

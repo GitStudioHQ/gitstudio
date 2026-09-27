@@ -1274,7 +1274,8 @@ export class PullRequestPage {
           p.append(`Couldn't load its files. ${files.error ?? ""} `);
           const retry = button("prp-link", `commit-retry-${c.sha}`, "commitRetry");
           retry.dataset.sha = c.sha;
-          retry.textContent = "Try again";
+          retry.textContent = "Retry";
+          retry.title = "Read its files again";
           p.appendChild(retry);
           detail.appendChild(p);
         } else {

@@ -724,7 +724,7 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
         icon: "warning",
         tone: "warning",
         title: `Couldn't load more: ${describe(err).message}`,
-        buttons: [{ label: "Try Again", icon: "refresh", action: { kind: "loadMore" } }],
+        buttons: [{ label: "Retry", icon: "refresh", action: { kind: "loadMore" } }],
       };
     } finally {
       if (this.queryKeyNow() === key) {

@@ -159,6 +159,7 @@ test("a next page that fails says so over the rows it kept, and trying again ask
   assert.equal(state(m).rows.length, 30, "the rows stay");
   assert.match(state(m).notice.title, /^Couldn't load more: Server Error/);
   assert.deepEqual(state(m).notice.buttons.map((b: any) => b.action.kind), ["loadMore"]);
+  assert.deepEqual(state(m).notice.buttons.map((b: any) => b.label), ["Retry"], "the word every other failed read uses");
   down = false;
   m.view.receive({ type: "action", action: { kind: "loadMore" } });
   await until(() => state(m).rows.length === 45, "the next page");
