@@ -1,19 +1,86 @@
-// The pull request feature's pure rules (src/pr/prModel.ts): a PR's state,
-// what its checks add up to, where GitHub lets a review comment land, and the
-// review GitHub is sent. The feature-level behaviour is in prFeature.test.ts;
-// these pin the rules themselves, one table each.
+// A pull request's shared rules and words (src/forge/pullRequests.ts): a PR's
+// state, what its checks add up to, what its reviews decided, where GitHub
+// lets a review comment land, and the review GitHub is sent. The extension's
+// feature-level behaviour is in apps/extension/test/prFeature.test.ts; these
+// pin the rules themselves, one table each.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  CI_STATES,
+  PR_STATES,
+  REVIEW_DECISIONS,
+  REVIEW_VERDICTS,
+  ciFromRollup,
   ciFromRollupState,
   ciWords,
   commentsOutsideHunks,
+  desktopPrKind,
   hunkSpans,
   prKind,
+  reviewDecisionOf,
   reviewPayload,
   rollupCi,
-} from "../src/pr/prModel";
+  type CiState,
+  type PrKind,
+} from "../src/forge/pullRequests";
+
+test("the vocabulary: every state, check result and review decision has words, a codicon and a tone — and no two states share a tone", () => {
+  const kinds: PrKind[] = ["open", "draft", "merged", "closed"];
+  // The owner's table: open green, merged purple, closed-unmerged red, draft muted.
+  assert.deepEqual(
+    kinds.map((k) => [PR_STATES[k].word, PR_STATES[k].tone]),
+    [
+      ["Open", "open"],
+      ["Draft", "draft"],
+      ["Merged", "merged"],
+      ["Closed", "closed"],
+    ],
+  );
+  assert.equal(new Set(kinds.map((k) => PR_STATES[k].tone)).size, 4, "four kinds, four inks");
+  assert.equal(new Set(kinds.map((k) => PR_STATES[k].codicon)).size, 4, "four kinds, four glyphs");
+  const cis: CiState[] = ["success", "failure", "pending", "none"];
+  // A glyph per result, not a colour alone: red and green are one colour to
+  // a red-green colour-blind eye.
+  assert.equal(new Set(cis.map((c) => CI_STATES[c].codicon)).size, 4);
+  assert.deepEqual(cis.map((c) => CI_STATES[c].codicon), ["check", "close", "sync", "circle-slash"]);
+  assert.deepEqual(
+    Object.values(REVIEW_DECISIONS).map((d) => d.word),
+    ["Approved", "Changes requested", "Review required"],
+  );
+  assert.deepEqual(REVIEW_VERDICTS.map((v) => v.label), ["Comment", "Approve", "Request changes"]);
+  for (const t of [...Object.values(PR_STATES), ...Object.values(CI_STATES), ...Object.values(REVIEW_DECISIONS)]) {
+    assert.match(t.codicon, /^[a-z][a-z-]*$/, "a codicon name");
+  }
+  assert.equal(desktopPrKind({ state: "open", draft: false }), "open-pr", "the desktop's class for Open");
+  assert.equal(desktopPrKind({ state: "closed", draft: false, mergedAt: "x" }), "merged");
+});
+
+test("reviewDecisionOf: GitHub's three decisions, and nothing else", () => {
+  assert.equal(reviewDecisionOf("APPROVED"), "APPROVED");
+  assert.equal(reviewDecisionOf("CHANGES_REQUESTED"), "CHANGES_REQUESTED");
+  assert.equal(reviewDecisionOf("REVIEW_REQUIRED"), "REVIEW_REQUIRED");
+  assert.equal(reviewDecisionOf(null), undefined);
+  assert.equal(reviewDecisionOf("DISMISSED"), undefined, "a value GitHub may add later is not guessed at");
+});
+
+test("ciFromRollup: GitHub's state, and the counts the words need — check runs and statuses together", () => {
+  const counts = (runs: Record<string, number>, statuses: Record<string, number> = {}) => ({
+    checkRunCountsByState: Object.entries(runs).map(([state, count]) => ({ state, count })),
+    statusContextCountsByState: Object.entries(statuses).map(([state, count]) => ({ state, count })),
+  });
+  const failed = ciFromRollup({ state: "FAILURE", contexts: counts({ SUCCESS: 3, FAILURE: 1, SKIPPED: 1 }, { ERROR: 1 }) });
+  assert.deepEqual(failed, { state: "failure", total: 6, failed: 2, pending: 0 });
+  assert.equal(ciWords(failed), "2 of 6 checks failed");
+  const running = ciFromRollup({ state: "PENDING", contexts: counts({ SUCCESS: 2, IN_PROGRESS: 1 }, { EXPECTED: 1 }) });
+  assert.equal(ciWords(running), "2 of 4 checks running");
+  assert.equal(ciWords(ciFromRollup({ state: "SUCCESS", contexts: counts({ SUCCESS: 1 }) })), "All 1 check passed");
+  // No rollup at all: the commit has no checks.
+  assert.deepEqual(ciFromRollup(null), { state: "none", total: 0, failed: 0, pending: 0 });
+  // A state the counts don't back says it plainly, never "0 of 5 checks failed".
+  assert.equal(ciWords(ciFromRollup({ state: "FAILURE", contexts: counts({ SUCCESS: 5 }) })), "Checks failed");
+  assert.equal(ciWords(ciFromRollup({ state: "SUCCESS" })), "Checks passed", "no counts read");
+});
 
 test("prKind: merged beats closed beats draft beats open", () => {
   const cases: Array<[Parameters<typeof prKind>[0], ReturnType<typeof prKind>]> = [

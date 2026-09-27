@@ -17,7 +17,7 @@ import {
   type CiRollup,
   type CiState,
   type ReviewPayload,
-} from "./prModel";
+} from "@gitstudio/engine/forge/pullRequests";
 
 const API_BASE = "https://api.github.com";
 const GRAPHQL = `${API_BASE}/graphql`;
@@ -254,6 +254,21 @@ export class GitHubApi {
       next = nextPageUrl(res.headers.get("link"));
     }
     return { items, truncated: next !== undefined };
+  }
+
+  /**
+   * One GraphQL request, answered as GitHub sent it — `data` and `errors`
+   * both — for the shared readers (@gitstudio/engine/forge/prList) that
+   * decide for themselves what a partial answer means. An HTTP or network
+   * failure throws a GitHubApiError, in this client's words.
+   */
+  async graphqlRaw(
+    query: string,
+    variables: Record<string, unknown>,
+    init?: { signal?: AbortSignal },
+  ): Promise<{ data?: unknown; errors?: { type?: string; message?: string; path?: (string | number)[] }[] }> {
+    const res = await this.fetchRes("POST", GRAPHQL, { query, variables }, init);
+    return (await res.json()) as { data?: unknown; errors?: { type?: string; message?: string }[] };
   }
 
   /** One GraphQL query. Errors with no data at all throw; partial data is kept. */

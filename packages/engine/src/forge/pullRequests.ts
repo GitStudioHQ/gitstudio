@@ -1,11 +1,22 @@
-// The pull request feature's pure rules — no `vscode` import, so each one is
-// unit-tested on its own (test/prModel.test.ts): what state a PR is in, what
-// its checks add up to, which lines of a changed file GitHub lets a review
-// comment land on, and the exact review payload GitHub is sent.
+// A pull request's rules and words, shared by the VS Code extension and the
+// desktop app — pure, no host import, each one unit-tested on its own
+// (test/pullRequests.test.ts): what state a PR is in, what its checks add up
+// to, what its reviews have decided, which lines of a changed file GitHub
+// lets a review comment land on, and the exact review payload GitHub is sent.
 //
-// The words and precedence follow the desktop app's (renderer/views/prs.ts:
-// rollupChecks, prKind, sideFor; main/github/prs.ts: prReview), so a PR reads
-// the same in both products.
+// THE VOCABULARY. One table per fact — the word a surface shows, the codicon
+// beside it and the TONE it is drawn in — so a PR reads the same in the
+// extension's list, its PR page and the desktop's section. A tone is a role,
+// not a colour: each host's stylesheet maps it to its own theme's ink
+// (open → green, merged → purple, closed → red, draft → muted: the owner's
+// table, memory issue-state-colors). The glyphs are codicons that exist,
+// never invented marks, and every one travels with its words.
+
+// The shapes are the wire's (host-bridge/prProtocol), so a row a host sends
+// and the rules that fill it can't disagree.
+import type { CiRollup, CiState, PrKind, ReviewDecision } from "@gitstudio/host-bridge/prProtocol";
+
+export type { CiRollup, CiState, PrKind, ReviewDecision };
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -15,8 +26,6 @@ export interface PrStateFields {
   draft: boolean;
   mergedAt?: string | null;
 }
-
-export type PrKind = "open" | "draft" | "merged" | "closed";
 
 /**
  * The PR's display state: merged beats closed beats draft beats open.
@@ -31,13 +40,53 @@ export function prKind(pr: PrStateFields): PrKind {
   return "open";
 }
 
+/**
+ * How a fact is drawn: the role its colour plays. Hosts map each to their
+ * theme (the extension: charts-green / -purple / -red, descriptionForeground;
+ * the desktop: --status-add, --gs-accent-ink, --status-del, --app-muted).
+ */
+export type PrTone = "open" | "merged" | "closed" | "draft" | "success" | "failure" | "pending" | "muted";
+
 /** Word, codicon and colour class per state — one table, used everywhere a PR's state is drawn. */
-export const PR_STATES: Record<PrKind, { word: string; codicon: string; cls: string }> = {
-  open: { word: "Open", codicon: "git-pull-request", cls: "open" },
-  draft: { word: "Draft", codicon: "git-pull-request-draft", cls: "draft" },
-  merged: { word: "Merged", codicon: "git-merge", cls: "merged" },
-  closed: { word: "Closed", codicon: "git-pull-request-closed", cls: "closed" },
+export const PR_STATES: Record<PrKind, { word: string; codicon: string; cls: string; tone: PrTone }> = {
+  open: { word: "Open", codicon: "git-pull-request", cls: "open", tone: "open" },
+  draft: { word: "Draft", codicon: "git-pull-request-draft", cls: "draft", tone: "draft" },
+  merged: { word: "Merged", codicon: "git-merge", cls: "merged", tone: "merged" },
+  closed: { word: "Closed", codicon: "git-pull-request-closed", cls: "closed", tone: "closed" },
 };
+
+/** The desktop's name for the open kind (its stylesheet's `open-pr`). */
+export function desktopPrKind(pr: PrStateFields): "open-pr" | "draft" | "merged" | "closed" {
+  const k = prKind(pr);
+  return k === "open" ? "open-pr" : k;
+}
+
+// ── Reviews ─────────────────────────────────────────────────────────────────
+
+/**
+ * What a PR's reviews add up to, as GitHub decides it (GraphQL's
+ * `reviewDecision`): null when the repository requires no review and nobody
+ * has approved or asked for changes.
+ */
+export const REVIEW_DECISIONS: Record<ReviewDecision, { word: string; codicon: string; tone: PrTone }> = {
+  APPROVED: { word: "Approved", codicon: "check", tone: "success" },
+  CHANGES_REQUESTED: { word: "Changes requested", codicon: "request-changes", tone: "failure" },
+  REVIEW_REQUIRED: { word: "Review required", codicon: "eye", tone: "pending" },
+};
+
+/** GraphQL's answer → ours; anything else (null, a value GitHub adds later) is none. */
+export function reviewDecisionOf(v: unknown): ReviewDecision | undefined {
+  return v === "APPROVED" || v === "CHANGES_REQUESTED" || v === "REVIEW_REQUIRED" ? v : undefined;
+}
+
+export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
+
+/** The three verdicts a reviewer submits — the words both products' review boxes offer. */
+export const REVIEW_VERDICTS: ReadonlyArray<{ event: ReviewEvent; label: string; icon: string; hint: string }> = [
+  { event: "COMMENT", label: "Comment", icon: "comment", hint: "Feedback without an explicit approval" },
+  { event: "APPROVE", label: "Approve", icon: "check", hint: "The change is good to merge" },
+  { event: "REQUEST_CHANGES", label: "Request changes", icon: "request-changes", hint: "Must be addressed before merging" },
+];
 
 // ── Checks ────────────────────────────────────────────────────────────────────
 
@@ -52,14 +101,6 @@ export interface StatusLike {
   state?: string | null;
 }
 
-export type CiState = "success" | "failure" | "pending" | "none";
-
-export interface CiRollup {
-  state: CiState;
-  total: number;
-  failed: number;
-  pending: number;
-}
 
 const FAILED_CONCLUSIONS = new Set([
   "failure",
@@ -119,17 +160,82 @@ export function ciFromRollupState(state: string | null | undefined): CiState {
   }
 }
 
+/**
+ * A commit's checks, per state: the sentence, the one word a row has room
+ * for, the codicon and the tone. The glyphs are the desktop's (and VS Code's
+ * own GitHub extension's): a check, a cross, the sync arrows — one weight,
+ * colour doing the rest, so red and green are never the only difference.
+ */
+export const CI_STATES: Record<CiState, { word: string; short: string; codicon: string; tone: PrTone }> = {
+  success: { word: "Checks passed", short: "Passed", codicon: "check", tone: "success" },
+  failure: { word: "Checks failed", short: "Failed", codicon: "close", tone: "failure" },
+  pending: { word: "Checks running", short: "Running", codicon: "sync", tone: "pending" },
+  none: { word: "No checks", short: "No checks", codicon: "circle-slash", tone: "muted" },
+};
+
+/** Check-run states GitHub counts as failed (its merge box's reading). */
+const FAILED_RUN_STATES = new Set(["FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "CANCELLED"]);
+const PENDING_RUN_STATES = new Set(["IN_PROGRESS", "PENDING", "QUEUED", "WAITING", "REQUESTED"]);
+
+/** One `{ state, count }` of GraphQL's checkRunCountsByState / statusContextCountsByState. */
+export interface StateCount {
+  state?: string | null;
+  count?: number | null;
+}
+
+/**
+ * GraphQL's `statusCheckRollup` → a rollup with counts. The STATE is GitHub's
+ * own (it already weighs check runs and statuses together); the counts —
+ * from `contexts { checkRunCountsByState, statusContextCountsByState }` —
+ * only say how many, for the words. A rollup that is absent means the
+ * commit has no checks at all.
+ */
+export function ciFromRollup(
+  rollup:
+    | {
+        state?: string | null;
+        contexts?: {
+          checkRunCountsByState?: readonly StateCount[] | null;
+          statusContextCountsByState?: readonly StateCount[] | null;
+        } | null;
+      }
+    | null
+    | undefined,
+): CiRollup {
+  const state = ciFromRollupState(rollup?.state);
+  let total = 0;
+  let failed = 0;
+  let pending = 0;
+  for (const c of rollup?.contexts?.checkRunCountsByState ?? []) {
+    const n = Math.max(0, Number(c.count) || 0);
+    total += n;
+    if (FAILED_RUN_STATES.has(c.state ?? "")) failed += n;
+    else if (PENDING_RUN_STATES.has(c.state ?? "")) pending += n;
+  }
+  for (const c of rollup?.contexts?.statusContextCountsByState ?? []) {
+    const n = Math.max(0, Number(c.count) || 0);
+    total += n;
+    if (c.state === "FAILURE" || c.state === "ERROR") failed += n;
+    else if (c.state === "PENDING" || c.state === "EXPECTED") pending += n;
+  }
+  return { state, total, failed, pending };
+}
+
 /** What the checks say, in words. */
 export function ciWords(ci: CiRollup | CiState): string {
   const r = typeof ci === "string" ? undefined : ci;
   const state = typeof ci === "string" ? ci : ci.state;
+  // Counts that don't back the state (GitHub's state is the authority; the
+  // counts are a separate read) fall back to the plain sentence rather than
+  // "0 of 5 checks failed".
+  const counted = (n: number | undefined) => r !== undefined && r.total > 0 && (n ?? 0) > 0;
   switch (state) {
     case "success":
-      return r ? `All ${r.total} check${r.total === 1 ? "" : "s"} passed` : "Checks passed";
+      return r && r.total > 0 ? `All ${r.total} check${r.total === 1 ? "" : "s"} passed` : "Checks passed";
     case "failure":
-      return r ? `${r.failed} of ${r.total} check${r.total === 1 ? "" : "s"} failed` : "Checks failed";
+      return counted(r?.failed) && r ? `${r.failed} of ${r.total} check${r.total === 1 ? "" : "s"} failed` : "Checks failed";
     case "pending":
-      return r ? `${r.pending} of ${r.total} check${r.total === 1 ? "" : "s"} running` : "Checks running";
+      return counted(r?.pending) && r ? `${r.pending} of ${r.total} check${r.total === 1 ? "" : "s"} running` : "Checks running";
     default:
       return "No checks";
   }

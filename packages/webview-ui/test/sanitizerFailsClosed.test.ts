@@ -20,7 +20,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeHtml, renderMarkdown } from "../src/renderer/markdown";
+import { sanitizeHtml, renderMarkdown } from "../src/markdown";
 
 /**
  * Every `<` that is not the start of a well-formed tag. Sanitizer output must

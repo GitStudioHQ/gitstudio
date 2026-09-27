@@ -12,7 +12,7 @@ import {
   reviewPayload,
   type QueuedComment,
   type ReviewSide,
-} from "./prModel";
+} from "@gitstudio/engine/forge/pullRequests";
 
 // Review mode (the VS Code Comments API). One CommentController for the whole
 // extension drives inline commenting on a PR's changed files. Because the

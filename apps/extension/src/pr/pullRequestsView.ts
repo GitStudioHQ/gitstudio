@@ -3,7 +3,7 @@ import { relativeTime } from "../util/relativeTime";
 import type { RepoManager } from "../git/repoManager";
 import type { GitHubAuth } from "./githubAuth";
 import { GitHubApi, GitHubApiError, type PullRequest } from "./githubApi";
-import { ciWords, type CiState } from "./prModel";
+import { ciWords, type CiState } from "@gitstudio/engine/forge/pullRequests";
 import {
   resolveGitHubContext,
   whyNoGitHub,

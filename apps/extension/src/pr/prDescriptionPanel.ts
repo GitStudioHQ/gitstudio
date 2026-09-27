@@ -10,7 +10,7 @@ import {
   type PullRequest,
   type PrFile,
 } from "./githubApi";
-import { ciWords, prKey, prKind, PR_STATES, type CiRollup, type PrKind } from "./prModel";
+import { ciWords, prKey, prKind, PR_STATES, type CiRollup, type PrKind } from "@gitstudio/engine/forge/pullRequests";
 import type { GitHubRepoContext } from "./repoContext";
 import { diffBase, openPrFileDiff } from "./reviewDiff";
 

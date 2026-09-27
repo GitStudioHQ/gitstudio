@@ -76,6 +76,12 @@ import {
   unreadableNotice,
 } from "./common";
 import { wireProseNav } from "../proseNav";
+import {
+  PR_STATES,
+  REVIEW_VERDICTS as SHARED_REVIEW_VERDICTS,
+  desktopPrKind,
+  rollupCi,
+} from "@gitstudio/engine/forge/pullRequests";
 import { openPeek } from "../peek";
 import { memberCard } from "./orgs";
 import type {
@@ -263,28 +269,19 @@ function watchDiffDetach(S: PrsTabState, surface: HTMLElement, panel: DiffPanel)
 }
 
 /** One state for a set of check runs: any failure wins, then anything still
- *  running, then success. The same precedence GitHub's merge box uses. */
+ *  running, then success — the rule the extension's list and page use too
+ *  (@gitstudio/engine/forge/pullRequests). */
 function rollupChecks(
   rows: ReadonlyArray<{ status?: string | null; conclusion?: string | null }>,
 ): "success" | "failure" | "pending" | "" {
-  if (!rows.length) return "";
-  const failed = new Set(["failure", "timed_out", "action_required", "startup_failure", "cancelled"]);
-  if (rows.some((r) => failed.has(r.conclusion ?? ""))) return "failure";
-  if (rows.some((r) => !r.conclusion || /queued|in_progress|waiting|pending|requested/.test(r.status ?? ""))) {
-    return "pending";
-  }
-  return "success";
+  const state = rollupCi(rows, []).state;
+  return state === "none" ? "" : state;
 }
 
-/** The PR's display state: merged beats closed beats draft beats open. */
-function prKind(pr: PullRequest): "open-pr" | "draft" | "merged" | "closed" {
-  if (pr.mergedAt) return "merged";
-  if (pr.state === "closed") return "closed";
-  if (pr.draft) return "draft";
-  return "open-pr";
-}
+/** The PR's display state: merged beats closed beats draft beats open (the shared rule, in this stylesheet's names). */
+const prKind = (pr: PullRequest): "open-pr" | "draft" | "merged" | "closed" => desktopPrKind(pr);
 function prKindLabel(kind: ReturnType<typeof prKind>): string {
-  return kind === "open-pr" ? "Open" : kind === "draft" ? "Draft" : kind === "merged" ? "Merged" : "Closed";
+  return PR_STATES[kind === "open-pr" ? "open" : kind].word;
 }
 
 export const renderPrs: SectionRender = (wrap, nav, target) => {
@@ -2136,11 +2133,8 @@ async function doReview(
   }
 }
 
-const REVIEW_VERDICTS: ReadonlyArray<{ event: PrReviewEvent; label: string; icon: string; hint: string }> = [
-  { event: "COMMENT", label: "Comment", icon: "comment", hint: "Feedback without an explicit approval" },
-  { event: "APPROVE", label: "Approve", icon: "check", hint: "The change is good to merge" },
-  { event: "REQUEST_CHANGES", label: "Request changes", icon: "request-changes", hint: "Must be addressed before merging" },
-];
+/** The verdicts a review is submitted with — one table, shared with the extension. */
+const REVIEW_VERDICTS: ReadonlyArray<{ event: PrReviewEvent; label: string; icon: string; hint: string }> = SHARED_REVIEW_VERDICTS;
 
 function reviewModal(
   n: number,
