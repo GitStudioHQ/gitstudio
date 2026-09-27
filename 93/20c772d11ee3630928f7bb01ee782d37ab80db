@@ -1,0 +1,22 @@
+apps/extension/test/branchMenuLayout.test.ts
+  s_26f5e669d3043c::t_27adc631f31fbf 128
+  s_26f5e669d3043c::t_7f99c59017356e 475,483,488,492-493,498-500
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_fe5bd07239f0cf 5862-5863,5917-5919
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9320c772d11ee3630928f7bb01ee782d37ab80db",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
