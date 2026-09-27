@@ -18565,6 +18565,39 @@
       c.match(text("#toast-stack"), /is open in another tab of this window, so it can't be removed — .*Close that tab first\./, "it says to close that tab first");
     },
 
+    /** A worktree's path is read the system's way and sent back git's way.
+     *  git spells a Windows worktree C:/Users/…; main sends that as `path`
+     *  (compared, sent back) and C:\Users\… as `shownPath`. The rows said
+     *  git's spelling to a Windows user. */
+    "worktree-paths-read-the-systems-way": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const GIT = "C:/Users/anton/Developer/GitStudioHQ/gitstudio-hotfix";
+      const SHOWN = "C:\\Users\\anton\\Developer\\GitStudioHQ\\gitstudio-hotfix";
+      const row = $$(".view-host .worktree-row").find((r) => r.dataset.ref === GIT);
+      c.ok(!!row, "precondition: the row, keyed by git's own path");
+      if (!row) return;
+      c.eq(text(row.querySelector(".br-subject-col")), SHOWN, "its path column reads C:\\Users\\…");
+      c.eq(row.title, SHOWN, "…and so does its tooltip");
+      c.ok((row.getAttribute("aria-label") || "").includes(` at ${SHOWN}`), `…and its name (${row.getAttribute("aria-label")})`);
+      $$(".lv-menu-btn", row)[0]?.click();
+      await settle(350);
+      const forget = $$(".dropdown .dropdown-item").find((i) => text(i) === "Forget this worktree…");
+      c.ok(!!forget, `precondition: its menu forgets it (${$$(".dropdown .dropdown-item").map(text).join(" | ")})`);
+      forget?.click();
+      await settle(600);
+      const card = $(".modal-card");
+      c.ok(!!card, "Forget asks");
+      if (!card) return;
+      c.ok(text($$(".modal-message", card)[0]).includes(`Its folder is gone: ${SHOWN}.`), `the question names it the system's way (${text($$(".modal-message", card)[0])})`);
+      $$(".modal-ok", card)[0].click();
+      await settle(800);
+      const asked = window.__gsWorktrees.removals.map((r) => r && r.path);
+      const sent = window.__gsWorktrees.removes.map((r) => r && r.path);
+      c.eq(asked.join(" | "), GIT, "what removing takes is asked of git's own path");
+      c.eq(sent.join(" | "), GIT, "…and git's own path is the one removed");
+    },
+
     /** Every tab taken: opening a worktree is refused, and said ONCE — main's
      *  "keeps up to 10 repositories" notice. The row's own "Couldn't open
      *  <path>." in red sat beside it, for a state, not a failure. */

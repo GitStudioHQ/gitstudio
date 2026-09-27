@@ -1057,6 +1057,17 @@
     // (the real fixture is above — an empty array here shadowed it)
   };
 
+  // ?winpaths=1 → the worktrees as main lists them on Windows: `path` is
+  // git's own spelling (C:/Users/…), the one sent back, and `shownPath` the
+  // system's (C:\Users\…), the one a person reads — main's nativePath.
+  if (params.get("winpaths")) {
+    fixtures["worktree:list"] = fixtures["worktree:list"].map((w) => ({
+      ...w,
+      path: `C:${w.path}`,
+      shownPath: `C:${w.path}`.replace(/\//g, "\\"),
+    }));
+  }
+
   // ?fewrefs=1 → a small repository: two branches, one remote, no tags. The
   // switcher turned its filter on only above nine rows, so here it had none
   // and typed letters did nothing (#32 review).

@@ -2588,7 +2588,8 @@ class App {
         for (const st of rows) body.appendChild(this.stashRow(st));
       } else {
         total = worktrees.length;
-        const rows = worktrees.filter((w) => hit(w.branch, w.path, w.head.slice(0, 7)));
+        // By the path as it reads (C:\Users\… on Windows) as well as git's.
+        const rows = worktrees.filter((w) => hit(w.branch, w.path, w.shownPath, w.head.slice(0, 7)));
         shown = rows.length;
         for (const w of rows) body.appendChild(this.worktreeRow(w));
       }
