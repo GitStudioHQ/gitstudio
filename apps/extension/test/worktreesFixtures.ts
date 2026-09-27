@@ -153,3 +153,27 @@ export function fixtureDetails(): WorktreeDetails {
     },
   };
 }
+
+/**
+ * This repository's own worktrees on a day of agents at work, as `git
+ * worktree list` showed them: long folder names that share their start
+ * (agent-a…, deliver…, fb-…, wf_4b651e91-cc2-…), so only their END tells
+ * them apart — and the last of them stopped mid-rebase.
+ */
+export function agentRows(): WorktreeRow[] {
+  const clean = { changed: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0 };
+  const nested = (name: string, over: Partial<WorktreeRow>): WorktreeRow =>
+    row({ path: `/g/gitstudio/.claude/worktrees/${name}`, name, relPath: `gitstudio/.claude/worktrees/${name}`, ...over });
+  return [
+    row({ path: "/g/gitstudio", name: "gitstudio", relPath: "gitstudio", kind: "main", branch: "fix/tab-glow", upstream: undefined, current: true, status: { ...clean, changed: 2, untracked: 2, unpublished: 3 } }),
+    nested("agent-a2c9ae276dde4d3da", { branch: "worktree-agent-a2c9ae276dde4d3da", upstream: undefined, locked: true, lockReason: "claude agent agent-a2c9ae276dde4d3da (pid 73264)", status: { ...clean, unpublished: 2 } }),
+    nested("agent-a7ae3852b3e3f6430", { branch: "worktree-agent-a7ae3852b3e3f6430", upstream: undefined, locked: true, lockReason: "claude agent agent-a7ae3852b3e3f6430 (pid 1234)", status: { ...clean } }),
+    nested("deliver", { branch: undefined, upstream: undefined, head: HEAD }),
+    nested("deliver-all", { branch: "deliver/all-r0927", upstream: undefined, status: { ...clean, unpublished: 41 } }),
+    nested("fb-changes", { branch: "fix/stash-dnd-and-branch-hover", upstream: undefined, status: { ...clean, changed: 4, staged: 1, unstaged: 3, unpublished: 2 } }),
+    nested("fb-worktrees", { branch: "fix/worktrees-minimal", upstream: undefined, status: { ...clean, unpublished: 2 } }),
+    nested("wf_4b651e91-cc2-1", { branch: "feat/stashes-in-changes", upstream: "origin/feat/stashes-in-changes" }),
+    nested("wf_4b651e91-cc2-2", { branch: "feat/worktrees-webview", upstream: "origin/feat/worktrees-webview", ahead: 3 }),
+    nested("wf_4b651e91-cc2-3", { branch: "feat/pull-requests-rebuild", upstream: "origin/feat/pull-requests-rebuild", behind: 2, status: { ...clean, operation: "rebase", rebasing: "feat/pull-requests-rebuild" } }),
+  ];
+}

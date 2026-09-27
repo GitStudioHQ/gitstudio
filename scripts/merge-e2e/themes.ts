@@ -257,6 +257,91 @@ export const VSCODE_THEMES: Record<VsCodeTheme, Record<string, string>> = {
   },
 };
 
+/**
+ * VS Code's newer defaults — the ones a fresh install picks — "Light Modern"
+ * and "Dark Modern" (theme-defaults/themes/light_modern.json and
+ * dark_modern.json): Light+ and Dark+ underneath, their own colours over
+ * them. Light Modern's foreground, descriptionForeground and editor
+ * foreground are ONE colour (#3B3B3B), so a view whose quiet words are
+ * "descriptionForeground" or "the foreground" has no quiet words there.
+ */
+export type VsCodeModernTheme = "light-modern" | "dark-modern";
+
+export const VSCODE_MODERN_BASE: Record<VsCodeModernTheme, VsCodeTheme> = {
+  "light-modern": "light",
+  "dark-modern": "dark",
+};
+
+export const VSCODE_MODERN_NAMES: Record<VsCodeModernTheme, string> = {
+  "light-modern": "Light Modern",
+  "dark-modern": "Dark Modern",
+};
+
+export const VSCODE_MODERN_THEMES: Record<VsCodeModernTheme, Record<string, string>> = {
+  "light-modern": {
+    ...VSCODE_THEMES.light,
+    "--vscode-foreground": "#3b3b3b",
+    "--vscode-descriptionForeground": "#3b3b3b",
+    "--vscode-errorForeground": "#f85149",
+    "--vscode-focusBorder": "#005fb8",
+    "--vscode-icon-foreground": "#3b3b3b",
+    "--vscode-textLink-foreground": "#005fb8",
+    "--vscode-badge-background": "#cccccc",
+    "--vscode-badge-foreground": "#3b3b3b",
+    "--vscode-button-background": "#005fb8",
+    "--vscode-button-border": "#0000001a",
+    "--vscode-button-hoverBackground": "#0258a8",
+    "--vscode-button-secondaryBackground": "#e5e5e5",
+    "--vscode-button-secondaryForeground": "#3b3b3b",
+    "--vscode-button-secondaryHoverBackground": "#cccccc",
+    "--vscode-checkbox-background": "#f8f8f8",
+    "--vscode-checkbox-border": "#cecece",
+    "--vscode-dropdown-background": "#ffffff",
+    "--vscode-dropdown-border": "#cecece",
+    "--vscode-dropdown-foreground": "#3b3b3b",
+    "--vscode-editor-background": "#ffffff",
+    "--vscode-editor-foreground": "#3b3b3b",
+    "--vscode-editorWidget-background": "#f8f8f8",
+    "--vscode-editorWidget-foreground": "#3b3b3b",
+    "--vscode-inputOption-activeBackground": "#bed6ed",
+    "--vscode-inputOption-activeBorder": "#005fb8",
+    "--vscode-list-activeSelectionBackground": "#e8e8e8",
+    "--vscode-list-activeSelectionForeground": "#000000",
+    "--vscode-list-hoverBackground": "#f2f2f2",
+    "--vscode-panel-border": "#e5e5e5",
+    "--vscode-sideBar-background": "#f8f8f8",
+  },
+  "dark-modern": {
+    ...VSCODE_THEMES.dark,
+    "--vscode-foreground": "#cccccc",
+    "--vscode-descriptionForeground": "#9d9d9d",
+    "--vscode-errorForeground": "#f85149",
+    "--vscode-focusBorder": "#0078d4",
+    "--vscode-icon-foreground": "#cccccc",
+    "--vscode-textLink-foreground": "#4daafc",
+    "--vscode-badge-background": "#616161",
+    "--vscode-badge-foreground": "#f8f8f8",
+    "--vscode-button-background": "#0078d4",
+    "--vscode-button-border": "#ffffff1a",
+    "--vscode-button-hoverBackground": "#026ec1",
+    "--vscode-button-secondaryBackground": "#00000000",
+    "--vscode-button-secondaryForeground": "#cccccc",
+    "--vscode-button-secondaryHoverBackground": "#2b2b2b",
+    "--vscode-checkbox-background": "#313131",
+    "--vscode-checkbox-border": "#3c3c3c",
+    "--vscode-dropdown-background": "#313131",
+    "--vscode-dropdown-border": "#3c3c3c",
+    "--vscode-dropdown-foreground": "#cccccc",
+    "--vscode-editor-background": "#1f1f1f",
+    "--vscode-editor-foreground": "#cccccc",
+    "--vscode-editorWidget-background": "#202020",
+    "--vscode-inputOption-activeBackground": "#2489db82",
+    "--vscode-inputOption-activeBorder": "#2488db",
+    "--vscode-panel-border": "#2b2b2b",
+    "--vscode-sideBar-background": "#181818",
+  },
+};
+
 /** The inline style VS Code would put on the webview body. */
 export function bodyStyle(theme: VsCodeTheme): string {
   return Object.entries(VSCODE_THEMES[theme])

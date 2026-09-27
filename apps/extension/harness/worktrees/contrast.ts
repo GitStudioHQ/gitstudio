@@ -58,7 +58,7 @@ const PROBE = `(function () {
 (async () => {
   if (!WorktreesPage.chrome()) throw new Error("no windowless Chrome (set GS_CHROME)");
   let failures = 0;
-  for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
+  for (const theme of ["dark", "light", "dark-modern", "light-modern", "hc-dark", "hc-light"] as VsCodeTheme[]) {
     const page = await WorktreesPage.open(theme, { width: 320, height: 900 });
     try {
       await page.send({ type: "rows", rows: fixtureRows(), state: "ok", labels: { reveal: "Reveal in Finder" } });

@@ -1,20 +1,23 @@
 // The Worktrees view as a person meets it — one, three and ten worktrees in
-// mixed states — per theme, at a sidebar's width: the list as it opens, a row
+// mixed states, and this repository's own agents' worktrees — per theme, at a
+// sidebar's width: the list as it opens, a row hovered, a row busy and
 // hovered, a row open, a row open with nothing to say, and a row's More menu.
 // For looking at, side by side with an earlier build's pictures.
 //
 //   GS_CHROME=… npx tsx apps/extension/harness/worktrees/scenes.ts [outDir]
+//   THEMES=light-modern SCENES=ten,real … (a subset)
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WorktreeDetails, WorktreeRow } from "@gitstudio/host-bridge/worktreesProtocol";
 import { WorktreesPage, type VsCodeTheme } from "../../test/worktreesPage";
-import { fixtureDetails, fixtureRows, row } from "../../test/worktreesFixtures";
+import { agentRows, fixtureDetails, fixtureRows, row } from "../../test/worktreesFixtures";
 
 const OUT = process.argv[2] ?? fileURLToPath(new URL("../../../../out/worktrees-scenes/", import.meta.url));
 const LABELS = { reveal: "Reveal in Finder" };
-const THEMES: VsCodeTheme[] = ["dark", "light", "hc-dark", "hc-light"];
+const THEMES = (process.env.THEMES?.split(",") ?? ["dark", "light", "dark-modern", "light-modern", "hc-dark", "hc-light"]) as VsCodeTheme[];
+const ONLY = process.env.SCENES?.split(",");
 const now = Math.floor(Date.now() / 1000);
 
 /** The owner's own repository, as the screenshot showed it: no remote, two worktrees and a third. */
@@ -77,6 +80,8 @@ interface Scene {
   rows: WorktreeRow[];
   open?: { path: string; details: WorktreeDetails }[];
   hover?: string;
+  /** Rows busy with an action, and what each says. */
+  busy?: { path: string; label: string }[];
   /** Hold the pointer on the hovered row until its tooltip shows. */
   tip?: boolean;
   menu?: string;
@@ -104,11 +109,14 @@ const SCENES: Scene[] = [
   { name: "ten", rows: ten, height: 520 },
   { name: "ten-open", rows: ten, open: [{ path: "/code/app-login", details: fixtureDetails() }], height: 640 },
   { name: "ten-menu", rows: ten, menu: "/code/app/.claude/worktrees/agent-a2c9ae27", height: 640 },
+  { name: "ten-busy-hover", rows: ten, busy: [{ path: "/code/app-checkout", label: "Removing…" }], hover: "/code/app-checkout", height: 520 },
+  { name: "real", rows: agentRows(), height: 420 },
 ];
 
 async function shoot(theme: VsCodeTheme, width: number): Promise<string[]> {
   const files: string[] = [];
   for (const scene of SCENES) {
+    if (ONLY && !ONLY.includes(scene.name)) continue;
     // A tooltip is shot at 1x: at 2x the headless browser's own after-layout
     // mouse move lands on another row, which takes the tooltip away.
     const page = await WorktreesPage.open(theme, { width, height: scene.height ?? 560, scale: scene.tip ? 1 : 2 });
@@ -133,6 +141,7 @@ async function shoot(theme: VsCodeTheme, width: number): Promise<string[]> {
           ],
         });
       }
+      for (const b of scene.busy ?? []) await page.send({ type: "busy", path: b.path, busy: true, label: b.label });
       if (scene.menu) await page.clickOn(`.wt-row[data-path="${scene.menu}"] .wt-more`);
       await page.settle(60);
       if (scene.hover) {
@@ -158,8 +167,10 @@ async function shoot(theme: VsCodeTheme, width: number): Promise<string[]> {
   for (const theme of THEMES) {
     for (const f of await shoot(theme, 300)) console.log(f);
   }
-  // A sidebar dragged narrow, in dark.
-  for (const f of await shoot("dark", 220)) console.log(f);
+  // A sidebar dragged narrow.
+  for (const theme of THEMES.filter((t) => t === "dark" || t === "light-modern")) {
+    for (const width of [220, 260]) for (const f of await shoot(theme, width)) console.log(f);
+  }
 })().catch((err) => {
   console.error(err);
   process.exit(1);
