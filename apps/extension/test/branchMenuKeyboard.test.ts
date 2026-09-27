@@ -563,6 +563,8 @@ test("a star holds through a host post sent before it, and the host's agreeing p
     var r = document.querySelector('.bm-list .bm-branch[data-bname="topic"] .bm-star').getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   })()`);
+  // An empty star shows on the row under the pointer: the pointer gets there first.
+  await page.mouseMove(star.x, star.y);
   await page.click(star.x, star.y);
   assert.equal(await groupOf("topic"), "Favorites", "starred at once");
   assert.deepEqual((await page.posted()).filter((m) => m.type === "branchAction"), [

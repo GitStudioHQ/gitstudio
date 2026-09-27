@@ -17,6 +17,7 @@ import { withFavorites, type BranchesPayload } from "../src/changes/branchMenuDa
 //     after the star now carries it;
 //   · a failed branch action is named by what the user did ("Pull into
 //     'merged-pr'"), not by the message's action id ("pullFf");
+//   · the list goes out with the remotes by name, which it is grouped by;
 //   · a revision to check out that git would read as an option ("-f") is
 //     refused before git sees it.
 
@@ -205,6 +206,13 @@ test("a failed branch action is named by what the user did, not by its action id
   assert.equal(errors.length, 1, JSON.stringify(said));
   assert.match(errors[0].text, /^GitStudio: Pull into 'merged-pr' failed/);
   assert.doesNotMatch(errors[0].text, /pullFf/);
+});
+
+test("the branch list goes out with the remotes by name, which the menu groups remote branches by", async () => {
+  const { p, posts } = provider();
+  await p.pushState();
+  const last = posts.filter((m) => m.type === "state").pop();
+  assert.deepEqual(last.branches.remoteNames, ["origin"]);
 });
 
 // "Checkout Revision '<query>'…" hands the host whatever was typed. "-f"

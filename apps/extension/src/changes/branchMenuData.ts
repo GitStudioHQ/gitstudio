@@ -31,10 +31,17 @@ export interface BranchRefPayload {
 /** Everything the branch menu needs: local branches (with favorites), remotes, recents, tags. */
 export interface BranchesPayload {
   local: BranchRefPayload[];
+  /** Remote branches, short names ("origin/feature"). */
   remote: string[];
   recent: string[];
   /** Tag names, newest-looking first (numeric-desc sort). */
   tags: string[];
+  /**
+   * The repository's remotes by name. The menu groups remote branches by
+   * remote, and a remote's name may itself hold a slash ("team/eu"), so it
+   * cannot be read off "team/eu/feature" by splitting at the first one.
+   */
+  remoteNames?: string[];
 }
 
 /** Local branches (with favorites), remotes, recents, and tags for the branch menu. */
@@ -42,6 +49,7 @@ export function branchesPayload(
   refs: readonly GitRef[],
   favorites: readonly string[],
   recent: string[],
+  remoteNames: readonly string[] = [],
 ): BranchesPayload {
   const favs = new Set(favorites);
   // Where the submenu offers "Reset to '<upstream>'…" (#32).
@@ -71,7 +79,7 @@ export function branchesPayload(
     .filter((r) => r.type === "tag")
     .map((r) => r.name)
     .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-  return { local, remote, recent, tags };
+  return { local, remote, recent, tags, remoteNames: [...remoteNames] };
 }
 
 /**
@@ -95,7 +103,7 @@ export function branchActionWords(action: string | undefined, ref?: string): str
     case "fetch":
       return "Fetch";
     case "pull":
-      return "Update (pull)";
+      return "Pull";
     case "pullMerge":
       return "Pull using Merge";
     case "pullRebase":
