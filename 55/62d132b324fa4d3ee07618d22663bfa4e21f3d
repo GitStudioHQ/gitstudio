@@ -1,0 +1,66 @@
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_96190dcf37b4fa 4291-4292,4294-4297,4299-4300
+  s_26f5e669d3043c::t_8246656d1a9832 62
+  s_26f5e669d3043c::t_1ce292bc417fba 4608
+  s_26f5e669d3043c::t_7dd1d19aea3e40 2125-2160,2163
+  s_26f5e669d3043c::t_704de26de2ab7e 8539
+  s_26f5e669d3043c::t_f006c059118b96 2014
+  s_26f5e669d3043c::t_4839eb0066025a 2238-2240
+  s_26f5e669d3043c::t_d71606816b18cf 2300
+  s_26f5e669d3043c::t_0f6b7a4edcc4ab 2454
+  s_26f5e669d3043c::t_10c3d061706c6e 2179-2184,2191-2225
+  s_26f5e669d3043c::t_2fa5e8fa6ee2d5 740
+  s_26f5e669d3043c::t_837e9106bf304a 2804-2806,2813-2814
+  s_26f5e669d3043c::t_1b840e7f953e30 7146-7154
+  s_26f5e669d3043c::t_1da2e30132d0ea 7184-7190,7192-7199,7201,7203,7206-7209
+  s_26f5e669d3043c::t_efe1b2e544785b 656-660,669-670
+  s_26f5e669d3043c::t_4c8c13ebd2e2b4 6787-6791
+  s_26f5e669d3043c::t_7e1bfc349ad936 6298-6345
+  s_26f5e669d3043c::t_f1e872b82baf99 186-187
+  s_26f5e669d3043c::t_e3431a99d2f33d 232-237
+  s_26f5e669d3043c::t_6702445aca7b84 46-49
+  s_26f5e669d3043c::t_eee0141fb180ae 2114-2116
+  s_26f5e669d3043c::t_59d03f9c97bddc 749-750,753-758
+  s_26f5e669d3043c::t_67d85f18c6c808 200-201
+  s_26f5e669d3043c::t_8f0320d6724296 8391-8396
+  s_26f5e669d3043c::t_e7afff37ec23b2 3371-3376
+  s_26f5e669d3043c::t_2930fad8fee7b6 6375-6377,6382-6384
+  s_26f5e669d3043c::t_b44f445a33d338 1601
+  s_26f5e669d3043c::t_c0624cc7d7bd14 2838
+  s_26f5e669d3043c::t_8df622d79fbc7c 6934
+  s_26f5e669d3043c::t_0b672508f3a1db 6806
+  s_26f5e669d3043c::t_05b94caec5e85b 2359
+apps/extension/test/changesPage.ts
+  s_26f5e669d3043c::t_2fcaa3bf1d6536 152-155,159-160
+  s_26f5e669d3043c::t_3be71d75262223 58
+  s_26f5e669d3043c::t_5db793f64e5808 35-36,39-57
+  s_26f5e669d3043c::t_76d41c062ae42e 24
+apps/extension/test/changesViewPage.ts
+  s_26f5e669d3043c::t_80cbd4b3ec5036 138,143-144
+  s_26f5e669d3043c::t_6b016f592445e2 20
+apps/extension/esbuild.js
+  s_26f5e669d3043c::t_6e92ce42a2fd72 170-192,202-203
+apps/extension/src/ui/dialogs.ts
+  s_26f5e669d3043c::t_98f4db00ef2a72 234-268
+  s_26f5e669d3043c::t_7ec4f92dca730a 125-126,135-136
+  s_26f5e669d3043c::t_01b9f265bdfcc2 270
+  s_26f5e669d3043c::t_eb52ce070cf082 89-101,107-110,233,269
+apps/extension/test/pushReviewWorktree.test.ts
+  s_26f5e669d3043c::t_3d4610a0d9d8e6 1-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5562d132b324fa4d3ee07618d22663bfa4e21f3d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
