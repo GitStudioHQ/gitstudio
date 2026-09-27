@@ -223,3 +223,303 @@ export type PrListMessageToHost =
   /** The filter menus want their labels and people. */
   | { type: "facetOptions" }
   | { type: "action"; action: PrListAction };
+
+// ── The pull request's page ──────────────────────────────────────────────────
+//
+// THE PAGE CONTRACT (packages/webview-ui/src/pr/page-main.ts): the same as the
+// list's — `ready` from the page once it listens, then a full
+// `{ type: "state", state }` from the host after every change; the page keeps
+// no GitHub state of its own, only what is on screen (which tab, what is
+// typed, which commit is open). A state older than the one on screen (`seq`)
+// is ignored.
+
+/** A review's verdict, as GitHub records it. */
+export type PrReviewState = "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING";
+
+/** GitHub's `mergeStateStatus`: whether, and why not, it can be merged now. */
+export type PrMergeState = "CLEAN" | "UNSTABLE" | "HAS_HOOKS" | "BEHIND" | "BLOCKED" | "DIRTY" | "DRAFT" | "UNKNOWN";
+
+export type PrMergeMethod = "merge" | "squash" | "rebase";
+
+/** The viewer's role in the repository (GraphQL's viewerPermission). */
+export type PrPermission = "ADMIN" | "MAINTAIN" | "WRITE" | "TRIAGE" | "READ";
+
+/** Someone the pull request asks, or asked, to review it. */
+export interface PrReviewer {
+  login?: string;
+  team?: string;
+  avatarUrl?: string | null;
+  /** Their latest verdict, when they gave one. */
+  verdict?: PrReviewState;
+  /** Asked, and not answered since. */
+  requested: boolean;
+}
+
+/** One comment in a review thread (or a pending one of yours). */
+export interface PrThreadComment {
+  id: string;
+  author: PrPerson | null;
+  body: string;
+  createdAt: string;
+  url: string;
+  /** Sent, and GitHub hasn't answered yet. */
+  sending?: boolean;
+}
+
+/** A review thread: comments on one place in one file. */
+export interface PrThread {
+  id: string;
+  path: string;
+  /** Where it sits in the diff as it is now; null when the code moved on (outdated). */
+  line: number | null;
+  startLine: number | null;
+  /** Where it sat when it was written. */
+  originalLine: number | null;
+  side: "LEFT" | "RIGHT";
+  resolved: boolean;
+  outdated: boolean;
+  resolvedBy?: string;
+  canResolve: boolean;
+  canUnresolve: boolean;
+  canReply: boolean;
+  /** The review it was written in (a timeline review's id). */
+  reviewId?: string;
+  comments: PrThreadComment[];
+  /** How many comments it has on GitHub (more than `comments` when cut short). */
+  totalComments: number;
+}
+
+export type PrTimelineEvent = "merged" | "closed" | "reopened" | "ready" | "draft" | "forcePushed" | "reviewRequested" | "reviewDismissed";
+
+/** One thing that happened on the pull request, oldest first. */
+export type PrTimelineItem =
+  | { kind: "comment"; id: string; author: PrPerson | null; body: string; createdAt: string; url: string; sending?: boolean }
+  | {
+      kind: "review";
+      id: string;
+      author: PrPerson | null;
+      state: PrReviewState;
+      body: string;
+      createdAt: string;
+      url: string;
+      sending?: boolean;
+    }
+  | { kind: "event"; id: string; event: PrTimelineEvent; actor: PrPerson | null; createdAt: string; detail?: string };
+
+/** One commit of the pull request. */
+export interface PrCommit {
+  sha: string;
+  shortSha: string;
+  headline: string;
+  body: string;
+  /** The GitHub account, when the commit's email belongs to one. */
+  author: PrPerson | null;
+  authorName: string;
+  committedAt: string;
+  ci: CiState;
+}
+
+/** A check run's (or a commit status's) result, in the page's terms. */
+export type PrCheckState = "success" | "failure" | "pending" | "neutral" | "skipped" | "cancelled";
+
+/** One check on the pull request's head: a check run, or a legacy commit status. */
+export interface PrCheck {
+  name: string;
+  /** "Code OSS" — the workflow a run belongs to. */
+  workflow?: string;
+  /** "GitHub Actions" — the app that ran it. */
+  app?: string;
+  state: PrCheckState;
+  /** GitHub's own word: its conclusion or status ("TIMED_OUT", "QUEUED"). */
+  raw: string;
+  startedAt?: string;
+  completedAt?: string;
+  /** Where its log or details are. */
+  url?: string;
+  required: boolean;
+  /** A status's description. */
+  description?: string;
+}
+
+/** Everything the page draws of a pull request, as GitHub answers one question for it. */
+export interface PrDetail {
+  id: string;
+  number: number;
+  title: string;
+  body: string;
+  url: string;
+  kind: PrKind;
+  draft: boolean;
+  state: "open" | "closed";
+  mergedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author: PrPerson | null;
+  mergedBy: PrPerson | null;
+  headRef: string;
+  headSha: string;
+  headOwner: string | null;
+  headRepo: string | null;
+  baseRef: string;
+  baseSha: string;
+  isFork: boolean;
+  maintainerCanModify: boolean;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  commitCount: number;
+  mergeState: PrMergeState;
+  reviewDecision?: ReviewDecision;
+  labels: { name: string; color: string }[];
+  assignees: PrPerson[];
+  reviewers: PrReviewer[];
+  ci: CiRollup;
+  /** Oldest first — the latest `timelineTotal` at most GitHub was asked for. */
+  timeline: PrTimelineItem[];
+  timelineTotal: number;
+  threads: PrThread[];
+  threadsTotal: number;
+  commits: PrCommit[];
+  checks: PrCheck[];
+  checksTotal: number;
+  viewer: {
+    login?: string;
+    avatarUrl?: string | null;
+    permission: PrPermission;
+    /** The viewer opened it (GitHub takes no approval from its author). */
+    isAuthor: boolean;
+    /** May close, reopen, mark ready. */
+    canUpdate: boolean;
+    canUpdateBranch: boolean;
+    canDeleteBranch: boolean;
+  };
+  repo: {
+    /** "owner/repo". */
+    id: string;
+    mergeMethods: PrMergeMethod[];
+    /** The method GitHub offers this viewer first. */
+    defaultMethod?: PrMergeMethod;
+    /** GitHub deletes the head branch itself after a merge. */
+    deleteBranchOnMerge: boolean;
+  };
+}
+
+/** A changed file, as the Files tab lists it. */
+export interface PrPageFile {
+  path: string;
+  /** A rename's (or copy's) old path. */
+  previousPath?: string;
+  status: "added" | "removed" | "modified" | "renamed" | "copied" | "changed" | "unchanged";
+  additions: number;
+  deletions: number;
+  /** GitHub sent no diff: a binary file, or one too large to diff. */
+  noDiff: boolean;
+}
+
+export type PrPageTab = "conversation" | "commits" | "checks" | "files";
+
+/** A queued review comment, as the page lists it. */
+export interface PrPendingComment {
+  path: string;
+  line: number;
+  startLine?: number;
+  side: "LEFT" | "RIGHT";
+  body: string;
+}
+
+/** Your review of this pull request, not yet sent. */
+export interface PrPendingReview {
+  comments: PrPendingComment[];
+  /** Started (Start Review), with or without comments yet. */
+  started: boolean;
+  /** The head the comments were written on. */
+  headSha: string;
+  /** It isn't the pull request's head any more: the comments are on older code. */
+  stale: boolean;
+}
+
+/** Something the page is doing for you: what it says while it runs. */
+export type PrPageBusy =
+  | "merge"
+  | "close"
+  | "reopen"
+  | "ready"
+  | "updateBranch"
+  | "comment"
+  | "review"
+  | "checkout"
+  | `reply:${string}`
+  | `resolve:${string}`;
+
+export interface PrPageViewState {
+  seq: number;
+  /**
+   * `loading`: the first answer is on its way (the page draws what the list
+   * already knew, `preview`). `ready`: `pr` is GitHub's. `message`: the page
+   * has nothing to show — `message` says why and what to do.
+   */
+  status: "loading" | "ready" | "message";
+  message?: PrListMessage;
+  /** Said above the page: a refresh or an action that failed, and what can be done. */
+  notice?: PrListMessage;
+  /** "owner/repo". */
+  repo: string;
+  number: number;
+  /** The tab the page opens on (the one last shown for this pull request). */
+  tab: PrPageTab;
+  /** What the list knew, drawn while the page loads. */
+  preview?: { title: string; kind: PrKind; author: PrPerson | null; headRef: string; baseRef: string };
+  pr?: PrDetail;
+  files?: {
+    items: PrPageFile[];
+    /** GitHub lists at most 3,000; the total is the pull request's own. */
+    truncated: boolean;
+    error?: string;
+  };
+  /** A commit's files, once asked for (by sha). */
+  commitFiles: Record<string, { status: "loading" | "loaded" | "failed"; files?: PrPageFile[]; error?: string }>;
+  review?: PrPendingReview;
+  busy: PrPageBusy[];
+  refreshing: boolean;
+  /** Its head branch is the one checked out here. */
+  checkedOut: boolean;
+  /** Where the page opens, when the host asks: a tab, and a box to open (`seq` makes each ask new). */
+  focus?: { seq: number; tab?: PrPageTab; open?: "merge" | "review" };
+  /** Text to put back in a box whose message failed to send (keyed "comment", "review", "reply:<thread id>"). */
+  restore?: { seq: number; key: string; body: string };
+  /** A box whose message GitHub took: the page empties it (and closes the review box). */
+  sent?: { seq: number; key: string };
+  /** The host's clock (epoch ms). */
+  now: number;
+}
+
+export type PrPageHostMessage = { type: "state"; state: PrPageViewState };
+
+export type PrPageMessageToHost =
+  | { type: "ready" }
+  | { type: "refresh" }
+  | { type: "tab"; tab: PrPageTab }
+  | { type: "checkout" }
+  | { type: "openOnGitHub" }
+  | { type: "copyLink" }
+  /** A link in a body, a check's details, a person. https only; the host checks. */
+  | { type: "openUrl"; url: string }
+  /** `#12` or `owner/repo#12` in a body: its page if it is a pull request, else GitHub's. */
+  | { type: "openRef"; repo?: string; number: number }
+  | { type: "merge"; method: PrMergeMethod; title?: string; deleteBranch: boolean }
+  | { type: "updateBranch" }
+  | { type: "close" }
+  | { type: "reopen" }
+  | { type: "markReady" }
+  | { type: "comment"; body: string }
+  | { type: "reply"; threadId: string; body: string }
+  | { type: "resolve"; threadId: string; resolved: boolean }
+  /** Open a changed file's diff (at a line, for a thread or a pending comment). */
+  | { type: "openFile"; path: string; line?: number; side?: "LEFT" | "RIGHT" }
+  | { type: "expandCommit"; sha: string }
+  | { type: "openCommitFile"; sha: string; path: string }
+  | { type: "startReview" }
+  | { type: "submitReview"; event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES"; body: string }
+  | { type: "discardReview" }
+  | { type: "action"; action: PrListAction };
