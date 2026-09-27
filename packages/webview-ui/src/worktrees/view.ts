@@ -300,9 +300,14 @@ export class WorktreesView {
     this.filterBox.hidden = n <= WORKTREE_FILTER_AFTER;
     this.filter.placeholder = `Filter ${n} worktrees`;
     const prunable = prunableCount(rows);
+    // "missing" while every one of them is a folder that is gone; "stale"
+    // once one is a folder still there that isn't a worktree any more.
+    const allGone = rows.every((r) => !r.unlinked || r.locked);
     this.pruneBtn.hidden = prunable === 0;
-    this.pruneBtn.replaceChildren(codicon("trash"), el("span", undefined, `Prune ${prunable} missing`));
-    this.pruneBtn.dataset.tip = `Forget the ${prunable === 1 ? "worktree" : `${prunable} worktrees`} whose folder is gone`;
+    this.pruneBtn.replaceChildren(codicon("trash"), el("span", undefined, `Prune ${prunable} ${allGone ? "missing" : "stale"}`));
+    this.pruneBtn.dataset.tip = allGone
+      ? `Forget the ${prunable === 1 ? "worktree" : `${prunable} worktrees`} whose folder is gone`
+      : `Forget the ${prunable === 1 ? "worktree" : `${prunable} worktrees`} git can prune: ${prunable === 1 ? "its folder is gone, or isn't a worktree any more" : "their folders are gone, or aren't worktrees any more"}`;
     this.pruneBtn.setAttribute("aria-label", this.pruneBtn.dataset.tip);
     this.top.hidden = this.filterBox.hidden && this.pruneBtn.hidden;
 
@@ -417,7 +422,7 @@ export class WorktreesView {
     const focusedAction = hadFocus ? (document.activeElement as HTMLElement).dataset.action : undefined;
     line.replaceChildren();
     line.classList.toggle("is-current", r.current);
-    line.classList.toggle("is-missing", r.missing);
+    line.classList.toggle("is-missing", r.missing || r.unlinked);
     line.classList.toggle("is-busy", !!s.busy);
     s.el.classList.toggle("open", s.open);
     line.setAttribute("aria-busy", s.busy ? "true" : "false");
@@ -454,7 +459,7 @@ export class WorktreesView {
     body.append(l1, l2);
 
     const actions = el("span", "wt-actions");
-    if (r.missing) {
+    if (caps.forget) {
       const forget = iconButton("close", "Forget Worktree…", "wt-danger");
       forget.dataset.action = "forget";
       forget.addEventListener("click", (e) => {
@@ -727,14 +732,17 @@ export class WorktreesView {
         menu.appendChild(el("div", "wt-menu-sep"));
       }
     };
-    if (!r.missing && r.kind !== "bare") {
+    // A folder that is gone, or that isn't a worktree any more, has nothing
+    // to open, pull or push: its menu is about git's record of it.
+    const there = !r.missing && !r.unlinked;
+    if (there && r.kind !== "bare") {
       item("openHere", "folder-opened", "Open in This Window", caps.openHere);
       item("openNew", "empty-window", "Open in New Window", caps.openNew);
     }
     item("reveal", "folder", this.labels.reveal, caps.reveal);
     item("terminal", "terminal", "Open in Terminal", caps.terminal);
     item("copyPath", "copy", "Copy Path", true);
-    if (r.kind !== "bare" && !r.missing) {
+    if (r.kind !== "bare" && there) {
       sep();
       item("pull", "repo-pull", "Pull", caps.pull);
       item("push", "repo-push", "Push…", caps.push);
@@ -746,7 +754,7 @@ export class WorktreesView {
     }
     if (r.kind !== "bare") {
       sep();
-      if (r.missing) item("forget", "close", "Forget Worktree…", true, true);
+      if (caps.forget) item("forget", "close", "Forget Worktree…", true, true);
       else item("remove", "trash", "Remove Worktree…", caps.remove, true);
     }
     document.body.appendChild(menu);

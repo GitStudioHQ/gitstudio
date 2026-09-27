@@ -1,7 +1,7 @@
 // Rows for the Worktrees page — one per cell of the state table a person can
 // see at once: this window's worktree, the main one, locked (an agent's lock
-// names itself), missing, dirty, ahead / behind / diverged, no upstream,
-// stopped in a merge, detached. Used by the page tests and the screenshots.
+// names itself), missing, not a worktree any more, dirty, ahead / behind /
+// diverged, no upstream, stopped in a merge, detached. Used by the page tests and the screenshots.
 
 import type { WorktreeDetails, WorktreeRow } from "@gitstudio/host-bridge/worktreesProtocol";
 
@@ -17,6 +17,7 @@ export function row(over: Partial<WorktreeRow> & Pick<WorktreeRow, "path" | "nam
     current: false,
     locked: false,
     missing: false,
+    unlinked: false,
     upstream: `origin/${over.branch ?? over.name}`,
     upstreamGone: false,
     ahead: 0,
@@ -105,6 +106,18 @@ export function fixtureRows(): WorktreeRow[] {
       locked: true,
       lockReason: "on a USB drive",
       missing: true,
+      status: undefined,
+    }),
+    // An agent's worktree whose .git is gone: its folder is there, but it is
+    // not a worktree any more.
+    row({
+      path: "/code/app/.claude/worktrees/agent-7f3e",
+      name: "agent-7f3e",
+      relPath: "app/.claude/worktrees/agent-7f3e",
+      branch: "worktree-agent-7f3e",
+      upstream: undefined,
+      unlinked: true,
+      unlinkedWhy: "gitdir file points to non-existent location",
       status: undefined,
     }),
     row({

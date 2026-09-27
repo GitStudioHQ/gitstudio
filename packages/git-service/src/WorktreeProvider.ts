@@ -1,4 +1,5 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { stoppedIn, type StoppedOperation } from "./stoppedOperation";
 import { StashProvider } from "./StashProvider";
@@ -97,6 +98,13 @@ export type WorktreeRemoval =
   /** Its folder is gone. Removing it only forgets git's record of it — past
    *  its lock, when it has one (`entry.locked`). */
   | { kind: "missing"; entry: WorktreeEntry }
+  /** Its folder is there, but is not a worktree any more: its .git is gone
+   *  (`entry.prunableReason` says what git makes of it; a LOCKED one has
+   *  none, as git never prunes it). Git run in the folder reads the
+   *  repository around it — the main worktree, for one nested in it — so
+   *  nothing is read there. Removing it only forgets git's record of it, past
+   *  its lock when it has one; the folder and its files stay. */
+  | { kind: "stale"; entry: WorktreeEntry }
   /** Its folder is there. `changes` are the paths git counts as uncommitted
    *  there, which removing it deletes; undefined when they could not be read.
    *  `operation`: what git is stopped in THERE — removing the worktree
@@ -117,7 +125,8 @@ export interface WorktreeOpResult {
   stderr: string;
   /** removeAsAgreed ran nothing: the worktree has uncommitted changes the
    *  question never listed (or they could no longer be read), made since it
-   *  was asked. Read removal() again and ask again; `stderr` is empty. */
+   *  was asked — or its folder is not the worktree any more (its .git went).
+   *  Read removal() again and ask again; `stderr` is empty. */
   changedSince?: true;
   /** `stashChanges`: the stash was made — by its commit sha — whether or not
    *  the remove that followed it went through. */
@@ -304,6 +313,11 @@ export class WorktreeProvider {
     if (!existsSync(entry.path)) {
       return { kind: "missing", entry };
     }
+    // Its folder is there but is not this worktree: nothing is read in it
+    // (its "changes" would be the repository's around it).
+    if (entry.prunable || !existsSync(join(entry.path, ".git")) || !(await this.isWorktreeRoot(entry.path, opts))) {
+      return { kind: "stale", entry };
+    }
     // Read in THAT worktree: its index and its operation markers are its own.
     const [changes, stop] = await Promise.all([
       this.uncommitted(entry.path, opts),
@@ -316,6 +330,19 @@ export class WorktreeProvider {
       ...(stop?.operation ? { operation: stop.operation } : {}),
       ...(stop?.unmerged ? { unmerged: stop.unmerged } : {}),
     };
+  }
+
+  /**
+   * Whether git run IN `path` is the worktree at `path`: `rev-parse
+   * --show-toplevel` there names the folder itself. A folder whose .git is
+   * gone answers with the repository AROUND it — the main worktree, for one
+   * nested in it (…/app/.claude/worktrees/x) — and a read or a stash there
+   * would be that repository's. Asked before anything is read or run there
+   * that deletes or moves changes.
+   */
+  async isWorktreeRoot(path: string, opts?: GitRunOptions): Promise<boolean> {
+    const r = await this.proc.run(["-C", path, "rev-parse", "--show-toplevel"], { signal: opts?.signal });
+    return r.code === 0 && sameFolder(r.stdout.trim(), path);
   }
 
   /**
@@ -372,6 +399,13 @@ export class WorktreeProvider {
     opts: WorktreeAgreedRemoveOptions,
   ): Promise<WorktreeOpResult> {
     const signal = opts.signal;
+    // Nothing is stashed from, or read in, a folder that is not this worktree
+    // any more (its .git went since the question): it would be the repository
+    // AROUND it — the main worktree, emptied into a stash named for this one.
+    // Asked again, it is a worktree to forget.
+    if ((opts.stashChanges || opts.discardChanges) && !(await this.isWorktreeRoot(path, { signal }))) {
+      return { ok: false, stderr: "", changedSince: true };
+    }
     if (opts.stashChanges) {
       const { listed, message } = opts.stashChanges;
       if (listed) {
@@ -408,11 +442,71 @@ export class WorktreeProvider {
         return unlocked;
       }
     }
-    const r = await this.remove(path, { signal });
+    const r = await this.removeOrForget(path, signal);
     if (!r.ok && opts.pastLock) {
       await this.lock(path, { reason: opts.pastLock.reason, signal });
     }
     return r;
+  }
+
+  /** A plain remove — or, for a folder that is not a worktree any more, which
+   *  `git worktree remove` refuses ("validation failed"), forgetting it. */
+  private async removeOrForget(path: string, signal?: AbortSignal): Promise<WorktreeOpResult> {
+    const entry = (await this.list({ signal })).find((e) => sameFolder(e.path, path));
+    if (entry && existsSync(entry.path) && (entry.prunable || !existsSync(join(entry.path, ".git")))) {
+      return this.forgetUnlinked(entry, signal);
+    }
+    return this.remove(path, { signal });
+  }
+
+  /**
+   * Forget ONE worktree whose folder is there but is not a worktree any more:
+   * drop its record under <common dir>/worktrees/<id> — what `git worktree
+   * prune` does for each entry it prunes, which is the only way git has, and
+   * it prunes every such entry at once. The folder is never touched. Only
+   * while git's own test for pruning it holds (should_prune_worktree): its
+   * record points at a .git that is not there, and it is not locked.
+   */
+  private async forgetUnlinked(entry: WorktreeEntry, signal?: AbortSignal): Promise<WorktreeOpResult> {
+    const common = await this.proc.run(["rev-parse", "--git-common-dir"], { signal });
+    if (common.code !== 0) {
+      return { ok: false, stderr: common.stderr };
+    }
+    const records = join(resolve(this.proc.cwd, common.stdout.trim()), "worktrees");
+    let ids: string[] = [];
+    try {
+      ids = readdirSync(records);
+    } catch {
+      // No records at all.
+    }
+    for (const id of ids) {
+      const record = join(records, id);
+      let gitdir: string;
+      try {
+        gitdir = readFileSync(join(record, "gitdir"), "utf8").trim();
+      } catch {
+        continue;
+      }
+      // Absolute — or, under worktree.useRelativePaths, relative to the record.
+      const dotGit = resolve(record, gitdir);
+      if (!gitdir || !sameFolder(dirname(dotGit), entry.path)) {
+        continue;
+      }
+      if (existsSync(dotGit)) {
+        return { ok: false, stderr: `${entry.path} is a worktree again — its .git is back.` };
+      }
+      if (existsSync(join(record, "locked"))) {
+        return { ok: false, stderr: `The worktree at ${entry.path} is locked.` };
+      }
+      rmSync(record, { recursive: true, force: true });
+      try {
+        rmdirSync(records); // as git does when the last one goes
+      } catch {
+        // Others remain.
+      }
+      return { ok: true, stderr: "" };
+    }
+    return { ok: false, stderr: `git's record of the worktree at ${entry.path} wasn't found.` };
   }
 
   /** `git worktree remove [--force [--force]] -- <path>` — see

@@ -162,6 +162,17 @@ async function resolveTarget(
 }
 
 /**
+ * A worktree git still lists whose folder is there but is not a worktree any
+ * more: its .git is gone (git calls it prunable — or, locked, which git never
+ * prunes, the folder says so). git in that folder reads the repository AROUND
+ * it — the main worktree, for one nested in it — so nothing is opened, pulled
+ * or pushed there; it can only be forgotten.
+ */
+export function isUnlinked(e: WorktreeEntry): boolean {
+  return !e.bare && existsSync(e.path) && (!!e.prunable || !existsSync(path.join(e.path, ".git")));
+}
+
+/**
  * A window on a folder that is not there opens onto nothing: says so and
  * answers true when the folder is gone.
  */
@@ -171,6 +182,24 @@ function saidFolderGone(entry: WorktreeEntry): boolean {
   }
   void vscode.window.showWarningMessage(
     `GitStudio: ${worktreeLabel(entry)}'s folder is gone — ${entry.path}. Forget the worktree in Worktrees to clear it from the list.`,
+  );
+  return true;
+}
+
+/**
+ * Nothing runs IN a folder that is not this worktree: gone, or not a worktree
+ * any more (git there would be the repository around it). Says which and
+ * answers true.
+ */
+function saidNotAWorktree(entry: WorktreeEntry): boolean {
+  if (saidFolderGone(entry)) {
+    return true;
+  }
+  if (!isUnlinked(entry)) {
+    return false;
+  }
+  void vscode.window.showWarningMessage(
+    `GitStudio: ${worktreeLabel(entry)}'s folder isn't a worktree any more — ${entry.path}. Forget the worktree in Worktrees to clear it from the list.`,
   );
   return true;
 }
@@ -191,9 +220,9 @@ export async function openWorktreeIn(
     repos,
     t,
     where === "new" ? "Open a worktree in a new window" : "Open a worktree in this window",
-    (e, _m, here) => !e.bare && !here && existsSync(e.path),
+    (e, _m, here) => !e.bare && !here && existsSync(e.path) && !isUnlinked(e),
   );
-  if (!r || r.entry.bare || saidFolderGone(r.entry) || r.here) {
+  if (!r || r.entry.bare || saidNotAWorktree(r.entry) || r.here) {
     return;
   }
   await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(r.entry.path), {
@@ -212,8 +241,8 @@ export async function revealWorktree(repos: RepoManager, t: WorktreeTarget): Pro
 
 /** A terminal in the worktree's folder, named for it. */
 export async function openWorktreeTerminal(repos: RepoManager, t: WorktreeTarget): Promise<void> {
-  const r = await resolveTarget(repos, t, "Open a terminal in a worktree", (e) => !e.bare && existsSync(e.path));
-  if (!r || r.entry.bare || saidFolderGone(r.entry)) {
+  const r = await resolveTarget(repos, t, "Open a terminal in a worktree", (e) => !e.bare && existsSync(e.path) && !isUnlinked(e));
+  if (!r || r.entry.bare || saidNotAWorktree(r.entry)) {
     return;
   }
   const term = vscode.window.createTerminal({ name: path.basename(r.entry.path), cwd: r.entry.path });
@@ -660,6 +689,7 @@ async function askAndRemove(
     locked: !!entry.locked,
     lockReason: entry.lockReason,
     changes: removal.kind === "present" ? removal.changes : [],
+    ...(removal.kind === "stale" && entry.prunableReason ? { staleWhy: entry.prunableReason } : {}),
     operation: removal.kind === "present" ? removal.operation : undefined,
     unmerged: removal.kind === "present" ? removal.unmerged : undefined,
     mergedInto: merged,
@@ -688,7 +718,7 @@ async function askAndRemove(
   // a path the question did not list runs nothing — see removeAsAgreed.
   const listed = removal.kind === "present" ? removal.changes : undefined;
   const pastLock = entry.locked ? { reason: entry.lockReason } : undefined;
-  ui.busy?.(entry.path, removal.kind === "missing" ? "Forgetting…" : "Removing…");
+  ui.busy?.(entry.path, removal.kind === "present" ? "Removing…" : "Forgetting…");
   let res;
   try {
     res = await a.ctx.worktrees.removeAsAgreed(entry.path, {
@@ -704,7 +734,7 @@ async function askAndRemove(
   }
   if (res.ok) {
     ui.drop?.(entry.path);
-    let said = `${removal.kind === "missing" ? "Forgot" : "Removed"} the worktree ${label}`;
+    let said = `${removal.kind === "present" ? "Removed" : "Forgot"} the worktree ${label}`;
     if (res.stashed) {
       said += ` — its changes are in the stash “${worktreeStashMessage(label, tildify(entry.path))}”`;
     }
@@ -734,7 +764,7 @@ async function askAndRemove(
     refresh();
     return;
   }
-  const verb = removal.kind === "missing" ? "forget" : "remove";
+  const verb = removal.kind === "present" ? "remove" : "forget";
   void vscode.window.showErrorMessage(
     `GitStudio: couldn't ${verb} the worktree ${label}${res.stashed ? " — its changes were stashed first, and are in the stash list" : ""} — ${res.stderr.trim() || "git worktree failed."}`,
   );
@@ -832,28 +862,38 @@ export async function pruneWorktrees(
     return;
   }
   const before = await a.ctx.worktrees.list();
-  const names = (list: WorktreeEntry[]) => list.map((e) => path.basename(e.path)).join(", ");
-  const gone = before.filter((e, i) => i > 0 && !e.bare && !existsSync(e.path));
-  const prunable = gone.filter((e) => !e.locked);
-  const locked = gone.filter((e) => e.locked);
+  const names = (list: WorktreeEntry[]) =>
+    list
+      .map((e) => path.basename(e.path))
+      .sort((x, y) => x.localeCompare(y))
+      .join(", ");
+  // git's own verdict — what `git worktree prune` forgets: its .git is gone
+  // (with its folder, or from a folder still there) and it is not locked. The
+  // same test is applied here for a git too old to say "prunable".
+  const noGit = (e: WorktreeEntry, i: number) => i > 0 && !e.bare && (!existsSync(e.path) || isUnlinked(e));
+  const prunable = before.filter((e, i) => e.prunable || (noGit(e, i) && !e.locked));
+  const locked = before.filter((e, i) => noGit(e, i) && e.locked);
+  const allGone = prunable.every((e) => !existsSync(e.path));
   const lockedNote =
     locked.length > 0
-      ? ` ${names(locked)} ${locked.length === 1 ? "is" : "are"} locked, so prune keeps ${locked.length === 1 ? "it" : "them"} though the folder is gone — forget ${locked.length === 1 ? "it" : "them"} in Worktrees.`
+      ? ` ${names(locked)} ${locked.length === 1 ? "is" : "are"} locked, so prune keeps ${locked.length === 1 ? "it" : "them"} though ${locked.every((e) => !existsSync(e.path)) ? "the folder is gone" : locked.length === 1 ? "it isn't a worktree any more" : "they aren't worktrees any more"} — forget ${locked.length === 1 ? "it" : "them"} in Worktrees.`
       : "";
   if (prunable.length === 0) {
     void vscode.window.showInformationMessage(
-      `GitStudio: Nothing to prune: ${locked.length > 0 ? "the only worktrees whose folder is gone are locked." : "every worktree's folder is still there."}${lockedNote}`,
+      `GitStudio: Nothing to prune: ${locked.length > 0 ? "the only worktrees git could prune are locked." : "every worktree's folder is still there."}${lockedNote}`,
     );
     return;
   }
   const n = prunable.length;
   const ok = await promptConfirm({
-    title: `Prune ${n} missing worktree${n === 1 ? "" : "s"}?`,
+    title: `Prune ${n} ${allGone ? "missing" : "stale"} worktree${n === 1 ? "" : "s"}?`,
     message:
-      `Git forgets ${n === 1 ? "the worktree whose folder is gone" : `the ${n} worktrees whose folders are gone`}:\n` +
+      (allGone
+        ? `Git forgets ${n === 1 ? "the worktree whose folder is gone" : `the ${n} worktrees whose folders are gone`}:\n`
+        : `Git forgets ${n === 1 ? "the worktree whose folder is gone or isn't a worktree any more" : `the ${n} worktrees whose folders are gone or aren't worktrees any more`}:\n`) +
       prunable
         .slice(0, 8)
-        .map((e) => `  ${path.basename(e.path)} — ${tildify(e.path)}`)
+        .map((e) => `  ${path.basename(e.path)} — ${tildify(e.path)}${allGone ? "" : existsSync(e.path) ? " (not a worktree any more)" : " (folder gone)"}`)
         .join("\n") +
       (n > 8 ? `\n  and ${n - 8} more` : "") +
       "\n\nNothing on disk changes, and their branches stay." +
@@ -873,7 +913,7 @@ export async function pruneWorktrees(
   const pruned = before.filter((e) => !after.some((x) => x.path === e.path));
   flash(
     pruned.length > 0
-      ? `Pruned ${pruned.length} worktree${pruned.length === 1 ? "" : "s"} whose folder was gone: ${names(pruned)}`
+      ? `Pruned ${pruned.length} worktree${pruned.length === 1 ? "" : "s"}${allGone ? " whose folder was gone" : ""}: ${names(pruned)}`
       : "Nothing was pruned",
   );
   refresh();
@@ -899,8 +939,8 @@ export async function pullWorktree(
   refresh: () => void,
   ui: WorktreeUi = {},
 ): Promise<void> {
-  const r = await resolveTarget(repos, t, "Pull into a worktree", (e) => !e.bare && !!e.branch && existsSync(e.path));
-  if (!r || saidFolderGone(r.entry)) {
+  const r = await resolveTarget(repos, t, "Pull into a worktree", (e) => !e.bare && !!e.branch && existsSync(e.path) && !isUnlinked(e));
+  if (!r || saidNotAWorktree(r.entry)) {
     return;
   }
   if (sameFolder(r.a.root, r.entry.path)) {
@@ -979,8 +1019,8 @@ export async function pushTargetFor(
   repos: RepoManager,
   t: WorktreeTarget,
 ): Promise<{ entry: RepoEntry; name: string; shownPath: string; release(): void } | "active" | undefined> {
-  const r = await resolveTarget(repos, t, "Push from a worktree", (e) => !e.bare && !!e.branch && existsSync(e.path));
-  if (!r || saidFolderGone(r.entry)) {
+  const r = await resolveTarget(repos, t, "Push from a worktree", (e) => !e.bare && !!e.branch && existsSync(e.path) && !isUnlinked(e));
+  if (!r || saidNotAWorktree(r.entry)) {
     return undefined;
   }
   if (sameFolder(r.a.root, r.entry.path)) {

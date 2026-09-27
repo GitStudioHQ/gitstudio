@@ -25,6 +25,7 @@ async function open(theme: VsCodeTheme = "dark", width = 300, height = 700): Pro
 
 const LOGIN = "/code/app-login";
 const AGENT = "/code/app/.claude/worktrees/agent-a2c9ae27";
+const UNLINKED = "/code/app/.claude/worktrees/agent-7f3e";
 
 /** A row's line, by folder, as a person reads it. */
 function lineOf(page: WorktreesPage, path: string) {
@@ -58,6 +59,14 @@ test("every row reads: its folder, what it has checked out, its badges in words,
   assert.deepEqual((await lineOf(page, "/code/app-v2"))?.head, "detached at 4f2a9c1");
   assert.deepEqual((await lineOf(page, "/code/app-usb"))?.badges, ["Locked: on a USB drive", "Folder missing"]);
   assert.equal((await lineOf(page, "/code/app-usb"))?.expanded, null, "a missing folder does not open");
+  assert.deepEqual(await lineOf(page, UNLINKED), {
+    name: "agent-7f3e",
+    head: "worktree-agent-7f3e",
+    badges: ["Not a worktree"],
+    path: "app/.claude/worktrees/agent-7f3e",
+    expanded: null,
+    label: "agent-7f3e, worktree-agent-7f3e, Not a worktree, app/.claude/worktrees/agent-7f3e",
+  });
   // This window's first, then the main worktree, the missing last.
   const order = await page.eval<string[]>(`Array.prototype.map.call(document.querySelectorAll(".wt-row"), function (l) { return l.dataset.path; })`);
   assert.deepEqual(order.slice(0, 2), [LOGIN, "/code/app"]);
@@ -262,10 +271,13 @@ test("a menu item asks the host for exactly that action on exactly that worktree
   await page.clearPosted();
   await page.clickOn(`.wt-row[data-path="/code/app-checkout"] [data-action="openNew"]`);
   assert.deepEqual(await page.posted(), [{ type: "action", path: "/code/app-checkout", action: "openNew" }]);
-  // A missing folder's button is Forget.
-  await page.clearPosted();
-  await page.clickOn(`.wt-row[data-path="/code/app-old"] [data-action="forget"]`);
-  assert.deepEqual(await page.posted(), [{ type: "action", path: "/code/app-old", action: "forget" }]);
+  // A missing folder's button is Forget — and so is one that isn't a worktree any more.
+  for (const gone of ["/code/app-old", UNLINKED]) {
+    await page.clearPosted();
+    assert.equal(await page.eval<string>(`document.querySelector('.wt-row[data-path="${gone}"] .wt-actions button').getAttribute("aria-label")`), "Forget Worktree…");
+    await page.clickOn(`.wt-row[data-path="${gone}"] [data-action="forget"]`);
+    assert.deepEqual(await page.posted(), [{ type: "action", path: gone, action: "forget" }]);
+  }
   // Delete on a row asks to remove it.
   await page.eval(`document.querySelector('.wt-row[data-path="/code/app-spike"]').focus()`);
   await page.clearPosted();
@@ -322,7 +334,7 @@ test("past eight worktrees a filter appears; it narrows by folder, branch or pat
   const page = await open();
   const shown = () => page.eval<boolean>(`!document.querySelector(".wt-filter").hidden`);
   assert.equal(await shown(), true);
-  assert.equal(await page.eval<string>(`document.querySelector(".wt-filter-input").placeholder`), "Filter 10 worktrees");
+  assert.equal(await page.eval<string>(`document.querySelector(".wt-filter-input").placeholder`), "Filter 11 worktrees");
   await page.clickOn(".wt-filter-input");
   await page.type("login");
   const visible = () => page.eval<string[]>(`Array.prototype.filter.call(document.querySelectorAll(".wt-item"), function (i) { return !i.hidden; }).map(function (i) { return i.dataset.path; })`);
@@ -331,20 +343,26 @@ test("past eight worktrees a filter appears; it narrows by folder, branch or pat
   assert.deepEqual(await visible(), []);
   assert.match(await page.eval<string>(`document.querySelector(".wt-note").textContent`), /No worktree matches “loginzzz”/);
   await page.key("Escape");
-  assert.equal((await visible()).length, 10);
+  assert.equal((await visible()).length, 11);
   // Eight or fewer: no filter.
   await page.send({ type: "rows", rows: fixtureRows().slice(0, 8), state: "ok", labels: LABELS });
   assert.equal(await shown(), false);
 });
 
-test("Prune N missing: shown only when git would prune something, counting only unlocked missing folders", { skip }, async () => {
+test("Prune N: shown only when git would prune something — unlocked, missing or not a worktree any more — and says which", { skip }, async () => {
   const page = await open();
-  const prune = () => page.eval<{ hidden: boolean; text: string }>(`(function () { var b = document.querySelector(".wt-prune"); return { hidden: b.hidden, text: b.textContent }; })()`);
-  assert.deepEqual(await prune(), { hidden: false, text: "Prune 1 missing" });
+  const prune = () => page.eval<{ hidden: boolean; text: string; tip: string }>(`(function () { var b = document.querySelector(".wt-prune"); return { hidden: b.hidden, text: b.textContent, tip: b.getAttribute("aria-label") }; })()`);
+  assert.deepEqual(await prune(), {
+    hidden: false,
+    text: "Prune 2 stale",
+    tip: "Forget the 2 worktrees git can prune: their folders are gone, or aren't worktrees any more",
+  });
   await page.clearPosted();
   await page.clickOn(".wt-prune");
   assert.deepEqual(await page.posted(), [{ type: "prune" }]);
-  await page.send({ type: "rows", rows: fixtureRows().filter((r) => r.path !== "/code/app-old"), state: "ok", labels: LABELS });
+  await page.send({ type: "rows", rows: fixtureRows().filter((r) => r.path !== UNLINKED), state: "ok", labels: LABELS });
+  assert.deepEqual(await prune(), { hidden: false, text: "Prune 1 missing", tip: "Forget the worktree whose folder is gone" });
+  await page.send({ type: "rows", rows: fixtureRows().filter((r) => r.path !== "/code/app-old" && r.path !== UNLINKED), state: "ok", labels: LABELS });
   assert.equal((await prune()).hidden, true, "only a locked one is missing: git keeps it");
 });
 

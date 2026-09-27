@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { parseV2 } from "./StatusProvider";
 import { stoppedIn, type StoppedOperation } from "./stoppedOperation";
@@ -45,6 +45,14 @@ export interface WorktreeSummary {
   /** Its folder is not there — the filesystem's answer, which a LOCKED
    *  worktree needs (git never calls a locked one prunable). */
   missing: boolean;
+  /**
+   * Its folder is there, but it is not a worktree any more: its .git is gone
+   * (git lists it prunable, or — locked, which git never prunes — the folder
+   * says so). `git -C` there finds whatever repository is AROUND the folder —
+   * the main worktree, for one nested in it — so nothing is ever read or run
+   * in it: its tree is not read, and it can only be forgotten.
+   */
+  unlinked: boolean;
   /** Its branch's upstream, by full name (refs/remotes/origin/x, or
    *  refs/heads/y for a branch that tracks a local one). */
   upstream?: string;
@@ -139,6 +147,7 @@ export function summarize(
 ): WorktreeSummary[] {
   return list.map((e, i) => {
     const b = e.branch ? facts.branches.get(`refs/heads/${e.branch}`) : undefined;
+    const missing = !e.bare && !exists(e.path);
     return {
       path: e.path,
       head: e.head,
@@ -150,7 +159,10 @@ export function summarize(
       ...(e.lockReason ? { lockReason: e.lockReason } : {}),
       prunable: !!e.prunable,
       ...(e.prunableReason ? { prunableReason: e.prunableReason } : {}),
-      missing: !e.bare && !exists(e.path),
+      missing,
+      // Never the main worktree (git lists it first): only a linked one has a
+      // .git FILE that can go while its folder stays.
+      unlinked: !e.bare && i > 0 && !missing && (!!e.prunable || !exists(join(e.path, ".git"))),
       ...(b?.upstream ? { upstream: b.upstream } : {}),
       upstreamGone: !!b?.gone,
       ahead: b?.ahead ?? 0,
@@ -227,7 +239,7 @@ export type UnpublishedRule =
  * and none for the default branch itself.
  */
 export function unpublishedRule(w: WorktreeSummary, snap: Pick<WorktreesSnapshot, "remotes" | "defaultBranch">): UnpublishedRule {
-  if (w.bare || w.missing) return { kind: "none" };
+  if (w.bare || w.missing || w.unlinked) return { kind: "none" };
   if (w.upstream && !w.upstreamGone) return { kind: "upstream", upstream: w.upstream };
   if (snap.remotes.length > 0) return { kind: "remotes" };
   const d = snap.defaultBranch;
@@ -256,7 +268,10 @@ export async function readWorktreeStatus(
   snap: Pick<WorktreesSnapshot, "remotes" | "defaultBranch">,
   opts?: GitRunOptions,
 ): Promise<WorktreeStatus | undefined> {
-  if (w.bare || w.missing) return undefined;
+  if (w.bare || w.missing || w.unlinked) return undefined;
+  // Checked again now, not only when the list was read: a linked worktree
+  // whose .git went since would answer with the repository around it.
+  if (!w.main && !existsSync(join(w.path, ".git"))) return undefined;
   const signal = opts?.signal;
   const rule = unpublishedRule(w, snap);
   // With an upstream, for-each-ref's `ahead` already counts them.

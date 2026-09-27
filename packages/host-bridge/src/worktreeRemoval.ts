@@ -9,8 +9,13 @@
 /** What the question needs to know about the worktree it asks about. */
 export interface WorktreeRemovalFacts {
   /** `missing`: its folder is gone, and removing it only forgets git's record
-   *  of it. `present`: its folder is there and is deleted. */
-  kind: "missing" | "present";
+   *  of it. `present`: its folder is there and is deleted. `stale`: its
+   *  folder is there but is not a worktree any more (its .git is gone) —
+   *  forgetting it leaves the folder alone. */
+  kind: "missing" | "present" | "stale";
+  /** `stale`: what git makes of it (its prunable reason); absent for a
+   *  locked one, which git never prunes. */
+  staleWhy?: string;
   /** How the worktree is named: its branch, or "<sha> (detached)". */
   label: string;
   /** Its folder, as the host shows paths. */
@@ -32,6 +37,16 @@ export interface WorktreeRemovalFacts {
 
 /** An operation git can be stopped in, as git-service's stoppedIn names it. */
 export type WorktreeOperation = "merge" | "rebase" | "cherry-pick" | "revert" | "am";
+
+/**
+ * Why a folder that git still lists is not a worktree any more, in words: its
+ * .git is gone (what git's "gitdir file points to non-existent location"
+ * means while the folder stands, and all a locked one — which git gives no
+ * reason for — can mean), or git's own words for anything else.
+ */
+export function unlinkedWhy(reason?: string): string {
+  return !reason || reason === "gitdir file points to non-existent location" ? "its .git file is gone" : `git says: “${reason}”`;
+}
 
 /** What removing the worktree does to the operation stopped in it. */
 const ABANDONS: Record<WorktreeOperation, string> = {
@@ -71,6 +86,24 @@ export function worktreeRemovalQuestion(f: WorktreeRemovalFacts): WorktreeRemova
       ? `It is locked: “${f.lockReason}”.`
       : "It is locked, with no reason given."
     : "";
+
+  if (f.kind === "stale") {
+    // Its folder stays whatever is said here: only git's record goes. What is
+    // IN the folder is never read (git there reads the repository around it).
+    return {
+      title: `Forget worktree ${f.label}?`,
+      message: [
+        `Its folder, ${f.shownPath}, isn't a worktree any more: ${unlinkedWhy(f.staleWhy)}. Forgetting it removes git's record of the worktree; the folder and everything in it stay.`,
+        lock && `${lock} Forgetting it unlocks it.`,
+        stays,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+      confirmLabel: f.locked ? "Unlock and Forget" : "Forget",
+      danger: false,
+      discardChanges: false,
+    };
+  }
 
   if (f.kind === "missing") {
     // A lock is git's answer for a worktree on a drive or share that is not
@@ -177,7 +210,8 @@ export interface WorktreeRemovalChoiceFacts extends WorktreeRemovalFacts {
 /** One way to answer the removal question. */
 export interface WorktreeRemovalChoice {
   /** `stash`: stash its changes, then remove it. `discard`: remove it with its
-   *  changes. `remove`: a clean one. `forget`: a missing one. */
+   *  changes. `remove`: a clean one. `forget`: a missing one, or one that is
+   *  not a worktree any more. */
   id: "stash" | "discard" | "remove" | "forget";
   label: string;
   description: string;
@@ -207,11 +241,18 @@ export function worktreeRemovalAsk(f: WorktreeRemovalChoiceFacts): WorktreeRemov
         }
       : undefined;
   const extra = deleteBranch ? { deleteBranch } : {};
-  if (f.kind === "missing") {
+  if (f.kind === "missing" || f.kind === "stale") {
     return {
       title: q.title,
       message: q.message,
-      choices: [{ id: "forget", label: q.confirmLabel, description: "Removes git's record of the worktree.", danger: q.danger }],
+      choices: [
+        {
+          id: "forget",
+          label: q.confirmLabel,
+          description: f.kind === "stale" ? "Removes git's record of the worktree; the folder stays." : "Removes git's record of the worktree.",
+          danger: q.danger,
+        },
+      ],
       ...extra,
     };
   }

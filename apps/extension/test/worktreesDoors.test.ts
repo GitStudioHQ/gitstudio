@@ -543,6 +543,122 @@ test("a missing folder: Open opens nothing and says so; Forget clears it, past i
   assert.ok(!listed(s).includes("feat-gone-locked"));
 });
 
+// ── A folder that is not a worktree any more ─────────────────────────────────
+//
+// Its .git is gone while the folder stays, so git in it reads the repository
+// AROUND it: for one nested in the main worktree (…/app/.claude/worktrees/x,
+// the agents' layout), the main worktree. A door must never read, stash or
+// delete there — what it would touch is the main worktree's.
+
+/**
+ * The main worktree with work in progress, and x nested in it — its .git gone
+ * when `unlink` runs. `sameNames`: x's own change and the main worktree's are
+ * both an edit to a.txt, so a question that listed x's changes would pass the
+ * main worktree's for them.
+ */
+function unlinkedNested(s: Scene, opts: { sameNames?: boolean } = {}) {
+  writeFileSync(join(s.app, ".git", "info", "exclude"), ".claude/\n");
+  const x = join(s.app, ".claude", "worktrees", "x");
+  s.git("worktree", "add", "-q", "-b", "x", x);
+  if (opts.sameNames) writeFileSync(join(x, "a.txt"), "x's edit\n");
+  else writeFileSync(join(x, "mine.txt"), "x's own file\n");
+  writeFileSync(join(s.app, "a.txt"), "a\nmain's edit\n");
+  if (!opts.sameNames) writeFileSync(join(s.app, "notes.md"), "main's new file\n");
+  const unlink = () => rmSync(join(x, ".git"));
+  const mainIntact = () => {
+    assert.equal(readFileSync(join(s.app, "a.txt"), "utf8"), "a\nmain's edit\n", "the main worktree's edit is where it was");
+    if (!opts.sameNames) assert.ok(existsSync(join(s.app, "notes.md")), "the main worktree's new file is where it was");
+    assert.equal(s.git("stash", "list"), "", "nothing was stashed");
+  };
+  return { x, unlink, mainIntact };
+}
+
+test("not a worktree any more, nested in the main one: Remove asks to Forget — never lists the main worktree's changes — and the folder stays", async () => {
+  const s = scene();
+  const { x, unlink, mainIntact } = unlinkedNested(s);
+  unlink();
+  const repos = windowAt(s.app);
+  const log = uiLog();
+  answer = yes;
+  await wt.removeWorktree(repos, x, noop, log.ui);
+  assert.equal(asked.length, 1);
+  const q = asked[0] as Confirm;
+  assert.equal(q.kind, "confirm", "one way: a confirm");
+  assert.equal(q.title, "Forget worktree x?");
+  assert.equal(q.confirmLabel, "Forget");
+  assert.match(q.message, /isn't a worktree any more: its \.git file is gone\. Forgetting it removes git's record of the worktree; the folder and everything in it stay\./);
+  assert.doesNotMatch(q.message, /a\.txt|notes\.md|Deletes its folder/, "never the main worktree's changes, never a delete");
+  assert.deepEqual(errors(), []);
+  assert.ok(!listed(s).includes("x"), "forgotten");
+  assert.equal(readFileSync(join(x, "mine.txt"), "utf8"), "x's own file\n", "its folder and files stay");
+  assert.deepEqual(log.events, ["busy x Forgetting…", "busy x -", "drop x"]);
+  assert.match(said.map((m) => m.message).join("\n"), /Forgot the worktree x/);
+  mainIntact();
+});
+
+test("its .git goes while the Remove question is open: Stash & Remove stashes nothing from the main worktree, and asks again — to Forget", async () => {
+  for (const way of ["stash", "discard"] as const) {
+    const s = scene();
+    const { x, unlink, mainIntact } = unlinkedNested(s, { sameNames: true });
+    const repos = windowAt(s.app);
+    asked = [];
+    answer = (spec) => {
+      if (asked.length === 1 && spec.kind === "pick") {
+        unlink(); // mid-question
+        return way;
+      }
+      return undefined; // the second question: keep it
+    };
+    await wt.removeWorktree(repos, x, noop);
+    assert.match((asked[0] as Pick).message ?? "", /It has 1 uncommitted change:\n {2}a\.txt/, "asked while it was a worktree, about its own edit");
+    assert.equal(asked.length, 2, `${way}: asked again, with what it is now`);
+    assert.equal(asked[1].title, "Forget worktree x?");
+    assert.ok(listed(s).includes("x"), "the second question was kept: still listed");
+    assert.equal(readFileSync(join(x, "a.txt"), "utf8"), "x's edit\n", "its own edit stays in its folder");
+    assert.deepEqual(errors(), []);
+    mainIntact();
+  }
+});
+
+test("not a worktree any more: Open, Terminal, Pull and Push… run nothing and say so; Reveal still shows the folder", async () => {
+  const s = scene();
+  const { x, unlink, mainIntact } = unlinkedNested(s);
+  unlink();
+  const repos = windowAt(s.app);
+  await wt.openWorktreeIn(repos, x, "new");
+  await wt.openWorktreeIn(repos, x, "here");
+  await wt.openWorktreeTerminal(repos, x);
+  await wt.pullWorktree(repos, x, noop);
+  assert.equal(await wt.pushTargetFor(repos, x), undefined);
+  assert.deepEqual(executed, [], "no window, no pull");
+  assert.deepEqual(terminals, []);
+  const warnings = said.filter((m) => m.kind === "warning").map((m) => m.message);
+  assert.equal(warnings.length, 5);
+  for (const w of warnings) assert.match(w, /^GitStudio: x's folder isn't a worktree any more — .*\.claude\/worktrees\/x\. Forget the worktree in Worktrees to clear it from the list\.$/);
+  await wt.revealWorktree(repos, x);
+  assert.deepEqual(executed.map((e) => e.command), ["revealFileInOS"]);
+  mainIntact();
+});
+
+test("Prune counts a folder that is not a worktree any more (git would prune it), forgets it, and leaves the folder", async () => {
+  const s = scene();
+  const { x, unlink, mainIntact } = unlinkedNested(s);
+  unlink();
+  const repos = windowAt(s.app);
+  answer = yes;
+  await wt.pruneWorktrees(repos, noop);
+  const q = asked[0] as Confirm;
+  assert.equal(q.title, "Prune 2 stale worktrees?");
+  assert.equal(q.confirmLabel, "Prune 2");
+  assert.match(q.message, /feat-gone — .* \(folder gone\)/);
+  assert.match(q.message, /\n {2}x — .*\.claude\/worktrees\/x \(not a worktree any more\)/);
+  assert.match(q.message, /Nothing on disk changes/);
+  assert.ok(!listed(s).includes("x") && !listed(s).includes("feat-gone"));
+  assert.ok(existsSync(join(x, "mine.txt")));
+  assert.match(said.map((m) => m.message).join("\n"), /Pruned 2 worktrees: feat-gone, x/);
+  mainIntact();
+});
+
 // ── Open, reveal, terminal, copy ─────────────────────────────────────────────
 
 test("Open in New Window / This Window open at once — no question — and never the window's own worktree", async () => {

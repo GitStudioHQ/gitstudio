@@ -8,6 +8,7 @@
 // a browser. The desktop's Worktrees list can adopt the same functions.
 
 import type { ChangeCommit, ChangeFile } from "./changeRows";
+import { unlinkedWhy } from "./worktreeRemoval";
 
 export type { ChangeCommit, ChangeFile } from "./changeRows";
 
@@ -51,6 +52,13 @@ export interface WorktreeRow {
   lockReason?: string;
   /** Its folder is gone. */
   missing: boolean;
+  /** Its folder is there, but it is not a worktree any more (its .git is
+   *  gone): git there would read the repository around it, so its tree is
+   *  never read, and it can only be forgotten. */
+  unlinked: boolean;
+  /** What git makes of an unlinked one (its prunable reason); absent for a
+   *  locked one, which git never prunes. */
+  unlinkedWhy?: string;
   /** Its upstream, as it reads ("origin/feature/x"). */
   upstream?: string;
   /** Configured, but deleted on the remote and pruned here. */
@@ -157,6 +165,15 @@ export function worktreeBadges(r: WorktreeRow): WorktreeBadge[] {
     });
     return out;
   }
+  if (r.unlinked) {
+    out.push({
+      id: "unlinked",
+      text: "Not a worktree",
+      tone: "danger",
+      tip: `Its folder is there, ${r.shownPath}, but it isn't a worktree any more: ${unlinkedWhy(r.unlinkedWhy)}. Forget it to clear it from the list — the folder and its files stay.`,
+    });
+    return out;
+  }
   const s = r.status;
   if (s?.operation) {
     const conflicts = s.conflicted > 0 ? ` · ${plural(s.conflicted, "conflict")}` : "";
@@ -256,7 +273,8 @@ export interface WorktreeCaps {
   push: Gate;
   lock: boolean;
   unlock: boolean;
-  /** Remove its folder; a missing one is forgotten instead (`forget`). */
+  /** Remove its folder; a missing one — or one not a worktree any more — is
+   *  forgotten instead (`forget`). */
   remove: Gate;
   forget: boolean;
 }
@@ -279,13 +297,15 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
       forget: false,
     };
   }
-  if (r.missing) {
-    const gone = no("Its folder is missing.");
+  if (r.missing || r.unlinked) {
+    // Not a worktree any more: nothing is run in the folder, which only
+    // Reveal still shows.
+    const gone = no(r.missing ? "Its folder is missing." : `It isn't a worktree any more — ${unlinkedWhy(r.unlinkedWhy)}.`);
     return {
       expand: false,
       openHere: gone,
       openNew: gone,
-      reveal: false,
+      reveal: !r.missing,
       terminal: false,
       pull: gone,
       push: gone,
@@ -340,7 +360,7 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
 
 /** The title of a row's "not pushed" section, by the rule that counts it. */
 export function unpublishedTitle(r: WorktreeRow): string | undefined {
-  if (r.kind === "bare" || r.missing) return undefined;
+  if (r.kind === "bare" || r.missing || r.unlinked) return undefined;
   if (r.branch && r.upstream && !r.upstreamGone) return `Not pushed to ${r.upstream}`;
   if (r.hasRemotes) return "Not on any remote";
   if (r.onDefaultBranch || !r.defaultBranch) return undefined;
@@ -351,15 +371,16 @@ export function unpublishedTitle(r: WorktreeRow): string | undefined {
  *  main worktree, then the rest by name, the missing ones last. */
 export function orderWorktreeRows(rows: readonly WorktreeRow[]): WorktreeRow[] {
   const rank = (r: WorktreeRow): number =>
-    r.kind === "bare" ? 0 : r.current ? 1 : r.kind === "main" ? 2 : r.missing ? 4 : 3;
+    r.kind === "bare" ? 0 : r.current ? 1 : r.kind === "main" ? 2 : r.missing || r.unlinked ? 4 : 3;
   return [...rows].sort(
     (a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) || a.path.localeCompare(b.path),
   );
 }
 
-/** How many worktrees `git worktree prune` would forget: missing and unlocked. */
+/** How many worktrees `git worktree prune` would forget — git's own test:
+ *  its .git is gone (the folder with it, or not) and it is not locked. */
 export function prunableCount(rows: readonly WorktreeRow[]): number {
-  return rows.filter((r) => r.missing && !r.locked).length;
+  return rows.filter((r) => (r.missing || r.unlinked) && !r.locked).length;
 }
 
 /** Past this many worktrees the list gets a filter field. */

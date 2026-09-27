@@ -118,6 +118,8 @@ export function worktreeRow(
     locked: w.locked,
     ...(w.lockReason ? { lockReason: w.lockReason } : {}),
     missing: w.missing,
+    unlinked: w.unlinked,
+    ...(w.unlinked && w.prunableReason ? { unlinkedWhy: w.prunableReason } : {}),
     ...(upstream ? { upstream } : {}),
     upstreamGone: w.upstreamGone,
     ahead: w.ahead,
@@ -283,7 +285,17 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
     if (row) {
       const caps = worktreeCaps(row);
       const gate =
-        action === "pull" ? caps.pull : action === "push" ? caps.push : action === "remove" ? caps.remove : undefined;
+        action === "pull"
+          ? caps.pull
+          : action === "push"
+            ? caps.push
+            : action === "remove"
+              ? caps.remove
+              : action === "openHere"
+                ? caps.openHere
+                : action === "openNew"
+                  ? caps.openNew
+                  : undefined;
       if (gate && !gate.ok) {
         void vscode.window.showInformationMessage(`GitStudio: ${gate.why}`);
         return;
@@ -442,7 +454,12 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
       seed.worktrees.map((w) => ({ path: w.path, head: w.head, bare: w.bare, branch: w.branch })),
       a.root,
     );
-    const rows = seed.worktrees.map((w) => worktreeRow({ ...w, missing: !w.bare && !existsSync(w.path) }, seed, here, undefined));
+    // The folders are asked again: the seed may be days old.
+    const rows = seed.worktrees.map((w, i) => {
+      const missing = !w.bare && !existsSync(w.path);
+      const unlinked = !w.bare && i > 0 && !missing && (!!w.prunable || !existsSync(path.join(w.path, ".git")));
+      return worktreeRow({ ...w, missing, unlinked }, seed, here, undefined);
+    });
     this.sendRows(rows, "ok");
   }
 
@@ -457,7 +474,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
     const s = this.snap;
     if (!s || !this.view?.visible) return;
     const w = s.snap.worktrees.find((x) => x.path === p);
-    if (!w || w.bare || w.missing) return;
+    if (!w || w.bare || w.missing || w.unlinked) return;
     const read = this.statuses.get(p);
     if (!force && read && Date.now() - read.at < STATUS_TTL_MS) return;
     if (this.queued.has(p)) return;
@@ -513,7 +530,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
     const a = this.repos.getActive();
     if (!s || !a) return;
     const w = s.snap.worktrees.find((x) => x.path === p);
-    if (!w || w.bare || w.missing) return;
+    if (!w || w.bare || w.missing || w.unlinked) return;
     let status = this.statuses.get(p);
     if (!status || !status.status || Date.now() - status.at > (quiet ? STATUS_TTL_MS : 1500)) {
       await this.readStatus(p);

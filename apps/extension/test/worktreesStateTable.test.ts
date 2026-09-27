@@ -99,6 +99,7 @@ const { GitContext } = require("@gitstudio/git-service/GitContext") as typeof im
 import {
   headWords,
   orderWorktreeRows,
+  prunableCount,
   unpublishedTitle,
   worktreeBadges,
   worktreeCaps,
@@ -384,6 +385,48 @@ test("every cell of the table: what each row names and offers, from real git", a
   const names = orderWorktreeRows(rows).map((r) => r.name);
   assert.deepEqual(names.slice(-2), ["missing", "missinglocked"]);
   assert.deepEqual(names.slice(0, 3), ["app", "ahead", "behind"]);
+});
+
+test("a folder that isn't a worktree any more — nested in the main one, beside it, locked — is never read: it says so and offers Forget", async () => {
+  const base = join(scratch, `unl${++seq}`);
+  const app = join(base, "app");
+  mkdirSync(app, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", app]);
+  for (const [k, v] of identity) at(app)("config", k, v);
+  commit(app, "a.txt", "a");
+  writeFileSync(join(app, ".git", "info", "exclude"), ".claude/\n");
+  const nested = join(app, ".claude", "worktrees", "x");
+  const side = join(base, "side");
+  const held = join(base, "held");
+  at(app)("worktree", "add", "-q", "-b", "x", nested);
+  at(app)("worktree", "add", "-q", "-b", "side", side);
+  at(app)("worktree", "add", "-q", "-b", "held", held);
+  at(app)("worktree", "lock", "--reason", "agent 9", held);
+  for (const d of [nested, side, held]) rmSync(join(d, ".git"));
+  writeFileSync(join(app, "a.txt"), "main's edit\n");
+  const h = host(app);
+  await h.send({ type: "ready" });
+  await h.send({ type: "visible", paths: h.rows().map((r) => r.path) });
+  const rows = h.rows();
+  for (const p of [nested, side, held]) {
+    const r = find(rows, p)!;
+    assert.deepEqual([r.unlinked, r.missing, r.status], [true, false, undefined], basename(p));
+    const c = worktreeCaps(r);
+    assert.deepEqual([c.expand, c.forget, c.reveal, c.pull.ok, c.openNew.ok], [false, true, true, false, false], basename(p));
+  }
+  assert.deepEqual(words(find(rows, nested)), ["Not a worktree"]);
+  assert.equal(find(rows, nested)!.unlinkedWhy, "gitdir file points to non-existent location");
+  assert.deepEqual(words(find(rows, held)), ["Locked: agent 9", "Not a worktree"]);
+  assert.equal(find(rows, app)!.status?.changed, 1, "the main worktree's change is the main worktree's alone");
+  assert.deepEqual(
+    h.spawns.filter((a) => a[0] === "-C" && [nested, side, held].includes(a[1])),
+    [],
+    "nothing is read in them — git there would read the main worktree",
+  );
+  assert.equal(prunableCount(rows), 2, "git prunes the two unlocked ones");
+  assert.deepEqual(orderWorktreeRows(rows).map((r) => r.name).slice(-3).sort(), ["held", "side", "x"], "with the missing, last");
+  await h.send({ type: "expand", path: nested });
+  assert.equal(h.details(nested), undefined, "it opens to nothing");
 });
 
 test("an open row: its uncommitted files (each side named), its commits not pushed, and what it has to pull", async () => {

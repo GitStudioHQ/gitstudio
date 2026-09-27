@@ -6,7 +6,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
@@ -473,4 +473,111 @@ test("a worktree moved away (as an unplugged drive) reads missing, and back agai
   assert.equal(byBranch(await r.ctx.worktrees.snapshot(), "usb").missing, true);
   renameSync(join(r.base, "away"), r.wt("usb"));
   assert.equal(byBranch(await r.ctx.worktrees.snapshot(), "usb").missing, false);
+});
+
+// ── A folder that is not a worktree any more ─────────────────────────────────
+//
+// git lists it (prunable, or — locked, which git never prunes — still
+// registered), but its .git is gone, so `git -C <folder>` finds whatever
+// repository is AROUND it: the main worktree, for one nested in it
+// (…/app/.claude/worktrees/x). Nothing may be read or run in it — its "changes"
+// are the main worktree's, and a stash there empties the main one.
+
+/** The main worktree with work in progress, and three folders whose .git is gone. */
+function unlinkedScene() {
+  const r = repo();
+  writeFileSync(join(r.app, ".git", "info", "exclude"), ".claude/\n");
+  const nested = join(r.app, ".claude", "worktrees", "x");
+  r.git("worktree", "add", "-q", "-b", "x", nested);
+  r.git("worktree", "add", "-q", "-b", "side", r.wt("side"));
+  r.git("worktree", "add", "-q", "-b", "held", r.wt("held"));
+  r.git("worktree", "lock", "--reason", "agent 9", r.wt("held"));
+  for (const d of [nested, r.wt("side"), r.wt("held")]) {
+    writeFileSync(join(d, "mine.txt"), "the folder's own file\n");
+    rmSync(join(d, ".git"));
+  }
+  writeFileSync(join(r.app, "a.txt"), "a\nmain's edit\n");
+  writeFileSync(join(r.app, "notes.md"), "main's new file\n");
+  const mainIntact = () => {
+    assert.equal(readFileSync(join(r.app, "a.txt"), "utf8"), "a\nmain's edit\n", "the main worktree's edit is where it was");
+    assert.ok(existsSync(join(r.app, "notes.md")), "the main worktree's new file is where it was");
+    assert.equal(r.git("stash", "list"), "", "nothing was stashed");
+  };
+  return { r, nested, mainIntact };
+}
+
+test("a folder whose .git is gone — nested in the main worktree, beside it, or locked — is unlinked, and its tree is never read", async () => {
+  const { r, nested, mainIntact } = unlinkedScene();
+  const snap = await r.ctx.worktrees.snapshot();
+  const x = byBranch(snap, "x");
+  const side = byBranch(snap, "side");
+  const held = byBranch(snap, "held");
+  assert.equal(x.path, nested);
+  for (const w of [x, side, held]) {
+    assert.equal(w.missing, false, `${w.branch}: its folder is there`);
+    assert.equal(w.unlinked, true, `${w.branch}: but it is not a worktree any more`);
+  }
+  assert.equal(x.prunable, true, "git would prune it");
+  assert.equal(held.prunable, false, "git never calls a locked one prunable — the .git says it");
+  assert.equal(snap.worktrees[0].unlinked, false);
+  assert.equal(byBranch(snap, "main").unlinked, false);
+  r.spawns.length = 0;
+  for (const w of [x, side, held]) assert.equal(await r.ctx.worktrees.status(w, snap), undefined);
+  assert.deepEqual(r.spawns, [], "nothing is run in any of them");
+  assert.deepEqual(unpublishedRule(x, snap), { kind: "none" });
+  mainIntact();
+});
+
+test("removal() says an unlinked folder is to be forgotten — never 'present' with the main worktree's changes", async () => {
+  const { r, nested, mainIntact } = unlinkedScene();
+  const x = await r.ctx.worktrees.removal(nested);
+  assert.equal(x.kind, "stale");
+  assert.equal(x.kind === "stale" ? x.entry.branch : undefined, "x");
+  assert.equal((await r.ctx.worktrees.removal(r.wt("side"))).kind, "stale");
+  const held = await r.ctx.worktrees.removal(r.wt("held"));
+  assert.equal(held.kind, "stale");
+  assert.equal(held.kind === "stale" ? held.entry.lockReason : undefined, "agent 9");
+  mainIntact();
+});
+
+test("Stash & Remove or Discard on a folder that stopped being a worktree runs nothing in the main one", async () => {
+  const { r, nested, mainIntact } = unlinkedScene();
+  const listed = ["a.txt", "notes.md"];
+  const stash = await r.ctx.worktrees.removeAsAgreed(nested, { stashChanges: { listed, message: "Changes from worktree x" } });
+  assert.deepEqual(stash, { ok: false, stderr: "", changedSince: true }, "asked again, as for any change since the question");
+  const discard = await r.ctx.worktrees.removeAsAgreed(nested, { discardChanges: { listed } });
+  assert.deepEqual(discard, { ok: false, stderr: "", changedSince: true });
+  const unread = await r.ctx.worktrees.removeAsAgreed(r.wt("side"), { discardChanges: { listed: undefined } });
+  assert.equal(unread.changedSince, true, "even when the question could not read its changes");
+  assert.ok(existsSync(nested) && existsSync(r.wt("side")));
+  mainIntact();
+});
+
+test("Forget on an unlinked folder drops git's record of it alone — the folder and its files stay; past its lock too", async () => {
+  const { r, nested, mainIntact } = unlinkedScene();
+  r.git("worktree", "add", "-q", "-b", "gone", r.wt("gone"));
+  rmSync(r.wt("gone"), { recursive: true, force: true });
+  const forgot = await r.ctx.worktrees.removeAsAgreed(nested, {});
+  assert.equal(forgot.ok, true, forgot.stderr);
+  assert.equal(readFileSync(join(nested, "mine.txt"), "utf8"), "the folder's own file\n", "nothing on disk changes");
+  const listed = () => r.git("worktree", "list", "--porcelain").split("\n").filter((l) => l.startsWith("branch ")).map((l) => l.slice(18)).sort();
+  assert.deepEqual(listed(), ["gone", "held", "main", "side"], "only x is forgotten — the others git would prune stay");
+  assert.equal((await r.ctx.worktrees.removeAsAgreed(r.wt("side"), {})).ok, true);
+  const held = await r.ctx.worktrees.removeAsAgreed(r.wt("held"), { pastLock: { reason: "agent 9" } });
+  assert.equal(held.ok, true, held.stderr);
+  assert.deepEqual(listed(), ["gone", "main"]);
+  for (const d of [nested, r.wt("side"), r.wt("held")]) assert.ok(existsSync(join(d, "mine.txt")));
+  assert.deepEqual(r.git("branch", "--list", "x", "side", "held").split("\n").map((b) => b.trim()), ["held", "side", "x"], "their branches stay");
+  mainIntact();
+});
+
+test("Forget never drops the record of a folder that is a worktree again, nor of a locked one without agreeing to pass the lock", async () => {
+  const { r, nested } = unlinkedScene();
+  // Its .git is back (as `git worktree repair` writes it): a worktree again, removed as one.
+  writeFileSync(join(nested, ".git"), `gitdir: ${join(r.app, ".git", "worktrees", "x")}\n`);
+  assert.equal(at(nested)("rev-parse", "--show-toplevel"), nested);
+  assert.equal((await r.ctx.worktrees.removal(nested)).kind, "present");
+  const held = await r.ctx.worktrees.removeAsAgreed(r.wt("held"), {});
+  assert.equal(held.ok, false, "locked: nothing is forgotten");
+  assert.ok(r.git("worktree", "list", "--porcelain").includes("branch refs/heads/held"));
 });

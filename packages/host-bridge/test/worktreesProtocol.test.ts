@@ -31,6 +31,7 @@ function row(over: Partial<WorktreeRow> = {}): WorktreeRow {
     current: false,
     locked: false,
     missing: false,
+    unlinked: false,
     upstream: "origin/feat",
     upstreamGone: false,
     ahead: 0,
@@ -105,6 +106,30 @@ test("missing folder: Folder missing, only Forget (and Unlock when locked)", () 
   assert.deepEqual(words(locked), ["Locked: on a USB drive", "Folder missing"]);
   assert.equal(worktreeCaps(locked).unlock, true);
   assert.match(worktreeBadges(locked)[1].tip, /drive that isn't connected/);
+});
+
+test("a folder that isn't a worktree any more (its .git gone): says so in words, and offers only Forget and Reveal", () => {
+  const r = row({ unlinked: true, unlinkedWhy: "gitdir file points to non-existent location", status: undefined });
+  assert.deepEqual(words(r), ["Not a worktree"]);
+  const badge = worktreeBadges(r)[0];
+  assert.equal(badge.tone, "danger");
+  assert.equal(
+    badge.tip,
+    "Its folder is there, ~/src/wt/app-feat, but it isn't a worktree any more: its .git file is gone. Forget it to clear it from the list — the folder and its files stay.",
+  );
+  const c = worktreeCaps(r);
+  assert.equal(c.expand, false, "its tree is never read, so there is nothing to open to");
+  const gone = { ok: false, why: "It isn't a worktree any more — its .git file is gone." };
+  assert.deepEqual([c.openHere, c.openNew, c.pull, c.push], [gone, gone, gone, gone]);
+  assert.deepEqual([c.reveal, c.terminal], [true, false], "its folder can still be shown");
+  assert.equal(c.remove.ok, false);
+  assert.equal(c.forget, true);
+  const damaged = row({ unlinked: true, unlinkedWhy: "invalid gitdir file", status: undefined });
+  assert.match(worktreeBadges(damaged)[0].tip, /git says: “invalid gitdir file”/);
+  const locked = row({ unlinked: true, locked: true, lockReason: "agent 9", status: undefined });
+  assert.deepEqual(words(locked), ["Locked: agent 9", "Not a worktree"]);
+  assert.match(worktreeBadges(locked)[1].tip, /its \.git file is gone/, "a locked one: git gives no reason, the folder does");
+  assert.equal(worktreeCaps(locked).forget, true);
 });
 
 test("locked with a reason, and without one: the reason is on the row; Lock becomes Unlock", () => {
@@ -205,15 +230,17 @@ test("order: this window, the main worktree, the rest by name (numbers read as n
   const rows = [
     row({ path: "/b", name: "b-10" }),
     row({ path: "/gone", name: "a-gone", missing: true }),
+    row({ path: "/unlinked", name: "a-unlinked", unlinked: true }),
     row({ path: "/main", name: "zz-main", kind: "main" }),
     row({ path: "/b2", name: "b-9" }),
     row({ path: "/here", name: "m-here", current: true }),
   ];
-  assert.deepEqual(orderWorktreeRows(rows).map((r) => r.path), ["/here", "/main", "/b2", "/b", "/gone"]);
+  assert.deepEqual(orderWorktreeRows(rows).map((r) => r.path), ["/here", "/main", "/b2", "/b", "/gone", "/unlinked"]);
 });
 
-test("Prune counts the missing ones git would prune — never a locked one", () => {
+test("Prune counts the ones git would prune — missing, or not a worktree any more — never a locked one", () => {
   assert.equal(prunableCount([row({ missing: true }), row({ missing: true, locked: true }), row()]), 1);
+  assert.equal(prunableCount([row({ unlinked: true }), row({ unlinked: true, locked: true }), row({ missing: true })]), 2);
 });
 
 // ── The removal question with choices ────────────────────────────────────────
@@ -269,6 +296,16 @@ test("unmerged files, or changes that couldn't be read: no Stash & Remove, and t
 test("missing: Forget (Unlock and Forget when locked)", () => {
   assert.deepEqual(worktreeRemovalAsk({ ...facts, kind: "missing" }).choices.map((c) => c.label), ["Forget"]);
   assert.deepEqual(worktreeRemovalAsk({ ...facts, kind: "missing", locked: true }).choices.map((c) => c.label), ["Unlock and Forget"]);
+});
+
+test("not a worktree any more: Forget — nothing on disk changes (Unlock and Forget when locked)", () => {
+  const a = worktreeRemovalAsk({ ...facts, kind: "stale", changes: ["main's.txt"] });
+  assert.equal(a.title, "Forget worktree feat?");
+  assert.deepEqual(a.choices.map((c) => [c.id, c.label, c.danger]), [["forget", "Forget", false]]);
+  assert.equal(a.choices[0].description, "Removes git's record of the worktree; the folder stays.");
+  assert.match(a.message, /^Its folder, ~\/wt\/feat, isn't a worktree any more: its \.git file is gone\. Forgetting it removes git's record of the worktree; the folder and everything in it stay\./);
+  assert.doesNotMatch(a.message, /main's\.txt|Deletes/, "never a change list, never a delete");
+  assert.deepEqual(worktreeRemovalAsk({ ...facts, kind: "stale", locked: true }).choices.map((c) => c.label), ["Unlock and Forget"]);
 });
 
 test("the stash says where it came from", () => {
