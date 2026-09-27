@@ -348,12 +348,11 @@ export class PullRequestPage {
       if (this.panel === "merge" && !mergeBoxOf(pr)?.canMerge) this.panel = undefined;
       if (this.panel === "review" && pr.kind !== "open" && pr.kind !== "draft") this.panel = undefined;
       if (this.asked) {
-        // The box asked for, and the keyboard in it — or, when it can't open,
-        // on the status line that says why.
-        const wanted = this.asked;
+        // The box asked for, and the keyboard in it — or, when it can't open
+        // (blocked, a draft, merged or closed meanwhile), on the status line
+        // that says why.
         this.asked = undefined;
-        this.focusAfter =
-          this.panel === "merge" ? MERGE_FOCUS : this.panel === "review" ? ".prp-review-body" : wanted === "merge" ? WHY_NO_MERGE : undefined;
+        this.focusAfter = this.panel === "merge" ? MERGE_FOCUS : this.panel === "review" ? ".prp-review-body" : WHY_NO_MERGE;
       }
     } else if (state.status === "message") {
       // The pull request couldn't be read: nothing to open a box on.

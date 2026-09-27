@@ -287,6 +287,11 @@ test("a box asked for before the pull request has loaded opens once it has — o
     await frame();
     expect(!$(".prp-merge"), "a pull request that couldn't be read opens no box when a Retry reads it");
 
+    // Review asked of one that has been merged meanwhile: no box — the keyboard on how it ended.
+    show({ ...S.loading, focus: asked("review", 12) });
+    show({ ...S.merged, focus: asked("review", 12) });
+    await frame();
+    expect(!$(".prp-review") && document.activeElement === $('[data-key="status-done"]'), "merged: no review box, the keyboard on how it ended: " + where());
     // Review, asked while loading: the box and its summary.
     show({ ...S.loading, focus: asked("review", 11) });
     show({ ...S.open, focus: asked("review", 11) });
