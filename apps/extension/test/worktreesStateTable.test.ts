@@ -583,10 +583,11 @@ test("nothing is sent that did not change: a second identical read posts no list
   const h = host(s.app);
   await h.send({ type: "ready" });
   await h.send({ type: "visible", paths: h.rows().map((r) => r.path) });
+  await h.send({ type: "expand", path: s.wt("ahead") });
   const before = h.posted.length;
   await h.repoChanged();
   const after2 = h.posted.slice(before).map((m) => m.type);
-  assert.deepEqual(after2.filter((t) => t === "rows" || t === "status"), [], JSON.stringify(after2));
+  assert.deepEqual(after2, [], `nothing changed, nothing sent: ${JSON.stringify(after2)}`);
   // A real change: only that row's status is sent.
   writeFileSync(join(s.wt("even"), "new.txt"), "n\n");
   const mark = h.posted.length;

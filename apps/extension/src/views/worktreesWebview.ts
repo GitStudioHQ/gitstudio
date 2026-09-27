@@ -162,6 +162,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
   /** What the page was last sent, to send nothing that did not change. */
   private lastRowsSig = "";
   private readonly lastStatusSig = new Map<string, string>();
+  private readonly lastDetailsSig = new Map<string, string>();
   /** Tier-1 reads waiting and running. */
   private readonly queue: string[] = [];
   private readonly queued = new Set<string>();
@@ -219,8 +220,11 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
   private async onMessage(m: WorktreesToHost): Promise<void> {
     switch (m.type) {
       case "ready":
+        // A new page (the view was moved or reloaded) has nothing: send all.
         this.lastRowsSig = "";
         this.lastStatusSig.clear();
+        this.lastDetailsSig.clear();
+        this.expanded.clear();
         this.postSeed();
         this.scheduleRefresh(false, 0);
         return;
@@ -238,6 +242,7 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
         return;
       case "collapse":
         this.expanded.delete(m.path);
+        this.lastDetailsSig.delete(m.path);
         return;
       case "commitFiles":
         await this.sendCommitFiles(m.path, m.sha);
@@ -541,6 +546,10 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
         : {}),
     };
     if (!this.expanded.has(p)) return;
+    // A refresh that found the same sends nothing (the open row stays as it is).
+    const sig = JSON.stringify(details);
+    if (quiet && this.lastDetailsSig.get(p) === sig) return;
+    this.lastDetailsSig.set(p, sig);
     void this.post({ type: "details", path: p, details });
   }
 
