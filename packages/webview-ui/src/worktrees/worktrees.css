@@ -24,6 +24,14 @@ body {
   line-height: 1.35;
   /* An opaque hover, so a row's always-visible buttons sit on one colour. */
   --wt-hover: color-mix(in srgb, var(--gs-fg) 7%, var(--gs-bg));
+  /* The row of the worktree this window has open: lit with the accent
+     (tokens.css, --gs-sel-fill), opaque like the hover, deeper under it. */
+  --wt-here: color-mix(in srgb, var(--gs-accent) 14%, var(--gs-bg));
+  --wt-here-hover: color-mix(in srgb, var(--gs-accent) 20%, var(--gs-bg));
+}
+body.vscode-light {
+  --wt-here: color-mix(in srgb, var(--gs-accent) 9%, var(--gs-bg));
+  --wt-here-hover: color-mix(in srgb, var(--gs-accent) 14%, var(--gs-bg));
 }
 .wt-view *,
 .wt-view *::before,
@@ -127,6 +135,16 @@ body {
 .wt-actions { grid-row: 1; grid-column: 4; }
 .wt-row:hover {
   background: var(--wt-hover);
+}
+/* The worktree this window has open is lit: a calm, rounded tint, with no
+   glow because this is a dense list, and no line of any kind. It also says
+   "This window" in words. High contrast paints no tints, so there the words
+   carry it (below). */
+.wt-row.is-current {
+  background: var(--wt-here);
+}
+.wt-row.is-current:hover {
+  background: var(--wt-here-hover);
 }
 .wt-row:focus-visible,
 .wt-row:focus {
@@ -578,6 +596,9 @@ body {
 }
 .vscode-high-contrast .wt-row:focus {
   outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent));
+}
+.vscode-high-contrast .wt-row.is-current {
+  background: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -35,6 +35,10 @@
   --prp-focus: var(--vscode-focusBorder, var(--gs-accent));
   --prp-brand-edge: color-mix(in srgb, var(--gs-brand) 70%, #ffffff);
   --prp-brand-wash: color-mix(in srgb, var(--gs-brand) 16%, transparent);
+  /* The selected state (tokens.css, --gs-sel-*), in the brand: lit, never
+     lined. The tab in front, a chosen verdict or merge method. */
+  --prp-brand-glow: 0 0 16px -4px color-mix(in srgb, var(--gs-brand) 70%, transparent);
+  --prp-brand-glow-soft: 0 0 12px -5px color-mix(in srgb, var(--gs-brand) 60%, transparent);
   --prp-add: var(--vscode-charts-green, #3fb950);
   --prp-del: var(--vscode-charts-red, #f85149);
   --prp-sk: color-mix(in srgb, var(--gs-fg) 10%, transparent);
@@ -51,6 +55,8 @@
   --prp-del: color-mix(in srgb, var(--vscode-charts-red, #e51400) 88%, #000000);
   --prp-brand-edge: var(--gs-brand);
   --prp-brand-wash: color-mix(in srgb, var(--gs-brand) 10%, transparent);
+  --prp-brand-glow: 0 0 14px -4px color-mix(in srgb, var(--gs-brand) 55%, transparent);
+  --prp-brand-glow-soft: 0 0 10px -5px color-mix(in srgb, var(--gs-brand) 45%, transparent);
   --prp-surface: color-mix(in srgb, var(--gs-fg) 3%, var(--prp-bg));
   --prp-surface-2: color-mix(in srgb, var(--gs-fg) 6%, var(--prp-bg));
   --prp-hover: color-mix(in srgb, var(--gs-fg) 5%, var(--prp-bg));
@@ -68,6 +74,8 @@
   --prp-fg-2: var(--gs-fg);
   --prp-brand-edge: var(--vscode-contrastActiveBorder, #f38518);
   --prp-brand-wash: transparent;
+  --prp-brand-glow: none;
+  --prp-brand-glow-soft: none;
 }
 
 .prp [hidden],
@@ -426,15 +434,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The branch checked out here: a calm brand tint and the "here" pill in
+   words. The chip keeps the neutral edge the other branch chip has; it used
+   to turn that edge the brand. */
 .prp-branch.is-current {
-  border-color: var(--prp-brand-edge);
+  background: color-mix(in srgb, var(--gs-brand) 14%, var(--prp-surface-2));
+}
+.vscode-light .prp-branch.is-current {
+  background: color-mix(in srgb, var(--gs-brand) 9%, var(--prp-surface-2));
+}
+.vscode-high-contrast .prp-branch.is-current {
+  background: var(--prp-surface-2);
 }
 .prp-here {
   display: inline-flex;
   align-items: center;
   height: 18px;
   padding: 0 6px;
-  border: 1px solid var(--prp-brand-edge);
+  border: 1px solid var(--prp-line-soft);
   border-radius: var(--gs-radius-pill);
   background: var(--prp-brand-wash);
   color: var(--gs-fg);
@@ -549,10 +566,14 @@
 .prp-verdict:not(.is-off):hover {
   border-color: var(--prp-line);
 }
+/* Chosen: lit, never outlined. The card keeps its neutral edge, takes the
+   brand wash and glows softly. It used to turn its edge the brand. */
 .prp-method.is-on,
 .prp-verdict.is-on {
-  border-color: var(--prp-brand-edge);
   background: var(--prp-brand-wash);
+  box-shadow: var(--prp-brand-glow-soft);
+  /* Its words take full ink on the tint: Light+'s secondary read 4.32:1. */
+  --prp-fg-2: var(--gs-fg);
 }
 .vscode-high-contrast .prp-method.is-on,
 .vscode-high-contrast .prp-verdict.is-on {
@@ -725,10 +746,16 @@
 }
 
 /* ── Tabs ─────────────────────────────────────────────────────────────── */
+/* The tab in front is a lit pill: a brand tint and a soft glow, and no
+   underline (the owner's rule: nothing chosen wears a line). The strip keeps
+   its own baseline as a divider under the row. The strip scrolls sideways,
+   which clips vertically too, so it pads the tabs by 4px to leave room for
+   the glow. 4 + 28 + 4 is the old 36px, so nothing below moves. */
 .prp-tabs {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   margin: 4px 0 0;
+  padding: 4px 2px;
   border-bottom: 1px solid var(--prp-line);
   overflow-x: auto;
   scrollbar-width: none;
@@ -739,9 +766,10 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  height: 36px;
+  height: 28px;
   padding: 0 12px;
   border: 0;
+  border-radius: var(--gs-radius);
   background: transparent;
   color: var(--prp-fg-2);
   font: inherit;
@@ -749,23 +777,19 @@
 }
 .prp-tab:hover {
   color: var(--gs-fg);
+  background: var(--prp-hover);
 }
 .prp-tab.is-on {
   color: var(--gs-fg);
   font-weight: 600;
+  background: var(--prp-brand-wash);
+  box-shadow: var(--prp-brand-glow-soft);
 }
-.prp-tab.is-on::after {
-  position: absolute;
-  right: 8px;
-  bottom: -1px;
-  left: 8px;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--gs-brand);
-  content: "";
-}
-.vscode-high-contrast .prp-tab.is-on::after {
-  background: var(--vscode-contrastActiveBorder, #f38518);
+/* High contrast paints no tint: the tab in front is ringed whole, in the
+   theme's active border, as VS Code marks a chosen thing there. */
+.vscode-high-contrast .prp-tab.is-on {
+  outline: 1px solid var(--vscode-contrastActiveBorder, #f38518);
+  outline-offset: -1px;
 }
 .prp-tab:focus-visible {
   outline-offset: -3px;

@@ -270,15 +270,25 @@ export class RebaseView extends LitElement {
       outline: 1px solid var(--gs-accent);
       outline-offset: -1px;
     }
-    /* Selected (#32): VS Code's selection colour for a list that is not the
-     * focused widget — neutral, so the action chips stay legible — with the
-     * card's edge in the accent. It keeps under the pointer, as VS Code's
-     * lists do, and lands at once (.painting), as a selection does. */
+    /* Selected (#32): lit, never outlined. The card is tinted with the
+     * accent and keeps the same neutral edge as the cards beside it. It
+     * used to turn that edge accent, which is the line the owner's rule
+     * bans. The tint is mixed into the card's own surface, so it is opaque
+     * and the action select's words are measured on it (AA). It stays under
+     * the pointer, as VS Code's lists do, and lands at once (.painting), as
+     * a selection does. */
     .row.selected,
     .row.selected:hover {
-      background: var(--vscode-list-inactiveSelectionBackground, color-mix(in srgb, var(--gs-accent) 16%, var(--gs-surface)));
-      border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--gs-border));
-      border-left-color: transparent;
+      background: color-mix(in srgb, var(--gs-accent) 18%, var(--gs-surface));
+    }
+    :host-context(body.vscode-light) .row.selected,
+    :host-context(body.vscode-light) .row.selected:hover {
+      background: color-mix(in srgb, var(--gs-accent) 12%, var(--gs-surface));
+    }
+    /* The SHA takes full ink on the tint: Light+'s secondary text read
+       4.04:1 on it. */
+    .row.selected .sha {
+      color: var(--gs-fg);
     }
     :host-context(body.vscode-high-contrast) .row.selected {
       outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
@@ -353,11 +363,20 @@ export class RebaseView extends LitElement {
     button.set[data-action="squash"] { --action-accent: var(--vscode-charts-purple, #b180d7); }
     button.set[data-action="fixup"] { --action-accent: var(--vscode-charts-orange, #d18616); }
     button.set[data-action="drop"] { --action-accent: var(--vscode-charts-red, #f14c4c); }
-    /* Every selected commit is already set to this one: the row chips' own
-     * tint, and a bar in the action's hue. */
+    /* Every selected commit is already set to this one: lit in the
+     * action's own hue, never underlined. It used to carry a 2px rule in
+     * that hue along its bottom. .setgroup clips (overflow: hidden), so the
+     * glow is drawn inside the segment. */
     button.set.current {
+      background: color-mix(in srgb, var(--action-accent) 22%, var(--gs-surface));
+      box-shadow: inset 0 0 10px -3px color-mix(in srgb, var(--action-accent) 60%, transparent);
+    }
+    :host-context(body.vscode-light) button.set.current {
       background: color-mix(in srgb, var(--action-accent) 16%, var(--gs-surface));
-      box-shadow: inset 0 -2px 0 var(--action-accent);
+    }
+    :host-context(body.vscode-high-contrast) button.set.current {
+      outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: -2px;
     }
     .note {
       flex: 1 1 auto;

@@ -36,6 +36,14 @@
   --prl-brand-edge: color-mix(in srgb, var(--gs-brand) 70%, #ffffff);
   --prl-brand-wash: color-mix(in srgb, var(--gs-brand) 18%, transparent);
   --prl-sk: color-mix(in srgb, var(--gs-fg) 10%, transparent);
+  /* The selected state (tokens.css, --gs-sel-*): lit, never lined, in the
+     brand, as everything chosen in this list is. A glow for a control, and
+     for the row checked out here a fill that is opaque like the hover, so
+     the actions strip over the row's end still hides the words under it. */
+  --prl-brand-glow: 0 0 16px -4px color-mix(in srgb, var(--gs-brand) 70%, transparent);
+  --prl-brand-glow-soft: 0 0 12px -5px color-mix(in srgb, var(--gs-brand) 60%, transparent);
+  --prl-here-row: color-mix(in srgb, var(--gs-brand) 14%, var(--gs-bg));
+  --prl-here-row-hover: color-mix(in srgb, var(--gs-brand) 20%, var(--gs-bg));
 }
 .vscode-light .prl,
 .vscode-light .prl-layer {
@@ -47,6 +55,10 @@
   --prl-brand-edge: var(--gs-brand);
   --prl-brand-wash: color-mix(in srgb, var(--gs-brand) 11%, transparent);
   --prl-sk: color-mix(in srgb, var(--gs-fg) 8%, transparent);
+  --prl-brand-glow: 0 0 14px -4px color-mix(in srgb, var(--gs-brand) 55%, transparent);
+  --prl-brand-glow-soft: 0 0 10px -5px color-mix(in srgb, var(--gs-brand) 45%, transparent);
+  --prl-here-row: color-mix(in srgb, var(--gs-brand) 9%, var(--gs-bg));
+  --prl-here-row-hover: color-mix(in srgb, var(--gs-brand) 14%, var(--gs-bg));
 }
 /* High contrast: every edge is the theme's contrast border, and a hovered or
    chosen thing is outlined in its active border — never a tint alone. */
@@ -58,6 +70,10 @@
   --prl-brand-ink: var(--gs-fg);
   --prl-brand-edge: var(--vscode-contrastBorder, #6fc3df);
   --prl-brand-wash: transparent;
+  --prl-brand-glow: none;
+  --prl-brand-glow-soft: none;
+  --prl-here-row: transparent;
+  --prl-here-row-hover: transparent;
 }
 
 .prl [hidden],
@@ -204,9 +220,11 @@
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
+/* The raised thumb keeps its shape by its fill and a soft drop shadow. It
+   used to carry a hairline ring as well, and a ring is a line. */
 .vscode-light .prl-seg-btn[aria-checked="true"] {
   background: var(--vscode-editor-background, #ffffff);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
 }
 .vscode-high-contrast .prl-seg-btn[aria-checked="true"] {
   background: transparent;
@@ -317,8 +335,17 @@
 }
 .prl-filter-btn:hover { background: var(--prl-row-hover); }
 .prl-filter-btn .codicon { font-size: 14px; color: var(--prl-fg-2); }
-.prl-filter-btn.is-active { border-color: var(--prl-brand-edge); }
+/* A filter is applied: the button is lit, its edge stays the neutral one it
+   always has. It used to turn that edge the brand, a line and nothing else.
+   In high contrast, where nothing is tinted, the edge IS the cue. */
+.prl-filter-btn.is-active {
+  background: var(--prl-brand-wash);
+  box-shadow: var(--prl-brand-glow-soft);
+}
 .prl-filter-btn.is-active .codicon { color: var(--prl-brand-ink); }
+.vscode-high-contrast .prl-filter-btn.is-active {
+  border-color: var(--vscode-contrastActiveBorder, var(--prl-focus));
+}
 .prl-badge {
   display: inline-flex;
   align-items: center;
@@ -347,7 +374,7 @@
   max-width: 100%;
   height: 20px;
   padding: 0 1px 0 8px;
-  border: 1px solid var(--prl-brand-edge);
+  border: 1px solid var(--prl-line);
   border-radius: 10px;
   background: var(--prl-brand-wash);
   color: var(--gs-fg);
@@ -592,16 +619,23 @@
   line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
-/* The branch checked out here: a line of the brand down its left edge. */
-.prl-row.is-checked-out::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--prl-brand-edge);
+/* The branch checked out here: the row is lit with a calm tint of the
+   brand, rounded like every row, and it says "Checked out" in words (the
+   pill). It used to wear a line of the brand down its left edge. It has no
+   glow, because this is a dense list. In high contrast the words carry it. */
+.prl-row.is-checked-out .prl-row-main {
+  background: var(--prl-here-row);
+}
+/* Its secondary words take full ink on the tint: Light+'s read 4.12:1. */
+.prl-row.is-checked-out {
+  --prl-fg-2: var(--gs-fg);
+}
+.prl-row.is-checked-out:hover .prl-row-main,
+.prl-row.is-checked-out:focus-within .prl-row-main {
+  background: var(--prl-here-row-hover);
+}
+.prl-row.is-checked-out .prl-row-actions {
+  background: linear-gradient(to right, transparent, var(--prl-here-row-hover) 12px);
 }
 /* One line: an item that does not fit wraps onto a second line that is
    never shown, so it is left out whole instead of cut in half. */
@@ -638,7 +672,6 @@
   white-space: nowrap;
 }
 .prl-pill.is-current {
-  border-color: var(--prl-brand-edge);
   background: var(--prl-brand-wash);
   color: var(--prl-brand-ink);
   font-weight: 600;
@@ -683,7 +716,8 @@
   pointer-events: none;
   transition: opacity var(--gs-motion-fast) var(--gs-ease);
 }
-.vscode-high-contrast .prl-row-actions { background: var(--gs-bg); }
+.vscode-high-contrast .prl-row-actions,
+.vscode-high-contrast .prl-row.is-checked-out .prl-row-actions { background: var(--gs-bg); }
 .prl-row:hover .prl-row-actions,
 .prl-row:focus-within .prl-row-actions {
   opacity: 1;
