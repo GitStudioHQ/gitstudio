@@ -1,0 +1,27 @@
+apps/extension/src/pr/prFeature.ts
+  s_26f5e669d3043c::t_612fcc8229ab2d 2,291
+apps/extension/src/pr/prPage.ts
+  s_26f5e669d3043c::t_b4c9b7d844c33d 2,502
+apps/extension/src/views/stashesView.ts
+  s_26f5e669d3043c::t_b0cb6bb692e635 20,89,328,402,430,613,627,675,723,780,832,840-844,969,988
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_7615c226e7a156 30,112,631
+apps/extension/test/notifyStyle.test.ts
+  s_26f5e669d3043c::t_8a65a8bfa6bb79 11-12,54-63,80,147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d6de43137b21084c253d16e3129cbcc259828482",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
