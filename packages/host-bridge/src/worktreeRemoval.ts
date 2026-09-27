@@ -162,3 +162,112 @@ export function worktreeRemovalRefusal(
       return `${label} is no longer a worktree of this repository.`;
   }
 }
+
+/** What the choosing question needs beyond WorktreeRemovalFacts. */
+export interface WorktreeRemovalChoiceFacts extends WorktreeRemovalFacts {
+  /** Files left unmerged there: `git stash` refuses them, so Stash & Remove
+   *  is not offered. */
+  unmerged?: number;
+  /** Its branch is fully merged into `mergedInto` (the default branch, which
+   *  is never this branch itself): deleting the branch loses no commit, so
+   *  "Also delete the branch" is offered — unchecked. */
+  mergedInto?: string;
+}
+
+/** One way to answer the removal question. */
+export interface WorktreeRemovalChoice {
+  /** `stash`: stash its changes, then remove it. `discard`: remove it with its
+   *  changes. `remove`: a clean one. `forget`: a missing one. */
+  id: "stash" | "discard" | "remove" | "forget";
+  label: string;
+  description: string;
+  danger: boolean;
+}
+
+/**
+ * The question asked before a worktree is removed, as a choice: a dirty one
+ * offers Stash & Remove (first, the default) beside Discard Changes and
+ * Remove; a clean or missing one has one way. A branch merged into the
+ * default branch adds an unchecked "Also delete the branch".
+ */
+export interface WorktreeRemovalAsk {
+  title: string;
+  message: string;
+  choices: WorktreeRemovalChoice[];
+  deleteBranch?: { label: string; description: string };
+}
+
+export function worktreeRemovalAsk(f: WorktreeRemovalChoiceFacts): WorktreeRemovalAsk {
+  const q = worktreeRemovalQuestion(f);
+  const deleteBranch =
+    f.branch && f.mergedInto
+      ? {
+          label: `Also delete the branch ${f.branch}`,
+          description: `It is fully merged into ${f.mergedInto}, so no commit is lost.`,
+        }
+      : undefined;
+  const extra = deleteBranch ? { deleteBranch } : {};
+  if (f.kind === "missing") {
+    return {
+      title: q.title,
+      message: q.message,
+      choices: [{ id: "forget", label: q.confirmLabel, description: "Removes git's record of the worktree.", danger: q.danger }],
+      ...extra,
+    };
+  }
+  if (!q.discardChanges) {
+    return {
+      title: q.title,
+      message: q.message,
+      choices: [{ id: "remove", label: q.confirmLabel, description: "Deletes its folder.", danger: true }],
+      ...extra,
+    };
+  }
+  const changes = f.changes;
+  const n = changes?.length ?? 0;
+  const them = changes === undefined ? "Its uncommitted changes" : `Its ${n} uncommitted change${n === 1 ? "" : "s"}`;
+  const listed =
+    changes === undefined
+      ? "Its uncommitted changes couldn't be read."
+      : `It has ${n} uncommitted change${n === 1 ? "" : "s"}:\n` +
+        changes
+          .slice(0, NAMED)
+          .map((c) => `  ${c}`)
+          .join("\n") +
+        (n > NAMED ? `\n  and ${n - NAMED} more` : "");
+  const unlock = f.locked ? "Unlock, " : "";
+  const canStash = changes !== undefined && !(f.unmerged && f.unmerged > 0);
+  // The question's own message, with its "go with it" paragraph swapped for
+  // the plain list: the choices below say where they go.
+  const paragraphs = q.message
+    .split("\n\n")
+    .map((p) => (p.startsWith("Its ") && (p.includes("go with it") || p.includes("couldn't be read")) ? listed : p));
+  if (!canStash) {
+    paragraphs.push(
+      changes === undefined
+        ? "They can't be stashed without knowing what they are."
+        : `${f.unmerged === 1 ? "A file is" : `${f.unmerged} files are`} left unmerged in it, which git can't stash.`,
+    );
+  }
+  const choices: WorktreeRemovalChoice[] = [];
+  if (canStash) {
+    choices.push({
+      id: "stash",
+      label: `${unlock}Stash & Remove`,
+      description: `${them} go into a stash you can apply from any worktree of this repository; then its folder is deleted.`,
+      danger: false,
+    });
+  }
+  choices.push({
+    id: "discard",
+    label: f.locked ? "Unlock, Discard Changes and Remove" : "Discard Changes and Remove",
+    description: `${them} are deleted with its folder, and nothing can bring them back.`,
+    danger: true,
+  });
+  return { title: q.title, message: paragraphs.join("\n\n"), choices, ...extra };
+}
+
+/** The stash message Stash & Remove leaves, so the stash says where it came from. */
+export function worktreeStashMessage(label: string, shownPath: string): string {
+  return `Changes from worktree ${label} (${shownPath}), stashed before removing it`;
+}
