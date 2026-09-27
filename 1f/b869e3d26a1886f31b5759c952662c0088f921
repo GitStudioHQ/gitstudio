@@ -1,0 +1,31 @@
+apps/extension/test/stashesInChanges.test.ts
+  s_26f5e669d3043c::t_247f022a094a8d 485-513
+  s_26f5e669d3043c::t_abadb06603108b 247-350
+  s_26f5e669d3043c::t_f7233748ed5736 533
+packages/git-service/src/StashProvider.ts
+  s_26f5e669d3043c::t_e906f48dc4285c 130-133
+  s_26f5e669d3043c::t_d3dece6772d099 657-662,664-668,740,928-942
+packages/git-service/test/stashFiles.test.ts
+  s_26f5e669d3043c::t_da7780c9bd084d 211-238
+  s_26f5e669d3043c::t_c00c72b4cdaf46 409-411
+apps/extension/src/views/stashesView.ts
+  s_26f5e669d3043c::t_91ff4f6c25a68c 451-452,455-486,512-523,527-532,546,562-564,588-590
+apps/extension/test/inTheWayCallSites.test.ts
+  s_26f5e669d3043c::t_c1e030cca3b7a5 132-133,135-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1fb869e3d26a1886f31b5759c952662c0088f921",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
