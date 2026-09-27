@@ -9499,6 +9499,8 @@
       const back = sent("commit:undoDrop").at(-1)?.payload;
       c.eq(back?.before, TIP, "Undo goes back to the old tip");
       c.eq(back?.after, "a1b2c3d4e5f60718293a", "from the tip the drop left");
+      // The branch the drop answered with goes back — not whichever HEAD is on by then.
+      c.eq(back?.branch, "refs/heads/main", "on the branch the drop rewrote");
     },
 
     /** A preflight refusal (uncommitted changes) is said INSTEAD of the question. */
@@ -9792,7 +9794,9 @@
       c.ok(!!undo, "with Undo");
       undo?.click();
       await settle(500);
-      c.eq(sent("commits:undo").at(-1)?.payload?.what, "drop", "Undo puts them back");
+      const back = sent("commits:undo").at(-1)?.payload;
+      c.eq(back?.what, "drop", "Undo puts them back");
+      c.eq(back?.branch, "refs/heads/main", "on the branch the drop rewrote");
     },
 
     /**

@@ -3463,7 +3463,8 @@
   dynamic["commit:drop"] = (req) =>
     params.get("dropconflict")
       ? { status: "stopped", reason: "conflict", message: "could not apply 9f8e7d6", before: req.head }
-      : { status: "done", before: req.head, after: DROP_AFTER };
+      : // As main answers: the branch it rewrote, which its Undo sends back.
+        { status: "done", before: req.head, after: DROP_AFTER, branch: "refs/heads/main" };
   dynamic["commit:undoDrop"] = () => ({ ok: true, changed: true });
 
   // ── Several commits at once (issue #32) ────────────────────────────────────
@@ -3535,7 +3536,7 @@
   dynamic["commits:rewrite"] = (req) =>
     params.get("dropconflict")
       ? { status: "stopped", reason: "conflict", message: "could not apply", before: req.head }
-      : { status: "done", before: req.head, after: "d0d0d0d0d0d0d0d0d0d0" };
+      : { status: "done", before: req.head, after: "d0d0d0d0d0d0d0d0d0d0", branch: "refs/heads/main" };
   dynamic["commits:undo"] = () => ({ ok: true, changed: true });
   {
     // commit:action with `shas` — Cherry-pick / Revert of several — answers
@@ -3552,7 +3553,7 @@
             message: `${req.action === "cherry-pick" ? "Cherry-picking" : "Reverting"} ${req.shas.length} commits stopped on a commit that needs you — resolve any conflicts and continue, skip that commit, or abort to put the branch back as it was.`,
           };
         }
-        return { ok: true, changed: true, before: graphBase.head, after: "d1d1d1d1d1d1d1d1d1d1" };
+        return { ok: true, changed: true, before: graphBase.head, after: "d1d1d1d1d1d1d1d1d1d1", branch: "refs/heads/main" };
       }
       return one(req);
     };
