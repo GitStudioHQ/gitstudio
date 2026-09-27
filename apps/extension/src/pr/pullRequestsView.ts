@@ -218,6 +218,8 @@ export class PullRequestsTreeProvider
   private readonly disposables: vscode.Disposable[] = [];
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly pollTimer: ReturnType<typeof setInterval>;
+  /** Aborted on dispose: the checks batch, which nothing awaits, stops with the view. */
+  private readonly stopped = new AbortController();
 
   private readonly api: GitHubApi;
   private data: LoadedData | undefined;
@@ -601,22 +603,27 @@ export class PullRequestsTreeProvider
 
   private async loadCi(data: LoadedData): Promise<void> {
     try {
+      // One request per 50 rows, one after another, and nothing awaits them:
+      // the view can be disposed before the last. Then it asks for nothing
+      // more — a list of 130 went on paging GitHub after its view was gone.
       data.ci = await this.api.ciForPulls(
         data.ctx.owner,
         data.ctx.repo,
         data.pulls.map((p) => p.number),
+        { signal: this.stopped.signal },
       );
     } catch {
       return; // rows keep their plain icons
     }
     // Only repaint if this data is still the one on screen — a later refresh may
     // have replaced it, and we must not clobber fresher rows with stale colours.
-    if (this.data === data) {
+    if (this.data === data && !this.stopped.signal.aborted) {
       this.redraw();
     }
   }
 
   dispose(): void {
+    this.stopped.abort();
     if (this.refreshTimer !== undefined) {
       clearTimeout(this.refreshTimer);
     }

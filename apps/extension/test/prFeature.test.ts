@@ -99,11 +99,17 @@ function mount(repos: ReturnType<typeof fakeRepos>) {
   const context = { subscriptions: [] as { dispose(): void }[], extensionUri: vscode.Uri.file("/ext") };
   registerPrFeature(context as any, repos as any, { isEnabled: async () => false } as any);
   const view = pr.views.at(-1);
+  let gone = false;
   const m = {
     view,
     tree: view.opts.treeDataProvider,
     controller: pr.controllers.at(-1),
-    dispose: () => context.subscriptions.forEach((d) => d.dispose()),
+    // Once: a test that closes the feature itself is not closed again after it.
+    dispose: () => {
+      if (gone) return;
+      gone = true;
+      context.subscriptions.forEach((d) => d.dispose());
+    },
   };
   mounted.push(m);
   return m;
@@ -247,10 +253,11 @@ test("a file save costs GitHub nothing, hidden or shown; another repository clea
   assert.equal(m.view.description, "acme/other");
 });
 
-test("the list follows GitHub's pages: 130 open PRs are 130 rows, not 100", async () => {
+/** 130 open PRs, over two of GitHub's pages. */
+function github130(): FakeGitHub {
   const all = Array.from({ length: 130 }, (_, i) => rawPull(1000 - i));
   const path = "/repos/acme/app/pulls?state=open&sort=updated&direction=desc&per_page=100";
-  github([
+  return github([
     [
       "GET",
       /^\/repos\/acme\/app\/pulls\?state=open/,
@@ -261,9 +268,32 @@ test("the list follows GitHub's pages: 130 open PRs are 130 rows, not 100", asyn
     ],
     ...acmeRoutes(),
   ]);
+}
+
+test("the list follows GitHub's pages: 130 open PRs are 130 rows, not 100", async () => {
+  const gh = github130();
   const m = mount(fakeRepos(ORIGIN));
   const open = (await rows(m.tree)).filter((x) => x.group === "open");
   assert.equal(open.length, 130);
+  // Their checks come after the rows, 50 PRs a request — and this test ends
+  // only when they have. Ended before, the last two requests went out after
+  // afterEach had put the machine's own fetch back: a real POST to
+  // api.github.com/graphql, from a test.
+  await until(() => gh.count(/^POST \/graphql$/) === 3, "the checks of all 130 rows, three requests");
+  await sleep(50);
+  assert.equal(gh.count(/^POST \/graphql$/), 3, "and no more");
+});
+
+test("a list closed while its checks are still paging asks GitHub for nothing more", async () => {
+  const gh = github130();
+  const slow = gh.hold(/^\/graphql$/);
+  const m = mount(fakeRepos(ORIGIN));
+  assert.equal((await rows(m.tree)).filter((x) => x.group === "open").length, 130);
+  await until(() => slow.held() === 1, "the first of the three checks requests");
+  m.dispose(); // the window closes, the extension with it
+  slow.release();
+  await sleep(150);
+  assert.equal(gh.count(/^POST \/graphql$/), 1, "the request in flight is the last one");
 });
 
 test("a list in sight is read again once it is stale — and nothing is asked while it is hidden", async () => {
