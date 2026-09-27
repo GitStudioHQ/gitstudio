@@ -1,0 +1,27 @@
+apps/extension/harness/pr/pageShots.ts
+  s_26f5e669d3043c::t_91e0ee0d2a8ee3 189-199,201
+apps/extension/src/pr/prPage.ts
+  s_26f5e669d3043c::t_e190f9f20b0b46 240-241,366,405-427,809,814,818
+apps/extension/test/prFeature.test.ts
+  s_26f5e669d3043c::t_8d6993dfc65e61 309-340
+packages/webview-ui/src/pr/prPage.ts
+  s_26f5e669d3043c::t_138058de4c9634 298-299
+packages/webview-ui/test/fixtures/prPageFixtures.ts
+  s_26f5e669d3043c::t_6ab64427a8efe6 274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "378938cbc44ed62f412eb826902017e2053d1d0c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
