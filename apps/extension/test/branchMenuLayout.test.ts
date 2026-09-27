@@ -410,7 +410,10 @@ test("a long name whose match lies past the row's end is cut in the middle: ever
   for (const width of [260, 300, 340]) {
     const p = await open("dark", width, 640);
     await openMenu(p, stateMessage({ local, remote: ["origin/" + LONG, "origin/" + JIRA] }));
-    for (const q of ["billing", "customers-v2", "oauth2", "refresh-tokens", "pkce", "feature/chec", "jira"]) {
+    // A run of letters, then scattered ones — the first letter the name's
+    // own ("fbilling"), or not ("cv2"), the last far past the row's end.
+    for (const q of ["billing", "customers-v2", "oauth2", "refresh-tokens", "pkce", "feature/chec", "jira",
+      "fbilling", "fval", "fcv2", "fintern", "cv2", "frefresh", "ftok"]) {
       await query(p, q);
       const rows = await p.eval<{ name: string; shown: string; label: string; tip: string; nameBox: Box; marks: Box[]; marked: string }[]>(`Array.prototype.map.call(document.querySelectorAll(".bm-list .bm-branch"), function (r) {
         var n = r.querySelector(".bm-bname"), nb = n.getBoundingClientRect();
@@ -427,6 +430,8 @@ test("a long name whose match lies past the row's end is cut in the middle: ever
             `${width}px '${q}': the match is in sight in '${r.shown}' (${Math.round(m.left)}–${Math.round(m.right)} in ${Math.round(r.nameBox.left)}–${Math.round(r.nameBox.right)})`);
         }
         assert.ok(r.label.startsWith(r.name) && r.tip.startsWith(r.name), `${width}px '${q}': the whole name in the spoken label and the tooltip`);
+        // A match that starts the name keeps the name's start in sight.
+        if (q.startsWith("f")) assert.ok(r.shown.startsWith("f"), `${width}px '${q}': '${r.shown}' still starts as the name does`);
       }
       if (q === "feature/chec") {
         // (A remote branch's row shows its name without the remote.)

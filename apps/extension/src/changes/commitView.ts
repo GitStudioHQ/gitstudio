@@ -6653,41 +6653,88 @@ export class CommitViewProvider
         if (cut) t.nm.innerHTML = hl(cut.text, cut.pos);
       }
     }
-    /** Where to cut text so the letters at pos show in avail pixels, or null
-     *  when an ellipsis at its end already leaves them in sight. */
+    /**
+     * Where to cut text so every letter at pos shows in avail pixels, or null
+     * when an ellipsis at its end already leaves them in sight. A scattered
+     * match ("fval": the f of feature, the val of validation) has several
+     * runs of matched letters; each keeps some of what is around it, and
+     * "…" stands for what lies between. What is kept, most first:
+     *   · of the name's start: its first path segment, else its first word,
+     *     else nothing — and all of it up to a run that starts the name;
+     *   · before each run: its path segment (with the slash before it), else
+     *     its word, else the run alone;
+     *   · after a run: the rest of its word, or, for the run alone, nothing.
+     *     The last run keeps everything after it, cut at the row's end.
+     * The first way that fits is the one: "feature/…/billing-address-val…"
+     * for "billing", "feature/…validation-for…" for "fval".
+     */
     function bmMiddleCut(text, pos, avail, width) {
-      const first = pos[0], last = pos[pos.length - 1];
       const ELL = "…";
-      if (first <= 1 || width(text.slice(0, last + 1)) + width(ELL) <= avail) return null;
-      // Where the kept end starts: the path segment the match is in, else
-      // the word it is in, else the match itself.
-      const seg = text.lastIndexOf("/", first - 1) + 1;
-      const starts = [seg];
-      for (let i = first; i > seg; i--) if (bmWordStart(text, i)) { starts.push(i); break; }
-      starts.push(first);
-      // What is kept of the start: its first path segment, else its first
-      // word, else nothing.
-      let word = 1;
-      while (word < text.length && !bmWordStart(text, word)) word++;
-      const heads = [text.indexOf("/") + 1, word, 0];
-      for (const s of starts) {
-        if (s <= 1) continue;
+      const last = pos[pos.length - 1];
+      if (width(text.slice(0, last + 1)) + width(ELL) <= avail) return null;
+      // The matched letters as runs, each [from, to).
+      const runs = [];
+      for (const p of pos) {
+        const r = runs[runs.length - 1];
+        if (r && p === r[1]) r[1] = p + 1;
+        else runs.push([p, p + 1]);
+      }
+      const SEP = /[\/\-_.\s()'"@#:,+]/;
+      /** Where the word holding text[i - 1] ends. */
+      const wordEnd = (i) => {
+        let j = i;
+        while (j < text.length && !SEP.test(text.charAt(j)) && !bmWordStart(text, j)) j++;
+        return j;
+      };
+      /** Where a run's kept text starts, at each level: its path segment, its word, itself. */
+      const before = (s, level) => {
+        let from = s;
+        if (level === 0) from = text.lastIndexOf("/", s - 1) + 1;
+        else if (level === 1) while (from > 0 && !bmWordStart(text, from)) from--;
+        // A kept path segment keeps the slash before it: "feature/…/billing".
+        return from > 0 && text.charAt(from - 1) === "/" ? from - 1 : from;
+      };
+      let firstWord = 1;
+      while (firstWord < text.length && !bmWordStart(text, firstWord)) firstWord++;
+      const heads = [text.indexOf("/") + 1, firstWord, 0];
+      /** The name with what lies between the kept parts as "…", and where each matched letter went. */
+      const build = (level, h) => {
+        const keep = [];
+        if (h > 0) keep.push([0, h]);
+        runs.forEach((r, k) => {
+          // A run that starts the name keeps the name's start.
+          const from = k === 0 && r[0] <= 1 ? 0 : before(r[0], level);
+          const to = k === runs.length - 1 ? text.length : level === 2 ? r[1] : wordEnd(r[1]);
+          keep.push([from, to]);
+        });
+        keep.sort((a, b) => a[0] - b[0]);
+        // Merged where they touch, or where "…" would be no shorter than what it stands for.
+        const merged = [];
+        for (const [a, b] of keep) {
+          const m = merged[merged.length - 1];
+          if (m && (a <= m[1] || width(text.slice(m[1], a)) <= width(ELL))) m[1] = Math.max(m[1], b);
+          else merged.push([a, b]);
+        }
+        if (merged[0][0] > 0 && width(text.slice(0, merged[0][0])) <= width(ELL)) merged[0][0] = 0;
+        let out = "";
+        const at = new Map();
+        merged.forEach(([a, b]) => {
+          if (a > 0) out += ELL;
+          for (let i = a; i < b; i++) at.set(i, out.length + i - a);
+          out += text.slice(a, b);
+        });
+        const mapped = pos.map((p) => at.get(p));
+        return { text: out, pos: mapped, fits: width(out.slice(0, mapped[mapped.length - 1] + 1)) + width(ELL) <= avail };
+      };
+      let cut = null;
+      for (let level = 0; level <= 2 && !(cut && cut.fits); level++) {
         for (const h of heads) {
-          if (h >= s) continue;
-          // A kept path segment keeps the slash before it: "feature/…/billing".
-          const from = s - 1 > h && text.charAt(s - 1) === "/" ? s - 1 : s;
-          if (width(text.slice(0, h) + ELL + text.slice(from, last + 1)) <= avail) return bmCut(text, pos, h, from);
+          cut = build(level, h);
+          if (cut.fits) break;
         }
       }
-      return bmCut(text, pos, 0, first);
-    }
-    function bmCut(text, pos, h, s) {
-      const mapped = [];
-      for (const p of pos) {
-        if (p < h) mapped.push(p);
-        else if (p >= s) mapped.push(h + 1 + p - s);
-      }
-      return { text: text.slice(0, h) + "…" + text.slice(s), pos: mapped };
+      // Nothing fits the row: the closest cut still shows the most of what matched.
+      return cut.text === text ? null : cut;
     }
 
     // ── GitStudio dialogs ─────────────────────────────────────────────────
