@@ -53,7 +53,7 @@ Free on public *and* private repos. No account, no sign-up, no analytics, no fea
 
 **Sync is live, not a status readout.** The ahead/behind counts in the header *are* the Push and Pull buttons, and they run the operation with a spinner in place. Force-push defaults to the safer `--force-with-lease`.
 
-**The branch dialog does the work without closing.** Fetch runs in place — the item spins, then every branch row's ↑/↓ badges update, so you can see exactly what's unpulled where. Local branches can be **pulled without checking them out**. Each branch carries its full operation set: checkout, merge, rebase onto, rename, delete, push/publish, set upstream, branch from here, create worktree, compare.
+**The branch dialog does the work without closing.** Open it from the branch name, the status bar or `Ctrl/Cmd+Alt+G G`, and type: `rel21` finds `release/2.1`, the best match is highlighted — a branch before an action it ties with — and Enter runs it; a name that matches nothing offers **New Branch '…'**. Fetch runs in place — the item spins, then every branch row's ↑/↓ badges update, so you can see exactly what's unpulled where. Remote branches are grouped by remote. Local branches can be **pulled without checking them out**. Each branch carries its full operation set, in the same order for every kind of ref: checkout, pull, new branch, new worktree, compare, merge, rebase onto, push/publish, set tracked branch, rename, copy name, favorite, reset to its remote, delete. In a narrow sidebar a branch's actions open in the dialog itself, under a back row.
 
 <table>
   <tr>
@@ -130,6 +130,7 @@ Everything lives under one conflict-free chord — `Ctrl+Alt+G` (`Cmd+Alt+G` on 
 | --- | --- | --- |
 | Toggle file blame annotations | `Ctrl+Alt+G` `B` | `Cmd+Alt+G` `B` |
 | Show line history | `Ctrl+Alt+G` `H` | `Cmd+Alt+G` `H` |
+| Open the branch menu (*GitStudio: Branches…*) | `Ctrl+Alt+G` `G` | `Cmd+Alt+G` `G` |
 | Open changes vs HEAD | `Ctrl+Alt+G` `D` | `Cmd+Alt+G` `D` |
 | Stage selected lines | `Ctrl+Alt+G` `S` | `Cmd+Alt+G` `S` |
 | Unstage selected lines | `Ctrl+Alt+G` `U` | `Cmd+Alt+G` `U` |

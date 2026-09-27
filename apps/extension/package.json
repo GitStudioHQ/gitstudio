@@ -547,7 +547,7 @@
       },
       {
         "command": "gitstudio.branch.createWorktree",
-        "title": "Create Worktree for This Branch\u2026",
+        "title": "New Worktree from This Branch\u2026",
         "category": "GitStudio",
         "icon": "$(repo-clone)"
       },
@@ -944,6 +944,12 @@
       }
     ],
     "keybindings": [
+      {
+        "command": "gitstudio.branches.open",
+        "key": "ctrl+alt+g g",
+        "mac": "cmd+alt+g g",
+        "when": "gitstudio.hasRepo"
+      },
       {
         "command": "gitstudio.toggleFileBlame",
         "key": "ctrl+alt+g b",
