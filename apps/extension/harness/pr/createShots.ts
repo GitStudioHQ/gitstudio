@@ -130,6 +130,7 @@ function shots(): Shot[] {
     } },
     { name: "base-picker", state: s.ready, act: async (page) => click(page, '[data-picker="base"]') },
     { name: "head-picker", state: s.ready, act: async (page) => click(page, '[data-picker="head"]') },
+    { name: "push-picker", state: s.newBranch, act: async (page) => click(page, '[data-picker="push"]') },
     { name: "target-picker", state: s.ready, act: async (page) => click(page, '[data-picker="target"]') },
     { name: "reviewers-picker", state: s.ready, act: async (page) => click(page, '[data-picker="reviewers"]') },
     { name: "labels-picker", state: s.ready, act: async (page) => click(page, '[data-picker="labels"]') },

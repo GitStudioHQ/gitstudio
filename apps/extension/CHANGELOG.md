@@ -16,7 +16,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   branch of that name that isn't the pull request's — your own `main` beside
   a fork's `main`, or one that tracks something else — is never taken over:
   you are asked, and offered **Checkout as alice-main**, **Use main**, or
-  **Cancel** (Cancel changes nothing, and the remote it added goes again). A
+  **Cancel** (Cancel changes nothing, and the remote it added goes again).
+  Checked out as `alice-main`, it is pushed with GitStudio's **Push**; git's
+  own `git push` refuses a branch named unlike the one it tracks, so the
+  choice and the message after it give the command that works (`git push
+  alice HEAD:main`). A
   branch with commits the pull request doesn't have is never moved without
   asking; your own commits on top of it are left as they are, and counted.
   Uncommitted changes in the way are offered **Stash & Retry**. A pull
@@ -38,7 +42,15 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   the files the pull request will have, compared with the base as GitHub has
   it now; a file opens its diff. A branch that isn't pushed yet, or has
   commits that aren't, is pushed first — the button says **Push and create
-  pull request**. A branch that already has an open pull request says so,
+  pull request**. It goes where git pushes it, except a branch started from
+  the base (`git switch -c feature upstream/main`), which goes to your fork
+  when the clone has a remote for it, as `gh pr create` does — not into the
+  repository you may not push to; **Push to another remote** picks any of
+  the clone's GitHub remotes. A commit, a pull or a push made while the form
+  is open shows in it at once (git is read again, GitHub isn't asked), and
+  **Create** reads the branch once more before it pushes, so the pull
+  request has every commit; **Refresh** at the top reads the branches and
+  GitHub again. A branch that already has an open pull request says so,
   with **Open #44**, and anything else that stops it (nothing to compare, a
   branch that has diverged from its remote) is said beside the button. What
   you type is never replaced. Once created, the pull request joins the list
@@ -81,12 +93,19 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   the repository allows, the one set in `gitstudio.pr.defaultMergeMethod`
   first, each saying what it does ("The 4 commits become one commit on
   main."), with the commit title to use and an option to delete the branch on
-  GitHub afterwards. GitHub refuses the merge if the branch has moved on since
-  the page read it, and the page says so. The list's **Merge** opens this box;
-  nothing is asked in the Changes view any more.
+  GitHub afterwards; **Confirm merge**, **Confirm squash and merge** or
+  **Confirm rebase and merge** sends it. GitHub refuses the merge if the
+  branch has moved on since the page read it, and the page says so. The
+  list's **Merge…** opens this box, on a page that is still loading too;
+  when the pull request can't be merged (a draft, blocked, read-only, already
+  merged) the box doesn't open, and the keyboard lands on the status line
+  that says why. Closing a box (Escape, Cancel) puts the keyboard back on the
+  button that opened it. Nothing is asked in the Changes view any more.
 - **Review in the editor, submit from the page.** A pull request's diffs take
   comments as soon as its page has read it — only on the lines GitHub accepts
-  — and your first comment starts your review. GitHub's own threads show on
+  — and your first comment starts your review. A commit's own diff (from the
+  **Commits** tab) takes none: its lines are that commit's change, not the
+  pull request's. GitHub's own threads show on
   the diff too, with **Reply** and **Resolve Conversation**. Your pending
   comments are listed on the page (each opens where it is) and counted on the
   **Review** button, the **Files** tab, each file and the status bar
@@ -116,7 +135,13 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   link, offered only where they apply; right-click or Shift+F10
   opens the same menu. **Up/Down** move through the rows, and Down from the
   search box gets you there. The list keeps its rows while it refreshes, with
-  a thin bar to show it, and says what to do when there is nothing to show —
+  a thin bar to show it — every row you paged in, not just the first hundred
+  — and a merge, close or reopen from a page moves that row at once, in that
+  repository's lists only (your fork's own #37 is another pull request).
+  Checking out a fork's pull request adds its remote without resetting the
+  list: your filters and rows stay. In a narrow sidebar the search box says
+  **Search**, never "Search pull reque". It says what to do when there is
+  nothing to show —
   **Sign in to GitHub**, **Sign in again**, **Retry**, **Authorize on
   GitHub**, **New pull request** or **Clear filters**. It is drawn for
   Dark, Light and both High Contrast themes.
@@ -125,7 +150,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   was forked from — as github.com's own Pull requests button does — with your
   fork (and any other GitHub remote) one click away in the repository menu at
   the top. Your choice is remembered for the workspace, and **New pull
-  request** opens on it too.
+  request** and the Command Palette's pull request commands use it too —
+  even before the Pull Requests view has been opened.
 - **Select several commits.** In the Commit Graph and the Commits list,
   **Cmd/Ctrl+click** adds or removes a commit, **Shift+click** selects
   everything from the last one you clicked, and **Shift+Up/Down** extends the

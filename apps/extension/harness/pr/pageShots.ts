@@ -100,6 +100,32 @@ function shots(): Shot[] {
     { name: "failed", state: s.failed },
     { name: "refresh-failed", state: s.refreshFailed },
     { name: "merge-box", state: s.mergeBox },
+    // The list's Merge… on a page still loading: the box once it has loaded —
+    // or, when it can't be merged, the keyboard on the line that says why.
+    {
+      name: "merge-asked-ready",
+      state: { ...s.loading, focus: { seq: 5, open: "merge" } },
+      act: async (page) => {
+        await page.eval(post({ ...s.ready, seq: 50, focus: { seq: 5, open: "merge" } }));
+        await new Promise((r) => setTimeout(r, 200));
+      },
+    },
+    {
+      name: "merge-asked-draft",
+      state: { ...s.loading, focus: { seq: 5, open: "merge" } },
+      act: async (page) => {
+        await page.eval(post({ ...s.draft, seq: 50, focus: { seq: 5, open: "merge" } }));
+        await new Promise((r) => setTimeout(r, 200));
+      },
+    },
+    {
+      name: "merge-asked-blocked",
+      state: { ...s.loading, focus: { seq: 5, open: "merge" } },
+      act: async (page) => {
+        await page.eval(post({ ...s.open, seq: 50, focus: { seq: 5, open: "merge" } }));
+        await new Promise((r) => setTimeout(r, 200));
+      },
+    },
     { name: "merging", state: s.merging },
     { name: "review-box", state: s.reviewBox },
     { name: "review-own", state: s.reviewOwn },
