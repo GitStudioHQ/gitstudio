@@ -2130,10 +2130,13 @@ export class CommitViewProvider
    */
   private pushTarget: { entry: RepoEntry; name: string; shownPath: string; release(): void } | undefined;
 
+  /**
+   * The review now acts on `t`. The one it acted on before is NOT disposed
+   * here: disposing a context kills its running git, and a push from the
+   * previous review may still be running when another review opens. An idle
+   * context holds nothing but itself; the last one is disposed with the view.
+   */
   private setPushTarget(t: CommitViewProvider["pushTarget"]): void {
-    if (this.pushTarget && this.pushTarget !== t) {
-      this.pushTarget.release();
-    }
     this.pushTarget = t;
   }
 
@@ -8536,7 +8539,8 @@ export class CommitViewProvider
   }
 
   dispose(): void {
-    this.setPushTarget(undefined);
+    this.pushTarget?.release();
+    this.pushTarget = undefined;
     for (const d of this.disposables) {
       d.dispose();
     }

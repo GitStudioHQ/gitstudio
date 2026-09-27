@@ -86,6 +86,29 @@ test("the review for another worktree lists THAT worktree's commits, says whose 
   assert.equal(host.posted.find((m) => m.type === "pushPreview"), undefined, "main has nothing to push");
 });
 
+test("a review that replaces another never kills the first one's git — its context is let go only with the view", async () => {
+  const s = scene();
+  const host = changesHost(s.repo.dir);
+  await host.send({ type: "ready" });
+  const released: string[] = [];
+  const target = (name: string) => {
+    const ctx = new GitContext({ root: s.topic });
+    return { entry: { root: s.topic, ctx }, name, shownPath: "~/t", release: () => (released.push(name), ctx.dispose()) };
+  };
+  await host.provider.openPushReview(target("first"));
+  await host.provider.openPushReview(target("second"));
+  await host.send({ type: "requestPushPreview" });
+  assert.deepEqual(released, [], "a push the first review started may still be running");
+  host.dispose();
+  assert.deepEqual(released, [], "only the review's CURRENT target is its own to dispose — and there is none now");
+  // With a worktree review open when the view goes, that one is let go.
+  const h2 = changesHost(s.repo.dir);
+  await h2.send({ type: "ready" });
+  await h2.provider.openPushReview(target("third"));
+  h2.dispose();
+  assert.deepEqual(released, ["third"]);
+});
+
 test("Undo commits… in another worktree's review resets THAT worktree, keeping the changes", async () => {
   const s = scene();
   const host = changesHost(s.repo.dir);
