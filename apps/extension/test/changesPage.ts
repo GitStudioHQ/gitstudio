@@ -21,6 +21,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildSync } from "esbuild";
 import ts from "typescript";
 import { findChrome } from "../../../packages/webview-ui/test/headless";
 import { Browser, type Page } from "../../../scripts/merge-e2e/cdp";
@@ -31,7 +32,29 @@ export type { VsCodeTheme };
 const HERE = (p: string): string => fileURLToPath(new URL(p, import.meta.url));
 const SRC = HERE("../src/changes/commitView.ts");
 const TOKENS = HERE("../../../packages/webview-ui/src/styles/tokens.css");
+const CHANGE_ROWS_CSS = HERE("../../../packages/webview-ui/src/changeRows/changeRows.css");
+const CHANGE_ROWS_ENTRY = HERE("../../../packages/webview-ui/src/changeRows/global.ts");
 const CODICONS = HERE("../../../node_modules/@vscode/codicons/dist/codicon.css");
+
+let changeRowsFile: string | undefined;
+
+/** change-rows.js (window.GsChangeRows), built once per run from the extension's entry. */
+export function changeRowsScript(): string {
+  if (!changeRowsFile) {
+    const out = buildSync({
+      entryPoints: [CHANGE_ROWS_ENTRY],
+      bundle: true,
+      write: false,
+      platform: "browser",
+      format: "iife",
+      logLevel: "silent",
+    });
+    const dir = mkdtempSync(join(tmpdir(), "gs-change-rows-"));
+    changeRowsFile = join(dir, "change-rows.js");
+    writeFileSync(changeRowsFile, out.outputFiles[0].text);
+  }
+  return pathToFileURL(changeRowsFile).href;
+}
 
 /** The menu, input and list tokens the Changes view reads that themes.ts has no need for. */
 const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
@@ -134,11 +157,15 @@ export function changesViewHtml(theme: VsCodeTheme, webviewState?: unknown): str
 
   const holes: Record<string, string> = {
     // Everything the page needs, and nothing it would not get in VS Code:
-    // inline style and script (the nonce stays on the tags), the codicon font.
-    csp: "default-src 'none'; style-src 'unsafe-inline' file:; font-src file: data:; script-src 'unsafe-inline'",
+    // inline style and script (the nonce stays on the tags), the codicon font,
+    // and the shared change rows' script (change-rows.js, built here from the
+    // extension's own entry).
+    csp: "default-src 'none'; style-src 'unsafe-inline' file:; font-src file: data:; script-src 'unsafe-inline' file:",
     codiconUri: pathToFileURL(CODICONS).href,
     nonce: "n",
     tokensCss: readFileSync(TOKENS, "utf8"),
+    changeRowsCss: readFileSync(CHANGE_ROWS_CSS, "utf8"),
+    changeRowsUri: changeRowsScript(),
   };
   // head "`…${", middle "}…${", tail "}…`" — the delimiters come off.
   let html = tpl.head.getText(sf).slice(1, -2);

@@ -1,0 +1,589 @@
+/* The Worktrees view (worktrees/view.ts). Rows share the push review's
+ * commit and file rows (changeRows.css); everything else is scoped under
+ * .wt-* so the desktop can import it whole.
+ *
+ * Colours are --gs-* tokens (tokens.css) or --vscode-* names with a
+ * fallback — never a hard colour.
+ *
+ * NB: never write a star-slash pair inside a comment here — a selector glob
+ * closes it early and silently eats the next rule. */
+
+@import "../styles/tokens.css";
+@import "../changeRows/changeRows.css";
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+body {
+  color: var(--gs-fg);
+  background: var(--gs-bg);
+  font-family: var(--gs-font-ui);
+  font-size: 13px;
+  line-height: 1.35;
+  /* An opaque hover, so a row's always-visible buttons sit on one colour. */
+  --wt-hover: color-mix(in srgb, var(--gs-fg) 7%, var(--gs-bg));
+}
+.wt-view *,
+.wt-view *::before,
+.wt-view *::after {
+  box-sizing: border-box;
+}
+.wt-view [hidden],
+[hidden].wt-menu,
+.gs-tip[hidden] {
+  display: none !important;
+}
+.wt-view .codicon {
+  line-height: 1;
+  color: inherit;
+}
+
+/* ---- Top: filter, Prune ------------------------------------------------- */
+.wt-top {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--gs-bg);
+  border-bottom: 1px solid var(--gs-border-soft);
+}
+.wt-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 2px;
+  background: var(--vscode-input-background, var(--gs-surface));
+  border: 1px solid var(--vscode-input-border, var(--gs-border));
+  color: var(--vscode-input-foreground, var(--gs-fg));
+}
+.wt-filter:focus-within {
+  outline: 1px solid var(--gs-accent);
+  outline-offset: -1px;
+}
+.wt-filter .codicon {
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--cr-muted);
+}
+.wt-filter-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+}
+.wt-filter-input::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--gs-fg-muted));
+}
+.wt-prune {
+  flex: 0 0 auto;
+  height: 24px;
+  font-size: 12px;
+  padding: 0 8px;
+}
+.wt-prune .codicon {
+  font-size: 13px;
+}
+
+/* ---- The list ----------------------------------------------------------- */
+.wt-list {
+  padding: 2px 4px 8px;
+}
+/* Two lines on a grid: the name and the buttons share the first; the badges
+   and the folder take the second, under the buttons too — the widest thing
+   a row has to show gets the whole width. */
+.wt-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px 16px minmax(0, 1fr) auto;
+  grid-template-rows: 20px 18px;
+  column-gap: 6px;
+  row-gap: 2px;
+  align-items: center;
+  min-height: 46px;
+  padding: 3px 4px;
+  border-radius: var(--gs-radius-sm);
+  cursor: pointer;
+  user-select: none;
+}
+.wt-chevron { grid-row: 1; grid-column: 1; }
+.wt-icon { grid-row: 1; grid-column: 2; }
+.wt-body { display: contents; }
+.wt-line1 { grid-row: 1; grid-column: 3; }
+.wt-line2 { grid-row: 2; grid-column: 3 / 5; }
+.wt-actions { grid-row: 1; grid-column: 4; }
+.wt-row:hover {
+  background: var(--wt-hover);
+}
+.wt-row:focus-visible,
+.wt-row:focus {
+  outline: 1px solid var(--gs-accent);
+  outline-offset: -1px;
+}
+.wt-row:focus:not(:focus-visible) {
+  outline: none;
+}
+.wt-chevron,
+.wt-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cr-muted);
+}
+.wt-chevron .codicon {
+  font-size: 14px;
+  transition: transform var(--gs-motion-fast) var(--gs-ease);
+}
+.wt-item.open > .wt-row .wt-chevron .codicon {
+  transform: rotate(90deg);
+}
+.wt-icon .codicon {
+  font-size: 15px;
+}
+.wt-row.is-current .wt-icon {
+  color: var(--gs-accent-text);
+}
+.wt-line1,
+.wt-line2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 18px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.wt-name {
+  flex: 0 1 auto;
+  min-width: 3ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  font-size: 13px;
+}
+/* The branch keeps its symbol and at least six letters (then an ellipsis):
+   the folder's name gives way first, down to its own three. Narrower than
+   that, the whole branch goes — symbol and all (fitBadges) — never a lone
+   symbol with no words. */
+.wt-head {
+  flex: 1 1 0;
+  min-width: calc(12px + 3px + 6ch);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  color: var(--cr-muted);
+  font-size: 12px;
+}
+.wt-head .codicon {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+.wt-head-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wt-row.is-missing .wt-name,
+.wt-row.is-missing .wt-head {
+  color: var(--cr-muted);
+}
+.wt-line2 {
+  gap: 4px;
+}
+/* Four letters or none: under that the folder goes whole (fitBadges) — the
+   tooltip has all of it — never a stray letter after the badges. */
+.wt-path {
+  flex: 1 1 0;
+  min-width: 4ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+  color: var(--cr-muted);
+}
+/* A busy row says what it is doing, at full ink: busy is said (the words,
+   the cursor, aria-busy and its disabled buttons), never faded — faded text
+   fell below AA in both themes. Only the row's icons step back. */
+.wt-busy {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--gs-fg);
+}
+.wt-row.is-busy {
+  cursor: progress;
+}
+.wt-row.is-busy .wt-icon,
+.wt-row.is-busy .wt-chevron {
+  opacity: 0.55;
+}
+
+/* ---- Badges: words, never a symbol alone -------------------------------- */
+.wt-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: var(--gs-radius-pill);
+  border: 1px solid transparent;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 14px;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  --wt-tone: var(--gs-fg-muted);
+  /* The words take the tone's hue, leaned toward the theme's ink so 10.5px
+     of them read at AA on the tint and on a hovered row (--cr-lean). */
+  color: color-mix(in srgb, var(--wt-tone), var(--cr-lean) var(--wt-lean-by, 40%));
+  background: color-mix(in srgb, var(--wt-tone) 11%, transparent);
+  border-color: color-mix(in srgb, var(--wt-tone) 36%, transparent);
+}
+.vscode-light .wt-badge {
+  --wt-lean-by: 42%;
+}
+/* A lock's reason can be long (an agent names itself and its pid): it gives
+   way before the rest of the line does, never below its own word. */
+.wt-badge[data-badge="locked"] {
+  flex: 0 1 auto;
+  min-width: 11ch;
+  max-width: 60%;
+  display: inline-block;
+}
+/* The badges that did not fit, as one: "+2 more", naming them on hover. */
+.wt-badge--more {
+  --wt-tone: var(--gs-fg-muted);
+  border-style: dashed;
+}
+/* The one badge left on a line too narrow even for it and "+N more" — a
+   lock's too, whose own floor (11ch, above) would otherwise hold it past
+   the edge at a sidebar's narrowest. */
+.wt-badge.wt-badge--squeezed {
+  flex: 0 1 auto;
+  min-width: 4ch;
+  display: inline-block;
+}
+.wt-badge--accent { --wt-tone: var(--gs-accent-text); }
+.wt-badge--neutral { --wt-tone: var(--gs-fg); }
+.wt-badge--info { --wt-tone: var(--gs-status-modified); }
+.wt-badge--warn { --wt-tone: var(--gs-amber); }
+.wt-badge--danger { --wt-tone: var(--gs-danger); }
+/* High contrast: no tints — the words on the ground, in a bordered pill. */
+.vscode-high-contrast .wt-badge {
+  color: var(--gs-fg);
+  background: transparent;
+  border-color: var(--vscode-contrastBorder, var(--gs-fg));
+}
+.vscode-high-contrast .wt-badge--danger,
+.vscode-high-contrast .wt-badge--warn {
+  border-style: dashed;
+}
+
+/* ---- A row's buttons ---------------------------------------------------- */
+.wt-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0.8;
+  transition: opacity var(--gs-motion-fast) var(--gs-ease);
+}
+.wt-row:hover .wt-actions,
+.wt-row:focus-within .wt-actions {
+  opacity: 1;
+}
+.wt-icon-btn,
+.wt-icon-spacer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+}
+.wt-icon-btn {
+  padding: 0;
+  border: none;
+  border-radius: var(--gs-radius-sm);
+  background: transparent;
+  color: var(--cr-muted);
+  cursor: pointer;
+}
+.wt-icon-btn .codicon {
+  font-size: 14px;
+}
+.wt-icon-btn:hover {
+  color: var(--gs-fg);
+  background: var(--vscode-toolbar-hoverBackground, var(--gs-hover));
+}
+.wt-icon-btn.wt-danger:hover {
+  color: var(--gs-danger);
+}
+.wt-icon-btn:focus-visible {
+  outline: 1px solid var(--gs-accent);
+  outline-offset: -1px;
+}
+.wt-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: progress;
+}
+
+/* ---- An open row -------------------------------------------------------- */
+.wt-details {
+  padding: 0 4px 6px 22px;
+}
+.wt-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px 4px;
+  min-height: 28px;
+}
+.wt-strip {
+  border-radius: var(--gs-radius-sm);
+}
+.wt-strip:focus {
+  outline: 1px solid var(--gs-accent);
+  outline-offset: -1px;
+}
+.wt-strip:focus:not(:focus-visible) {
+  outline: none;
+}
+.vscode-high-contrast .wt-strip:focus {
+  outline-color: var(--vscode-contrastActiveBorder, var(--gs-accent));
+}
+.wt-upstream {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--cr-muted);
+}
+.wt-upstream > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wt-upstream .codicon {
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+.wt-verbs {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 4px;
+}
+.wt-verb {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.wt-verb .codicon {
+  font-size: 13px;
+}
+.wt-verb.is-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.wt-verb.is-disabled:hover {
+  background: var(--vscode-button-secondaryBackground, transparent);
+}
+.wt-verb:focus-visible {
+  outline: 1px solid var(--gs-accent);
+  outline-offset: 1px;
+}
+.wt-loading {
+  padding-left: 8px;
+}
+.wt-details .cr-section-label {
+  padding-top: 6px;
+}
+
+/* ---- Nothing to list, or only the main worktree ------------------------- */
+.wt-note {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 16px 10px;
+  text-align: center;
+  color: var(--cr-muted);
+}
+.wt-note-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gs-fg);
+}
+.wt-note-hint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  max-width: 250px;
+}
+.wt-add {
+  margin-top: 8px;
+  height: 26px;
+  font-size: 12px;
+}
+
+/* ---- The More menu ------------------------------------------------------ */
+.wt-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 210px;
+  max-width: min(300px, calc(100vw - 12px));
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--vscode-menu-background, var(--gs-surface));
+  color: var(--vscode-menu-foreground, var(--gs-fg));
+  border: 1px solid var(--vscode-menu-border, var(--gs-border));
+  border-radius: var(--gs-radius);
+  box-shadow: var(--gs-shadow-2);
+  font-family: var(--gs-font-ui);
+}
+.wt-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gs-menu-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--gs-border);
+  margin-bottom: 4px;
+}
+.wt-menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  border-radius: var(--gs-radius-sm);
+  cursor: pointer;
+}
+.wt-menu-item .codicon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  margin-top: 1px;
+  color: var(--gs-menu-muted);
+}
+.wt-menu-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.wt-menu-why {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--gs-menu-muted);
+  white-space: normal;
+}
+.wt-menu-item:hover,
+.wt-menu-item:focus-visible {
+  background: var(--gs-hover-strong);
+  outline: none;
+}
+.wt-menu-item.is-disabled {
+  cursor: default;
+}
+.wt-menu-item.is-disabled .wt-menu-label {
+  color: var(--gs-menu-muted);
+}
+.wt-menu-item.danger:not(.is-disabled) {
+  color: var(--gs-danger);
+}
+.wt-menu-item.danger:not(.is-disabled) .codicon {
+  color: inherit;
+}
+.wt-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--gs-border);
+}
+.vscode-high-contrast .wt-menu-item:hover,
+.vscode-high-contrast .wt-menu-item:focus-visible {
+  background: transparent;
+  outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent));
+  outline-offset: -1px;
+}
+
+/* ---- Tooltip ------------------------------------------------------------ */
+.gs-tip {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: none;
+  max-width: min(320px, calc(100vw - 8px));
+  padding: 4px 8px;
+  border-radius: var(--gs-radius-sm);
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--gs-border));
+  background: var(--vscode-editorHoverWidget-background, var(--gs-surface-2));
+  color: var(--vscode-editorHoverWidget-foreground, var(--gs-fg));
+  font-family: var(--gs-font-ui);
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: var(--gs-shadow-2);
+  opacity: 0;
+  transition: opacity var(--gs-motion-fast) var(--gs-ease);
+}
+.gs-tip.show {
+  opacity: 1;
+}
+
+/* ---- High contrast: a button is its border, as VS Code's are ------------ */
+.vscode-high-contrast .wt-view .gs-btn:not(.gs-btn--primary) {
+  border-color: var(--vscode-button-border, var(--vscode-contrastBorder, var(--gs-fg)));
+}
+.vscode-high-contrast .wt-view .gs-btn:not(.gs-btn--primary):hover {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--vscode-contrastActiveBorder, var(--gs-accent));
+}
+
+/* ---- High contrast: a row's state is its outline ------------------------ */
+.vscode-high-contrast .wt-row:hover {
+  background: transparent;
+  outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
+  outline-offset: -1px;
+}
+.vscode-high-contrast .wt-row:focus {
+  outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-chevron .codicon,
+  .wt-actions,
+  .gs-tip {
+    transition: none;
+  }
+}

@@ -3380,8 +3380,10 @@ class App {
     const actions: HTMLElement[] = [];
     // Said and copied in the system's spelling; `w.path` (git's) is what is sent.
     const shown = w.shownPath ?? w.path;
-    // Nothing to open when its folder is gone, or for a bare repository's entry.
-    if (!w.current && !w.missing && !w.bare) {
+    // Nothing to open when its folder is gone or is not a worktree any more
+    // (a tab there would be the repository around it), or for a bare
+    // repository's entry.
+    if (!w.current && !w.missing && !w.unlinked && !w.bare) {
       const open = el("button", "row-btn") as HTMLButtonElement;
       open.textContent = "Open";
       open.setAttribute("aria-label", `Open the worktree at ${shown}`);
@@ -3400,8 +3402,9 @@ class App {
         { label: "Copy path", icon: "copy", onClick: () => void copyText(shown, "Copied the path.") },
         { separator: true },
         {
-          // Its folder gone, removing it only forgets git's record of it.
-          label: w.missing ? "Forget this worktree…" : "Remove this worktree…",
+          // Its folder gone, or not a worktree any more, removing it only
+          // forgets git's record of it.
+          label: w.missing || w.unlinked ? "Forget this worktree…" : "Remove this worktree…",
           icon: "trash",
           danger: true,
           disabled: w.current || w.main,
@@ -3447,9 +3450,13 @@ class App {
     }
     // Not only `prunable`: git never calls a LOCKED worktree prunable, even
     // with its folder gone.
-    if (w.missing || w.prunable) {
+    if (w.missing || (w.prunable && !w.unlinked)) {
       const p = span("folder missing", "ab-pill gone");
       p.title = "Its folder is gone — Forget it from the ⋯ menu";
+      pills.push(p);
+    } else if (w.unlinked) {
+      const p = span("not a worktree", "ab-pill gone");
+      p.title = "Its folder is there, but it isn't a worktree any more (its .git is gone) — Forget it from the ⋯ menu; the folder stays";
       pills.push(p);
     }
 
@@ -3531,6 +3538,7 @@ class App {
     }
     const q = worktreeRemovalQuestion({
       kind: plan.kind,
+      ...(plan.staleWhy ? { staleWhy: plan.staleWhy } : {}),
       label,
       shownPath: w.shownPath ?? w.path,
       branch: plan.branch,
@@ -3564,7 +3572,7 @@ class App {
       await this.refreshBranchesSoft();
       return;
     }
-    toast(plan.kind === "missing" ? `Forgot worktree ${label}.` : `Removed worktree ${label}.`, "success");
+    toast(plan.kind === "present" ? `Removed worktree ${label}.` : `Forgot worktree ${label}.`, "success");
     await this.refreshBranchesSoft();
   }
 

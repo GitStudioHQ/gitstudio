@@ -153,5 +153,9 @@ test("the push review's ages come from the host's one formatter, not a second on
   const view = readFileSync(join(SRC, "changes", "commitView.ts"), "utf8");
   assert.doesNotMatch(view, /function relTime\(/, "the page has no formatter of its own");
   assert.match(view, /rel: relativeTime\(c\.authorDate\)/, "the host sends each commit's age, as the rail and blame say it");
-  assert.match(view, /meta\.textContent = c\.author \+ \(c\.rel \? " · " \+ c\.rel : ""\)/);
+  // Its rows are the shared commit rows (webview-ui changeRows, the Worktrees
+  // view's too): they say the age the host sent, and have no "… ago" of their own.
+  const rows = readFileSync(join(SRC, "..", "..", "..", "packages", "webview-ui", "src", "changeRows", "changeRows.ts"), "utf8");
+  assert.match(rows, /const when = c\.rel \?\? relTime\(/);
+  assert.doesNotMatch(rows, /function relTime\(/);
 });

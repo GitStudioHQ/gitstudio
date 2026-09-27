@@ -65,9 +65,25 @@ export type {
 export {
   WorktreeProvider,
   parseWorktreePorcelain,
+  parseWorktreePorcelainZ,
 } from "./WorktreeProvider";
 export { folderKey, sameFolder, nativePath } from "./folderPath";
 export type { PathRules } from "./folderPath";
+export {
+  parseRefFacts,
+  defaultBranchOf,
+  summarize as summarizeWorktrees,
+  unpublishedRule,
+  unpublishedRange,
+} from "./worktreeState";
+export type {
+  WorktreeSummary,
+  WorktreesSnapshot,
+  WorktreeStatus,
+  WorktreeFileChange,
+  WorktreeCommit,
+  UnpublishedRule,
+} from "./worktreeState";
 export type {
   WorktreeEntry,
   WorktreeAddOptions,

@@ -5,6 +5,8 @@ import type { GitProcess, GitRunOptions } from "./GitProcess";
 export interface StatusFile {
   path: string;
   status: string;
+  /** Where a rename or copy came from (a porcelain-v2 `2` record's second path). */
+  oldPath?: string;
 }
 
 /** The working-tree status, grouped exactly like vscode.git's repo.state so the
@@ -103,7 +105,7 @@ function unstagedLetter(y: string): string | undefined {
 /**
  * Parse `git status --porcelain=v2 --branch -z`. Records are NUL-separated; a
  * `2 …` rename/copy record is followed by an extra NUL field (the original
- * path) which we consume + drop.
+ * path), kept as the renamed entry's `oldPath`.
  */
 export function parseV2(stdout: string): RepoStatus {
   const out = empty();
@@ -165,20 +167,19 @@ export function parseV2(stdout: string): RepoStatus {
       const y = xy[1] ?? ".";
       const path =
         kind === "1" ? afterNTokens(rec, 8) : afterNTokens(rec, 9);
-      if (kind === "2") {
-        // The original path rides in the next NUL field — drop it.
-        i++;
-      }
+      // A rename's original path rides in the next NUL field.
+      const oldPath = kind === "2" ? fields[++i] || undefined : undefined;
       if (!path) {
         continue;
       }
+      const from = oldPath ? { oldPath } : {};
       const s = stagedLetter(x);
       if (s) {
-        out.staged.push({ path, status: s });
+        out.staged.push({ path, status: s, ...(s === "R" ? from : {}) });
       }
       const u = unstagedLetter(y);
       if (u) {
-        out.unstaged.push({ path, status: u });
+        out.unstaged.push({ path, status: u, ...(u === "R" ? from : {}) });
       }
     }
   }

@@ -603,6 +603,10 @@ export interface WorktreeInfo {
    *  heldByAnotherTab): the renderer cannot resolve a path on disk, and git's
    *  spelling of a folder need not be the tab's. */
   openInTab?: boolean;
+  /** Its folder is there, but it is not a worktree any more (its .git is
+   *  gone): git in it reads the repository around it, so it is never opened —
+   *  only forgotten. */
+  unlinked?: boolean;
 }
 
 /**
@@ -618,7 +622,11 @@ export type WorktreeRemovalInfo =
   /** Another repository tab of this window has it open (#32). */
   | { kind: "openInTab" }
   | {
-      kind: "missing" | "present";
+      /** `stale`: its folder is there but is not a worktree any more — only
+       *  git's record of it goes, and the folder stays. */
+      kind: "missing" | "present" | "stale";
+      /** `stale`: what git makes of it (its prunable reason). */
+      staleWhy?: string;
       branch?: string;
       head: string;
       locked: boolean;

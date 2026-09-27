@@ -1,0 +1,232 @@
+/* The shared commit and file rows (changeRows.ts): the push review in the
+ * Changes view and the Worktrees view draw the same rows from these rules.
+ *
+ * Every rule is scoped under a .cr-* class, so the Changes view can inline
+ * this beside its own stylesheet and the desktop can import it whole.
+ * Colours are --gs-* tokens (tokens.css) — never a hard colour.
+ *
+ * NB: never write a star-slash pair inside a comment here — a selector glob
+ * closes it early and silently eats the next rule. */
+
+/* Secondary ink. The theme's description colour is 4.40:1 on Light+'s side
+   bar — under AA for 11px text — so a light theme leans it toward the
+   foreground; a dark one keeps it. The status letters and line counts lean
+   the same way, keeping their hue. */
+:root {
+  --cr-muted: var(--gs-fg-muted);
+  --cr-lean: var(--vscode-foreground);
+  --cr-lean-by: 18%;
+}
+.vscode-light,
+.vscode-high-contrast-light {
+  --cr-muted: color-mix(in srgb, var(--gs-fg-muted) 55%, var(--vscode-editor-foreground, var(--vscode-foreground)));
+  --cr-lean: var(--vscode-editor-foreground, var(--vscode-foreground));
+  --cr-lean-by: 35%;
+}
+
+.cr-section-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cr-muted);
+  padding: 9px 8px 4px;
+}
+.cr-section-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cr-section-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--cr-muted);
+}
+
+.cr-commit,
+.cr-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: var(--gs-radius-sm);
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--gs-fg);
+}
+.cr-commit:hover,
+.cr-file:hover {
+  background: var(--gs-hover);
+}
+/* A row that opens is a control, not text: a click must not leave a caret
+   in it — Chrome drops a clipped subject's ellipsis while one is there, and
+   the subject reads cut mid-letter. */
+.cr-commit.clickable,
+.cr-file.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+.cr-commit:focus-visible,
+.cr-file:focus-visible {
+  outline: 1px solid var(--gs-accent);
+  outline-offset: -1px;
+}
+
+/* ---- A commit ------------------------------------------------------------ */
+.cr-chevron {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cr-muted);
+  transition: transform var(--gs-motion-fast) var(--gs-ease);
+}
+.cr-chevron .codicon {
+  font-size: 12px;
+}
+.cr-commit-item.open > .cr-commit .cr-chevron {
+  transform: rotate(90deg);
+}
+.cr-sha {
+  flex: 0 0 auto;
+  font-family: var(--gs-font-mono);
+  font-size: 11px;
+  color: var(--cr-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cr-subj {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cr-meta {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--cr-muted);
+}
+.cr-author::after {
+  content: " · ";
+}
+/* A list about as wide as a sidebar keeps the subject, and only when. */
+.cr-list {
+  container-type: inline-size;
+}
+@container (max-width: 360px) {
+  .cr-author {
+    display: none;
+  }
+}
+.cr-commit-files[hidden] {
+  display: none;
+}
+
+/* ---- A file -------------------------------------------------------------- */
+.cr-st {
+  flex: 0 0 auto;
+  width: 13px;
+  text-align: center;
+  font-family: var(--gs-font-mono);
+  font-weight: 700;
+  font-size: 11px;
+}
+.cr-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cr-file.clickable:hover .cr-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cr-dir {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--cr-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.cr-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 5px;
+  border-radius: var(--gs-radius-pill);
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  color: var(--cr-muted);
+}
+.cr-tag--conflicted {
+  color: color-mix(in srgb, var(--gs-status-conflict), var(--cr-lean) var(--cr-lean-by));
+}
+.cr-nums {
+  flex: 0 0 auto;
+  font-family: var(--gs-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.cr-add {
+  color: color-mix(in srgb, var(--gs-status-added), var(--cr-lean) var(--cr-lean-by));
+}
+.cr-del {
+  color: color-mix(in srgb, var(--gs-status-deleted), var(--cr-lean) var(--cr-lean-by));
+  margin-left: 5px;
+}
+.cr-binary {
+  color: var(--cr-muted);
+  font-family: var(--gs-font-ui);
+}
+/* A status letter keeps its hue, leaned toward the ink so 11px of it reads. */
+.cr-file { --cr-st: var(--gs-status-modified); }
+.cr-file.st-A { --cr-st: var(--gs-status-added); }
+.cr-file.st-D { --cr-st: var(--gs-status-deleted); }
+.cr-file.st-R { --cr-st: var(--gs-status-renamed); }
+.cr-file.st-untracked { --cr-st: var(--gs-status-untracked); }
+.cr-file.st-conflict { --cr-st: var(--gs-status-conflict); }
+.cr-st { color: color-mix(in srgb, var(--cr-st), var(--cr-lean) var(--cr-lean-by)); }
+
+/* ---- Quiet lines --------------------------------------------------------- */
+.cr-empty,
+.cr-more,
+.cr-loading {
+  padding: 3px 8px 3px 30px;
+  font-size: 11.5px;
+  color: var(--cr-muted);
+}
+.cr-empty {
+  padding-left: 8px;
+}
+
+/* High contrast: a row's state is its outline, as VS Code's lists do. */
+.vscode-high-contrast .cr-commit:hover,
+.vscode-high-contrast .cr-file:hover {
+  background: transparent;
+  outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
+  outline-offset: -1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-chevron {
+    transition: none;
+  }
+}

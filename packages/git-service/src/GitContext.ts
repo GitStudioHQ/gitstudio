@@ -56,7 +56,21 @@ export class GitContext {
   /** Whole-file conflict actions + the dashboard snapshot, in role terms. */
   readonly conflictOps: ConflictOps;
 
+  /** How this context was made — for `at`, which makes another like it. */
+  private readonly opts: GitContextOptions;
+
+  /**
+   * A context like this one — the same git binary and run hook — for
+   * ANOTHER folder: a worktree of this repository that this window has not
+   * opened, whose HEAD, index and operation are its own. Its pool is small
+   * (4) and its own; dispose it when done.
+   */
+  at(root: string): GitContext {
+    return new GitContext({ ...this.opts, root, maxConcurrent: 4 });
+  }
+
   constructor(opts: GitContextOptions) {
+    this.opts = opts;
     this.root = opts.root;
     this.process = new GitProcess({
       cwd: opts.root,

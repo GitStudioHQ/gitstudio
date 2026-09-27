@@ -358,6 +358,7 @@ async function removalInfo(ctx: GitContext, path: string, otherTabs: readonly st
     locked: !!r.entry.locked,
     lockReason: r.entry.lockReason,
     ...(r.kind === "present" ? { changes: r.changes, operation: r.operation } : {}),
+    ...(r.kind === "stale" && r.entry.prunableReason ? { staleWhy: r.entry.prunableReason } : {}),
   };
 }
 
@@ -1717,6 +1718,9 @@ export class GitBridge {
           missing,
           // As its Remove decides it: only while its folder is there.
           openInTab: !current && !missing && heldByAnotherTab(w.path, otherTabs),
+          // Its folder there, its .git gone: git in it would read the
+          // repository around it (the main one, for one nested in it).
+          unlinked: !w.bare && i > 0 && !missing && (!!w.prunable || !existsSync(join(w.path, ".git"))),
         };
       });
     } catch {
@@ -1805,7 +1809,7 @@ export class GitBridge {
       }
       // Anything else git refuses a remove over is the repository's state
       // (a submodule in it, a lock put back in the meantime), said by git.
-      const verb = now.kind === "missing" ? "forget" : "remove";
+      const verb = now.kind === "present" ? "remove" : "forget";
       return {
         ok: false,
         expected: true,

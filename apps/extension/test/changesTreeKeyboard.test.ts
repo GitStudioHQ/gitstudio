@@ -496,12 +496,14 @@ test("the push review: its file rows are buttons Tab reaches, Enter opens one, a
     );
   }
   assert.ok(!seen.some((s) => s.startsWith("OUTSIDE")), `Tab left the dialog: ${JSON.stringify(seen)}`);
-  assert.ok(seen.includes("Open the diff of src/app.ts"), JSON.stringify(seen));
-  assert.ok(seen.includes("Open the diff of src/new.ts, renamed from src/old.ts"), JSON.stringify(seen));
+  // The rows are the shared change rows (webview-ui changeRows), named as
+  // the Worktrees view names a file: its name, its change, its folder.
+  assert.ok(seen.includes("app.ts, Modified, in src. Open changes"), JSON.stringify(seen));
+  assert.ok(seen.includes("new.ts, Renamed, was src/old.ts, in src. Open changes"), JSON.stringify(seen));
   // Round again to the first file and press Enter.
   for (let i = 0; i < 12; i++) {
     const at = await page.eval<string | null>(`document.activeElement.getAttribute("aria-label")`);
-    if (at === "Open the diff of src/app.ts") break;
+    if (at === "app.ts, Modified, in src. Open changes") break;
     await page.key("Tab");
   }
   await page.eval("window.__posted = []");

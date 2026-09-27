@@ -79,7 +79,7 @@ Free on public *and* private repos. No account, no sign-up, no analytics, no fea
 ## Branches, stashes, worktrees, tags, remotes
 
 - **Stashes** live under your changes, in the Changes view: open one to see every file it holds — staged and untracked ones too — click a file for its diff, and **Move to Changes** (or **Copy to Changes**) just the files you want back. Apply, Pop, Create Branch or Drop a whole stash from its row; stash all your changes, or just the files you selected, from the Changes toolbar.
-- **Worktrees** get their own view: open, create, remove, lock/unlock, prune — the sane way to review a PR without stashing your work.
+- **Worktrees** get their own view: every worktree with its branch and, in words, what it holds — changes, commits to push or pull, a lock and its reason, a merge or rebase stopped in it, a folder that's gone or is no longer a worktree. Open a row to see its uncommitted files and its commits not pushed, each commit opening to its files, diffs read from that worktree. Pull in place, review its push, open it here or in a new window, lock it, remove it (Stash & Remove keeps its changes), forget or prune the ones that are gone — the sane way to review a PR without stashing your work. New Worktree suggests a folder beside your project, named for the branch.
 - **Tags** support checkout, delete, and push; **remotes** support add, manage, and fetch — all reachable from the branch dialog, the graph, or the Command Palette.
 
 ## GitHub pull requests, in-editor

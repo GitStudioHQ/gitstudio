@@ -9,8 +9,13 @@
 /** What the question needs to know about the worktree it asks about. */
 export interface WorktreeRemovalFacts {
   /** `missing`: its folder is gone, and removing it only forgets git's record
-   *  of it. `present`: its folder is there and is deleted. */
-  kind: "missing" | "present";
+   *  of it. `present`: its folder is there and is deleted. `stale`: its
+   *  folder is there but is not a worktree any more (its .git is gone) —
+   *  forgetting it leaves the folder alone. */
+  kind: "missing" | "present" | "stale";
+  /** `stale`: what git makes of it (its prunable reason); absent for a
+   *  locked one, which git never prunes. */
+  staleWhy?: string;
   /** How the worktree is named: its branch, or "<sha> (detached)". */
   label: string;
   /** Its folder, as the host shows paths. */
@@ -32,6 +37,16 @@ export interface WorktreeRemovalFacts {
 
 /** An operation git can be stopped in, as git-service's stoppedIn names it. */
 export type WorktreeOperation = "merge" | "rebase" | "cherry-pick" | "revert" | "am";
+
+/**
+ * Why a folder that git still lists is not a worktree any more, in words: its
+ * .git is gone (what git's "gitdir file points to non-existent location"
+ * means while the folder stands, and all a locked one — which git gives no
+ * reason for — can mean), or git's own words for anything else.
+ */
+export function unlinkedWhy(reason?: string): string {
+  return !reason || reason === "gitdir file points to non-existent location" ? "its .git file is gone" : `git says: “${reason}”`;
+}
 
 /** What removing the worktree does to the operation stopped in it. */
 const ABANDONS: Record<WorktreeOperation, string> = {
@@ -72,6 +87,24 @@ export function worktreeRemovalQuestion(f: WorktreeRemovalFacts): WorktreeRemova
       : "It is locked, with no reason given."
     : "";
 
+  if (f.kind === "stale") {
+    // Its folder stays whatever is said here: only git's record goes. What is
+    // IN the folder is never read (git there reads the repository around it).
+    return {
+      title: `Forget worktree ${f.label}?`,
+      message: [
+        `Its folder, ${f.shownPath}, isn't a worktree any more: ${unlinkedWhy(f.staleWhy)}. Forgetting it removes git's record of the worktree; the folder and everything in it stay.`,
+        lock && `${lock} Forgetting it unlocks it.`,
+        stays,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+      confirmLabel: f.locked ? "Unlock and Forget" : "Forget",
+      danger: false,
+      discardChanges: false,
+    };
+  }
+
   if (f.kind === "missing") {
     // A lock is git's answer for a worktree on a drive or share that is not
     // always there. Forgotten while it is unplugged, the folder that comes
@@ -101,7 +134,9 @@ export function worktreeRemovalQuestion(f: WorktreeRemovalFacts): WorktreeRemova
     changes === undefined
       ? "Its uncommitted changes couldn't be read; any it has are deleted with it."
       : changes.length > 0
-        ? `Its ${changes.length} uncommitted change${changes.length === 1 ? "" : "s"} go with it, and nothing can bring them back:\n` +
+        ? (changes.length === 1
+            ? "Its 1 uncommitted change goes with it, and nothing can bring it back:\n"
+            : `Its ${changes.length} uncommitted changes go with it, and nothing can bring them back:\n`) +
           changes
             .slice(0, NAMED)
             .map((c) => `  ${c}`)
@@ -161,4 +196,123 @@ export function worktreeRemovalRefusal(
     case "notListed":
       return `${label} is no longer a worktree of this repository.`;
   }
+}
+
+/** What the choosing question needs beyond WorktreeRemovalFacts. */
+export interface WorktreeRemovalChoiceFacts extends WorktreeRemovalFacts {
+  /** Files left unmerged there: `git stash` refuses them, so Stash & Remove
+   *  is not offered. */
+  unmerged?: number;
+  /** Its branch is fully merged into `mergedInto` (the default branch, which
+   *  is never this branch itself): deleting the branch loses no commit, so
+   *  "Also delete the branch" is offered — unchecked. */
+  mergedInto?: string;
+}
+
+/** One way to answer the removal question. */
+export interface WorktreeRemovalChoice {
+  /** `stash`: stash its changes, then remove it. `discard`: remove it with its
+   *  changes. `remove`: a clean one. `forget`: a missing one, or one that is
+   *  not a worktree any more. */
+  id: "stash" | "discard" | "remove" | "forget";
+  label: string;
+  description: string;
+  danger: boolean;
+}
+
+/**
+ * The question asked before a worktree is removed, as a choice: a dirty one
+ * offers Stash & Remove (first, the default) beside Discard Changes and
+ * Remove; a clean or missing one has one way. A branch merged into the
+ * default branch adds an unchecked "Also delete the branch".
+ */
+export interface WorktreeRemovalAsk {
+  title: string;
+  message: string;
+  choices: WorktreeRemovalChoice[];
+  deleteBranch?: { label: string; description: string };
+}
+
+export function worktreeRemovalAsk(f: WorktreeRemovalChoiceFacts): WorktreeRemovalAsk {
+  const q = worktreeRemovalQuestion(f);
+  const deleteBranch =
+    f.branch && f.mergedInto
+      ? {
+          label: `Also delete the branch ${f.branch}`,
+          description: `It is fully merged into ${f.mergedInto}, so no commit is lost.`,
+        }
+      : undefined;
+  const extra = deleteBranch ? { deleteBranch } : {};
+  if (f.kind === "missing" || f.kind === "stale") {
+    return {
+      title: q.title,
+      message: q.message,
+      choices: [
+        {
+          id: "forget",
+          label: q.confirmLabel,
+          description: f.kind === "stale" ? "Removes git's record of the worktree; the folder stays." : "Removes git's record of the worktree.",
+          danger: q.danger,
+        },
+      ],
+      ...extra,
+    };
+  }
+  if (!q.discardChanges) {
+    return {
+      title: q.title,
+      message: q.message,
+      choices: [{ id: "remove", label: q.confirmLabel, description: "Deletes its folder.", danger: true }],
+      ...extra,
+    };
+  }
+  const changes = f.changes;
+  const n = changes?.length ?? 0;
+  const them = changes === undefined ? "Its uncommitted changes" : `Its ${n} uncommitted change${n === 1 ? "" : "s"}`;
+  // The verbs agree with the count: one change goes, two go.
+  const one = n === 1;
+  const listed =
+    changes === undefined
+      ? "Its uncommitted changes couldn't be read."
+      : `It has ${n} uncommitted change${n === 1 ? "" : "s"}:\n` +
+        changes
+          .slice(0, NAMED)
+          .map((c) => `  ${c}`)
+          .join("\n") +
+        (n > NAMED ? `\n  and ${n - NAMED} more` : "");
+  const unlock = f.locked ? "Unlock, " : "";
+  const canStash = changes !== undefined && !(f.unmerged && f.unmerged > 0);
+  // The question's own message, with its "go with it" paragraph swapped for
+  // the plain list: the choices below say where they go.
+  const paragraphs = q.message
+    .split("\n\n")
+    .map((p) => (p.startsWith("Its ") && (/\bgoe?s? with it\b/.test(p) || p.includes("couldn't be read")) ? listed : p));
+  if (!canStash) {
+    paragraphs.push(
+      changes === undefined
+        ? "They can't be stashed without knowing what they are."
+        : `${f.unmerged === 1 ? "A file is" : `${f.unmerged} files are`} left unmerged in it, which git can't stash.`,
+    );
+  }
+  const choices: WorktreeRemovalChoice[] = [];
+  if (canStash) {
+    choices.push({
+      id: "stash",
+      label: `${unlock}Stash & Remove`,
+      description: `${them} ${one ? "goes" : "go"} into a stash you can apply from any worktree of this repository; then its folder is deleted.`,
+      danger: false,
+    });
+  }
+  choices.push({
+    id: "discard",
+    label: f.locked ? "Unlock, Discard Changes and Remove" : "Discard Changes and Remove",
+    description: `${them} ${one ? "is" : "are"} deleted with its folder, and nothing can bring ${one ? "it" : "them"} back.`,
+    danger: true,
+  });
+  return { title: q.title, message: paragraphs.join("\n\n"), choices, ...extra };
+}
+
+/** The stash message Stash & Remove leaves, so the stash says where it came from. */
+export function worktreeStashMessage(label: string, shownPath: string): string {
+  return `Changes from worktree ${label} (${shownPath}), stashed before removing it`;
 }

@@ -252,6 +252,39 @@ test("a worktree whose folder is gone is forgotten", async () => {
   assert.ok(!s.git("worktree", "list", "--porcelain").includes("refs/heads/gone"));
 });
 
+test("a folder nested in the main worktree whose .git is gone: listed as not a worktree, asked about as one to forget — never with the main worktree's changes — and forgotten, its folder and the main work kept", async () => {
+  const s = scene();
+  const { readFileSync } = await import("node:fs");
+  writeFileSync(join(s.app, ".git", "info", "exclude"), ".claude/\n");
+  const x = join(s.app, ".claude", "worktrees", "x");
+  s.git("worktree", "add", "-q", "-b", "x", x);
+  writeFileSync(join(x, "mine.txt"), "x's own\n");
+  rmSync(join(x, ".git"));
+  writeFileSync(join(s.app, "a.txt"), "main's edit\n");
+  const bridge = await bridgeOn(s.app);
+  const row = (await bridge.worktreeList()).find((w) => w.branch === "x");
+  assert.deepEqual([row?.missing, row?.unlinked], [false, true]);
+  const plan = await bridge.worktreeRemoval({ path: x });
+  assert.equal(plan.kind, "stale", JSON.stringify(plan));
+  assert.equal(plan.kind === "stale" && plan.staleWhy, "gitdir file points to non-existent location");
+  assert.equal("changes" in plan, false, "never the main worktree's changes as its own");
+  // What the renderer does with the answer: a remove with nothing to discard.
+  const r = await bridge.worktreeRemove({ path: x });
+  assert.ok(r.ok, r.ok ? "" : r.message);
+  assert.doesNotMatch(s.git("worktree", "list", "--porcelain"), /refs\/heads\/x/, "forgotten");
+  assert.equal(readFileSync(join(x, "mine.txt"), "utf8"), "x's own\n", "its folder stays");
+  assert.equal(readFileSync(join(s.app, "a.txt"), "utf8"), "main's edit\n", "the main worktree's work stays");
+  assert.equal(s.git("stash", "list"), "");
+  // A discard the renderer could still send for it runs nothing in the main worktree.
+  const y = join(s.app, ".claude", "worktrees", "y");
+  s.git("worktree", "add", "-q", "-b", "y", y);
+  rmSync(join(y, ".git"));
+  const d = await bridge.worktreeRemove({ path: y, discardChanges: true, listed: ["a.txt"] });
+  assert.equal(d.ok, false);
+  assert.equal(d.changedSince?.kind, "stale", "asked again, as one to forget");
+  assert.equal(readFileSync(join(s.app, "a.txt"), "utf8"), "main's edit\n");
+});
+
 test("opened through a symlink, the window's own worktree is still the current one — and still refused", async () => {
   const s = scene();
   const link = join(s.app, "..", "link-to-clean");

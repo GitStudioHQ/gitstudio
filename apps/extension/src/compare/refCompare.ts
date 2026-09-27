@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { CommitRecord, GitRef } from "@gitstudio/host-bridge/git";
+import { mergeCommitFiles } from "@gitstudio/git-service/CommitDetailsProvider";
 import type { RepoEntry } from "../git/repoManager";
 import { toRevisionUri } from "../history/revisionContentProvider";
 import { promptPick } from "../ui/dialogs";
@@ -122,23 +123,13 @@ export async function collectCommits(
   return commits;
 }
 
-/**
- * Reconstruct the new path from a `--numstat` rename token, which git renders
- * as either `old => new` or `pre{old => new}post` (compressed common
- * pre/suffix). Returns the plain path unchanged when there's no rename arrow.
- */
-function numstatNewPath(token: string): string {
-  const brace = token.match(/^(.*)\{(.*) => (.*)\}(.*)$/);
-  if (brace) {
-    // `src/{a => b}/f` → `src/b/f`; collapse any doubled slash from an empty side.
-    return (brace[1] + brace[3] + brace[4]).replace(/\/\//g, "/");
-  }
-  const arrow = token.indexOf(" => ");
-  return arrow >= 0 ? token.slice(arrow + 4) : token;
-}
-
 /** Files changed between two refs, with per-file line counts. `threeDot` uses
- *  `A...B` (what B introduced, GitHub-style); otherwise the direct `A B` diff. */
+ *  `A...B` (what B introduced, GitHub-style); otherwise the direct `A B` diff.
+ *
+ *  NUL-separated (`-z`), through the parser the commit details use: without
+ *  it git quotes an "unusual" path ("\303\251t\303\251.txt", quotes and all)
+ *  and a tab or newline in a name splits the line — the push review listed
+ *  names no file has, without their counts, and their diffs opened nothing. */
 export async function collectCompareFiles(
   repo: RepoEntry,
   refA: string,
@@ -147,54 +138,13 @@ export async function collectCompareFiles(
 ): Promise<CompareFile[]> {
   const range = threeDot ? [`${refA}...${refB}`] : [refA, refB];
   const [nameStatus, numstat] = await Promise.all([
-    repo.ctx.process.run(["diff", "--name-status", "-M", ...range]),
-    repo.ctx.process.run(["diff", "--numstat", "-M", ...range]),
+    repo.ctx.process.run(["diff", "--name-status", "-z", "-M", ...range]),
+    repo.ctx.process.run(["diff", "--numstat", "-z", "-M", ...range]),
   ]);
   if (nameStatus.code !== 0) {
     return [];
   }
-  // Per-new-path line counts. `-` means binary (git prints `-\t-\tpath`).
-  const counts = new Map<string, { additions: number; deletions: number }>();
-  if (numstat.code === 0) {
-    for (const line of numstat.stdout.split("\n")) {
-      if (!line.trim()) {
-        continue;
-      }
-      const parts = line.split("\t");
-      if (parts.length < 3) {
-        continue;
-      }
-      const add = parts[0] === "-" ? -1 : Number(parts[0]);
-      const del = parts[1] === "-" ? -1 : Number(parts[1]);
-      counts.set(numstatNewPath(parts.slice(2).join("\t")), {
-        additions: Number.isFinite(add) ? add : 0,
-        deletions: Number.isFinite(del) ? del : 0,
-      });
-    }
-  }
-  const files: CompareFile[] = [];
-  for (const line of nameStatus.stdout.split("\n")) {
-    if (!line.trim()) {
-      continue;
-    }
-    const parts = line.split("\t");
-    const status = (parts[0] ?? "").charAt(0);
-    // Renames/copies carry both old (parts[1]) and new (parts[2]) paths.
-    const isRename = status === "R" || status === "C";
-    const path = isRename ? (parts[2] ?? "") : (parts[1] ?? "");
-    if (!path) {
-      continue;
-    }
-    const c = counts.get(path) ?? { additions: 0, deletions: 0 };
-    files.push({
-      path,
-      status,
-      additions: c.additions,
-      deletions: c.deletions,
-      oldPath: isRename ? parts[1] : undefined,
-    });
-  }
-  return files;
+  return mergeCommitFiles(numstat.code === 0 ? numstat.stdout : "", nameStatus.stdout);
 }
 
 /** The merge-base of two refs, or undefined if none / on error. */
