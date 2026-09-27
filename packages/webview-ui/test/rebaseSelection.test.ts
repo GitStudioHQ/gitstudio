@@ -365,6 +365,7 @@ const MOVING = `
 const LONG = `
   // Forty lines in a 760px panel: the LIST scrolls, and the header and the
   // footer's Start rebase stay where they are.
+  expect(innerHeight === 760, "the view is the panel, as VS Code mounts it (" + innerHeight + "px)");
   const list = $(".list");
   expect(list.scrollHeight > list.clientHeight + 40, "the list scrolls (" + list.scrollHeight + " in " + list.clientHeight + ")");
   const onScreen = () => {
@@ -396,9 +397,17 @@ test("a paused rebase's --edit-todo: a leading squash folds into the commit git 
 });
 
 test("a long todo scrolls inside the list; the header and Start rebase stay on screen", { skip: CHROME ? false : "no headless Chrome on this machine" }, async () => {
+  // "On screen" is a question about the VIEW, so the page runs in a frame of
+  // exactly the panel's size — the way VS Code mounts a webview — whichever
+  // Chrome runs it. It ran in a 900px window: the whole view in the headless
+  // shell (a Mac, and the macOS runner), but the ubuntu and windows runners
+  // drive their system Chrome, which lays its own toolbar out inside the
+  // window — a 757px view there (749px on windows), shorter than the 760px
+  // panel, so the footer was below the view on every run, whatever the
+  // editor did. Run at those views in the headless shell, it failed the same
+  // two ways.
   const v = await runInChrome(CHROME!, MAIN, MOUNT(BODY_CLASS.dark, 40) + LONG, {
-    width: 1000,
-    height: 900,
+    frame: { width: 1000, height: 760 },
     prelude: PRELUDE,
     css: themeCss("dark"),
   });
