@@ -1,0 +1,25 @@
+apps/extension/harness/branch-menu/shots.ts
+  s_26f5e669d3043c::t_d77a45e26086df 210-211
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_6d9a06c3f86368 6269-6272,6279,6285-6286
+apps/extension/test/branchMenuKeyboard.test.ts
+  s_26f5e669d3043c::t_aa1bcc183db644 333-342,384,522-523,526,532,535-536,538-563
+apps/extension/test/branchMenuLayout.test.ts
+  s_26f5e669d3043c::t_27adc631f31fbf 128,170-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "02273aeeecf4cb85834825f76be6f2208ea2ebc2",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
