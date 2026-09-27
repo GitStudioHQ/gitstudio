@@ -1113,5 +1113,28 @@ window.__GS_REQUIREMENTS = (() => {
         );
       },
     },
+
+    // ── Repository tabs, tested live (27 Sep) ───────────────────────────────
+    {
+      id: "a-repository-opened-in-a-tab-loads-its-branch",
+      says: "checking out a repo doesnt load the branch, its rly bad, fix it",
+      scene: "repositories",
+      // git answers after the open has landed on Code, as it does on a real
+      // repository: the order that left the pill on "…".
+      extra: "tabs=1&slow=head:get:700,refs:list:700,sync:status:700",
+      async run() {
+        await settle(1500);
+        const root = "/Users/demo/GitStudio/gistudio.dev";
+        $$(".sec-row.repo-row").find((row) => row.dataset.root === root)?.click();
+        await settle(1600);
+        const front = $(".repo-tab.is-active")?.dataset.root;
+        const pill = text(".topbar-branch .switch-name");
+        const sync = text(".topbar-sync .sync-main");
+        return r(
+          front === root && pill === "main" && sync !== "",
+          `the tab in front is ${front ?? "none"}; its branch pill says "${pill}", its sync control "${sync}"`,
+        );
+      },
+    },
   ];
 })();
