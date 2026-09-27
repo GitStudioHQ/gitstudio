@@ -1,0 +1,51 @@
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_56bd6854c7f74b 347,1700-1702,1790
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_755039e04ebadd 3385-3388,3407-3409,3451,3455-3458,3539,3573
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_717d2694eea180 596-599,615-619
+apps/desktop/test/worktreeRemoval.test.ts
+  s_26f5e669d3043c::t_084b4b3822ccfe 214-246
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_b2bd99147654af 164-174,189-206,223,225,244-245,692,721,737,767,865-876,879,883,889,891-893,896,916,942-943,1022-1023
+apps/extension/src/views/worktreesWebview.ts
+  s_26f5e669d3043c::t_a97f05c76a9b93 121-122,288-298,457-462,477,533
+apps/extension/test/worktreesDoors.test.ts
+  s_26f5e669d3043c::t_d451f6bafcae71 546-655
+apps/extension/test/worktreesFixtures.ts
+  s_26f5e669d3043c::t_81e1bd801177be 3-4,20,111-122
+apps/extension/test/worktreesStateTable.test.ts
+  s_26f5e669d3043c::t_744d57b1871fd8 102,390-431
+apps/extension/test/worktreesWebview.test.ts
+  s_26f5e669d3043c::t_4c62c4bb04ca9a 28,62-69,274-280,337,346,352,354-359,363-365
+packages/git-service/src/WorktreeProvider.ts
+  s_26f5e669d3043c::t_7d4ba03d367891 1-2,101-107,128-129,316-320,335-347,402-408,445,452-511
+packages/git-service/src/worktreeState.ts
+  s_26f5e669d3043c::t_99c39df168f604 2,48-55,150,162-165,242,271-274
+packages/git-service/test/worktreeState.test.ts
+  s_26f5e669d3043c::t_c91d60df5e6705 9,477-583
+packages/host-bridge/src/worktreeRemoval.ts
+  s_26f5e669d3043c::t_78af899247a26d 12-18,41-50,90-107,213-214,244,248-255
+packages/host-bridge/src/worktreesProtocol.ts
+  s_26f5e669d3043c::t_f91ee5950ec501 11,55-61,168-176,276-277,300-303,308,363,374,380-381,383
+packages/host-bridge/test/worktreesProtocol.test.ts
+  s_26f5e669d3043c::t_2883e95f0557dc 34,111-134,233,238,241,243,301-310
+packages/webview-ui/src/worktrees/view.ts
+  s_26f5e669d3043c::t_57683fa8d584db 303-305,307-310,425,462,735-738,745,757
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7c87f830cad8801bef9c5521e8e6a80538883e60",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
