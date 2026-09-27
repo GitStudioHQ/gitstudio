@@ -424,6 +424,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **Prune Worktrees** says which worktrees it pruned, or that there was nothing
   to prune — it reported success either way.
 - Branch tooltips show upstream names without stray backslashes.
+- **The push review and Compare name every file as it is on disk.** A file
+  whose name had an accent (`été.txt`) or a tab was listed in git's quoted
+  form ("\303\251t\303\251.txt"), without its line counts, and opening it
+  showed nothing.
 - A worktree row's button is **Open in New Window**, and it opens the
   worktree straight away; **Open in This Window** is in the row's menu. The
   button was *Open Worktree* and asked which window first.

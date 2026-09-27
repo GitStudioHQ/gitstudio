@@ -232,6 +232,10 @@ but they share the same engine, so most Git behaviour lands in both at once.
   left side was the base branch as it is now: once others had merged, it
   showed their new work as if the pull request removed it, and a comment on
   a removed line was sent for the wrong line.
+- **Branches ▸ Worktrees lists a worktree whose folder name holds a line
+  break** as one worktree — it read as two broken ones. The list is read in
+  git's NUL-separated form where git has it (2.36 and later), as the VS Code
+  extension's Worktrees view reads it.
 
 ## [2.1.0] - 2026-09-25
 
