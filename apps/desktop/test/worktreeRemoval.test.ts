@@ -109,6 +109,25 @@ test("a worktree another repository tab has open is refused too — its folder s
   assert.equal((await bridge.worktreeRemoval({ path: s.path("locked") })).kind, "present");
 });
 
+test("a worktree whose folder is gone can be forgotten while its (gone) tab is still open (#32)", async () => {
+  const s = scene();
+  // The worktree open as a tab of its own, then its folder deleted on disk:
+  // the tab stays, struck through. There is no folder to delete from under
+  // it, so the tab is no reason to refuse — and "Forget that worktree in
+  // Worktrees" is what the words for a branch held by it say to do.
+  const repos = new RepoStore([]);
+  await repos.open(s.app);
+  await repos.open(s.path("clean"));
+  await repos.open(s.app);
+  rmSync(s.path("clean"), { recursive: true, force: true });
+  const bridge = new GitBridge(repos);
+  assert.equal((await bridge.worktreeRemoval({ path: s.path("clean") })).kind, "missing");
+  const r = await bridge.worktreeRemove({ path: s.path("clean") });
+  assert.ok(r.ok, r.ok ? "" : r.message);
+  assert.doesNotMatch(s.git("worktree", "list"), /clean/, "git no longer lists it");
+  assert.equal(repos.state().tabs.length, 2, "its tab is still there, gone");
+});
+
 test("removal names a merge stopped in that worktree", async () => {
   const s = scene();
   const clean = s.path("clean");

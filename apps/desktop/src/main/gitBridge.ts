@@ -320,8 +320,8 @@ function mustSucceed(result: { stdout: string; stderr?: string; code?: number },
 /**
  * What removing the worktree at `path` takes, as the renderer's one question
  * needs it (git-service's removal): refused outright — the main worktree, this
- * window's own, one another of its tabs has open, one no longer listed — or
- * the facts. Read fresh each time: for the question, and again when a remove
+ * window's own, one another of its tabs has open (while its folder is there),
+ * one no longer listed — or the facts. Read fresh each time: for the question, and again when a remove
  * was refused because it changed since.
  */
 async function removalInfo(ctx: GitContext, path: string, otherTabs: readonly string[]): Promise<WorktreeRemovalInfo> {
@@ -332,7 +332,9 @@ async function removalInfo(ctx: GitContext, path: string, otherTabs: readonly st
   if (sameFolder(r.entry.path, ctx.root)) {
     return { kind: "current" };
   }
-  if (otherTabs.some((root) => sameFolder(r.entry.path, root))) {
+  // Only while its folder is there: a gone worktree's tab has nothing to lose,
+  // and Forget is how that tab's worktree is let go.
+  if (r.kind === "present" && otherTabs.some((root) => sameFolder(r.entry.path, root))) {
     return { kind: "openInTab" };
   }
   return {
@@ -1759,7 +1761,8 @@ export class GitBridge {
       if (sameFolder(opts.path, ctx.root)) {
         return { ok: false, expected: true, message: "This window has that worktree open, so it can't be removed from here." };
       }
-      if (this.otherTabRoots(ctx).some((root) => sameFolder(opts.path, root))) {
+      // One whose folder is gone deletes nothing from under its tab: forgetting it goes on.
+      if (existsSync(opts.path) && this.otherTabRoots(ctx).some((root) => sameFolder(opts.path, root))) {
         return { ok: false, expected: true, message: worktreeRemovalRefusal("openInTab", "That worktree") };
       }
       // The lock's reason, to put back if git refuses (see removeAsAgreed).
