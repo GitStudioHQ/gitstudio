@@ -46,7 +46,7 @@ interface FromPanel {
  * desktop app's "AI Models" settings: a card, the connected model as a row, and a
  * "Connect a model" gallery (bring a key, run a model locally, or use your
  * editor's AI) with an inline editor. Configures the extension's provider layer,
- * so the ✨ commit message and AI code review just work once connected.
+ * so generated commit messages and AI code review just work once connected.
  */
 export class AiSettingsPanel {
   private static current: AiSettingsPanel | undefined;
@@ -229,30 +229,49 @@ export class AiSettingsPanel {
 <link href="${codiconUri}" rel="stylesheet" />
 <style nonce="${nonce}">${tokensCss}</style>
 <style nonce="${nonce}">
-  /* ── The desktop app's own tokens, so this panel matches it exactly ──────── */
+  /* ── The editor's own theme, as every other GitStudio webview reads it ────
+     It hard-coded the desktop app's dark palette (#0d1016 …) for every dark
+     theme and had no high-contrast look at all: under Solarized, Monokai or
+     a high-contrast theme it was a black box in a coloured editor. Every
+     surface and line is the theme's now; the violet stays for the primary
+     button and the marks, as in the Changes view. */
   body {
-    --gs-accent: #7c5cf0; --gs-accent-2: #4aa5ff; --gs-accent-ink: #a78bff;
-    --status-add: #2ecf83; --status-warn: #e0a44e;
-    --app-panel: #12151c; --app-elevated: #171b24; --app-border: #232936;
-    --app-hover: #1d2330; --app-muted: #8b93a1;
-    --app-bg: #0d1016;
-    --sheen: inset 0 1px 0 rgba(255,255,255,0.055);
-    --shadow-sm: 0 1px 2px rgba(0,0,0,0.32), 0 1px 1px rgba(0,0,0,0.22);
-    --shadow-lg: 0 18px 44px rgba(0,0,0,0.50), 0 4px 12px rgba(0,0,0,0.32);
+    --gs-accent: var(--gs-brand);
+    --gs-accent-2: var(--vscode-textLink-foreground, var(--gs-brand));
+    --gs-accent-ink: var(--vscode-textLink-foreground, var(--gs-brand));
+    --status-add: var(--gs-status-added);
+    --status-warn: var(--gs-amber);
+    --app-bg: var(--vscode-editor-background);
+    --app-panel: color-mix(in srgb, var(--vscode-foreground) 3%, var(--vscode-editor-background));
+    --app-elevated: color-mix(in srgb, var(--vscode-foreground) 6%, var(--vscode-editor-background));
+    --app-border: var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 16%, transparent));
+    --app-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 9%, transparent));
+    --app-muted: var(--vscode-descriptionForeground);
+    --app-fg: var(--vscode-foreground);
+    --sheen: none;
+    --shadow-sm: 0 1px 2px color-mix(in srgb, var(--vscode-widget-shadow, #000) 60%, transparent);
+    --shadow-lg: 0 12px 32px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
     --accent-line: color-mix(in srgb, var(--gs-accent) 40%, var(--app-border));
     --dur-1: 120ms; --ease: cubic-bezier(0.2, 0, 0, 1);
     --text-2xs: 10.5px; --text-sm: 12.5px;
   }
-  body.vscode-light {
-    --gs-accent-2: #1f6fd6; --gs-accent-ink: #6a45e8;
-    --status-add: #0f7a44; --status-warn: #92610f;
-    --app-panel: #f7f9fb; --app-elevated: #ffffff; --app-border: #dde2ea;
-    --app-hover: #e9edf3; --app-muted: #5b636f; --app-bg: #eef1f5;
-    --sheen: inset 0 1px 0 rgba(255,255,255,0.75);
-    --shadow-sm: 0 1px 2px rgba(16,24,40,0.06), 0 1px 1px rgba(16,24,40,0.04);
-    --shadow-lg: 0 18px 44px rgba(16,24,40,0.16), 0 5px 12px rgba(16,24,40,0.08);
-    --accent-line: color-mix(in srgb, var(--gs-accent) 34%, var(--app-border));
+  /* High contrast: the theme's own lines, no tints, no shadows. */
+  body.vscode-high-contrast {
+    --app-panel: var(--vscode-editor-background);
+    --app-elevated: var(--vscode-editor-background);
+    --app-border: var(--vscode-contrastBorder);
+    --accent-line: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+    --shadow-sm: none;
+    --shadow-lg: none;
   }
+  body.vscode-high-contrast .btn-primary {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: 1px solid var(--vscode-contrastBorder);
+    box-shadow: none;
+  }
+  body.vscode-high-contrast .btn-primary .glyph { color: var(--vscode-button-foreground); }
+  body.vscode-high-contrast .pill { border: 1px solid var(--vscode-contrastBorder); }
 
   * { box-sizing: border-box; }
   body { margin: 0; padding: 26px 22px 48px; background: var(--app-bg); color: var(--vscode-foreground); font-family: var(--gs-font-ui); font-size: 13px; }
@@ -294,8 +313,9 @@ export class AiSettingsPanel {
   /* ── Fields ───────────────────────────────────────────────────────────── */
   .settings-field { display: flex; flex-direction: column; gap: 5px; }
   .settings-field-label { font-size: 11.5px; font-weight: 600; color: var(--app-muted); }
-  .settings-input { height: 32px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--app-border); background: var(--app-elevated); color: var(--vscode-foreground); font-family: inherit; font-size: 13px; outline: none; }
-  .settings-input:focus { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 22%, transparent); }
+  .settings-input { height: 32px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--vscode-input-border, var(--app-border)); background: var(--vscode-input-background, var(--app-elevated)); color: var(--vscode-input-foreground, var(--vscode-foreground)); font-family: inherit; font-size: 13px; outline: none; }
+  .settings-input::placeholder { color: var(--vscode-input-placeholderForeground, var(--app-muted)); }
+  .settings-input:focus { border-color: var(--vscode-focusBorder); box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   .field-hint { font-size: 11px; color: var(--app-muted); }
   .field-hint a { color: var(--gs-accent-ink); cursor: pointer; text-decoration: none; }
   .field-hint a:hover { text-decoration: underline; }
@@ -321,10 +341,11 @@ export class AiSettingsPanel {
   .note.err { color: var(--vscode-errorForeground, #e15a5a); }
   .style-row { display: flex; align-items: center; gap: 10px; }
   .style-row label { font-size: 12px; color: var(--app-muted); font-weight: 600; }
-  select { height: 30px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--app-border); background: var(--app-elevated); color: var(--vscode-foreground); font-family: inherit; font-size: 12.5px; }
+  select { height: 30px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--vscode-dropdown-border, var(--app-border)); background: var(--vscode-dropdown-background, var(--app-elevated)); color: var(--vscode-dropdown-foreground, var(--vscode-foreground)); font-family: inherit; font-size: 12.5px; }
+  button:focus-visible, select:focus-visible, a:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
 
   /* ── Gallery modal ────────────────────────────────────────────────────── */
-  .ai-gallery-pop { position: fixed; inset: 0; z-index: 60; background: color-mix(in srgb, #000 42%, transparent); display: flex; align-items: center; justify-content: center; animation: ai-fade .12s ease; }
+  .ai-gallery-pop { position: fixed; inset: 0; z-index: 60; background: color-mix(in srgb, var(--vscode-widget-shadow, #000) 70%, transparent); display: flex; align-items: center; justify-content: center; animation: ai-fade .12s ease; }
   @keyframes ai-fade { from { opacity: 0; } to { opacity: 1; } }
   .ai-gallery-panel { width: min(560px, 92vw); max-height: 80vh; overflow: auto; background: var(--app-panel); border: 1px solid var(--app-border); border-radius: 14px; box-shadow: var(--shadow-lg); }
   .ai-gallery-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--app-border); font-weight: 650; font-size: 14px; }
@@ -333,7 +354,7 @@ export class AiSettingsPanel {
   .ai-gallery-section-title { font-size: 12px; font-weight: 680; text-transform: uppercase; letter-spacing: .04em; }
   .ai-gallery-section-sub { font-size: 11.5px; color: var(--app-muted); margin-top: 2px; line-height: 1.4; }
   .ai-gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 16px 16px; }
-  .ai-prov-card { display: flex; align-items: flex-start; gap: 10px; text-align: left; padding: 12px; border: 1px solid var(--app-border); border-radius: 11px; background: var(--app-elevated); cursor: pointer; font-family: inherit; transition: border-color .12s ease, transform .12s ease, background .12s ease; }
+  .ai-prov-card { display: flex; align-items: flex-start; gap: 10px; text-align: left; padding: 12px; border: 1px solid var(--app-border); border-radius: 11px; background: var(--app-elevated); color: var(--vscode-foreground); cursor: pointer; font-family: inherit; transition: border-color .12s ease, transform .12s ease, background .12s ease; }
   .ai-prov-card:hover { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); background: var(--app-hover); transform: translateY(-1px); }
   .ai-prov-card > .glyph .codicon, .ai-prov-card > .glyph { font-size: 18px; color: var(--gs-accent-ink); }
   .ai-prov-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -370,7 +391,7 @@ export class AiSettingsPanel {
 <body>
   <div class="wrap">
     <h1><i class="codicon codicon-sparkle"></i> GitStudio AI</h1>
-    <p class="lead">Connect a model to power the ✨ commit messages and AI code review. Bring your own API key, run a model locally (fully private), or use your editor's built-in AI. It's optional and never blocks Git.</p>
+    <p class="lead">Connect a model to write commit messages and review your changes. Bring your own API key, run a model locally (fully private), or use your editor's built-in AI. It's optional and never blocks Git.</p>
     <div id="card"></div>
   </div>
   <script nonce="${nonce}">
