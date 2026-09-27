@@ -274,6 +274,9 @@ const REBASE_FINISH = /^rebase(?: -i)? \(finish\): (.+) onto ([0-9a-f]+)$|^rebas
 /** A branch a rebase carried with it (`--update-refs`). */
 const REBASE_CARRIED = "rewritten during rebase";
 
+/** A step of a rebase in HEAD's reflog: "rebase (start): checkout main", "rebase -i (pick): …", "rebase: …". */
+const REBASE_STEP = /^rebase(?: -i)?(?: \((\w+)\))?: /;
+
 /**
  * Captures, settles, plans and restores snapshots. Capture writes nothing a
  * user could see: `stash create` only writes objects. This package must never
@@ -918,7 +921,8 @@ export class SnapshotProvider {
    * carried (`--update-refs`): its tip was among the commits rebased, and it
    * was "rewritten during rebase" between the capture and that finish. A
    * rebase the user ran later, of any branch, is theirs. A branch moved again
-   * since is refused rather than thrown away.
+   * since is refused rather than thrown away. A rebase started on a detached
+   * HEAD finishes no branch: it is followed through HEAD's own reflog.
    */
   private async resettle(
     snap: Snapshot,
@@ -931,11 +935,9 @@ export class SnapshotProvider {
       return refuse(`A rebase is in progress that "${snap.label}" didn't start. Finish or abort it first, then undo.`);
     }
     if (!s.branches) return { kind: "ok", settled };
-    if (!s.headRef) {
-      return refuse(`Undo can't follow a rebase that was started on a detached HEAD. Nothing was changed.`);
-    }
-    const head = s.headRef;
     const onto = s.deferred?.onto ?? settled.op?.onto;
+    if (!s.headRef) return this.resettleDetached(snap, s, settled, now, onto, opts);
+    const head = s.headRef;
     const headBefore = s.branches[head] ?? null;
     const headNow = now.branches[head] ?? null;
     const name = branchShort(head);
@@ -952,23 +954,9 @@ export class SnapshotProvider {
     }
     // Published before the op can't be known from here; its commits are new.
     const moved: MovedRef[] = [{ ref: head, before: headBefore, after: headNow, published: [] }];
-
-    const carried = (e: { msg: string; time: number }): boolean =>
-      e.msg === REBASE_CARRIED && e.time >= s.time && e.time <= finish.time + CARRY_SLACK;
-    for (const ref of new Set([...Object.keys(s.branches), ...Object.keys(now.branches)])) {
-      if (ref === head) continue;
-      const b = s.branches[ref] ?? null;
-      const a = now.branches[ref] ?? null;
-      if (b === a || b === null) continue;
-      // Only a tip among the commits rebased can be carried with them.
-      if (!(await this.isAncestor(b, snap.headSha, opts)) || (onto && (await this.isAncestor(b, onto, opts)))) continue;
-      const moves = await this.reflogSince(ref, b, opts);
-      if (!moves || !moves.some(carried)) continue;
-      if (!carried(moves[0])) {
-        return refuse(`'${branchShort(ref)}' has moved since the rebase (it is at ${a ? shortSha(a) : "nothing"} now), and putting it back would throw that away.`);
-      }
-      moved.push({ ref, before: b, after: a, published: [] });
-    }
+    const others = await this.carriedBy(snap, s, now, head, onto, finish.time, opts);
+    if (typeof others === "string") return refuse(others);
+    moved.push(...others);
     return {
       kind: "ok",
       settled: {
@@ -983,6 +971,97 @@ export class SnapshotProvider {
         published: [],
       },
     };
+  }
+
+  /**
+   * `resettle` for a rebase started on a detached HEAD. git writes its
+   * "rebase (finish)" only to a branch, so this one is read from HEAD's own
+   * reflog: its steps after the capture, from its "rebase (start)" (onto
+   * `onto`, when known) to its last. An abort, or no start, and the rebase
+   * changed nothing; anything HEAD did after its last step is the user's, and
+   * putting HEAD back would throw it away.
+   */
+  private async resettleDetached(
+    snap: Snapshot,
+    s: SnapshotScope,
+    settled: SettledScope,
+    now: Observed,
+    onto: string | undefined,
+    opts?: GitRunOptions,
+  ): Promise<{ kind: "ok"; settled: SettledScope } | Extract<RestorePlan, { kind: "refuse" | "nothing" }>> {
+    const since = await this.reflogSince("HEAD", snap.headSha, opts);
+    if (!since) {
+      if (now.headRef === null && now.headSha === snap.headSha) return { kind: "nothing", reason: "the rebase didn't change anything." };
+      return refuse(`GitStudio can't tell what moved HEAD since "${snap.label}" (it keeps no reflog), so it won't guess. Nothing was changed.`);
+    }
+    // Oldest first: this rebase's start is the first step after the capture.
+    const after = since.filter((e) => e.time >= s.time).reverse();
+    const start = after.findIndex((e) => REBASE_STEP.exec(e.msg)?.[1] === "start" && (!onto || e.sha === onto));
+    if (start < 0) {
+      return { kind: "nothing", reason: "the rebase didn't change anything." };
+    }
+    let end = start;
+    while (end + 1 < after.length && REBASE_STEP.test(after[end + 1].msg)) end++;
+    const last = after[end];
+    if (REBASE_STEP.exec(last.msg)?.[1] === "abort") {
+      return { kind: "nothing", reason: "the rebase was abandoned, so it changed nothing." };
+    }
+    if (end !== after.length - 1 || now.headRef !== null || now.headSha !== last.sha) {
+      // The HEAD section says what moved it (a commit, a checkout of a branch).
+      return {
+        kind: "ok",
+        settled: { headRef: null, headSha: last.sha, tree: snap.stashSha ? "?" : CLEAN_TREE, moved: [], stashes: [], published: [] },
+      };
+    }
+    const others = await this.carriedBy(snap, s, now, null, onto, last.time, opts);
+    if (typeof others === "string") return refuse(others);
+    return {
+      kind: "ok",
+      settled: {
+        headRef: null,
+        headSha: last.sha,
+        tree: snap.stashSha ? "?" : CLEAN_TREE,
+        moved: others,
+        stashes: [],
+        ...(settled.pushed ? { pushed: settled.pushed } : {}),
+        published: [],
+      },
+    };
+  }
+
+  /**
+   * The branches a rebase carried with it (`--update-refs`) — each a tip among
+   * the commits rebased, "rewritten during rebase" between the capture and the
+   * rebase's end — or a sentence when one has moved again since.
+   */
+  private async carriedBy(
+    snap: Snapshot,
+    s: SnapshotScope,
+    now: Observed,
+    head: string | null,
+    onto: string | undefined,
+    endTime: number,
+    opts?: GitRunOptions,
+  ): Promise<MovedRef[] | string> {
+    const out: MovedRef[] = [];
+    const branches = s.branches ?? {};
+    const carried = (e: { msg: string; time: number }): boolean =>
+      e.msg === REBASE_CARRIED && e.time >= s.time && e.time <= endTime + CARRY_SLACK;
+    for (const ref of new Set([...Object.keys(branches), ...Object.keys(now.branches)])) {
+      if (ref === head) continue;
+      const b = branches[ref] ?? null;
+      const a = now.branches[ref] ?? null;
+      if (b === a || b === null) continue;
+      // Only a tip among the commits rebased can be carried with them.
+      if (!(await this.isAncestor(b, snap.headSha, opts)) || (onto && (await this.isAncestor(b, onto, opts)))) continue;
+      const moves = await this.reflogSince(ref, b, opts);
+      if (!moves || !moves.some(carried)) continue;
+      if (!carried(moves[0])) {
+        return `'${branchShort(ref)}' has moved since the rebase (it is at ${a ? shortSha(a) : "nothing"} now), and putting it back would throw that away.`;
+      }
+      out.push({ ref, before: b, after: a, published: [] });
+    }
+    return out;
   }
 
   /** `ref`'s reflog entries since it was last at `was` (newest first, with their times); undefined without a reflog. */

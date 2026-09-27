@@ -1741,3 +1741,81 @@ cell({
     assert.equal(sha(f, "refs/heads/main"), f.memo.D, "main back at D");
   },
 });
+
+// ══ 14. Rebase onto, on a detached HEAD, stopped and continued by hand ══════
+//
+// The question says "Undo can take you back." A detached rebase writes no
+// "rebase (finish)" to any branch's reflog: Undo follows it through HEAD's.
+
+/** Detached at F (f.txt = feature's line); main = M (f.txt = main's line). */
+function detachedOnF(f: Fx): void {
+  f.commit("M", "f.txt", "main's line\n");
+  f.git("checkout", "-q", "-b", "feature", "HEAD~1");
+  f.memo.F = f.commit("F", "f.txt", "feature's line\n");
+  f.commit("G", "g.txt");
+  f.memo.G = sha(f, "HEAD");
+  f.git("checkout", "-q", "--detach", "feature");
+  f.git("branch", "-q", "-D", "feature");
+}
+
+/** Rebase onto main from the Branches view; it stops on f.txt; resolve it and `git rebase --continue`. */
+async function detachedRebaseContinued(f: Fx): Promise<void> {
+  answer = yes();
+  await branchActions.rebaseCurrentOnto(f.repos, node("main"), noop);
+  const q = asked.find((a) => a.kind === "confirm");
+  assert.match(q && "message" in q ? (q.message ?? "") : "", /Undo can take you back\./, "the question's promise");
+  assert.equal(state(f).op, "rebase", "stopped on f.txt");
+  f.write("f.txt", "both lines\n");
+  f.git("add", "f.txt");
+  f.gitEnv({ GIT_EDITOR: "true" }, "rebase", "--continue");
+  f.memo.rebased = sha(f, "HEAD");
+}
+
+cell({
+  id: "E63",
+  operation: "Rebase HEAD onto main (Branches view) on a DETACHED HEAD",
+  state: "detached at G (F, G on no branch); stops on f.txt; resolved and continued by hand before Undo",
+  expected: "HEAD detached at G again, as the question promised",
+  setup: (f) => detachedOnF(f),
+  op: (f) => detachedRebaseContinued(f),
+  expect: (f, s, { undoSaid }) => {
+    assert.notEqual(f.memo.rebased, f.memo.G, "the rebase rewrote G");
+    assert.equal(s.head.startsWith("(detached)"), true, "still detached");
+    assert.equal(sha(f, "HEAD"), f.memo.G, `HEAD back at G (said: ${undoSaid.join(" / ")})`);
+    assert.equal(s.op, "none");
+    assert.deepEqual(s.status, []);
+  },
+});
+
+cell({
+  id: "E64",
+  operation: "Rebase HEAD onto main (Branches view) on a DETACHED HEAD",
+  state: "as E63, then a commit X made on the detached HEAD before Undo",
+  expected: "Undo refuses — putting HEAD back would throw X away — and nothing moves",
+  setup: (f) => detachedOnF(f),
+  op: (f) => detachedRebaseContinued(f),
+  between: (f) => {
+    f.memo.X = f.commit("X", "x.txt");
+  },
+  expect: (f, _s, { undoSaid }) => {
+    assert.equal(sha(f, "HEAD"), f.memo.X, "HEAD still at X");
+    assert.ok(undoSaid.some((l) => /HEAD has moved since/.test(l)), undoSaid.join(" / "));
+  },
+});
+
+cell({
+  id: "E65",
+  operation: "Rebase HEAD onto main (Branches view) on a DETACHED HEAD",
+  state: "stops on f.txt; the user aborts it by hand before Undo",
+  expected: "nothing to undo: HEAD at G, as the abort left it",
+  setup: (f) => detachedOnF(f),
+  op: async (f) => {
+    answer = yes();
+    await branchActions.rebaseCurrentOnto(f.repos, node("main"), noop);
+    f.git("rebase", "--abort");
+  },
+  expect: (f, s) => {
+    assert.equal(sha(f, "HEAD"), f.memo.G);
+    assert.equal(s.head.startsWith("(detached)"), true);
+  },
+});
