@@ -1,0 +1,41 @@
+apps/extension/src/ui/notify.ts
+  s_26f5e669d3043c::t_59cf8d7b751a3a 32,34-39
+apps/extension/package.json
+  s_26f5e669d3043c::t_e3476eaf8f092b 1419,1491
+  s_26f5e669d3043c::t_b59f9e6489b35e 1422-1425,1427,1435-1436,1439-1442,1444,1452-1453,1456-1459,1461,1465-1467,1473,1476-1479,1481,1494-1497,1499,1512-1515,1517
+apps/extension/harness/walkthrough/pack.py
+  s_26f5e669d3043c::t_4f73c6d7e58742 1-44
+apps/extension/harness/walkthrough/shots.ts
+  s_26f5e669d3043c::t_5f07a3ead48b28 1-62,65-256,258-278,280-350
+  s_26f5e669d3043c::t_aac9cf4ea25846 64
+  s_26f5e669d3043c::t_26523c57607c3d 257,279
+  s_26f5e669d3043c::t_b46d2c884ca340 63
+apps/extension/src/ui/walkthroughProgress.ts
+  s_26f5e669d3043c::t_3c0931cfe786fd 1-26
+apps/extension/test/walkthroughMedia.test.ts
+  s_26f5e669d3043c::t_6f4e554407e91a 1-91
+apps/extension/test/notifyStyle.test.ts
+  s_26f5e669d3043c::t_185491d610e2d3 87-90
+  s_26f5e669d3043c::t_f3a749db18b681 39-43
+apps/extension/src/changes/lineStaging.ts
+  s_26f5e669d3043c::t_f81bdcbf8b43fe 9,266
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_437c26878c0346 7571-7579
+  s_26f5e669d3043c::t_042b69ebd78ed4 4,1011-1013,1554,1564
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fa66ebe1b34b81c79de387aac6053aafc0759591",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
