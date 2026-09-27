@@ -2900,6 +2900,12 @@ export class CommitViewProvider
     }
     .sync-clean.visible { display: inline-flex; }
     .sync-clean svg { width: 12px; height: 12px; }
+    /* Short of room for the branch's name, the pills keep their arrow and
+       count and let the verb go ("up to date" keeps its tick): the name and
+       tip of each still say Push or Pull. */
+    .sync.compact .sync-verb,
+    .sync.compact .sync-clean span { display: none; }
+    .sync.compact .sync-pill { padding: 0 6px 0 4px; }
 
     /* ---- Branch + actions menu (popover; folds in the Branches view) ---- */
     .branch-menu {
@@ -4404,7 +4410,7 @@ export class CommitViewProvider
         <span class="sync-verb">Pull</span>
         <span id="behind-n">0</span>
       </button>
-      <span class="sync-clean" id="sync-clean" title="Up to date with upstream">
+      <span class="sync-clean" id="sync-clean" title="Up to date with upstream" role="img" aria-label="Up to date with upstream">
         <i class="codicon codicon-check" aria-hidden="true"></i>
         <span>up to date</span>
       </span>
@@ -5363,6 +5369,9 @@ export class CommitViewProvider
       const hasUpstream = !!state.upstream;
       aheadN.textContent = String(ahead);
       behindN.textContent = String(behind);
+      // The count in the name too: a folded pill shows only an arrow and it.
+      aheadEl.setAttribute("aria-label", "Push " + ahead + (ahead === 1 ? " commit" : " commits"));
+      behindEl.setAttribute("aria-label", "Pull " + behind + (behind === 1 ? " commit" : " commits"));
       aheadEl.classList.toggle("visible", ahead > 0);
       behindEl.classList.toggle("visible", behind > 0);
       syncClean.classList.toggle("visible", hasUpstream && ahead === 0 && behind === 0);
@@ -5386,11 +5395,22 @@ export class CommitViewProvider
     // (Windows' are narrower), with the branch already losing letters. So,
     // measured with the name shown each time: if the branch name is clipped,
     // the name folds away completely; with room again, it comes back.
+    //
+    // Then the sync pills' verbs: at a sidebar's width, "Push 2" and "Pull 3"
+    // kept their full width while the branch was down to "fea…". Folded,
+    // they are an arrow and a count (the pill's name and tip keep the word).
+    // Each pass starts from everything shown, so a wider sidebar gives it all
+    // back and the decision is the same whichever state it starts from.
     function fitRepoPill() {
-      if (repoPill.hidden) return;
+      const clipped = () => branchName.scrollWidth > branchName.clientWidth + 0.5;
       repoPill.classList.remove("folded");
-      const clipped = branchName.scrollWidth > branchName.clientWidth + 0.5;
-      repoPill.classList.toggle("folded", clipped);
+      syncEl.classList.remove("compact");
+      if (!clipped()) return;
+      if (!repoPill.hidden) {
+        repoPill.classList.add("folded");
+        if (!clipped()) return;
+      }
+      syncEl.classList.add("compact");
     }
     new ResizeObserver(() => fitRepoPill()).observe(repoPill.parentElement);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitRepoPill);
