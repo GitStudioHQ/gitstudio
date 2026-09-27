@@ -162,8 +162,15 @@ body.vscode-dark {
   --sel-fill-strong: color-mix(in srgb, var(--gs-accent) 28%, transparent);
   --sel-glow: 0 0 16px -4px color-mix(in srgb, var(--gs-accent) 70%, transparent);
   --sel-glow-soft: 0 0 12px -5px color-mix(in srgb, var(--gs-accent) 60%, transparent);
-  /* Accent words ON a selected tint. The plain accent ink in dark. */
-  --sel-ink: var(--gs-accent-ink);
+  /* Accent words ON a selected tint. The plain accent ink measured 4.05:1 on
+     a lit segment in a popover (the Inbox's "Unread", the clone dialog's
+     "URL"): the tint lifts the ground toward the ink. A lighter violet from
+     the same hue clears it. */
+  --sel-ink: color-mix(in srgb, var(--gs-accent-ink) 78%, #fff);
+  /* Secondary words ON a selected tint — a hint, a "current", a time. The
+     muted grey measured 4.21:1 under the review verdict's tint and 4.36:1
+     under the branch menu's current row. */
+  --sel-muted: color-mix(in srgb, var(--app-muted) 72%, var(--vscode-foreground));
   /* The app canvas itself — a barely-there top glow so the window has depth. */
   --canvas: radial-gradient(1200px 520px at 50% -340px,
       color-mix(in srgb, var(--gs-accent) 7%, transparent), transparent 70%),
@@ -329,6 +336,13 @@ body.vscode-light {
      on --sel-fill over the page (11px "current", the filtering facet's name),
      so a deeper violet from the same hue — 5.9:1 there, 7.7:1 on white. */
   --sel-ink: color-mix(in srgb, var(--gs-accent-ink) 82%, #000);
+  /* The muted grey measured 4.47:1 on the deep-link landing row's tint. */
+  --sel-muted: color-mix(in srgb, var(--app-muted) 80%, #000);
+  /* A lit PILL on a grey track (the segmented controls): a soft accent
+     shadow under it lifts it, a glow around it lights it. Both blurred — a
+     shadow, never a hairline or a ring. */
+  --sel-lift: 0 1px 3px color-mix(in srgb, var(--gs-accent) 32%, transparent),
+    0 0 12px -3px color-mix(in srgb, var(--gs-accent) 60%, transparent);
   --canvas: radial-gradient(1200px 520px at 50% -340px,
       color-mix(in srgb, var(--gs-accent) 6%, transparent), transparent 70%),
     var(--app-bg);
@@ -3573,6 +3587,9 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
 .sec-row-meta > .repo-lang { width: 92px; flex: 0 0 92px; text-align: right; }
 .sec-row-meta > .repo-stars { width: 62px; flex: 0 0 62px; justify-content: flex-end; }
 .gh-pill.is-current { color: var(--status-add); }
+/* "open" (the repository open in this window), in light: the status green on
+   the pill's grey wash measured 4.40:1. One step deeper. */
+body.vscode-light .gh-pill.is-current { color: color-mix(in srgb, var(--status-add) 85%, #000); }
 .gh-pill.is-warn {
   color: color-mix(in srgb, var(--status-warn) 90%, var(--vscode-foreground));
   border-color: var(--status-warn);
@@ -7323,7 +7340,7 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .explore-tab:hover { background: var(--app-hover); color: var(--vscode-foreground); }
 .explore-tab.active {
   background: var(--sel-fill);
-  color: var(--gs-accent-ink, var(--gs-accent));
+  color: var(--sel-ink);
   box-shadow: var(--sel-glow-soft);
 }
 .explore-sort { margin-left: auto; }
@@ -9277,7 +9294,10 @@ body.vscode-light .gh-label-chip {
    plan is; the footer grows upward over the list, which does not move. */
 .rb-foot > .rb-banner { flex: 1 0 100%; margin: 0; }
 .rb-row.is-selected:hover { background: color-mix(in srgb, var(--gs-accent) 26%, transparent); }
-body.vscode-light .rb-row.is-selected:hover { background: color-mix(in srgb, var(--gs-accent) 20%, var(--app-elevated)); }
+/* 26%, not 20%: at 20% into white the hovered row stood LIGHTER than its
+   resting --app-active (1.30 vs 1.34:1 off a white card) — a selected thing
+   deepens under the pointer. */
+body.vscode-light .rb-row.is-selected:hover { background: color-mix(in srgb, var(--gs-accent) 26%, var(--app-elevated)); }
 /* The node's ring is drawn in the page colour to cut the rail; on a selected
    row it has to be the row's colour, or each dot sits in a dark halo. */
 .rb-row.is-selected .rb-node { box-shadow: 0 0 0 3px var(--app-active); }
@@ -12692,7 +12712,9 @@ body.vscode-light .log-pane {
   align-self: flex-start;
 }
 .gs-where.is-local {
-  color: var(--gs-accent-ink, var(--gs-accent));
+  /* --sel-ink: the accent words on an accent tint — the plain accent ink
+     measured 4.42:1 on this chip in light. */
+  color: var(--sel-ink);
   border-color: color-mix(in srgb, var(--gs-accent) 40%, transparent);
   background: var(--accent-soft);
 }
@@ -12766,11 +12788,26 @@ body.vscode-light .log-pane {
   from { background: color-mix(in srgb, var(--gs-accent) 42%, transparent); }
 }
 .row-landed {
-  background: color-mix(in srgb, var(--gs-accent) 15%, transparent);
+  background: var(--sel-fill);
   animation: gs-row-land 0.9s var(--ease);
 }
 /* ONE class on purpose: `.sec-row:hover` outranks it, so the landed row still
    lights under the cursor like every other row. */
+
+/* Secondary words inside a selected thing. The tint that marks it lifts the
+   ground toward the muted grey, so inside it, muted means --sel-muted: the
+   verdict's hint (4.21:1 dark), the branch menu's "current" (4.36:1 dark), the
+   landed row's subject and time (4.47:1 light) all read now. */
+.row-landed,
+.review-verdict.is-selected,
+.dropdown-item.is-current {
+  --app-muted: var(--sel-muted);
+}
+/* The landed row's ahead pill in light: its green one step deeper — on its
+   own green wash over the accent wash it measured 3.77:1. */
+body.vscode-light .row-landed .ab-pill.ahead {
+  color: color-mix(in srgb, var(--status-add) 80%, #000);
+}
 @media (prefers-reduced-motion: reduce) {
   .row-landed { animation: none; }
 }
@@ -12825,17 +12862,21 @@ body.vscode-light .notif-read .notif-line-title {
 /* The SELECTED segment, in light. Two things were fighting: a fill dark enough
    to read as "selected" pushed the accent ink under AA (4.32:1 on the blue
    --app-active), and a fill light enough for the ink left the segment with no
-   shape at all. So stop asking the fill to do both: the fill stays light
-   enough for the word on top of it (accent ink on 16% into white: 4.7:1),
-   and the shape comes from the tint on the grey track and the soft accent
-   GLOW the segment wears in both themes — never a ring (the owner: selection
-   is never a line; see the PILL block below).
-   .explore-tab is the same control wearing a different class. */
+   shape at all. The deeper --sel-ink settles the first, so the fill is free to
+   be a PILL again: 30% of the accent into white stands 1.17:1 off the grey
+   track (the 16% it replaced stood 1.03:1 — the selection rested on the
+   violet word alone; --sel-ink on it is 5.1:1), and --sel-lift lifts and
+   lights it: a soft accent shadow under it, a glow around it. No ring and no
+   hairline — the old white pill's 0.5px outline was a line, and selection is
+   never a line (the owner; see the PILL block below). .explore-tab is the
+   same control wearing a different class. */
 body.vscode-light .gh-seg-btn.active,
 body.vscode-light .settings-seg-btn.active,
 body.vscode-light .cmp-seg-btn.active,
 body.vscode-light .explore-tab.active {
-  background: color-mix(in srgb, var(--gs-accent) 16%, var(--app-elevated));
+  background: color-mix(in srgb, var(--gs-accent) 30%, var(--app-elevated));
+  color: var(--sel-ink);
+  box-shadow: var(--sel-lift);
 }
 
 /* The board's status dots keep their own ink in light. Excluding them from the
@@ -13014,7 +13055,6 @@ body.vscode-light .topbar-assistant.is-current {
 .term-side-row.is-current:hover,
 .explore-tab.active:hover,
 .rb-chip.is-active:hover,
-.gotofile-row.is-sel:hover,
 .review-verdict.is-selected:hover,
 .cmt-file.active:hover,
 .md-tab.active:hover,
@@ -13025,14 +13065,27 @@ body.vscode-light .topbar-assistant.is-current {
 }
 body.vscode-light .dropdown-item.is-current:hover,
 body.vscode-light .nav-item.active:hover,
-body.vscode-light .cmp-seg-btn.active:hover,
-body.vscode-light .settings-seg-btn.active:hover,
-body.vscode-light .gh-seg-btn.active:hover,
 body.vscode-light .gh-subtab.active:hover,
-body.vscode-light .explore-tab.active:hover,
 body.vscode-light .term-tab.active:hover,
 body.vscode-light .list-row.is-current:hover {
   background: color-mix(in srgb, var(--gs-accent) 20%, var(--app-elevated));
+}
+/* The light segment's pill rests at 30% (above), so its hover goes past it. */
+body.vscode-light .cmp-seg-btn.active:hover,
+body.vscode-light .settings-seg-btn.active:hover,
+body.vscode-light .gh-seg-btn.active:hover,
+body.vscode-light .explore-tab.active:hover {
+  background: color-mix(in srgb, var(--gs-accent) 38%, var(--app-elevated));
+}
+
+/* The keyboard cursors rest on --sel-fill-strong (28% dark, 25% light), above
+   the 26% the list gives everything else — which made hovering the Go-to-file
+   row the keyboard is on LIGHTER in dark. Theirs goes past their own rest. */
+.gotofile-row.is-sel:hover {
+  background: color-mix(in srgb, var(--gs-accent) 36%, transparent);
+}
+body.vscode-light .gotofile-row.is-sel:hover {
+  background: color-mix(in srgb, var(--gs-accent) 33%, transparent);
 }
 
 /* A toggle that is ON stops answering too — same mistake, different clothes. */
@@ -13128,6 +13181,7 @@ select.rb-action:hover {
 .cmp-seg-btn.active {
   background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
   box-shadow: var(--sel-glow-soft);
+  color: var(--sel-ink);
 }
 /* Hover on the track's unselected buttons stays inside their own radius. */
 .gh-seg-btn:hover,
