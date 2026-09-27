@@ -272,8 +272,10 @@ body {
   --wt-tone: var(--gs-fg-muted);
   border-style: dashed;
 }
-/* The one badge left on a line too narrow even for it and "+N more". */
-.wt-badge--squeezed {
+/* The one badge left on a line too narrow even for it and "+N more" — a
+   lock's too, whose own floor (11ch, above) would otherwise hold it past
+   the edge at a sidebar's narrowest. */
+.wt-badge.wt-badge--squeezed {
   flex: 0 1 auto;
   min-width: 4ch;
   display: inline-block;

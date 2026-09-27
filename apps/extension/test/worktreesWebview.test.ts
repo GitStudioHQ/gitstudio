@@ -716,10 +716,15 @@ test("a narrow sidebar never shows a symbol without its words: a branch keeps a 
       });
       return out;
     })()`);
-  for (const width of [240, 300, 360]) {
+  // 180: a sidebar dragged as narrow as it goes — the branch goes whole there.
+  for (const width of [180, 240, 300, 360]) {
     await page.page.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
     await page.settle(80);
     assert.deepEqual(await measure(), [], `at ${width}px`);
+    if (width === 180) {
+      const gone = await page.eval<number>(`Array.prototype.filter.call(document.querySelectorAll(".wt-head"), function (h) { return h.getClientRects().length === 0; }).length`);
+      assert.ok(gone > 0, "at its narrowest some branches go whole");
+    }
   }
   // Wide enough, every branch is there.
   await page.page.send("Emulation.setDeviceMetricsOverride", { width: 700, height: 900, deviceScaleFactor: 1, mobile: false });
