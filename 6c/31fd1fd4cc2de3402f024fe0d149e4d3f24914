@@ -1,0 +1,23 @@
+apps/extension/harness/worktrees/contrast.ts
+  s_26f5e669d3043c::t_2b6caa0caa7cb0 2-4,69-75,79
+apps/extension/test/worktreesWebview.test.ts
+  s_26f5e669d3043c::t_626f0889fcdd3e 448-487
+packages/webview-ui/src/worktrees/worktrees.css
+  s_26f5e669d3043c::t_40c858a02026c1 212-214,219,224-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6c31fd1fd4cc2de3402f024fe0d149e4d3f24914",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
