@@ -1,0 +1,52 @@
+packages/webview-ui/src/worktrees/view.ts
+  s_26f5e669d3043c::t_e95bbde6d07c24 1-98,101-150,152-153,160-161,163-165,178-254,256-261,263-276,278-291,293-355,357-358,360-380,382-429,431-433,441-502,538-907,909-912,915-916,918,920-974
+  s_26f5e669d3043c::t_d3f153e153c3ae 255,262
+  s_26f5e669d3043c::t_50c2e183a823e8 99-100
+  s_26f5e669d3043c::t_7ee2580c9c6daa 503-537
+  s_26f5e669d3043c::t_3bf14a3ccde581 151,154-159,162
+  s_26f5e669d3043c::t_d3508e7956f4f0 434-440
+  s_26f5e669d3043c::t_e27ba65389366f 381
+  s_26f5e669d3043c::t_68c17699f9f3cd 356,359
+  s_26f5e669d3043c::t_89ed9dcc579a6d 908,913-914,917,919
+  s_26f5e669d3043c::t_1c259d9f835bf8 430
+  s_26f5e669d3043c::t_fae921c9c90daf 166-177
+  s_26f5e669d3043c::t_0c81c4abfb9f46 277
+  s_26f5e669d3043c::t_49b64ce6acfc2c 292
+packages/webview-ui/src/worktrees/main.ts
+  s_26f5e669d3043c::t_4220d69b9e76e9 1-36
+packages/webview-ui/src/worktrees/worktrees.css
+  s_26f5e669d3043c::t_debee5bb02ccba 221-222
+  s_26f5e669d3043c::t_f0d0762be8345f 105-107,110-114,116-117,122-127
+  s_26f5e669d3043c::t_bd43c29f7124b1 1-74,76-104,108-109,115,118-121,128-145,147-185,187-198,200-209,211-215,217-220,223-242,251-252,254-255,258,264-265,267-305,307-347,349-396,398-548
+  s_26f5e669d3043c::t_7675c018d3ef40 245
+  s_26f5e669d3043c::t_6e3119d6842031 253,256-257,259-263
+  s_26f5e669d3043c::t_69d766259e35e8 75,146,186,199,210,216,243-244,246-250,266,306,348,397
+packages/webview-ui/src/changeRows/changeRows.css
+  s_26f5e669d3043c::t_9e31b15685cca2 1-10,27-34,36-40,42-77,79-90,92-101,103-108,110,123-150,152-164,166-167,169-176,178-179,181-183,185-186,195-201,203-220
+  s_26f5e669d3043c::t_39c00e22b6bbae 102
+  s_26f5e669d3043c::t_e75640de54c40b 111-122
+  s_26f5e669d3043c::t_b0457b5ed525d8 11-26
+  s_26f5e669d3043c::t_3ad9051624cfb8 35,41,78,91,109,151,165,168,177,180,184,187-194,202
+packages/webview-ui/src/changeRows/global.ts
+  s_26f5e669d3043c::t_a7603cb2249949 1-12
+packages/webview-ui/src/changeRows/changeRows.ts
+  s_26f5e669d3043c::t_a7143c9259e1f9 196
+  s_26f5e669d3043c::t_57f5e2ce7d4b6b 1-191,197-279
+  s_26f5e669d3043c::t_85ce891f5068c5 192-195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "13f682c5701266a4767092fc0271d18997e52a40",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
