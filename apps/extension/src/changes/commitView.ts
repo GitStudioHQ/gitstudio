@@ -3312,7 +3312,9 @@ export class CommitViewProvider
       cursor: pointer;
     }
     .bm-action .codicon, .bm-bicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
-    .bm-action:hover, .bm-branch:hover { background: var(--gs-hover-strong); }
+    /* No hover colour of its own: the pointer MOVES the highlight (the
+       list's mousemove), so a row under the pointer is the lit row, and
+       there is never a second, differently lit one (see .is-active). */
     /* A collapsible category header: chevron + label + count, full-width
        button. It stays pinned at the top of the list while its group's rows
        scroll under it — the next group's heading pushes it off, because each
@@ -3404,51 +3406,70 @@ export class CommitViewProvider
        menu does: a chevron at its end, always there, in the secondary
        colour — the room it takes is the hint. */
     .bm-bmore { flex: 0 0 auto; font-size: 13px; color: var(--gs-fg-muted); }
-    .bm-branch:hover .bm-bmore { color: var(--gs-fg); }
 
-    /* The keyboard highlight: the one row the arrow keys have reached (and
-       the mouse, which moves it too). VS Code's own colours for a focused
-       selection, plus the focus outline, because the high-contrast themes
-       give a selection no background at all and draw it with that outline. */
+    /* The highlight: the one row the arrow keys or the pointer have reached
+       (the pointer moves it), and in a row's own menu the item that has the
+       keyboard (which the pointer moves too). ONE look for both: a tint of
+       the accent, rounded, and the words and icon at the menu's full ink —
+       no outline, and no second colour for a hover. It used to be VS Code's
+       selection blue with the focus outline around it; under the pointer a
+       submenu item took the hover's grey instead but kept the selection's
+       white words, which read faded, inside a blue ring. Declared on body,
+       where the theme's class is: --gs-danger is the light theme's deeper
+       red there, and a custom property resolves where it is declared. */
+    body {
+      --bm-lit: color-mix(in srgb, var(--gs-accent) 26%, transparent);
+      --bm-lit-soft: color-mix(in srgb, var(--gs-accent) 13%, transparent);
+      --bm-lit-danger: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 14%, transparent);
+      --bm-danger-ink: var(--gs-danger, var(--vscode-errorForeground, #e15a5a));
+    }
+    body.vscode-light {
+      --bm-lit: color-mix(in srgb, var(--gs-accent) 18%, transparent);
+      --bm-lit-soft: color-mix(in srgb, var(--gs-accent) 9%, transparent);
+    }
     .bm-action.is-active,
     .bm-branch.is-active,
     .bm-more.is-active,
-    .bm-subaction.is-active {
-      background: var(--vscode-list-activeSelectionBackground, var(--gs-hover-strong));
-      color: var(--vscode-list-activeSelectionForeground, var(--gs-fg));
-      outline: 1px solid var(--vscode-list-focusOutline, var(--vscode-focusBorder, transparent));
-      outline-offset: -1px;
+    .bm-subaction.is-active,
+    .action-menu .bm-subaction:focus {
+      background: var(--bm-lit);
+      color: var(--gs-fg);
+      outline: none;
     }
     .bm-action.is-active .codicon,
     .bm-branch.is-active .bm-bicon,
     .bm-branch.is-active.is-current .bm-bname,
     .bm-branch.is-active .bm-bup,
     .bm-branch.is-active .bm-gone,
-    .bm-subaction.is-active .codicon { color: inherit; }
+    .bm-subaction.is-active .codicon,
+    .action-menu .bm-subaction:focus .codicon { color: inherit; }
     .bm-branch.is-active .bm-bmore { color: inherit; }
     .bm-branch.is-active .bm-star:not(.on) { color: inherit; }
-    /* A match on the highlighted row: in the colour VS Code gives a match
-       on a focused list row, on a faint band of that same colour — the
-       letters alone (pale blue beside white, in Light+) were easy to miss. */
-    .bm-action.is-active .bm-hl,
-    .bm-branch.is-active .bm-hl {
-      background: color-mix(in srgb, var(--vscode-list-focusHighlightForeground, currentColor) 15%, transparent);
-      color: var(--vscode-list-focusHighlightForeground, inherit);
-      font-weight: 600;
+    /* The row whose submenu holds the highlight stays lit, more softly. */
+    .bm-branch.is-open { background: var(--bm-lit-soft); }
+    .bm-branch.is-open .bm-bmore { color: var(--gs-fg); }
+    /* A destructive item keeps its colour when highlighted: red on a red tint. */
+    .bm-subaction.danger.is-active,
+    .action-menu .bm-subaction.danger:focus {
+      background: var(--bm-lit-danger);
+      color: var(--bm-danger-ink);
     }
-    /* The row whose submenu holds the highlight stays marked, as VS Code
-       marks a selection whose list is not the focused one. */
-    .bm-branch.is-open {
-      background: var(--vscode-list-inactiveSelectionBackground, var(--gs-hover));
-      outline: 1px dashed var(--vscode-contrastActiveBorder, transparent);
+    .bm-subaction.danger.is-active .codicon,
+    .action-menu .bm-subaction.danger:focus .codicon { color: inherit; }
+    /* The high-contrast themes paint a selection with no fill of its own but
+       VS Code's contrast border, drawn whole: there, and only there, the
+       highlight keeps that ring (dashed for the row whose submenu is open). */
+    body.vscode-high-contrast .bm-action.is-active,
+    body.vscode-high-contrast .bm-branch.is-active,
+    body.vscode-high-contrast .bm-more.is-active,
+    body.vscode-high-contrast .bm-subaction.is-active,
+    body.vscode-high-contrast .action-menu .bm-subaction:focus {
+      outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent));
       outline-offset: -1px;
     }
-    .bm-branch.is-open .bm-bmore { color: var(--gs-fg); }
-    /* A destructive item keeps its colour when highlighted: red on red tint. */
-    .bm-subaction.danger.is-active {
-      background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 20%, transparent);
-      color: var(--vscode-errorForeground, #e15a5a);
-      outline-color: var(--vscode-errorForeground, #e15a5a);
+    body.vscode-high-contrast .bm-branch.is-open {
+      outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: -1px;
     }
 
     /* Per-branch action submenu (flyout). */
@@ -3496,6 +3517,9 @@ export class CommitViewProvider
     /* The list scrolls, so it clips: a focus ring drawn outside an item
        would lose three sides. Drawn just inside, it keeps all four. */
     .bm-subaction:focus-visible { outline-offset: -1px; }
+    /* In a row's own menu the focused item IS the highlight (lit, above):
+       no ring on top of it, but in high contrast. */
+    body:not(.vscode-high-contrast) .action-menu .bm-subaction:focus-visible { outline: none; }
     .bm-subaction {
       display: flex; align-items: center; gap: 9px;
       width: 100%;
@@ -3511,10 +3535,9 @@ export class CommitViewProvider
     }
     .bm-subaction .codicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
     .bm-subaction span { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .bm-subaction:hover { background: var(--gs-hover-strong); }
-    .bm-subaction.danger { color: var(--vscode-errorForeground, #e15a5a); }
-    .bm-subaction.danger .codicon { color: var(--vscode-errorForeground, #e15a5a); }
-    .bm-subaction.danger:hover { background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 14%, transparent); }
+    /* No :hover colour: the pointer moves the highlight here too. */
+    .bm-subaction.danger { color: var(--bm-danger-ink); }
+    .bm-subaction.danger .codicon { color: var(--bm-danger-ink); }
     .bm-subsep { height: 1px; margin: 4px 6px; background: var(--gs-border); }
     /* Drilled in: a sidebar with no room beside the menu for a branch's
        actions shows them IN the menu, in place of the list, under a back row
@@ -3704,7 +3727,7 @@ export class CommitViewProvider
       padding: 5px 8px 6px 34px; color: var(--gs-accent-text);
       font-size: 11px; cursor: pointer; user-select: none;
     }
-    .bm-more:hover { background: var(--gs-hover); text-decoration: underline; }
+    /* Under the pointer it is the highlighted row (lit, above) — never underlined. */
     .bm-more:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
 
     /* ---- Message composer -------------------------------------------------
@@ -6705,10 +6728,20 @@ export class CommitViewProvider
       vscode.postMessage({ type: "branchRefCommand", command: command, ref: refName, refType: refType });
       closeBranchMenu();
     }
+    /**
+     * An item's tip: a title that says more than its label (it becomes the
+     * item's description too), else the label itself — which the page's
+     * tooltip shows only while the label is cut short (tipAdds), never over
+     * a label that is there in full.
+     */
+    function itemTip(b, label, title) {
+      if (title) b.title = title;
+      else b.dataset.tip = label;
+    }
     function subItem(list, icon, label, fn, danger, title) {
       const b = el("button", "bm-subaction" + (danger ? " danger" : ""), bIcon(icon) + "<span></span>");
       b.querySelector("span").textContent = label;
-      b.title = title || label; // full text on hover when the label ellipsis-clips a long branch name
+      itemTip(b, label, title);
       b.addEventListener("click", fn);
       list.appendChild(b);
     }
@@ -6720,7 +6753,7 @@ export class CommitViewProvider
       const b = el("button", "bm-subaction" + (running ? " is-busy" : ""),
         bIcon(running ? "loading codicon-modifier-spin" : icon) + "<span></span>");
       b.querySelector("span").textContent = running ? busyLabel : label;
-      b.title = title || label;
+      itemTip(b, label, title);
       b.addEventListener("click", () => {
         if (subLive || syncBusy || menuSyncBusy) return;
         subLive = { action: action, ref: ref };
@@ -6879,11 +6912,18 @@ export class CommitViewProvider
       menu.appendChild(list);
       for (const it of items) {
         if (it.sep) { subSep(list); continue; }
-        subItem(list, it.icon, it.label, () => { closeActionMenu(true); it.fn(); }, it.danger);
+        subItem(list, it.icon, it.label, () => { closeActionMenu(true); it.fn(); }, it.danger, it.tip);
       }
       list.querySelectorAll(".bm-subaction").forEach((b) => {
         b.setAttribute("role", "menuitem");
         b.tabIndex = -1;
+      });
+      // The pointer moves the keyboard's item, as it moves the branch
+      // window's highlight: the focused item is the one lit item, under the
+      // pointer or the arrows alike.
+      menu.addEventListener("mousemove", (e) => {
+        const item = e.target.closest ? e.target.closest(".bm-subaction") : null;
+        if (item && document.activeElement !== item) item.focus({ preventScroll: true });
       });
       list.querySelectorAll(".bm-subsep").forEach((s) => s.setAttribute("role", "separator"));
       document.body.appendChild(menu);
@@ -10894,12 +10934,29 @@ export class CommitViewProvider
       c.dataset.tipNamed = "1";
     }
     function hideTip() { clearTimeout(tipTimer); tipTarget = null; tipEl.classList.remove("show"); }
+    /**
+     * Whether a tip says something the element does not already show: other
+     * words (an icon button's name, a folder, an explanation), or its own
+     * words while some of them are cut off. A tip repeating a label that is
+     * there in full ("Copy Branch Name" over Copy Branch Name) is noise.
+     */
+    function tipAdds(t, text) {
+      const norm = (s) => String(s || "").replace(/\s+/g, " ").trim();
+      const shown = norm(t.innerText);
+      if (!shown || norm(text) !== shown) return true;
+      const all = [t].concat(Array.prototype.slice.call(t.querySelectorAll("*")));
+      for (let i = 0; i < all.length; i++) {
+        const n = all[i];
+        if (n.scrollWidth > n.clientWidth + 1 && getComputedStyle(n).overflowX !== "visible") return true;
+      }
+      return false;
+    }
     function showTip() {
       // The hovered node can be swapped out by a live dialog repaint before
       // the delay fires — a tip for a detached node would float orphaned.
       if (!tipTarget || !tipTarget.isConnected) { hideTip(); return; }
       const text = tipTarget.getAttribute("data-tip");
-      if (!text) return;
+      if (!text || !tipAdds(tipTarget, text)) return;
       tipEl.textContent = text;
       tipEl.classList.add("show");
       // Grow to the full single-line width, and ONLY wrap when that width
