@@ -458,6 +458,40 @@ test("the view says which repository it shows — or why there is none — never
   assert.match(String(m.view.message), /None of this repository's remotes is on github\.com: origin \(gitlab\.com\)/);
 });
 
+test("while repositories are still being found, the view says it is looking — as Changes and the graph do — then what it found", async () => {
+  github(acmeRoutes());
+  // Discovery under way: no active repository YET.
+  let discovering = true;
+  const repos = { ...fakeRepos(ORIGIN), isDiscovering: () => discovering };
+  repos.switchTo(undefined);
+  const m = mount(repos);
+  let redraws = 0;
+  m.tree.onDidChangeTreeData(() => redraws++);
+  assert.deepEqual(await m.tree.getChildren(), []);
+  assert.equal(m.view.message, "Looking for a repository…", "not 'Open a Git repository' while one may still turn up");
+
+  // Discovery settles with nothing found: now there is none, and it says so.
+  discovering = false;
+  let before = redraws;
+  repos.fire();
+  await until(() => redraws > before, "the view to redraw once discovery settled", 2000);
+  assert.deepEqual(await m.tree.getChildren(), []);
+  assert.equal(m.view.message, "Open a Git repository to see its pull requests.");
+
+  // …or with a repository: its pull requests. (A window whose folders
+  // changed discovers again: drawn then, it is looking again.)
+  discovering = true;
+  await m.tree.getChildren();
+  assert.equal(m.view.message, "Looking for a repository…");
+  discovering = false;
+  repos.switchTo(entryFor("/work/app", ORIGIN));
+  before = redraws;
+  repos.fire();
+  await until(() => redraws > before, "the view to leave 'looking'", 2000);
+  assert.equal((await rows(m.tree)).filter((x) => x.group === "open").length, 3);
+  assert.equal(m.view.message, undefined);
+});
+
 test("github.com under another name is github.com: SSH aliases, ssh.github.com, www.github.com, ~/.ssh/config", async () => {
   mkdirSync(join(HOME, ".ssh"), { recursive: true });
   writeFileSync(join(HOME, ".ssh", "config"), "Host work\n  HostName github.com\n  User git\n");

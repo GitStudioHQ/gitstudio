@@ -80,15 +80,20 @@ export async function resolveGitHubContext(
     : null;
 }
 
+/** Said while RepoManager is still finding the workspace's repositories. */
+export const LOOKING_FOR_A_REPOSITORY = "Looking for a repository…";
+
 /**
  * Why the active repository has no GitHub context, in words for the Pull
- * Requests view: no repository, no remote at all, or remotes that point
- * somewhere other than github.com (named, so the user can see what was read).
+ * Requests view: none found YET (repositories are still being found — the
+ * words Changes and the Commit Graph use then), no repository, no remote at
+ * all, or remotes that point somewhere other than github.com (named, so the
+ * user can see what was read).
  */
 export async function whyNoGitHub(repos: RepoManager): Promise<string> {
   const entry = repos.getActive();
   if (!entry) {
-    return "Open a Git repository to see its pull requests.";
+    return repos.isDiscovering?.() ? LOOKING_FOR_A_REPOSITORY : "Open a Git repository to see its pull requests.";
   }
   let remotes: Remote[] = [];
   try {

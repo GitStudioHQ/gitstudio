@@ -230,7 +230,7 @@ export class PullRequestsTreeProvider
    * identity (undefined when it has none). The rows, an error row or the
    * view's message all belong to it.
    */
-  private shown: { root: string | undefined; key: string | undefined } | undefined;
+  private shown: { root: string | undefined; key: string | undefined; discovering?: true } | undefined;
 
   constructor(
     private readonly repos: RepoManager,
@@ -413,7 +413,7 @@ export class PullRequestsTreeProvider
     if (!shown) {
       return; // nothing drawn since the last change: the next draw resolves it
     }
-    if (this.repos.getActive()?.root !== shown.root) {
+    if (this.repos.getActive()?.root !== shown.root || (shown.discovering && !this.repos.isDiscovering?.())) {
       this.forget();
       return;
     }
@@ -454,6 +454,8 @@ export class PullRequestsTreeProvider
     this.shown = {
       root: ctx?.entry.root ?? this.repos.getActive()?.root,
       key: ctx ? identity(ctx) : undefined,
+      // "Looking for a repository…" holds only until discovery settles.
+      ...(!ctx && !this.repos.getActive() && this.repos.isDiscovering?.() ? { discovering: true as const } : {}),
     };
     if (!ctx) {
       // Not a GitHub repo (or no active repo): say which, not a blank view.
