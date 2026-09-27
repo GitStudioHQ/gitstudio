@@ -1,0 +1,21 @@
+apps/desktop/src/main/githubBridge.ts
+  s_26f5e669d3043c::t_372d84eba8b40a 72-73,123,128-130,150,430-434
+apps/desktop/test/prCheckoutUpdate.test.ts
+  s_26f5e669d3043c::t_3854b12ca0cd5b 16,93-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eee3ebf1ec766d0b76f8996427d4b71f0a0a1505",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
