@@ -447,7 +447,7 @@ test("remote branches are grouped by remote â€” a slash in a remote's name too â
   assert.deepEqual(g.map((x) => [x.name, x.nameCase, x.count]), [["origin", "none", "56"], ["team/eu", "none", "2"]]);
   assert.deepEqual(g[1].rows, ["team/eu/feature=feature", "team/eu/fix/x=fix/x"], "rows named without the remote");
   assert.equal(g[0].rows.length, 40, "origin: the first 40");
-  assert.equal(g[0].more, "Show 16 more of 16");
+  assert.equal(g[0].more, "Show 16 more");
   const tip = await p.eval<string>(`document.querySelector('.bm-branch[data-bname="team/eu/fix/x"]').dataset.tip || document.querySelector('.bm-branch[data-bname="team/eu/fix/x"]').title`);
   assert.match(tip, /^team\/eu\/fix\/x/, "the whole name in the tooltip");
 
@@ -463,7 +463,7 @@ test("remote branches are grouped by remote â€” a slash in a remote's name too â
   await query(p, "item");
   g = await groups();
   assert.equal(g[0].rows.length, 40);
-  assert.equal(g[0].more, "Show 15 more of 15");
+  assert.equal(g[0].more, "Show 15 more");
 
   // A host that lists no remotes (an older one): grouped by the first path segment.
   const bare = stateMessage({ local: LOCAL, remote: ["origin/main", "team/eu/feature"] });

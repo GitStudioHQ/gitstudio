@@ -1,4 +1,8 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
+import { restoreStash, stashStack } from "./stashRestore";
 
 /** Unit separator — frames the stash-list fields (robust to messages). */
 const FIELD_SEP = "\x1f";
@@ -56,6 +60,116 @@ export interface StashOpResult {
 
 /** What the user is told when the stash they acted on has left the list. */
 export const STASH_GONE_MESSAGE = "That stash is no longer in the list, so nothing was changed.";
+
+// ── What a stash holds ───────────────────────────────────────────────────────
+
+/**
+ * A file's change in a stash, in the letters the Changes view uses: M, A, D,
+ * R (renamed), T (type changed), and U for a file git did not track, which a
+ * stash made with `-u` keeps in its third parent.
+ */
+export type StashFileStatus = "M" | "A" | "D" | "R" | "T" | "U";
+
+/** One file a stash holds. */
+export interface StashFile {
+  /** Repo-relative path — for a rename, its new name. */
+  path: string;
+  /** A rename's old name. */
+  oldPath?: string;
+  status: StashFileStatus;
+  /**
+   * Staged when the stash was made. "all": the stash's index holds the same
+   * version as its working copy; "part": a different one (staged, then edited
+   * further — or staged and then put back in the working tree).
+   */
+  staged?: "all" | "part";
+  /**
+   * The stash's working copy is the base's: only its staged version differs
+   * (staged, and then put back in the working tree). Its changes are the
+   * staged ones.
+   */
+  onlyStaged?: true;
+  /** Its content is binary: there is no text to diff. */
+  binary?: true;
+}
+
+/**
+ * A stash's message as a row shows it: the words, and the branch it was made
+ * on. git writes "On main: my words" for a stash with a message and "WIP on
+ * main: 1a2b3c4 subject" for one without, so every row of a list read "On
+ * main:" and the words that tell stashes apart were cut off.
+ */
+export interface StashTitle {
+  /** What the row says. Never empty. */
+  text: string;
+  /** The branch it was made on; absent on a detached HEAD, or when the
+   *  message is not one git wrote (another tool's, or `stash store -m`). */
+  branch?: string;
+  /** git wrote it — nobody typed these words. */
+  auto?: true;
+}
+
+/** "On main: words", "WIP on main: 1a2b3c4 subject", and anything else, as a row says them. */
+export function stashTitle(message: string): StashTitle {
+  // A branch name cannot hold a colon, so the first ": " ends it.
+  const typed = /^On ([^:]+): ([\s\S]*)$/.exec(message);
+  const wip = /^WIP on ([^:]+): (?:[0-9a-f]{4,64} )?([\s\S]*)$/.exec(message);
+  const branchOf = (b: string): string | undefined => (b === "(no branch)" ? undefined : b);
+  if (typed) {
+    const words = typed[2].trim();
+    // GitHub Desktop stashes with a marker instead of words.
+    const desktop = /^!!GitHub_Desktop<(.+)>$/.exec(words);
+    if (desktop) {
+      return { text: "Stashed by GitHub Desktop", branch: desktop[1] };
+    }
+    return { text: words || "(no message)", ...optional("branch", branchOf(typed[1])) };
+  }
+  if (wip) {
+    const subject = wip[2].trim();
+    return {
+      // "WIP: subject", never quoted here: every question, label and bar
+      // puts a stash's words in quotes of its own, and quotes inside them
+      // read "Drop “WIP on “Add tests””?".
+      text: subject ? `WIP: ${subject}` : "WIP",
+      ...optional("branch", branchOf(wip[1])),
+      auto: true,
+    };
+  }
+  if (message.trim() === "autostash") {
+    // What git's own autostash (pull or rebase with autoStash) is stored as
+    // when it could not be put back.
+    return { text: "Autostash", auto: true };
+  }
+  return { text: message.trim() || "(no message)" };
+}
+
+function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
+  return (value === undefined ? {} : { [key]: value }) as { [P in K]?: V };
+}
+
+/** A stash-shaped commit cut from a stash: some of its files, and nothing else. */
+export type StashSubsetResult = { ok: true; sha: string } | { ok: false; stderr: string };
+
+/** One side of a stash (its working tree, its index, its untracked files), by path. */
+interface StashSide {
+  /** path → its entry there, or null where the side removes it. */
+  entries: Map<string, { mode: string; oid: string } | null>;
+}
+
+/** What `files` reads, kept for `subset` to cut from. A stash never changes. */
+interface StashContents {
+  files: StashFile[];
+  tree: StashSide;
+  index: StashSide;
+  untracked: StashSide;
+  /** The commits the stash is built from. */
+  base: string;
+  indexCommit: string;
+  untrackedCommit?: string;
+}
+
+/** How many stashes' file lists are kept, newest reads last. */
+const CONTENTS_CACHE = 200;
 
 /**
  * A stash's full sha. A stash is ADDRESSED by it: `stash@{n}` is a position,
@@ -151,6 +265,9 @@ export type StashScope = "tree" | "selection" | "staged";
  * Code extension, and the desktop app alike.
  */
 export class StashProvider {
+  /** What each stash holds, by its sha — a stash is immutable, so never stale. */
+  private readonly contentsCache = new Map<string, StashContents>();
+
   constructor(private proc: GitProcess) {}
 
   /** `git stash list` parsed into {sha, ref, message, time}, newest first. */
@@ -434,6 +551,257 @@ export class StashProvider {
   }
 
   /**
+   * Every file the stash holds — its tracked changes, whether each was staged,
+   * and the untracked files a `-u` stash keeps in its third parent — sorted by
+   * path. Undefined when `stash` is not a stash's full sha, or git can't read
+   * it. Read once per stash: a stash never changes, its sha is its content.
+   *
+   * Plumbing only (`diff-tree`), so no diff configuration of the user's —
+   * colour, renames, external diff — can change what is read.
+   */
+  async files(stash: string, opts?: GitRunOptions): Promise<StashFile[] | undefined> {
+    return (await this.contents(stash, opts))?.files;
+  }
+
+  private async contents(stash: string, opts?: GitRunOptions): Promise<StashContents | undefined> {
+    if (!isStashSha(stash)) {
+      return undefined;
+    }
+    const cached = this.contentsCache.get(stash);
+    if (cached) {
+      // Most recently read last, so the oldest read is the one let go.
+      this.contentsCache.delete(stash);
+      this.contentsCache.set(stash, cached);
+      return cached;
+    }
+    const signal = opts?.signal;
+    const parents = await this.proc.run(["rev-list", "--parents", "-n", "1", stash, "--"], { signal });
+    const [, base, indexCommit, untrackedCommit] = parents.code === 0 ? parents.stdout.trim().split(/\s+/) : [];
+    if (!base || !indexCommit) {
+      return undefined;
+    }
+    const [tree, index, untracked] = await Promise.all([
+      this.proc.run(["diff-tree", "-r", "-z", "--raw", "--numstat", "-M", "--no-commit-id", base, stash, "--"], { signal }),
+      this.proc.run(["diff-tree", "-r", "-z", "--raw", "-M", "--no-commit-id", base, indexCommit, "--"], { signal }),
+      untrackedCommit
+        ? this.proc.run(["diff-tree", "-r", "-z", "--raw", "--numstat", "--root", "--no-commit-id", untrackedCommit, "--"], { signal })
+        : Promise.resolve({ code: 0, stdout: "", stderr: "" }),
+    ]);
+    if (tree.code !== 0 || index.code !== 0 || untracked.code !== 0) {
+      return undefined;
+    }
+    const w = parseRawDiff(tree.stdout);
+    const i = parseRawDiff(index.stdout);
+    const u = parseRawDiff(untracked.stdout);
+
+    const byPath = new Map<string, StashFile>();
+    for (const r of w.records) {
+      byPath.set(r.path, {
+        path: r.path,
+        ...(r.oldPath !== undefined ? { oldPath: r.oldPath } : {}),
+        status: letterOf(r.status),
+        ...(w.binary.has(r.path) ? { binary: true as const } : {}),
+      });
+    }
+    for (const r of i.records) {
+      const f = byPath.get(r.path);
+      if (f) {
+        const inTree = w.records.find((x) => x.path === r.path);
+        f.staged = inTree && inTree.mode === r.mode && inTree.oid === r.oid ? "all" : "part";
+      } else {
+        // Staged, and the working copy was then put back as it was: the
+        // stash's index is all it holds of this file.
+        byPath.set(r.path, {
+          path: r.path,
+          ...(r.oldPath !== undefined ? { oldPath: r.oldPath } : {}),
+          status: letterOf(r.status),
+          staged: "part",
+          onlyStaged: true,
+        });
+      }
+    }
+    for (const r of u.records) {
+      if (!byPath.has(r.path)) {
+        byPath.set(r.path, { path: r.path, status: "U", ...(u.binary.has(r.path) ? { binary: true as const } : {}) });
+      }
+    }
+    const contents: StashContents = {
+      files: [...byPath.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+      tree: sideOf(w.records),
+      index: sideOf(i.records),
+      untracked: sideOf(u.records),
+      base,
+      indexCommit,
+      ...(untrackedCommit ? { untrackedCommit } : {}),
+    };
+    this.contentsCache.set(stash, contents);
+    while (this.contentsCache.size > CONTENTS_CACHE) {
+      const oldest = this.contentsCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.contentsCache.delete(oldest);
+    }
+    return contents;
+  }
+
+  /**
+   * A stash-shaped commit holding only `paths` of this stash — their working
+   * copies, their staged versions and, from a `-u` stash, those untracked
+   * files — over the same base, with the stash's own author, dates and
+   * message. `git stash apply` takes it like any stash, so it goes through
+   * the same door (Stash & Retry, the staging question, a conflict pause).
+   * Nothing the user can see changes: a commit is only written as objects.
+   *
+   * The two names of a rename travel together: picking either takes both, or
+   * the new name would come back as a copy with the old one still there.
+   * Paths the stash does not hold are ignored; picking none is refused.
+   *
+   * `unstaged`: the part to apply WITHOUT `--index`, which restores only
+   * working copies. A file the stash holds only staged (`onlyStaged`:
+   * staged, then put back in the working tree) has the base as its working
+   * copy, so nothing of it would come back; here its staged version is its
+   * working copy instead, and its change comes back unstaged.
+   */
+  async subset(
+    stash: string,
+    paths: readonly string[],
+    opts?: GitRunOptions & { unstaged?: boolean },
+  ): Promise<StashSubsetResult> {
+    const signal = opts?.signal;
+    const c = await this.contents(stash, opts);
+    if (!c) {
+      return { ok: false, stderr: `“${stash}” is not a stash git can read.` };
+    }
+    const wanted = new Set(paths);
+    const picked = c.files.filter((f) => wanted.has(f.path) || (f.oldPath !== undefined && wanted.has(f.oldPath)));
+    if (picked.length === 0) {
+      return { ok: false, stderr: "None of those files are in the stash." };
+    }
+    // Every name the picked files have on either side: a rename's old name too.
+    const names = new Set<string>();
+    for (const f of picked) {
+      names.add(f.path);
+      if (f.oldPath !== undefined) names.add(f.oldPath);
+    }
+    const zero = "0".repeat(stash.length);
+    const info = await this.proc.run(
+      ["log", "-1", "--date=raw", "--format=%an%x1f%ae%x1f%ad%x1f%cn%x1f%ce%x1f%cd", stash, "--"],
+      { signal },
+    );
+    const [an, ae, ad, cn, ce, cd] = info.code === 0 ? info.stdout.replace(/\n$/, "").split(FIELD_SEP) : [];
+    const ident: Record<string, string> = {};
+    if (an !== undefined && ae !== undefined && ad && cn !== undefined && ce !== undefined && cd) {
+      Object.assign(ident, {
+        GIT_AUTHOR_NAME: an,
+        GIT_AUTHOR_EMAIL: ae,
+        GIT_AUTHOR_DATE: `@${ad}`,
+        GIT_COMMITTER_NAME: cn,
+        GIT_COMMITTER_EMAIL: ce,
+        GIT_COMMITTER_DATE: `@${cd}`,
+      });
+    }
+    const messageOf = async (commit: string): Promise<string> => {
+      const r = await this.proc.run(["log", "-1", "--format=%B", commit, "--"], { signal });
+      return r.code === 0 && r.stdout.trim() ? r.stdout : "stash\n";
+    };
+
+    const dir = mkdtempSync(join(tmpdir(), "gs-stash-part-"));
+    const env = { GIT_INDEX_FILE: join(dir, "index") };
+    const fail = (what: string, r: { stderr: string }): StashSubsetResult => ({
+      ok: false,
+      stderr: `Couldn't take those files out of the stash (${what}): ${r.stderr.trim() || "git refused"}`,
+    });
+    try {
+      // One side's tree: `start` (a commit, or nothing), with each name set as
+      // the side has it — or removed, where the side removes it.
+      const treeOf = async (start: string | null, side: StashSide, only: Iterable<string>): Promise<StashSubsetResult> => {
+        const read = await this.proc.run(start ? ["read-tree", start] : ["read-tree", "--empty"], { signal, env });
+        if (read.code !== 0) return fail("read-tree", read);
+        let input = "";
+        for (const name of only) {
+          if (!side.entries.has(name)) continue;
+          const e = side.entries.get(name);
+          input += e ? `${e.mode} ${e.oid}\t${name}\0` : `0 ${zero}\t${name}\0`;
+        }
+        if (input) {
+          const upd = await this.proc.run(["update-index", "-z", "--index-info"], { signal, env, input });
+          if (upd.code !== 0) return fail("update-index", upd);
+        }
+        const written = await this.proc.run(["write-tree"], { signal, env });
+        return written.code === 0 ? { ok: true, sha: written.stdout.trim() } : fail("write-tree", written);
+      };
+      const commit = async (tree: string, parents: string[], message: string): Promise<StashSubsetResult> => {
+        const args = ["commit-tree", tree];
+        for (const p of parents) args.push("-p", p);
+        args.push("-F", "-");
+        const r = await this.proc.run(args, { signal, env: ident, input: message });
+        return r.code === 0 ? { ok: true, sha: r.stdout.trim() } : fail("commit-tree", r);
+      };
+
+      const workTree = await treeOf(c.base, opts?.unstaged ? stagedAsWorking(c, picked) : c.tree, names);
+      if (!workTree.ok) return workTree;
+      const indexTree = await treeOf(c.base, c.index, names);
+      if (!indexTree.ok) return indexTree;
+      const indexCommit = await commit(indexTree.sha, [c.base], await messageOf(c.indexCommit));
+      if (!indexCommit.ok) return indexCommit;
+      const parents = [c.base, indexCommit.sha];
+      const loose = [...names].filter((n) => c.untracked.entries.has(n));
+      if (loose.length > 0 && c.untrackedCommit) {
+        const untrackedTree = await treeOf(null, c.untracked, loose);
+        if (!untrackedTree.ok) return untrackedTree;
+        const untrackedCommit = await commit(untrackedTree.sha, [], await messageOf(c.untrackedCommit));
+        if (!untrackedCommit.ok) return untrackedCommit;
+        parents.push(untrackedCommit.sha);
+      }
+      return await commit(workTree.sha, parents, await messageOf(stash));
+    } finally {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // The OS sweeps its temp directory; a leftover index is harmless.
+      }
+    }
+  }
+
+  /**
+   * Put `replacement` where the stash `stash` is in the list, with its
+   * message: what is left of a stash once some of its files have been moved
+   * out. git has no "replace" or "insert at" — `git stash store` only pushes
+   * on top — so the stash is dropped and the replacement stored at its place
+   * the way Undo of a drop does (stashRestore.ts). The stash is found by its
+   * sha just before; `gone` when it has left the list, and nothing changes.
+   */
+  async replace(stash: string, replacement: string, opts?: GitRunOptions): Promise<StashOpResult & { index?: number }> {
+    if (!isStashSha(stash) || !isStashSha(replacement)) {
+      return notAStash(isStashSha(stash) ? replacement : stash);
+    }
+    const stack = await stashStack(this.proc, opts);
+    const at = stack.findIndex((s) => s.sha === stash);
+    if (at < 0) {
+      return gone();
+    }
+    const entry = stack[at];
+    const dropped = await this.proc.run(["stash", "drop", "-q", `stash@{${at}}`], { signal: opts?.signal });
+    if (dropped.code !== 0) {
+      return { ok: false, stderr: dropped.stderr };
+    }
+    const put = await restoreStash(
+      this.proc,
+      { sha: replacement, message: entry.message },
+      { index: at, above: stack.slice(0, at).map((s) => s.sha) },
+      opts,
+    );
+    if (!put.ok) {
+      // The rest of its files are still in the object store; say how to get
+      // them back rather than lose them quietly.
+      return {
+        ok: false,
+        stderr: `${put.message} The files left in the stash are in commit ${replacement}: \`git stash store ${replacement}\` brings them back.`,
+      };
+    }
+    return { ok: true, stderr: "", index: put.index };
+  }
+
+  /**
    * `git stash branch <name> <stash>` — create a branch at the stash's base,
    * apply it there and drop it. A name git cannot use, or one a branch already
    * has, is refused before git runs (see stashBranchNameRefusal).
@@ -481,6 +849,95 @@ export async function stashBranchNameRefusal(
   }
   const exists = await proc.run(["rev-parse", "--verify", "--quiet", `refs/heads/${name}`], { signal });
   return exists.code === 0 ? `A branch named “${name}” already exists.` : undefined;
+}
+
+/** One `diff-tree --raw` record: the new side's mode and blob, and git's letter. */
+interface RawRecord {
+  status: string;
+  path: string;
+  oldPath?: string;
+  mode: string;
+  oid: string;
+}
+
+/**
+ * `diff-tree -z --raw [--numstat]` output: the raw records, and the paths
+ * numstat calls binary ("-\t-"). Raw records start with ":"; numstat ones
+ * with a count or "-" — and for a rename, an empty name followed by the old
+ * and new ones.
+ */
+function parseRawDiff(stdout: string): { records: RawRecord[]; binary: Set<string> } {
+  const t = stdout.split("\0");
+  const records: RawRecord[] = [];
+  const binary = new Set<string>();
+  for (let i = 0; i < t.length; i++) {
+    const tok = t[i];
+    if (!tok) continue;
+    if (tok.startsWith(":")) {
+      const [, mode, , oid, status] = tok.slice(1).split(" ");
+      if (!status) continue;
+      if (/^[RC]/.test(status)) {
+        records.push({ status, oldPath: t[i + 1], path: t[i + 2], mode, oid });
+        i += 2;
+      } else {
+        records.push({ status, path: t[i + 1], mode, oid });
+        i += 1;
+      }
+      continue;
+    }
+    const m = /^(\d+|-)\t(\d+|-)\t([\s\S]*)$/.exec(tok);
+    if (!m) continue;
+    let path = m[3];
+    if (path === "") {
+      // A rename: "added\tdeleted\t" then the old name, then the new one.
+      path = t[i + 2] ?? "";
+      i += 2;
+    }
+    if (m[1] === "-" && m[2] === "-" && path) binary.add(path);
+  }
+  return { records, binary };
+}
+
+/** git's raw status as the Changes view's letter. A copy is a new file. */
+function letterOf(status: string): StashFileStatus {
+  switch (status.charAt(0)) {
+    case "A":
+    case "C":
+      return "A";
+    case "D":
+      return "D";
+    case "R":
+      return "R";
+    case "T":
+      return "T";
+    default:
+      return "M";
+  }
+}
+
+/** A side's entries by path: what each record leaves there, a rename's old name removed. */
+function sideOf(records: readonly RawRecord[]): StashSide {
+  const entries = new Map<string, { mode: string; oid: string } | null>();
+  for (const r of records) {
+    if (r.status.startsWith("R") && r.oldPath !== undefined) entries.set(r.oldPath, null);
+    entries.set(r.path, r.status.startsWith("D") ? null : { mode: r.mode, oid: r.oid });
+  }
+  return { entries };
+}
+
+/**
+ * The stash's working-tree side, with each of `picked` that it holds only
+ * staged taken from its index side instead (see subset's `unstaged`).
+ */
+function stagedAsWorking(c: StashContents, picked: readonly StashFile[]): StashSide {
+  const entries = new Map(c.tree.entries);
+  for (const f of picked) {
+    if (!f.onlyStaged) continue;
+    for (const name of f.oldPath !== undefined ? [f.path, f.oldPath] : [f.path]) {
+      if (c.index.entries.has(name)) entries.set(name, c.index.entries.get(name) ?? null);
+    }
+  }
+  return { entries };
 }
 
 function gone(): StashOpResult {

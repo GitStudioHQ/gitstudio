@@ -62,6 +62,20 @@ import { toRevisionUri } from "../history/revisionContentProvider";
 import { operationBanner, type OperationBannerData } from "./operationBanner";
 import { stoppedByThisCommand, type DetectedOperation } from "../git/pausedForUser";
 import { detectOperation, notifyPaused } from "../git/pauseNotice";
+import { isStashSha, stashTitle } from "@gitstudio/git-service/StashProvider";
+import { stashRows, type StashRow } from "./stashRows";
+import {
+  applyStash,
+  branchFromStash,
+  copyStashFiles,
+  dropStash,
+  moveStashFiles,
+  openStashFile,
+  popStash,
+  showStash,
+  stashFileSides,
+  type StashOutcome,
+} from "../views/stashesView";
 
 // The unified Commit window: ONE WebviewView ("Commit", viewId gitstudio.commit)
 // that renders BOTH the commit message box AND the working-tree changes —
@@ -143,6 +157,12 @@ interface StatePayload {
    * review and a refused push use (detachedPushReason). The Push button's tip.
    */
   detachedReason?: string;
+  /**
+   * The stash list, newest first — the Stashes group. Absent when not read
+   * yet for this repository (the page keeps what it shows); empty when there
+   * are none (no group).
+   */
+  stashes?: StashRow[];
 }
 
 interface FromWebview {
@@ -187,7 +207,14 @@ interface FromWebview {
     | "resolveConflicts"
     | "operation"
     | "switchRepo"
+    | "stashAct"
+    | "stashFiles"
+    | "stashOpenFile"
+    | "stashOpenAll"
+    | "stashReadFiles"
     | "dialogResult";
+  /** A stash's full sha: stashAct, stashFiles, stashOpenFile, stashOpenAll, stashReadFiles. */
+  sha?: string;
   /** operation: which verb the banner's button asked for. */
   verb?: "continue" | "skip" | "abort";
   /** Correlation id for a `dialogResult` reply (see DialogHost below). */
@@ -216,7 +243,8 @@ interface FromWebview {
   author?: string;
   push?: boolean;
   /** Branch-menu sub-action: new | checkoutRef | pull | pullRebase | push |
-   *  fetch | pullFf | copyName | favorite. (Checkouts go via branchRefCommand.) */
+   *  fetch | pullFf | copyName | favorite. (Checkouts go via branchRefCommand.)
+   *  stashAct: apply | pop | drop | branch. stashFiles: copy | move. */
   action?: string;
   /** The ref a branch action targets (branch name or "remote/branch"). */
   ref?: string;
@@ -371,6 +399,12 @@ export class CommitViewProvider
   private lastOperation: OperationBannerData | undefined;
   /** The conflicted paths last pushed, and for which repository — a row click routes on them. */
   private lastMergePaths: { root: string; paths: Set<string> } | undefined;
+  /**
+   * The stash list last read, for which repository, carried by the instant
+   * first post as the branch list is. Cleared by a stash action, so the post
+   * right after it never shows the list from before it.
+   */
+  private lastStashes: { root: string; rows: StashRow[]; sig: string; stale?: true } | undefined;
   /** Bumped by invalidateRefs so an in-flight listRefs cannot re-cache stale refs. */
   private refsEpoch = 0;
 
@@ -689,6 +723,11 @@ export class CommitViewProvider
     void this.pushState();
   }
 
+  /** A stash was made, applied or dropped elsewhere (the palette): re-read the Stashes group. */
+  stashesChanged(): void {
+    void this.refreshStashes();
+  }
+
   /**
    * Reveal the Changes view and open its branch menu — the branch surface this
    * extension already has, reached from the status bar.
@@ -754,6 +793,23 @@ export class CommitViewProvider
         // The header's repository control — the same picker as the palette's
         // Switch Repository…, answered in this view's own dialog.
         await switchRepository(this.repos);
+        return;
+      case "stashAct":
+        await this.doStashAct(msg.sha ?? "", msg.action ?? "");
+        return;
+      case "stashFiles":
+        await this.doStashFiles(msg.sha ?? "", msg.action ?? "", msg.paths ?? []);
+        return;
+      case "stashOpenFile":
+        if (!(await openStashFile(this.repos, msg.sha ?? "", msg.path ?? "", !!msg.staged))) {
+          await this.refreshStashes();
+        }
+        return;
+      case "stashOpenAll":
+        await this.openWholeStash(msg.sha ?? "");
+        return;
+      case "stashReadFiles":
+        await this.readStashFiles(msg.sha ?? "");
         return;
       case "resolveConflicts": {
         const entry = this.repos.getActive();
@@ -911,6 +967,141 @@ export class CommitViewProvider
         await this.pushState();
         return;
     }
+  }
+
+  // ── The Stashes group ──────────────────────────────────────────────────────
+
+  /**
+   * Every stash, file by file (StashProvider.files, read once per stash),
+   * newest first. Empty on a read git refuses: the group then says nothing
+   * rather than something wrong.
+   */
+  private async collectStashes(entry: RepoEntry): Promise<StashRow[]> {
+    let list;
+    try {
+      list = await entry.ctx.stashes.list();
+    } catch {
+      return [];
+    }
+    const files = await Promise.all(list.map((e) => entry.ctx.stashes.files(e.sha).catch(() => undefined)));
+    return stashRows(list, files);
+  }
+
+  /**
+   * A stash's files, for the page that opened one the list carried as a
+   * count (stashRows). StashProvider keeps what it read, so this is the read
+   * the list already made. `files: null` when there is nothing to read — not
+   * a stash's sha, or git could not read it — and the page says so.
+   */
+  private async readStashFiles(sha: string): Promise<void> {
+    const entry = this.repos.getActive();
+    const files =
+      entry && isStashSha(sha) ? await entry.ctx.stashes.files(sha).catch(() => undefined) : undefined;
+    void this.view?.webview.postMessage({ type: "stashFilesRead", sha, files: files ?? null });
+  }
+
+  /**
+   * The list carried by the next instant post may be from before a stash
+   * action: it carries none then (the page keeps what it shows, with its own
+   * patches), and the read after it answers.
+   */
+  private markStashesStale(): void {
+    if (this.lastStashes) {
+      this.lastStashes.stale = true;
+    }
+  }
+
+  /** Re-read the list and repaint, after a stash action or a stash that left. */
+  private async refreshStashes(): Promise<void> {
+    this.markStashesStale();
+    await this.refreshFromDisk();
+  }
+
+  /**
+   * A stash row's Apply / Pop / Drop… / Create Branch…. The page moved the
+   * row at the click; "stashPending" says the question was answered (Drop,
+   * Create Branch), and "stashDone" what became of it, so the page keeps the
+   * row gone or puts it back.
+   */
+  private async doStashAct(sha: string, action: string): Promise<void> {
+    const refresh = (): void => void this.refreshStashes();
+    const hooks = {
+      onConfirmed: () => void this.view?.webview.postMessage({ type: "stashPending", sha, action }),
+    };
+    let outcome: StashOutcome = { kind: "kept" };
+    try {
+      switch (action) {
+        case "apply":
+          outcome = await applyStash(this.repos, sha, refresh);
+          break;
+        case "pop":
+          outcome = await popStash(this.repos, sha, refresh);
+          break;
+        case "drop":
+          outcome = await dropStash(this.repos, sha, refresh, hooks);
+          break;
+        case "branch":
+          outcome = await branchFromStash(this.repos, sha, refresh, hooks);
+          if (outcome.kind === "done") this.invalidateRefs();
+          break;
+      }
+    } finally {
+      this.markStashesStale();
+      void this.view?.webview.postMessage({ type: "stashDone", sha, action, outcome });
+    }
+  }
+
+  /** Copy to Changes / Move to Changes for some of a stash's files. */
+  private async doStashFiles(sha: string, action: string, paths: string[]): Promise<void> {
+    const refresh = (): void => void this.refreshStashes();
+    const wanted = paths.filter((p) => p.length > 0);
+    let outcome: StashOutcome = { kind: "kept" };
+    try {
+      if (wanted.length > 0 && (action === "copy" || action === "move")) {
+        outcome =
+          action === "move"
+            ? await moveStashFiles(this.repos, sha, wanted, refresh)
+            : await copyStashFiles(this.repos, sha, wanted, refresh);
+      }
+    } finally {
+      this.markStashesStale();
+      void this.view?.webview.postMessage({ type: "stashDone", sha, action, paths: wanted, outcome });
+    }
+  }
+
+  /**
+   * Open All Changes: every file of the stash in one multi-file diff where
+   * VS Code has one (`vscode.changes`), else the stash as one patch. Binary
+   * files have no text to compare, so they are left out of the multi-diff.
+   */
+  private async openWholeStash(sha: string): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry || !sha) {
+      return;
+    }
+    const stash = (await entry.ctx.stashes.list()).find((e) => e.sha === sha);
+    const files = stash ? await entry.ctx.stashes.files(sha) : undefined;
+    if (!stash || !files) {
+      void vscode.window.showInformationMessage("GitStudio: That stash is no longer in the list.");
+      await this.refreshStashes();
+      return;
+    }
+    const commands = await vscode.commands.getCommands(true);
+    if (!commands.includes("vscode.changes")) {
+      await showStash(this.repos, sha);
+      return;
+    }
+    const resources = files
+      .filter((f) => !f.binary)
+      .map((f) => {
+        const { left, right } = stashFileSides(stash, f, f.onlyStaged === true);
+        return [
+          vscode.Uri.joinPath(vscode.Uri.file(entry.root), f.path),
+          toRevisionUri(entry.root, left.rev, f.path, left.path),
+          toRevisionUri(entry.root, right.rev, f.path, right.path),
+        ] as const;
+      });
+    await vscode.commands.executeCommand("vscode.changes", `Stash “${stashTitle(stash.message).text}”`, resources);
   }
 
   /**
@@ -2581,11 +2772,19 @@ export class CommitViewProvider
         this.lastBranchesSig = JSON.stringify(starred);
       }
     }
+    // The stash list as last read for this repository. Right after a stash
+    // action it may be from before it: none is carried, and the page keeps
+    // what it shows until the read below answers. Another repository's list
+    // is never shown here — an empty one is, until this one's is read.
+    const lastForHere = active && this.lastStashes?.root === active.root ? this.lastStashes : undefined;
+    const knownStashes = lastForHere && !lastForHere.stale ? lastForHere : undefined;
+    const firstStashes: StashRow[] | undefined = !hasRepo ? [] : lastForHere ? knownStashes?.rows : [];
     const sent: SlowState = {
       aiEnabled: this.lastAiEnabled,
       branchesSig: sameRepo ? this.lastBranchesSig : undefined,
       unpushed: upstream ? (ahead ?? 0) : undefined,
       canPublish: upstream ? true : undefined,
+      stashesSig: knownStashes?.sig,
     };
     const base: StatePayload = {
       type: "state",
@@ -2616,6 +2815,7 @@ export class CommitViewProvider
       aiOff: vscode.workspace.getConfiguration("gitstudio").get<string>("ai.provider") === "off",
       layout,
       busy: this.busy,
+      stashes: firstStashes,
     };
     void this.view.webview.postMessage(base);
     this.updateBadge(staged, unstaged, behind);
@@ -2627,7 +2827,7 @@ export class CommitViewProvider
     // button + branch menu without a re-render; but it is still the whole
     // payload crossing the webview boundary, and during a staging burst or the
     // onDidChange firehose the answer is the one already on screen.
-    const [aiEnabled, listed, pushInfo, operation] = await Promise.all([
+    const [aiEnabled, listed, pushInfo, operation, stashRows] = await Promise.all([
       this.generator
         ? this.generator.isEnabled().catch(() => false)
         : Promise.resolve(false),
@@ -2636,15 +2836,19 @@ export class CommitViewProvider
         ? this.countUnpushed(active, upstream, ahead, !!detached)
         : Promise.resolve({ unpushed: 0, canPublish: false }),
       active ? this.readOperation(active) : Promise.resolve(undefined),
+      active && hasRepo ? this.collectStashes(active) : Promise.resolve([] as StashRow[]),
     ]);
     // A star set while the rest was being read is on it too.
     const branches = listed && active ? withFavorites(listed, this.favorites(active)) : listed;
+    const stashesSig = JSON.stringify(stashRows);
     const resolved: SlowState = {
       aiEnabled,
       branchesSig: branches ? JSON.stringify(branches) : undefined,
       unpushed: pushInfo.unpushed,
       canPublish: pushInfo.canPublish,
+      stashesSig,
     };
+    this.lastStashes = active ? { root: active.root, rows: stashRows, sig: stashesSig } : undefined;
     this.lastAiEnabled = aiEnabled;
     this.lastBranches = branches;
     this.lastBranchesSig = resolved.branchesSig;
@@ -2662,6 +2866,7 @@ export class CommitViewProvider
       canPublish: pushInfo.canPublish,
       operation,
       detachedReason: base.detached ? detachedPushReason(operation) : undefined,
+      stashes: stashRows,
     });
   }
 
@@ -3673,6 +3878,12 @@ export class CommitViewProvider
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--gs-fg-muted);
+      /* One line, cut short when the toolbar is full (the tree layout adds
+         Collapse All) — it wrapped to two and pushed the list down. */
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .changes-total {
       display: none;
@@ -3691,7 +3902,8 @@ export class CommitViewProvider
     }
     .changes-total.visible { display: inline-flex; }
     .changes-toolbar .toolbar-spacer { flex: 1 1 auto; }
-    .changes-toolbar .toolbar-actions { display: inline-flex; align-items: center; gap: 1px; }
+    .changes-toolbar .toolbar-actions { display: inline-flex; align-items: center; gap: 1px; flex: 0 0 auto; }
+    .changes-toolbar .changes-total { flex: 0 0 auto; }
     .icon-btn {
       display: inline-flex;
       align-items: center;
@@ -4108,6 +4320,84 @@ export class CommitViewProvider
     .st-T { --gs-row-accent: var(--gs-status-modified); }
     .st-I { --gs-row-accent: var(--gs-status-ignored); }
     .row.is-conflict { --gs-row-accent: var(--gs-status-conflict); }
+
+    /* ---- Stashes group (after the file groups) ------------------------- */
+    /* The header is the Staged / Changes header; the dot is the brand's. */
+    .group--stashes .gdot { background: var(--gs-brand); }
+    /* A stash row is two lines — its words, then where and when it was made
+       and how many files it holds — so neither is cut to make room for the
+       other at sidebar width. Its twisty, icon and buttons are centred on
+       the two lines. */
+    .row.stash-row { height: 38px; align-items: center; }
+    .row.stash-row .stash-icon { color: var(--gs-fg-muted); }
+    .stash-text {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .stash-msg,
+    .stash-meta {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .stash-msg { line-height: 17px; }
+    .stash-meta {
+      font-size: 11.5px;
+      line-height: 15px;
+      color: var(--gs-fg-muted);
+    }
+    /* In flight (Apply, a Copy): the row stays, dimmed, until git answers. */
+    .row.stash-row.is-busy,
+    .row.stash-file.is-busy { opacity: 0.6; }
+    .row.stash-row.is-busy .row-actions { visibility: hidden; }
+    /* Where an open stash's files would be, while they are read or when they
+       could not be: a note in a file row's place, not something to press. */
+    .row.stash-note { color: var(--gs-fg-muted); cursor: default; }
+    .row.stash-note:hover { background: none; }
+    .row.stash-note .file-icon { color: var(--gs-fg-muted); }
+    /* "Show 200 more of N": it reads as an action, as the branch menu's
+       "Show more" does — its words in the link colour, underlined on hover. */
+    .row.stash-more { color: var(--gs-accent-text); }
+    .row.stash-more:hover .name { text-decoration: underline; }
+    /* "staged" / "partly staged": the stash had it staged, in words. */
+    .stash-staged {
+      flex: 0 0 auto;
+      font-size: 11px;
+      color: var(--gs-fg-muted);
+      white-space: nowrap;
+    }
+    /* At the narrowest widths the words that name things keep their room: a
+       stash row keeps only More Actions (its menu has Apply and Pop), and a
+       file row drops the staged word (its status letter's tip says it). The
+       row is the container, so a deep row in the tree gives way sooner. */
+    .row.stash-row,
+    .row.stash-file { container-type: inline-size; }
+    @container (max-width: 229px) {
+      .stash-row .row-actions .stash-quick { display: none; }
+    }
+    @container (max-width: 199px) {
+      .stash-file .stash-staged { display: none; }
+    }
+    .selbar-count {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .selbar-btn { white-space: nowrap; }
+    /* A stash's files: which stash, and Clear, on the first line; Move to
+       Changes and Copy to Changes share the second — at sidebar width the
+       four did not fit on one. */
+    .selbar.is-stash { flex-wrap: wrap; row-gap: 2px; padding-top: 5px; padding-bottom: 6px; }
+    .selbar.is-stash .selbar-actions { display: contents; }
+    .selbar.is-stash .selbar-count { flex: 1 1 0; order: 0; }
+    .selbar.is-stash #selbar-clear { order: 1; }
+    .selbar.is-stash::after { content: ""; order: 2; flex-basis: 100%; height: 0; }
+    .selbar.is-stash #selbar-move,
+    .selbar.is-stash #selbar-copy { order: 3; flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
     /* ---- Empty state --------------------------------------------------- */
     .empty-state {
@@ -4604,7 +4894,7 @@ export class CommitViewProvider
       </button>
       <button class="icon-btn stash-btn" id="stash-changes" type="button"
         title="Stash all changes…" aria-label="Stash all changes…">
-        <i class="codicon codicon-archive" aria-hidden="true"></i>
+        <i class="codicon codicon-git-stash" aria-hidden="true"></i>
       </button>
       <button class="icon-btn collapse-all" id="collapse-all" type="button"
         title="Collapse All Folders" aria-label="Collapse All Folders">
@@ -4620,8 +4910,9 @@ export class CommitViewProvider
   <!-- One tree: group headers, folders, files and a file's changes are its
        treeitems, with ONE tab stop that the arrow keys move (a roving
        tabindex). The row buttons stay for the pointer; the keyboard reaches
-       the same actions through the row's menu (Shift+F10). -->
-  <div class="groups" id="groups" role="tree" aria-label="Changed files" aria-multiselectable="true"></div>
+       the same actions through the row's menu (Shift+F10). The Stashes
+       group below the clean-tree note is part of it (aria-owns). -->
+  <div class="groups" id="groups" role="tree" aria-label="Changed files" aria-multiselectable="true" aria-owns="stashes"></div>
 
   <!-- Selection bar: only present while a multi-selection exists, so the view
        is unchanged for anyone who never selects. -->
@@ -4630,6 +4921,10 @@ export class CommitViewProvider
     <span class="selbar-actions">
       <button type="button" class="selbar-btn" id="selbar-stash">Stash</button>
       <button type="button" class="selbar-btn" id="selbar-stage">Stage</button>
+      <button type="button" class="selbar-btn" id="selbar-move" hidden
+        title="Take these files out of the stash, into Changes">Move to Changes</button>
+      <button type="button" class="selbar-btn" id="selbar-copy" hidden
+        title="Bring these files into Changes and keep them in the stash">Copy to Changes</button>
       <button type="button" class="selbar-btn" id="selbar-clear">Clear</button>
     </span>
   </div>
@@ -4637,7 +4932,7 @@ export class CommitViewProvider
   <!-- The stash drop target. Hidden until a drag starts, so it costs no layout
        until it means something. -->
   <div class="stash-drop" id="stash-drop" hidden>
-    <i class="codicon codicon-archive" aria-hidden="true"></i>
+    <i class="codicon codicon-git-stash" aria-hidden="true"></i>
     <span id="stash-drop-label">Drop to stash</span>
   </div>
 
@@ -4655,6 +4950,12 @@ export class CommitViewProvider
     </span>
     <span class="et" id="loading-text">Reading changes…</span>
   </div>
+
+  <!-- The Stashes group: after the file groups and the clean-tree note, so a
+       clean tree still reads "Working tree clean" first. No stashes, no group.
+       Its rows are treeitems of the list's tree (#groups owns it), and share
+       its one tab stop and its arrows. -->
+  <div class="groups stash-groups" id="stashes" role="none" hidden></div>
 
   <div class="no-repo" id="no-repo">
     <span class="badge">
@@ -4689,8 +4990,13 @@ export class CommitViewProvider
     const commitLabel = $("commit-label");
     const authorToggle = $("author-toggle");
     const groupsEl = $("groups");
+    const stashesEl = $("stashes");
     const selbarEl = $("selbar");
     const selbarCount = $("selbar-count");
+    const selbarStashBtn = $("selbar-stash");
+    const selbarStageBtn = $("selbar-stage");
+    const selbarMoveBtn = $("selbar-move");
+    const selbarCopyBtn = $("selbar-copy");
     const stashDropEl = $("stash-drop");
     const stashDropLabel = $("stash-drop-label");
     const emptyEl = $("empty-state");
@@ -4782,6 +5088,18 @@ export class CommitViewProvider
     // covers what the user actually sees — tree or flat, one group or three.
     let rowOrder = [];
     const rowKey = (kind, path) => kind + ":" + path;
+    // A stash's files select the same way, keyed "stash:<sha>:<path>", in
+    // their own order. A selection lives in ONE place — the working tree's
+    // rows, or one stash's files — because what can be done with it differs:
+    // clicking into the other place starts a new selection there.
+    let stashRowOrder = [];
+    const stashKey = (sha, path) => "stash:" + sha + ":" + path;
+    function selScope(key) {
+      return key.indexOf("stash:") === 0 ? key.slice(0, key.indexOf(":", 6)) : "tree";
+    }
+    function orderOf(key) {
+      return key.indexOf("stash:") === 0 ? stashRowOrder : rowOrder;
+    }
 
     // ---- Keyed rows: the list is PATCHED, never rebuilt -----------------
     //
@@ -4847,9 +5165,14 @@ export class CommitViewProvider
     function shownItem(it) {
       return !!it && !it.closest(".group.empty, .group.collapsed .group-body");
     }
+    // The Stashes group is part of the same tree (the list's aria-owns): it
+    // sits after the "Working tree clean" note, so it has a box of its own,
+    // but the arrows walk from the last changed file into it and back.
+    const TREE_ITEMS = '#groups [role="treeitem"], #stashes [role="treeitem"]';
+    const treeEls = [groupsEl, stashesEl];
     /** The treeitems a person can see, top to bottom. */
     function treeItems() {
-      const all = groupsEl.querySelectorAll('[role="treeitem"]');
+      const all = document.querySelectorAll(TREE_ITEMS);
       const out = [];
       for (let i = 0; i < all.length; i++) {
         if (shownItem(all[i])) out.push(all[i]);
@@ -4858,7 +5181,8 @@ export class CommitViewProvider
     }
     function itemByTKey(tkey) {
       if (!tkey) return null;
-      return groupsEl.querySelector('[data-tkey="' + CSS.escape(tkey) + '"]');
+      const sel = '[data-tkey="' + CSS.escape(tkey) + '"]';
+      return groupsEl.querySelector(sel) || stashesEl.querySelector(sel);
     }
     function levelOf(it) { return Number(it.getAttribute("aria-level") || "1"); }
     /**
@@ -4883,15 +5207,15 @@ export class CommitViewProvider
       it.focus({ preventScroll: true });
       it.scrollIntoView({ block: "nearest" });
     }
-    groupsEl.addEventListener("focusin", (ev) => {
+    treeEls.forEach((t) => t.addEventListener("focusin", (ev) => {
       const it = itemOf(ev.target);
       if (!it || it.dataset.tkey === activeTKey) return;
       activeTKey = it.dataset.tkey || null;
       applyRoving();
-    });
+    }));
     // A click on a row's own button or tick acts, and leaves the keyboard on
     // the row — never on a control that is not in the tab order.
-    groupsEl.addEventListener("mousedown", (ev) => {
+    treeEls.forEach((t) => t.addEventListener("mousedown", (ev) => {
       const it = itemOf(ev.target);
       if (!it || ev.target === it) return;
       const ctl = ev.target.closest ? ev.target.closest("button, input") : null;
@@ -4900,20 +5224,29 @@ export class CommitViewProvider
       activeTKey = it.dataset.tkey || null;
       applyRoving();
       it.focus({ preventScroll: true });
-    });
-    /** Shift+Up/Down: the selection runs from its anchor to the file row the keyboard lands on. */
+    }));
+    /**
+     * Shift+Up/Down: the selection runs from its anchor to the file row the
+     * keyboard lands on — inside one place only (the working tree's rows, or
+     * one stash's files), as a Shift-click's range does.
+     */
     function selectThrough(from, to) {
       if (!to || !to.dataset.key) return;
-      if (!selectionAnchor && from && from.dataset.key) selectionAnchor = from.dataset.key;
+      const scope = selScope(to.dataset.key);
+      if (selectionAnchor && selScope(selectionAnchor) !== scope) selectionAnchor = null;
+      if (!selectionAnchor && from && from.dataset.key && selScope(from.dataset.key) === scope) {
+        selectionAnchor = from.dataset.key;
+      }
       if (!selectionAnchor) selectionAnchor = to.dataset.key;
-      const a = rowOrder.indexOf(selectionAnchor);
-      const b = rowOrder.indexOf(to.dataset.key);
+      const order = orderOf(to.dataset.key);
+      const a = order.indexOf(selectionAnchor);
+      const b = order.indexOf(to.dataset.key);
       if (a === -1 || b === -1) return;
       selectedRows.clear();
-      for (let i = Math.min(a, b); i <= Math.max(a, b); i++) selectedRows.add(rowOrder[i]);
+      for (let i = Math.min(a, b); i <= Math.max(a, b); i++) selectedRows.add(order[i]);
       paintSelection();
     }
-    groupsEl.addEventListener("keydown", (ev) => {
+    function onTreeKey(ev) {
       const it = itemOf(ev.target);
       if (!it || ev.altKey) return;
       const k = ev.key;
@@ -4936,6 +5269,11 @@ export class CommitViewProvider
       }
       if (mod && (k === "a" || k === "A") && ev.target === it) {
         ev.preventDefault();
+        // In the Stashes group: the files of the stash the keyboard is in.
+        if (stashesEl.contains(it)) {
+          if (it.dataset.sha) selectStashFiles(it.dataset.sha);
+          return;
+        }
         selectedRows.clear();
         for (let i = 0; i < rowOrder.length; i++) selectedRows.add(rowOrder[i]);
         selectionAnchor = rowOrder.length ? rowOrder[0] : null;
@@ -4977,11 +5315,12 @@ export class CommitViewProvider
         ev.preventDefault();
         it.__activate(k === " " ? "space" : "enter");
       }
-    });
+    }
+    treeEls.forEach((t) => t.addEventListener("keydown", onTreeKey));
 
     /** Paint selection onto the DOM without a full render(), so clicks feel instant. */
     function paintSelection() {
-      const rows = groupsEl.querySelectorAll(".row.is-file");
+      const rows = document.querySelectorAll("#groups .row.is-file, #stashes .row.is-file");
       for (let i = 0; i < rows.length; i++) paintRowSelected(rows[i]);
       updateSelectionBar();
       updateSelectionChrome();
@@ -5033,13 +5372,25 @@ export class CommitViewProvider
      * so nothing about the view changes for anyone who never shift-clicks.
      */
     function handleSelectionClick(ev, key) {
+      // A selection gesture in the other place (the working tree's rows, or
+      // another stash's files) starts over there. The row a Shift-range runs
+      // from goes too, even with nothing selected: a plain click leaves it
+      // behind, and a range from it would run through two stashes — whose
+      // files the bar would then credit to one of them.
+      const scope = selScope(key);
+      if (selectionAnchor && selScope(selectionAnchor) !== scope) selectionAnchor = null;
+      if (selectedRows.size > 0 && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) {
+        const first = selectedRows.values().next().value;
+        if (selScope(first) !== scope) selectedRows.clear();
+      }
       if (ev.shiftKey && selectionAnchor) {
-        const a = rowOrder.indexOf(selectionAnchor);
-        const b = rowOrder.indexOf(key);
+        const order = orderOf(key);
+        const a = order.indexOf(selectionAnchor);
+        const b = order.indexOf(key);
         if (a !== -1 && b !== -1) {
           selectedRows.clear();
           const lo = Math.min(a, b), hi = Math.max(a, b);
-          for (let i = lo; i <= hi; i++) selectedRows.add(rowOrder[i]);
+          for (let i = lo; i <= hi; i++) selectedRows.add(order[i]);
           paintSelection();
           return true;
         }
@@ -5072,7 +5423,7 @@ export class CommitViewProvider
       const stageable = entries.filter((en) => en.kind !== "staged");
       const unstageable = entries.filter((en) => en.kind === "staged");
       const items = [];
-      items.push({ icon: "archive", label: "Stash " + label,
+      items.push({ icon: "git-stash", label: "Stash " + label,
         fn: () => { vscode.postMessage({ type: "stashPaths", paths: paths }); clearSelection(); } });
       items.push({ sep: true });
       // ONE message per action, never one per file. Per-file messages ran
@@ -5116,6 +5467,22 @@ export class CommitViewProvider
       const n = selectedRows.size;
       selbarEl.hidden = n === 0;
       if (n === 0) return;
+      // A stash's files: the bar sits under the stash group and offers what
+      // can be done with them. The working tree's: under the file groups.
+      const st = stashSelection();
+      selbarEl.classList.toggle("is-stash", !!st);
+      selbarStashBtn.hidden = !!st;
+      selbarStageBtn.hidden = !!st;
+      selbarMoveBtn.hidden = !st;
+      selbarCopyBtn.hidden = !st;
+      if (st) {
+        const s = authStashes.find((x) => x.sha === st.sha);
+        selbarCount.textContent = (st.paths.length === 1 ? "1 file" : String(st.paths.length) + " files") +
+          (s ? " from “" + s.text + "”" : "");
+        if (selbarEl.previousElementSibling !== stashesEl) stashesEl.after(selbarEl);
+        return;
+      }
+      if (selbarEl.previousElementSibling !== groupsEl) groupsEl.after(selbarEl);
       const files = selectionPaths().length;
       selbarCount.textContent = files === 1 ? "1 file selected" : String(files) + " files selected";
     }
@@ -5363,6 +5730,16 @@ export class CommitViewProvider
     };
     function statusTitle(letter) {
       return STATUS_NAMES[letter] || "Modified";
+    }
+
+    /**
+     * The row that shows the next page of a long list — the branch menu's
+     * tags, a stash's files: "Show 40 more of 95" while more stay hidden
+     * after it, "Show 15 more" for the last page ("Show 15 more of 15" said
+     * the same number twice).
+     */
+    function showMoreLabel(hidden, page) {
+      return hidden > page ? "Show " + page + " more of " + hidden : "Show " + hidden + " more";
     }
 
     function el(tag, cls, html) {
@@ -5650,6 +6027,7 @@ export class CommitViewProvider
       applyLayoutClass();
       vscode.postMessage({ type: "setLayout", layout });
       render();
+      renderStashes();
     });
 
     // Staging model, beside the tree/list toggle because it is the same KIND of
@@ -5679,7 +6057,11 @@ export class CommitViewProvider
       for (const key of Object.keys(collapsed)) collapsed[key] = false;
       const folders = collectFolderKeys();
       for (const k of folders) collapsed[k] = true;
+      // And the folders of every open stash.
+      const stashFolders = stashesEl.querySelectorAll("[data-tkey^='stashfolder:']");
+      for (let i = 0; i < stashFolders.length; i++) collapsed[stashFolders[i].dataset.tkey] = true;
       render();
+      renderStashes();
     });
     stageAllTopBtn.addEventListener("click", () => {
       queueGroup("unstaged", "stage");
@@ -6382,6 +6764,7 @@ export class CommitViewProvider
     function openActionMenu(title, items, anchor, icon) {
       closeActionMenu(false);
       closeBranchSubmenu();
+      actionMenuAnchor = anchor || null;
       const menu = el("div", "branch-submenu action-menu");
       menu.setAttribute("role", "menu");
       if (title) menu.setAttribute("aria-label", title);
@@ -6905,7 +7288,7 @@ export class CommitViewProvider
         });
         const more = rows.length - shown.length;
         if (more > 0) {
-          const moreRow = el("div", "bm-more", "Show " + Math.min(more, PAGE) + " more of " + more);
+          const moreRow = el("div", "bm-more", showMoreLabel(more, PAGE));
           moreRow.dataset.bmkey = "more:" + key;
           bmOption(moreRow);
           // The arrows reach it and Enter runs it from the search box, which
@@ -8277,50 +8660,68 @@ export class CommitViewProvider
     function render() {
       // Where the keyboard is, so a row that leaves the list (staged,
       // discarded) hands focus to the next row still there — or, with none
-      // after it, the one before — instead of dropping it on the page. The
-      // whole run on each side, not only the neighbours: a folder or a
-      // group takes its files with it.
-      const ae = document.activeElement;
-      const focused = ae && groupsEl.contains(ae) ? itemOf(ae) : null;
-      let was = null;
-      if (focused) {
-        const items = treeItems();
-        const i = items.indexOf(focused);
-        const keyOf = (n) => n.dataset.tkey;
-        was = {
-          tkey: focused.dataset.tkey,
-          after: i < 0 ? [] : items.slice(i + 1).map(keyOf),
-          before: i < 0 ? [] : items.slice(0, i).reverse().map(keyOf),
-          index: i,
-        };
-      }
+      // after it, the one before — instead of dropping it on the page.
+      const was = focusPlace(groupsEl);
       renderRows();
+      if (tipTarget && !tipTarget.isConnected) hideTip();
       let dropped = false;
       selectedRows.forEach((k) => {
-        if (rowOrder.indexOf(k) === -1) { selectedRows.delete(k); dropped = true; }
+        if (selScope(k) === "tree" && rowOrder.indexOf(k) === -1) { selectedRows.delete(k); dropped = true; }
       });
       if (dropped) paintSelection();
-      if (dropped && selectionAnchor && rowOrder.indexOf(selectionAnchor) === -1) {
+      if (dropped && selectionAnchor && orderOf(selectionAnchor).indexOf(selectionAnchor) === -1) {
         selectionAnchor = null;
       }
       applyRoving();
+      handFocusOn(was, groupsEl);
+      updateSelectionBar();
+    }
+
+    /**
+     * Where the keyboard is among container's treeitems, and every item
+     * showing on each side of it — the whole run, not only the neighbours:
+     * a folder, a group or a stash takes its rows with it. Null when the
+     * keyboard is elsewhere.
+     */
+    function focusPlace(container) {
+      const ae = document.activeElement;
+      const focused = ae && container.contains(ae) ? itemOf(ae) : null;
+      if (!focused) return null;
+      const items = treeItems();
+      const i = items.indexOf(focused);
+      const keyOf = (n) => n.dataset.tkey;
+      return {
+        tkey: focused.dataset.tkey,
+        after: i < 0 ? [] : items.slice(i + 1).map(keyOf),
+        before: i < 0 ? [] : items.slice(0, i).reverse().map(keyOf),
+        index: i,
+      };
+    }
+    /**
+     * After a repaint of container: when the item that had the keyboard is
+     * gone (or can no longer be seen), the same item's new row takes it — or
+     * the next one still showing, else the one before. With no item left in
+     * the whole tree, fallback() names the place (never the page itself).
+     */
+    function handFocusOn(was, container, fallback) {
+      if (!was) return;
       // Only to a row that can be seen: the header of a group this render
       // emptied is still in the DOM (and may still hold the focus for a
       // frame), and a focus() on it lands nowhere.
       const now = document.activeElement;
-      const lost = !groupsEl.contains(now) || (!!itemOf(now) && !shownItem(itemOf(now)));
-      if (was && lost) {
-        // One pass over the rows (a Stage All can take thousands at once).
-        const items = treeItems();
-        const shownNow = new Map();
-        for (let j = 0; j < items.length; j++) shownNow.set(items[j].dataset.tkey, items[j]);
-        let to = shownNow.get(was.tkey) || null;
-        for (let j = 0; !to && j < was.after.length; j++) to = shownNow.get(was.after[j]) || null;
-        for (let j = 0; !to && j < was.before.length; j++) to = shownNow.get(was.before[j]) || null;
-        if (!to) to = items[Math.min(Math.max(was.index, 0), items.length - 1)] || null;
-        if (to) focusItem(to);
-      }
-      updateSelectionBar();
+      const lost = !container.contains(now) || (!!itemOf(now) && !shownItem(itemOf(now)));
+      if (!lost) return;
+      // One pass over the rows (a Stage All can take thousands at once).
+      const items = treeItems();
+      const shownNow = new Map();
+      for (let j = 0; j < items.length; j++) shownNow.set(items[j].dataset.tkey, items[j]);
+      let to = shownNow.get(was.tkey) || null;
+      for (let j = 0; !to && j < was.after.length; j++) to = shownNow.get(was.after[j]) || null;
+      for (let j = 0; !to && j < was.before.length; j++) to = shownNow.get(was.before[j]) || null;
+      if (!to) to = items[Math.min(Math.max(was.index, 0), items.length - 1)] || null;
+      if (to) { focusItem(to); return; }
+      const other = fallback ? fallback() : null;
+      if (other) other.focus({ preventScroll: true });
     }
 
     function renderRows() {
@@ -8608,9 +9009,9 @@ export class CommitViewProvider
             fn: function () { selectKeys(unchecked); } });
         }
         items.push({ sep: true });
-        items.push({ icon: "archive", label: "Stash Everything Staged",
+        items.push({ icon: "git-stash", label: "Stash Everything Staged",
           fn: function () { vscode.postMessage({ type: "stashStaged" }); } });
-        items.push({ icon: "archive", label: "Stash All Changes",
+        items.push({ icon: "git-stash", label: "Stash All Changes",
           fn: function () { vscode.postMessage({ type: "stash" }); } });
         // The header's own button, for the keyboard (it is out of the tab order).
         items.push({ sep: true });
@@ -8899,6 +9300,9 @@ export class CommitViewProvider
         const list = header.__list || [];
         const keys = [];
         for (let i = 0; i < list.length; i++) keys.push(rowKey(def.kind, list[i].path));
+        // A stash's files selected before: this selection is the working
+        // tree's, so it starts over.
+        selectedRows.forEach((k) => { if (selScope(k) !== "tree") selectedRows.delete(k); });
         const allOn = keys.length > 0 && keys.every((k) => selectedRows.has(k));
         for (let i = 0; i < keys.length; i++) {
           if (allOn) selectedRows.delete(keys[i]);
@@ -8947,8 +9351,8 @@ export class CommitViewProvider
         if (def.kind !== "merge") {
           items.push({ sep: true });
           items.push(def.kind === "staged"
-            ? { icon: "archive", label: "Stash Everything Staged", fn: () => vscode.postMessage({ type: "stashStaged" }) }
-            : { icon: "archive", label: "Stash All Changes", fn: () => vscode.postMessage({ type: "stash" }) });
+            ? { icon: "git-stash", label: "Stash Everything Staged", fn: () => vscode.postMessage({ type: "stashStaged" }) }
+            : { icon: "git-stash", label: "Stash All Changes", fn: () => vscode.postMessage({ type: "stash" }) });
         }
         openActionMenu(def.label, items, header, null);
       };
@@ -9078,7 +9482,7 @@ export class CommitViewProvider
         // A conflicted file is not stashed; the other folders' files can be.
         if (def.kind !== "merge") {
           items.push({ sep: true });
-          items.push({ icon: "archive", label: "Stash This Folder",
+          items.push({ icon: "git-stash", label: "Stash This Folder",
             fn: () => vscode.postMessage({ type: "stashPaths", paths: row.__paths }) });
         }
         openActionMenu(name, items, row, "folder");
@@ -9234,9 +9638,9 @@ export class CommitViewProvider
           }
         }
         items.push({ sep: true });
-        items.push({ icon: "archive", label: "Stash This File",
+        items.push({ icon: "git-stash", label: "Stash This File",
           fn: () => vscode.postMessage({ type: "stashPaths", paths: [e.path] }) });
-        items.push({ icon: "archive", label: def.staged ? "Stash Everything Staged" : "Stash All Changes",
+        items.push({ icon: "git-stash", label: def.staged ? "Stash Everything Staged" : "Stash All Changes",
           fn: () => vscode.postMessage(
             def.staged ? { type: "stashStaged" } : { type: "stash" }) });
         openActionMenu(fileName, items, row, "file");
@@ -9305,6 +9709,629 @@ export class CommitViewProvider
       b.tabIndex = -1;
       return b;
     }
+
+    // ---- Stashes group ---------------------------------------------------
+    // Every stash, after the file groups: a row each (its words, where and
+    // when it was made, how many files), opening to ALL its files — tracked,
+    // staged, untracked — as Changes rows, a page at a time. A file comes back with Move to
+    // Changes (it leaves the stash) or Copy to Changes (the stash keeps it);
+    // a stash with Apply, Pop, Create Branch… or Drop…. Every message names a
+    // stash by its full sha, never stash@{n}.
+    //
+    // authStashes is the host's list; the rows show it with every action
+    // still in flight laid over it (stashPending), so a Pop takes its row away
+    // at the click and a Cancel puts it back — never a reload of the list.
+    let authStashes = [];
+    // sha -> { remove, busy, moved: [paths], busyPaths: [paths], at }
+    const stashPending = new Map();
+    // A stash action can wait on a question (Stash & Retry, the staging one),
+    // so this is long; it only matters when the host never answers.
+    const STASH_PENDING_TTL = 60000;
+    // What the user opened, and whether the group is folded — the webview's
+    // own state, so hiding the view or reloading the window keeps both. The
+    // group starts open, each stash closed.
+    const stashUi = (function () {
+      try { return (vscode.getState && vscode.getState()) || {}; } catch (e) { return {}; }
+    })();
+    const stashOpen = new Set(Array.isArray(stashUi.stashOpen) ? stashUi.stashOpen : []);
+    let stashGroupCollapsed = stashUi.stashGroupCollapsed === true;
+    let lastStashSig = null;
+    // A stash's files, by its sha. A stash never changes, so what was read
+    // once is its files for good. The host carries them in the list while
+    // they are few (stashRows.ts); a bigger stash comes as a count, and its
+    // files are asked for when it is opened ("stashReadFiles").
+    const stashFiles = new Map();
+    // Asked for, not answered yet; answered with nothing (said in its place).
+    const stashReading = new Set();
+    const stashUnreadable = new Set();
+    // What is left of a stash after a move: its files are known before the
+    // list that names it arrives, and a list read before the move must not
+    // forget them.
+    const stashSeeded = new Set();
+    // Ctrl/Cmd-click on a stash whose files are still being read: select
+    // them when they arrive.
+    let stashSelectOnRead = null;
+    // How many of an open stash's files are shown; "Show 200 more of N" adds a page.
+    const STASH_FILE_PAGE = 200;
+    const stashShown = new Map();
+    function saveStashUi() {
+      try {
+        const prev = (vscode.getState && vscode.getState()) || {};
+        vscode.setState(Object.assign({}, prev, {
+          stashOpen: Array.from(stashOpen),
+          stashGroupCollapsed: stashGroupCollapsed,
+        }));
+      } catch (e) { /* a host without webview state */ }
+    }
+
+    /** How many files a stash of the host's list holds (a list from before counts carried its files). */
+    function countOf(s) {
+      return typeof s.count === "number" ? s.count : Array.isArray(s.files) ? s.files.length : 0;
+    }
+
+    /** The host's list with the actions in flight laid over it. */
+    function shownStashes() {
+      const out = [];
+      for (let i = 0; i < authStashes.length; i++) {
+        const s = authStashes[i];
+        const p = stashPending.get(s.sha);
+        if (p && p.remove) continue;
+        if (p && p.moved && p.moved.length) {
+          const left = countOf(s) - p.moved.length;
+          if (left <= 0) continue;
+          out.push(Object.assign({}, s, { count: left, leaving: p.moved }));
+          continue;
+        }
+        out.push(s);
+      }
+      return out;
+    }
+
+    /** A shown stash's files, less any on their way out; undefined until read. */
+    function visibleFiles(s) {
+      const files = stashFiles.get(s.sha);
+      if (!files || !s.leaving) return files;
+      const leaving = new Set(s.leaving);
+      return files.filter((f) => !leaving.has(f.path));
+    }
+
+    /** Take in a list from the host: the files it carried, and forget the stashes it no longer has. */
+    function takeStashList(list) {
+      const have = new Set();
+      for (let i = 0; i < list.length; i++) {
+        const s = list[i];
+        have.add(s.sha);
+        stashSeeded.delete(s.sha);
+        if (Array.isArray(s.files)) {
+          stashFiles.set(s.sha, s.files);
+          stashUnreadable.delete(s.sha);
+        }
+      }
+      stashFiles.forEach((_f, sha) => {
+        if (!have.has(sha) && !stashPending.has(sha) && !stashSeeded.has(sha)) stashFiles.delete(sha);
+      });
+      stashUnreadable.forEach((sha) => { if (!have.has(sha)) stashUnreadable.delete(sha); });
+      authStashes = list;
+    }
+
+    /** Ask the host for a stash's files, once. */
+    function readStashFiles(sha) {
+      if (stashReading.has(sha) || stashFiles.has(sha) || stashUnreadable.has(sha)) return;
+      stashReading.add(sha);
+      vscode.postMessage({ type: "stashReadFiles", sha: sha });
+    }
+
+    /** Drop the patches the host's list now agrees with, or that aged out. */
+    function reconcileStashPending() {
+      const now = Date.now();
+      const have = new Set(authStashes.map((s) => s.sha));
+      stashPending.forEach((p, sha) => {
+        if (now - p.at > STASH_PENDING_TTL) { stashPending.delete(sha); return; }
+        // Taken off the list (Pop, Drop, a branch, a move): settled once the
+        // list no longer holds that sha — what is left of a move is a NEW sha.
+        if ((p.remove || p.moved) && !have.has(sha)) stashPending.delete(sha);
+      });
+    }
+
+    /**
+     * The selected files of ONE stash: the first one on screen that has any.
+     * A selection never spans two (handleSelectionClick starts over in the
+     * other); if it ever did, the other stash's files are left out rather
+     * than sent under this one's sha.
+     */
+    function stashSelection() {
+      let sha = null;
+      const paths = [];
+      for (let i = 0; i < stashRowOrder.length; i++) {
+        const k = stashRowOrder[i];
+        if (!selectedRows.has(k)) continue;
+        const rest = k.slice(6);
+        const cut = rest.indexOf(":");
+        const at = rest.slice(0, cut);
+        if (sha === null) sha = at;
+        else if (at !== sha) continue;
+        paths.push(rest.slice(cut + 1));
+      }
+      return sha ? { sha: sha, paths: paths } : null;
+    }
+
+    function countFiles(n) { return n === 1 ? "1 file" : String(n) + " files"; }
+
+    /**
+     * Everything a stash row shows, so an identical re-post touches nothing.
+     * A stash's files are named by its sha and whether they have been read —
+     * they never change — so a post of a big stash costs no more than a small one.
+     */
+    function stashSig(list) {
+      return JSON.stringify([
+        layout, stashGroupCollapsed, Array.from(stashOpen),
+        list.map((s) => {
+          const p = stashPending.get(s.sha);
+          return [s.sha, s.text, s.branch || "", s.time, s.rel || "", countOf(s),
+            stashFiles.has(s.sha) ? 1 : stashUnreadable.has(s.sha) ? 2 : 0, s.leaving || 0, stashShown.get(s.sha) || 0,
+            p && p.busy ? 1 : 0, p && p.busyPaths ? p.busyPaths : 0];
+        }),
+        Object.keys(collapsed).filter((k) => k.indexOf("stashfolder:") === 0 && collapsed[k]),
+      ]);
+    }
+
+    function renderStashesIfChanged() {
+      if (stashSig(shownStashes()) === lastStashSig) return;
+      renderStashes();
+    }
+
+    function renderStashes() {
+      const list = shownStashes();
+      lastStashSig = stashSig(list);
+      // The group is built again (it changes only when the list or what is
+      // open does): the keyboard goes back to the same row's new node, or —
+      // a row that left — to the next one showing, as in the file groups.
+      const was = focusPlace(stashesEl);
+      stashesEl.textContent = "";
+      stashRowOrder = [];
+      stashesEl.hidden = list.length === 0;
+      if (list.length > 0) stashesEl.appendChild(renderStashGroup(list));
+      paintSelection();
+      applyRoving();
+      handFocusOn(was, stashesEl, nearestAboveStashes);
+      // A tooltip over a row that was just replaced has nothing under it.
+      if (tipTarget && !tipTarget.isConnected) hideTip();
+      // A stash that is gone, or files that left it, are not selected any more.
+      let dropped = false;
+      selectedRows.forEach((k) => {
+        if (selScope(k) !== "tree" && stashRowOrder.indexOf(k) === -1) { selectedRows.delete(k); dropped = true; }
+      });
+      if (dropped && selectionAnchor && orderOf(selectionAnchor).indexOf(selectionAnchor) === -1) {
+        selectionAnchor = null;
+      }
+      updateSelectionBar();
+    }
+
+    /**
+     * Where the keyboard goes when the Stashes group has gone with the stash
+     * that had it and no row is showing above it (the working tree's last
+     * row takes it when there is one — handFocusOn): the toolbar's last
+     * button, never the page.
+     */
+    function nearestAboveStashes() {
+      const tools = document.querySelectorAll(".changes-toolbar .icon-btn:not(:disabled)");
+      return tools.length ? tools[tools.length - 1] : null;
+    }
+
+    /** A row of the Stashes group as a treeitem of the list's tree, out of the tab order until the arrows reach it. */
+    function stashItem(row, tkey, level) {
+      row.tabIndex = -1;
+      row.setAttribute("role", "treeitem");
+      row.setAttribute("aria-level", String(level));
+      row.dataset.tkey = tkey;
+    }
+
+    function renderStashGroup(list) {
+      const group = el("div", "group group--stashes" + (stashGroupCollapsed ? " collapsed" : ""));
+      group.setAttribute("role", "none");
+      const header = el("div", "group-header");
+      stashItem(header, "group:stashes", 1);
+      header.setAttribute("aria-expanded", stashGroupCollapsed ? "false" : "true");
+      header.setAttribute("aria-label", "Stashes, " + countWords(list.length, "stash", "stashes"));
+      const glabel = el("span", "glabel");
+      glabel.textContent = "Stashes";
+      const gcount = el("span", "gcount");
+      gcount.textContent = String(list.length);
+      header.title = "Stashes — click to " + (stashGroupCollapsed ? "show" : "hide") + " them";
+      header.append(el("span", "twisty", ICON_CHEVRON), el("span", "gdot"), glabel, el("span", "group-actions"), gcount);
+      const setOpen = (open) => {
+        if (stashGroupCollapsed === !open) return;
+        stashGroupCollapsed = !open;
+        saveStashUi();
+        renderStashes();
+      };
+      header.addEventListener("click", () => setOpen(stashGroupCollapsed));
+      header.__expand = setOpen;
+      header.__activate = () => setOpen(stashGroupCollapsed);
+      group.appendChild(header);
+      const body = el("div", "group-body");
+      body.setAttribute("role", "group");
+      if (!stashGroupCollapsed) {
+        for (let i = 0; i < list.length; i++) {
+          const s = list[i];
+          const open = stashOpen.has(s.sha);
+          body.appendChild(makeStashRow(s, open));
+          if (!open) continue;
+          const files = visibleFiles(s);
+          if (!files) {
+            // Not carried with the list: asked for, and said in its place.
+            body.appendChild(makeStashNote(stashUnreadable.has(s.sha)));
+            readStashFiles(s.sha);
+            continue;
+          }
+          // A page at a time: a stash of thousands of files (a dependency
+          // folder stashed with -u) is thousands of rows otherwise.
+          const limit = stashShown.get(s.sha) || STASH_FILE_PAGE;
+          const page = files.length > limit ? files.slice(0, limit) : files;
+          if (layout === "tree") renderStashNode(body, s, buildTree(page), 2, files);
+          else for (const f of page) body.appendChild(makeStashFileRow(s, f, null, 2));
+          if (page.length < files.length) body.appendChild(makeStashMore(s, files, page.length));
+        }
+      }
+      group.appendChild(body);
+      return group;
+    }
+
+    function stashMeta(s) {
+      const parts = [];
+      if (s.branch) parts.push(s.branch);
+      // Its age from the host's one formatter ("3h", "2d"), as the Commits
+      // list and the push review say it.
+      if (s.rel) parts.push(s.rel);
+      parts.push(countFiles(countOf(s)));
+      return parts.join(" · ");
+    }
+
+    /** Where an open stash's files would be: being read, or unreadable. */
+    function makeStashNote(failed) {
+      const row = el("div", "row stash-note");
+      row.style.paddingLeft = (2 * 12 + 16) + "px";
+      row.appendChild(el("span", "file-icon", failed
+        ? '<i class="codicon codicon-warning" aria-hidden="true"></i>'
+        : '<i class="codicon codicon-loading codicon-modifier-spin" aria-hidden="true"></i>'));
+      const text = el("span", "name");
+      text.textContent = failed ? "Its files couldn't be read." : "Reading its files…";
+      row.appendChild(text);
+      if (!failed) row.setAttribute("aria-busy", "true");
+      return row;
+    }
+
+    /**
+     * "Show 200 more of 250": the next page of a stash's files, in the branch
+     * menu's words for its tags (showMoreLabel). From the keyboard, the first file it showed
+     * takes the keyboard, so reading goes on where it stopped.
+     */
+    function makeStashMore(s, files, shownCount) {
+      const hidden = files.length - shownCount;
+      const row = el("div", "row stash-more");
+      row.style.paddingLeft = (2 * 12 + 16) + "px";
+      stashItem(row, "stashmore:" + s.sha, 3);
+      row.appendChild(el("span", "file-icon"));
+      const text = el("span", "name");
+      text.textContent = showMoreLabel(hidden, STASH_FILE_PAGE);
+      row.appendChild(text);
+      const grow = () => {
+        const fromKeys = document.activeElement === row;
+        stashShown.set(s.sha, shownCount + STASH_FILE_PAGE);
+        renderStashes();
+        if (!fromKeys) return;
+        const first = stashKey(s.sha, files[shownCount].path);
+        const rows = stashesEl.querySelectorAll(".row.is-file");
+        for (let i = 0; i < rows.length; i++) {
+          if (rows[i].dataset.key === first) {
+            focusItem(rows[i]);
+            break;
+          }
+        }
+      };
+      row.addEventListener("click", (ev) => { ev.preventDefault(); grow(); });
+      // Enter or Space, from the tree's keys.
+      row.__activate = grow;
+      return row;
+    }
+
+    /** Select every file of an open stash that is on screen. */
+    function selectStashFiles(sha) {
+      const prefix = "stash:" + sha + ":";
+      const keys = stashRowOrder.filter((k) => k.indexOf(prefix) === 0);
+      selectedRows.clear();
+      for (let i = 0; i < keys.length; i++) selectedRows.add(keys[i]);
+      selectionAnchor = keys.length ? keys[keys.length - 1] : null;
+      paintSelection();
+    }
+
+    /** A stash action from its row or its menu: the row moves now, the host settles it. */
+    function stashAct(s, action) {
+      if (stashPending.has(s.sha)) return;
+      // Pop takes the row away at once; Drop and Create Branch ask first, so
+      // their row waits (dimmed) until the host says the question was
+      // answered; Apply keeps it, dimmed while it runs.
+      stashPending.set(s.sha, action === "pop" ? { remove: true, at: Date.now() } : { busy: true, at: Date.now() });
+      renderStashes();
+      vscode.postMessage({ type: "stashAct", sha: s.sha, action: action });
+    }
+
+    /** Move / Copy to Changes for some of a stash's files. */
+    function stashFilesAct(s, paths, action) {
+      const files = stashFiles.get(s.sha);
+      if (!files || stashPending.has(s.sha)) return;
+      // Only the paths this stash holds: "all of them" is counted against
+      // its own files, never against a list that could carry another's.
+      const have = new Set(files.map((f) => f.path));
+      const mine = paths.filter((p) => have.has(p));
+      if (!mine.length) return;
+      const all = mine.length >= files.length;
+      stashPending.set(s.sha, action === "move"
+        ? (all ? { remove: true, at: Date.now() } : { moved: mine.slice(), at: Date.now() })
+        : { busyPaths: mine.slice(), at: Date.now() });
+      clearSelection();
+      renderStashes();
+      vscode.postMessage({ type: "stashFiles", sha: s.sha, action: action, paths: mine });
+    }
+
+    function stashItems(s) {
+      return [
+        { icon: "diff-multiple", label: "Open All Changes",
+          fn: () => vscode.postMessage({ type: "stashOpenAll", sha: s.sha }) },
+        { sep: true },
+        { icon: "git-stash-apply", label: "Apply", fn: () => stashAct(s, "apply") },
+        { icon: "git-stash-pop", label: "Pop", fn: () => stashAct(s, "pop") },
+        { icon: "git-branch", label: "Create Branch…", fn: () => stashAct(s, "branch") },
+        { sep: true },
+        { icon: "trash", label: "Drop…", danger: true, fn: () => stashAct(s, "drop") },
+      ];
+    }
+
+    function makeStashRow(s, open) {
+      const p = stashPending.get(s.sha);
+      const busy = !!(p && p.busy);
+      const row = el("div", "row stash-row" + (open ? "" : " collapsed") + (busy ? " is-busy" : ""));
+      row.style.paddingLeft = "12px";
+      stashItem(row, "stash:" + s.sha, 2);
+      row.dataset.sha = s.sha;
+      row.setAttribute("aria-expanded", open ? "true" : "false");
+      if (busy) row.setAttribute("aria-busy", "true");
+      row.appendChild(el("span", "twisty", ICON_CHEVRON));
+      row.appendChild(el("span", "file-icon stash-icon",
+        '<i class="codicon ' + (busy ? "codicon-loading codicon-modifier-spin" : "codicon-git-stash") + '" aria-hidden="true"></i>'));
+      const text = el("span", "stash-text");
+      const msgEl = el("span", "stash-msg");
+      msgEl.textContent = s.text;
+      const meta = el("span", "stash-meta");
+      meta.textContent = stashMeta(s);
+      text.append(msgEl, meta);
+      row.appendChild(text);
+      // Its name for a screen reader: the words, then where, when, how many.
+      row.setAttribute("aria-label", s.text + ", " + stashMeta(s));
+      row.title = s.message + " — " + new Date(s.time * 1000).toLocaleString();
+
+      // The pointer's buttons, out of the tab order: the keyboard has them
+      // in the row's menu (Shift+F10), as a file row's are.
+      const actions = el("span", "row-actions");
+      const applyBtn = rowBtn('<i class="codicon codicon-git-stash-apply" aria-hidden="true"></i>',
+        "Apply — bring its changes back and keep the stash", (ev) => { ev.stopPropagation(); stashAct(s, "apply"); });
+      const popBtn = rowBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
+        "Pop — bring its changes back and remove the stash", (ev) => { ev.stopPropagation(); stashAct(s, "pop"); });
+      applyBtn.classList.add("stash-quick");
+      popBtn.classList.add("stash-quick");
+      actions.append(applyBtn, popBtn);
+      actions.appendChild(rowBtn('<i class="codicon codicon-ellipsis" aria-hidden="true"></i>',
+        "More Actions…", (ev) => { ev.stopPropagation(); openActionMenu(s.text, stashItems(s), row, "git-stash"); }));
+      row.appendChild(actions);
+
+      const setOpen = (want) => {
+        if (stashOpen.has(s.sha) === want) return;
+        // Closed, it opens again at its first page.
+        if (want) stashOpen.add(s.sha);
+        else { stashOpen.delete(s.sha); stashShown.delete(s.sha); }
+        saveStashUi();
+        renderStashes();
+      };
+      const toggle = () => setOpen(!stashOpen.has(s.sha));
+      row.addEventListener("click", (ev) => {
+        // The second click of a double-click: the first one already toggled.
+        if (ev.detail > 1) return;
+        if (ev.ctrlKey || ev.metaKey) {
+          // Every file of this stash on screen, as a header's Ctrl/Cmd-click
+          // selects a group — once they are read, if they are being read.
+          ev.preventDefault();
+          if (!stashOpen.has(s.sha)) { stashOpen.add(s.sha); saveStashUi(); renderStashes(); }
+          if (stashFiles.has(s.sha)) selectStashFiles(s.sha);
+          else stashSelectOnRead = s.sha;
+          return;
+        }
+        toggle();
+      });
+      const menu = (ev) => {
+        if (ev) ev.preventDefault();
+        openActionMenu(s.text, stashItems(s), row, "git-stash");
+      };
+      row.addEventListener("contextmenu", menu);
+      // The tree's keys: Enter and Space open or close it, Right and Left
+      // too, Shift+F10 its menu.
+      row.__expand = setOpen;
+      row.__activate = toggle;
+      row.__menu = menu;
+      row.addEventListener("keydown", (ev) => {
+        if (ev.target !== row || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        // Delete, and the Mac's delete key, ask to drop it.
+        if (ev.key === "Delete" || ev.key === "Backspace") { ev.preventDefault(); stashAct(s, "drop"); }
+      });
+      return row;
+    }
+
+    /**
+     * A stash's folders, in the tree layout: the Changes tree's rows. The
+     * last argument is every file of the stash, shown or not: a folder's Move
+     * takes all of its files, not only the page on screen.
+     */
+    function renderStashNode(container, s, node, depth, all) {
+      const dirs = Array.from(node.dirs.values()).sort((a, b) => a.name.localeCompare(b.name));
+      for (const dir of dirs) {
+        const key = "stashfolder:" + s.sha + ":" + dir.path;
+        const isCollapsed = collapsed[key] === true;
+        const row = el("div", "row" + (isCollapsed ? " collapsed" : ""));
+        row.style.paddingLeft = (depth * 12) + "px";
+        stashItem(row, key, depth + 1);
+        row.dataset.sha = s.sha;
+        row.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+        row.appendChild(el("span", "twisty", ICON_CHEVRON));
+        row.appendChild(el("span", "file-icon folder-icon", ICON_FOLDER));
+        const name = el("span", "name");
+        name.textContent = dir.name;
+        row.appendChild(name);
+        row.appendChild(el("span", "spacer"));
+        const under = dir.path + "/";
+        const inside = all.filter((f) => f.path.indexOf(under) === 0).map((f) => f.path);
+        row.setAttribute("aria-label", dir.name + ", folder, " + countWords(inside.length));
+        const factions = el("span", "row-actions");
+        factions.appendChild(rowBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
+          "Move this folder's files to Changes", (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "move"); }));
+        row.appendChild(factions);
+        const setOpen = (open) => { collapsed[key] = !open; renderStashes(); };
+        row.addEventListener("click", () => setOpen(collapsed[key] === true));
+        row.__expand = setOpen;
+        row.__activate = () => setOpen(collapsed[key] === true);
+        // Its button, and Copy beside it, from the keyboard.
+        row.__menu = (ev) => {
+          if (ev) ev.preventDefault();
+          const n = countWords(inside.length);
+          openActionMenu(dir.name, [
+            { icon: "git-stash-pop", label: "Move " + n + " to Changes", fn: () => stashFilesAct(s, inside, "move") },
+            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", fn: () => stashFilesAct(s, inside, "copy") },
+          ], row, "folder");
+        };
+        row.addEventListener("contextmenu", row.__menu);
+        container.appendChild(row);
+        if (!isCollapsed) renderStashNode(container, s, dir, depth + 1, all);
+      }
+      for (const f of node.files.slice().sort((a, b) => a.name.localeCompare(b.name))) {
+        container.appendChild(makeStashFileRow(s, f.entry, f.name, depth));
+      }
+    }
+
+    /**
+     * One file of a stash, as a Changes row: its status letter (U for a file
+     * git did not track), its name and folder, "staged" when the stash had it
+     * staged. Click opens its diff; the hover action is Move to Changes.
+     * fileName is null in the list layout (the folder is shown beside it).
+     */
+    function makeStashFileRow(s, f, fileName, depth) {
+      const letter = f.status;
+      const key = stashKey(s.sha, f.path);
+      const p = stashPending.get(s.sha);
+      const busy = !!(p && p.busyPaths && p.busyPaths.indexOf(f.path) !== -1);
+      const row = el("div", "row is-file stash-file " + statusClass(letter) +
+        (letter === "D" ? " is-deleted" : "") + (busy ? " is-busy" : ""));
+      row.style.paddingLeft = (depth * 12 + 16) + "px";
+      stashItem(row, key, depth + 1);
+      row.dataset.key = key;
+      row.dataset.path = f.path;
+      row.dataset.sha = s.sha;
+      stashRowOrder.push(key);
+      paintRowSelected(row);
+      if (busy) row.setAttribute("aria-busy", "true");
+      row.title = f.oldPath ? f.path + " (was " + f.oldPath + ")" : f.path;
+      row.appendChild(el("span", "file-icon", ICON_FILE));
+      const slash = f.path.lastIndexOf("/");
+      const name = el("span", "name");
+      name.textContent = fileName !== null ? fileName : (slash === -1 ? f.path : f.path.slice(slash + 1));
+      row.appendChild(name);
+      const dir = fileName !== null ? "" : (slash === -1 ? "" : f.path.slice(0, slash));
+      if (dir) {
+        const dirEl = el("span", "dir");
+        const dirText = document.createElement("bdi");
+        dirText.textContent = dir;
+        dirEl.appendChild(dirText);
+        row.appendChild(dirEl);
+      } else {
+        row.appendChild(el("span", "spacer"));
+      }
+      if (f.staged) {
+        const w = el("span", "stash-staged");
+        w.textContent = f.staged === "all" ? "staged" : "partly staged";
+        w.dataset.tip = f.staged === "all"
+          ? "Staged when it was stashed: it comes back staged"
+          : "Staged, then changed again, when it was stashed: both versions come back";
+        row.appendChild(w);
+      }
+      const actions = el("span", "row-actions");
+      actions.appendChild(rowBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
+        "Move to Changes — take it out of the stash", (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "move"); }));
+      row.appendChild(actions);
+      const status = el("span", "status " + statusClass(letter));
+      status.setAttribute("aria-hidden", "true");
+      status.textContent = letter;
+      // The staged word gives way at the narrowest widths; its tip keeps it
+      // for the pointer, and the row's name below for a screen reader.
+      status.dataset.tip = statusTitle(letter) +
+        (f.staged === "all" ? ", staged" : f.staged === "part" ? ", partly staged" : "");
+      row.appendChild(status);
+      // Its name in words — the file, its folder, its change, its staging —
+      // rather than the row's text run together ("login.ts src/auth Move to
+      // Changes… M"), which lost the staging wherever the word was hidden.
+      const folder = slash === -1 ? "" : f.path.slice(0, slash);
+      row.setAttribute("aria-label", [
+        slash === -1 ? f.path : f.path.slice(slash + 1),
+        folder,
+        statusTitle(letter).toLowerCase() + (f.oldPath ? " from " + f.oldPath : ""),
+        f.staged === "all" ? "staged" : f.staged === "part" ? "partly staged" : "",
+      ].filter(Boolean).join(", "));
+
+      const open = () => vscode.postMessage({ type: "stashOpenFile", sha: s.sha, path: f.path });
+      const menu = (ev) => {
+        if (ev) ev.preventDefault();
+        if (selectedRows.size > 0 && !selectedRows.has(key)) clearSelection();
+        const sel = stashSelection();
+        if (sel && sel.sha === s.sha && selectedRows.has(key) && sel.paths.length > 1) {
+          const n = countFiles(sel.paths.length);
+          openActionMenu(n + " from “" + s.text + "”", [
+            { icon: "git-stash-pop", label: "Move " + n + " to Changes", fn: () => stashFilesAct(s, sel.paths, "move") },
+            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", fn: () => stashFilesAct(s, sel.paths, "copy") },
+            { sep: true },
+            { icon: "close", label: "Clear Selection", fn: clearSelection },
+          ], row);
+          return;
+        }
+        const items = [{ icon: "git-compare", label: "Open Changes", fn: open }];
+        if (f.staged && !f.onlyStaged) {
+          items.push({ icon: "git-compare", label: "Open Staged Changes",
+            fn: () => vscode.postMessage({ type: "stashOpenFile", sha: s.sha, path: f.path, staged: true }) });
+        }
+        items.push({ sep: true });
+        items.push({ icon: "git-stash-pop", label: "Move to Changes", fn: () => stashFilesAct(s, [f.path], "move") });
+        items.push({ icon: "git-stash-apply", label: "Copy to Changes", fn: () => stashFilesAct(s, [f.path], "copy") });
+        openActionMenu(name.textContent, items, row);
+      };
+      row.addEventListener("click", (ev) => {
+        if (handleSelectionClick(ev, key)) return;
+        if (ev.detail > 1) return;
+        open();
+      });
+      row.addEventListener("dblclick", menu);
+      row.addEventListener("contextmenu", menu);
+      // The tree's keys: Enter (and Space, as in the split model) open its
+      // diff, Shift+F10 its menu.
+      row.__activate = open;
+      row.__menu = menu;
+      return row;
+    }
+
+    selbarMoveBtn.addEventListener("click", () => {
+      const sel = stashSelection();
+      const s = sel && authStashes.find((x) => x.sha === sel.sha);
+      if (s) stashFilesAct(s, sel.paths, "move");
+    });
+    selbarCopyBtn.addEventListener("click", () => {
+      const sel = stashSelection();
+      const s = sel && authStashes.find((x) => x.sha === sel.sha);
+      if (s) stashFilesAct(s, sel.paths, "copy");
+    });
 
     // ---- Operation banner ------------------------------------------------
     // A stopped merge / rebase / cherry-pick / revert / am / stash apply, as
@@ -9551,6 +10578,59 @@ export class CommitViewProvider
         }
         renderCount();
         renderIfChanged();
+        // The stash list: absent means "not read yet, keep what is shown".
+        if (Array.isArray(msg.stashes)) {
+          takeStashList(msg.stashes);
+          reconcileStashPending();
+        }
+        renderStashesIfChanged();
+      } else if (msg.type === "stashFilesRead") {
+        // The files of a stash the list carried as a count, read when it opened.
+        stashReading.delete(msg.sha);
+        if (Array.isArray(msg.files)) stashFiles.set(msg.sha, msg.files);
+        else stashUnreadable.add(msg.sha);
+        renderStashes();
+        if (stashSelectOnRead === msg.sha) {
+          stashSelectOnRead = null;
+          if (stashFiles.has(msg.sha)) selectStashFiles(msg.sha);
+        }
+      } else if (msg.type === "stashPending") {
+        // Drop's confirm or Create Branch's name was answered: the row leaves
+        // now, before git has run, and comes back if it did not happen.
+        stashPending.set(msg.sha, { remove: true, at: Date.now() });
+        renderStashes();
+      } else if (msg.type === "stashDone") {
+        const o = msg.outcome || { kind: "kept" };
+        const p = stashPending.get(msg.sha);
+        // What is left of a stash after a move is a new sha where it was:
+        // it stays open if it was, as many of its files shown, and its files
+        // are the stash's less the ones moved — nothing to read again.
+        if (o.kind === "done" && o.rest) {
+          const had = stashFiles.get(msg.sha);
+          if (had && Array.isArray(msg.paths)) {
+            const moved = new Set(msg.paths);
+            stashFiles.set(o.rest, had.filter((f) => !moved.has(f.path)));
+            stashSeeded.add(o.rest);
+          }
+          if (stashShown.has(msg.sha)) stashShown.set(o.rest, stashShown.get(msg.sha));
+          if (stashOpen.has(msg.sha)) {
+            stashOpen.delete(msg.sha);
+            stashOpen.add(o.rest);
+            saveStashUi();
+          }
+        }
+        if (p) {
+          if (o.kind === "gone") {
+            p.remove = true; p.busy = false; p.busyPaths = null; p.at = Date.now();
+          } else if (o.kind === "done" && (p.remove || p.moved)) {
+            // Gone from the list once the host's next list agrees (reconcile).
+            p.at = Date.now();
+          } else {
+            // Applied or copied — or it did not happen: back as it was.
+            stashPending.delete(msg.sha);
+          }
+        }
+        renderStashes();
       } else if (msg.type === "branchActionDone") {
         // A sync op finished — clear every in-flight face (the fresh counts
         // arrived via the state push the host sent just before this).

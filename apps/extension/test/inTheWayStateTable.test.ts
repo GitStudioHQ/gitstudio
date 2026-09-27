@@ -1,6 +1,6 @@
 // The in-the-way state table, extension column: the REAL extension doors —
 // the graph's Revert and Cherry-Pick, the Branches view's Merge, Rebase onto
-// and Checkout, the Stashes view's Apply and Pop, and the pull door every pull
+// and Checkout, the Stashes group's Apply and Pop, and the pull door every pull
 // goes through — against real git, × every shape of the user's work.
 //
 // Crash report #18 came from here: the graph's Revert over an edit it touches,

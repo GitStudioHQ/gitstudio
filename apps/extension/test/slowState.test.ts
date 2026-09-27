@@ -41,6 +41,15 @@ test("a never-pushed branch waits for the rev-list count", () => {
   assert.equal(slowStateChanged(sent, { ...steady, unpushed: 0, canPublish: false }), true);
 });
 
+test("the stash list: owed when it changed, or when the first post carried none", () => {
+  const withStashes: SlowState = { ...steady, stashesSig: '[{"sha":"a"}]' };
+  assert.equal(slowStateChanged(withStashes, { ...withStashes }), false, "the same list is not owed");
+  assert.equal(slowStateChanged(withStashes, { ...withStashes, stashesSig: "[]" }), true, "a stash gone is owed");
+  // Right after a stash action the first post carries none, so the page
+  // keeps what it shows; the list read after the action is always owed.
+  assert.equal(slowStateChanged({ ...withStashes, stashesSig: undefined }, withStashes), true);
+});
+
 test("a push landing changes the count, and that is owed", () => {
   assert.equal(slowStateChanged(steady, { ...steady, unpushed: 0 }), true);
   assert.equal(slowStateChanged(steady, { ...steady, canPublish: false }), true);

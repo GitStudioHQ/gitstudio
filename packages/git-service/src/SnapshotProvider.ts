@@ -12,6 +12,7 @@ import {
   type RefMove,
 } from "./refRestore";
 import { placeHolds, restoreStash, stashStack, type StashSlot } from "./stashRestore";
+import { stashTitle } from "./StashProvider";
 
 /**
  * A record of what an operation is about to change, and — once it has run and
@@ -703,7 +704,10 @@ export class SnapshotProvider {
     const stack = now.stashes.filter((x) => !dropping.has(x.sha));
     for (const d of unrestoredStashes(settled, now)) {
       const at = placeHolds(stack, d) ? d.index : 0;
-      lines.push(`Put the stash “${d.message || shortSha(d.sha)}” back${at > 0 || d.index === 0 ? ` as stash@{${at}}` : " on top of the stash list"}.`);
+      // Named as its row and the op's toast name it (stashTitle), and its
+      // place in words: stash@{n} is a position the list renumbers.
+      const words = d.message ? stashTitle(d.message).text : shortSha(d.sha);
+      lines.push(`Put the stash “${words}” back ${at > 0 ? "where it was in the stash list" : "on top of the stash list"}.`);
       steps.push({ do: "stash", entry: d });
     }
 
@@ -1109,9 +1113,16 @@ export class SnapshotProvider {
     const copy = snap.stashSha;
     const putsBack = !!copy && steps.some((st) => "stash" in st && st.stash === copy);
     const going = new Set<string>();
+    // The stashes this undo puts back: one the op made that is only a PART of
+    // one of them — what was left of a stash once some of its files were
+    // moved out — goes too, or the list would hold those files twice.
+    const takenBack = unrestoredStashes(settled, now);
     for (const made of settled.pushed ?? []) {
       if (!onStack.has(made.sha)) continue;
-      if (putsBack && (await this.stashWithin(made.sha, copy!, opts))) {
+      if (
+        (putsBack && (await this.stashWithin(made.sha, copy!, opts))) ||
+        (await this.partOfAny(made.sha, takenBack, opts))
+      ) {
         steps.push({ do: "drop-stash", entry: made });
         going.add(made.sha);
       } else {
@@ -1119,6 +1130,52 @@ export class SnapshotProvider {
       }
     }
     return going;
+  }
+
+  /** Is stash `sha` a part of one of `wholes` (see stashPartOf)? */
+  private async partOfAny(sha: string, wholes: readonly StashSlot[], opts?: GitRunOptions): Promise<boolean> {
+    for (const whole of wholes) {
+      if (await this.stashPartOf(sha, whole.sha, opts)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Is stash `part` a part of stash `whole` — the same base, and every file it
+   * changes (working copy, staged version, untracked file) the same in
+   * `whole`? What is left of a stash after some of its files were moved out
+   * is such a part (StashProvider.subset).
+   */
+  private async stashPartOf(part: string, whole: string, opts?: GitRunOptions): Promise<boolean> {
+    const parentsOf = async (sha: string): Promise<string[]> => {
+      const r = await this.process.run(["rev-list", "--parents", "-n", "1", sha, "--"], opts);
+      return r.code === 0 ? r.stdout.trim().split(/\s+/).slice(1) : [];
+    };
+    const [p, w] = await Promise.all([parentsOf(part), parentsOf(whole)]);
+    if (p.length < 2 || w.length < 2 || p[0] !== w[0]) return false;
+    if (p.length > 2 && w.length < 3) return false;
+    const names = async (a: string, b: string, root = false): Promise<string[] | undefined> => {
+      const args = root ? ["diff-tree", "-r", "-z", "--name-only", "--no-commit-id", "--root", a, "--"] : ["diff-tree", "-r", "-z", "--name-only", "--no-renames", a, b, "--"];
+      const r = await this.process.run(args, opts);
+      return r.code === 0 ? r.stdout.split("\0").filter(Boolean) : undefined;
+    };
+    const sides: [string, string, string][] = [
+      [p[0], part, whole],
+      [p[0], p[1], w[1]],
+    ];
+    for (const [base, mine, theirs] of sides) {
+      const [changed, differ] = await Promise.all([names(base, mine), names(mine, theirs)]);
+      if (!changed || !differ) return false;
+      const d = new Set(differ);
+      if (changed.some((x) => d.has(x))) return false;
+    }
+    if (p.length > 2) {
+      const [changed, differ] = await Promise.all([names(p[2], "", true), names(p[2], w[2])]);
+      if (!changed || !differ) return false;
+      const d = new Set(differ);
+      if (changed.some((x) => d.has(x))) return false;
+    }
+    return true;
   }
 
   /**

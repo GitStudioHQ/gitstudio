@@ -7,6 +7,29 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 ## [Unreleased]
 
 ### Added
+- **Stashes live in the Changes view, file by file.** Under your changes, a
+  **Stashes** group lists every stash — its message (without git's "On
+  main:"), the branch it was made on, how long ago, and how many files — and
+  opens to every file it holds, staged and untracked ones too, as Changes
+  rows. Click a file to see its diff against the commit the stash was made
+  on. **Move to Changes** (the button on a file's row) brings the file back as
+  it was stashed — staged, if it was — and takes it out of the stash; **Copy
+  to Changes** (in its menu) brings it back and leaves the stash as it is.
+  Ctrl/Cmd-click and Shift-click select several files to move or copy
+  together; in the tree view a folder moves too. A stash's row has **Apply**
+  and **Pop**, and its menu **Open All Changes**, **Create Branch…** and
+  **Drop…** (Delete asks too). A file you have changed yourself is never
+  overwritten: it asks, and Stash & Retry keeps both. What is left of a stash
+  stays where the stash was in the list, and Undo (Ctrl/Cmd+Alt+G Z) puts the
+  whole stash back. A row goes the moment you click and comes back if nothing
+  happened, and the group remembers which stashes you opened. A stash made
+  without a message reads "WIP: " and the subject of the commit it was made
+  on. A stash of hundreds of files — a dependency folder stashed with its
+  untracked files — opens 200 files at a time, with **Show 200 more of N**
+  under them, and costs nothing while it is closed. The separate
+  Stashes view is gone; the Command Palette has **Apply Stash…**, **Pop
+  Stash…**, **Drop Stash…** and **Create Branch from Stash…**, which ask
+  which stash.
 - **Select several commits.** In the Commit Graph and the Commits list,
   **Cmd/Ctrl+click** adds or removes a commit, **Shift+click** selects
   everything from the last one you clicked, and **Shift+Up/Down** extends the
@@ -399,15 +422,18 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   They now find the stash you picked just before git runs; if it has left the
   list, they say so and change nothing. The Drop question names the stash by
   its message.
-- **A stash of new files opened as an empty document.** Clicking a stash made
-  with untracked files (the Stash dialog makes one whenever a new file is
-  ticked) left those files out, so a stash of only new files looked empty.
-  They are shown now, beside the edits.
+- **A stash of new files opened as an empty document.** A stash made with
+  untracked files (the Stash dialog makes one whenever a new file is ticked)
+  left those files out of its document, so a stash of only new files looked
+  empty. They are shown now, beside the edits.
 - **Apply and Pop keep what the stash had staged.** Its staged changes came
   back unstaged, and popping a file that was staged and then edited further
   lost the staged version for good. They come back staged now. When your own
   staged changes are in the way, or the staged part no longer applies, it asks
-  first whether to apply the stash unstaged.
+  first whether to apply the stash unstaged — and says a staged version is
+  lost only where one is. A change you had staged and then undone in the file
+  before stashing comes back unstaged too; git alone brought nothing of it
+  back.
 - **The Stash dialog listed a partly staged file twice**, and unticking one of
   its two rows still stashed it. Each file has one row now.
 - **Create Branch from a stash asks about changes in its way.** Over an
@@ -417,18 +443,22 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   your stash. Now it asks first, Stash & Retry or Cancel, as Apply and Pop do,
   naming the branch it is in the way of, and a name a branch already has is
   said before anything runs.
-- **The Stashes view: Cancel on a Drop no longer freezes every row for six
-  seconds.** Only the row you pressed waits — its right-click menu too — and
-  only until its action is over.
-- **The Stashes view keeps your place.** Every file save redrew all the rows
-  and threw keyboard focus out of the list; now only rows that changed are
-  touched, and a stash popped or dropped from its buttons or its menu hands
-  the keyboard to the next one. Up, Down, Home and End move between stashes,
-  and Delete (on a Mac, the delete key or Cmd+Delete) asks to drop one. A
-  click previews a stash without taking the keyboard, and a double-click
-  opens its menu without opening the stash twice.
-- Apply and Pop in the Stashes view use the stash-apply and stash-pop icons,
-  and the empty view says "Stash", not "Shelve".
+- **Undo names a stash by its message.** "Pop stash@{0} — done." named
+  whichever stash was on top by the time you read it, in the toast and in
+  Undo History; it reads "Pop “my work” — done." now, and the Drop question
+  says how many files leave the list. Undo's own question says the same —
+  "Put the stash “my work” back where it was in the stash list", not git's
+  "On main: my work" and a stash@{n}.
+- **The Changes view keeps the keyboard where it was.** Opening a group or a
+  folder with Enter, or anything that redrew the list, dropped the keyboard
+  to the top of the view; the same row keeps it now — the same tick or row
+  button, when one of those had it — and Escape or a choice in a row's menu
+  hands it back to the row. When the last stash leaves, the row above the
+  Stashes group takes the keyboard.
+- The Changes toolbar's title stays on one line in the tree view at sidebar
+  width, and its Stash buttons wear the stash icon the stashes do.
+- The branch menu's last **Show more** row says its number once: "Show 5
+  more", not "Show 5 more of 5".
 - **Removing a locked worktree works.** Remove asked twice and then failed
   with git's "cannot remove a locked working tree". It now asks once, quoting
   the lock's reason, and **Unlock and Remove** removes it.

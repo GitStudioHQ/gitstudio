@@ -128,6 +128,12 @@ test("every door that applies commits hands the door its own op", async () => {
       /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: entry\.sha, pop, index \}\)/,
       /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: entry\.sha, pop \}\)/,
       /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: entry\.sha, branch: name \}\)/,
+      // Copy / Move to Changes: a part cut from the stash, while that stash
+      // is still listed — and without its staging, a part whose working
+      // copies carry what the stash held only staged (the whole stash too).
+      /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: part, cutFrom: entry\.sha, index \}\)/,
+      /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: plain, cutFrom: entry\.sha \}\)/,
+      /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: whole\.sha, cutFrom: entry\.sha \}\)/,
     ],
     "changes/commitView.ts": [/checkoutOp\(\["checkout", "--detach", target\]\)/, /pullOrAsk\(entry\.ctx/],
     "pr/checkoutPr.ts": [/checkoutOp\(\["checkout", local\]\)/],

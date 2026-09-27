@@ -6,8 +6,8 @@
  * second post after the slow probes resolve. That second post carries the
  * ENTIRE payload again — every file list — and it went out unconditionally,
  * on every push of the onDidChange firehose, even when it corrected nothing.
- * Its only purpose is to correct these four fields, so when none of them
- * moved there is nothing to send.
+ * Its only purpose is to correct these fields, so when none of them moved
+ * there is nothing to send.
  */
 export interface SlowState {
   aiEnabled: boolean;
@@ -15,6 +15,12 @@ export interface SlowState {
   branchesSig: string | undefined;
   unpushed: number | undefined;
   canPublish: boolean | undefined;
+  /**
+   * `JSON.stringify` of the stash list (the Stashes group); undefined when
+   * the first post carried none — right after a stash action, or in a
+   * repository not read yet.
+   */
+  stashesSig?: string | undefined;
 }
 
 /** True when the second post would tell the webview something the first did not. */
@@ -23,6 +29,7 @@ export function slowStateChanged(sent: SlowState, resolved: SlowState): boolean 
     sent.aiEnabled !== resolved.aiEnabled ||
     sent.branchesSig !== resolved.branchesSig ||
     sent.unpushed !== resolved.unpushed ||
-    sent.canPublish !== resolved.canPublish
+    sent.canPublish !== resolved.canPublish ||
+    sent.stashesSig !== resolved.stashesSig
   );
 }

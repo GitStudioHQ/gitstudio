@@ -1024,11 +1024,11 @@ cell({
   },
 });
 
-// ══ 5. Stashes view: Pop / Drop ═════════════════════════════════════════════
+// ══ 5. Stashes (the Changes view's Stashes group): Pop / Drop / Move ════════
 
 cell({
   id: "E33",
-  operation: "Pop stash@{0} (Stashes view)",
+  operation: "Pop stash@{0} (Stashes group)",
   state: "on main, clean; one stash holding an edit to f.txt",
   expected: "the stash is back in the list and the tree is clean again (as before the pop)",
   setup: (f) => {
@@ -1037,7 +1037,7 @@ cell({
   },
   op: (f) => stashesView.popStash(f.repos, "stash@{0}", noop),
   expect: (f, s, { row }) => {
-    assert.deepEqual(row.opToasts, ["GitStudio: Pop stash@{0} — done."], "a pop that finished is done");
+    assert.deepEqual(row.opToasts, ["GitStudio: Pop “my work” — done."], "a pop that finished is done, named by its words — stash@{0} names whichever stash is on top by the time it is read");
     const workSomewhere = s.stashes.length === 1 || f.read("f.txt") === "stashed work\n";
     assert.ok(workSomewhere, `the stashed work is gone: not in the stash list (${s.stashes.join(";") || "empty"}) and not in f.txt (${JSON.stringify(f.read("f.txt"))})`);
     assert.equal(s.stashes.length, 1, "the stash is back");
@@ -1046,7 +1046,7 @@ cell({
 
 cell({
   id: "E34",
-  operation: "Pop stash@{0} (Stashes view)",
+  operation: "Pop stash@{0} (Stashes group)",
   state: "on main with an unrelated uncommitted edit (g.txt); stash holds an edit to f.txt",
   expected: "stash back in the list, g.txt edit kept",
   setup: (f) => {
@@ -1065,7 +1065,7 @@ cell({
 
 cell({
   id: "E35",
-  operation: "Drop stash@{0} (Stashes view)",
+  operation: "Drop stash@{0} (Stashes group)",
   state: "on main, clean; one stash",
   expected: "the stash is back (the confirm says 'GitStudio's Undo can bring the stash back')",
   setup: (f) => {
@@ -1076,14 +1076,61 @@ cell({
     answer = yes();
     return stashesView.dropStash(f.repos, "stash@{0}", noop);
   },
-  expect: (_f, s) => {
+  expect: (_f, s, { row }) => {
     assert.deepEqual(s.stashes, ["On main: my work"], "the stash is back");
+    assert.deepEqual(row.opToasts, ["GitStudio: Drop “my work” — done."], "named by its words, not stash@{0}");
+  },
+});
+
+cell({
+  id: "E66",
+  operation: "Move to Changes: one file of a two-file stash (Stashes group)",
+  state: "on main, clean; a stash holding edits to f.txt and g.txt",
+  expected: "the whole stash is back where it was, what was left of it is gone, and f.txt is as before",
+  setup: (f) => {
+    f.commit("G", "g.txt", "g\n");
+    f.write("other.txt", "older\n");
+    f.git("stash", "push", "-q", "-u", "-m", "older");
+    f.write("f.txt", "stashed f\n");
+    f.write("g.txt", "stashed g\n");
+    f.git("stash", "push", "-q", "-m", "my work");
+    f.memo.stash = f.git("rev-parse", "stash@{0}");
+    f.memo.list = f.git("stash", "list", "--format=%H");
+  },
+  op: (f) => stashesView.moveStashFiles(f.repos, f.memo.stash, ["f.txt"], noop),
+  expect: (f, s, { row }) => {
+    assert.equal(row.afterOp.includes(" M f.txt"), true, `the file came out of the stash (${row.afterOp})`);
+    assert.deepEqual(row.opToasts, ["GitStudio: Move 1 file out of “my work” — done."]);
+    // The question names the stash as the toast does, and its place in words.
+    assert.match(row.undoAsked.join("\n"), /Put the stash “my work” back on top of the stash list\./);
+    assert.doesNotMatch(row.undoAsked.join("\n"), /stash@\{|On main:/);
+    assert.equal(f.git("stash", "list", "--format=%H"), f.memo.list, "the same stashes, in the same places");
+    assert.equal(f.read("f.txt"), "base\n");
+    assert.deepEqual(s.status, []);
+  },
+});
+
+cell({
+  id: "E67",
+  operation: "Move to Changes: every file of a stash (Stashes group)",
+  state: "on main, clean; a stash holding one edit",
+  expected: "moving every file is a Pop: Undo puts the stash back",
+  setup: (f) => {
+    f.write("f.txt", "stashed work\n");
+    f.git("stash", "push", "-q", "-m", "my work");
+    f.memo.stash = f.git("rev-parse", "stash@{0}");
+  },
+  op: (f) => stashesView.moveStashFiles(f.repos, f.memo.stash, ["f.txt"], noop),
+  expect: (f, s, { row }) => {
+    assert.deepEqual(row.opToasts, ["GitStudio: Pop “my work” — done."]);
+    assert.deepEqual(s.stashes, ["On main: my work"], "the stash is back");
+    assert.equal(f.read("f.txt"), "base\n");
   },
 });
 
 cell({
   id: "E51",
-  operation: "Pop stash@{0} (Stashes view)",
+  operation: "Pop stash@{0} (Stashes group)",
   state: "the pop CONFLICTS with a commit made since (git keeps the stash)",
   expected: "conflict gone, tree as before the pop, stash still in the list",
   setup: (f) => {
@@ -1094,7 +1141,7 @@ cell({
   op: (f) => stashesView.popStash(f.repos, "stash@{0}", noop),
   expect: (f, s, { row }) => {
     // git applied it with conflicts and kept it: the pop did not finish.
-    assert.deepEqual(row.opToasts, ["GitStudio: Pop stash@{0} did not finish."]);
+    assert.deepEqual(row.opToasts, ["GitStudio: Pop “my work” did not finish."]);
     assert.deepEqual(s.stashes, ["On main: my work"], "the stash is still there");
     assert.equal(f.read("f.txt"), "committed since\n", "the tree is as before the pop");
     assert.deepEqual(s.status, []);
@@ -1537,7 +1584,7 @@ cell({
 
 cell({
   id: "E54",
-  operation: "Drop stash@{0} (Stashes view)",
+  operation: "Drop stash@{0} (Stashes group)",
   state: "a merge stopped on f.txt; one stash",
   expected: "the stash is back",
   setup: (f) => {

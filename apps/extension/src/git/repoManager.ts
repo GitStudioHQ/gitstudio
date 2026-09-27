@@ -416,6 +416,8 @@ export class RepoManager implements vscode.Disposable {
     // graph kept showing the deleted branch or tag.
     for (const [dir, glob, kinds] of [
       [targets.gitDir, targets.opStateGlob, ["operation", "refs"]],
+      // refs/** sees every change to the stash list too: a drop — of any
+      // stash, the newest or not — rewrites refs/stash through a lock file.
       [targets.commonDir, targets.refsGlob, ["refs"]],
       [targets.commonDir, "packed-refs", ["refs"]],
     ] as const) {

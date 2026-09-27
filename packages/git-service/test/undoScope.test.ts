@@ -315,7 +315,7 @@ test("a dropped stash goes back where it was — and on top when the stack has c
     const before = await stashStack(r.ctx.process);
     const snap = await around(r, "Drop stash@{1}", () => void r.git("stash", "drop", "-q", "stash@{1}"));
     const plan = await r.ctx.snapshot.plan(snap);
-    assert.deepEqual(plan.kind === "restore" && plan.lines, ["Put the stash “On main: two” back as stash@{1}."]);
+    assert.deepEqual(plan.kind === "restore" && plan.lines, ["Put the stash “two” back where it was in the stash list."]);
     await r.ctx.snapshot.restore(snap);
     assert.deepEqual(await stashStack(r.ctx.process), before, "the same stashes, in the same order");
 
@@ -329,6 +329,32 @@ test("a dropped stash goes back where it was — and on top when the stack has c
     const back = await restoreStash(r.ctx.process, two, { index: 1, above: [top.sha] });
     assert.deepEqual(back, { ok: true, index: 0 });
     assert.equal((await stashStack(r.ctx.process))[0].sha, two.sha);
+  } finally {
+    r.dispose();
+  }
+});
+
+test("Undo's question names a stash by its words, and where it goes back in words — never git's “On main:”, never stash@{n}", async () => {
+  const r = repo();
+  try {
+    r.commit("base", "f.txt", "base\n");
+    for (const m of ["one", "two"]) {
+      writeFileSync(join(r.dir, "f.txt"), `${m}\n`);
+      r.git("stash", "push", "-q", "-m", m);
+    }
+    // No message: git writes "WIP on main: <sha> base".
+    writeFileSync(join(r.dir, "f.txt"), "three\n");
+    r.git("stash", "push", "-q");
+    const top = await around(r, "Drop the newest", () => void r.git("stash", "drop", "-q", "stash@{0}"));
+    const topPlan = await r.ctx.snapshot.plan(top);
+    assert.deepEqual(topPlan.kind === "restore" && topPlan.lines, ["Put the stash “WIP: base” back on top of the stash list."]);
+    await r.ctx.snapshot.restore(top);
+    const mid = await around(r, "Drop the middle one", () => void r.git("stash", "drop", "-q", "stash@{1}"));
+    const midPlan = await r.ctx.snapshot.plan(mid);
+    assert.deepEqual(midPlan.kind === "restore" && midPlan.lines, ["Put the stash “two” back where it was in the stash list."]);
+    for (const line of [...(topPlan.kind === "restore" ? topPlan.lines : []), ...(midPlan.kind === "restore" ? midPlan.lines : [])]) {
+      assert.doesNotMatch(line, /stash@\{|On main:|WIP on/);
+    }
   } finally {
     r.dispose();
   }
@@ -787,7 +813,7 @@ test("undo of a Stash & Retry pop whose put-back git refused: the work, the popp
     });
     const plan = await r.ctx.snapshot.plan(snap);
     assert.equal(plan.kind, "restore", JSON.stringify(plan));
-    assert.ok(plan.kind === "restore" && plan.lines.includes("Put the stash “On main: A” back as stash@{1}."), JSON.stringify(plan));
+    assert.ok(plan.kind === "restore" && plan.lines.includes("Put the stash “A” back where it was in the stash list."), JSON.stringify(plan));
     await r.ctx.snapshot.restore(snap);
     assert.equal(r.read("f.txt"), "my edit, in the way\n");
     assert.deepEqual((await stashStack(r.ctx.process)).map((x) => x.sha), before, "A back below X, as it was, and the op's own stash gone");

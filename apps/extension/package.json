@@ -125,13 +125,6 @@
           "visibility": "visible"
         },
         {
-          "id": "gitstudio.stashes",
-          "name": "Stashes",
-          "type": "webview",
-          "initialSize": 1,
-          "visibility": "collapsed"
-        },
-        {
           "id": "gitstudio.worktrees",
           "name": "Worktrees",
           "initialSize": 1,
@@ -425,6 +418,30 @@
         "title": "Stash Changes\u2026",
         "category": "GitStudio",
         "icon": "$(add)"
+      },
+      {
+        "command": "gitstudio.stash.apply",
+        "title": "Apply Stash\u2026",
+        "category": "GitStudio",
+        "icon": "$(git-stash-apply)"
+      },
+      {
+        "command": "gitstudio.stash.pop",
+        "title": "Pop Stash\u2026",
+        "category": "GitStudio",
+        "icon": "$(git-stash-pop)"
+      },
+      {
+        "command": "gitstudio.stash.drop",
+        "title": "Drop Stash\u2026",
+        "category": "GitStudio",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "gitstudio.stash.branch",
+        "title": "Create Branch from Stash\u2026",
+        "category": "GitStudio",
+        "icon": "$(git-branch)"
       },
       {
         "command": "gitstudio.worktrees.refresh",
@@ -1456,7 +1473,7 @@
           {
             "id": "gitstudio.walkthrough.stage",
             "title": "Stage changes & commit",
-            "description": "Stage whole files, or tick single changes inside one, in the **Changes** view, then commit from its commit box (Amend, Sign-off, a different author, Commit & Push). With AI on, the sparkle button in the box drafts a message from what you staged.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nIn the editor: select lines and press __Ctrl/Cmd+Alt+G S__ to stage the changes they touch.",
+            "description": "Stage whole files, or tick single changes inside one, in the **Changes** view, then commit from its commit box (Amend, Sign-off, a different author, Commit & Push). With AI on, the sparkle button in the box drafts a message from what you staged. Your stashes are listed under your changes: open one to see every file it holds, and **Move to Changes** just the files you want back.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nIn the editor: select lines and press __Ctrl/Cmd+Alt+G S__ to stage the changes they touch.",
             "media": {
               "image": {
                 "light": "media/walkthrough/stage-light.png",
@@ -1546,11 +1563,6 @@
           "command": "gitstudio.openWalkthrough",
           "when": "view == gitstudio.commit",
           "group": "9_help@1"
-        },
-        {
-          "command": "gitstudio.stashes.refresh",
-          "when": "view == gitstudio.stashes",
-          "group": "navigation@2"
         },
         {
           "command": "gitstudio.worktree.add",
@@ -1884,6 +1896,22 @@
         },
         {
           "command": "gitstudio.stash.save",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stash.apply",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stash.pop",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stash.drop",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stash.branch",
           "when": "gitstudio.hasRepo"
         },
         {

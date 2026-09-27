@@ -10643,6 +10643,38 @@
       c.ok(!!page && page.isConnected, "the page of the stash that is still there stays open");
     },
 
+    /**
+     * Every control that makes, lists or holds a stash wears codicon's stash
+     * glyph, as the extension's do — the Stashes segment, each stash's row,
+     * the "Stash changes" button over them, and on the Changes page the Stash
+     * button and its drop zone (the row menus' Stash items too). They wore an
+     * archive box, which says "archive", while the extension had moved on:
+     * the same verb, two different pictures.
+     */
+    "every-stash-control-wears-the-stash-glyph": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      // Drawn, not only named: the character the font is asked for.
+      const STASH = '"\uec26"';
+      const drawn = (g) => (g ? getComputedStyle(g, "::before").content : "none");
+      const glyphs = [];
+      const seg = $$(".gh-seg-btn").find((b) => /^Stashes/.test(text(b) || ""));
+      if (seg) {
+        glyphs.push(["the Stashes segment", seg.querySelector(".codicon")]);
+        for (const row of $$(".sec-row")) glyphs.push([`the row “${text(row).slice(0, 30)}”`, row.querySelector(".codicon")]);
+        const cta = $$(".gh-head-cta, .gh-head .btn, .gh-head .mini-btn").find((b) => /Stash changes/.test(text(b) || ""));
+        glyphs.push(["Stash changes", cta && cta.querySelector(".codicon")]);
+      } else {
+        const btn = $$(".mini-btn").find((b) => text(b) === "Stash");
+        glyphs.push(["the Stash button", btn && btn.querySelector(".codicon")]);
+        glyphs.push(["the drop zone", $(".dc-stash-drop .codicon")]);
+      }
+      c.ok(glyphs.length > 1, `stash controls found (${glyphs.length})`);
+      for (const [what, g] of glyphs) {
+        c.ok(!!g && g.classList.contains("codicon-git-stash") && drawn(g) === STASH, `${what}: ${g ? g.className : "no glyph"} ${drawn(g)}`);
+      }
+    },
+
     "a-stash-rows-pop-wears-the-stash-glyph": async (f) => {
       const c = check(f);
       await settle(1200);

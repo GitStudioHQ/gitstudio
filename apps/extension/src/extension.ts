@@ -13,9 +13,13 @@ import {
 import { RefsTreeProvider } from "./views/branchesView";
 import {
   StashDiffContentProvider,
+  applyStash,
+  branchFromStash,
+  dropStash,
+  pickStash,
+  popStash,
   saveStash,
 } from "./views/stashesView";
-import { StashesWebviewViewProvider } from "./views/stashesWebview";
 import {
   WorktreesTreeProvider,
   openWorktree,
@@ -602,21 +606,18 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       ),
     );
 
-    // M9 — the remaining sidebar pillars + operations: Stashes, Worktrees,
-    // Search & Compare views; branch / remote / tag context actions; and the
-    // status-bar sync segment. Destructive ops (pop/drop, merge/rebase, branch
-    // delete) route through the universal Undo envelope via the RepoManager's
-    // wired-in ledger.
-    const stashesProvider = new StashesWebviewViewProvider(
-      repos,
-      context.extensionUri,
-    );
+    // M9 — the remaining sidebar pillars + operations: Worktrees, Search &
+    // Compare views; branch / remote / tag context actions; and the
+    // status-bar sync segment. Stashes live in the Changes view (its Stashes
+    // group), with palette commands of their own. Destructive ops (pop/drop,
+    // merge/rebase, branch delete) route through the universal Undo envelope
+    // via the RepoManager's wired-in ledger.
     const worktreesProvider = new WorktreesTreeProvider(
       repos,
       context.workspaceState,
     );
     const stashDiffContent = new StashDiffContentProvider(repos);
-    context.subscriptions.push(stashesProvider, worktreesProvider);
+    context.subscriptions.push(worktreesProvider);
 
     const worktreesView = vscode.window.createTreeView("gitstudio.worktrees", {
       treeDataProvider: worktreesProvider,
@@ -632,7 +633,8 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       worktreesProvider.prewarm();
     });
     context.subscriptions.push(warmWorktrees);
-    const refreshStashes = () => stashesProvider.refresh();
+    // The stash list is the Changes view's Stashes group.
+    const refreshStashes = () => commitProvider.stashesChanged();
     const refreshWorktrees = () => worktreesProvider.refresh();
     const refreshBranches = () => refsProvider.refresh();
 
@@ -659,23 +661,38 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
         // Retain so re-opening the Commits graph is instant (no re-render/re-fetch).
         { webviewOptions: { retainContextWhenHidden: true } },
       ),
-      vscode.window.registerWebviewViewProvider(
-        StashesWebviewViewProvider.viewId,
-        stashesProvider,
-        { webviewOptions: { retainContextWhenHidden: true } },
-      ),
       vscode.workspace.registerTextDocumentContentProvider(
         StashDiffContentProvider.scheme,
         stashDiffContent,
       ),
 
-      // ── Stashes (apply/pop/drop/branch/show are driven by the webview) ──────
+      // ── Stashes ────────────────────────────────────────────────────────────
+      // Listed, file by file, in the Changes view's Stashes group, which runs
+      // these same operations by sha. From the palette they ask which stash,
+      // in the Changes view (never a quick pick); a caller that knows it
+      // passes `{ sha }`.
       vscode.commands.registerCommand("gitstudio.stashes.refresh", () =>
-        stashesProvider.refresh(),
+        refreshStashes(),
       ),
       vscode.commands.registerCommand("gitstudio.stash.save", () =>
         saveStash(repos, refreshStashes),
       ),
+      vscode.commands.registerCommand("gitstudio.stash.apply", async (arg?: { sha?: string }) => {
+        const sha = arg?.sha ?? (await pickStash(repos, "Apply"));
+        if (sha) await applyStash(repos, sha, refreshStashes);
+      }),
+      vscode.commands.registerCommand("gitstudio.stash.pop", async (arg?: { sha?: string }) => {
+        const sha = arg?.sha ?? (await pickStash(repos, "Pop"));
+        if (sha) await popStash(repos, sha, refreshStashes);
+      }),
+      vscode.commands.registerCommand("gitstudio.stash.drop", async (arg?: { sha?: string }) => {
+        const sha = arg?.sha ?? (await pickStash(repos, "Drop"));
+        if (sha) await dropStash(repos, sha, refreshStashes);
+      }),
+      vscode.commands.registerCommand("gitstudio.stash.branch", async (arg?: { sha?: string }) => {
+        const sha = arg?.sha ?? (await pickStash(repos, "Create a branch from"));
+        if (sha) await branchFromStash(repos, sha, refreshStashes);
+      }),
       // Scoped stashes. Not in the palette: both take an argument, and a palette
       // entry that silently stashes everything when invoked without one would be
       // worse than no entry at all.

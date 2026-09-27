@@ -422,6 +422,8 @@ test("Tab and Shift+Tab leave focus in the search box; nothing in the menu is in
   const tags = Array.from({ length: 45 }, (_, i) => `v1.${i}`);
   await openMenu(page, stateMessage({ local: LOCAL, remote: ["origin/main", "origin/feature"], tags }));
   assert.ok(await page.eval(`!!document.querySelector(".bm-more") && !!document.querySelector(".bm-action") && !!document.querySelector(".bm-star")`));
+  // The last page says its number once — as a stash's files do (changesStashes).
+  assert.equal(await page.eval<string>(`document.querySelector(".bm-more").textContent`), "Show 5 more");
   assert.deepEqual(await tabbable(), [], "top actions, rows, stars, group headers and 'Show more' take no Tab stop");
   await page.key("Tab");
   assert.ok((await snap(page)).focusIsSearch, "Tab keeps focus in the search box");

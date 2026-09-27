@@ -1,6 +1,7 @@
 // A stash is addressed by its sha, shown whole, and applied with its staging.
 //
-// Three things the Stashes view got wrong, pinned here against real git:
+// Three things the (since removed) Stashes view got wrong, pinned here
+// against real git — the Changes view's Stashes group runs the same doors:
 //
 //   · `stash@{n}` is a POSITION. Every push, pop or drop renumbers the list,
 //     so a row that said stash@{2} when it was drawn could pop or drop another
