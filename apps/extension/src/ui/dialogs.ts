@@ -86,11 +86,28 @@ export interface InputSpec extends BaseSpec {
   secret?: boolean;
 }
 
+/**
+ * A checkbox under a pick's choices or a confirm's message — "Also delete the
+ * branch". Starts as `checked` says (unchecked by default); the ids that are
+ * checked when the question is answered come back in DialogResult.options.
+ */
+export interface DialogOption {
+  id: string;
+  label: string;
+  /** A second line saying what checking it does. */
+  description?: string;
+  checked?: boolean;
+}
+
 export interface PickSpec extends BaseSpec {
   kind: "pick";
   choices: DialogChoice[];
   /** Show a filter box above the list. Defaults on past 8 choices. */
   filter?: boolean;
+  /** Checkboxes under the choices (see DialogOption). */
+  options?: DialogOption[];
+  /** The message above the choices — what the question is about. */
+  message?: string;
 }
 
 export interface MultiPickSpec extends BaseSpec {
@@ -105,6 +122,8 @@ export interface ConfirmSpec extends BaseSpec {
   confirmLabel: string;
   /** Style the confirm button as destructive and don't autofocus it. */
   danger?: boolean;
+  /** Checkboxes under the message (see DialogOption). */
+  options?: DialogOption[];
 }
 
 export type DialogSpec = InputSpec | PickSpec | MultiPickSpec | ConfirmSpec;
@@ -113,6 +132,8 @@ export type DialogSpec = InputSpec | PickSpec | MultiPickSpec | ConfirmSpec;
 export interface DialogResult {
   /** Input: the text. Pick: the chosen id. MultiPick: the chosen ids. Confirm: "ok". */
   value?: string | string[];
+  /** A pick's or a confirm's checked options, by id. */
+  options?: string[];
 }
 
 /**
@@ -207,6 +228,44 @@ export async function promptConfirm(
 ): Promise<boolean> {
   const r = await run({ ...spec, kind: "confirm" });
   return r?.value === "ok";
+}
+
+/**
+ * Ask one question that is answered by a choice and some checkboxes: a pick
+ * when there are several ways, a confirm when there is one. Answers the
+ * chosen id (a confirm's is its one choice's) and the checked options' ids;
+ * undefined when dismissed.
+ */
+export async function promptChoose(spec: {
+  title: string;
+  message: string;
+  choices: DialogChoice[];
+  options?: DialogOption[];
+}): Promise<{ id: string; options: string[] } | undefined> {
+  if (spec.choices.length === 0) {
+    return undefined;
+  }
+  if (spec.choices.length === 1) {
+    const only = spec.choices[0];
+    const r = await run({
+      kind: "confirm",
+      title: spec.title,
+      message: spec.message,
+      confirmLabel: only.label,
+      danger: only.danger,
+      ...(spec.options?.length ? { options: spec.options } : {}),
+    });
+    return r?.value === "ok" ? { id: only.id, options: r.options ?? [] } : undefined;
+  }
+  const r = await run({
+    kind: "pick",
+    title: spec.title,
+    message: spec.message,
+    choices: spec.choices,
+    filter: false,
+    ...(spec.options?.length ? { options: spec.options } : {}),
+  });
+  return typeof r?.value === "string" ? { id: r.value, options: r.options ?? [] } : undefined;
 }
 
 /**

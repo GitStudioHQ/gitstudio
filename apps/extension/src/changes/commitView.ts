@@ -43,6 +43,10 @@ import {
 // the ".css": "text" loader). Injected into the webview <style> so this surface
 // consumes the SAME token system as every bundled webview — one source, no drift.
 import tokensCss from "../../../../packages/webview-ui/src/styles/tokens.css";
+// The push review's commit and file rows — the same ones the Worktrees view
+// draws (webview-ui/changeRows): their stylesheet inlined here, their script
+// loaded as dist/webview/change-rows.js (window.GsChangeRows).
+import changeRowsCss from "../../../../packages/webview-ui/src/changeRows/changeRows.css";
 import {
   openChangeDiff,
   relativePath,
@@ -55,7 +59,7 @@ import {
   collectCompareFiles,
   type CompareFile,
 } from "../compare/refCompare";
-import { toRevisionUri } from "../history/revisionContentProvider";
+import { commitChangeSides, openSidesDiff, toRevisionUri } from "../history/revisionContentProvider";
 import { operationBanner, type OperationBannerData } from "./operationBanner";
 import { stoppedByThisCommand, type DetectedOperation } from "../git/pausedForUser";
 import { detectOperation, notifyPaused } from "../git/pauseNotice";
@@ -179,6 +183,8 @@ interface FromWebview {
     | "discardLocalCommits"
     | "newBranchFromPush"
     | "openPushFileDiff"
+    | "pushCommitFiles"
+    | "openPushCommitFile"
     | "openFolder"
     | "openGraph"
     | "resolveConflicts"
@@ -191,6 +197,8 @@ interface FromWebview {
   dialogId?: string;
   /** The dialog's answer: text, a choice id, checked ids, or "ok". */
   dialogValue?: string | string[];
+  /** A pick's or a confirm's checked options ("Also delete the branch"). */
+  dialogOptions?: string[];
   path?: string;
   /** Original path for a renamed file (push-modal file diff). */
   oldPath?: string;
@@ -221,6 +229,12 @@ interface FromWebview {
   command?: string;
   /** The kind of ref the submenu command targets: "head" (local) | "remote" | "tag". */
   refType?: "head" | "remote" | "tag";
+  /** pushCommitFiles / openPushCommitFile: the commit in the push review. */
+  sha?: string;
+  /** openPushCommitFile: the commit's first parent (absent for a root commit). */
+  parent?: string;
+  /** openPushCommitFile: git's letter for what the commit did to the file. */
+  status?: string;
 }
 
 /**
@@ -639,7 +653,11 @@ export class CommitViewProvider
     return answered;
   }
 
-  private resolveDialog(id: string | undefined, value: string | string[] | undefined): void {
+  private resolveDialog(
+    id: string | undefined,
+    value: string | string[] | undefined,
+    options?: unknown,
+  ): void {
     if (!id) {
       return;
     }
@@ -648,7 +666,8 @@ export class CommitViewProvider
       return; // already settled (a dismissal that raced a reload)
     }
     this.dialogWaiters.delete(id);
-    resolve(value === undefined ? undefined : { value });
+    const checked = Array.isArray(options) ? options.filter((o): o is string => typeof o === "string") : undefined;
+    resolve(value === undefined ? undefined : checked ? { value, options: checked } : { value });
   }
 
   /** Settle every pending dialog as dismissed (view reloaded or disposed). */
@@ -718,7 +737,7 @@ export class CommitViewProvider
         await this.pushState(!!msg.amend);
         return;
       case "dialogResult":
-        this.resolveDialog(msg.dialogId, msg.dialogValue);
+        this.resolveDialog(msg.dialogId, msg.dialogValue, msg.dialogOptions);
         return;
       case "branchAction":
         await this.handleBranchAction(msg);
@@ -727,7 +746,15 @@ export class CommitViewProvider
         await this.handleBranchRefCommand(msg);
         return;
       case "requestPushPreview":
+        // The view's own Push: this window's repository.
+        this.setPushTarget(undefined);
         await this.sendPushPreview();
+        return;
+      case "pushCommitFiles":
+        await this.sendPushCommitFiles(msg.sha ?? "");
+        return;
+      case "openPushCommitFile":
+        await this.openPushCommitFile(msg);
         return;
       case "confirmPush":
         await this.confirmPush(!!msg.force);
@@ -1571,6 +1598,7 @@ export class CommitViewProvider
       // other push route uses, so the user confirms exactly what's about to be
       // pushed (and can still undo the commit) before it leaves their machine.
       if (msg.push) {
+        this.setPushTarget(undefined);
         await this.sendPushPreview();
       }
     } finally {
@@ -1983,7 +2011,7 @@ export class CommitViewProvider
     needsForce: boolean;
     additions: number;
     deletions: number;
-    commits: Array<{ sha: string; subject: string; author: string; date: number }>;
+    commits: Array<{ sha: string; parents: string[]; subject: string; author: string; date: number }>;
     files: CompareFile[];
   } | null> {
     const head = await entry.ctx.refs.getHead();
@@ -2083,6 +2111,9 @@ export class CommitViewProvider
       deletions,
       commits: commitRecords.map((c) => ({
         sha: c.sha,
+        // The first is what the commit's own files are diffed against when
+        // its row opens (the shared change rows).
+        parents: c.parents,
         subject: c.subject || "(no message)",
         author: c.author,
         date: c.authorDate,
@@ -2091,9 +2122,45 @@ export class CommitViewProvider
     };
   }
 
+  /**
+   * The worktree the open push review is for, when it is not this window's
+   * repository (the Worktrees view's Push…): every action the review takes —
+   * Push, Undo commits…, New branch…, a file's diff — runs in THAT folder.
+   * Undefined: the active repository.
+   */
+  private pushTarget: { entry: RepoEntry; name: string; shownPath: string; release(): void } | undefined;
+
+  private setPushTarget(t: CommitViewProvider["pushTarget"]): void {
+    if (this.pushTarget && this.pushTarget !== t) {
+      this.pushTarget.release();
+    }
+    this.pushTarget = t;
+  }
+
+  /** The repository the push review acts on. */
+  private reviewEntry(): RepoEntry | undefined {
+    return this.pushTarget?.entry ?? this.repos.getActive();
+  }
+
+  /**
+   * Open the push review for a worktree — the Worktrees view's Push… — in
+   * this view, where every push is reviewed. Its commits and files are that
+   * worktree's, and the review says whose they are. Without a target: this
+   * window's repository, as the view's own Push.
+   */
+  async openPushReview(target?: { entry: RepoEntry; name: string; shownPath: string; release(): void }): Promise<void> {
+    await vscode.commands.executeCommand("gitstudio.commit.focus");
+    for (let i = 0; i < 20 && !this.view; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    await Promise.race([this.webviewReady ?? Promise.resolve(), new Promise<void>((r) => setTimeout(r, 3000))]);
+    this.setPushTarget(target);
+    await this.sendPushPreview();
+  }
+
   /** Gather the preview and open the confirm-push modal in the webview. */
   private async sendPushPreview(): Promise<void> {
-    const entry = this.repos.getActive();
+    const entry = this.reviewEntry();
     if (!entry) {
       return;
     }
@@ -2109,14 +2176,53 @@ export class CommitViewProvider
       return;
     }
     if (!data) {
-      vscode.window.setStatusBarMessage("$(check) Nothing to push — up to date", 2500);
+      vscode.window.setStatusBarMessage(
+        this.pushTarget
+          ? `$(check) Nothing to push from ${this.pushTarget.name} — up to date`
+          : "$(check) Nothing to push — up to date",
+        2500,
+      );
       // Clear any spinner the trigger may have started.
       void this.view?.webview.postMessage({ type: "pushDone", ok: true, nothing: true });
       return;
     }
     // Remember the diff base so a click on a file row can open its committed diff.
     this.lastPushBase = data.base;
-    void this.view?.webview.postMessage({ type: "pushPreview", ...data });
+    void this.view?.webview.postMessage({
+      type: "pushPreview",
+      ...data,
+      ...(this.pushTarget ? { worktree: { name: this.pushTarget.name, shownPath: this.pushTarget.shownPath } } : {}),
+    });
+  }
+
+  /** A commit in the push review opened: the files it changed, against its first parent. */
+  private async sendPushCommitFiles(sha: string): Promise<void> {
+    const entry = this.reviewEntry();
+    if (!entry || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(sha)) {
+      return;
+    }
+    let files: CompareFile[] | null;
+    try {
+      const parents = await entry.ctx.process.run(["rev-list", "--parents", "-n", "1", sha]);
+      const first = parents.code === 0 ? parents.stdout.trim().split(" ")[1] : undefined;
+      files = await entry.ctx.commitDetails.getCommitFiles(sha, first);
+    } catch {
+      files = null;
+    }
+    void this.view?.webview.postMessage({ type: "pushCommitFiles", sha, files });
+  }
+
+  /** A file under a commit in the push review: what THAT commit did to it. */
+  private async openPushCommitFile(msg: FromWebview): Promise<void> {
+    const entry = this.reviewEntry();
+    const sha = msg.sha ?? "";
+    if (!entry || !msg.path || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(sha)) {
+      return;
+    }
+    const parent = msg.parent && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(msg.parent) ? msg.parent : COMMIT_EMPTY_TREE;
+    const sides = commitChangeSides({ sha, parent, path: msg.path, oldPath: msg.oldPath, status: msg.status });
+    const name = msg.path.split("/").pop() ?? msg.path;
+    await openSidesDiff(entry.root, msg.path, sides, `${name} (${sha.slice(0, 7)})`);
   }
 
   /** The base ref of the last push preview (left side of committed file diffs). */
@@ -2129,7 +2235,9 @@ export class CommitViewProvider
    * about to be pushed introduce.
    */
   private async openPushFileDiff(path: string, oldPath?: string): Promise<void> {
-    const entry = this.repos.getActive();
+    // The review's worktree: its HEAD is the right side (revision URIs read
+    // the root they name — see RevisionContentProvider).
+    const entry = this.reviewEntry();
     if (!entry || !path) {
       return;
     }
@@ -2189,7 +2297,7 @@ export class CommitViewProvider
   }
 
   private async confirmPush(force = false): Promise<void> {
-    const entry = this.repos.getActive();
+    const entry = this.reviewEntry();
     if (!entry) {
       return;
     }
@@ -2248,7 +2356,7 @@ export class CommitViewProvider
    * nothing is lost, the commits are just "un-made".
    */
   private async discardLocalCommits(): Promise<void> {
-    const entry = this.repos.getActive();
+    const entry = this.reviewEntry();
     if (!entry) {
       return;
     }
@@ -2343,7 +2451,7 @@ export class CommitViewProvider
    * leaves the modal open; success closes it (the push target changed).
    */
   private async newBranchFromPush(nameFromView?: string): Promise<void> {
-    const entry = this.repos.getActive();
+    const entry = this.reviewEntry();
     if (!entry) {
       return;
     }
@@ -2693,13 +2801,17 @@ export class CommitViewProvider
     const codiconUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, "dist", "codicons", "codicon.css"),
     );
+    const changeRowsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "change-rows.js"),
+    );
     const csp = [
       `default-src 'none'`,
       // cspSource: the codicon stylesheet; nonce: our own inline <style>.
       `style-src 'nonce-${nonce}' ${webview.cspSource}`,
       // cspSource: the codicon.ttf the stylesheet @font-face references.
       `font-src ${webview.cspSource}`,
-      `script-src 'nonce-${nonce}'`,
+      // nonce: our inline script and change-rows.js (the push review's rows).
+      `script-src 'nonce-${nonce}' ${webview.cspSource}`,
     ].join("; ");
 
     // String.raw so the inline script's regex backslashes (\s, \[, \{, \\) survive
@@ -2723,6 +2835,7 @@ export class CommitViewProvider
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${codiconUri}" rel="stylesheet" />
   <style nonce="${nonce}">${tokensCss}</style>
+  <style nonce="${nonce}">${changeRowsCss}</style>
   <style nonce="${nonce}">
     /* Surface-specific styling only. The --gs-* token scale and the .gs-*
        utility classes come from the shared tokens.css injected above — this
@@ -3255,6 +3368,12 @@ export class CommitViewProvider
     .rp-choice-detail { margin-left: auto; padding-left: 10px; font-size: 10px; color: var(--gs-fg-subtle); flex: 0 0 auto; }
     .rp-choice.danger .rp-choice-label, .rp-choice.danger .codicon { color: var(--gs-danger, #f14c4c); }
     .rp-check { flex: 0 0 auto; margin: 1px 0 0; accent-color: var(--gs-accent); }
+    /* A question's checkboxes ("Also delete the branch"), between the choices
+       and the footer. */
+    .rp-options { padding: 6px 11px 8px; border-top: 1px solid var(--gs-border-soft); }
+    .rp-option { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; font-size: 12px; cursor: pointer; }
+    .rp-option .rp-check { margin-top: 2px; }
+    .rp-option:focus-within .rp-choice-label { text-decoration: underline; text-underline-offset: 2px; }
     /* A confirm has no list and no input — just the question. */
     .rp-msg { padding: 2px 11px 11px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
     /* Reads as an action, not a footnote — it is the only way to reach the
@@ -4169,40 +4288,16 @@ export class CommitViewProvider
       display: inline-flex; align-items: center; gap: 4px;
     }
     .pm-behind .codicon { color: var(--gs-amber); font-size: 12px; }
+    /* The commit and file rows are the shared ones (changeRows.css, inlined
+       above): .cr-section-label, .cr-commit, .cr-file. */
     .pm-body { overflow-y: auto; padding: 4px 6px 8px; }
-    .pm-section-label {
-      font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-      color: var(--gs-fg-muted); padding: 9px 8px 4px;
+    .pm-where {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 14px; font-size: 11.5px; color: var(--gs-fg-muted);
+      border-bottom: 1px solid var(--gs-border-soft);
     }
-    .pm-commit {
-      display: flex; align-items: baseline; gap: 8px;
-      padding: 4px 8px; border-radius: var(--gs-radius-sm);
-    }
-    .pm-commit:hover { background: var(--gs-hover); }
-    .pm-commit .sha {
-      flex: 0 0 auto; font-family: var(--gs-font-mono); font-size: 11px;
-      color: var(--gs-fg-subtle);
-    }
-    .pm-commit .subj { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pm-commit .meta { flex: 0 0 auto; font-size: 11px; color: var(--gs-fg-muted); }
-    .pm-file {
-      display: flex; align-items: center; gap: 8px;
-      padding: 4px 8px; border-radius: var(--gs-radius-sm);
-    }
-    .pm-file:hover { background: var(--gs-hover-strong); }
-    .pm-file.clickable { cursor: pointer; }
-    .pm-file.clickable:hover .name { text-decoration: underline; text-underline-offset: 2px; }
-    .pm-file .st { flex: 0 0 auto; width: 13px; text-align: center; font-family: var(--gs-font-mono); font-weight: 700; font-size: 11px; }
-    .pm-file .name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pm-file .dir { flex: 1 1 0; min-width: 0; font-size: 11px; color: var(--gs-fg-muted);
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
-    .pm-file .nums { flex: 0 0 auto; font-family: var(--gs-font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
-    .pm-file .nums .add { color: var(--gs-status-added); }
-    .pm-file .nums .del { color: var(--gs-status-deleted); margin-left: 5px; }
-    .pm-file.st-A .st { color: var(--gs-status-added); }
-    .pm-file.st-M .st { color: var(--gs-status-modified); }
-    .pm-file.st-D .st { color: var(--gs-status-deleted); }
-    .pm-file.st-R .st { color: var(--gs-status-renamed); }
+    .pm-where span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .pm-where .codicon { flex: 0 0 auto; font-size: 13px; }
     .pm-error {
       margin: 4px 8px 0; padding: 7px 9px; font-size: 11.5px;
       color: var(--vscode-errorForeground, #e15a5a);
@@ -4298,7 +4393,6 @@ export class CommitViewProvider
     }
     .pm-btn .codicon { font-size: 13px; }
     .pm-btn .codicon-modifier-spin { animation: codicon-spin 1s steps(12) infinite; }
-    .pm-empty-note { padding: 14px 10px; text-align: center; color: var(--gs-fg-muted); font-size: 12px; }
 
     /* ---- Operation banner: a stopped merge / rebase / cherry-pick ------- */
     .op-banner {
@@ -4511,6 +4605,7 @@ export class CommitViewProvider
     </div>
   </div>
 
+  <script nonce="${nonce}" src="${changeRowsUri}"></script>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const $ = (id) => document.getElementById(id);
@@ -6200,6 +6295,54 @@ export class CommitViewProvider
     var dlgReturnFocus = null;
     /** Correlation id of a host-requested dialog, so we can answer exactly once. */
     var dlgHostId = null;
+    /** The open dialog's checkboxes ("Also delete the branch"), answered with it. */
+    var dlgOptionBoxes = [];
+
+    /**
+     * A pick's or a confirm's checkboxes, above the footer: a real checkbox with
+     * its label and a line saying what checking it does. Their checked ids go
+     * back with the answer (closeDialog).
+     */
+    function renderDialogOptions(panel, spec) {
+      dlgOptionBoxes = [];
+      var opts = spec.options || [];
+      if (!opts.length) return;
+      var box = el("div", "rp-options");
+      opts.forEach(function (o, i) {
+        var row = document.createElement("label");
+        row.className = "rp-option";
+        var input = document.createElement("input");
+        input.type = "checkbox";
+        input.className = "rp-check";
+        input.checked = !!o.checked;
+        input.dataset.optionId = o.id;
+        input.id = "rp-option-" + i;
+        var text = el("span", "rp-choice-text");
+        var label = el("span", "rp-choice-label");
+        label.textContent = o.label;
+        text.appendChild(label);
+        if (o.description) {
+          var desc = el("span", "rp-choice-desc");
+          desc.textContent = o.description;
+          text.appendChild(desc);
+          input.setAttribute("aria-describedby", "rp-option-desc-" + i);
+          desc.id = "rp-option-desc-" + i;
+        }
+        // Space toggles the box; Enter still answers the question.
+        input.addEventListener("keydown", function (e) { if (e.key === " ") e.stopPropagation(); });
+        row.appendChild(input);
+        row.appendChild(text);
+        box.appendChild(row);
+        dlgOptionBoxes.push(input);
+      });
+      panel.appendChild(box);
+    }
+
+    /** The checked options' ids, when the open dialog has any. */
+    function checkedDialogOptions() {
+      return dlgOptionBoxes.filter(function (b) { return b.checked; })
+        .map(function (b) { return b.dataset.optionId; });
+    }
 
     /**
      * Remove the dialog's DOM and listeners WITHOUT answering anyone.
@@ -6229,11 +6372,16 @@ export class CommitViewProvider
      * is posted here — the single place every close path funnels through.
      */
     function closeDialog(answer) {
+      // Read before the teardown takes the boxes with it.
+      var options = answer !== undefined && dlgOptionBoxes.length ? checkedDialogOptions() : undefined;
+      dlgOptionBoxes = [];
       teardownDialog();
       var hostId = dlgHostId;
       dlgHostId = null;
       if (hostId) {
-        vscode.postMessage({ type: "dialogResult", dialogId: hostId, dialogValue: answer });
+        var reply = { type: "dialogResult", dialogId: hostId, dialogValue: answer };
+        if (options) reply.dialogOptions = options;
+        vscode.postMessage(reply);
       }
     }
 
@@ -6636,6 +6784,11 @@ export class CommitViewProvider
       var sel = 0;
       var shown = choices;
       var panel = beginDialog(spec);
+      if (spec.message) {
+        var pmsg = el("div", "rp-msg");
+        pmsg.textContent = spec.message;
+        panel.appendChild(pmsg);
+      }
 
       var input = null;
       if (useFilter) {
@@ -6650,6 +6803,7 @@ export class CommitViewProvider
 
       var list = el("div", "rp-list");
       panel.appendChild(list);
+      renderDialogOptions(panel, spec);
 
       // No confirm button: a pick IS the commit, exactly like the branch menu.
       var foot = el("div", "rp-foot");
@@ -6777,6 +6931,7 @@ export class CommitViewProvider
       var msg = el("div", "rp-msg");
       msg.textContent = spec.message;
       panel.appendChild(msg);
+      renderDialogOptions(panel, spec);
       var ok = dialogFoot(panel, spec.confirmLabel, spec.danger, function () {
         closeDialog("ok");
       });
@@ -6988,6 +7143,15 @@ export class CommitViewProvider
       close.addEventListener("click", () => { if (!pushBusy) closePushModal(); });
       head.appendChild(close);
       modal.appendChild(head);
+      // Reviewing another worktree's push (from the Worktrees view): say whose.
+      if (data.worktree) {
+        const where = el("div", "pm-where", '<i class="codicon codicon-worktree" aria-hidden="true"></i>');
+        const whereText = el("span");
+        whereText.textContent = "From the worktree " + data.worktree.name + " — " + data.worktree.shownPath;
+        where.appendChild(whereText);
+        modal.appendChild(where);
+        modal.setAttribute("aria-label", "Confirm push from the worktree " + data.worktree.name);
+      }
 
       const stats = el("div", "pm-stats");
       const nC = data.commits.length, nF = data.files.length;
@@ -7017,44 +7181,32 @@ export class CommitViewProvider
       }
       modal.appendChild(stats);
 
-      const body = el("div", "pm-body");
-      body.appendChild(el("div", "pm-section-label", "Commits to push"));
+      const body = el("div", "pm-body cr-list");
+      // The rows the Worktrees view draws too (webview-ui/changeRows, loaded
+      // as change-rows.js): each commit opens to what IT changed; the files
+      // below are what all of them change together. Clicking a file opens its
+      // diff in the editor; the modal stays.
+      const R = window.GsChangeRows;
+      body.appendChild(R ? R.sectionLabel("Commits to push") : el("div", "cr-section-label", "Commits to push"));
       data.commits.forEach((c) => {
-        const row = el("div", "pm-commit");
-        row.appendChild(el("span", "sha", esc(c.sha.slice(0, 7))));
-        const subj = el("span", "subj"); subj.textContent = c.subject; subj.title = c.subject; row.appendChild(subj);
-        const meta = el("span", "meta"); meta.textContent = c.author + " · " + relTime(c.date); row.appendChild(meta);
-        body.appendChild(row);
+        if (!R) { body.appendChild(el("div", "cr-commit", esc(c.sha.slice(0, 7) + "  " + c.subject))); return; }
+        body.appendChild(R.commitRow(c, {
+          loadFiles: (commit) => vscode.postMessage({ type: "pushCommitFiles", sha: commit.sha }),
+          onOpenFile: (commit, f) => vscode.postMessage({
+            type: "openPushCommitFile", sha: commit.sha, parent: (commit.parents || [])[0],
+            path: f.path, oldPath: f.oldPath, status: f.status,
+          }),
+        }));
       });
-      body.appendChild(el("div", "pm-section-label", "Files changed"));
+      body.appendChild(R ? R.sectionLabel("Files changed") : el("div", "cr-section-label", "Files changed"));
       if (!data.files.length) {
-        body.appendChild(el("div", "pm-empty-note", "No file changes in these commits."));
+        body.appendChild(R ? R.emptyNote("No file changes in these commits.") : el("div", "cr-empty", "No file changes in these commits."));
       } else {
         data.files.forEach((f) => {
-          const st = (f.status || "M").charAt(0).toUpperCase();
-          const row = el("div", "pm-file " + statusClass(st));
-          row.appendChild(el("span", "st", st));
-          const name = f.path.split("/").pop() || f.path;
-          const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
-          const nm = el("span", "name"); nm.textContent = name; row.appendChild(nm);
-          const dd = el("span", "dir");
-          const ddText = document.createElement("bdi");
-          ddText.textContent = dir;
-          dd.appendChild(ddText);
-          row.appendChild(dd);
-          row.title = "Open diff — " + f.path + (f.oldPath ? "  (was " + f.oldPath + ")" : "");
-          if (f.additions > 0 || f.deletions > 0) {
-            const nums = el("span", "nums");
-            if (f.additions > 0) nums.appendChild(el("span", "add", "+" + f.additions));
-            if (f.deletions > 0) nums.appendChild(el("span", "del", "−" + f.deletions));
-            row.appendChild(nums);
-          }
-          // Clicking a committed file opens its diff (base…HEAD) in the editor,
-          // so you can review exactly what's about to be pushed. The modal stays.
-          row.classList.add("clickable");
-          row.addEventListener("click", () =>
-            vscode.postMessage({ type: "openPushFileDiff", path: f.path, oldPath: f.oldPath }));
-          body.appendChild(row);
+          if (!R) { body.appendChild(el("div", "cr-file", esc(f.path))); return; }
+          body.appendChild(R.fileRow(f, {
+            onOpen: (file) => vscode.postMessage({ type: "openPushFileDiff", path: file.path, oldPath: file.oldPath }),
+          }));
         });
       }
       if (!data.canPush && data.reason) {
@@ -8236,6 +8388,12 @@ export class CommitViewProvider
         }
       } else if (msg.type === "pushPreview") {
         openPushModal(msg);
+      } else if (msg.type === "pushCommitFiles") {
+        // A commit in the push review opened: its own files.
+        var item = pushModal && Array.prototype.find.call(
+          pushModal.querySelectorAll(".cr-commit-item"),
+          function (n) { return n.dataset.sha === msg.sha; });
+        if (item && window.GsChangeRows) window.GsChangeRows.setCommitFiles(item, msg.files || null);
       } else if (msg.type === "pushDone") {
         if (msg.ok) closePushModal();
         else pushModalError(msg.error);
@@ -8378,6 +8536,7 @@ export class CommitViewProvider
   }
 
   dispose(): void {
+    this.setPushTarget(undefined);
     for (const d of this.disposables) {
       d.dispose();
     }

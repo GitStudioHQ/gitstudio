@@ -167,6 +167,29 @@ async function main() {
     loader: { ".ttf": "dataurl" },
   });
 
+  // The Worktrees view (webview-ui/worktrees). Its .css import emits
+  // dist/webview/worktrees.css beside the bundle; views/worktreesWebview.ts
+  // links both.
+  const worktreesCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(webviewUiSrc, "worktrees/main.ts")],
+    outfile: path.resolve(__dirname, "dist/webview/worktrees.js"),
+    platform: "browser",
+    format: "iife",
+    loader: { ".ttf": "dataurl" },
+  });
+
+  // The shared commit and file rows (webview-ui/changeRows) as a page global,
+  // for the Changes view's push review — a hand-written page whose script is
+  // a string in the extension host, so it cannot import them.
+  const changeRowsCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(webviewUiSrc, "changeRows/global.ts")],
+    outfile: path.resolve(__dirname, "dist/webview/change-rows.js"),
+    platform: "browser",
+    format: "iife",
+  });
+
   const contexts = [
     extensionCtx,
     webviewCtx,
@@ -176,6 +199,8 @@ async function main() {
     rebaseCtx,
     rebasePlanCtx,
     conflictsCtx,
+    worktreesCtx,
+    changeRowsCtx,
   ];
 
   if (watch) {
