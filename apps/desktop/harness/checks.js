@@ -17550,19 +17550,28 @@
       if (!front || !back || !bar || !row) return c.ok(false, "precondition: a front tab, a back tab, the bars");
       const fs = getComputedStyle(front);
       const bs = getComputedStyle(back);
-      c.eq(fs.backgroundColor, getComputedStyle(bar).backgroundColor, "the front tab wears the top bar's panel colour, so it runs into it");
+      // The owner: no rule on top and no side lines — the tab in front is lit.
       c.ok(bs.backgroundColor === "rgba(0, 0, 0, 0)" || bs.backgroundColor === "transparent", `a back tab sits on the row's ground (${bs.backgroundColor})`);
-      c.ok(fs.backgroundColor !== getComputedStyle(row).backgroundColor, "…which is a different colour from the front tab");
+      c.ok(fs.backgroundColor !== getComputedStyle(row).backgroundColor, "the front tab is filled, a different colour from the row");
+      c.ok(fs.backgroundColor !== getComputedStyle(bar).backgroundColor, "…tinted, not the top bar's plain panel");
       const accent = getComputedStyle(document.body).getPropertyValue("--gs-accent").trim();
-      c.match(fs.boxShadow, /inset/, `the front tab carries the accent rule (${fs.boxShadow})`);
-      c.ok(bs.boxShadow === "none", "a back tab carries none");
+      c.ok(!/inset/.test(fs.boxShadow), `no rule drawn inside the front tab (${fs.boxShadow})`);
+      c.match(fs.boxShadow, /\b\d+(\.\d+)?px -?\d+(\.\d+)?px \d*[1-9]\d*(\.\d+)?px/, "it glows: an outer shadow with a blur");
+      for (const side of ["Top", "Right", "Bottom", "Left"]) {
+        c.ok(parseFloat(fs[`border${side}Width`]) === 0, `no ${side.toLowerCase()} border line on the front tab`);
+      }
+      c.ok(bs.boxShadow === "none", "a back tab carries no glow");
       c.ok(Number(fs.fontWeight) > Number(bs.fontWeight), "the front tab's name is heavier");
-      c.eq(Math.round(front.getBoundingClientRect().bottom), Math.round(row.getBoundingClientRect().bottom), "it covers the row's bottom rule — no line between it and its bar");
+      c.ok(front.getBoundingClientRect().bottom < row.getBoundingClientRect().bottom - 1, "it floats in the row, clear of the row's edge");
       // Contrast, measured.
-      const lum = (rgb) => {
-        const m = /rgba?\(([^)]+)\)/.exec(rgb);
-        if (!m) return 0;
-        const [r, g, b] = m[1].split(",").map((x) => Number(x.trim()) / 255);
+      // color-mix() computes to "color(srgb r g b)" (0–1), plain colours to rgb().
+      const lum = (col) => {
+        let r, g, b;
+        const m = /rgba?\(([^)]+)\)/.exec(col);
+        const n = /color\(srgb ([^)]+)\)/.exec(col);
+        if (m) [r, g, b] = m[1].split(",").map((x) => Number(x.trim()) / 255);
+        else if (n) [r, g, b] = n[1].trim().split(/\s+/).map(Number);
+        else return NaN;
         const lin = (v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
         return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
       };
@@ -17570,6 +17579,7 @@
         const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
         return (x + 0.05) / (y + 0.05);
       };
+      c.ok(!Number.isNaN(lum(fs.backgroundColor)), `the front tab's colour is measurable (${fs.backgroundColor})`);
       const rowBg = getComputedStyle(row).backgroundColor;
       c.ok(ratio(bs.color, rowBg) >= 4.5, `a back tab's name reads on the row (${ratio(bs.color, rowBg).toFixed(2)}:1)`);
       c.ok(ratio(fs.color, fs.backgroundColor) >= 7, `the front tab's name reads strongly (${ratio(fs.color, fs.backgroundColor).toFixed(2)}:1)`);

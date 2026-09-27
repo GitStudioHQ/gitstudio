@@ -13361,11 +13361,11 @@ html.is-mac .repo-tabs { padding-left: 80px; }
   box-sizing: border-box;
   min-width: 120px;
   max-width: 220px;
-  height: 30px;
+  height: 28px;
+  margin-bottom: 4px;
   padding: 0 3px 0 12px;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 8px 8px 0 0;
+  border: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--app-muted);
   font-size: var(--text-sm);
@@ -13373,21 +13373,27 @@ html.is-mac .repo-tabs { padding-left: 80px; }
   line-height: 1;
   cursor: pointer;
   outline: none;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
+              box-shadow var(--dur-2) var(--ease);
 }
 .repo-tab:hover {
   background: color-mix(in srgb, var(--app-hover) 72%, transparent);
   color: var(--vscode-foreground);
 }
+/* The tab in front is lit, not outlined (the owner: no top rule, no side
+   lines): a pill tinted with the accent, glowing softly in it. */
 .repo-tab.is-active {
   z-index: 1;
-  height: 31px;
-  margin-bottom: -1px;
-  background: var(--app-panel);
-  border-color: var(--app-border);
+  background: color-mix(in srgb, var(--gs-accent) 16%, var(--app-panel));
   color: var(--vscode-foreground);
   font-weight: 600;
-  box-shadow: inset 0 2px 0 var(--gs-accent);
+  box-shadow: 0 0 16px -4px color-mix(in srgb, var(--gs-accent) 70%, transparent),
+              0 1px 2px rgba(0, 0, 0, 0.25);
+}
+body.vscode-light .repo-tab.is-active {
+  background: color-mix(in srgb, var(--gs-accent) 11%, var(--app-panel));
+  box-shadow: 0 0 14px -4px color-mix(in srgb, var(--gs-accent) 55%, transparent),
+              0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .repo-tab:focus-visible {
   outline: 2px solid var(--gs-focus-ring);
@@ -13456,8 +13462,8 @@ html.is-mac .repo-tabs { padding-left: 80px; }
 .repo-tab.is-dragging { opacity: 0.5; }
 .repo-tab.drop-before { box-shadow: inset 2px 0 0 var(--gs-accent); }
 .repo-tab.drop-after { box-shadow: inset -2px 0 0 var(--gs-accent); }
-.repo-tab.is-active.drop-before { box-shadow: inset 0 2px 0 var(--gs-accent), inset 2px 0 0 var(--gs-accent); }
-.repo-tab.is-active.drop-after { box-shadow: inset 0 2px 0 var(--gs-accent), inset -2px 0 0 var(--gs-accent); }
+.repo-tab.is-active.drop-before { box-shadow: inset 2px 0 0 var(--gs-accent), 0 0 16px -4px color-mix(in srgb, var(--gs-accent) 70%, transparent); }
+.repo-tab.is-active.drop-after { box-shadow: inset -2px 0 0 var(--gs-accent), 0 0 16px -4px color-mix(in srgb, var(--gs-accent) 70%, transparent); }
 /* On the tabs' own centre line (the row is 36px, a tab is its bottom 30), so
    the + reads as the next tab's place, not as a control floating above. */
 .repo-tabs-add {
