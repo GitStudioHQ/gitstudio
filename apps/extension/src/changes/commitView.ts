@@ -3395,6 +3395,11 @@ export class CommitViewProvider
       color: inherit;
       background: color-mix(in srgb, currentColor 20%, transparent);
     }
+    /* Light+'s ink on its own band over the tint read 3.87:1: deepened, as
+       a search's letters are on the lit row. */
+    body.vscode-light .bm-branch.is-active .bm-ab {
+      color: color-mix(in srgb, var(--gs-fg) 60%, #000000);
+    }
     /* In-flight items keep the normal cursor — the spinner lives IN the item. */
     .bm-action.is-busy, .bm-subaction.is-busy { opacity: 0.8; cursor: default; }
     /* The upstream starts from nothing and grows into the room the name left,
@@ -3463,7 +3468,21 @@ export class CommitViewProvider
     }
     /* The row whose submenu holds the highlight stays lit, more softly. */
     .bm-branch.is-open { background: var(--bm-lit-soft); }
-    .bm-branch.is-open .bm-bmore { color: var(--gs-fg); }
+    /* Its words read on that tint (AA): the quiet ones take full ink, and
+       the coloured ones (the current branch, a search's letters, the
+       counts) lean away from the ground. In their own colours they read
+       2.7 to 4.4:1 on it. */
+    .bm-branch.is-open .bm-bmore,
+    .bm-branch.is-open .bm-bicon,
+    .bm-branch.is-open .bm-bup,
+    .bm-branch.is-open .bm-gone { color: var(--gs-fg); }
+    .bm-branch.is-open.is-current .bm-bname,
+    .bm-branch.is-open.is-current .bm-bicon { color: var(--gs-sel-ink); }
+    .bm-branch.is-open .bm-hl {
+      color: color-mix(in srgb, var(--vscode-list-highlightForeground, var(--gs-accent)) 58%, var(--gs-sel-lift));
+    }
+    .bm-branch.is-open .bm-ab.up { color: color-mix(in srgb, var(--gs-status-added) 55%, var(--gs-sel-lift)); }
+    .bm-branch.is-open .bm-ab.down { color: color-mix(in srgb, var(--gs-status-modified) 55%, var(--gs-sel-lift)); }
     /* A destructive item keeps its colour when highlighted: red on a red tint. */
     .bm-subaction.danger.is-active,
     .action-menu .bm-subaction.danger:focus {
@@ -4167,6 +4186,14 @@ export class CommitViewProvider
     }
     .row.is-file.is-selected { background: var(--sel-fill); }
     .row.is-file.is-selected:hover { background: var(--sel-fill-hover); }
+    /* Its words read on the tint (AA), at rest and under the pointer: the
+       name and the folder lean a little further from the ground (Light+'s
+       folder read 3.7:1), and the status letter keeps its hue, lifted toward
+       white in dark and black in light (Light+'s blue M read 2.75:1). */
+    .row.is-file.is-selected .name,
+    .row.is-file.is-selected .dir { color: color-mix(in srgb, var(--gs-fg) 72%, var(--gs-sel-lift)); }
+    .row.is-file.is-selected.is-deleted .name { opacity: 1; }
+    .row.is-file.is-selected .status { color: color-mix(in srgb, var(--gs-row-accent, var(--gs-fg-muted)) 62%, var(--gs-sel-lift)); }
     body.vscode-high-contrast .row.is-file.is-selected {
       outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
       outline-offset: -1px;
