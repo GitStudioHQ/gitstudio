@@ -262,6 +262,12 @@ body {
   --wt-tone: var(--gs-fg-muted);
   border-style: dashed;
 }
+/* The one badge left on a line too narrow even for it and "+N more". */
+.wt-badge--squeezed {
+  flex: 0 1 auto;
+  min-width: 4ch;
+  display: inline-block;
+}
 .wt-badge--accent { --wt-tone: var(--gs-accent-text); }
 .wt-badge--neutral { --wt-tone: var(--gs-fg); }
 .wt-badge--info { --wt-tone: var(--gs-status-modified); }
@@ -527,6 +533,16 @@ body {
 }
 .gs-tip.show {
   opacity: 1;
+}
+
+/* ---- High contrast: a button is its border, as VS Code's are ------------ */
+.vscode-high-contrast .wt-view .gs-btn:not(.gs-btn--primary) {
+  border-color: var(--vscode-button-border, var(--vscode-contrastBorder, var(--gs-fg)));
+}
+.vscode-high-contrast .wt-view .gs-btn:not(.gs-btn--primary):hover {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--vscode-contrastActiveBorder, var(--gs-accent));
 }
 
 /* ---- High contrast: a row's state is its outline ------------------------ */

@@ -514,8 +514,12 @@ export class WorktreesView {
     if (!l2 || !s.el.isConnected) return;
     l2.querySelector(".wt-badge--more")?.remove();
     const badges = [...l2.querySelectorAll<HTMLElement>(".wt-badge")];
-    for (const b of badges) b.hidden = false;
-    if (l2.clientWidth === 0 || l2.scrollWidth <= l2.clientWidth + 1) return;
+    for (const b of badges) {
+      b.hidden = false;
+      b.classList.remove("wt-badge--squeezed");
+    }
+    const fits = () => l2.scrollWidth <= l2.clientWidth + 1;
+    if (l2.clientWidth === 0 || fits()) return;
     const more = el("span", "wt-badge wt-badge--more");
     more.dataset.badge = "more";
     more.setAttribute("aria-hidden", "true");
@@ -526,8 +530,12 @@ export class WorktreesView {
       hidden.unshift(badges[i]);
       more.textContent = `+${hidden.length} more`;
       more.dataset.tip = hidden.map((h) => h.textContent).join(" · ");
-      if (l2.scrollWidth <= l2.clientWidth + 1) break;
+      if (fits()) return;
     }
+    // Still too wide: the one badge left gives way (its words end in an
+    // ellipsis, whole on hover) so "+N more" is never the thing cut off.
+    if (hidden.length === 0) more.remove();
+    badges[0]?.classList.add("wt-badge--squeezed");
   }
 
   /** The list's width changed: every row's badges are fitted again. */
@@ -583,6 +591,7 @@ export class WorktreesView {
     } else {
       where.append(codicon("git-commit"), el("span", undefined, `No branch — ${headWords(r)}`));
     }
+    where.dataset.tip = where.textContent ?? "";
     strip.appendChild(where);
     const verbs = el("span", "wt-verbs");
     verbs.append(

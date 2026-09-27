@@ -35,7 +35,15 @@
   color: var(--cr-muted);
   padding: 9px 8px 4px;
 }
+.cr-section-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cr-section-count {
+  flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   color: var(--cr-muted);

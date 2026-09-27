@@ -58,6 +58,7 @@ export function statusClass(status: string): string {
 export function sectionLabel(text: string, count?: number): HTMLElement {
   const label = el("div", "cr-section-label");
   label.appendChild(el("span", "cr-section-text", text));
+  label.dataset.tip = text;
   if (count !== undefined) {
     label.appendChild(el("span", "cr-section-count", String(count)));
   }

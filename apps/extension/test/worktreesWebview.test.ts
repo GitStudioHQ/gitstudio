@@ -100,6 +100,24 @@ test("badges are colour AND words: each tone paints, and every one reads at AA o
   }
 });
 
+test("in high contrast a button is its border: Prune, Pull and Push… are drawn as buttons, not bare words", { skip }, async () => {
+  for (const theme of ["hc-dark", "hc-light"] as VsCodeTheme[]) {
+    const page = await open(theme);
+    await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);
+    await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
+    const borders = await page.eval<{ text: string; width: string; color: string }[]>(`Array.prototype.map.call(
+      document.querySelectorAll(".wt-prune, .wt-verb"), function (b) {
+        var cs = getComputedStyle(b);
+        return { text: b.textContent, width: cs.borderTopWidth, color: cs.borderTopColor };
+      })`);
+    assert.equal(borders.length, 3);
+    for (const b of borders) {
+      assert.equal(b.width, "1px", `${theme}: ${b.text}`);
+      assert.notEqual(b.color, "rgba(0, 0, 0, 0)", `${theme}: ${b.text} has a visible border`);
+    }
+  }
+});
+
 test("a status landing later does not move the row: its height is the same before and after", { skip }, async () => {
   const page = await WorktreesPage.open("dark", { width: 300, height: 600 });
   opened.push(page);
@@ -370,6 +388,25 @@ test("badges that don't fit become '+N more' naming them — never a word cut at
   assert.ok(fit.shown.length >= 1 && fit.shown[0] === "This window");
   assert.match(fit.more, /^\+\d more$/);
   assert.ok(fit.tip.includes("to push"), fit.tip);
+  // At a sidebar's narrowest, on every row: nothing past the edge, and a
+  // "+N more" is never the badge that is cut.
+  await page.page.send("Emulation.setDeviceMetricsOverride", { width: 240, height: 800, deviceScaleFactor: 1, mobile: false });
+  await page.send({ type: "rows", rows: [...fixtureRows(), crowded], state: "ok", labels: LABELS });
+  await page.settle(80);
+  const cut = await page.eval<string[]>(`(function () {
+    var out = [];
+    document.querySelectorAll(".wt-line2").forEach(function (l2) {
+      var right = l2.getBoundingClientRect().right;
+      l2.querySelectorAll(".wt-badge").forEach(function (b) {
+        if (b.hidden) return;
+        var r = b.getBoundingClientRect();
+        if (r.right > right + 0.5) out.push(b.textContent + " past the edge");
+        if (b.classList.contains("wt-badge--more") && b.scrollWidth > b.clientWidth + 1) out.push(b.textContent + " cut");
+      });
+    });
+    return out;
+  })()`);
+  assert.deepEqual(cut, []);
   // Wider: they all fit, and the "+N more" goes.
   await page.page.send("Emulation.setDeviceMetricsOverride", { width: 700, height: 500, deviceScaleFactor: 1, mobile: false });
   await page.settle(80);
