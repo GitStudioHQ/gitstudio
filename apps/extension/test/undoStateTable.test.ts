@@ -259,12 +259,15 @@ interface Row {
   undoAsked: string[];
   undoSaid: string[];
   opRecordedUndo: boolean;
+  /** The envelope's own toast(s) for the op, word for word. */
+  opToasts: string[];
   failure?: string;
   extra?: Record<string, unknown>;
 }
 const rows: Row[] = [];
-/** The envelope's toast: "<label> — done." or "<label> did not finish.", with Undo. */
-const UNDO_TOAST = / — done\.$| did not finish\.$/;
+/** The envelope's toast, with Undo: "<label> — done.", "<label> stopped — finish
+ *  it, or Undo." (git is waiting on the user), or "<label> did not finish.". */
+const UNDO_TOAST = / — done\.$| stopped — finish it, or Undo\.$| did not finish\.$/;
 after(() => {
   if (process.env.UNDO_AUDIT_OUT) writeFileSync(process.env.UNDO_AUDIT_OUT, JSON.stringify(rows, null, 2));
 });
@@ -305,6 +308,7 @@ function cell(spec: CellSpec): void {
       undoAsked: [],
       undoSaid: [],
       opRecordedUndo: false,
+      opToasts: [],
     };
     rows.push(row);
     try {
@@ -312,7 +316,8 @@ function cell(spec: CellSpec): void {
       row.before = describe(state(f));
       clear();
       await spec.op(f);
-      row.opRecordedUndo = vscode.__said.some((m) => m.kind === "info" && UNDO_TOAST.test(m.message));
+      row.opToasts = vscode.__said.filter((m) => m.kind === "info" && UNDO_TOAST.test(m.message)).map((m) => m.message);
+      row.opRecordedUndo = row.opToasts.length > 0;
       row.opAsked = asked.map((a) => a.title);
       row.afterOp = describe(state(f)) + ` | op said: ${saidLines().join(" / ") || "-"}`;
       if (spec.between) await spec.between(f);
@@ -639,7 +644,9 @@ cell({
     f.git("checkout", "-q", "main");
   },
   op: (f) => runCommitAction("cherryPick", f.ctx, { sha: sha(f, "feature"), subject: "F" }, f.undoRunner),
-  expect: (f, s) => {
+  expect: (f, s, { row }) => {
+    // Stopped for the user, not done: the toast beside "needs a decision" says so.
+    assert.deepEqual(row.opToasts, [`Cherry-pick ${sha(f, "feature").slice(0, 7)} stopped — finish it, or Undo.`]);
     isAt(f, "refs/heads/main", "M", "main at M");
     assert.deepEqual(s.status, [], "clean");
     assert.equal(s.op, "none", "no cherry-pick left in progress");
@@ -925,7 +932,8 @@ cell({
     answer = yes();
     return branchActions.rebaseCurrentOnto(f.repos, node("main"), noop);
   },
-  expect: (f, s) => {
+  expect: (f, s, { row }) => {
+    assert.deepEqual(row.opToasts, ["Rebase onto main stopped — finish it, or Undo."]);
     assert.equal(s.op, "none", "no rebase left in progress");
     onBranch(f, "feature", "back on feature");
     assert.equal(sha(f, "refs/heads/feature"), f.memo.F, "feature at the ORIGINAL F");
@@ -1027,7 +1035,8 @@ cell({
     f.git("stash", "push", "-q", "-m", "my work");
   },
   op: (f) => stashesView.popStash(f.repos, "stash@{0}", noop),
-  expect: (f, s) => {
+  expect: (f, s, { row }) => {
+    assert.deepEqual(row.opToasts, ["Pop stash@{0} — done."], "a pop that finished is done");
     const workSomewhere = s.stashes.length === 1 || f.read("f.txt") === "stashed work\n";
     assert.ok(workSomewhere, `the stashed work is gone: not in the stash list (${s.stashes.join(";") || "empty"}) and not in f.txt (${JSON.stringify(f.read("f.txt"))})`);
     assert.equal(s.stashes.length, 1, "the stash is back");
@@ -1082,7 +1091,9 @@ cell({
     f.commit("M", "f.txt", "committed since\n");
   },
   op: (f) => stashesView.popStash(f.repos, "stash@{0}", noop),
-  expect: (f, s) => {
+  expect: (f, s, { row }) => {
+    // git applied it with conflicts and kept it: the pop did not finish.
+    assert.deepEqual(row.opToasts, ["Pop stash@{0} did not finish."]);
     assert.deepEqual(s.stashes, ["On main: my work"], "the stash is still there");
     assert.equal(f.read("f.txt"), "committed since\n", "the tree is as before the pop");
     assert.deepEqual(s.status, []);
@@ -1661,7 +1672,8 @@ cell({
     await runMultiCommitAction("cherryPickMany", f.ctx, [f.memo.C, f.memo.B, f.memo.A], manyHost, f.undoRunner);
     assert.equal(state(f).op, "cherry-pick,sequence", "stopped on B, with C still queued");
   },
-  expect: async (f, s, { undoAsked }) => {
+  expect: async (f, s, { undoAsked, row }) => {
+    assert.deepEqual(row.opToasts, ["Cherry-pick 3 commits stopped — finish it, or Undo."], "stopped, not done");
     assert.equal(sha(f, "HEAD"), f.memo.before, "main back where it was");
     assert.equal(s.op, "none", "no cherry-pick left in progress");
     assert.deepEqual(s.status, []);
@@ -1695,12 +1707,37 @@ cell({
     await runMultiCommitAction("revertMany", f.ctx, [f.memo.B, f.memo.A], manyHost, f.undoRunner);
     assert.equal(state(f).op, "revert,sequence", "stopped on B, with A still queued");
   },
-  expect: async (f, s, { undoAsked }) => {
+  expect: async (f, s, { undoAsked, row }) => {
+    assert.deepEqual(row.opToasts, ["Revert 2 commits stopped — finish it, or Undo."], "stopped, not done");
     assert.equal(sha(f, "HEAD"), f.memo.before, "main where it was");
     assert.equal(s.op, "none", "no revert left in progress");
     assert.deepEqual(s.status, []);
     assert.equal((await f.ctx.operation.detect()).kind, "none", "GitStudio's own detector agrees");
     const q = undoAsked.find((a) => a.kind === "confirm");
     assert.match(q && "message" in q ? (q.message ?? "") : "", /The revert in progress is abandoned\./);
+  },
+});
+
+cell({
+  id: "E61",
+  operation: "Drop 2 commits A, C (graph menu for a selection)",
+  state: "on main (base, A on f.txt, B, C, D on f.txt) — replaying D after A is gone stops on f.txt",
+  expected: "the toast says it stopped; Undo abandons the rebase and main is back at D",
+  setup: (f) => {
+    f.memo.A = f.commit("A", "f.txt", "a\n");
+    f.commit("B", "b.txt");
+    f.memo.C = f.commit("C", "c.txt");
+    f.memo.D = f.commit("D", "f.txt", "d\n");
+  },
+  op: async (f) => {
+    answer = yes();
+    await runMultiCommitAction("dropMany", f.ctx, [f.memo.C, f.memo.A], manyHost, f.undoRunner);
+    assert.equal(state(f).op, "rebase", "stopped replaying D");
+  },
+  expect: (f, s, { row }) => {
+    assert.deepEqual(row.opToasts, ["Drop 2 commits stopped — finish it, or Undo."], "stopped, not done");
+    assert.equal(s.op, "none", "no rebase left in progress");
+    onBranch(f, "main", "on main");
+    assert.equal(sha(f, "refs/heads/main"), f.memo.D, "main back at D");
   },
 });

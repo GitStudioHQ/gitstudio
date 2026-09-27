@@ -12,7 +12,8 @@ import { notifyPaused } from "../git/pauseNotice";
 // snapshotted BEFORE the op (git-service's SnapshotProvider: HEAD, every local
 // branch, the stash stack, the uncommitted state), the op runs, and `settle`
 // keeps exactly what it changed. Only an op that changed something is
-// recorded, with a subtle "<label> — done. · [Undo]" toast.
+// recorded, with a subtle "<label> — done. · [Undo]" toast — or, when git was
+// left stopped for the user, "<label> stopped — finish it, or Undo."
 //
 // `gitstudio.undo` undoes the most recent entry by putting back what THAT op
 // changed and nothing else — the plan says so in words first ("Switch back to
@@ -70,7 +71,8 @@ export class UndoLedger {
   /**
    * Capture a pre-op snapshot, run `fn`, then — when the op changed anything —
    * record an undo entry and show the subtle "<label> — done. · [Undo]" toast
-   * ("<label> did not finish." for a result that reports a failure). On
+   * ("<label> stopped — finish it, or Undo." when git was left stopped for the
+   * user; "<label> did not finish." for a result that reports a failure). On
    * failure we STILL record what it changed (so a half-finished op can be
    * undone) and rethrow. `fn`'s return value is passed through untouched.
    */
@@ -113,7 +115,7 @@ export class UndoLedger {
         return result;
       }
       if (await this.settle(repo, snapshot)) {
-        this.offerUndoToast(repo.root, this.record(repo.root, snapshot), reportsFailure(result));
+        this.offerUndoToast(repo.root, this.record(repo.root, snapshot), outcomeOf(snapshot, result));
       }
       return result;
     } catch (err) {
@@ -161,13 +163,19 @@ export class UndoLedger {
 
   /**
    * Say what happened — the operation is done (it read "Undid? <label>", as if
-   * it had been undone) — or, for a result that reports a failure, that it did
-   * not finish; either way its Undo undoes THAT entry (and the newer ones
-   * first), not whatever is newest by the time it is pressed.
+   * it had been undone), it stopped for the user, or it did not finish; either
+   * way its Undo undoes THAT entry (and the newer ones first), not whatever is
+   * newest by the time it is pressed.
    */
-  private offerUndoToast(root: string, entry: UndoEntry, failed: boolean): void {
+  private offerUndoToast(root: string, entry: UndoEntry, outcome: Outcome): void {
+    const text =
+      outcome === "stopped"
+        ? `${entry.label} stopped — finish it, or Undo.`
+        : outcome === "failed"
+          ? `${entry.label} did not finish.`
+          : `${entry.label} — done.`;
     void vscode.window
-      .showInformationMessage(failed ? `${entry.label} did not finish.` : `${entry.label} — done.`, "Undo")
+      .showInformationMessage(text, "Undo")
       .then((choice) => {
         if (choice === "Undo") {
           void this.undoThrough(root, entry);
@@ -488,9 +496,35 @@ export class UndoLedger {
   }
 }
 
-/** A result that ran but says it failed (`{ ok: false }`, as GitResult does). */
+/** What the envelope's toast says an op came to. */
+type Outcome = "done" | "stopped" | "failed";
+
+/**
+ * Read from what settle saw, not only from the result's shape: the doors that
+ * stop for the user answer `true` (a cherry-pick, a revert, several of them)
+ * or a RebaseOutcome, and "— done." sat next to their "stopped on a commit
+ * that needs you". An op that left git stopped in an operation it started — a
+ * conflict, an emptied pick, an `edit` row — stopped. A deferred op (an
+ * interactive rebase handed to a terminal) is MEANT to be under way.
+ */
+export function outcomeOf(snapshot: Snapshot, result: unknown): Outcome {
+  const s = snapshot.scope;
+  if (s?.settled?.op && !s.deferred) return "stopped";
+  if (typeof result === "object" && result !== null && (result as { status?: unknown }).status === "stopped") return "stopped";
+  return reportsFailure(result) ? "failed" : "done";
+}
+
+/**
+ * A result that ran but says it failed: `{ ok: false }` (as GitResult does), a
+ * RebaseOutcome that failed, or a door's Applied whose git run exited non-zero
+ * (a pop that hit conflicts applies the stash and keeps it).
+ */
 function reportsFailure(result: unknown): boolean {
-  return typeof result === "object" && result !== null && (result as { ok?: unknown }).ok === false;
+  if (typeof result !== "object" || result === null) return false;
+  const r = result as { ok?: unknown; status?: unknown; result?: unknown };
+  if (r.ok === false || r.status === "failed") return true;
+  const run = r.result as { code?: unknown } | null | undefined;
+  return typeof run === "object" && run !== null && typeof run.code === "number" && run.code !== 0;
 }
 
 /**

@@ -248,7 +248,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   exist, name *Set Anthropic API Key…* or *Connect AI Provider*, and the
   walkthrough's AI button opens Connect AI Provider.
 - The toast after an operation read "Undid? Amend commit". It says what
-  happened — "Amend commit — done." — with **Undo** beside it.
+  happened — "Amend commit — done." — with **Undo** beside it. One that
+  stopped for you (a conflict, an emptied cherry-pick) says "Cherry-pick 2
+  commits stopped — finish it, or Undo.", and a pop that hit conflicts and
+  kept its stash says it did not finish.
 - **The status bar items have names of their own.** The branch, Commit Graph,
   terminal and blame items each have an id and a name, so the status bar's
   menu lists and hides them one by one; a screen reader hears the branch

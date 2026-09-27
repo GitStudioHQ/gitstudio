@@ -24,7 +24,7 @@ resolver._resolveFilename = function (request: unknown, ...rest: unknown[]) {
 /* eslint-disable @typescript-eslint/no-require-imports -- loaded after the stand-in is in place */
 const vscode = require("vscode") as { __said: { kind: string; message: string }[] };
 const { Arrival } = require("../src/ui/arrival") as typeof import("../src/ui/arrival");
-const { UndoLedger, nothingRan } = require("../src/undo/undoLedger") as typeof import("../src/undo/undoLedger");
+const { UndoLedger, nothingRan, outcomeOf } = require("../src/undo/undoLedger") as typeof import("../src/undo/undoLedger");
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 test("a view resolved AFTER .focus returned is still the one the dialog is shown in", async () => {
@@ -93,4 +93,24 @@ test("nothing ran — a cancel — records no undo entry and offers no Undo; a r
   assert.equal(nothingRan(true), false);
   assert.equal(nothingRan({ ok: false }), false, "a failure ran something: its snapshot stays reachable");
   assert.equal(nothingRan(undefined), false);
+});
+
+test("the toast's word is what the op came to: stopped when settle saw git left waiting, whatever the door answered", () => {
+  const snap = (op?: { kind: "cherry-pick" | "rebase" }, deferred?: object) =>
+    ({ label: "x", headSha: "a".repeat(40), stashSha: null, ref: null, scope: { settled: { ...(op ? { op } : {}) }, ...(deferred ? { deferred } : {}) } }) as never;
+  // The doors that stop answer `true` or a RebaseOutcome — never { ok: false }.
+  assert.equal(outcomeOf(snap({ kind: "cherry-pick" }), true), "stopped");
+  assert.equal(outcomeOf(snap({ kind: "rebase" }), { status: "stopped", reason: "conflict", message: "" }), "stopped");
+  assert.equal(outcomeOf(snap(), { status: "stopped", reason: "conflict", message: "" }), "stopped");
+  // An interactive rebase handed to a terminal is MEANT to be under way.
+  assert.equal(outcomeOf(snap({ kind: "rebase" }, {}), undefined), "done");
+  // Failures, by every shape a door answers with.
+  assert.equal(outcomeOf(snap(), { ok: false }), "failed");
+  assert.equal(outcomeOf(snap(), { status: "failed", message: "no" }), "failed");
+  assert.equal(outcomeOf(snap(), { result: { code: 1, stdout: "", stderr: "CONFLICT" } }), "failed", "a pop that kept its stash");
+  // Done.
+  assert.equal(outcomeOf(snap(), { result: { code: 0, stdout: "", stderr: "" } }), "done");
+  assert.equal(outcomeOf(snap(), { status: "done" }), "done");
+  assert.equal(outcomeOf(snap(), true), "done");
+  assert.equal(outcomeOf(snap(), undefined), "done");
 });
