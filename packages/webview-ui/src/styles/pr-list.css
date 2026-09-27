@@ -1,0 +1,914 @@
+/* The Pull Requests list (pr/prList.ts): header (repository, segments,
+ * search, filters), the rows, and the menus. Shared by the extension's
+ * sidebar view and any host that mounts the same component.
+ *
+ * EVERY rule is scoped under .prl or .prl-layer, so a host that imports this
+ * file into a larger page restyles nothing of its own. Colours are the
+ * shared --gs-* tokens (tokens.css) or --vscode-* names with a fallback.
+ *
+ * TONES are roles, set by the shared vocabulary (engine/forge/pullRequests):
+ * open green, merged purple, closed red, draft muted; a check or a review
+ * that passed green, failed red, is waiting amber. Only GLYPHS take a tone;
+ * the words beside them stay in the text colours, so no sentence depends on
+ * a hue for its contrast.
+ *
+ * NB: never write a star-slash pair inside a comment here: a selector glob
+ * closes the comment early and silently eats the next rule. */
+
+@import "./tokens.css";
+
+.prl,
+.prl-layer {
+  --prl-open: var(--vscode-charts-green, #3fb950);
+  --prl-merged: var(--vscode-charts-purple, #a371f7);
+  --prl-closed: var(--vscode-charts-red, #f85149);
+  --prl-draft: var(--gs-fg-muted);
+  --prl-pending: var(--vscode-charts-yellow, #d29922);
+  --prl-muted: var(--gs-fg-muted);
+  /* Secondary text a step toward the foreground: the theme's muted ink falls
+     under AA on a hovered row. */
+  --prl-fg-2: color-mix(in srgb, var(--gs-fg-muted) 80%, var(--gs-fg));
+  --prl-line: var(--vscode-widget-border, color-mix(in srgb, var(--gs-fg) 16%, transparent));
+  /* Opaque, so the actions strip over a row's end hides the words under it. */
+  --prl-row-hover: color-mix(in srgb, var(--gs-fg) 7%, var(--gs-bg));
+  --prl-focus: var(--vscode-focusBorder, var(--gs-accent));
+  --prl-brand-ink: color-mix(in srgb, var(--gs-brand) 58%, #ffffff);
+  --prl-brand-edge: color-mix(in srgb, var(--gs-brand) 70%, #ffffff);
+  --prl-brand-wash: color-mix(in srgb, var(--gs-brand) 18%, transparent);
+  --prl-sk: color-mix(in srgb, var(--gs-fg) 10%, transparent);
+}
+.vscode-light .prl,
+.vscode-light .prl-layer {
+  /* charts-yellow is 2.9:1 on a light sidebar; pressed toward black it
+     clears 3:1 for a glyph, as the other tones already do. */
+  --prl-pending: color-mix(in srgb, var(--vscode-charts-yellow, #bf8803) 72%, #000000);
+  --prl-row-hover: color-mix(in srgb, var(--gs-fg) 6%, var(--gs-bg));
+  --prl-brand-ink: color-mix(in srgb, var(--gs-brand) 80%, #000000);
+  --prl-brand-edge: var(--gs-brand);
+  --prl-brand-wash: color-mix(in srgb, var(--gs-brand) 11%, transparent);
+  --prl-sk: color-mix(in srgb, var(--gs-fg) 8%, transparent);
+}
+/* High contrast: every edge is the theme's contrast border, and a hovered or
+   chosen thing is outlined in its active border — never a tint alone. */
+.vscode-high-contrast .prl,
+.vscode-high-contrast .prl-layer {
+  --prl-line: var(--vscode-contrastBorder, #6fc3df);
+  --prl-row-hover: transparent;
+  --prl-fg-2: var(--gs-fg);
+  --prl-brand-ink: var(--gs-fg);
+  --prl-brand-edge: var(--vscode-contrastBorder, #6fc3df);
+  --prl-brand-wash: transparent;
+}
+
+.prl [hidden],
+.prl-layer [hidden] {
+  display: none !important;
+}
+.prl *,
+.prl *::before,
+.prl *::after,
+.prl-layer *,
+.prl-layer *::before,
+.prl-layer *::after {
+  box-sizing: border-box;
+}
+.prl .codicon,
+.prl-layer .codicon {
+  line-height: 1;
+  color: inherit;
+}
+
+.prl {
+  position: relative;
+  min-height: 100%;
+  color: var(--gs-fg);
+  background: var(--gs-bg);
+  font-family: var(--gs-font-ui);
+  font-size: 13px;
+  line-height: 1.4;
+  container: prl / inline-size;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Progress: a thin bar while a load runs with the rows still on screen ── */
+.prl-progress {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 2px;
+  margin-bottom: -2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.prl-progress-bar {
+  display: block;
+  width: 32%;
+  height: 100%;
+  background: var(--vscode-progressBar-background, var(--prl-focus));
+  visibility: hidden;
+  transform: translateX(-100%);
+}
+.prl-progress.is-on .prl-progress-bar {
+  visibility: visible;
+  animation: prl-slide 1.1s var(--gs-ease) infinite;
+}
+@keyframes prl-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(320%); }
+}
+
+/* ── The header ─────────────────────────────────────────────────────────── */
+.prl-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 6px;
+  background: var(--gs-bg);
+}
+
+.prl-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--prl-line);
+  border-radius: var(--gs-radius);
+  background: transparent;
+  color: var(--gs-fg);
+  font: 12.5px var(--gs-font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.prl-target:hover { background: var(--prl-row-hover); }
+.prl-target .codicon { font-size: 14px; flex: none; }
+.prl-target-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prl-target-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--prl-fg-2);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prl-target-chevron { color: var(--prl-fg-2); }
+
+/* The segments: cells in fixed proportions (each word's share, and room for
+   its count), so a count arriving never moves a boundary — and each word
+   keeps the start of its cell, the count arriving after it, so no word moves
+   either. All has no count of its own, as on the desktop. */
+.prl-seg {
+  display: grid;
+  grid-template-columns: minmax(0, 66fr) minmax(0, 88fr) minmax(0, 76fr) minmax(0, 40fr);
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--gs-radius);
+  background: color-mix(in srgb, var(--gs-fg) 7%, transparent);
+}
+.vscode-high-contrast .prl-seg {
+  background: transparent;
+  border: 1px solid var(--prl-line);
+}
+.prl-seg-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--prl-fg-2);
+  font: 12px var(--gs-font-ui);
+  cursor: pointer;
+}
+.prl-seg-btn:hover { color: var(--gs-fg); }
+.prl-seg-btn[aria-checked="true"] {
+  background: var(--vscode-editor-background, var(--gs-bg));
+  color: var(--gs-fg);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+.vscode-light .prl-seg-btn[aria-checked="true"] {
+  background: var(--vscode-editor-background, #ffffff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+.vscode-high-contrast .prl-seg-btn[aria-checked="true"] {
+  background: transparent;
+  box-shadow: none;
+  border-color: var(--vscode-contrastActiveBorder, var(--prl-focus));
+}
+.prl-seg-word {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prl-seg-count {
+  flex: none;
+  color: var(--prl-fg-2);
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.prl-seg-btn[aria-checked="true"] .prl-seg-count { color: var(--gs-fg); }
+
+.prl-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.prl-search {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 2px 0 24px;
+  border: 1px solid var(--vscode-input-border, var(--prl-line));
+  border-radius: 4px;
+  background: var(--vscode-input-background, transparent);
+  color: var(--vscode-input-foreground, var(--gs-fg));
+}
+.prl-search:focus-within {
+  border-color: var(--prl-focus);
+  outline: 1px solid var(--prl-focus);
+  outline-offset: -1px;
+}
+.prl-search-icon {
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  color: var(--prl-fg-2);
+  pointer-events: none;
+}
+.prl-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: 12.5px var(--gs-font-ui);
+}
+.prl-search-input::placeholder { color: var(--vscode-input-placeholderForeground, var(--prl-fg-2)); }
+.prl-search-input::-webkit-search-cancel-button,
+.prl-search-input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+
+.prl-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--prl-fg-2);
+  cursor: pointer;
+}
+.prl-icon-btn .codicon { font-size: 14px; }
+.prl-icon-btn:hover {
+  color: var(--gs-fg);
+  background: var(--vscode-toolbar-hoverBackground, color-mix(in srgb, var(--gs-fg) 10%, transparent));
+}
+.vscode-high-contrast .prl-icon-btn:hover {
+  background: transparent;
+  border-color: var(--vscode-contrastActiveBorder, var(--prl-focus));
+  border-style: dashed;
+}
+.prl-search-clear { width: 20px; height: 20px; }
+
+.prl-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--prl-line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--gs-fg);
+  font: 12px var(--gs-font-ui);
+  cursor: pointer;
+}
+.prl-filter-btn:hover { background: var(--prl-row-hover); }
+.prl-filter-btn .codicon { font-size: 14px; color: var(--prl-fg-2); }
+.prl-filter-btn.is-active { border-color: var(--prl-brand-edge); }
+.prl-filter-btn.is-active .codicon { color: var(--prl-brand-ink); }
+.prl-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--vscode-badge-background, var(--gs-chip-bg));
+  color: var(--vscode-badge-foreground, var(--gs-chip-fg));
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.prl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.prl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  height: 20px;
+  padding: 0 1px 0 8px;
+  border: 1px solid var(--prl-brand-edge);
+  border-radius: 10px;
+  background: var(--prl-brand-wash);
+  color: var(--gs-fg);
+  font-size: 11.5px;
+}
+.prl-chip-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prl-chip-x { width: 16px; height: 16px; border-radius: 8px; }
+.prl-chip-x .codicon { font-size: 12px; }
+.prl-link {
+  height: 20px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--vscode-textLink-foreground, var(--gs-link));
+  font: 11.5px var(--gs-font-ui);
+  cursor: pointer;
+}
+.prl-link:hover { text-decoration: underline; }
+
+/* ── Keyboard focus: the theme's focus ring, everywhere ─────────────────── */
+.prl button:focus-visible,
+.prl-layer button:focus-visible,
+.prl-layer input:focus-visible {
+  outline: 1px solid var(--prl-focus);
+  outline-offset: -1px;
+}
+
+/* ── Messages: a whole view with nothing to list, an empty segment ─────── */
+.prl-message,
+.prl-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 16px 12px;
+  text-align: center;
+}
+.prl-message-icon,
+.prl-empty-icon {
+  display: inline-flex;
+  color: var(--prl-tone, var(--prl-fg-2));
+}
+.prl-message-icon .codicon,
+.prl-empty-icon .codicon { font-size: 22px; }
+.prl-message-body,
+.prl-empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: 280px;
+}
+.prl-message-title,
+.prl-empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.prl-message-detail,
+.prl-empty-detail {
+  color: var(--prl-fg-2);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.prl-message-buttons,
+.prl-empty-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* A notice over rows that are still worth reading. */
+.prl-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 8px 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--prl-line);
+  border-radius: var(--gs-radius);
+  background: var(--gs-surface);
+  font-size: 12px;
+}
+.prl-notice-icon {
+  display: inline-flex;
+  padding-top: 1px;
+  color: var(--prl-tone, var(--prl-fg-2));
+}
+.prl-notice-icon .codicon { font-size: 14px; }
+.prl-notice-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.prl-notice-title { line-height: 1.4; overflow-wrap: anywhere; }
+.prl-notice-detail { color: var(--prl-fg-2); line-height: 1.4; overflow-wrap: anywhere; }
+.prl-notice-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+
+.prl .prl-btn {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  gap: 5px;
+}
+.prl .prl-btn .codicon { font-size: 14px; }
+.vscode-high-contrast .prl .prl-btn { border-color: var(--vscode-contrastBorder, #6fc3df); }
+
+.prl .tone-info { --prl-tone: var(--prl-fg-2); }
+.prl .tone-warning { --prl-tone: var(--vscode-editorWarning-foreground, var(--prl-pending)); }
+.prl .tone-error { --prl-tone: var(--vscode-errorForeground, var(--prl-closed)); }
+.prl .tone-open { --prl-tone: var(--prl-open); }
+.prl .tone-merged { --prl-tone: var(--prl-merged); }
+.prl .tone-closed { --prl-tone: var(--prl-closed); }
+.prl .tone-draft { --prl-tone: var(--prl-draft); }
+.prl .tone-success { --prl-tone: var(--prl-open); }
+.prl .tone-failure { --prl-tone: var(--prl-closed); }
+.prl .tone-pending { --prl-tone: var(--prl-pending); }
+.prl .tone-muted { --prl-tone: var(--prl-fg-2); }
+
+/* ── The rows ───────────────────────────────────────────────────────────── */
+.prl-list {
+  margin: 0;
+  padding: 0 4px 4px;
+  list-style: none;
+}
+.prl-row {
+  position: relative;
+  border-radius: var(--gs-radius-sm);
+}
+/* Three lines on one grid: the lead glyph beside the title, and every line
+   under the title starting where the title starts. */
+.prl-row-main {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "lead title age"
+    ". meta meta"
+    ". status status";
+  column-gap: 7px;
+  row-gap: 2px;
+  width: 100%;
+  padding: 5px 8px 6px;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.prl-row:hover .prl-row-main,
+.prl-row:focus-within .prl-row-main {
+  background: var(--prl-row-hover);
+}
+.vscode-high-contrast .prl-row:hover .prl-row-main {
+  border-color: var(--vscode-contrastActiveBorder, var(--prl-focus));
+  border-style: dashed;
+}
+.prl .prl-row-main:focus-visible {
+  outline: 1px solid var(--prl-focus);
+  outline-offset: -1px;
+}
+.prl-lead {
+  grid-area: lead;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  color: var(--prl-tone);
+}
+.prl-lead .codicon { font-size: 16px; }
+.prl-title {
+  grid-area: title;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prl-meta {
+  grid-area: meta;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--prl-fg-2);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.prl-num { flex: none; font-variant-numeric: tabular-nums; }
+/* Who wrote it keeps their name up to a share of the line; the branch gives
+   way first, its head before its base. */
+.prl-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+}
+.prl-author { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.prl-dot { flex: none; opacity: 0.8; }
+.prl-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 32px;
+  overflow: hidden;
+}
+.prl-branch-fork { flex: none; font-size: 12px; margin-right: 1px; }
+.prl-branch-head {
+  flex: 0 1 auto;
+  min-width: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prl-branch-arrow { flex: none; font-size: 12px; }
+.prl-branch-base {
+  flex: 0 0 auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prl-corner {
+  grid-area: age;
+  justify-self: end;
+  align-self: center;
+}
+.prl-age {
+  color: var(--prl-fg-2);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+/* The branch checked out here: a line of the brand down its left edge. */
+.prl-row.is-checked-out::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--prl-brand-edge);
+}
+/* One line: an item that does not fit wraps onto a second line that is
+   never shown, so it is left out whole instead of cut in half. */
+.prl-status {
+  grid-area: status;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 10px;
+  min-width: 0;
+  height: 16px;
+  margin-top: 1px;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--prl-fg-2);
+}
+.prl-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.prl .prl-stat-icon { font-size: 13px; color: var(--prl-tone); }
+.prl-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid var(--prl-line);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+.prl-pill.is-current {
+  border-color: var(--prl-brand-edge);
+  background: var(--prl-brand-wash);
+  color: var(--prl-brand-ink);
+  font-weight: 600;
+}
+.prl-label {
+  display: inline-block;
+  max-width: 140px;
+  height: 16px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--prl-label, #888888) 40%, var(--prl-line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--prl-label, #888888) 18%, transparent);
+  color: color-mix(in srgb, var(--prl-label, #888888) 45%, var(--gs-fg) 55%);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vscode-light .prl-label {
+  border-color: color-mix(in srgb, var(--prl-label, #888888) 55%, var(--prl-line) 45%);
+  background: color-mix(in srgb, var(--prl-label, #888888) 20%, transparent);
+  color: color-mix(in srgb, var(--prl-label, #888888) 45%, #000000 55%);
+}
+.vscode-high-contrast .prl-label {
+  border-color: var(--prl-label, var(--prl-line));
+  background: transparent;
+  color: var(--gs-fg);
+}
+
+/* A row's own actions: over its right end, on hover and on focus. */
+.prl-row-actions {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  display: flex;
+  gap: 1px;
+  padding-left: 14px;
+  background: linear-gradient(to right, transparent, var(--prl-row-hover) 12px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--gs-motion-fast) var(--gs-ease);
+}
+.vscode-high-contrast .prl-row-actions { background: var(--gs-bg); }
+.prl-row:hover .prl-row-actions,
+.prl-row:focus-within .prl-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── The avatar: GitHub's picture, or the person's initial on their hue ── */
+.prl-avatar {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--prl-avatar, 14px);
+  height: var(--prl-avatar, 14px);
+  border-radius: 50%;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.prl-avatar-initial {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsl(var(--prl-hue, 220) 42% 44%);
+  color: #ffffff;
+  font-size: calc(var(--prl-avatar, 14px) * 0.62);
+  font-weight: 600;
+  line-height: 1;
+}
+.prl-avatar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.prl-avatar.is-broken .prl-avatar-img { display: none; }
+
+/* ── Loading: rows of the same shape as the real ones ───────────────────── */
+.prl-row-skeleton .prl-row-main { cursor: default; }
+.prl-row-skeleton:hover .prl-row-main { background: transparent; }
+.prl-sk {
+  display: block;
+  height: 10px;
+  align-self: center;
+  border-radius: 3px;
+  background: var(--prl-sk);
+  animation: prl-pulse 1.4s ease-in-out infinite;
+}
+/* Each bar sits in the line its text will take, at that line's height, so
+   the rows that replace them land where the bars were. */
+.prl-sk-lead { grid-area: lead; width: 14px; height: 14px; border-radius: 50%; justify-self: center; }
+.prl-sk-title { grid-area: title; width: 72%; height: 11px; margin: 3.5px 0; }
+.prl-sk-age { grid-area: age; width: 20px; }
+.prl-sk-meta { grid-area: meta; width: 58%; margin: 3px 0; }
+.prl-sk-status { grid-area: status; width: 36%; margin: 4px 0 3px; height: 9px; }
+.prl-row-skeleton:nth-child(2) .prl-sk-title { width: 58%; }
+.prl-row-skeleton:nth-child(3) .prl-sk-title { width: 80%; }
+.prl-row-skeleton:nth-child(4) .prl-sk-title { width: 46%; }
+.prl-row-skeleton:nth-child(5) .prl-sk-title { width: 66%; }
+@keyframes prl-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ── The end of the list ────────────────────────────────────────────────── */
+.prl-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 12px 12px;
+  color: var(--prl-fg-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Narrow: what gives way first ───────────────────────────────────────── */
+/* Under 260px the counts go (their words stay in each segment's name for a
+   screen reader and its title), and so the cells can take their words'
+   own widths: with no count to arrive, nothing moves. A row keeps its
+   author's picture and gives up the name; the checks keep their glyph and
+   give up the word (both still in the row's accessible name). */
+@container prl (max-width: 260px) {
+  .prl-seg { grid-template-columns: repeat(4, auto); }
+  .prl-seg-count { display: none; }
+  .prl-seg-btn { justify-content: center; padding: 0 4px; }
+  .prl-author { display: none; }
+  .prl-status .prl-stat.is-ci .prl-stat-word { display: none; }
+}
+@container prl (max-width: 210px) {
+  .prl-filter-word { display: none; }
+  .prl-target-detail { display: none; }
+}
+
+/* ── Menus ──────────────────────────────────────────────────────────────── */
+.prl-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  font-family: var(--gs-font-ui);
+}
+.prl-menu {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-menu-border, var(--prl-line));
+  border-radius: var(--gs-radius);
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background, var(--gs-bg)));
+  color: var(--vscode-menu-foreground, var(--gs-fg));
+  box-shadow: 0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+  font-size: 12.5px;
+  pointer-events: auto;
+}
+.prl-menu-items { display: flex; flex-direction: column; }
+.prl-menu-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 7px;
+  width: 100%;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.prl-menu-item:hover,
+.prl-menu-item:focus {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, var(--prl-row-hover)));
+  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, inherit));
+  outline: none;
+}
+.vscode-high-contrast .prl-menu-item:hover,
+.vscode-high-contrast .prl-menu-item:focus {
+  background: transparent;
+  border-color: var(--vscode-contrastActiveBorder, var(--prl-focus));
+  border-style: dashed;
+}
+.prl-menu-item[disabled] { opacity: 0.5; cursor: default; }
+.prl-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+}
+.prl-menu-icon .codicon { font-size: 14px; }
+.prl-menu-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prl-menu-detail {
+  max-width: 130px;
+  color: var(--gs-menu-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prl-menu-item:hover .prl-menu-detail,
+.prl-menu-item:focus .prl-menu-detail { color: inherit; opacity: 0.85; }
+.prl-menu-item.is-stacked {
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.prl-menu-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.prl-menu-item.is-stacked .prl-menu-detail { max-width: none; }
+.prl-menu-chevron,
+.prl-menu-check { font-size: 13px; }
+.prl-menu-back { color: var(--gs-menu-muted); }
+.prl-menu-heading {
+  padding: 2px 8px 4px;
+  color: var(--gs-menu-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.prl-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--vscode-menu-separatorBackground, var(--prl-line));
+}
+.prl-menu-filter {
+  width: 100%;
+  height: 24px;
+  margin: 0 0 4px;
+  padding: 0 8px;
+  border: 1px solid var(--vscode-input-border, var(--prl-line));
+  border-radius: 4px;
+  background: var(--vscode-input-background, transparent);
+  color: var(--vscode-input-foreground, var(--gs-fg));
+  font: 12px var(--gs-font-ui);
+}
+.prl-menu-filter:focus { outline: 1px solid var(--prl-focus); outline-offset: -1px; border-color: var(--prl-focus); }
+.prl-menu-empty {
+  padding: 6px 8px;
+  color: var(--gs-menu-muted);
+}
+.prl-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--prl-label, #888888);
+  border: 1px solid color-mix(in srgb, var(--prl-label, #888888) 60%, var(--gs-fg));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prl-progress.is-on .prl-progress-bar { animation: none; transform: none; width: 100%; opacity: 0.6; }
+  .prl-sk { animation: none; }
+  .prl-row-actions { transition: none; }
+}
