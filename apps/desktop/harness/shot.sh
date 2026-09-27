@@ -20,7 +20,10 @@
 # GS_SHOT_SIZE=880,700 shoots a narrower (or smaller) window than 1600x1000.
 #
 # A 4th argument is appended to the query string, for the scene switches the
-# shim reads directly (e.g. "staging=checkboxes", "many=1", "ask=1").
+# shim reads directly (e.g. "staging=checkboxes", "many=1", "ask=1"). Pass
+# "still=1" when a step CLICKS into the state you want to see: the compositor
+# does not follow the virtual clock, so a transition the click started is shot
+# at its first frame (a toggle switched on photographs as off).
 # Examples:
 #   ./shot.sh issues out/issues.png
 #   ./shot.sh 'issues~open31' out/detail.png light

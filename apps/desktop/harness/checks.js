@@ -236,6 +236,156 @@
     c.eq(activeTabRoot(), GS_DEV_ROOT, "and then the tab main put in front comes to the front");
   };
 
+  // ── Selection is never a line ─────────────────────────────────────────────
+  //
+  // The owner's rule: a selected, active or current thing is never marked with
+  // a LINE — no bar down its left or right edge, no rule on top, no underline,
+  // no accent outline. ("disgusting", "trash".) It is marked with a fill tinted
+  // with the accent, and a pill or tab also glows softly in it
+  // (.repo-tab.is-active is the pattern). These read it back by COMPUTED style.
+
+  /** The states that mean "this one": a class, or what aria says. */
+  const SELECTED_STATE =
+    '.active, .is-active, .is-selected, .is-sel, .selected, .is-current, .current, .is-on, .row-landed, ' +
+    '[aria-selected="true"], [aria-current]:not([aria-current="false"]), [aria-pressed="true"]';
+  const STATE_CLASS = /^(active|is-active|is-selected|is-sel|selected|is-current|current|is-on|row-landed)$/;
+  /**
+   * A computed colour as {r,g,b,a} in 0–1. Reads rgb()/rgba() and the
+   * "color(srgb …)" a color-mix() computes to — which an rgb() parser reads as
+   * black. Anything else (oklab(), a keyword) is null.
+   */
+  const rgbaOf = (col) => {
+    const al = (s) => (s === undefined ? 1 : s.endsWith("%") ? parseFloat(s) / 100 : Number(s));
+    const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)/.exec(col || "");
+    if (m) return { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255, a: al(m[4]) };
+    const n = /color\(srgb\s+([-\d.e]+)\s+([-\d.e]+)\s+([-\d.e]+)(?:\s*\/\s*([\d.]+%?))?\s*\)/.exec(col || "");
+    if (n) return { r: +n[1], g: +n[2], b: +n[3], a: al(n[4]) };
+    return null;
+  };
+  /** Painted at all: an unreadable colour counts, so it cannot hide a line. */
+  const paints = (col) => {
+    const p = rgbaOf(col);
+    return p ? p.a > 0.04 : !/^(transparent|none)$/.test(col || "");
+  };
+  /** Has a hue — the accent, a status colour — rather than a grey. */
+  const hued = (col) => {
+    const p = rgbaOf(col);
+    if (!p) return paints(col);
+    return p.a > 0.04 && Math.max(p.r, p.g, p.b) - Math.min(p.r, p.g, p.b) > 0.08;
+  };
+  const sameColour = (a, b) => {
+    const p = rgbaOf(a), q = rgbaOf(b);
+    if (!p || !q) return a === b;
+    return Math.abs(p.r - q.r) + Math.abs(p.g - q.g) + Math.abs(p.b - q.b) < 0.06 && Math.abs(p.a - q.a) < 0.08;
+  };
+  /** A computed box-shadow list as [{inset, x, y, blur, spread, colour}]. */
+  const shadowsOf = (v) => {
+    if (!v || v === "none") return [];
+    const parts = [];
+    let depth = 0, cur = "";
+    for (const ch of v) {
+      if (ch === "(") depth++;
+      if (ch === ")") depth--;
+      if (ch === "," && depth === 0) { parts.push(cur); cur = ""; } else cur += ch;
+    }
+    parts.push(cur);
+    return parts.map((p) => {
+      const colour = (/(rgba?\([^)]*\)|color\([^)]*\)|oklab\([^)]*\)|oklch\([^)]*\)|lab\([^)]*\)|lch\([^)]*\))/.exec(p) || [""])[0];
+      const lens = p.replace(colour, "").match(/-?[\d.]+px/g) || [];
+      const [x, y, blur, spread] = [0, 1, 2, 3].map((i) => parseFloat(lens[i] || "0"));
+      return { inset: /\binset\b/.test(p), x, y, blur, spread, colour };
+    });
+  };
+  /**
+   * Every line a selected element (or one of its ::before/::after) draws that
+   * an unselected sibling of its kind does not: returns a list of phrases.
+   */
+  const selectionLines = (el, sib) => {
+    const out = [];
+    const cs = getComputedStyle(el);
+    const ss = sib ? getComputedStyle(sib) : null;
+    const focused = el.matches(":focus-visible");
+    // A bar: an inset shadow pushed to one side, hard-edged. Any colour but a
+    // neutral 1px sheen (the "lit from above" bevel raised surfaces wear).
+    const sibShadows = ss ? shadowsOf(ss.boxShadow) : [];
+    for (const s of shadowsOf(cs.boxShadow)) {
+      if (!paints(s.colour)) continue;
+      const offset = Math.max(Math.abs(s.x), Math.abs(s.y));
+      const hard = s.blur <= 1;
+      const had = sibShadows.some((t) => t.inset === s.inset && t.x === s.x && t.y === s.y && t.spread === s.spread && sameColour(t.colour, s.colour));
+      if (s.inset && offset > 0 && hard) {
+        if (!hued(s.colour) && offset <= 1 && !s.spread) continue;
+        if (!had) out.push(`an inset bar (box-shadow ${s.x}px ${s.y}px, ${s.colour})`);
+      } else if (s.inset && !offset && s.spread > 0 && hard && !focused && !had) {
+        out.push(`an inset outline ring (${s.spread}px, ${s.colour})`);
+      } else if (!s.inset && s.blur === 0 && !focused && !had && (offset > 0 || s.spread > 0)) {
+        out.push(`a hard outer line (box-shadow ${s.x}px ${s.y}px 0 ${s.spread}px, ${s.colour})`);
+      }
+    }
+    // A border side: one the sibling does not have, wider than the sibling's,
+    // or in a colour (a hue) the sibling's is not. A grey 1px side the sibling
+    // lacks is a segmented group's divider (`.x + .x { border-left }` — the
+    // first button has none), not a mark.
+    for (const side of ["Top", "Right", "Bottom", "Left"]) {
+      const w = parseFloat(cs[`border${side}Width`]) || 0;
+      const col = cs[`border${side}Color`];
+      if (!w || /none|hidden/.test(cs[`border${side}Style`]) || !paints(col)) continue;
+      const sw = ss ? parseFloat(ss[`border${side}Width`]) || 0 : 0;
+      const sv = ss && sw > 0 && !/none|hidden/.test(ss[`border${side}Style`]) && paints(ss[`border${side}Color`]);
+      if (!sv) {
+        if (hued(col) || w > 1) out.push(`a ${side.toLowerCase()} border (${w}px ${col}) its sibling does not have`);
+      } else if (w > sw + 0.5) {
+        out.push(`a ${side.toLowerCase()} border ${w}px wide where its sibling's is ${sw}px`);
+      } else if (hued(col) && !sameColour(col, ss[`border${side}Color`])) {
+        out.push(`a ${side.toLowerCase()} border in ${col} where its sibling's is ${ss[`border${side}Color`]}`);
+      }
+    }
+    // A strip: a ::before/::after at most 4px across one axis, painted.
+    const strip = (node, pe) => {
+      if (!node) return null;
+      const p = getComputedStyle(node, pe);
+      if (!p.content || p.content === "none" || p.content === "normal" || p.display === "none" || p.visibility === "hidden") return null;
+      const w = parseFloat(p.width), h = parseFloat(p.height);
+      if (Number.isNaN(w) || Number.isNaN(h)) return null;
+      if (!((w <= 4 && h > 4) || (h <= 4 && w > 4))) return null;
+      const bg = paints(p.backgroundColor) || /gradient/.test(p.backgroundImage);
+      const bd = ["Top", "Right", "Bottom", "Left"].some((s) => (parseFloat(p[`border${s}Width`]) || 0) > 0 && paints(p[`border${s}Color`]));
+      if (!bg && !bd) return null;
+      return `${w}×${h} ${p.backgroundColor}`;
+    };
+    for (const pe of ["::before", "::after"]) {
+      const mine = strip(el, pe);
+      if (mine && !strip(sib, pe)) out.push(`a ${pe} strip (${mine})`);
+    }
+    return out;
+  };
+  /** An unselected element of the same kind: its sibling if it has one. */
+  const unselectedSibling = (el) => {
+    const kind = [...el.classList].find((k) => !STATE_CLASS.test(k));
+    const same = (n) =>
+      n !== el && n.tagName === el.tagName && (!kind || n.classList.contains(kind)) &&
+      !n.matches(SELECTED_STATE) && n.getClientRects().length > 0;
+    const near = el.parentElement ? [...el.parentElement.children].find(same) : null;
+    if (near) return near;
+    if (!kind) return null;
+    return $$(`${el.tagName.toLowerCase()}.${CSS.escape(kind)}`).find(same) || null;
+  };
+  /**
+   * Surfaces this sweep does not own: Monaco's own chrome (the editor's current
+   * line is Monaco's), and the shared diff/merge views from packages/webview-ui
+   * (the `jb-*` roots diffView.ts, mergeView.ts and mergeShell.ts build) — the
+   * merge editor's bands, columns and ribbons are signed off, and that package
+   * is swept with the extension.
+   */
+  const NOT_OURS =
+    ".monaco-editor, .monaco-diff-editor, .jb-app, .jb-diff-grid, .jb-merge-grid, .jb-toolbar, .jb-bottom-bar, .jb-legend";
+  /** A short name for an element in a failure message. */
+  const describeEl = (el) => {
+    const cls = [...el.classList].slice(0, 3).join(".");
+    const label = (el.getAttribute("aria-label") || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 28);
+    return `${el.tagName.toLowerCase()}${cls ? "." + cls : ""}${label ? ` "${label}"` : ""}`;
+  };
+
   window.__GS_CHECKS = {
     // ── the count badge reports what is on screen ────────────────────────────
     "count-badge-filtered": (f) => {
@@ -292,29 +442,42 @@
       c.eq(idx, 0, "index of the selected row");
       c.match(rows[0]?.textContent, /Search GitHub for/, "first row");
     },
+    /**
+     * The highlighted row IS the button Enter presses, so it has to read as
+     * one — on its FILL alone. It used to lean on an accent bar down its left
+     * edge, which the owner called trash; the bar is gone, so the fill has to
+     * stand clear of the card by itself (composited over the card: the tint is
+     * mixed into transparent), with no inset bar and no border the other rows
+     * do not have.
+     */
     "palette-selection-visible": (f) => {
       const c = check(f);
+      noAnimation();
       const sel = $(".cmdk-row.is-selected");
-      c.ok(!!sel, "a row is selected");
-      if (!sel) return;
-      const parse = (rgb) => (rgb.match(/\d+/g) || []).slice(0, 3).map(Number);
-      const lum = (rgb) => {
-        const [r, g, b] = parse(rgb).map((v) => {
-          const x = v / 255;
-          return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
-        });
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const other = $(".cmdk-row:not(.is-selected)");
+      c.ok(!!sel && !!other, "a row is selected, and another is not");
+      if (!sel || !other) return;
+      const card = getComputedStyle($(".cmdk-card")).backgroundColor;
+      const under = rgbaOf(card);
+      const over = rgbaOf(getComputedStyle(sel).backgroundColor);
+      c.ok(!!under && !!over, `both colours are measurable (${card} / ${getComputedStyle(sel).backgroundColor})`);
+      if (!under || !over) return;
+      const mix = (k) => over[k] * over.a + under[k] * (1 - over.a);
+      const lum = (r, g, b) => {
+        const lin = (v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
       };
-      const rowBg = getComputedStyle(sel).backgroundColor;
-      const panelBg = getComputedStyle($(".cmdk-card")).backgroundColor;
-      const a = lum(rowBg) + 0.05;
-      const b = lum(panelBg) + 0.05;
+      const a = lum(mix("r"), mix("g"), mix("b")) + 0.05;
+      const b = lum(under.r, under.g, under.b) + 0.05;
       const ratio = a > b ? a / b : b / a;
-      const bar = getComputedStyle(sel).boxShadow;
-      c.ok(
-        ratio >= 1.35 || /inset/.test(bar),
-        `selection must be visible: ${ratio.toFixed(2)}:1 against the panel and no accent bar`,
-      );
+      c.ok(ratio >= 1.35, `the fill alone stands clear of the card: ${ratio.toFixed(2)}:1 (needs 1.35; ${getComputedStyle(sel).backgroundColor} on ${card})`);
+      const cs = getComputedStyle(sel);
+      const os = getComputedStyle(other);
+      c.ok(!shadowsOf(cs.boxShadow).some((x) => x.inset), `no bar or ring drawn inside the row (${cs.boxShadow})`);
+      for (const side of ["Top", "Right", "Bottom", "Left"]) {
+        c.eq(cs[`border${side}Width`], os[`border${side}Width`], `its ${side.toLowerCase()} border is the other rows' width`);
+      }
+      c.eq(selectionLines(sel, other).join("; "), "", "it is marked with no line of any kind");
     },
     "palette-min-chars": (f) => {
       const groups = $$(".cmdk-group").map((g) => g.textContent);
@@ -7890,7 +8053,14 @@
         c.ok(strip.clientHeight >= 34, `the strip keeps its height (${strip.clientHeight}px)`);
         c.ok(strip.clientHeight >= strip.scrollHeight, "nothing in the strip is clipped");
         const active = strip.querySelector(".gh-subtab.active");
-        c.ok(!!active && active.getBoundingClientRect().bottom <= strip.getBoundingClientRect().bottom + 1, "the active tab's underline is inside the strip");
+        c.ok(!!active && active.getBoundingClientRect().bottom <= strip.getBoundingClientRect().bottom + 1, "the active tab is inside the strip");
+        // …and it is LIT, not underlined (the owner: selection is never a line).
+        const idle = strip.querySelector(".gh-subtab:not(.active)");
+        if (active && idle) {
+          const as = getComputedStyle(active);
+          c.ok(as.backgroundColor !== getComputedStyle(idle).backgroundColor, `the active tab is filled (${as.backgroundColor})`);
+          c.eq(as.borderBottomWidth, getComputedStyle(idle).borderBottomWidth, "…with no underline the other tabs do not have");
+        }
       }
       const body = $(".pr-threads-body");
       const cards = $$(".pr-threads-body > .pr-thread");
@@ -18733,6 +18903,53 @@
       const back = calls().length;
       await settle(9500);
       c.ok(calls().length > back, `back in front, it polls again (${channel}: ${back} → ${calls().length})`);
+    },
+    /**
+     * THE OWNER'S RULE, swept: nothing selected, active or current is marked
+     * with a line. Every element in the scene wearing a selected state — a
+     * class (.active, .is-active, .is-selected, .is-sel, .selected,
+     * .is-current, .current, .is-on, .row-landed) or aria (aria-selected,
+     * aria-current, aria-pressed) — is compared by COMPUTED style with an
+     * unselected sibling of its kind, and fails on an inset box-shadow bar, an
+     * inset or hard outer outline the sibling does not wear, a border side the
+     * sibling does not have (or has in another hue), or a ::before/::after
+     * strip. Drag and drop markers, focus rings and the shared diff/merge
+     * surfaces are not selection and are not measured.
+     *
+     * `arg` names what the scene exists to reach (".cmdk-row.is-selected"):
+     * it must be among the elements measured, so a scene that stopped reaching
+     * its surface fails instead of passing over nothing.
+     *
+     * Light DOM only: the graph, rail, commit details and rebase view are Lit
+     * components from packages/webview-ui, shared with the extension and
+     * swept with it.
+     */
+    "no-selection-is-drawn-as-a-line": async (f) => {
+      const c = check(f);
+      await settle(400);
+      noAnimation();
+      await settle(120);
+      const marked = $$(SELECTED_STATE).filter((el) => el.getClientRects().length > 0 && !el.closest(NOT_OURS));
+      c.ok(marked.length > 0, "precondition: something in the scene is selected");
+      const want = window.__GS_ARG;
+      if (want) c.ok(marked.some((el) => el.matches(want)), `precondition: the scene reaches ${want} (measured: ${[...new Set(marked.map((el) => el.className.split(" ")[0]))].join(", ")})`);
+      for (const el of marked) {
+        for (const line of selectionLines(el, unselectedSibling(el))) {
+          c.ok(false, `${describeEl(el)} is marked with ${line}`);
+        }
+      }
+      // With the line gone, the surface the scene exists for must still be
+      // unmistakable: filled, and filled differently from the one beside it.
+      const ground = (n) => {
+        const cs = getComputedStyle(n);
+        return `${cs.backgroundColor} ${cs.backgroundImage}`;
+      };
+      for (const el of want ? marked.filter((n) => n.matches(want)) : []) {
+        const cs = getComputedStyle(el);
+        c.ok(paints(cs.backgroundColor) || /gradient/.test(cs.backgroundImage), `${describeEl(el)} is filled (${cs.backgroundColor})`);
+        const sib = unselectedSibling(el);
+        if (sib) c.ok(ground(el) !== ground(sib), `${describeEl(el)} is filled differently from ${describeEl(sib)}`);
+      }
     },
   };
 })();
