@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2 — 2026-09-28
+
+- **Merge Studio reads in Cursor.** Cursor's own dark theme draws its focus colour at 15% white, and Merge Studio's accent was that colour, so a selected row, a pressed toggle and a lit control were nearly invisible there. Where a theme's focus colour is see-through, the accent is now that theme's own button colour; every other theme looks as it did.
+- **The pressed Synchronized scrolling toggle is lit, not ringed.** Pressed, it wore a ring the merge editor's other buttons don't have; it now shows its fill and a soft glow. High Contrast keeps VS Code's own ring.
+
 ## 1.0.1 — 2026-09-25
 
 - The README shows its VS Marketplace version, Sponsor and Buy me a coffee badges again. The 1.0.0 README had lost them.

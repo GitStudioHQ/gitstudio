@@ -4,7 +4,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.15.0] - 2026-09-28
 
 ### Added
 - **Stashes live in the Changes view, file by file.** Under your changes, a
@@ -40,11 +40,13 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Staged or Unstaged alone. Drag a stash's files (or the ones you've
   selected, or a folder of them) there to move them out of the stash — Alt
   or Option copies them. Drag changed files — one, your selection, or a
-  folder — onto the **Stashes** header to stash exactly those. The place
+  folder — anywhere onto the **Stashes** group to stash exactly those: the
+  whole group lights up, never one stash as if the files were joining it
+  (git can't add to a stash — they become a new one), and its words stay in
+  sight at the top of a long list. The place
   under the pointer lights up and says what letting go does ("Drop to
   apply · Hold Option to pop"), on a line of its own under the verb in a
-  narrow sidebar rather than cut off; a stash itself takes no drop, since
-  git can't add to a stash. It runs what the menus run, so Stash & Retry,
+  narrow sidebar rather than cut off. It runs what the menus run, so Stash & Retry,
   the staging question, conflicts and Undo work as they do there. This
   replaces the "Drop to stash" box.
 - **Checkout puts you on the pull request's own branch.** **Checkout** on a
@@ -192,10 +194,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   the top. Your choice is remembered for the workspace, and **New pull
   request** and the Command Palette's pull request commands use it too —
   even before the Pull Requests view has been opened.
-- **Worktrees, rebuilt: one quiet line per worktree.** Each row names the
-  worktree's folder, the branch it has checked out in quieter ink (or
-  *detached at 1a2b3c4*, or the branch a stopped rebase is rebasing) and —
-  on the right, only when there is something to say — the one state that
+- **Worktrees, rebuilt: a row per worktree, as a stash's row.** Each
+  worktree wears VS Code's own worktree icon and two lines: its folder, and
+  under it, quieter, the branch it has checked out (after git's branch
+  symbol; *detached at 1a2b3c4* after a commit's) and the one state that
   matters most, in words: *merge in progress*, *rebase stopped*,
   *2 conflicts*, *folder missing*, *not a worktree*, *5 changed*,
   *2 to push*, *1 to pull*, *diverged*, *3 unpublished* (a branch with no
@@ -209,20 +211,24 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   is in the row's tooltip, which names the folder once. The worktree this
   window has open is its bold name, and comes first, then the main one, the
   rest by name and the missing ones last; past eight worktrees a filter
-  appears. In a narrow sidebar the branch gives way first; a state that
-  needs attention then says one word (*merging*, *rebasing*, *missing*); and
-  a long name gives way in its middle, keeping the end that tells it from
-  its neighbours (*wf_4b6…cc2-3*), so no two rows ever read alike.
+  appears. In a narrow sidebar the state is never cut: the branch shortens
+  first, a state that needs attention then says one word (*merging*,
+  *rebasing*, *missing*), and then the branch goes; a long name gives way
+  in its middle, keeping the end that tells it from its neighbours
+  (*wf_4b6…cc2-3*), so no two rows ever read alike.
 - **Open a worktree's row to see what it has — and only that.** Click it (or
-  press Enter or →): its uncommitted files, grouped as Source Control groups
-  them (*Conflicts*, *Staged changes*, *Changes*), each opening its diff read
+  press Enter or →) and it opens on a soft card: its uncommitted files,
+  grouped as Source Control groups them, under small-capital captions with
+  their counts (*CONFLICTS*, *STAGED CHANGES 2*, *CHANGES 3*), each opening its diff read
   from that worktree, not this window's; its commits not pushed (not on its
   upstream; with no upstream, not on any remote, as the push review counts
   them; with no remote at all, not on the default branch); and what it has
   to pull. A list with nothing in it isn't shown; with nothing at all, the
   row says *Nothing to commit or push.* Each commit opens to the files it
   changed, as in the push review.
-- **Pull and Push… for any worktree, from its menu.** **Pull** runs in that
+- **Pull and Push… for any worktree.** An open worktree shows **Pull** and
+  **Push…** under what they would move — only when there is something to
+  pull or push, never greyed out — and its menu has them too. **Pull** runs in that
   worktree's own folder, with the questions every Pull asks (Stash & Retry,
   Merge or Rebase); a stop is said naming the worktree, with **Open in New
   Window**. **Push…** opens the push review for that worktree — its commits,
@@ -230,7 +236,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   can't work (a detached HEAD, a merge in progress, no upstream, no remote,
   nothing to push) it isn't offered.
 - **Every worktree action says what it does.** Hovering a row shows two
-  buttons over its state: **Open in New Window** and **More**. More — the
+  buttons at its end: **Open in New Window** and **More**. More — the
   row's right-click menu too — lists what that worktree can do now: Open in
   This Window, Open in New Window, Reveal in Finder, Open in Terminal, Copy
   Path, Pull, Push…, Lock… (or Unlock), Remove Worktree… (or Forget
@@ -498,6 +504,23 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Review* is **Review Pull Request**.
 
 ### Fixed
+- **GitStudio reads in Cursor.** Cursor's own dark theme draws its focus
+  colour at 15% white, and GitStudio's accent was that colour: a selected
+  file was a 3% white wash, a drop target barely changed, and the band of
+  words over your changes let the rows show through. Where a theme's focus
+  colour is see-through, GitStudio's accent is now that theme's own button
+  colour (Cursor's light blue); every other theme looks as it did. The AI
+  settings' open form glows in their violet again.
+- **A dialog's main button always reads.** Its label took the theme's
+  button text and its fill the focus colour — near-black on dark grey in
+  Cursor, and under the 4.5:1 contrast bar in Dark+, Light+ and High
+  Contrast Dark. It is GitStudio's violet with white now, as Push and
+  Commit & Push are, and darkens under the pointer instead of washing out.
+- **Apply/Pop Unstaged says what git does.** Without its staging, git brings
+  a stash's changes back unstaged — all but a new file and a renamed file's
+  new name, which it adds back staged. The choice now says so when the
+  stash holds one; and when all a stash had staged is new files, nothing is
+  asked, because the answer would change nothing.
 - **Checkout Tag or Revision… no longer hands git an option.** A revision
   typed as `-f` was read by git as its force flag and threw away every
   uncommitted change. A revision starting with "-" is refused, in the dialog
