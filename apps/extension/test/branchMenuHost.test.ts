@@ -16,7 +16,9 @@ import { withFavorites, type BranchesPayload } from "../src/changes/branchMenuDa
 //     old star, so the row the menu had already moved went back. Every post
 //     after the star now carries it;
 //   · a failed branch action is named by what the user did ("Pull into
-//     'merged-pr'"), not by the message's action id ("pullFf").
+//     'merged-pr'"), not by the message's action id ("pullFf");
+//   · a revision to check out that git would read as an option ("-f") is
+//     refused before git sees it.
 
 const CFG = join(mkdtempSync(join(tmpdir(), "gs-ext-bmh-cfg-")), "config");
 writeFileSync(CFG, "");
@@ -203,4 +205,23 @@ test("a failed branch action is named by what the user did, not by its action id
   assert.equal(errors.length, 1, JSON.stringify(said));
   assert.match(errors[0].text, /^GitStudio: Pull into 'merged-pr' failed/);
   assert.doesNotMatch(errors[0].text, /pullFf/);
+});
+
+// "Checkout Revision '<query>'…" hands the host whatever was typed. "-f"
+// after `checkout --detach` is git's --force: it threw every uncommitted
+// change away. Something git would read as an option never reaches it.
+test("a revision to check out that starts with '-' never reaches git", async () => {
+  const { p } = provider();
+  said.length = 0;
+  writeFileSync(join(repo, "f.txt"), "an edit in progress\n");
+  try {
+    await p.handleBranchAction({ type: "branchAction", action: "checkoutRef", ref: "-f" });
+    assert.equal(readFileSync(join(repo, "f.txt"), "utf8"), "an edit in progress\n", "the edit is still there");
+    assert.equal(git(repo, "symbolic-ref", "--short", "HEAD"), "main", "and HEAD is still on main");
+    const errors = said.filter((s) => s.kind === "error");
+    assert.deepEqual(errors.map((e) => e.text), ["GitStudio: Checkout '-f' failed — '-f' is not a revision: it starts with '-'."]);
+  } finally {
+    git(repo, "checkout", "-q", "main");
+    writeFileSync(join(repo, "f.txt"), "base\n");
+  }
 });

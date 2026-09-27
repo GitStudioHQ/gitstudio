@@ -1763,6 +1763,12 @@ export class CommitViewProvider
         case "checkoutRef": {
           const r = (msg.ref ?? "").trim();
           if (!r) return;
+          // git would read it as one of its own options: "-f" after
+          // --detach discards every uncommitted change.
+          if (r.startsWith("-")) {
+            result = { ok: false, stderr: `'${r}' is not a revision: it starts with '-'.` };
+            break;
+          }
           // Through the shared door: uncommitted work in the checkout's way is
           // said, with Stash & Retry, rather than as git's refusal in red.
           const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", "--detach", r]));
