@@ -6809,12 +6809,20 @@ export class CommitViewProvider
         const mapped = pos.map((p) => at.get(p));
         return { text: out, pos: mapped, fits: width(out.slice(0, mapped[mapped.length - 1] + 1)) + width(ELL) <= avail };
       };
+      // Most kept first: around each run, then of the name's start — but a
+      // run that starts the name keeps its first path segment whole before
+      // anything around the other runs ("feature/…validation", never
+      // "feature…/billing-address-validation" beside it on the next row).
+      const tries = [];
+      if (runs[0][0] <= 1) {
+        for (const h of [heads[0], 0]) for (let level = 0; level <= 2; level++) tries.push([level, h]);
+      } else {
+        for (let level = 0; level <= 2; level++) for (const h of heads) tries.push([level, h]);
+      }
       let cut = null;
-      for (let level = 0; level <= 2 && !(cut && cut.fits); level++) {
-        for (const h of heads) {
-          cut = build(level, h);
-          if (cut.fits) break;
-        }
+      for (const [level, h] of tries) {
+        cut = build(level, h);
+        if (cut.fits) break;
       }
       // Nothing fits the row: the closest cut still shows the most of what matched.
       return cut.text === text ? null : cut;

@@ -182,6 +182,8 @@ async function shootWindow(theme: VsCodeTheme): Promise<string[]> {
   await scene("search-fe", 320, 480, async (p) => { await p.type("fe"); });
   await scene("search-rel21", 320, 400, async (p) => { await p.type("rel21"); });
   await scene("search-billing", 300, 400, async (p) => { await p.type("billing"); });
+  // Scattered letters in a long name: its start kept, the rest cut around them.
+  await scene("search-fval", 300, 400, async (p) => { await p.type("fval"); });
   await scene("search-none", 320, 360, async (p) => { await p.type("zzzq"); });
   // A branch's actions: in the menu in a sidebar, beside it where there is room.
   await scene("actions-drilled", 320, 640, async (p) => { await p.type("feature"); await p.key("ArrowRight"); await p.key("ArrowDown"); });
@@ -198,7 +200,12 @@ async function shootWindow(theme: VsCodeTheme): Promise<string[]> {
     await p.mouseMove(c.x, c.y);
   });
   // A detached HEAD: no Pull or Push, and the line that says why.
-  const branches = SIDEBAR.branches as { local: { current?: boolean }[] };
+  const branches = SIDEBAR.branches as { local: { name: string; current?: boolean }[] };
+  // The branch you're on tracks nothing: no Pull, and why, when looked for.
+  await scene("no-pull", 320, 360, async (p) => { await p.type("pull"); }, {
+    ...SIDEBAR, upstream: undefined,
+    branches: { ...branches, local: branches.local.map((b) => (b.name === "main" ? { name: "main", current: true, favorite: false } : b)) },
+  });
   await scene("detached", 320, 480, async () => {}, {
     ...SIDEBAR, branch: "a1b2c3d", detached: true, upstream: undefined,
     branches: { ...branches, local: branches.local.map((b) => ({ ...b, current: false })) },

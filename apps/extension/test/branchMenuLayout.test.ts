@@ -573,8 +573,9 @@ test("a long name whose match lies past the row's end is cut in the middle: ever
             `${width}px '${q}': the match is in sight in '${r.shown}' (${Math.round(m.left)}–${Math.round(m.right)} in ${Math.round(r.nameBox.left)}–${Math.round(r.nameBox.right)})`);
         }
         assert.ok(r.label.startsWith(r.name) && r.tip.startsWith(r.name), `${width}px '${q}': the whole name in the spoken label and the tooltip`);
-        // A match that starts the name keeps the name's start in sight.
-        if (q.startsWith("f")) assert.ok(r.shown.startsWith("f"), `${width}px '${q}': '${r.shown}' still starts as the name does`);
+        // A match that starts the name keeps the name's first path segment
+        // in sight, whole — the same on every row with that name.
+        if (q.startsWith("f")) assert.ok(r.shown.startsWith("feature/"), `${width}px '${q}': '${r.shown}' still starts as the name does`);
       }
       if (q === "feature/chec") {
         // (A remote branch's row shows its name without the remote.)
