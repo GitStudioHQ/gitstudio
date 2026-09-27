@@ -125,7 +125,7 @@ const REFS: [string, string][] = [
 const WIDE = stateMessage({ local: [...LOCAL, { name: LONG, upstream: "origin/" + LONG }], remote: REMOTE, tags: ["v1.0"] });
 for (const [width, height, names, expect] of [
   [260, 640, "short", "drilled"], [300, 380, "short", "drilled"], [340, 640, "short", "drilled"],
-  [560, 640, "short", "drilled"], [600, 640, "short", "beside"], [560, 640, "long", "drilled"], [900, 640, "long", "beside"],
+  [560, 640, "short", "drilled"], [640, 640, "short", "beside"], [560, 640, "long", "drilled"], [900, 640, "long", "beside"],
 ] as const) {
   test(`${width}×${height}, ${names} names: a ref's actions open ${expect === "drilled" ? "in the menu, under a back row" : "beside the menu"}, every item reachable — for every kind of ref`, { skip }, async () => {
     const p = await open("dark", width, height);
@@ -472,7 +472,7 @@ test("remote branches are grouped by remote — a slash in a remote's name too �
   assert.deepEqual(g.map((x) => x.name), ["origin", "team"]);
 });
 
-test("a row names its upstream by the remote alone when it tracks the same name there; counts past 999 read 999+", { skip }, async () => {
+test("a row names its upstream by the remote alone when it tracks the same name there — in full when it is gone; counts past 999 read 999+", { skip }, async () => {
   const p = await open("dark", 560, 640);
   const local: LocalBranch[] = [
     { name: "main", current: true, upstream: "origin/main" },
@@ -480,19 +480,24 @@ test("a row names its upstream by the remote alone when it tracks the same name 
     { name: "tracks-local", upstream: "main" },
     { name: "x", upstream: "feature/x" },
     { name: "big", upstream: "origin/big", ahead: 1204, behind: 37 },
+    { name: "merged-pr", upstream: "origin/merged-pr", gone: true },
   ];
   const state = stateMessage({ local, remote: ["origin/main"] });
   (state.branches as Record<string, unknown>).remoteNames = ["origin"];
   await openMenu(p, state);
-  const rows = await p.eval<Record<string, { up: string; counts: string[]; tip: string }>>(`(function () {
+  const rows = await p.eval<Record<string, { up: string; struck: boolean; counts: string[]; tip: string }>>(`(function () {
     var out = {};
     document.querySelectorAll(".bm-list .bm-branch").forEach(function (r) {
       var u = r.querySelector(".bm-bup");
-      out[r.dataset.bname] = { up: u ? u.textContent : "", counts: Array.prototype.map.call(r.querySelectorAll(".bm-ab"), function (a) { return a.textContent; }), tip: r.dataset.tip || r.title };
+      out[r.dataset.bname] = { up: u ? u.textContent : "", struck: !!u && getComputedStyle(u).textDecorationLine === "line-through",
+        counts: Array.prototype.map.call(r.querySelectorAll(".bm-ab"), function (a) { return a.textContent; }), tip: r.dataset.tip || r.title };
     });
     return out;
   })()`);
   assert.equal(rows["main"].up, "origin");
+  assert.equal(rows["main"].struck, false);
+  // 'origin' struck through would say the remote is gone.
+  assert.deepEqual([rows["merged-pr"].up, rows["merged-pr"].struck], ["origin/merged-pr", true], "a gone upstream: in full, struck through");
   assert.equal(rows["renamed"].up, "origin/other-name", "another name there: said in full");
   assert.equal(rows["tracks-local"].up, "main", "a local branch: said in full");
   assert.equal(rows["x"].up, "feature/x", "'feature' is no remote here, so not cut to it");

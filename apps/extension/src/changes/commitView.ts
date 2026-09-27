@@ -5859,8 +5859,8 @@ export class CommitViewProvider
       const i = name.indexOf("/");
       return i > 0 ? name.slice(0, i) : "";
     }
-    /** What a row shows for its upstream: only the remote ("origin") when it
-     *  tracks the branch of the same name there, else the whole name. */
+    /** What a row shows for a live upstream: only the remote ("origin") when
+     *  it tracks the branch of the same name there, else the whole name. */
     function bmUpstreamShown(name, up) {
       const r = bmRemoteOf(up, true);
       return r && up === r + "/" + name ? r : up;
@@ -5914,7 +5914,9 @@ export class CommitViewProvider
       if (behind) row.appendChild(el("span", "bm-ab down", "↓" + bmCount(behind)));
       if (up) {
         const u = el("span", "bm-bup" + (gone ? " is-gone" : ""));
-        u.textContent = bmUpstreamShown(name, up);
+        // Gone, it is named in full: 'origin' struck through would say the
+        // remote is gone, not its branch.
+        u.textContent = gone ? up : bmUpstreamShown(name, up);
         row.appendChild(u);
         // A deleted upstream says so, and keeps saying it where a narrow
         // row has no room left for the upstream's name.
