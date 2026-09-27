@@ -1,0 +1,35 @@
+packages/webview-ui/test/selectionStatic.ts
+  s_26f5e669d3043c::t_7bb0a083ceec85 1-513
+  s_26f5e669d3043c::t_6bfaa09262bae7 514-586
+packages/webview-ui/test/selectionProbe.js
+  s_26f5e669d3043c::t_90af75fbe276d9 2-10,15-17,21-22,25-35,39,41,43-48,50-53,84-85,101-105,119-120,124,128-129,146,165-222,236-243,246,248-280,294-339,341-345,347-354,356-372,374-379,381-460,464-517,541-563,590,606-613,635,637,639-655,657-659,661-678
+  s_26f5e669d3043c::t_5023f4352840a5 679-686,688-689,691,696-697,712,727-731
+apps/desktop/test/selectionIsLit.test.ts
+  s_26f5e669d3043c::t_73809be8b42cce 6-13,19-22,24-25,80-90,107-110
+apps/extension/test/selectionIsLit.test.ts
+  s_26f5e669d3043c::t_840ad4b54a9c14 190-209,248-278,367-375
+apps/extension/test/selectionIsLitStatic.test.ts
+  s_26f5e669d3043c::t_34d632d97446d3 1-18
+packages/webview-ui/test/fixtures/probeShapesEntry.ts
+  s_26f5e669d3043c::t_93e2e69c1cbcd3 1-4
+packages/webview-ui/test/selectionIsLitStatic.test.ts
+  s_26f5e669d3043c::t_cbbe2b677584db 1-61
+packages/webview-ui/test/selectionProbeCatches.test.ts
+  s_26f5e669d3043c::t_e9bf36e73f227c 1-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cae3181b71722af098ee0ade8574c921cc595ad1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
