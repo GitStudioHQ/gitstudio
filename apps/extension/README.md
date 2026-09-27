@@ -138,7 +138,7 @@ Everything lives under one conflict-free chord — `Ctrl+Alt+G` (`Cmd+Alt+G` on 
 
 In the commit box, `Enter` starts a new line; commit with the **Commit** button. All bindings are remappable in *Keyboard Shortcuts*.
 
-**In the Changes list** the arrow keys walk the files: `Up`/`Down` move, `Right`/`Left` open and close a group, a folder or a file's changes, `Enter` opens a diff, `Space` ticks a file in the checkbox view, `Shift+Up/Down` selects, and `Shift+F10` opens a row's menu (Stage, Unstage, Discard, Stash).
+**In the Changes list** the arrow keys walk the files: `Up`/`Down` move, `Right`/`Left` open and close a group, a folder or a file's changes, `Enter` opens a diff, `Space` ticks a file in the checkbox view, `Shift+Up/Down` selects, and `Shift+F10` opens the menu of a file, a folder or a group — everything its buttons do (Stage, Unstage, Discard, Stage All, Discard All) and Stash; `Escape` or a choice puts you back on the row.
 
 ## Settings
 
