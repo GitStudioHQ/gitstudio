@@ -1100,6 +1100,9 @@ cell({
   expect: (f, s, { row }) => {
     assert.equal(row.afterOp.includes(" M f.txt"), true, `the file came out of the stash (${row.afterOp})`);
     assert.deepEqual(row.opToasts, ["Move 1 file out of “my work” — done."]);
+    // The question names the stash as the toast does, and its place in words.
+    assert.match(row.undoAsked.join("\n"), /Put the stash “my work” back on top of the stash list\./);
+    assert.doesNotMatch(row.undoAsked.join("\n"), /stash@\{|On main:/);
     assert.equal(f.git("stash", "list", "--format=%H"), f.memo.list, "the same stashes, in the same places");
     assert.equal(f.read("f.txt"), "base\n");
     assert.deepEqual(s.status, []);
