@@ -74,6 +74,42 @@ function codicon(name: string): HTMLElement {
 }
 
 /** An icon button that says what it does in words (tooltip + accessible name). */
+/**
+ * A worktree: a folder with a branch badge on its corner, drawn as codicons
+ * are (16px, one-pixel strokes, the text's colour). Codicons has no worktree
+ * of its own — its "worktree" is a forked arrow, read as "on a branch".
+ */
+function worktreeIcon(): SVGSVGElement {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  const attrs: Record<string, string> = {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "1",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+    class: "wt-glyph",
+    "data-icon": "worktree",
+  };
+  for (const [k, v] of Object.entries(attrs)) svg.setAttribute(k, v);
+  const shape = (tag: string, a: Record<string, string>) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(a)) n.setAttribute(k, v);
+    svg.appendChild(n);
+  };
+  // The folder, open where the badge sits on it.
+  shape("path", { d: "M8 13H1.5V2.5h4.3l1.4 1.5h7.3v2.8" });
+  // The branch: two commits above, one below, one joining back.
+  shape("circle", { cx: "10.3", cy: "9", r: "1" });
+  shape("circle", { cx: "13.7", cy: "9", r: "1" });
+  shape("circle", { cx: "10.3", cy: "14", r: "1" });
+  shape("path", { d: "M10.3 10v3" });
+  shape("path", { d: "M13.7 10c0 1.5-1.4 2-3.4 2.4" });
+  return svg;
+}
+
 function iconButton(icon: string, label: string, cls = ""): HTMLButtonElement {
   const b = el("button", `wt-icon-btn${cls ? ` ${cls}` : ""}`);
   b.type = "button";
@@ -456,12 +492,13 @@ export class WorktreesView {
 
     const chev = el("span", "wt-chevron");
     if (caps.expand) chev.appendChild(codicon("chevron-right"));
-    // One icon for every worktree: the folder each of them is. Two (a repo's
-    // book, a worktree's) asked the owner to decode them; which one is the
-    // repository's own is said in the tooltip, and the one this window has
-    // open by its name's weight.
+    // One icon for every worktree: a folder with a branch on it — a folder
+    // checked out on a branch, which is what a worktree is. Two icons (a
+    // repo's book, codicons' forked arrow) asked the owner to decode them;
+    // which one is the repository's own is said in the tooltip, and the one
+    // this window has open by its name's weight.
     const icon = el("span", "wt-icon");
-    icon.appendChild(codicon("folder"));
+    icon.appendChild(worktreeIcon());
     line.append(chev, icon, el("span", "wt-name", r.name));
     // The folder named for its branch says it once. The branch wears git's
     // branch symbol, so it reads as a branch and not a second name; a

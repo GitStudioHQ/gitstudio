@@ -162,6 +162,10 @@ body {
 .wt-icon .codicon {
   font-size: 14px;
 }
+.wt-icon .wt-glyph {
+  width: 16px;
+  height: 16px;
+}
 /* The folder's name gives way last — and then in its middle (fitRow), so
    the end that tells "wf_…cc2-1" from "wf_…cc2-2" stays. */
 .wt-name {

@@ -473,10 +473,11 @@ test("a status landing later does not move the row: its height is the same befor
 
 // The owner, looking at the minimal view: "you don't know what those 2 icons
 // mean, one is on branch and one is not" — and the earlier view's look,
-// simplified. One folder icon for every worktree; its branch after git's
+// simplified — then "instead of folder, a proper worktree icon". One
+// worktree icon (a folder with a branch badge) for every worktree; its branch after git's
 // branch symbol; an open worktree's Pull and Push… back, only where there
 // is something to move — never greyed out — and legible in every theme.
-test("one folder icon for every worktree, its branch after the branch symbol, and an open one's Pull and Push… only where there is something to move", { skip }, async () => {
+test("one worktree icon for every worktree, its branch after the branch symbol, and an open one's Pull and Push… only where there is something to move", { skip }, async () => {
   const want: Record<string, string[]> = {
     "/code/app": ["Pull"], // 3 to pull
     [LOGIN]: ["Push…"], // 2 to push
@@ -490,9 +491,10 @@ test("one folder icon for every worktree, its branch after the branch symbol, an
     const page = await open(theme, 360, 900);
     const rows = await page.eval<{ icon: string; glyph: string | null; branch: string | null }[]>(`Array.prototype.map.call(document.querySelectorAll(".wt-row"), function (l) {
       var g = l.querySelector(".wt-head .codicon"), t = l.querySelector(".wt-head-text");
-      return { icon: l.querySelector(".wt-icon .codicon").className, glyph: g ? g.className : null, branch: t ? t.textContent : null };
+      var i = l.querySelector(".wt-icon > *");
+      return { icon: i ? i.getAttribute("data-icon") || i.getAttribute("class") : "none", glyph: g ? g.className : null, branch: t ? t.textContent : null };
     })`);
-    assert.ok(rows.length > 5 && rows.every((r) => r.icon === "codicon codicon-folder"), `${theme}: every worktree the same folder: ${JSON.stringify(rows.map((r) => r.icon))}`);
+    assert.ok(rows.length > 5 && rows.every((r) => r.icon === "worktree"), `${theme}: every worktree the same worktree icon: ${JSON.stringify(rows.map((r) => r.icon))}`);
     for (const r of rows.filter((x) => x.branch)) {
       assert.equal(r.glyph, /^detached/.test(r.branch!) ? "codicon codicon-git-commit" : "codicon codicon-git-branch", `${theme}: ${r.branch} wears its symbol`);
     }
