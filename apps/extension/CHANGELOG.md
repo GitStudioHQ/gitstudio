@@ -409,11 +409,17 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   highlighted row, a question's highlighted choice, the rebase selection and
   the action it is set to, the Compare panel's tabs, a pull request's tab,
   verdict and merge method, and the pull request checked out here. Search
-  matches in the graph and the Commits list are washed a soft yellow.
-  Before, many of these were marked by a bar down an edge, an underline or an
-  accent outline. The words on every tint are at least 4.5:1. High Contrast
-  themes keep VS Code's own whole ring around a selection, and the keyboard's
-  focus ring is unchanged.
+  matches in the graph and the Commits list are washed a soft yellow; a
+  result you select stays selected, its selection fill touched with that
+  yellow, and a selected commit the search does not match no longer fades
+  with the rest. The branch you're on, open in its pill, the row whose
+  actions are open beside a wide branch menu, and the merge editor's pressed
+  Synchronized scrolling toggle are lit too. Before, many of these were
+  marked by a bar down an edge, an underline or an accent outline. The words
+  on every tint are at least 4.5:1, under the pointer too: in the branch
+  menu's actions the row under the pointer is the highlighted one and looks
+  it. High Contrast themes keep VS Code's own whole ring around a selection,
+  and the keyboard's focus ring is unchanged.
 - **A branch's actions are in one order for every kind of ref** — the
   branch you're on, any other, a remote branch, a tag: checkout and what
   starts from it, then compare, merge and rebase, then push and the tracked

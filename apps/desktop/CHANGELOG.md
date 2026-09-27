@@ -16,7 +16,7 @@ but they share the same engine, so most Git behaviour lands in both at once.
   a commit, **Shift+click** selects everything from the last one you clicked,
   and **Shift+Up/Down** extends the selection from the keyboard; **Escape**
   keeps only the commit the cursor is on. Every selected row is highlighted and
-  the one the cursor is on keeps its accent bar. Right-click inside the
+  the one the cursor is on is lit a shade deeper. Right-click inside the
   selection (or press Shift+F10) for one menu for all of them; right-click
   outside it and it is that commit's own menu, as before. The details pane says
   how many commits are selected, by whom and when, lists them — click one to
@@ -127,6 +127,14 @@ but they share the same engine, so most Git behaviour lands in both at once.
   menu. (#32)
 
 ### Changed
+- **Whatever you picked is lit, never lined.** The tab in front, the selected
+  row of a list or a menu, a segment, a filter, a toggle that is on, the
+  current branch and the selected commit are marked by a tint of the accent,
+  with a soft glow on a tab, a pill or a button, and no longer by a bar down
+  an edge, a rule on top, an underline or an accent outline. That includes
+  the Go to list's selected row and the merge editor's pressed Synchronized
+  scrolling toggle. A search result you select in the graph stays selected.
+  The words on every tint read at least 4.5:1, under the pointer too.
 - **Closing a repository is closing its tab.** Repo ▸ **Close Tab** is ⌘W
   (Ctrl+W) — it was ⌘⇧W, and on macOS ⌘W did nothing. On Windows and Linux
   the window's own Close moves to Ctrl+Shift+W. The GitStudio mark in the top
