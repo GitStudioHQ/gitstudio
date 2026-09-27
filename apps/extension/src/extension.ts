@@ -19,6 +19,7 @@ import {
   openWorktreeIn,
   addWorktree,
   removeWorktree,
+  forgetWorktree,
   lockWorktree,
   pruneWorktrees,
   type WorktreeTarget,
@@ -711,11 +712,12 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
         "gitstudio.worktree.remove",
         (t?: WorktreeTarget) => removeWorktree(repos, t, refreshWorktrees),
       ),
-      // A worktree whose folder is gone: the same door, which reads that the
-      // folder is missing and asks to forget git's record of it.
+      // A worktree whose folder is gone, or isn't a worktree any more: git's
+      // record of it goes and nothing on disk changes. Its own door — never
+      // Remove's, which deletes a folder.
       vscode.commands.registerCommand(
         "gitstudio.worktree.forget",
-        (t?: WorktreeTarget) => removeWorktree(repos, t, refreshWorktrees),
+        (t?: WorktreeTarget) => forgetWorktree(repos, t, refreshWorktrees),
       ),
       vscode.commands.registerCommand(
         "gitstudio.worktree.lock",

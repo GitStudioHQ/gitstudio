@@ -567,6 +567,42 @@ test("from the palette: Remove asks which worktree, offering only the ones it ca
   assert.equal(existsSync(s.path("feat-clean")), false);
 });
 
+test("from the palette: Forget asks which worktree, offering only those whose folder is gone or isn't a worktree any more", async () => {
+  const s = scene();
+  const { x, unlink } = unlinkedNested(s);
+  unlink();
+  const repos = windowAt(s.app);
+  answer = (spec) => (spec.kind === "pick" && spec.title === "Forget a worktree" ? s.path("feat-gone") : spec.kind === "confirm" ? "ok" : undefined);
+  assert.equal(typeof wt.forgetWorktree, "function", "Forget is its own door");
+  await wt.forgetWorktree(repos, undefined, noop);
+  const pick = asked[0] as Pick;
+  assert.equal(pick.title, "Forget a worktree");
+  assert.deepEqual(pick.choices.map((c) => c.label).sort(), ["feat-gone", "feat-gone-locked", "x"]);
+  assert.equal(asked[1].title, "Forget worktree feat-gone?");
+  assert.equal((asked[1] as Confirm).confirmLabel, "Forget");
+  assert.ok(!listed(s).includes("feat-gone"));
+  assert.ok(existsSync(x), "the others are untouched");
+  assert.deepEqual(errors(), []);
+});
+
+test("Forget handed a worktree whose folder is there asks nothing and removes nothing — Remove is the door that deletes a folder", async () => {
+  const s = scene();
+  const repos = windowAt(s.app);
+  answer = yes;
+  await wt.forgetWorktree(repos, s.path("feat-clean"), noop);
+  assert.equal(asked.length, 0);
+  assert.ok(existsSync(s.path("feat-clean")));
+  assert.ok(listed(s).includes("feat-clean"));
+  assert.match(said.map((m) => m.message).join("\n"), /^GitStudio: feat-clean's folder is there, so there's nothing to forget\. Remove Worktree… removes it, folder and all\.$/m);
+  // With nothing to forget, the palette says so and asks nothing.
+  s.git("worktree", "unlock", s.path("feat-gone-locked"));
+  s.git("worktree", "prune");
+  said.length = 0;
+  await wt.forgetWorktree(repos, undefined, noop);
+  assert.equal(asked.length, 0);
+  assert.match(said.map((m) => m.message).join("\n"), /no worktree this can be done to/);
+});
+
 // ── A worktree whose folder is gone ──────────────────────────────────────────
 
 test("a missing folder: Open opens nothing and says so; Forget clears it, past its lock too", async () => {

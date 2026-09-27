@@ -34,6 +34,7 @@ import {
 import {
   addWorktree,
   copyWorktreePath,
+  forgetWorktree,
   lockWorktree,
   openWorktreeIn,
   openWorktreeTerminal,
@@ -327,9 +328,11 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
       case "unlock":
         return lockWorktree(this.repos, p, false, refresh, ui);
       case "remove":
-      case "forget":
         await removeWorktree(this.repos, p, refresh, ui);
         this.deps.onChanged?.();
+        return;
+      case "forget":
+        await forgetWorktree(this.repos, p, refresh, ui);
         return;
     }
   }

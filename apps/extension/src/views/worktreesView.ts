@@ -639,6 +639,39 @@ interface MergedInto {
   ref: string;
 }
 
+/**
+ * `gitstudio.worktree.forget` — forget git's record of a worktree whose folder
+ * is gone, or is there but isn't a worktree any more. Nothing on disk
+ * changes. From the palette it offers only those; handed one whose folder is
+ * a worktree, it refuses in words — Remove Worktree… is the door that deletes
+ * a folder, and a command named Forget never leads to one.
+ */
+export async function forgetWorktree(
+  repos: RepoManager,
+  t: WorktreeTarget,
+  refresh: () => void,
+  ui: WorktreeUi = {},
+): Promise<void> {
+  const r = await resolveTarget(
+    repos,
+    t,
+    "Forget a worktree",
+    (e, main) => !e.bare && !main && (!existsSync(e.path) || isUnlinked(e)),
+  );
+  if (!r) {
+    refresh();
+    return;
+  }
+  const removal = await r.a.ctx.worktrees.removal(r.entry.path);
+  if (removal.kind === "present") {
+    void vscode.window.showInformationMessage(
+      `GitStudio: ${worktreeLabel(r.entry)}'s folder is there, so there's nothing to forget. Remove Worktree… removes it, folder and all.`,
+    );
+    return;
+  }
+  await askAndRemove(repos, r.a, r.entry.path, worktreeLabel(r.entry), refresh, ui, removal);
+}
+
 /** Whether the branch is merged into the default branch — and which that is. */
 async function mergedInto(a: RepoEntry, branch: string | undefined): Promise<MergedInto | undefined> {
   if (!branch) {
