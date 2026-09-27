@@ -38,7 +38,6 @@ import {
   moreLine,
   sectionLabel,
   setCommitFiles,
-  toggleCommit,
 } from "../changeRows/changeRows";
 
 /** What the host says about the platform — how Reveal reads. */
@@ -203,6 +202,8 @@ export class WorktreesView {
       case "details": {
         const s = this.rows.get(msg.path);
         if (!s || !s.open) return;
+        // The same details again (a refresh that found nothing new) change nothing.
+        if (s.loaded && JSON.stringify(s.loaded) === JSON.stringify(msg.details)) return;
         s.loaded = msg.details;
         this.paintDetails(s);
         return;
@@ -222,6 +223,7 @@ export class WorktreesView {
         if (!s) return;
         s.busy = msg.busy ? (msg.label ?? "Working…") : undefined;
         this.paintRow(s, true);
+        if (s.open) this.paintStrip(s);
         return;
       }
       case "patch": {
@@ -264,7 +266,7 @@ export class WorktreesView {
         // A new list does not know what tier 1 read since: keep it until
         // the host sends a fresh one.
         const row = r.status === undefined && s.row.status !== undefined ? { ...r, status: s.row.status } : r;
-        this.patchRow(s, row);
+        this.patchRow(s, row, true);
       }
       const want: ChildNode | null = prev ? prev.nextSibling : this.list.firstChild;
       if (s.el !== want) this.list.insertBefore(s.el, want);
@@ -400,11 +402,20 @@ export class WorktreesView {
     return s;
   }
 
-  private patchRow(s: RowState, row: WorktreeRow): void {
+  /**
+   * A row's data changed (a status, a patch, a new list): its line is painted
+   * again if what it shows changed, and an open row's strip — its upstream and
+   * Pull / Push… — likewise. Its files and commits are NOT: they change only
+   * when the host sends its details, so an open commit keeps its files and
+   * the row the keyboard is on keeps it. `inList`: part of a new list, whose
+   * chrome is painted once at the end.
+   */
+  private patchRow(s: RowState, row: WorktreeRow, inList = false): void {
     s.row = row;
     this.paintRow(s);
     if (s.open && !worktreeCaps(row).expand) this.toggle(s, false);
-    else if (s.open) this.paintDetails(s);
+    else if (s.open) this.paintStrip(s);
+    if (inList) return;
     this.paintChrome();
     this.applyFilter();
   }
@@ -572,20 +583,19 @@ export class WorktreesView {
 
   // ── A row's details ───────────────────────────────────────────────────────
 
-  private paintDetails(s: RowState): void {
+  /** What an open row's strip shows, to repaint it only when that changed. */
+  private stripSig(s: RowState): string {
     const r = s.row;
-    const d = s.details;
     const caps = worktreeCaps(r);
-    // Keep the commits that are open, and the keyboard, across a repaint.
-    const openShas = new Set(
-      [...d.querySelectorAll<HTMLElement>(".cr-commit-item.open")].map((i) => i.dataset.sha ?? ""),
-    );
-    const active = document.activeElement as HTMLElement | null;
-    const focusKey = active && d.contains(active) ? keyOf(active) : undefined;
+    return JSON.stringify([r.name, r.branch, r.upstream, r.upstreamGone, r.hasRemotes, headWords(r), caps.pull, caps.push, s.busy]);
+  }
 
-    const parts: HTMLElement[] = [];
-    // The way to this worktree's remote: its upstream and the two verbs.
+  /** The way to this worktree's remote: its upstream and the two verbs. */
+  private strip(s: RowState): HTMLElement {
+    const r = s.row;
+    const caps = worktreeCaps(r);
     const strip = el("div", "wt-strip");
+    strip.dataset.sig = this.stripSig(s);
     const where = el("span", "wt-upstream");
     if (r.branch && r.upstream) {
       where.append(codicon("cloud"), el("span", undefined, r.upstreamGone ? `${r.upstream} (gone)` : r.upstream));
@@ -604,7 +614,38 @@ export class WorktreesView {
       this.verb(s, "push", "repo-push", "Push…", caps.push),
     );
     strip.appendChild(verbs);
-    parts.push(strip);
+    return strip;
+  }
+
+  /** An open row's strip, painted again in place — only when what it shows changed. */
+  private paintStrip(s: RowState): void {
+    const old = s.details.querySelector<HTMLElement>(":scope > .wt-strip");
+    if (!old || old.dataset.sig === this.stripSig(s)) return;
+    const active = document.activeElement as HTMLElement | null;
+    const focusKey = active && old.contains(active) ? keyOf(active) : undefined;
+    const next = this.strip(s);
+    old.replaceWith(next);
+    this.syncTreeItems();
+    if (focusKey) [...next.querySelectorAll<HTMLElement>("[data-action]")].find((n) => keyOf(n) === focusKey)?.focus();
+  }
+
+  /**
+   * An open row's details, from what the host last sent. Commit items already
+   * on screen are kept whole — open or not, with the files they loaded — so a
+   * repaint never asks for those files again, never shows "Loading files…"
+   * over them, and never moves the row the keyboard is on.
+   */
+  private paintDetails(s: RowState): void {
+    const r = s.row;
+    const d = s.details;
+    const kept = new Map<string, HTMLElement>();
+    for (const item of d.querySelectorAll<HTMLElement>(".cr-commit-item")) {
+      if (item.dataset.sha) kept.set(item.dataset.sha, item);
+    }
+    const active = document.activeElement as HTMLElement | null;
+    const focusKey = active && d.contains(active) ? keyOf(active) : undefined;
+
+    const parts: HTMLElement[] = [this.strip(s)];
 
     const det = s.loaded;
     if (!det) {
@@ -640,15 +681,18 @@ export class WorktreesView {
         continue;
       }
       for (const c of sec.commits) {
-        const item = commitRow(c, {
-          loadFiles: (commit: ChangeCommit) => this.post({ type: "commitFiles", path: r.path, sha: commit.sha }),
-          onOpenFile: (commit: ChangeCommit, file: ChangeFile) =>
-            this.post({ type: "openCommitFile", path: r.path, sha: commit.sha, parent: commit.parents?.[0], file }),
-          role: "treeitem",
-          tabIndex: -1,
-        });
+        // A sha is the commit's content: the item on screen for it is it.
+        const item =
+          kept.get(c.sha) ??
+          commitRow(c, {
+            loadFiles: (commit: ChangeCommit) => this.post({ type: "commitFiles", path: r.path, sha: commit.sha }),
+            onOpenFile: (commit: ChangeCommit, file: ChangeFile) =>
+              this.post({ type: "openCommitFile", path: r.path, sha: commit.sha, parent: commit.parents?.[0], file }),
+            role: "treeitem",
+            tabIndex: -1,
+          });
+        kept.delete(c.sha);
         parts.push(item);
-        if (openShas.has(c.sha)) toggleCommit(item, true);
       }
       if (sec.more) parts.push(moreLine("and more — the Commit Graph shows them all"));
     }

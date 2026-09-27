@@ -330,6 +330,86 @@ test("the same list again changes nothing on screen: open rows stay open, the fo
   assert.equal(await page.eval<number>(`document.querySelectorAll('.wt-item[data-path="${LOGIN}"] .cr-file').length`), 5);
 });
 
+test("an open commit and the file row with the keyboard survive a status for that row, a list where another row changed, and details that did not change", { skip }, async () => {
+  const page = await open("dark", 320, 900);
+  const SHA = fixtureDetails().unpushed!.commits[0].sha;
+  const files = [
+    { path: "src/auth/session.ts", status: "M", additions: 24, deletions: 3 },
+    { path: "src/auth/store.ts", status: "A", additions: 41, deletions: 0 },
+  ];
+  await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);
+  await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
+  await page.clickOn(`.wt-item[data-path="${LOGIN}"] .cr-commit`);
+  await page.send({ type: "commitFiles", path: LOGIN, sha: SHA, files });
+  // The second file under the open commit has the keyboard.
+  await page.eval(`(window.__file = document.querySelectorAll('.wt-item[data-path="${LOGIN}"] .cr-commit-files .cr-file')[1], window.__file.focus())`);
+  const state = () =>
+    page.eval<{ sameFocus: boolean; focusText: string; filesUnder: string; open: boolean; height: number; top: number }>(`(function () {
+      var item = document.querySelector('.wt-item[data-path="${LOGIN}"]');
+      var commit = item.querySelector('.cr-commit-item[data-sha="${SHA}"]');
+      return {
+        sameFocus: document.activeElement === window.__file,
+        focusText: document.activeElement ? document.activeElement.tagName + "." + document.activeElement.className : "",
+        filesUnder: commit.querySelector(".cr-commit-files").textContent,
+        open: commit.classList.contains("open"),
+        height: item.querySelector(".wt-details").getBoundingClientRect().height,
+        top: window.__file.getBoundingClientRect().top,
+      };
+    })()`);
+  const before = await state();
+  assert.equal(before.sameFocus, true);
+  assert.match(before.filesUnder, /session\.ts.*store\.ts/);
+
+  const settled = async (what: string) => {
+    const now = await state();
+    assert.equal(now.sameFocus, true, `${what}: the file row keeps the keyboard (on ${JSON.stringify(now.focusText)})`);
+    assert.equal(now.open, true, `${what}: the commit stays open`);
+    assert.equal(now.filesUnder, before.filesUnder, `${what}: its files stay — never "Loading files…" again`);
+    assert.equal(now.height, before.height, `${what}: the open row keeps its height`);
+    assert.equal(now.top, before.top, `${what}: nothing moves`);
+    assert.deepEqual((await page.posted()).filter((m) => m.type === "commitFiles"), [], `${what}: the files are not asked for again`);
+  };
+
+  // 1. A status for THIS row (one more change).
+  await page.clearPosted();
+  await page.send({ type: "status", path: LOGIN, status: { changed: 6, staged: 2, unstaged: 3, untracked: 1, conflicted: 0 } });
+  await page.settle();
+  await settled("a status for the row");
+  assert.deepEqual((await lineOf(page, LOGIN))?.badges, ["This window", "6 changed", "2 to push"], "the row itself says the new count");
+
+  // 2. A list in which only ANOTHER row changed.
+  const rows = fixtureRows().map((r) =>
+    r.path === "/code/app-checkout" ? { ...r, ahead: 2 } : r.path === LOGIN ? { ...r, status: { changed: 6, staged: 2, unstaged: 3, untracked: 1, conflicted: 0 } } : r,
+  );
+  await page.send({ type: "rows", rows, state: "ok", labels: LABELS });
+  await page.settle();
+  await settled("a list where another row changed");
+
+  // 3. Its details sent again, the same commits: the open one is kept, with its files.
+  await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
+  await page.settle();
+  await settled("the same details again");
+
+  // 3b. Details that did change — one more uncommitted file — above the open commit: it keeps its files and the keyboard.
+  const more = fixtureDetails();
+  more.files.push({ path: "src/auth/new.ts", status: "U", area: "untracked" });
+  more.filesTotal += 1;
+  await page.send({ type: "details", path: LOGIN, details: more });
+  await page.settle();
+  const moved = await state();
+  assert.deepEqual([moved.sameFocus, moved.open, moved.filesUnder], [true, true, before.filesUnder], "new details: the open commit is the same, with its files");
+  assert.deepEqual((await page.posted()).filter((m) => m.type === "commitFiles"), []);
+  await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
+  await page.settle();
+  await settled("the details as they were");
+
+  // 4. A list that changes THIS row's upstream: the strip says so, the commits are untouched.
+  await page.send({ type: "rows", rows: rows.map((r) => (r.path === LOGIN ? { ...r, ahead: 3 } : r)), state: "ok", labels: LABELS });
+  await page.settle();
+  await settled("a list that changes this row");
+  assert.deepEqual(page.errors(), []);
+});
+
 test("past eight worktrees a filter appears; it narrows by folder, branch or path, and says when nothing matches", { skip }, async () => {
   const page = await open();
   const shown = () => page.eval<boolean>(`!document.querySelector(".wt-filter").hidden`);
