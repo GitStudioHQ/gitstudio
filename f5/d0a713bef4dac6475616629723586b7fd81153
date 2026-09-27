@@ -1,0 +1,39 @@
+apps/extension/test/failureWording.test.ts
+  s_26f5e669d3043c::t_e6a2481fb7fc1f 1-195
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_e696603f0adc21 598-601,603-606
+apps/extension/src/ai/gitBrain.ts
+  s_26f5e669d3043c::t_986072e145c7bd 12,168
+apps/extension/src/git/inTheWay.ts
+  s_26f5e669d3043c::t_bc1619747dd7fa 19,173,175,177
+apps/extension/src/git/pauseNotice.ts
+  s_26f5e669d3043c::t_ef5f08debcc6e8 11
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_6393098e7ef108 2,319,334,455,473,490,530,646,719,983,1122,1132,1140,1147,1171,1173-1175,1187,1191-1192,1195
+apps/extension/src/rebase/rebaseCommands.ts
+  s_26f5e669d3043c::t_ed5420328ee6ce 2,48
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_bc7001a6f3d74a 2,77,94-98
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_5b3f4b2ab2232e 177,369,373,521,588,602,651,714,718,804,862,888,902,935,1006,1014,1032,1051,1068,1130,1138,1141-1146,1151,1157
+apps/extension/src/views/optionLikeBranch.ts
+  s_26f5e669d3043c::t_ab3f5a2afaf6a8 8,41,69
+apps/extension/test/notifyStyle.test.ts
+  s_26f5e669d3043c::t_01237471c21d7f 106-135,137-146,148-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f5d0a713bef4dac6475616629723586b7fd81153",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
