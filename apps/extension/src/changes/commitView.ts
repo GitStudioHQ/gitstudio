@@ -6008,7 +6008,8 @@ export class CommitViewProvider
       }
     }
 
-    // ---- Reusable in-sidebar action popover (file rows: double/right-click) ----
+    // ---- Reusable in-sidebar action popover (files, folders, group headers:
+    // right-click or Shift+F10; files also double-click) ----
     // Opens right at the row inside the sidebar — NOT the VS Code quick-pick.
     let actionMenuEl = null;
     // The row (or header) the open menu belongs to. The menu is the
