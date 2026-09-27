@@ -1,0 +1,21 @@
+apps/extension/test/changesStashes.test.ts
+  s_26f5e669d3043c::t_b3d1c5490c2d82 516-553,555
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_43d0152c693bc9 8830-8833,8842-8843,8848,8854-8860,8872-8888
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "46e96bc1c02c951d13303cac4b1b5c0743ee7adf",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
