@@ -134,6 +134,7 @@
         {
           "id": "gitstudio.worktrees",
           "name": "Worktrees",
+          "type": "webview",
           "initialSize": 1,
           "visibility": "collapsed"
         },
@@ -154,11 +155,6 @@
       ]
     },
     "viewsWelcome": [
-      {
-        "view": "gitstudio.worktrees",
-        "when": "gitstudio.hasRepo",
-        "contents": "Work on multiple branches at once with linked worktrees.\n[New Worktree](command:gitstudio.worktree.add)"
-      },
       {
         "view": "gitstudio.pullRequests",
         "when": "gitstudio.hasRepo && !gitstudio.github.connected",
@@ -433,19 +429,19 @@
       },
       {
         "command": "gitstudio.worktree.open",
-        "title": "Open Worktree",
+        "title": "Open Worktree\u2026",
         "category": "GitStudio",
-        "icon": "$(folder-opened)"
+        "icon": "$(empty-window)"
       },
       {
         "command": "gitstudio.worktree.openInNewWindow",
-        "title": "Open in New Window",
+        "title": "Open Worktree in New Window\u2026",
         "category": "GitStudio",
         "icon": "$(empty-window)"
       },
       {
         "command": "gitstudio.worktree.openHere",
-        "title": "Open in This Window",
+        "title": "Open Worktree in This Window\u2026",
         "category": "GitStudio",
         "icon": "$(folder-opened)"
       },
@@ -457,13 +453,13 @@
       },
       {
         "command": "gitstudio.worktree.remove",
-        "title": "Remove Worktree",
+        "title": "Remove Worktree\u2026",
         "category": "GitStudio",
         "icon": "$(trash)"
       },
       {
         "command": "gitstudio.worktree.forget",
-        "title": "Forget Worktree",
+        "title": "Forget Worktree\u2026",
         "category": "GitStudio",
         "icon": "$(close)"
       },
@@ -475,15 +471,15 @@
       },
       {
         "command": "gitstudio.worktree.unlock",
-        "title": "Unlock Worktree",
+        "title": "Unlock Worktree\u2026",
         "category": "GitStudio",
         "icon": "$(unlock)"
       },
       {
         "command": "gitstudio.worktree.prune",
-        "title": "Prune Worktrees",
+        "title": "Prune Missing Worktrees\u2026",
         "category": "GitStudio",
-        "icon": "$(clear-all)"
+        "icon": "$(trash)"
       },
       {
         "command": "gitstudio.compareRefs",
@@ -1171,7 +1167,8 @@
         "gitstudio.worktrees.prefixWithProjectName": {
           "type": "boolean",
           "default": false,
-          "description": "When creating a worktree, name its folder '<project>-<branch>' instead of just '<branch>', where '<project>' is the main repository's folder name (resolved from any linked worktree, so the prefix never compounds no matter where you create it)."
+          "description": "No longer used: New Worktree now suggests the folder '<project>-<branch>' beside the main worktree, and you can edit it before it is created.",
+          "markdownDeprecationMessage": "No longer used: **New Worktree** now suggests the folder `<project>-<branch>` beside the main worktree, and you can edit it before it is created."
         },
         "gitstudio.ai.provider": {
           "type": "string",
@@ -1457,14 +1454,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "gitstudio.worktree.prune",
+          "command": "gitstudio.worktrees.refresh",
           "when": "view == gitstudio.worktrees",
           "group": "navigation@2"
         },
         {
-          "command": "gitstudio.worktrees.refresh",
+          "command": "gitstudio.worktree.prune",
           "when": "view == gitstudio.worktrees",
-          "group": "navigation@3"
+          "group": "worktrees@1"
         },
         {
           "command": "gitstudio.pr.create",
@@ -1802,27 +1799,27 @@
         },
         {
           "command": "gitstudio.worktree.openInNewWindow",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.worktree.openHere",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.worktree.remove",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.worktree.forget",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.worktree.lock",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.worktree.unlock",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.compareRefs",
@@ -2118,51 +2115,6 @@
         }
       ],
       "view/item/context": [
-        {
-          "command": "gitstudio.worktree.openInNewWindow",
-          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree(\\.main)?(\\.locked)?$/",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.worktree.remove",
-          "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
-          "group": "inline@2"
-        },
-        {
-          "command": "gitstudio.worktree.forget",
-          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree\\.missing(\\.locked)?$/",
-          "group": "inline@2"
-        },
-        {
-          "command": "gitstudio.worktree.openInNewWindow",
-          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree(\\.main)?(\\.locked)?$/",
-          "group": "1_worktree@1"
-        },
-        {
-          "command": "gitstudio.worktree.openHere",
-          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree(\\.main)?(\\.locked)?$/",
-          "group": "1_worktree@2"
-        },
-        {
-          "command": "gitstudio.worktree.lock",
-          "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.current)",
-          "group": "1_worktree@3"
-        },
-        {
-          "command": "gitstudio.worktree.unlock",
-          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree(\\.current)?(\\.missing)?\\.locked$/",
-          "group": "1_worktree@3"
-        },
-        {
-          "command": "gitstudio.worktree.remove",
-          "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
-          "group": "2_worktree@1"
-        },
-        {
-          "command": "gitstudio.worktree.forget",
-          "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree\\.missing(\\.locked)?$/",
-          "group": "2_worktree@1"
-        },
         {
           "command": "gitstudio.pr.checkout",
           "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",

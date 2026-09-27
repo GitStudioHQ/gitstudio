@@ -16,15 +16,14 @@ import {
 } from "./views/stashesView";
 import { StashesWebviewViewProvider } from "./views/stashesWebview";
 import {
-  WorktreesTreeProvider,
-  openWorktree,
   openWorktreeIn,
   addWorktree,
   removeWorktree,
   lockWorktree,
   pruneWorktrees,
-  type WorktreeNode,
+  type WorktreeTarget,
 } from "./views/worktreesView";
+import { WorktreesWebviewProvider } from "./views/worktreesWebview";
 import { ComparePanel } from "./compare/comparePanel";
 import { SyncStatusItem } from "./statusBar/syncStatus";
 import { StatusCluster } from "./statusBar/statusCluster";
@@ -610,27 +609,20 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       repos,
       context.extensionUri,
     );
-    const worktreesProvider = new WorktreesTreeProvider(
+    // Worktrees: a webview (views/worktreesWebview.ts). Its Push… opens the
+    // push review — the Changes view's — for that worktree; a Stash & Remove
+    // adds a stash, so the Stashes list is told.
+    const worktreesProvider = new WorktreesWebviewProvider(
       repos,
+      context.extensionUri,
       context.workspaceState,
+      {
+        openPushReview: (target) => commitProvider.openPushReview(target),
+        onChanged: () => stashesProvider.refresh(),
+      },
     );
     const stashDiffContent = new StashDiffContentProvider(repos);
     context.subscriptions.push(stashesProvider, worktreesProvider);
-
-    const worktreesView = vscode.window.createTreeView("gitstudio.worktrees", {
-      treeDataProvider: worktreesProvider,
-      showCollapseAll: false,
-    });
-    // Warm the worktree list off the reveal path so the cold `git worktree list`
-    // spawn overlaps activation. Since git activation is now backgrounded, a
-    // setup-time prewarm sees no repo yet — so also warm on the FIRST onDidChange
-    // (when repos are discovered), then stop.
-    worktreesProvider.prewarm();
-    const warmWorktrees = repos.onDidChange(() => {
-      warmWorktrees.dispose();
-      worktreesProvider.prewarm();
-    });
-    context.subscriptions.push(warmWorktrees);
     const refreshStashes = () => stashesProvider.refresh();
     const refreshWorktrees = () => worktreesProvider.refresh();
     const refreshBranches = () => refsProvider.refresh();
@@ -651,7 +643,13 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
     );
 
     context.subscriptions.push(
-      worktreesView,
+      vscode.window.registerWebviewViewProvider(
+        WorktreesWebviewProvider.viewId,
+        worktreesProvider,
+        // Kept while hidden: its open rows and the keyboard's place survive a
+        // collapse, and no read runs meanwhile (the provider skips them).
+        { webviewOptions: { retainContextWhenHidden: true } },
+      ),
       vscode.window.registerWebviewViewProvider(
         CommitsGraphViewProvider.viewId,
         commitsGraphView,
@@ -691,41 +689,41 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       vscode.commands.registerCommand("gitstudio.worktrees.refresh", () =>
         worktreesProvider.refresh(),
       ),
+      // Each takes a worktree's folder (the view passes it); from the palette,
+      // with none, it asks which worktree. "Open Worktree" opens it in a new
+      // window — it asked which window, and every control now says where.
       vscode.commands.registerCommand(
         "gitstudio.worktree.open",
-        (node: WorktreeNode) => void openWorktree(node),
+        (t?: WorktreeTarget) => openWorktreeIn(repos, t, "new"),
       ),
-      // The row's buttons and menu say where it opens, and open it there.
       vscode.commands.registerCommand(
         "gitstudio.worktree.openInNewWindow",
-        (node: WorktreeNode) => openWorktreeIn(node, "new"),
+        (t?: WorktreeTarget) => openWorktreeIn(repos, t, "new"),
       ),
       vscode.commands.registerCommand(
         "gitstudio.worktree.openHere",
-        (node: WorktreeNode) => openWorktreeIn(node, "here"),
+        (t?: WorktreeTarget) => openWorktreeIn(repos, t, "here"),
       ),
       vscode.commands.registerCommand("gitstudio.worktree.add", () =>
         addWorktree(repos, refreshWorktrees),
       ),
       vscode.commands.registerCommand(
         "gitstudio.worktree.remove",
-        (node: WorktreeNode) => removeWorktree(repos, node, refreshWorktrees),
+        (t?: WorktreeTarget) => removeWorktree(repos, t, refreshWorktrees),
       ),
       // A worktree whose folder is gone: the same door, which reads that the
       // folder is missing and asks to forget git's record of it.
       vscode.commands.registerCommand(
         "gitstudio.worktree.forget",
-        (node: WorktreeNode) => removeWorktree(repos, node, refreshWorktrees),
+        (t?: WorktreeTarget) => removeWorktree(repos, t, refreshWorktrees),
       ),
       vscode.commands.registerCommand(
         "gitstudio.worktree.lock",
-        (node: WorktreeNode) =>
-          lockWorktree(repos, node, true, refreshWorktrees),
+        (t?: WorktreeTarget) => lockWorktree(repos, t, true, refreshWorktrees),
       ),
       vscode.commands.registerCommand(
         "gitstudio.worktree.unlock",
-        (node: WorktreeNode) =>
-          lockWorktree(repos, node, false, refreshWorktrees),
+        (t?: WorktreeTarget) => lockWorktree(repos, t, false, refreshWorktrees),
       ),
       vscode.commands.registerCommand("gitstudio.worktree.prune", () =>
         pruneWorktrees(repos, refreshWorktrees),

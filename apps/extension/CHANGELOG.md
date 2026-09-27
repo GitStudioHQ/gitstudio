@@ -103,6 +103,61 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   says why instead of letting the rebase fail. The editor that opens for a
   `git rebase -i` run in a terminal does the same in git's own order, oldest
   at the top, so there a commit folds into the kept one above it. (#32)
+- **Worktrees, rebuilt: every worktree says what it holds.** Each row names
+  the worktree's folder and the branch it has checked out (or *detached at
+  1a2b3c4*, or the branch a stopped rebase is rebasing), where the folder is,
+  and — in words — what state it is in: *This window*, *Main worktree*,
+  *5 changed*, *2 to push*, *1 to pull*, *3 not pushed* (a branch with no
+  upstream), *2 not on main* (a repository with no remote), *Upstream gone*,
+  *Locked: on a USB drive* (its reason), *Merge in progress · 1 conflict*, *Rebase stopped*,
+  *Folder missing*. Badges that don't fit a narrow sidebar become *+2 more*,
+  naming them on hover. This window's worktree comes first, then the main
+  one, the rest by name and the missing ones last; past eight worktrees a
+  filter appears.
+- **Open a worktree's row to see its changes and its commits.** Click it (or
+  press Enter or →): its uncommitted files — staged ones tagged, each opening
+  its diff read from that worktree, not this window's — and its commits not
+  pushed (not on its upstream; with no upstream, not on any remote, as the
+  push review counts them; with no remote at all, not on the default branch),
+  plus what it has to pull. Each commit opens to the files it changed, as in
+  the push review.
+- **Pull and Push… for any worktree, from its row.** **Pull** runs in that
+  worktree's own folder, with the questions every Pull asks (Stash & Retry,
+  Merge or Rebase); a stop is said naming the worktree, with **Open in New
+  Window**. **Push…** opens the push review for that worktree — its commits,
+  its files, "From the worktree …" — and pushes its branch. Where either
+  can't work (a detached HEAD, a merge in progress, no upstream, no remote,
+  nothing to push) the button says why instead.
+- **Every worktree action says what it does.** A row has **Open in New
+  Window** (or **Forget Worktree…** when its folder is gone) and a **More**
+  menu: Open in This Window, Reveal in Finder, Open in Terminal, Copy Path,
+  Pull, Push…, Lock…/Unlock, Remove Worktree…. An action a worktree can't
+  take is shown with the reason — "This window has it open.", "The main
+  worktree holds the repository itself, so git never removes it." The whole
+  list works from the keyboard (arrows, Home/End, Enter, the context-menu
+  key, Delete). Unlock shows at once, and comes back if git refuses.
+- **Stash & Remove.** Removing a worktree with uncommitted changes offers
+  **Stash & Remove** first: its changes go into a stash you can apply from
+  any worktree, then its folder is deleted. **Discard Changes and Remove** is
+  still there, second. When its branch is fully merged into the default
+  branch, the question also offers **Also delete the branch**, unchecked;
+  Undo (Ctrl/Cmd+Alt+G Z) brings a deleted branch back.
+- **Prune N missing.** When worktrees' folders are gone, Worktrees shows
+  **Prune N missing** with the count; it asks first, naming them, and says
+  that a locked one is kept.
+- **New Worktree suggests where the folder goes**: beside your project,
+  named `<project>-<branch>` (`app-feature-login`), in the question itself,
+  ready to edit — a relative folder lands beside the project, `~` is home.
+  It no longer opens a system folder picker. A folder that is taken is asked
+  for again with why. The `gitstudio.worktrees.prefixWithProjectName`
+  setting is no longer used.
+- **The push review's commits open to their files.** Click a commit in the
+  review (or press Enter or →) to see the files that commit changed; click
+  one for what that commit did to it. The list of every file changed is
+  still below.
+- Worktrees reads only the rows you can see: a repository with dozens of
+  worktrees lists them all at once, and reads each one's changes as it
+  scrolls into view — and nothing while the view is collapsed.
 
 ### Fixed
 - **Undo puts back what the operation changed — and only that.** Undo used to
@@ -355,23 +410,21 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   to open a window onto the missing folder.
 - **New Worktree no longer leaves a stray branch behind when it fails**, so
   trying again with the same name works. Folders are named for the whole
-  branch (`feature/login` → `feature-login`), so `bugfix/login` beside it no
-  longer lands in the same folder; a folder that already exists is refused
+  branch (`feature/login` → `app-feature-login`), so `bugfix/login` beside it
+  no longer lands in the same folder; a folder that already exists is refused
   before anything runs, and so is one git still keeps for a worktree whose
   folder is gone (with where to forget it); a branch name that's taken is
   asked for again; and a branch another worktree has checked out goes
-  straight to a new branch from it, saying where it's checked out. The folder
-  picker names the folder it creates.
-- The *current* marker in Worktrees survives opening the repository through a
-  symlink, and clicking the current worktree no longer offers to reopen it.
-- **Lock Worktree…** asks why (optional); the reason shows in the row's tooltip
-  and in the Remove question.
+  straight to a new branch from it, saying where it's checked out.
+- *This window* in Worktrees survives opening the repository through a
+  symlink, and the worktree this window has open no longer offers to open
+  itself again.
+- **Lock Worktree…** asks why (optional); the reason shows on the row and in
+  the Remove question.
 - **Prune Worktrees** says which worktrees it pruned, or that there was nothing
   to prune — it reported success either way.
-- Worktree and branch tooltips show paths and upstream names without stray
-  backslashes, and a detached worktree's row uses the commit icon its tooltip
-  does.
-- A worktree row's inline button is **Open in New Window**, and it opens the
+- Branch tooltips show upstream names without stray backslashes.
+- A worktree row's button is **Open in New Window**, and it opens the
   worktree straight away; **Open in This Window** is in the row's menu. The
   button was *Open Worktree* and asked which window first.
 - **Removing a worktree that is stopped in a merge, rebase, cherry-pick or

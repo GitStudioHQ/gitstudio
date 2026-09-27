@@ -130,16 +130,26 @@ test("every door that runs a git verb which can stop on conflicts can say so thr
   assert.equal(VERB.test(ffOnlyAside(`{ kind: "merge", target: s, args: ["merge", s] }`)), true, "a merge that can stop still counts");
   assert.equal(VERB.test(ffOnlyAside(`{ kind: "merge", target: s, args } ; x = ["--ff-only"]`)), true, "…even beside an unrelated --ff-only");
   const THE_DOOR = "git/inTheWay.ts";
+  // A door whose verb runs in ANOTHER worktree (the Worktrees view's Pull):
+  // Resolve Conflicts… opens this window's dashboard, for this window's
+  // repository, so its stop is said with the way to THAT worktree instead —
+  // and the file says so, with a `pause-notice-reviewed:` note.
+  const REVIEWED = /pause-notice-reviewed:/;
   const silent: string[] = [];
+  const reviewed: string[] = [];
   for (const file of await tsFiles(SRC)) {
     const rel = relative(SRC, file).split("\\").join("/");
     if (rel === THE_DOOR) continue;
-    const code = ffOnlyAside(stripComments(await readFile(file, "utf8")));
+    const raw = await readFile(file, "utf8");
+    const code = ffOnlyAside(stripComments(raw));
     if (VERB.test(code) && !/\bnotifyPaused\(/.test(code)) {
-      silent.push(rel);
+      if (REVIEWED.test(raw)) reviewed.push(rel);
+      else silent.push(rel);
     }
   }
   assert.deepEqual(silent, [], silent.join("\n"));
+  // The exemption stays as narrow as it was granted.
+  assert.deepEqual(reviewed, ["views/worktreesView.ts"]);
 });
 
 test("the pull doors' shared settler says a stop through notifyPaused, so it offers Resolve Conflicts… too", async () => {
