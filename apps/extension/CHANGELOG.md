@@ -7,6 +7,44 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 ## [Unreleased]
 
 ### Added
+- **Checkout puts you on the pull request's own branch.** **Checkout** on a
+  pull request — in the list, on its page, or in the Command Palette — checks
+  out its real branch (`feature`, not a `pr/37` copy), tracking it where it
+  lives and pushing there, so a fix you commit and push reaches the pull
+  request, as `gh pr checkout` does. A pull request from a fork adds the
+  fork's remote, named after its owner, the first time (and says so). A
+  branch of that name that isn't the pull request's — your own `main` beside
+  a fork's `main`, or one that tracks something else — is never taken over:
+  you are asked, and offered **Checkout as alice-main**, **Use main**, or
+  **Cancel** (Cancel changes nothing, and the remote it added goes again). A
+  branch with commits the pull request doesn't have is never moved without
+  asking; your own commits on top of it are left as they are, and counted.
+  Uncommitted changes in the way are offered **Stash & Retry**. A pull
+  request whose branch is gone is checked out at its last commit as
+  `pr/37`, and it says a push from there can't reach it; one whose author
+  doesn't let maintainers edit it says a push will be refused.
+- **New pull request is one form.** **New pull request** — in the Pull
+  Requests view's title bar, its empty list, or the Command Palette — opens a
+  form in an editor tab, with everything on one screen and nothing sent
+  until **Create pull request**: the repository it opens on (a fork's parent,
+  with your fork one click away); **Into** — that repository's default
+  branch, or any other, picked or typed; **from** — the branch checked out,
+  or any other; the title GitHub would propose; the description from the
+  repository's pull request template when it has one (else the commit's
+  message, or the commits as a list), with **Commit list** and **Draft with
+  AI** beside it; **Create as draft**; **Reviewers**, **Assignees** (with
+  **Assign yourself**) and **Labels**, when your access to the repository
+  lets you set them — and it says so when it doesn't. Below, the commits and
+  the files the pull request will have, compared with the base as GitHub has
+  it now; a file opens its diff. A branch that isn't pushed yet, or has
+  commits that aren't, is pushed first — the button says **Push and create
+  pull request**. A branch that already has an open pull request says so,
+  with **Open #44**, and anything else that stops it (nothing to compare, a
+  branch that has diverged from its remote) is said beside the button. What
+  you type is never replaced. Once created, the pull request joins the list
+  and its page opens in the form's place. It replaces the six questions
+  Create Pull Request asked in the Changes view, and is drawn for Dark,
+  Light and both High Contrast themes.
 - **A page for each pull request.** Opening a pull request — from the list,
   the Command Palette, or a link in another one — opens its own editor tab,
   titled with its repository and number (`acme/app#37`); opening it again
@@ -14,45 +52,48 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   it stands: its state, who wants to merge what into where, whether its
   branch is the one checked out, and a status box for its reviews, its checks
   and whether it can be merged — with the one thing that helps when it can't:
-  **Update Branch** when the base has moved on, **Check Out to Resolve** for
-  conflicts, **Mark Ready for Review** for a draft. Its actions are the ones
-  its state allows: **Merge…**, **Mark Ready for Review** or **Reopen** first,
-  then **Check Out**, **Review…** and **More** (Close Pull Request, Copy Link),
-  with Refresh and Open on GitHub beside them. Four tabs:
+  **Update branch** when the base has moved on, **Checkout to resolve** for
+  conflicts, **Mark ready** for a draft. Its actions are the ones its state
+  allows: **Merge**, **Mark ready** or **Reopen pull request** first, then
+  **Checkout**, **Approve** (not on your own), **Review** and **More actions**
+  (Update branch, Close pull request, Copy link), with Refresh and Open on
+  GitHub beside them — the GitStudio desktop app's words and icons. Four
+  tabs:
   - **Conversation**: the description as GitHub draws it — tables, task lists,
     images, code, collapsible sections — with `#12`, `owner/repo#12` and
     `@people` as links (a pull request of the same repository opens its own
     page); every comment, review (with its verdict) and event; review threads
-    under their review, with **Reply** and **Resolve Conversation**; and a box
+    under their review, with **Reply** and **Resolve conversation**; and a box
     to comment. Reviewers with their verdicts, assignees and labels sit
     beside it.
   - **Commits**, each opening to its changed files, and each file to that
     commit's diff.
   - **Checks**: every check on the latest commit, failing first, with how long
     it took (or has been running), whether it is required, and **Details**.
-  - **Files Changed**: the changed files as a tree, with their line counts and
+  - **Files**: the changed files as a tree, with their line counts and
     how many conversations each has; a file opens VS Code's diff, and a
     renamed one is compared with its old name.
   What you change there shows at once and is then sent; if GitHub refuses it,
   the page goes back and says why, with what to do. While checks run, the page
   keeps itself up to date. It replaces the old description panel, and is drawn
   for Dark, Light and both High Contrast themes.
-- **Merge from the pull request's page.** **Merge…** lists only the methods
+- **Merge from the pull request's page.** **Merge** lists only the methods
   the repository allows, the one set in `gitstudio.pr.defaultMergeMethod`
   first, each saying what it does ("The 4 commits become one commit on
   main."), with the commit title to use and an option to delete the branch on
   GitHub afterwards. GitHub refuses the merge if the branch has moved on since
-  the page read it, and the page says so. The list's **Merge…** opens this box;
+  the page read it, and the page says so. The list's **Merge** opens this box;
   nothing is asked in the Changes view any more.
 - **Review in the editor, submit from the page.** A pull request's diffs take
   comments as soon as its page has read it — only on the lines GitHub accepts
   — and your first comment starts your review. GitHub's own threads show on
   the diff too, with **Reply** and **Resolve Conversation**. Your pending
   comments are listed on the page (each opens where it is) and counted on the
-  **Review** button, the **Files Changed** tab, each file and the status bar
+  **Review** button, the **Files** tab, each file and the status bar
   ("Reviewing #37 · 3 pending"). They are kept with the workspace, so
-  reloading the window keeps them. Submit them from the page's **Review…** box
-  as **Comment**, **Approve** or **Request changes**, with a summary — Approve
+  reloading the window keeps them. Submit them from the page's **Review** box
+  as **Comment**, **Approve** or **Request changes**, with a summary (the
+  header's **Approve** opens it with Approve chosen) — Approve
   and Request changes aren't offered on your own pull request — or **Discard**
   them there. Reviews of several pull requests can be under way at once, and
   comments written before the pull request moved on say so, and are sent on
@@ -69,23 +110,22 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Failed, Running), its reviews (Approved, Changes requested, Review
   required), its comments, Draft, its labels in their colours, and
   **Checked out** on the one whose branch you have checked out. Rows come 30 at
-  a time, and more load as you reach the end (or with **Load More**). Click a
+  a time, and more load as you reach the end (or with **Load more**). Click a
   row to open its page; hover it (or move to it with the keyboard) for
-  **Check Out**, **Open on GitHub** and **More Actions…** — Start Review,
-  Merge…, Copy Link, offered only where they apply; right-click or Shift+F10
+  **Checkout**, **Open on GitHub** and **More actions** — Review, Merge, Copy
+  link, offered only where they apply; right-click or Shift+F10
   opens the same menu. **Up/Down** move through the rows, and Down from the
   search box gets you there. The list keeps its rows while it refreshes, with
   a thin bar to show it, and says what to do when there is nothing to show —
-  **Sign in to GitHub**, **Sign in Again**, **Retry**, **Authorize on
-  GitHub**, **Create Pull Request** or **Clear filters**. It is drawn for
+  **Sign in to GitHub**, **Sign in again**, **Retry**, **Authorize on
+  GitHub**, **New pull request** or **Clear filters**. It is drawn for
   Dark, Light and both High Contrast themes.
 - **Pull requests of the repository your fork came from.** When `origin` is a
   fork, the Pull Requests list shows the pull requests of the repository it
   was forked from — as github.com's own Pull requests button does — with your
   fork (and any other GitHub remote) one click away in the repository menu at
-  the top. Your choice is remembered for the workspace. Checking out a pull
-  request of that repository fetches it from its `upstream` remote, or from
-  github.com when the clone has none.
+  the top. Your choice is remembered for the workspace, and **New pull
+  request** opens on it too.
 - **Select several commits.** In the Commit Graph and the Commits list,
   **Cmd/Ctrl+click** adds or removes a commit, **Shift+click** selects
   everything from the last one you clicked, and **Shift+Up/Down** extends the
@@ -182,6 +222,16 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   says why instead of letting the rebase fail. The editor that opens for a
   `git rebase -i` run in a terminal does the same in git's own order, oldest
   at the top, so there a commit folds into the kept one above it. (#32)
+
+### Changed
+- **Pull requests speak the GitStudio desktop app's words.** The list, a pull
+  request's page and the new form use the desktop's words and icons for the
+  same things — **Checkout**, **Approve**, **Review**, **Merge**, **Mark
+  ready**, **Update branch**, **Close pull request**, **Copy link**, **More
+  actions**, **New pull request**, and the tabs Conversation, Commits, Checks
+  and Files. In the Command Palette, *Create Pull Request* is now **New Pull
+  Request**, *Check Out Pull Request* is **Checkout Pull Request**, and *Start
+  Review* is **Review Pull Request**.
 
 ### Fixed
 - **Undo puts back what the operation changed — and only that.** Undo used to
@@ -511,20 +561,19 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   the first eight — as a mark of its own in a colour of its own, with the word
   beside it (Passed, Failed, Running); rows no longer show the literal text
   `$(check)`, `$(x)` or `$(circle-filled)`.
-- **Create Pull Request: Draft creates a draft.** Every pull request was
+- **Creating a pull request: Draft creates a draft.** Every pull request was
   created ready for review, whichever you picked. A branch that lives in your
   fork is now sent to GitHub as `owner:branch` — as a bare name, GitHub looked
   for it in the target repository. The branch is pushed to the remote git
   pushes it to, under its own name: one started from `origin/main` tracks
   `main`, and Create Pull Request pushed its commits into `main` — or, with a
   push remote set to your fork, into the original repository's `main`, and
-  nothing reached the fork. It asks to push only when the branch isn't there
-  yet or has commits that aren't, and leaves what the branch tracks alone.
-  The title proposed is the branch's one commit subject, or with several
-  commits the branch name, as GitHub proposes it (it was the newest commit's
-  subject). The base branch question offers only branches the remote has
-  (`master` and `develop` were offered everywhere) and says which repository
-  the pull request opens on. "A pull request already exists" opens that pull
+  nothing reached the fork. It is pushed only when it isn't there yet or has
+  commits that aren't, and what the branch tracks is left alone. The title
+  proposed is the branch's one commit subject, or with several commits the
+  branch name, as GitHub proposes it (it was the newest commit's subject).
+  The base branches offered are the repository's own (`master` and `develop`
+  were offered everywhere). "A pull request already exists" opens that pull
   request, not the list.
 - **Renamed files in a pull request** diff against the file as it was, under
   its old name — the whole file showed as added — and the page says what each
@@ -553,21 +602,21 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   the comments that are pending; discarding them leaves the ones already
   posted. A pull request whose files fail to load leaves your queued comments
   alone.
-- **Check Out on a pull request you already have** brings `pr/<n>` up to
-  date. It failed while `pr/<n>` was checked out, and it silently threw away
-  any commits you had made on it; now a `pr/<n>` with commits the pull request
-  doesn't have is never moved without asking. On the pull request's own
-  branch already, it says so instead of moving you to a `pr/<n>` copy. The
-  progress notification ends before "Checked out" appears, and its Open
-  Pull Request opens that pull request even after you have switched
-  repositories (it opened the same number in the repository active then).
+- **Checkout on a pull request you already have** brings its branch up to
+  date. It failed while the branch was checked out, and it silently threw
+  away any commits you had made on it; now a branch with commits the pull
+  request doesn't have is never moved without asking. On the pull request's
+  own branch already, it says so. The progress notification ends before
+  "Checked out" appears, and its Open Pull Request opens that pull request
+  even after you have switched repositories (it opened the same number in the
+  repository active then).
 - **A pull request's page:** label chips wear their colours (the page's own
   security policy dropped them, and every label was grey); a merged pull
   request reads **Merged** in purple and one closed without merging reads
-  **Closed** in red (both read a purple "Closed"); after **Merge…** the page
+  **Closed** in red (both read a purple "Closed"); after **Merge** the page
   flips to Merged at once, and the row leaves the list, without a reload or a
   second Merge — and stays Merged when a Refresh was still loading as the
-  merge landed. Merge… offers only the methods the repository allows, and
+  merge landed. Merge offers only the methods the repository allows, and
   isn't offered on a draft. A same-repository branch reads without its owner,
   and a file's line counts no longer show a red "−0".
 - **The Pull Requests list no longer asks GitHub on every file save**, even
