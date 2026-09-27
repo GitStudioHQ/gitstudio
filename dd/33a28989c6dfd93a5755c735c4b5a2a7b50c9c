@@ -1,0 +1,23 @@
+apps/extension/harness/walkthrough/shots.ts
+  s_26f5e669d3043c::t_87023aa74d4fcd 332-335
+apps/extension/harness/walkthrough/pack.py
+  s_26f5e669d3043c::t_fdd0acb28405e2 5-6,29,32-33
+apps/extension/test/walkthroughMedia.test.ts
+  s_26f5e669d3043c::t_1feef3b256f2bc 15,61-64,66-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dd33a28989c6dfd93a5755c735c4b5a2a7b50c9c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
