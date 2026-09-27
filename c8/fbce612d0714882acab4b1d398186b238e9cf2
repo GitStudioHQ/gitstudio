@@ -1,0 +1,29 @@
+packages/webview-ui/src/worktrees/worktrees.css
+  s_26f5e669d3043c::t_c49ad112947c2e 116-117,119,123,165,167,171-177,179,183-194,207-208,211,233,272-274,276-279,283-285
+  s_26f5e669d3043c::t_dae47144130661 196,228-230,235-237
+  s_26f5e669d3043c::t_d7f411e6b2d8c0 231
+packages/webview-ui/src/worktrees/view.ts
+  s_26f5e669d3043c::t_fad6b9ecfba588 483,525-532,538,540,546-547,549-561,565
+  s_26f5e669d3043c::t_3d6cb2b381ce4e 459-463,465-471,485-489,512
+  s_26f5e669d3043c::t_dae47144130661 484
+apps/extension/test/worktreesWebview.test.ts
+  s_26f5e669d3043c::t_54ed4c28a9f914 119,133,315-316,501,1110
+  s_26f5e669d3043c::t_084ddb440a77ec 164-165,171-174,176-179
+  s_26f5e669d3043c::t_a8b0e1059d9483 191,1163-1166,1214-1215,1219,1221-1224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c8fbce612d0714882acab4b1d398186b238e9cf2",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
