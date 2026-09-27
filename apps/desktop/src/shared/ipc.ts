@@ -2353,7 +2353,10 @@ export interface IpcChannels {
     { path: string; discardChanges?: boolean; listed?: string[]; pastLock?: boolean },
     WorktreeRemoveResult,
   ];
-  "worktree:open": [string, RepoInfo | undefined];
+  /** The worktree's tab (a new one, or the one it has); `{ said: true }` when
+   *  nothing opened and main has already said why in an app:notice (every tab
+   *  is taken, the folder isn't a repository); undefined for any other failure. */
+  "worktree:open": [string, RepoInfo | { said: true } | undefined];
   // ── Sync (control remote changes) ──
   "sync:status": [void, SyncStatus];
   "sync:fetch": [{ prune?: boolean } | void, CommitActionResult];

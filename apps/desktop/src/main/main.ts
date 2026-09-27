@@ -511,6 +511,11 @@ async function openRepoDialog(): Promise<RepoInfo | undefined> {
 }
 
 async function openRepoPath(path: string): Promise<RepoInfo | undefined> {
+  return (await openRepoPathSaying(path)).info;
+}
+
+/** openRepoPath, and whether a refusal was already said (an app:notice). */
+async function openRepoPathSaying(path: string): Promise<{ info?: RepoInfo; said: boolean }> {
   const out = await repos.openTab(path);
   const info = "info" in out ? out.info : undefined;
   // Opening a repo teaches the app where you keep repos. See
@@ -530,7 +535,7 @@ async function openRepoPath(path: string): Promise<RepoInfo | undefined> {
   }
   buildMenu();
   void saveState();
-  return info;
+  return { info, said: out.kind === "full" || out.kind === "notRepo" };
 }
 
 // ── IPC registration ─────────────────────────────────────────────────────────
@@ -941,7 +946,12 @@ function registerIpc(): void {
   handle("worktree:add", (req) => worktreeAddDialog(req));
   handle("worktree:removal", (req) => bridge.worktreeRemoval(req));
   handle("worktree:remove", (req) => bridge.worktreeRemove(req));
-  handle("worktree:open", (path) => openRepoPath(path));
+  // A refusal main has said already (every tab taken) is answered as such, so
+  // the Worktrees row doesn't add a red "Couldn't open" of its own.
+  handle("worktree:open", async (path) => {
+    const r = await openRepoPathSaying(path);
+    return r.info ?? (r.said ? { said: true as const } : undefined);
+  });
 
   // Sync (control remote changes).
   handle("sync:status", () => bridge.syncStatus());

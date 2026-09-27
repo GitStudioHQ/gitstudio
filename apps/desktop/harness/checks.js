@@ -18530,6 +18530,27 @@
       c.ok(!btn.disabled && !btn.classList.contains("is-busy"), "its Open button is not left busy");
     },
 
+    /** Every tab taken: opening a worktree is refused, and said ONCE — main's
+     *  "keeps up to 10 repositories" notice. The row's own "Couldn't open
+     *  <path>." in red sat beside it, for a state, not a failure. */
+    "opening-a-worktree-with-every-tab-taken-says-so-once": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const btn = $$(".view-host button.row-btn").find((b) => (b.getAttribute("aria-label") || "").includes("gitstudio-wave2"));
+      c.ok(!!btn, "precondition: the worktree's Open button");
+      if (!btn) return;
+      const before = $$(".repo-tab").length;
+      c.eq(before, 10, "precondition: every tab is taken");
+      btn.click();
+      await settle(1200);
+      c.eq($$(".repo-tab").length, before, "no tab opened");
+      const toasts = $$("#toast-stack .toast");
+      c.ok(toasts.some((t) => /keeps up to 10 repositories open/.test(text(t))), `the full row is said (${text("#toast-stack")})`);
+      c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `and nothing is said as a failure (${text("#toast-stack")})`);
+      c.ok(!/Couldn't open/.test(text("#toast-stack")), "no \"Couldn't open\"");
+      c.ok(!btn.disabled && !btn.classList.contains("is-busy"), "its Open button is not left busy");
+    },
+
     /** A clone that takes long enough for its progress card lands in its NEW
      *  tab (issue #32): the tab opens while the card is still up, so the switch
      *  waits for the card — and the clone's own landing used to route the tab

@@ -3481,6 +3481,8 @@ class App {
   private async openWorktreeLive(w: WorktreeInfo, btn: HTMLButtonElement): Promise<void> {
     await this.refreshInPlace(btn, async () => {
       const repo = await host.invoke("worktree:open", w.path);
+      // Main has said why nothing opened (every tab is taken): once is enough.
+      if (repo && "said" in repo) return;
       if (!repo) {
         toast(`Couldn't open ${w.path}.`, "error");
         return;

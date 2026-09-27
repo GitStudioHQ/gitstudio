@@ -856,6 +856,7 @@ const CASES = [
   ["a-board-still-loading-when-you-switch-away-paints-when-you-are-back", "projects", { extra: "tabs=2&slow=project:board@gitstudio:1500" }],
   ["an-assistant-run-uses-its-own-tabs-permission", "assistant~click:.topbar-assistant", { extra: "tabs=2&ai=1" }],
   ["opening-a-worktree-opens-a-tab-and-says-so-there", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "tabs=1" }],
+  ["opening-a-worktree-with-every-tab-taken-says-so-once", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "tabs=10" }],
   ["a-slow-clone-lands-in-its-new-tab-and-says-so", "explore~type:git~key:Enter~text:libgit2/libgit2", { extra: "tabs=1&clonems=1200" }],
   ["a-cloned-repository-says-so-in-its-new-tab", "code~palette~type:clone~text:Clone%20repository%E2%80%A6", { extra: "tabs=1" }],
   ["a-live-page-keeps-polling-after-a-tab-round-trip", "actions~open9101", { extra: "tabs=2", arg: "actions:runDetail", budget: 40000 }],

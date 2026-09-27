@@ -1881,9 +1881,10 @@
     },
     // Opening another worktree is main's openRepoPath, like any open: a tab of
     // its own (or the one it has), announced before the invoke answers.
+    // Every tab taken: main has said so (app:notice), and answers { said }.
     "worktree:open": (path) => {
       const info = window.__gsTabs.open(String(path));
-      return info ? { ...info } : undefined;
+      return info ? { ...info } : window.__gsTabs.state().tabs.length >= 10 ? { said: true } : undefined;
     },
     // ── Repositories as tabs (issue #32) — main's RepoStore, in miniature ──
     // ?latetabs=1 is main's boot order. The window asks which tabs are open
