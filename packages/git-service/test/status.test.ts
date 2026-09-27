@@ -51,15 +51,26 @@ test("parseV2: ordinary staged + unstaged + untracked", () => {
   assert.equal(s.merge.length, 0);
 });
 
-test("parseV2: rename record consumes the original path field", () => {
+test("parseV2: rename record consumes the original path field, and keeps it as oldPath", () => {
   // "2 XY sub mH mI mW hH hI Xscore path\0origPath"
   const s = parseV2(
     ["2 R. N... 100644 100644 100644 eeee eeee R100 new.ts", "old.ts", ""].join(
       "\0",
     ),
   );
-  assert.deepEqual(s.staged, [{ path: "new.ts", status: "R" }]);
+  assert.deepEqual(s.staged, [{ path: "new.ts", status: "R", oldPath: "old.ts" }]);
   assert.equal(s.unstaged.length, 0);
+});
+
+test("parseV2: a renamed-and-edited file keeps its origin on the rename only", () => {
+  const s = parseV2(
+    ["2 RM N... 100644 100644 100644 eeee eeee R090 dir/new name.ts", "dir/old name.ts", "? after.txt", ""].join("\0"),
+  );
+  assert.deepEqual(s.staged, [{ path: "dir/new name.ts", status: "R", oldPath: "dir/old name.ts" }]);
+  assert.deepEqual(s.unstaged, [
+    { path: "dir/new name.ts", status: "M" },
+    { path: "after.txt", status: "U" },
+  ]);
 });
 
 test("parseV2: unmerged (conflict) → merge group with '!'", () => {

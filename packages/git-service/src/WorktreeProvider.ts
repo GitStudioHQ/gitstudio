@@ -1,6 +1,16 @@
 import { existsSync, realpathSync } from "node:fs";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { stoppedIn, type StoppedOperation } from "./stoppedOperation";
+import { StashProvider } from "./StashProvider";
+import {
+  readCommits,
+  readWorktreesSnapshot,
+  readWorktreeStatus,
+  type WorktreeCommit,
+  type WorktreeStatus,
+  type WorktreeSummary,
+  type WorktreesSnapshot,
+} from "./worktreeState";
 
 /** One linked worktree as reported by `git worktree list --porcelain`. */
 export interface WorktreeEntry {
@@ -19,6 +29,8 @@ export interface WorktreeEntry {
   lockReason?: string;
   /** True when git considers the worktree prunable (its path is gone). */
   prunable?: boolean;
+  /** Why git would prune it ("gitdir file points to non-existent location"). */
+  prunableReason?: string;
 }
 
 export interface WorktreeAddOptions extends GitRunOptions {
@@ -53,6 +65,15 @@ export interface WorktreeAgreedRemoveOptions extends GitRunOptions {
    *  stops it (see removeAsAgreed). `listed: undefined` — the question could
    *  not read them, and said any it has go. */
   discardChanges?: { listed: readonly string[] | undefined };
+  /**
+   * Its uncommitted changes — the ones the question listed — are STASHED in
+   * it first (`stash push --include-untracked -m <message>`), and then it is
+   * removed without `--force`. The stash stack is the repository's, not the
+   * worktree's, so the stash outlives the folder and shows in every
+   * worktree's stash list. A path the question never listed stops it before
+   * anything runs, as for `discardChanges`.
+   */
+  stashChanges?: { listed: readonly string[] | undefined; message: string };
   /** It is locked and removing it anyway was agreed; `reason` is the lock's,
    *  put back if git refuses the remove. */
   pastLock?: { reason?: string };
@@ -80,8 +101,16 @@ export type WorktreeRemoval =
    *  there, which removing it deletes; undefined when they could not be read.
    *  `operation`: what git is stopped in THERE — removing the worktree
    *  abandons it, and git says nothing (a clean worktree mid-rebase goes
-   *  with a plain remove, exit 0). */
-  | { kind: "present"; entry: WorktreeEntry; changes?: string[]; operation?: StoppedOperation };
+   *  with a plain remove, exit 0). `unmerged`: files left unmerged there,
+   *  which `git stash` refuses ("needs merge") — so they can only be
+   *  discarded with it. */
+  | {
+      kind: "present";
+      entry: WorktreeEntry;
+      changes?: string[];
+      operation?: StoppedOperation;
+      unmerged?: number;
+    };
 
 export interface WorktreeOpResult {
   ok: boolean;
@@ -90,6 +119,9 @@ export interface WorktreeOpResult {
    *  question never listed (or they could no longer be read), made since it
    *  was asked. Read removal() again and ask again; `stderr` is empty. */
   changedSince?: true;
+  /** `stashChanges`: the stash was made — by its commit sha — whether or not
+   *  the remove that followed it went through. */
+  stashed?: string;
 }
 
 /**
@@ -100,8 +132,27 @@ export interface WorktreeOpResult {
 export class WorktreeProvider {
   constructor(private proc: GitProcess) {}
 
-  /** `git worktree list --porcelain` parsed into entries. */
+  /**
+   * Whether this git knows `worktree list -z` (2.36+). Asked once: an older
+   * git answers the flag with its usage (exit 129), and the newline form is
+   * read from then on — which a path holding a newline breaks, as it always
+   * did there.
+   */
+  private listZ: boolean | undefined;
+
+  /** `git worktree list --porcelain [-z]` parsed into entries. */
   async list(opts?: GitRunOptions): Promise<WorktreeEntry[]> {
+    if (this.listZ !== false) {
+      const z = await this.proc.run(["worktree", "list", "--porcelain", "-z"], { signal: opts?.signal });
+      if (z.code === 0) {
+        this.listZ = true;
+        return parseWorktreePorcelainZ(z.stdout);
+      }
+      if (z.code !== 129) {
+        return [];
+      }
+      this.listZ = false;
+    }
     const r = await this.proc.run(["worktree", "list", "--porcelain"], {
       signal: opts?.signal,
     });
@@ -109,6 +160,31 @@ export class WorktreeProvider {
       return [];
     }
     return parseWorktreePorcelain(r.stdout);
+  }
+
+  /** Tier 0: every worktree's summary and the repository's remotes and
+   *  default branch, in three spawns (see worktreeState.ts). */
+  snapshot(opts?: GitRunOptions): Promise<WorktreesSnapshot> {
+    return readWorktreesSnapshot(this.proc, (o) => this.list(o), opts);
+  }
+
+  /** Tier 1: what one worktree's working tree holds and what git is stopped in there. */
+  status(
+    w: WorktreeSummary,
+    snap: Pick<WorktreesSnapshot, "remotes" | "defaultBranch">,
+    opts?: GitRunOptions,
+  ): Promise<WorktreeStatus | undefined> {
+    return readWorktreeStatus(this.proc, w, snap, opts);
+  }
+
+  /** Tier 2: up to `limit` commits `range` selects, read in the worktree at `path`. */
+  commits(
+    path: string,
+    range: string[],
+    limit: number,
+    opts?: GitRunOptions,
+  ): Promise<{ commits: WorktreeCommit[]; more: boolean }> {
+    return readCommits(this.proc, path, range, limit, opts);
   }
 
   /**
@@ -233,7 +309,13 @@ export class WorktreeProvider {
       this.uncommitted(entry.path, opts),
       stoppedIn(this.proc.at(entry.path), opts?.signal),
     ]);
-    return { kind: "present", entry, changes, ...(stop?.operation ? { operation: stop.operation } : {}) };
+    return {
+      kind: "present",
+      entry,
+      changes,
+      ...(stop?.operation ? { operation: stop.operation } : {}),
+      ...(stop?.unmerged ? { unmerged: stop.unmerged } : {}),
+    };
   }
 
   /**
@@ -290,6 +372,25 @@ export class WorktreeProvider {
     opts: WorktreeAgreedRemoveOptions,
   ): Promise<WorktreeOpResult> {
     const signal = opts.signal;
+    if (opts.stashChanges) {
+      const { listed, message } = opts.stashChanges;
+      if (listed) {
+        const now = await this.uncommitted(path, { signal });
+        const agreed = new Set(listed);
+        if (now === undefined || now.some((p) => !agreed.has(p))) {
+          return { ok: false, stderr: "", changedSince: true };
+        }
+      }
+      const here = this.proc.at(path);
+      const saved = await new StashProvider(here).save({ includeUntracked: true, message, signal });
+      if (!saved.ok) {
+        return { ok: false, stderr: saved.stderr };
+      }
+      const top = saved.created ? await here.run(["rev-parse", "--verify", "--quiet", "refs/stash"], { signal }) : undefined;
+      const stashed = top && top.code === 0 ? top.stdout.trim() : undefined;
+      const r = await this.removeAsAgreed(path, { pastLock: opts.pastLock, signal });
+      return stashed ? { ...r, stashed } : r;
+    }
     if (opts.discardChanges) {
       const { listed } = opts.discardChanges;
       if (listed) {
@@ -433,6 +534,9 @@ export function parseWorktreePorcelain(text: string): WorktreeEntry[] {
       case "prunable":
         if (current) {
           current.prunable = true;
+          if (value) {
+            current.prunableReason = unquoteC(value);
+          }
         }
         break;
       default:
@@ -440,6 +544,56 @@ export function parseWorktreePorcelain(text: string): WorktreeEntry[] {
     }
   }
   flush();
+  return entries;
+}
+
+/**
+ * Parse `git worktree list --porcelain -z` (git 2.36+): every attribute line
+ * ends in NUL instead of a newline, and a record ends in an empty one — so a
+ * path (or a lock reason) holding a newline reads whole, and nothing is
+ * C-quoted.
+ */
+export function parseWorktreePorcelainZ(text: string): WorktreeEntry[] {
+  const entries: WorktreeEntry[] = [];
+  let current: WorktreeEntry | undefined;
+  for (const field of text.split("\0")) {
+    if (field.length === 0) {
+      if (current) entries.push(current);
+      current = undefined;
+      continue;
+    }
+    const sp = field.indexOf(" ");
+    const key = sp === -1 ? field : field.slice(0, sp);
+    const value = sp === -1 ? "" : field.slice(sp + 1);
+    if (key === "worktree") {
+      if (current) entries.push(current);
+      current = { path: value, head: "" };
+      continue;
+    }
+    if (!current) continue;
+    switch (key) {
+      case "HEAD":
+        current.head = value;
+        break;
+      case "branch":
+        current.branch = value.startsWith("refs/heads/") ? value.slice("refs/heads/".length) : value;
+        break;
+      case "bare":
+        current.bare = true;
+        break;
+      case "locked":
+        current.locked = true;
+        if (value) current.lockReason = value;
+        break;
+      case "prunable":
+        current.prunable = true;
+        if (value) current.prunableReason = value;
+        break;
+      default:
+        break;
+    }
+  }
+  if (current) entries.push(current);
   return entries;
 }
 
