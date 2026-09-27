@@ -79,7 +79,7 @@ const STATUS_CONCURRENCY = 4;
 export interface WorktreesDeps {
   /** Open the push review for a worktree (the Changes view's). */
   openPushReview(target?: { entry: RepoEntry; name: string; shownPath: string; release(): void }): Promise<void>;
-  /** Other views that list what these actions change (the Stashes list). */
+  /** Other views that list what these actions change (the Changes view's Stashes group). */
   onChanged?(): void;
 }
 
