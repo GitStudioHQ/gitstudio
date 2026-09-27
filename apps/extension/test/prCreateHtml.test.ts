@@ -13,6 +13,7 @@ import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { decodeVerdictTitle, findChrome } from "../../../packages/webview-ui/test/headless";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { prCreateCsp, prCreateHtml } from "../src/pr/prCreateHtml";
 import { createScenes } from "../../../packages/webview-ui/test/fixtures/prCreateFixtures";
 
@@ -86,7 +87,7 @@ test("the form's own policy lets it paint: no refusal, a picked label's colour a
     const stdout = await new Promise<string>((res) =>
       execFile(
         CHROME!,
-        ["--headless", "--disable-gpu", "--no-sandbox", `--user-data-dir=${join(dir, "profile")}`, "--allow-file-access-from-files", "--virtual-time-budget=5000", "--window-size=1000,900", "--dump-dom", `file://${page}`],
+        headlessChromeArgs(["--disable-gpu", "--no-sandbox", `--user-data-dir=${join(dir, "profile")}`, "--allow-file-access-from-files", "--virtual-time-budget=5000", "--window-size=1000,900", "--dump-dom", `file://${page}`]),
         { maxBuffer: 32 * 1024 * 1024, timeout: 60_000, killSignal: "SIGKILL" },
         (_err, o) => res(o ?? ""),
       ),

@@ -14,6 +14,7 @@ import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { decodeVerdictTitle, findChrome } from "../../../packages/webview-ui/test/headless";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { prListHtml, prListCsp } from "../src/pr/prListHtml";
 import { listScenes } from "../../../packages/webview-ui/test/fixtures/prListFixtures";
 
@@ -78,7 +79,7 @@ test("the page's own policy lets the list paint: no refusal, labels in their col
     const stdout = await new Promise<string>((res) =>
       execFile(
         CHROME!,
-        ["--headless", "--disable-gpu", "--no-sandbox", `--user-data-dir=${join(dir, "profile")}`, "--allow-file-access-from-files", "--virtual-time-budget=5000", "--window-size=320,900", "--dump-dom", `file://${page}`],
+        headlessChromeArgs(["--disable-gpu", "--no-sandbox", `--user-data-dir=${join(dir, "profile")}`, "--allow-file-access-from-files", "--virtual-time-budget=5000", "--window-size=320,900", "--dump-dom", `file://${page}`]),
         { maxBuffer: 32 * 1024 * 1024, timeout: 60_000, killSignal: "SIGKILL" },
         (_err, out) => res(out ?? ""),
       ),
