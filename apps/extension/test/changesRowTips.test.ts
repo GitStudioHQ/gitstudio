@@ -14,7 +14,9 @@ import { relativeTime } from "../src/util/relativeTime";
 // folder on the row), the same with its folder cut at a narrow width, one in
 // the tree layout (the folder is not on the row), a stash's file at the root,
 // one in a folder, one renamed, a stash, a file's status letter, a word
-// button} × width {360, 250}.
+// button} × width {360, 250}. And a tip too wide for the view wraps: a
+// sentence between its words ("as it w / as stashed" read as broken), a
+// name anywhere, each line filled.
 
 const chrome = ChangesPage.chrome();
 const skip = chrome ? false : "no windowless Chrome on this machine (set GS_CHROME)";
@@ -113,3 +115,58 @@ for (const width of [360, 250]) {
     assert.deepEqual(p.page.errors, []);
   });
 }
+
+/** The tip that is up: its text, and where its lines break ("ab|cd"), and how many break inside a word. */
+const tipLines = (p: ChangesPage) => p.eval<{ text: string; breaks: string[]; inWord: number }>(`(function () {
+  var t = document.querySelector(".gs-tip.show"); var node = t.firstChild; var text = node.textContent;
+  var r = document.createRange(); var last = null; var at = [];
+  for (var i = 0; i < text.length; i++) {
+    r.setStart(node, i); r.setEnd(node, i + 1);
+    var rects = r.getClientRects(); if (!rects.length) continue;
+    var top = Math.round(rects[0].top);
+    if (last !== null && top > last + 2) at.push(i);
+    last = top;
+  }
+  return {
+    text: text,
+    breaks: at.map(function (i) { return text.slice(Math.max(0, i - 4), i) + "|" + text.slice(i, i + 4); }),
+    inWord: at.filter(function (i) { return text[i - 1] !== " " && text[i] !== " "; }).length,
+  };
+})()`);
+
+test("a tip too wide for the view wraps a sentence between its words, and a name anywhere", { skip }, async () => {
+  const p = await open(300);
+  await p.send(state({
+    stashes: [{
+      sha: B, text: "Fix login redirect", branch: "main", message: "On main: Fix login redirect", time: now - 14400, rel: relativeTime(now - 14400), count: 1,
+      files: [{ path: "src/auth/callback.ts", status: "A", staged: "all" }],
+    }],
+  }));
+  await p.eval(`${stash}.click()`);
+  const row = stashFile("src/auth/callback.ts");
+  await p.page.waitFor(`!!${row}`);
+  // The row under the pointer shows its words; then the pointer on Move.
+  const r = await p.eval<{ x: number; y: number }>(`(function () { var b = ${row}.getBoundingClientRect(); return { x: Math.round(b.left + 40), y: Math.round(b.top + b.height / 2) }; })()`);
+  await p.mouseMove(r.x, r.y + 1);
+  await p.mouseMove(r.x, r.y);
+  const m = await p.eval<{ x: number; y: number }>(`(function () { var b = ${row}.querySelector('[data-act="move"]').getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()`);
+  await p.mouseMove(m.x, m.y + 1);
+  await p.mouseMove(m.x, m.y);
+  await sleep(600);
+  const sentence = await tipLines(p);
+  assert.equal(sentence.text, "Move: take this file out of the stash, back into Staged as it was stashed");
+  assert.ok(sentence.breaks.length > 0, `it wraps at this width: ${JSON.stringify(sentence)}`);
+  assert.equal(sentence.inWord, 0, `never inside a word: ${JSON.stringify(sentence.breaks)}`);
+  await p.mouseMove(2, 2);
+  await sleep(20);
+
+  await p.resize(250, 700);
+  await p.send(state());
+  const nameAt = await p.eval<{ x: number; y: number }>(`(function () { var b = ${file("unstaged", `${DEEP}/panel.ts`)}.getBoundingClientRect(); return { x: Math.round(b.left + 30), y: Math.round(b.top + b.height / 2) }; })()`);
+  await p.mouseMove(nameAt.x, nameAt.y + 1);
+  await p.mouseMove(nameAt.x, nameAt.y);
+  await sleep(600);
+  const name = await tipLines(p);
+  assert.equal(name.text, `${DEEP}/panel.ts`);
+  assert.ok(name.inWord > 0, `a path breaks anywhere, each line filled: ${JSON.stringify(name.breaks)}`);
+});

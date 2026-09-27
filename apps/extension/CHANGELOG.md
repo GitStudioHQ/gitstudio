@@ -433,7 +433,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   file's, a stash's) highlights its items the same way. High contrast
   themes keep their border. A tooltip now shows only when it adds
   something — a name that is cut short, or an explanation — never the words
-  already on the row.
+  already on the row (a file at the root no longer shows its own name), and
+  one too wide for a narrow sidebar wraps between its words.
 - **A branch's actions are in one order for every kind of ref** — the
   branch you're on, any other, a remote branch, a tag: checkout and what
   starts from it, then compare, merge and rebase, then push and the tracked

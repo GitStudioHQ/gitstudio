@@ -11433,15 +11433,20 @@ export class CommitViewProvider
       tipEl.style.right = "auto";
       tipEl.style.whiteSpace = "nowrap";
       tipEl.style.wordBreak = "normal";
+      tipEl.style.overflowWrap = "normal";
       tipEl.style.width = "auto";
       tipEl.style.maxWidth = "none";
       if (tipEl.offsetWidth > avail) {
-        // Genuinely too wide for the panel — wrap. Use break-all so each line
-        // fills COMPLETELY and the remainder just overflows to the next row,
-        // instead of break-word snapping at the last hyphen and leaving a ragged
-        // gap on line 1 (which reads as "there's still room, why did it wrap?").
+        // Genuinely too wide for the panel — wrap. A name (a path, a branch)
+        // breaks anywhere, so each line fills COMPLETELY and the remainder
+        // just overflows to the next row, instead of break-word snapping at
+        // the last hyphen and leaving a ragged gap on line 1 (which reads as
+        // "there's still room, why did it wrap?"). Words in a sentence wrap
+        // between them: "as it w / as stashed" read as broken.
+        const sentence = /\s/.test(text.trim());
         tipEl.style.whiteSpace = "normal";
-        tipEl.style.wordBreak = "break-all";
+        tipEl.style.wordBreak = sentence ? "normal" : "break-all";
+        tipEl.style.overflowWrap = sentence ? "anywhere" : "normal";
         tipEl.style.width = avail + "px";
         tipEl.style.maxWidth = avail + "px";
       }
