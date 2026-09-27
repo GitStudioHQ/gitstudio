@@ -1,0 +1,161 @@
+apps/desktop/src/renderer/markdown.ts
+  s_26f5e669d3043c::t_9ff912852d2d6b 1-6
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_a8be894ea72863 79-86,274-275,279-280,283-284,286,618,870-871,882,890-891,913,919,932-933,937,940-941,943,949,996-998,1002,2139-2140
+apps/desktop/src/shared/issueRefs.ts
+  s_26f5e669d3043c::t_e93c1a43dd31f3 1-4
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_a9cbb749fbca85 33-177,427-436,794-797,802,804-809,833-845,849,852,868-871
+apps/extension/README.md
+  s_26f5e669d3043c::t_b36aca38440900 87
+apps/extension/esbuild.js
+  s_26f5e669d3043c::t_274ab58e0a3a56 193-225,237-239
+apps/extension/harness/pr/createShots.ts
+  s_26f5e669d3043c::t_84af21fb364cff 1-223
+apps/extension/harness/pr/listShots.ts
+  s_26f5e669d3043c::t_bcef26899cc9b3 1-7,9,11-12,14-17,19-24,26-153,157-175,178-199,204,207-220,226,228
+apps/extension/harness/pr/pageShots.ts
+  s_26f5e669d3043c::t_98b90009ddea9b 1-7,9-12,14-15,17,19-24,26-29,31-55,57-65,68-173,175-179,181-196,198-240,243
+apps/extension/harness/pr/themeExtras.ts
+  s_26f5e669d3043c::t_92169e74159d0d 1-61
+apps/extension/package.json
+  s_26f5e669d3043c::t_3a45d8456bff18 137,683,685,701,709,713,725,727-745,767,779,2110-2121,2278,2283,2285-2289,2295-2305
+apps/extension/src/pr/checkoutPr.ts
+  s_26f5e669d3043c::t_ec951910c78f39 9-22,25,30-47,50-51,53-84,88,92-112,114-116,118,125-138,140-143,150-172,175-177,179-202,204-208,211,220-221,225-227,229-232,239-241,243,249-261,267-289,292,294-295,298,304-305,309-400,404-413,420
+apps/extension/src/pr/githubApi.ts
+  s_26f5e669d3043c::t_2ad08233060c44 20,42-46,121-128,272-286,566-567,573,591-595,601,606-634,639-690,845,851-858,936
+apps/extension/src/pr/prContentProvider.ts
+  s_26f5e669d3043c::t_57188d5a3f4158 23-24,36-37,43,49
+apps/extension/src/pr/prCreateHtml.ts
+  s_26f5e669d3043c::t_d2c248c404bf99 1-57
+apps/extension/src/pr/prCreatePage.ts
+  s_26f5e669d3043c::t_9a8267a095aa30 1-897
+apps/extension/src/pr/prFeature.ts
+  s_26f5e669d3043c::t_6fbd18fca1d6d3 2,5,7-8,10,13-15,17-23,25-33,44,47,51-52,56,58-59,62-113,115,120-124,130-134,136,159-187,193,202,205-214,217-268,270,277-298,300,302
+apps/extension/src/pr/prListHtml.ts
+  s_26f5e669d3043c::t_3e5a91ab440e86 1-54
+apps/extension/src/pr/prPage.ts
+  s_26f5e669d3043c::t_e68e0a821571c8 2-21,23-24,26-34,36-57,59,61-62,64-71,74-78,81-87,89-186,189-192,195-197,200-207,210-211,214-220,222-235,237-243,246,248-252,254-277,279-286,288-348,350-387,389-394,396-403,407-409,411-437,439,442-448,451-453,456-465,468-474,477-479,481-484,486-487,489-490,493-496,498-501,503-505,507-524,526-550,552-559,564-573,575-591,594-609,611-618,620,622-657,659-680,683-769,772-773,776-780,783-802,804-823,825-829,831-842,844,846-852,855-899,901-909
+apps/extension/src/pr/prPageHtml.ts
+  s_26f5e669d3043c::t_e2e60ae48e4d79 1-65
+apps/extension/src/pr/prTargets.ts
+  s_26f5e669d3043c::t_505dbed62e8bac 1-84
+apps/extension/src/pr/pullRequestsView.ts
+  s_26f5e669d3043c::t_6400dc0a16792b 2-26,30-31,33-34,36,40-49,51-54,56-66,69,71-74,76-80,82-95,97-102,104-106,108-116,119-120,122,124-125,128-136,139-174,177-208,211-217,220-223,226-280,283-294,296-297,299,303-324,329-330,335,343,345-349,354-357,359-382,386,390-486,490-494,496-604,607-610,613-614,617-620,623-635,638-649,652,654-667,670-676,679-740,744-781,785-795,798-803,806-807,809-812,814-815,819-832,835-837,840,848-851,853-855,857,860,863-865,867-868,870-892,897-908,911-922,925,927-929,933-936,938-978,980,983-985,988-999,1001,1005,1007,1009,1013-1014,1017-1040,1043-1063
+apps/extension/src/pr/reviewDiff.ts
+  s_26f5e669d3043c::t_7df81bd2382956 6,9-12,22-27,29-30,37-38,46-47,51,53-54,57,60-61,64-65,69,74-81
+apps/extension/src/pr/reviewMode.ts
+  s_26f5e669d3043c::t_6d1476cdf29fcf 2,4,12,14-21,23-31,37-39,41-42,56-60,77-83,86-126,129-130,134-147,154-155,157,161-164,167-207,212,214-216,223-253,255,258-267,270-281,283-285,287-294,296-303,308-310,312-325,327-343,346-347,349,351-352,356-358,362-365,367-368,372-379,381-387,390,392-397,403,409,411,414-416,418,423-424,426,430-432,435-436,438,444,446,450-453,455-467,469-470,472,474-478,481-493,495-496,498-513,517-518,521-526,529-531,535-538,541,544-546,548,550,555,558-561,563-592,597-611,613-616,619-622,625-663,665-810,824-828
+apps/extension/test/branchInAnotherWorktree.test.ts
+  s_26f5e669d3043c::t_243b439fe51880 43,173,175-176,179-193,201,203-206,210
+apps/extension/test/fakeGitHub.ts
+  s_26f5e669d3043c::t_28419c6d154969 37-38,44,77-81,124-421
+apps/extension/test/prCheckoutBranch.test.ts
+  s_26f5e669d3043c::t_12b947d158966a 1-6,8-27,36-37,53,68,105,110-114,118,120,124-125,129,131-134,141,145,147,151-172,175-176,178-192,194,198,200-203,205-212,215,219,221-222,225,228-241,250,252,255-256,261,265,269,271-394,397,415,417,423-426
+apps/extension/test/prCreateForm.test.ts
+  s_26f5e669d3043c::t_1e6d01514de79b 1-631
+apps/extension/test/prCreateHtml.test.ts
+  s_26f5e669d3043c::t_89e3653397d243 1-100
+apps/extension/test/prFeature.test.ts
+  s_26f5e669d3043c::t_1271481f42b857 1-6,8-33,35,37-39,41,43,45-46,48-77,80-93,96-99,101-110,112-115,118-119,121-125,127-131,134,136-141,143,145-150,152,156-184,186-196,200-205,208,210-212,217-218,223-224,227-246,248-255,257,259-260,264-267,269-273,275-282,285-290,296-338,341,343-347,351-407,433-436,440-454,461-469,472,475,478-534,538,541-542,546-547,550,552-565,567-569,572-599,601-642,646,648-654,660-690,692-731,738,745,747-751,753-755,758,761-763,768,775-776,778-781,784-797,799-803,805-815,819
+apps/extension/test/prGitWorld.ts
+  s_26f5e669d3043c::t_9a7f8ead83b497 1-33
+apps/extension/test/prListPage.test.ts
+  s_26f5e669d3043c::t_49e032493b3153 1-92
+apps/extension/test/prListView.test.ts
+  s_26f5e669d3043c::t_cf519802cd1c60 1-854
+apps/extension/test/prPageHtml.test.ts
+  s_26f5e669d3043c::t_58b75b0f5a1b18 1-100
+apps/extension/test/prTestKit.ts
+  s_26f5e669d3043c::t_c3ee7403566db4 1-6,8-9,13-16,18,20-34,37-39,42-51,53-61,63-64,66-82,84-96,98-102,104-202,204-213,217-232,234-236,239-248
+apps/extension/test/prVscodeStub.cjs
+  s_26f5e669d3043c::t_197b7e0e5d9747 151,154-155,168-169,239-240,262-269,278-355,399-404
+packages/engine/src/forge/issueRefs.ts
+  s_26f5e669d3043c::t_0617d422faa8a8 1-60
+packages/engine/src/forge/prCreate.ts
+  s_26f5e669d3043c::t_b2d5766e55aefd 1-5,7-11,13-49,51-53,55-57,59-61,63-95,97,99,101-105,111,113-116,120-127,131-133,135-149,152-154,157-158,160-161,163-165,167-170,172-173,176-196,199-204,206,209-223
+packages/engine/src/forge/prList.ts
+  s_26f5e669d3043c::t_0d45f0bdcb4d91 1-535
+packages/engine/src/forge/prPage.ts
+  s_26f5e669d3043c::t_c13ffe09c6a089 1-877
+packages/engine/src/forge/pullRequests.ts
+  s_26f5e669d3043c::t_9d0247491c1a91 1-5,7-19,43-49,51-104,107-141,214-274,279-282,285,287,289
+packages/engine/test/issueRefs.test.ts
+  s_26f5e669d3043c::t_52aa854c20a2b0 3
+packages/engine/test/prCreate.test.ts
+  s_26f5e669d3043c::t_1707f9f9ba93d8 1-122
+packages/engine/test/prList.test.ts
+  s_26f5e669d3043c::t_b7a699e9b0e226 1-276
+packages/engine/test/prPage.test.ts
+  s_26f5e669d3043c::t_76ad8ea90f788a 1-475
+packages/engine/test/pullRequests.test.ts
+  s_26f5e669d3043c::t_47830067543d4b 1-5,10-14,18,21,24-83
+packages/git-service/src/prBranch.ts
+  s_26f5e669d3043c::t_89168bb7edfe52 1-413
+packages/git-service/src/prCheckout.ts
+  s_26f5e669d3043c::t_786a25b2523bdf 72,81-96,100-103,120,124-132
+packages/git-service/test/prBranch.test.ts
+  s_26f5e669d3043c::t_70c3a631d47a06 1-292
+packages/git-service/test/prCheckout.test.ts
+  s_26f5e669d3043c::t_5281529f662cf8 8,127-139
+packages/host-bridge/src/prProtocol.ts
+  s_26f5e669d3043c::t_f33a1afcea2fe5 1-669
+packages/webview-ui/src/markdown.ts
+  s_26f5e669d3043c::t_a6cfe75c224a3c 1-695
+packages/webview-ui/src/pr/create-main.ts
+  s_26f5e669d3043c::t_cdde5ec3c950ae 1-48
+packages/webview-ui/src/pr/list-main.ts
+  s_26f5e669d3043c::t_bc49af2d148a6b 1-51
+packages/webview-ui/src/pr/page-main.ts
+  s_26f5e669d3043c::t_02eeee6680d861 1-51
+packages/webview-ui/src/pr/prCreate.ts
+  s_26f5e669d3043c::t_d6968959295d12 1-1068
+packages/webview-ui/src/pr/prList.ts
+  s_26f5e669d3043c::t_f0fb2ce9a0e5a7 1-1259
+packages/webview-ui/src/pr/prPage.ts
+  s_26f5e669d3043c::t_73ab042f4d1bff 1-1826
+packages/webview-ui/src/styles/pr-create.css
+  s_26f5e669d3043c::t_b1becdbcfd567a 1-526
+packages/webview-ui/src/styles/pr-list.css
+  s_26f5e669d3043c::t_cb7f73b99c96bc 1-914
+packages/webview-ui/src/styles/pr-page.css
+  s_26f5e669d3043c::t_45407669bae765 1-1649
+packages/webview-ui/test/fixtures/prCreateEntry.ts
+  s_26f5e669d3043c::t_0df0938d1749a3 1-9
+packages/webview-ui/test/fixtures/prCreateFixtures.ts
+  s_26f5e669d3043c::t_8fe0a77644c1f9 1-148
+packages/webview-ui/test/fixtures/prListEntry.ts
+  s_26f5e669d3043c::t_c173928c8fe7bd 1-35
+packages/webview-ui/test/fixtures/prListFixtures.ts
+  s_26f5e669d3043c::t_ae0cc1b67b8756 1-254
+packages/webview-ui/test/fixtures/prPageEntry.ts
+  s_26f5e669d3043c::t_d3cde7bfa6153c 1-9
+packages/webview-ui/test/fixtures/prPageFixtures.ts
+  s_26f5e669d3043c::t_820279253a54bc 1-276
+packages/webview-ui/test/markdown.test.ts
+  s_26f5e669d3043c::t_ff42fe0a4f3131 3
+packages/webview-ui/test/prCreate.test.ts
+  s_26f5e669d3043c::t_2aa149d3636d05 1-398
+packages/webview-ui/test/prList.test.ts
+  s_26f5e669d3043c::t_91790261917bb9 1-387
+packages/webview-ui/test/prPage.test.ts
+  s_26f5e669d3043c::t_8f1d234c0d2a3c 1-561
+packages/webview-ui/test/sanitizerFailsClosed.test.ts
+  s_26f5e669d3043c::t_8da4634f341539 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5e28dd4362eb2d605c90b49086b5be9ce8dee81f",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
