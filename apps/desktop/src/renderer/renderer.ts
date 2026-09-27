@@ -859,11 +859,6 @@ class App {
     // a terminal, an edit in your editor — is found by the same cheap question
     // a window focus asks. Nothing moved, nothing rebuilds.
     void this.refreshIfDiskMoved();
-    // A top-bar read whose newest answer never painted — it failed, or (before
-    // topbarRead.ts) a route threw it away — is asked again now, so the tab in
-    // front never keeps a "…" pill or a sync control from before.
-    if (this.refsRead.owed()) void this.refreshRefs();
-    if (this.syncRead.owed()) void this.updateSync();
     if (this.tabsMoved) this.onTabsChanged(true);
   }
 
@@ -9005,16 +9000,9 @@ class App {
       this.renderSyncWidget?.(cached);
     }
     // The same rule as the pill's (topbarRead.ts): an older answer never
-    // paints over a newer one, and one that failed is asked again when the tab
-    // is next in front.
+    // paints over a newer one.
     const ticket = this.syncRead.ask();
-    let status: SyncStatus;
-    try {
-      status = await gget("sync:status", undefined, 4000);
-    } catch (e) {
-      this.syncRead.fail(ticket);
-      throw e;
-    }
+    const status = await gget("sync:status", undefined, 4000);
     if (!this.syncRead.land(ticket)) return;
     this.syncStatus = status;
     this.renderSyncWidget?.(this.syncStatus);
@@ -10404,21 +10392,12 @@ class App {
     // Code) or the first click while git was still answering threw the answer
     // away, and the pill said "…" for the rest of the tab's life.
     const ticket = this.refsRead.ask();
-    let refs: RefInfo[];
-    let head: HeadInfo | undefined;
-    try {
-      // Cached: refs/head change rarely between view switches, so reuse a
-      // recent result instead of re-running git on every navigation.
-      [refs, head] = await Promise.all([
-        gget("refs:list", undefined),
-        gget("head:get", undefined),
-      ]);
-    } catch (e) {
-      // Not painted: the pill is owed, and asks again when the tab is next in
-      // front (activate).
-      this.refsRead.fail(ticket);
-      throw e;
-    }
+    // Cached: refs/head change rarely between view switches, so reuse a recent
+    // result instead of re-running git on every navigation.
+    const [refs, head] = await Promise.all([
+      gget("refs:list", undefined),
+      gget("head:get", undefined),
+    ]);
     if (!this.refsRead.land(ticket)) return; // a newer answer is on screen
     this.refs = refs;
     this.headInfo = head;

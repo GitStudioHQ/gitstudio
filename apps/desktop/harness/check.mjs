@@ -827,7 +827,6 @@ const CASES = [
   ["a-tabs-top-bar-fills-however-it-came-to-the-front", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "tabs=1&slow=head:get:700,refs:list:700,sync:status:700", arg: "worktree" }],
   ["a-tabs-top-bar-fills-however-it-came-to-the-front", "changes", { extra: "tabs=3&slow=head:get:700,refs:list:700,sync:status:700", arg: "switch" }],
   ["a-tabs-top-bar-fills-however-it-came-to-the-front", "changes", { extra: "tabs=2&latetabs=1&slow=head:get:2000,refs:list:2000,sync:status:2000", arg: "launch" }],
-  ["a-tabs-top-bar-fills-however-it-came-to-the-front", "changes", { extra: "tabs=2&slow=head:get:700,refs:list:700,sync:status:700", arg: "failed" }],
   ["a-background-tabs-disk-event-leaves-the-front-tab-alone", "changes", { extra: "tabs=2" }],
   ["a-stopped-operation-stays-with-its-tab", "changes", { extra: "tabs=2&op=cherry-pick&conflicts=1" }],
   ["each-tab-has-its-own-terminal-dock", "changes", { extra: "tabs=2" }],

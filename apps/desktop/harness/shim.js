@@ -3776,9 +3776,6 @@
   // surfaces launder a read failure into a confident empty state and no check
   // noticed.
   const failing = new Set((params.get("fail") || "").split(",").filter(Boolean));
-  // A check can make a channel fail for a while and then answer again — the
-  // only way to see that a read which failed is asked again later.
-  window.__gsFailing = failing;
 
   /** channel → listeners, for `on()` / `__gsEmit()`. */
   const listeners = {};

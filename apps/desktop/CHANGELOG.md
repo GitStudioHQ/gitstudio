@@ -140,8 +140,7 @@ but they share the same engine, so most Git behaviour lands in both at once.
 - **A repository opened in a new tab shows its branch.** Opening one from
   Repositories, Home or a clone — or clicking anywhere before git had answered
   — could leave the top bar's branch showing *…* for as long as the tab was
-  open. The branch now always fills in, and a tab whose branch or sync state
-  could not be read asks again when you come back to it. (#32)
+  open. The branch now always fills in. (#32)
 - **Undo of *Discard changes*, and ⌘Z after *Accept Yours / Theirs*, no longer
   overwrite edits you made since.** Discard, type something new, Undo: the new
   text was replaced by the discarded one; resolve a conflict, polish the file

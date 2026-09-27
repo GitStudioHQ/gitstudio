@@ -17898,7 +17898,7 @@
      * rest of the tab's life — nothing asked again.
      *
      * `arg` is the door: repositories, clone, home, open, recent, worktree,
-     * switch, launch, failed.
+     * switch, launch.
      */
     "a-tabs-top-bar-fills-however-it-came-to-the-front": async (f) => {
       const c = check(f);
@@ -18034,33 +18034,6 @@
         await clickOnAtOnce();
         await settle(2600);
         filledFor(GS_DEV_ROOT, { branch: "site/pricing", sync: "Pull 1" }, "the other restored tab");
-        return;
-      }
-      if (door === "failed") {
-        // B's first reads FAIL. Coming back to B later asks again — once.
-        window.__gsFailing.add("head:get");
-        window.__gsFailing.add("sync:status");
-        tabEl(GS_DEV_ROOT)?.click();
-        await settle(SLOW + 500);
-        c.eq(text(".topbar-branch .switch-name"), "…", "precondition: B's reads failed, so its pill has nothing to say");
-        window.__gsFailing.delete("head:get");
-        window.__gsFailing.delete("sync:status");
-        tabEl(GS_ROOT)?.click();
-        await settle(300);
-        const refsBefore = asked("refs:list", GS_DEV_ROOT);
-        tabEl(GS_DEV_ROOT)?.click();
-        await settle(SLOW + 500);
-        filledFor(GS_DEV_ROOT, { branch: "site/pricing", sync: "Pull 1" }, "B, in front again", false);
-        c.eq(asked("refs:list", GS_DEV_ROOT) - refsBefore, 1, "the pill was asked again, once");
-        // Filled now: another round trip owes it nothing.
-        tabEl(GS_ROOT)?.click();
-        await settle(300);
-        const refsFilled = asked("refs:list", GS_DEV_ROOT);
-        const syncFilled = asked("sync:status", GS_DEV_ROOT);
-        tabEl(GS_DEV_ROOT)?.click();
-        await settle(SLOW + 500);
-        c.eq(asked("refs:list", GS_DEV_ROOT), refsFilled, "a filled pill is not asked again on a switch");
-        c.eq(asked("sync:status", GS_DEV_ROOT), syncFilled, "…nor a filled sync control");
         return;
       }
       c.ok(false, `unknown door ${door}`);
