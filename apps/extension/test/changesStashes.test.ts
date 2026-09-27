@@ -39,7 +39,7 @@ const FILES_B = [
 
 function stashes(): Record<string, unknown>[] {
   return [
-    { sha: A, text: "WIP on “Initial layout”", branch: "main", auto: true, message: "WIP on main: 1a2b3c4 Initial layout", time: now - 2 * 3600, files: [{ path: "src/app.ts", status: "M" }] },
+    { sha: A, text: "WIP: Initial layout", branch: "main", auto: true, message: "WIP on main: 1a2b3c4 Initial layout", time: now - 2 * 3600, files: [{ path: "src/app.ts", status: "M" }] },
     { sha: B, text: "Fix login redirect", branch: "main", message: "On main: Fix login redirect", time: now - 4 * 3600, files: FILES_B },
     { sha: C, text: "Release notes", message: "Release notes", time: now - 30 * 86400, files: [{ path: "README.md", status: "M" }, { path: "CHANGELOG.md", status: "M" }] },
   ];
@@ -111,7 +111,7 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
       const s = await shown(page);
       assert.equal(s.header, "Stashes 3");
       assert.deepEqual(s.rows, [
-        "WIP on “Initial layout” | main · 2h ago · 1 file | false",
+        "WIP: Initial layout | main · 2h ago · 1 file | false",
         "Fix login redirect | main · 4h ago · 6 files | false",
         "Release notes | 1mo ago · 2 files | false",
       ]);
@@ -207,7 +207,7 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
       await page.send({ type: "stashDone", sha: B, action: "pop", outcome: { kind: "done" } });
       const after = stashes().filter((s) => s.sha !== B);
       await page.send(state({ stashes: after }));
-      assert.deepEqual((await shown(page)).rows.map((r) => r.split(" | ")[0]), ["WIP on “Initial layout”", "Release notes"]);
+      assert.deepEqual((await shown(page)).rows.map((r) => r.split(" | ")[0]), ["WIP: Initial layout", "Release notes"]);
     } finally {
       await page.close();
     }
@@ -316,6 +316,41 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
     }
   });
 
+  test(`${theme}: Shift after a plain click in another stash starts there — never a range over two stashes`, { skip }, async () => {
+    const page = await ChangesPage.open(theme, { width: 300, height: 900 });
+    try {
+      await page.send(state());
+      await page.eval(`${row(B)}.click()`);
+      await page.eval(`${row(C)}.click()`);
+      const click = (sel: string, mods = "") =>
+        page.eval(`${sel}.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1${mods} }))`);
+      const selected = () =>
+        page.eval<string[]>("Array.from(document.querySelectorAll('#stashes .row.is-file.is-selected')).map((r) => r.dataset.key)");
+      // A plain click opens a file of one stash, with nothing selected…
+      await click(fileRow(B, "src/routes.ts"));
+      await clearPosted(page);
+      // …and Shift-click in the next stash is a plain click there: its diff, no range.
+      await click(fileRow(C, "README.md"), ", shiftKey: true");
+      assert.deepEqual(await selected(), [], "nothing selected across two stashes");
+      assert.deepEqual(await posted(page, "stashOpenFile"), [{ type: "stashOpenFile", sha: C, path: "README.md" }]);
+      assert.equal(await page.eval<boolean>(`document.getElementById("selbar").hidden`), true);
+      // The next Shift-click ranges from there, inside that stash only.
+      await click(fileRow(C, "CHANGELOG.md"), ", shiftKey: true");
+      assert.deepEqual(await selected(), [`stash:${C}:README.md`, `stash:${C}:CHANGELOG.md`]);
+      assert.equal(await page.eval<string>(`document.getElementById("selbar-count").textContent`), "2 files from “Release notes”");
+      await clearPosted(page);
+      await page.eval(`document.getElementById("selbar-move").click()`);
+      assert.deepEqual(await posted(page, "stashFiles"), [
+        { type: "stashFiles", sha: C, action: "move", paths: ["README.md", "CHANGELOG.md"] },
+      ]);
+      // Every file of C moved: its row goes; B is untouched.
+      assert.deepEqual((await shown(page)).rows.map((r) => r.split(" | ")[0]), ["WIP: Initial layout", "Fix login redirect"]);
+      assert.equal((await shown(page)).files.length, FILES_B.length, "B keeps every file");
+    } finally {
+      await page.close();
+    }
+  });
+
   test(`${theme}: the keyboard — Enter and Space open, Shift+F10 the menu, Escape gives the row the keyboard back, a popped row hands it on`, { skip }, async () => {
     const page = await ChangesPage.open(theme, { width: 300, height: 900 });
     try {
@@ -336,6 +371,43 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
       await page.key("F10", { with: ["shift"] });
       await page.eval("Array.from(document.querySelectorAll('.action-menu .bm-subaction')).find((b) => b.textContent.trim() === 'Pop').click()");
       assert.equal(await active(page), `stash:${B}`);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test(`${theme}: the last stash leaving hands the keyboard to the row above the group, never to the page`, { skip }, async () => {
+    const page = await ChangesPage.open(theme, { width: 300, height: 900 });
+    try {
+      const one = () => stashes().slice(0, 1);
+      const lastTreeRow = `stash-less: ${await (async () => {
+        await page.send(state({ stashes: one() }));
+        return page.eval<string>("Array.from(document.querySelectorAll('#groups [data-focus-key]')).pop().dataset.focusKey");
+      })()}`;
+      const where = () => page.eval<string>(`(() => {
+        const a = document.activeElement;
+        if (!a || a === document.body) return "BODY";
+        return a.closest("#groups") ? "stash-less: " + a.dataset.focusKey : (a.dataset.focusKey || a.id || a.className);
+      })()`);
+      // Pop from its menu.
+      await page.eval(`${row(A)}.focus()`);
+      await page.key("F10", { with: ["shift"] });
+      await page.eval("Array.from(document.querySelectorAll('.action-menu .bm-subaction')).find((b) => b.textContent.trim() === 'Pop').click()");
+      assert.equal((await shown(page)).header, null, "the group is gone");
+      assert.equal(await where(), lastTreeRow, "the working tree's last row has it");
+      // Drop from the keyboard: Delete, the question, Enter.
+      await page.send({ type: "stashDone", sha: A, action: "pop", outcome: { kind: "kept" } });
+      await page.eval(`${row(A)}.focus()`);
+      await page.key("Delete");
+      await page.send({ type: "dialog", dialogId: "q1", spec: { kind: "confirm", title: "Drop “WIP: Initial layout”?", message: "…", confirmLabel: "Drop", danger: true } });
+      await page.key("Enter");
+      await page.send({ type: "stashPending", sha: A, action: "drop" });
+      assert.equal((await shown(page)).header, null);
+      assert.equal(await where(), lastTreeRow);
+      // …and when the list the host reads next agrees, it stays there.
+      await page.send({ type: "stashDone", sha: A, action: "drop", outcome: { kind: "done" } });
+      await page.send(state({ stashes: [] }));
+      assert.equal(await where(), lastTreeRow);
     } finally {
       await page.close();
     }
@@ -381,6 +453,161 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
     }
   });
 }
+
+// ── A stash too big to carry: its files read when it opens, shown a page at a time ──
+//
+// The host carries a stash's files in the list only while they are few
+// (stashesPayload.test.ts); a bigger one comes as a count, and the page asks
+// for its files when it is opened. It shows them a page at a time.
+
+const BIG = "e".repeat(40);
+const BIG_FILES = Array.from({ length: 450 }, (_, i) => ({ path: `deps/pkg${String(i).padStart(3, "0")}.js`, status: "U" }));
+function bigState(over: Record<string, unknown> = {}): Record<string, unknown> {
+  const list = stashes();
+  list.unshift({ sha: BIG, text: "oops, deps too", branch: "main", message: "On main: oops, deps too", time: now - 60, count: 450 });
+  return state({ stashes: list, ...over });
+}
+const reads = async (page: ChangesPage) => (await posted(page, "stashReadFiles")).map((m) => m.sha);
+const shownFiles = (page: ChangesPage, sha: string) =>
+  page.eval<number>(`document.querySelectorAll('#stashes .row.is-file[data-sha="${sha}"]').length`);
+const moreRow = (page: ChangesPage) =>
+  page.eval<string | null>(`(() => { const m = document.querySelector('#stashes .stash-more'); return m ? m.textContent : null; })()`);
+
+test("a stash sent as a count: its files are asked for once, when it opens — and shown 200 at a time", { skip }, async () => {
+  const page = await ChangesPage.open("dark", { width: 300, height: 900 });
+  try {
+    await page.send(bigState());
+    assert.match((await shown(page)).rows[0], /^oops, deps too \| main · 1m ago · 450 files \| false$/);
+    assert.deepEqual(await reads(page), [], "nothing asked for a closed stash");
+    await page.eval(`${row(BIG)}.click()`);
+    assert.deepEqual(await reads(page), [BIG]);
+    const loading = await page.eval<{ text: string; busy: string | null }>(`(() => {
+      const r = document.querySelector('#stashes .stash-note');
+      return { text: r ? r.textContent : "", busy: r ? r.getAttribute("aria-busy") : null };
+    })()`);
+    assert.deepEqual(loading, { text: "Reading its files…", busy: "true" });
+    // The firehose re-posts the list, and a stash pushed meanwhile repaints
+    // the group: nothing is asked twice.
+    await page.send(bigState());
+    const pushed = (bigState().stashes as Record<string, unknown>[]).slice();
+    pushed.unshift({ sha: R, text: "pushed meanwhile", branch: "main", message: "On main: pushed meanwhile", time: now, files: [{ path: "x.ts", status: "M" }] });
+    await page.send(bigState({ stashes: pushed }));
+    assert.equal((await shown(page)).header, "Stashes 5", "repainted");
+    assert.deepEqual(await reads(page), [BIG]);
+    await page.send({ type: "stashFilesRead", sha: BIG, files: BIG_FILES });
+    assert.equal(await page.eval<number>("document.querySelectorAll('#stashes .stash-note').length"), 0);
+    assert.equal(await shownFiles(page, BIG), 200);
+    assert.equal(await moreRow(page), "Show 200 more of 250");
+    await page.eval("document.querySelector('#stashes .stash-more').click()");
+    assert.equal(await shownFiles(page, BIG), 400);
+    assert.equal(await moreRow(page), "Show 50 more");
+    // From the keyboard: Enter on the row, and the keyboard goes on to the files it showed.
+    await page.eval("document.querySelector('#stashes .stash-more').focus()");
+    await page.key("Enter");
+    assert.equal(await shownFiles(page, BIG), 450);
+    assert.equal(await moreRow(page), null);
+    assert.equal(await active(page), `stash:${BIG}:deps/pkg400.js`);
+    // Closed and opened again: read once, never again.
+    await page.eval(`${row(BIG)}.click()`);
+    await page.eval(`${row(BIG)}.click()`);
+    assert.deepEqual(await reads(page), [BIG]);
+    assert.equal(await shownFiles(page, BIG), 200, "a page again, from the top");
+  } finally {
+    await page.close();
+  }
+});
+
+test("a stash whose files cannot be read says so, in the place its files would be", { skip }, async () => {
+  const page = await ChangesPage.open("dark", { width: 300, height: 900 });
+  try {
+    await page.send(bigState());
+    await page.eval(`${row(BIG)}.click()`);
+    await page.send({ type: "stashFilesRead", sha: BIG, files: null });
+    assert.equal(await page.eval<string>("document.querySelector('#stashes .stash-note').textContent"), "Its files couldn't be read.");
+    assert.equal(await page.eval<string | null>("document.querySelector('#stashes .stash-note').getAttribute('aria-busy')"), null);
+  } finally {
+    await page.close();
+  }
+});
+
+test("the tree layout pages too; a folder's Move takes every file under it, shown or not", { skip }, async () => {
+  const page = await ChangesPage.open("dark", { width: 300, height: 900 });
+  try {
+    await page.send(bigState({ layout: "tree" }));
+    await page.eval(`${row(BIG)}.click()`);
+    await page.send({ type: "stashFilesRead", sha: BIG, files: BIG_FILES });
+    assert.equal(await shownFiles(page, BIG), 200);
+    assert.equal(await moreRow(page), "Show 200 more of 250");
+    await clearPosted(page);
+    await page.eval(`document.querySelector('#stashes [data-focus-key="stashfolder:${BIG}:deps"] .row-actions .icon-btn').click()`);
+    const moves = await posted(page, "stashFiles");
+    assert.equal(moves.length, 1);
+    assert.equal((moves[0].paths as string[]).length, 450, "all of the folder, not the page on screen");
+    assert.equal((await shown(page)).rows.some((r) => r.startsWith("oops")), false, "every file: the stash goes");
+  } finally {
+    await page.close();
+  }
+});
+
+test("Ctrl-click on a stash not read yet opens it, and selects its files once they arrive", { skip }, async () => {
+  const page = await ChangesPage.open("dark", { width: 300, height: 900 });
+  try {
+    await page.send(bigState());
+    await page.eval(`${row(BIG)}.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true, detail: 1 }))`);
+    assert.deepEqual(await reads(page), [BIG]);
+    await page.send({ type: "stashFilesRead", sha: BIG, files: BIG_FILES.slice(0, 3) });
+    assert.equal(await page.eval<number>("document.querySelectorAll('#stashes .row.is-selected').length"), 3);
+    assert.equal(await page.eval<string>(`document.getElementById("selbar-count").textContent`), "3 files from “oops, deps too”");
+  } finally {
+    await page.close();
+  }
+});
+
+test("what is left after a move shows at once — its files are the stash's, less the ones moved, never read again", { skip }, async () => {
+  const page = await ChangesPage.open("dark", { width: 300, height: 900 });
+  try {
+    await page.send(bigState());
+    await page.eval(`${row(BIG)}.click()`);
+    await page.send({ type: "stashFilesRead", sha: BIG, files: BIG_FILES });
+    await clearPosted(page);
+    await page.eval(`${fileRow(BIG, "deps/pkg000.js")}.querySelector(".row-actions .icon-btn").click()`);
+    assert.match((await shown(page)).rows[0], /449 files/);
+    await page.send({ type: "stashDone", sha: BIG, action: "move", paths: ["deps/pkg000.js"], outcome: { kind: "done", rest: R } });
+    const list = stashes();
+    list.unshift({ sha: R, text: "oops, deps too", branch: "main", message: "On main: oops, deps too", time: now - 60, count: 449 });
+    await page.send(state({ stashes: list }));
+    assert.deepEqual(await reads(page), [], "nothing to read: a stash never changes");
+    assert.equal(await shownFiles(page, R), 200);
+    assert.equal(await page.eval<boolean>(`!!${fileRow(R, "deps/pkg000.js")}`), false);
+    assert.equal(await page.eval<boolean>(`!!${fileRow(R, "deps/pkg001.js")}`), true);
+  } finally {
+    await page.close();
+  }
+});
+
+// ── What a screen reader hears ───────────────────────────────────────────────
+
+test("a stash's file is named with its folder, its change and its staging — at 240px too, where the staged word leaves the row", { skip }, async () => {
+  const page = await ChangesPage.open("dark", { width: 240, height: 900 });
+  try {
+    await page.send(state());
+    await page.eval(`${row(B)}.click()`);
+    const name = (path: string) => page.accessibleName(fileRow(B, path));
+    const wordShown = await page.eval<boolean>(
+      `getComputedStyle(${fileRow(B, "src/auth/login.ts")}.querySelector(".stash-staged")).display !== "none"`,
+    );
+    assert.equal(wordShown, false, "the word gives way at 240px");
+    assert.equal(await name("src/auth/login.ts"), "login.ts, src/auth, modified, partly staged");
+    assert.equal(await name("src/routes.ts"), "routes.ts, src, deleted, staged");
+    assert.equal(await name("src/auth/oauth.test.ts"), "oauth.test.ts, src/auth, untracked");
+    assert.equal(await name("docs/sign-in.md"), "sign-in.md, docs, renamed from docs/guide.md, staged");
+    // Wide enough for the word: the same name.
+    await page.resize(420, 900);
+    assert.equal(await name("src/auth/login.ts"), "login.ts, src/auth, modified, partly staged");
+  } finally {
+    await page.close();
+  }
+});
 
 // ── How it looks, per theme: computed styles, never class names ─────────────
 

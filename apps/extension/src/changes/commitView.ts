@@ -59,7 +59,8 @@ import { toRevisionUri } from "../history/revisionContentProvider";
 import { operationBanner, type OperationBannerData } from "./operationBanner";
 import { stoppedByThisCommand, type DetectedOperation } from "../git/pausedForUser";
 import { detectOperation, notifyPaused } from "../git/pauseNotice";
-import { stashTitle, type StashFile } from "@gitstudio/git-service/StashProvider";
+import { isStashSha, stashTitle } from "@gitstudio/git-service/StashProvider";
+import { stashRows, type StashRow } from "./stashRows";
 import {
   applyStash,
   branchFromStash,
@@ -86,26 +87,6 @@ import {
 interface FileEntry {
   path: string;
   status: string;
-}
-
-/**
- * One stash, as the Stashes group shows it: its words without git's "On
- * main:", the branch it was made on, when, and every file it holds. Named by
- * its full sha — `stash@{n}` is a position, and the list renumbers under a
- * row that still shows the old one.
- */
-interface StashRow {
-  sha: string;
-  /** stashTitle's words. */
-  text: string;
-  branch?: string;
-  /** git wrote the message (a stash made without one). */
-  auto?: true;
-  /** The message as git has it (`%gs`), for the row's tooltip. */
-  message: string;
-  /** Commit time, epoch seconds. */
-  time: number;
-  files: StashFile[];
 }
 
 interface StatePayload {
@@ -227,8 +208,9 @@ interface FromWebview {
     | "stashFiles"
     | "stashOpenFile"
     | "stashOpenAll"
+    | "stashReadFiles"
     | "dialogResult";
-  /** A stash's full sha: stashAct, stashFiles, stashOpenFile, stashOpenAll. */
+  /** A stash's full sha: stashAct, stashFiles, stashOpenFile, stashOpenAll, stashReadFiles. */
   sha?: string;
   /** operation: which verb the banner's button asked for. */
   verb?: "continue" | "skip" | "abort";
@@ -823,6 +805,9 @@ export class CommitViewProvider
       case "stashOpenAll":
         await this.openWholeStash(msg.sha ?? "");
         return;
+      case "stashReadFiles":
+        await this.readStashFiles(msg.sha ?? "");
+        return;
       case "resolveConflicts": {
         const entry = this.repos.getActive();
         if (entry) {
@@ -996,18 +981,20 @@ export class CommitViewProvider
       return [];
     }
     const files = await Promise.all(list.map((e) => entry.ctx.stashes.files(e.sha).catch(() => undefined)));
-    return list.map((e, i) => {
-      const t = stashTitle(e.message);
-      return {
-        sha: e.sha,
-        text: t.text,
-        ...(t.branch !== undefined ? { branch: t.branch } : {}),
-        ...(t.auto ? { auto: true as const } : {}),
-        message: e.message,
-        time: e.time,
-        files: files[i] ?? [],
-      };
-    });
+    return stashRows(list, files);
+  }
+
+  /**
+   * A stash's files, for the page that opened one the list carried as a
+   * count (stashRows). StashProvider keeps what it read, so this is the read
+   * the list already made. `files: null` when there is nothing to read — not
+   * a stash's sha, or git could not read it — and the page says so.
+   */
+  private async readStashFiles(sha: string): Promise<void> {
+    const entry = this.repos.getActive();
+    const files =
+      entry && isStashSha(sha) ? await entry.ctx.stashes.files(sha).catch(() => undefined) : undefined;
+    void this.view?.webview.postMessage({ type: "stashFilesRead", sha, files: files ?? null });
   }
 
   /**
@@ -4251,6 +4238,15 @@ export class CommitViewProvider
     .row.stash-row.is-busy,
     .row.stash-file.is-busy { opacity: 0.6; }
     .row.stash-row.is-busy .row-actions { visibility: hidden; }
+    /* Where an open stash's files would be, while they are read or when they
+       could not be: a note in a file row's place, not something to press. */
+    .row.stash-note { color: var(--gs-fg-muted); cursor: default; }
+    .row.stash-note:hover { background: none; }
+    .row.stash-note .file-icon { color: var(--gs-fg-muted); }
+    /* "Show 200 more of N": it reads as an action, as the branch menu's
+       "Show more" does — its words in the link colour, underlined on hover. */
+    .row.stash-more { color: var(--gs-accent-text); }
+    .row.stash-more:hover .name { text-decoration: underline; }
     /* "staged" / "partly staged": the stash had it staged, in words. */
     .stash-staged {
       flex: 0 0 auto;
@@ -4991,13 +4987,15 @@ export class CommitViewProvider
      */
     function handleSelectionClick(ev, key) {
       // A selection gesture in the other place (the working tree's rows, or
-      // another stash's files) starts over there.
+      // another stash's files) starts over there. The row a Shift-range runs
+      // from goes too, even with nothing selected: a plain click leaves it
+      // behind, and a range from it would run through two stashes — whose
+      // files the bar would then credit to one of them.
+      const scope = selScope(key);
+      if (selectionAnchor && selScope(selectionAnchor) !== scope) selectionAnchor = null;
       if (selectedRows.size > 0 && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) {
         const first = selectedRows.values().next().value;
-        if (selScope(first) !== selScope(key)) {
-          selectedRows.clear();
-          if (selectionAnchor && selScope(selectionAnchor) !== selScope(key)) selectionAnchor = null;
-        }
+        if (selScope(first) !== scope) selectedRows.clear();
       }
       if (ev.shiftKey && selectionAnchor) {
         const order = orderOf(key);
@@ -5341,6 +5339,16 @@ export class CommitViewProvider
     };
     function statusTitle(letter) {
       return STATUS_NAMES[letter] || "Modified";
+    }
+
+    /**
+     * The row that shows the next page of a long list — the branch menu's
+     * tags, a stash's files: "Show 40 more of 95" while more stay hidden
+     * after it, "Show 15 more" for the last page ("Show 15 more of 15" said
+     * the same number twice).
+     */
+    function showMoreLabel(hidden, page) {
+      return hidden > page ? "Show " + page + " more of " + hidden : "Show " + hidden + " more";
     }
 
     function el(tag, cls, html) {
@@ -6447,8 +6455,7 @@ export class CommitViewProvider
         rows.forEach((r) => body.appendChild(build(r)));
         if (opts && opts.note) body.appendChild(el("div", "bm-note", esc(opts.note)));
         if (opts && opts.more > 0) {
-          const more = el("div", "bm-more", "Show " + Math.min(opts.more, TAG_PAGE) +
-            " more of " + opts.more);
+          const more = el("div", "bm-more", showMoreLabel(opts.more, TAG_PAGE));
           more.dataset.bmkey = "more:" + label;
           bmOption(more);
           // The arrows reach it and Enter runs it from the search box, which
@@ -7635,7 +7642,10 @@ export class CommitViewProvider
      * a focused row used to be thrown away with the old DOM and the next Tab
      * started from the top of the view. The same key's new row takes focus
      * back; a row that is gone (a stash popped from the keyboard) hands it to
-     * the one that took its place.
+     * the one that took its place. A control inside the row that had it (a
+     * tick, a row's button) gets it back too, found in the new row by the
+     * words it is named by (focusPart), so the next Space or Tab does what it
+     * would have done without the repaint.
      */
     function captureFocus(container) {
       const a = document.activeElement;
@@ -7643,9 +7653,13 @@ export class CommitViewProvider
       const row = a.closest ? a.closest("[data-focus-key]") : null;
       if (!row) return null;
       const all = Array.prototype.slice.call(container.querySelectorAll("[data-focus-key]"));
-      return { key: row.dataset.focusKey, index: all.indexOf(row), onRow: a === row };
+      return { key: row.dataset.focusKey, index: all.indexOf(row), onRow: a === row, part: a === row ? "" : focusPart(a) };
     }
-    function restoreFocus(container, f) {
+    /** A control's name inside its row: its data-focus-part, else its aria-label. */
+    function focusPart(node) {
+      return (node.dataset && node.dataset.focusPart) || node.getAttribute("aria-label") || "";
+    }
+    function restoreFocus(container, f, fallback) {
       if (!f) return;
       const all = Array.prototype.slice.call(container.querySelectorAll("[data-focus-key]"));
       let next = null;
@@ -7653,6 +7667,15 @@ export class CommitViewProvider
         if (all[i].dataset.focusKey === f.key) { next = all[i]; break; }
       }
       if (!next && all.length) next = all[Math.min(Math.max(f.index, 0), all.length - 1)];
+      // Nothing left in the container at all (the last stash popped): the
+      // caller's nearest place, never the page itself.
+      if (!next && fallback) next = fallback();
+      if (next && !f.onRow && f.part) {
+        const parts = next.querySelectorAll("button, input, [tabindex]");
+        for (let i = 0; i < parts.length; i++) {
+          if (focusPart(parts[i]) === f.part && !parts[i].disabled) { next = parts[i]; break; }
+        }
+      }
       if (next && document.activeElement !== next) next.focus({ preventScroll: true });
     }
 
@@ -8432,7 +8455,7 @@ export class CommitViewProvider
     // ---- Stashes group ---------------------------------------------------
     // Every stash, after the file groups: a row each (its words, where and
     // when it was made, how many files), opening to ALL its files — tracked,
-    // staged, untracked — as Changes rows. A file comes back with Move to
+    // staged, untracked — as Changes rows, a page at a time. A file comes back with Move to
     // Changes (it leaves the stash) or Copy to Changes (the stash keeps it);
     // a stash with Apply, Pop, Create Branch… or Drop…. Every message names a
     // stash by its full sha, never stash@{n}.
@@ -8455,6 +8478,24 @@ export class CommitViewProvider
     const stashOpen = new Set(Array.isArray(stashUi.stashOpen) ? stashUi.stashOpen : []);
     let stashGroupCollapsed = stashUi.stashGroupCollapsed === true;
     let lastStashSig = null;
+    // A stash's files, by its sha. A stash never changes, so what was read
+    // once is its files for good. The host carries them in the list while
+    // they are few (stashRows.ts); a bigger stash comes as a count, and its
+    // files are asked for when it is opened ("stashReadFiles").
+    const stashFiles = new Map();
+    // Asked for, not answered yet; answered with nothing (said in its place).
+    const stashReading = new Set();
+    const stashUnreadable = new Set();
+    // What is left of a stash after a move: its files are known before the
+    // list that names it arrives, and a list read before the move must not
+    // forget them.
+    const stashSeeded = new Set();
+    // Ctrl/Cmd-click on a stash whose files are still being read: select
+    // them when they arrive.
+    let stashSelectOnRead = null;
+    // How many of an open stash's files are shown; "Show 200 more of N" adds a page.
+    const STASH_FILE_PAGE = 200;
+    const stashShown = new Map();
     function saveStashUi() {
       try {
         const prev = (vscode.getState && vscode.getState()) || {};
@@ -8465,6 +8506,11 @@ export class CommitViewProvider
       } catch (e) { /* a host without webview state */ }
     }
 
+    /** How many files a stash of the host's list holds (a list from before counts carried its files). */
+    function countOf(s) {
+      return typeof s.count === "number" ? s.count : Array.isArray(s.files) ? s.files.length : 0;
+    }
+
     /** The host's list with the actions in flight laid over it. */
     function shownStashes() {
       const out = [];
@@ -8473,15 +8519,48 @@ export class CommitViewProvider
         const p = stashPending.get(s.sha);
         if (p && p.remove) continue;
         if (p && p.moved && p.moved.length) {
-          const leaving = new Set(p.moved);
-          const files = s.files.filter((f) => !leaving.has(f.path));
-          if (files.length === 0) continue;
-          out.push(Object.assign({}, s, { files: files }));
+          const left = countOf(s) - p.moved.length;
+          if (left <= 0) continue;
+          out.push(Object.assign({}, s, { count: left, leaving: p.moved }));
           continue;
         }
         out.push(s);
       }
       return out;
+    }
+
+    /** A shown stash's files, less any on their way out; undefined until read. */
+    function visibleFiles(s) {
+      const files = stashFiles.get(s.sha);
+      if (!files || !s.leaving) return files;
+      const leaving = new Set(s.leaving);
+      return files.filter((f) => !leaving.has(f.path));
+    }
+
+    /** Take in a list from the host: the files it carried, and forget the stashes it no longer has. */
+    function takeStashList(list) {
+      const have = new Set();
+      for (let i = 0; i < list.length; i++) {
+        const s = list[i];
+        have.add(s.sha);
+        stashSeeded.delete(s.sha);
+        if (Array.isArray(s.files)) {
+          stashFiles.set(s.sha, s.files);
+          stashUnreadable.delete(s.sha);
+        }
+      }
+      stashFiles.forEach((_f, sha) => {
+        if (!have.has(sha) && !stashPending.has(sha) && !stashSeeded.has(sha)) stashFiles.delete(sha);
+      });
+      stashUnreadable.forEach((sha) => { if (!have.has(sha)) stashUnreadable.delete(sha); });
+      authStashes = list;
+    }
+
+    /** Ask the host for a stash's files, once. */
+    function readStashFiles(sha) {
+      if (stashReading.has(sha) || stashFiles.has(sha) || stashUnreadable.has(sha)) return;
+      stashReading.add(sha);
+      vscode.postMessage({ type: "stashReadFiles", sha: sha });
     }
 
     /** Drop the patches the host's list now agrees with, or that aged out. */
@@ -8496,6 +8575,12 @@ export class CommitViewProvider
       });
     }
 
+    /**
+     * The selected files of ONE stash: the first one on screen that has any.
+     * A selection never spans two (handleSelectionClick starts over in the
+     * other); if it ever did, the other stash's files are left out rather
+     * than sent under this one's sha.
+     */
     function stashSelection() {
       let sha = null;
       const paths = [];
@@ -8504,7 +8589,9 @@ export class CommitViewProvider
         if (!selectedRows.has(k)) continue;
         const rest = k.slice(6);
         const cut = rest.indexOf(":");
-        sha = rest.slice(0, cut);
+        const at = rest.slice(0, cut);
+        if (sha === null) sha = at;
+        else if (at !== sha) continue;
         paths.push(rest.slice(cut + 1));
       }
       return sha ? { sha: sha, paths: paths } : null;
@@ -8512,13 +8599,18 @@ export class CommitViewProvider
 
     function countFiles(n) { return n === 1 ? "1 file" : String(n) + " files"; }
 
-    /** Everything a stash row shows, so an identical re-post touches nothing. */
+    /**
+     * Everything a stash row shows, so an identical re-post touches nothing.
+     * A stash's files are named by its sha and whether they have been read —
+     * they never change — so a post of a big stash costs no more than a small one.
+     */
     function stashSig(list) {
       return JSON.stringify([
         layout, stashGroupCollapsed, Array.from(stashOpen),
         list.map((s) => {
           const p = stashPending.get(s.sha);
-          return [s.sha, s.text, s.branch || "", s.time, s.files,
+          return [s.sha, s.text, s.branch || "", s.time, countOf(s),
+            stashFiles.has(s.sha) ? 1 : stashUnreadable.has(s.sha) ? 2 : 0, s.leaving || 0, stashShown.get(s.sha) || 0,
             p && p.busy ? 1 : 0, p && p.busyPaths ? p.busyPaths : 0];
         }),
         Object.keys(collapsed).filter((k) => k.indexOf("stashfolder:") === 0 && collapsed[k]),
@@ -8538,7 +8630,7 @@ export class CommitViewProvider
       stashRowOrder = [];
       stashesEl.hidden = list.length === 0;
       if (list.length > 0) stashesEl.appendChild(renderStashGroup(list));
-      restoreFocus(stashesEl, focus);
+      restoreFocus(stashesEl, focus, nearestAboveStashes);
       // A tooltip over a row that was just replaced has nothing under it.
       if (tipTarget && !tipTarget.isConnected) hideTip();
       // A stash that is gone, or files that left it, are not selected any more.
@@ -8550,6 +8642,18 @@ export class CommitViewProvider
         selectionAnchor = null;
       }
       updateSelectionBar();
+    }
+
+    /**
+     * Where the keyboard goes when the Stashes group has gone with the stash
+     * that had it: the working tree's last row, just above the group — or,
+     * with no row there, the toolbar's last button.
+     */
+    function nearestAboveStashes() {
+      const rows = groupsEl.querySelectorAll("[data-focus-key]");
+      if (rows.length) return rows[rows.length - 1];
+      const tools = document.querySelectorAll(".changes-toolbar .icon-btn:not(:disabled)");
+      return tools.length ? tools[tools.length - 1] : null;
     }
 
     function renderStashGroup(list) {
@@ -8583,8 +8687,20 @@ export class CommitViewProvider
           const open = stashOpen.has(s.sha);
           body.appendChild(makeStashRow(s, open));
           if (!open) continue;
-          if (layout === "tree") renderStashNode(body, s, buildTree(s.files), 2);
-          else for (const f of s.files) body.appendChild(makeStashFileRow(s, f, null, 2));
+          const files = visibleFiles(s);
+          if (!files) {
+            // Not carried with the list: asked for, and said in its place.
+            body.appendChild(makeStashNote(stashUnreadable.has(s.sha)));
+            readStashFiles(s.sha);
+            continue;
+          }
+          // A page at a time: a stash of thousands of files (a dependency
+          // folder stashed with -u) is thousands of rows otherwise.
+          const limit = stashShown.get(s.sha) || STASH_FILE_PAGE;
+          const page = files.length > limit ? files.slice(0, limit) : files;
+          if (layout === "tree") renderStashNode(body, s, buildTree(page), 2, files);
+          else for (const f of page) body.appendChild(makeStashFileRow(s, f, null, 2));
+          if (page.length < files.length) body.appendChild(makeStashMore(s, files, page.length));
         }
       }
       group.appendChild(body);
@@ -8595,8 +8711,68 @@ export class CommitViewProvider
       const parts = [];
       if (s.branch) parts.push(s.branch);
       parts.push(relTime(s.time));
-      parts.push(countFiles(s.files.length));
+      parts.push(countFiles(countOf(s)));
       return parts.join(" · ");
+    }
+
+    /** Where an open stash's files would be: being read, or unreadable. */
+    function makeStashNote(failed) {
+      const row = el("div", "row stash-note");
+      row.style.paddingLeft = (2 * 12 + 16) + "px";
+      row.appendChild(el("span", "file-icon", failed
+        ? '<i class="codicon codicon-warning" aria-hidden="true"></i>'
+        : '<i class="codicon codicon-loading codicon-modifier-spin" aria-hidden="true"></i>'));
+      const text = el("span", "name");
+      text.textContent = failed ? "Its files couldn't be read." : "Reading its files…";
+      row.appendChild(text);
+      if (!failed) row.setAttribute("aria-busy", "true");
+      return row;
+    }
+
+    /**
+     * "Show 200 more of 250": the next page of a stash's files, in the branch
+     * menu's words for its tags (showMoreLabel). From the keyboard, the first file it showed
+     * takes the keyboard, so reading goes on where it stopped.
+     */
+    function makeStashMore(s, files, shownCount) {
+      const hidden = files.length - shownCount;
+      const row = el("div", "row stash-more");
+      row.style.paddingLeft = (2 * 12 + 16) + "px";
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.dataset.focusKey = "stashmore:" + s.sha;
+      row.appendChild(el("span", "file-icon"));
+      const text = el("span", "name");
+      text.textContent = showMoreLabel(hidden, STASH_FILE_PAGE);
+      row.appendChild(text);
+      const grow = (ev) => {
+        ev.preventDefault();
+        const fromKeys = document.activeElement === row;
+        stashShown.set(s.sha, shownCount + STASH_FILE_PAGE);
+        renderStashes();
+        if (!fromKeys) return;
+        const first = stashKey(s.sha, files[shownCount].path);
+        const rows = stashesEl.querySelectorAll(".row.is-file");
+        for (let i = 0; i < rows.length; i++) {
+          if (rows[i].dataset.key === first) { rows[i].focus({ preventScroll: false }); break; }
+        }
+      };
+      row.addEventListener("click", grow);
+      row.addEventListener("keydown", (ev) => {
+        if (ev.target !== row) return;
+        if (ev.key === "Enter" || ev.key === " ") grow(ev);
+      });
+      return row;
+    }
+
+    /** Select every file of an open stash that is on screen. */
+    function selectStashFiles(sha) {
+      const prefix = "stash:" + sha + ":";
+      const keys = stashRowOrder.filter((k) => k.indexOf(prefix) === 0);
+      selectedRows.clear();
+      for (let i = 0; i < keys.length; i++) selectedRows.add(keys[i]);
+      selectionAnchor = keys.length ? keys[keys.length - 1] : null;
+      paintSelection();
     }
 
     /** A stash action from its row or its menu: the row moves now, the host settles it. */
@@ -8612,14 +8788,20 @@ export class CommitViewProvider
 
     /** Move / Copy to Changes for some of a stash's files. */
     function stashFilesAct(s, paths, action) {
-      if (!paths.length || stashPending.has(s.sha)) return;
-      const all = paths.length >= s.files.length;
+      const files = stashFiles.get(s.sha);
+      if (!files || stashPending.has(s.sha)) return;
+      // Only the paths this stash holds: "all of them" is counted against
+      // its own files, never against a list that could carry another's.
+      const have = new Set(files.map((f) => f.path));
+      const mine = paths.filter((p) => have.has(p));
+      if (!mine.length) return;
+      const all = mine.length >= files.length;
       stashPending.set(s.sha, action === "move"
-        ? (all ? { remove: true, at: Date.now() } : { moved: paths.slice(), at: Date.now() })
-        : { busyPaths: paths.slice(), at: Date.now() });
+        ? (all ? { remove: true, at: Date.now() } : { moved: mine.slice(), at: Date.now() })
+        : { busyPaths: mine.slice(), at: Date.now() });
       clearSelection();
       renderStashes();
-      vscode.postMessage({ type: "stashFiles", sha: s.sha, action: action, paths: paths });
+      vscode.postMessage({ type: "stashFiles", sha: s.sha, action: action, paths: mine });
     }
 
     function stashItems(s) {
@@ -8673,7 +8855,8 @@ export class CommitViewProvider
       row.appendChild(actions);
 
       const toggle = () => {
-        if (stashOpen.has(s.sha)) stashOpen.delete(s.sha);
+        // Closed, it opens again at its first page.
+        if (stashOpen.has(s.sha)) { stashOpen.delete(s.sha); stashShown.delete(s.sha); }
         else stashOpen.add(s.sha);
         saveStashUi();
         renderStashes();
@@ -8682,14 +8865,12 @@ export class CommitViewProvider
         // The second click of a double-click: the first one already toggled.
         if (ev.detail > 1) return;
         if (ev.ctrlKey || ev.metaKey) {
-          // Every file of this stash, as a header's Ctrl/Cmd-click selects a group.
+          // Every file of this stash on screen, as a header's Ctrl/Cmd-click
+          // selects a group — once they are read, if they are being read.
           ev.preventDefault();
-          const keys = s.files.map((f) => stashKey(s.sha, f.path));
-          selectedRows.clear();
-          for (let i = 0; i < keys.length; i++) selectedRows.add(keys[i]);
-          selectionAnchor = keys.length ? keys[keys.length - 1] : null;
           if (!stashOpen.has(s.sha)) { stashOpen.add(s.sha); saveStashUi(); renderStashes(); }
-          paintSelection();
+          if (stashFiles.has(s.sha)) selectStashFiles(s.sha);
+          else stashSelectOnRead = s.sha;
           return;
         }
         toggle();
@@ -8709,8 +8890,12 @@ export class CommitViewProvider
       return row;
     }
 
-    /** A stash's folders, in the tree layout: the Changes tree's rows. */
-    function renderStashNode(container, s, node, depth) {
+    /**
+     * A stash's folders, in the tree layout: the Changes tree's rows. The
+     * last argument is every file of the stash, shown or not: a folder's Move
+     * takes all of its files, not only the page on screen.
+     */
+    function renderStashNode(container, s, node, depth, all) {
       const dirs = Array.from(node.dirs.values()).sort((a, b) => a.name.localeCompare(b.name));
       for (const dir of dirs) {
         const key = "stashfolder:" + s.sha + ":" + dir.path;
@@ -8727,7 +8912,8 @@ export class CommitViewProvider
         name.textContent = dir.name;
         row.appendChild(name);
         row.appendChild(el("span", "spacer"));
-        const inside = collectFolderFiles(dir, []);
+        const under = dir.path + "/";
+        const inside = all.filter((f) => f.path.indexOf(under) === 0).map((f) => f.path);
         const factions = el("span", "row-actions");
         factions.appendChild(makeIconBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
           "Move this folder's files to Changes", (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "move"); }));
@@ -8739,7 +8925,7 @@ export class CommitViewProvider
           if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
         });
         container.appendChild(row);
-        if (!isCollapsed) renderStashNode(container, s, dir, depth + 1);
+        if (!isCollapsed) renderStashNode(container, s, dir, depth + 1, all);
       }
       for (const f of node.files.slice().sort((a, b) => a.name.localeCompare(b.name))) {
         container.appendChild(makeStashFileRow(s, f.entry, f.name, depth));
@@ -8802,10 +8988,21 @@ export class CommitViewProvider
       row.appendChild(actions);
       const status = el("span", "status " + statusClass(letter));
       status.textContent = letter;
-      // The staged word gives way at the narrowest widths; its tip keeps it.
+      // The staged word gives way at the narrowest widths; its tip keeps it
+      // for the pointer, and the row's name below for a screen reader.
       status.dataset.tip = statusTitle(letter) +
         (f.staged === "all" ? ", staged" : f.staged === "part" ? ", partly staged" : "");
       row.appendChild(status);
+      // Its name in words — the file, its folder, its change, its staging —
+      // rather than the row's text run together ("login.ts src/auth Move to
+      // Changes… M"), which lost the staging wherever the word was hidden.
+      const folder = slash === -1 ? "" : f.path.slice(0, slash);
+      row.setAttribute("aria-label", [
+        slash === -1 ? f.path : f.path.slice(slash + 1),
+        folder,
+        statusTitle(letter).toLowerCase() + (f.oldPath ? " from " + f.oldPath : ""),
+        f.staged === "all" ? "staged" : f.staged === "part" ? "partly staged" : "",
+      ].filter(Boolean).join(", "));
 
       const open = () => vscode.postMessage({ type: "stashOpenFile", sha: s.sha, path: f.path });
       const menu = (ev) => {
@@ -9049,10 +9246,20 @@ export class CommitViewProvider
         renderIfChanged();
         // The stash list: absent means "not read yet, keep what is shown".
         if (Array.isArray(msg.stashes)) {
-          authStashes = msg.stashes;
+          takeStashList(msg.stashes);
           reconcileStashPending();
         }
         renderStashesIfChanged();
+      } else if (msg.type === "stashFilesRead") {
+        // The files of a stash the list carried as a count, read when it opened.
+        stashReading.delete(msg.sha);
+        if (Array.isArray(msg.files)) stashFiles.set(msg.sha, msg.files);
+        else stashUnreadable.add(msg.sha);
+        renderStashes();
+        if (stashSelectOnRead === msg.sha) {
+          stashSelectOnRead = null;
+          if (stashFiles.has(msg.sha)) selectStashFiles(msg.sha);
+        }
       } else if (msg.type === "stashPending") {
         // Drop's confirm or Create Branch's name was answered: the row leaves
         // now, before git has run, and comes back if it did not happen.
@@ -9062,11 +9269,21 @@ export class CommitViewProvider
         const o = msg.outcome || { kind: "kept" };
         const p = stashPending.get(msg.sha);
         // What is left of a stash after a move is a new sha where it was:
-        // it stays open if it was.
-        if (o.kind === "done" && o.rest && stashOpen.has(msg.sha)) {
-          stashOpen.delete(msg.sha);
-          stashOpen.add(o.rest);
-          saveStashUi();
+        // it stays open if it was, as many of its files shown, and its files
+        // are the stash's less the ones moved — nothing to read again.
+        if (o.kind === "done" && o.rest) {
+          const had = stashFiles.get(msg.sha);
+          if (had && Array.isArray(msg.paths)) {
+            const moved = new Set(msg.paths);
+            stashFiles.set(o.rest, had.filter((f) => !moved.has(f.path)));
+            stashSeeded.add(o.rest);
+          }
+          if (stashShown.has(msg.sha)) stashShown.set(o.rest, stashShown.get(msg.sha));
+          if (stashOpen.has(msg.sha)) {
+            stashOpen.delete(msg.sha);
+            stashOpen.add(o.rest);
+            saveStashUi();
+          }
         }
         if (p) {
           if (o.kind === "gone") {

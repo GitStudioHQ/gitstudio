@@ -282,6 +282,22 @@ export class ChangesPage {
     await this.page.eval(`window.__send(${JSON.stringify(msg)})`);
   }
 
+  /**
+   * The name a screen reader announces for the element `expression` yields,
+   * as Chrome's accessibility tree computes it — what a hover-only tip or a
+   * display:none word never reaches.
+   */
+  async accessibleName(expression: string): Promise<string> {
+    await this.page.send("Accessibility.enable");
+    const r = await this.page.send<{ result: { objectId?: string } }>("Runtime.evaluate", { expression });
+    if (!r.result.objectId) throw new Error(`not an element: ${expression}`);
+    const tree = await this.page.send<{ nodes: { name?: { value?: string } }[] }>("Accessibility.getPartialAXTree", {
+      objectId: r.result.objectId,
+      fetchRelatives: false,
+    });
+    return tree.nodes[0]?.name?.value ?? "";
+  }
+
   /** Everything the page has posted to the host so far. */
   posted(): Promise<Record<string, unknown>[]> {
     return this.page.eval("window.__posted");

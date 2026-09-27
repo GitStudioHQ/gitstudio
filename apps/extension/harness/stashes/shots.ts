@@ -4,10 +4,11 @@
 //   npx tsx apps/extension/harness/stashes/shots.ts [outDir]
 //
 // Writes to <repo>/out/stashes by default. Nothing on screen is typed here:
-// a scratch repository gets real stashes (every kind of file), the rows are
-// read from it the way the host reads them (StashProvider.files +
-// stashTitle), and the questions are the ones the real doors ask, recorded
-// by a dialog host that backs out.
+// a scratch repository gets real stashes (every kind of file, and one too big
+// to carry — a dependency folder stashed with -u), the rows are built from
+// it the way the host builds them (StashProvider.files + stashRows), and the
+// questions are the ones the real doors ask, recorded by a dialog host that
+// backs out.
 
 import Module from "node:module";
 import { execFileSync } from "node:child_process";
@@ -28,7 +29,7 @@ resolver._resolveFilename = function (request: unknown, ...rest: unknown[]) {
 const { registerDialogHost } = require("../../src/ui/dialogs") as typeof import("../../src/ui/dialogs");
 const stashesView = require("../../src/views/stashesView") as typeof import("../../src/views/stashesView");
 const { GitContext } = require("@gitstudio/git-service/GitContext") as typeof import("@gitstudio/git-service/GitContext");
-const { stashTitle } = require("@gitstudio/git-service/StashProvider") as typeof import("@gitstudio/git-service/StashProvider");
+const { stashRows } = require("../../src/changes/stashRows") as typeof import("../../src/changes/stashRows");
 const { ChangesPage } = require("../../test/changesPage") as typeof import("../../test/changesPage");
 /* eslint-enable @typescript-eslint/no-require-imports */
 import type { DialogSpec } from "../../src/ui/dialogs";
@@ -50,8 +51,14 @@ registerDialogHost({
   },
 });
 
-/** A repository with three stashes, the middle one holding every kind of file. */
-async function realStashes(): Promise<{ rows: unknown[]; drop: DialogSpec; staging: DialogSpec | undefined; dir: string }> {
+/** A repository with four stashes: the second holds every kind of file, the oldest 260 of them. */
+async function realStashes(): Promise<{
+  rows: unknown[];
+  big: { sha: string; files: unknown[] };
+  drop: DialogSpec;
+  staging: DialogSpec | undefined;
+  dir: string;
+}> {
   const dir = mkdtempSync(join(tmpdir(), "gs-shots-stash-"));
   const git = (...args: string[]): string =>
     execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -67,7 +74,10 @@ async function realStashes(): Promise<{ rows: unknown[]; drop: DialogSpec; stagi
   }
   git("add", ".");
   git("commit", "-q", "-m", "Initial layout");
-  // The oldest: a message typed with it.
+  // The oldest: an accident — a dependency folder stashed with -u.
+  for (let i = 0; i < 260; i++) write(`vendor/lib/part-${String(i).padStart(3, "0")}.js`, `module.exports = ${i};\n`);
+  git("stash", "push", "-q", "-u", "-m", "Try the new bundler");
+  // Then: a message typed with it.
   write("README.md", "README.md\nnotes for the release\n");
   git("stash", "push", "-q", "-m", "Release notes draft");
   // The middle one: every kind of file, staged and not, new and gone.
@@ -92,12 +102,12 @@ async function realStashes(): Promise<{ rows: unknown[]; drop: DialogSpec; stagi
   const ctx = new GitContext({ root: dir });
   try {
     const list = await ctx.stashes.list();
-    const rows = await Promise.all(
-      list.map(async (e) => {
-        const t = stashTitle(e.message);
-        return { sha: e.sha, text: t.text, ...(t.branch ? { branch: t.branch } : {}), ...(t.auto ? { auto: true } : {}), message: e.message, time: e.time - 2 * 3600 * (list.indexOf(e) + 1), files: (await ctx.stashes.files(e.sha)) ?? [] };
-      }),
-    );
+    // Made hours apart, as a real list is.
+    const dated = list.map((e, i) => ({ ...e, time: e.time - 2 * 3600 * (i + 1) }));
+    const files = await Promise.all(list.map((e) => ctx.stashes.files(e.sha)));
+    const rows = stashRows(dated, files);
+    const oldest = list[list.length - 1];
+    const big = { sha: oldest.sha, files: files[files.length - 1] ?? [] };
     // The questions the real doors ask, backed out of.
     const entry = { ctx, root: dir };
     const repos = { getActive: () => entry, getAll: () => [entry], getUndoLedger: () => undefined } as never;
@@ -111,7 +121,7 @@ async function realStashes(): Promise<{ rows: unknown[]; drop: DialogSpec; stagi
     await stashesView.moveStashFiles(repos, list[1].sha, ["src/auth/login.ts"], () => {});
     const staging = captured[0];
     git("reset", "-q", "src/app.ts");
-    return { rows, drop, staging, dir };
+    return { rows, big, drop, staging, dir };
   } finally {
     ctx.dispose();
   }
@@ -202,7 +212,18 @@ async function shoot(theme: VsCodeTheme, data: Awaited<ReturnType<typeof realSta
     if (data.staging) {
       await page.send({ type: "dialog", dialogId: "shot-2", spec: data.staging });
       await snap("staging");
+      await page.key("Escape");
     }
+    // 7. A stash too big to carry: opened, its files being read…
+    await page.send(state(data.rows, { unstaged: [] }));
+    await page.eval(`document.querySelector('[data-focus-key="stash:${middle}"]').click()`);
+    await openStash(data.big.sha);
+    await page.eval("window.scrollTo(0, document.body.scrollHeight)");
+    await snap("big-reading");
+    // 8. …and read: its first page, and the row that shows the next.
+    await page.send({ type: "stashFilesRead", sha: data.big.sha, files: data.big.files });
+    await page.eval("window.scrollTo(0, document.body.scrollHeight)");
+    await snap("big-more");
   } finally {
     await page.close();
   }
