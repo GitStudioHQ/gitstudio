@@ -222,6 +222,26 @@ test("what couldn't be read says so: a commit's files, a worktree's uncommitted 
   assert.deepEqual(said, { uncommitted: "Couldn't read its uncommitted changes.", label: "Uncommitted", commit: "Couldn't read this commit's files." });
 });
 
+test("clicking a commit or a file opens it without putting a text caret in it — a caret in a clipped subject drops its ellipsis and cuts a letter", { skip }, async () => {
+  const page = await open("dark", 320, 900);
+  await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);
+  await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
+  await page.settle();
+  // A subject too long for the row: its ellipsis must survive the click that opens it.
+  await page.clickOn(`.wt-item[data-path="${LOGIN}"] .cr-commit .cr-subj`);
+  await page.clickOn(`.wt-item[data-path="${LOGIN}"] .cr-file .cr-name`);
+  const after = await page.eval<{ caretIn: string; select: string[] }>(`(function () {
+    var sel = window.getSelection();
+    var n = sel && sel.rangeCount ? sel.anchorNode : null;
+    var el = n ? (n.nodeType === 1 ? n : n.parentElement) : null;
+    return {
+      caretIn: el && el.closest(".cr-commit, .cr-file") ? el.closest(".cr-commit, .cr-file").className : "",
+      select: [getComputedStyle(document.querySelector(".cr-commit")).userSelect, getComputedStyle(document.querySelector(".cr-file")).userSelect],
+    };
+  })()`);
+  assert.deepEqual(after, { caretIn: "", select: ["none", "none"] });
+});
+
 test("the keyboard walks one tree: ↓ ↑ between rows and into an open one, → opens, ← closes and climbs, Enter toggles", { skip }, async () => {
   const page = await open();
   await page.eval(`document.querySelector('.wt-row').focus()`);

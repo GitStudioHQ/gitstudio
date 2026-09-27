@@ -65,9 +65,13 @@
 .cr-file:hover {
   background: var(--gs-hover);
 }
+/* A row that opens is a control, not text: a click must not leave a caret
+   in it — Chrome drops a clipped subject's ellipsis while one is there, and
+   the subject reads cut mid-letter. */
 .cr-commit.clickable,
 .cr-file.clickable {
   cursor: pointer;
+  user-select: none;
 }
 .cr-commit:focus-visible,
 .cr-file:focus-visible {

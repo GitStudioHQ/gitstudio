@@ -6,8 +6,10 @@
 //
 // Writes to <repo>/out/worktrees by default: the list (every row state), an
 // open row (its uncommitted files, its commits not pushed, one commit open to
-// its files), a row's More menu, the "only the main worktree" explainer, and
-// a filtered list of many.
+// its files), a row's More menu, the menu of a folder that isn't a worktree
+// any more, rows busy with an action, the "only the main worktree"
+// explainer, a filtered list of many — and, in the Changes view, the push
+// review for another worktree, the Remove question and the Forget question.
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -55,6 +57,18 @@ async function shoot(theme: VsCodeTheme): Promise<string[]> {
     await page.clickOn('.wt-row[data-path="/code/app/.claude/worktrees/agent-a2c9ae27"] .wt-more');
     await snap("menu");
     await page.key("Escape");
+
+    // The menu of a folder that isn't a worktree any more: Reveal, Forget.
+    await page.clickOn('.wt-row[data-path="/code/app/.claude/worktrees/agent-7f3e"] .wt-more');
+    await snap("menu-unlinked");
+    await page.key("Escape");
+
+    // Rows busy with an action say what they are doing, at full ink.
+    await page.send({ type: "busy", path: "/code/app-checkout", busy: true, label: "Removing…" });
+    await page.send({ type: "busy", path: "/code/app-login", busy: true, label: "Pulling…" });
+    await snap("busy");
+    await page.send({ type: "busy", path: "/code/app-checkout", busy: false });
+    await page.send({ type: "busy", path: "/code/app-login", busy: false });
 
     // Only the main worktree: the explainer and New Worktree….
     await page.send({ type: "rows", rows: [rows[0]], state: "ok", labels: LABELS });
@@ -122,6 +136,31 @@ async function shootChanges(theme: VsCodeTheme): Promise<string[]> {
       ],
     });
     await snap("push-review-worktree");
+    await page.key("Escape");
+    await page.key("Escape");
+    // Forget, for a folder whose .git is gone: nothing on disk changes.
+    const forget = worktreeRemovalAsk({
+      kind: "stale",
+      label: "agent-7f3e",
+      shownPath: "~/code/app/.claude/worktrees/agent-7f3e",
+      branch: "worktree-agent-7f3e",
+      head: p,
+      locked: false,
+      staleWhy: "gitdir file points to non-existent location",
+    });
+    await page.send({
+      type: "dialog",
+      dialogId: "forget",
+      spec: {
+        kind: "confirm",
+        title: forget.title,
+        message: forget.message,
+        confirmLabel: forget.choices[0].label,
+        danger: forget.choices[0].danger,
+      },
+    });
+    await page.page.waitFor(`!!document.querySelector(".rp-panel")`);
+    await snap("forget-question");
     await page.key("Escape");
     const ask = worktreeRemovalAsk({
       kind: "present",
