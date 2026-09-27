@@ -10,8 +10,9 @@ import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from ".
 //     ('‹ feature'): never laid over the menu and the row they belong to.
 //     The back row, Left and Escape return to the list, scrolled where it
 //     was, the branch highlighted; typing returns and searches; a repaint
-//     or a resize keeps the actions open with the same item highlighted,
-//     beside the menu or in it as the new size allows;
+//     or a resize keeps the actions open with the same item highlighted —
+//     found by what it is, when the repaint added or dropped items above
+//     it — beside the menu or in it as the new size allows;
 //   · every kind of ref lists its actions in one order, with a separator
 //     only between groups that have items: at most four;
 //   · a group's heading stays pinned while its rows scroll under it, and a
@@ -231,6 +232,66 @@ test("drilled in, the actions survive a repaint from the host, and a resize puts
   assert.equal(at.mode, "drilled");
   assert.equal(await p.eval(`document.querySelector(".branch-submenu .is-active").textContent.trim()`), item);
   inside(at.sub, { left: 0, top: 0, right: at.vw, bottom: at.vh }, "inside the view");
+});
+
+// A repaint can change which actions a ref has — an upstream appears (a
+// push set it), or goes (a fetch pruned it) — and so every item's place.
+// The highlight is what Enter runs: it stays on the item it was on, found by
+// what it is, beside the menu and drilled in, and through a resize after.
+// An item the repaint took away hands the highlight to the first item —
+// never to whatever took its place.
+test("a repaint that adds or drops a ref's actions keeps the highlight on the same action, and Enter runs it", { skip }, async () => {
+  const active = (p: ChangesPage): Promise<string> =>
+    p.eval<string>(`(function () { var a = document.querySelector(".branch-submenu .is-active"); return a ? a.textContent.trim() : ""; })()`);
+  const walkTo = async (p: ChangesPage, label: string | RegExp): Promise<void> => {
+    for (let i = 0; i < 30; i++) {
+      const on = await active(p);
+      if (typeof label === "string" ? on === label : label.test(on)) return;
+      await p.key("ArrowDown");
+    }
+    throw new Error(`never reached ${label}`);
+  };
+  const live = LOCAL.map((b) => (b.name === "topic" ? { ...b, upstream: "origin/topic", upstreamOnRemote: true } : b));
+  const pruned = LOCAL.map((b) => (b.name === "feature" ? { ...b, gone: true, upstreamOnRemote: false, ahead: 0, behind: 0 } : b));
+  for (const [width, mode] of [[900, "beside"], [300, "drilled"]] as const) {
+    const p = await open("dark", width, 640);
+    // The upstream goes: Set Tracked Branch… comes first, Pull into and Reset go.
+    await openMenu(p);
+    await query(p, "feature");
+    await p.key("ArrowRight");
+    await walkTo(p, "Add to Favorites");
+    await p.send(stateMessage({ local: pruned, remote: REMOTE.filter((r) => r !== "origin/feature"), tags: ["v1.0"] }));
+    assert.equal((await placement(p)).mode, mode);
+    assert.equal(await p.eval(`document.querySelector(".branch-submenu .bm-subaction").textContent.trim()`), "Set Tracked Branch…", `${width}px: the list did change`);
+    assert.equal(await active(p), "Add to Favorites", `${width}px: an upstream gone, the highlight on the same action`);
+    await p.resize(width === 900 ? 300 : 900, 640);
+    assert.equal(await active(p), "Add to Favorites", `${width}px: and through a resize after it`);
+    await p.resize(width, 640);
+    await p.eval(`window.__posted.length = 0`);
+    await p.key("Enter");
+    assert.deepEqual((await p.posted()).filter((m) => m.type === "branchAction" || m.type === "branchRefCommand"),
+      [{ type: "branchAction", action: "favorite", ref: "feature" }], `${width}px: Enter runs the action it is on`);
+
+    // An upstream appears: Pull into, Tracked Branch and Reset come in above.
+    await openMenu(p);
+    await query(p, "topic");
+    await p.key("ArrowRight");
+    await walkTo(p, "Copy Branch Name");
+    const items = (): Promise<string[]> => p.eval<string[]>(`Array.prototype.map.call(document.querySelectorAll(".branch-submenu .bm-subaction"), function (b) { return b.textContent.trim(); })`);
+    const was = (await items()).indexOf("Copy Branch Name");
+    await p.send(stateMessage({ local: live, remote: [...REMOTE, "origin/topic"], tags: ["v1.0"] }));
+    assert.ok((await items()).includes("Pull into 'topic'"), `${width}px: the list did change: ${(await items()).join(" | ")}`);
+    assert.notEqual((await items()).indexOf("Copy Branch Name"), was, `${width}px: and the action moved`);
+    assert.equal(await active(p), "Copy Branch Name", `${width}px: an upstream appeared, the highlight on the same action`);
+
+    // The action it was on is gone: the first item, not whatever is there now.
+    await openMenu(p);
+    await query(p, "feature");
+    await p.key("ArrowRight");
+    await walkTo(p, /^Pull 1 Commit into 'feature'/);
+    await p.send(stateMessage({ local: pruned, remote: REMOTE.filter((r) => r !== "origin/feature"), tags: ["v1.0"] }));
+    assert.equal(await active(p), "Set Tracked Branch…", `${width}px: a pull that is gone hands the highlight to the first item`);
+  }
 });
 
 // The groups every action belongs to, in order, and each action's place.

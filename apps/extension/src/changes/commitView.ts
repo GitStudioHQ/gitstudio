@@ -5960,12 +5960,25 @@ export class CommitViewProvider
       list.appendChild(b);
     }
     function subSep(list) { list.appendChild(el("div", "bm-subsep")); }
-    /** Repaint the open menu (badges/labels) and re-open the same branch's
-     *  submenu on its NEW row — an in-place live refresh of the dialog stack. */
-    function refreshOpenBranchUi() {
+    /** What the highlighted submenu item is (its data-sub), or null when the
+     *  highlight is not in a submenu. */
+    function bmSubActiveKey() {
+      const item = bmSubActive >= 0 ? bmSubItems()[bmSubActive] : null;
+      return item ? item.dataset.sub || "" : null;
+    }
+    /**
+     * Repaint the open menu (badges/labels) and re-open the same branch's
+     * submenu on its NEW row — an in-place live refresh of the dialog stack.
+     * A keyboard highlight in the submenu stays on the same item, found by
+     * what it is: the repaint can add or drop items above it (an upstream
+     * that appeared, or went), and Enter must still run what was chosen. An
+     * item that is gone gives the highlight to the first. subKey: the item
+     * to keep, when the caller has already closed the submenu.
+     */
+    function refreshOpenBranchUi(subKey) {
       if (!branchMenu) return;
       const sub = subMenuFor;
-      const subActive = bmSubActive; // a keyboard highlight in the submenu survives the repaint
+      const keep = subKey !== undefined ? subKey : bmSubActiveKey();
       // Drilled in, the list is hidden: it comes back where it was, under
       // the actions drilled in again below.
       const drillScroll = branchMenu.classList.contains("is-drilled") ? bmDrillScroll : -1;
@@ -5983,10 +5996,13 @@ export class CommitViewProvider
         const row = bmRowByKey("b:" + sub.kind + ":" + sub.name);
         if (row) {
           openBranchActions(sub.name, sub.kind, sub.current, row);
-          bmSubActive = subActive;
+          if (keep !== null) {
+            const i = bmSubItems().findIndex((n) => n.dataset.sub === keep);
+            bmSubActive = i >= 0 ? i : 0;
+          }
           // The rebuilt submenu starts scrolled to its top; a highlight
           // further down a short view's submenu is brought back into sight.
-          paintBm(subActive >= 0);
+          paintBm(bmSubActive >= 0);
         } else {
           subMenuFor = null; // the branch vanished (e.g. deleted)
         }
@@ -6113,8 +6129,15 @@ export class CommitViewProvider
       // The row this submenu belongs to holds the main list's highlight.
       if (anchor && anchor.dataset && anchor.dataset.bmkey) bmActiveKey = anchor.dataset.bmkey;
 
+      // Each item carries what it is (data-sub), so a repaint that adds or
+      // drops items above it finds it again by that, not by its place.
       const groups = [[], [], [], [], []];
-      const add = (g, fn) => groups[g].push(fn);
+      const add = (g, key, fn) => groups[g].push((l) => {
+        const before = l.querySelectorAll(".bm-subaction").length;
+        fn(l);
+        const items = l.querySelectorAll(".bm-subaction");
+        for (let i = before; i < items.length; i++) items[i].dataset.sub = key;
+      });
       const trackedItem = (l) => subItem(l, "cloud",
         bd && bd.upstream && !gone ? "Tracked Branch: " + bd.upstream + "…" : "Set Tracked Branch…",
         () => subAct("gitstudio.branch.setUpstream", name, refType), false,
@@ -6123,66 +6146,66 @@ export class CommitViewProvider
           : "Choose the remote branch '" + name + "' pulls from and pushes to.");
 
       // Switch to it, or start something from it.
-      if (local && gone) add(0, trackedItem);
+      if (local && gone) add(0, "tracked", trackedItem);
       if (kind === "tag") {
-        add(0, (l) => subItem(l, "arrow-swap", "Checkout Tag (detached)", () => subAct("gitstudio.tag.checkout", name, "tag")));
+        add(0, "checkout", (l) => subItem(l, "arrow-swap", "Checkout Tag (detached)", () => subAct("gitstudio.tag.checkout", name, "tag")));
       } else if (!current) {
         // Not the check: in this menu that marks the branch that IS checked out.
-        add(0, (l) => subItem(l, kind === "remote" ? "cloud-download" : "arrow-swap", "Checkout", () =>
+        add(0, "checkout", (l) => subItem(l, kind === "remote" ? "cloud-download" : "arrow-swap", "Checkout", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.checkout" : "gitstudio.branch.checkout", name, refType)));
       }
       // Nothing to pull without an upstream, nor from one deleted from its
       // remote: the pull could only fail. Push… can still publish the branch.
       if (current && bd && bd.upstream && !gone) {
-        add(0, (l) => subItemLive(l, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name));
-        add(0, (l) => subItemLive(l, "arrow-down", "Pull using Merge", "Pulling…", "pullMerge", name));
+        add(0, "pullRebase", (l) => subItemLive(l, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name));
+        add(0, "pullMerge", (l) => subItemLive(l, "arrow-down", "Pull using Merge", "Pulling…", "pullMerge", name));
       } else if (local && !current && bd && bd.upstream && !gone) {
         // Fast-forward this branch from its upstream WITHOUT checking it out.
-        add(0, (l) => subItemLive(l, "arrow-down",
+        add(0, "pullFf", (l) => subItemLive(l, "arrow-down",
           "Pull " + (bd.behind ? bd.behind + (bd.behind === 1 ? " Commit " : " Commits ") : "") + "into '" + name + "'",
           "Pulling…", "pullFf", name,
           "Fast-forwards '" + name + "' from " + bd.upstream + " — no checkout"));
       }
-      add(0, (l) => subItem(l, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType)));
-      add(0, (l) => subItem(l, "worktree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType)));
+      add(0, "newBranch", (l) => subItem(l, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType)));
+      add(0, "worktree", (l) => subItem(l, "worktree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType)));
 
       // Against what HEAD is on (nothing to compare the current branch with).
       if (!current) {
-        add(1, (l) => subItem(l, "git-compare", "Compare with " + cur, () => subAct("gitstudio.branch.compare", name, refType)));
-        add(1, (l) => subItem(l, "git-merge", "Merge '" + name + "' into " + cur, () => subAct("gitstudio.branch.merge", name, refType)));
+        add(1, "compare", (l) => subItem(l, "git-compare", "Compare with " + cur, () => subAct("gitstudio.branch.compare", name, refType)));
+        add(1, "merge", (l) => subItem(l, "git-merge", "Merge '" + name + "' into " + cur, () => subAct("gitstudio.branch.merge", name, refType)));
         // Not the pull-request glyph: a rebase opens no pull request. The
         // replayed, reordered list is GitStudio's glyph for a rebase.
         if (kind !== "tag") {
-          add(1, (l) => subItem(l, "list-ordered", "Rebase " + cur + " onto '" + name + "'", () => subAct("gitstudio.branch.rebase", name, refType)));
+          add(1, "rebase", (l) => subItem(l, "list-ordered", "Rebase " + cur + " onto '" + name + "'", () => subAct("gitstudio.branch.rebase", name, refType)));
         }
       }
 
       // Publish it.
       if (kind === "tag") {
-        add(2, (l) => subItem(l, "cloud-upload", "Push Tag to Remote…", () => subAct("gitstudio.tag.push", name, "tag")));
+        add(2, "push", (l) => subItem(l, "cloud-upload", "Push Tag to Remote…", () => subAct("gitstudio.tag.push", name, "tag")));
       } else if (current) {
         // Push opens the review modal (see openPushModal) rather than pushing in
         // place, so every push route funnels through the same confirmation.
-        add(2, (l) => subItem(l, "arrow-up", "Push…", () => {
+        add(2, "push", (l) => subItem(l, "arrow-up", "Push…", () => {
           closeBranchMenu();
           vscode.postMessage({ type: "requestPushPreview" });
         }));
       } else if (local) {
-        add(2, (l) => subItem(l, "arrow-up", "Push…", () => subAct("gitstudio.branch.push", name, refType)));
+        add(2, "push", (l) => subItem(l, "arrow-up", "Push…", () => subAct("gitstudio.branch.push", name, refType)));
       }
-      if ((local || current) && !gone) add(2, trackedItem);
+      if ((local || current) && !gone) add(2, "tracked", trackedItem);
 
       // Its name.
-      if (local || current) add(3, (l) => subItem(l, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType)));
-      add(3, (l) => subItem(l, "copy", kind === "tag" ? "Copy Tag Name" : "Copy Branch Name", () => branchAct("copyName", name)));
-      if (local || current) add(3, (l) => favoriteItem(l, name, bd));
+      if (local || current) add(3, "rename", (l) => subItem(l, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType)));
+      add(3, "copy", (l) => subItem(l, "copy", kind === "tag" ? "Copy Tag Name" : "Copy Branch Name", () => branchAct("copyName", name)));
+      if (local || current) add(3, "favorite", (l) => favoriteItem(l, name, bd));
 
       // What cannot be taken back without Undo.
-      if (local || current) add(4, (l) => resetToUpstreamItem(l, name, bd));
+      if (local || current) add(4, "reset", (l) => resetToUpstreamItem(l, name, bd));
       if (kind === "tag") {
-        add(4, (l) => subItem(l, "trash", "Delete Tag", () => subAct("gitstudio.tag.delete", name, "tag"), true));
+        add(4, "delete", (l) => subItem(l, "trash", "Delete Tag", () => subAct("gitstudio.tag.delete", name, "tag"), true));
       } else if (!current) {
-        add(4, (l) => subItem(l, "trash", "Delete", () =>
+        add(4, "delete", (l) => subItem(l, "trash", "Delete", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.delete" : "gitstudio.branch.delete", name, refType), true));
       }
 
@@ -7491,16 +7514,15 @@ export class CommitViewProvider
       // Drilled in, the list is hidden and cannot be measured: it comes back
       // first, and the actions are placed again below — beside the menu if
       // the view is wide enough for that now.
-      const sub = subMenuFor, subActive = bmSubActive;
+      const sub = subMenuFor, subKey = bmSubActiveKey(); // the same item stays highlighted
       if (branchSubmenu) closeBranchSubmenu();
       subMenuFor = sub;
-      bmSubActive = subActive; // the same item stays highlighted
       // Measured on whole rows: the counts a narrower view hid come back first.
       branchMenu.querySelectorAll(".bm-branch.is-cramped").forEach((r) => r.classList.remove("is-cramped"));
       holdBranchMenuWidth();
       placeBranchMenu();
       // Every row, measured again at the new width.
-      refreshOpenBranchUi();
+      refreshOpenBranchUi(subKey);
     }
     branchPill.addEventListener("click", openBranchMenu);
     // Switch Repository: the host builds the list (it holds every repository's
