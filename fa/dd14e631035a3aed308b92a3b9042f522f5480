@@ -1,0 +1,43 @@
+apps/extension/test/changesKeepsFocus.test.ts
+  s_26f5e669d3043c::t_57113f48a2eeb7 1-80
+apps/extension/test/changesPage.ts
+  s_26f5e669d3043c::t_c1e3c62842d86a 285-300
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_ffc09283d96d40 8740,8869,8996-9002
+  s_26f5e669d3043c::t_4e28b07f2b1e22 8858-8859
+  s_26f5e669d3043c::t_3e9c7220ff9df9 8578-8583,8592-8594,8723
+  s_26f5e669d3043c::t_680e90ba6e265a 4990-4995,4998
+  s_26f5e669d3043c::t_ffa15dbdb0c6e1 5349,7648,7671,8498,8548,8555,8613,8648,8699,8721,8757,8767,8776,8793-8798,8800-8801,8804
+  s_26f5e669d3043c::t_e7cf94f00107a4 4241-4249
+  s_26f5e669d3043c::t_10013062b566c4 62-63,211,213,808-810,984-997,5344-5348,5350-5353,6458,7645-7647,7656-7660,7662,7670,7672-7678,8458,8481-8497,8509-8513,8522-8524,8532-8547,8549-8554,8556-8565,8602-8606,8612,8633,8647,8649-8658,8690-8698,8700-8703,8714,8718-8720,8722,8724-8739,8741-8756,8758-8766,8768-8775,8777,8791-8792,8868,8872-8873,8893-8898,8915-8916,8928,8991-8992,9003-9005,9249,9253-9262,9272-9286
+apps/extension/test/stashesPayload.test.ts
+  s_26f5e669d3043c::t_836a065f64ee0b 1-109
+apps/extension/test/changesStashes.test.ts
+  s_26f5e669d3043c::t_ba2f46571391d3 379-410
+  s_26f5e669d3043c::t_be84aca713c09c 319-353,411-414
+  s_26f5e669d3043c::t_335f8e17d2be9c 457-582
+  s_26f5e669d3043c::t_6e4258485e48d6 583-605
+  s_26f5e669d3043c::t_4ba43ae6eefdd6 42,114,210,415,606-611
+apps/extension/test/branchMenuKeyboard.test.ts
+  s_26f5e669d3043c::t_eddd0f877f364a 415-416
+apps/extension/src/changes/stashRows.ts
+  s_26f5e669d3043c::t_e89e671553f0c9 1-59
+apps/extension/harness/stashes/shots.ts
+  s_26f5e669d3043c::t_44870a95ea0f87 7-11,32,54-61,77-80,105-110,124,215,217-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fadd14e631035a3aed308b92a3b9042f522f5480",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
