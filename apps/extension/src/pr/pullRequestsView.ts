@@ -214,7 +214,7 @@ export function failureMessage(err: Described, repo: string): PrListMessage {
       tone: "warning",
       title: "Your GitHub session expired",
       detail: `Sign in again to see ${repo}'s pull requests.`,
-      buttons: [{ label: "Sign in Again", icon: "sign-in", primary: true, action: { kind: "signIn", again: true } }],
+      buttons: [{ label: "Sign in again", icon: "sign-in", primary: true, action: { kind: "signIn", again: true } }],
     };
   }
   if (err.kind === "auth" || err.kind === "forbidden") {
@@ -246,7 +246,7 @@ export function failureMessage(err: Described, repo: string): PrListMessage {
       title: `GitHub has no repository ${repo}`,
       detail: "Or this GitHub sign-in can't see it: a private repository needs an account with access to it.",
       buttons: [
-        { label: "Sign in Again", icon: "sign-in", action: { kind: "signIn", again: true }, title: "Sign in to GitHub, with another account if need be" },
+        { label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true }, title: "Sign in to GitHub, with another account if need be" },
         retry,
       ],
     };
@@ -677,7 +677,7 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
           detail: `Showing the list as it was ${ago(shown.at)}.`,
           buttons:
             d.kind === "auth" && d.status === 401
-              ? [{ label: "Sign in Again", icon: "sign-in", action: { kind: "signIn", again: true } }]
+              ? [{ label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true } }]
               : [{ label: "Retry", icon: "refresh", action: { kind: "retry" } }],
         };
       } else {

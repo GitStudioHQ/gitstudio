@@ -37,7 +37,7 @@ import type {
   PrThread,
   PrTimelineItem,
 } from "@gitstudio/host-bridge/prProtocol";
-import { CI_STATES, PR_STATES, REVIEW_DECISIONS, ciWords } from "@gitstudio/engine/forge/pullRequests";
+import { CI_STATES, PR_ACTIONS, PR_STATES, PR_TABS, REVIEW_DECISIONS, ciWords } from "@gitstudio/engine/forge/pullRequests";
 import {
   CHECK_STATES,
   FILE_STATUS,
@@ -232,12 +232,10 @@ function prose(src: string, repo: string, key: string, empty?: string): HTMLElem
 // ── The component ────────────────────────────────────────────────────────────
 
 const TABS: PrPageTab[] = ["conversation", "commits", "checks", "files"];
-const TAB_WORDS: Record<PrPageTab, { label: string; icon: string }> = {
-  conversation: { label: "Conversation", icon: "comment-discussion" },
-  commits: { label: "Commits", icon: "git-commit" },
-  checks: { label: "Checks", icon: "pass" },
-  files: { label: "Files Changed", icon: "diff" },
-};
+const PR_ACTIONS_MORE = PR_ACTIONS.more;
+
+/** The tabs: the desktop's words and glyphs (the shared PR_TABS). */
+const TAB_WORDS: Record<PrPageTab, { label: string; icon: string }> = PR_TABS;
 
 type Verdict = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 const VERDICT_WORDS: Record<Verdict, { label: string; icon: string; hint: string }> = {
@@ -521,8 +519,11 @@ export class PullRequestPage {
       b.appendChild(codicon(w.icon));
       let label = w.label;
       let title = w.title;
+      // Merge and Review open a box under the header: a chevron says so, as
+      // the desktop's menu buttons do.
+      let chevron = false;
       if (a === "merge") {
-        label = "Merge…";
+        chevron = true;
         b.setAttribute("aria-expanded", this.panel === "merge" ? "true" : "false");
         const box = mergeBoxOf(pr);
         if (box && !box.canMerge) {
@@ -531,15 +532,16 @@ export class PullRequestPage {
         }
       }
       if (a === "review") {
-        label = pending > 0 ? `Review (${pending} pending)` : "Review…";
+        chevron = true;
+        label = pending > 0 ? `Review (${pending} pending)` : w.label;
         title = pending > 0 ? `Submit your review — ${plural(pending, "pending comment")} will be sent with it` : w.title;
         b.setAttribute("aria-expanded", this.panel === "review" ? "true" : "false");
         if (pending > 0) b.classList.add("has-pending");
       }
       const busyWord: Partial<Record<PrPageAction, [string, string]>> = {
-        markReady: ["ready", "Marking Ready…"],
+        markReady: ["ready", "Marking ready…"],
         reopen: ["reopen", "Reopening…"],
-        checkout: ["checkout", "Checking Out…"],
+        checkout: ["checkout", "Checking out…"],
       };
       const busy = busyWord[a];
       if (busy && this.isBusy(busy[0])) {
@@ -551,14 +553,16 @@ export class PullRequestPage {
         b.disabled = true;
       }
       b.appendChild(el("span", "prp-btn-label", label));
+      if (chevron) b.appendChild(codicon(b.getAttribute("aria-expanded") === "true" ? "chevron-up" : "chevron-down", "prp-btn-chevron"));
       b.title = title;
       row.appendChild(b);
     };
     if (acts.primary) add(acts.primary, true);
     for (const a of acts.buttons) add(a, false);
     const more = button("gs-btn prp-btn prp-more-btn", "more", "more");
-    more.append(codicon("ellipsis"), el("span", "prp-btn-label", "More"));
-    more.title = "More actions";
+    more.appendChild(codicon(PR_ACTIONS_MORE.icon));
+    more.title = PR_ACTIONS_MORE.title;
+    more.setAttribute("aria-label", PR_ACTIONS_MORE.label);
     more.setAttribute("aria-haspopup", "menu");
     more.setAttribute("aria-expanded", this.moreOpen ? "true" : "false");
     row.appendChild(more);
@@ -627,7 +631,7 @@ export class PullRequestPage {
     if (pr.ci.state !== "none") {
       const show = button("prp-link", "status-show-checks", "tab");
       show.dataset.value = "checks";
-      show.textContent = "Show Checks";
+      show.textContent = "Show checks";
       show.title = "Every check on its latest commit";
       checks.querySelector(".prp-status-text")?.append(" ", show);
     }
@@ -639,9 +643,9 @@ export class PullRequestPage {
       // The fix, unless the header's own primary action is already it.
       if (m.fix && !(m.fix === "markReady" && prPageActions(pr).primary === "markReady")) {
         const words = {
-          updateBranch: ["Update Branch", "sync", `Merge ${pr.baseRef} into this branch on GitHub`, "updateBranch", "Updating…"],
-          checkout: ["Check Out to Resolve", "git-branch", "Check out its branch here, to merge the base into it and resolve the conflicts", "checkout", "Checking Out…"],
-          markReady: ["Mark Ready for Review", "eye", "Take it out of draft", "markReady", "Marking Ready…"],
+          updateBranch: [PR_PAGE_ACTION_WORDS.updateBranch.label, PR_PAGE_ACTION_WORDS.updateBranch.icon, `Merge ${pr.baseRef} into this branch on GitHub`, "updateBranch", "Updating…"],
+          checkout: ["Checkout to resolve", PR_PAGE_ACTION_WORDS.checkout.icon, "Check out its branch here, to merge the base into it and resolve the conflicts", "checkout", "Checking out…"],
+          markReady: [PR_PAGE_ACTION_WORDS.markReady.label, PR_PAGE_ACTION_WORDS.markReady.icon, PR_PAGE_ACTION_WORDS.markReady.title, "markReady", "Marking ready…"],
           refresh: ["Refresh", "refresh", "Ask GitHub again", "refresh", "Refreshing…"],
         }[m.fix];
         const b = button("gs-btn prp-btn prp-status-fix", `fix-${m.fix}`, words[3]);
@@ -802,7 +806,7 @@ export class PullRequestPage {
     const box = el("div", "prp-pending");
     box.dataset.key = "pending";
     if (pending.length === 0) {
-      box.appendChild(el("p", "prp-note", "No line comments yet. In Files Changed, open a file and click + beside a changed line to add one."));
+      box.appendChild(el("p", "prp-note", "No line comments yet. In Files, open a file and click + beside a changed line to add one."));
     } else {
       const title = el("div", "prp-pending-title");
       title.append(codicon("comment-draft"), el("span", "", `${plural(pending.length, "pending comment")} will be sent with this review`));
@@ -835,7 +839,7 @@ export class PullRequestPage {
       q.append(codicon("warning"), el("span", "prp-confirm-text", `Discard ${plural(pending.length, "pending comment")}? They haven't been sent to GitHub, and this can't be undone.`));
       const yes = button("gs-btn prp-btn prp-btn-danger", "discard-yes", "discardYes", "Discard");
       yes.title = "Delete them — nothing is sent";
-      const no = button("gs-btn prp-btn", "discard-no", "discardNo", "Keep Them");
+      const no = button("gs-btn prp-btn", "discard-no", "discardNo", "Keep them");
       no.title = "Keep your pending comments";
       q.append(yes, no);
       foot.appendChild(q);
@@ -843,12 +847,12 @@ export class PullRequestPage {
       const busy = this.isBusy("review");
       const go = button("gs-btn gs-btn--primary prp-btn", "review-submit", "submitReview");
       go.appendChild(codicon(VERDICT_WORDS[this.verdict].icon));
-      go.appendChild(el("span", "prp-btn-label", busy ? "Submitting…" : "Submit Review"));
+      go.appendChild(el("span", "prp-btn-label", busy ? "Submitting…" : "Submit review"));
       go.disabled = busy;
       go.title = `Send your review as ${VERDICT_WORDS[this.verdict].label}${pending.length ? `, with ${plural(pending.length, "comment")}` : ""}`;
       foot.appendChild(go);
       if (pending.length > 0) {
-        const discard = button("gs-btn prp-btn", "review-discard", "discard", "Discard Pending Comments…");
+        const discard = button("gs-btn prp-btn", "review-discard", "discard", "Discard pending comments…");
         discard.title = "Throw your pending comments away without sending them";
         discard.disabled = busy;
         foot.appendChild(discard);
@@ -1127,7 +1131,7 @@ export class PullRequestPage {
       r.dataset.value = t.resolved ? "unresolve" : "resolve";
       const busy = this.isBusy(`resolve:${t.id}`);
       r.appendChild(codicon(t.resolved ? "issue-reopened" : "check"));
-      r.appendChild(el("span", "prp-btn-label", busy ? (t.resolved ? "Unresolving…" : "Resolving…") : t.resolved ? "Unresolve" : "Resolve Conversation"));
+      r.appendChild(el("span", "prp-btn-label", busy ? (t.resolved ? "Unresolving…" : "Resolving…") : t.resolved ? "Unresolve" : "Resolve conversation"));
       r.disabled = busy;
       r.title = t.resolved ? "Open this conversation again" : "Mark this conversation resolved";
       foot.appendChild(r);
@@ -1214,7 +1218,7 @@ export class PullRequestPage {
           p.append(`Couldn't load its files. ${files.error ?? ""} `);
           const retry = button("prp-link", `commit-retry-${c.sha}`, "commitRetry");
           retry.dataset.sha = c.sha;
-          retry.textContent = "Try Again";
+          retry.textContent = "Try again";
           p.appendChild(retry);
           detail.appendChild(p);
         } else {
@@ -1303,7 +1307,7 @@ export class PullRequestPage {
       bar.appendChild(hint);
       if (!s.review?.started && (s.review?.comments.length ?? 0) === 0) {
         const start = button("gs-btn prp-btn", "files-start-review", "startReview");
-        start.append(codicon("comment-discussion"), el("span", "prp-btn-label", "Start Review"));
+        start.append(codicon(PR_PAGE_ACTION_WORDS.review.icon), el("span", "prp-btn-label", "Start review"));
         start.title = "Open the first file, ready for your comments";
         bar.appendChild(start);
       }
@@ -1559,6 +1563,15 @@ export class PullRequestPage {
         this.focusAfter = this.panel ? ".prp-review-body" : undefined;
         this.repaint();
         return;
+      case "approve":
+        // The review box, with Approve chosen: an approval is a public, named
+        // act, and the box is where its summary is written — as on the desktop.
+        this.panel = "review";
+        this.verdict = "APPROVE";
+        this.confirmDiscard = false;
+        this.focusAfter = ".prp-review-body";
+        this.repaint();
+        return;
       case "closePanel":
         this.panel = undefined;
         this.confirmDiscard = false;
@@ -1702,8 +1715,16 @@ export class PullRequestPage {
     const menu = el("div", "prp-menu");
     menu.setAttribute("role", "menu");
     menu.setAttribute("aria-label", "More actions");
-    const items: PrPageAction[] = [...prPageActions(pr).more, "openOnGitHub", "refresh"];
-    for (const a of items) {
+    // The desktop's More actions: Update branch · Close pull request · Copy
+    // link, a line between the groups. Open on GitHub and Refresh have their
+    // own buttons at the header's end.
+    const items: PrPageAction[] = prPageActions(pr).more;
+    for (const [i, a] of items.entries()) {
+      if (i > 0 && (a === "close" || a === "copyLink")) {
+        const sep = el("div", "prp-menu-sep");
+        sep.setAttribute("role", "separator");
+        menu.appendChild(sep);
+      }
       const w = PR_PAGE_ACTION_WORDS[a];
       const b = button("prp-menu-item", `menu-${a}`, a);
       b.setAttribute("role", "menuitem");

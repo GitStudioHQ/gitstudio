@@ -69,39 +69,53 @@ async function check(script: string, opts: { width?: number; height?: number } =
 
 test("the header, per state: the pill's word and glyph, one primary action, and the status of reviews, checks and merging", { skip }, async () => {
   await check(`
-    // Open, blocked: Merge… is there, and says why it can't be pressed.
+    // Open, blocked: Merge is there, and says why it can't be pressed.
     show(S.open);
     expect(text($(".prp-state")) === "Open" && colour($(".prp-state .codicon")) === GREEN, "Open, green glyph: " + colour($(".prp-state .codicon")));
     expect(colour($(".prp-state-word")) !== GREEN, "the word stays in text ink");
-    expect(text(primary()) === "Merge…" && primary().disabled, "Merge…, off while blocked");
+    expect(text(primary()) === "Merge" && primary().disabled, "Merge, off while blocked: " + text(primary()));
+    expect(primary().querySelector(".codicon-chevron-down"), "a chevron: it opens a box, as the desktop's Merge opens a menu");
+    // The desktop's words, in the desktop's order: Checkout, Approve, Review, and More actions as an icon.
+    const acts = $$(".prp-actions > .prp-btn").map((b) => text(b) || b.getAttribute("aria-label"));
+    expect(JSON.stringify(acts) === JSON.stringify(["Merge", "Checkout", "Approve", "Review", "More actions"]), "the header: " + acts.join(" | "));
+    expect($('[data-act="checkout"] .codicon-git-branch') && $('[data-act="review"] .codicon-comment') && $('[data-act="approve"] .codicon-check'), "the desktop's glyphs");
+    // Approve opens the review box with Approve chosen — never a one-click public verdict.
+    $('[data-act="approve"]').click();
+    expect($(".prp-review") && $('.prp-verdict-input[value="APPROVE"]').checked, "Approve: the review box, Approve chosen");
+    expect(!last("submitReview"), "…and nothing sent yet");
+    expect($('[data-act="review"] .codicon-chevron-up') && $('[data-act="review"]').getAttribute("aria-expanded") === "true", "Review says its box is open");
+    $('[data-act="review"]').click();
+    expect(!$(".prp-review"), "and closes it");
+    show(S.reviewOwn);
+    expect(!$('[data-act="approve"]'), "no Approve on your own pull request");
     expect(/^Merging is blocked\\. Changes were requested, and required checks failed\\.$/.test(primary().title), "…saying why: " + primary().title);
     const rows = $$(".prp-status-row").map((r) => text(r));
     expect(rows[0] === "Changes requested By dana-okafor.", "reviews: " + rows[0]);
-    expect(rows[1] === "1 of 7 checks failed Show Checks", "checks: " + rows[1]);
+    expect(rows[1] === "1 of 7 checks failed Show checks", "checks: " + rows[1]);
     expect(rows[2] === "Merging is blocked Changes were requested, and required checks failed.", "merge: " + rows[2]);
     expect(colour($('[data-key="status-checks"] .prp-status-glyph')) === RED, "a failed check's glyph is red");
     expect(said($(".prp-sub")).startsWith("sam-rivera wants to merge 4 commits into main from stream-diffs"), "who, and from where into where: " + said($(".prp-sub")));
     // Ready: Merge is on.
     show(S.ready);
-    expect(!primary().disabled, "ready: Merge… on");
+    expect(!primary().disabled, "ready: Merge on");
     expect(text($('[data-key="status-merge"]')) === "Ready to merge Nothing is blocking it.", "ready: " + text($('[data-key="status-merge"]')));
     expect(text($(".prp-here")) === "Checked out", "the branch checked out here is said in words");
     // Behind and conflicts: the one thing that helps.
     show(S.behind);
     $('[data-act="updateBranch"]').click();
-    expect(last("updateBranch"), "Update Branch");
+    expect(last("updateBranch"), "Update branch");
     show(S.conflicts);
-    expect(text($(".prp-status-fix")) === "Check Out to Resolve", "conflicts: " + text($(".prp-status-fix")));
-    // Draft: Mark Ready is the primary — and not said twice.
+    expect(text($(".prp-status-fix")) === "Checkout to resolve", "conflicts: " + text($(".prp-status-fix")));
+    // Draft: Mark ready is the primary — and not said twice.
     show(S.draft);
     expect(text($(".prp-state")) === "Draft", "Draft");
-    expect(text(primary()) === "Mark Ready for Review", "draft's primary: " + text(primary()));
+    expect(text(primary()) === "Mark ready", "draft's primary: " + text(primary()));
     expect(!$(".prp-status-fix"), "the merge box doesn't repeat the header's own button");
     primary().click();
-    expect(last("markReady"), "Mark Ready posts");
+    expect(last("markReady"), "Mark ready posts");
     // Closed: Reopen. Merged: no primary; how it ended, in words.
     show(S.closed);
-    expect(text(primary()) === "Reopen" && colour($(".prp-state .codicon")) === RED, "closed: Reopen, red");
+    expect(text(primary()) === "Reopen pull request" && colour($(".prp-state .codicon")) === RED, "closed: Reopen pull request, red: " + text(primary()));
     expect(text($(".prp-status")).startsWith("Closed without merging"), "closed: " + text($(".prp-status")));
     show(S.merged);
     expect(!primary(), "merged: nothing left to do first");
@@ -273,7 +287,8 @@ test("tabs: a tablist the keyboard moves through; commits expand to their files,
   await check(`
     show(S.open);
     const tabs = $$(".prp-tab").map((t) => t.getAttribute("aria-label"));
-    expect(JSON.stringify(tabs) === JSON.stringify(["Conversation, 4", "Commits, 4", "Checks, 7, 1 of 7 checks failed", "Files Changed, 7"]), "tabs: " + tabs);
+    expect(JSON.stringify(tabs) === JSON.stringify(["Conversation, 4", "Commits, 4", "Checks, 7, 1 of 7 checks failed", "Files, 7"]), "tabs: " + tabs);
+    expect($('.prp-tab[data-value="files"] .codicon-code') && $('.prp-tab[data-value="commits"] .codicon-git-commit'), "the desktop's tab glyphs");
     $("#prp-tab-conversation").focus();
     key("ArrowRight");
     expect(document.activeElement === $("#prp-tab-commits") && $("#prp-tab-commits").getAttribute("aria-selected") === "true", "ArrowRight: Commits");
@@ -325,25 +340,26 @@ test("pending comments show on their files and on the tab; More Actions offers w
     expect(!$('[data-act="startReview"]'), "a review under way needs no Start");
     show({ ...S.files, review: undefined });
     $('[data-act="startReview"]').click();
-    expect(last("startReview"), "Start Review");
-    // More Actions.
+    expect(last("startReview"), "Start review");
+    // More actions.
     show(S.open);
     $('[data-act="more"]').focus();
     $('[data-act="more"]').click();
     const items = [...document.querySelectorAll(".prp-layer .prp-menu-item")].map(text);
-    expect(JSON.stringify(items) === JSON.stringify(["Close Pull Request", "Copy Link", "Open on GitHub", "Refresh"]), "open: " + items);
+    expect(JSON.stringify(items) === JSON.stringify(["Update branch", "Close pull request", "Copy link"]), "open, as the desktop's: " + items);
+    expect(document.querySelectorAll(".prp-layer .prp-menu-sep").length === 2, "a line between the groups");
     expect(document.activeElement.classList.contains("prp-menu-item"), "the first item has the keyboard");
     key("ArrowDown");
-    expect(text(document.activeElement) === "Copy Link", "ArrowDown moves");
+    expect(text(document.activeElement) === "Close pull request", "ArrowDown moves");
     key("Escape");
     expect(!document.querySelector(".prp-layer .prp-menu") && document.activeElement === $('[data-act="more"]'), "Escape closes, back to the button");
     $('[data-act="more"]').click();
     document.querySelector('.prp-layer [data-act="close"]').click();
-    expect(last("close") && !document.querySelector(".prp-layer .prp-menu"), "Close Pull Request posts, and the menu closes");
+    expect(last("close") && !document.querySelector(".prp-layer .prp-menu"), "Close pull request posts, and the menu closes");
     show(S.merged);
     $('[data-act="more"]').click();
     const done = [...document.querySelectorAll(".prp-layer .prp-menu-item")].map(text);
-    expect(JSON.stringify(done) === JSON.stringify(["Copy Link", "Open on GitHub", "Refresh"]), "merged: nothing to close: " + done);
+    expect(JSON.stringify(done) === JSON.stringify(["Copy link"]), "merged: nothing to close, nothing to update: " + done);
   `);
 });
 

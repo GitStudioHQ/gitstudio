@@ -162,6 +162,18 @@
 .prp .prp-btn .codicon {
   font-size: 14px;
 }
+/* Merge and Review open a box: a chevron beside the word, as on the desktop. */
+.prp .prp-btn .prp-btn-chevron {
+  margin-left: -2px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+/* More actions: the desktop's icon-only button. */
+.prp .prp-more-btn {
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+}
 .vscode-high-contrast .prp .gs-btn:not(.gs-btn--primary),
 .vscode-high-contrast .prp-layer .gs-btn:not(.gs-btn--primary) {
   border-color: var(--vscode-button-border, var(--prp-line));
@@ -1618,6 +1630,11 @@
 }
 .prp-layer .prp-menu-item.is-danger .codicon {
   color: var(--prp-closed);
+}
+.prp-layer .prp-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--vscode-menu-separatorBackground, var(--prp-line));
 }
 
 @media (prefers-reduced-motion: reduce) {

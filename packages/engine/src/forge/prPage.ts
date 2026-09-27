@@ -35,7 +35,7 @@ import type {
   PrTimelineEvent,
   PrTimelineItem,
 } from "@gitstudio/host-bridge/prProtocol";
-import { ciFromRollupState, prKind, reviewDecisionOf, type PrTone } from "./pullRequests";
+import { PR_ACTIONS, ciFromRollupState, prKind, reviewDecisionOf, type PrTone } from "./pullRequests";
 import { PrListError, type GraphqlFn } from "./prList";
 
 export type { PrDetail, PrMergeMethod, PrMergeState, PrCheck, PrCheckState, PrThread, PrTimelineItem, PrPageFile };
@@ -581,21 +581,26 @@ export type PrPageAction =
   | "reopen"
   | "close"
   | "checkout"
+  | "approve"
   | "review"
+  | "updateBranch"
   | "copyLink"
   | "openOnGitHub"
   | "refresh";
 
+/** The header's words and glyphs: the shared vocabulary's (PR_ACTIONS), the desktop's. */
 export const PR_PAGE_ACTION_WORDS: Record<PrPageAction, { label: string; icon: string; title: string }> = {
-  merge: { label: "Merge", icon: "git-merge", title: "Merge this pull request — choose how" },
-  markReady: { label: "Mark Ready for Review", icon: "eye", title: "Take it out of draft, so it can be reviewed and merged" },
-  reopen: { label: "Reopen", icon: "git-pull-request", title: "Reopen this pull request" },
-  close: { label: "Close Pull Request", icon: "git-pull-request-closed", title: "Close it without merging (you can reopen it)" },
-  checkout: { label: "Check Out", icon: "git-branch", title: "Check out its branch in this repository" },
-  review: { label: "Review", icon: "comment-discussion", title: "Comment, approve or request changes" },
-  copyLink: { label: "Copy Link", icon: "copy", title: "Copy the pull request's link" },
-  openOnGitHub: { label: "Open on GitHub", icon: "link-external", title: "Open this pull request on github.com" },
-  refresh: { label: "Refresh", icon: "refresh", title: "Read the pull request again" },
+  merge: PR_ACTIONS.merge,
+  markReady: PR_ACTIONS.markReady,
+  reopen: PR_ACTIONS.reopen,
+  close: PR_ACTIONS.close,
+  checkout: PR_ACTIONS.checkout,
+  approve: PR_ACTIONS.approve,
+  review: PR_ACTIONS.review,
+  updateBranch: PR_ACTIONS.updateBranch,
+  copyLink: PR_ACTIONS.copyLink,
+  openOnGitHub: PR_ACTIONS.openOnGitHub,
+  refresh: PR_ACTIONS.refresh,
 };
 
 const WRITE: ReadonlySet<PrPermission> = new Set(["ADMIN", "MAINTAIN", "WRITE"]);
@@ -606,11 +611,13 @@ export function canMergeHere(pr: Pick<PrDetail, "viewer">): boolean {
 }
 
 /**
- * What the header offers, by state: one primary action (Merge for an open
- * pull request the viewer can merge, Mark Ready for a draft, Reopen for a
- * closed one — none for a merged one), the everyday buttons, and the rest in
- * More Actions. Only what can apply: GitHub merges no draft, reviews no
- * closed pull request, and lets only its author or a writer close it.
+ * What the header offers, by state — the desktop's set: one primary action
+ * (Merge for an open pull request the viewer can merge, Mark ready for a
+ * draft, Reopen for a closed one — none for a merged one), then Checkout,
+ * Approve (not on your own: GitHub takes no approval from its author) and
+ * Review, and the rest in More actions (Update branch, Close pull request,
+ * Copy link). Only what can apply: GitHub merges no draft, reviews no closed
+ * pull request, and lets only its author or a writer close it.
  */
 export function prPageActions(pr: Pick<PrDetail, "kind" | "viewer" | "repo">): { primary?: PrPageAction; buttons: PrPageAction[]; more: PrPageAction[] } {
   const buttons: PrPageAction[] = [];
@@ -621,7 +628,9 @@ export function prPageActions(pr: Pick<PrDetail, "kind" | "viewer" | "repo">): {
   if (pr.kind === "draft" && pr.viewer.canUpdate) primary = "markReady";
   if (pr.kind === "closed" && pr.viewer.canUpdate) primary = "reopen";
   buttons.push("checkout");
+  if (open && !pr.viewer.isAuthor) buttons.push("approve");
   if (open) buttons.push("review");
+  if (open && pr.viewer.canUpdateBranch) more.push("updateBranch");
   if (open && pr.viewer.canUpdate) more.push("close");
   more.push("copyLink");
   return { ...(primary ? { primary } : {}), buttons, more };

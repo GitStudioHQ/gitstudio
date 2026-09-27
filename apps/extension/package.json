@@ -668,9 +668,9 @@
       },
       {
         "command": "gitstudio.pr.create",
-        "title": "Create Pull Request",
+        "title": "New Pull Request",
         "category": "GitStudio",
-        "icon": "$(git-pull-request-create)"
+        "icon": "$(git-pull-request)"
       },
       {
         "command": "gitstudio.pr.refresh",
@@ -692,13 +692,13 @@
       },
       {
         "command": "gitstudio.pr.checkout",
-        "title": "Check Out Pull Request",
+        "title": "Checkout Pull Request",
         "category": "GitStudio",
         "icon": "$(git-branch)"
       },
       {
         "command": "gitstudio.pr.startReview",
-        "title": "Start Review",
+        "title": "Review Pull Request",
         "category": "GitStudio",
         "icon": "$(comment-discussion)"
       },

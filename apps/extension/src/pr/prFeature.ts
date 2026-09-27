@@ -28,7 +28,7 @@ import { listGitHubRemotes, resolveGitHubContext, type GitHubRepoContext } from 
 // not an identity).
 //
 // Merging and submitting a review happen on the page, in its own boxes —
-// the list's Merge… and the palette's Submit Review open the page there —
+// the list's Merge and the palette's Submit Review open the page there —
 // never in a question asked in the sidebar.
 
 interface PrCommandArg {

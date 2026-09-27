@@ -33,7 +33,7 @@ import type { ReviewController } from "./reviewMode";
 // and the changed files from REST, whose patches decide where a review
 // comment may go.
 //
-// ONE-CLICK MUTATIONS ARE OPTIMISTIC. Close, Reopen, Mark Ready, Merge,
+// ONE-CLICK MUTATIONS ARE OPTIMISTIC. Close, Reopen, Mark ready, Merge,
 // Resolve, a comment and a reply patch the page at once and are sent; a
 // failure puts the page back as it was and says why, with what can be done.
 // GitHub is then asked again, quietly — never a reload that throws away the
@@ -101,7 +101,7 @@ export function pageFailure(err: Described, repo: string, n: number): PrListMess
       tone: "warning",
       title: "Your GitHub session expired",
       detail: `Sign in again to see ${repo}#${n}.`,
-      buttons: [{ label: "Sign in Again", icon: "sign-in", primary: true, action: { kind: "signIn", again: true } }],
+      buttons: [{ label: "Sign in again", icon: "sign-in", primary: true, action: { kind: "signIn", again: true } }],
     };
   }
   if (err.kind === "auth" || err.kind === "forbidden") {
@@ -124,7 +124,7 @@ export function pageFailure(err: Described, repo: string, n: number): PrListMess
       tone: "warning",
       title: `GitHub has no pull request ${repo}#${n}`,
       detail: `${err.message} A private repository needs a sign-in with access to it.`,
-      buttons: [{ label: "Sign in Again", icon: "sign-in", action: { kind: "signIn", again: true }, title: "Sign in to GitHub, with another account if need be" }, retry],
+      buttons: [{ label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true }, title: "Sign in to GitHub, with another account if need be" }, retry],
     };
   }
   if (err.kind === "rate-limit") return { icon: "clock", tone: "warning", title: "GitHub's rate limit was reached", detail: err.message, buttons: [retry] };
@@ -378,7 +378,7 @@ export class PrPage {
             detail: "Showing the pull request as it was.",
             buttons:
               why.kind === "auth" && why.status === 401
-                ? [{ label: "Sign in Again", icon: "sign-in", action: { kind: "signIn", again: true } }]
+                ? [{ label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true } }]
                 : [{ label: "Retry", icon: "refresh", action: { kind: "retry" } }],
           };
         } else {
@@ -586,7 +586,7 @@ export class PrPage {
       ...(extra ? { detail: extra } : {}),
       buttons:
         why.kind === "auth" && why.status === 401
-          ? [{ label: "Sign in Again", icon: "sign-in", action: { kind: "signIn", again: true } }]
+          ? [{ label: "Sign in again", icon: "sign-in", action: { kind: "signIn", again: true } }]
           : [{ label: "Open on GitHub", icon: "link-external", action: { kind: "openUrl", url: this.detail?.url ?? `https://github.com/${this.repoId}/pull/${this.n}` } }],
     };
   }

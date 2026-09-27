@@ -22,6 +22,7 @@ import {
   mergeBoxOf,
   mergeMethodsFor,
   parsePrPage,
+  PR_PAGE_ACTION_WORDS,
   prPageActions,
   reviewVerdictsFor,
   sortChecks,
@@ -256,37 +257,60 @@ test("the answer: GitHub's failures say what went wrong", () => {
 const KINDS: PrKind[] = ["open", "draft", "closed", "merged"];
 const ROLES: PrPermission[] = ["ADMIN", "WRITE", "TRIAGE", "READ"];
 
-test("the header offers, per state, only what can apply — every cell of kind × role × may-update × merge methods", () => {
-  // The table, as the owner reads it: one primary action per state, never
-  // Merge on a draft or for a reader, never Review or Close once it is done.
-  const expected = (kind: PrKind, role: PrPermission, canUpdate: boolean, methods: number) => {
+test("the header offers, per state, only what can apply — every cell of kind × role × may-update × may-update-branch × author × merge methods", () => {
+  // The table, as the owner reads it — the desktop's set, in the desktop's
+  // words: one primary action per state, never Merge on a draft or for a
+  // reader, never Approve on your own, never Review or Close once it is done.
+  const expected = (kind: PrKind, role: PrPermission, canUpdate: boolean, canUpdateBranch: boolean, isAuthor: boolean, methods: number) => {
     const writer = role === "ADMIN" || role === "WRITE";
     const primary =
       kind === "open" && writer && methods > 0 ? "merge" : kind === "draft" && canUpdate ? "markReady" : kind === "closed" && canUpdate ? "reopen" : undefined;
     const open = kind === "open" || kind === "draft";
     return {
       ...(primary ? { primary } : {}),
-      buttons: open ? ["checkout", "review"] : ["checkout"],
-      more: open && canUpdate ? ["close", "copyLink"] : ["copyLink"],
+      buttons: open ? ["checkout", ...(isAuthor ? [] : ["approve"]), "review"] : ["checkout"],
+      more: [...(open && canUpdateBranch ? ["updateBranch"] : []), ...(open && canUpdate ? ["close"] : []), "copyLink"],
     };
   };
   let cells = 0;
   for (const kind of KINDS) {
     for (const role of ROLES) {
       for (const canUpdate of [true, false]) {
-        for (const methods of [3, 0]) {
-          const pr = {
-            kind,
-            viewer: { permission: role, isAuthor: false, canUpdate, canUpdateBranch: false, canDeleteBranch: false },
-            repo: { id: "acme/app", mergeMethods: methods ? (["merge", "squash", "rebase"] as const).slice() : [], deleteBranchOnMerge: false },
-          };
-          assert.deepEqual(prPageActions(pr as never), expected(kind, role, canUpdate, methods), `${kind} × ${role} × canUpdate=${canUpdate} × methods=${methods}`);
-          cells++;
+        for (const canUpdateBranch of [true, false]) {
+          for (const isAuthor of [false, true]) {
+            for (const methods of [3, 0]) {
+              const pr = {
+                kind,
+                viewer: { permission: role, isAuthor, canUpdate, canUpdateBranch, canDeleteBranch: false },
+                repo: { id: "acme/app", mergeMethods: methods ? (["merge", "squash", "rebase"] as const).slice() : [], deleteBranchOnMerge: false },
+              };
+              const cell = `${kind} × ${role} × canUpdate=${canUpdate} × canUpdateBranch=${canUpdateBranch} × author=${isAuthor} × methods=${methods}`;
+              assert.deepEqual(prPageActions(pr as never), expected(kind, role, canUpdate, canUpdateBranch, isAuthor, methods), cell);
+              cells++;
+            }
+          }
         }
       }
     }
   }
-  assert.equal(cells, 64);
+  assert.equal(cells, 256);
+  // The words are the desktop's: one vocabulary.
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(PR_PAGE_ACTION_WORDS).map(([k, w]) => [k, `${w.label} (${w.icon})`])),
+    {
+      merge: "Merge (git-merge)",
+      markReady: "Mark ready (eye)",
+      reopen: "Reopen pull request (git-pull-request)",
+      close: "Close pull request (git-pull-request-closed)",
+      checkout: "Checkout (git-branch)",
+      approve: "Approve (check)",
+      review: "Review (comment)",
+      updateBranch: "Update branch (git-merge)",
+      copyLink: "Copy link (copy)",
+      openOnGitHub: "Open on GitHub (link-external)",
+      refresh: "Refresh (refresh)",
+    },
+  );
   // MAINTAIN is a writer too.
   assert.equal(prPageActions({ kind: "open", viewer: { permission: "MAINTAIN", canUpdate: false }, repo: { mergeMethods: ["squash"] } } as never).primary, "merge");
 });

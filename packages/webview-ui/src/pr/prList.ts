@@ -34,7 +34,7 @@ import type {
   PrPerson,
   PrRowView,
 } from "@gitstudio/host-bridge/prProtocol";
-import { CI_STATES, PR_STATES, REVIEW_DECISIONS, ciWords } from "@gitstudio/engine/forge/pullRequests";
+import { CI_STATES, PR_ACTIONS, PR_STATES, REVIEW_DECISIONS, ciWords } from "@gitstudio/engine/forge/pullRequests";
 import { NO_ONE, PR_FACETS, PR_FACET_WORDS, PR_LIST_STATES, PR_LIST_STATE_WORDS, countFor } from "@gitstudio/engine/forge/prList";
 import { patchChildren } from "../conflicts/patch";
 
@@ -463,7 +463,7 @@ export class PullRequestList {
     if (filtered) {
       buttons.push({ label: "Clear filters", icon: "clear-all", action: { kind: "clearFilters" }, title: "Remove the search and every filter" });
     } else if (s.segment === "open" || s.segment === "all") {
-      buttons.push({ label: "Create Pull Request", icon: "git-pull-request-create", action: { kind: "createPr" }, title: "Open a pull request for the current branch" });
+      buttons.push({ label: PR_ACTIONS.newPullRequest.label, icon: PR_ACTIONS.newPullRequest.icon, action: { kind: "createPr" }, title: "Open a pull request — from the branch checked out, or any other" });
     }
     return this.buildMessage(
       filtered
@@ -593,19 +593,19 @@ export class PullRequestList {
     const co = button("prl-icon-btn", `checkout-${r.number}`, "checkout");
     co.dataset.number = String(r.number);
     co.tabIndex = active ? 0 : -1;
-    co.title = r.checkedOut ? "Check Out (update it to the pull request's latest)" : "Check Out";
-    co.setAttribute("aria-label", `Check out pull request #${r.number}`);
-    co.appendChild(codicon("git-branch"));
+    co.title = r.checkedOut ? `${PR_ACTIONS.checkout.label} — update it to the pull request's latest` : `${PR_ACTIONS.checkout.label} — ${PR_ACTIONS.checkout.title.charAt(0).toLowerCase()}${PR_ACTIONS.checkout.title.slice(1)}`;
+    co.setAttribute("aria-label", `Checkout pull request #${r.number}`);
+    co.appendChild(codicon(PR_ACTIONS.checkout.icon));
     const gh = button("prl-icon-btn", `github-${r.number}`, "github");
     gh.dataset.number = String(r.number);
     gh.tabIndex = active ? 0 : -1;
-    gh.title = "Open on GitHub";
+    gh.title = PR_ACTIONS.openOnGitHub.label;
     gh.setAttribute("aria-label", `Open pull request #${r.number} on GitHub`);
     gh.appendChild(codicon("link-external"));
     const more = button("prl-icon-btn", `more-${r.number}`, "more");
     more.dataset.number = String(r.number);
     more.tabIndex = active ? 0 : -1;
-    more.title = "More Actions…";
+    more.title = PR_ACTIONS.more.label;
     more.setAttribute("aria-haspopup", "menu");
     more.setAttribute("aria-label", `More actions for pull request #${r.number}`);
     more.appendChild(codicon("ellipsis"));
@@ -623,7 +623,7 @@ export class PullRequestList {
     if (s.hasMore) {
       const b = button("gs-btn prl-btn prl-more-btn", "load-more", "load-more");
       b.disabled = s.loadingMore;
-      b.appendChild(el("span", "", s.loadingMore ? "Loading…" : "Load More"));
+      b.appendChild(el("span", "", s.loadingMore ? "Loading…" : "Load more"));
       b.title = `Show the next pull requests (${shown.toLocaleString("en-US")} of ${s.total.toLocaleString("en-US")} shown)`;
       box.appendChild(b);
     }
@@ -872,17 +872,17 @@ export class PullRequestList {
       items: [
         { label: "Open", icon: PR_STATES[row.kind].codicon, detail: "The pull request's page", run: () => this.opts.post({ type: "open", number: n }) },
         {
-          label: "Check Out",
-          icon: "git-branch",
+          label: PR_ACTIONS.checkout.label,
+          icon: PR_ACTIONS.checkout.icon,
           detail: row.checkedOut ? "Update it to the latest" : `${row.isFork && row.headOwner ? `${row.headOwner}:` : ""}${row.headRef}`,
           run: () => this.opts.post({ type: "checkout", number: n }),
         },
         // Only what can apply: a closed pull request takes no review, and
         // GitHub merges neither a closed one nor a draft.
-        ...(open ? [{ label: "Start Review", icon: "comment-discussion", run: () => this.opts.post({ type: "startReview", number: n }) }] : []),
-        ...(row.kind === "open" ? [{ label: "Merge…", icon: "git-merge", detail: `Into ${row.baseRef}`, run: () => this.opts.post({ type: "merge", number: n }) }] : []),
-        { label: "Open on GitHub", icon: "link-external", run: () => this.opts.post({ type: "openOnGitHub", number: n }) },
-        { label: "Copy Link", icon: "copy", run: () => this.opts.post({ type: "copyLink", number: n }) },
+        ...(open ? [{ label: PR_ACTIONS.review.label, icon: PR_ACTIONS.review.icon, detail: "Start your review", run: () => this.opts.post({ type: "startReview", number: n }) }] : []),
+        ...(row.kind === "open" ? [{ label: PR_ACTIONS.merge.label, icon: PR_ACTIONS.merge.icon, detail: `Into ${row.baseRef}`, run: () => this.opts.post({ type: "merge", number: n }) }] : []),
+        { label: PR_ACTIONS.openOnGitHub.label, icon: PR_ACTIONS.openOnGitHub.icon, run: () => this.opts.post({ type: "openOnGitHub", number: n }) },
+        { label: PR_ACTIONS.copyLink.label, icon: PR_ACTIONS.copyLink.icon, run: () => this.opts.post({ type: "copyLink", number: n }) },
       ],
     }), at);
   }
@@ -964,7 +964,7 @@ export class PullRequestList {
       }
       return {
         label: PR_FACET_WORDS[k],
-        back: { label: "All Filters", run: () => this.swapMenu(top) },
+        back: { label: "All filters", run: () => this.swapMenu(top) },
         heading: PR_FACET_WORDS[k],
         filter: {
           placeholder: k === "label" ? "Find a label" : "Find someone, or type a login",
