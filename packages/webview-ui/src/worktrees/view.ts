@@ -696,7 +696,8 @@ export class WorktreesView {
     menu.setAttribute("role", "menu");
     menu.setAttribute("aria-label", `Actions for ${r.name}`);
     const head = el("div", "wt-menu-head");
-    head.append(codicon(r.branch ? "git-branch" : "git-commit"), el("span", undefined, r.name));
+    // The row's own symbol: the menu is about the worktree, not its branch.
+    head.append(codicon(r.kind === "bare" ? "repo" : "worktree"), el("span", undefined, r.name));
     menu.appendChild(head);
     const item = (action: WorktreeAction, icon: string, label: string, gate: Gate | boolean, danger = false): void => {
       const ok = gate === true || (typeof gate === "object" && gate.ok);
