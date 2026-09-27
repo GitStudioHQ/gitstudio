@@ -17,6 +17,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
+import { serveOwnSsh } from "../../../scripts/test/no-network-git.mjs";
 import { RepoStore } from "../src/main/repoStore";
 import { GitHubBridge } from "../src/main/githubBridge";
 import { reportableResultMessage } from "../src/main/expectedError";
@@ -105,7 +106,7 @@ test("the PR's head comes from the GitHub remote the list reads — upstream, wh
   const hub = w.git("remote", "get-url", "origin");
   w.git("remote", "set-url", "origin", mirror);
   w.git("remote", "add", "upstream", "git@github.com:acme/app.git");
-  // A node script, named with forward slashes: git runs core.sshCommand
+  // A node script, named with forward slashes: git runs an ssh command
   // through `sh -c`, which ate a Windows path's backslashes
   // ("C:UsersRUNNER~1…fake-ssh.sh: command not found").
   const ssh = join(w.dir, "..", "fake-ssh.cjs");
@@ -114,8 +115,16 @@ test("the PR's head comes from the GitHub remote the list reads — upstream, wh
     `const r = require("child_process").spawnSync("git", ["upload-pack", ${JSON.stringify(hub)}], { stdio: "inherit" });\n` +
       `process.exit(r.status ?? 1);\n`,
   );
-  w.git("config", "core.sshCommand", `node "${ssh.replace(/\\/g, "/")}"`);
-  const r = await w.github.prCheckout(7);
+  // Said to the network guard in so many words: its GIT_SSH_COMMAND outranks
+  // any core.sshCommand (the machine's too), so a repository's own is not
+  // enough — and never serves a test by accident.
+  const undo = serveOwnSsh(`node "${ssh.replace(/\\/g, "/")}"`);
+  let r: Awaited<ReturnType<typeof w.github.prCheckout>>;
+  try {
+    r = await w.github.prCheckout(7);
+  } finally {
+    undo();
+  }
   assert.equal(r.ok, true, r.message);
   assert.equal(w.git("symbolic-ref", "--short", "HEAD"), "pr/7");
   assert.equal(w.git("rev-parse", "HEAD"), w.tip1, "the pull request's head, from upstream");

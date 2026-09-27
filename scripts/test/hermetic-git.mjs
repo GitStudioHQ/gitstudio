@@ -9,7 +9,9 @@
 // the GitContext / GitProcess / RebaseRunner under test, which inherit this
 // environment — sees what is set here:
 //
-//   · no network and no credential helper, ever (no-network-git.mjs);
+//   · no network and no credential helper, ever (no-network-git.mjs) — for
+//     the test process itself too: fetch, http(s), net and tls reach this
+//     machine and nothing else (no-network-node.mjs);
 //   · no config but the repository's own. Against the developer's global or
 //     system config a test inherits hooks, LFS filters, an editor,
 //     pull.rebase, autocrlf and trace2 listeners, and then describes the
