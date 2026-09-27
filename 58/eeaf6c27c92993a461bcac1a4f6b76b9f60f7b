@@ -1,0 +1,21 @@
+packages/webview-ui/src/pr/prList.ts
+  s_26f5e669d3043c::t_a1cb516b18c992 1203-1212
+packages/webview-ui/test/prList.test.ts
+  s_26f5e669d3043c::t_a15bb0f9363dd2 291-293,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "58eeaf6c27c92993a461bcac1a4f6b76b9f60f7b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
