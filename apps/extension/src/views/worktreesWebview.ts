@@ -296,7 +296,11 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
                 ? caps.openHere
                 : action === "openNew"
                   ? caps.openNew
-                  : undefined;
+                  : action === "lock"
+                    ? caps.lock
+                    : action === "unlock"
+                      ? caps.unlock
+                      : undefined;
       if (gate && !gate.ok) {
         void vscode.window.showInformationMessage(`GitStudio: ${gate.why}`);
         return;

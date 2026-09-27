@@ -261,6 +261,46 @@ test("More: every action in words; one it can't take is shown with the reason; E
   assert.deepEqual(await page.posted(), []);
 });
 
+/** A row's More menu, opened, as a person reads it: each item's words, why not, and whether it is disabled. */
+async function menuOf(page: WorktreesPage, path: string): Promise<{ label: string; why: string; disabled: boolean }[]> {
+  await page.clickOn(`.wt-row[data-path="${path}"] .wt-more`);
+  const items = await page.eval<{ label: string; why: string; disabled: boolean }[]>(`Array.prototype.map.call(document.querySelectorAll(".wt-menu-item"), function (b) {
+    var why = b.querySelector(".wt-menu-why");
+    return { label: b.querySelector(".wt-menu-label").textContent, why: why ? why.textContent : "", disabled: b.getAttribute("aria-disabled") === "true" };
+  })`);
+  await page.key("Escape");
+  return items;
+}
+
+test("Lock… is on every worktree's menu — disabled with why where git can't lock it; a stopped rebase is the reason Pull and Push give", { skip }, async () => {
+  const rebasing = row({ path: "/code/app-rebase", name: "app-rebase", branch: undefined, upstream: undefined, status: { changed: 1, staged: 0, unstaged: 0, untracked: 0, conflicted: 1, operation: "rebase", rebasing: "feature/rebase" } });
+  const page = await open("dark", 320, 900);
+  await page.send({ type: "rows", rows: [...fixtureRows(), rebasing], state: "ok", labels: LABELS });
+  await page.settle();
+  const lockOf = async (p: string) => (await menuOf(page, p)).filter((i) => i.label === "Lock…" || i.label === "Unlock");
+  assert.deepEqual(await lockOf("/code/app"), [{ label: "Lock…", why: "The main worktree holds the repository itself, so git can't lock it.", disabled: true }]);
+  assert.deepEqual(await lockOf("/code/app-old"), [{ label: "Lock…", why: "Its folder is missing.", disabled: true }]);
+  assert.deepEqual(await lockOf("/code/app-usb"), [{ label: "Unlock", why: "", disabled: false }]);
+  assert.deepEqual(await lockOf("/code/app-checkout"), [{ label: "Lock…", why: "", disabled: false }]);
+  assert.deepEqual(await menuOf(page, UNLINKED), [
+    { label: "Reveal in Finder", why: "", disabled: false },
+    { label: "Copy Path", why: "", disabled: false },
+    { label: "Lock…", why: "It isn't a worktree any more — its .git file is gone.", disabled: true },
+    { label: "Forget Worktree…", why: "", disabled: false },
+  ]);
+  const stopped = (await menuOf(page, "/code/app-rebase")).filter((i) => i.label === "Pull" || i.label === "Push…");
+  const why = "A rebase is stopped in it — continue or abort it first.";
+  assert.deepEqual(stopped, [
+    { label: "Pull", why, disabled: true },
+    { label: "Push…", why, disabled: true },
+  ]);
+  // A disabled Lock… does nothing.
+  await page.clickOn(`.wt-row[data-path="/code/app"] .wt-more`);
+  await page.clearPosted();
+  await page.eval(`Array.prototype.find.call(document.querySelectorAll(".wt-menu-item"), function (b) { return b.textContent.indexOf("Lock…") === 0; }).click()`);
+  assert.deepEqual(await page.posted(), []);
+});
+
 test("a menu item asks the host for exactly that action on exactly that worktree", { skip }, async () => {
   const page = await open();
   await page.clickOn(`.wt-row[data-path="/code/app-checkout"] .wt-more`);

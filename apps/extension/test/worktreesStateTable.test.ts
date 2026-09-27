@@ -358,11 +358,12 @@ test("every cell of the table: what each row names and offers, from real git", a
   assert.equal(row("rebasing").branch, undefined, "git lists a rebase detached");
   assert.equal(headWords(row("rebasing")), "rebasing (rebasing)");
   assert.equal(words(row("rebasing"))[0], "Rebase stopped · 1 conflict");
+  assert.deepEqual(worktreeCaps(row("rebasing")).pull, { ok: false, why: "A rebase is stopped in it — continue or abort it first." }, "the rebase, not \"no branch\"");
   assert.deepEqual(words(row("stale")), ["No upstream"], "a stale REBASE_HEAD alone is nothing");
 
   // Lock.
   assert.deepEqual(words(row("locked")), ["Locked: claude agent a2c9 (pid 73264)", "No upstream"]);
-  assert.deepEqual([worktreeCaps(row("locked")).lock, worktreeCaps(row("locked")).unlock], [false, true]);
+  assert.deepEqual([worktreeCaps(row("locked")).lock.ok, worktreeCaps(row("locked")).unlock.ok], [false, true]);
   assert.deepEqual(words(row("lockedbare")), ["Locked", "No upstream"]);
 
   // Folder.
@@ -373,7 +374,7 @@ test("every cell of the table: what each row names and offers, from real git", a
     ["forget"],
   );
   assert.deepEqual(words(row("missinglocked")), ["Locked: on a USB drive", "Folder missing"]);
-  assert.equal(worktreeCaps(row("missinglocked")).unlock, true);
+  assert.equal(worktreeCaps(row("missinglocked")).unlock.ok, true);
 
   // Detached.
   assert.equal(headWords(row("detached")), `detached at ${row("detached").head.slice(0, 7)}`);

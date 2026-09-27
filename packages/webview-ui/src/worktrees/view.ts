@@ -791,10 +791,14 @@ export class WorktreesView {
       item("pull", "repo-pull", "Pull", caps.pull);
       item("push", "repo-push", "Push…", caps.push);
     }
-    if (caps.lock || caps.unlock || r.kind !== "bare") {
+    // One of the two, as it stands: Unlock when it is locked, Lock… when not
+    // — and when that one can't run (the main worktree, a missing folder),
+    // it is there, disabled, saying why. A bare repository's entry is not a
+    // working tree: none of its working-tree actions are listed.
+    if (r.kind !== "bare") {
       sep();
-      item("lock", "lock", "Lock…", caps.lock);
-      item("unlock", "unlock", "Unlock", caps.unlock);
+      if (r.locked) item("unlock", "unlock", "Unlock", caps.unlock);
+      else item("lock", "lock", "Lock…", caps.lock);
     }
     if (r.kind !== "bare") {
       sep();

@@ -271,8 +271,10 @@ export interface WorktreeCaps {
   terminal: boolean;
   pull: Gate;
   push: Gate;
-  lock: boolean;
-  unlock: boolean;
+  /** The menu shows one of the two — Unlock when it is locked, Lock… when
+   *  not — and says why when that one can't run. */
+  lock: Gate;
+  unlock: Gate;
   /** Remove its folder; a missing one — or one not a worktree any more — is
    *  forgotten instead (`forget`). */
   remove: Gate;
@@ -291,8 +293,8 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
       terminal: false,
       pull: bare,
       push: bare,
-      lock: false,
-      unlock: false,
+      lock: bare,
+      unlock: bare,
       remove: bare,
       forget: false,
     };
@@ -309,8 +311,8 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
       terminal: false,
       pull: gone,
       push: gone,
-      lock: false,
-      unlock: r.locked,
+      lock: r.locked ? no("It is locked already.") : gone,
+      unlock: r.locked ? yes : no("It isn't locked."),
       remove: gone,
       forget: true,
     };
@@ -318,10 +320,12 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
   const here = no("This window has it open.");
   const op = r.status?.operation;
   const stopped = op ? no(`${operationSentence(op)} — continue or abort it first.`) : undefined;
-  const pull: Gate = !r.branch
-    ? no("No branch is checked out in it, so there is nothing to pull into.")
-    : stopped
-      ? stopped
+  // What git is stopped in comes first: mid-rebase git lists the worktree
+  // detached, and "no branch is checked out" would be the wrong reason.
+  const pull: Gate = stopped
+    ? stopped
+    : !r.branch
+      ? no("No branch is checked out in it, so there is nothing to pull into.")
       : !r.hasRemotes
         ? no("The repository has no remote to pull from.")
         : !r.upstream
@@ -329,10 +333,10 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
           : r.upstreamGone
             ? no(`Its upstream, ${r.upstream}, is gone from the remote.`)
             : yes;
-  const push: Gate = !r.branch
-    ? no("No branch is checked out in it, so there is nothing to push.")
-    : stopped
-      ? stopped
+  const push: Gate = stopped
+    ? stopped
+    : !r.branch
+      ? no("No branch is checked out in it, so there is nothing to push.")
       : !r.hasRemotes
         ? no("The repository has no remote to push to.")
         : r.upstream && !r.upstreamGone && r.ahead === 0
@@ -346,8 +350,13 @@ export function worktreeCaps(r: WorktreeRow): WorktreeCaps {
     terminal: true,
     pull,
     push,
-    lock: r.kind === "linked" && !r.locked,
-    unlock: r.locked,
+    lock:
+      r.kind === "main"
+        ? no("The main worktree holds the repository itself, so git can't lock it.")
+        : r.locked
+          ? no("It is locked already.")
+          : yes,
+    unlock: r.locked ? yes : no("It isn't locked."),
     remove:
       r.kind === "main"
         ? no("The main worktree holds the repository itself, so git never removes it.")

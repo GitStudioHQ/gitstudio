@@ -56,7 +56,8 @@ test("a plain linked worktree, clean and up to date: no badges, everything offer
   assert.deepEqual([c.openHere.ok, c.openNew.ok, c.reveal, c.terminal], [true, true, true, true]);
   assert.equal(c.pull.ok, true);
   assert.deepEqual(c.push, { ok: false, why: "Nothing to push — it is up to date with origin/feat." });
-  assert.deepEqual([c.lock, c.unlock, c.remove.ok, c.forget], [true, false, true, false]);
+  assert.deepEqual([c.lock.ok, c.unlock.ok, c.remove.ok, c.forget], [true, false, true, false]);
+  assert.deepEqual(c.unlock, { ok: false, why: "It isn't locked." });
 });
 
 test("main worktree: says so, never removed or locked", () => {
@@ -65,7 +66,7 @@ test("main worktree: says so, never removed or locked", () => {
   const c = worktreeCaps(r);
   assert.equal(c.remove.ok, false);
   assert.match((c.remove as { why: string }).why, /main worktree holds the repository itself/);
-  assert.equal(c.lock, false);
+  assert.deepEqual(c.lock, { ok: false, why: "The main worktree holds the repository itself, so git can't lock it." }, "shown, with why — as Remove is");
 });
 
 test("this window's worktree: first badge, no Open, no Remove — both say why", () => {
@@ -88,7 +89,7 @@ test("a bare repository's entry: no badges, not expandable, nothing to do but Re
   assert.equal(headWords(r), "Bare repository");
   const c = worktreeCaps(r);
   assert.equal(c.expand, false);
-  assert.deepEqual([c.openHere.ok, c.pull.ok, c.push.ok, c.remove.ok, c.lock, c.forget], [false, false, false, false, false, false]);
+  assert.deepEqual([c.openHere.ok, c.pull.ok, c.push.ok, c.remove.ok, c.lock.ok, c.forget], [false, false, false, false, false, false]);
   assert.equal(c.reveal, true);
 });
 
@@ -101,10 +102,11 @@ test("missing folder: Folder missing, only Forget (and Unlock when locked)", () 
   assert.equal(c.expand, false);
   assert.deepEqual([c.openHere.ok, c.openNew.ok, c.reveal, c.terminal, c.pull.ok, c.push.ok, c.remove.ok], [false, false, false, false, false, false, false]);
   assert.equal(c.forget, true);
-  assert.equal(c.unlock, false);
+  assert.deepEqual(c.lock, { ok: false, why: "Its folder is missing." }, "Lock… is shown, and says why not");
+  assert.equal(c.unlock.ok, false);
   const locked = row({ missing: true, locked: true, lockReason: "on a USB drive", status: undefined });
   assert.deepEqual(words(locked), ["Locked: on a USB drive", "Folder missing"]);
-  assert.equal(worktreeCaps(locked).unlock, true);
+  assert.equal(worktreeCaps(locked).unlock.ok, true);
   assert.match(worktreeBadges(locked)[1].tip, /drive that isn't connected/);
 });
 
@@ -136,7 +138,7 @@ test("locked with a reason, and without one: the reason is on the row; Lock beco
   const r = row({ locked: true, lockReason: "claude agent a2c9 (pid 73264)" });
   assert.deepEqual(words(r), ["Locked: claude agent a2c9 (pid 73264)"]);
   assert.match(worktreeBadges(r)[0].tip, /won't prune, move or remove it/);
-  assert.deepEqual([worktreeCaps(r).lock, worktreeCaps(r).unlock], [false, true]);
+  assert.deepEqual([worktreeCaps(r).lock.ok, worktreeCaps(r).unlock.ok], [false, true]);
   assert.deepEqual(words(row({ locked: true })), ["Locked"]);
 });
 
@@ -213,6 +215,9 @@ test("each operation has its words; a rebase names the branch it is rebasing", (
   assert.equal(op("am"), "Applying patches");
   const rebasing = row({ branch: undefined, upstream: undefined, status: { ...clean, operation: "rebase", rebasing: "feat" } });
   assert.equal(headWords(rebasing), "feat (rebasing)");
+  // git lists it detached, but what stops Pull and Push is the rebase — said first.
+  const why = { ok: false, why: "A rebase is stopped in it — continue or abort it first." };
+  assert.deepEqual([worktreeCaps(rebasing).pull, worktreeCaps(rebasing).push], [why, why]);
 });
 
 test("files left unmerged with no operation (a stash that conflicted): N conflicts", () => {
