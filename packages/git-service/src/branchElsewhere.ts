@@ -1,5 +1,5 @@
+import { nativePath, sameFolder } from "./folderPath";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
-import { sameFolder } from "./WorktreeProvider";
 
 // The words live in host-bridge, node-free, so the desktop's renderer says
 // the same ones.
@@ -15,7 +15,8 @@ export { checkedOutElsewhereMessage, type ElsewhereDoor } from "@gitstudio/host-
 
 /**
  * The folder of ANOTHER worktree that has `fullName` (refs/heads/…) checked
- * out — compared with this one (`proc.cwd`) through symlinks. Undefined when
+ * out — compared with this one (`proc.cwd`) as a folder, not as text (see
+ * folderPath), and spelled the system's way to be shown. Undefined when
  * no worktree has it, only this one does, it is not a local branch, or git
  * cannot say (the door then runs as before, and git decides).
  *
@@ -45,5 +46,5 @@ export async function checkedOutElsewhere(
   if (!where || sameFolder(where, proc.cwd)) {
     return undefined;
   }
-  return where;
+  return nativePath(where);
 }

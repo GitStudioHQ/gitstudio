@@ -25,7 +25,8 @@
 // test pins it). The fetch writes `+<remote ref>:refs/remotes/<remote>/<x>`.
 
 import { lstat } from "node:fs/promises";
-import { dirname, join, normalize } from "node:path";
+import { dirname, join } from "node:path";
+import { nativePath } from "@gitstudio/git-service/folderPath";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { OperationKind } from "@gitstudio/host-bridge/conflictsProtocol";
 import type {
@@ -222,7 +223,7 @@ function refused(message: string): { ok: false; changed: false; expected: true; 
 function checkedOutElsewhere(name: string, where: string): string {
   return (
     // git spells a Windows path C:/Users/…; say it the way the system does.
-    `'${name}' is checked out in the worktree at ${normalize(where)}. Reset it there, or switch that ` +
+    `'${name}' is checked out in the worktree at ${nativePath(where)}. Reset it there, or switch that ` +
     `worktree to another branch first.`
   );
 }
@@ -400,7 +401,7 @@ function branchForceRefusal(name: string, stderr: string): CommitActionResult {
   const at = /used by worktree at '([^']+)'/.exec(stderr);
   if (at) {
     return refused(
-      `'${name}' is in use in the worktree at ${at[1]} — checked out, or being rebased there. ` +
+      `'${name}' is in use in the worktree at ${nativePath(at[1])} — checked out, or being rebased there. ` +
         `Nothing was changed.`,
     );
   }

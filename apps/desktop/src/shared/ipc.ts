@@ -577,7 +577,12 @@ export interface StashInfo {
 
 /** A linked worktree for the Worktrees view. */
 export interface WorktreeInfo {
+  /** git's own spelling of the folder: what is sent back, and compared. */
   path: string;
+  /** The same folder spelled the system's way, for a person to read — git's
+   *  C:/Users/… is C:\Users\… on Windows (git-service's nativePath). Absent
+   *  from an older main: show `path`. */
+  shownPath?: string;
   head: string;
   branch?: string;
   bare?: boolean;

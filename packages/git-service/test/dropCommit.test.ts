@@ -435,8 +435,11 @@ test("undoDrop refuses a carried branch that moved since, and changes nothing", 
 for (const where of ["on main", "on a detached HEAD"] as const) {
   test(`undoDrop ${where}: a carried branch checked out in another worktree is refused in refRestore's words; put back, its reflog says so`, async () => {
     const r = repo();
-    // Real path: git names a worktree by it (/var is /private/var on macOS).
-    const wt = realpathSync(mkdtempSync(join(tmpdir(), "gs-drop-wt-")));
+    // Made in os.tmpdir()'s spelling; the refusal names it in the disk's own
+    // — as git does — with the system's separators: realpathSync.native
+    // (RUNNER~1 is runneradmin on a Windows runner; /var is /private/var on
+    // macOS).
+    const wt = mkdtempSync(join(tmpdir(), "gs-drop-wt-"));
     try {
       r.commit("base");
       const a = r.commit("A");
@@ -455,7 +458,11 @@ for (const where of ["on main", "on a detached HEAD"] as const) {
 
       r.git("worktree", "add", "-q", join(wt, "w"), "side");
       const refused = await undoDrop(r.ctx.process, req);
-      assert.deepEqual(refused, { ok: false, expected: true, message: `'side' is checked out in another worktree, at ${join(wt, "w")}. Undo it there.` });
+      assert.deepEqual(refused, {
+        ok: false,
+        expected: true,
+        message: `'side' is checked out in another worktree, at ${realpathSync.native(join(wt, "w"))}. Undo it there.`,
+      });
       assert.equal(r.git("rev-parse", "HEAD"), out.after, "a refusal moves nothing — HEAD included");
       assert.equal(r.git("rev-parse", "side"), side);
 

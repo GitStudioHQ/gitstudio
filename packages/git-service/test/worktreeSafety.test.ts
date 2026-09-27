@@ -7,14 +7,17 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
 import { parseWorktreePorcelain } from "../src/WorktreeProvider";
 import { removeTempRepo } from "./tmpRepo";
 
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "gitstudio-wt-safety-")));
+// os.tmpdir()'s own spelling (RUNNER~1 on a Windows runner, /var/… on macOS),
+// never resolved: git names these folders by another, and removal() must
+// find them by either.
+const scratch = mkdtempSync(join(tmpdir(), "gitstudio-wt-safety-"));
 const contexts: GitContext[] = [];
 after(() => {
   for (const c of contexts) c.dispose();
@@ -139,6 +142,31 @@ test("removal() says what removing takes, before git runs", async () => {
   assert.equal((await ctx.worktrees.remove(lockedGone)).ok, false);
   assert.ok((await ctx.worktrees.remove(lockedGone, { force: true, evenIfLocked: true })).ok);
   assert.deepEqual((await ctx.worktrees.list()).map((e) => e.branch), ["main", "clean", "dirty"]);
+});
+
+test("removal() finds a worktree whose folder is gone by any spelling of its folder — not only git's", async () => {
+  // git names a worktree by the resolved path its folder had when it was
+  // added: C:/Users/runneradmin/… on a Windows runner, where the same folder
+  // was asked for as os.tmpdir()'s C:\Users\RUNNER~1\…; /private/var/… on
+  // macOS beside tmpdir's /var/…. With the folder gone there is nothing to
+  // resolve, and removal() answered "notListed" — a worktree git still has,
+  // which Forget could then never let go. Here the other spelling is a link
+  // to the repository's folder, which every system has.
+  const { base, git, ctx } = repo();
+  const gone = join(base, "wt", "gone");
+  git("worktree", "add", "-q", "-b", "gone", gone);
+  rmSync(gone, { recursive: true, force: true });
+  const link = join(scratch, `link-r${seq}`);
+  symlinkSync(base, link, "junction");
+  const spelled = join(link, "wt", "gone");
+  const r = await ctx.worktrees.removal(spelled);
+  assert.equal(r.kind, "missing", spelled);
+  assert.equal(r.kind === "missing" && r.entry.branch, "gone");
+  assert.equal((await ctx.worktrees.removal(join(link, "wt", "never"))).kind, "notListed");
+  // …and forgotten by the entry it found, which is git's own spelling — the
+  // one both products hand git.
+  assert.ok(r.kind === "missing" && (await ctx.worktrees.remove(r.entry.path)).ok);
+  assert.deepEqual((await ctx.worktrees.list()).map((e) => e.branch), ["main"]);
 });
 
 test("an add -b that fails leaves no branch behind, so the retry works", async () => {

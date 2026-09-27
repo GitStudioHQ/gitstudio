@@ -524,6 +524,14 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   reads both the older and the newer form now, keeps a title that itself
   starts with `#`, and a line whose action you change keeps git's own
   spelling.
+- **A worktree is one folder however its path is spelled.** git names a
+  worktree by its resolved path — `C:/Users/you/…` on Windows — and the same
+  folder can be reached through a symlink or Windows' short `C:\Users\YOU~1\…`
+  names. **New Worktree** into the folder of a worktree git still keeps, its
+  folder gone, picked by such a spelling, ran git and showed its error; it
+  says whose folder it is now. On Windows, worktree paths — in the Worktrees
+  view, its tooltips and questions, and "checked out in the worktree at …" —
+  are shown the Windows way, `C:\Users\…`.
 - On Windows, SSH host aliases are read from `%HOME%\.ssh\config` when
   `HOME` is set — where Git for Windows' ssh reads them — so a remote through
   one is recognised as github.com there too.

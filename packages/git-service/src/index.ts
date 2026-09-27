@@ -65,9 +65,9 @@ export type {
 export {
   WorktreeProvider,
   parseWorktreePorcelain,
-  folderKey,
-  sameFolder,
 } from "./WorktreeProvider";
+export { folderKey, sameFolder, nativePath } from "./folderPath";
+export type { PathRules } from "./folderPath";
 export type {
   WorktreeEntry,
   WorktreeAddOptions,

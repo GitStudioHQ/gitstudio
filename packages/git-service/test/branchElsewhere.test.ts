@@ -8,13 +8,22 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { GitContext } from "../src/GitContext";
 import { checkedOutElsewhere, checkedOutElsewhereMessage } from "../src/branchElsewhere";
 import { planRefCheckout } from "../src/checkoutRef";
 import { removeTempRepo } from "./tmpRepo";
 
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "gitstudio-elsewhere-")));
+// Paths are made in os.tmpdir()'s own spelling — the 8.3 C:\Users\RUNNER~1\…
+// on a Windows runner, /var/… on macOS — so every compare with git's
+// (C:/Users/runneradmin/…, /private/var/…) is a compare of two spellings, on
+// macOS as on Windows. An answer is expected in the disk's own spelling, as
+// it is shown: realpathSync.native gives the long name, as git does, with the
+// system's separators.
+const scratch = mkdtempSync(join(tmpdir(), "gitstudio-elsewhere-"));
+const shown = (p: string): string => realpathSync.native(p);
+/** The shown spelling of a folder that is gone: its parent's, and its name. */
+const shownGone = (p: string): string => join(realpathSync.native(dirname(p)), basename(p));
 const contexts: GitContext[] = [];
 after(() => {
   for (const c of contexts) c.dispose();
@@ -49,7 +58,7 @@ const ctx = new GitContext({ root: app });
 contexts.push(ctx);
 
 test("checkedOutElsewhere names the OTHER worktree that has the branch, and nothing else", async () => {
-  assert.equal(await checkedOutElsewhere(ctx.process, "refs/heads/feat"), holder);
+  assert.equal(await checkedOutElsewhere(ctx.process, "refs/heads/feat"), shown(holder));
   assert.equal(await checkedOutElsewhere(ctx.process, "refs/heads/main"), undefined, "checked out HERE is not elsewhere");
   assert.equal(await checkedOutElsewhere(ctx.process, "refs/heads/free"), undefined);
   assert.equal(await checkedOutElsewhere(ctx.process, "refs/heads/feat-2"), undefined);
@@ -59,7 +68,7 @@ test("checkedOutElsewhere names the OTHER worktree that has the branch, and noth
   // From the linked worktree, it is main that is elsewhere.
   const inside = new GitContext({ root: holder });
   contexts.push(inside);
-  assert.equal(await checkedOutElsewhere(inside.process, "refs/heads/main"), app);
+  assert.equal(await checkedOutElsewhere(inside.process, "refs/heads/main"), shown(app));
   assert.equal(await checkedOutElsewhere(inside.process, "refs/heads/feat"), undefined);
 });
 
@@ -69,7 +78,7 @@ test("a window opened through a symlink still knows its own branch is here", asy
   const viaLink = new GitContext({ root: link });
   contexts.push(viaLink);
   assert.equal(await checkedOutElsewhere(viaLink.process, "refs/heads/main"), undefined);
-  assert.equal(await checkedOutElsewhere(viaLink.process, "refs/heads/feat"), holder);
+  assert.equal(await checkedOutElsewhere(viaLink.process, "refs/heads/feat"), shown(holder));
 });
 
 test("a checkout plan names the existing local branch it switches to — and none when it creates one or detaches", async () => {
@@ -101,6 +110,6 @@ test("a worktree whose folder is gone still holds its branch — git refuses bot
   const gone = join(scratch, "wt", "gone");
   git("worktree", "add", "-q", "-b", "gone", gone);
   rmSync(gone, { recursive: true, force: true });
-  assert.equal(await checkedOutElsewhere(ctx.process, "refs/heads/gone"), gone);
+  assert.equal(await checkedOutElsewhere(ctx.process, "refs/heads/gone"), shownGone(gone));
   assert.throws(() => git("branch", "-D", "gone"), "git refuses the delete too");
 });

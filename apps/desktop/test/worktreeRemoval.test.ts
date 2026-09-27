@@ -21,7 +21,13 @@ import { GitBridge } from "../src/main/gitBridge";
 import { GitHubBridge } from "../src/main/githubBridge";
 import { reportableResultMessage } from "../src/main/expectedError";
 
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "gs-desktop-wt-")));
+// Made in os.tmpdir()'s own spelling — the 8.3 C:\Users\RUNNER~1\… on a
+// Windows runner, /var/… on macOS — so the bridge is asked about a folder in
+// another spelling than git's (C:/Users/runneradmin/…, /private/var/…), as a
+// tab or a window can ask it, on macOS as on Windows. A path the bridge SAYS
+// is in the disk's own spelling, with the system's separators:
+// realpathSync.native.
+const scratch = mkdtempSync(join(tmpdir(), "gs-desktop-wt-"));
 after(() => removeTempRepo(scratch));
 let seq = 0;
 
@@ -66,6 +72,11 @@ test("the list says which worktree is main, which folder is gone, and why one is
   assert.equal(by("gone")?.missing, true);
   assert.equal(by("clean")?.missing, false);
   assert.equal(by("locked")?.lockReason, "on a USB drive");
+  // Shown in the system's spelling — git's C:/Users/runneradmin/… is
+  // C:\Users\runneradmin\… on Windows — while `path` stays git's own, to send back.
+  assert.equal(by("clean")?.shownPath, realpathSync.native(s.path("clean")));
+  assert.equal(by("clean")?.current, false);
+  assert.equal(by("main")?.current, true, "this tab's own");
 });
 
 test("removal is read before anything is asked: refused for main and this window's own, facts for the rest", async () => {
@@ -239,7 +250,7 @@ test("checking out a branch another worktree has says where it is, and runs noth
   assert.equal(r.expected, true, "the person's state, not a failure to report");
   assert.equal(
     r.message,
-    `'clean' is checked out in the worktree at ${s.path("clean")}, and a branch can be checked out in only one worktree at a time. Work on it there, or create a new branch from it here.`,
+    `'clean' is checked out in the worktree at ${realpathSync.native(s.path("clean"))}, and a branch can be checked out in only one worktree at a time. Work on it there, or create a new branch from it here.`,
   );
   assert.equal(s.git("symbolic-ref", "HEAD"), "refs/heads/main");
 });
@@ -262,7 +273,7 @@ test("checking out a pull request whose pr/<n> another worktree has says where i
   assert.equal(reportableResultMessage(r), undefined, "never filed as a crash report");
   assert.equal(
     r.message,
-    `'pr/7' is checked out in the worktree at ${s.path("pr7")}, and a branch can be checked out in only one worktree at a time. Work on it there, or create a new branch from it here.`,
+    `'pr/7' is checked out in the worktree at ${realpathSync.native(s.path("pr7"))}, and a branch can be checked out in only one worktree at a time. Work on it there, or create a new branch from it here.`,
   );
   assert.equal(s.git("rev-parse", "refs/heads/pr/7"), before);
   assert.equal(s.git("symbolic-ref", "HEAD"), "refs/heads/main");

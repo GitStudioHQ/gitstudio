@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { folderKey } from "@gitstudio/git-service/folderPath";
 
 // ── The stand-in for `vscode` ────────────────────────────────────────────────
 const said: { kind: string; message: string; items?: string[] }[] = [];
@@ -141,7 +142,13 @@ process.env.GIT_CONFIG_SYSTEM = cfg;
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 process.env.GIT_OPTIONAL_LOCKS = "0";
 
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "gs-ext-wt-")));
+// os.tmpdir()'s own spelling, never resolved — the 8.3 C:\Users\RUNNER~1\… on
+// a Windows runner, /var/… on macOS — while git names these folders by
+// another (C:/Users/runneradmin/…, /private/var/…). So every door here is
+// asked in a spelling that is not git's, on macOS as on Windows: a folder it
+// opens is compared as a folder (folderKey), and a path it SHOWS is the
+// disk's own spelling with the system's separators (realpathSync.native).
+const scratch = mkdtempSync(join(tmpdir(), "gs-ext-wt-"));
 const contexts: InstanceType<typeof GitContext>[] = [];
 after(() => {
   for (const c of contexts) c.dispose();
@@ -592,10 +599,10 @@ test("the row's Open in New Window opens at once — no question — and Open in
   await wt.openWorktreeIn(node, "new");
   await wt.openWorktreeIn(node, "here");
   assert.deepEqual(
-    executed.map((e) => [e.command, (e.args[0] as { fsPath: string }).fsPath, (e.args[1] as { forceNewWindow: boolean }).forceNewWindow]),
+    executed.map((e) => [e.command, folderKey((e.args[0] as { fsPath: string }).fsPath), (e.args[1] as { forceNewWindow: boolean }).forceNewWindow]),
     [
-      ["vscode.openFolder", s.path("feat-clean"), true],
-      ["vscode.openFolder", s.path("feat-clean"), false],
+      ["vscode.openFolder", folderKey(s.path("feat-clean")), true],
+      ["vscode.openFolder", folderKey(s.path("feat-clean")), false],
     ],
   );
   assert.equal(asked.length, 0);
@@ -788,7 +795,7 @@ test("tooltip paths are code spans with no backslash escapes", async () => {
   s.git("worktree", "add", "-q", "-b", "feat_x", odd);
   const { provider } = windowAt(s.app);
   const node = await row(provider, "feat_x");
-  assert.ok(node.tooltip?.value.includes("`" + odd + "`"), node.tooltip?.value);
+  assert.ok(node.tooltip?.value.includes("`" + realpathSync.native(odd) + "`"), node.tooltip?.value);
 });
 
 test("its sibling: the Branches view's tooltip names a branch's upstream in a code span the same way", async () => {

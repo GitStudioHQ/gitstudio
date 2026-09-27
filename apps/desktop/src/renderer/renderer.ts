@@ -3382,24 +3382,26 @@ class App {
    *  contract with no caller in any view — the cheapest capability in the app. */
   private worktreeRow(w: WorktreeInfo): HTMLElement {
     const actions: HTMLElement[] = [];
+    // Said and copied in the system's spelling; `w.path` (git's) is what is sent.
+    const shown = w.shownPath ?? w.path;
     // Nothing to open when its folder is gone, or for a bare repository's entry.
     if (!w.current && !w.missing && !w.bare) {
       const open = el("button", "row-btn") as HTMLButtonElement;
       open.textContent = "Open";
-      open.setAttribute("aria-label", `Open the worktree at ${w.path}`);
+      open.setAttribute("aria-label", `Open the worktree at ${shown}`);
       // An open, like any other (issue #32): the worktree gets a tab of its
       // own, or the one it already has is brought to the front.
-      open.title = `Open the worktree at ${w.path} in its own tab`;
+      open.title = `Open the worktree at ${shown} in its own tab`;
       open.addEventListener("click", () => void this.openWorktreeLive(w, open));
       actions.push(open);
     }
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
-    more.setAttribute("aria-label", `More actions for ${w.path}`);
+    more.setAttribute("aria-label", `More actions for ${shown}`);
     more.setAttribute("aria-haspopup", "menu");
     more.appendChild(glyph("ellipsis"));
     const menu = (): void =>
       openMenu(more, [
-        { label: "Copy path", icon: "copy", onClick: () => void copyText(w.path, "Copied the path.") },
+        { label: "Copy path", icon: "copy", onClick: () => void copyText(shown, "Copied the path.") },
         { separator: true },
         {
           // Its folder gone, removing it only forgets git's record of it.
@@ -3462,7 +3464,7 @@ class App {
           for (const p of pills) c.appendChild(p);
           return c;
         })(),
-        span(w.path, "br-subject br-subject-col"),
+        span(shown, "br-subject br-subject-col"),
         span(w.head.slice(0, 7), "br-sha sec-mono"),
       ],
       time: "",
@@ -3476,11 +3478,11 @@ class App {
         w.branch
           ? this.routeView("refdetail", false, { ref: w.branch, id: "head" })
           : this.routeView("commit", false, { sha: w.head }),
-      ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${w.path}${w.current ? ", this tab" : inTab ? ", open in another tab" : ""}${w.main && !w.bare ? ", main worktree" : ""}`,
+      ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${shown}${w.current ? ", this tab" : inTab ? ", open in another tab" : ""}${w.main && !w.bare ? ", main worktree" : ""}`,
     });
     row.classList.add("ref-row", "worktree-row");
     row.dataset.ref = w.path;
-    row.title = w.path;
+    row.title = shown;
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       menu();
@@ -3497,10 +3499,10 @@ class App {
       // Main has said why nothing opened (every tab is taken): once is enough.
       if (repo && "said" in repo) return;
       if (!repo) {
-        toast(`Couldn't open ${w.path}.`, "error");
+        toast(`Couldn't open ${w.shownPath ?? w.path}.`, "error");
         return;
       }
-      toast(`Opened ${w.branch ?? w.path}.`, "success");
+      toast(`Opened ${w.branch ?? w.shownPath ?? w.path}.`, "success");
     });
   }
 
@@ -3530,7 +3532,7 @@ class App {
     const q = worktreeRemovalQuestion({
       kind: plan.kind,
       label,
-      shownPath: w.path,
+      shownPath: w.shownPath ?? w.path,
       branch: plan.branch,
       head: plan.head,
       locked: plan.locked,
@@ -4652,7 +4654,7 @@ class App {
     const worktreeList = await host.invoke("worktree:list", undefined).catch((): WorktreeInfo[] => []);
     const holder = worktreeList.find((w) => !w.current && !w.bare && w.branch === name);
     if (holder) {
-      toast(checkedOutElsewhereMessage(name, holder.path, "delete", !!(holder.missing || holder.prunable)), "info");
+      toast(checkedOutElsewhereMessage(name, holder.shownPath ?? holder.path, "delete", !!(holder.missing || holder.prunable)), "info");
       return;
     }
     // Confirm FIRST. This sits a few pixels from Checkout in a hover-revealed

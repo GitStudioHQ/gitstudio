@@ -1,3 +1,4 @@
+import { nativePath } from "./folderPath";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 
 // Reading and putting back local branches — for both products' Undo.
@@ -55,14 +56,15 @@ export async function localBranches(proc: GitProcess, opts?: GitRunOptions): Pro
   return out;
 }
 
-/** Where each local branch is checked out, by worktree path (branches that aren't, are absent). */
+/** Where each local branch is checked out, by worktree path spelled the
+ *  system's way — it is said to a person (branches that aren't, are absent). */
 export async function checkedOutAt(proc: GitProcess, opts?: GitRunOptions): Promise<Map<string, string>> {
   const r = await proc.run(["for-each-ref", "--format=%(refname)%00%(worktreepath)", "refs/heads/"], opts);
   const out = new Map<string, string>();
   if (r.code !== 0) return out;
   for (const line of r.stdout.split("\n")) {
     const [ref, path] = line.split("\0");
-    if (ref && path) out.set(ref, path);
+    if (ref && path) out.set(ref, nativePath(path));
   }
   return out;
 }

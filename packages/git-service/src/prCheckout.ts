@@ -32,6 +32,7 @@
 
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
+import { nativePath } from "./folderPath";
 import type { GitRunResult } from "./GitProcess";
 
 /** All this needs from a GitProcess. */
@@ -177,8 +178,9 @@ export function divergedMessage(n: number, plan: PrHeadPlan): string {
 }
 
 /**
- * The worktree that has `ref` checked out, if any. Asked only when THIS
- * worktree's HEAD is not `ref`, so any worktree listed with it is another.
+ * The worktree that has `ref` checked out, if any — spelled the system's way,
+ * as it is shown. Asked only when THIS worktree's HEAD is not `ref`, so any
+ * worktree listed with it is another.
  */
 function worktreeHolding(porcelain: string, ref: string): string | undefined {
   let path: string | undefined;
@@ -186,7 +188,7 @@ function worktreeHolding(porcelain: string, ref: string): string | undefined {
     if (line.startsWith("worktree ")) {
       path = line.slice("worktree ".length);
     } else if (line === `branch ${ref}`) {
-      return path;
+      return path === undefined ? undefined : nativePath(path);
     }
   }
   return undefined;

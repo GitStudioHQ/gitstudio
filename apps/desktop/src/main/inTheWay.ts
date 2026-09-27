@@ -24,6 +24,7 @@
 
 import { realpath } from "node:fs/promises";
 import { posix, win32 } from "node:path";
+import { sameFolder } from "@gitstudio/git-service/folderPath";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRunResult } from "@gitstudio/git-service/GitProcess";
 import type { PullMode, PullResult } from "@gitstudio/git-service/SyncOps";
@@ -211,19 +212,18 @@ async function retryRefused(ctx: GitContext, stashFirst: unknown): Promise<Commi
 const pathsOn = (platform: string) => (platform === "win32" ? win32 : posix);
 
 /**
- * Whether two paths spell the same folder, by their text alone: resolved, so
- * `/` against `\`, a trailing separator and a `..` fall away; and on Windows
- * regardless of case, which its file system ignores. A relative path names no
- * folder here (resolving it would ask this process's working directory, which
- * is nobody's answer). Pure, so the Windows rules are tested on any machine
- * with `platform: "win32"`.
+ * Whether two paths spell the same folder, by their text alone — git-service's
+ * one rule for that (folderPath's sameFolder, without the disk): `/` against
+ * `\`, a trailing separator and a `..` fall away; and on Windows regardless
+ * of case, which its file system ignores. A relative path names no folder
+ * here (resolving it would ask this process's working directory, which is
+ * nobody's answer). Pure, so the Windows rules are tested on any machine with
+ * `platform: "win32"`.
  */
 export function sameFolderSpelling(a: string, b: string, platform: string = process.platform): boolean {
   const paths = pathsOn(platform);
   if (!paths.isAbsolute(a) || !paths.isAbsolute(b)) return false;
-  const x = paths.resolve(a);
-  const y = paths.resolve(b);
-  return platform === "win32" ? x.toLowerCase() === y.toLowerCase() : x === y;
+  return sameFolder(a, b, { platform, realpath: null });
 }
 
 /**

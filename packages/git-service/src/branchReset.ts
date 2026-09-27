@@ -25,8 +25,8 @@
  *     checked out in any worktree (including one being rebased there).
  */
 
-import { normalize } from "node:path";
 import type { GitRef } from "@gitstudio/host-bridge/git";
+import { nativePath } from "./folderPath";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { parseV2 } from "./StatusProvider";
 import { refShortName } from "./checkoutRef";
@@ -193,7 +193,7 @@ export async function resetTargetOf(
   if (!current && worktreePath) {
     return {
       // git spells a Windows path C:/Users/…; say it the way the system does.
-      refused: `'${branch}' is checked out in another worktree, at ${normalize(worktreePath)}. Reset it there, or check out another branch in that worktree first.`,
+      refused: `'${branch}' is checked out in another worktree, at ${nativePath(worktreePath)}. Reset it there, or check out another branch in that worktree first.`,
     };
   }
   // A name git reads as an option. `branch -f -- <name>` is refused by git

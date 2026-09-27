@@ -11,7 +11,8 @@ import * as path from "node:path";
 import type { WorktreeEntry, GitRef } from "@gitstudio/git-service/index";
 import { optionLikeCheckout } from "@gitstudio/git-service/checkoutRef";
 import { tildify } from "./branchElsewhere";
-import { folderKey, sameFolder, type WorktreeRemoval } from "@gitstudio/git-service/WorktreeProvider";
+import type { WorktreeRemoval } from "@gitstudio/git-service/WorktreeProvider";
+import { folderKey, nativePath, sameFolder } from "@gitstudio/git-service/folderPath";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { worktreeChangedSinceAsked, worktreeRemovalQuestion, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
 import { bareName, shortNameOf, startPointOf, worktreeRefFor } from "./worktreeRefs";
@@ -31,6 +32,16 @@ export interface WorktreeRowState {
   /** Its folder is gone. A locked one never reads `prunable` in git's list,
    *  so this is the filesystem's answer. */
   missing: boolean;
+}
+
+/**
+ * A worktree's folder as a person reads it: the system's spelling (git's
+ * C:/Users/… is C:\Users\… on Windows), with ~ for home where that is how
+ * paths are written. The entry keeps git's own spelling; paths are compared
+ * as folders, never by this text.
+ */
+function shownPath(entry: WorktreeEntry): string {
+  return tildify(nativePath(entry.path));
 }
 
 /** How a worktree is named: its branch, its detached commit, or "(bare)". */
@@ -83,7 +94,7 @@ export class WorktreeNode extends vscode.TreeItem {
 
     // Description leads with status flags (current first), then the path.
     const flags = rowFlags(entry, state);
-    const path = tildify(entry.path);
+    const path = shownPath(entry);
     this.description = flags.length > 0 ? `${flags.join(" · ")} · ${path}` : path;
 
     // Icon conveys status: current worktree gets an accent, a missing folder
@@ -133,7 +144,7 @@ function buildTooltip(
       ? "$(git-branch)"
       : "$(git-commit)";
   md.appendMarkdown(`${headIcon} **${escapeMarkdown(worktreeLabel(entry))}**\n\n`);
-  md.appendMarkdown(`$(folder) ${codeSpan(entry.path)}`);
+  md.appendMarkdown(`$(folder) ${codeSpan(nativePath(entry.path))}`);
   if (entry.head) {
     md.appendMarkdown(`\n\n$(git-commit) ${codeSpan(entry.head.slice(0, 7))}`);
   }
@@ -634,7 +645,7 @@ export async function worktreeFromRef(
   const name = await askNewBranchName(
     a,
     holder
-      ? `${label} is checked out in the worktree at ${tildify(holder.path)}, and a branch can be checked out in only one worktree at a time. ${created}`
+      ? `${label} is checked out in the worktree at ${shownPath(holder)}, and a branch can be checked out in only one worktree at a time. ${created}`
       : optionLike
         ? `${optionLike.message} ${created}`
         : created,
@@ -842,7 +853,7 @@ async function askAndRemove(
   const q = worktreeRemovalQuestion({
     kind: removal.kind,
     label,
-    shownPath: tildify(entry.path),
+    shownPath: shownPath(entry),
     branch: entry.branch,
     head: entry.head,
     locked: !!entry.locked,
@@ -959,7 +970,7 @@ export async function pruneWorktrees(
     return;
   }
   const after = await a.ctx.worktrees.list();
-  const pruned = before.filter((e) => !after.some((x) => x.path === e.path));
+  const pruned = before.filter((e) => !after.some((x) => sameFolder(x.path, e.path)));
   const kept = after.filter((e, i) => i > 0 && !e.bare && e.locked && !existsSync(e.path));
   const names = (list: WorktreeEntry[]) => list.map(worktreeLabel).join(", ");
   const said =

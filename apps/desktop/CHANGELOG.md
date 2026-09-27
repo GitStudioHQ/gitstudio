@@ -232,6 +232,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   left side was the base branch as it is now: once others had merged, it
   showed their new work as if the pull request removed it, and a comment on
   a removed line was sent for the wrong line.
+- **A worktree is one folder however its path is spelled.** git names a
+  worktree by its resolved path — `C:/Users/you/…` on Windows — and the same
+  folder can be reached through a symlink or Windows' short `C:\Users\YOU~1\…`
+  names; one whose folder is gone is now found through the folder above it,
+  where it was taken for no worktree of the repository. On Windows, worktree
+  paths are shown and copied the Windows way, `C:\Users\…`, in Worktrees and
+  in "checked out in the worktree at …".
 - On Windows, SSH host aliases are read from `%HOME%\.ssh\config` when
   `HOME` is set — where Git for Windows' ssh reads them — not only from the
   user profile's, and the SSH keys listed in Settings come from the same

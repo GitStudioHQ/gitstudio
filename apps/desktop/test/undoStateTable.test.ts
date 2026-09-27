@@ -20,7 +20,7 @@ import "./hermeticGit";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitBridge } from "../src/main/gitBridge";
@@ -32,10 +32,12 @@ import type { Undoable, UndoResult } from "../src/renderer/undo";
 
 const ROOT = process.env.UNDO_AUDIT_SCRATCH || tmpdir();
 mkdirSync(ROOT, { recursive: true });
-// Real path: RepoStore opens the repository by its realpath, and the reset
-// cells hand `root` back to main — under macOS's /var → /private/var symlink
-// (the default tmpdir) they were refused as "another repository".
-const scratch = realpathSync(mkdtempSync(join(ROOT, "desktop-undo-")));
+// os.tmpdir()'s own spelling, never resolved. RepoStore opens the repository
+// by git's spelling (/private/var/… on macOS, C:/Users/runneradmin/… on a
+// Windows runner), and the reset cells hand `root` back to main in this one
+// (/var/…, C:\Users\RUNNER~1\…): main compares them as folders, not as text —
+// compared as text they were refused as "another repository".
+const scratch = mkdtempSync(join(ROOT, "desktop-undo-"));
 let seq = 0;
 
 // ── Fixture ──────────────────────────────────────────────────────────────────

@@ -52,7 +52,7 @@ import {
   pushUnseenMessage,
 } from "@gitstudio/git-service/SyncOps";
 import { GitProcess } from "@gitstudio/git-service/GitProcess";
-import { sameFolder } from "@gitstudio/git-service/WorktreeProvider";
+import { nativePath, sameFolder } from "@gitstudio/git-service/folderPath";
 import { sshHome } from "@gitstudio/git-service/sshAliases";
 import { worktreeChangedSinceAsked, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
 import type {
@@ -223,9 +223,11 @@ function notABranch(what: string): CommitActionResult {
 }
 
 /** Is the repository a request was built in the one open now? A string from
- *  the renderer that is not a path at all is simply not the same one. */
+ *  the renderer that is not a path at all is simply not the same one; a path
+ *  is compared as a folder (git-service's folderPath), not as text — git's
+ *  C:/Users/runneradmin/… and C:\Users\RUNNER~1\… are one repository. */
 function sameRoot(a: unknown, b: string): boolean {
-  return typeof a === "string" && a.length > 0 && resolve(a) === resolve(b);
+  return typeof a === "string" && a.length > 0 && sameFolder(a, b);
 }
 
 /** Standard rejection for an unusable path reaching a mutation. */
@@ -1687,13 +1689,14 @@ export class GitBridge {
     try {
       return (await ctx.worktrees.list()).map((w, i) => ({
         path: w.path,
+        shownPath: nativePath(w.path),
         head: w.head,
         branch: w.branch,
         bare: w.bare,
         locked: w.locked,
         lockReason: w.lockReason,
         prunable: w.prunable,
-        current: w.path === ctx.root,
+        current: sameFolder(w.path, ctx.root),
         // git lists the main worktree first.
         main: i === 0,
         missing: !w.bare && !existsSync(w.path),

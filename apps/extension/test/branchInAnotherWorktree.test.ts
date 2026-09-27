@@ -48,7 +48,10 @@ process.env.GIT_CONFIG_SYSTEM = cfg;
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 process.env.GIT_OPTIONAL_LOCKS = "0";
 
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "gs-ext-elsewhere-")));
+// os.tmpdir()'s own spelling, never resolved — RUNNER~1 on a Windows runner,
+// /var/… on macOS — while git says the disk's own; where a branch is is SHOWN
+// in that, with the system's separators: realpathSync.native.
+const scratch = mkdtempSync(join(tmpdir(), "gs-ext-elsewhere-"));
 const contexts: InstanceType<typeof GitContext>[] = [];
 after(() => {
   for (const c of contexts) c.dispose();
@@ -109,7 +112,7 @@ test("Checkout of a branch another worktree has: says where, runs nothing — fr
   assert.deepEqual(said("error"), [], "never git's words");
   const w = said("warning").join("\n");
   assert.match(w, /'feat' is checked out in the worktree at /);
-  assert.ok(w.includes(s.holder), w);
+  assert.ok(w.includes(`at ${realpathSync.native(s.holder)},`), w);
   assert.equal(s.git("symbolic-ref", "HEAD"), "refs/heads/main");
 });
 
@@ -188,7 +191,7 @@ test("Checkout of a pull request whose pr/<n> branch another worktree has: says 
   assert.deepEqual(said("error"), [], "never git's 'refusing to fetch into branch'");
   const w = said("warning").join("\n");
   assert.match(w, /'pr\/7' is checked out in the worktree at /);
-  assert.ok(w.includes(prTree), w);
+  assert.ok(w.includes(`at ${realpathSync.native(prTree)},`), w);
   assert.equal(s.git("rev-parse", "refs/heads/pr/7"), before);
   assert.equal(s.git("symbolic-ref", "HEAD"), "refs/heads/main");
   // Said BEFORE the fetch: nothing went to the network for a checkout that

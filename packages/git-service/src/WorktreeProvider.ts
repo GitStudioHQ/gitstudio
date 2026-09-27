@@ -1,6 +1,11 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { sameFolder } from "./folderPath";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { stoppedIn, type StoppedOperation } from "./stoppedOperation";
+
+// Worktree paths are compared through the one shared rule (folderPath.ts);
+// re-exported here, where the extension and the desktop import them from.
+export { folderKey, sameFolder } from "./folderPath";
 
 /** One linked worktree as reported by `git worktree list --porcelain`. */
 export interface WorktreeEntry {
@@ -475,27 +480,4 @@ export function unquoteC(value: string): string {
     }
   }
   return new TextDecoder().decode(new Uint8Array(bytes));
-}
-
-/**
- * The key two paths compare equal by when they name the same folder: symlinks
- * resolved (when the path exists), separators unified, no trailing slash, and
- * case folded on the case-insensitive file systems macOS and Windows default
- * to. A window opened through a symlink keeps the path it was opened by while
- * git reports the resolved one — without the realpath they never matched.
- */
-export function folderKey(path: string): string {
-  let real = path;
-  try {
-    real = realpathSync.native(path);
-  } catch {
-    // Gone (or unreadable): compare it as written.
-  }
-  const unified = real.replace(/[\\/]+/g, "/").replace(/\/+$/, "");
-  return process.platform === "linux" ? unified : unified.toLowerCase();
-}
-
-/** Whether two paths name the same folder — see folderKey. */
-export function sameFolder(a: string, b: string): boolean {
-  return folderKey(a) === folderKey(b);
 }
