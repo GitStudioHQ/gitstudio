@@ -574,6 +574,37 @@ test("a missing folder: no Open, the row says so, and Forget clears it (past its
   assert.ok(!listed(s).includes("feat-gone-locked"));
 });
 
+test("a message or a question names a worktree's folder as its row does, never in git's spelling", async () => {
+  const s = scene();
+  // Home is the scene's folder as git spells it, so every worktree here has a
+  // shown spelling that is not git's on every system: ~/wt/… on macOS and
+  // Linux, C:\Users\…\wt\… (git's C:/Users/…/wt/…) on Windows.
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  process.env.HOME = process.env.USERPROFILE = realpathSync.native(s.base);
+  try {
+    const { provider } = windowAt(s.app);
+    const shown = (n: Node): string => (n.description ?? "").split(" · ").pop() ?? "";
+
+    const gone = await row(provider, "feat-gone");
+    assert.notEqual(shown(gone), gone.entry.path, "precondition: the row's spelling is not git's");
+    await wt.openWorktree(gone);
+    const warning = said.find((m) => /folder is gone/.test(m.message))?.message ?? "";
+    assert.ok(warning.includes(`folder is gone — ${shown(gone)}.`), `the warning names it as its row does: ${warning}`);
+    assert.ok(!warning.includes(gone.entry.path), "not in git's spelling");
+
+    const clean = await row(provider, "feat-clean");
+    await wt.openWorktree(clean);
+    const question = asked.find((q) => q.kind === "pick");
+    assert.equal(question?.hint, shown(clean), "the question says where it is as its row does");
+    assert.ok(!executed.some((e) => e.command === "vscode.openFolder"), "unanswered, nothing opened");
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
 test("Open on the current worktree never offers to reopen it in this window", async () => {
   const s = scene();
   const { provider } = windowAt(s.path("feat-clean"));

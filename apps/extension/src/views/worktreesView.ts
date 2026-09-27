@@ -406,14 +406,15 @@ function active(repos: RepoManager): RepoEntry | undefined {
 /**
  * A window on a folder that is not there opens onto nothing. The row offers no
  * Open then; this is the door a stale row (or a keybinding) still reaches.
- * Says so and answers true when the folder is gone.
+ * Says so — naming the folder as its row does — and answers true when the
+ * folder is gone.
  */
 function saidFolderGone(node: WorktreeNode): boolean {
   if (existsSync(node.entry.path)) {
     return false;
   }
   void vscode.window.showWarningMessage(
-    `GitStudio: ${worktreeLabel(node.entry)}'s folder is gone — ${node.entry.path}. Use Forget Worktree on its row to clear it from the list.`,
+    `GitStudio: ${worktreeLabel(node.entry)}'s folder is gone — ${shownPath(node.entry)}. Use Forget Worktree on its row to clear it from the list.`,
   );
   return true;
 }
@@ -456,7 +457,8 @@ export async function openWorktree(node: WorktreeNode): Promise<void> {
   }
   const choice = await promptPick({
     title: `Open worktree ${label}`,
-    hint: node.entry.path,
+    // Where it is, as its row says it; `uri` (git's spelling) is what opens.
+    hint: shownPath(node.entry),
     choices,
   });
   if (choice === undefined) {
