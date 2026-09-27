@@ -1,0 +1,23 @@
+apps/extension/test/prCreateHtml.test.ts
+  s_26f5e669d3043c::t_d47a58a6590444 16,90
+apps/extension/test/prListPage.test.ts
+  s_26f5e669d3043c::t_1c1f497f74c471 17,82
+apps/extension/test/prPageHtml.test.ts
+  s_26f5e669d3043c::t_fef2cfe32ad88c 17,90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "30a335c9600373ff66b074a69a21a29c13a8264c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
