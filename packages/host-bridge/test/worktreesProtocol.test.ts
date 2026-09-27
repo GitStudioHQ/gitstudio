@@ -120,7 +120,7 @@ test("a folder that isn't a worktree any more (its .git gone): says so in words,
   assert.equal(fact.tone, "danger");
   assert.equal(
     fact.tip,
-    "Its folder is there, ~/src/wt/app-feat, but it isn't a worktree any more: its .git file is gone. Forget it to clear it from the list — the folder and its files stay.",
+    "Its folder is there, but it isn't a worktree any more: its .git file is gone. Forget it to clear it from the list — the folder and its files stay.",
   );
   const c = worktreeCaps(r);
   assert.equal(c.expand, false, "its tree is never read, so there is nothing to open to");
@@ -165,9 +165,11 @@ test("upstream gone: said, and Pull says why not; Push publishes again", () => {
   assert.equal(worktreeCaps(r).push.ok, true);
 });
 
-test("no upstream with remotes: No upstream, or N not pushed once counted (one fact); Push publishes, Pull says why not", () => {
+test("no upstream with remotes: No upstream, or N unpublished once counted (one fact); Push publishes, Pull says why not", () => {
   const r = row({ upstream: undefined, status: { ...clean, unpublished: 3 } });
-  assert.deepEqual(words(r), ["3 not pushed"]);
+  // "unpublished", never "not pushed": beside "3 to push" (ahead of an
+  // upstream) the two read as one thing said two ways.
+  assert.deepEqual(words(r), ["3 unpublished"]);
   assert.match(worktreeFacts(r)[0].tip, /^No upstream: 3 commits no remote has yet/);
   assert.equal(worktreeCaps(r).push.ok, true);
   assert.deepEqual(worktreeCaps(r).pull, { ok: false, why: "Its branch has no upstream to pull from." });
@@ -225,6 +227,8 @@ test("each operation has its words; a rebase names the branch it is rebasing", (
 
 test("files left unmerged with no operation (a stash that conflicted): N conflicts", () => {
   assert.deepEqual(words(row({ status: { ...clean, changed: 2, conflicted: 2 } })), ["2 conflicts", "2 changed"]);
+  assert.equal(worktreeFacts(row({ status: { ...clean, changed: 2, conflicted: 2 } }))[0].tip, "2 files left unmerged in it. Open the worktree to resolve them.");
+  assert.equal(worktreeFacts(row({ status: { ...clean, changed: 1, conflicted: 1 } }))[0].tip, "1 file left unmerged in it. Open the worktree to resolve it.");
 });
 
 test("before tier 1 lands a row says only what tier 0 knows — no guessing 'clean'", () => {
@@ -252,7 +256,7 @@ test("the state beside the name: the most pressing fact, in a few lower-case wor
     ["behind", { behind: 4 }, "4 to pull (muted)"],
     ["diverged", { ahead: 1, behind: 3 }, "diverged (muted)"],
     ["upstream gone", { upstreamGone: true }, "upstream gone (muted)"],
-    ["no upstream, 3 no remote has", { upstream: undefined, status: { ...clean, unpublished: 3 } }, "3 not pushed (muted)"],
+    ["no upstream, 3 no remote has", { upstream: undefined, status: { ...clean, unpublished: 3 } }, "3 unpublished (muted)"],
     ["no remote, 2 not on main", { upstream: undefined, hasRemotes: false, defaultBranch: "main", status: { ...clean, unpublished: 2 } }, "2 not on main (muted)"],
     ["locked, clean", { locked: true, lockReason: "agent 9" }, "locked (muted)"],
     ["changed", { status: dirty }, "3 changed (muted)"],
@@ -272,6 +276,47 @@ test("the state beside the name: the most pressing fact, in a few lower-case wor
     ["this window's, dirty", { current: true, status: dirty }, "3 changed (muted)"],
   ];
   for (const [what, over, want] of table) assert.equal(st(over), want, what);
+});
+
+test("a state that needs attention has one word for a narrow sidebar, said before the name gives way; a routine one has none", () => {
+  const short = (over: Partial<WorktreeRow>) => {
+    const s = worktreeState(row(over));
+    return s ? [s.text, s.short ?? ""] : [];
+  };
+  const table: [string, Partial<WorktreeRow>, string[]][] = [
+    ["a merge", { status: { ...clean, operation: "merge" } }, ["merge in progress", "merging"]],
+    ["a rebase", { status: { ...clean, operation: "rebase" } }, ["rebase stopped", "rebasing"]],
+    ["a cherry-pick", { status: { ...clean, operation: "cherry-pick" } }, ["cherry-pick stopped", "cherry-picking"]],
+    ["a revert", { status: { ...clean, operation: "revert" } }, ["revert stopped", "reverting"]],
+    ["git am", { status: { ...clean, operation: "am" } }, ["applying patches", "applying"]],
+    ["folder missing", { missing: true, status: undefined }, ["folder missing", "missing"]],
+    ["not a worktree", { unlinked: true, status: undefined }, ["not a worktree", "unlinked"]],
+    ["conflicts: already a word and a number", { status: { ...clean, changed: 2, conflicted: 2 } }, ["2 conflicts", ""]],
+    ["routine: goes whole instead", { status: { ...clean, changed: 3, unstaged: 3 } }, ["3 changed", ""]],
+  ];
+  for (const [what, over, want] of table) assert.deepEqual(short(over), want, what);
+  for (const [what, over] of table) {
+    const s = worktreeState(row(over));
+    if (s?.short) assert.ok(s.short.length < s.text.length, `${what}: shorter`);
+  }
+});
+
+test("the tooltip names the folder once: no fact says its path again", () => {
+  const rows: [string, WorktreeRow][] = [
+    ["missing", row({ missing: true, status: undefined })],
+    ["missing, locked", row({ missing: true, locked: true, lockReason: "on a USB drive", status: undefined })],
+    ["not a worktree", row({ unlinked: true, unlinkedWhy: "gitdir file points to non-existent location", status: undefined })],
+    ["not a worktree, locked", row({ unlinked: true, locked: true, lockReason: "agent 9", status: undefined })],
+    ["clean", row()],
+    ["dirty, this window's, the main one", row({ current: true, kind: "main", ahead: 2, status: { ...clean, changed: 5, staged: 2, unstaged: 2, untracked: 1 } })],
+    ["merging", row({ status: { ...clean, changed: 1, conflicted: 1, operation: "merge" } })],
+  ];
+  for (const [what, r] of rows) {
+    const lines = worktreeTip(r).split("\n");
+    assert.equal(lines[0], r.shownPath, `${what}: the folder first`);
+    assert.deepEqual(lines.slice(1).filter((l) => l.includes(r.shownPath)), [], `${what}: said once`);
+  }
+  assert.equal(worktreeFacts(row({ missing: true, status: undefined }))[0].tip, "Its folder isn't there. Forget it to clear it from the list.");
 });
 
 test("the state never says what the name already does: 'This window' and 'Main worktree' are the tooltip's", () => {

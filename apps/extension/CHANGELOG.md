@@ -181,16 +181,21 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   on the right, only when there is something to say — the one state that
   matters most, in words: *merge in progress*, *rebase stopped*,
   *2 conflicts*, *folder missing*, *not a worktree*, *5 changed*,
-  *2 to push*, *1 to pull*, *diverged*, *3 not pushed* (a branch with no
+  *2 to push*, *1 to pull*, *diverged*, *3 unpublished* (a branch with no
   upstream), *2 not on main* (a repository with no remote),
-  *upstream gone*, *locked*. Something stopped halfway, or a folder that is
-  gone, is in the warning colour. Everything else — where the folder is, a
-  lock's reason, how many changes are staged, the main worktree, both sides
-  of a divergence — is in the row's tooltip. The worktree this window has
-  open is its bold name, and comes first, then the main one, the rest by
-  name and the missing ones last; past eight worktrees a filter appears. In
-  a narrow sidebar the branch gives way before the folder's name, and a
-  state is never cut.
+  *upstream gone*, *locked*. The branch and the state read quieter than the
+  folder's name in every theme — Light Modern's too, whose own
+  "description" colour is its text colour. Something stopped halfway, or a
+  folder that is gone, is in the warning colour (in High Contrast, full ink
+  and heavier). Everything else — where the folder is, a lock's reason, how
+  many changes are staged, the main worktree, both sides of a divergence —
+  is in the row's tooltip, which names the folder once. The worktree this
+  window has open is its bold name, and comes first, then the main one, the
+  rest by name and the missing ones last; past eight worktrees a filter
+  appears. In a narrow sidebar the branch gives way first; a state that
+  needs attention then says one word (*merging*, *rebasing*, *missing*); and
+  a long name gives way in its middle, keeping the end that tells it from
+  its neighbours (*wf_4b6…cc2-3*), so no two rows ever read alike.
 - **Open a worktree's row to see what it has — and only that.** Click it (or
   press Enter or →): its uncommitted files, grouped as Source Control groups
   them (*Conflicts*, *Staged changes*, *Changes*), each opening its diff read
@@ -219,7 +224,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Cmd+Delete), and a screen reader hears an open worktree's files and
   commits as that worktree's, and each row's tooltip as its name. Unlock
   shows at once, and comes back if git refuses. A row busy with an action
-  says so ("Removing…") without fading its words, and while a row is open,
+  says so ("Removing…") without fading its words — hovered too, and its
+  menu doesn't open until the action is done — and while a row is open,
   a status landing for it (or for any other row) leaves its open commits
   and the keyboard where they are. Nothing hovered or open is drawn with a
   line — a soft fill, in every theme, High Contrast too.
@@ -231,10 +237,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   it is deleted only if it is still fully merged when you answer — a commit
   made on it meanwhile (an agent at work in the worktree) keeps it, and the
   report says why. Undo (Ctrl/Cmd+Alt+G Z) brings a deleted branch back.
-- **Prune N missing.** When worktrees' folders are gone, a quiet
-  **Prune N missing** link sits under the list, where those rows are
-  (**Prune N stale** when some of them are folders that aren't worktrees
-  any more); it asks first, naming them, and says that a locked one is kept.
+- **Prune missing worktrees.** When worktrees' folders are gone (or
+  aren't worktrees any more), a quiet **Prune 2 missing worktrees…** link
+  sits under the list, where those rows are — the words of the view's own
+  **Prune Missing Worktrees…** and of the question it asks; it asks first,
+  naming them, and says that a locked one is kept.
 - **New Worktree suggests where the folder goes**: beside your project,
   named `<project>-<branch>` (`app-feature-login`), in the question itself,
   ready to edit — a relative folder lands beside the project, `~` is home.

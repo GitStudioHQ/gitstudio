@@ -163,7 +163,7 @@ export function worktreeFacts(r: WorktreeRow): WorktreeFact[] {
       id: "missing",
       text: "Folder missing",
       tone: "danger",
-      tip: `Its folder isn't there: ${r.shownPath}. Forget it to clear it from the list${r.locked ? " — if it is on a drive that isn't connected, connect it instead" : ""}.`,
+      tip: `Its folder isn't there. Forget it to clear it from the list${r.locked ? " — if it is on a drive that isn't connected, connect it instead" : ""}.`,
     });
     return out;
   }
@@ -172,7 +172,7 @@ export function worktreeFacts(r: WorktreeRow): WorktreeFact[] {
       id: "unlinked",
       text: "Not a worktree",
       tone: "danger",
-      tip: `Its folder is there, ${r.shownPath}, but it isn't a worktree any more: ${unlinkedWhy(r.unlinkedWhy)}. Forget it to clear it from the list — the folder and its files stay.`,
+      tip: `Its folder is there, but it isn't a worktree any more: ${unlinkedWhy(r.unlinkedWhy)}. Forget it to clear it from the list — the folder and its files stay.`,
     });
     return out;
   }
@@ -190,7 +190,7 @@ export function worktreeFacts(r: WorktreeRow): WorktreeFact[] {
       id: "operation",
       text: plural(s.conflicted, "conflict"),
       tone: "danger",
-      tip: `${plural(s.conflicted, "file")} left unmerged in it. Open the worktree to resolve them.`,
+      tip: `${plural(s.conflicted, "file")} left unmerged in it. Open the worktree to resolve ${s.conflicted === 1 ? "it" : "them"}.`,
     });
   }
   if (s && s.changed > 0) {
@@ -235,12 +235,14 @@ export function worktreeFacts(r: WorktreeRow): WorktreeFact[] {
       });
     }
   } else if (r.hasRemotes) {
-    // One fact, not two: "N not pushed" already says there is nowhere it went.
+    // One fact, not two: "N unpublished" already says there is nowhere it
+    // went. Never "not pushed": beside "N to push" (ahead of its upstream)
+    // the two read as one thing said two ways.
     out.push(
       s?.unpublished
         ? {
             id: "sync",
-            text: `${s.unpublished} not pushed`,
+            text: `${s.unpublished} unpublished`,
             tone: "info",
             tip: `No upstream: ${plural(s.unpublished, "commit")} no remote has yet. Push publishes the branch.`,
           }
@@ -264,6 +266,26 @@ export interface WorktreeState {
   text: string;
   /** "attention" when something is wrong or stopped halfway; else "muted". */
   tone: "muted" | "attention";
+  /** One word for a narrow sidebar ("merging", "missing"), said instead of
+   *  `text` before the folder's name gives way — the tooltip says the rest.
+   *  Only a state that needs attention has one: a routine one goes whole. */
+  short?: string;
+}
+
+/** An operation in one word, as git's prompt says it ("MERGING", "REBASE"). */
+function operationWord(op: WorktreeOperationName): string {
+  switch (op) {
+    case "merge":
+      return "merging";
+    case "rebase":
+      return "rebasing";
+    case "cherry-pick":
+      return "cherry-picking";
+    case "revert":
+      return "reverting";
+    case "am":
+      return "applying";
+  }
 }
 
 /**
@@ -276,10 +298,10 @@ export interface WorktreeState {
  */
 export function worktreeState(r: WorktreeRow): WorktreeState | undefined {
   if (r.kind === "bare") return undefined;
-  if (r.missing) return { id: "missing", text: "folder missing", tone: "attention" };
-  if (r.unlinked) return { id: "unlinked", text: "not a worktree", tone: "attention" };
+  if (r.missing) return { id: "missing", text: "folder missing", tone: "attention", short: "missing" };
+  if (r.unlinked) return { id: "unlinked", text: "not a worktree", tone: "attention", short: "unlinked" };
   const s = r.status;
-  if (s?.operation) return { id: "operation", text: operationWords(s.operation).toLowerCase(), tone: "attention" };
+  if (s?.operation) return { id: "operation", text: operationWords(s.operation).toLowerCase(), tone: "attention", short: operationWord(s.operation) };
   if (s && s.conflicted > 0) return { id: "operation", text: plural(s.conflicted, "conflict"), tone: "attention" };
   if (s && s.changed > 0) return { id: "changed", text: `${s.changed} changed`, tone: "muted" };
   const sync = syncState(r);
@@ -300,7 +322,7 @@ function syncState(r: WorktreeRow): string | undefined {
   }
   const n = r.status?.unpublished;
   if (!n) return undefined;
-  if (r.hasRemotes) return `${n} not pushed`;
+  if (r.hasRemotes) return `${n} unpublished`;
   return r.defaultBranch ? `${n} not on ${r.defaultBranch}` : undefined;
 }
 

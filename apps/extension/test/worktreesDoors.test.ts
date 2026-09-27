@@ -784,7 +784,7 @@ test("Prune counts a folder that is not a worktree any more (git would prune it)
   answer = yes;
   await wt.pruneWorktrees(repos, noop);
   const q = asked[0] as Confirm;
-  assert.equal(q.title, "Prune 2 stale worktrees?");
+  assert.equal(q.title, "Prune 2 missing worktrees?", "the words the view's link and its title menu use");
   assert.equal(q.confirmLabel, "Prune 2");
   assert.match(q.message, /feat-gone — .* \(folder gone\)/);
   assert.match(q.message, /\n {2}x — .*\.claude\/worktrees\/x \(not a worktree any more\)/);

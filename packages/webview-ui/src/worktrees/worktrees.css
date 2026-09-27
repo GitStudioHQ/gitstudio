@@ -91,14 +91,24 @@ body {
 .wt-list {
   padding: 2px 0 6px;
 }
-/* Light+: the shared quiet ink leans toward the editor's black (so 11px of
-   it reads at AA), which leaves it DARKER than the side bar's own grey — a
-   branch would outweigh its folder's name. Here the names take the deeper
-   ink and the quiet words the side bar's grey, AA on the row and on its
-   hover. */
+/* Two inks, as a VS Code tree has: the folder's name at full ink, and
+   everything that describes it — its branch, its state, a folder that is
+   gone, the chevrons and icons, an open row's labels and its files' folders
+   — quieter, as the tree draws a description (at opacity .7). The quiet ink
+   is the name's own, mixed toward the background, never the theme's
+   descriptionForeground: Light Modern's IS its foreground (#3B3B3B), and
+   there a branch read exactly as loud as its folder. 78% holds AA (4.5:1)
+   on a row and on its hover in every theme, and reads clearly quieter than
+   the name. Declared on the list too, so it follows the list's own ink. */
+.wt-view,
+.wt-list {
+  --wt-quiet: color-mix(in srgb, var(--gs-fg) 78%, var(--gs-bg));
+  --cr-muted: var(--wt-quiet);
+}
+/* Light+: the names take a deeper ink than the side bar's grey (the quiet
+   words, mixed from it, then read at AA). */
 .vscode-light .wt-list {
   --gs-fg: color-mix(in srgb, var(--vscode-foreground) 55%, var(--vscode-editor-foreground, #000000));
-  --cr-muted: var(--vscode-foreground);
   color: var(--gs-fg);
 }
 .wt-row {
@@ -135,7 +145,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--cr-muted);
+  color: var(--wt-quiet);
 }
 .wt-chevron .codicon {
   font-size: 14px;
@@ -150,7 +160,8 @@ body {
 .wt-icon .codicon {
   font-size: 14px;
 }
-/* The folder's name gives way first, down to three letters. */
+/* The folder's name gives way last — and then in its middle (fitRow), so
+   the end that tells "wf_…cc2-1" from "wf_…cc2-2" stays. */
 .wt-name {
   flex: 0 1 auto;
   min-width: 3ch;
@@ -173,11 +184,11 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 12px;
-  color: var(--cr-muted);
+  color: var(--wt-quiet);
 }
 .wt-row.is-missing .wt-name,
 .wt-row.is-missing .wt-icon {
-  color: var(--cr-muted);
+  color: var(--wt-quiet);
 }
 /* The end of the row: the state, and — hovered — the buttons over it. One
    grid cell holds both, so it is as wide as the wider and nothing before it
@@ -196,7 +207,7 @@ body {
 }
 .wt-state {
   font-size: 12px;
-  color: var(--cr-muted);
+  color: var(--wt-quiet);
 }
 /* Something stopped halfway, or a folder that is gone: the words take the
    warning hue, leaned toward the ink so they read at AA. */
@@ -219,6 +230,16 @@ body {
 .wt-row.is-busy .wt-icon,
 .wt-row.is-busy .wt-chevron {
   opacity: 0.55;
+}
+/* Hovered too: its buttons (disabled while it runs) never cover what it is
+   doing. Its menu doesn't open (view.ts), so there is nothing to show. */
+.wt-row.is-busy .wt-actions,
+.wt-row.is-busy:hover .wt-actions {
+  visibility: hidden;
+}
+.wt-row.is-busy .wt-state,
+.wt-row.is-busy:hover .wt-state {
+  visibility: visible;
 }
 
 /* ---- A row's buttons: shown on hover, over its state -------------------- */
@@ -271,7 +292,7 @@ body {
 .wt-group-label {
   padding: 5px 8px 1px;
   font-size: 11px;
-  color: var(--cr-muted);
+  color: var(--wt-quiet);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -452,8 +473,12 @@ body.vscode-high-contrast {
   outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent));
   outline-offset: -1px;
 }
+/* No hues here: a state that needs attention is the full ink at a heavier
+   weight, so "merge in progress" never reads like "3 to pull" (High
+   Contrast Light's own description ink is its foreground). */
 .vscode-high-contrast .wt-state[data-tone="attention"] {
   color: var(--gs-fg);
+  font-weight: 600;
 }
 .vscode-high-contrast .wt-add {
   border-color: var(--vscode-button-border, var(--vscode-contrastBorder, var(--gs-fg)));

@@ -9,12 +9,16 @@
 
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
+import type { WorktreeRow } from "@gitstudio/host-bridge/worktreesProtocol";
 import { WorktreesPage, type VsCodeTheme } from "./worktreesPage";
-import { fixtureDetails, fixtureRows, row } from "./worktreesFixtures";
+import { agentRows, fixtureDetails, fixtureRows, row } from "./worktreesFixtures";
 
 const skip = WorktreesPage.chrome() ? false : "no windowless Chrome on this machine (set GS_CHROME)";
 const LABELS = { reveal: "Reveal in Finder" };
-const THEMES: VsCodeTheme[] = ["dark", "light", "hc-dark", "hc-light"];
+// Light Modern and Dark Modern are what a fresh install picks; Light Modern's
+// descriptionForeground IS its foreground, which a view drawn only in Dark+
+// and Light+ never meets.
+const THEMES: VsCodeTheme[] = ["dark", "light", "dark-modern", "light-modern", "hc-dark", "hc-light"];
 const opened: WorktreesPage[] = [];
 after(async () => {
   for (const p of opened) await p.close();
@@ -70,6 +74,9 @@ const COLOUR = `
     return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
   }
   function seen(el) { return !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden"; }
+  // Its text runs past its box by any fraction of a pixel — text-overflow
+  // draws its ellipsis for 0.4px too, which scrollWidth's whole pixels miss.
+  function textOver(el) { var r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect().width > el.getBoundingClientRect().width + 0.01; }
 `;
 
 interface Line {
@@ -137,7 +144,7 @@ test("one line per worktree: its folder, its branch, and at most one state in wo
     "app-checkout": "diverged",
     "agent-a2c9ae27": "3 changed",
     "app-merge": "merge in progress",
-    "app-spike": "3 not pushed",
+    "app-spike": "3 unpublished",
     "app-v2": "",
     "app-hotfix": "upstream gone",
     "app-usb": "folder missing",
@@ -148,6 +155,11 @@ test("one line per worktree: its folder, its branch, and at most one state in wo
   assert.equal((await lineOf(page, "/code/app-usb"))?.expanded, null, "a missing folder does not open");
   assert.match((await lineOf(page, "/code/app-usb"))!.tip, /Locked: “on a USB drive”/, "its lock is in the tooltip");
   assert.deepEqual((await lineOf(page, UNLINKED))?.words, ["agent-7f3e", "worktree-agent-7f3e", "not a worktree"]);
+  // A tooltip names the folder once — its first line — and no fact says it again.
+  for (const r of fixtureRows()) {
+    const tip = (await lineOf(page, r.path))!.tip.split("\n");
+    assert.deepEqual(tip.filter((l) => l.includes(r.shownPath)), [r.shownPath], `${r.name}: its folder, said once`);
+  }
 
   // Every row: one line, 22px, nothing with an edge or a fill of its own at rest.
   const shape = await page.eval<{ heights: number[]; lines: string[]; edges: string[] }>(`(function () {
@@ -189,7 +201,11 @@ test("one line per worktree: its folder, its branch, and at most one state in wo
   assert.deepEqual(page.errors(), []);
 });
 
-test("every word on a row reads at AA, at rest and hovered, in every theme — and a name never reads fainter than its branch", { skip }, async () => {
+/** How much louder the name must read than what describes it — "quieter", not
+ *  "never fainter": a VS Code tree draws its description at opacity .7. */
+const QUIETER = 1.25;
+
+test("every word on a row reads at AA, at rest and hovered, in every theme — and what describes a worktree reads clearly quieter than its name", { skip }, async () => {
   for (const theme of THEMES) {
     const page = await open(theme);
     const probe = () =>
@@ -214,27 +230,56 @@ test("every word on a row reads at AA, at rest and hovered, in every theme — a
       for (const r of hovered) assert.ok(r.ratio >= 4.5, `${theme}, hovered: "${r.text}" reads at ${r.ratio.toFixed(2)}:1`);
     }
     await page.mouseMove(1, 1);
-    // The folder's name is the row's first word: its branch is quieter, never louder.
-    const pairs = await page.eval<{ path: string; name: number; head: number }[]>(`(function () {
+    // The folder's name is the row's first word. Its branch, and its state
+    // when that is routine, read clearly quieter — in every theme, Light
+    // Modern too, where the theme's own "description" ink is its foreground.
+    const pairs = await page.eval<{ path: string; name: number; head: number | null; state: number | null; tone: string }[]>(`(function () {
       ${COLOUR}
-      return Array.prototype.filter.call(document.querySelectorAll(".wt-row"), function (l) { return seen(l.querySelector(".wt-head")); }).map(function (l) {
-        return { path: l.dataset.path, name: contrast(l.querySelector(".wt-name")), head: contrast(l.querySelector(".wt-head")) };
+      return Array.prototype.map.call(document.querySelectorAll(".wt-row:not(.is-missing)"), function (l) {
+        var h = l.querySelector(".wt-head"), st = l.querySelector(".wt-state");
+        return {
+          path: l.dataset.path,
+          name: contrast(l.querySelector(".wt-name")),
+          head: seen(h) ? contrast(h) : null,
+          state: seen(st) && st.textContent ? contrast(st) : null,
+          tone: st ? st.dataset.tone || "" : "",
+        };
       });
     })()`);
-    assert.ok(pairs.length >= 8, `${theme}: rows with a branch (${pairs.length})`);
-    for (const p of pairs) assert.ok(p.name >= p.head - 0.01, `${theme}: ${p.path}'s name (${p.name.toFixed(2)}:1) reads fainter than its branch (${p.head.toFixed(2)}:1)`);
-    // Something stopped halfway, or gone, stands out: its own hue — in high
-    // contrast, where there are no hues, the full ink — never fainter.
-    const tones = await page.eval<Record<string, { color: string; ratio: number }>>(`(function () {
+    assert.ok(pairs.filter((p) => p.head !== null).length >= 7, `${theme}: rows with a branch (${pairs.length})`);
+    for (const p of pairs) {
+      if (p.head !== null) assert.ok(p.name >= p.head * QUIETER, `${theme}: ${p.path}'s branch (${p.head.toFixed(2)}:1) is not quieter than its name (${p.name.toFixed(2)}:1)`);
+      if (p.state !== null && p.tone === "muted") assert.ok(p.name >= p.state * QUIETER, `${theme}: ${p.path}'s state (${p.state.toFixed(2)}:1) is not quieter than its name (${p.name.toFixed(2)}:1)`);
+    }
+    // A folder that is gone: its name is quieter than a live one's.
+    const names = await page.eval<{ live: number; gone: number }>(`(function () {
+      ${COLOUR}
+      return {
+        live: contrast(document.querySelector('.wt-row[data-path="/code/app-checkout"] .wt-name')),
+        gone: contrast(document.querySelector('.wt-row[data-path="/code/app-old"] .wt-name')),
+      };
+    })()`);
+    assert.ok(names.live >= names.gone * QUIETER, `${theme}: a missing folder's name (${names.gone.toFixed(2)}:1) reads as loud as a live one (${names.live.toFixed(2)}:1)`);
+    // Something stopped halfway, or gone, stands apart from "3 to pull" by
+    // what a person sees — a hue, or (High Contrast, where there are none)
+    // the full ink at a heavier weight — never by a colour string alone
+    // (color-mix computes to color(srgb …), which never equals an rgb()).
+    const tones = await page.eval<Record<string, { rgb: number[]; weight: number; ratio: number }>>(`(function () {
       ${COLOUR}
       var o = {};
-      document.querySelectorAll(".wt-state").forEach(function (s) { if (s.textContent) o[s.textContent] = { color: getComputedStyle(s).color, ratio: contrast(s) }; });
+      document.querySelectorAll(".wt-state").forEach(function (s) {
+        if (!s.textContent) return;
+        var c = rgb(getComputedStyle(s).color);
+        o[s.textContent] = { rgb: [c.r, c.g, c.b], weight: Number(getComputedStyle(s).fontWeight), ratio: contrast(s) };
+      });
       return o;
     })()`);
     const attention = tones["merge in progress"];
     const quiet = tones["3 to pull"];
-    assert.notEqual(attention.color, quiet.color, `${theme}: a merge stopped halfway stands out from "3 to pull"`);
-    assert.ok(attention.ratio >= quiet.ratio - 0.01 || !theme.startsWith("hc"), `${theme}: …never fainter (${attention.ratio.toFixed(2)} vs ${quiet.ratio.toFixed(2)})`);
+    const hue = (c: number[]) => Math.max(...c) - Math.min(...c);
+    const apart = Math.abs(hue(attention.rgb) - hue(quiet.rgb)) >= 40 || attention.weight - quiet.weight >= 200;
+    assert.ok(apart, `${theme}: "merge in progress" (rgb ${attention.rgb.map(Math.round)} ${attention.weight}) looks like "3 to pull" (rgb ${quiet.rgb.map(Math.round)} ${quiet.weight})`);
+    if (theme.startsWith("hc")) assert.ok(attention.ratio >= quiet.ratio - 0.01, `${theme}: …never fainter (${attention.ratio.toFixed(2)} vs ${quiet.ratio.toFixed(2)})`);
   }
 });
 
@@ -279,29 +324,65 @@ test("hovered, a row shows at most two buttons — Open in New Window and More �
   assert.deepEqual((await buttons("/code/app-checkout")).shown, []);
 });
 
-test("nothing hovered, open or current is drawn with a line — a tinted fill, in every theme", { skip }, async () => {
+/**
+ * Every line an element draws — itself, its ::before and ::after, and
+ * everything inside it: an outline (a keyboard focus ring aside: that is
+ * accessibility, not a mark), a painted border side, any box-shadow, an
+ * underline or overline, a gradient (a stripe is one), a child 4px or less
+ * across painted as a bar, and a pseudo-element that paints a fill, a border,
+ * a shadow or an outline (a codicon's ::before is a glyph and paints none).
+ */
+const LINES = `
+  function paints(c) { return rgb(c).a > 0.04; }
+  function sidesOf(cs) {
+    return ["Top", "Right", "Bottom", "Left"].filter(function (s) {
+      return parseFloat(cs["border" + s + "Width"]) > 0 && !/none|hidden/.test(cs["border" + s + "Style"]) && paints(cs["border" + s + "Color"]);
+    }).map(function (s) { return s.toLowerCase(); });
+  }
+  function pseudoDrawn(p) {
+    return !!p.content && p.content !== "none" && p.content !== "normal" && p.display !== "none" && p.visibility !== "hidden" && parseFloat(p.opacity) > 0.04;
+  }
+  function linesOf(root) {
+    var out = [];
+    [root].concat(Array.prototype.slice.call(root.querySelectorAll("*"))).forEach(function (e) {
+      if (!seen(e)) return;
+      var cs = getComputedStyle(e);
+      var name = e === root ? "it" : (typeof e.className === "string" && e.className ? e.className : e.tagName.toLowerCase());
+      if (!e.matches(":focus-visible") && cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0 && paints(cs.outlineColor)) out.push(name + ": an outline");
+      sidesOf(cs).forEach(function (s) { out.push(name + ": a " + s + " border"); });
+      if (cs.boxShadow !== "none") out.push(name + ": box-shadow " + cs.boxShadow);
+      if (cs.textDecorationLine !== "none") out.push(name + ": " + cs.textDecorationLine);
+      if (/gradient\\(/.test(cs.backgroundImage)) out.push(name + ": a gradient");
+      var r = e.getBoundingClientRect();
+      if (e !== root && ((r.width <= 4 && r.height >= 6) || (r.height <= 4 && r.width >= 6)) && paints(cs.backgroundColor)) out.push(name + ": a bar " + Math.round(r.width) + "x" + Math.round(r.height));
+      ["::before", "::after"].forEach(function (pe) {
+        var p = getComputedStyle(e, pe);
+        if (!pseudoDrawn(p)) return;
+        if (paints(p.backgroundColor) || /gradient\\(/.test(p.backgroundImage) || sidesOf(p).length || p.boxShadow !== "none" || (p.outlineStyle !== "none" && parseFloat(p.outlineWidth) > 0 && paints(p.outlineColor))) {
+          out.push(name + pe + ": draws " + p.width + " x " + p.height);
+        }
+      });
+    });
+    return out;
+  }
+`;
+
+/** What an element draws as a line (LINES), and whether it is filled. */
+function linesAt(page: WorktreesPage, sel: string): Promise<{ lines: string[]; fill: boolean }> {
+  return page.eval<{ lines: string[]; fill: boolean }>(`(function () {
+    ${COLOUR}${LINES}
+    var n = document.querySelector(${JSON.stringify(sel)});
+    if (!n) return { lines: ["nothing matches ${sel.replace(/"/g, "'")}"], fill: false };
+    return { lines: linesOf(n), fill: rgb(getComputedStyle(n).backgroundColor).a > 0 };
+  })()`);
+}
+
+test("nothing hovered, open, current or with its menu open is drawn with a line — a tinted fill, in every theme", { skip }, async () => {
   for (const theme of THEMES) {
     const page = await open(theme, 320, 900);
     await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);
     await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
     await page.settle();
-    const lines = (sel: string) =>
-      page.eval<{ lines: string[]; fill: boolean }>(`(function () {
-        ${COLOUR}
-        var n = document.querySelector(${JSON.stringify(sel)});
-        var out = [];
-        [n].concat(Array.prototype.slice.call(n.querySelectorAll("*"))).forEach(function (e) {
-          if (!seen(e)) return;
-          var cs = getComputedStyle(e);
-          var name = e === n ? "it" : e.className;
-          if (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) out.push(name + ": outline " + cs.outlineStyle);
-          ["Top", "Right", "Bottom", "Left"].forEach(function (s) { if (parseFloat(cs["border" + s + "Width"]) > 0 && rgb(cs["border" + s + "Color"]).a > 0) out.push(name + ": border-" + s.toLowerCase()); });
-          if (cs.boxShadow !== "none") out.push(name + ": box-shadow " + cs.boxShadow);
-          if (cs.textDecorationLine !== "none") out.push(name + ": " + cs.textDecorationLine);
-        });
-        var bg = rgb(getComputedStyle(n).backgroundColor);
-        return { lines: out, fill: bg.a > 0 };
-      })()`);
     const hoverOn = async (sel: string) => {
       const at = await page.eval<{ x: number; y: number }>(`(function () { var b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.left + 12, y: b.top + b.height / 2 }; })()`);
       await page.mouseMove(at.x, at.y);
@@ -314,19 +395,53 @@ test("nothing hovered, open or current is drawn with a line — a tinted fill, i
       `.wt-prune`,
     ]) {
       await hoverOn(sel);
-      const got = await lines(sel);
+      const got = await linesAt(page, sel);
       assert.deepEqual(got.lines, [], `${theme}: ${sel} hovered`);
       assert.equal(got.fill, true, `${theme}: ${sel} hovered is a fill`);
     }
+    // Its More menu open and the pointer gone: the row keeps its fill — and nothing else.
     await page.clickOn(`.wt-row[data-path="/code/app-checkout"] .wt-more`);
+    await page.mouseMove(1, 1);
+    const withMenu = await linesAt(page, `.wt-row.has-menu`);
+    assert.deepEqual(withMenu.lines, [], `${theme}: the row whose menu is open`);
+    assert.equal(withMenu.fill, true, `${theme}: the row whose menu is open is a fill`);
     await hoverOn(".wt-menu-item:nth-of-type(2)");
-    const item = await lines(".wt-menu-item:nth-of-type(2)");
+    const item = await linesAt(page, ".wt-menu-item:nth-of-type(2)");
     assert.deepEqual(item.lines, [], `${theme}: a menu item hovered`);
     assert.equal(item.fill, true, `${theme}: a menu item hovered is a fill`);
     await page.key("Escape");
     await page.mouseMove(1, 1);
-    // At rest, the open row and this window's are not drawn apart by a line either.
-    assert.deepEqual((await lines(`.wt-row[data-path="${LOGIN}"]`)).lines, [], `${theme}: the open, current row at rest`);
+    // At rest: the open, current worktree — its row AND what it opened to —
+    // and the whole list, are drawn apart by no line either.
+    assert.deepEqual((await linesAt(page, `.wt-item[data-path="${LOGIN}"]`)).lines, [], `${theme}: the open, current worktree at rest`);
+    assert.deepEqual((await linesAt(page, `.wt-list`)).lines, [], `${theme}: the list at rest`);
+  }
+});
+
+test("the line probe sees every way a line can be drawn — so its passing means there is none", { skip }, async () => {
+  const page = await open("dark", 320, 900);
+  await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);
+  await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
+  await page.settle();
+  await page.clickOn(`.wt-row[data-path="/code/app-checkout"] .wt-more`);
+  const ITEM = `.wt-item[data-path="${LOGIN}"]`;
+  const shapes: [string, string, string][] = [
+    ["a ::before strip down this window's row", `.wt-row.is-current{position:relative}.wt-row.is-current::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:2px;background:var(--gs-accent)}`, ITEM],
+    ["an inset bar on the row whose menu is open", `.wt-row.has-menu{box-shadow:inset 2px 0 0 var(--gs-accent)}`, ".wt-row.has-menu"],
+    ["a side border on an open row's details", `.wt-item.open > .wt-details{border-left:1px solid var(--gs-accent)}`, ITEM],
+    ["an underline under this window's name", `.wt-row.is-current .wt-name{text-decoration:underline}`, ITEM],
+    ["a hard-stop stripe", `.wt-row.has-menu{background-image:linear-gradient(90deg,var(--gs-accent) 0 2px,transparent 2px)}`, ".wt-row.has-menu"],
+    ["a thin child as a bar", `.wt-row.is-current .wt-chevron{flex:0 0 3px;width:3px;overflow:hidden;background:var(--gs-accent)}`, ITEM],
+    ["an outline round an open row", `.wt-item.open{outline:1px solid var(--gs-accent)}`, ITEM],
+    ["an ::after rule under an open row", `.wt-item.open > .wt-row{position:relative}.wt-item.open > .wt-row::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--gs-accent)}`, ITEM],
+    ["a top rule by shadow", `.wt-item.open > .wt-row{box-shadow:0 -1px 0 var(--gs-accent)}`, ITEM],
+  ];
+  for (const target of new Set(shapes.map(([, , t]) => t))) assert.deepEqual((await linesAt(page, target)).lines, [], `${target}: nothing drawn before a shape is added`);
+  for (const [what, css, target] of shapes) {
+    await page.eval(`(function () { var st = document.createElement("style"); st.id = "shape"; st.textContent = ${JSON.stringify(css)}; document.head.appendChild(st); })()`);
+    const got = await linesAt(page, target);
+    await page.eval(`document.getElementById("shape").remove()`);
+    assert.ok(got.lines.length > 0, `the probe misses ${what}`);
   }
 });
 
@@ -601,6 +716,24 @@ test("More lists only what can run now, in words — nothing disabled, no reason
   ]);
   await page.clickOn(`.wt-row[data-path="${AGENT}"] .wt-more`);
   assert.equal(await page.eval<string>(`document.activeElement.textContent`), "Open in This Window");
+  // Each item's icon is its own: two that look alike (a folder over a folder
+  // once meant Open in This Window and Reveal) would say nothing the words don't.
+  const icons = await page.eval<string[][]>(`Array.prototype.map.call(document.querySelectorAll(".wt-menu-item"), function (b) {
+    var i = b.querySelector(".codicon");
+    return [b.textContent, i ? (i.className.match(/codicon-([a-z-]+)/) || [])[1] : ""];
+  })`);
+  assert.deepEqual(icons, [
+    ["Open in This Window", "window"],
+    ["Open in New Window", "empty-window"],
+    ["Reveal in Finder", "folder"],
+    ["Open in Terminal", "terminal"],
+    ["Copy Path", "copy"],
+    ["Push…", "repo-push"],
+    ["Unlock", "unlock"],
+    ["Remove Worktree…", "trash"],
+  ]);
+  assert.equal(new Set(icons.map(([, i]) => i)).size, icons.length, "no icon twice");
+  assert.ok(icons.filter(([, i]) => /folder/.test(i)).length <= 1, "one folder at most");
   await page.key("Escape");
   assert.equal(await page.eval<string>(`document.activeElement.dataset.path`), AGENT);
   assert.equal(await page.eval<number>(`document.querySelectorAll(".wt-menu").length`), 0);
@@ -678,10 +811,15 @@ test("Unlock paints at once — the lock goes before the host answers — and co
   assert.equal(await page.eval<boolean>(`document.querySelector('.wt-item[data-path="${locked.path}"]') === window.__heldRow`), true, "patched in place, not rebuilt");
 });
 
-test("a running action: the row says what it is doing and takes no second one; then it goes, and the keyboard moves on", { skip }, async () => {
+test("a running action: the row says what it is doing — hovered too — and takes no second one; then it goes, and the keyboard moves on", { skip }, async () => {
   const page = await open();
-  await page.eval(`document.querySelector('.wt-row[data-path="/code/app-checkout"]').focus()`);
+  const menus = () => page.eval<number>(`document.querySelectorAll(".wt-menu").length`);
+  // Its menu open when the action starts: the menu goes, the row keeps the keyboard.
+  await page.clickOn(`.wt-row[data-path="/code/app-checkout"] .wt-more`);
+  assert.equal(await menus(), 1);
   await page.send({ type: "busy", path: "/code/app-checkout", busy: true, label: "Removing…" });
+  assert.equal(await menus(), 0, "a menu on a row that turns busy closes");
+  assert.equal(await page.eval<string>(`document.activeElement.dataset.path`), "/code/app-checkout", "the row has the keyboard back");
   const busy = await page.eval<{ text: string; disabled: boolean[]; ariaBusy: string | null }>(`(function () {
     var l = document.querySelector('.wt-row[data-path="/code/app-checkout"]');
     return { text: l.querySelector(".wt-state").textContent, disabled: Array.prototype.map.call(l.querySelectorAll("button"), function (b) { return b.disabled; }), ariaBusy: l.getAttribute("aria-busy") };
@@ -689,6 +827,22 @@ test("a running action: the row says what it is doing and takes no second one; t
   assert.equal(busy.text, "Removing…");
   assert.deepEqual(busy.disabled, [true, true]);
   assert.equal(busy.ariaBusy, "true");
+  // Hovered, it still says what it is doing: no faded buttons over its words.
+  const at = await page.eval<{ x: number; y: number }>(`(function () { var b = document.querySelector('.wt-row[data-path="/code/app-checkout"]').getBoundingClientRect(); return { x: b.left + 40, y: b.top + b.height / 2 }; })()`);
+  await page.mouseMove(at.x, at.y);
+  const hovered = await page.eval<{ state: string; buttons: number }>(`(function () {
+    ${COLOUR}
+    var l = document.querySelector('.wt-row[data-path="/code/app-checkout"]');
+    var st = l.querySelector(".wt-state");
+    return { state: seen(st) ? st.textContent : "", buttons: Array.prototype.filter.call(l.querySelectorAll("button"), seen).length };
+  })()`);
+  assert.deepEqual(hovered, { state: "Removing…", buttons: 0 }, "hovered, a busy row says what it is doing");
+  // Nor does its menu open: not by a right-click, not from the keyboard.
+  await page.clickOn(`.wt-row[data-path="/code/app-checkout"] .wt-name`, "right");
+  assert.equal(await menus(), 0, "no menu by right-click on a busy row");
+  await page.eval(`document.querySelector('.wt-row[data-path="/code/app-checkout"]').focus()`);
+  await page.key("F10", { with: ["shift"] });
+  assert.equal(await menus(), 0, "no menu by Shift+F10 on a busy row");
   await page.clearPosted();
   await page.key("Delete");
   assert.deepEqual(await asked(page), [], "no second action while one runs");
@@ -853,7 +1007,7 @@ test("Prune N: a quiet link under the list, only when git would prune something 
     })()`);
   assert.deepEqual(await prune(), {
     hidden: false,
-    text: "Prune 2 stale",
+    text: "Prune 2 missing worktrees…",
     tip: "Forget the 2 worktrees git can prune: their folders are gone, or aren't worktrees any more",
     last: true,
     border: "0px",
@@ -865,7 +1019,7 @@ test("Prune N: a quiet link under the list, only when git would prune something 
   assert.deepEqual(await asked(page), [{ type: "prune" }]);
   await page.send({ type: "rows", rows: fixtureRows().filter((r) => r.path !== UNLINKED), state: "ok", labels: LABELS });
   const one = await prune();
-  assert.deepEqual([one.hidden, one.text, one.tip], [false, "Prune 1 missing", "Forget the worktree whose folder is gone"]);
+  assert.deepEqual([one.hidden, one.text, one.tip], [false, "Prune 1 missing worktree…", "Forget the worktree whose folder is gone"]);
   await page.send({ type: "rows", rows: fixtureRows().filter((r) => r.path !== "/code/app-old" && r.path !== UNLINKED), state: "ok", labels: LABELS });
   assert.equal((await prune()).hidden, true, "only a locked one is missing: git keeps it");
 });
@@ -917,14 +1071,17 @@ test("a narrow sidebar: the state is never cut, the name gives way only once the
         var state = row.querySelector(".wt-state");
         var right = row.getBoundingClientRect().right;
         if (seen(head) && head.clientWidth + 0.5 < lead(head, 4)) out.push(id + ": its branch shows " + head.clientWidth + "px — under 4 letters");
-        if (seen(head) && cut(name)) out.push(id + ": its name is cut while its branch shows");
-        if (name.clientWidth + 0.5 < lead(name, 3)) out.push(id + ": its name is cut under 3 letters");
+        var clipped = name.textContent !== id;
+        if (seen(head) && (cut(name) || clipped)) out.push(id + ": its name is cut while its branch shows");
+        if (textOver(name)) out.push(id + ": its name is cut at its end (" + name.textContent + ")");
+        if (name.textContent.replace("…", "").length < Math.min(4, id.length)) out.push(id + ": its name shows under 4 letters (" + name.textContent + ")");
         if (state.textContent && seen(state) && cut(state)) out.push(id + ": its state is cut");
         if (state.textContent && !seen(state) && seen(head)) out.push(id + ": its state went while its branch shows");
         if (state.textContent && state.getBoundingClientRect().right > right + 0.5) out.push(id + ": its state runs past the edge");
         if (row.scrollWidth > row.clientWidth + 1) out.push(id + ": the row runs past the edge");
         var tip = row.dataset.tip;
         if (head && !seen(head) && tip.indexOf(head.textContent) < 0) out.push(id + ": its branch is hidden and not in its tooltip");
+        if (clipped && tip.split("\\n")[0] !== id) out.push(id + ": its name is clipped and its tooltip does not lead with it");
       });
       return out;
     })()`);
@@ -938,9 +1095,9 @@ test("a narrow sidebar: the state is never cut, the name gives way only once the
       assert.ok(gone > 0, "at its narrowest some branches go whole");
     }
     if (width === 220) {
-      // Routine counts give way to eight letters of the name; what needs attention keeps its place.
-      const shown = await page.eval<Record<string, boolean>>(`(function () { var o = {}; document.querySelectorAll(".wt-row").forEach(function (l) { var s = l.querySelector(".wt-state"); if (s.textContent) o[s.textContent] = s.getClientRects().length > 0; }); return o; })()`);
-      assert.deepEqual([shown["merge in progress"], shown["cherry-pick stopped"], shown["folder missing"], shown["not a worktree"]], [true, true, true, true], JSON.stringify(shown));
+      // Routine counts give way to eight letters of the name; what needs attention keeps its place — in its one word, if that is what fits.
+      const shown = await page.eval<Record<string, string>>(`(function () { var o = {}; document.querySelectorAll(".wt-row").forEach(function (l) { var s = l.querySelector(".wt-state"); if (s.dataset.tone === "attention") o[l.dataset.path.split("/").pop()] = s.getClientRects().length > 0 ? s.textContent : ""; }); return o; })()`);
+      for (const id of ["app-merge", "app-cherry", "app-old", "app-usb", "agent-7f3e"]) assert.ok(shown[id], `${id}'s state shows at 220px: ${JSON.stringify(shown)}`);
     }
   }
   // At a sidebar's usual width every state is there; wide enough, every branch too.
@@ -951,6 +1108,53 @@ test("a narrow sidebar: the state is never cut, the name gives way only once the
   await page.settle(80);
   const hidden = await page.eval<number>(`Array.prototype.filter.call(document.querySelectorAll(".wt-head, .wt-state"), function (h) { return h.textContent && h.getClientRects().length === 0; }).length`);
   assert.equal(hidden, 0, "nothing hidden when there is room");
+});
+
+test("a narrow sidebar never makes two rows read alike: a name keeps its end, and a state that needs attention says one word before the name gives way", { skip }, async () => {
+  const page = await WorktreesPage.open("dark", { width: 300, height: 900 });
+  opened.push(page);
+  const read = () =>
+    page.eval<{ full: string; shown: string; cut: boolean; state: string; tip: string }[]>(`(function () {
+      ${COLOUR}
+      return Array.prototype.map.call(document.querySelectorAll(".wt-row"), function (l) {
+        var n = l.querySelector(".wt-name"), st = l.querySelector(".wt-state");
+        return { full: l.dataset.path.split("/").pop(), shown: n.textContent, cut: textOver(n), state: seen(st) ? st.textContent : "", tip: l.dataset.tip };
+      });
+    })()`);
+  const sets: [string, WorktreeRow[]][] = [
+    ["this repository's agents", agentRows()],
+    ["the fixtures", fixtureRows()],
+  ];
+  for (const [what, rows] of sets) {
+    await page.send({ type: "rows", rows, state: "ok", labels: LABELS });
+    for (const width of [180, 200, 220, 240, 260, 300]) {
+      await page.page.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
+      await page.settle(80);
+      const got = await read();
+      for (const n of got) {
+        assert.equal(n.cut, false, `${what} at ${width}px: ${n.full} is cut at its end ("${n.shown}")`);
+        if (n.shown === n.full) continue;
+        // Clipped in the middle: its start and its END, each two letters or more.
+        const [a, b] = n.shown.split("…");
+        assert.ok(b !== undefined && a.length >= 2 && b.length >= 2 && n.full.startsWith(a) && n.full.endsWith(b), `${what} at ${width}px: ${n.full} reads "${n.shown}"`);
+        assert.equal(n.tip.split("\n")[0], n.full, `${what} at ${width}px: the tooltip names ${n.full} whole`);
+      }
+      const shown = got.map((n) => n.shown);
+      assert.equal(new Set(shown).size, shown.length, `${what} at ${width}px: two rows read alike — ${shown.join(" | ")}`);
+    }
+  }
+  // At 260px this repository's stopped rebase reads whole, in one word: the tooltip says the rest.
+  await page.send({ type: "rows", rows: agentRows(), state: "ok", labels: LABELS });
+  await page.page.send("Emulation.setDeviceMetricsOverride", { width: 260, height: 900, deviceScaleFactor: 1, mobile: false });
+  await page.settle(80);
+  const stopped = (await read()).find((n) => n.full === "wf_4b651e91-cc2-3")!;
+  assert.deepEqual([stopped.shown, stopped.state], ["wf_4b651e91-cc2-3", "rebasing"]);
+  assert.match(stopped.tip, /A rebase is stopped in it/);
+  // With room, the whole words.
+  await page.page.send("Emulation.setDeviceMetricsOverride", { width: 400, height: 900, deviceScaleFactor: 1, mobile: false });
+  await page.settle(80);
+  assert.equal((await read()).find((n) => n.full === "wf_4b651e91-cc2-3")!.state, "rebase stopped");
+  assert.deepEqual(page.errors(), []);
 });
 
 test("the page tells the host which rows are in view — and again as they scroll into it", { skip }, async () => {

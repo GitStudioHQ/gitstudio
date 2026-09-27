@@ -228,6 +228,12 @@ export class WorktreesView {
         const s = this.rows.get(msg.path);
         if (!s) return;
         s.busy = msg.busy ? (msg.label ?? "Working…") : undefined;
+        if (s.busy && this.menuFor === s) {
+          // Its menu offers nothing while it runs: gone, the keyboard back on the row.
+          const had = !!this.menu?.contains(document.activeElement);
+          this.closeMenu();
+          if (had) s.line.focus();
+        }
         this.paintRow(s, true);
         return;
       }
@@ -308,11 +314,12 @@ export class WorktreesView {
     this.filter.placeholder = `Filter ${n} worktrees`;
     this.top.hidden = this.filterBox.hidden;
     const prunable = prunableCount(rows);
-    // "missing" while every one of them is a folder that is gone; "stale"
-    // once one is a folder still there that isn't a worktree any more.
+    // In whole words, as the view's title menu ("Prune Missing Worktrees…")
+    // and the question it asks say it. Its tooltip says which kind: folders
+    // that are gone, or folders that aren't worktrees any more.
     const allGone = rows.every((r) => !r.unlinked || r.locked);
     this.foot.hidden = prunable === 0;
-    this.pruneBtn.textContent = `Prune ${prunable} ${allGone ? "missing" : "stale"}`;
+    this.pruneBtn.textContent = `Prune ${prunable} missing worktree${prunable === 1 ? "" : "s"}…`;
     this.pruneBtn.dataset.tip = allGone
       ? `Forget the ${prunable === 1 ? "worktree" : `${prunable} worktrees`} whose folder is gone`
       : `Forget the ${prunable === 1 ? "worktree" : `${prunable} worktrees`} git can prune: ${prunable === 1 ? "its folder is gone, or isn't a worktree any more" : "their folders are gone, or aren't worktrees any more"}`;
@@ -469,6 +476,7 @@ export class WorktreesView {
       state.textContent = st.text;
       state.dataset.state = st.id;
       state.dataset.tone = st.tone;
+      if (st.short) state.dataset.short = st.short;
     }
     const actions = el("span", "wt-actions");
     if (caps.openNew.ok) {
@@ -506,15 +514,16 @@ export class WorktreesView {
   }
 
   /**
-   * Fit a row to its width, never cutting a word to a stray letter. The
-   * folder's name comes first: the branch gives way before it does — to an
-   * ellipsis after at least four letters, then whole — and only with the
-   * branch gone does the name shrink. The state is never cut: in a sidebar
-   * too narrow for it and eight letters of the name, a routine one ("3
-   * changed") goes whole — its fact is in the tooltip — while one that needs
-   * attention ("merge in progress", "folder missing") or says what the row
-   * is doing ("Removing…") keeps its place down to the name's last three
-   * letters. The tooltip names whatever the row cannot show whole.
+   * Fit a row to its width without making two rows read alike. The folder's
+   * name comes first: the branch gives way before it does — to an ellipsis
+   * after at least four letters, then whole. A state that needs attention
+   * ("merge in progress", "folder missing") says its one word ("merging",
+   * "missing") before the name gives way; a routine one ("3 changed") goes
+   * whole below eight letters of the name — its fact is in the tooltip. What
+   * the row is doing ("Removing…") keeps its place. Only then does the name
+   * give way, in its MIDDLE ("wf_4b…cc2-3"): worktrees' names share their
+   * start (agent-…, wf_4b651e91-cc2-…), and their end is what tells them
+   * apart. The tooltip names whatever the row cannot show whole.
    */
   private fitRow(s: RowState): void {
     const line = s.line;
@@ -523,20 +532,31 @@ export class WorktreesView {
     const head = line.querySelector<HTMLElement>(".wt-head");
     const state = line.querySelector<HTMLElement>(".wt-state");
     const over = (n: HTMLElement | null) => !!n && n.clientWidth > 0 && n.scrollWidth > n.clientWidth + 1;
-    if (state) state.hidden = false;
+    // The name to the fraction of a pixel: an overflow of 0.4px is below
+    // scrollWidth's whole pixels, and still draws the ellipsis that cuts a letter.
+    const nameOver = () => !!name && name.clientWidth > 0 && textOver(name);
+    const rowOver = () => line.scrollWidth > line.clientWidth + 1;
+    if (name) name.textContent = s.row.name;
+    if (state) {
+      state.hidden = false;
+      if (state.dataset.short) state.textContent = worktreeState(s.row)?.text ?? state.textContent;
+    }
     if (head) {
       head.hidden = false;
-      if (line.clientWidth > 0 && (over(name) || line.scrollWidth > line.clientWidth + 1)) head.hidden = true;
+      if (line.clientWidth > 0 && (nameOver() || rowOver())) head.hidden = true;
     }
     if (state?.textContent && name && line.clientWidth > 0) {
+      if (state.dataset.short && (nameOver() || rowOver())) state.textContent = state.dataset.short;
       const urgent = state.dataset.tone === "attention" || state.classList.contains("wt-busy");
-      const squeezed = line.scrollWidth > line.clientWidth + 1 || (!urgent && name.clientWidth + 0.5 < leadWidth(name, 8));
+      // Room for the name's start and end ("wf…-3") beside a state that must
+      // stay; eight letters of it beside one that can go.
+      const squeezed = rowOver() || name.clientWidth + 0.5 < leadWidth(name, urgent ? 5 : 8);
       if (squeezed) state.hidden = true;
     }
+    const clipped = !!name && nameOver() && clipMiddle(name, s.row.name);
     const tip = worktreeTip(s.row);
     const cut = head && (head.hidden || over(head));
-    const nameCut = over(name);
-    line.dataset.tip = [nameCut ? s.row.name : "", cut ? headWords(s.row) : "", tip].filter(Boolean).join("\n");
+    line.dataset.tip = [clipped ? s.row.name : "", cut ? headWords(s.row) : "", tip].filter(Boolean).join("\n");
   }
 
   /** The list's width changed: every row is fitted again. */
@@ -665,6 +685,8 @@ export class WorktreesView {
    * by the same capabilities, so a stale page can't ask for more.
    */
   private openMenu(s: RowState, anchor: HTMLElement): void {
+    // A row running an action takes no second one — its menu included.
+    if (s.busy) return;
     this.closeMenu();
     this.hideTip();
     const r = s.row;
@@ -676,7 +698,8 @@ export class WorktreesView {
     type Item = [WorktreeAction, string, string, Gate | boolean, boolean?];
     const groups: Item[][] = [
       [
-        ["openHere", "folder-opened", "Open in This Window", r.kind === "bare" ? false : caps.openHere],
+        // A window, not a folder: Reveal's folder is two items down.
+        ["openHere", "window", "Open in This Window", r.kind === "bare" ? false : caps.openHere],
         ["openNew", "empty-window", "Open in New Window", r.kind === "bare" ? false : caps.openNew],
         ["reveal", "folder", this.labels.reveal, caps.reveal],
         ["terminal", "terminal", "Open in Terminal", caps.terminal],
@@ -927,6 +950,39 @@ export class WorktreesView {
     this.tip.style.left = `${Math.round(left)}px`;
     this.tip.style.top = `${Math.round(top)}px`;
   }
+}
+
+/** Its text runs past its box — by any fraction of a pixel (text-overflow
+ *  draws its ellipsis for that too). A range's width is the whole text's,
+ *  drawn or not. */
+function textOver(el: HTMLElement): boolean {
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  return r.getBoundingClientRect().width > el.getBoundingClientRect().width + 0.01;
+}
+
+/**
+ * Clip an element's text in its middle to the width it has — its start, "…",
+ * its end, two letters or more each side — and say whether it did. Its box
+ * shrinks with its text (a flex item's basis is its content), so "fits" is
+ * the element's own verdict: nothing past its edge.
+ */
+function clipMiddle(el: HTMLElement, full: string): boolean {
+  const fits = () => !textOver(el);
+  const at = (k: number) => `${full.slice(0, Math.ceil(k / 2))}…${full.slice(full.length - Math.floor(k / 2))}`;
+  let lo = 4;
+  let hi = full.length - 1;
+  if (hi < lo) return false;
+  el.textContent = at(lo);
+  if (!fits()) return true; // as few letters as tell it apart; the row's end gives way before this
+  while (lo < hi) {
+    const k = Math.ceil((lo + hi) / 2);
+    el.textContent = at(k);
+    if (fits()) lo = k;
+    else hi = k - 1;
+  }
+  el.textContent = at(lo);
+  return true;
 }
 
 /** How wide the first `n` letters of an element's text are drawn (all of it, if shorter). */

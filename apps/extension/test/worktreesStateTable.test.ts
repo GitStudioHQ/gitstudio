@@ -343,7 +343,7 @@ test("every cell of the table: what each row names and offers, from real git", a
   assert.equal(worktreeCaps(row("gone")).pull.ok, false);
 
   // No upstream, with remotes: what no remote has — the push review's count.
-  assert.deepEqual(words(row("local")), ["3 not pushed"]);
+  assert.deepEqual(words(row("local")), ["3 unpublished"]);
   assert.equal(Number(at(s.wt("local"))("rev-list", "--count", "HEAD", "--not", "--remotes")), 3);
   assert.deepEqual(words(row("fresh")), ["No upstream"]);
   assert.equal(worktreeCaps(row("fresh")).push.ok, true, "Push publishes it");
@@ -355,7 +355,7 @@ test("every cell of the table: what each row names and offers, from real git", a
   assert.equal(row("dirty").status?.untracked, 1);
 
   // Operation.
-  assert.deepEqual(words(row("merging")), ["Merge in progress · 1 conflict", "1 changed", "1 not pushed"]);
+  assert.deepEqual(words(row("merging")), ["Merge in progress · 1 conflict", "1 changed", "1 unpublished"]);
   assert.deepEqual(worktreeCaps(row("merging")).pull, { ok: false, why: "A merge is in progress in it — continue or abort it first." });
   assert.equal(worktreeCaps(row("merging")).push.ok, false);
   assert.equal(row("rebasing").branch, undefined, "git lists a rebase detached");
@@ -397,7 +397,7 @@ test("every cell of the table: what each row names and offers, from real git", a
       behind: "1 to pull",
       diverged: "diverged",
       gone: "upstream gone",
-      local: "3 not pushed",
+      local: "3 unpublished",
       fresh: "",
       dirty: "4 changed",
       merging: "merge in progress",
@@ -573,7 +573,7 @@ test("a bare repository's entry: a row with no facts and no state, that does not
   assert.equal(orderWorktreeRows(rows)[0].path, bare, "shown first, as the repository it is");
   // A bare clone keeps its remote but no remote-tracking refs: by the push
   // review's rule, main's commit is on no remote this repository knows of.
-  assert.deepEqual(words(find(rows, join(base, "main-wt"))), ["This window", "1 not pushed"]);
+  assert.deepEqual(words(find(rows, join(base, "main-wt"))), ["This window", "1 unpublished"]);
 });
 
 test("the window's worktree is the one it has open — a linked one, or one opened through a symlink — and exactly one", async () => {
