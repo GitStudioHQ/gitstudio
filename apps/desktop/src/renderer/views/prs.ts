@@ -76,6 +76,14 @@ import {
   unreadableNotice,
 } from "./common";
 import { wireProseNav } from "../proseNav";
+import {
+  PR_ACTIONS,
+  PR_STATES,
+  PR_TABS,
+  REVIEW_VERDICTS as SHARED_REVIEW_VERDICTS,
+  desktopPrKind,
+  rollupCi,
+} from "@gitstudio/engine/forge/pullRequests";
 import { openPeek } from "../peek";
 import { memberCard } from "./orgs";
 import type {
@@ -263,28 +271,19 @@ function watchDiffDetach(S: PrsTabState, surface: HTMLElement, panel: DiffPanel)
 }
 
 /** One state for a set of check runs: any failure wins, then anything still
- *  running, then success. The same precedence GitHub's merge box uses. */
+ *  running, then success — the rule the extension's list and page use too
+ *  (@gitstudio/engine/forge/pullRequests). */
 function rollupChecks(
   rows: ReadonlyArray<{ status?: string | null; conclusion?: string | null }>,
 ): "success" | "failure" | "pending" | "" {
-  if (!rows.length) return "";
-  const failed = new Set(["failure", "timed_out", "action_required", "startup_failure", "cancelled"]);
-  if (rows.some((r) => failed.has(r.conclusion ?? ""))) return "failure";
-  if (rows.some((r) => !r.conclusion || /queued|in_progress|waiting|pending|requested/.test(r.status ?? ""))) {
-    return "pending";
-  }
-  return "success";
+  const state = rollupCi(rows, []).state;
+  return state === "none" ? "" : state;
 }
 
-/** The PR's display state: merged beats closed beats draft beats open. */
-function prKind(pr: PullRequest): "open-pr" | "draft" | "merged" | "closed" {
-  if (pr.mergedAt) return "merged";
-  if (pr.state === "closed") return "closed";
-  if (pr.draft) return "draft";
-  return "open-pr";
-}
+/** The PR's display state: merged beats closed beats draft beats open (the shared rule, in this stylesheet's names). */
+const prKind = (pr: PullRequest): "open-pr" | "draft" | "merged" | "closed" => desktopPrKind(pr);
 function prKindLabel(kind: ReturnType<typeof prKind>): string {
-  return kind === "open-pr" ? "Open" : kind === "draft" ? "Draft" : kind === "merged" ? "Merged" : "Closed";
+  return PR_STATES[kind === "open-pr" ? "open" : kind].word;
 }
 
 export const renderPrs: SectionRender = (wrap, nav, target) => {
@@ -616,7 +615,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
           // Only offer to open one where opening one is the natural next step.
           action:
             S.prState === "open" || S.prState === "all"
-              ? { label: "New pull request", icon: "git-pull-request", onClick: () => void openCreatePr(refresh) }
+              ? { label: PR_ACTIONS.newPullRequest.label, icon: PR_ACTIONS.newPullRequest.icon, onClick: () => void openCreatePr(refresh) }
               : undefined,
         }),
       );
@@ -868,7 +867,8 @@ function buildDetail(ctx: DetailCtx): void {
   actions.push(aiBtn);
 
   const checkoutBtn = el("button", "mini-btn");
-  checkoutBtn.append(glyph("git-branch"), span("Checkout"));
+  // One vocabulary with the extension: the shared words and glyphs.
+  checkoutBtn.append(glyph(PR_ACTIONS.checkout.icon), span(PR_ACTIONS.checkout.label));
   checkoutBtn.title = `Fetch and check out this PR as pr/${full.number}`;
   checkoutBtn.addEventListener("click", () => void doCheckout(full.number, checkoutBtn));
   actions.push(checkoutBtn);
@@ -879,7 +879,7 @@ function buildDetail(ctx: DetailCtx): void {
   // now open the review modal with APPROVE preselected, which is also where the
   // review body the modal exists for finally gets used.
   const approveBtn = el("button", "mini-btn");
-  approveBtn.append(glyph("check"), span("Approve"));
+  approveBtn.append(glyph(PR_ACTIONS.approve.icon), span(PR_ACTIONS.approve.label));
   approveBtn.title = "Approve this pull request — opens the review composer";
   approveBtn.addEventListener("click", () => void doReview(full.number, "APPROVE", approveBtn, reload));
 
@@ -887,8 +887,8 @@ function buildDetail(ctx: DetailCtx): void {
   const paintReview = (): void => {
     const q = pendingFor(full.number).length;
     reviewBtn.replaceChildren(
-      glyph("comment"),
-      span(q > 0 ? `Review (${q} pending)` : "Review"),
+      glyph(PR_ACTIONS.review.icon),
+      span(q > 0 ? `${PR_ACTIONS.review.label} (${q} pending)` : PR_ACTIONS.review.label),
       glyph("chevron-down"),
     );
     reviewBtn.classList.toggle("has-pending", q > 0);
@@ -910,13 +910,13 @@ function buildDetail(ctx: DetailCtx): void {
   // The primary slot: Merge for an open PR, Mark ready for a draft.
   if (kind === "draft") {
     const readyBtn = el("button", "btn btn-primary");
-    readyBtn.append(glyph("eye"), span("Mark ready"));
+    readyBtn.append(glyph(PR_ACTIONS.markReady.icon), span(PR_ACTIONS.markReady.label));
     readyBtn.title = "Convert this draft to ready for review";
     readyBtn.addEventListener("click", () => void doMarkReady(full.number, readyBtn, reload));
     actions.push(readyBtn);
   } else if (kind === "open-pr") {
     const mergeBtn = el("button", "btn btn-primary gh-merge-btn");
-    mergeBtn.append(glyph("git-merge"), span("Merge"), glyph("chevron-down"));
+    mergeBtn.append(glyph(PR_ACTIONS.merge.icon), span(PR_ACTIONS.merge.label), glyph("chevron-down"));
     mergeBtn.title = "Merge this pull request";
     mergeBtn.addEventListener("click", () =>
       openMenu(mergeBtn, [
@@ -929,24 +929,24 @@ function buildDetail(ctx: DetailCtx): void {
   }
 
   const moreBtn = el("button", "mini-btn gh-icon-btn");
-  moreBtn.append(glyph("ellipsis"));
-  moreBtn.title = "More actions";
+  moreBtn.append(glyph(PR_ACTIONS.more.icon));
+  moreBtn.title = PR_ACTIONS.more.label;
   moreBtn.addEventListener("click", () =>
     openMenu(moreBtn, [
       { label: "Edit title & description", icon: "pencil", onClick: () => nav("predit", { number: full.number }) },
-      { label: "Update branch", icon: "git-merge", onClick: () => void doUpdateBranch(full.number, reload) },
+      { label: PR_ACTIONS.updateBranch.label, icon: PR_ACTIONS.updateBranch.icon, onClick: () => void doUpdateBranch(full.number, reload) },
       { separator: true },
       full.state === "open"
-        ? { label: "Close pull request", icon: "git-pull-request-closed", onClick: () => void doSetState(full.number, "closed", reload) }
-        : { label: "Reopen pull request", icon: "git-pull-request", onClick: () => void doSetState(full.number, "open", reload) },
+        ? { label: PR_ACTIONS.close.label, icon: PR_ACTIONS.close.icon, onClick: () => void doSetState(full.number, "closed", reload) }
+        : { label: PR_ACTIONS.reopen.label, icon: PR_ACTIONS.reopen.icon, onClick: () => void doSetState(full.number, "open", reload) },
       { separator: true },
-      { label: "Copy link", icon: "copy", onClick: () => void copyText(full.htmlUrl, "Copied PR link.") },
+      { label: PR_ACTIONS.copyLink.label, icon: PR_ACTIONS.copyLink.icon, onClick: () => void copyText(full.htmlUrl, "Copied PR link.") },
     ]),
   );
   actions.push(moreBtn);
 
   const openBtn = el("button", "mini-btn gh-icon-btn");
-  openBtn.append(glyph("link-external"));
+  openBtn.append(glyph(PR_ACTIONS.openOnGitHub.icon));
   openBtn.title = "Open this pull request on GitHub";
   openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => window.open(full.htmlUrl, "_blank"));
@@ -993,13 +993,13 @@ function buildDetail(ctx: DetailCtx): void {
   // ── sub-tabs ──
   const content = el("div", "gh-subcontent");
   const subDefs = [
-    { id: "conversation", label: "Conversation", icon: "comment-discussion" },
-    { id: "commits", label: `Commits${typeof full.commits === "number" ? ` (${full.commits})` : ""}`, icon: "git-commit" },
-    { id: "checks", label: "Checks", icon: "play" },
+    { id: "conversation", label: PR_TABS.conversation.label, icon: PR_TABS.conversation.icon },
+    { id: "commits", label: `${PR_TABS.commits.label}${typeof full.commits === "number" ? ` (${full.commits})` : ""}`, icon: PR_TABS.commits.icon },
+    { id: "checks", label: PR_TABS.checks.label, icon: PR_TABS.checks.icon },
     // The tab's count is the PR's OWN total, not the length of the page we
     // happened to fetch. GitHub caps the files response, so the two disagreed
     // on the same screen: the rail read 412 and this tab read 300.
-    { id: "files", label: `Files (${full.changedFiles ?? d.files.length})`, icon: "code" },
+    { id: "files", label: `${PR_TABS.files.label} (${full.changedFiles ?? d.files.length})`, icon: PR_TABS.files.icon },
   ];
   content.id = "gs-pr-subpanel";
   const tabs = subTabs({
@@ -2136,11 +2136,8 @@ async function doReview(
   }
 }
 
-const REVIEW_VERDICTS: ReadonlyArray<{ event: PrReviewEvent; label: string; icon: string; hint: string }> = [
-  { event: "COMMENT", label: "Comment", icon: "comment", hint: "Feedback without an explicit approval" },
-  { event: "APPROVE", label: "Approve", icon: "check", hint: "The change is good to merge" },
-  { event: "REQUEST_CHANGES", label: "Request changes", icon: "request-changes", hint: "Must be addressed before merging" },
-];
+/** The verdicts a review is submitted with — one table, shared with the extension. */
+const REVIEW_VERDICTS: ReadonlyArray<{ event: PrReviewEvent; label: string; icon: string; hint: string }> = SHARED_REVIEW_VERDICTS;
 
 function reviewModal(
   n: number,

@@ -17,7 +17,7 @@ import {
   type CiRollup,
   type CiState,
   type ReviewPayload,
-} from "./prModel";
+} from "@gitstudio/engine/forge/pullRequests";
 
 const API_BASE = "https://api.github.com";
 const GRAPHQL = `${API_BASE}/graphql`;
@@ -39,6 +39,11 @@ export interface PullRequest {
   base: PrRef;
   labels: PrLabel[];
   requestedReviewers: GitHubUser[];
+  /**
+   * A fork's author lets the base repository's maintainers push to its
+   * branch. (False for a same-repository branch, where it doesn't apply.)
+   */
+  maintainerCanModify?: boolean;
   /** Total additions/deletions/changed files, present on the detail response. */
   additions?: number;
   deletions?: number;
@@ -112,6 +117,14 @@ export interface CreatePrInput {
 }
 
 export type MergeMethod = "merge" | "squash" | "rebase";
+
+/** A comment GitHub took: what the page needs to draw it as posted. */
+export interface PostedComment {
+  id: string;
+  url: string;
+  createdAt: string;
+  author: GitHubUser | null;
+}
 
 /** A normalised API failure with a human-friendly message. */
 export class GitHubApiError extends Error {
@@ -254,6 +267,21 @@ export class GitHubApi {
       next = nextPageUrl(res.headers.get("link"));
     }
     return { items, truncated: next !== undefined };
+  }
+
+  /**
+   * One GraphQL request, answered as GitHub sent it — `data` and `errors`
+   * both — for the shared readers (@gitstudio/engine/forge/prList) that
+   * decide for themselves what a partial answer means. An HTTP or network
+   * failure throws a GitHubApiError, in this client's words.
+   */
+  async graphqlRaw(
+    query: string,
+    variables: Record<string, unknown>,
+    init?: { signal?: AbortSignal },
+  ): Promise<{ data?: unknown; errors?: { type?: string; message?: string; path?: (string | number)[] }[] }> {
+    const res = await this.fetchRes("POST", GRAPHQL, { query, variables }, init);
+    return (await res.json()) as { data?: unknown; errors?: { type?: string; message?: string }[] };
   }
 
   /** One GraphQL query. Errors with no data at all throw; partial data is kept. */
@@ -535,13 +563,14 @@ export class GitHubApi {
     repo: string,
     number: number,
     payload: ReviewPayload,
-  ): Promise<void> {
-    await this.request(
+  ): Promise<{ id: string; url: string; submittedAt: string } | undefined> {
+    const raw = await this.request<{ node_id?: string; id?: number; html_url?: string; submitted_at?: string } | undefined>(
       "POST",
       `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/reviews`,
       payload,
       { interactiveAuth: true },
     );
+    return raw ? { id: raw.node_id ?? String(raw.id ?? ""), url: raw.html_url ?? "", submittedAt: raw.submitted_at ?? new Date().toISOString() } : undefined;
   }
 
   /** `POST /repos/{owner}/{repo}/pulls` — create a PR; returns the new PR. */
@@ -559,19 +588,104 @@ export class GitHubApi {
     return mapPull(raw);
   }
 
-  /** `PUT /repos/{owner}/{repo}/pulls/{n}/merge`. */
+  /**
+   * `PUT /repos/{owner}/{repo}/pulls/{n}/merge`. `sha` is the head the page
+   * showed: GitHub refuses the merge (409) if the branch has moved on since,
+   * rather than merging commits nobody on this page saw.
+   */
   async mergePull(
     owner: string,
     repo: string,
     number: number,
     method: MergeMethod,
+    opts: { title?: string; sha?: string } = {},
   ): Promise<void> {
     await this.request(
       "PUT",
       `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/merge`,
-      { merge_method: method },
+      {
+        merge_method: method,
+        ...(opts.title ? { commit_title: opts.title } : {}),
+        ...(opts.sha ? { sha: opts.sha } : {}),
+      },
       { interactiveAuth: true },
     );
+  }
+
+  /** `PATCH /repos/{owner}/{repo}/pulls/{n}` — close it, or reopen it. */
+  async setPullState(owner: string, repo: string, number: number, state: "open" | "closed"): Promise<void> {
+    await this.request("PATCH", `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}`, { state }, { interactiveAuth: true });
+  }
+
+  /** `DELETE /repos/{owner}/{repo}/git/refs/heads/{branch}` — a merged branch, on GitHub. */
+  async deleteBranch(owner: string, repo: string, branch: string): Promise<void> {
+    const ref = branch.split("/").map(enc).join("/");
+    await this.request("DELETE", `/repos/${enc(owner)}/${enc(repo)}/git/refs/heads/${ref}`, undefined, { interactiveAuth: true });
+  }
+
+  /**
+   * `PUT /repos/{owner}/{repo}/pulls/{n}/update-branch` — GitHub merges the
+   * base into the head. `expectedHead` makes it refuse a head that moved.
+   */
+  async updateBranch(owner: string, repo: string, number: number, expectedHead: string): Promise<void> {
+    await this.request(
+      "PUT",
+      `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/update-branch`,
+      { expected_head_sha: expectedHead },
+      { interactiveAuth: true },
+    );
+  }
+
+  /** `POST /repos/{owner}/{repo}/issues/{n}/comments` — a comment in the conversation. */
+  async addComment(owner: string, repo: string, number: number, body: string): Promise<PostedComment> {
+    const raw = await this.request<RawComment>(
+      "POST",
+      `/repos/${enc(owner)}/${enc(repo)}/issues/${number}/comments`,
+      { body },
+      { interactiveAuth: true },
+    );
+    return {
+      id: raw?.node_id ?? String(raw?.id ?? ""),
+      url: raw?.html_url ?? "",
+      createdAt: raw?.created_at ?? new Date().toISOString(),
+      author: mapUser(raw?.user ?? null) ?? null,
+    };
+  }
+
+  /**
+   * A commit's changed files and its first parent — the two sides of its
+   * diff. GitHub lists at most 300 files of one commit here.
+   */
+  async commitFiles(owner: string, repo: string, sha: string): Promise<{ parent?: string; files: PrFile[]; truncated: boolean }> {
+    const raw = await this.request<{ parents?: { sha?: string }[]; files?: RawFile[] }>(
+      "GET",
+      `/repos/${enc(owner)}/${enc(repo)}/commits/${enc(sha)}`,
+    );
+    const files = (raw?.files ?? []).map(mapFile);
+    return { ...(raw?.parents?.[0]?.sha ? { parent: raw.parents[0].sha } : {}), files, truncated: files.length >= 300 };
+  }
+
+  /**
+   * The files of `base...head` with their patches: a pull request's diff at a
+   * head it has since moved past (a review written on older code). GitHub
+   * lists at most 300 files of a comparison.
+   */
+  async compareFiles(owner: string, repo: string, base: string, head: string): Promise<PrFile[]> {
+    const raw = await this.request<{ files?: RawFile[] }>(
+      "GET",
+      `/repos/${enc(owner)}/${enc(repo)}/compare/${enc(base)}...${enc(head)}?per_page=1`,
+    );
+    return (raw?.files ?? []).map(mapFile);
+  }
+
+  /** `POST /repos/{owner}/{repo}/issues/{n}/labels` — add labels (a pull request is an issue here). */
+  async addLabels(owner: string, repo: string, number: number, labels: string[]): Promise<void> {
+    await this.request("POST", `/repos/${enc(owner)}/${enc(repo)}/issues/${number}/labels`, { labels }, { interactiveAuth: true });
+  }
+
+  /** `POST /repos/{owner}/{repo}/issues/{n}/assignees`. */
+  async addAssignees(owner: string, repo: string, number: number, assignees: string[]): Promise<void> {
+    await this.request("POST", `/repos/${enc(owner)}/${enc(repo)}/issues/${number}/assignees`, { assignees }, { interactiveAuth: true });
   }
 
   /** `POST /repos/{owner}/{repo}/pulls/{n}/requested_reviewers`. */
@@ -728,9 +842,18 @@ interface RawPull {
   base: RawRef;
   labels?: { name: string; color: string }[];
   requested_reviewers?: RawUser[];
+  maintainer_can_modify?: boolean;
   additions?: number;
   deletions?: number;
   changed_files?: number;
+}
+
+interface RawComment {
+  id?: number;
+  node_id?: string;
+  html_url?: string;
+  created_at?: string;
+  user?: RawUser | null;
 }
 
 interface RawFile {
@@ -810,6 +933,7 @@ function mapPull(p: RawPull): PullRequest {
     requestedReviewers: (p.requested_reviewers ?? [])
       .map(mapUser)
       .filter((u): u is GitHubUser => u !== undefined),
+    maintainerCanModify: p.maintainer_can_modify === true,
     additions: p.additions,
     deletions: p.deletions,
     changedFiles: p.changed_files,

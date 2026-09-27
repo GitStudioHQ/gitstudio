@@ -134,6 +134,7 @@
         {
           "id": "gitstudio.pullRequests",
           "name": "Pull Requests",
+          "type": "webview",
           "initialSize": 1,
           "visibility": "collapsed"
         }
@@ -147,13 +148,6 @@
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "gitstudio.pullRequests",
-        "when": "gitstudio.hasRepo && !gitstudio.github.connected",
-        "contents": "Connect GitHub to review pull requests.\nSign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests without leaving the editor.\n[Sign in to GitHub](command:gitstudio.pr.signIn)"
-      }
-    ],
     "customEditors": [
       {
         "viewType": "gitstudio.mergeEditor",
@@ -686,9 +680,9 @@
       },
       {
         "command": "gitstudio.pr.create",
-        "title": "Create Pull Request",
+        "title": "New Pull Request",
         "category": "GitStudio",
-        "icon": "$(git-pull-request-create)"
+        "icon": "$(git-pull-request)"
       },
       {
         "command": "gitstudio.pr.refresh",
@@ -704,7 +698,7 @@
       },
       {
         "command": "gitstudio.pr.openDescription",
-        "title": "Open Pull Request Description",
+        "title": "Open Pull Request",
         "category": "GitStudio",
         "icon": "$(git-pull-request)"
       },
@@ -712,11 +706,11 @@
         "command": "gitstudio.pr.checkout",
         "title": "Checkout Pull Request",
         "category": "GitStudio",
-        "icon": "$(arrow-down)"
+        "icon": "$(git-branch)"
       },
       {
         "command": "gitstudio.pr.startReview",
-        "title": "Start Review",
+        "title": "Review Pull Request",
         "category": "GitStudio",
         "icon": "$(comment-discussion)"
       },
@@ -728,9 +722,27 @@
       },
       {
         "command": "gitstudio.pr.cancelReview",
-        "title": "Cancel Review",
+        "title": "Discard Pending Review",
         "category": "GitStudio",
-        "icon": "$(close)"
+        "icon": "$(trash)"
+      },
+      {
+        "command": "gitstudio.pr.replyThread",
+        "title": "Reply",
+        "category": "GitStudio",
+        "icon": "$(reply)"
+      },
+      {
+        "command": "gitstudio.pr.resolveThread",
+        "title": "Resolve Conversation",
+        "category": "GitStudio",
+        "icon": "$(check)"
+      },
+      {
+        "command": "gitstudio.pr.unresolveThread",
+        "title": "Unresolve Conversation",
+        "category": "GitStudio",
+        "icon": "$(issue-reopened)"
       },
       {
         "command": "gitstudio.pr.addReviewComment",
@@ -752,7 +764,7 @@
       },
       {
         "command": "gitstudio.pr.merge",
-        "title": "Merge Pull Request",
+        "title": "Merge Pull Request…",
         "category": "GitStudio",
         "icon": "$(git-merge)"
       },
@@ -764,7 +776,7 @@
       },
       {
         "command": "gitstudio.pr.copyUrl",
-        "title": "Copy Pull Request URL",
+        "title": "Copy Pull Request Link",
         "category": "GitStudio",
         "icon": "$(copy)"
       },
@@ -2096,6 +2108,18 @@
           "when": "false"
         },
         {
+          "command": "gitstudio.pr.replyThread",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.pr.resolveThread",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.pr.unresolveThread",
+          "when": "false"
+        },
+        {
           "command": "gitstudio.blame.field.revision.on",
           "when": "false"
         },
@@ -2248,64 +2272,37 @@
           "when": "gitstudio.hasRepo"
         }
       ],
-      "view/item/context": [
-        {
-          "command": "gitstudio.pr.checkout",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.pr.openOnGitHub",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "inline@2"
-        },
-        {
-          "command": "gitstudio.pr.checkout",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "1_pr@1"
-        },
-        {
-          "command": "gitstudio.pr.openDescription",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "1_pr@2"
-        },
-        {
-          "command": "gitstudio.pr.startReview",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "1_pr@3"
-        },
-        {
-          "command": "gitstudio.pr.merge",
-          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
-          "group": "1_pr@4"
-        },
-        {
-          "command": "gitstudio.pr.openOnGitHub",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "2_pr@1"
-        },
-        {
-          "command": "gitstudio.pr.copyUrl",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "2_pr@2"
-        }
-      ],
       "comments/commentThread/context": [
         {
           "command": "gitstudio.pr.addReviewComment",
-          "when": "commentController == gitstudio.prReview && gitstudio.pr.reviewing",
+          "when": "commentController == gitstudio.prReview && commentThread != gitstudio.prThread.open && commentThread != gitstudio.prThread.resolved",
           "group": "inline@1"
         },
         {
           "command": "gitstudio.pr.addSingleComment",
-          "when": "commentController == gitstudio.prReview && gitstudio.pr.reviewing",
+          "when": "commentController == gitstudio.prReview && commentThread != gitstudio.prThread.open && commentThread != gitstudio.prThread.resolved",
           "group": "inline@2"
+        },
+        {
+          "command": "gitstudio.pr.replyThread",
+          "when": "commentController == gitstudio.prReview && commentThread =~ /^gitstudio\\.prThread\\./",
+          "group": "inline@1"
         }
       ],
       "comments/commentThread/title": [
         {
           "command": "gitstudio.pr.submitReview",
-          "when": "commentController == gitstudio.prReview && gitstudio.pr.reviewing",
+          "when": "commentController == gitstudio.prReview && commentThread == gitstudio.prPendingThread",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitstudio.pr.resolveThread",
+          "when": "commentController == gitstudio.prReview && commentThread == gitstudio.prThread.open",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitstudio.pr.unresolveThread",
+          "when": "commentController == gitstudio.prReview && commentThread == gitstudio.prThread.resolved",
           "group": "navigation@1"
         }
       ],

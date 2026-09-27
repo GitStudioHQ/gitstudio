@@ -40,6 +40,7 @@ const { GitContext } = require("@gitstudio/git-service/GitContext") as typeof im
 const { checkoutPullRequest } = require("../src/pr/checkoutPr") as typeof import("../src/pr/checkoutPr");
 /* eslint-enable @typescript-eslint/no-require-imports */
 import type { DialogSpec } from "../src/ui/dialogs";
+import { configuredRemotes } from "./prGitWorld";
 
 const cfg = join(mkdtempSync(join(tmpdir(), "gs-ext-elsewhere-cfg-")), "config");
 writeFileSync(cfg, "");
@@ -169,18 +170,27 @@ test("a branch no worktree has is checked out and deleted as before", async () =
   assert.deepEqual(said("warning"), []);
 });
 
-test("Checkout of a pull request whose pr/<n> branch another worktree has: says where, fetches nothing", async () => {
+test("Checkout of a pull request whose branch another worktree has: says where, fetches nothing", async () => {
   const s = scene();
-  // origin carries the PR's head, and pr/7 is checked out in a linked worktree.
+  // acme/app (a bare repository, reached by its github.com URL) carries the
+  // PR's branch `topic`; a linked worktree has `topic` checked out, tracking it.
   const remote = join(s.app, "..", "origin.git");
   execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
-  s.git("push", "-q", remote, "HEAD:refs/heads/main", "HEAD:refs/pull/7/head");
-  s.git("remote", "set-url", "origin", remote);
-  const prTree = join(s.app, "..", "wt", "pr-7");
-  s.git("worktree", "add", "-q", "-b", "pr/7", prTree);
-  const before = s.git("rev-parse", "refs/heads/pr/7");
-  // checkoutPullRequest takes the pull request's repository context (its
-  // entry and remote) and a pull request with its head and base.
+  s.git("config", `url.${remote}.insteadOf`, "https://github.com/acme/app.git");
+  s.git("remote", "set-url", "origin", "https://github.com/acme/app.git");
+  configuredRemotes(s.ctx, s.app);
+  s.git("push", "-q", "origin", "HEAD:refs/heads/main", "HEAD:refs/heads/topic");
+  s.git("fetch", "-q", "origin");
+  const prTree = join(s.app, "..", "wt", "topic");
+  s.git("worktree", "add", "-q", "--track", "-b", "topic", prTree, "origin/topic");
+  const before = s.git("rev-parse", "refs/heads/topic");
+  const tracked = s.git("rev-parse", "refs/remotes/origin/topic");
+  // The contributor pushes again: a fetch would move origin/topic.
+  s.git("commit", "-q", "--allow-empty", "-m", "more");
+  // (to the repository by its path: a push by the remote's name would move origin/topic itself)
+  s.git("push", "-q", remote, "HEAD:refs/heads/topic");
+  s.git("reset", "-q", "--hard", "HEAD~1");
+  rmSync(join(s.git("rev-parse", "--absolute-git-dir"), "FETCH_HEAD"), { force: true }); // the setup's own fetch
   const repoContext = { owner: "acme", repo: "app", remoteName: "origin", entry: { ctx: s.ctx, root: s.app } };
   const pr = {
     number: 7,
@@ -188,13 +198,15 @@ test("Checkout of a pull request whose pr/<n> branch another worktree has: says 
     base: { ref: "main", repoFullName: "acme/app" },
   };
   await checkoutPullRequest(repoContext as never, pr as never);
-  assert.deepEqual(said("error"), [], "never git's 'refusing to fetch into branch'");
+  assert.deepEqual(said("error"), [], "never git's 'already used by worktree'");
   const w = said("warning").join("\n");
-  assert.match(w, /'pr\/7' is checked out in the worktree at /);
-  assert.ok(w.includes(`at ${realpathSync.native(prTree)},`), w);
-  assert.equal(s.git("rev-parse", "refs/heads/pr/7"), before);
+  assert.match(w, /'topic' is checked out in the worktree at /);
+  // Where, in the disk's own spelling (git's), with the system's separators.
+  assert.ok(w.includes(`at ${realpathSync.native(prTree)}`), w);
+  assert.equal(s.git("rev-parse", "refs/heads/topic"), before);
   assert.equal(s.git("symbolic-ref", "HEAD"), "refs/heads/main");
   // Said BEFORE the fetch: nothing went to the network for a checkout that
   // cannot happen here.
+  assert.equal(s.git("rev-parse", "refs/remotes/origin/topic"), tracked, "nothing was fetched");
   assert.equal(existsSync(join(s.git("rev-parse", "--absolute-git-dir"), "FETCH_HEAD")), false, "nothing was fetched");
 });

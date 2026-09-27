@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { renderMarkdown, sanitizeHtml } from "../src/renderer/markdown";
+import { renderMarkdown, sanitizeHtml } from "../src/markdown";
 
 // renderMarkdown output goes straight into innerHTML for READMEs, issue/PR
 // bodies, release notes, gists and AI chat — i.e. fully untrusted input from any

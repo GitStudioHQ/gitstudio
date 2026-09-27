@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitProcess } from "../src/GitProcess";
-import { fetchPrHead, movePrBranch, planPrHead } from "../src/prCheckout";
+import { fetchPrHead, fetchRefTip, movePrBranch, planPrHead } from "../src/prCheckout";
 import { removeTempRepo } from "./tmpRepo";
 
 // Checking out a pull request as pr/<n>, against real git: a bare "GitHub"
@@ -122,5 +122,18 @@ test("plan: checked out in another worktree → elsewhere, named", async () => {
   const plan = await planPrHead(w.proc, 7, tip2);
   assert.equal(plan.kind, "elsewhere");
   assert.match(String(plan.worktree), /other-wt$/);
+  w.proc.dispose();
+});
+
+test("a branch's tip, fetched by remote name or by URL, without writing anything — and only a ref, never an option", async () => {
+  const w = world();
+  const main = w.git("rev-parse", "refs/heads/main");
+  assert.deepEqual(await fetchRefTip(w.proc, "origin", "refs/heads/main"), { sha: main });
+  assert.deepEqual(await fetchRefTip(w.proc, w.hub, "refs/heads/main"), { sha: main }, "a URL (the parent a fork has no remote for)");
+  const missing = await fetchRefTip(w.proc, "origin", "refs/heads/nope");
+  assert.ok("error" in missing, JSON.stringify(missing));
+  assert.ok("error" in (await fetchRefTip(w.proc, "origin", "--upload-pack=x")), "an option-like ref never reaches git");
+  assert.ok("error" in (await fetchRefTip(w.proc, "origin", "refs/heads/../x")));
+  assert.ok("error" in (await fetchRefTip(w.proc, "-x", "refs/heads/main")));
   w.proc.dispose();
 });

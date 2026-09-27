@@ -1,0 +1,526 @@
+/* A new pull request's form (pr/prCreate.ts): the branches it goes between,
+ * the title and description, Draft, the reviewers, assignees and labels, and
+ * the commits and files it will have — with the pickers that choose them.
+ *
+ * It is drawn in the pull request page's language: this file brings in
+ * pr-page.css (its tokens, buttons, fields, rail, notices and menu) and adds
+ * only what is the form's own, every rule scoped under .prc or .prc-layer.
+ * Designed for Dark+, Light+ and both High Contrast themes.
+ *
+ * NB: never write a star-slash pair inside a comment here: a selector glob
+ * closes the comment early and silently eats the next rule. */
+
+@import "./pr-page.css";
+
+.prc-page {
+  max-width: 1120px;
+}
+
+/* ── The header: where it opens, and between which branches ──────────── */
+.prc-crumb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--gs-radius-sm);
+  background: transparent;
+  color: var(--prp-fg-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.prc-crumb-btn:hover {
+  background: var(--prp-hover);
+  color: var(--gs-fg);
+}
+/* Refresh sits at the title's end, on its first line. */
+.prc-refresh {
+  flex: none;
+  margin-top: 1px;
+}
+.prc-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 10px;
+}
+.prc-flow-word {
+  color: var(--prp-fg-2);
+  font-size: 12.5px;
+}
+.prc-flow-arrow {
+  display: inline-flex;
+  color: var(--prp-fg-2);
+}
+.prc-flow-arrow .codicon {
+  font-size: 14px;
+}
+.prc-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: min(360px, 100%);
+  height: 26px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius-sm);
+  background: var(--prp-surface-2);
+  color: var(--gs-fg);
+  font-family: var(--gs-font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.prc-branch .codicon {
+  flex: none;
+  font-size: 13px;
+  color: var(--prp-fg-2);
+}
+.prc-branch:hover:not(:disabled),
+.prc-branch[aria-expanded="true"] {
+  border-color: var(--prp-focus);
+}
+.prc-branch.is-empty {
+  color: var(--prp-fg-2);
+  font-family: var(--gs-font-ui);
+  font-style: italic;
+}
+.prc-branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prc-branch .prc-branch-chevron {
+  font-size: 12px;
+}
+.prc-flow-sum {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--prp-fg-2);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.prc-existing {
+  margin-top: 14px;
+}
+
+/* ── The form beside its rail ─────────────────────────────────────────── */
+.prc-grid {
+  display: grid;
+  grid-template-areas: "main" "side" "foot";
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  margin-top: 16px;
+}
+.prc-grid > .prc-main { grid-area: main; }
+.prc-grid > .prc-side { grid-area: side; }
+.prc-grid > .prc-foot { grid-area: foot; }
+@container prp (min-width: 780px) {
+  .prc-grid {
+    grid-template-areas: "main side" "foot side";
+    grid-template-columns: minmax(0, 1fr) 232px;
+    grid-template-rows: auto 1fr;
+    column-gap: 28px;
+    row-gap: 0;
+  }
+}
+.prc-main {
+  min-width: 0;
+}
+.prc-main > .prp-field:first-child {
+  margin-top: 0;
+}
+.prc .prc-title {
+  height: 32px;
+  font-size: 14px;
+}
+.prc .prp-input.is-invalid {
+  border-color: var(--prp-closed);
+}
+.prc-field-problem {
+  color: var(--prp-fg-2);
+  font-size: 12px;
+}
+.prc-body-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+.prc-tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.prc-tool .codicon {
+  font-size: 13px;
+  color: var(--prp-fg-2);
+}
+.prc-tool:disabled {
+  opacity: 0.55;
+}
+.prc .prc-body {
+  min-height: 220px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.prc-draft-row {
+  align-items: flex-start;
+  margin-top: 12px;
+}
+.prc-draft-row .prp-check-input {
+  margin-top: 2px;
+}
+.prc-draft-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+.prc-foot {
+  align-self: start;
+  padding-top: 12px;
+  border-top: 1px solid var(--prp-line-soft);
+}
+@container prp (min-width: 780px) {
+  .prc-foot {
+    margin-top: 14px;
+  }
+}
+.prc-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0 0 8px;
+  color: var(--prp-fg-2);
+  font-size: 12.5px;
+}
+.prc-note .codicon {
+  margin-top: 2px;
+  font-size: 14px;
+}
+.prc-note-text {
+  min-width: 0;
+}
+/* "Push to another remote": a link in the sentence, its chevron saying it opens a list. */
+.prc-push-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+.prc-note .prc-push-chevron {
+  margin-top: 0;
+  font-size: 12px;
+}
+.prc-problem .codicon {
+  color: var(--prp-pending);
+}
+.prc-buttons {
+  margin-top: 4px;
+}
+.prc-keys {
+  margin-left: 6px;
+}
+
+/* The rail: reviewers, assignees, labels. */
+.prc-side {
+  gap: 12px;
+}
+.prc-side-section {
+  padding-bottom: 12px;
+}
+.prc-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.prc-side-head .prp-rail-title {
+  margin: 0;
+}
+.prc-side-edit {
+  width: 24px;
+  height: 24px;
+}
+.prc-side-edit:disabled {
+  opacity: 0.45;
+}
+.prc-remove {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+}
+.prp-person:hover .prc-remove,
+.prc-remove:focus-visible {
+  opacity: 1;
+}
+.prc-self {
+  margin-top: 4px;
+  font-size: 12.5px;
+}
+.prc-label {
+  gap: 2px;
+  padding-right: 2px;
+}
+.prc-label-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--prp-fg-2);
+  cursor: pointer;
+}
+.prc-label-x .codicon {
+  font-size: 11px;
+}
+.prc-label-x:hover {
+  background: color-mix(in srgb, var(--gs-fg) 14%, transparent);
+  color: var(--gs-fg);
+}
+.prc-side-note {
+  margin: 0;
+}
+
+/* ── What it will have ────────────────────────────────────────────────── */
+.prc-preview {
+  display: grid;
+  gap: 18px;
+  margin-top: 26px;
+}
+.prc-stale {
+  margin: 0;
+}
+.prc-block-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.prc-block-title > .codicon {
+  color: var(--prp-fg-2);
+}
+.prc-block-stat {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 2px;
+  font-weight: 400;
+}
+.prc-commits,
+.prc-files {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius);
+  list-style: none;
+  overflow: hidden;
+}
+.prc-commit {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 10px;
+  min-height: 32px;
+  padding: 4px 12px;
+}
+.prc-commit + .prc-commit,
+.prc-file-item + .prc-file-item {
+  border-top: 1px solid var(--prp-line-soft);
+}
+.prc-commit-glyph {
+  color: var(--prp-fg-2);
+}
+.prc-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prc-commit-meta {
+  color: var(--prp-fg-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.prc-sha {
+  color: var(--prp-fg-2);
+  font-family: var(--gs-font-mono);
+  font-size: 11.5px;
+}
+.prc-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 3px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--gs-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.prc-file:hover {
+  background: var(--prp-hover);
+}
+.vscode-high-contrast .prc-file:hover {
+  outline: 1px dashed var(--vscode-contrastActiveBorder, #f38518);
+  outline-offset: -1px;
+}
+.prc-file:focus-visible {
+  outline: 1px solid var(--prp-focus);
+  outline-offset: -1px;
+}
+.prc-file-name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prc-file-dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--prp-fg-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prc-file-counts {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+}
+.prc-empty {
+  margin: 8px 0 0;
+  text-align: left;
+}
+.prc-rows-sk {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--prp-line-soft);
+  border-radius: var(--gs-radius);
+}
+.prc-sk-row {
+  width: 72%;
+}
+.prc-sk-row:nth-child(2) {
+  width: 54%;
+}
+.prc-sk-row:nth-child(3) {
+  width: 63%;
+}
+
+@container prp (max-width: 560px) {
+  .prc-commit {
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+  }
+  .prc-commit-meta {
+    display: none;
+  }
+  .prc-keys {
+    display: none;
+  }
+}
+
+/* ── Pickers ──────────────────────────────────────────────────────────── */
+.prc-layer .prc-picker {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  overflow: hidden;
+}
+.prc-picker-title {
+  padding: 4px 8px 6px;
+  color: var(--prp-fg-2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.prc-picker-filter {
+  flex: none;
+  width: 100%;
+  height: 26px;
+  margin: 0 0 4px;
+  padding: 0 8px;
+  border: 1px solid var(--prp-input-line);
+  border-radius: var(--gs-radius-sm);
+  background: var(--prp-input-bg);
+  color: var(--prp-input-fg);
+  font: inherit;
+  font-size: 12.5px;
+}
+.prc-picker-filter::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--prp-muted));
+}
+.prc-picker-filter:focus {
+  outline: 1px solid var(--prp-focus);
+  outline-offset: -1px;
+  border-color: var(--prp-focus);
+}
+.prc-picker-items {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.prc-layer .prc-picker-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, auto) minmax(0, 1fr) 16px;
+  align-items: center;
+  column-gap: 8px;
+}
+.prc-picker-lead {
+  display: inline-flex;
+  justify-content: center;
+}
+.prc-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prc-picker-detail {
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground, var(--prp-fg-2));
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prc-layer .prc-picker-item:hover .prc-picker-detail,
+.prc-layer .prc-picker-item:focus-visible .prc-picker-detail {
+  color: inherit;
+  opacity: 0.85;
+}
+.prc-picker-check {
+  display: inline-flex;
+  justify-content: center;
+}
+.prc-picker-empty,
+.prc-picker-foot {
+  padding: 8px 10px;
+  color: var(--prp-fg-2);
+  font-size: 12px;
+}
+.prc-picker-foot {
+  border-top: 1px solid var(--vscode-menu-separatorBackground, var(--prp-line-soft));
+}
+.prc-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid color-mix(in srgb, var(--prp-label, var(--prp-muted)) 70%, #000000);
+  border-radius: 50%;
+  background: var(--prp-label, var(--prp-muted));
+}

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { HAS_ISSUE_REF, parseIssueRef, splitIssueRefs } from "../src/shared/issueRefs";
+import { HAS_ISSUE_REF, parseIssueRef, splitIssueRefs } from "../src/forge/issueRefs";
 
 // What a reference in prose is allowed to be. The linkifier turns each match
 // into a door, so a false positive is a link to nothing and a miss is a

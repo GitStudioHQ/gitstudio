@@ -69,9 +69,7 @@ export function prBranchName(n: number): string {
 
 /**
  * Fetch the PR's head (`refs/pull/<n>/head`, which exists for forks too) from
- * `remote` without writing any branch, and return the commit it names. The
- * commit is read from FETCH_HEAD's line for exactly that ref, so a fetch
- * running beside this one cannot hand us its answer.
+ * `remote` without writing any branch, and return the commit it names.
  */
 export async function fetchPrHead(
   proc: PrGitRunner,
@@ -80,11 +78,29 @@ export async function fetchPrHead(
   opts?: { signal?: AbortSignal },
 ): Promise<{ sha: string } | { error: string }> {
   prBranchName(n);
+  return fetchRefTip(proc, remote, `refs/pull/${n}/head`, opts);
+}
+
+/**
+ * Fetch one ref (`refs/heads/main`, `refs/pull/7/head`) from `remote` — a
+ * remote's name or a URL — without writing any branch, and return the commit
+ * it names. The commit is read from FETCH_HEAD's line for exactly that ref,
+ * so a fetch running beside this one cannot hand us its answer. Neither
+ * argument can read as an option.
+ */
+export async function fetchRefTip(
+  proc: PrGitRunner,
+  remote: string,
+  ref: string,
+  opts?: { signal?: AbortSignal },
+): Promise<{ sha: string } | { error: string }> {
   if (!remote || remote.startsWith("-")) {
     return { error: `"${remote}" isn't a remote name.` };
   }
-  const refspec = `refs/pull/${n}/head`;
-  const f = await proc.run(["fetch", "--no-tags", "--", remote, refspec], opts);
+  if (!/^refs\/[A-Za-z0-9._/-]+$/.test(ref) || ref.includes("..") || ref.includes("//")) {
+    return { error: `"${ref}" isn't a ref git can fetch.` };
+  }
+  const f = await proc.run(["fetch", "--no-tags", "--", remote, ref], opts);
   if (f.code !== 0) {
     return { error: firstLine(f.stderr) || `git fetch exited with ${f.code}` };
   }
@@ -101,11 +117,19 @@ export async function fetchPrHead(
   }
   for (const line of text.split("\n")) {
     const m = /^([0-9a-f]{40,64})\t[^\t]*\t'([^']+)'/.exec(line);
-    if (m && m[2] === refspec) {
+    if (m && m[2] === ref) {
       return { sha: m[1] };
     }
   }
-  return { error: "Couldn't find the pull request's head in what was fetched." };
+  // A branch is written `branch 'main' of <url>`, not by its full name.
+  const short = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : undefined;
+  if (short) {
+    for (const line of text.split("\n")) {
+      const m = /^([0-9a-f]{40,64})\t[^\t]*\tbranch '([^']+)' of /.exec(line);
+      if (m && m[2] === short) return { sha: m[1] };
+    }
+  }
+  return { error: ref.startsWith("refs/pull/") ? "Couldn't find the pull request's head in what was fetched." : `Couldn't find ${ref} in what was fetched.` };
 }
 
 /** What checking out `pr/<n>` at `sha` means for the branch that is there. */

@@ -148,8 +148,11 @@ const pr = {
   contexts: {},
   said: [],
   views: [],
+  webviewViews: [],
   panels: [],
   controllers: [],
+  statusBars: [],
+  shown: [],
   providers: new Map(),
   opened: [],
   clipboard: undefined,
@@ -162,6 +165,8 @@ const pr = {
     this.executed.length = 0;
     this.said.length = 0;
     this.opened.length = 0;
+    this.shown.length = 0;
+    this.statusBars.length = 0;
     this.answer = () => undefined;
   },
 };
@@ -231,6 +236,8 @@ const window = {
       viewType,
       title,
       options,
+      visible: true,
+      reveals: 0,
       htmlWrites: 0,
       posted: [],
       webview: {
@@ -252,7 +259,14 @@ const window = {
       },
       /** A message from the page, as the webview would deliver it. */
       receive: (m) => received.fire(m),
-      reveal() {},
+      /** The last state the page was sent. */
+      state() {
+        const s = [...this.posted].reverse().find((m) => m && m.type === "state");
+        return s ? s.state : undefined;
+      },
+      reveal() {
+        panel.reveals++;
+      },
       onDidDispose: disposed.event,
       dispose() {
         disposed.fire();
@@ -261,7 +275,84 @@ const window = {
     pr.panels.push(panel);
     return panel;
   },
-  createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
+  /**
+   * A sidebar webview view, resolved at once and in sight — as VS Code does
+   * when the view is open. `receive(m)` is a message from the page;
+   * `posted` is everything the host sent it, `state()` the last state.
+   */
+  registerWebviewViewProvider: (id, provider) => {
+    const received = new EventEmitter();
+    const visibility = new EventEmitter();
+    const disposed = new EventEmitter();
+    const view = {
+      id,
+      provider,
+      title: undefined,
+      description: undefined,
+      visible: true,
+      posted: [],
+      htmlWrites: 0,
+      webview: {
+        cspSource: "vscode-webview:",
+        options: undefined,
+        _html: "",
+        get html() {
+          return this._html;
+        },
+        set html(v) {
+          this._html = v;
+          view.htmlWrites++;
+        },
+        asWebviewUri: (u) => u,
+        onDidReceiveMessage: received.event,
+        postMessage: (m) => {
+          view.posted.push(JSON.parse(JSON.stringify(m)));
+          return Promise.resolve(true);
+        },
+      },
+      onDidChangeVisibility: visibility.event,
+      onDidDispose: disposed.event,
+      receive: (m) => received.fire(m),
+      setVisible(v) {
+        this.visible = v;
+        visibility.fire();
+      },
+      state() {
+        const s = [...this.posted].reverse().find((m) => m.type === "state");
+        return s ? s.state : undefined;
+      },
+      dispose() {
+        disposed.fire();
+      },
+    };
+    pr.webviewViews.push(view);
+    provider.resolveWebviewView(view, {}, new CancellationTokenSource().token);
+    return new Disposable();
+  },
+  state: { focused: true },
+  createStatusBarItem: () => {
+    const item = {
+      text: "",
+      tooltip: undefined,
+      command: undefined,
+      shown: false,
+      show() {
+        this.shown = true;
+      },
+      hide() {
+        this.shown = false;
+      },
+      dispose() {
+        this.shown = false;
+      },
+    };
+    pr.statusBars.push(item);
+    return item;
+  },
+  showTextDocument: async (uri, options) => {
+    pr.shown.push({ uri, options });
+    return {};
+  },
   activeTextEditor: undefined,
   onDidChangeActiveTextEditor: new EventEmitter().event,
 };
@@ -305,7 +396,12 @@ const api = {
         id,
         label,
         commentingRangeProvider: undefined,
-        createCommentThread: (uri, range, comments) => makeThread(uri, range, comments),
+        threads: [],
+        createCommentThread(uri, range, comments) {
+          const t = makeThread(uri, range, comments);
+          this.threads.push(t);
+          return t;
+        },
         dispose() {},
       };
       pr.controllers.push(controller);
