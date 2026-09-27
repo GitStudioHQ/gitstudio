@@ -296,6 +296,33 @@ test("a list closed while its checks are still paging asks GitHub for nothing mo
   assert.equal(gh.count(/^POST \/graphql$/), 1, "the request in flight is the last one");
 });
 
+test("a list closed while its own pages are still loading asks GitHub for nothing more", async () => {
+  // 250 open PRs: three of GitHub's pages, read one after another.
+  const all = Array.from({ length: 250 }, (_, i) => rawPull(1000 - i));
+  const path = "/repos/acme/app/pulls?state=open&sort=updated&direction=desc&per_page=100";
+  const gh = github([
+    [
+      "GET",
+      /^\/repos\/acme\/app\/pulls\?state=open/,
+      (req) => {
+        const page = Number(/[?&]page=(\d+)/.exec(req.path)?.[1] ?? 1);
+        return { body: all.slice((page - 1) * 100, page * 100), headers: linkHeader(path, page, 3) };
+      },
+    ],
+    ...acmeRoutes(),
+  ]);
+  const slow = gh.hold(/^\/repos\/acme\/app\/pulls\?state=open/);
+  const m = mount(fakeRepos(ORIGIN));
+  const drawn = m.tree.getChildren(); // the view asks for its rows; the first page goes out
+  await until(() => slow.held() === 1, "the first of the three pages");
+  m.dispose(); // the window closes, the extension with it
+  slow.release();
+  await drawn.catch(() => undefined);
+  await sleep(150);
+  assert.equal(gh.count(/^GET \/repos\/acme\/app\/pulls\?state=open/), 1, "the page in flight is the last one");
+  assert.equal(gh.count(/^POST \/graphql$/), 0, "and no rows' checks are asked for");
+});
+
 test("a list in sight is read again once it is stale — and nothing is asked while it is hidden", async () => {
   const gh = github(acmeRoutes());
   const auth = new GitHubAuth();

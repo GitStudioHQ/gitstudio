@@ -577,9 +577,11 @@ export class PullRequestsTreeProvider
   private async load(ctx: GitHubRepoContext): Promise<LoadedData> {
     // The pulls list and the current login are independent — fetch them together
     // rather than one after the other (saves a full GitHub round-trip on first
-    // paint). The login is asked once per sign-in.
+    // paint). The login is asked once per sign-in. The list follows GitHub's
+    // pages one after another (up to ten), and stops with the view: closed
+    // mid-read, it went on paging for rows nobody would see.
     const [pulls, me] = await Promise.all([
-      this.api.listOpenPulls(ctx.owner, ctx.repo),
+      this.api.listOpenPulls(ctx.owner, ctx.repo, { signal: this.stopped.signal }),
       this.login !== undefined ? Promise.resolve(undefined) : this.api.currentLogin(),
     ]);
     if (me?.login) {

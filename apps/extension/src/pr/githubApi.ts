@@ -230,7 +230,8 @@ export class GitHubApi {
   /**
    * GET a list, following `Link: rel="next"` up to `maxPages` pages. `key`
    * names the array in an object-bodied answer (`{ check_runs: [...] }`); an
-   * array body is read as is.
+   * array body is read as is. `signal` stops it between pages too, whatever
+   * the fetch underneath does with an aborted one.
    */
   private async requestPaged<T>(
     path: string,
@@ -241,6 +242,7 @@ export class GitHubApi {
     let next: string | undefined = `${API_BASE}${path}`;
     let pages = 0;
     while (next && pages < maxPages) {
+      init?.signal?.throwIfAborted();
       const res = await this.fetchRes("GET", next, undefined, init);
       pages++;
       const text = await res.text();
