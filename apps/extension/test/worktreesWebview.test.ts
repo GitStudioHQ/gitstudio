@@ -677,6 +677,57 @@ test("badges that don't fit become '+N more' naming them — never a word cut at
   assert.equal(await page.eval<number>(`document.querySelectorAll(".wt-badge--more").length`), 0);
 });
 
+test("a narrow sidebar never shows a symbol without its words: a branch keeps a few letters or goes whole, icon and all; a folder never shrinks to a stray letter", { skip }, async () => {
+  // Agents' worktrees: long folder names AND long branches, nested deep —
+  // the rows that squeezed the branch to a lone ⑂ and the path to "g".
+  const long = [
+    row({ path: "/code/app/.claude/worktrees/agent-a2c9ae276dde4d3da", name: "agent-a2c9ae276dde4d3da", relPath: "app/.claude/worktrees/agent-a2c9ae276dde4d3da", branch: "worktree-agent-a2c9ae276dde4d3da", upstream: undefined, status: { changed: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0, unpublished: 2 } }),
+    row({ path: "/code/app/.claude/worktrees/agent-a6ca5aacb06de1cf0", name: "agent-a6ca5aacb06de1cf0", relPath: "app/.claude/worktrees/agent-a6ca5aacb06de1cf0", branch: "ci/desktop-portability", upstream: "origin/ci/desktop-portability", ahead: 3, behind: 1, status: { changed: 7, staged: 2, unstaged: 5, untracked: 0, conflicted: 0 } }),
+    row({ path: "/code/app/.claude/worktrees/wf_4b651e91-cc2-2", name: "wf_4b651e91-cc2-2", relPath: "app/.claude/worktrees/wf_4b651e91-cc2-2", branch: "feat/worktrees-webview", upstream: undefined, locked: true, lockReason: "claude agent agent-a2c9ae276dde4d3da (pid 73264)" }),
+  ];
+  const page = await WorktreesPage.open("dark", { width: 300, height: 900 });
+  opened.push(page);
+  await page.send({ type: "rows", rows: [...fixtureRows(), ...long], state: "ok", labels: LABELS });
+  const measure = () =>
+    page.eval<string[]>(`(function () {
+      // How wide the first n characters of an element's text are drawn.
+      function lead(el, n) {
+        var t = el.firstChild;
+        if (!t || t.nodeType !== 3) return 0;
+        var r = document.createRange();
+        r.setStart(t, 0);
+        r.setEnd(t, Math.min(n, t.length));
+        return r.getBoundingClientRect().width;
+      }
+      function shown(el) { return !!el && el.getClientRects().length > 0; }
+      var out = [];
+      document.querySelectorAll(".wt-row").forEach(function (row) {
+        var name = row.dataset.path.split("/").pop();
+        var head = row.querySelector(".wt-head");
+        var text = row.querySelector(".wt-head-text");
+        if (shown(head) && text.clientWidth + 0.5 < lead(text, 4)) out.push(name + ": its branch shows " + text.clientWidth + "px — under 4 letters beside its symbol");
+        var where = row.querySelector(".wt-path");
+        if (shown(where) && where.clientWidth + 0.5 < lead(where, 4)) out.push(name + ": its folder shows " + where.clientWidth + "px — a stray letter");
+        ["wt-line1", "wt-line2"].forEach(function (c) {
+          var l = row.querySelector("." + c);
+          if (l.scrollWidth > l.clientWidth + 1) out.push(name + ": " + c + " runs past the edge");
+        });
+        if (shown(head) && row.querySelector(".wt-name").clientWidth + 0.5 < lead(row.querySelector(".wt-name"), 3)) out.push(name + ": its name is cut under 3 letters");
+      });
+      return out;
+    })()`);
+  for (const width of [240, 300, 360]) {
+    await page.page.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    await page.settle(80);
+    assert.deepEqual(await measure(), [], `at ${width}px`);
+  }
+  // Wide enough, every branch is there.
+  await page.page.send("Emulation.setDeviceMetricsOverride", { width: 700, height: 900, deviceScaleFactor: 1, mobile: false });
+  await page.settle(80);
+  const hidden = await page.eval<number>(`Array.prototype.filter.call(document.querySelectorAll(".wt-head, .wt-path"), function (h) { return h.getClientRects().length === 0; }).length`);
+  assert.equal(hidden, 0, "nothing hidden when there is room");
+});
+
 test("the page tells the host which rows are in view — and again as they scroll into it", { skip }, async () => {
   const page = await WorktreesPage.open("dark", { width: 300, height: 200 });
   opened.push(page);

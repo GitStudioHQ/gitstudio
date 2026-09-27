@@ -176,9 +176,13 @@ body {
   font-weight: 600;
   font-size: 13px;
 }
+/* The branch keeps its symbol and at least six letters (then an ellipsis):
+   the folder's name gives way first, down to its own three. Narrower than
+   that, the whole branch goes — symbol and all (fitBadges) — never a lone
+   symbol with no words. */
 .wt-head {
   flex: 1 1 0;
-  min-width: 0;
+  min-width: calc(12px + 3px + 6ch);
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -191,6 +195,7 @@ body {
   font-size: 12px;
 }
 .wt-head-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -201,9 +206,11 @@ body {
 .wt-line2 {
   gap: 4px;
 }
+/* Four letters or none: under that the folder goes whole (fitBadges) — the
+   tooltip has all of it — never a stray letter after the badges. */
 .wt-path {
   flex: 1 1 0;
-  min-width: 0;
+  min-width: 4ch;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 11.5px;

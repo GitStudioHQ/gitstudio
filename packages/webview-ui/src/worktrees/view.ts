@@ -527,14 +527,25 @@ export class WorktreesView {
   }
 
   /**
-   * The badges that do not fit on the line go into one "+N more" badge that
-   * names them on hover — never clipped mid-word at the edge. The folder,
-   * last on the line, gives way first (it is in the tooltip too). The line's
-   * accessible name lists every badge either way.
+   * Fit a row to its width, never cutting a word at the edge. Line 1: the
+   * branch keeps its symbol and a few letters (CSS gives it that floor, and
+   * the folder's name gives way first); with no room even for that, the
+   * whole branch goes, symbol and all. Line 2: the badges that do not fit go
+   * into one "+N more" badge that names them on hover; the folder, last on
+   * the line, gives way first — whole, never to a stray letter (it is in the
+   * tooltip too). The row's accessible name says everything either way.
    */
   private fitBadges(s: RowState): void {
+    const l1 = s.line.querySelector<HTMLElement>(".wt-line1");
     const l2 = s.line.querySelector<HTMLElement>(".wt-line2");
-    if (!l2 || !s.el.isConnected) return;
+    if (!l1 || !l2 || !s.el.isConnected) return;
+    const head = l1.querySelector<HTMLElement>(".wt-head");
+    if (head) {
+      head.hidden = false;
+      if (l1.clientWidth > 0 && l1.scrollWidth > l1.clientWidth + 1) head.hidden = true;
+    }
+    const where = l2.querySelector<HTMLElement>(".wt-path");
+    if (where) where.hidden = false;
     l2.querySelector(".wt-badge--more")?.remove();
     const badges = [...l2.querySelectorAll<HTMLElement>(".wt-badge")];
     for (const b of badges) {
@@ -543,6 +554,10 @@ export class WorktreesView {
     }
     const fits = () => l2.scrollWidth <= l2.clientWidth + 1;
     if (l2.clientWidth === 0 || fits()) return;
+    if (where) {
+      where.hidden = true;
+      if (fits()) return;
+    }
     const more = el("span", "wt-badge wt-badge--more");
     more.dataset.badge = "more";
     more.setAttribute("aria-hidden", "true");
