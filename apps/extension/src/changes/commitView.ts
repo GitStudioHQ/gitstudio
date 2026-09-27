@@ -12,7 +12,7 @@ import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import { slowStateChanged, type SlowState } from "./slowState";
-import { branchActionWords, branchesPayload, withFavorites, type BranchesPayload } from "./branchMenuData";
+import { branchActionWords, branchesPayload, pickedRefName, withFavorites, type BranchesPayload } from "./branchMenuData";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { repoName as repoNameOf, switchRepository, workspacePathOf } from "../git/repoPicker";
 import { pruneOnFetch } from "../git/fetchOptions";
@@ -382,7 +382,7 @@ export class CommitViewProvider
    * the star toggles; branch operations call {@link invalidateRefs} so a
    * checkout / new / delete still reflects immediately.
    */
-  private refsCache: { root: string; at: number; refs: GitRef[] } | undefined;
+  private refsCache: { root: string; at: number; refs: GitRef[]; remotes: string[] } | undefined;
   private static readonly REFS_TTL_MS = 1500;
 
   constructor(
@@ -1655,8 +1655,8 @@ export class CommitViewProvider
 
   /** Local branches (with favorites), remotes, recents, and tags for the branch menu. */
   private async collectBranches(entry: RepoEntry): Promise<BranchesPayload> {
-    const refs = await this.listRefsCached(entry);
-    return branchesPayload(refs, this.favorites(entry), this.memento.get<string[]>(this.recentKey(entry), []));
+    const { refs, remotes } = await this.listRefsCached(entry);
+    return branchesPayload(refs, this.favorites(entry), this.memento.get<string[]>(this.recentKey(entry), []), remotes);
   }
 
   /**
@@ -1664,9 +1664,11 @@ export class CommitViewProvider
    * state push. Serves cached refs within REFS_TTL_MS so a staging burst (or the
    * onDidChange firehose) doesn't re-list every branch each tick; branch
    * operations call {@link invalidateRefs} so real ref changes still show at
-   * once. On error, falls back to the last-known refs for this repo.
+   * once. On error, falls back to the last-known refs for this repo. The
+   * remotes' names ride along (the menu groups remote branches by remote),
+   * read in parallel and cached the same.
    */
-  private async listRefsCached(entry: RepoEntry): Promise<GitRef[]> {
+  private async listRefsCached(entry: RepoEntry): Promise<{ refs: GitRef[]; remotes: string[] }> {
     const now = Date.now();
     const cached = this.refsCache;
     if (
@@ -1674,7 +1676,7 @@ export class CommitViewProvider
       cached.root === entry.root &&
       now - cached.at < CommitViewProvider.REFS_TTL_MS
     ) {
-      return cached.refs;
+      return cached;
     }
     // Which invalidation era this read belongs to. A branch op calls
     // invalidateRefs() and then pushes state — but a listRefs() that was ALREADY
@@ -1684,16 +1686,16 @@ export class CommitViewProvider
     // its old state for over a second. The firehose makes a push routinely
     // in-flight across a branch action, so this is not a narrow window.
     const era = this.refsEpoch;
-    let refs: GitRef[];
-    try {
-      refs = await entry.ctx.refs.listRefs();
-    } catch {
-      refs = cached && cached.root === entry.root ? cached.refs : [];
-    }
+    const known = cached && cached.root === entry.root ? cached : undefined;
+    const [refs, remotes] = await Promise.all([
+      entry.ctx.refs.listRefs().catch(() => known?.refs ?? []),
+      entry.ctx.remotes.names().catch(() => known?.remotes ?? []),
+    ]);
+    const read = { root: entry.root, at: now, refs, remotes };
     if (era === this.refsEpoch) {
-      this.refsCache = { root: entry.root, at: now, refs };
+      this.refsCache = read;
     }
-    return refs;
+    return read;
   }
 
   /** Drop the cached ref list so the next push re-lists (post branch op). */
@@ -1766,9 +1768,31 @@ export class CommitViewProvider
         case "checkoutRef": {
           const r = (msg.ref ?? "").trim();
           if (!r) return;
+          // git would read it as one of its own options: "-f" after
+          // --detach discards every uncommitted change.
+          if (r.startsWith("-")) {
+            result = { ok: false, stderr: `'${r}' is not a revision: it starts with '-'.` };
+            break;
+          }
+          // Picked from the dialog's list — a branch, a remote branch, a tag —
+          // it is checked out as that ref, by its full name: the short name
+          // can be another ref's too by now (a tag made with a branch's name),
+          // and git would take the branch. Typed, it goes as typed: a
+          // revision git reads for itself (a sha, origin/main~3).
+          let target = r;
+          const picked = msg.refType;
+          if (picked === "head" || picked === "remote" || picked === "tag") {
+            const full = pickedRefName(await entry.ctx.refs.listRefs(), r, picked);
+            if (!full) {
+              const word = picked === "head" ? "branch" : picked === "remote" ? "remote branch" : "tag";
+              result = { ok: false, stderr: `there is no ${word} '${r}' any more.` };
+              break;
+            }
+            target = full;
+          }
           // Through the shared door: uncommitted work in the checkout's way is
           // said, with Stash & Retry, rather than as git's refusal in red.
-          const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", "--detach", r]));
+          const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", "--detach", target]));
           if (applied.cancelled) {
             cancelled = true;
             break;
@@ -2944,7 +2968,10 @@ export class CommitViewProvider
       outline: none;
     }
     .bm-search input:focus { border-color: var(--gs-accent); box-shadow: var(--gs-glow); }
-    .bm-list { overflow-y: auto; padding: 3px; }
+    /* A row brought into view from below stops under its group's heading,
+       which stays pinned at the top while its rows scroll (below). */
+    .bm-list { overflow-y: auto; padding: 0 3px 3px; scroll-padding-top: 26px; }
+    .bm-list > .bm-action:first-child { margin-top: 3px; }
     .bm-action, .bm-branch {
       display: flex;
       align-items: center;
@@ -2962,16 +2989,25 @@ export class CommitViewProvider
     }
     .bm-action .codicon, .bm-bicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
     .bm-action:hover, .bm-branch:hover { background: var(--gs-hover-strong); }
-    /* A collapsible category header: chevron + label + count, full-width button. */
+    /* A collapsible category header: chevron + label + count, full-width
+       button. It stays pinned at the top of the list while its group's rows
+       scroll under it — the next group's heading pushes it off, because each
+       heading sticks only inside its own group (.bm-group). Opaque, or the
+       rows would show through it. */
+    .bm-group { position: relative; }
     .bm-sep {
+      position: sticky;
+      top: 0;
+      z-index: 1;
       display: flex;
       align-items: center;
       gap: 6px;
       width: 100%;
-      margin: 4px 0 1px;
-      padding: 4px 8px;
+      height: 26px;
+      margin: 0;
+      padding: 7px 8px 3px;
       border: none;
-      background: transparent;
+      background: var(--vscode-menu-background, var(--gs-surface));
       font-size: 10px;
       font-weight: 600;
       letter-spacing: 0.06em;
@@ -2983,14 +3019,24 @@ export class CommitViewProvider
     .bm-sep:hover { color: var(--gs-fg); }
     .bm-sep .codicon { font-size: 13px; transition: transform 120ms var(--gs-ease); }
     .bm-sep.collapsed .codicon { transform: rotate(-90deg); }
-    .bm-sep-label { flex: 1 1 auto; }
+    .bm-sep-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* A remote's own name, as git spells it, beside the word Remote. */
+    .bm-sep-remote { margin-left: 5px; text-transform: none; letter-spacing: 0; font-size: 11px; color: var(--gs-fg); }
     .bm-sep-count {
       flex: 0 0 auto;
       font-variant-numeric: tabular-nums;
       letter-spacing: 0;
       color: var(--gs-fg-muted);
     }
-    .bm-hl { background: color-mix(in srgb, var(--gs-accent) 34%, transparent); color: inherit; border-radius: 2px; }
+    /* The letters a search matched, the way VS Code's lists mark them — in
+       the list's match colour and bolder — on a faint band of that colour,
+       so they still show on the current branch, whose whole name is bold. */
+    .bm-hl {
+      background: color-mix(in srgb, var(--vscode-list-highlightForeground, var(--gs-accent)) 16%, transparent);
+      color: var(--vscode-list-highlightForeground, var(--gs-accent-text));
+      font-weight: 600;
+      border-radius: 2px;
+    }
     .bm-branch { padding: 4px 8px 4px 4px; }
     .bm-branch.is-current .bm-bname { color: var(--gs-accent-text); font-weight: 600; }
     .bm-branch.is-current .bm-bicon { color: var(--gs-accent-text); }
@@ -3014,6 +3060,12 @@ export class CommitViewProvider
     .bm-ab.down { color: var(--gs-status-modified); background: color-mix(in srgb, var(--gs-status-modified) 16%, transparent); }
     /* A row too narrow for its name and its counts: the counts go, whole. */
     .bm-branch.is-cramped .bm-ab { display: none; }
+    /* On the highlighted row the counts take the selection's colour, as the
+       rest of the row does: green or blue on the selection's blue is lost. */
+    .bm-branch.is-active .bm-ab {
+      color: inherit;
+      background: color-mix(in srgb, currentColor 20%, transparent);
+    }
     /* In-flight items keep the normal cursor — the spinner lives IN the item. */
     .bm-action.is-busy, .bm-subaction.is-busy { opacity: 0.8; cursor: default; }
     /* The upstream starts from nothing and grows into the room the name left,
@@ -3024,8 +3076,11 @@ export class CommitViewProvider
        stays when the row is too narrow for the name beside it. */
     .bm-bup.is-gone { text-decoration: line-through; }
     .bm-gone { flex: 0 0 auto; font-size: 10.5px; color: var(--gs-fg-muted); }
-    .bm-bmore { flex: 0 0 auto; font-size: 13px; color: var(--gs-fg-subtle); opacity: 0; transition: opacity 100ms; }
-    .bm-branch:hover .bm-bmore { opacity: 0.8; }
+    /* Every branch row opens a list of its actions, and says so the way a
+       menu does: a chevron at its end, always there, in the secondary
+       colour — the room it takes is the hint. */
+    .bm-bmore { flex: 0 0 auto; font-size: 13px; color: var(--gs-fg-muted); }
+    .bm-branch:hover .bm-bmore { color: var(--gs-fg); }
 
     /* The keyboard highlight: the one row the arrow keys have reached (and
        the mouse, which moves it too). VS Code's own colours for a focused
@@ -3046,14 +3101,14 @@ export class CommitViewProvider
     .bm-branch.is-active .bm-bup,
     .bm-branch.is-active .bm-gone,
     .bm-subaction.is-active .codicon { color: inherit; }
-    .bm-branch.is-active .bm-bmore { opacity: 0.9; color: inherit; }
+    .bm-branch.is-active .bm-bmore { color: inherit; }
     .bm-branch.is-active .bm-star:not(.on) { color: inherit; }
-    /* A match on the highlighted row: the accent band would be blue on the
-       blue selection, so the letters are marked instead, in the colour VS
-       Code gives a match on a focused list row. */
+    /* A match on the highlighted row: in the colour VS Code gives a match
+       on a focused list row, on a faint band of that same colour — the
+       letters alone (pale blue beside white, in Light+) were easy to miss. */
     .bm-action.is-active .bm-hl,
     .bm-branch.is-active .bm-hl {
-      background: transparent;
+      background: color-mix(in srgb, var(--vscode-list-focusHighlightForeground, currentColor) 15%, transparent);
       color: var(--vscode-list-focusHighlightForeground, inherit);
       font-weight: 600;
     }
@@ -3064,7 +3119,7 @@ export class CommitViewProvider
       outline: 1px dashed var(--vscode-contrastActiveBorder, transparent);
       outline-offset: -1px;
     }
-    .bm-branch.is-open .bm-bmore { opacity: 0.8; }
+    .bm-branch.is-open .bm-bmore { color: var(--gs-fg); }
     /* A destructive item keeps its colour when highlighted: red on red tint. */
     .bm-subaction.danger.is-active {
       background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 20%, transparent);
@@ -3137,8 +3192,41 @@ export class CommitViewProvider
     .bm-subaction.danger .codicon { color: var(--vscode-errorForeground, #e15a5a); }
     .bm-subaction.danger:hover { background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 14%, transparent); }
     .bm-subsep { height: 1px; margin: 4px 6px; background: var(--gs-border); }
-    /* An empty star is a control on every local row, so it is drawn at a
-       control's contrast (3:1) in the muted text colour, not the subtle one. */
+    /* Drilled in: a sidebar with no room beside the menu for a branch's
+       actions shows them IN the menu, in place of the list, under a back row
+       that names the branch ('‹ feature'). The search box stays; typing, the
+       back row, Left and Escape all return to the list. */
+    .branch-menu.is-drilled > .bm-list { display: none; }
+    .branch-submenu.is-drilled {
+      position: static;
+      z-index: auto;
+      flex: 1 1 auto;
+      min-height: 0;
+      min-width: 0;
+      max-width: none;
+      max-height: none;
+      padding: 0 3px 3px;
+      background: transparent;
+      border: none;
+      border-top: 1px solid var(--vscode-menu-separatorBackground, var(--gs-border));
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .branch-submenu.is-drilled .bm-subhead {
+      margin: 0 -3px 3px;
+      padding: 6px 10px 6px 6px;
+      border-radius: 0;
+      cursor: pointer;
+    }
+    .branch-submenu.is-drilled .bm-subhead:hover { background: color-mix(in srgb, var(--gs-brand) 24%, transparent); }
+    .bm-subhead .bm-back { font-size: 14px; color: var(--gs-fg); }
+    /* Words for a screen reader only: in the page, not on screen. */
+    .bm-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    /* A set star is always shown. An empty one is a control that only the
+       row under the pointer or the highlight offers — a column of 200 hollow
+       stars read as 200 things to do — drawn then at a control's contrast
+       (3:1), in the muted text colour. Its room is kept either way, so the
+       names stay in one column. */
     .bm-star, .bm-star-spacer {
       flex: 0 0 auto;
       width: 22px; height: 22px;
@@ -3146,10 +3234,22 @@ export class CommitViewProvider
       border: none; background: transparent; border-radius: var(--gs-radius-sm);
       color: var(--gs-fg-muted); cursor: pointer; padding: 0;
     }
+    .bm-star:not(.on) { visibility: hidden; }
+    .bm-branch:hover .bm-star, .bm-branch.is-active .bm-star { visibility: visible; }
     .bm-star:hover { background: color-mix(in srgb, var(--gs-fg) 10%, transparent); color: var(--gs-fg); }
     .bm-star.on { color: var(--vscode-charts-yellow, #d7ba00); }
     .bm-star .codicon { font-size: 13px; }
     .bm-empty { padding: 10px 8px; color: var(--gs-fg-muted); font-size: 12px; text-align: center; }
+    /* A line that says why an action is missing (Pull and Push on a detached
+       HEAD). Not a row the arrows visit: it is read out with the search box. */
+    .bm-why {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 5px 8px; font-size: 12px; line-height: 16px;
+      color: var(--gs-fg-muted);
+    }
+    .bm-why .codicon { font-size: 14px; flex: 0 0 auto; line-height: 16px; }
+    /* An action's label, which a long query can make longer than the row. */
+    .bm-action > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .bm-loading { display: flex; align-items: center; justify-content: center; gap: 6px; }
     .bm-loading .codicon { font-size: 13px; }
     .bm-note { padding: 4px 8px 6px 34px; color: var(--gs-fg-subtle); font-size: 11px; font-style: italic; }
@@ -5130,6 +5230,11 @@ export class CommitViewProvider
     // carries none on its first post for a repository (see pushState).
     let branchesLoading = true;
     let lastBranchSig = "";
+    /** What an open branch menu shows, as one string: when it changes the menu repaints. */
+    function bmSig() {
+      const hs = lastHeaderState;
+      return JSON.stringify([branchesLoading, branchData, !!(hs && hs.detached), hs && hs.detached ? hs.branch : ""]);
+    }
 
     // path -> { action: "stage" | "unstage", at: ms }. An optimistic move that
     // git hasn't confirmed yet. Cleared once the authoritative state agrees, or
@@ -5610,13 +5715,26 @@ export class CommitViewProvider
     // ---- Branch + actions menu (folds in the old Branches view) ----------
     let branchMenu = null;
     let branchFilter = "";
-    // How many tags are rendered at once, and the current window. Paged rather
-    // than capped so every tag is reachable via "Show more".
-    const TAG_PAGE = 40;
-    let tagLimit = TAG_PAGE;
+    // The query as typed (branchFilter is it lower-cased): what "New Branch
+    // '<query>'…" fills its name with.
+    let branchQuery = "";
+    // How many rows a long group (Tags, and each remote) renders at once, and
+    // each group's current window, by its key. Paged rather than capped, so
+    // every ref is reachable via "Show more"; a new query starts over.
+    const PAGE = 40;
+    let pageLimits = Object.create(null);
     let branchSubmenu = null;
     // The width the open menu holds while the query changes (see holdBranchMenuWidth).
     let bmHeldWidth = 0;
+    // The best match of the last render: the row a query's highlight goes to.
+    let bmBest = null;
+    // Whether the arrows or the pointer have moved the highlight since the
+    // query last changed. Until they have, a repaint from the host puts it
+    // back on the best match (branches that arrived, counts that changed);
+    // after, it stays where they put it.
+    let bmUserMoved = false;
+    // The list's scroll position while a branch's actions are drilled in.
+    let bmDrillScroll = 0;
     // Per-category collapse memory (Favorites / Recents / Local / Remote / Tags).
     const collapsedCats = Object.create(null);
 
@@ -5688,7 +5806,10 @@ export class CommitViewProvider
         target.classList.add("is-active");
         target.setAttribute("aria-selected", "true");
         if (input) input.setAttribute("aria-activedescendant", target.id);
-        if (scroll && target.scrollIntoView) target.scrollIntoView({ block: "nearest" });
+        if (scroll && target.scrollIntoView) {
+          target.scrollIntoView({ block: "nearest" });
+          fitBranchNames(); // rows it scrolled into sight
+        }
       } else if (input) {
         input.removeAttribute("aria-activedescendant");
       }
@@ -5704,6 +5825,7 @@ export class CommitViewProvider
       // An open submenu belongs to the row it was opened on.
       if (branchSubmenu) { closeBranchSubmenu(); subMenuFor = null; }
       bmActiveKey = rows[i].dataset.bmkey;
+      bmUserMoved = true;
       paintBm(true);
     }
     function moveBmSub(delta) {
@@ -5728,6 +5850,7 @@ export class CommitViewProvider
     function closeBmSub() {
       closeBranchSubmenu();
       subMenuFor = null;
+      bmUserMoved = true; // the branch it was opened on keeps the highlight
       paintBm(true);
     }
     /** The search box's keys. Only the box's own events: a dialog raised
@@ -5819,6 +5942,12 @@ export class CommitViewProvider
     function closeBranchSubmenu() {
       if (branchSubmenu) { branchSubmenu.remove(); branchSubmenu = null; }
       bmSubActive = -1;
+      // Drilled in: the list comes back, scrolled where it was.
+      if (branchMenu && branchMenu.classList.contains("is-drilled")) {
+        branchMenu.classList.remove("is-drilled");
+        const list = bmList();
+        if (list) list.scrollTop = bmDrillScroll;
+      }
       hideTip(); // a tip anchored to a removed submenu item must not linger
     }
     function onBranchDocDown(e) {
@@ -5869,26 +5998,150 @@ export class CommitViewProvider
       vscode.postMessage({ type: "branchAction", action: "favorite", ref: name });
       // The list below is the one this change makes: the host's agreeing
       // post then has nothing to repaint.
-      lastBranchSig = JSON.stringify([branchesLoading, branchData]);
+      lastBranchSig = bmSig();
       refreshOpenBranchUi();
     }
-    function matchF(s) { return !branchFilter || s.toLowerCase().indexOf(branchFilter) !== -1; }
+    // ── Search: one scorer for the actions and every ref ─────────────────
+    // A query matches a name in one of these ways, best first. A better way
+    // always outranks a worse one, so an exact or a prefix match is never
+    // beaten by a scattered one:
+    //   exact · a prefix of the name · a prefix of its last path segment
+    //   ("login" in feature/login) · a run that starts a word ("cache" in
+    //   spike/the-cache) · a run anywhere · scattered letters, each one
+    //   either right after the one before it or starting a word: "rel21"
+    //   finds release/2.1 and "fl" feature/login, but "fe" does not find
+    //   fix/some-page.
+    // The actions are scored the same way, on their labels, so with a query
+    // the highlight goes to the best match of all; on a tie a branch wins —
+    // "fe" is feature, not Fetch — and only an action whose name the query
+    // matches better (typing "fetch") takes it.
+    const BM_TIER = { exact: 1000, prefix: 800, segment: 700, word: 600, run: 400, scattered: 200 };
+    /** Does a word start at text[i]: the start, after a separator, a
+     *  lower-to-upper case step, or a step between letters and digits. */
+    function bmWordStart(text, i) {
+      if (i <= 0) return true;
+      const p = text.charAt(i - 1), c = text.charAt(i);
+      if (/[\/\-_.\s()'"@#:,+]/.test(p)) return true;
+      if (/[a-z]/.test(p) && /[A-Z]/.test(c)) return true;
+      const pd = /[0-9]/.test(p), cd = /[0-9]/.test(c);
+      return pd !== cd && /[A-Za-z0-9]/.test(p) && /[A-Za-z0-9]/.test(c);
+    }
+    function bmRun(at, n) {
+      const out = [];
+      for (let i = 0; i < n; i++) out.push(at + i);
+      return out;
+    }
+    /**
+     * How well q (lower case, trimmed) matches text: { s, pos } — s the
+     * score, pos the index of each matched letter — or null for no match.
+     */
+    function bmScore(q, text) {
+      if (!q) return { s: 0, pos: [] };
+      const t = text.toLowerCase();
+      const n = q.length;
+      if (t === q) return { s: BM_TIER.exact, pos: bmRun(0, n) };
+      if (t.startsWith(q)) return { s: BM_TIER.prefix, pos: bmRun(0, n) };
+      const seg = t.lastIndexOf("/") + 1;
+      if (seg > 0 && t.startsWith(q, seg)) return { s: BM_TIER.segment, pos: bmRun(seg, n) };
+      const first = t.indexOf(q);
+      if (first >= 0) {
+        for (let w = first; w >= 0; w = t.indexOf(q, w + 1)) {
+          // Within a way of matching, an earlier match ranks a little higher.
+          if (bmWordStart(text, w)) return { s: BM_TIER.word + (99 - Math.min(w, 99)) / 100, pos: bmRun(w, n) };
+        }
+        return { s: BM_TIER.run + (99 - Math.min(first, 99)) / 100, pos: bmRun(first, n) };
+      }
+      return bmScattered(q, text, t);
+    }
+    /** The scattered match with the fewest separate runs (then the earliest). */
+    function bmScattered(q, text, t) {
+      const n = t.length, m = q.length;
+      // The letters in order at all? Most names are out here, cheaply.
+      let k = 0;
+      for (let j = 0; j < n && k < m; j++) if (t.charCodeAt(j) === q.charCodeAt(k)) k++;
+      if (k < m) return null;
+      // runs[j]: the fewest runs matching q up to letter i with letter i at
+      // j (Infinity: cannot); back[i][j]: where letter i - 1 was then.
+      let runs = new Array(n).fill(Infinity);
+      for (let j = 0; j < n; j++) if (t.charAt(j) === q.charAt(0) && bmWordStart(text, j)) runs[j] = 1;
+      const back = [null];
+      for (let i = 1; i < m; i++) {
+        const cur = new Array(n).fill(Infinity);
+        const from = new Array(n).fill(-1);
+        let bestBefore = Infinity, bestAt = -1; // the best of runs[0 .. j - 2]
+        for (let j = 0; j < n; j++) {
+          if (j >= 2 && runs[j - 2] < bestBefore) { bestBefore = runs[j - 2]; bestAt = j - 2; }
+          if (t.charAt(j) !== q.charAt(i)) continue;
+          // Right after the letter before: the same run.
+          if (j >= 1 && runs[j - 1] < cur[j]) { cur[j] = runs[j - 1]; from[j] = j - 1; }
+          // Or a new run, which must start a word.
+          if (bestAt >= 0 && bestBefore + 1 < cur[j] && bmWordStart(text, j)) { cur[j] = bestBefore + 1; from[j] = bestAt; }
+        }
+        back.push(from);
+        runs = cur;
+      }
+      let end = -1, fewest = Infinity;
+      for (let j = 0; j < n; j++) if (runs[j] < fewest) { fewest = runs[j]; end = j; }
+      if (end < 0) return null;
+      const pos = [end];
+      for (let i = m - 1; i > 0; i--) pos.unshift(back[i][pos[0]]);
+      return { s: BM_TIER.scattered + Math.max(1, 90 - 10 * (fewest - 1) - Math.min(pos[0], 40) / 2), pos: pos };
+    }
+    /** A remote branch scored on what its row shows (the name without the
+     *  remote) and on its whole name ("origin/fe" finds it too); the marks
+     *  land on the part shown. */
+    function bmScoreRemote(q, full, shown) {
+      const part = bmScore(q, shown);
+      const whole = bmScore(q, full);
+      if (!whole || (part && part.s >= whole.s)) return part;
+      const cut = full.length - shown.length;
+      return { s: whole.s, pos: whole.pos.filter((p) => p >= cut).map((p) => p - cut) };
+    }
 
     function bIcon(name) {
       return '<i class="codicon codicon-' + name + '" aria-hidden="true"></i>';
     }
-    // HTML-escape, then wrap the matched search substring in a highlight mark.
     function esc(s) {
       return s.replace(/[&<>"]/g, (c) =>
         ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
     }
-    function hl(text) {
-      if (!branchFilter) return esc(text);
-      const i = text.toLowerCase().indexOf(branchFilter);
-      if (i < 0) return esc(text);
-      return esc(text.slice(0, i)) +
-        '<mark class="bm-hl">' + esc(text.slice(i, i + branchFilter.length)) + '</mark>' +
-        esc(text.slice(i + branchFilter.length));
+    /** HTML-escape text, marking the letters at pos (each run in one mark). */
+    function hl(text, pos) {
+      if (!pos || !pos.length) return esc(text);
+      const on = new Set(pos);
+      let out = "";
+      for (let i = 0; i < text.length; ) {
+        let j = i;
+        const inMark = on.has(i);
+        while (j < text.length && on.has(j) === inMark) j++;
+        const part = esc(text.slice(i, j));
+        out += inMark ? '<mark class="bm-hl">' + part + "</mark>" : part;
+        i = j;
+      }
+      return out;
+    }
+    /** A count as a badge shows it: a number past 999 would crowd the name out. */
+    function bmCount(n) { return n > 999 ? "999+" : String(n); }
+    /**
+     * The remote a remote-tracking name belongs to — the longest remote the
+     * host listed whose namespace holds it, since a remote's own name may
+     * hold a slash ("team/eu"). When strict, "" for a name under none of
+     * them (an upstream that is a local branch); otherwise its first path
+     * segment then, as it is when the host listed no remotes.
+     */
+    function bmRemoteOf(name, strict) {
+      const names = branchData.remoteNames || [];
+      let best = "";
+      for (const r of names) if (r.length > best.length && name.startsWith(r + "/")) best = r;
+      if (best || (strict && names.length)) return best;
+      const i = name.indexOf("/");
+      return i > 0 ? name.slice(0, i) : "";
+    }
+    /** What a row shows for a live upstream: only the remote ("origin") when
+     *  it tracks the branch of the same name there, else the whole name. */
+    function bmUpstreamShown(name, up) {
+      const r = bmRemoteOf(up, true);
+      return r && up === r + "/" + name ? r : up;
     }
     /** What Compare / Merge / Rebase act on, as a submenu names it: the
      *  current branch, quoted — the header's name when git lists no ref for it
@@ -5901,9 +6154,18 @@ export class CommitViewProvider
       return name ? "'" + name + "'" : "HEAD";
     }
 
-    function branchRow(name, kind, up, fav, current, ahead, behind, gone) {
+    /**
+     * One ref's row. r: { name, kind ("local" | "remote" | "tag"), shown (the
+     * text the row shows: a remote branch without its remote), up, fav,
+     * current, ahead, behind, gone, pos (matched letters of shown), s }.
+     */
+    function branchRow(r) {
+      const name = r.name, kind = r.kind, up = r.up, current = r.current;
+      const ahead = r.ahead, behind = r.behind, gone = r.gone;
+      const shown = r.shown || name;
       const row = el("div", "bm-branch" + (current ? " is-current" : ""));
       if (kind === "local") {
+        const fav = !!r.fav;
         const star = el("button", "bm-star" + (fav ? " on" : ""),
           bIcon(fav ? "star-full" : "star-empty"));
         star.title = fav ? "Remove from favorites" : "Add to favorites";
@@ -5920,13 +6182,19 @@ export class CommitViewProvider
         : current ? "check" : "git-branch";
       row.appendChild(el("i", "codicon codicon-" + icon + " bm-bicon"));
       row.dataset.bname = name; // refreshOpenBranchUi re-finds the row by name
-      const nm = el("span", "bm-bname", hl(name)); row.appendChild(nm);
+      const nm = el("span", "bm-bname", hl(shown, r.pos));
+      // What fitBranchNames needs to cut the middle out of a long name
+      // around what matched.
+      if (r.pos && r.pos.length) { nm.dataset.text = shown; nm.dataset.pos = r.pos.join(","); }
+      row.appendChild(nm);
       // Unpushed/unpulled counts per branch — the payoff of the in-menu Fetch.
-      if (ahead) row.appendChild(el("span", "bm-ab up", "↑" + ahead));
-      if (behind) row.appendChild(el("span", "bm-ab down", "↓" + behind));
+      if (ahead) row.appendChild(el("span", "bm-ab up", "↑" + bmCount(ahead)));
+      if (behind) row.appendChild(el("span", "bm-ab down", "↓" + bmCount(behind)));
       if (up) {
         const u = el("span", "bm-bup" + (gone ? " is-gone" : ""));
-        u.textContent = up;
+        // Gone, it is named in full: 'origin' struck through would say the
+        // remote is gone, not its branch.
+        u.textContent = gone ? up : bmUpstreamShown(name, up);
         row.appendChild(u);
         // A deleted upstream says so, and keeps saying it where a narrow
         // row has no room left for the upstream's name.
@@ -5940,6 +6208,7 @@ export class CommitViewProvider
       row.title = name + (up ? "  ↔ " + up + (gone ? ", which no longer exists on the remote" : "") : "") +
         (counts ? " — " + counts : "");
       row.dataset.bmkey = "b:" + kind + ":" + name;
+      if (branchFilter) row.dataset.score = String(r.s);
       bmOption(row);
       // What a screen reader says when the highlight lands here — the badges
       // are arrows and numbers, so they are spelled out.
@@ -5987,21 +6256,49 @@ export class CommitViewProvider
       list.appendChild(b);
     }
     function subSep(list) { list.appendChild(el("div", "bm-subsep")); }
-    /** Repaint the open menu (badges/labels) and re-open the same branch's
-     *  submenu on its NEW row — an in-place live refresh of the dialog stack. */
-    function refreshOpenBranchUi() {
+    /** What the highlighted submenu item is (its data-sub), or null when the
+     *  highlight is not in a submenu. */
+    function bmSubActiveKey() {
+      const item = bmSubActive >= 0 ? bmSubItems()[bmSubActive] : null;
+      return item ? item.dataset.sub || "" : null;
+    }
+    /**
+     * Repaint the open menu (badges/labels) and re-open the same branch's
+     * submenu on its NEW row — an in-place live refresh of the dialog stack.
+     * A keyboard highlight in the submenu stays on the same item, found by
+     * what it is: the repaint can add or drop items above it (an upstream
+     * that appeared, or went), and Enter must still run what was chosen. An
+     * item that is gone gives the highlight to the first. subKey: the item
+     * to keep, when the caller has already closed the submenu.
+     */
+    function refreshOpenBranchUi(subKey) {
       if (!branchMenu) return;
       const sub = subMenuFor;
-      const subActive = bmSubActive; // a keyboard highlight in the submenu survives the repaint
+      const keep = subKey !== undefined ? subKey : bmSubActiveKey();
+      // Drilled in, the list is hidden: it comes back where it was, under
+      // the actions drilled in again below.
+      const drillScroll = branchMenu.classList.contains("is-drilled") ? bmDrillScroll : -1;
       renderBranchMenu(); // closes the submenu; rows rebuilt with fresh data
+      if (drillScroll >= 0) { const l = bmList(); if (l) l.scrollTop = drillScroll; }
+      // A query whose highlight nobody has moved stays on its best match —
+      // which may be a branch that has only now arrived.
+      if (!sub && branchFilter && !bmUserMoved) {
+        bmActiveKey = bmBest ? bmBest.key : "";
+        paintBm(true);
+      }
       if (sub) {
-        const row = branchMenu.querySelector('.bm-branch[data-bname="' + (window.CSS && CSS.escape ? CSS.escape(sub.name) : sub.name) + '"]');
+        // By kind and name: a branch and a tag can share a short name, and
+        // the name alone finds the branch's row first.
+        const row = bmRowByKey("b:" + sub.kind + ":" + sub.name);
         if (row) {
           openBranchActions(sub.name, sub.kind, sub.current, row);
-          bmSubActive = subActive;
+          if (keep !== null) {
+            const i = bmSubItems().findIndex((n) => n.dataset.sub === keep);
+            bmSubActive = i >= 0 ? i : 0;
+          }
           // The rebuilt submenu starts scrolled to its top; a highlight
           // further down a short view's submenu is brought back into sight.
-          paintBm(subActive >= 0);
+          paintBm(bmSubActive >= 0);
         } else {
           subMenuFor = null; // the branch vanished (e.g. deleted)
         }
@@ -6150,98 +6447,134 @@ export class CommitViewProvider
         () => toggleFavorite(name));
     }
 
+    /**
+     * A ref's actions, in ONE order for every kind — a current branch, any
+     * other local branch, a remote branch, a tag — with what does not apply
+     * left out, and a separator only between groups that have items:
+     *   switch and start from it · against HEAD · publish · its name · danger
+     *   Checkout, Pull…, New Branch from…, New Worktree from…
+     *   Compare with…, Merge… into…, Rebase… onto…
+     *   Push…, Tracked Branch…
+     *   Rename…, Copy Name, Add to Favorites
+     *   Reset to '<upstream>'…, Delete
+     * A branch whose upstream is gone from its remote starts with Set Tracked
+     * Branch…: the one thing it needs, and the first thing its row's "gone"
+     * sends you looking for.
+     */
     function openBranchActions(name, kind, current, anchor) {
       closeBranchSubmenu();
       const cur = headTarget();
       const refType = kind === "remote" ? "remote" : kind === "tag" ? "tag" : "head";
       const headIcon = kind === "remote" ? "cloud" : kind === "tag" ? "tag" : "git-branch";
+      const local = kind === "local";
       const menu = el("div", "branch-submenu");
-      menu.id = "bm-sub";
-      menu.setAttribute("role", "listbox");
-      menu.setAttribute("aria-label", "Actions for " + name);
       const head = el("div", "bm-subhead");
       head.setAttribute("aria-hidden", "true");
       head.appendChild(el("i", "codicon codicon-" + headIcon));
       head.appendChild(el("span", "bm-subhead-name", esc(name)));
       menu.appendChild(head);
       const list = el("div", "bm-sublist");
+      list.id = "bm-sub";
+      list.setAttribute("role", "listbox");
+      list.setAttribute("aria-label", "Actions for " + name);
       menu.appendChild(list);
 
       // Live branch data for this row (counts may have just changed via Fetch).
-      const bd = (branchData.local || []).find((x) => x.name === name);
+      const bd = local ? (branchData.local || []).find((x) => x.name === name) : null;
+      const gone = !!(bd && bd.gone);
       subMenuFor = { name: name, kind: kind, current: current };
       // The row this submenu belongs to holds the main list's highlight.
       if (anchor && anchor.dataset && anchor.dataset.bmkey) bmActiveKey = anchor.dataset.bmkey;
+
+      // Each item carries what it is (data-sub), so a repaint that adds or
+      // drops items above it finds it again by that, not by its place.
+      const groups = [[], [], [], [], []];
+      const add = (g, key, fn) => groups[g].push((l) => {
+        const before = l.querySelectorAll(".bm-subaction").length;
+        fn(l);
+        const items = l.querySelectorAll(".bm-subaction");
+        for (let i = before; i < items.length; i++) items[i].dataset.sub = key;
+      });
+      const trackedItem = (l) => subItem(l, "cloud",
+        bd && bd.upstream && !gone ? "Tracked Branch: " + bd.upstream + "…" : "Set Tracked Branch…",
+        () => subAct("gitstudio.branch.setUpstream", name, refType), false,
+        gone ? "'" + bd.upstream + "', which '" + name + "' tracked, no longer exists on the remote. Choose the branch it tracks now."
+          : bd && bd.upstream ? "'" + name + "' tracks " + bd.upstream + ". Choose another branch to track."
+          : "Choose the remote branch '" + name + "' pulls from and pushes to.");
+
+      // Switch to it, or start something from it.
+      if (local && gone) add(0, "tracked", trackedItem);
       if (kind === "tag") {
-        subItem(list, "arrow-swap", "Checkout Tag (detached)", () => subAct("gitstudio.tag.checkout", name, "tag"));
-        subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, "tag"));
-        subItem(list, "worktree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, "tag"));
-        subSep(list);
-        subItem(list, "git-compare", "Compare with " + cur, () => subAct("gitstudio.branch.compare", name, "tag"));
-        subItem(list, "git-merge", "Merge '" + name + "' into " + cur, () => subAct("gitstudio.branch.merge", name, "tag"));
-        subSep(list);
-        subItem(list, "cloud-upload", "Push Tag to Remote…", () => subAct("gitstudio.tag.push", name, "tag"));
-        subItem(list, "copy", "Copy Tag Name", () => branchAct("copyName", name));
-        subSep(list);
-        subItem(list, "trash", "Delete Tag", () => subAct("gitstudio.tag.delete", name, "tag"), true);
-      } else if (current) {
-        // Nothing to pull from an upstream deleted from its remote: the pull
-        // could only fail. Push… can still publish the branch again.
-        if (!(bd && bd.gone)) {
-          subItemLive(list, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name);
-          subItemLive(list, "arrow-down", "Pull using Merge", "Pulling…", "pullMerge", name);
+        add(0, "checkout", (l) => subItem(l, "arrow-swap", "Checkout Tag (detached)", () => subAct("gitstudio.tag.checkout", name, "tag")));
+      } else if (!current) {
+        // Not the check: in this menu that marks the branch that IS checked out.
+        add(0, "checkout", (l) => subItem(l, kind === "remote" ? "cloud-download" : "arrow-swap", "Checkout", () =>
+          subAct(kind === "remote" ? "gitstudio.remoteBranch.checkout" : "gitstudio.branch.checkout", name, refType)));
+      }
+      // Nothing to pull without an upstream, nor from one deleted from its
+      // remote: the pull could only fail. Push… can still publish the branch.
+      if (current && bd && bd.upstream && !gone) {
+        add(0, "pullRebase", (l) => subItemLive(l, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name));
+        add(0, "pullMerge", (l) => subItemLive(l, "arrow-down", "Pull using Merge", "Pulling…", "pullMerge", name));
+      } else if (local && !current && bd && bd.upstream && !gone) {
+        // Fast-forward this branch from its upstream WITHOUT checking it out.
+        add(0, "pullFf", (l) => subItemLive(l, "arrow-down",
+          "Pull " + (bd.behind ? bd.behind + (bd.behind === 1 ? " Commit " : " Commits ") : "") + "into '" + name + "'",
+          "Pulling…", "pullFf", name,
+          "Fast-forwards '" + name + "' from " + bd.upstream + " — no checkout"));
+      }
+      add(0, "newBranch", (l) => subItem(l, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType)));
+      add(0, "worktree", (l) => subItem(l, "worktree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType)));
+
+      // Against what HEAD is on (nothing to compare the current branch with).
+      if (!current) {
+        add(1, "compare", (l) => subItem(l, "git-compare", "Compare with " + cur, () => subAct("gitstudio.branch.compare", name, refType)));
+        add(1, "merge", (l) => subItem(l, "git-merge", "Merge '" + name + "' into " + cur, () => subAct("gitstudio.branch.merge", name, refType)));
+        // Not the pull-request glyph: a rebase opens no pull request. The
+        // replayed, reordered list is GitStudio's glyph for a rebase.
+        if (kind !== "tag") {
+          add(1, "rebase", (l) => subItem(l, "list-ordered", "Rebase " + cur + " onto '" + name + "'", () => subAct("gitstudio.branch.rebase", name, refType)));
         }
+      }
+
+      // Publish it.
+      if (kind === "tag") {
+        add(2, "push", (l) => subItem(l, "cloud-upload", "Push Tag to Remote…", () => subAct("gitstudio.tag.push", name, "tag")));
+      } else if (current) {
         // Push opens the review modal (see openPushModal) rather than pushing in
         // place, so every push route funnels through the same confirmation.
-        subItem(list, "arrow-up", "Push…", () => {
+        add(2, "push", (l) => subItem(l, "arrow-up", "Push…", () => {
           closeBranchMenu();
           vscode.postMessage({ type: "requestPushPreview" });
-        });
-        subSep(list);
-        subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType));
-        subItem(list, "worktree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
-        subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
-        subItem(list, "copy", "Copy Branch Name", () => branchAct("copyName", name));
-        favoriteItem(list, name, bd);
-        if (bd && bd.upstreamOnRemote) {
-          subSep(list);
-          resetToUpstreamItem(list, name, bd);
-        }
-      } else {
-        // Not the check: in this menu that marks the branch that IS checked out.
-        subItem(list, kind === "remote" ? "cloud-download" : "arrow-swap", "Checkout", () =>
-          subAct(kind === "remote" ? "gitstudio.remoteBranch.checkout" : "gitstudio.branch.checkout", name, refType));
-        if (kind === "local" && bd && bd.upstream && !bd.gone) {
-          // Fast-forward this branch from its upstream WITHOUT checking it out
-          // (not from one deleted from its remote: that fetch can only fail).
-          subItemLive(list, "arrow-down",
-            "Pull " + (bd.behind ? bd.behind + (bd.behind === 1 ? " Commit " : " Commits ") : "") + "into '" + name + "'",
-            "Pulling…", "pullFf", name,
-            "Fast-forwards '" + name + "' from " + bd.upstream + " — no checkout");
-        }
-        subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType));
-        subSep(list);
-        subItem(list, "git-compare", "Compare with " + cur, () => subAct("gitstudio.branch.compare", name, refType));
-        subSep(list);
-        subItem(list, "git-merge", "Merge '" + name + "' into " + cur, () => subAct("gitstudio.branch.merge", name, refType));
-        subItem(list, "git-pull-request", "Rebase " + cur + " onto '" + name + "'", () => subAct("gitstudio.branch.rebase", name, refType));
-        subSep(list);
-        subItem(list, "worktree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
-        if (kind === "local") {
-          subSep(list);
-          subItem(list, "arrow-up", "Push…", () => subAct("gitstudio.branch.push", name, refType));
-          subItem(list, "cloud",
-            bd && bd.upstream ? "Tracked Branch: " + bd.upstream + (bd.gone ? " (gone)" : "") + "…" : "Set Tracked Branch…",
-            () => subAct("gitstudio.branch.setUpstream", name, refType));
-          subSep(list);
-        }
-        if (kind === "local") subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
-        subItem(list, "copy", "Copy Branch Name", () => branchAct("copyName", name));
-        if (kind === "local") favoriteItem(list, name, bd);
-        subSep(list);
-        if (kind === "local") resetToUpstreamItem(list, name, bd);
-        subItem(list, "trash", "Delete", () =>
-          subAct(kind === "remote" ? "gitstudio.remoteBranch.delete" : "gitstudio.branch.delete", name, refType), true);
+        }));
+      } else if (local) {
+        add(2, "push", (l) => subItem(l, "arrow-up", "Push…", () => subAct("gitstudio.branch.push", name, refType)));
+      }
+      if ((local || current) && !gone) add(2, "tracked", trackedItem);
+
+      // Its name.
+      if (local || current) add(3, "rename", (l) => subItem(l, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType)));
+      add(3, "copy", (l) => subItem(l, "copy", kind === "tag" ? "Copy Tag Name" : "Copy Branch Name", () => branchAct("copyName", name)));
+      if (local || current) add(3, "favorite", (l) => favoriteItem(l, name, bd));
+
+      // What cannot be taken back without Undo.
+      if (local || current) add(4, "reset", (l) => resetToUpstreamItem(l, name, bd));
+      if (kind === "tag") {
+        add(4, "delete", (l) => subItem(l, "trash", "Delete Tag", () => subAct("gitstudio.tag.delete", name, "tag"), true));
+      } else if (!current) {
+        add(4, "delete", (l) => subItem(l, "trash", "Delete", () =>
+          subAct(kind === "remote" ? "gitstudio.remoteBranch.delete" : "gitstudio.branch.delete", name, refType), true));
+      }
+
+      // A group's builders can add nothing (Reset has no upstream to go to):
+      // a separator goes only between groups that drew items.
+      for (const g of groups) {
+        const before = list.children.length;
+        const hadItems = !!list.querySelector(".bm-subaction");
+        const sep = hadItems ? el("div", "bm-subsep") : null;
+        if (sep) list.appendChild(sep);
+        g.forEach((fn) => fn(list));
+        if (sep && list.children.length === before + 1) sep.remove();
       }
 
       // Options of the submenu's listbox, for aria-activedescendant. None
@@ -6271,30 +6604,59 @@ export class CommitViewProvider
         if (box && document.activeElement !== box) box.focus();
       });
 
-      document.body.appendChild(menu);
-      branchSubmenu = menu;
-      paintBm(false);
-      // Cascade as a secondary popup off the RIGHT edge of the main branch menu,
-      // vertically aligned to the clicked row. Flip to the LEFT only if it would
-      // overflow the (narrow) panel. SEAM = small overlap so it reads as a child.
+      // Beside the menu when the view has room for it there — off its right
+      // edge, else its left — and otherwise IN it: a submenu laid over the
+      // menu hid the list and the very row it belonged to, with no way back
+      // but Escape. The room it asks for is a ref's actions at their widest
+      // (the submenu's max-width), not this ref's: its labels quote its
+      // name, and one row's actions must not open beside a menu whose next
+      // row's open in it. Measured as it would cascade, before it is shown.
       const SEAM = 2;
       const PAD = 6;
-      const sub = menu.getBoundingClientRect();
-      const subW = sub.width;
-      const subH = sub.height;
+      menu.style.visibility = "hidden";
+      document.body.appendChild(menu);
+      branchSubmenu = menu;
+      const subW = menu.getBoundingClientRect().width;
+      const widest = Math.max(subW, parseFloat(getComputedStyle(menu).maxWidth) || 0);
       const menuRect = branchMenu
         ? branchMenu.getBoundingClientRect()
         : anchor.getBoundingClientRect();
-      const rowRect = anchor.getBoundingClientRect();
+      const W = window.innerWidth;
+      let left = -1;
+      if (menuRect.right - SEAM + widest <= W - PAD) left = menuRect.right - SEAM;
+      else if (menuRect.left + SEAM - widest >= PAD) left = menuRect.left + SEAM - subW;
 
-      // Horizontal: hang off the menu's right edge; flip to its left on overflow.
-      let left = menuRect.right - SEAM;
-      if (left + subW > window.innerWidth - PAD) {
-        left = menuRect.left - subW + SEAM;
+      if (left < 0 && branchMenu) {
+        // Drilled in: the actions take the list's place, under a back row.
+        const l0 = bmList();
+        bmDrillScroll = l0 ? l0.scrollTop : 0;
+        menu.classList.add("is-drilled");
+        head.removeAttribute("aria-hidden");
+        head.insertBefore(el("i", "codicon codicon-chevron-left bm-back"), head.firstChild);
+        head.title = "Back to the branches (Left or Escape)";
+        // A way back, as a screen reader meets it: a button that says so —
+        // no Tab stop, as nothing in the menu has one — and the actions'
+        // list says the keys that go back.
+        head.setAttribute("role", "button");
+        head.setAttribute("aria-label", "Back to the branches");
+        head.tabIndex = -1;
+        head.addEventListener("click", () => closeBmSub());
+        const hint = el("span", "bm-sr");
+        hint.id = "bm-back-hint";
+        hint.textContent = "Left or Escape goes back to the branches";
+        menu.appendChild(hint);
+        list.setAttribute("aria-describedby", "bm-back-hint");
+        branchMenu.appendChild(menu);
+        branchMenu.classList.add("is-drilled");
+        menu.style.visibility = "";
+        paintBm(false);
+        return;
       }
-      left = Math.max(PAD, Math.min(left, window.innerWidth - subW - PAD));
 
-      // Vertical: align the submenu's top to the clicked row's top, clamped.
+      // Cascaded: vertically aligned to the clicked row, clamped to the view.
+      const subH = menu.getBoundingClientRect().height;
+      const rowRect = anchor.getBoundingClientRect();
+      if (left < 0) left = Math.max(PAD, Math.min(menuRect.right - SEAM, W - subW - PAD));
       let top = rowRect.top;
       if (top + subH > window.innerHeight - PAD) {
         top = window.innerHeight - subH - PAD;
@@ -6303,39 +6665,142 @@ export class CommitViewProvider
 
       menu.style.left = Math.round(left) + "px";
       menu.style.top = Math.round(top) + "px";
+      menu.style.visibility = "";
+      paintBm(false);
+    }
+
+    /**
+     * The top actions. Pull and Push have no branch to act on at a detached
+     * HEAD, and Pull nothing to pull from for a branch with no upstream (or
+     * a gone one): one line says so in their place. "terms" are other words a
+     * person may look for one by ("update" was Pull's old name): they find
+     * it, but never outrank a name the query really matches.
+     */
+    const BM_ACTIONS = [
+      // Fetch sits on TOP: it's the read-only "what's out there?" action the
+      // rest of the menu builds on.
+      { a: "fetch", icon: "sync", label: "Fetch" },
+      { a: "pull", icon: "arrow-down", label: "Pull", terms: ["update"] },
+      // It opens the push review first, so it asks for more, as "…" says.
+      { a: "push", icon: "arrow-up", label: "Push…" },
+      { a: "new", icon: "add", label: "New Branch…", terms: ["create branch"] },
+      { a: "checkoutRef", icon: "tag", label: "Checkout Tag or Revision…", terms: ["detach"] },
+    ];
+    /** An action's match: on its label (without its "…"), or on one of its terms. */
+    function bmScoreAction(q, it) {
+      let best = bmScore(q, it.label.replace(/…$/, ""));
+      for (const term of it.terms || []) {
+        const m = bmScore(q, term);
+        const s = m ? Math.min(m.s, BM_TIER.word) : 0;
+        if (m && (!best || s > best.s)) best = { s: s, pos: [] };
+      }
+      return best;
+    }
+    /** "New Branch", its name typed or to type. Created at HEAD, switched to. */
+    function promptNewBranch(value) {
+      closeBranchMenu();
+      openRefPrompt({
+        title: "New Branch",
+        hint: "Creates the branch at HEAD and switches to it.",
+        placeholder: "feature/my-change",
+        value: value || "",
+        confirmLabel: "Create Branch",
+        candidates: [],
+        allowFreeText: true,
+        validate: "refName",
+        onConfirm: function (v) {
+          vscode.postMessage({ type: "branchAction", action: "new", ref: v });
+        },
+      });
+    }
+    /** "Checkout Tag or Revision": any revision, checked out as a detached HEAD. */
+    function promptCheckoutRef(value) {
+      closeBranchMenu();
+      openRefPrompt({
+        title: "Checkout Tag or Revision",
+        hint: "Pick a tag or branch, or type any revision (a sha, origin/main~3). Checks out as a detached HEAD.",
+        placeholder: "v1.2.0   a1b2c3d   origin/main~3",
+        value: value || "",
+        confirmLabel: "Checkout",
+        candidates: allRefCandidates(),
+        allowFreeText: true,
+        // git would read it as one of its options.
+        validate: function (v) { return /^-/.test(v) ? "A revision can't start with '-'." : null; },
+        // A ref picked from the list goes with its kind, and the host checks
+        // out that ref by its full name: a tag and a branch can share the
+        // short one, and git would take the branch. What was typed goes as
+        // typed, a revision git reads for itself.
+        onConfirm: function (v, pick) {
+          const refType = pick ? { branch: "head", remote: "remote", tag: "tag" }[pick.kind] : undefined;
+          vscode.postMessage({ type: "branchAction", action: "checkoutRef", ref: v, refType: refType });
+        },
+      });
     }
 
     function renderBranchMenu() {
       if (!branchMenu) return;
       closeBranchSubmenu();
       const list = branchMenu.querySelector(".bm-list");
+      const input = branchMenu.querySelector(".bm-search input");
       list.replaceChildren();
+      const q = branchFilter;
+      // The best match so far: a higher score, or on a tie a ref over an action.
+      bmBest = null;
+      const consider = (key, s, isAction) => {
+        if (!q) return;
+        if (!bmBest || s > bmBest.s || (s === bmBest.s && bmBest.action && !isAction)) {
+          bmBest = { key: key, s: s, action: isAction };
+        }
+      };
+      const hs = lastHeaderState;
+      const detached = !!(hs && hs.detached);
 
-      // Fetch sits on TOP: it's the read-only "what's out there?" action the
-      // rest of the menu builds on. Fetch/pull/push all run IN PLACE — the
-      // dialog stays open, the item itself spins until the real op finishes,
-      // and the branch rows' ↑/↓ badges refresh live.
+      // Fetch/pull/push all run IN PLACE — the dialog stays open, the item
+      // itself spins until the real op finishes, and the branch rows' ↑/↓
+      // badges refresh live.
       const busyLabels = { fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" };
-      const actions = [
-        { a: "fetch", icon: "sync", label: "Fetch" },
-        { a: "pull", icon: "arrow-down", label: "Update (pull)" },
-        // It opens the push review first, so it asks for more, as "…" says.
-        { a: "push", icon: "arrow-up", label: "Push…" },
-        { a: "new", icon: "add", label: "New Branch…" },
-        { a: "checkoutRef", icon: "tag", label: "Checkout Tag or Revision…" },
-      ];
-      let anyAction = false;
-      for (const it of actions) {
-        if (!matchF(it.label)) continue;
-        anyAction = true;
+      // Nothing to pull into the branch HEAD is on when it tracks nothing, or
+      // tracks a branch gone from its remote — the pull could only fail. Its
+      // own actions offer no Pull then either (openBranchActions): one rule.
+      const cur = detached ? null : (branchData.local || []).find((b) => b.current);
+      const noPull = !!cur && (!cur.upstream || !!cur.gone);
+      /** The query is looking for this action: its name or a term found by
+       *  a start or a word's start, not by one letter somewhere inside. */
+      const lookingFor = (it) => {
+        const m = bmScoreAction(q, it);
+        return !!m && m.s >= BM_TIER.word;
+      };
+      // Where Pull and Push are not offered, one line says why, in their
+      // place: on a detached HEAD with the box empty too (both are gone);
+      // otherwise only when the query is looking for the one that is gone.
+      const why = detached ? !q || lookingFor(BM_ACTIONS[1]) || lookingFor(BM_ACTIONS[2])
+        : noPull && !!q && lookingFor(BM_ACTIONS[1]);
+      for (const it of BM_ACTIONS) {
         const live = it.a === "fetch" || it.a === "pull" || it.a === "push";
+        if ((detached && (it.a === "pull" || it.a === "push")) || (noPull && it.a === "pull")) {
+          if (it.a === "pull" && why) {
+            const line = el("div", "bm-why", bIcon("info") + "<span></span>");
+            line.id = "bm-why";
+            line.querySelector("span").textContent = detached
+              ? "Detached at " + (hs.branch || "HEAD") + " — check out a branch to pull or push"
+              : cur.gone
+                ? "'" + cur.name + "' tracks " + cur.upstream + ", which no longer exists on the remote"
+                : "'" + cur.name + "' has no upstream to pull from";
+            list.appendChild(line);
+          }
+          continue;
+        }
+        const m = bmScoreAction(q, it);
+        if (!m) continue;
         const spinning = live && menuSyncBusy === it.a;
         const b = el("button", "bm-action" + (spinning ? " is-busy" : ""),
           bIcon(spinning ? "loading codicon-modifier-spin" : it.icon) + "<span></span>");
-        b.querySelector("span").innerHTML = spinning ? busyLabels[it.a] : hl(it.label);
+        b.querySelector("span").innerHTML = spinning ? busyLabels[it.a] : hl(it.label, m.pos);
         b.dataset.bmkey = "a:" + it.a;
+        if (q) b.dataset.score = String(m.s);
         b.tabIndex = -1; // the arrows reach it; Tab never leaves the search box
         bmOption(b);
+        consider(b.dataset.bmkey, m.s, true);
         b.addEventListener("click", () => {
           if (live) {
             if (menuSyncBusy || syncBusy) return;
@@ -6353,89 +6818,119 @@ export class CommitViewProvider
             }
             renderBranchMenu();
           } else if (it.a === "new") {
-            closeBranchMenu();
-            openRefPrompt({
-              title: "New Branch",
-              hint: "Creates the branch at HEAD and switches to it.",
-              placeholder: "feature/my-change",
-              confirmLabel: "Create Branch",
-              candidates: [],
-              allowFreeText: true,
-              validate: "refName",
-              onConfirm: function (v) {
-                vscode.postMessage({ type: "branchAction", action: "new", ref: v });
-              },
-            });
+            promptNewBranch("");
           } else if (it.a === "checkoutRef") {
-            closeBranchMenu();
-            openRefPrompt({
-              title: "Checkout Tag or Revision",
-              hint: "Pick a tag or branch, or type any revision (a sha, origin/main~3). Checks out as a detached HEAD.",
-              placeholder: "v1.2.0   a1b2c3d   origin/main~3",
-              confirmLabel: "Checkout",
-              candidates: allRefCandidates(),
-              allowFreeText: true,
-              onConfirm: function (v) {
-                vscode.postMessage({ type: "branchAction", action: "checkoutRef", ref: v });
-              },
-            });
+            promptCheckoutRef("");
           } else {
             branchAct(it.a);
           }
         });
         list.appendChild(b);
       }
+      if (input) {
+        if (why) input.setAttribute("aria-describedby", "bm-why");
+        else input.removeAttribute("aria-describedby");
+      }
 
+      /** A group's rows: with a query, each scored, the rest out, the best
+       *  first — ties keep the list's own order (the sort is stable). */
+      function scored(rows) {
+        if (!q) return rows;
+        const out = [];
+        for (const r of rows) {
+          const m = r.kind === "remote" ? bmScoreRemote(q, r.name, r.shown) : bmScore(q, r.name);
+          if (!m) continue;
+          r.s = m.s;
+          r.pos = m.pos;
+          out.push(r);
+        }
+        return out.sort((a, b) => b.s - a.s);
+      }
+      const localRow = (b) => ({
+        name: b.name, kind: "local", up: b.upstream, fav: b.favorite, current: b.current,
+        ahead: b.ahead, behind: b.behind, gone: b.gone,
+      });
       const locals = branchData.local || [];
       const recentNames = branchData.recent || [];
-      const favs = locals.filter((b) => b.favorite && matchF(b.name));
-      const recents = recentNames
+      const favs = scored(locals.filter((b) => b.favorite).map(localRow));
+      const recents = scored(recentNames
         .map((n) => locals.find((b) => b.name === n))
-        .filter((b) => b && !b.favorite && matchF(b.name));
-      const others = locals.filter((b) =>
-        !b.favorite && recentNames.indexOf(b.name) === -1 && matchF(b.name));
-      const remotes = (branchData.remote || []).filter((n) => matchF(n));
+        .filter((b) => b && !b.favorite)
+        .map(localRow));
+      const others = scored(locals
+        .filter((b) => !b.favorite && recentNames.indexOf(b.name) === -1)
+        .map(localRow));
+      // Remote branches by remote — origin, upstream, a fork — each its own
+      // group, its rows named without the remote the heading already says.
+      const byRemote = new Map();
+      for (const n of branchData.remote || []) {
+        const r = bmRemoteOf(n);
+        if (!byRemote.has(r)) byRemote.set(r, []);
+        byRemote.get(r).push({ name: n, kind: "remote", shown: r ? n.slice(r.length + 1) : n });
+      }
+      const remotes = [];
+      for (const [r, rows] of byRemote) remotes.push({ remote: r, rows: scored(rows) });
+      const tags = scored((branchData.tags || []).map((n) => ({ name: n, kind: "tag" })));
 
-      // A collapsible category: a clickable header (chevron + count) over its
-      // rows. While searching, force-expand so matches are always visible.
-      // opts.count overrides the header badge (for a capped list); opts.note
-      // appends a muted footer row (e.g. "N more — type to search").
-      function group(label, rows, build, opts) {
+      // A collapsible category: a heading (chevron, label, count) over its
+      // rows. While searching it is open, so every match shows. A paged one
+      // renders PAGE rows and a "Show more" row that renders PAGE more.
+      function group(key, label, rows, opts) {
         if (!rows.length) return;
-        const collapsed = !branchFilter && !!collapsedCats[label];
+        const remote = opts && opts.remote;
+        const collapsed = !q && !!collapsedCats[key];
+        const wrap = el("div", "bm-group");
         const head = el("button", "bm-sep" + (collapsed ? " collapsed" : ""),
           bIcon("chevron-down") + '<span class="bm-sep-label"></span><span class="bm-sep-count"></span>');
-        head.querySelector(".bm-sep-label").textContent = label;
-        head.querySelector(".bm-sep-count").textContent =
-          String(opts && opts.count != null ? opts.count : rows.length);
+        const lab = head.querySelector(".bm-sep-label");
+        lab.textContent = label;
+        if (remote) lab.appendChild(el("span", "bm-sep-remote", esc(remote)));
+        head.querySelector(".bm-sep-count").textContent = String(rows.length);
+        // Its name in words: read from the text it would be "REMOTEorigin 56"
+        // (the remote's name is set off by a margin, not a space).
+        const noun = key === "tags" ? (rows.length === 1 ? " tag" : " tags") : rows.length === 1 ? " branch" : " branches";
+        head.setAttribute("aria-label", (remote ? label + " " + remote : label) + ", " + rows.length + noun);
         head.setAttribute("aria-expanded", collapsed ? "false" : "true");
         head.tabIndex = -1; // a click folds it; Tab never leaves the search box
         const body = el("div", "bm-group-body");
         body.setAttribute("role", "group");
-        body.setAttribute("aria-label", label);
+        body.setAttribute("aria-label", remote ? label + " " + remote : label);
         if (collapsed) body.style.display = "none";
-        rows.forEach((r) => body.appendChild(build(r)));
-        if (opts && opts.note) body.appendChild(el("div", "bm-note", esc(opts.note)));
-        if (opts && opts.more > 0) {
-          const more = el("div", "bm-more", "Show " + Math.min(opts.more, TAG_PAGE) +
-            " more of " + opts.more);
-          more.dataset.bmkey = "more:" + label;
-          bmOption(more);
+        const limit = opts && opts.paged ? (pageLimits[key] || PAGE) : rows.length;
+        const shown = rows.slice(0, limit);
+        shown.forEach((r) => {
+          const row = branchRow(r);
+          body.appendChild(row);
+          consider(row.dataset.bmkey, r.s, false);
+        });
+        const more = rows.length - shown.length;
+        if (more > 0) {
+          const moreRow = el("div", "bm-more", "Show " + Math.min(more, PAGE) + " more of " + more);
+          moreRow.dataset.bmkey = "more:" + key;
+          bmOption(moreRow);
           // The arrows reach it and Enter runs it from the search box, which
           // keeps focus: no Tab stop of its own.
-          more.setAttribute("tabindex", "-1");
-          const grow = (ev) => {
+          moreRow.setAttribute("tabindex", "-1");
+          moreRow.addEventListener("click", (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
-            tagLimit += TAG_PAGE;
+            // The highlight goes to the first of the rows it adds: where
+            // "Show more" was.
+            const at = bmRows().findIndex((n) => n.dataset.bmkey === "more:" + key);
+            pageLimits[key] = limit + PAGE;
             renderBranchMenu();
-          };
-          more.addEventListener("click", grow);
-          body.appendChild(more);
+            const rowsNow = bmRows();
+            if (at >= 0 && rowsNow[at]) {
+              bmActiveKey = rowsNow[at].dataset.bmkey;
+              bmUserMoved = true;
+              paintBm(true);
+            }
+          });
+          body.appendChild(moreRow);
         }
         head.addEventListener("click", () => {
-          collapsedCats[label] = !collapsedCats[label];
-          const c = !!collapsedCats[label];
+          collapsedCats[key] = !collapsedCats[key];
+          const c = !!collapsedCats[key];
           head.classList.toggle("collapsed", c);
           head.setAttribute("aria-expanded", c ? "false" : "true");
           body.style.display = c ? "none" : "";
@@ -6444,58 +6939,83 @@ export class CommitViewProvider
             bmActiveKey = "";
             paintBm(false);
           }
+          fitBranchNames();
         });
-        list.appendChild(head);
-        list.appendChild(body);
+        wrap.appendChild(head);
+        wrap.appendChild(body);
+        list.appendChild(wrap);
       }
 
-      // Tags can number in the thousands, so we PAGE them rather than build a
-      // giant DOM up front — but every tag stays reachable: the "Show more" row
-      // raises the window until they are all rendered. The old hard cap applied
-      // even while filtering, so tags past it could not be reached at all.
-      const allTags = (branchData.tags || []).filter((n) => matchF(n));
-      const tagsShown = allTags.slice(0, tagLimit);
-      const tagsHidden = allTags.length - tagsShown.length;
+      group("favorites", "Favorites", favs);
+      group("recents", "Recents", recents);
+      group("local", "Local", others);
+      for (const g of remotes) group("remote:" + g.remote, "Remote", g.rows, { remote: g.remote, paged: true });
+      // Tags can number in the thousands: paged, never capped, so every tag
+      // stays reachable.
+      group("tags", "Tags", tags, { paged: true });
 
-      group("Favorites", favs, (b) => branchRow(b.name, "local", b.upstream, true, b.current, b.ahead, b.behind, b.gone));
-      group("Recents", recents, (b) => branchRow(b.name, "local", b.upstream, false, b.current, b.ahead, b.behind, b.gone));
-      group("Local", others, (b) => branchRow(b.name, "local", b.upstream, b.favorite, b.current, b.ahead, b.behind, b.gone));
-      group("Remote", remotes, (n) => branchRow(n, "remote", "", false, false));
-      group("Tags", tagsShown, (n) => branchRow(n, "tag", "", false, false),
-        { count: allTags.length, more: tagsHidden });
-
+      const anyRef = favs.length || recents.length || others.length || tags.length ||
+        remotes.some((g) => g.rows.length);
       if (branchesLoading) {
         // The host has not listed this repository's branches yet (its first
         // push carries none): say so, rather than show a repository with none.
         list.appendChild(el("div", "bm-empty bm-loading",
           bIcon("loading codicon-modifier-spin") + "<span>Loading branches…</span>"));
-      } else if (!anyAction && !favs.length && !recents.length && !others.length &&
-          !remotes.length && !allTags.length) {
-        list.appendChild(el("div", "bm-empty", "No matches"));
+      } else if (q && !anyRef) {
+        // No ref by that name: offer to make one, or to check out what was
+        // typed as a revision (a sha, origin/main~3). The new branch is the
+        // first, so Enter makes it — unless an action matched.
+        const none = el("div", "bm-empty bm-none");
+        none.textContent = "No branch or tag matches '" + branchQuery + "'";
+        list.appendChild(none);
+        const offer = (key, icon, label, run) => {
+          const b = el("button", "bm-action", bIcon(icon) + "<span></span>");
+          b.querySelector("span").textContent = label;
+          b.title = label;
+          b.dataset.bmkey = key;
+          b.dataset.score = "1";
+          b.tabIndex = -1;
+          bmOption(b);
+          consider(key, 1, true);
+          b.addEventListener("click", run);
+          list.appendChild(b);
+        };
+        const typed = branchQuery;
+        offer("a:newNamed", "add", "New Branch '" + typed + "'…", () => promptNewBranch(typed));
+        offer("a:checkoutNamed", "arrow-swap", "Checkout Revision '" + typed + "'…", () => promptCheckoutRef(typed));
       }
       // The whole list is showing: the width it needs is the width to keep
       // while a query narrows it (the branches may have just arrived).
-      if (!branchFilter) holdBranchMenuWidth();
+      if (!q) holdBranchMenuWidth();
       // New rows can be wider (a longer name arrived, more tags shown): the
       // box is kept inside the view.
       placeBranchMenu();
       fitBranchRows();
+      fitBranchNames();
       // The rows are new; the highlight finds its row again by key.
       paintBm(false);
     }
     /**
      * The width the menu keeps while you type, so fewer, shorter rows never
-     * pull its edge in under the pointer: what its whole list needs, never
-     * less than it had. Taken with the box empty (on open, when the branches
-     * arrive, when the box is cleared) and when the view is resized, so
-     * branches that arrive after it opened, or a view widened under it, widen
-     * it for good. It never outgrows the view.
+     * pull its edge in under the pointer — nor a long query push it out:
+     * what its whole list needs, never less than it had. Taken with the box
+     * empty (on open, when the branches arrive, when the box is cleared) and
+     * when the view is resized, so branches that arrive after it opened, or
+     * a view widened under it, widen it for good. It never outgrows the view.
      */
     function holdBranchMenuWidth() {
       if (!branchMenu) return;
-      branchMenu.style.minWidth = "";
+      branchMenu.style.width = "";
       bmHeldWidth = Math.max(bmHeldWidth, Math.ceil(branchMenu.getBoundingClientRect().width));
-      branchMenu.style.minWidth = "min(" + bmHeldWidth + "px, calc(100vw - 12px))";
+      branchMenu.style.width = "min(" + bmHeldWidth + "px, calc(100vw - 12px))";
+    }
+    /** The same, from the whole list while a query shows only part of it:
+     *  the branches arrived after something was typed. */
+    function holdWholeListWidth() {
+      const f = branchFilter;
+      branchFilter = "";
+      renderBranchMenu();
+      branchFilter = f;
     }
     /**
      * A branch's name keeps at least 45% of its row, or all of itself when it
@@ -6514,6 +7034,135 @@ export class CommitViewProvider
         return n.scrollWidth > n.clientWidth + 0.5 && n.clientWidth < 0.45 * r.clientWidth;
       });
       cramped.forEach((r) => r.classList.add("is-cramped"));
+    }
+
+    // Measures text for fitBranchNames without laying anything out.
+    let bmMeasure = null;
+    function bmTextWidth(font, s) {
+      if (!bmMeasure) bmMeasure = document.createElement("canvas").getContext("2d");
+      bmMeasure.font = font;
+      return bmMeasure.measureText(s).width;
+    }
+    /**
+     * A long name whose match lies past the end of its row is cut in the
+     * middle instead of at the end — its first path segment, "…", then the
+     * segment (or the word) the match is in — so what was typed is in sight:
+     * "feature/…/billing-address-valid…" for "billing". Only rows on screen
+     * with a match are measured, once each; the full name is in the row's
+     * tooltip and spoken label.
+     */
+    function fitBranchNames() {
+      const list = bmList();
+      if (!list || !branchFilter || !branchMenu || branchMenu.classList.contains("is-drilled")) return;
+      const box = list.getBoundingClientRect();
+      const todo = [];
+      list.querySelectorAll(".bm-bname[data-pos]:not([data-cut])").forEach((nm) => {
+        const r = nm.getBoundingClientRect();
+        if (r.height === 0 || r.bottom < box.top || r.top > box.bottom) return;
+        if (nm.scrollWidth <= nm.clientWidth + 0.5) { nm.dataset.cut = "0"; return; }
+        const cs = getComputedStyle(nm);
+        // Measured as if every letter were as bold as a match: it errs
+        // towards showing a letter less, never a match hidden.
+        todo.push({ nm: nm, avail: nm.clientWidth, font: cs.fontStyle + " 600 " + cs.fontSize + " " + cs.fontFamily });
+      });
+      for (const t of todo) {
+        const text = t.nm.dataset.text;
+        const pos = t.nm.dataset.pos.split(",").map(Number);
+        const cut = bmMiddleCut(text, pos, t.avail, (s) => bmTextWidth(t.font, s));
+        t.nm.dataset.cut = cut ? "1" : "0";
+        if (cut) t.nm.innerHTML = hl(cut.text, cut.pos);
+      }
+    }
+    /**
+     * Where to cut text so every letter at pos shows in avail pixels, or null
+     * when an ellipsis at its end already leaves them in sight. A scattered
+     * match ("fval": the f of feature, the val of validation) has several
+     * runs of matched letters; each keeps some of what is around it, and
+     * "…" stands for what lies between. What is kept, most first:
+     *   · of the name's start: its first path segment, else its first word,
+     *     else nothing — and all of it up to a run that starts the name;
+     *   · before each run: its path segment (with the slash before it), else
+     *     its word, else the run alone;
+     *   · after a run: the rest of its word, or, for the run alone, nothing.
+     *     The last run keeps everything after it, cut at the row's end.
+     * The first way that fits is the one: "feature/…/billing-address-val…"
+     * for "billing", "feature/…validation-for…" for "fval".
+     */
+    function bmMiddleCut(text, pos, avail, width) {
+      const ELL = "…";
+      const last = pos[pos.length - 1];
+      if (width(text.slice(0, last + 1)) + width(ELL) <= avail) return null;
+      // The matched letters as runs, each [from, to).
+      const runs = [];
+      for (const p of pos) {
+        const r = runs[runs.length - 1];
+        if (r && p === r[1]) r[1] = p + 1;
+        else runs.push([p, p + 1]);
+      }
+      const SEP = /[\/\-_.\s()'"@#:,+]/;
+      /** Where the word holding text[i - 1] ends. */
+      const wordEnd = (i) => {
+        let j = i;
+        while (j < text.length && !SEP.test(text.charAt(j)) && !bmWordStart(text, j)) j++;
+        return j;
+      };
+      /** Where a run's kept text starts, at each level: its path segment, its word, itself. */
+      const before = (s, level) => {
+        let from = s;
+        if (level === 0) from = text.lastIndexOf("/", s - 1) + 1;
+        else if (level === 1) while (from > 0 && !bmWordStart(text, from)) from--;
+        // A kept path segment keeps the slash before it: "feature/…/billing".
+        return from > 0 && text.charAt(from - 1) === "/" ? from - 1 : from;
+      };
+      let firstWord = 1;
+      while (firstWord < text.length && !bmWordStart(text, firstWord)) firstWord++;
+      const heads = [text.indexOf("/") + 1, firstWord, 0];
+      /** The name with what lies between the kept parts as "…", and where each matched letter went. */
+      const build = (level, h) => {
+        const keep = [];
+        if (h > 0) keep.push([0, h]);
+        runs.forEach((r, k) => {
+          // A run that starts the name keeps the name's start.
+          const from = k === 0 && r[0] <= 1 ? 0 : before(r[0], level);
+          const to = k === runs.length - 1 ? text.length : level === 2 ? r[1] : wordEnd(r[1]);
+          keep.push([from, to]);
+        });
+        keep.sort((a, b) => a[0] - b[0]);
+        // Merged where they touch, or where "…" would be no shorter than what it stands for.
+        const merged = [];
+        for (const [a, b] of keep) {
+          const m = merged[merged.length - 1];
+          if (m && (a <= m[1] || width(text.slice(m[1], a)) <= width(ELL))) m[1] = Math.max(m[1], b);
+          else merged.push([a, b]);
+        }
+        if (merged[0][0] > 0 && width(text.slice(0, merged[0][0])) <= width(ELL)) merged[0][0] = 0;
+        let out = "";
+        const at = new Map();
+        merged.forEach(([a, b]) => {
+          if (a > 0) out += ELL;
+          for (let i = a; i < b; i++) at.set(i, out.length + i - a);
+          out += text.slice(a, b);
+        });
+        const mapped = pos.map((p) => at.get(p));
+        return { text: out, pos: mapped, fits: width(out.slice(0, mapped[mapped.length - 1] + 1)) + width(ELL) <= avail };
+      };
+      // Most kept first: around each run, then of the name's start — but a
+      // run that starts the name keeps its first path segment whole before
+      // anything around the other runs ("feature/…validation", never
+      // "feature…/billing-address-validation" beside it on the next row).
+      const tries = [];
+      if (runs[0][0] <= 1) {
+        for (const h of [heads[0], 0]) for (let level = 0; level <= 2; level++) tries.push([level, h]);
+      } else {
+        for (let level = 0; level <= 2; level++) for (const h of heads) tries.push([level, h]);
+      }
+      let cut = null;
+      for (const [level, h] of tries) {
+        cut = build(level, h);
+        if (cut.fits) break;
+      }
+      // Nothing fits the row: the closest cut still shows the most of what matched.
+      return cut.text === text ? null : cut;
     }
 
     // ── GitStudio dialogs ─────────────────────────────────────────────────
@@ -6732,6 +7381,9 @@ export class CommitViewProvider
       var candidates = spec.candidates || [];
       var sel = -1;
       var shown = [];
+      // The candidate a click picked: its name alone may be another ref's
+      // too (a branch and a tag), so a local caller is handed the candidate.
+      var picked = null;
       var panel = beginDialog(spec);
 
       var wrap = el("div", "rp-inputwrap");
@@ -6762,6 +7414,11 @@ export class CommitViewProvider
       function currentValue() {
         if (sel >= 0 && shown[sel]) return shown[sel].name;
         return spec.multiline ? input.value : input.value.trim();
+      }
+      /** The candidate the value is, when one was picked (never one typed). */
+      function currentPick() {
+        if (sel >= 0 && shown[sel]) return shown[sel];
+        return picked && picked.name === currentValue() ? picked : null;
       }
 
       function problem(v) {
@@ -6882,6 +7539,7 @@ export class CommitViewProvider
           row.addEventListener("click", function () {
             input.value = c.name;
             sel = -1;
+            picked = c;
             renderList();
             if (validate()) confirm();
           });
@@ -6892,11 +7550,12 @@ export class CommitViewProvider
       function confirm() {
         var v = currentValue();
         if (!v || problem(v)) return;
+        var pick = currentPick();
         closeDialog(onConfirm ? undefined : v);
-        if (onConfirm) onConfirm(v);
+        if (onConfirm) onConfirm(v, pick);
       }
 
-      input.addEventListener("input", function () { sel = -1; renderList(); validate(); });
+      input.addEventListener("input", function () { sel = -1; picked = null; renderList(); validate(); });
       input.addEventListener("keydown", function (e) {
         if (e.key === "Escape") { e.preventDefault(); closeDialog(undefined); return; }
         if (e.key === "Enter") {
@@ -7168,7 +7827,9 @@ export class CommitViewProvider
     function openBranchMenu() {
       if (branchMenu) { closeBranchMenu(); return; }
       branchFilter = "";
-      tagLimit = TAG_PAGE;
+      branchQuery = "";
+      pageLimits = Object.create(null);
+      bmUserMoved = false;
       // A scrim dims the view behind the dialog stack, so it's unmistakable
       // that you're IN a dialog (clicking it closes, like any modal).
       branchBackdrop = el("div", "bm-backdrop");
@@ -7186,17 +7847,22 @@ export class CommitViewProvider
       input.setAttribute("aria-autocomplete", "list");
       input.setAttribute("aria-controls", "bm-list");
       input.addEventListener("input", () => {
-        branchFilter = input.value.trim().toLowerCase();
-        tagLimit = TAG_PAGE; // a new query starts from the first page again
+        // Typing leaves an open submenu (a drilled-in one too) for the
+        // list, for good: a host repaint must not open it again.
+        subMenuFor = null;
+        branchQuery = input.value.trim();
+        branchFilter = branchQuery.toLowerCase();
+        pageLimits = Object.create(null); // a new query starts from the first page again
+        bmUserMoved = false;
         renderBranchMenu();
         // A new query starts at the top, its first group header in view —
         // not wherever the last one had been scrolled to.
         const l = bmList();
         if (l) l.scrollTop = 0;
-        // Typing puts the highlight on the first match (none for an empty box),
-        // so Enter runs what the search found.
-        const rows = bmRows();
-        bmActiveKey = branchFilter && rows.length ? rows[0].dataset.bmkey : "";
+        // Typing puts the highlight on the best match (none for an empty
+        // box), so Enter runs what the search found — a branch before an
+        // action it ties with.
+        bmActiveKey = branchFilter && bmBest ? bmBest.key : "";
         paintBm(true);
       });
       input.addEventListener("keydown", onBmInputKey);
@@ -7214,8 +7880,11 @@ export class CommitViewProvider
         const row = e.target.closest ? e.target.closest("[data-bmkey]") : null;
         if (!row || row.dataset.bmkey === bmActiveKey) return;
         bmActiveKey = row.dataset.bmkey;
+        bmUserMoved = true;
         paintBm(false);
       });
+      // Rows scrolled into sight get their long names cut around the match.
+      list.addEventListener("scroll", () => fitBranchNames(), { passive: true });
       branchMenu.appendChild(list);
       // A press anywhere in the menu but the box itself — a row, a group
       // header, the padding, the 'No matches' line — never takes focus from
@@ -7257,11 +7926,22 @@ export class CommitViewProvider
     // placed again, inside the view's new edges.
     function onBranchResize() {
       if (!branchMenu) return;
+      // Drilled in, the list is hidden and cannot be measured: it comes back
+      // first, and the actions are placed again below — beside the menu if
+      // the view is wide enough for that now.
+      const sub = subMenuFor, subKey = bmSubActiveKey(); // the same item stays highlighted
+      if (branchSubmenu) closeBranchSubmenu();
+      subMenuFor = sub;
       // Measured on whole rows: the counts a narrower view hid come back first.
       branchMenu.querySelectorAll(".bm-branch.is-cramped").forEach((r) => r.classList.remove("is-cramped"));
-      holdBranchMenuWidth();
+      // The width the whole list needs in the new view — never what a query
+      // shows: an offer quoting a long query would measure the menu at its
+      // widest, and hold it there after the box was cleared.
+      if (branchFilter) holdWholeListWidth();
+      else holdBranchMenuWidth();
       placeBranchMenu();
-      if (branchSubmenu) refreshOpenBranchUi(); else fitBranchRows();
+      // Every row, measured again at the new width.
+      refreshOpenBranchUi(subKey);
     }
     branchPill.addEventListener("click", openBranchMenu);
     // Switch Repository: the host builds the list (it holds every repository's
@@ -8842,8 +9522,12 @@ export class CommitViewProvider
         // out of the three file lists, so anything else on the payload is dropped.
         stagingModel = msg.stagingModel || "split";
         applyModelToggleLabel();
+        const wasLoading = branchesLoading;
         branchData = applyPendingFavorites(msg.branches) || { local: [], remote: [], recent: [], tags: [] };
         branchesLoading = !!msg.hasRepo && !msg.branches;
+        // The branches arrived after something was typed: the width to hold
+        // is the whole list's, not that of what the query shows.
+        if (branchMenu && wasLoading && !branchesLoading && branchFilter) holdWholeListWidth();
         // Only rebuild an OPEN branch menu when the branch data actually
         // changed. Every state push (and now the redundant 2nd post) would
         // otherwise call renderBranchMenu(), which closeBranchSubmenu()s and
@@ -8851,8 +9535,9 @@ export class CommitViewProvider
         // resetting the scroll position. refreshOpenBranchUi re-opens the
         // same branch's submenu on its fresh row, so the stack survives.
         // Loading is part of it: a repository that really has no branches
-        // yet answers with the same empty lists the loading menu holds.
-        const branchSig = JSON.stringify([branchesLoading, branchData]);
+        // yet answers with the same empty lists the loading menu holds. So
+        // is a detached HEAD, which takes Pull and Push away.
+        const branchSig = bmSig();
         if (branchMenu && branchSig !== lastBranchSig) refreshOpenBranchUi();
         lastBranchSig = branchSig;
         if (typeof msg.lastMessage === "string" && amend.checked &&

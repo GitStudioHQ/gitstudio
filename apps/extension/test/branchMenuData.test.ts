@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "@gitstudio/git-service/GitContext";
-import { branchesPayload } from "../src/changes/branchMenuData";
+import { branchActionWords, branchesPayload } from "../src/changes/branchMenuData";
 
 // What the Changes view's branch menu is sent, from what real git lists: a
 // branch whose upstream was deleted from the remote (what a merged pull
@@ -64,4 +64,32 @@ test("a branch whose upstream was deleted from the remote is sent as gone; a liv
     assert.ok(!row(live)?.gone, `${live}'s upstream is there: ${JSON.stringify(row(live))}`);
     assert.equal(row(live)?.upstreamOnRemote, true);
   }
+});
+
+// The menu groups remote branches by remote, and a remote's name may hold a
+// slash: "team/eu/feature" is team/eu's feature, which no split at the first
+// slash can tell. So the remotes are sent by name — every one, including one
+// whose URL holds a space, which `git remote -v` cannot delimit.
+test("the remotes are sent by name: one whose name holds a slash, one whose URL holds a space", async () => {
+  const eu = mkdtempSync(join(tmpdir(), "gs ext bmd eu "));
+  try {
+    git(eu, "init", "-q", "--bare", "-b", "main");
+    git(repo, "remote", "add", "team/eu", eu);
+    git(repo, "push", "-q", "team/eu", "refs/heads/main:refs/heads/feature");
+    git(repo, "fetch", "-q", "team/eu");
+    const names = await ctx.remotes.names();
+    assert.deepEqual([...names].sort(), ["origin", "team/eu"]);
+    assert.ok(!(await ctx.remotes.list()).some((r) => r.name === "team/eu"), "(`remote -v` loses it, as this is about)");
+    const menu = branchesPayload(await ctx.refs.listRefs(), [], [], names);
+    assert.deepEqual([...(menu.remoteNames ?? [])].sort(), ["origin", "team/eu"]);
+    assert.ok(menu.remote.includes("team/eu/feature"), menu.remote.join(" | "));
+  } finally {
+    git(repo, "remote", "remove", "team/eu");
+    rmSync(eu, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
+test("a branch action is named as the menu names it: Pull, not 'Update (pull)'", () => {
+  assert.equal(branchActionWords("pull"), "Pull");
+  assert.equal(branchActionWords("checkoutRef", "-f"), "Checkout '-f'");
 });

@@ -447,17 +447,25 @@ for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
     await closeMenu(p);
   });
 
-  // The hollow star is a control on every local row: 3:1, as a control needs.
-  test(`${theme}: an empty star on a plain row reads at 3:1`, { skip }, async () => {
+  // The hollow star is a control the row under the pointer offers: shown
+  // there at 3:1, as a control needs — and on no other plain row.
+  test(`${theme}: an empty star shows on the row under the pointer, at 3:1, and on no other`, { skip }, async () => {
     const p = await open(theme, 400, 640);
     await p.eval(COLOUR);
     await openMenu(p, stateMessage({ local: FEW }));
-    const r = await p.eval<{ on: boolean; ratio: number }>(`(function () {
-      var s = document.querySelector('.bm-list .bm-branch[data-bname="spike/cache"] .bm-star');
-      return { on: s.classList.contains("on"), ratio: __textContrast(s) };
+    const star = (name: string) => `document.querySelector('.bm-list .bm-branch[data-bname="${name}"] .bm-star')`;
+    assert.equal(await p.eval(`getComputedStyle(${star("spike/cache")}).visibility`), "hidden", "not on a plain row");
+    const c = await p.eval<{ x: number; y: number }>(`(function () { var r = document.querySelector('.bm-branch[data-bname="spike/cache"]').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await p.mouseMove(c.x, c.y);
+    const r = await p.eval<{ on: boolean; shown: string; ratio: number; other: string }>(`(function () {
+      var s = ${star("spike/cache")};
+      return { on: s.classList.contains("on"), shown: getComputedStyle(s).visibility, ratio: __textContrast(s),
+        other: getComputedStyle(${star("release/2.1")}).visibility };
     })()`);
     assert.ok(!r.on, "the row is not starred");
+    assert.equal(r.shown, "visible", "the hovered row offers it");
     assert.ok(r.ratio >= 3, `the empty star: ${r.ratio.toFixed(2)}:1`);
+    assert.equal(r.other, "hidden", "another plain row still does not");
     await closeMenu(p);
   });
 

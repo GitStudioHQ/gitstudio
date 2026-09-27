@@ -13,7 +13,8 @@ import { ChangesPage, stateMessage, type LocalBranch } from "./changesPage";
 //     soon as they arrive, even when there are none;
 //   · a submenu names what it acts on: the current branch, or on a detached
 //     HEAD the commit HEAD is at, never a branch called "current branch";
-//   · a branch whose upstream is gone offers no pull from it;
+//   · a branch whose upstream is gone offers no pull from it, and its
+//     actions start with Set Tracked Branch…;
 //   · the words say what happens — "Push…" asks more, a count has its unit —
 //     and every glyph is a codicon this build ships, none of them the check
 //     that marks the checked-out branch or the view's tree/list toggle.
@@ -187,7 +188,7 @@ test("the menu's words say what happens, and its glyphs are real and mean one th
 // The row says its upstream is gone; its actions must not offer to pull from
 // it. "Pull into 'merged-pr'" ran a fetch of a remote branch that no longer
 // exists, so it could only fail, and the current branch's two pulls the same.
-test("a branch whose upstream is gone offers no pull from it, and names that upstream as gone", { skip }, async () => {
+test("a branch whose upstream is gone offers no pull from it, and Set Tracked Branch… first", { skip }, async () => {
   const local: LocalBranch[] = [
     { name: "main", upstream: "origin/main", upstreamOnRemote: true, behind: 2 },
     { name: "merged-pr", upstream: "origin/merged-pr", gone: true },
@@ -207,11 +208,15 @@ test("a branch whose upstream is gone offers no pull from it, and names that ups
   };
   const gone = await labelsFor("merged-pr");
   assert.ok(!gone.some((l) => /^Pull/.test(l)), `no pull: ${gone.join(" | ")}`);
-  assert.ok(gone.includes("Tracked Branch: origin/merged-pr (gone)…"), `the tracked branch says it is gone: ${gone.join(" | ")}`);
+  // What it needs first: another branch to track. Not a second item naming
+  // the gone one as if it could be kept.
+  assert.equal(gone[0], "Set Tracked Branch…", `choosing a new upstream comes first: ${gone.join(" | ")}`);
+  assert.equal(gone.filter((l) => /Tracked Branch/.test(l)).length, 1, gone.join(" | "));
   assert.ok(gone.includes("Checkout") && gone.includes("Delete"), "the rest is still there");
 
   const current = await labelsFor("done");
   assert.ok(!current.some((l) => /^Pull/.test(l)), `the current branch: no pull either: ${current.join(" | ")}`);
+  assert.equal(current[0], "Set Tracked Branch…", `nor for the current branch: ${current.join(" | ")}`);
   assert.ok(current.includes("Push…"), `but Push… is: ${current.join(" | ")}`);
 
   // A live upstream keeps them.

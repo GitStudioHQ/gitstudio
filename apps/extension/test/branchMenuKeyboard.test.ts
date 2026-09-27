@@ -330,6 +330,16 @@ test("the reset item: on a local branch tracking a remote branch, current or not
 });
 
 test("the pointer moves the highlight — but not a list scrolling under a still pointer, nor crossing rows to an open submenu", { skip }, async () => {
+  // A view with room beside the menu, where a branch's actions open there
+  // and the way to them can cross other rows.
+  await page.resize(900, 640);
+  try {
+    await pointerMovesTheHighlight();
+  } finally {
+    await page.resize(520, 640);
+  }
+});
+async function pointerMovesTheHighlight(): Promise<void> {
   await openMenu(page);
   const centre = (sel: string): Promise<{ x: number; y: number }> =>
     page.eval(`(function () { var r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
@@ -371,7 +381,7 @@ test("the pointer moves the highlight — but not a list scrolling under a still
   const second = await centre(`.branch-submenu #bm-sub-1`);
   await page.mouseMove(second.x, second.y);
   assert.equal((await snap(page)).sub, "Pull 1 Commit into 'feature'", "hovering an item highlights it");
-});
+}
 
 test("the highlight scrolls into view, and survives the host repainting the menu", { skip }, async () => {
   const many: LocalBranch[] = [
@@ -509,22 +519,48 @@ test("a press anywhere in the menu or a submenu leaves focus in the search box",
   let s = await pressOn(".branch-menu .bm-search", "edge");
   assert.ok(s.menuOpen && s.focusIsSearch, "the search row's padding");
 
+  // Drilled in (this view has no room beside the menu): the back row takes
+  // the press and goes back; the rest of the actions' box takes nothing.
   await page.type("feature");
   await page.key("ArrowRight");
+  assert.ok(await page.eval<boolean>(`document.querySelector(".branch-menu").contains(document.querySelector(".branch-submenu"))`), "drilled in");
   for (const [sel, at] of [
-    [".branch-submenu .bm-subhead", "centre"],
     [".branch-submenu .bm-subsep", "centre"],
     [".branch-submenu", "edge"],
   ] as const) {
     s = await pressOn(sel, at);
-    assert.ok(s.subOpen && s.focusIsSearch, `a press on ${sel} (${at})`);
+    assert.ok(s.subOpen && s.focusIsSearch, `drilled in, a press on ${sel} (${at})`);
   }
-  // After a press on the submenu's title band the arrows still move in it.
   s = await pressOn(".branch-submenu .bm-subhead");
-  const was = s.sub;
+  assert.ok(!s.subOpen && s.menuOpen && s.focusIsSearch, "drilled in, the back row goes back, focus in the box");
+  assert.equal(s.main, "b:local:feature", "to its branch");
   await page.key("ArrowDown");
-  assert.notEqual((await snap(page)).sub, was, `Down moved on from '${was}'`);
-  await page.key("ArrowLeft");
+  assert.equal((await snap(page)).main, "b:remote:origin/feature", "and the arrows move on in the list");
+
+  // Beside the menu, in a view with room for it there.
+  await page.resize(900, 640);
+  try {
+    await openMenu(page);
+    await page.type("feature");
+    await page.key("ArrowRight");
+    assert.ok(!(await page.eval<boolean>(`document.querySelector(".branch-menu").contains(document.querySelector(".branch-submenu"))`)), "beside the menu");
+    for (const [sel, at] of [
+      [".branch-submenu .bm-subhead", "centre"],
+      [".branch-submenu .bm-subsep", "centre"],
+      [".branch-submenu", "edge"],
+    ] as const) {
+      s = await pressOn(sel, at);
+      assert.ok(s.subOpen && s.focusIsSearch, `a press on ${sel} (${at})`);
+    }
+    // After a press on the submenu's title band the arrows still move in it.
+    s = await pressOn(".branch-submenu .bm-subhead");
+    const was = s.sub;
+    await page.key("ArrowDown");
+    assert.notEqual((await snap(page)).sub, was, `Down moved on from '${was}'`);
+    await page.key("ArrowLeft");
+  } finally {
+    await page.resize(520, 640);
+  }
 
   await clear();
   await page.type("zzzq");
@@ -563,6 +599,8 @@ test("a star holds through a host post sent before it, and the host's agreeing p
     var r = document.querySelector('.bm-list .bm-branch[data-bname="topic"] .bm-star').getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   })()`);
+  // An empty star shows on the row under the pointer: the pointer gets there first.
+  await page.mouseMove(star.x, star.y);
   await page.click(star.x, star.y);
   assert.equal(await groupOf("topic"), "Favorites", "starred at once");
   assert.deepEqual((await page.posted()).filter((m) => m.type === "branchAction"), [

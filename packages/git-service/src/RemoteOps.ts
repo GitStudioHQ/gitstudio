@@ -25,6 +25,19 @@ export interface RemoteFetchOptions extends GitRunOptions {
 export class RemoteOps {
   constructor(private proc: GitProcess) {}
 
+  /**
+   * The remotes' names, from `git remote`: every one, whatever its URL
+   * (`list` skips a remote whose URL holds a space, which `-v` cannot
+   * delimit). A name may hold a slash ("team/eu").
+   */
+  async names(opts?: GitRunOptions): Promise<string[]> {
+    const r = await this.proc.run(["remote"], { signal: opts?.signal });
+    if (r.code !== 0) {
+      return [];
+    }
+    return r.stdout.split("\n").map((s) => s.replace(/\r$/, "").trim()).filter(Boolean);
+  }
+
   /** `git remote -v` parsed into {name, fetchUrl, pushUrl}. */
   async list(opts?: GitRunOptions): Promise<RemoteEntry[]> {
     const r = await this.proc.run(["remote", "-v"], { signal: opts?.signal });

@@ -31,10 +31,17 @@ export interface BranchRefPayload {
 /** Everything the branch menu needs: local branches (with favorites), remotes, recents, tags. */
 export interface BranchesPayload {
   local: BranchRefPayload[];
+  /** Remote branches, short names ("origin/feature"). */
   remote: string[];
   recent: string[];
   /** Tag names, newest-looking first (numeric-desc sort). */
   tags: string[];
+  /**
+   * The repository's remotes by name. The menu groups remote branches by
+   * remote, and a remote's name may itself hold a slash ("team/eu"), so it
+   * cannot be read off "team/eu/feature" by splitting at the first one.
+   */
+  remoteNames?: string[];
 }
 
 /** Local branches (with favorites), remotes, recents, and tags for the branch menu. */
@@ -42,6 +49,7 @@ export function branchesPayload(
   refs: readonly GitRef[],
   favorites: readonly string[],
   recent: string[],
+  remoteNames: readonly string[] = [],
 ): BranchesPayload {
   const favs = new Set(favorites);
   // Where the submenu offers "Reset to '<upstream>'…" (#32).
@@ -71,7 +79,7 @@ export function branchesPayload(
     .filter((r) => r.type === "tag")
     .map((r) => r.name)
     .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-  return { local, remote, recent, tags };
+  return { local, remote, recent, tags, remoteNames: [...remoteNames] };
 }
 
 /**
@@ -87,6 +95,24 @@ export function withFavorites(payload: BranchesPayload, favorites: readonly stri
 }
 
 /**
+ * The full name of a ref picked from a list by its short name and its kind,
+ * as git lists it now — undefined when there is none any more. A short name
+ * names one ref only while no other shares it: a tag made since the list was
+ * drawn with the name of the branch that was picked, and `git checkout
+ * --detach v1` lands on the branch (git prefers it), whichever was picked.
+ * git's own short name for a ref that shares one ("heads/v1") is found too.
+ */
+export function pickedRefName(
+  refs: readonly GitRef[],
+  name: string,
+  refType: "head" | "remote" | "tag",
+): string | undefined {
+  const prefix = refType === "head" ? "refs/heads/" : refType === "remote" ? "refs/remotes/" : "refs/tags/";
+  const same = refs.filter((r) => r.type === refType);
+  return (same.find((r) => r.name === name) ?? same.find((r) => r.fullName === prefix + name))?.fullName;
+}
+
+/**
  * A branch-menu action as the person chose it, for a message about it:
  * "Pull into 'feature'", not the message's action id ("pullFf").
  */
@@ -95,7 +121,7 @@ export function branchActionWords(action: string | undefined, ref?: string): str
     case "fetch":
       return "Fetch";
     case "pull":
-      return "Update (pull)";
+      return "Pull";
     case "pullMerge":
       return "Pull using Merge";
     case "pullRebase":

@@ -16,7 +16,12 @@ import { withFavorites, type BranchesPayload } from "../src/changes/branchMenuDa
 //     old star, so the row the menu had already moved went back. Every post
 //     after the star now carries it;
 //   · a failed branch action is named by what the user did ("Pull into
-//     'merged-pr'"), not by the message's action id ("pullFf").
+//     'merged-pr'"), not by the message's action id ("pullFf");
+//   · the list goes out with the remotes by name, which it is grouped by;
+//   · a revision to check out that git would read as an option ("-f") is
+//     refused before git sees it;
+//   · a ref picked to check out is checked out as that ref, by its full
+//     name, when a tag shares a branch's name.
 
 const CFG = join(mkdtempSync(join(tmpdir(), "gs-ext-bmh-cfg-")), "config");
 writeFileSync(CFG, "");
@@ -203,4 +208,68 @@ test("a failed branch action is named by what the user did, not by its action id
   assert.equal(errors.length, 1, JSON.stringify(said));
   assert.match(errors[0].text, /^GitStudio: Pull into 'merged-pr' failed/);
   assert.doesNotMatch(errors[0].text, /pullFf/);
+});
+
+test("the branch list goes out with the remotes by name, which the menu groups remote branches by", async () => {
+  const { p, posts } = provider();
+  await p.pushState();
+  const last = posts.filter((m) => m.type === "state").pop();
+  assert.deepEqual(last.branches.remoteNames, ["origin"]);
+});
+
+// "Checkout Revision '<query>'…" hands the host whatever was typed. "-f"
+// after `checkout --detach` is git's --force: it threw every uncommitted
+// change away. Something git would read as an option never reaches it.
+test("a revision to check out that starts with '-' never reaches git", async () => {
+  const { p } = provider();
+  said.length = 0;
+  writeFileSync(join(repo, "f.txt"), "an edit in progress\n");
+  try {
+    await p.handleBranchAction({ type: "branchAction", action: "checkoutRef", ref: "-f" });
+    assert.equal(readFileSync(join(repo, "f.txt"), "utf8"), "an edit in progress\n", "the edit is still there");
+    assert.equal(git(repo, "symbolic-ref", "--short", "HEAD"), "main", "and HEAD is still on main");
+    const errors = said.filter((s) => s.kind === "error");
+    assert.deepEqual(errors.map((e) => e.text), ["GitStudio: Checkout '-f' failed — '-f' is not a revision: it starts with '-'."]);
+  } finally {
+    git(repo, "checkout", "-q", "main");
+    writeFileSync(join(repo, "f.txt"), "base\n");
+  }
+});
+
+// Checkout Tag or Revision… with a ref picked from its list: that ref, by its
+// full name. A tag made with a branch's name after the list was drawn left
+// the list saying "v1" for both, and `git checkout --detach v1` takes the
+// branch (git prefers it) whichever was picked. git's own short name for a
+// twin ("heads/v1") is found too; a picked ref that is gone is said, and
+// nothing is checked out.
+test("a ref picked to check out is checked out as that ref, by its full name, when a tag shares a branch's name", async () => {
+  const { p } = provider();
+  const base = git(repo, "rev-parse", "HEAD");
+  git(repo, "tag", "v1");
+  git(repo, "checkout", "-q", "-b", "v1");
+  git(repo, "commit", "-q", "--allow-empty", "-m", "on the branch v1");
+  const onBranch = git(repo, "rev-parse", "HEAD");
+  git(repo, "checkout", "-q", "main");
+  const head = (): string => git(repo, "rev-parse", "HEAD");
+  said.length = 0;
+  try {
+    assert.equal(git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads/v1", "refs/tags/v1"), "heads/v1\ntags/v1",
+      "git's own short names for the twins");
+    await p.handleBranchAction({ type: "branchAction", action: "checkoutRef", ref: "v1", refType: "tag" });
+    assert.equal(head(), base, "the tag picked: on the tag");
+    await p.handleBranchAction({ type: "branchAction", action: "checkoutRef", ref: "v1", refType: "head" });
+    assert.equal(head(), onBranch, "the branch picked: on the branch");
+    git(repo, "checkout", "-q", "main");
+    await p.handleBranchAction({ type: "branchAction", action: "checkoutRef", ref: "heads/v1", refType: "head" });
+    assert.equal(head(), onBranch, "by git's own short name for it");
+    assert.throws(() => git(repo, "symbolic-ref", "-q", "HEAD"), "detached, as the dialog says");
+    git(repo, "checkout", "-q", "main");
+    await p.handleBranchAction({ type: "branchAction", action: "checkoutRef", ref: "v0", refType: "tag" });
+    assert.equal(git(repo, "symbolic-ref", "--short", "HEAD"), "main", "a picked tag that is gone: nothing checked out");
+    assert.deepEqual(said.filter((s) => s.kind === "error").map((e) => e.text), ["GitStudio: Checkout 'v0' failed — there is no tag 'v0' any more."]);
+  } finally {
+    git(repo, "checkout", "-q", "main");
+    git(repo, "branch", "-q", "-D", "v1");
+    git(repo, "tag", "-d", "v1");
+  }
 });

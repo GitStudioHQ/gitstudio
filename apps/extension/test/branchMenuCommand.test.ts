@@ -13,6 +13,7 @@ const manifest = JSON.parse(read("../package.json")) as {
   contributes: {
     commands: { command: string; title: string; category?: string }[];
     menus: { commandPalette: { command: string; when?: string }[] };
+    keybindings: { command: string; key: string; mac?: string; when?: string }[];
   };
 };
 const ID = "gitstudio.branches.open";
@@ -32,4 +33,27 @@ test("the command opens the Changes view's branch menu, as the status bar does",
   // The handler is the next arrow function: it calls the view's openBranchMenu.
   const handler = src.slice(at, src.indexOf(")", src.indexOf("openBranchMenu(", at)) + 1);
   assert.match(handler, /^registerCommand\("gitstudio\.branches\.open", \(\) =>\s+commitProvider\.openBranchMenu\(\)$/);
+});
+
+// A key of its own, in GitStudio's one chord (Ctrl/Cmd+Alt+G, then a letter),
+// on a letter no other GitStudio binding takes — and said in the README's
+// table of them.
+test("'GitStudio: Branches…' has Ctrl/Cmd+Alt+G G, a letter of the chord nothing else uses", () => {
+  const mine = manifest.contributes.keybindings.filter((k) => k.command === ID);
+  assert.deepEqual(mine, [{ command: ID, key: "ctrl+alt+g g", mac: "cmd+alt+g g", when: "gitstudio.hasRepo" }]);
+  for (const k of manifest.contributes.keybindings) {
+    if (k.command === ID) continue;
+    assert.notEqual(k.key, "ctrl+alt+g g", `${k.command} has the same key`);
+    assert.notEqual(k.mac, "cmd+alt+g g", `${k.command} has the same key on macOS`);
+    assert.match(k.key, /^ctrl\+alt\+g [a-z]$/, `${k.command}: every GitStudio key is in the one chord`);
+  }
+  assert.match(read("../README.md"), /\| Open the branch menu \(\*GitStudio: Branches…\*\) \| `Ctrl\+Alt\+G` `G` \| `Cmd\+Alt\+G` `G` \|/);
+});
+
+// One name for one thing: the branch menu says "New Worktree from 'x'…",
+// and so does the command a branch's context menu runs.
+test("the worktree command says New Worktree, as the branch menu does", () => {
+  const cmd = manifest.contributes.commands.find((c) => c.command === "gitstudio.branch.createWorktree");
+  assert.equal(cmd?.title, "New Worktree from This Branch…");
+  assert.match(read("../src/changes/commitView.ts"), /"New Worktree from '" \+ name \+ "'…"/);
 });
