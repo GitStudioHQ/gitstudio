@@ -117,12 +117,18 @@ export function mount(repos: ReturnType<typeof fakeRepos>, workspaceState = meme
   const view = pr.webviewViews.at(-1);
   // The page, loaded: it announces itself and the host answers.
   view.receive({ type: "ready" });
+  let gone = false;
   const m = {
     view,
     list,
     review,
     controller: pr.controllers.at(-1),
-    dispose: () => context.subscriptions.forEach((d) => d.dispose()),
+    // Once: a test that closes the feature itself is not closed again after it.
+    dispose: () => {
+      if (gone) return;
+      gone = true;
+      context.subscriptions.forEach((d) => d.dispose());
+    },
   };
   mounted.push(m);
   return m;

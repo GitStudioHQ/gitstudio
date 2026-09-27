@@ -787,6 +787,30 @@ test("a refresh re-reads every row on screen — 130 paged in stay 130, read 100
   assert.equal(view.state().rows.length, 130, "the poll keeps every row paged in: no list shrinking under the reader");
 });
 
+test("a list closed while it re-reads its rows asks GitHub for nothing more", async () => {
+  // 130 rows on screen: a refresh reads them 100 then 30. Closed while the
+  // first is in flight, it asks for no second (the old tree went on paging
+  // GitHub, up to ten pages, for rows nobody would see).
+  const all = Array.from({ length: 130 }, (_, i) => rawPull(1000 - i, { updated_at: new Date(Date.now() - i * 60e3).toISOString() }));
+  const gh = github(acmeRoutes([], world({ "acme/app": { pulls: () => all } })));
+  const m = mount(fakeRepos(ORIGIN));
+  await settled(m);
+  for (let i = 0; i < 4; i++) {
+    const n = state(m).rows.length;
+    m.view.receive({ type: "loadMore" });
+    await until(() => state(m).rows.length > n && !state(m).loadingMore, `page ${i + 2}`);
+  }
+  assert.equal(state(m).rows.length, 130);
+  const before = gql(gh, LIST_QUERY).length;
+  const slow = gh.hold((req: any) => req.path === "/graphql" && LIST_QUERY.test(String(req.body?.query ?? "")));
+  m.view.receive({ type: "refresh" });
+  await until(() => slow.held() === 1, "the first of the refresh's two pages");
+  m.dispose(); // the window closes, the extension with it
+  slow.release();
+  await sleep(150);
+  assert.equal(gql(gh, LIST_QUERY).length - before, 1, "the page in flight is the last one");
+});
+
 // The Pull Requests view is collapsed until opened: its page never says
 // "ready", and the list never resolves. The palette's commands and the New
 // pull request form act where the list WOULD — a fork's parent, or the

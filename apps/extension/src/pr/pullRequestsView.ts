@@ -301,6 +301,13 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
   private readonly pollTimer: ReturnType<typeof setInterval>;
   private readonly api: GitHubApi;
   private readonly graphql: GraphqlFn;
+  /**
+   * Aborted on dispose. A read under way stops with the view: the request in
+   * flight is handed the signal, and a refresh that re-reads its rows a page
+   * at a time asks for no page after it (the old tree went on paging GitHub
+   * for rows nobody would see).
+   */
+  private readonly stopped = new AbortController();
 
   private seq = 0;
   private segment: PrListState = "open";
@@ -332,7 +339,7 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
     private readonly staleMs: number = STALE_MS,
   ) {
     this.api = new GitHubApi({ getToken: (o) => this.auth.getToken(o) });
-    this.graphql = (query, variables) => this.api.graphqlRaw(query, variables);
+    this.graphql = (query, variables) => this.api.graphqlRaw(query, variables, { signal: this.stopped.signal });
     // Checked four times per period, so a list is at most a quarter period
     // past stale when it is read again.
     this.pollTimer = setInterval(() => this.poll(), this.staleMs / 4);
@@ -686,12 +693,12 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
     const ask = { owner: r.target.owner, repo: r.target.repo, state: this.segment, filters: this.filters };
     try {
       const page = await fetchPrListPage(this.graphql, { ...ask, first: Math.min(REFRESH_MAX, want) });
-      if (this.queryKeyNow() !== key) return; // the view moved on: another question's answer
+      if (this.stopped.signal.aborted || this.queryKeyNow() !== key) return; // closed, or another question's answer
       let items = page.items;
       let { hasMore, cursor } = page;
       while (hasMore && cursor && items.length < want) {
         const next = await fetchPrListPage(this.graphql, { ...ask, first: Math.min(REFRESH_MAX, want - items.length), after: cursor });
-        if (this.queryKeyNow() !== key) return;
+        if (this.stopped.signal.aborted || this.queryKeyNow() !== key) return;
         // Sorted by last update: a row can move to a later page between reads.
         const seen = new Set(items.map((i) => i.number));
         items = [...items, ...next.items.filter((i) => !seen.has(i.number))];
@@ -714,7 +721,7 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
       this.notice = undefined;
       this.message = undefined;
     } catch (err) {
-      if (this.queryKeyNow() !== key) return;
+      if (this.stopped.signal.aborted || this.queryKeyNow() !== key) return;
       const d = describe(err);
       if (shown) {
         // The rows on screen are still worth reading; say they are old.
@@ -734,7 +741,7 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
       }
     } finally {
       this.inFlight.delete(key);
-      if (this.queryKeyNow() === key) {
+      if (!this.stopped.signal.aborted && this.queryKeyNow() === key) {
         this.refreshing = false;
         this.post();
       }
@@ -1002,6 +1009,7 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
   }
 
   dispose(): void {
+    this.stopped.abort();
     if (this.refreshTimer !== undefined) clearTimeout(this.refreshTimer);
     clearInterval(this.pollTimer);
     for (const d of [...this.disposables, ...this.viewDisposables]) d.dispose();
