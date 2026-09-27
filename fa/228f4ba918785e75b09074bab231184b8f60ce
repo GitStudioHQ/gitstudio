@@ -1,0 +1,38 @@
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_dd3e3a492538a3 3701-3703
+  s_26f5e669d3043c::t_70d03f19cbfc44 7630
+  s_26f5e669d3043c::t_31d244521ac5a1 6014-6022,6024,6028-6035,6038-6045
+  s_26f5e669d3043c::t_5e835349e22289 7626
+  s_26f5e669d3043c::t_e8a4926a49a037 4849,7633,7635,7937,8368,8370,8373,8375,8378,8380,8382,8385-8388,8394-8400,8404
+  s_26f5e669d3043c::t_e70a05ad49bb89 4848,6056-6076,6078-6085,6088-6089,6092-6093,6100,6104,6106-6110,6113
+  s_26f5e669d3043c::t_bb6f2aa67f9806 4740-4749,4755,4764-4768,4774
+  s_26f5e669d3043c::t_99047d417188e0 7627-7629,7631-7632
+  s_26f5e669d3043c::t_9bad6cdea7f8d6 8230-8233,8235,8238,8240,8243,8245,8247,8250-8269,8367
+  s_26f5e669d3043c::t_20b34ec748c316 4850-4854,7598-7601,7608,7611-7612,7634,7636-7639,7873-7875,7878,7934-7936,7939,8208,8270-8274,8366,8401-8403,8405,8533,8561,8606
+apps/extension/test/changesPage.ts
+  s_26f5e669d3043c::t_1f7d22168f851d 224-225
+apps/extension/test/changesRowMenus.test.ts
+  s_26f5e669d3043c::t_2e1b5744e554d6 1-333
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_caa712140f957f 112-123
+apps/extension/harness/changes/shots.ts
+  s_26f5e669d3043c::t_47af99c12ae04f 179-207
+apps/extension/test/changesTreeKeyboard.test.ts
+  s_26f5e669d3043c::t_b647aaeb184670 213-361
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fa228f4ba918785e75b09074bab231184b8f60ce",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
