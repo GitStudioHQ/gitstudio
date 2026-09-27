@@ -1,0 +1,24 @@
+packages/git-service/test/undoScope.test.ts
+  s_26f5e669d3043c::t_0f325c6ad5eb2d 337-362
+  s_26f5e669d3043c::t_e811383d268b06 318,816
+apps/extension/test/undoStateTable.test.ts
+  s_26f5e669d3043c::t_4430b46badbc6e 1103-1105
+packages/git-service/src/SnapshotProvider.ts
+  s_26f5e669d3043c::t_996c120ba0d75f 15,707-710
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f73d08cb013b6d17ec7684b909d0ec22ecfbf367",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
