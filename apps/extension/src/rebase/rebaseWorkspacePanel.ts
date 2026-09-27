@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { NO_REPOSITORY, notifyInfo } from "../ui/notify";
+import { NO_REPOSITORY, notice, notifyInfo } from "../ui/notify";
 import { promptConfirm } from "../ui/dialogs";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import { promptRevision } from "../ui/refPrompt";
@@ -74,7 +74,7 @@ export class RebaseWorkspacePanel {
     // of `git status` prose, which a non-English git words differently.
     const blocked = operationInProgressMessage(await detectOperation(active.ctx));
     if (blocked) {
-      void vscode.window.showWarningMessage(blocked);
+      void vscode.window.showWarningMessage(notice(blocked));
       return;
     }
     const base = await resolveBase(active, sha);
@@ -91,9 +91,11 @@ export class RebaseWorkspacePanel {
       // base, which finds fewer, not more.
       const total = await countInRange(active, base);
       void vscode.window.showInformationMessage(
-        total > 0
-          ? `GitStudio: nothing to rebase — all ${total} commit${total === 1 ? "" : "s"} here are either merges or changes already on the base, which a rebase would skip.`
-          : "GitStudio: no commits to rebase from that point.",
+        notice(
+          total > 0
+            ? `Nothing to rebase — all ${total} commit${total === 1 ? "" : "s"} here are either merges or changes already on the base, which a rebase would skip.`
+            : "No commits to rebase from that point.",
+        ),
       );
       return;
     }

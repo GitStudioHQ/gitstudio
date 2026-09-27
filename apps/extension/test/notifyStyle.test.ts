@@ -103,13 +103,50 @@ test("a copy is confirmed in the status bar, never in a toast", () => {
   assert.deepEqual(hits, []);
 });
 
-test("a toast written out as text starts with GitStudio:", () => {
-  // A literal (or a template starting with text) must carry the prefix; a
-  // variable is the caller's sentence and is checked where it is built.
+/**
+ * The calls whose first argument is not one of the sentence builders, each
+ * with the reason. Everything else goes through notice(), failed(),
+ * NO_REPOSITORY or a "GitStudio: " literal.
+ */
+const EXEMPT: { rel: string; args: RegExp; why: string }[] = [
+  {
+    rel: "git/pausedForUser.ts",
+    args: /^message: string, \.\.\.actions: string\[\]$/,
+    why: "the PauseNoticeUi adapter's type, not a call",
+  },
+  {
+    rel: "git/pausedForUser.ts",
+    args: /^message, RESOLVE_CONFLICTS_ACTION$/,
+    why: "announcePause is vscode-free; its one sender (pauseNotice.ts) passes notice()",
+  },
+  {
+    rel: "ai/aiCommands.ts",
+    args: /^message,\s*\{ modal: false \},\s*"Copy",?$/,
+    why: "the commit message the AI drafted, offered to copy: the user's words, not GitStudio's",
+  },
+];
+
+test("every toast is built by notice(), failed() or NO_REPOSITORY, or is a 'GitStudio: ' literal", () => {
+  // It used to check literals only: a variable, a template starting with
+  // one, or git's stderr passed straight through went unread, and the
+  // graph's failures ("Cherry-pick failed: error: …"), about twenty branch
+  // actions (git's stderr alone) and the rebase refusals were all of those.
+  const built = /^(notice\(|failed\(|NO_REPOSITORY\b|["'`]GitStudio: )/;
+  const seen = new Set<number>();
   const hits = calls()
-    .filter((c) => /^["'`]/.test(c.args) && !/^["'`]GitStudio: /.test(c.args))
-    .map((c) => `${c.rel}: ${c.args.slice(0, 90)}`);
+    .filter((c) => {
+      if (built.test(c.args)) return false;
+      const i = EXEMPT.findIndex((e) => e.rel === c.rel && e.args.test(c.args.replace(/\s+/g, " ").trim()));
+      if (i >= 0) {
+        seen.add(i);
+        return false;
+      }
+      return true;
+    })
+    .map((c) => `${c.rel}: ${c.args.replace(/\s+/g, " ").slice(0, 90)}`);
   assert.deepEqual(hits, []);
+  // An exemption that no longer matches anything is removed, not kept.
+  assert.deepEqual(EXEMPT.filter((_, i) => !seen.has(i)).map((e) => `${e.rel}: ${e.why}`), []);
 });
 
 test("the push review's ages come from the host's one formatter, not a second one in the page", () => {

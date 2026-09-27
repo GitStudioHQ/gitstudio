@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { notice } from "../ui/notify";
+import { failed, notice } from "../ui/notify";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GraphMenuItem } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
@@ -316,7 +316,7 @@ async function checkoutRef(
       // The switch is not an Undo entry of its own: undoing a checkout by
       // resetting HEAD would move the branch just reset. The reset's entry
       // undoes it where it stands (`reset --keep` on the checked-out branch).
-      return runCheckout(ctx, plan.args, plan.success);
+      return runCheckout(ctx, plan.args, plan.success, "Checkout");
     }
   }
   if (plan.detaches) {
@@ -331,7 +331,7 @@ async function checkoutRef(
     }
   }
   return withUndo(undo, plan.undoLabel, () =>
-    runCheckout(ctx, plan.args, plan.success),
+    runCheckout(ctx, plan.args, plan.success, "Checkout"),
   );
 }
 
@@ -452,7 +452,7 @@ function detachAt(
   undo?: UndoRunner,
 ): Promise<boolean> {
   return withUndo(undo, `Checkout ${short(commit.sha)}`, () =>
-    runCheckout(ctx, ["checkout", "--detach", commit.sha], "Checked out"),
+    runCheckout(ctx, ["checkout", "--detach", commit.sha], "Checked out", "Checkout"),
   );
 }
 
@@ -470,7 +470,7 @@ async function createBranch(
   if (!name) {
     return false;
   }
-  return runGit(ctx, ["branch", name, commit.sha], `Created branch ${name}`);
+  return runGit(ctx, ["branch", name, commit.sha], `Created branch ${name}`, "Create branch");
 }
 
 async function createTag(
@@ -487,7 +487,7 @@ async function createTag(
   if (!name) {
     return false;
   }
-  return runGit(ctx, ["tag", name, commit.sha], `Created tag ${name}`);
+  return runGit(ctx, ["tag", name, commit.sha], `Created tag ${name}`, "Create tag");
 }
 
 async function cherryPick(
@@ -527,7 +527,7 @@ async function cherryPick(
       );
       return true;
     }
-    await showGitError(ctx, "Cherry-pick failed", stderr);
+    await showGitError(ctx, "Cherry-pick", stderr);
     return true;
   });
 }
@@ -643,7 +643,7 @@ async function revert(
       );
       return true;
     }
-    await showGitError(ctx, "Revert failed", stderr);
+    await showGitError(ctx, "Revert", stderr);
     return true;
   });
 }
@@ -716,6 +716,7 @@ async function resetTo(
       ctx,
       ["reset", mode.value, commit.sha],
       `Reset to ${short(commit.sha)}`,
+      "Reset",
     ),
   );
 }
@@ -979,7 +980,7 @@ async function applyMany(
       notifyPaused(`GitStudio: ${applyManyMessage(verb, n, "stopped")}`);
       return true;
     }
-    await showGitError(ctx, `${verb === "cherry-pick" ? "Cherry-picking" : "Reverting"} ${n} commits failed`, result.stderr.trim());
+    await showGitError(ctx, `${verb === "cherry-pick" ? "Cherry-picking" : "Reverting"} ${n} commits`, result.stderr.trim());
     return true;
   });
 }
@@ -1118,6 +1119,7 @@ async function runCheckout(
   ctx: GitContext,
   args: string[],
   successMessage: string,
+  action: string,
 ): Promise<boolean> {
   const applied = await applyOrAsk(ctx, checkoutOp(args));
   if (applied.cancelled || applied.settled) {
@@ -1127,7 +1129,7 @@ async function runCheckout(
     flash(successMessage);
     return true;
   }
-  await showGitError(ctx, `git ${args[0]} failed`, applied.result.stderr.trim());
+  await showGitError(ctx, action, applied.result.stderr.trim(), `git ${args[0]} failed`);
   return true;
 }
 
@@ -1135,13 +1137,14 @@ async function runGit(
   ctx: GitContext,
   args: string[],
   successMessage: string,
+  action: string,
 ): Promise<boolean> {
   const result = await ctx.process.run(args);
   if (result.code === 0) {
     flash(successMessage);
     return true;
   }
-  await showGitError(ctx, `git ${args[0]} failed`, result.stderr.trim());
+  await showGitError(ctx, action, result.stderr.trim(), `git ${args[0]} failed`);
   return true;
 }
 
@@ -1165,8 +1168,11 @@ async function runGit(
  */
 async function showGitError(
   ctx: GitContext,
-  title: string,
+  action: string,
   stderr: string,
+  // What a crash report files it under: unchanged, so the collector keeps
+  // grouping a failure with the reports it already has.
+  op = `${action} failed`,
 ): Promise<void> {
   let unmerged = 0;
   try {
@@ -1178,16 +1184,15 @@ async function showGitError(
     // In the stopped operation's own words: a rebase or a pick CONTINUES.
     const stop = await stoppedIn(ctx.process).catch(() => null);
     void vscode.window.showWarningMessage(
-      notice(`${title} — ${unresolvedConflictsMessage(unmerged, stop)}`),
+      failed(action, unresolvedConflictsMessage(unmerged, stop)),
     );
     return;
   }
-  void vscode.window.showErrorMessage(
-    stderr ? `${title}: ${stderr}` : title,
-  );
+  // "GitStudio: Cherry-pick failed — <git's reason>", as every failure reads.
+  void vscode.window.showErrorMessage(failed(action, stderr));
   // Anonymous, scrubbed crash report so we hear about failures during beta
   // (no-op if the user turned reporting off or VS Code telemetry is off).
-  ErrorReporter.current?.captureGitError(title, stderr);
+  ErrorReporter.current?.captureGitError(op, stderr);
 }
 
 function flash(message: string): void {

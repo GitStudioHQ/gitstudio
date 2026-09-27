@@ -595,11 +595,15 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   editor's colours now, high contrast included.
 - **Notifications speak with one voice.** The same failure read "Push failed:
   …" from the status bar and "GitStudio: push failed — …" from the Changes
-  view; "no repository" was said four ways. The status bar, the Changes view,
+  view; "no repository" was said four ways; the graph's failures read
+  "Cherry-pick failed: error: …" or "git branch failed: …", and a failed
+  branch action (rename, delete, publish, push, fetch, tags, remotes) showed
+  git's words alone. The status bar, the Changes view, the branch actions,
   Undo, file and line history, rebase, blame, the graph and Compare now say
-  things one way: a notification starts "GitStudio:", a failure reads
-  "GitStudio: Push failed — <git's reason>", and a copy is confirmed in the
-  status bar, as the graph's always was (blame's was a notification). The push review gives a commit's age as the rest of
+  things one way: a notification starts "GitStudio:", a failure names what
+  failed and then git's reason — "GitStudio: Delete branch failed — …" — and
+  a copy is confirmed in the status bar, as the graph's always was (blame's
+  was a notification). The push review gives a commit's age as the rest of
   GitStudio does ("3h", not "3h ago").
 
 ## [1.14.0] - 2026-09-25

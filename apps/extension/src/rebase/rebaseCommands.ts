@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { failed, NO_REPOSITORY, notifyInfo } from "../ui/notify";
+import { failed, NO_REPOSITORY, notice, notifyInfo } from "../ui/notify";
 import { promptConfirm } from "../ui/dialogs";
 import { promptRevision } from "../ui/refPrompt";
 import type { GitContext } from "@gitstudio/git-service/index";
@@ -45,7 +45,7 @@ export async function startInteractiveRebase(
 
   const blocked = operationInProgressMessage(await detectOperation(active.ctx));
   if (blocked) {
-    void vscode.window.showWarningMessage(blocked);
+    void vscode.window.showWarningMessage(notice(blocked));
     return;
   }
 

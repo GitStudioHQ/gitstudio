@@ -16,6 +16,7 @@ import {
 import { STASH_GONE_MESSAGE } from "@gitstudio/git-service/StashProvider";
 import { promptPick } from "../ui/dialogs";
 import { notifyPaused } from "./pauseNotice";
+import { notice } from "../ui/notify";
 
 /**
  * Every extension door that applies commits — the graph's Cherry-Pick, Revert
@@ -169,11 +170,11 @@ export async function pullOrAsk(ctx: GitContext, mode?: PullMode): Promise<PullR
  * settlePullStop says a pull blocked the same way.
  */
 function sayBlocked(result: GitRunResult, blocked: OperationInTheWay): Applied {
-  const message = `GitStudio: ${operationInTheWayMessage(blocked)}`;
+  const said = operationInTheWayMessage(blocked);
   if (blocked.unmerged > 0) {
-    notifyPaused(message);
+    notifyPaused(said); // "GitStudio: …", with Resolve Conflicts…
   } else {
-    void vscode.window.showWarningMessage(message);
+    void vscode.window.showWarningMessage(notice(said));
   }
   return { result, settled: true };
 }

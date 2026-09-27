@@ -8,7 +8,7 @@ import { notice } from "../ui/notify";
 // list, pull from the status bar — offers the same way through.
 
 const VS_CODE_UI: PauseNoticeUi = {
-  showWarningMessage: (message, ...actions) => vscode.window.showWarningMessage(message, ...actions),
+  showWarningMessage: (message, ...actions) => vscode.window.showWarningMessage(notice(message), ...actions),
   executeCommand: (command) => vscode.commands.executeCommand(command),
 };
 
