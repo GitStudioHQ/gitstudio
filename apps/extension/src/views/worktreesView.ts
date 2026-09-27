@@ -503,18 +503,32 @@ export function projectName(mainPath: string): string {
 }
 
 /**
+ * The bare-repository layout: the repository in a hidden folder inside the
+ * project (project/.bare, or project/.git), and its worktrees beside it in the
+ * project's folder (project/main, project/feature-x).
+ */
+function bareInsideProject(mainPath: string, bare: boolean): boolean {
+  return bare && path.basename(mainPath).startsWith(".");
+}
+
+/**
  * Where a new worktree's folder is suggested: beside the main worktree, named
  * "<project>-<branch>" with the branch's slashes as dashes (feature/login →
  * app-feature-login, so bugfix/login beside it is app-bugfix-login rather than
- * a second "login"). The first of name, name-2, name-3… that is free.
+ * a second "login"). The first of name, name-2, name-3… that is free. In the
+ * bare-repository layout (`bare`, the repository in project/.bare) the
+ * worktrees live in the project's folder: project/feature-login — never a
+ * hidden ".bare-feature-login".
  */
 export function suggestWorktreeFolder(
   mainPath: string,
   folderName: string,
   isFree: (p: string) => boolean = folderIsFree,
+  bare = false,
 ): string {
   const parent = path.dirname(mainPath);
-  const leaf = `${projectName(mainPath)}-${folderName.replace(/[\\/]+/g, "-")}`;
+  const branch = folderName.replace(/[\\/]+/g, "-");
+  const leaf = bareInsideProject(mainPath, bare) ? branch : `${projectName(mainPath)}-${branch}`;
   for (let i = 1; i < 100; i++) {
     const p = path.join(parent, i === 1 ? leaf : `${leaf}-${i}`);
     if (isFree(p)) return p;
@@ -551,8 +565,9 @@ async function askFolderAndCreate(
 ): Promise<void> {
   const list = await a.ctx.worktrees.list();
   const mainPath = list[0]?.path ?? a.root;
-  const suggested = suggestWorktreeFolder(mainPath, opts.folderName);
-  const intro = `The new worktree's folder. Suggested beside the main worktree, as ${path.basename(suggested)}; change it if you like — it must not exist yet, or be empty.`;
+  const bare = !!list[0]?.bare;
+  const suggested = suggestWorktreeFolder(mainPath, opts.folderName, folderIsFree, bare);
+  const intro = `The new worktree's folder. Suggested ${bareInsideProject(mainPath, bare) ? "in the project's folder" : "beside the main worktree"}, as ${path.basename(suggested)}; change it if you like — it must not exist yet, or be empty.`;
   let hint = intro;
   let value = suggested;
   let target: string;

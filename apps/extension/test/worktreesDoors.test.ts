@@ -998,6 +998,35 @@ test("New worktree from a branch named like an option never offers it directly â
   assert.equal(made("symbolic-ref", "HEAD"), "refs/heads/x-copy", "on the new branch, not detached");
 });
 
+test("the bare-repository layout (project/.bare, its worktrees beside it): New Worktree suggests project/<branch>, never a hidden .bare-<branch>", async () => {
+  assert.equal(wt.suggestWorktreeFolder("/x/project/.bare", "feature/login", () => true, true), join("/x/project", "feature-login"));
+  assert.equal(wt.suggestWorktreeFolder("/x/project/.git", "fix", () => true, true), join("/x/project", "fix"), "a bare .git inside the project too");
+  assert.equal(wt.suggestWorktreeFolder("/x/project/.bare", "a", (p) => !p.endsWith("/a"), true), join("/x/project", "a-2"));
+  assert.equal(wt.suggestWorktreeFolder("/x/repo.git", "a", () => true, true), join("/x", "repo-a"), "a bare repo.git beside its worktrees is as before");
+
+  // Through the door, on a real layout.
+  const base = join(scratch, `barelayout${++seq}`);
+  const seed = join(base, "seed");
+  mkdirSync(seed, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", seed]);
+  for (const [k, v] of [["user.email", "t@example.com"], ["user.name", "T"], ["commit.gpgsign", "false"]]) at(seed)("config", k, v);
+  writeFileSync(join(seed, "a.txt"), "a\n");
+  at(seed)("add", ".");
+  at(seed)("commit", "-qm", "base");
+  const project = join(base, "project");
+  execFileSync("git", ["clone", "-q", "--bare", seed, join(project, ".bare")]);
+  writeFileSync(join(project, ".git"), "gitdir: ./.bare\n");
+  at(project)("worktree", "add", "-q", join(project, "main"), "main");
+  const repos = windowAt(join(project, "main"));
+  answer = newBranchAnswers("feature/login");
+  await wt.addWorktree(repos, noop);
+  const folderQ = asked.find((q) => q.kind === "input" && q.title.startsWith("New worktree for ")) as DialogSpec & { kind: "input" };
+  assert.equal(folderQ.value, join(project, "feature-login"));
+  assert.match(folderQ.hint ?? "", /Suggested in the project's folder, as feature-login/);
+  assert.deepEqual(errors(), []);
+  assert.equal(at(join(project, "feature-login"))("symbolic-ref", "--short", "HEAD"), "feature/login");
+});
+
 test("the suggestion for a bare repository's worktrees names the project without .git", () => {
   assert.equal(wt.projectName("/code/repo.git"), "repo");
   assert.equal(wt.suggestWorktreeFolder("/code/repo.git", "feature/a", () => true), join("/code", "repo-feature-a"));
