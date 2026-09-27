@@ -3,357 +3,26 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import {
+  decls,
+  isState,
+  notSelection,
+  rules,
+  selectionLines as sharedSelectionLines,
+  topLevel,
+} from "../../../packages/webview-ui/test/selectionStatic";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CSS = readFileSync(resolve(HERE, "../src/renderer/styles/app.css"), "utf8");
 
-type Rule = { selector: string; body: string; line: number };
-
-/** Every plain style rule in the sheet, @media/@supports bodies included. */
-function rules(css: string): Rule[] {
-  // Comments blanked, not removed, so a rule keeps its line number.
-  const s = css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
-  const out: Rule[] = [];
-  const walk = (start: number, end: number): void => {
-    let i = start;
-    let from = start;
-    while (i < end) {
-      const c = s[i];
-      if (c === ";") from = i + 1;
-      if (c !== "{") {
-        i++;
-        continue;
-      }
-      const selector = s.slice(from, i).trim();
-      let depth = 1;
-      let j = i + 1;
-      while (j < end && depth) {
-        if (s[j] === "{") depth++;
-        else if (s[j] === "}") depth--;
-        j++;
-      }
-      const body = s.slice(i + 1, j - 1);
-      if (/^@(keyframes|font-face)/.test(selector)) {
-        // not style rules
-      } else if (selector.startsWith("@") || body.includes("{")) {
-        walk(i + 1, j - 1);
-      } else {
-        out.push({ selector, body, line: s.slice(0, i).split("\n").length });
-      }
-      i = j;
-      from = j;
-    }
-  };
-  walk(0, s.length);
-  return out;
-}
-
-/** A value split at its top-level commas (not inside a colour or a :not()). */
-function topLevel(v: string): string[] {
-  const out: string[] = [];
-  let depth = 0;
-  let cur = "";
-  for (const ch of v) {
-    if (ch === "(" || ch === "[") depth++;
-    if (ch === ")" || ch === "]") depth--;
-    if (ch === "," && depth === 0) {
-      out.push(cur);
-      cur = "";
-    } else cur += ch;
-  }
-  out.push(cur);
-  return out;
-}
-
-/** A complex selector's compound selectors, combinators dropped. */
-function compounds(sel: string): string[] {
-  const out: string[] = [];
-  let depth = 0;
-  let cur = "";
-  for (const ch of sel) {
-    if (ch === "(" || ch === "[") depth++;
-    if (ch === ")" || ch === "]") depth--;
-    if (depth === 0 && /[\s>+~]/.test(ch)) {
-      if (cur) out.push(cur);
-      cur = "";
-      continue;
-    }
-    cur += ch;
-  }
-  if (cur) out.push(cur);
-  return out;
-}
-
-/** A declaration block as [name, value] pairs, whitespace collapsed. */
-function decls(body: string): [string, string][] {
-  return body
-    .split(";")
-    .map((d) => d.trim().replace(/\s+/g, " "))
-    .filter(Boolean)
-    .map((d) => {
-      const [prop, ...rest] = d.split(":");
-      return [prop.trim(), rest.join(":").replace(/\s*!important$/, "").trim()] as [string, string];
-    });
-}
-
-/** Removes every :not(…) — `.tab:not(.is-active)` names the UNselected state. */
-function withoutNot(s: string): string {
-  let out = s;
-  for (let prev = ""; prev !== out; ) {
-    prev = out;
-    out = out.replace(/:not\([^()]*\)/g, "");
-  }
-  return out;
-}
-
 /**
- * The selected states: a class, or what aria says. `.is-mine` (your own
- * reaction), `.focused` (a list's cursor row), `.checked`, and a switch's
- * `[aria-checked]` are states too; so is anything derived from `:checked` —
- * `input:checked + label`, `.row:has(:checked)` — though a native checkbox's
- * OWN `:checked` box (the subject itself) is its glyph, not a selection mark.
+ * The analyser is shared with the webviews' static guards
+ * (packages/webview-ui/test/selectionStatic.ts). Here a ring in a SURFACE
+ * colour is a knockout — the rebase node's halo in its row's own fill,
+ * cutting the rail under it — not a mark.
  */
-const STATE =
-  /\.(active|is-active|is-selected|is-sel|selected|is-current|current|is-on|row-landed|is-currentHead|is-mine|focused|checked|is-checked)(?![\w-])|\[aria-(selected|current|pressed|checked)(?!\s*=\s*["']?false)/;
-
-function isState(part: string): boolean {
-  const s = withoutNot(part);
-  if (STATE.test(s)) return true;
-  if (/:has\([^)]*:checked/.test(s)) return true;
-  const cs = compounds(s);
-  return cs.slice(0, -1).some((c) => /:checked\b/.test(c));
-}
-
-/**
- * Not a selection: keyboard focus (`:focus-visible` rings are accessibility),
- * the pressed `:active` flash, and drag-and-drop insertion markers. A drag or
- * drop marker is a class with "drag" or "drop" as a WHOLE hyphen-separated
- * word — `.drop-before`, `.drag-over`, `.is-dragging`, `.dc-stash-drop` — and
- * never `.dropdown-item`, whose current row is a selection like any other. The
- * rebase verb classes `.a-drop`/`.g-drop` name an action, not a drag.
- */
-function notSelection(part: string): boolean {
-  const s = withoutNot(part);
-  if (/:(focus|focus-visible|focus-within)(?![\w-])/.test(s)) return true;
-  if (/:active(?![\w-])/.test(s.replace(/\.[\w-]+/g, ""))) return true;
-  for (const m of s.matchAll(/\.([\w-]+)/g)) {
-    const cls = m[1];
-    if (cls === "a-drop" || cls === "g-drop") continue;
-    if (cls.split("-").some((w) => /^(drag|dragging|dragged|drop|dropping)$/.test(w))) return true;
-  }
-  return false;
-}
-
-/** Custom property definitions, every theme's, for var() resolution. */
-function tokens(css: string): Map<string, string[]> {
-  const out = new Map<string, string[]>();
-  for (const r of rules(css)) {
-    for (const [name, value] of decls(r.body)) {
-      if (!name.startsWith("--")) continue;
-      out.set(name, [...(out.get(name) ?? []), value]);
-    }
-  }
-  return out;
-}
-
-/** A value with its var()s substituted — one variant per definition, capped. */
-function resolveVars(value: string, defs: Map<string, string[]>, depth = 0): string[] {
-  const m = /var\(\s*(--[\w-]+)\s*(?:,((?:[^()]|\([^()]*\))*))?\)/.exec(value);
-  if (!m || depth > 6) return [value];
-  const found = defs.get(m[1]);
-  const choices = found?.length ? found : m[2] !== undefined ? [m[2].trim()] : [`unresolved(${m[1]})`];
-  const out: string[] = [];
-  for (const c of choices.slice(0, 4)) {
-    for (const v of resolveVars(value.slice(0, m.index) + c + value.slice(m.index + m[0].length), defs, depth + 1)) {
-      out.push(v);
-      if (out.length >= 24) return out;
-    }
-  }
-  return out;
-}
-
-/** Has a hue: the accent, a status colour, currentColor — rather than a grey. */
-function hued(v: string): boolean {
-  if (/currentcolor/i.test(v)) return true;
-  if (/unresolved\(--[\w-]*(accent|status|danger|warn|brand|focus|amber)/.test(v)) return true;
-  for (const h of v.matchAll(/#([0-9a-f]{3,8})\b/gi)) {
-    let x = h[1];
-    if (x.length <= 4) x = [...x].map((c) => c + c).join("");
-    const [r, g, b] = [0, 2, 4].map((i) => parseInt(x.slice(i, i + 2), 16) / 255);
-    if (Math.max(r, g, b) - Math.min(r, g, b) > 0.08) return true;
-  }
-  for (const c of v.matchAll(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/g)) {
-    const [r, g, b] = [c[1], c[2], c[3]].map((n) => Number(n) / 255);
-    if (Math.max(r, g, b) - Math.min(r, g, b) > 0.08) return true;
-  }
-  return false;
-}
-
-/** Paints nothing: none, zero, transparent. */
-const nothing = (v: string): boolean => /^(none|0|0px|transparent|initial|unset)$/.test(v.trim());
-
-/** The lengths in a value with its colours (and their parentheses) cut out. */
-function lengths(v: string): number[] {
-  let bare = v.replace(/#[0-9a-f]{3,8}\b/gi, "").replace(/\b(transparent|currentcolor|white|black)\b/gi, "");
-  for (let prev = ""; prev !== bare; ) {
-    prev = bare;
-    bare = bare.replace(/[a-z-]+\([^()]*\)/gi, "");
-  }
-  return (bare.match(/-?[\d.]+(px|em|rem)?/g) ?? []).map((x) => parseFloat(x));
-}
-
-/** A box-shadow list's lines: bars, rings, and hard outer rules. */
-function shadowLines(value: string): string[] {
-  const out: string[] = [];
-  for (const s of topLevel(value)) {
-    if (nothing(s)) continue;
-    const inset = /\binset\b/.test(s);
-    const [x = 0, y = 0, blur = 0, spread = 0] = lengths(s.replace(/\binset\b/, ""));
-    const hard = blur <= 1;
-    if (!hard || (!x && !y && !spread)) continue;
-    // A neutral 1px sheen or lift — the "lit from above" bevel a raised
-    // surface wears — is not a mark; a ring never is exempt.
-    if (!spread && Math.max(Math.abs(x), Math.abs(y)) <= 1 && !hued(s)) continue;
-    if (inset && (x || y)) out.push(`an inset bar (${s.trim()})`);
-    else if (inset) out.push(`an inset ring (${s.trim()})`);
-    else if (x || y) out.push(`a hard outer line (${s.trim()})`);
-    else out.push(`an outer ring (${s.trim()})`);
-  }
-  return out;
-}
-
-/** A gradient drawn as a bar: a hard stop, or sized to a sliver. */
-function gradientLine(value: string, size = ""): string {
-  if (!/gradient\(/.test(value) || !hued(value)) return "";
-  // background-size, or the "/ size" inside a background shorthand.
-  const sizes = [size, ...[...value.matchAll(/\/\s*((?:-?[\d.]+(?:px|%)|auto)(?:\s+(?:-?[\d.]+(?:px|%)|auto))?)/g)].map((m) => m[1])];
-  for (const sz of sizes) {
-    if ((sz.match(/[\d.]+px/g) ?? []).some((n) => parseFloat(n) > 0 && parseFloat(n) <= 4)) return `a gradient sized to a sliver (${sz})`;
-  }
-  for (const g of value.matchAll(/gradient\(((?:[^()]|\((?:[^()]|\([^()]*\))*\))*)\)/g)) {
-    const stops: { col: string; at: string }[] = [];
-    for (const part of topLevel(g[1])) {
-      const col = (/(color-mix\((?:[^()]|\([^()]*\))*\)|rgba?\([^)]*\)|#[0-9a-f]{3,8}\b|transparent|unresolved\([^)]*\)|currentcolor)/i.exec(part) ?? [""])[0];
-      if (!col) continue;
-      const pos = part.replace(col, "").match(/-?[\d.]+(px|%)?/g) ?? [];
-      for (const at of pos.length ? pos : [""]) stops.push({ col, at });
-    }
-    for (let i = 1; i < stops.length; i++) {
-      const a = stops[i - 1];
-      const b = stops[i];
-      if (!a.at || !b.at || a.col === b.col) continue;
-      const unit = (x: string): string => (x.endsWith("%") ? "%" : "px");
-      if (unit(a.at) !== unit(b.at) && parseFloat(a.at) && parseFloat(b.at)) continue;
-      if (Math.abs(parseFloat(b.at) - parseFloat(a.at)) <= (unit(b.at) === "%" ? 1 : 2)) {
-        return `a gradient with a hard stop at ${b.at} (${g[0].slice(0, 90)})`;
-      }
-    }
-  }
-  return "";
-}
-
-const THIN = /^(width|height|min-width|min-height|max-width|max-height|block-size|inline-size|flex-basis)$/;
-const thin = (d: [string, string][]): boolean =>
-  d.some(([n, v]) => THIN.test(n) && /^[\d.]+px$/.test(v) && parseFloat(v) > 0 && parseFloat(v) <= 4);
-const painted = (d: [string, string][], defs: Map<string, string[]>): boolean =>
-  d.some(
-    ([n, v]) =>
-      /^(background|background-color|background-image|border(-[a-z]+)*)$/.test(n) &&
-      !nothing(v) &&
-      resolveVars(v, defs).some((x) => hued(x) || /gradient\(/.test(x)),
-  );
-const REVEALS = /^(opacity|display|visibility|transform|scale|width|height|background|background-color|background-image|clip-path|inset|top|right|bottom|left)$/;
-
-/**
- * Every line a stylesheet draws on a selected, active or current state, as
- * "app.css:<line> <selector> — <why>". Exported shape for the tests below.
- */
-function selectionLines(css: string): string[] {
-  const defs = tokens(css);
-  const all = rules(css);
-  const found: string[] = [];
-  // Base rules by the first class of their subject — what a state rule on a
-  // descendant or a pseudo-element may be switching on.
-  const base = new Map<string, [string, string][]>();
-  for (const r of all) {
-    for (const p of topLevel(r.selector).map((x) => x.trim())) {
-      if (isState(p)) continue;
-      const subj = compounds(p).at(-1) ?? "";
-      const key = (/\.[\w-]+/.exec(subj)?.[0] ?? "") + (/::?(before|after)\b/.exec(subj)?.[0].replace(/^:+/, "::") ?? "");
-      if (!key) continue;
-      base.set(key, [...(base.get(key) ?? []), ...decls(r.body)]);
-    }
-  }
-  for (const r of all) {
-    const parts = topLevel(r.selector)
-      .map((p) => p.trim())
-      .filter((p) => isState(p) && !notSelection(p));
-    if (!parts.length) continue;
-    const d = decls(r.body);
-    const why = new Set<string>();
-    for (const p of parts) {
-      const cs = compounds(withoutNot(p));
-      const subj = cs.at(-1) ?? "";
-      const subjectIsState = STATE.test(subj) || /\[aria-(selected|current|pressed|checked)/.test(subj);
-      const pseudo = /::?(before|after)\b/.test(subj);
-      // A native checkbox's own box (`input:checked`, `.dc-ck:checked::after`)
-      // is its glyph.
-      const own = subj.replace(/:has\((?:[^()]|\([^()]*\))*\)/g, "");
-      if (/:(checked|indeterminate)\b/.test(own) && !subjectIsState) continue;
-      for (const [name, value] of d) {
-        if (name.startsWith("--")) continue;
-        const variants = resolveVars(value, defs);
-        if (name === "box-shadow") {
-          // A ring in a SURFACE colour is a knockout — the rebase node's halo
-          // in its row's own fill, cutting the rail under it — not a mark.
-          const marks = topLevel(value).filter((sh) => !/^[^()]*var\(--app-(bg|panel|elevated|active|hover)\)\s*$/.test(sh.trim()));
-          for (const v of resolveVars(marks.join(","), defs)) for (const l of shadowLines(v)) why.add(l);
-        } else if (/^border(-(top|right|bottom|left|block|inline)(-start|-end)?)?(-color|-width|-style)?$/.test(name) && !nothing(value)) {
-          why.add(`a border (${name}: ${value})`);
-        } else if (name === "border-image" && !nothing(value)) {
-          why.add(`a border image (${value})`);
-        } else if (/^outline(-color|-width|-style)?$/.test(name) && !nothing(value) && !/^(none|0)\b/.test(value) && !(/transparent/.test(value) && !hued(value))) {
-          why.add(`an outline (${name}: ${value})`);
-        } else if (/^text-decoration(-line)?$/.test(name) && /underline|overline/.test(value)) {
-          why.add(`a line under or over its text (${name}: ${value})`);
-        } else if (/^background(-image)?$/.test(name)) {
-          const size = d.find(([n]) => n === "background-size")?.[1] ?? "";
-          for (const v of variants) {
-            const g = gradientLine(v, size);
-            if (g) why.add(g);
-          }
-        } else if (name === "background-size" && d.some(([n, v]) => /^background(-image)?$/.test(n) && /gradient/.test(v))) {
-          if ((value.match(/[\d.]+px/g) ?? []).some((n) => parseFloat(n) > 0 && parseFloat(n) <= 4)) why.add(`a gradient sized to a sliver (${value})`);
-        }
-      }
-      // A ::before/::after switched on by the state: a strip, unless it is a
-      // text glyph (a check mark's content is a character).
-      if (pseudo) {
-        const key = (/\.[\w-]+/.exec(subj.replace(STATE, ""))?.[0] ?? "") + (/::?(before|after)\b/.exec(subj)?.[0].replace(/^:+/, "::") ?? "");
-        const merged = [...(base.get(key) ?? []), ...d];
-        const content = [...merged].reverse().find(([n]) => n === "content")?.[1] ?? "";
-        const glyph = /^["'].*\S.*["']$/.test(content);
-        // What draws or moves it; hiding it (display: none, opacity: 0) is fine.
-        const hides = ([n, v]: [string, string]): boolean =>
-          (n === "display" && v === "none") || (n === "visibility" && v === "hidden") || (n === "opacity" && parseFloat(v) === 0) || (n === "content" && nothing(v));
-        const reveals = d.filter((x) => !hides(x) && (REVEALS.test(x[0]) || x[0] === "content" || /^border/.test(x[0])));
-        if (!glyph && reveals.length) {
-          why.add(`a ::before/::after it switches on (${reveals.map(([n, v]) => `${n}: ${v}`).join("; ")})`);
-        }
-      } else if (!subjectIsState) {
-        // A part of the selected thing made into a bar: thin and painted,
-        // here or in its base rule, and switched on or painted here.
-        const key = /\.[\w-]+/.exec(subj)?.[0] ?? "";
-        const merged = [...(base.get(key) ?? []), ...d];
-        if (thin(merged) && painted(merged, defs) && d.some(([n]) => REVEALS.test(n) || /^border/.test(n))) {
-          why.add(`a child bar (${d.map(([n, v]) => `${n}: ${v}`).join("; ")})`);
-        }
-      }
-    }
-    for (const w of why) found.push(`app.css:${r.line} ${parts.join(", ")} — ${w}`);
-  }
-  return found;
-}
+const APP = { label: "app.css", surface: /^[^()]*var\(--app-(bg|panel|elevated|active|hover)\)\s*$/ };
+const selectionLines = (css: string): string[] => sharedSelectionLines(css, APP);
 
 /**
  * THE OWNER'S RULE: a selected, active or current thing is never marked with a
@@ -408,6 +77,17 @@ test("the guard sees every shape a line can take", () => {
     ["a row holding a checked box, lined", ".opt-row:has(input:checked) { box-shadow: inset 2px 0 0 var(--gs-accent); }"],
     ["a selected row's bar that shows on hover", ".file-row.active:hover { box-shadow: inset 2px 0 0 var(--gs-accent); }"],
     ["an aria-current link underlined", ".crumb[aria-current=\"page\"] { text-decoration-line: underline; }"],
+    // The second review's: each passed this guard (and some the harness too).
+    ["an inset bar blurred 2px", ".cmdk-row.is-selected { box-shadow: inset 3px 0 2px 0 var(--gs-accent), var(--sel-glow-soft); }"],
+    ["a file row's blurred bar", ".dc-file.is-selected { box-shadow: inset 3px 0 2px 0 var(--gs-accent); }"],
+    ["a bar the base rule draws from a property the state sets", ".term-side-row { box-shadow: inset var(--rv-bar, 0px) 0 0 var(--gs-accent); }\n.term-side-row.active { --rv-bar: 3px; }"],
+    ["a drop-shadow filter underline", ".gh-seg-btn.active { filter: drop-shadow(0 2px 0 var(--gs-accent)); }"],
+    ["a search hit's bar", ".log-line.is-hit { box-shadow: inset 3px 0 0 var(--gs-accent); }"],
+    ["an open picker's underline", ".gh-picker[aria-expanded=\"true\"] { box-shadow: inset 0 -2px 0 var(--gs-accent); }"],
+    ["an open group's side border", ".repo-group.is-open { border-left: 2px solid var(--gs-accent); }"],
+    ["a BEM modifier's underline", ".gh-tab--active { border-bottom: 2px solid var(--gs-accent); }"],
+    ["a full-size overlay's border side", ".gh-subtab { position: relative; }\n.gh-subtab.active::after { content: \"\"; position: absolute; inset: 0; border-bottom: 2px solid var(--gs-accent); pointer-events: none; }"],
+    ["a full-size overlay's inset bar", ".cmdk-row.is-selected::before { content: \"\"; position: absolute; inset: 0; box-shadow: inset 3px 0 0 var(--gs-accent); }"],
   ];
   for (const [what, css] of shapes) {
     assert.ok(selectionLines(TOKENS + css).length > 0, `not seen: ${what}\n  ${css}`);
@@ -424,6 +104,10 @@ test("the guard sees every shape a line can take", () => {
     ["a soft wash", ".nav-item.active { background: linear-gradient(180deg, color-mix(in srgb, var(--gs-accent) 22%, transparent), color-mix(in srgb, var(--gs-accent) 15%, transparent)); }"],
     ["a check mark glyph", ".menu-item.is-on::after { content: \"✓\"; opacity: 1; }"],
     ["a knockout halo in the row's own fill", ".rb-row.is-selected .rb-node { box-shadow: 0 0 0 3px var(--app-active); }"],
+    ["a soft lift", ".gh-seg-btn.active { box-shadow: 0 1px 3px color-mix(in srgb, var(--gs-accent) 32%, transparent), 0 0 12px -3px color-mix(in srgb, var(--gs-accent) 60%, transparent); }"],
+    ["a soft drop-shadow filter", ".gh-seg-btn.active { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4)); }"],
+    ["a soft inset glow", ".rb-set.is-current { box-shadow: inset 0 0 10px -3px color-mix(in srgb, var(--gs-accent) 55%, transparent); }"],
+    ["a property the state sets that draws no line", ".row { background: var(--row-fill, transparent); }\n.row.selected { --row-fill: var(--sel-fill); }"],
   ];
   for (const [what, css] of fine) {
     assert.deepEqual(selectionLines(TOKENS + css), [], `flagged, but ${what} is not a selection line\n  ${css}`);

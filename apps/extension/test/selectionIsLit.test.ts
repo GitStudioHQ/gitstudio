@@ -187,6 +187,26 @@ for (const theme of THEMES) {
     await page.key("ArrowRight");
     await settle(page);
     fails.push(...(await sweep(page, theme, "a branch's submenu", hc ? {} : { ...menuOpts, targets: [".branch-submenu .is-active"] })));
+    // The pointer moves the highlight: the row under it looks exactly as the
+    // keyboard's highlight does (it once took the hover's grey, and the
+    // highlight's white words on it read 1.39:1 in Light+).
+    const lookOf = `(function () { var e = document.querySelector(".branch-submenu .is-active"); if (!e) return "none"; var c = getComputedStyle(e); return [c.backgroundColor, c.color, c.outlineStyle, c.outlineColor].join(" | "); })()`;
+    const byKeyboard = await page.eval<string>(lookOf);
+    const second = await page.eval<{ x: number; y: number } | null>(`(function () {
+      var items = Array.prototype.slice.call(document.querySelectorAll(".branch-submenu .bm-subaction:not(.danger)"));
+      var t = items.find(function (b) { return !b.classList.contains("is-active"); });
+      if (!t) return null;
+      var r = t.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    assert.ok(second, "the submenu has a second item");
+    await page.mouseMove(second!.x, second!.y);
+    await settle(page);
+    const underPointer = await page.eval<boolean>(`document.querySelector(".branch-submenu .is-active") === document.elementFromPoint(${second!.x}, ${second!.y}).closest(".bm-subaction")`);
+    assert.ok(underPointer, "the pointer moved the highlight");
+    const byMouse = await page.eval<string>(lookOf);
+    if (byMouse !== byKeyboard) fails.push(`a branch's submenu: the highlight under the pointer looks unlike the keyboard's (${byMouse} vs ${byKeyboard})`);
+    await page.mouseMove(2, 2);
     await page.key("Escape");
     await page.key("Escape");
     await settle(page);
@@ -220,6 +240,37 @@ for (const theme of THEMES) {
         also: [[".rp-option:has(.rp-check:focus-visible)", ".rp-choice:not(.sel)"]],
         ...(hc ? {} : { targets: [".rp-option:has(.rp-check:focus-visible)"] }),
       })),
+    );
+    assert.deepEqual(fails, []);
+  });
+}
+
+// ── The branch menu in a wide view: the row whose submenu is open ──────────
+
+for (const theme of THEMES) {
+  test(`the branch menu, wide enough for its submenu beside the list: the open row is lit and reads (${theme})`, { skip }, async () => {
+    // At 420px the submenu takes the list's place and the open row is not
+    // on screen; here it stays beside it, marked.
+    const page = await ChangesPage.open(theme, { width: 900, height: 760 });
+    cleanups.push(() => page.close());
+    const hc = theme.startsWith("hc");
+    await page.send(changesState());
+    await settle(page);
+    await page.send({ type: "openBranchMenu" });
+    await page.page.waitFor(`!!document.querySelector(".branch-menu .bm-search input")`);
+    await settle(page, 30);
+    await page.type("feature");
+    await settle(page);
+    await page.key("ArrowRight");
+    await settle(page);
+    const open = await page.eval<boolean>(`(function () { var r = document.querySelector(".bm-branch.is-open"); return !!r && r.getClientRects().length > 0 && !document.querySelector(".branch-submenu.is-drilled"); })()`);
+    assert.ok(open, "the submenu opened beside the list, its row marked open");
+    if (hc) assert.equal(await outlineOf(page, ".bm-branch.is-open"), "dashed", "high contrast: the open row is ringed whole");
+    const fails = await sweep(
+      page,
+      theme,
+      "the open row",
+      hc ? {} : { targets: [".bm-branch.is-open", ".branch-submenu .is-active"], fillSkip: ".bm-branch.is-current:not(.is-open), .bm-star" },
     );
     assert.deepEqual(fails, []);
   });
@@ -313,6 +364,15 @@ for (const theme of THEMES) {
     assert.ok(await page.eval<boolean>(`!!document.querySelector(".rb-set.is-current")`), "the toolbar shows what they are set to");
     if (hc) assert.equal(await outlineOf(page, ".rb-set.is-current"), "solid", "high contrast: the action they are set to is ringed whole");
     const fails = await sweep(page, theme, "a rebase selection", hc ? {} : { targets: [".rb-row.is-selected", ".rb-set.is-current"] });
+    // Every action's own hue, lit, at rest and under the pointer (the
+    // segments' hover once replaced the tint: Squash read 3.69:1 on it).
+    for (const action of ["pick", "reword", "edit", "squash", "drop"]) {
+      const at = await page.centre(`.rb-set.a-${action}`);
+      assert.ok(at, `the toolbar has ${action}`);
+      await page.clickAt(at!.x, at!.y);
+      assert.ok(await page.eval<boolean>(`!!document.querySelector(".rb-set.a-${action}.is-current")`), `the selection is set to ${action}`);
+      fails.push(...(await sweep(page, theme, `set to ${action}`, hc ? {} : { targets: [".rb-set.is-current"] })));
+    }
     assert.deepEqual(fails, []);
   });
 }
