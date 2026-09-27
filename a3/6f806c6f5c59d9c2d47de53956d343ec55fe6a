@@ -1,0 +1,26 @@
+apps/extension/package.json
+  s_26f5e669d3043c::t_fc41bed58566d5 1222-1223
+  s_26f5e669d3043c::t_e17989cc23295d 989-1036,1039-1147,1149-1177,1179,1182-1201,1203-1221,1224-1404,1407
+apps/extension/test/aiProviderSchema.test.ts
+  s_26f5e669d3043c::t_8d544048604111 12,16,18-23
+apps/extension/test/docsClaims.test.ts
+  s_26f5e669d3043c::t_8d544048604111 18,26,56-57
+apps/extension/test/settingsLayout.test.ts
+  s_26f5e669d3043c::t_c91a6c45046984 1-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a36f806c6f5c59d9c2d47de53956d343ec55fe6a",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
