@@ -18569,6 +18569,69 @@
       c.match(text("#toast-stack"), /is open in another tab of this window, so it can't be removed — .*Close that tab first\./, "it says to close that tab first");
     },
 
+    /** The mark follows the tabs after Branches comes back from the
+     *  keep-alive cache (#32). Every route drops the view's reload hook, and
+     *  the cache restore returned before anything re-armed it: once Branches
+     *  had been left and come back, a tab closing in front of it left the
+     *  worktree's "open in a tab" behind, and a tab opening never added it.
+     *  And a tab that opened or closed while the view was parked was not read
+     *  at all when it came back. */
+    "a-restored-branches-view-still-follows-the-tabs": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const WT = "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2";
+      const view = () => $(".view-host .branches-view");
+      const mark = () => text($$(".view-host .worktree-row").find((r) => r.dataset.ref === WT)?.querySelector(".br-state-col"));
+      const away = async () => {
+        $('.nav-item[data-view="changes"]')?.click();
+        await settle(700);
+      };
+      const back = async () => {
+        $('.nav-item[data-view="branches"]')?.click();
+        await settle(1000);
+      };
+      /** Opened again the way Open does — its tab in front — then this one. */
+      const reopen = async () => {
+        window.__gsTabs.open(WT);
+        await settle(1200);
+        c.eq(activeTabRoot(), WT, "precondition: the reopened worktree's tab is in front");
+        tabEl(GS_ROOT)?.click();
+        await settle(1200);
+        c.eq(activeTabRoot(), GS_ROOT, "precondition: this tab is in front again");
+      };
+      const built = view();
+      c.ok(!!built, "precondition: the Branches view");
+      c.eq(mark(), "open in a tab", "precondition: its row says another tab has it open");
+      if (!built) return;
+      // Left and come back: the SAME view, from the keep-alive cache.
+      await away();
+      c.ok(!built.isConnected, "precondition: left, the view is parked");
+      await back();
+      c.ok(view() === built, "precondition: Branches came back from the cache, not rebuilt");
+      // The tab closes in front of the restored view.
+      window.__gsTabs.close(WT);
+      await settle(1200);
+      c.eq(mark(), "", "restored from the cache, its row loses the mark when the tab closes");
+      // It opens again while Branches is PARKED: read on the way back. (Each
+      // step flips the mark, so each can fail on its own.)
+      await away();
+      await reopen();
+      await back();
+      c.ok(view() === built, "precondition: restored from the cache again");
+      c.eq(mark(), "open in a tab", "a tab that opened while Branches was parked is marked on the way back");
+      // …and closes while it is parked.
+      await away();
+      window.__gsTabs.close(WT);
+      await settle(900);
+      await back();
+      c.ok(view() === built, "precondition: and again");
+      c.eq(mark(), "", "a tab that closed while Branches was parked has no mark on the way back");
+      // It opens again with the restored view in front — its tab in front, then this one.
+      await reopen();
+      c.ok(view() === built, "precondition: still the restored view");
+      c.eq(mark(), "open in a tab", "restored, its row gets the mark back when the tab opens again");
+    },
+
     /** Which worktree another tab has open is main's to say (#32). The row
      *  compared a tab's root with git's path as TEXT, so a tab whose root is
      *  spelled another way — C:\\Users\\… (realpathSync.native) beside git's

@@ -860,6 +860,7 @@ const CASES = [
   ["a-worktree-open-in-another-tab-says-so", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "wttab=1" }],
   ["worktree-paths-read-the-systems-way", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "winpaths=1" }],
   ["a-worktree-open-in-a-tab-is-marked-however-its-folder-is-spelled", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "wttab=1&winpaths=1" }],
+  ["a-restored-branches-view-still-follows-the-tabs", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "wttab=1", budget: 40000 }],
   ["a-slow-clone-lands-in-its-new-tab-and-says-so", "explore~type:git~key:Enter~text:libgit2/libgit2", { extra: "tabs=1&clonems=1200" }],
   ["a-cloned-repository-says-so-in-its-new-tab", "code~palette~type:clone~text:Clone%20repository%E2%80%A6", { extra: "tabs=1" }],
   ["a-live-page-keeps-polling-after-a-tab-round-trip", "actions~open9101", { extra: "tabs=2", arg: "actions:runDetail", budget: 40000 }],

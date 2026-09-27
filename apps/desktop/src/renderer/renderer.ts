@@ -483,6 +483,9 @@ class App {
   /** Where each kept-alive view was scrolled when it was parked. Keyed by the
    *  node itself, so a rebuilt view never inherits the old one's position. */
   private viewScroll = new WeakMap<HTMLElement, [HTMLElement, number, number, boolean][]>();
+  /** What a kept-alive view does when the cache puts it back on screen — see
+   *  showBranchesView. Keyed by the node, like viewScroll. */
+  private viewRevive = new WeakMap<HTMLElement, () => void>();
   /** Per view root, the elements inside it that have ever been scrolled. */
   private scrolledIn = new WeakMap<HTMLElement, Set<HTMLElement>>();
   /** Views safe to keep alive (no Monaco surface / dispose lifecycle of their own). */
@@ -1850,6 +1853,10 @@ class App {
         : undefined;
     if (cached) {
       this.viewHost.replaceChildren(cached);
+      // Live again: its soft-reload hook, dropped above with every route, is
+      // re-armed for THIS route — or a restored Branches view went deaf to
+      // every tab that opened or closed for the rest of the session (#32).
+      this.viewRevive.get(cached)?.();
       // …and put them back, on the frame after the attach so layout has run.
       const shot = this.viewScroll.get(cached);
       if (shot) {
@@ -2125,6 +2132,9 @@ class App {
     // follows. Swallowing it let the view assert "No other worktrees" from a
     // git call that never answered.
     let worktreeFailed = false;
+    // Which tabs were open when the list was read: each row's "open in a tab"
+    // is main's answer for THOSE (#32). See tabsEpoch.
+    let tabsRead = this.tabsEpoch;
     try {
       worktrees = await host.invoke("worktree:list", undefined);
     } catch {
@@ -2605,8 +2615,11 @@ class App {
       }
     };
 
-    this.reloadBranchRows = async (): Promise<void> => {
-      if (gen !== this.routeGen) return;
+    // The route this view answers for: the one that built it, and then each
+    // one that restores it from the keep-alive cache (revive, below).
+    let live = gen;
+    const reload = async (): Promise<void> => {
+      if (live !== this.routeGen) return;
       await this.refreshRefs();
       locals = await gget("branches:list", undefined);
       try {
@@ -2626,6 +2639,7 @@ class App {
       // refresh in the view goes through here, including `removeWorktreeLive`.
       // "Worktree removed." left the row and its count on screen, and pressing
       // Remove again ran git against a path that no longer existed.
+      tabsRead = this.tabsEpoch;
       try {
         worktrees = await host.invoke("worktree:list", undefined);
         worktreeFailed = false;
@@ -2635,12 +2649,24 @@ class App {
         worktreeFailed = true;
         if (worktrees.length) toast("Couldn't re-read the worktrees — showing the last list git gave.", "info");
       }
-      if (gen !== this.routeGen) return;
+      if (live !== this.routeGen) return;
       remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
       tags = this.refs.filter((r) => r.type === "tag");
       defaultBranch = this.defaultBranchName(locals);
       render();
     };
+    this.reloadBranchRows = reload;
+    // Restored from the keep-alive cache, the view is on screen again but its
+    // hook was dropped with the route that parked it, and nothing re-armed it:
+    // a tab closing in front of it left its worktree's "open in a tab" mark
+    // behind, and a tab opening never added one. Re-armed for the route that
+    // restored it — and a tab that opened or closed while it was parked is
+    // read now, since the list on screen was main's answer for the tabs then.
+    this.viewRevive.set(wrap, () => {
+      live = this.routeGen;
+      this.reloadBranchRows = reload;
+      if (tabsRead !== this.tabsEpoch) void reload();
+    });
     // ── the keyboard ──────────────────────────────────────────────────────
     //
     // Nothing in this view had a shortcut: not the filter, not Fetch, not New
@@ -9720,10 +9746,15 @@ class App {
    *  tab is next in front (Open on a worktree row puts its new tab in front;
    *  coming back, the row it was opened from says so). */
   onTabsChanged(inFront: boolean): void {
+    this.tabsEpoch++;
     this.tabsMoved = !inFront;
     if (inFront && this.currentView === "branches") void this.reloadBranchRows?.();
   }
   private tabsMoved = false;
+  /** Bumped whenever the set of open tabs changes, so a Branches view the
+   *  keep-alive cache parked can tell, when it is restored, that the list it
+   *  shows was read for other tabs than these. */
+  private tabsEpoch = 0;
 
   /** Forgetting or trashing a clone changes Home's "other repositories" card
    *  and the Repositories list — repaint whichever is showing. */
