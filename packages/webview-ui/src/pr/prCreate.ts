@@ -158,7 +158,7 @@ export class PullRequestCreate {
   private readonly labels: string[] = [];
   /** Tried to create with something missing: say what, in place. */
   private tried = false;
-  private picker: { kind: PickerKind; anchor: HTMLElement; el: HTMLElement; query: string; input?: HTMLInputElement } | undefined;
+  private picker: { kind: PickerKind; anchor: HTMLElement; el: HTMLElement; query: string; input?: HTMLInputElement; width?: number } | undefined;
   private focusAfter: string | undefined;
 
   constructor(
@@ -986,7 +986,16 @@ export class PullRequestCreate {
     const m = p.el;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const width = Math.min(320, vw - 16);
+    // As wide as its rows want when it opens — "upstream  acme/webapp —
+    // where it opens" whole — from 320px up to 480px, never wider than the
+    // view; and that width for its life, so typing a filter moves nothing.
+    if (p.width === undefined) {
+      m.style.width = "max-content";
+      // The fractional width, rounded UP: offsetWidth rounds to the nearest
+      // pixel, and half a pixel short is an ellipsis.
+      p.width = Math.ceil(m.getBoundingClientRect().width);
+    }
+    const width = Math.min(Math.max(320, p.width), 480, vw - 16);
     m.style.width = `${width}px`;
     m.style.maxHeight = `${Math.max(160, Math.min(420, vh - 16))}px`;
     const r = p.anchor.getBoundingClientRect();

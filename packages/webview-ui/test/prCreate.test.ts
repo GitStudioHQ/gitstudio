@@ -200,6 +200,21 @@ test("where the branch is pushed can be picked — your fork or the repository i
     const items = $$(".prc-picker-item").map((b) => text(b));
     expect(JSON.stringify(items) === JSON.stringify(["origin sam-rivera/webapp — your fork", "upstream acme/webapp — where it opens"]), "each remote, and what it is: " + items);
     expect($$(".prc-picker-item")[0].getAttribute("aria-selected") === "true", "the one it goes to now is chosen");
+    // Whole to the sub-pixel: the laid-out text against its box (scrollWidth
+    // rounds, and half a pixel short is an ellipsis).
+    const whole = (d) => {
+      const r = document.createRange();
+      r.selectNodeContents(d);
+      return r.getBoundingClientRect().width <= d.getBoundingClientRect().width + 0.01;
+    };
+    const size = (d) => { const r = document.createRange(); r.selectNodeContents(d); return r.getBoundingClientRect().width + "/" + d.getBoundingClientRect().width; };
+    for (const d of $$(".prc-picker-detail")) expect(whole(d), "each remote's words whole: " + d.textContent + " " + size(d));
+    const wide = $(".prc-picker").getBoundingClientRect().width;
+    type($(".prc-picker-filter"), "up");
+    await frame();
+    expect($$(".prc-picker-item").length === 1 && $(".prc-picker").getBoundingClientRect().width === wide, "a filter narrows the rows, never the list: " + $(".prc-picker").getBoundingClientRect().width + " / " + wide);
+    type($(".prc-picker-filter"), "");
+    await frame();
     $$(".prc-picker-item")[1].click();
     expect(last("pushRemote")?.remote === "upstream", "picks upstream: " + JSON.stringify(last("pushRemote")));
     expect(!$(".prc-picker"), "and closes");
@@ -215,6 +230,17 @@ test("where the branch is pushed can be picked — your fork or the repository i
     key("Escape");
     await frame();
     expect(!$(".prc-picker") && document.activeElement === $('[data-picker="push"]'), "Escape: closed, back on the link");
+    // Longer names: the list grows to show them whole (up to 480px).
+    show({ ...S.newBranch, pushRemotes: [
+      { name: "origin", repo: "sam-rivera/webapp-frontend", detail: "your fork" },
+      { name: "upstream", repo: "acme-corporation/webapp-frontend", detail: "where it opens" },
+    ] });
+    $('[data-picker="push"]').click();
+    await frame();
+    for (const d of $$(".prc-picker-detail")) expect(whole(d), "long names whole: " + d.textContent + " " + size(d));
+    expect($(".prc-picker").getBoundingClientRect().width <= 480, "…never wider than 480px");
+    key("Escape");
+    await frame();
     show(S.diverged);
     expect(!!$('.prc-problem [data-picker="push"]'), "diverged: offered in the line that says why");
     show(S.ready);
