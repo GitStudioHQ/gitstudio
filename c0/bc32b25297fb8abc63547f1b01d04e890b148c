@@ -1,0 +1,68 @@
+packages/webview-ui/test/prCreate.test.ts
+  s_26f5e669d3043c::t_73ccc9b4fd0b3e 1-302
+packages/engine/test/prCreate.test.ts
+  s_26f5e669d3043c::t_2e4d1786a5e546 1-122
+apps/extension/test/prCreateForm.test.ts
+  s_26f5e669d3043c::t_b0ecc829773a1c 1-405
+  s_26f5e669d3043c::t_83d203aecc30e9 406-450
+packages/engine/src/forge/prCreate.ts
+  s_26f5e669d3043c::t_d26d30b8fbcebd 1-225
+packages/webview-ui/src/styles/pr-create.css
+  s_26f5e669d3043c::t_236bc98f960ef4 1-495,498,500
+  s_26f5e669d3043c::t_31d61a45a9a00f 496-497,499,501-507
+apps/extension/src/pr/prCreatePage.ts
+  s_26f5e669d3043c::t_06a859684e828f 1-768
+packages/webview-ui/src/pr/prCreate.ts
+  s_26f5e669d3043c::t_c0803ccfc11cb6 1-997,1000,1004
+  s_26f5e669d3043c::t_c3961a037993d4 998-999,1001-1003,1005-1020
+apps/extension/esbuild.js
+  s_26f5e669d3043c::t_7b0e50d94701b1 192-202,214
+apps/extension/harness/pr/createShots.ts
+  s_26f5e669d3043c::t_fa7d78196593ac 1-222
+apps/extension/src/pr/githubApi.ts
+  s_26f5e669d3043c::t_00e71b388d138c 681-690
+apps/extension/src/pr/prCreateHtml.ts
+  s_26f5e669d3043c::t_d09bf84ddc3a3e 1-57
+apps/extension/src/pr/prFeature.ts
+  s_26f5e669d3043c::t_6c9b2abc0e86e4 13,94-103,190-199
+apps/extension/src/pr/pullRequestsView.ts
+  s_26f5e669d3043c::t_6127b8aca48734 471-476
+apps/extension/test/fakeGitHub.ts
+  s_26f5e669d3043c::t_c11cb43eb0cf3e 145-148,382-404
+apps/extension/test/prCheckoutBranch.test.ts
+  s_26f5e669d3043c::t_a5009e80ea1864 33,143
+apps/extension/test/prCreateHtml.test.ts
+  s_26f5e669d3043c::t_fbbc64aa474fc3 1-100
+apps/extension/test/prGitWorld.ts
+  s_26f5e669d3043c::t_d48a28d723b4e5 1-33
+packages/engine/src/forge/pullRequests.ts
+  s_26f5e669d3043c::t_2edbec5ecdf670 64-114
+packages/git-service/src/prCheckout.ts
+  s_26f5e669d3043c::t_fbc4bb40c247b6 71,80-95,99-102,119,123-131
+packages/git-service/test/prCheckout.test.ts
+  s_26f5e669d3043c::t_aa1fdb32ddfb8b 8,127-139
+packages/host-bridge/src/prProtocol.ts
+  s_26f5e669d3043c::t_a11f9808d40e59 526-665
+packages/webview-ui/src/pr/create-main.ts
+  s_26f5e669d3043c::t_d3b457e820ed29 1-48
+packages/webview-ui/test/fixtures/prCreateEntry.ts
+  s_26f5e669d3043c::t_cc9950a38764d2 1-9
+packages/webview-ui/test/fixtures/prCreateFixtures.ts
+  s_26f5e669d3043c::t_a6cea8afd2c4d6 1-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c0bc32b25297fb8abc63547f1b01d04e890b148c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
