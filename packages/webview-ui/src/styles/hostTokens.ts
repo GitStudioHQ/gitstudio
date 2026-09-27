@@ -35,7 +35,7 @@ export const hostTokens = css`
        the menu's ink: the desktop declares no menu tokens (cssTokens.test),
        and Light+/Dark+ paint their menus in the foreground anyway. */
     --gs-menu-muted: color-mix(in srgb, var(--vscode-descriptionForeground) 80%, var(--vscode-foreground));
-    --gs-accent: var(--vscode-focusBorder);
+    --gs-accent: var(--gs-accent-solid, var(--vscode-focusBorder)); /* styles/solidAccent.ts */
     --gs-accent-text: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
     --gs-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
     --gs-surface: color-mix(in srgb, var(--gs-fg) 4%, var(--gs-bg));

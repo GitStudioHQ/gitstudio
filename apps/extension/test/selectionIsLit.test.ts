@@ -403,6 +403,28 @@ for (const theme of THEMES) {
   });
 }
 
+// Cursor's own theme gives a focus colour of 15% white; the panel's accent is
+// its violet, but the glow was resolved on :root from the theme's colour —
+// the open form had no mark at all there.
+test("the AI settings in Cursor Dark: the picked provider's form glows in the panel's violet", { skip }, async () => {
+  const over = JSON.parse(readFileSync(join(__dirname, "fixtures", "cursorDarkTheme.json"), "utf8")).vars;
+  const page = await AiSettingsPage.open("dark", { over });
+  cleanups.push(() => page.close());
+  await page.send({ type: "status", status: aiStatus() });
+  await settle(page);
+  await page.eval(`(function () {
+    var cards = Array.prototype.slice.call(document.querySelectorAll(".ai-prov-card"));
+    var c = cards.find(function (x) { return /Ollama/.test(x.textContent); }) || cards[0];
+    c.click();
+  })()`);
+  await settle(page, 120);
+  const glow = await page.eval<string>(`getComputedStyle(document.querySelector(".ai-editor-inline .ai-conn")).boxShadow`);
+  const m = /color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)|rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/.exec(glow);
+  assert.ok(m, `a glow: ${glow}`);
+  const [r, g, b, a] = m![1] ? [+m![1] * 255, +m![2] * 255, +m![3] * 255, m![4] ? +m![4] : 1] : [+m![5], +m![6], +m![7], m![8] ? +m![8] : 1];
+  assert.ok(a >= 0.5 && b > r + 60 && b > g + 60, `the glow is the violet, and solid enough to see: ${glow}`);
+});
+
 // ── The Worktrees view: this window's row ───────────────────────────────────
 
 // The owner's minimal Worktrees view marks the worktree this window has open

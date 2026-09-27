@@ -12,9 +12,13 @@
 // The component itself (prCreate.ts) is host-agnostic; the desktop can mount
 // the same class.
 
+import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/pr-create.css";
 import type { PrCreateHostMessage, PrCreateMessageToHost } from "@gitstudio/host-bridge/prProtocol";
 import { PullRequestCreate } from "./prCreate";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 interface PrCreateVsCodeApi {
   postMessage(message: PrCreateMessageToHost): void;

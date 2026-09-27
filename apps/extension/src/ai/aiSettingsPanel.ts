@@ -235,6 +235,10 @@ export class AiSettingsPanel {
      a high-contrast theme it was a black box in a coloured editor. Every
      surface and line is the theme's now; the violet stays for the primary
      button and the marks, as in the Changes view. */
+  /* The violet on :root as well: tokens.css resolves the selection's glow
+     there (--gs-sel-glow), so a body-only accent left it the theme's focus
+     colour — 15% white in Cursor Dark, no glow at all. */
+  :root { --gs-accent: var(--gs-brand); }
   body {
     --gs-accent: var(--gs-brand);
     --gs-accent-2: var(--vscode-textLink-foreground, var(--gs-brand));

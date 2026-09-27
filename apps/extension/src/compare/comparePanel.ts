@@ -6,6 +6,7 @@ import { relativeTime } from "../util/relativeTime";
 // Shared design tokens, inlined as text by esbuild (see esbuild.js .css loader),
 // so the compare panel matches every other GitStudio surface.
 import tokensCss from "../../../../packages/webview-ui/src/styles/tokens.css";
+import { SOLID_ACCENT_JS } from "../../../../packages/webview-ui/src/styles/solidAccent";
 import {
   compareRefsData,
   fileDiffPatch,
@@ -399,6 +400,7 @@ export class ComparePanel {
     <div class="cmp-empty" id="commits-empty" hidden>No commits — <b>${esc(this.head)}</b> has nothing that <b>${esc(this.base)}</b> doesn't.</div>
   </div>
 
+<script nonce="${nonce}">${SOLID_ACCENT_JS}</script>
 <script nonce="${nonce}">
 const DATA = ${dataJson};
 ${COMPARE_JS}

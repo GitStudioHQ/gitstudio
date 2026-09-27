@@ -7,6 +7,10 @@
 // then drift from — this bundle hands it the same functions the Worktrees page
 // imports, as `window.GsChangeRows` (dist/webview/change-rows.js).
 
+import { installSolidAccent } from "../styles/solidAccent";
 import * as rows from "./changeRows";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 (globalThis as unknown as { GsChangeRows: typeof rows }).GsChangeRows = rows;

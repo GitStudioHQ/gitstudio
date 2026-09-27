@@ -1118,7 +1118,7 @@ export class CommitGraph extends LitElement {
     .col-resize.dragging::after {
       width: 2px;
       height: 100%;
-      background: var(--vscode-focusBorder);
+      background: var(--gs-accent);
     }
     .col-resize:focus-visible {
       outline: 1px solid var(--vscode-focusBorder);
@@ -1501,7 +1501,7 @@ export class CommitGraph extends LitElement {
         var(--vscode-textLink-foreground, var(--vscode-focusBorder)) 88%, var(--vscode-foreground));
       border-color: transparent;
       background: color-mix(in srgb,
-        var(--vscode-focusBorder) 13%, var(--vscode-editor-background));
+        var(--gs-accent) 13%, var(--vscode-editor-background));
     }
     .chip-head .ico { color: inherit; }
     /* remote = the quietest kind. It is context ("this also exists upstream"),

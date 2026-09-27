@@ -78,7 +78,8 @@ window.__send = function (msg) { window.dispatchEvent(new MessageEvent("message"
 `;
 
 /** The panel's page for `theme`, with its CSP opened to file: for the codicon font. */
-export function aiSettingsHtml(theme: VsCodeTheme): string {
+/** `over`: variables laid over the theme's — Cursor Dark's, say (test/fixtures/cursorDarkTheme.json). */
+export function aiSettingsHtml(theme: VsCodeTheme, over: Record<string, string> = {}): string {
   const webview = {
     cspSource: "file:",
     asWebviewUri: () => pathToFileURL(CODICONS).href,
@@ -86,7 +87,7 @@ export function aiSettingsHtml(theme: VsCodeTheme): string {
   const html = (AiSettingsPanel.prototype as unknown as {
     html: (w: unknown, u: unknown) => string;
   }).html.call({}, webview, { fsPath: "/ext", path: "/ext" });
-  const vars = { ...VSCODE_THEMES[theme], ...EXTRA[theme] };
+  const vars = { ...VSCODE_THEMES[theme], ...EXTRA[theme], ...over };
   const style = Object.entries(vars)
     .map(([k, v]) => `${k}:${v.replace(/"/g, "&quot;")}`)
     .join(";");
@@ -133,7 +134,7 @@ export class AiSettingsPage {
     return findChrome();
   }
 
-  static async open(theme: VsCodeTheme, opts: { width?: number; height?: number; scale?: number } = {}): Promise<AiSettingsPage> {
+  static async open(theme: VsCodeTheme, opts: { width?: number; height?: number; scale?: number; over?: Record<string, string> } = {}): Promise<AiSettingsPage> {
     const chrome = findChrome();
     if (!chrome) throw new Error("no windowless Chrome on this machine (set GS_CHROME)");
     process.env.GS_CHROME = chrome;
@@ -143,7 +144,7 @@ export class AiSettingsPage {
     const page = await browser.newPage(width, height, opts.scale ?? 1);
     const dir = mkdtempSync(join(tmpdir(), "gs-ai-page-"));
     const file = join(dir, "ai.html");
-    writeFileSync(file, aiSettingsHtml(theme));
+    writeFileSync(file, aiSettingsHtml(theme, opts.over));
     await browser.goto(page, pathToFileURL(file).href);
     await page.waitFor(`typeof window.__send === "function" && window.__posted.some(function (m) { return m.type === "ready"; })`);
     return new AiSettingsPage(browser, page, dir);

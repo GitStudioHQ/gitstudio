@@ -13,9 +13,13 @@
 // The component itself (prPage.ts) is host-agnostic; the desktop can mount
 // the same class.
 
+import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/pr-page.css";
 import type { PrMergeMethod, PrPageHostMessage, PrPageMessageToHost } from "@gitstudio/host-bridge/prProtocol";
 import { PullRequestPage } from "./prPage";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 interface PrPageVsCodeApi {
   postMessage(message: PrPageMessageToHost): void;

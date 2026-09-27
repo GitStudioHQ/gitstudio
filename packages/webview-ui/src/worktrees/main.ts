@@ -7,9 +7,13 @@
 // `<div id="root">`. Messages: host-bridge/worktreesProtocol.ts — the page
 // posts `ready` on load and the host answers with `rows`.
 
+import { installSolidAccent } from "../styles/solidAccent";
 import "./worktrees.css";
 import type { WorktreesToHost, WorktreesToPage } from "@gitstudio/host-bridge/worktreesProtocol";
 import { WorktreesView, type WorktreesLabels } from "./view";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 interface WorktreesVsCodeApi {
   postMessage(message: WorktreesToHost): void;

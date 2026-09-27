@@ -448,7 +448,7 @@ async function applyWithStaging(a: RepoEntry, entry: StashEntry, pop: boolean): 
     return first;
   }
   const files = (await a.ctx.stashes.files(entry.sha)) ?? [];
-  if (!(await askWithoutStaging(entry, first.staging, pop, losesStaged(files)))) {
+  if (!sameWithoutIndex(files) && !(await askWithoutStaging(entry, first.staging, pop, losesStaged(files), readdsNew(files)))) {
     return { result: first.result, cancelled: true };
   }
   if (!files.some((f) => f.onlyStaged)) {
@@ -486,6 +486,32 @@ function losesStaged(files: readonly StashFile[]): boolean {
 }
 
 /**
+ * What it holds that git adds back staged even without `--index`: a file it
+ * added, and a rename's new name (a -u stash's untracked files stay
+ * untracked) — named, so "unstaged" says where it is not. Null: nothing.
+ */
+function readdsNew(files: readonly StashFile[]): string | null {
+  const added = files.some((f) => f.status === "A" && !!f.staged);
+  const renamed = files.some((f) => f.status === "R" && !!f.staged);
+  return added && renamed ? "a new or renamed file" : added ? "a new file" : renamed ? "a renamed file" : null;
+}
+
+/** "…unstaged", and the exception git makes, where there is one. */
+function unstagedWords(readds: string | null): string {
+  return readds ? `unstaged, but for ${readds}, which git adds back staged,` : "unstaged";
+}
+
+/**
+ * Would the question change anything? Where every change it had staged is a
+ * new file staged as it is, git adds those back staged without `--index` as
+ * well: the plain apply IS the apply with its staging, so nothing is asked.
+ */
+function sameWithoutIndex(files: readonly StashFile[]): boolean {
+  const staged = files.filter((f) => f.staged);
+  return staged.length > 0 && staged.every((f) => f.status === "A" && f.staged === "all" && !f.onlyStaged);
+}
+
+/**
  * Some of a stash's files, through the same door: `part` is the stash-shaped
  * commit cut from `entry` holding only them (StashProvider.subset), applied
  * by its sha while `entry` is still in the list — with their staging, Stash
@@ -505,7 +531,7 @@ async function applyPartWithStaging(
   if (!first.staging) {
     return first;
   }
-  if (!(await askPartWithoutStaging(entry, first.staging, move, picked))) {
+  if (!sameWithoutIndex(picked) && !(await askPartWithoutStaging(entry, first.staging, move, picked))) {
     return { result: first.result, cancelled: true };
   }
   // A picked file the stash holds only staged comes back from its staged
@@ -528,6 +554,7 @@ async function askWithoutStaging(
   why: "busy" | "refused",
   pop: boolean,
   lossy: boolean,
+  readds: string | null,
 ): Promise<boolean> {
   const verb = pop ? "Pop" : "Apply";
   const choice = await promptPick({
@@ -542,8 +569,8 @@ async function askWithoutStaging(
         label: `${verb} Unstaged`,
         icon: pop ? "git-stash-pop" : "git-stash-apply",
         description: pop
-          ? `Its changes come back unstaged and the stash is dropped.${lossy ? ` ${LOST_STAGED}` : ""}`
-          : "Its changes come back unstaged. The stash is kept, staging and all.",
+          ? `Its changes come back ${unstagedWords(readds)} and the stash is dropped.${lossy ? ` ${LOST_STAGED}` : ""}`
+          : `Its changes come back ${unstagedWords(readds).replace(/,$/, "")}. The stash is kept, staging and all.`,
       },
       {
         id: "cancel",
@@ -570,6 +597,7 @@ async function askPartWithoutStaging(
 ): Promise<boolean> {
   const verb = move ? "Move" : "Copy";
   const one = picked.length === 1;
+  const back = unstagedWords(readdsNew(picked));
   const them = one ? `“${picked[0].path.split("/").pop()}”` : `These ${picked.length} files`;
   const was = one ? "was" : "were";
   const choice = await promptPick({
@@ -584,10 +612,10 @@ async function askPartWithoutStaging(
         label: `${verb} Unstaged`,
         icon: move ? "git-stash-pop" : "git-stash-apply",
         description: move
-          ? `${one ? "Its changes come back unstaged and leave" : "Their changes come back unstaged and leave"} the stash.${
+          ? `${one ? "Its changes come" : "Their changes come"} back ${back} and leave the stash.${
               !losesStaged(picked) ? "" : one ? " It was staged and then changed again, so its staged version is not kept." : ` ${LOST_STAGED}`
             }`
-          : `${one ? "Its changes come" : "Their changes come"} back unstaged. The stash keeps ${one ? "it" : "them"}, staging and all.`,
+          : `${one ? "Its changes come" : "Their changes come"} back ${back.replace(/,$/, "")}. The stash keeps ${one ? "it" : "them"}, staging and all.`,
       },
       {
         id: "cancel",

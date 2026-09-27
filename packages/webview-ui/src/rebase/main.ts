@@ -3,6 +3,7 @@
 // rows, and forwards the user's Start/Abort intent back to the extension host
 // (which serializes via the engine and writes the git-rebase-todo).
 
+import { installSolidAccent } from "../styles/solidAccent";
 import "./rebase.css";
 import "./rebase-view";
 import type { RebaseView, RebaseIntent } from "./rebase-view";
@@ -10,6 +11,9 @@ import type {
   RebaseHostMessage,
   RebaseWebviewMessage,
 } from "@gitstudio/host-bridge/rebaseProtocol";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 interface VsCodeApi {
   postMessage(message: RebaseWebviewMessage): void;

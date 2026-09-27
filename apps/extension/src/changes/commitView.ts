@@ -3737,9 +3737,13 @@ export class CommitViewProvider
       padding: 4px 11px; font-size: 12px; border-radius: 5px; cursor: pointer;
       border: 1px solid var(--gs-border); background: transparent; color: var(--gs-fg);
     }
+    /* GitStudio's own pair, as Push and Commit & Push: the theme's focusBorder
+       is no fill (Cursor Dark's is 15% white) and its button label pairs
+       only with its own button colour — together they read 1.4:1 in Cursor,
+       and white on focusBorder blue was under 4.5:1 even in Dark+. */
     .rp-foot button.primary {
-      background: var(--gs-accent); border-color: var(--gs-accent);
-      color: var(--vscode-button-foreground, #fff);
+      background: var(--gs-brand); border-color: var(--gs-brand);
+      color: var(--gs-brand-fg);
     }
     /* A FILL for a destructive button. --gs-danger is the theme's error TEXT
        colour (Dark+: #f48771), and a white label on it read 2.5:1; darkened
@@ -3747,8 +3751,20 @@ export class CommitViewProvider
     :root { --gs-danger-fill: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 62%, #000000); }
     .rp-foot button.primary.danger {
       background: var(--gs-danger-fill); border-color: var(--gs-danger-fill);
+      color: #fff;
     }
     .rp-foot button:disabled { opacity: 0.5; cursor: default; }
+    /* Under the pointer a filled button darkens: the global button.primary
+       brightening took the violet to #8061ff, white on it 4.1:1. */
+    .rp-foot button.primary:not(:disabled):hover { filter: none; }
+    .rp-foot button.primary:not(.danger):not(:disabled):hover {
+      background: color-mix(in srgb, var(--gs-brand) 82%, #000);
+      border-color: color-mix(in srgb, var(--gs-brand) 82%, #000);
+    }
+    .rp-foot button.primary.danger:not(:disabled):hover {
+      background: color-mix(in srgb, var(--gs-danger-fill) 88%, #000);
+      border-color: color-mix(in srgb, var(--gs-danger-fill) 88%, #000);
+    }
     /* A multi-line answer (a PR body, a review summary). Same frame as the
        single-line input so the dialog doesn't change shape between kinds. */
     .rp-inputwrap textarea {
@@ -4258,6 +4274,13 @@ export class CommitViewProvider
     .group-header.is-drop-over .glabel,
     .group-header.is-drop-over .gcount,
     .group-header.is-drop-over .group-actions { display: none; }
+    /* The group is the lit place; its header only speaks — one ring, and its
+       tint made solid, held in sight at the top while the group is: let go
+       over a stash far down a long list, the words are still there. */
+    .group--stashes.is-drop-over > .group-header.is-drop-over {
+      position: sticky; top: 0; z-index: 3;
+      background: var(--drop-over-solid); outline: none;
+    }
     /* The working tree, every group of it one place: the words in a band
        held at its top — in sight however far the list is scrolled — laid
        over its first group's header on the lit tint made solid. The band
@@ -5784,13 +5807,16 @@ export class CommitViewProvider
     // to the other — the menus' Apply, Pop, Move, Copy and Stash, by hand:
     //   a stash               → the working tree (or its clean note): Apply (Alt: Pop)
     //   its files, a folder   → the same place: Move (Alt: Copy)
-    //   working-tree files    → the Stashes header: stash exactly those
+    //   working-tree files    → the Stashes group: stash exactly those
     // The working tree is ONE place, however many groups it shows: what
     // comes back comes back as it was stashed (staged changes staged), so no
     // one group — Staged, say — may look like it decides where.
     // It posts what the menus post, so the same doors answer (Stash & Retry,
     // the staging question, conflicts, Undo). A single stash takes nothing:
-    // git cannot add to a stash, so a stash row is never a place to drop.
+    // git cannot add to a stash, so files go to the GROUP — lit whole, its
+    // words in its header — wherever in it they are let go, never to a row
+    // lit as if it were the one they joined. (The header alone was a 26px
+    // strip; let go over the stashes under it, a drop did nothing.)
     // drag is what is being dragged (null: nothing of ours); dropKey the
     // place under the pointer, by name — the renders rebuild the elements.
     let drag = null;
@@ -5820,17 +5846,23 @@ export class CommitViewProvider
       if (drag.kind === "tree") return drag.paths.length ? ["stashes"] : [];
       return ["tree", "empty"];
     }
+    /** Where a place shows its words. */
     function dropEl(key) {
       if (key === "stashes") return stashesEl.hidden ? null : stashesEl.querySelector(".group--stashes > .group-header");
       if (key === "empty") return emptyEl.classList.contains("visible") ? emptyEl : null;
       // The working tree: every group it shows, as one place.
       return groupsEl.querySelector(":scope > .group:not(.empty)") ? groupsEl : null;
     }
+    /** A place, whole: what takes the drop and is lit — the Stashes group with its rows. */
+    function dropArea(key) {
+      const t = dropEl(key);
+      return t && key === "stashes" ? t.parentElement : t;
+    }
     /** The place a node is in, when the drag in hand can go there. */
     function dropKeyAt(node) {
       const keys = dropKeys();
       for (let i = 0; i < keys.length; i++) {
-        const t = dropEl(keys[i]);
+        const t = dropArea(keys[i]);
         if (t && node && t.contains(node)) return keys[i];
       }
       return null;
@@ -5884,8 +5916,11 @@ export class CommitViewProvider
       for (let i = 0; i < keys.length; i++) {
         const t = dropEl(keys[i]);
         if (!t) continue;
-        if (keys[i] !== dropKey) { t.classList.add("is-drop-ready"); continue; }
-        t.classList.add("is-drop-over");
+        const area = dropArea(keys[i]);
+        if (keys[i] !== dropKey) { area.classList.add("is-drop-ready"); continue; }
+        area.classList.add("is-drop-over");
+        // The Stashes group is lit whole; its header carries the words.
+        if (area !== t) t.classList.add("is-drop-over");
         const h = hintOf(t);
         const words = dropWords();
         const verb = h.querySelector(".drop-verb");

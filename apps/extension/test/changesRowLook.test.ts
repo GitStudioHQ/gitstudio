@@ -1,6 +1,6 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { ChangesPage, stateMessage, type VsCodeTheme } from "./changesPage";
+import { ChangesPage, stateMessage, type PageTheme } from "./changesPage";
 import { LOOK_PROBE } from "./litLook";
 import { relativeTime } from "../src/util/relativeTime";
 
@@ -36,7 +36,9 @@ const STATE = {
 
 type Look = { fill: string; apart: number; text: number; lines: string[] };
 
-for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
+// cursor-dark: Cursor's default theme, whose focus colour is 15% white — a
+// selected row there was 3% white until the accent was made solid.
+for (const theme of ["dark", "light", "hc-dark", "hc-light", "cursor-dark"] as PageTheme[]) {
   test(`${theme}: a file row, hovered or selected, is lit and never wears a line`, { skip }, async () => {
     const p = await ChangesPage.open(theme, { width: 360, height: 640 });
     opened.push(p);
@@ -47,6 +49,11 @@ for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
     })()`);
     await p.eval(LOOK_PROBE);
     await p.send(STATE);
+    if (theme === "cursor-dark") {
+      // The theme's own button colour, not its 15% white — nor Dark+'s blue from the base under the fixture.
+      const accent = await p.eval<string>(`(function () { var i = document.createElement("i"); i.style.color = "var(--gs-accent)"; document.body.appendChild(i); var c = getComputedStyle(i).color; i.remove(); return c; })()`);
+      assert.equal(accent, "rgb(129, 161, 193)", "Cursor Dark's accent is its button colour, #81a1c1");
+    }
     await p.eval(`document.querySelector('#stashes [data-tkey="stash:${B}"]').click()`);
     await p.page.waitFor(`!!document.querySelector('#stashes [data-key="stash:${B}:README.md"]')`);
     const hc = theme.startsWith("hc");

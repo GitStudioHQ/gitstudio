@@ -9,6 +9,10 @@
 // the engine's own functions as `window.GsRebasePlan`, the same ones the
 // desktop's Rebase view and the git-rebase-todo editor import.
 
+import { installSolidAccent } from "../styles/solidAccent";
 import * as plan from "@gitstudio/engine/rebase/planEdit";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 (globalThis as unknown as { GsRebasePlan: typeof plan }).GsRebasePlan = plan;

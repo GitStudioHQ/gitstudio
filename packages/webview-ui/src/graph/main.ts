@@ -4,6 +4,7 @@
 // details; the details panel's file-open / action / copy events and the
 // graph's select/open/context/loadMore intents are forwarded to the host.
 
+import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/graph.css";
 import "./commit-graph";
 import "../commit-details";
@@ -16,6 +17,9 @@ import type {
   GraphWebviewMessage,
   WireRef,
 } from "@gitstudio/host-bridge/graphProtocol";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 interface VsCodeApi {
   postMessage(message: GraphWebviewMessage): void;

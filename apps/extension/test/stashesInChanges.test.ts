@@ -327,6 +327,77 @@ test("only staged, Apply Unstaged of the whole stash: every change comes back, a
   assert.deepEqual(await filesOf(f.dir, sha), ["a.ts", "b.ts"]);
 });
 
+// Without --index git brings every change back unstaged but a new file and a
+// rename's new name, which it adds back staged. In the real Cursor the
+// question said "Its changes come back unstaged" and layout.css came back
+// staged. Now: where all a stash had staged is new files, staged as they
+// are, the plain apply IS the apply with its staging — nothing is asked;
+// otherwise the words name what git adds back staged.
+test("all it had staged is a new file: nothing is asked, and it all comes back as it was stashed", async () => {
+  for (const pop of [false, true]) {
+    reset();
+    const f = fixture();
+    f.write("fresh.ts", "fresh\n");
+    f.git("add", "fresh.ts");
+    f.write("b.ts", "b.ts stashed\n");
+    f.git("stash", "push", "-q", "-m", "with a new file");
+    const [sha] = shas(f);
+    f.write("c.ts", "mine, staged\n");
+    f.git("add", "c.ts");
+    answer = () => undefined;
+    const out = await withRepo(f.dir, (repos) => (pop ? stashesView.popStash : stashesView.applyStash)(repos, sha, () => {}));
+    assert.equal(out.kind, "done");
+    assert.equal(asked.filter((q) => q.kind === "pick").length, 0, "no question: it would change nothing");
+    const lines = status(f).split("\n");
+    for (const l of ["A  fresh.ts", " M b.ts", "M  c.ts"]) assert.ok(lines.includes(l), `${l}: ${lines.join(" | ")}`);
+    assert.deepEqual(shas(f), pop ? [] : [sha]);
+  }
+});
+
+test("a new file and a staged edit: the question says git adds the new file back staged — and git does", async () => {
+  for (const pop of [false, true]) {
+    reset();
+    const f = fixture();
+    f.write("fresh.ts", "fresh\n");
+    f.write("a.ts", "a.ts staged in the stash\n");
+    f.git("add", "fresh.ts", "a.ts");
+    f.write("b.ts", "b.ts stashed\n");
+    f.git("stash", "push", "-q", "-m", "with a new file");
+    const [sha] = shas(f);
+    f.write("c.ts", "mine, staged\n");
+    f.git("add", "c.ts");
+    answer = () => ({ value: "unstaged" });
+    const out = await withRepo(f.dir, (repos) => (pop ? stashesView.popStash : stashesView.applyStash)(repos, sha, () => {}));
+    assert.equal(out.kind, "done");
+    assert.match(
+      unstagedChoice(),
+      pop
+        ? /^Pop Unstaged: Its changes come back unstaged, but for a new file, which git adds back staged, and the stash is dropped\.$/
+        : /^Apply Unstaged: Its changes come back unstaged, but for a new file, which git adds back staged\. The stash is kept, staging and all\.$/,
+    );
+    const lines = status(f).split("\n");
+    for (const l of ["A  fresh.ts", " M a.ts", " M b.ts", "M  c.ts"]) assert.ok(lines.includes(l), `${l}: ${lines.join(" | ")}`);
+  }
+});
+
+test("a staged rename: the question says git adds the renamed file back staged — and git does", async () => {
+  reset();
+  const f = fixture();
+  f.git("mv", "b.ts", "b2.ts");
+  f.write("a.ts", "a.ts staged in the stash\n");
+  f.git("add", "a.ts");
+  f.git("stash", "push", "-q", "-m", "renamed b");
+  const [sha] = shas(f);
+  f.write("c.ts", "mine, staged\n");
+  f.git("add", "c.ts");
+  answer = () => ({ value: "unstaged" });
+  const out = await withRepo(f.dir, (repos) => stashesView.applyStash(repos, sha, () => {}));
+  assert.equal(out.kind, "done");
+  assert.match(unstagedChoice(), /^Apply Unstaged: Its changes come back unstaged, but for a renamed file, which git adds back staged\. The stash is kept, staging and all\.$/);
+  const lines = status(f).split("\n");
+  for (const l of ["A  b2.ts", " M a.ts", "M  c.ts"]) assert.ok(lines.includes(l), `${l}: ${lines.join(" | ")}`);
+});
+
 test("staged, then edited again: without its staging the staged version is lost — and the question says so", async () => {
   reset();
   const f = fixture();

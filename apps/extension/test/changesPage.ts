@@ -29,6 +29,21 @@ import { BODY_CLASS, VSCODE_THEMES, type VsCodeTheme } from "../../../scripts/me
 
 export type { VsCodeTheme };
 
+/**
+ * A theme a Changes page can be opened in: VS Code's four, and Cursor's own
+ * default ("Cursor Dark", the --vscode-* values its webviews are given, read
+ * from a live Changes view: test/fixtures/cursorDarkTheme.json). Cursor's
+ * focusBorder is 15% white — GitStudio's accent was invisible there.
+ */
+export type PageTheme = VsCodeTheme | "cursor-dark";
+
+const CURSOR_DARK: Record<string, string> = JSON.parse(readFileSync(join(__dirname, "fixtures", "cursorDarkTheme.json"), "utf8")).vars;
+
+/** The VS Code theme a page theme is laid over, and what it lays over it. */
+function themeParts(theme: PageTheme): { base: VsCodeTheme; over: Record<string, string> } {
+  return theme === "cursor-dark" ? { base: "dark", over: CURSOR_DARK } : { base: theme, over: {} };
+}
+
 const HERE = (p: string): string => fileURLToPath(new URL(p, import.meta.url));
 const SRC = HERE("../src/changes/commitView.ts");
 const TOKENS = HERE("../../../packages/webview-ui/src/styles/tokens.css");
@@ -136,7 +151,8 @@ window.__send = function (msg) { window.dispatchEvent(new MessageEvent("message"
  * holes filled. `webviewState`: what getState() answers when the page starts,
  * as after a reload.
  */
-export function changesViewHtml(theme: VsCodeTheme, webviewState?: unknown): string {
+export function changesViewHtml(pageTheme: PageTheme, webviewState?: unknown): string {
+  const { base: theme, over } = themeParts(pageTheme);
   const source = readFileSync(SRC, "utf8");
   const sf = ts.createSourceFile(SRC, source, ts.ScriptTarget.Latest, true);
   let tpl: ts.TemplateExpression | undefined;
@@ -177,7 +193,7 @@ export function changesViewHtml(theme: VsCodeTheme, webviewState?: unknown): str
     html += ts.isTemplateTail(span.literal) ? lit.slice(1, -1) : lit.slice(1, -2);
   }
 
-  const vars = { ...VSCODE_THEMES[theme], ...VIEW_TOKENS[theme] };
+  const vars = { ...VSCODE_THEMES[theme], ...VIEW_TOKENS[theme], ...over };
   const style = Object.entries(vars)
     .map(([k, v]) => `${k}:${v.replace(/"/g, "&quot;")}`)
     .join(";");
@@ -283,7 +299,7 @@ export class ChangesPage {
   }
 
   static async open(
-    theme: VsCodeTheme,
+    theme: PageTheme,
     opts: { width?: number; height?: number; scale?: number; webviewState?: unknown } = {},
   ): Promise<ChangesPage> {
     const chrome = findChrome();

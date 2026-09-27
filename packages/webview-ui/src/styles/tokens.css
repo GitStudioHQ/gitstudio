@@ -74,7 +74,9 @@
   --gs-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--gs-fg) 7%, transparent));
   --gs-selection-bg: var(--vscode-list-activeSelectionBackground);
   --gs-selection-fg: var(--vscode-list-activeSelectionForeground);
-  --gs-accent: var(--vscode-focusBorder);
+  /* The theme's focus colour — or, where that is see-through (Cursor Dark's
+     is 15% white), an opaque one of its own: styles/solidAccent.ts. */
+  --gs-accent: var(--gs-accent-solid, var(--vscode-focusBorder));
   --gs-accent-text: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
   --gs-link: var(--vscode-textLink-foreground);
 

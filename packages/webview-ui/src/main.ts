@@ -4,6 +4,7 @@
 // with Merge Studio and the desktop app (mergeShell.ts); this file only
 // connects it to VS Code's messaging.
 
+import { installSolidAccent } from "./styles/solidAccent";
 import "./styles/diff.css";
 import "./styles/shell.css";
 import { configureMonacoWorkers } from "./monacoEnv";
@@ -17,6 +18,9 @@ import type {
   MergeInitPayload,
 } from "@gitstudio/host-bridge/protocol";
 import { arrowDown, arrowUp } from "./icons";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 configureMonacoWorkers();
 

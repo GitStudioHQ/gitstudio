@@ -7,9 +7,10 @@
 // ability to drag and drop directly". One mechanism, both ways:
 //   a stash             → the working tree / the clean tree: Apply (Alt: Pop)
 //   its files, a folder → the same place: Move (Alt: Copy)
-//   working-tree files  → the Stashes header: stash exactly those
-// and nowhere else — a stash row never takes a drop (git cannot add to a
-// stash), a stash never lands on the Stashes group, nor the working tree's
+//   working-tree files  → the Stashes group: stash exactly those
+// and nowhere else — the group is lit whole wherever in it they are let go,
+// never one stash row as if they joined it (git cannot add to a stash); a
+// stash never lands on the Stashes group, nor the working tree's
 // files on the working tree. The working tree is ONE place, whatever groups
 // it shows: what comes back comes back as it was stashed, so no group of it
 // (Staged, say) is lit on its own as if it decided where. The place under
@@ -39,7 +40,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { answerWith, asked, changesHost, scratchRepo } from "./changesHost";
-import { ChangesPage, type VsCodeTheme } from "./changesPage";
+import { ChangesPage, type PageTheme, type VsCodeTheme } from "./changesPage";
 import { LOOK_PROBE } from "./litLook";
 import { relativeTime } from "../src/util/relativeTime";
 
@@ -124,7 +125,9 @@ window.__dnd = {
     this.fire(t, "dragenter", alt);
     this.dt.dropEffect = "none";
     var e = this.fire(t, "dragover", alt);
-    var lit = document.querySelectorAll(".is-drop-over");
+    // The lit PLACES: a lit element inside another (the Stashes group's
+    // header, which carries its words) is part of it, not a second place.
+    var lit = Array.prototype.filter.call(document.querySelectorAll(".is-drop-over"), function (n) { return !n.parentElement.closest(".is-drop-over"); });
     var hint = lit.length === 1 ? lit[0].querySelector(".drop-hint") : null;
     return {
       allowed: e.defaultPrevented,
@@ -154,7 +157,7 @@ window.__dnd = {
 
 type Over = { allowed: boolean; effect: string; lit: string[]; words: string[]; ready: number };
 
-async function open(theme: VsCodeTheme = "dark", width = 360): Promise<ChangesPage> {
+async function open(theme: PageTheme = "dark", width = 360): Promise<ChangesPage> {
   const p = await ChangesPage.open(theme, { width, height: 900 });
   cleanups.push(() => p.close());
   await p.eval(`(function () {
@@ -310,7 +313,7 @@ test("a stash's files: one, its selected ones, one outside the selection, a fold
   assert.deepEqual({ ...moved, paths: moved.paths.slice().sort() }, { type: "stashFiles", sha: B, action: "move", paths: ["src/auth/callback.ts", "src/auth/login.ts"] });
 });
 
-test("the working tree's files: onto the Stashes header only — one, a selection (staged and unstaged, once each), a folder; never a conflicted file", { skip }, async () => {
+test("the working tree's files: onto the Stashes group, its header or any stash in it — one, a selection (staged and unstaged, once each), a folder; never a conflicted file", { skip }, async () => {
   const p = await open();
   await p.send(state({
     merge: [{ path: "src/conflict.ts", status: "U" }],
@@ -319,11 +322,15 @@ test("the working tree's files: onto the Stashes header only — one, a selectio
   assert.ok(await start(p, Q.file("unstaged", "src/app.ts")));
   assert.equal((await p.eval<{ text: string }>(`window.__dnd.carries()`)).text, "src/app.ts", "outside the view: its path");
   let o = await over(p, Q.stashesHeader);
-  assert.deepEqual([o.allowed, o.effect, o.lit, o.words, o.ready], [true, "move", ["group-header"], ["Drop to stash 1 file"], 0]);
+  assert.deepEqual([o.allowed, o.effect, o.lit, o.words, o.ready], [true, "move", ["group--stashes"], ["Drop to stash 1 file"], 0]);
+  // Over a stash: still the group, lit whole, and the same words — no row of
+  // it lights as if the files were joining that stash.
+  o = await over(p, Q.stash(B));
+  assert.deepEqual([o.allowed, o.effect, o.lit, o.words], [true, "move", ["group--stashes"], ["Drop to stash 1 file"]]);
+  assert.equal(await p.eval<number>(`document.querySelectorAll("#stashes .row.is-drop-over, #stashes .row.is-drop-ready").length`), 0, "no stash row is lit");
   for (const [what, t] of [
     ["Changes", Q.group("unstaged")],
     ["Staged", Q.group("staged")],
-    ["a stash row", Q.stash(B)],
     ["the merge group", Q.group("merge")],
   ] as const) {
     o = await over(p, t);
@@ -348,7 +355,8 @@ test("the working tree's files: onto the Stashes header only — one, a selectio
   await clearPosted(p);
   await cmdClick(p, Q.file("unstaged", "src/app.ts"));
   assert.ok(await start(p, Q.file("unstaged", "src/routes.ts")));
-  await drop(p, Q.stashesHeader);
+  // Let go over a stash rather than the header: the same new stash.
+  await drop(p, Q.stash(B));
   assert.deepEqual(await posted(p), [{ type: "stashPaths", paths: ["src/routes.ts"] }]);
   assert.equal(await p.eval<number>(`document.querySelectorAll(".row.is-selected").length`), 1);
 
@@ -368,6 +376,28 @@ test("the working tree's files: onto the Stashes header only — one, a selectio
   await drop(p, Q.stashesHeader);
   const sent = (await posted(p))[0] as { paths: string[] };
   assert.deepEqual(sent.paths.slice().sort(), ["src/app.ts", "src/routes.ts"]);
+});
+
+test("a long stash list: over a stash far down it, the Stashes header's words are held in sight", { skip }, async () => {
+  const p = await open("dark", 320);
+  await p.resize(320, 360);
+  const many = Array.from({ length: 30 }, (_, i) => ({
+    sha: String(i).padStart(2, "0").repeat(20), text: `Stash ${i + 1}`, branch: "main", message: `On main: Stash ${i + 1}`,
+    time: now - 600 * (i + 1), rel: relativeTime(now - 600 * (i + 1)), count: 1, files: [{ path: `src/f${i}.ts`, status: "M" }],
+  }));
+  await p.send(state({ stashes: many }));
+  assert.ok(await start(p, Q.file("unstaged", "src/app.ts")));
+  const far = `document.querySelector('#stashes [data-tkey="stash:${"29".repeat(20)}"]')`;
+  await p.eval(`${far}.scrollIntoView({ block: "end" })`);
+  const o = await over(p, far);
+  assert.deepEqual([o.allowed, o.lit, o.words], [true, ["group--stashes"], ["Drop to stash 1 file"]]);
+  const hint = await p.eval<{ top: number; bottom: number; h: number; header: number }>(`(function () {
+    var r = document.querySelector("#stashes .drop-hint").getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, h: innerHeight, header: document.querySelector("#stashes .group--stashes > .group-header").getBoundingClientRect().top };
+  })()`);
+  assert.ok(hint.top >= 0 && hint.bottom <= hint.h, `the words are on screen: ${JSON.stringify(hint)}`);
+  assert.ok(Math.abs(hint.header) <= 1, `held at the top of the view: ${JSON.stringify(hint)}`);
+  await end(p);
 });
 
 test("no stash yet: a working-tree drag brings the Stashes header to drop on, and takes it away after", { skip }, async () => {
@@ -521,7 +551,7 @@ async function altName(p: ChangesPage): Promise<string> {
   return p.eval<string>(`/Mac|iPhone|iPad/.test(navigator.platform || "") ? "Option" : "Alt"`);
 }
 
-for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
+for (const theme of ["dark", "light", "hc-dark", "hc-light", "cursor-dark"] as PageTheme[]) {
   test(`${theme}: the lit place is a tint that stands apart, its words read, and it wears no line`, { skip }, async () => {
     const p = await open(theme);
     await p.send(state());

@@ -14,9 +14,13 @@
 // The component itself (prList.ts) is host-agnostic; the desktop can mount the
 // same class in its own Pull Requests section.
 
+import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/pr-list.css";
 import type { PrListHostMessage, PrListMessageToHost } from "@gitstudio/host-bridge/prProtocol";
 import { PullRequestList } from "./prList";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 interface PrListVsCodeApi {
   postMessage(message: PrListMessageToHost): void;

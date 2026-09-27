@@ -4,6 +4,7 @@
 // deliberately has no docked details pane: activating a commit posts
 // `openInGraph`, which promotes it to the full Commit Graph panel.
 
+import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/graph-sidebar.css";
 import "./commit-rail";
 import { applyGraphInitRefs } from "./graphInit";
@@ -12,6 +13,9 @@ import type {
   GraphHostMessage,
   GraphWebviewMessage,
 } from "@gitstudio/host-bridge/graphProtocol";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 interface VsCodeApi {
   postMessage(message: GraphWebviewMessage): void;

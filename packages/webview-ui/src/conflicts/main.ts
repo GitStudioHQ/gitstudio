@@ -18,12 +18,16 @@
 // The component itself (dashboard.ts) is host-agnostic; the desktop mounts the
 // same class natively in its Changes view.
 
+import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/conflicts.css";
 import type {
   ConflictsAction,
   ConflictsHostMessage,
 } from "@gitstudio/host-bridge/conflictsProtocol";
 import { ConflictsDashboard } from "./dashboard";
+
+// A see-through theme focus colour (Cursor Dark) gets an opaque accent.
+installSolidAccent();
 
 interface ConflictsVsCodeApi {
   postMessage(message: ConflictsAction): void;
