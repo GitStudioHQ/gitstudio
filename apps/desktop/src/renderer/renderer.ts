@@ -2248,7 +2248,7 @@ class App {
             { value: "local", label: `Local (${n.local})`, icon: "git-branch" },
             { value: "remote", label: `Remotes (${n.remote})`, icon: "cloud" },
             { value: "tags", label: `Tags (${n.tags})`, icon: "tag" },
-            { value: "stashes", label: `Stashes (${n.stashes})`, icon: "archive" },
+            { value: "stashes", label: `Stashes (${n.stashes})`, icon: "git-stash" },
             // Only when there is more than one: a single worktree is just "the
             // repository", and a segment reading "Worktrees (1)" is a tab that
             // tells you nothing.
@@ -3024,7 +3024,7 @@ class App {
     actions.push(more);
 
     const row = secRow({
-      lead: glyph("archive"),
+      lead: glyph("git-stash"),
       title: st.message || st.ref,
       meta: [span(st.ref, "stash-sel sec-mono")],
       time: st.time ? relTime(st.time) : "",
@@ -3631,7 +3631,7 @@ class App {
     }
     if (tab === "stashes") {
       // The one screen that LISTS stashes could not make one.
-      return mk("Stash changes", "archive", "Stash the working tree", () => void this.stashHere());
+      return mk("Stash changes", "git-stash", "Stash the working tree", () => void this.stashHere());
     }
     return el("span", "gh-head-cta-blank");
   }
@@ -3751,7 +3751,7 @@ class App {
       ],
     };
     const [title, desc] = copy[tab] ?? ["Nothing here", "This list is empty."];
-    return emptyState(title, desc, { icon: tab === "stashes" ? "archive" : "git-branch" });
+    return emptyState(title, desc, { icon: tab === "stashes" ? "git-stash" : "git-branch" });
   }
 
   /**
@@ -6845,9 +6845,11 @@ class App {
     // extension. Without one, the toolbar could stage everything but never stash
     // anything, and the only stash route was a right-click most people never try.
     // Stashing moves your working tree; its only affordance used to be an
-    // unlabelled archive glyph sitting between two text buttons. Label it.
+    // unlabelled glyph sitting between two text buttons. Label it. Its glyph
+    // is codicon's stash one — every stash control here and in the extension
+    // wears it (it was an archive box, which says "archive", not "stash").
     const stashBtn = el("button", "mini-btn") as HTMLButtonElement;
-    stashBtn.append(glyph("archive"), span("Stash"));
+    stashBtn.append(glyph("git-stash"), span("Stash"));
     // What the button will actually do, captured when its label is written.
     //
     // The label used to be computed from `selectionPaths()` at toolbar-build
@@ -6913,7 +6915,7 @@ class App {
     // The stash drop target, revealed only mid-drag.
     const dropZone = el("div", "dc-stash-drop");
     dropZone.hidden = true;
-    dropZone.append(glyph("archive"), span("Drop to stash", "dc-drop-label"));
+    dropZone.append(glyph("git-stash"), span("Drop to stash", "dc-drop-label"));
     // dragover must be cancelled or the browser refuses the drop entirely and
     // the whole gesture silently does nothing.
     dropZone.addEventListener("dragover", (ev) => {
@@ -8263,7 +8265,7 @@ class App {
       }
       items.push({ separator: true });
       items.push({
-        label: "Stash all changes", icon: "archive",
+        label: "Stash all changes", icon: "git-stash",
         onClick: () => void this.stashPaths([]).then(() => this.clearSelection(lists, selBar)),
       });
       openMenu(head, items);
@@ -8293,11 +8295,11 @@ class App {
     }
     items.push({ separator: true });
     items.push({
-      label: "Stash this file", icon: "archive",
+      label: "Stash this file", icon: "git-stash",
       onClick: () => void this.stashPaths([f.path]).then(() => this.clearSelection(lists, selBar)),
     });
     items.push({
-      label: "Stash all changes", icon: "archive",
+      label: "Stash all changes", icon: "git-stash",
       onClick: () => void this.stashPaths([]).then(() => this.clearSelection(lists, selBar)),
     });
     if (kind !== "staged") {
@@ -8326,7 +8328,7 @@ class App {
 
     const items: MenuItem[] = [
       {
-        label: `Stash ${noun(paths.length)}`, icon: "archive",
+        label: `Stash ${noun(paths.length)}`, icon: "git-stash",
         onClick: () => void this.stashPaths(paths).then(() => this.clearSelection(lists, selBar)),
       },
       { separator: true },
