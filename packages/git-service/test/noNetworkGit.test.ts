@@ -187,12 +187,17 @@ test("this process is guarded: no credential helper, no prompt, the global and s
   assert.match(process.env.GIT_SSH_COMMAND ?? "", /no-network-in-tests[^\s'"]*[\\/]ssh"$/);
 });
 
+// Where an https attempt died: the guard's proxy, which nothing listens on.
+// curl on macOS and Linux names its port ("127.0.0.1 port 1"); Git for
+// Windows' curl says "… over proxy 127.0.0.1 …" instead.
+const VIA_GUARD_PROXY = /127\.0\.0\.1 port 1\b|over proxy 127\.0\.0\.1\b/;
+
 test("a remote on the network fails at once, and never leaves the machine", () => {
   // `.invalid` never resolves, so even a broken guard would not reach a host —
   // what proves the guard is WHERE each attempt failed.
   const https = git(["ls-remote", "https://example.invalid/acme/app.git"]);
   assert.notEqual(https.status, 0);
-  assert.match(https.out, /127\.0\.0\.1 port 1\b/, `https went to the proxy nothing listens on: ${https.out}`);
+  assert.match(https.out, VIA_GUARD_PROXY, `https went to the proxy nothing listens on: ${https.out}`);
   for (const url of ["git@example.invalid:acme/app.git", "ssh://git@example.invalid/acme/app.git"]) {
     const ssh = git(["ls-remote", url]);
     assert.notEqual(ssh.status, 0);
@@ -362,7 +367,7 @@ test("a machine's own config cannot outrank the guard: core.sshCommand, core.git
     assert.equal(existsSync(marker("machine-git-proxy")), false, "the machine's core.gitProxy never ran");
     for (const name of ["exact host", "host and path", "wildcard host", "remote by name", "only in that repository", "no proxy"]) {
       assert.notEqual(shut[name].status, 0);
-      assert.match(shut[name].err, /127\.0\.0\.1 port 1\b/, `${name}: https went to the proxy nothing listens on: ${shut[name].err}`);
+      assert.match(shut[name].err, VIA_GUARD_PROXY, `${name}: https went to the proxy nothing listens on: ${shut[name].err}`);
     }
     assert.match(shut.ssh.err, /no-network-in-tests[^\s'"]*[\\/]ssh/, `ssh is the guard's: ${shut.ssh.err}`);
     if (posixOnly) assert.match(shut["git://"].err, /no-network-in-tests[^\s'"]*[\\/]git-proxy/, `git:// too: ${shut["git://"].err}`);
