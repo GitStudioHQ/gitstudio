@@ -27,6 +27,7 @@
 //   node harness/probe.mjs code 'return $$("button").filter(b=>!b.textContent.trim()&&!b.title).length'
 
 import { harnessChrome } from "./chrome.mjs";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { chromeProfile } from "./profile.mjs";
 import { existsSync } from "node:fs";
@@ -100,8 +101,7 @@ const url = `file://${PAGE}?scene=${scene}&theme=${theme}&probe=${probe}${extra}
 const profile = chromeProfile("gs-probe-");
 execFile(
   CHROME,
-  [
-    "--headless",
+  headlessChromeArgs([
     "--disable-gpu",
     "--hide-scrollbars",
     profile.flag,
@@ -109,7 +109,7 @@ execFile(
     "--virtual-time-budget=12000",
     "--dump-dom",
     url,
-  ],
+  ]),
   // Same guard check.mjs carries: a page that never lets virtual time run out
   // hangs headless Chrome forever, and a probe that never returns is worse than
   // one that fails — it hangs whatever asked the question.

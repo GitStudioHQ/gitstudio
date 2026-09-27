@@ -13,6 +13,7 @@
 // Exit code is non-zero if any case fails, so it can gate a commit.
 
 import { harnessChrome } from "./chrome.mjs";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { chromeProfile } from "./profile.mjs";
 import { existsSync } from "node:fs";
@@ -862,6 +863,8 @@ const CASES = [
   ["a-worktree-open-in-another-tab-says-so", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "wttab=1" }],
   ["worktree-paths-read-the-systems-way", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "winpaths=1" }],
   ["a-worktree-open-in-a-tab-is-marked-however-its-folder-is-spelled", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "wttab=1&winpaths=1" }],
+  ["a-restored-branches-view-still-follows-the-tabs", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "wttab=1", budget: 40000 }],
+  ["a-branches-view-left-mid-read-still-follows-the-tabs", "branches~click:.gh-seg-btn:nth-child(5)", { extra: "wttab=1&slow=worktree:list:1500", budget: 40000 }],
   ["a-slow-clone-lands-in-its-new-tab-and-says-so", "explore~type:git~key:Enter~text:libgit2/libgit2", { extra: "tabs=1&clonems=1200" }],
   ["a-cloned-repository-says-so-in-its-new-tab", "code~palette~type:clone~text:Clone%20repository%E2%80%A6", { extra: "tabs=1" }],
   ["a-live-page-keeps-polling-after-a-tab-round-trip", "actions~open9101", { extra: "tabs=2", arg: "actions:runDetail", budget: 40000 }],
@@ -884,8 +887,7 @@ function run(scene, checkId, opts = {}) {
   return new Promise((res) => {
     execFile(
       CHROME,
-      [
-        "--headless",
+      headlessChromeArgs([
         "--disable-gpu",
         "--hide-scrollbars",
         profile.flag,
@@ -895,7 +897,7 @@ function run(scene, checkId, opts = {}) {
         `--virtual-time-budget=${opts.budget ?? 12000}`,
         "--dump-dom",
         url,
-      ],
+      ]),
       // A page that never lets virtual time run out (an unbounded animation, a
       // self-rescheduling timer) hangs headless Chrome forever, and without a
       // timeout that hangs the WHOLE suite with no clue which case did it.

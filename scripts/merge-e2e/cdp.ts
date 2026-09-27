@@ -5,11 +5,14 @@
 // The browser is Playwright's chrome-headless-shell, from GS_CHROME or its
 // usual cache path — NEVER /Applications/Google Chrome.app, whose windows
 // flash on the owner's screen (memory: headless-tests-never-drive-users-chrome).
+// It reaches this machine and nothing else: its argv starts from
+// scripts/test/no-network-chrome.mjs's headlessChromeArgs().
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { headlessChromeArgs } from "../test/no-network-chrome.mjs";
 
 const HEADLESS_SHELL = join(
   homedir(),
@@ -134,8 +137,7 @@ export class Browser {
     const profile = mkdtempSync(join(tmpdir(), "gs-merge-e2e-chrome-"));
     const proc = spawn(
       chrome,
-      [
-        "--headless",
+      headlessChromeArgs([
         "--disable-gpu",
         "--hide-scrollbars",
         "--no-sandbox",
@@ -145,7 +147,7 @@ export class Browser {
         `--user-data-dir=${profile}`,
         `--window-size=${opts.width ?? 1600},${opts.height ?? 1000}`,
         "about:blank",
-      ],
+      ]),
       { stdio: ["ignore", "ignore", "pipe"] },
     );
     const cleanup = () => {

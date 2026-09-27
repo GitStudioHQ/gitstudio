@@ -18,12 +18,17 @@
 // pointing at it is refused too, the way scripts/merge-e2e/cdp.ts refuses it.
 // A CI runner (CI set) keeps it as the last resort, so the macOS job still runs
 // these checks.
+//
+// And it reaches this machine and nothing else: its argv starts from
+// scripts/test/no-network-chrome.mjs's headlessChromeArgs(). A graph page asks
+// for every author's avatar (gravatarUrl()), and each check sent those out.
 
 import { build } from "esbuild";
 import { execFile } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { chromeCandidates } from "./findChrome.mjs";
 
 const DESKTOP_CHROME = /Google Chrome\.app/;
@@ -172,8 +177,7 @@ window.addEventListener("message", (e) => {
   return new Promise((res) => {
     execFile(
       chrome,
-      [
-        "--headless",
+      headlessChromeArgs([
         "--disable-gpu",
         "--hide-scrollbars",
         "--no-sandbox",
@@ -188,7 +192,7 @@ window.addEventListener("message", (e) => {
         "--virtual-time-budget=20000",
         "--dump-dom",
         `file://${page}`,
-      ],
+      ]),
       { maxBuffer: 64 * 1024 * 1024, timeout: 60_000, killSignal: "SIGKILL" },
       (err, stdout) => {
         // The page is read; its directory goes now, whatever the verdict. It

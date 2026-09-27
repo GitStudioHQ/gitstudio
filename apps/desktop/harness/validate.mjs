@@ -19,6 +19,7 @@
 // what is not — quoting the sentence, because that is the form it will be read
 // in. An UNMET row is not a failure of the harness. It is the backlog.
 import { harnessChrome } from "./chrome.mjs";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { chromeProfile } from "./profile.mjs";
 import { existsSync, readFileSync } from "node:fs";
@@ -90,7 +91,7 @@ try {
     const profile = chromeProfile("gs-validate-");
     execFile(
       CHROME,
-      ["--headless", "--disable-gpu", "--hide-scrollbars", profile.flag, `--window-size=${width},1000`, "--virtual-time-budget=20000", "--dump-dom", url],
+      headlessChromeArgs(["--disable-gpu", "--hide-scrollbars", profile.flag, `--window-size=${width},1000`, "--virtual-time-budget=20000", "--dump-dom", url]),
       { maxBuffer: 64 * 1024 * 1024, timeout: 120_000, killSignal: "SIGKILL" },
       (err, stdout) => {
         profile.cleanup();

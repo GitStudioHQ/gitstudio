@@ -39,8 +39,16 @@ CHROME="$(node "$HARNESS/../../../packages/webview-ui/test/findChrome.mjs")"
 # .com.google.Chrome.* directory in $TMPDIR behind on every launch.
 PROFILE="$(mktemp -d "${TMPDIR:-/tmp}/gs-shot-XXXXXX")"
 trap 'rm -rf "$PROFILE"' EXIT
-"$CHROME" \
-  --headless --disable-gpu --hide-scrollbars --user-data-dir="$PROFILE" \
+# --headless and no network but this machine's: the switches every test's
+# Chrome starts from, one per line (scripts/test/no-network-chrome.mjs). The
+# resolver rule has spaces and a `*` — split on newlines only, no globbing.
+GUARD="$(node "$HARNESS/../../../scripts/test/no-network-chrome.mjs")"
+set -f; IFS='
+'
+set -- $GUARD
+unset IFS; set +f
+"$CHROME" "$@" \
+  --disable-gpu --hide-scrollbars --user-data-dir="$PROFILE" \
   --window-size="${GS_SHOT_SIZE:-1600,1000}" --force-device-scale-factor=2 \
   --virtual-time-budget=9000 \
   --screenshot="$OUT" \

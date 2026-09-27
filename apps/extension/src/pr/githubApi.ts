@@ -243,7 +243,8 @@ export class GitHubApi {
   /**
    * GET a list, following `Link: rel="next"` up to `maxPages` pages. `key`
    * names the array in an object-bodied answer (`{ check_runs: [...] }`); an
-   * array body is read as is.
+   * array body is read as is. `signal` stops it between pages too, whatever
+   * the fetch underneath does with an aborted one.
    */
   private async requestPaged<T>(
     path: string,
@@ -254,6 +255,7 @@ export class GitHubApi {
     let next: string | undefined = `${API_BASE}${path}`;
     let pages = 0;
     while (next && pages < maxPages) {
+      init?.signal?.throwIfAborted();
       const res = await this.fetchRes("GET", next, undefined, init);
       pages++;
       const text = await res.text();
@@ -285,8 +287,12 @@ export class GitHubApi {
   }
 
   /** One GraphQL query. Errors with no data at all throw; partial data is kept. */
-  private async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-    const res = await this.fetchRes("POST", GRAPHQL, { query, variables });
+  private async graphql<T>(
+    query: string,
+    variables: Record<string, unknown>,
+    init?: { signal?: AbortSignal },
+  ): Promise<T> {
+    const res = await this.fetchRes("POST", GRAPHQL, { query, variables }, init);
     const json = (await res.json()) as { data?: T; errors?: { message?: string }[] };
     if (!json.data) {
       throw new GitHubApiError(
@@ -478,14 +484,19 @@ export class GitHubApi {
    * `statusCheckRollup`, which GitHub computes from check runs AND statuses.
    * Two REST calls per row would cost hundreds of requests for a busy list.
    * A PR missing from the answer is simply absent from the map.
+   *
+   * `signal` stops it between requests too: a list closed while its batch
+   * was still paging went on asking GitHub for rows nobody would see.
    */
   async ciForPulls(
     owner: string,
     repo: string,
     numbers: readonly number[],
+    init?: { signal?: AbortSignal },
   ): Promise<Map<number, CiState>> {
     const out = new Map<number, CiState>();
     for (let i = 0; i < numbers.length; i += 50) {
+      init?.signal?.throwIfAborted();
       const chunk = numbers.slice(i, i + 50).filter((n) => Number.isSafeInteger(n) && n > 0);
       if (chunk.length === 0) continue;
       const fields = chunk
@@ -502,6 +513,7 @@ export class GitHubApi {
       }>(
         `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {\n${fields}\n} }`,
         { owner, name: repo },
+        init,
       );
       for (const n of chunk) {
         const node = data.repository?.[`pr${n}`];
