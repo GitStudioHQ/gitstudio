@@ -1,0 +1,74 @@
+apps/desktop/test/hermeticGit.ts
+  s_26f5e669d3043c::t_306ab9f18fc8d7 3,5-7,17,20
+scripts/test/hermetic-git.mjs
+  s_26f5e669d3043c::t_ea209ced58385f 1-9,11,18,24-26,29-62
+  s_26f5e669d3043c::t_adff62f9a56fca 10,12-17,19-23,27-28
+packages/merge-vscode/test/hermetic.ts
+  s_26f5e669d3043c::t_e978bdc41e2add 1-3,5-8
+scripts/test/no-network-git.d.mts
+  s_26f5e669d3043c::t_1d23f154b89e6e 1-6
+scripts/test/hermetic-git.d.mts
+  s_26f5e669d3043c::t_ea89ce7b44a63d 1-4
+scripts/test/no-network-git.mjs
+  s_26f5e669d3043c::t_ec4aa71cf1a8fa 1-80
+packages/git-service/test/noNetworkGit.test.ts
+  s_26f5e669d3043c::t_22ffc81c9df7f6 1-212
+apps/desktop/package.json
+  s_26f5e669d3043c::t_ec8d719442fa36 18
+apps/desktop/src/main/ghRepoOpen.ts
+  s_26f5e669d3043c::t_caa4cd68aaeb98 72-77,139
+apps/desktop/test/ghRepoOpen.test.ts
+  s_26f5e669d3043c::t_f0e0ad9183534c 1,5,8-9,17-22,26-27,48-68,73,80,84,92,100,112,123,129,135-138,145,155,160-173
+apps/extension/package.json
+  s_26f5e669d3043c::t_34568062960de4 2453
+apps/extension/test/opInProgress.test.ts
+  s_26f5e669d3043c::t_ac65199ca01bb5 31
+apps/extension/test/refCheckout.test.ts
+  s_26f5e669d3043c::t_391221bd30c675 21
+apps/mcp/package.json
+  s_26f5e669d3043c::t_c9d57a837857e9 14
+apps/merge-studio/package.json
+  s_26f5e669d3043c::t_387448e74fa6eb 549
+packages/ai/package.json
+  s_26f5e669d3043c::t_2e3ae717fe4c2a 11
+packages/engine/package.json
+  s_26f5e669d3043c::t_f0ed30e1d66bf2 11
+packages/git-service/package.json
+  s_26f5e669d3043c::t_b192e52435f611 11
+packages/git-service/test/opRepo.ts
+  s_26f5e669d3043c::t_2c99cea6e9bd8c 3-4
+packages/git-service/test/worktree.test.ts
+  s_26f5e669d3043c::t_93a72114fc2af1 127-128
+packages/host-bridge/package.json
+  s_26f5e669d3043c::t_25599f2aee1095 11
+packages/merge-vscode/package.json
+  s_26f5e669d3043c::t_75cd93cbbc644a 11
+packages/merge-vscode/test/fixtures.ts
+  s_26f5e669d3043c::t_2393943e34a776 1
+packages/secret-store/package.json
+  s_26f5e669d3043c::t_d2b535e375b1a7 11
+packages/webview-ui/package.json
+  s_26f5e669d3043c::t_3f7936b443e55b 13
+scripts/merge-e2e/alignment.test.ts
+  s_26f5e669d3043c::t_0aba024ce1f6b9 17-19
+scripts/merge-e2e/editorHosts.test.ts
+  s_26f5e669d3043c::t_a4debaa2e4bd60 21-23
+scripts/merge-e2e/matrix.test.ts
+  s_26f5e669d3043c::t_2237609d6611fb 15-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2034488e0bab30b5e54e758ad193538242013ca1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
