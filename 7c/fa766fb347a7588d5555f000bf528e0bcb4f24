@@ -1,0 +1,73 @@
+CONTRIBUTING.md
+  s_26f5e669d3043c::t_86c1f428b7eb3c 30-34
+apps/desktop/harness/affordance.mjs
+  s_26f5e669d3043c::t_8e4273b013aacf 34,391,393
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_1eb3632349bccb 16,866-867,890,900
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_5a4528837d754f 18602-18701
+apps/desktop/harness/chrome.mjs
+  s_26f5e669d3043c::t_b6894e6f846780 10-13
+apps/desktop/harness/contrast.mjs
+  s_26f5e669d3043c::t_a41afa928f16c1 22,334-336,339
+apps/desktop/harness/fit.mjs
+  s_26f5e669d3043c::t_aadd9457f0865c 27,258-259
+apps/desktop/harness/perf.mjs
+  s_26f5e669d3043c::t_7ce471e0aef162 25,173,184
+apps/desktop/harness/probe.mjs
+  s_26f5e669d3043c::t_8bf6f9f9cd1acf 30,104,112
+apps/desktop/harness/shot.sh
+  s_26f5e669d3043c::t_2a6257c6b5a0d1 42-51
+apps/desktop/harness/validate.mjs
+  s_26f5e669d3043c::t_8be78bf37ce639 22,94
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_fa1f550c713460 486-488,1856-1859,2135-2137,2618-2622,2642-2647,2651,2658,2663-2668,2670-2681,9771,9776-9779
+apps/desktop/test/harnessChrome.test.ts
+  s_26f5e669d3043c::t_c4bedca4e8a91b 8,17-21,35,44-49,52,54-58,68-69,91-101,136,165
+apps/desktop/test/prCheckoutUpdate.test.ts
+  s_26f5e669d3043c::t_37572654821bd5 20,109,118-127
+apps/extension/src/pr/githubApi.ts
+  s_26f5e669d3043c::t_1f600fdbac8074 246-247,258,290-295,487-489,495,499,516
+apps/extension/test/changesViewPage.ts
+  s_26f5e669d3043c::t_073c0e93b199e1 19,189-190,201
+brand/rasterise.sh
+  s_26f5e669d3043c::t_cb38d4f79935c4 28-35,43
+packages/git-service/test/noNetworkGit.test.ts
+  s_26f5e669d3043c::t_806516d6e1ea9a 3-8,11,17-22,28,186-187,207,214,216-219,224-477
+packages/webview-ui/test/chromeNoNetwork.test.ts
+  s_26f5e669d3043c::t_98cc1bae2fef6b 1-322
+packages/webview-ui/test/fixtures/mergeViewPage.ts
+  s_26f5e669d3043c::t_22f879bc46b159 22,140-141,150
+packages/webview-ui/test/headless.ts
+  s_26f5e669d3043c::t_480d440c7118b1 21-24,31,180,195
+scripts/merge-e2e/cdp.ts
+  s_26f5e669d3043c::t_0596ef847f60b2 8-9,15,140,150
+scripts/test/hermetic-git.mjs
+  s_26f5e669d3043c::t_759d8d1aae6cb5 12-14
+scripts/test/no-network-chrome.d.mts
+  s_26f5e669d3043c::t_267b92641714e6 1-9
+scripts/test/no-network-chrome.mjs
+  s_26f5e669d3043c::t_52e1bc16979e7c 1-78
+scripts/test/no-network-git.d.mts
+  s_26f5e669d3043c::t_e25e8ae79394c3 7-13
+scripts/test/no-network-git.mjs
+  s_26f5e669d3043c::t_c6d159235d6295 16,18-38,46-47,56-57,70-118,126-138,145-147,152-155
+scripts/test/no-network-node.mjs
+  s_26f5e669d3043c::t_d9f32227fef91d 1-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7cfa766fb347a7588d5555f000bf528e0bcb4f24",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
