@@ -1,5 +1,6 @@
-// The Stashes view's operations, driven as the view drives them, against real
-// git — the defects the stashes audit found broken:
+// The stash operations (the Changes view's Stashes group, and the palette),
+// driven as the group drives them, against real git — the defects the
+// stashes audit found broken:
 //
 //   · Drop, Pop and Create Branch acted on `stash@{n}`, a POSITION. The
 //     confirm (or the name prompt) has no time limit, and a stash pushed

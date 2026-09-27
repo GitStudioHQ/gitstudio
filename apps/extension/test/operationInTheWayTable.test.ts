@@ -1,6 +1,6 @@
 // The stopped-operation state table, extension column: the REAL extension
 // doors — the graph's Revert, Cherry-Pick and Check Out (detached), the
-// Branches view's Merge, Rebase onto and Checkout, the Stashes view's Apply
+// Branches view's Merge, Rebase onto and Checkout, the Stashes group's Apply
 // and Pop, the status bar's Pull and Sync — pressed while git is ALREADY
 // stopped: a merge, a rebase, a cherry-pick, a revert or a `git am` waiting
 // for the user (conflicted, or resolved and not yet continued), or files left
