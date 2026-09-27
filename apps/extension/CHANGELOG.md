@@ -518,6 +518,12 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **A pull request's diff that can't be loaded says why** — signed out, rate
   limited, offline — instead of an empty pane that claimed the file was added
   or deleted. A binary or very large file shows a note, not its bytes.
+- **Interactive rebase under git 2.55 shows commit titles as they are.**
+  git 2.55 writes each line of a rebase plan as `pick <sha> # <title>`, and
+  the rebase editor showed that `#` in front of every commit's title. It
+  reads both the older and the newer form now, keeps a title that itself
+  starts with `#`, and a line whose action you change keeps git's own
+  spelling.
 
 ## [1.14.0] - 2026-09-25
 

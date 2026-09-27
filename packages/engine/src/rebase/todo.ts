@@ -28,7 +28,10 @@ export interface RebaseCommitEntry {
   action: RebaseAction;
   /** The commit object name as it appears in the todo (abbreviated or full). */
   sha: string;
-  /** The commit subject (the remainder of the line after the sha). */
+  /**
+   * The commit subject: the remainder of the line after the sha, without the
+   * `# ` a newer git writes in front of it (see {@link todoSubject}).
+   */
   subject: string;
   /**
    * The verbatim original line text (no EOL). Re-emitted unchanged whenever the
@@ -109,10 +112,31 @@ function parseCommitLine(raw: string): RebaseCommitEntry | null {
     return null;
   }
   const sha = m[4];
-  // Subject is the remainder after the sha, trimmed of its leading separator
-  // space so callers get a clean subject; the original spacing lives in `raw`.
-  const subject = m[5].replace(/^\s+/, "");
-  return { kind: "commit", action, sha, subject, raw };
+  return { kind: "commit", action, sha, subject: todoSubject(m[5]), raw };
+}
+
+/**
+ * The commit subject from what follows the object name on a todo line.
+ *
+ * git writes that part two ways, and both are in the wild:
+ *
+ *   pick 0151064 c3          ← git up to 2.54
+ *   pick 0151064 # c3        ← git 2.55: the subject is written as a comment
+ *
+ * so a newer git's subject starts with a `# ` that is not part of it — shown
+ * as-is, every commit title read "# c3". The separator is always a literal
+ * `#` whatever `core.commentChar` says (verified against git 2.55 with
+ * `core.commentChar=;`), and an empty subject is `pick <sha> # ` — or `#`
+ * alone once an editor trims the line. Only ONE separator comes off: a
+ * subject that itself starts with `#` is written `pick <sha> # # hashtag`
+ * and is kept as `# hashtag`.
+ *
+ * Under an older git a subject that begins `# ` reads the same as the
+ * separator and loses it here. That is display only: a line is written back
+ * from its own `raw`, never from this.
+ */
+export function todoSubject(rest: string): string {
+  return rest.replace(/^\s+/, "").replace(/^#(?: |$)/, "");
 }
 
 export interface SerializeOptions {
@@ -156,11 +180,18 @@ export function serializeRebaseTodo(
 /**
  * Render a commit entry. If its current `action` matches the verb its `raw`
  * began with, re-emit `raw` unchanged (preserving exact original spacing and
- * any short-form verb). Otherwise regenerate the canonical `<action> <sha> <subject>`.
+ * any short-form verb). Otherwise regenerate `<action> <sha>` followed by the
+ * rest of `raw` as git wrote it — so a newer git's `# <subject>` keeps its
+ * separator, and git's own trailing `# empty` stays — or by ` <subject>` for
+ * an entry with no line of its own.
  */
 function renderCommit(entry: RebaseCommitEntry): string {
   if (rawMatchesAction(entry)) {
     return entry.raw;
+  }
+  const m = COMMIT_LINE.exec(entry.raw);
+  if (m && m[4] === entry.sha) {
+    return `${entry.action} ${entry.sha}${m[5]}`;
   }
   const subject = entry.subject ? ` ${entry.subject}` : "";
   return `${entry.action} ${entry.sha}${subject}`;

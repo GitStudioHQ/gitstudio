@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { RebaseInitMessage } from "@gitstudio/host-bridge/rebaseProtocol";
 
@@ -66,12 +66,16 @@ function repo(name: string): string {
   return dir;
 }
 
-/** A sequence editor: a shell script that runs `body` with the todo as $1. */
+/**
+ * A sequence editor: a node script that runs `body` with the todo's path as
+ * `todo`. git runs an editor through `sh -c`, which eats a Windows path's
+ * backslashes (C:\Users\… became "C:Users…: command not found"), so the
+ * command names the script with forward slashes, which every git's shell reads.
+ */
 function editor(name: string, body: string): string {
   const path = join(scratch, name);
-  writeFileSync(path, `#!/bin/sh\nset -e\n${body}\n`);
-  chmodSync(path, 0o755);
-  return path;
+  writeFileSync(path, `const fs = require("fs"); const path = require("path"); const todo = process.argv[2];\n${body}\n`);
+  return `node "${path.replace(/\\/g, "/")}"`;
 }
 
 /** Open `todoPath` in the real provider and return the init it posts. */
@@ -115,7 +119,13 @@ test("a paused rebase's --edit-todo: the editor is told git is past the first li
   const dir = repo("paused");
   // edit c2 / squash c3 / pick c4: git stops at c2, and the todo it leaves
   // starts with the squash.
-  const plan = editor("plan.sh", `sed -e '1s/^pick/edit/' -e '2s/^pick/squash/' "$1" > "$1.new" && mv "$1.new" "$1"`);
+  const plan = editor(
+    "plan.cjs",
+    `const lines = fs.readFileSync(todo, "utf8").split("\\n");
+lines[0] = lines[0].replace(/^pick/, "edit");
+lines[1] = lines[1].replace(/^pick/, "squash");
+fs.writeFileSync(todo, lines.join("\\n"));`,
+  );
   git(dir, ["rebase", "-i", "HEAD~3"], { GIT_SEQUENCE_EDITOR: plan });
   const todo = join(dir, ".git", "rebase-merge", "git-rebase-todo");
   assert.ok(existsSync(join(dir, ".git", "rebase-merge", "done")), "git keeps a done list while paused");
@@ -133,7 +143,7 @@ test("a rebase about to start: the editor is told nothing is done yet", () => {
   // The moment the editor opens is the moment the sequence editor runs, so
   // that is where the rebase's directory is copied from.
   const snap = join(scratch, "fresh-snapshot");
-  const plan = editor("snap.sh", `cp -R "$(dirname "$1")" "${snap}"`);
+  const plan = editor("snap.cjs", `fs.cpSync(path.dirname(todo), ${JSON.stringify(snap)}, { recursive: true });`);
   git(dir, ["rebase", "-i", "HEAD~3"], { GIT_SEQUENCE_EDITOR: plan });
   const init = openInEditor(join(snap, "git-rebase-todo"));
   assert.equal(init.rows.length, 3);

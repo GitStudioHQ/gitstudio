@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { makeRepo, topoRepo, reporterRepo, seqEditor, type Repo } from "./opRepo";
 import * as S from "./opScenarios";
-import { kindOf, mergeLabel, shortName } from "../src/OperationProvider";
+import { readFileSync, writeFileSync } from "node:fs";
+import { kindOf, mergeLabel, pickedCommit, shortName } from "../src/OperationProvider";
 
 // W1 (PLAN §3.2): the NAMES a stop is described with, derived the way git
 // itself records them — never `name-rev` (it answered "remotes/origin/HEAD"),
@@ -353,6 +354,67 @@ test("mergeLabel reads the label a merge todo line re-creates", () => {
   assert.equal(mergeLabel("m -c 0123abcd topic"), "topic");
   assert.equal(mergeLabel("merge a b # octopus"), "a, b");
   assert.equal(mergeLabel("pick 0123abcd x"), undefined);
+});
+
+// git 2.55 writes a todo line's subject as a comment — `pick <sha> # <subject>`
+// — in git-rebase-todo, in done, and in sequencer/todo. Every reader here
+// takes the verb and the object name only; these pin that for both spellings.
+
+test("pickedCommit reads the commit of a todo line in both of git's spellings", () => {
+  const sha = "4c44dbc4440354bc51113f215882deea9f6543cf";
+  for (const line of [
+    `pick ${sha} c2`, // git up to 2.54
+    `pick ${sha} # c2`, // git 2.55
+    `edit ${sha} # c2`,
+    `fixup -C ${sha} # fixup! c2`,
+    `s ${sha.slice(0, 7)} # # a subject that starts with a hash`,
+  ]) {
+    assert.ok(sha.startsWith(pickedCommit(line) ?? "-"), line);
+  }
+  assert.equal(pickedCommit("exec make # c2"), undefined);
+  assert.equal(pickedCommit("# pick 4c44dbc c2"), undefined, "a commented-out line picks nothing");
+});
+
+test("mergeLabel reads a merge line's label in both of git's spellings", () => {
+  assert.equal(mergeLabel("merge -C 0123abcd side # Merge branch 'side' into feat"), "side");
+  assert.equal(mergeLabel("merge -C 0123abcd side # # Merge branch 'side'"), "side");
+});
+
+test("a paused rebase reads the same whichever spelling git wrote its done list and todo in", async () => {
+  // A real stop at the first of three commits (`edit`), its two files then
+  // rewritten into each spelling in turn: the step, the pause and the title
+  // must not change.
+  const r = topoRepo("todo-spelling");
+  try {
+    r.git("checkout", "-q", "test");
+    r.gitEnv({ GIT_SEQUENCE_EDITOR: seqEditor(r, `t=t.replace(/^pick /m,"edit ")`), GIT_EDITOR: "true" }, "rebase", "-i", "master");
+    const dir = join(r.root, ".git", "rebase-merge");
+    const subjectOf = (sha: string) => r.git("log", "-1", "--format=%s", sha).trim();
+    // Each command line as `<verb> <sha>`, whatever the local git wrote.
+    const commands = (file: string) =>
+      readFileSync(join(dir, file), "utf8")
+        .split("\n")
+        .filter((l) => l.trim() && !l.startsWith("#"))
+        .map((l) => l.split(/\s+/).slice(0, 2));
+    const done = commands("done");
+    const todo = commands("git-rebase-todo");
+    assert.equal(done.length, 1);
+    assert.equal(todo.length, 2);
+    const seen: string[] = [];
+    for (const sep of [" ", " # "]) {
+      const spell = (lines: string[][]) => lines.map(([verb, sha]) => `${verb} ${sha}${sep}${subjectOf(sha)}\n`).join("");
+      writeFileSync(join(dir, "done"), spell(done));
+      writeFileSync(join(dir, "git-rebase-todo"), spell(todo));
+      const v = await viewOf(r);
+      assert.deepEqual(v.step, { n: 1, m: 3, unit: "commit" }, JSON.stringify(sep));
+      assert.equal(v.pause?.reason, "edit", JSON.stringify(sep));
+      seen.push(v.title);
+    }
+    assert.equal(seen[0], seen[1]);
+    assert.ok(seen[0].includes("commit 1 of 3"), seen[0]);
+  } finally {
+    r.cleanup();
+  }
 });
 
 test("shortName strips only the namespace git writes", () => {

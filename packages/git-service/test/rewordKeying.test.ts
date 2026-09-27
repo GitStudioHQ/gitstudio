@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { buildRebasePlan } from "../src/rebasePlan";
@@ -126,3 +126,52 @@ test("an entry with no real key renames nothing — not even a conflicted pick",
     removeTempRepo(root);
   }
 });
+
+for (const [spelling, sep] of [
+  ["git up to 2.54's `reword <sha> <subject>`", " "],
+  ["git 2.55's `reword <sha> # <subject>`", " # "],
+] as const) {
+  test(`a reword continued after a conflict finds its message by the sha in done — ${spelling}`, async () => {
+    // The installer reads the sha off the last line of git's own `done`. That
+    // line is written in the spelling of whichever git is running, so it is
+    // rewritten here into each one in turn, literally.
+    const root = mkdtempSync(`${tmpdir()}/gs-rewordkey3-`);
+    try {
+      const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+      git("init", "-q");
+      git("config", "user.email", "t@t");
+      git("config", "user.name", "t");
+      git("config", "gc.auto", "0");
+      git("config", "core.autocrlf", "false");
+      writeFileSync(`${root}/shared.txt`, "base\n");
+      git("add", "-A");
+      git("commit", "-qm", "m1");
+      git("branch", "trunk");
+      git("checkout", "-qb", "feature");
+      writeFileSync(`${root}/shared.txt`, "feature\n");
+      git("commit", "-qam", "OLD-MESSAGE");
+      git("checkout", "-q", "trunk");
+      writeFileSync(`${root}/shared.txt`, "trunk\n");
+      git("commit", "-qam", "m2");
+      git("checkout", "-q", "feature");
+
+      const sha = git("rev-parse", "HEAD").trim();
+      const built = buildRebasePlan([{ sha, action: "reword", subject: "OLD-MESSAGE", message: "NEW-MESSAGE" }]);
+      assert.ok(built.ok, built.ok ? "" : built.message);
+      const out = await runRebasePlan(root, { base: "trunk", todo: built.todo, rewords: built.rewords });
+      assert.equal(out.status, "stopped", "it conflicts");
+
+      const done = `${root}/.git/rebase-merge/done`;
+      assert.match(readFileSync(done, "utf8"), new RegExp(`^reword ${sha.slice(0, 7)}`));
+      writeFileSync(done, `reword ${sha}${sep}OLD-MESSAGE\n`);
+
+      writeFileSync(`${root}/shared.txt`, "resolved\n");
+      git("add", "shared.txt");
+      const cont = await continueRebase(root);
+      assert.equal(cont.status, "done", cont.status === "done" ? "" : cont.message);
+      assert.equal(git("log", "-1", "--format=%s", "HEAD").trim(), "NEW-MESSAGE");
+    } finally {
+      removeTempRepo(root);
+    }
+  });
+}

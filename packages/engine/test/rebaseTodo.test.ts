@@ -172,6 +172,69 @@ test("empty input round-trips to empty", () => {
   assert.equal(serializeRebaseTodo([]), "");
 });
 
+// ── git 2.55 writes the subject as a comment ─────────────────────────────────
+//
+// Both texts below are what git itself wrote into `git-rebase-todo` for the
+// same four commits — the last one's subject is "# hashtag subject" and it is
+// empty — before and after git 2.55 (captured from 2.49 and 2.55).
+
+const TODO_UP_TO_2_54 = `pick 0151064 c3
+pick 6cd3cec c4
+fixup 7c6867f fixup! c4 # empty
+pick aec1a3d # hashtag subject # empty
+
+# Rebase 4c44dbc..aec1a3d onto 4c44dbc (4 commands)
+`;
+
+const TODO_FROM_2_55 = `pick 0151064 # c3
+pick 6cd3cec # c4
+fixup 7c6867f # fixup! c4 # empty
+pick aec1a3d # # hashtag subject # empty
+
+# Rebase 4c44dbc..aec1a3d onto 4c44dbc (4 commands)
+`;
+
+function subjects(text: string): string[] {
+  return parseRebaseTodo(text)
+    .filter((l): l is RebaseCommitEntry => l.kind === "commit")
+    .map((l) => l.subject);
+}
+
+test("git 2.55's `pick <sha> # <subject>`: the subject has no '# ' in front of it", () => {
+  assert.deepEqual(subjects(TODO_FROM_2_55), ["c3", "c4", "fixup! c4 # empty", "# hashtag subject # empty"]);
+});
+
+test("git up to 2.54's `pick <sha> <subject>` reads the same subjects", () => {
+  // The one line both formats cannot tell apart is a subject that itself
+  // starts "# " under an older git; it is shown without it. Display only —
+  // the line is written back from its own raw text.
+  assert.deepEqual(subjects(TODO_UP_TO_2_54), ["c3", "c4", "fixup! c4 # empty", "hashtag subject # empty"]);
+});
+
+test("an empty subject: '# ' and a trimmed '#' are the separator, not a subject", () => {
+  assert.deepEqual(subjects("pick c76f531 # \npick c76f532 #\npick c76f533\n"), ["", "", ""]);
+  // …while '#' glued to a word is a subject.
+  assert.deepEqual(subjects("pick c76f531 #hashtag\n"), ["#hashtag"]);
+});
+
+test("git 2.55's todo round-trips byte-for-byte, and a retyped line keeps git's '# ' separator", () => {
+  const lines = parseRebaseTodo(TODO_FROM_2_55);
+  assert.equal(serializeRebaseTodo(lines), TODO_FROM_2_55);
+  const commits = lines.filter((l): l is RebaseCommitEntry => l.kind === "commit");
+  commits[1].action = "squash";
+  commits[3].action = "drop";
+  const out = serializeRebaseTodo(lines).split("\n");
+  assert.equal(out[1], "squash 6cd3cec # c4");
+  assert.equal(out[3], "drop aec1a3d # # hashtag subject # empty");
+});
+
+test("an older git's retyped line is written as it always was", () => {
+  const lines = parseRebaseTodo(TODO_UP_TO_2_54);
+  const commits = lines.filter((l): l is RebaseCommitEntry => l.kind === "commit");
+  commits[1].action = "squash";
+  assert.equal(serializeRebaseTodo(lines).split("\n")[1], "squash 6cd3cec c4");
+});
+
 // ── Test helpers ─────────────────────────────────────────────────────────────
 
 /**
