@@ -289,3 +289,21 @@ test("a row menu's item stays with the keys when the pointer has not moved", { s
   assert.equal(await p.eval<string>(`document.activeElement.textContent.trim()`), keys, "the keys keep their item");
   await p.key("Escape");
 });
+
+// A search's matched letters on the lit row read too: they are words.
+for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
+  test(`${theme}: the letters a search matched read at 4.5:1 on the lit row, and still stand out from the rest`, { skip }, async () => {
+    const p = await open(theme);
+    await openMenu(p);
+    await p.type("topic");
+    await p.page.waitFor(`!!document.querySelector(".bm-list .is-active .bm-hl")`);
+    const m = await p.eval<{ hl: Look; rest: Look; bold: string }>(`(function () {
+      var row = document.querySelector(".bm-list .is-active");
+      var hl = row.querySelector(".bm-hl");
+      return { hl: window.__look(hl, { text: hl }), rest: window.__look(row, { text: row.querySelector(".bm-bname") }), bold: getComputedStyle(hl).fontWeight };
+    })()`);
+    assert.ok(m.hl.text >= 4.5, `the match reads ${m.hl.text}:1 (${JSON.stringify(m.hl)})`);
+    assert.ok(m.hl.fill !== m.rest.fill || m.hl.color !== m.rest.color, `and is marked apart from the rest of the name: ${JSON.stringify(m)}`);
+    assert.ok(Number(m.bold) >= 600, "in bold");
+  });
+}

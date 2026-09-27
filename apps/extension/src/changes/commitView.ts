@@ -3445,6 +3445,19 @@ export class CommitViewProvider
     .action-menu .bm-subaction:focus .codicon { color: inherit; }
     .bm-branch.is-active .bm-bmore { color: inherit; }
     .bm-branch.is-active .bm-star:not(.on) { color: inherit; }
+    /* A search's letters on the lit row: the row's own ink, bold, on a band
+       of the match colour — the match colour itself read 3–4:1 on the tint. */
+    .bm-action.is-active .bm-hl,
+    .bm-branch.is-active .bm-hl {
+      color: inherit;
+      background: color-mix(in srgb, var(--vscode-list-highlightForeground, var(--gs-accent)) 26%, transparent);
+    }
+    /* Light+'s ink (#616161) is too pale for a band on a tint: deepened. */
+    body.vscode-light .bm-action.is-active .bm-hl,
+    body.vscode-light .bm-branch.is-active .bm-hl {
+      color: color-mix(in srgb, var(--gs-fg) 60%, #000000);
+      background: color-mix(in srgb, var(--vscode-list-highlightForeground, var(--gs-accent)) 20%, transparent);
+    }
     /* The row whose submenu holds the highlight stays lit, more softly. */
     .bm-branch.is-open { background: var(--bm-lit-soft); }
     .bm-branch.is-open .bm-bmore { color: var(--gs-fg); }
