@@ -1,0 +1,1627 @@
+/* A pull request's page (pr/prPage.ts): the header and its actions, the
+ * status box, the merge and review boxes, the tabs — conversation, commits,
+ * checks, changed files — and the More Actions menu. Shared by the
+ * extension's editor tab and any host that mounts the same component.
+ *
+ * EVERY rule is scoped under .prp or .prp-layer, so a host that imports this
+ * file restyles nothing of its own. Colours are the shared --gs-* tokens
+ * (tokens.css) or --vscode-* names with a fallback.
+ *
+ * TONES are the shared vocabulary's roles (engine/forge/pullRequests): open
+ * green, merged purple, closed red, draft muted; passed green, failed red,
+ * waiting amber. Only GLYPHS take a tone; the words beside them stay in the
+ * text colours, so no sentence depends on a hue for its contrast.
+ *
+ * NB: never write a star-slash pair inside a comment here: a selector glob
+ * closes the comment early and silently eats the next rule. */
+
+@import "./tokens.css";
+
+.prp,
+.prp-layer {
+  --prp-bg: var(--vscode-editor-background);
+  --prp-open: var(--vscode-charts-green, #3fb950);
+  --prp-merged: var(--vscode-charts-purple, #a371f7);
+  --prp-closed: var(--vscode-charts-red, #f85149);
+  --prp-draft: var(--gs-fg-muted);
+  --prp-pending: var(--vscode-charts-yellow, #d29922);
+  --prp-muted: var(--gs-fg-muted);
+  --prp-fg-2: color-mix(in srgb, var(--gs-fg-muted) 80%, var(--gs-fg));
+  --prp-line: var(--vscode-widget-border, color-mix(in srgb, var(--gs-fg) 16%, transparent));
+  --prp-line-soft: color-mix(in srgb, var(--gs-fg) 9%, transparent);
+  --prp-surface: color-mix(in srgb, var(--gs-fg) 4%, var(--prp-bg));
+  --prp-surface-2: color-mix(in srgb, var(--gs-fg) 7%, var(--prp-bg));
+  --prp-hover: color-mix(in srgb, var(--gs-fg) 7%, var(--prp-bg));
+  --prp-focus: var(--vscode-focusBorder, var(--gs-accent));
+  --prp-brand-edge: color-mix(in srgb, var(--gs-brand) 70%, #ffffff);
+  --prp-brand-wash: color-mix(in srgb, var(--gs-brand) 16%, transparent);
+  --prp-add: var(--vscode-charts-green, #3fb950);
+  --prp-del: var(--vscode-charts-red, #f85149);
+  --prp-sk: color-mix(in srgb, var(--gs-fg) 10%, transparent);
+  --prp-input-bg: var(--vscode-input-background, var(--prp-bg));
+  --prp-input-fg: var(--vscode-input-foreground, var(--gs-fg));
+  --prp-input-line: var(--vscode-input-border, var(--prp-line));
+}
+.vscode-light .prp,
+.vscode-light .prp-layer {
+  /* charts-yellow is 2.9:1 on a light editor; pressed toward black it clears
+     3:1 for a glyph, as the other tones already do. */
+  --prp-pending: color-mix(in srgb, var(--vscode-charts-yellow, #bf8803) 72%, #000000);
+  --prp-add: color-mix(in srgb, var(--vscode-charts-green, #388a34) 82%, #000000);
+  --prp-del: color-mix(in srgb, var(--vscode-charts-red, #e51400) 88%, #000000);
+  --prp-brand-edge: var(--gs-brand);
+  --prp-brand-wash: color-mix(in srgb, var(--gs-brand) 10%, transparent);
+  --prp-surface: color-mix(in srgb, var(--gs-fg) 3%, var(--prp-bg));
+  --prp-surface-2: color-mix(in srgb, var(--gs-fg) 6%, var(--prp-bg));
+  --prp-hover: color-mix(in srgb, var(--gs-fg) 5%, var(--prp-bg));
+  --prp-sk: color-mix(in srgb, var(--gs-fg) 8%, transparent);
+}
+/* High contrast: every edge is the theme's contrast border, and a hovered or
+   chosen thing is outlined in its active border — never a tint alone. */
+.vscode-high-contrast .prp,
+.vscode-high-contrast .prp-layer {
+  --prp-line: var(--vscode-contrastBorder, #6fc3df);
+  --prp-line-soft: var(--vscode-contrastBorder, #6fc3df);
+  --prp-surface: var(--prp-bg);
+  --prp-surface-2: var(--prp-bg);
+  --prp-hover: transparent;
+  --prp-fg-2: var(--gs-fg);
+  --prp-brand-edge: var(--vscode-contrastActiveBorder, #f38518);
+  --prp-brand-wash: transparent;
+}
+
+.prp [hidden],
+.prp-layer [hidden] {
+  display: none !important;
+}
+.prp *,
+.prp *::before,
+.prp *::after,
+.prp-layer *,
+.prp-layer *::before,
+.prp-layer *::after {
+  box-sizing: border-box;
+}
+.prp .codicon,
+.prp-layer .codicon {
+  line-height: 1;
+  color: inherit;
+  flex: none;
+}
+
+.prp {
+  position: relative;
+  min-height: 100vh;
+  color: var(--gs-fg);
+  background: var(--prp-bg);
+  font-family: var(--gs-font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  container: prp / inline-size;
+  -webkit-font-smoothing: antialiased;
+}
+.prp-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 14px 28px 56px;
+}
+@container prp (max-width: 560px) {
+  .prp-page {
+    padding: 10px 14px 40px;
+  }
+}
+
+/* Tones: glyphs only. */
+.prp .tone-open > .prp-status-glyph, .prp .tone-open.prp-state .codicon, .prp .tone-open > .prp-event-glyph { color: var(--prp-open); }
+.prp .tone-merged > .prp-status-glyph, .prp .tone-merged.prp-state .codicon, .prp .tone-merged > .prp-event-glyph { color: var(--prp-merged); }
+.prp .tone-closed > .prp-status-glyph, .prp .tone-closed.prp-state .codicon, .prp .tone-closed > .prp-event-glyph { color: var(--prp-closed); }
+.prp .tone-draft > .prp-status-glyph, .prp .tone-draft.prp-state .codicon, .prp .tone-draft > .prp-event-glyph { color: var(--prp-draft); }
+.prp .tone-success > .prp-status-glyph, .prp .tone-success > .prp-event-glyph, .prp .tone-success > .prp-check-glyph, .prp .prp-verdict-tag.tone-success .codicon, .prp .prp-commit-ci.tone-success, .prp .prp-tab-ci.tone-success { color: var(--prp-open); }
+.prp .tone-failure > .prp-status-glyph, .prp .tone-failure > .prp-event-glyph, .prp .tone-failure > .prp-check-glyph, .prp .prp-verdict-tag.tone-failure .codicon, .prp .prp-commit-ci.tone-failure, .prp .prp-tab-ci.tone-failure { color: var(--prp-closed); }
+.prp .tone-pending > .prp-status-glyph, .prp .tone-pending > .prp-event-glyph, .prp .tone-pending > .prp-check-glyph, .prp .prp-verdict-tag.tone-pending .codicon, .prp .prp-commit-ci.tone-pending, .prp .prp-tab-ci.tone-pending { color: var(--prp-pending); }
+.prp .tone-muted > .prp-status-glyph, .prp .tone-muted > .prp-event-glyph, .prp .tone-muted > .prp-check-glyph, .prp .prp-verdict-tag.tone-muted .codicon, .prp .prp-commit-ci.tone-muted, .prp .prp-tab-ci.tone-muted { color: var(--prp-muted); }
+
+/* ── Progress ─────────────────────────────────────────────────────────── */
+.prp-progress {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: 2px;
+  margin-bottom: -2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.prp-progress-bar {
+  display: block;
+  width: 30%;
+  height: 100%;
+  background: var(--vscode-progressBar-background, var(--prp-focus));
+  visibility: hidden;
+  transform: translateX(-100%);
+}
+.prp-progress.is-on .prp-progress-bar {
+  visibility: visible;
+  animation: prp-slide 1.1s var(--gs-ease) infinite;
+}
+@keyframes prp-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.prp .prp-btn,
+.prp-layer .prp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.prp .prp-btn .codicon {
+  font-size: 14px;
+}
+.vscode-high-contrast .prp .gs-btn:not(.gs-btn--primary),
+.vscode-high-contrast .prp-layer .gs-btn:not(.gs-btn--primary) {
+  border-color: var(--vscode-button-border, var(--prp-line));
+}
+.prp .prp-btn.has-pending,
+.prp .prp-btn.has-pending:hover {
+  border-color: var(--prp-brand-edge);
+  background: var(--prp-brand-wash);
+  color: var(--gs-fg);
+}
+.prp .prp-btn-danger .prp-btn-label {
+  color: var(--gs-fg);
+}
+.prp .prp-btn-danger {
+  border-color: color-mix(in srgb, var(--prp-closed) 60%, transparent);
+}
+.prp .prp-btn-danger:hover {
+  background: color-mix(in srgb, var(--prp-closed) 14%, transparent);
+}
+.prp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--gs-radius-sm);
+  background: transparent;
+  color: var(--prp-fg-2);
+  cursor: pointer;
+}
+.prp-icon-btn:hover {
+  background: var(--prp-hover);
+  color: var(--gs-fg);
+}
+.vscode-high-contrast .prp-icon-btn:hover {
+  outline: 1px dashed var(--vscode-contrastActiveBorder, #f38518);
+  outline-offset: -1px;
+}
+/* A quiet button beside rows of content: a link's weight, a button's target. */
+.prp-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius-sm);
+  background: transparent;
+  color: var(--gs-fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.prp-ghost:hover {
+  background: var(--prp-hover);
+}
+.vscode-high-contrast .prp-ghost:hover {
+  outline: 1px dashed var(--vscode-contrastActiveBorder, #f38518);
+  outline-offset: -1px;
+}
+.prp-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vscode-textLink-foreground, var(--prp-focus));
+  font: inherit;
+  cursor: pointer;
+}
+.prp-link:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  text-decoration: underline;
+}
+.prp button:focus-visible,
+.prp input:focus-visible,
+.prp textarea:focus-visible,
+.prp a:focus-visible,
+.prp-layer button:focus-visible {
+  outline: 1px solid var(--prp-focus);
+  outline-offset: 1px;
+}
+.prp button:disabled {
+  cursor: default;
+}
+
+/* ── Notices and whole-page messages ─────────────────────────────────── */
+.prp-notice,
+.prp-message {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius);
+  background: var(--prp-surface);
+}
+.prp-notice {
+  padding: 8px 12px;
+  margin: 0 0 12px;
+}
+.prp-notice.tone-warning {
+  border-color: color-mix(in srgb, var(--prp-pending) 55%, transparent);
+}
+.prp-notice.tone-error {
+  border-color: color-mix(in srgb, var(--prp-closed) 55%, transparent);
+}
+.prp-message {
+  max-width: 560px;
+  margin: 32px auto;
+  padding: 18px 20px;
+}
+.prp-notice-icon,
+.prp-message-icon {
+  padding-top: 1px;
+  color: var(--prp-fg-2);
+}
+.tone-warning > .prp-notice-icon,
+.tone-warning > .prp-message-icon {
+  color: var(--prp-pending);
+}
+.tone-error > .prp-notice-icon,
+.tone-error > .prp-message-icon {
+  color: var(--prp-closed);
+}
+.prp-message-icon .codicon {
+  font-size: 20px;
+}
+.prp-notice-body,
+.prp-message-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.prp-notice-title,
+.prp-message-title {
+  font-weight: 600;
+}
+.prp-message-title {
+  font-size: 14px;
+}
+.prp-notice-detail,
+.prp-message-detail {
+  color: var(--prp-fg-2);
+}
+.prp-notice-buttons,
+.prp-message-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* ── The header ───────────────────────────────────────────────────────── */
+.prp-head {
+  padding: 4px 0 0;
+}
+.prp-crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--prp-fg-2);
+  font-size: 12px;
+}
+.prp-crumb-num {
+  color: var(--prp-muted);
+}
+.prp-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.prp-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin-top: 2px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius-pill);
+  background: var(--prp-surface-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.prp-state.tone-open { border-color: color-mix(in srgb, var(--prp-open) 55%, transparent); background: color-mix(in srgb, var(--prp-open) 12%, var(--prp-bg)); }
+.prp-state.tone-merged { border-color: color-mix(in srgb, var(--prp-merged) 55%, transparent); background: color-mix(in srgb, var(--prp-merged) 12%, var(--prp-bg)); }
+.prp-state.tone-closed { border-color: color-mix(in srgb, var(--prp-closed) 55%, transparent); background: color-mix(in srgb, var(--prp-closed) 12%, var(--prp-bg)); }
+.vscode-high-contrast .prp-state {
+  background: transparent !important;
+}
+.prp-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.prp-title-num {
+  color: var(--prp-muted);
+  font-weight: 400;
+}
+.prp-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 5px;
+  margin-top: 8px;
+  color: var(--prp-fg-2);
+  font-size: 12.5px;
+}
+.prp-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.prp-author {
+  color: var(--gs-fg);
+  font-weight: 600;
+}
+.prp-dot {
+  opacity: 0.6;
+}
+.prp-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--prp-line-soft);
+  border-radius: 4px;
+  background: var(--prp-surface-2);
+  color: var(--gs-fg);
+  font-family: var(--gs-font-mono);
+  font-size: 11.5px;
+}
+.prp-branch .codicon {
+  font-size: 12px;
+  color: var(--prp-fg-2);
+}
+.prp-branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prp-branch.is-current {
+  border-color: var(--prp-brand-edge);
+}
+.prp-here {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--prp-brand-edge);
+  border-radius: var(--gs-radius-pill);
+  background: var(--prp-brand-wash);
+  color: var(--gs-fg);
+  font-size: 11px;
+  font-weight: 600;
+}
+.prp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 12px;
+}
+.prp-actions-gap {
+  flex: 1;
+}
+.prp-actions-end {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+
+/* ── Status: reviews, checks, merge ──────────────────────────────────── */
+.prp-status {
+  margin: 0 0 14px;
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius);
+  overflow: hidden;
+}
+.prp-status-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  min-height: 40px;
+  padding: 8px 12px;
+}
+.prp-status-row + .prp-status-row {
+  border-top: 1px solid var(--prp-line-soft);
+}
+.prp-status-glyph {
+  display: inline-flex;
+  justify-content: center;
+}
+.prp-status-glyph .codicon {
+  font-size: 16px;
+}
+.prp-status-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.prp-status-title {
+  font-weight: 600;
+}
+.prp-status-detail {
+  color: var(--prp-fg-2);
+}
+.prp-status-fix {
+  justify-self: end;
+}
+
+/* ── Boxes: merge and review ─────────────────────────────────────────── */
+.prp-panel {
+  margin: 0 0 14px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--prp-brand-edge);
+  border-radius: var(--gs-radius);
+  background: var(--prp-surface);
+}
+.prp-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--prp-fg-2);
+}
+.prp-panel-title {
+  margin: 0;
+  color: var(--gs-fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+.prp-methods,
+.prp-verdicts {
+  display: grid;
+  gap: 6px;
+}
+.prp-verdicts {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.prp-method,
+.prp-verdict {
+  display: grid;
+  grid-template-columns: 16px 18px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--prp-line-soft);
+  border-radius: var(--gs-radius-sm);
+  background: var(--prp-bg);
+  cursor: pointer;
+}
+.prp-method:hover,
+.prp-verdict:not(.is-off):hover {
+  border-color: var(--prp-line);
+}
+.prp-method.is-on,
+.prp-verdict.is-on {
+  border-color: var(--prp-brand-edge);
+  background: var(--prp-brand-wash);
+}
+.vscode-high-contrast .prp-method.is-on,
+.vscode-high-contrast .prp-verdict.is-on {
+  outline: 1px solid var(--vscode-contrastActiveBorder, #f38518);
+  outline-offset: -2px;
+}
+.prp-verdict.is-off {
+  cursor: default;
+  opacity: 0.62;
+}
+.prp-method-input,
+.prp-verdict-input {
+  margin: 2px 0 0;
+  accent-color: var(--gs-brand);
+}
+.prp-method-glyph,
+.prp-verdict-glyph {
+  padding-top: 1px;
+  color: var(--prp-fg-2);
+}
+.verdict-approve .prp-verdict-glyph { color: var(--prp-open); }
+.verdict-request_changes .prp-verdict-glyph { color: var(--prp-closed); }
+.prp-method-text,
+.prp-verdict-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.prp-method-label,
+.prp-verdict-label {
+  font-weight: 600;
+}
+.prp-method-what,
+.prp-verdict-hint {
+  color: var(--prp-fg-2);
+  font-size: 12px;
+}
+.prp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+.prp-field-label {
+  color: var(--prp-fg-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.prp-input,
+.prp-textarea {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--prp-input-line);
+  border-radius: var(--gs-radius-sm);
+  background: var(--prp-input-bg);
+  color: var(--prp-input-fg);
+  font-family: var(--gs-font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.prp-textarea {
+  min-height: 34px;
+  resize: vertical;
+}
+.prp-input::placeholder,
+.prp-textarea::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--prp-muted));
+}
+.prp-input:focus,
+.prp-textarea:focus {
+  outline: 1px solid var(--prp-focus);
+  outline-offset: -1px;
+  border-color: var(--prp-focus);
+}
+.prp-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+.prp-check-input {
+  margin: 0;
+  accent-color: var(--gs-brand);
+}
+.prp-note {
+  margin: 8px 0 0;
+  color: var(--prp-fg-2);
+  font-size: 12.5px;
+}
+.prp-panel-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+.prp-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--prp-closed) 55%, transparent);
+  border-radius: var(--gs-radius-sm);
+  background: var(--prp-bg);
+}
+.prp-confirm > .codicon {
+  color: var(--prp-closed);
+}
+.prp-confirm-text {
+  flex: 1 1 260px;
+}
+.prp-pending {
+  margin-top: 10px;
+}
+.prp-pending-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.prp-pending-title .codicon {
+  color: var(--prp-pending);
+}
+.prp-pending-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--prp-line-soft);
+  border-radius: var(--gs-radius-sm);
+  background: var(--prp-bg);
+}
+.prp-pending-item + .prp-pending-item {
+  border-top: 1px solid var(--prp-line-soft);
+}
+.prp-pending-row {
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--gs-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.prp-pending-row:hover {
+  background: var(--prp-hover);
+}
+.prp-pending-row .codicon {
+  color: var(--prp-pending);
+}
+.prp-pending-where {
+  font-family: var(--gs-font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.prp-pending-body {
+  overflow: hidden;
+  color: var(--prp-fg-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+.prp-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 4px 0 0;
+  border-bottom: 1px solid var(--prp-line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.prp-tab {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--prp-fg-2);
+  font: inherit;
+  cursor: pointer;
+}
+.prp-tab:hover {
+  color: var(--gs-fg);
+}
+.prp-tab.is-on {
+  color: var(--gs-fg);
+  font-weight: 600;
+}
+.prp-tab.is-on::after {
+  position: absolute;
+  right: 8px;
+  bottom: -1px;
+  left: 8px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--gs-brand);
+  content: "";
+}
+.vscode-high-contrast .prp-tab.is-on::after {
+  background: var(--vscode-contrastActiveBorder, #f38518);
+}
+.prp-tab:focus-visible {
+  outline-offset: -3px;
+}
+@container prp (max-width: 600px) {
+  .prp-tab {
+    padding: 0 8px;
+  }
+  /* Room for the words: the glyphs go, and the plain counts (each tab's
+     accessible name keeps them); what is pending stays. */
+  .prp-tab > .codicon,
+  .prp-tab > .prp-count:not(.is-pending) {
+    display: none;
+  }
+}
+.prp-count {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--gs-radius-pill);
+  background: var(--prp-surface-2);
+  color: var(--gs-fg);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.vscode-high-contrast .prp-count {
+  border: 1px solid var(--prp-line);
+}
+.prp-count.is-pending {
+  border: 1px solid var(--prp-brand-edge);
+  background: var(--prp-brand-wash);
+}
+.prp-tabpanel {
+  padding-top: 16px;
+}
+.prp-empty {
+  margin: 24px 0;
+  color: var(--prp-fg-2);
+  text-align: center;
+}
+
+/* ── Skeleton ─────────────────────────────────────────────────────────── */
+.prp-skeleton {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.prp-sk {
+  display: block;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--prp-sk);
+}
+.prp-sk-tabs { height: 30px; width: 60%; }
+.prp-sk-line-1 { width: 80%; }
+.prp-sk-line-2 { width: 55%; }
+.prp-sk-line-3 { width: 68%; }
+.prp-sk-block { height: 90px; }
+.prp-sk-block-2 { height: 60px; }
+
+/* ── Conversation ─────────────────────────────────────────────────────── */
+.prp-conv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+@container prp (min-width: 820px) {
+  .prp-conv {
+    grid-template-columns: minmax(0, 1fr) 220px;
+  }
+}
+.prp-conv-main {
+  position: relative;
+  min-width: 0;
+}
+.prp-entry {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: 12px;
+  margin-bottom: 16px;
+}
+.prp-card {
+  min-width: 0;
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius);
+  background: var(--prp-bg);
+}
+.prp-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 4px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--prp-line-soft);
+  border-radius: var(--gs-radius) var(--gs-radius) 0 0;
+  background: var(--prp-surface);
+  color: var(--prp-fg-2);
+  font-size: 12.5px;
+}
+.prp-entry-desc .prp-card-head {
+  background: var(--prp-surface-2);
+}
+.prp-card-body {
+  padding: 10px 14px;
+}
+.prp-when {
+  color: var(--prp-fg-2);
+}
+.prp-sending {
+  margin-left: 6px;
+  color: var(--prp-fg-2);
+  font-style: italic;
+}
+.prp-entry.is-sending .prp-card,
+.prp-thread-comment.is-sending {
+  opacity: 0.72;
+}
+.prp-event {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: center;
+  margin: 0 0 14px;
+  color: var(--prp-fg-2);
+  font-size: 12.5px;
+}
+.prp-event-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--prp-line);
+  border-radius: 50%;
+  background: var(--prp-surface);
+}
+.prp-event-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 4px;
+  min-width: 0;
+}
+.prp-event-text .prp-avatar {
+  margin-right: 2px;
+}
+.prp-review-item {
+  margin-bottom: 4px;
+}
+.prp-review-item > .prp-card,
+.prp-review-item > .prp-thread {
+  margin-left: 44px;
+}
+.prp-review-body-card {
+  margin-bottom: 12px;
+}
+.prp-timeline-cut {
+  margin: 0 0 14px 44px;
+}
+.prp-section-title {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* A review thread. */
+.prp-thread {
+  margin: 0 0 14px;
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius);
+  background: var(--prp-bg);
+  overflow: hidden;
+}
+.prp-thread-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--prp-surface);
+}
+.prp-thread:not(.is-resolved) .prp-thread-head,
+.prp-thread.is-resolved .prp-thread-comment:first-of-type {
+  border-bottom: 1px solid var(--prp-line-soft);
+}
+.prp-thread-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--gs-fg);
+  font-family: var(--gs-font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.prp-thread-where:hover {
+  color: var(--vscode-textLink-foreground, var(--gs-fg));
+  text-decoration: underline;
+}
+.prp-thread-where .codicon {
+  color: var(--prp-fg-2);
+}
+.prp-thread-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prp-thread-line {
+  color: var(--prp-fg-2);
+}
+.prp-thread-path .prp-thread-line {
+  margin-left: 0;
+}
+.prp-grow {
+  flex: 1;
+}
+.prp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius-pill);
+  color: var(--prp-fg-2);
+  font-size: 11px;
+}
+.prp-tag .codicon {
+  font-size: 12px;
+}
+.prp-thread-comment {
+  padding: 8px 12px 2px;
+}
+.prp-thread-comment + .prp-thread-comment {
+  border-top: 1px solid var(--prp-line-soft);
+}
+.prp-thread-comment-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  margin-bottom: 4px;
+  color: var(--prp-fg-2);
+  font-size: 12.5px;
+}
+.prp-thread-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--prp-line-soft);
+  background: var(--prp-surface);
+}
+.prp-reply {
+  flex: 1 1 240px;
+}
+.prp-composer {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: 12px;
+  margin-top: 8px;
+}
+.prp-composer-card {
+  padding: 8px;
+}
+.prp-composer-card .prp-textarea {
+  min-height: 72px;
+}
+.prp-composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+.prp-hint {
+  color: var(--prp-fg-2);
+  font-size: 12px;
+}
+
+/* The rail. */
+.prp-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.prp-rail-section {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--prp-line-soft);
+}
+.prp-rail-title {
+  margin: 0 0 8px;
+  color: var(--prp-fg-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.prp-rail-empty {
+  margin: 0;
+  color: var(--prp-fg-2);
+  font-size: 12.5px;
+}
+.prp-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+.prp-person-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prp-person.is-reviewer {
+  align-items: flex-start;
+  padding: 3px 0;
+}
+.prp-person.is-reviewer > .prp-avatar {
+  margin-top: 1px;
+}
+.prp-person-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.prp-person-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+.prp-verdict-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--prp-fg-2);
+  font-size: 11.5px;
+}
+.prp-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.prp-label {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--prp-label, var(--prp-muted)) 50%, transparent);
+  border-radius: var(--gs-radius-pill);
+  background: color-mix(in srgb, var(--prp-label, var(--prp-muted)) 18%, transparent);
+  color: var(--gs-fg);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.vscode-high-contrast .prp-label {
+  border-color: var(--prp-line);
+  background: transparent;
+}
+
+/* ── Avatars ──────────────────────────────────────────────────────────── */
+.prp-avatar {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: var(--prp-avatar, 18px);
+  height: var(--prp-avatar, 18px);
+  overflow: hidden;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.prp-avatar.is-team {
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: var(--prp-surface-2);
+  color: var(--prp-fg-2);
+}
+.prp-avatar-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: hsl(var(--prp-hue, 250) 38% 46%);
+  color: #ffffff;
+  font-size: calc(var(--prp-avatar, 18px) * 0.5);
+  font-weight: 600;
+}
+.prp-avatar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.prp-avatar.is-broken .prp-avatar-img {
+  display: none;
+}
+
+/* ── Commits ──────────────────────────────────────────────────────────── */
+.prp-commits,
+.prp-checks,
+.prp-tree,
+.prp-tree-group,
+.prp-flat-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.prp-commits,
+.prp-checks,
+.prp-tree {
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius);
+  overflow: hidden;
+}
+.prp-commit + .prp-commit,
+.prp-check-row + .prp-check-row {
+  border-top: 1px solid var(--prp-line-soft);
+}
+.prp-commit-row {
+  display: grid;
+  grid-template-columns: 16px 20px minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--gs-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.prp-commit-row:hover,
+.prp-file-row:hover,
+.prp-dir-row:hover {
+  background: var(--prp-hover);
+}
+.vscode-high-contrast .prp-commit-row:hover,
+.vscode-high-contrast .prp-file-row:hover,
+.vscode-high-contrast .prp-dir-row:hover,
+.vscode-high-contrast .prp-pending-row:hover {
+  outline: 1px dashed var(--vscode-contrastActiveBorder, #f38518);
+  outline-offset: -1px;
+}
+.prp-twisty {
+  color: var(--prp-fg-2);
+}
+.prp-commit-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.prp-commit-headline {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prp-commit-meta {
+  color: var(--prp-fg-2);
+  font-size: 12px;
+}
+.prp-commit-ci {
+  display: inline-flex;
+  justify-content: center;
+  width: 16px;
+}
+.prp-sha {
+  padding: 1px 6px;
+  border: 1px solid var(--prp-line-soft);
+  border-radius: 4px;
+  background: var(--prp-surface-2);
+  font-family: var(--gs-font-mono);
+  font-size: 11.5px;
+}
+.prp-commit-detail {
+  padding: 2px 12px 10px 48px;
+}
+.prp-commit-body {
+  margin: 0 0 8px;
+  color: var(--prp-fg-2);
+  font-family: var(--gs-font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.prp-flat-files {
+  border: 1px solid var(--prp-line-soft);
+  border-radius: var(--gs-radius-sm);
+  overflow: hidden;
+}
+
+/* ── Checks ───────────────────────────────────────────────────────────── */
+.prp-checks-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.prp-checks-sum {
+  font-weight: 600;
+}
+.prp-checks-on {
+  color: var(--prp-fg-2);
+  font-family: var(--gs-font-mono);
+  font-size: 12px;
+}
+.prp-check-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 10px;
+  min-height: 44px;
+  padding: 6px 12px;
+}
+.prp-check-glyph {
+  display: inline-flex;
+  justify-content: center;
+}
+.prp-check-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.prp-check-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prp-check-group {
+  color: var(--prp-fg-2);
+}
+.prp-check-words {
+  color: var(--prp-fg-2);
+  font-size: 12px;
+}
+.prp-check-req,
+.prp-check-link {
+  display: inline-flex;
+  justify-content: flex-end;
+}
+.prp-check-link {
+  min-width: 82px;
+}
+
+/* ── Files ────────────────────────────────────────────────────────────── */
+.prp-files-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+.prp-files-sum {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 600;
+}
+.prp-add {
+  color: var(--prp-add);
+  font-family: var(--gs-font-mono);
+  font-size: 12px;
+}
+.prp-del {
+  color: var(--prp-del);
+  font-family: var(--gs-font-mono);
+  font-size: 12px;
+}
+.prp-dir-row,
+.prp-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 12px 3px calc(8px + var(--prp-depth, 0) * 16px);
+  border: 0;
+  background: transparent;
+  color: var(--gs-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.prp-tree > li + li > .prp-dir-row,
+.prp-tree > li + li > .prp-file-row,
+.prp-flat-files > li + li > .prp-file-row {
+  border-top: 1px solid var(--prp-line-soft);
+}
+.prp-dir-icon {
+  color: var(--prp-fg-2);
+}
+.prp-dir-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prp-twisty-gap {
+  flex: none;
+  width: 16px;
+}
+.prp-file-status {
+  flex: none;
+  width: 14px;
+  font-family: var(--gs-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+.prp-file-status.is-added { color: var(--gs-status-added); }
+.prp-file-status.is-deleted { color: var(--gs-status-deleted); }
+.prp-file-status.is-modified { color: var(--gs-status-modified); }
+.prp-file-status.is-renamed { color: var(--gs-status-renamed); }
+.vscode-light .prp-file-status.is-added { color: var(--prp-add); }
+.vscode-light .prp-file-status.is-deleted { color: var(--prp-del); }
+.prp-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prp-file-dir,
+.prp-file-from {
+  color: var(--prp-fg-2);
+}
+.prp-file-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--prp-line);
+  border-radius: var(--gs-radius-pill);
+  color: var(--prp-fg-2);
+  font-size: 11px;
+}
+.prp-file-badge .codicon {
+  font-size: 12px;
+}
+.prp-file-badge.is-pending {
+  border-color: var(--prp-brand-edge);
+  background: var(--prp-brand-wash);
+  color: var(--gs-fg);
+}
+.prp-file-badge.is-pending .codicon {
+  color: var(--prp-pending);
+}
+.prp-file-counts {
+  display: inline-flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 70px;
+}
+.prp-file-binary {
+  color: var(--prp-fg-2);
+  font-size: 11.5px;
+}
+
+/* ── Rendered Markdown ────────────────────────────────────────────────── */
+.prp-md {
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.prp-md > :first-child { margin-top: 0; }
+.prp-md > :last-child { margin-bottom: 0; }
+.prp-md p,
+.prp-md ul,
+.prp-md ol,
+.prp-md blockquote,
+.prp-md pre,
+.prp-md table,
+.prp-md details {
+  margin: 0 0 10px;
+}
+.prp-md h1,
+.prp-md h2,
+.prp-md h3,
+.prp-md h4,
+.prp-md h5,
+.prp-md h6 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.prp-md h1 { font-size: 18px; }
+.prp-md h2 { font-size: 16px; padding-bottom: 4px; border-bottom: 1px solid var(--prp-line-soft); }
+.prp-md h3 { font-size: 14px; }
+.prp-md h4,
+.prp-md h5,
+.prp-md h6 { font-size: 13px; }
+.prp-md ul,
+.prp-md ol {
+  padding-left: 22px;
+}
+.prp-md li + li {
+  margin-top: 2px;
+}
+.prp-md li > input[type="checkbox"] {
+  margin: 0 6px 0 -18px;
+  vertical-align: -1px;
+}
+.prp-md a {
+  color: var(--vscode-textLink-foreground, var(--prp-focus));
+  text-decoration: none;
+}
+.prp-md a:hover {
+  text-decoration: underline;
+}
+.prp-md code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--vscode-textPreformat-background, var(--prp-surface-2));
+  font-family: var(--gs-font-mono);
+  font-size: 12px;
+}
+.prp-md pre {
+  padding: 10px 12px;
+  border: 1px solid var(--prp-line-soft);
+  border-radius: var(--gs-radius-sm);
+  background: var(--vscode-textCodeBlock-background, var(--prp-surface));
+  overflow-x: auto;
+}
+.prp-md pre code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+}
+.prp-md blockquote {
+  padding: 0 12px;
+  border-left: 3px solid var(--prp-line);
+  color: var(--prp-fg-2);
+}
+.prp-md table {
+  display: block;
+  max-width: 100%;
+  border-collapse: collapse;
+  overflow-x: auto;
+}
+.prp-md th,
+.prp-md td {
+  padding: 5px 10px;
+  border: 1px solid var(--prp-line);
+}
+.prp-md th {
+  background: var(--prp-surface);
+  font-weight: 600;
+}
+.prp-md img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+.prp-md hr {
+  height: 1px;
+  margin: 14px 0;
+  border: 0;
+  background: var(--prp-line);
+}
+.prp-md [align="left"] { text-align: left; }
+.prp-md [align="center"] { text-align: center; }
+.prp-md [align="right"] { text-align: right; }
+.prp-md .md-left { text-align: left; }
+.prp-md .md-center { text-align: center; }
+.prp-md .md-right { text-align: right; }
+/* Task lists: a box that reads as a checkbox (the renderer never emits a
+   real input), no bullet. */
+.prp-md ul.md-task-list {
+  padding-left: 4px;
+  list-style: none;
+}
+.prp-md .md-task {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-right: 7px;
+  border: 1px solid var(--prp-line);
+  border-radius: 3px;
+  background: var(--prp-bg);
+  color: transparent;
+  font-size: 10px;
+  line-height: 1;
+  vertical-align: -2px;
+}
+.prp-md .md-task-done {
+  border-color: var(--gs-brand);
+  background: var(--gs-brand);
+  color: var(--gs-brand-fg);
+}
+.prp-md details {
+  padding: 0 12px;
+  border: 1px solid var(--prp-line-soft);
+  border-radius: var(--gs-radius-sm);
+  background: var(--prp-surface);
+}
+.prp-md details[open] {
+  padding-bottom: 8px;
+}
+.prp-md summary {
+  padding: 6px 0;
+  cursor: pointer;
+}
+.prp-md-empty {
+  color: var(--prp-fg-2);
+  font-style: italic;
+}
+
+/* ── More Actions ─────────────────────────────────────────────────────── */
+.prp-layer .prp-menu {
+  position: fixed;
+  z-index: 20;
+  padding: 4px;
+  border: 1px solid var(--vscode-menu-border, var(--prp-line));
+  border-radius: var(--gs-radius);
+  background: var(--vscode-menu-background, var(--prp-bg));
+  color: var(--vscode-menu-foreground, var(--gs-fg));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  font-family: var(--gs-font-ui);
+  font-size: 13px;
+}
+.prp-layer .prp-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--gs-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.prp-layer .prp-menu-item:hover,
+.prp-layer .prp-menu-item:focus-visible {
+  background: var(--vscode-menu-selectionBackground, var(--prp-hover));
+  color: var(--vscode-menu-selectionForeground, inherit);
+  outline: none;
+}
+.vscode-high-contrast .prp-layer .prp-menu-item:hover,
+.vscode-high-contrast .prp-layer .prp-menu-item:focus-visible {
+  outline: 1px dashed var(--vscode-contrastActiveBorder, #f38518);
+  outline-offset: -1px;
+}
+.prp-layer .prp-menu-item.is-danger .codicon {
+  color: var(--prp-closed);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prp-progress.is-on .prp-progress-bar {
+    animation-duration: 2.4s;
+  }
+}
