@@ -3900,7 +3900,8 @@ export class CommitViewProvider
     }
     .row.is-file:hover::before { background: var(--gs-row-accent, var(--gs-accent)); }
     .row:hover { background: var(--gs-hover); }
-    .row:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
+    .row:focus-visible,
+    .group-header:focus-visible { outline: 1px solid var(--vscode-list-focusOutline, var(--gs-accent)); outline-offset: -1px; }
     .row .indent { flex: 0 0 auto; }
     .row .twisty {
       width: 16px; height: 16px;
@@ -4185,11 +4186,15 @@ export class CommitViewProvider
     }
     .pm-commit .subj { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pm-commit .meta { flex: 0 0 auto; font-size: 11px; color: var(--gs-fg-muted); }
+    /* A button (it opens the file's diff), dressed as the row it always was. */
     .pm-file {
       display: flex; align-items: center; gap: 8px;
+      width: 100%; margin: 0; border: 0;
       padding: 4px 8px; border-radius: var(--gs-radius-sm);
+      font: inherit; color: inherit; background: transparent; text-align: left;
     }
     .pm-file:hover { background: var(--gs-hover-strong); }
+    .pm-file:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
     .pm-file.clickable { cursor: pointer; }
     .pm-file.clickable:hover .name { text-decoration: underline; text-underline-offset: 2px; }
     .pm-file .st { flex: 0 0 auto; width: 13px; text-align: center; font-family: var(--gs-font-mono); font-weight: 700; font-size: 11px; }
@@ -4458,7 +4463,11 @@ export class CommitViewProvider
     </span>
   </div>
 
-  <div class="groups" id="groups"></div>
+  <!-- One tree: group headers, folders, files and a file's changes are its
+       treeitems, with ONE tab stop that the arrow keys move (a roving
+       tabindex). The row buttons stay for the pointer; the keyboard reaches
+       the same actions through the row's menu (Shift+F10). -->
+  <div class="groups" id="groups" role="tree" aria-label="Changed files" aria-multiselectable="true"></div>
 
   <!-- Selection bar: only present while a multi-selection exists, so the view
        is unchanged for anyone who never selects. -->
@@ -4620,18 +4629,195 @@ export class CommitViewProvider
     let rowOrder = [];
     const rowKey = (kind, path) => kind + ":" + path;
 
+    // ---- Keyed rows: the list is PATCHED, never rebuilt -----------------
+    //
+    // Every click that moves a file (Stage, Unstage, a tick) used to clear the
+    // whole list and build every row again — 55,000 elements at 5,000 files,
+    // and the focused row, its hover and its tooltip timer thrown away each
+    // time. Now each row is kept by a key and a signature of everything its
+    // DOM and its handlers were built from: a render reuses the row whose
+    // signature still matches, builds only the rows that changed, and moves
+    // nodes into place — so one Stage builds one row, not the list.
+    //
+    // What changes without rebuilding (selection, a group's count, whether a
+    // group or folder is open) is painted onto the kept row on every render.
+    let rowCache = new Map();
+    let nextRowCache = new Map();
+    function keep(key, sig, build) {
+      const hit = rowCache.get(key);
+      const node = hit && hit.sig === sig ? hit.node : build();
+      nextRowCache.set(key, { sig: sig, node: node });
+      return node;
+    }
+    /** Make parent's children exactly nodes, in order, moving only what is out of place. */
+    function patchChildren(parent, nodes) {
+      let cur = parent.firstChild;
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        if (n === cur) { cur = cur.nextSibling; continue; }
+        parent.insertBefore(n, cur);
+      }
+      while (cur) {
+        const next = cur.nextSibling;
+        parent.removeChild(cur);
+        cur = next;
+      }
+    }
+    function setAttr(node, name, value) {
+      if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+    }
+    function countWords(n, one, many) {
+      return n === 1 ? "1 " + (one || "file") : n + " " + (many || "files");
+    }
+
+    // ---- The tree from the keyboard: one tab stop, arrows move it ---------
+    //
+    // Every row, tick and row button was its own tab stop — 46 of them for six
+    // files — and no arrow key did anything. The list is a tree now: Tab
+    // reaches it once, Up/Down/Home/End move through what is showing,
+    // Right/Left open and close a group, a folder or a file's changes (or step
+    // in and out of one), Enter opens, Space ticks in the checkbox model,
+    // Shift+Up/Down extends the selection and Shift+F10 opens a row's menu.
+    let activeTKey = null;  // the treeitem that holds the one tab stop
+    let rovingEl = null;
+    function itemOf(node) {
+      return node && node.closest ? node.closest('[role="treeitem"]') : null;
+    }
+    /** The treeitems a person can see, top to bottom. */
+    function treeItems() {
+      const all = groupsEl.querySelectorAll('[role="treeitem"]');
+      const out = [];
+      for (let i = 0; i < all.length; i++) {
+        if (!all[i].closest(".group.collapsed .group-body")) out.push(all[i]);
+      }
+      return out;
+    }
+    function itemByTKey(tkey) {
+      if (!tkey) return null;
+      return groupsEl.querySelector('[data-tkey="' + CSS.escape(tkey) + '"]');
+    }
+    function levelOf(it) { return Number(it.getAttribute("aria-level") || "1"); }
+    /** Put the one tab stop on the active item (or the first, or its closed group's header). */
+    function applyRoving() {
+      let target = itemByTKey(activeTKey);
+      if (target && target.closest(".group.collapsed .group-body")) {
+        target = target.closest(".group").querySelector(".group-header");
+      }
+      if (!target) target = groupsEl.querySelector('[role="treeitem"]');
+      if (rovingEl && rovingEl !== target) rovingEl.tabIndex = -1;
+      rovingEl = target;
+      if (target && target.tabIndex !== 0) target.tabIndex = 0;
+    }
+    function focusItem(it) {
+      if (!it) return;
+      activeTKey = it.dataset.tkey || null;
+      applyRoving();
+      it.focus({ preventScroll: true });
+      it.scrollIntoView({ block: "nearest" });
+    }
+    groupsEl.addEventListener("focusin", (ev) => {
+      const it = itemOf(ev.target);
+      if (!it || it.dataset.tkey === activeTKey) return;
+      activeTKey = it.dataset.tkey || null;
+      applyRoving();
+    });
+    // A click on a row's own button or tick acts, and leaves the keyboard on
+    // the row — never on a control that is not in the tab order.
+    groupsEl.addEventListener("mousedown", (ev) => {
+      const it = itemOf(ev.target);
+      if (!it || ev.target === it) return;
+      const ctl = ev.target.closest ? ev.target.closest("button, input") : null;
+      if (!ctl || !it.contains(ctl)) return;
+      ev.preventDefault();
+      activeTKey = it.dataset.tkey || null;
+      applyRoving();
+      it.focus({ preventScroll: true });
+    });
+    /** Shift+Up/Down: the selection runs from its anchor to the file row the keyboard lands on. */
+    function selectThrough(from, to) {
+      if (!to || !to.dataset.key) return;
+      if (!selectionAnchor && from && from.dataset.key) selectionAnchor = from.dataset.key;
+      if (!selectionAnchor) selectionAnchor = to.dataset.key;
+      const a = rowOrder.indexOf(selectionAnchor);
+      const b = rowOrder.indexOf(to.dataset.key);
+      if (a === -1 || b === -1) return;
+      selectedRows.clear();
+      for (let i = Math.min(a, b); i <= Math.max(a, b); i++) selectedRows.add(rowOrder[i]);
+      paintSelection();
+    }
+    groupsEl.addEventListener("keydown", (ev) => {
+      const it = itemOf(ev.target);
+      if (!it || ev.altKey) return;
+      const k = ev.key;
+      const mod = ev.ctrlKey || ev.metaKey;
+      if (k === "ArrowDown" || k === "ArrowUp" || k === "Home" || k === "End" ||
+          k === "PageDown" || k === "PageUp") {
+        const items = treeItems();
+        const i = items.indexOf(it);
+        const page = Math.max(1, Math.floor(groupsEl.clientHeight / 24) - 1);
+        const to = k === "ArrowDown" ? i + 1 : k === "ArrowUp" ? i - 1
+          : k === "Home" ? 0 : k === "End" ? items.length - 1
+          : k === "PageDown" ? i + page : i - page;
+        const next = items[Math.max(0, Math.min(items.length - 1, to))];
+        ev.preventDefault();
+        if (!next) return;
+        if (ev.shiftKey && (k === "ArrowDown" || k === "ArrowUp")) selectThrough(it, next);
+        focusItem(next);
+        return;
+      }
+      if (mod && (k === "a" || k === "A") && ev.target === it) {
+        ev.preventDefault();
+        selectedRows.clear();
+        for (let i = 0; i < rowOrder.length; i++) selectedRows.add(rowOrder[i]);
+        selectionAnchor = rowOrder.length ? rowOrder[0] : null;
+        paintSelection();
+        return;
+      }
+      // Enter, Space and the arrows sideways on a row's own button or tick
+      // belong to that control.
+      if (ev.target !== it || mod) return;
+      const expanded = it.getAttribute("aria-expanded");
+      if (k === "ArrowRight") {
+        ev.preventDefault();
+        if (expanded === "false" && it.__expand) { it.__expand(true); return; }
+        if (expanded === "true") {
+          const items = treeItems();
+          const child = items[items.indexOf(it) + 1];
+          if (child && levelOf(child) > levelOf(it)) focusItem(child);
+        }
+        return;
+      }
+      if (k === "ArrowLeft") {
+        ev.preventDefault();
+        if (expanded === "true" && it.__expand) { it.__expand(false); return; }
+        const items = treeItems();
+        const lvl = levelOf(it);
+        for (let j = items.indexOf(it) - 1; j >= 0; j--) {
+          if (levelOf(items[j]) < lvl) { focusItem(items[j]); return; }
+        }
+        return;
+      }
+      if ((k === "Enter" || k === " ") && it.__activate) {
+        ev.preventDefault();
+        it.__activate(k === " " ? "space" : "enter");
+      }
+    });
+
     /** Paint selection onto the DOM without a full render(), so clicks feel instant. */
     function paintSelection() {
       const rows = groupsEl.querySelectorAll(".row.is-file");
-      for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
-        const on = selectedRows.has(r.dataset.key);
-        r.classList.toggle("is-selected", on);
-        if (on) r.setAttribute("aria-selected", "true");
-        else r.removeAttribute("aria-selected");
-      }
+      for (let i = 0; i < rows.length; i++) paintRowSelected(rows[i]);
       updateSelectionBar();
       updateSelectionChrome();
+    }
+    /** One file row's selected state: its class, and what a screen reader hears. */
+    function paintRowSelected(r) {
+      const on = selectedRows.has(r.dataset.key);
+      if (r.classList.contains("is-selected") !== on) r.classList.toggle("is-selected", on);
+      // In a multi-select tree every selectable item says whether it is
+      // selected, not only the selected ones.
+      const want = on ? "true" : "false";
+      if (r.getAttribute("aria-selected") !== want) r.setAttribute("aria-selected", want);
     }
 
     function clearSelection() {
@@ -6953,6 +7139,18 @@ export class CommitViewProvider
     }
     function onPushKey(e) {
       if (e.key === "Escape" && !pushBusy) { e.preventDefault(); e.stopPropagation(); closePushModal(); }
+      // A modal keeps Tab inside it: its file rows, its buttons, round again
+      // — never the list behind the backdrop.
+      if (e.key === "Tab" && pushModal) {
+        const stops = Array.prototype.filter.call(
+          pushModal.querySelectorAll("button"),
+          function (b) { return !b.disabled && b.offsetParent !== null; });
+        if (!stops.length) return;
+        const first = stops[0], last = stops[stops.length - 1];
+        const inside = pushModal.contains(document.activeElement);
+        if (e.shiftKey && (!inside || document.activeElement === first)) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
+      }
     }
     function relTime(sec) {
       const d = Math.max(0, Date.now() / 1000 - sec);
@@ -7032,8 +7230,15 @@ export class CommitViewProvider
       } else {
         data.files.forEach((f) => {
           const st = (f.status || "M").charAt(0).toUpperCase();
-          const row = el("div", "pm-file " + statusClass(st));
-          row.appendChild(el("span", "st", st));
+          // A button, so Tab reaches it and Enter opens it — it was a
+          // clickable div the keyboard could not get to.
+          const row = el("button", "pm-file " + statusClass(st));
+          row.type = "button";
+          row.setAttribute("aria-label", "Open the diff of " + f.path +
+            (f.oldPath ? ", renamed from " + f.oldPath : ""));
+          const stEl = el("span", "st", st);
+          stEl.setAttribute("aria-hidden", "true");
+          row.appendChild(stEl);
           const name = f.path.split("/").pop() || f.path;
           const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
           const nm = el("span", "name"); nm.textContent = name; row.appendChild(nm);
@@ -7248,22 +7453,48 @@ export class CommitViewProvider
      * in rowOrder, so anything outside it no longer exists.
      */
     function render() {
+      // Where the keyboard is, so a row that leaves the list (staged,
+      // discarded) hands focus to its neighbour instead of dropping it on
+      // the page.
+      const ae = document.activeElement;
+      const focused = ae && groupsEl.contains(ae) ? itemOf(ae) : null;
+      let was = null;
+      if (focused) {
+        const items = treeItems();
+        const i = items.indexOf(focused);
+        was = {
+          tkey: focused.dataset.tkey,
+          next: items[i + 1] ? items[i + 1].dataset.tkey : null,
+          prev: items[i - 1] ? items[i - 1].dataset.tkey : null,
+          index: i,
+        };
+      }
       renderRows();
       let dropped = false;
       selectedRows.forEach((k) => {
         if (rowOrder.indexOf(k) === -1) { selectedRows.delete(k); dropped = true; }
       });
+      if (dropped) paintSelection();
       if (dropped && selectionAnchor && rowOrder.indexOf(selectionAnchor) === -1) {
         selectionAnchor = null;
+      }
+      applyRoving();
+      if (was && !groupsEl.contains(document.activeElement)) {
+        let to = itemByTKey(was.tkey) || itemByTKey(was.next) || itemByTKey(was.prev);
+        if (!to) {
+          const items = treeItems();
+          to = items[Math.min(Math.max(was.index, 0), items.length - 1)] || null;
+        }
+        if (to) focusItem(to);
       }
       updateSelectionBar();
     }
 
     function renderRows() {
       lastRenderSig = stateSig();
-      groupsEl.textContent = "";
       folderKeyAccumulator = [];
       rowOrder = [];
+      nextRowCache = new Map();
       const data = {
         merge: lastState.merge,
         staged: lastState.staged,
@@ -7284,16 +7515,19 @@ export class CommitViewProvider
       changesTotal.textContent = String(total);
       changesTotal.classList.toggle("visible", total > 0);
 
+      const groups = [];
       if (stagingModel === "checkboxes") {
-        groupsEl.appendChild(renderChecklist(data));
-        return;
+        groups.push(renderChecklist(data));
+      } else {
+        for (const def of GROUP_DEFS) {
+          const list = data[def.kind];
+          if (def.kind === "merge" && list.length === 0) continue;
+          groups.push(renderGroup(def, list));
+        }
       }
-
-      for (const def of GROUP_DEFS) {
-        const list = data[def.kind];
-        if (def.kind === "merge" && list.length === 0) continue;
-        groupsEl.appendChild(renderGroup(def, list));
-      }
+      patchChildren(groupsEl, groups);
+      // What this render did not ask for is gone: its rows are not kept.
+      rowCache = nextRowCache;
     }
 
     // ── Checkbox model (gitstudio.changes.stagingModel = "checkboxes") ─────────
@@ -7361,35 +7595,127 @@ export class CommitViewProvider
       });
       all.sort(function (a, b) { return a.entry.path.localeCompare(b.entry.path); });
 
-      const group = el("div", "group group--all" + (all.length === 0 ? " empty" : ""));
+      // The group and its header are built once and kept: what changes from
+      // render to render (the master tick, the count, the rows it acts on)
+      // is painted onto them below, and read by its handlers from __live.
+      const group = keep("grp|ck", "", buildChecklistShell);
+      const header = group.firstChild;
+      const checkedCount = all.filter(function (f) { return f.staged; }).length;
+      header.__live = { all: all, checkedCount: checkedCount };
+      const wantClass = "group group--all" + (all.length === 0 ? " empty" : "");
+      if (group.className !== wantClass) group.className = wantClass;
+      const master = header.querySelector(".ck-master");
+      master.checked = checkedCount > 0 && checkedCount === all.length;
+      // A partly staged file is some of the changes included, too: the header
+      // said "none" over a staged part.
+      master.indeterminate = !master.checked &&
+        all.some(function (f) { return f.state !== "unstaged"; });
+      const masterTip = master.checked ? "Uncheck all" : "Check all";
+      if (master.dataset.tip !== masterTip) master.dataset.tip = masterTip;
+      setAttr(header, "aria-checked", master.indeterminate ? "mixed" : master.checked ? "true" : "false");
+      setAttr(header, "aria-label", "Changes, " + countWords(all.length));
+      header.querySelector(".gcount").textContent = String(all.length);
+
+      const stagedByPath = new Map();
+      const kindByPath = new Map();
+      const stateByPath = new Map();
+      for (const f of all) {
+        stagedByPath.set(f.entry.path, f.staged);
+        kindByPath.set(f.entry.path, f.kind);
+        stateByPath.set(f.entry.path, f.state);
+      }
+      const defForEntry = function (entry) {
+        const kind = kindByPath.get(entry.path);
+        return kind === "merge"
+          ? GROUP_DEFS[0]
+          : stagedByPath.get(entry.path) ? GROUP_DEFS[1] : GROUP_DEFS[2];
+      };
+
+      /**
+       * The tick (and the changes twisty) for one file row. sig is part of
+       * the row's signature — the tick's handler is built from the state —
+       * and decorate prepends them to a row being built.
+       */
+      const tickFor = function (entry) {
+        const state = stateByPath.get(entry.path) || "unstaged";
+        const kind = kindByPath.get(entry.path);
+        // Any file with changes can be opened up to tick them individually.
+        //
+        // This used to exclude fully staged files, on the reasoning that they
+        // had "nothing left to pick from" — true when the list held only
+        // UNSTAGED changes, and false now that a listed change can be unticked.
+        // The effect was that staging the last change removed the twisty and the
+        // open list in one go, so the whole panel evaporated at exactly the
+        // moment the user finished with it.
+        const expandable = kind !== "merge";
+        return {
+          sig: state + "/" + kind,
+          expandable: expandable,
+          decorate: function (row) { decorateTick(row, entry.path, state, expandable); },
+        };
+      };
+
+      // Both layouts, so the tree/list toggle keeps working in this model. It
+      // used to build a flat list unconditionally, which left that toggle
+      // visible and inert whenever the checkbox model was on.
+      const nodes = [];
+      if (layout === "tree") {
+        renderTreeInto(nodes, GROUP_DEFS[2], all.map(function (f) { return f.entry; }), {
+          defFor: defForEntry,
+          tick: tickFor,
+        });
+      } else {
+        for (const f of all) {
+          renderFileRow(nodes, defForEntry(f.entry), f.entry, 1, tickFor(f.entry));
+        }
+      }
+      patchChildren(group.lastChild, nodes);
+      return group;
+    }
+
+    /** The checkbox model's group and header, built once (see renderChecklist). */
+    function buildChecklistShell() {
+      const group = el("div", "group group--all");
+      group.setAttribute("role", "none");
       const header = el("div", "group-header");
+      header.tabIndex = -1;
+      header.setAttribute("role", "treeitem");
+      header.setAttribute("aria-level", "1");
+      // It holds every file and never closes.
+      header.setAttribute("aria-expanded", "true");
+      header.dataset.tkey = "g:all";
       const master = el("input", "ck ck-master");
       master.type = "checkbox";
-      const checkedCount = all.filter(function (f) { return f.staged; }).length;
-      master.checked = checkedCount > 0 && checkedCount === all.length;
-      master.indeterminate = checkedCount > 0 && checkedCount < all.length;
-      master.title = master.checked ? "Uncheck all" : "Check all";
-      master.addEventListener("click", function (ev) {
-        ev.stopPropagation();
+      // The header itself is the tick for the keyboard (Space) and for a
+      // screen reader (aria-checked); this box is the pointer's.
+      master.tabIndex = -1;
+      master.setAttribute("aria-hidden", "true");
+      const toggleAll = function () {
+        const live = header.__live;
         // Aim at the state the user is asking for, not at a toggle of each row:
         // from indeterminate, one click should mean "include everything".
-        if (checkedCount === all.length && all.length > 0) {
+        if (live.checkedCount === live.all.length && live.all.length > 0) {
           queueGroup("staged", "unstage");
           vscode.postMessage({ type: "unstageAll" });
         } else {
           queueGroup("unstaged", "stage");
           vscode.postMessage({ type: "stageAllForCommit" });
         }
+      };
+      master.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        toggleAll();
       });
+      header.__activate = function (how) { if (how === "space") toggleAll(); };
       const glabel = el("span", "glabel");
       glabel.textContent = "Changes";
       const gcount = el("span", "gcount");
-      gcount.textContent = String(all.length);
       const actions = el("span", "group-actions");
-      actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard All", function (ev) {
+      const discardAll = rowBtn(ICON_DISCARD, "Discard All", function (ev) {
         ev.stopPropagation();
         vscode.postMessage({ type: "discardAll", group: "unstaged" });
-      }));
+      });
+      actions.appendChild(discardAll);
       // Selecting a "section" in this model. There is only one list here — the
       // split into Staged and Unstaged is exactly what the checkbox model does
       // away with — so the sections the user means are the CHECKED rows and the
@@ -7406,7 +7732,7 @@ export class CommitViewProvider
       };
       const keysFor = function (which) {
         const out = [];
-        for (const f of all) {
+        for (const f of header.__live.all) {
           if (which === "checked" && !f.staged) continue;
           if (which === "unchecked" && f.staged) continue;
           const kind = f.kind === "merge" ? "merge" : f.staged ? "staged" : "unstaged";
@@ -7422,8 +7748,9 @@ export class CommitViewProvider
         const allOn = every.length > 0 && every.every(function (k) { return selectedRows.has(k); });
         selectKeys(allOn ? [] : every);
       });
-      header.addEventListener("contextmenu", function (ev) {
+      const menu = function (ev) {
         ev.preventDefault();
+        const all = header.__live.all;
         const checked = keysFor("checked");
         const unchecked = keysFor("unchecked");
         const items = [];
@@ -7443,147 +7770,112 @@ export class CommitViewProvider
         items.push({ icon: "archive", label: "Stash All Changes",
           fn: function () { vscode.postMessage({ type: "stash" }); } });
         openActionMenu("Changes", items, header);
+      };
+      header.addEventListener("contextmenu", menu);
+      header.addEventListener("keydown", function (ev) {
+        if (ev.target !== header) return;
+        if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) menu(ev);
       });
 
       header.append(master, glabel, actions, gcount);
       group.appendChild(header);
-
       const body = el("div", "group-body");
-      const pendingHunks = new Map();
-      const stagedByPath = new Map();
-      const kindByPath = new Map();
-      const stateByPath = new Map();
-      for (const f of all) {
-        stagedByPath.set(f.entry.path, f.staged);
-        kindByPath.set(f.entry.path, f.kind);
-        stateByPath.set(f.entry.path, f.state);
-      }
-      const defForEntry = function (entry) {
-        const kind = kindByPath.get(entry.path);
-        return kind === "merge"
-          ? GROUP_DEFS[0]
-          : stagedByPath.get(entry.path) ? GROUP_DEFS[1] : GROUP_DEFS[2];
-      };
-
-      /** Prepends the tick (and the changes twisty) to one already-built row. */
-      const decorate = function (row, entry, container) {
-        const f = {
-          entry,
-          staged: !!stagedByPath.get(entry.path),
-          kind: kindByPath.get(entry.path),
-        };
-        const state = stateByPath.get(f.entry.path) || "unstaged";
-        const ck = el("input", "ck");
-        ck.type = "checkbox";
-        // Named by its file: a list of ticks all called "Not included — click
-        // to include it" does not say which is which.
-        ck.setAttribute("aria-label", "Include " + f.entry.path + " in the commit");
-        ck.checked = state === "staged";
-        // Some of this file is staged and some is not. An empty box would claim
-        // none of it is and a ticked one that all of it is; both are false, and
-        // showing it as two rows instead was worse than either.
-        ck.indeterminate = state === "partial";
-        ck.title = state === "staged"
-          ? "Included in the commit \u2014 click to remove it"
-          : state === "partial"
-            ? "Partly included \u2014 click to include the rest"
-            : "Not included \u2014 click to include it";
-        ck.addEventListener("click", function (ev) {
-          // The row itself opens the diff; the tick must not.
-          ev.stopPropagation();
-          // Ticking the file supersedes any hunk view of it — the indexes it was
-          // showing describe a state that no longer exists.
-          expandedHunks.delete(f.entry.path);
-          hunkCache.delete(f.entry.path);
-          // Partial completes rather than reverting: the visible state is "not
-          // finished", so forward is the obvious direction, and unstaging would
-          // discard the part already staged.
-          vscode.postMessage({
-            type: state === "staged" ? "unstage" : "stage",
-            path: f.entry.path,
-          });
-        });
-        row.insertBefore(ck, row.firstChild);
-
-        // Any file with changes can be opened up to tick them individually.
-        //
-        // This used to exclude fully staged files, on the reasoning that they
-        // had "nothing left to pick from" — true when the list held only
-        // UNSTAGED changes, and false now that a listed change can be unticked.
-        // The effect was that staging the last change removed the twisty and the
-        // open list in one go, so the whole panel evaporated at exactly the
-        // moment the user finished with it.
-        const expandable = f.kind !== "merge";
-        if (expandable) {
-          const path = f.entry.path;
-          const open = expandedHunks.has(path);
-          const twist = el("button", "hunk-twisty" + (open ? " open" : ""), ICON_CHEVRON);
-          twist.title = open ? "Hide individual changes" : "Show individual changes";
-          twist.setAttribute("aria-expanded", open ? "true" : "false");
-          twist.addEventListener("click", function (ev) {
-            ev.stopPropagation();
-            // Toggle ONE row in place. This used to call render(), which
-            // rebuilt every group and every row of the whole Changes view to
-            // open a single file -- the lag -- and threw away scroll position
-            // and focus while doing it, which is the glitching. Nothing outside
-            // this row changes, so nothing outside this row is rebuilt.
-            const isOpen = expandedHunks.has(path);
-            const next = !isOpen;
-            twist.classList.toggle("open", next);
-            twist.setAttribute("aria-expanded", next ? "true" : "false");
-            twist.title = next ? "Hide individual changes" : "Show individual changes";
-            const after = row.nextSibling;
-            const panel =
-              after && after.classList && after.classList.contains("hunks")
-                ? after
-                : null;
-            if (isOpen) {
-              expandedHunks.delete(path);
-              if (panel) panel.remove();
-              return;
-            }
-            expandedHunks.add(path);
-            // Ask every time rather than trusting the cache: the file may have
-            // changed on disk since it was last listed.
-            vscode.postMessage({ type: "requestHunks", path: path });
-            if (!panel && row.parentNode) {
-              row.parentNode.insertBefore(renderHunks(path), row.nextSibling);
-            }
-          });
-          row.insertBefore(twist, row.firstChild);
-        }
-        // The tree appends the row itself after this runs, so the changes panel
-        // is queued to follow it rather than appended here.
-        if (expandable && expandedHunks.has(f.entry.path)) {
-          pendingHunks.set(row, f.entry.path);
-        }
-        void container;
-      };
-
-      // Both layouts, so the tree/list toggle keeps working in this model. It
-      // used to build a flat list unconditionally, which left that toggle
-      // visible and inert whenever the checkbox model was on.
-      if (layout === "tree") {
-        renderTreeInto(body, GROUP_DEFS[2], all.map(function (f) { return f.entry; }), {
-          defFor: defForEntry,
-          decorate: decorate,
-        });
-      } else {
-        for (const f of all) {
-          const row = renderFileRow(defForEntry(f.entry), f.entry, 1);
-          decorate(row, f.entry, body);
-          body.appendChild(row);
-        }
-      }
-      // Insert each open changes panel directly after its file row, wherever the
-      // layout ended up putting that row.
-      pendingHunks.forEach(function (path, row) {
-        if (row.parentNode) row.parentNode.insertBefore(renderHunks(path), row.nextSibling);
-      });
-      pendingHunks.clear();
-
+      body.setAttribute("role", "group");
       group.appendChild(body);
       return group;
+    }
+
+    /** Prepends a checkbox-model row's tick (and its changes twisty) as the row is built. */
+    function decorateTick(row, path, state, expandable) {
+      const ck = el("input", "ck");
+      ck.type = "checkbox";
+      // Named by its file for the pointer's tooltip; the ROW is the tick for
+      // the keyboard (Space) and for a screen reader (aria-checked), so the
+      // box itself is out of the tab order and the accessibility tree.
+      ck.setAttribute("aria-label", "Include " + path + " in the commit");
+      ck.tabIndex = -1;
+      ck.setAttribute("aria-hidden", "true");
+      ck.checked = state === "staged";
+      // Some of this file is staged and some is not. An empty box would claim
+      // none of it is and a ticked one that all of it is; both are false, and
+      // showing it as two rows instead was worse than either.
+      ck.indeterminate = state === "partial";
+      row.setAttribute("aria-checked", state === "staged" ? "true" : state === "partial" ? "mixed" : "false");
+      ck.title = state === "staged"
+        ? "Included in the commit — click to remove it"
+        : state === "partial"
+          ? "Partly included — click to include the rest"
+          : "Not included — click to include it";
+      const tick = function () {
+        // Ticking the file supersedes any hunk view of it — the indexes it was
+        // showing describe a state that no longer exists.
+        expandedHunks.delete(path);
+        hunkCache.delete(path);
+        // Partial completes rather than reverting: the visible state is "not
+        // finished", so forward is the obvious direction, and unstaging would
+        // discard the part already staged.
+        vscode.postMessage({
+          type: state === "staged" ? "unstage" : "stage",
+          path: path,
+        });
+      };
+      ck.addEventListener("click", function (ev) {
+        // The row itself opens the diff; the tick must not.
+        ev.stopPropagation();
+        tick();
+      });
+      row.__tick = tick;
+      row.insertBefore(ck, row.firstChild);
+      if (!expandable) return;
+
+      const twist = el("button", "hunk-twisty", ICON_CHEVRON);
+      twist.type = "button";
+      twist.tabIndex = -1;
+      const setOpen = function (next) {
+        // Toggle ONE row in place. This used to call render(), which
+        // rebuilt every group and every row of the whole Changes view to
+        // open a single file -- the lag -- and threw away scroll position
+        // and focus while doing it, which is the glitching. Nothing outside
+        // this row changes, so nothing outside this row is rebuilt.
+        const isOpen = expandedHunks.has(path);
+        if (next === isOpen) return;
+        paintTwist(row, next);
+        const after = row.nextSibling;
+        const panel =
+          after && after.classList && after.classList.contains("hunks")
+            ? after
+            : null;
+        if (isOpen) {
+          expandedHunks.delete(path);
+          if (panel) panel.remove();
+          return;
+        }
+        expandedHunks.add(path);
+        // Ask every time rather than trusting the cache: the file may have
+        // changed on disk since it was last listed.
+        vscode.postMessage({ type: "requestHunks", path: path });
+        if (!panel && row.parentNode) {
+          row.parentNode.insertBefore(renderHunks(path), row.nextSibling);
+        }
+      };
+      twist.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        setOpen(!expandedHunks.has(path));
+      });
+      row.__expand = setOpen;
+      row.insertBefore(twist, row.firstChild);
+      paintTwist(row, expandedHunks.has(path));
+    }
+
+    /** A checkbox-model row's changes toggle, open or closed — on the button and on the row. */
+    function paintTwist(row, open) {
+      const twist = row.querySelector(".hunk-twisty");
+      if (!twist) return;
+      if (twist.classList.contains("open") !== open) twist.classList.toggle("open", open);
+      setAttr(twist, "aria-expanded", open ? "true" : "false");
+      const tip = open ? "Hide individual changes" : "Show individual changes";
+      if (twist.dataset.tip !== tip && twist.getAttribute("title") !== tip) twist.title = tip;
+      setAttr(row, "aria-expanded", open ? "true" : "false");
     }
 
     // The individual changes inside one file, each with its own tick (#20). These
@@ -7591,26 +7883,52 @@ export class CommitViewProvider
     // list on the next refresh, exactly like the file-level tick.
     function renderHunks(path) {
       const wrap = buildHunks(path);
+      hunkPanelEls.set(path, wrap);
       // Register the in-place updater for this panel. Rebuilding calls
       // renderHunks again, so the map always points at the live element; a
-      // panel that has been detached (a full render, or the file collapsed)
+      // panel that has been detached (the file collapsed, or its row gone)
       // reports false and forgets itself.
       hunkPanels.set(path, function () {
         if (!wrap.parentNode) {
           hunkPanels.delete(path);
           return false;
         }
-        wrap.parentNode.replaceChild(renderHunks(path), wrap);
+        const focusedHunk = wrap.contains(document.activeElement)
+          ? itemOf(document.activeElement)
+          : null;
+        const fresh = renderHunks(path);
+        wrap.parentNode.replaceChild(fresh, wrap);
+        // The keyboard was on one of these changes: keep it on the same one.
+        if (focusedHunk) {
+          const again = itemByTKey(focusedHunk.dataset.tkey) || itemOf(fresh.firstChild) || null;
+          if (again) focusItem(again);
+        } else {
+          applyRoving();
+        }
         return true;
       });
       return wrap;
     }
+    // path -> the open changes panel now in the list, so a render keeps it
+    // rather than rebuilding it (and its ticks) on every click elsewhere.
+    const hunkPanelEls = new Map();
+    // path -> the tree level its changes sit at (one below their file's row).
+    const hunkLevels = new Map();
+    function hunkPanelFor(path, level) {
+      hunkLevels.set(path, level);
+      const live = hunkPanelEls.get(path);
+      if (live && live.isConnected && live.dataset.level === String(level)) return live;
+      return renderHunks(path);
+    }
 
     function buildHunks(path) {
       const wrap = el("div", "hunks");
+      wrap.setAttribute("role", "group");
+      const level = hunkLevels.get(path) || 3;
+      wrap.dataset.level = String(level);
       const hunks = hunkCache.get(path);
       if (!hunks) {
-        wrap.appendChild(el("div", "hunk-empty", "Reading changes\u2026"));
+        wrap.appendChild(el("div", "hunk-empty", "Reading changes…"));
         return wrap;
       }
       if (hunks.length === 0) {
@@ -7622,30 +7940,37 @@ export class CommitViewProvider
         const hrow = el("div", "hunk-row hunk-" + state);
         const hck = el("input", "ck");
         hck.type = "checkbox";
+        // The row is the tick for the keyboard and a screen reader (below).
+        hck.tabIndex = -1;
+        hck.setAttribute("aria-hidden", "true");
         // The real state, so a ticked change STAYS in the list showing itself as
         // ticked. It used to be hard-coded false because the list only ever held
         // unstaged changes, which made ticking one look like it deleted the row.
         hck.checked = state === "staged";
         hck.indeterminate = state === "partial";
         hck.title = state === "staged"
-          ? "Staged \u2014 click to unstage this change"
+          ? "Staged — click to unstage this change"
           : state === "partial"
-            ? "Partly staged \u2014 click to stage the rest"
+            ? "Partly staged — click to stage the rest"
             : "Include this change in the commit";
-        hck.addEventListener("click", function (ev) {
-          ev.stopPropagation();
+        const tickHunk = function () {
           // Paint the new state immediately. The host round trip re-reads git
           // and repaints authoritatively a moment later; without this the tick
           // sits visibly unchanged until then, which reads as lag.
           if (state === "staged") { hck.checked = false; hck.indeterminate = false; }
           else { hck.checked = true; hck.indeterminate = false; }
+          hrow.setAttribute("aria-checked", hck.checked ? "true" : "false");
           hrow.classList.add("is-busy");
           vscode.postMessage({ type: "stageHunk", path: path, hunkIndex: h.index });
+        };
+        hck.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          tickHunk();
         });
         const lines = el("span", "hunk-lines");
         // 1-based, matching what the editor's gutter shows.
         lines.textContent = h.lineCount > 1
-          ? "L" + (h.start + 1) + "\u2013" + (h.end + 1)
+          ? "L" + (h.start + 1) + "–" + (h.end + 1)
           : "L" + (h.start + 1);
         const prev = el("span", "hunk-preview");
         prev.textContent = h.preview || "(whitespace only)";
@@ -7654,8 +7979,14 @@ export class CommitViewProvider
         // Clicking the row opens the file's diff at THIS change — the same way
         // clicking the file opens its diff. Without it a change is something you
         // can tick but never actually look at, which is backwards.
-        hrow.tabIndex = 0;
-        hrow.setAttribute("role", "button");
+        hrow.tabIndex = -1;
+        hrow.setAttribute("role", "treeitem");
+        hrow.setAttribute("aria-level", String(level));
+        hrow.setAttribute("aria-checked", state === "staged" ? "true" : state === "partial" ? "mixed" : "false");
+        hrow.setAttribute("aria-label", (h.lineCount > 1
+          ? "Lines " + (h.start + 1) + " to " + (h.end + 1)
+          : "Line " + (h.start + 1)) + ": " + (h.preview || "whitespace only"));
+        hrow.dataset.tkey = "h:" + path + ":" + h.index;
         hrow.dataset.tip = "Open this change in the diff";
         const openHunk = function () {
           vscode.postMessage({
@@ -7663,10 +7994,7 @@ export class CommitViewProvider
           });
         };
         hrow.addEventListener("click", openHunk);
-        hrow.addEventListener("keydown", function (ev) {
-          if (ev.target !== hrow) return;
-          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openHunk(); }
-        });
+        hrow.__activate = function (how) { if (how === "space") tickHunk(); else openHunk(); };
 
         wrap.appendChild(hrow);
       }
@@ -7676,22 +8004,47 @@ export class CommitViewProvider
     function renderGroup(def, list) {
       const collapseKey = "group:" + def.kind;
       const isCollapsed = collapsed[collapseKey] === true;
-      const group = el("div", "group group--" + def.kind +
+      // Kept across renders; its count, its open state and the files its
+      // Ctrl/Cmd-click selects are painted on below.
+      const group = keep("grp|" + def.kind, "", function () { return buildGroupShell(def); });
+      const wantClass = "group group--" + def.kind +
         (list.length === 0 ? " empty" : "") +
-        (isCollapsed ? " collapsed" : ""));
+        (isCollapsed ? " collapsed" : "");
+      if (group.className !== wantClass) group.className = wantClass;
+      const header = group.firstChild;
+      header.__list = list;
+      setAttr(header, "aria-expanded", isCollapsed ? "false" : "true");
+      setAttr(header, "aria-label", def.label + ", " + countWords(list.length));
+      const gcount = header.querySelector(".gcount");
+      if (gcount.textContent !== String(list.length)) gcount.textContent = String(list.length);
 
+      const nodes = [];
+      if (layout === "tree") {
+        renderTreeInto(nodes, def, list);
+      } else {
+        for (const f of list) renderFileRow(nodes, def, f, 1);
+      }
+      patchChildren(group.lastChild, nodes);
+      return group;
+    }
+
+    /** A split-model group and its header, built once per group (see renderGroup). */
+    function buildGroupShell(def) {
+      const collapseKey = "group:" + def.kind;
+      const group = el("div", "group group--" + def.kind);
+      group.setAttribute("role", "none");
       const header = el("div", "group-header");
-      header.tabIndex = 0;
-      header.setAttribute("role", "button");
-      header.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+      header.tabIndex = -1;
+      header.setAttribute("role", "treeitem");
+      header.setAttribute("aria-level", "1");
+      header.dataset.tkey = "g:" + def.kind;
       const twisty = el("span", "twisty", ICON_CHEVRON);
       const gdot = el("span", "gdot");
       const glabel = el("span", "glabel");
       glabel.textContent = def.label;
-      header.title = def.label + " \u2014 click to collapse, " +
+      header.title = def.label + " — click to collapse, " +
         "Ctrl/Cmd-click to select every file in it";
       const gcount = el("span", "gcount");
-      gcount.textContent = String(list.length);
 
       // Select the whole section. Ctrl/cmd-click matches the row modifier, and a
       // stash button that already follows the selection then means "stash this
@@ -7700,6 +8053,7 @@ export class CommitViewProvider
         if (!(ev.ctrlKey || ev.metaKey)) return;
         ev.preventDefault();
         ev.stopPropagation();
+        const list = header.__list || [];
         const keys = [];
         for (let i = 0; i < list.length; i++) keys.push(rowKey(def.kind, list[i].path));
         const allOn = keys.length > 0 && keys.every((k) => selectedRows.has(k));
@@ -7713,19 +8067,19 @@ export class CommitViewProvider
 
       const actions = el("span", "group-actions");
       if (def.kind === "staged") {
-        actions.appendChild(makeIconBtn(ICON_UNSTAGE, "Unstage All", (ev) => {
+        actions.appendChild(rowBtn(ICON_UNSTAGE, "Unstage All", (ev) => {
           ev.stopPropagation();
           queueGroup("staged", "unstage");
           vscode.postMessage({ type: "unstageAll", group: def.kind });
         }));
       } else {
-        actions.appendChild(makeIconBtn(ICON_STAGE, "Stage All", (ev) => {
+        actions.appendChild(rowBtn(ICON_STAGE, "Stage All", (ev) => {
           ev.stopPropagation();
           queueGroup(def.kind, "stage");
           vscode.postMessage({ type: "stageAll", group: def.kind });
         }));
         if (def.kind === "unstaged") {
-          actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard All", (ev) => {
+          actions.appendChild(rowBtn(ICON_DISCARD, "Discard All", (ev) => {
             ev.stopPropagation();
             vscode.postMessage({ type: "discardAll", group: def.kind });
           }));
@@ -7733,25 +8087,17 @@ export class CommitViewProvider
       }
 
       header.append(twisty, gdot, glabel, actions, gcount);
-      const toggleGroup = () => {
-        collapsed[collapseKey] = !(collapsed[collapseKey] === true);
+      const setOpen = (open) => {
+        collapsed[collapseKey] = !open;
         render();
       };
-      header.addEventListener("click", toggleGroup);
-      header.addEventListener("keydown", (e) => {
-        // Only act when the header itself is focused — never swallow Enter/Space
-        // meant for a focused action button inside it (Stage All / Unstage All).
-        if (e.target !== header) return;
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleGroup(); }
-      });
+      header.addEventListener("click", () => setOpen(collapsed[collapseKey] === true));
+      header.__expand = setOpen;
+      header.__activate = () => setOpen(collapsed[collapseKey] === true);
       group.appendChild(header);
 
       const body = el("div", "group-body");
-      if (layout === "tree") {
-        renderTreeInto(body, def, list);
-      } else {
-        for (const f of list) body.appendChild(renderFileRow(def, f, 1));
-      }
+      body.setAttribute("role", "group");
       group.appendChild(body);
       return group;
     }
@@ -7761,13 +8107,13 @@ export class CommitViewProvider
      *
      * That model merges staged and unstaged files into one list, so each FILE
      * needs its own def for its row buttons (defFor) and each row needs its tick
-     * prepended (decorate) — while the folder rows keep the single def they are
+     * prepended (tick) — while the folder rows keep the single def they are
      * given. Without this the tree/list toggle was visible but inert in checkbox
      * mode, because the checklist only ever built a flat list.
      */
-    function renderTreeInto(body, def, list, opts) {
+    function renderTreeInto(nodes, def, list, opts) {
       const tree = buildTree(list);
-      renderNode(body, def, tree, 1, opts);
+      renderNode(nodes, def, tree, 1, opts);
     }
 
     // Flatten every file path under a folder node (direct + nested) so a
@@ -7778,7 +8124,7 @@ export class CommitViewProvider
       return out;
     }
 
-    function renderNode(container, def, node, depth, opts) {
+    function renderNode(nodes, def, node, depth, opts) {
       // Folders first (alphabetical), then files.
       const dirs = [...node.dirs.values()].sort((a, b) =>
         a.name.localeCompare(b.name));
@@ -7786,75 +8132,113 @@ export class CommitViewProvider
         const key = "folder:" + def.kind + ":" + dir.path;
         folderKeyAccumulator.push(key);
         const isCollapsed = collapsed[key] === true;
-        const row = el("div", "row" + (isCollapsed ? " collapsed" : ""));
-        row.style.paddingLeft = (depth * 12) + "px";
-        row.tabIndex = 0;
-        // It collapses like a group header, so it says so like one (until the
-        // rows become a tree of treeitems).
-        row.setAttribute("role", "button");
-        row.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
-        row.appendChild(el("span", "twisty", ICON_CHEVRON));
-        row.appendChild(el("span", "file-icon folder-icon", ICON_FOLDER));
-        const name = el("span", "name");
-        name.textContent = dir.name;
-        row.appendChild(name);
-        row.appendChild(el("span", "spacer"));
-        // Folder-level stage/unstage/discard — one git op over every file under
-        // this folder (mirrors the per-file actions; stopPropagation so the
-        // button click never toggles the folder's collapse).
-        const folderPaths = collectFolderFiles(dir, []);
-        const factions = el("span", "row-actions");
-        if (def.staged) {
-          factions.appendChild(makeIconBtn(ICON_UNSTAGE, "Unstage folder", (ev) => {
-            ev.stopPropagation();
-            queueFiles(folderPaths, "unstage");
-            vscode.postMessage({ type: "unstageFolder", paths: folderPaths });
-          }));
-        } else {
-          factions.appendChild(makeIconBtn(ICON_STAGE, "Stage folder", (ev) => {
-            ev.stopPropagation();
-            queueFiles(folderPaths, "stage");
-            vscode.postMessage({ type: "stageFolder", paths: folderPaths });
-          }));
-          if (def.kind === "unstaged") {
-            factions.appendChild(makeIconBtn(ICON_DISCARD, "Discard folder", (ev) => {
-              ev.stopPropagation();
-              vscode.postMessage({ type: "discardFolder", paths: folderPaths });
-            }));
-          }
-        }
-        row.appendChild(factions);
-        const toggle = () => { collapsed[key] = !isCollapsed; render(); };
-        row.addEventListener("click", toggle);
-        row.addEventListener("keydown", (e) => {
-          // Don't hijack Enter/Space aimed at a focused folder action button.
-          if (e.target !== row) return;
-          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
-        });
-        container.appendChild(row);
-        if (!isCollapsed) renderNode(container, def, dir, depth + 1, opts);
+        const row = keep(
+          "fold|" + stagingModel + "|" + def.kind + "|" + dir.path,
+          dir.name + "|" + depth,
+          function () { return buildFolderRow(def, dir.name, dir.path, key, depth); },
+        );
+        // The files a folder's Stage / Unstage / Discard act on are today's.
+        row.__paths = collectFolderFiles(dir, []);
+        if (row.classList.contains("collapsed") !== isCollapsed) row.classList.toggle("collapsed", isCollapsed);
+        setAttr(row, "aria-expanded", isCollapsed ? "false" : "true");
+        setAttr(row, "aria-label", dir.name + ", folder, " + countWords(row.__paths.length));
+        nodes.push(row);
+        if (!isCollapsed) renderNode(nodes, def, dir, depth + 1, opts);
       }
       for (const f of node.files.slice().sort((a, b) =>
         a.name.localeCompare(b.name))) {
         const rowDef = opts && opts.defFor ? opts.defFor(f.entry) : def;
-        const fileRow = renderFileRowTree(rowDef, f, depth);
-        if (opts && opts.decorate) opts.decorate(fileRow, f.entry, container);
-        container.appendChild(fileRow);
+        fileRowNode(nodes, rowDef, f.entry, f.name, null, depth + 1, depth * 12 + 16,
+          opts && opts.tick ? opts.tick(f.entry) : null);
       }
     }
 
-    function renderFileRowTree(def, f, depth) {
-      const row = makeFileRow(def, f.entry, f.name, null);
-      row.style.paddingLeft = (depth * 12 + 16) + "px";
+    function buildFolderRow(def, name, path, key, depth) {
+      const row = el("div", "row");
+      row.style.paddingLeft = (depth * 12) + "px";
+      row.tabIndex = -1;
+      // It opens and closes like a group header: a treeitem one level in.
+      row.setAttribute("role", "treeitem");
+      row.setAttribute("aria-level", String(depth + 1));
+      row.dataset.tkey = "d:" + stagingModel + ":" + def.kind + ":" + path;
+      row.appendChild(el("span", "twisty", ICON_CHEVRON));
+      row.appendChild(el("span", "file-icon folder-icon", ICON_FOLDER));
+      const nameEl = el("span", "name");
+      nameEl.textContent = name;
+      row.appendChild(nameEl);
+      row.appendChild(el("span", "spacer"));
+      // Folder-level stage/unstage/discard — one git op over every file under
+      // this folder (mirrors the per-file actions; stopPropagation so the
+      // button click never toggles the folder's collapse).
+      const factions = el("span", "row-actions");
+      if (def.staged) {
+        factions.appendChild(rowBtn(ICON_UNSTAGE, "Unstage folder", (ev) => {
+          ev.stopPropagation();
+          queueFiles(row.__paths, "unstage");
+          vscode.postMessage({ type: "unstageFolder", paths: row.__paths });
+        }));
+      } else {
+        factions.appendChild(rowBtn(ICON_STAGE, "Stage folder", (ev) => {
+          ev.stopPropagation();
+          queueFiles(row.__paths, "stage");
+          vscode.postMessage({ type: "stageFolder", paths: row.__paths });
+        }));
+        if (def.kind === "unstaged") {
+          factions.appendChild(rowBtn(ICON_DISCARD, "Discard folder", (ev) => {
+            ev.stopPropagation();
+            vscode.postMessage({ type: "discardFolder", paths: row.__paths });
+          }));
+        }
+      }
+      row.appendChild(factions);
+      const setOpen = (open) => { collapsed[key] = !open; render(); };
+      row.addEventListener("click", () => setOpen(collapsed[key] === true));
+      row.__expand = setOpen;
+      row.__activate = () => setOpen(collapsed[key] === true);
       return row;
     }
 
-    function renderFileRow(def, e, depth) {
+    /** A file row in the flat list: its name, then the folder it is in. */
+    function renderFileRow(nodes, def, e, depth, tick) {
       const slash = e.path.lastIndexOf("/");
       const fileName = slash === -1 ? e.path : e.path.slice(slash + 1);
       const dir = slash === -1 ? "" : e.path.slice(0, slash);
-      const row = makeFileRow(def, e, fileName, dir);
-      row.style.paddingLeft = "20px";
+      fileRowNode(nodes, def, e, fileName, dir, depth + 1, 20, tick);
+    }
+
+    /**
+     * One file row, kept by its key while nothing it was built from changes,
+     * followed by its open changes panel in the checkbox model. The row's
+     * handlers are built from def, the path and the status, so all of them
+     * are in its signature; its selection is painted on every render.
+     */
+    function fileRowNode(nodes, def, e, fileName, dir, level, padLeft, tick) {
+      const key = rowKey(def.kind, e.path);
+      rowOrder.push(key);
+      const sig = [
+        def.kind, def.staged ? 1 : 0, e.status, fileName, dir == null ? "\u0000" : dir,
+        level, padLeft, tick ? tick.sig : "",
+      ].join("|");
+      const row = keep("file|" + stagingModel + "|" + key, sig, function () {
+        const r = makeFileRow(def, e, fileName, dir);
+        r.style.paddingLeft = padLeft + "px";
+        r.setAttribute("aria-level", String(level));
+        // In the checkbox model a file keeps its place (and the keyboard) when
+        // it is ticked, though its group changes; in the split model it moves
+        // to the other group, and the keyboard stays where the file was.
+        r.dataset.tkey = stagingModel === "checkboxes"
+          ? "f:ck:" + e.path
+          : "f:" + key;
+        if (tick) tick.decorate(r);
+        return r;
+      });
+      paintRowSelected(row);
+      nodes.push(row);
+      if (tick && tick.expandable) {
+        const open = expandedHunks.has(e.path);
+        paintTwist(row, open);
+        if (open) nodes.push(hunkPanelFor(e.path, level + 1));
+      }
       return row;
     }
 
@@ -7864,8 +8248,12 @@ export class CommitViewProvider
       const row = el("div", "row is-file " + statusClass(letter) +
         (letter === "D" ? " is-deleted" : "") +
         (conflict ? " is-conflict" : ""));
-      row.tabIndex = 0;
-      row.setAttribute("role", "button");
+      row.tabIndex = -1;
+      // A treeitem, not a button: a button's content is read as one name, so
+      // the row was heard as "README.md Stage file Discard changes M". Its
+      // name is the file and what happened to it; its folder is the tip.
+      row.setAttribute("role", "treeitem");
+      row.setAttribute("aria-label", fileName + ", " + statusTitle(letter));
       row.title = e.path;
       // The path is not otherwise recoverable from the DOM: the title attribute
       // is moved to data-tip and removed by upgradeTips, so a delegated handler
@@ -7874,11 +8262,6 @@ export class CommitViewProvider
       row.dataset.path = e.path;
       row.dataset.kind = def.kind;
       row.dataset.key = key;
-      rowOrder.push(key);
-      if (selectedRows.has(key)) {
-        row.classList.add("is-selected");
-        row.setAttribute("aria-selected", "true");
-      }
 
       row.appendChild(el("span", "file-icon", ICON_FILE));
       const name = el("span", "name");
@@ -7900,19 +8283,19 @@ export class CommitViewProvider
 
       const actions = el("span", "row-actions");
       if (def.staged) {
-        actions.appendChild(makeIconBtn(ICON_UNSTAGE, "Unstage file", (ev) => {
+        actions.appendChild(rowBtn(ICON_UNSTAGE, "Unstage file", (ev) => {
           ev.stopPropagation();
           queueOp(e.path, "unstage");
           vscode.postMessage({ type: "unstage", path: e.path });
         }));
       } else {
-        actions.appendChild(makeIconBtn(ICON_STAGE, "Stage file", (ev) => {
+        actions.appendChild(rowBtn(ICON_STAGE, "Stage file", (ev) => {
           ev.stopPropagation();
           queueOp(e.path, "stage");
           vscode.postMessage({ type: "stage", path: e.path });
         }));
         if (def.kind === "unstaged") {
-          actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard changes", (ev) => {
+          actions.appendChild(rowBtn(ICON_DISCARD, "Discard changes", (ev) => {
             ev.stopPropagation();
             vscode.postMessage({ type: "discard", path: e.path });
           }));
@@ -7923,6 +8306,7 @@ export class CommitViewProvider
       const status = el("span", "status " + statusClass(letter));
       status.textContent = letter;
       status.dataset.tip = statusTitle(letter);
+      status.setAttribute("aria-hidden", "true");
       row.appendChild(status);
 
       const open = () => vscode.postMessage({
@@ -7975,6 +8359,11 @@ export class CommitViewProvider
         if (ev.detail > 1) return;
         open();
       });
+      // Enter opens; Space ticks in the checkbox model and opens otherwise.
+      row.__activate = (how) => {
+        if (how === "space" && row.__tick) row.__tick();
+        else open();
+      };
       // Double-click OR right-click a file → an actions menu (open / stage / discard).
       row.addEventListener("dblclick", menu);
       row.addEventListener("contextmenu", menu);
@@ -8007,10 +8396,8 @@ export class CommitViewProvider
         hideDropZone();
       });
       row.addEventListener("keydown", (ev) => {
-        // Don't hijack Enter aimed at a focused stage/unstage/discard button.
         if (ev.target !== row) return;
-        if (ev.key === "Enter") { ev.preventDefault(); open(); }
-        else if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) menu(ev);
+        if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) menu(ev);
       });
       return row;
     }
@@ -8023,6 +8410,13 @@ export class CommitViewProvider
       b.dataset.tip = title;
       b.setAttribute("aria-label", title);
       b.addEventListener("click", onClick);
+      return b;
+    }
+
+    /** A row's own button: the pointer's, out of the tab order (the tree has one stop). */
+    function rowBtn(svg, title, onClick) {
+      const b = makeIconBtn(svg, title, onClick);
+      b.tabIndex = -1;
       return b;
     }
 
@@ -8357,6 +8751,23 @@ export class CommitViewProvider
     });
     document.addEventListener("pointerdown", hideTip);
     window.addEventListener("scroll", hideTip, true);
+    // The keyboard gets the tip too: a button reached with Tab says what it
+    // does, as it does under the pointer. Not the tree's rows — their name is
+    // read out, and a tip over the next row at every arrow press is noise.
+    document.addEventListener("focusin", (e) => {
+      const t = e.target;
+      if (!t || !t.getAttribute || !t.getAttribute("data-tip")) return;
+      if (t.getAttribute("role") === "treeitem") return;
+      let keyboard = false;
+      try { keyboard = t.matches(":focus-visible"); } catch (_) { keyboard = false; }
+      if (!keyboard) return;
+      hideTip();
+      tipTarget = t;
+      tipTimer = setTimeout(showTip, 350);
+    });
+    document.addEventListener("focusout", (e) => {
+      if (e.target === tipTarget) hideTip();
+    });
     upgradeTips(document.body);
     new MutationObserver((muts) => {
       for (const m of muts) {

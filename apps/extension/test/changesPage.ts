@@ -219,6 +219,8 @@ const KEYS: Record<string, { code: string; vk: number }> = {
   PageDown: { code: "PageDown", vk: 34 },
   Home: { code: "Home", vk: 36 },
   End: { code: "End", vk: 35 },
+  " ": { code: "Space", vk: 32 },
+  a: { code: "KeyA", vk: 65 },
 };
 
 /** The DevTools protocol's modifier bits. */
@@ -262,6 +264,15 @@ export class ChangesPage {
     return this.page.eval<T>(expression);
   }
 
+  /** Load the page afresh — every piece of the script's state gone — and wait until it is up. */
+  async reload(): Promise<void> {
+    await this.page.eval("window.__gsStale = true");
+    await this.page.send("Page.reload", { ignoreCache: true });
+    await this.page.waitFor(
+      `!window.__gsStale && typeof window.__send === "function" && !!document.getElementById("branch-pill")`,
+    );
+  }
+
   /** Deliver a host message to the page. */
   async send(msg: unknown): Promise<void> {
     await this.page.eval(`window.__send(${JSON.stringify(msg)})`);
@@ -273,12 +284,23 @@ export class ChangesPage {
   }
 
   /** A real key press on whatever has focus. `repeat` marks it as a held key's repeat; `with` holds modifiers down. */
-  async key(name: keyof typeof KEYS | string, opts: { repeat?: boolean; with?: Modifier[] } = {}): Promise<void> {
+  async key(
+    name: keyof typeof KEYS | string,
+    opts: { repeat?: boolean; with?: Modifier[]; typed?: boolean } = {},
+  ): Promise<void> {
     const k = KEYS[name];
     if (!k) throw new Error(`no key mapping for ${name}`);
     const modifiers = (opts.with ?? []).reduce((m, x) => m | MODIFIERS[x], 0);
     const base = { key: name, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk, autoRepeat: !!opts.repeat, modifiers };
-    await this.page.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });
+    // `typed`: the key also types its character, as a real press does — which
+    // is what makes Enter or Space press a focused <button>. Without it only
+    // keydown handlers see the key.
+    const text = name === "Enter" ? "\r" : name.length === 1 ? name : undefined;
+    if (opts.typed && text !== undefined) {
+      await this.page.send("Input.dispatchKeyEvent", { type: "keyDown", text, unmodifiedText: text, ...base });
+    } else {
+      await this.page.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });
+    }
     await this.page.send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
   }
 
