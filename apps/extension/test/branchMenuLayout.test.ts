@@ -594,3 +594,23 @@ test("the menu keeps its width while a long query is typed, and takes the whole 
   await query(p, "zzzq");
   assert.ok(Math.abs((await box(p, ".branch-menu")).width - whole) < 0.5, "and it holds while typing on");
 });
+
+// A resize measures the menu again — the whole list, never what the query
+// shows: the offers quote a long query in full, so measured on them the
+// menu took its widest, and kept it after the box was cleared.
+test("a resize while a long query is typed keeps the width the whole list needs, and so does clearing the box after", { skip }, async () => {
+  const p = await open("dark", 560, 640);
+  await openMenu(p); // short names: the menu at its least width
+  const whole = (await box(p, ".branch-menu")).width;
+  const width = async (): Promise<number> => (await box(p, ".branch-menu")).width;
+  await query(p, "a-new-branch-name-long-enough-to-overflow-the-row-it-is-offered-in-" + "x".repeat(60));
+  assert.ok(Math.abs((await width()) - whole) < 0.5, "typed: the width it opened at");
+  for (const [w, what] of [[561, "a pixel wider"], [320, "a sidebar"], [560, "back"]] as const) {
+    await p.resize(w, 640);
+    const expect = Math.min(whole, w - 12);
+    assert.ok(Math.abs((await width()) - expect) < 0.5, `resized ${what} (${w}px): ${await width()}px, the whole list's ${expect}px`);
+    assert.equal(await p.eval(`document.querySelectorAll(".bm-list [data-bmkey]").length`), 2, `${what}: still the query's two offers`);
+  }
+  await query(p, "");
+  assert.ok(Math.abs((await width()) - whole) < 0.5, `cleared: ${await width()}px, the whole list's ${whole}px`);
+});

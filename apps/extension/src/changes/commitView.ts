@@ -7550,7 +7550,11 @@ export class CommitViewProvider
       subMenuFor = sub;
       // Measured on whole rows: the counts a narrower view hid come back first.
       branchMenu.querySelectorAll(".bm-branch.is-cramped").forEach((r) => r.classList.remove("is-cramped"));
-      holdBranchMenuWidth();
+      // The width the whole list needs in the new view — never what a query
+      // shows: an offer quoting a long query would measure the menu at its
+      // widest, and hold it there after the box was cleared.
+      if (branchFilter) holdWholeListWidth();
+      else holdBranchMenuWidth();
       placeBranchMenu();
       // Every row, measured again at the new width.
       refreshOpenBranchUi(subKey);
