@@ -4122,7 +4122,6 @@ export class CommitViewProvider
       position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
       background: var(--vscode-focusBorder);
     }
-    body.is-dragging-files .row.is-file { cursor: grabbing; }
 
     .selbar {
       display: flex; align-items: center; gap: 8px;
@@ -4141,21 +4140,67 @@ export class CommitViewProvider
     .selbar-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
     .selbar-btn:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 
-    /* The drop target only exists mid-drag. A permanently visible strip would
-       cost vertical space in a view that is already short. */
-    .stash-drop {
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      margin: 6px 0; padding: 14px 10px;
-      border: 1px dashed var(--vscode-focusBorder);
-      border-radius: 6px;
-      color: var(--vscode-descriptionForeground);
-      font-size: 12px;
+    /* ---- Drag and drop: the working tree and the Stashes group ---------
+       One mechanism, both ways. A stash, some of its files or one of its
+       folders dragged onto Staged, Changes (or the clean tree's note) comes
+       back; working-tree files dragged onto the Stashes header are stashed.
+       While a drag is on, each place it can go is faintly tinted; the one
+       under the pointer is lit and says what a drop does, and Alt/Option
+       picks the other verb. No outline, no dashed box: a tinted fill. */
+    body {
+      --drop-ready: color-mix(in srgb, var(--gs-accent) 7%, transparent);
+      --drop-over: color-mix(in srgb, var(--gs-accent) 20%, transparent);
     }
-    .stash-drop[hidden] { display: none; }
-    .stash-drop.is-over {
-      background: var(--vscode-list-dropBackground, var(--vscode-list-hoverBackground));
-      color: var(--vscode-foreground);
-      border-style: solid;
+    body.vscode-light {
+      --drop-ready: color-mix(in srgb, var(--gs-accent) 5%, transparent);
+      --drop-over: color-mix(in srgb, var(--gs-accent) 14%, transparent);
+    }
+    body.is-dragging { cursor: grabbing; }
+    .row.is-dragged { opacity: 0.55; }
+    .is-drop-ready { background: var(--drop-ready); border-radius: var(--gs-radius); }
+    .is-drop-over { background: var(--drop-over); border-radius: var(--gs-radius); }
+    /* A working-tree group lit as the target: its header (where the words
+       are) stays in sight at the top of a long group, on the same tint. */
+    .group.is-drop-over > .group-header {
+      position: sticky; top: 0; z-index: 2;
+      background: color-mix(in srgb, var(--gs-accent) 20%, var(--vscode-sideBar-background, var(--gs-bg)));
+    }
+    body.vscode-light .group.is-drop-over > .group-header {
+      background: color-mix(in srgb, var(--gs-accent) 14%, var(--vscode-sideBar-background, var(--gs-bg)));
+    }
+    /* Its words: what a drop does, and — where Alt/Option picks the other
+       verb — how. In the header, in place of its name, count and buttons
+       (the dot and the place say which group it is); at a sidebar's width
+       the name beside them was cut to "UNST…". */
+    .drop-hint { display: none; }
+    .is-drop-over .drop-hint,
+    .is-drop-over > .group-header .drop-hint {
+      display: flex; align-items: baseline; gap: 10px;
+      flex: 1 1 auto; min-width: 0;
+      white-space: nowrap; overflow: hidden;
+    }
+    .drop-verb { flex: 0 0 auto; font-size: 12px; font-weight: 600; color: var(--gs-fg); }
+    .drop-alt {
+      flex: 0 1 auto; min-width: 0; margin-left: auto;
+      overflow: hidden; text-overflow: ellipsis;
+      font-size: 11px; font-weight: 400; color: var(--gs-fg);
+    }
+    .is-drop-over > .group-header .glabel,
+    .is-drop-over > .group-header .gcount,
+    .is-drop-over > .group-header .group-actions,
+    .group-header.is-drop-over .glabel,
+    .group-header.is-drop-over .gcount,
+    .group-header.is-drop-over .group-actions { display: none; }
+    /* The clean tree's note: the words take the place of "No changes to
+       commit.", one under the other. */
+    #empty-state.is-drop-over .es { display: none; }
+    #empty-state.is-drop-over .drop-hint { flex: 0 0 auto; flex-direction: column; align-items: center; gap: 2px; }
+    #empty-state.is-drop-over .drop-alt { margin-left: 0; }
+    /* High contrast paints no tints: there the target is ringed, as VS Code
+       rings a drop target. */
+    body.vscode-high-contrast .is-drop-over {
+      outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: -1px;
     }
     .group { margin-top: 4px; }
     /* An empty group is not drawn; the tree's keyboard skips it too (see
@@ -4507,9 +4552,37 @@ export class CommitViewProvider
     .row.stash-note:hover { background: none; }
     .row.stash-note .file-icon { color: var(--gs-fg-muted); }
     /* "Show 200 more of N": it reads as an action, as the branch menu's
-       "Show more" does — its words in the link colour, underlined on hover. */
+       "Show more" does — its words in the link colour (the row's hover fill
+       under the pointer; never an underline). */
     .row.stash-more { color: var(--gs-accent-text); }
-    .row.stash-more:hover .name { text-decoration: underline; }
+    /* A stash's verbs, and its files' and folders', are WORDS — Apply and
+       Pop, Move and Copy: their two glyphs read alike ("apply and pop have
+       the same icon, it's confusing"). Small, calm and filled, shown on the
+       row the pointer or the keyboard is on; the tip says what each does. */
+    .row .row-actions .word-btn {
+      flex: 0 0 auto;
+      height: 20px;
+      margin-left: 3px;
+      padding: 0 7px;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 20px;
+      color: var(--gs-fg);
+      background: color-mix(in srgb, var(--gs-fg) 10%, transparent);
+      border: none;
+      border-radius: var(--gs-radius-sm);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .row .row-actions .word-btn:hover { background: color-mix(in srgb, var(--gs-fg) 19%, transparent); }
+    body.vscode-high-contrast .row .row-actions .word-btn {
+      outline: 1px solid var(--vscode-contrastBorder, transparent);
+      outline-offset: -1px;
+    }
+    .row .row-actions .word-btn { display: none; }
+    .row:hover .row-actions .word-btn,
+    .row:focus-within .row-actions .word-btn { display: inline-block; }
     /* "staged" / "partly staged": the stash had it staged, in words. */
     .stash-staged {
       flex: 0 0 auto;
@@ -4518,13 +4591,20 @@ export class CommitViewProvider
       white-space: nowrap;
     }
     /* At the narrowest widths the words that name things keep their room: a
-       stash row keeps only More Actions (its menu has Apply and Pop), and a
-       file row drops the staged word (its status letter's tip says it). The
-       row is the container, so a deep row in the tree gives way sooner. */
+       stash row keeps only More Actions (its menu has Apply and Pop), a file
+       or folder row its name (its menu has Move and Copy, and it can be
+       dragged), and a file row drops the staged word (its status letter's
+       tip says it). The row is the container, so a deep row in the tree
+       gives way sooner. */
     .row.stash-row,
-    .row.stash-file { container-type: inline-size; }
+    .row.stash-file,
+    .row.stash-folder { container-type: inline-size; }
+    @container (max-width: 249px) {
+      .row.stash-row .row-actions .word-btn.stash-quick { display: none; }
+    }
     @container (max-width: 229px) {
-      .stash-row .row-actions .stash-quick { display: none; }
+      .row.stash-file .row-actions .word-btn.word-btn,
+      .row.stash-folder .row-actions .word-btn.word-btn { display: none; }
     }
     @container (max-width: 199px) {
       .stash-file .stash-staged { display: none; }
@@ -5048,13 +5128,6 @@ export class CommitViewProvider
     </span>
   </div>
 
-  <!-- The stash drop target. Hidden until a drag starts, so it costs no layout
-       until it means something. -->
-  <div class="stash-drop" id="stash-drop" hidden>
-    <i class="codicon codicon-git-stash" aria-hidden="true"></i>
-    <span id="stash-drop-label">Drop to stash</span>
-  </div>
-
   <div class="empty-state" id="empty-state">
     <span class="badge">
       <i class="codicon codicon-check" aria-hidden="true"></i>
@@ -5117,8 +5190,6 @@ export class CommitViewProvider
     const selbarStageBtn = $("selbar-stage");
     const selbarMoveBtn = $("selbar-move");
     const selbarCopyBtn = $("selbar-copy");
-    const stashDropEl = $("stash-drop");
-    const stashDropLabel = $("stash-drop-label");
     const emptyEl = $("empty-state");
     const loadingEl = $("loading-state");
     const loadingText = $("loading-text");
@@ -5531,9 +5602,6 @@ export class CommitViewProvider
       return false;
     }
 
-    /** Paths being dragged right now; empty when no drag is in progress. */
-    let dragPaths = [];
-
     /** The context menu for a multi-row selection. Counts are files, not rows. */
     function multiItems() {
       const entries = selectionEntries();
@@ -5609,37 +5677,185 @@ export class CommitViewProvider
 
     function updateSelectionChrome() { syncStashButtonLabel(); }
 
-    function showDropZone(count) {
-      stashDropLabel.textContent =
-        count === 1 ? "Drop to stash 1 file" : "Drop to stash " + count + " files";
-      stashDropEl.hidden = false;
+    // ---- Drag and drop: the working tree and the Stashes group ------------
+    // Stashes and changes share this view, so a drag goes straight from one
+    // to the other — the menus' Apply, Pop, Move, Copy and Stash, by hand:
+    //   a stash               → Staged / Changes / the clean tree: Apply (Alt: Pop)
+    //   its files, a folder   → the same places: Move (Alt: Copy)
+    //   working-tree files    → the Stashes header: stash exactly those
+    // It posts what the menus post, so the same doors answer (Stash & Retry,
+    // the staging question, conflicts, Undo). A single stash takes nothing:
+    // git cannot add to a stash, so a stash row is never a place to drop.
+    // drag is what is being dragged (null: nothing of ours); dropKey the
+    // place under the pointer, by name — the renders rebuild the elements.
+    let drag = null;
+    let dropKey = null;
+    let dropAlt = false;
+    const ALT_NAME = /Mac|iPhone|iPad/.test(navigator.platform || "") ? "Option" : "Alt";
+
+    /** The working tree's rows being dragged: the selection when the row is in it, else that row. Never a conflicted file — it cannot be stashed. */
+    function treeDragPaths(key, own) {
+      const conflicted = new Set((lastState.merge || []).map((e) => e.path));
+      let paths;
+      if (key && selectedRows.has(key)) {
+        paths = [];
+        const entries = selectionEntries();
+        for (let i = 0; i < entries.length; i++) {
+          if (entries[i].kind !== "merge" && paths.indexOf(entries[i].path) === -1) paths.push(entries[i].path);
+        }
+      } else {
+        paths = own.slice();
+      }
+      return paths.filter((p) => !conflicted.has(p));
     }
 
-    function hideDropZone() {
-      stashDropEl.hidden = true;
-      stashDropEl.classList.remove("is-over");
+    /** The places the drag in hand can go, by name. */
+    function dropKeys() {
+      if (!drag) return [];
+      if (drag.kind === "tree") return drag.paths.length ? ["stashes"] : [];
+      return ["g:staged", "g:unstaged", "g:all", "empty"];
     }
-
-    // dragover must be cancelled for a drop to be allowed at all — without the
-    // preventDefault the browser refuses the drop and the whole gesture silently
-    // does nothing.
-    stashDropEl.addEventListener("dragover", (ev) => {
+    function dropEl(key) {
+      if (key === "stashes") return stashesEl.hidden ? null : stashesEl.querySelector(".group--stashes > .group-header");
+      if (key === "empty") return emptyEl.classList.contains("visible") ? emptyEl : null;
+      const g = groupsEl.querySelector(".group--" + key.slice(2));
+      return g && !g.classList.contains("empty") ? g : null;
+    }
+    /** The place a node is in, when the drag in hand can go there. */
+    function dropKeyAt(node) {
+      const keys = dropKeys();
+      for (let i = 0; i < keys.length; i++) {
+        const t = dropEl(keys[i]);
+        if (t && node && t.contains(node)) return keys[i];
+      }
+      return null;
+    }
+    /** What a drop does, in words: [the verb, how Alt/Option picks the other]. */
+    function dropWords() {
+      if (drag.kind === "tree") return ["Drop to stash " + countWords(drag.paths.length), ""];
+      if (drag.kind === "stash") {
+        return dropAlt
+          ? ["Drop to pop", "Release " + ALT_NAME + " to apply"]
+          : ["Drop to apply", "Hold " + ALT_NAME + " to pop"];
+      }
+      const n = countWords(drag.paths.length);
+      return dropAlt
+        ? ["Drop to copy " + n, "Release " + ALT_NAME + " to move"]
+        : ["Drop to move " + n, "Hold " + ALT_NAME + " to copy"];
+    }
+    /** Where a place shows its words: a group's header, the note, the Stashes header. */
+    function hintOf(t) {
+      const host = t.classList.contains("group") ? t.querySelector(".group-header") : t;
+      let h = host && host.querySelector(":scope > .drop-hint");
+      if (!h && host) {
+        h = el("span", "drop-hint");
+        h.setAttribute("aria-hidden", "true");
+        h.append(el("span", "drop-verb"), el("span", "drop-alt"));
+        host.appendChild(h);
+      }
+      return h;
+    }
+    /** Paint the drag onto the view: every place it can go faintly, the one under the pointer lit, with its words. */
+    function paintDrop() {
+      const keys = dropKeys();
+      document.querySelectorAll(".is-drop-ready, .is-drop-over").forEach((n) => {
+        n.classList.remove("is-drop-ready", "is-drop-over");
+      });
+      document.body.classList.toggle("is-dragging", !!drag);
+      if (!drag) return;
+      for (let i = 0; i < keys.length; i++) {
+        const t = dropEl(keys[i]);
+        if (!t) continue;
+        if (keys[i] !== dropKey) { t.classList.add("is-drop-ready"); continue; }
+        t.classList.add("is-drop-over");
+        const h = hintOf(t);
+        if (h) {
+          const words = dropWords();
+          h.firstChild.textContent = words[0];
+          h.lastChild.textContent = words[1];
+          h.lastChild.hidden = !words[1];
+        }
+      }
+    }
+    function setDrop(key, alt) {
+      if (key === dropKey && !!alt === dropAlt) return;
+      dropKey = key;
+      dropAlt = !!alt;
+      paintDrop();
+    }
+    /** A drag of ours starts: what it carries, and the rows that go with it (dimmed). */
+    function beginDrag(ev, what, rows, text) {
+      drag = what;
+      dropKey = null;
+      dropAlt = false;
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = "copyMove";
+        // Plain text too, so a drop in a terminal or an editor pastes
+        // something sensible rather than nothing.
+        ev.dataTransfer.setData("text/plain", text);
+      }
+      rows.forEach((r) => r.classList.add("is-dragged"));
+      // A drag of the working tree's files needs the Stashes header, even
+      // with no stash yet: it is where they go.
+      if (what.kind === "tree" && stashesEl.hidden) renderStashes();
+      paintDrop();
+    }
+    function endDrag() {
+      if (!drag) return;
+      const wasTree = drag.kind === "tree";
+      drag = null;
+      dropKey = null;
+      dropAlt = false;
+      document.querySelectorAll(".row.is-dragged").forEach((r) => r.classList.remove("is-dragged"));
+      paintDrop();
+      if (wasTree && shownStashes().length === 0) renderStashes();
+    }
+    /** The drag landed on key: do what the menus do. */
+    function dropOn(d, alt) {
+      if (d.kind === "tree") {
+        if (!d.paths.length) return;
+        vscode.postMessage({ type: "stashPaths", paths: d.paths });
+        if (d.selection) clearSelection();
+        return;
+      }
+      const s = authStashes.find((x) => x.sha === d.sha);
+      if (!s) return;
+      if (d.kind === "stash") stashAct(s, alt ? "pop" : "apply");
+      else stashFilesAct(s, d.paths, alt ? "copy" : "move");
+    }
+    // dragover must be cancelled for a drop to be allowed at all: over a
+    // place the drag can go it is, and the pointer says copy or move; over
+    // anything else it is not, and the browser shows that nothing drops.
+    document.addEventListener("dragenter", (ev) => {
+      if (drag && dropKeyAt(ev.target)) ev.preventDefault();
+    });
+    document.addEventListener("dragover", (ev) => {
+      if (!drag) return;
+      const key = dropKeyAt(ev.target);
+      setDrop(key, ev.altKey);
+      if (!key) return;
       ev.preventDefault();
-      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
-      stashDropEl.classList.add("is-over");
+      if (ev.dataTransfer) {
+        const keeps = drag.kind === "stash" ? !ev.altKey : drag.kind === "stashFiles" ? ev.altKey : false;
+        ev.dataTransfer.dropEffect = keeps ? "copy" : "move";
+      }
     });
-    stashDropEl.addEventListener("dragleave", () => {
-      stashDropEl.classList.remove("is-over");
+    document.addEventListener("dragleave", (ev) => {
+      // Out of the view altogether: nothing under the pointer is ours.
+      if (drag && !ev.relatedTarget && (ev.clientX <= 0 || ev.clientY <= 0 ||
+          ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight)) setDrop(null, false);
     });
-    stashDropEl.addEventListener("drop", (ev) => {
+    document.addEventListener("drop", (ev) => {
+      if (!drag) return;
       ev.preventDefault();
-      const paths = dragPaths.slice();
-      hideDropZone();
-      document.body.classList.remove("is-dragging-files");
-      if (paths.length === 0) return;
-      vscode.postMessage({ type: "stashPaths", paths: paths });
-      clearSelection();
+      const d = drag;
+      const key = dropKeyAt(ev.target);
+      endDrag();
+      if (key) dropOn(d, ev.altKey);
     });
+    // Its source's end: dropped (above), cancelled with Escape, or let go
+    // outside the view.
+    document.addEventListener("dragend", () => endDrag());
 
     // The selection bar's actions operate on the whole selection.
     $("selbar-stash").addEventListener("click", () => {
@@ -8862,6 +9078,7 @@ export class CommitViewProvider
       applyRoving();
       handFocusOn(was, groupsEl);
       updateSelectionBar();
+      if (drag) paintDrop();
     }
 
     /**
@@ -9695,6 +9912,14 @@ export class CommitViewProvider
         openActionMenu(name, items, row, "folder");
       };
       row.addEventListener("contextmenu", row.__menu);
+      // Dragged onto the Stashes header, its files are stashed (not a
+      // conflicted one: git cannot stash it).
+      row.draggable = true;
+      row.addEventListener("dragstart", (ev) => {
+        const paths = def.kind === "merge" ? [] : treeDragPaths(null, row.__paths || []);
+        beginDrag(ev, { kind: "tree", paths: paths }, [row], paths.length ? paths.join("\n") : path);
+      });
+      row.addEventListener("dragend", endDrag);
       return row;
     }
 
@@ -9868,33 +10093,19 @@ export class CommitViewProvider
       row.addEventListener("dblclick", menu);
       row.addEventListener("contextmenu", menu);
 
-      // Drag a row (or the whole selection) onto the stash target.
+      // Drag it — or the selection it is in — onto the Stashes header to
+      // stash them. An unselected row goes alone, and the selection is left
+      // as it was: a drag is not a click, and never takes files the user has
+      // forgotten selecting somewhere off screen.
       row.draggable = true;
       row.addEventListener("dragstart", (ev) => {
-        // Right-clicking or dragging an unselected row acts on THAT row, not on
-        // a selection the user has forgotten about somewhere off screen.
-        if (!selectedRows.has(key)) {
-          selectedRows.clear();
-          selectedRows.add(key);
-          selectionAnchor = key;
-          paintSelection();
-        }
-        const paths = selectionPaths();
-        dragPaths = paths;
-        if (ev.dataTransfer) {
-          ev.dataTransfer.effectAllowed = "move";
-          // Plain text too, so dragging into a terminal or editor pastes
-          // something sensible rather than nothing.
-          ev.dataTransfer.setData("text/plain", paths.join("\n"));
-        }
-        document.body.classList.add("is-dragging-files");
-        showDropZone(paths.length);
+        const inSelection = selectedRows.has(key);
+        const paths = treeDragPaths(key, [e.path]);
+        const rows = inSelection ? Array.from(groupsEl.querySelectorAll(".row.is-file.is-selected")) : [row];
+        beginDrag(ev, { kind: "tree", paths: paths, selection: inSelection }, rows, paths.length ? paths.join("\n") : e.path);
       });
-      row.addEventListener("dragend", () => {
-        dragPaths = [];
-        document.body.classList.remove("is-dragging-files");
-        hideDropZone();
-      });
+      // Its own, too: a row a render took out mid-drag hears its end, the page does not.
+      row.addEventListener("dragend", endDrag);
       row.__menu = menu;
       return row;
     }
@@ -9915,6 +10126,36 @@ export class CommitViewProvider
       const b = makeIconBtn(svg, title, onClick);
       b.tabIndex = -1;
       return b;
+    }
+
+    /**
+     * A row's verb in WORDS — a stash's Apply and Pop, a stash file's Move
+     * and Copy, whose glyphs read alike. The pointer's, out of the tab order
+     * like rowBtn (the row's menu has the same verbs for the keyboard); its
+     * tip says exactly what happens.
+     */
+    function wordBtn(label, tip, onClick) {
+      const b = el("button", "word-btn");
+      b.type = "button";
+      b.textContent = label;
+      b.dataset.tip = tip;
+      b.setAttribute("aria-description", tip);
+      b.tabIndex = -1;
+      b.addEventListener("click", onClick);
+      return b;
+    }
+    const TIP_APPLY = "Apply: put these changes back and keep the stash";
+    const TIP_POP = "Pop: put these changes back and delete the stash";
+    /** Move / Copy's tips, for n files ("this file" for one). */
+    function tipMove(n) {
+      return n === 1
+        ? "Move: take this file out of the stash, into Changes"
+        : "Move: take these " + n + " files out of the stash, into Changes";
+    }
+    function tipCopy(n) {
+      return n === 1
+        ? "Copy: bring this file into Changes and keep it in the stash"
+        : "Copy: bring these " + n + " files into Changes and keep them in the stash";
     }
 
     // ---- Stashes group ---------------------------------------------------
@@ -10096,8 +10337,11 @@ export class CommitViewProvider
       const was = focusPlace(stashesEl);
       stashesEl.textContent = "";
       stashRowOrder = [];
-      stashesEl.hidden = list.length === 0;
-      if (list.length > 0) stashesEl.appendChild(renderStashGroup(list));
+      // No stash, no group — but while the working tree's files are being
+      // dragged, its header is where they go, so it is there then.
+      const shown = list.length > 0 || (!!drag && drag.kind === "tree" && drag.paths.length > 0);
+      stashesEl.hidden = !shown;
+      if (shown) stashesEl.appendChild(renderStashGroup(list));
       paintSelection();
       applyRoving();
       handFocusOn(was, stashesEl, nearestAboveStashes);
@@ -10112,6 +10356,7 @@ export class CommitViewProvider
         selectionAnchor = null;
       }
       updateSelectionBar();
+      if (drag) paintDrop();
     }
 
     /**
@@ -10145,7 +10390,9 @@ export class CommitViewProvider
       const gcount = el("span", "gcount");
       gcount.textContent = String(list.length);
       header.title = "Stashes — click to " + (stashGroupCollapsed ? "show" : "hide") + " them";
-      header.append(el("span", "twisty", ICON_CHEVRON), el("span", "gdot"), glabel, el("span", "group-actions"), gcount);
+      header.append(el("span", "twisty", ICON_CHEVRON), el("span", "gdot"), glabel, el("span", "group-actions"));
+      // None yet (a drag of the working tree's files shows the header): no "0".
+      if (list.length > 0) header.appendChild(gcount);
       const setOpen = (open) => {
         if (stashGroupCollapsed === !open) return;
         stashGroupCollapsed = !open;
@@ -10286,8 +10533,8 @@ export class CommitViewProvider
         { icon: "diff-multiple", label: "Open All Changes",
           fn: () => vscode.postMessage({ type: "stashOpenAll", sha: s.sha }) },
         { sep: true },
-        { icon: "git-stash-apply", label: "Apply", fn: () => stashAct(s, "apply") },
-        { icon: "git-stash-pop", label: "Pop", fn: () => stashAct(s, "pop") },
+        { icon: "git-stash-apply", label: "Apply", tip: TIP_APPLY, fn: () => stashAct(s, "apply") },
+        { icon: "git-stash-pop", label: "Pop", tip: TIP_POP, fn: () => stashAct(s, "pop") },
         { icon: "git-branch", label: "Create Branch…", fn: () => stashAct(s, "branch") },
         { sep: true },
         { icon: "trash", label: "Drop…", danger: true, fn: () => stashAct(s, "drop") },
@@ -10320,12 +10567,12 @@ export class CommitViewProvider
       // The pointer's buttons, out of the tab order: the keyboard has them
       // in the row's menu (Shift+F10), as a file row's are.
       const actions = el("span", "row-actions");
-      const applyBtn = rowBtn('<i class="codicon codicon-git-stash-apply" aria-hidden="true"></i>',
-        "Apply — bring its changes back and keep the stash", (ev) => { ev.stopPropagation(); stashAct(s, "apply"); });
-      const popBtn = rowBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
-        "Pop — bring its changes back and remove the stash", (ev) => { ev.stopPropagation(); stashAct(s, "pop"); });
+      const applyBtn = wordBtn("Apply", TIP_APPLY, (ev) => { ev.stopPropagation(); stashAct(s, "apply"); });
+      const popBtn = wordBtn("Pop", TIP_POP, (ev) => { ev.stopPropagation(); stashAct(s, "pop"); });
       applyBtn.classList.add("stash-quick");
+      applyBtn.dataset.act = "apply";
       popBtn.classList.add("stash-quick");
+      popBtn.dataset.act = "pop";
       actions.append(applyBtn, popBtn);
       actions.appendChild(rowBtn('<i class="codicon codicon-ellipsis" aria-hidden="true"></i>',
         "More Actions…", (ev) => { ev.stopPropagation(); openActionMenu(s.text, stashItems(s), row, "git-stash"); }));
@@ -10369,6 +10616,13 @@ export class CommitViewProvider
         // Delete, and the Mac's delete key, ask to drop it.
         if (ev.key === "Delete" || ev.key === "Backspace") { ev.preventDefault(); stashAct(s, "drop"); }
       });
+      // Dragged onto Staged, Changes or the clean tree: Apply (Alt: Pop).
+      row.draggable = !busy;
+      row.addEventListener("dragstart", (ev) => {
+        if (stashPending.has(s.sha)) { ev.preventDefault(); return; }
+        beginDrag(ev, { kind: "stash", sha: s.sha }, [row], s.message);
+      });
+      row.addEventListener("dragend", endDrag);
       return row;
     }
 
@@ -10382,7 +10636,7 @@ export class CommitViewProvider
       for (const dir of dirs) {
         const key = "stashfolder:" + s.sha + ":" + dir.path;
         const isCollapsed = collapsed[key] === true;
-        const row = el("div", "row" + (isCollapsed ? " collapsed" : ""));
+        const row = el("div", "row stash-folder" + (isCollapsed ? " collapsed" : ""));
         row.style.paddingLeft = (depth * 12) + "px";
         stashItem(row, key, depth + 1);
         row.dataset.sha = s.sha;
@@ -10397,9 +10651,19 @@ export class CommitViewProvider
         const inside = all.filter((f) => f.path.indexOf(under) === 0).map((f) => f.path);
         row.setAttribute("aria-label", dir.name + ", folder, " + countWords(inside.length));
         const factions = el("span", "row-actions");
-        factions.appendChild(rowBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
-          "Move this folder's files to Changes", (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "move"); }));
+        const moveBtn = wordBtn("Move", tipMove(inside.length), (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "move"); });
+        const copyBtn = wordBtn("Copy", tipCopy(inside.length), (ev) => { ev.stopPropagation(); stashFilesAct(s, inside, "copy"); });
+        moveBtn.dataset.act = "move";
+        copyBtn.dataset.act = "copy";
+        factions.append(moveBtn, copyBtn);
         row.appendChild(factions);
+        // Dragged onto Staged, Changes or the clean tree: Move its files (Alt: Copy).
+        row.draggable = true;
+        row.addEventListener("dragstart", (ev) => {
+          if (stashPending.has(s.sha)) { ev.preventDefault(); return; }
+          beginDrag(ev, { kind: "stashFiles", sha: s.sha, paths: inside.slice() }, [row], inside.join("\n"));
+        });
+        row.addEventListener("dragend", endDrag);
         const setOpen = (open) => { collapsed[key] = !open; renderStashes(); };
         row.addEventListener("click", () => setOpen(collapsed[key] === true));
         row.__expand = setOpen;
@@ -10409,8 +10673,8 @@ export class CommitViewProvider
           if (ev) ev.preventDefault();
           const n = countWords(inside.length);
           openActionMenu(dir.name, [
-            { icon: "git-stash-pop", label: "Move " + n + " to Changes", fn: () => stashFilesAct(s, inside, "move") },
-            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", fn: () => stashFilesAct(s, inside, "copy") },
+            { icon: "git-stash-pop", label: "Move " + n + " to Changes", tip: tipMove(inside.length), fn: () => stashFilesAct(s, inside, "move") },
+            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", tip: tipCopy(inside.length), fn: () => stashFilesAct(s, inside, "copy") },
           ], row, "folder");
         };
         row.addEventListener("contextmenu", row.__menu);
@@ -10468,8 +10732,11 @@ export class CommitViewProvider
         row.appendChild(w);
       }
       const actions = el("span", "row-actions");
-      actions.appendChild(rowBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
-        "Move to Changes — take it out of the stash", (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "move"); }));
+      const moveBtn = wordBtn("Move", tipMove(1), (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "move"); });
+      const copyBtn = wordBtn("Copy", tipCopy(1), (ev) => { ev.stopPropagation(); stashFilesAct(s, [f.path], "copy"); });
+      moveBtn.dataset.act = "move";
+      copyBtn.dataset.act = "copy";
+      actions.append(moveBtn, copyBtn);
       row.appendChild(actions);
       const status = el("span", "status " + statusClass(letter));
       status.setAttribute("aria-hidden", "true");
@@ -10498,8 +10765,8 @@ export class CommitViewProvider
         if (sel && sel.sha === s.sha && selectedRows.has(key) && sel.paths.length > 1) {
           const n = countFiles(sel.paths.length);
           openActionMenu(n + " from “" + s.text + "”", [
-            { icon: "git-stash-pop", label: "Move " + n + " to Changes", fn: () => stashFilesAct(s, sel.paths, "move") },
-            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", fn: () => stashFilesAct(s, sel.paths, "copy") },
+            { icon: "git-stash-pop", label: "Move " + n + " to Changes", tip: tipMove(sel.paths.length), fn: () => stashFilesAct(s, sel.paths, "move") },
+            { icon: "git-stash-apply", label: "Copy " + n + " to Changes", tip: tipCopy(sel.paths.length), fn: () => stashFilesAct(s, sel.paths, "copy") },
             { sep: true },
             { icon: "close", label: "Clear Selection", fn: clearSelection },
           ], row);
@@ -10511,8 +10778,8 @@ export class CommitViewProvider
             fn: () => vscode.postMessage({ type: "stashOpenFile", sha: s.sha, path: f.path, staged: true }) });
         }
         items.push({ sep: true });
-        items.push({ icon: "git-stash-pop", label: "Move to Changes", fn: () => stashFilesAct(s, [f.path], "move") });
-        items.push({ icon: "git-stash-apply", label: "Copy to Changes", fn: () => stashFilesAct(s, [f.path], "copy") });
+        items.push({ icon: "git-stash-pop", label: "Move to Changes", tip: tipMove(1), fn: () => stashFilesAct(s, [f.path], "move") });
+        items.push({ icon: "git-stash-apply", label: "Copy to Changes", tip: tipCopy(1), fn: () => stashFilesAct(s, [f.path], "copy") });
         openActionMenu(name.textContent, items, row);
       };
       row.addEventListener("click", (ev) => {
@@ -10526,6 +10793,18 @@ export class CommitViewProvider
       // diff, Shift+F10 its menu.
       row.__activate = open;
       row.__menu = menu;
+      // Dragged onto Staged, Changes or the clean tree — with the files of
+      // this stash selected beside it, when it is one of them: Move (Alt: Copy).
+      row.draggable = !busy;
+      row.addEventListener("dragstart", (ev) => {
+        if (stashPending.has(s.sha) || !stashFiles.has(s.sha)) { ev.preventDefault(); return; }
+        const sel = stashSelection();
+        const many = !!sel && sel.sha === s.sha && selectedRows.has(key);
+        const paths = many ? sel.paths.slice() : [f.path];
+        const rows = many ? Array.from(stashesEl.querySelectorAll(".row.is-file.is-selected")) : [row];
+        beginDrag(ev, { kind: "stashFiles", sha: s.sha, paths: paths }, rows, paths.join("\n"));
+      });
+      row.addEventListener("dragend", endDrag);
       return row;
     }
 
