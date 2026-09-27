@@ -553,10 +553,17 @@ const REBASE_CSS = `
     background: color-mix(in srgb, var(--rb-act, var(--gs-accent)) 20%, var(--gs-surface));
     box-shadow: inset 0 0 10px -3px color-mix(in srgb, var(--rb-act, var(--gs-accent)) 55%, transparent);
     /* Its name keeps the action's hue, lifted toward white in dark and black
-       in light, so it clears AA on the tint (the brand's Fixup read 2.4:1). */
-    color: color-mix(in srgb, var(--rb-act, var(--gs-fg)) 62%, var(--gs-sel-lift));
+       in light, so it clears AA on the tint and on the deeper tint under the
+       pointer (the brand's Fixup read 2.4:1 unlifted, and 4.43:1 on the
+       hover at a 62% mix). */
+    color: color-mix(in srgb, var(--rb-act, var(--gs-fg)) 55%, var(--gs-sel-lift));
   }
   body.vscode-light .rb-set.is-current { background: color-mix(in srgb, var(--rb-act, var(--gs-accent)) 13%, var(--gs-surface)); }
+  /* Under the pointer it stays lit, a step deeper. The segments' hover
+     (above) outranks .is-current and swapped the tint for the hover grey, on
+     which the lifted names read 3.69:1 (Fixup, Squash) to 4.09:1 (Drop). */
+  .rb-set.is-current:hover:not(:disabled) { background: color-mix(in srgb, var(--rb-act, var(--gs-accent)) 25%, var(--gs-surface)); }
+  body.vscode-light .rb-set.is-current:hover:not(:disabled) { background: color-mix(in srgb, var(--rb-act, var(--gs-accent)) 17%, var(--gs-surface)); }
   body.vscode-high-contrast .rb-set.is-current { outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent)); outline-offset: -2px; }
 
   /* Plain-English explainer + action glossary (dismissible). */

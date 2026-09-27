@@ -3467,14 +3467,29 @@ export class CommitViewProvider
     body.vscode-high-contrast .bm-branch.is-active .bm-hl {
       background: transparent;
     }
-    /* The row whose submenu holds the highlight stays marked, as VS Code
-       marks a selection whose list is not the focused one. */
+    /* The row whose submenu holds the highlight (a menu wide enough to open
+       it beside the list) stays marked: lit with the calm selection tint,
+       and in High Contrast, which paints no tints, VS Code's whole dashed
+       ring. Its words read on the tint (AA). On the inactive-selection grey
+       it used to wear, the match read 3.65:1 in Dark+, the current branch
+       3.85:1, and the counts 2.45:1 in Light+. */
     .bm-branch.is-open {
-      background: var(--vscode-list-inactiveSelectionBackground, var(--gs-hover));
+      background: var(--gs-sel-fill);
       outline: 1px dashed var(--vscode-contrastActiveBorder, transparent);
       outline-offset: -1px;
     }
-    .bm-branch.is-open .bm-bmore { color: var(--gs-fg); }
+    body.vscode-high-contrast .bm-branch.is-open { background: transparent; }
+    .bm-branch.is-open .bm-bmore,
+    .bm-branch.is-open .bm-bicon,
+    .bm-branch.is-open .bm-bup,
+    .bm-branch.is-open .bm-gone { color: var(--gs-fg); }
+    .bm-branch.is-open.is-current .bm-bname,
+    .bm-branch.is-open.is-current .bm-bicon { color: var(--gs-sel-ink); }
+    .bm-branch.is-open .bm-hl {
+      color: color-mix(in srgb, var(--vscode-list-highlightForeground, var(--gs-accent)) 58%, var(--gs-sel-lift));
+    }
+    .bm-branch.is-open .bm-ab.up { color: color-mix(in srgb, var(--gs-status-added) 55%, var(--gs-sel-lift)); }
+    .bm-branch.is-open .bm-ab.down { color: color-mix(in srgb, var(--gs-status-modified) 55%, var(--gs-sel-lift)); }
     /* A destructive item keeps its colour when highlighted: red on red tint. */
     .bm-subaction.danger.is-active {
       background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 20%, transparent);
@@ -3544,10 +3559,15 @@ export class CommitViewProvider
     }
     .bm-subaction .codicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
     .bm-subaction span { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .bm-subaction:hover { background: var(--gs-hover-strong); }
+    /* The pointer moves the highlight, so the row under it IS the
+       highlighted one and looks exactly as the keyboard's does. These hover
+       fills are for a row the highlight has not reached (they were declared
+       after .is-active and replaced it: the highlight's white words on the
+       hover's grey, 1.39:1 in Light+). */
+    .bm-subaction:hover:not(.is-active) { background: var(--gs-hover-strong); }
     .bm-subaction.danger { color: var(--vscode-errorForeground, #e15a5a); }
     .bm-subaction.danger .codicon { color: var(--vscode-errorForeground, #e15a5a); }
-    .bm-subaction.danger:hover { background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 14%, transparent); }
+    .bm-subaction.danger:hover:not(.is-active) { background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 14%, transparent); }
     .bm-subsep { height: 1px; margin: 4px 6px; background: var(--gs-border); }
     /* Drilled in: a sidebar with no room beside the menu for a branch's
        actions shows them IN the menu, in place of the list, under a back row
@@ -3751,7 +3771,7 @@ export class CommitViewProvider
       padding: 5px 8px 6px 34px; color: var(--gs-accent-text);
       font-size: 11px; cursor: pointer; user-select: none;
     }
-    .bm-more:hover { background: var(--gs-hover); text-decoration: underline; }
+    .bm-more:hover:not(.is-active) { background: var(--gs-hover); text-decoration: underline; }
     .bm-more:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
 
     /* ---- Message composer -------------------------------------------------
@@ -4147,11 +4167,14 @@ export class CommitViewProvider
        row stays visibly selected under the pointer. */
     .row.is-file.is-selected { background: var(--gs-sel-fill); }
     .row.is-file.is-selected:hover { background: var(--gs-sel-fill-strong); }
-    /* Its words are measured on the tint (AA): the path takes full ink (the
-       muted read 3.9:1 in Light+), and the status letter keeps its hue,
-       lifted toward white in dark and black in light (Light+'s blue M read
-       2.8:1). */
-    .row.is-file.is-selected .dir { color: var(--gs-fg); }
+    /* Its words are measured on the tint (AA), at rest and on the deeper
+       hover: the name and the path take the foreground leaned a little
+       further from the ground (Light+'s #616161 read 4.23:1 on the hover's
+       tint; the muted path 3.9:1 at rest), and the status letter keeps its
+       hue, lifted toward white in dark and black in light (Light+'s blue M
+       read 2.8:1). */
+    .row.is-file.is-selected .name,
+    .row.is-file.is-selected .dir { color: color-mix(in srgb, var(--gs-fg) 72%, var(--gs-sel-lift)); }
     .row.is-file.is-selected.is-deleted .name { opacity: 1; }
     .row.is-file.is-selected .status { color: color-mix(in srgb, var(--gs-row-accent, var(--gs-fg-muted)) 62%, var(--gs-sel-lift)); }
     body.vscode-high-contrast .row.is-file.is-selected {

@@ -176,6 +176,12 @@ body.vscode-light {
 .wt-row.is-current .wt-icon {
   color: var(--gs-accent-text);
 }
+/* Its badges lean further toward the theme's ink, so they read on the
+   tint and on the deeper tint under the pointer (Dark+'s 40% read 4.39:1
+   on the hover). */
+.wt-row.is-current .wt-badge {
+  --wt-lean-by: 55%;
+}
 .wt-line1,
 .wt-line2 {
   display: flex;
