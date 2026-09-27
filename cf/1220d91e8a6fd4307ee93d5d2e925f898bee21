@@ -1,0 +1,33 @@
+apps/extension/src/pr/prCreatePage.ts
+  s_26f5e669d3043c::t_690badaf272317 44-52,76-77,135-137,193-199,221-231,264-272,369,393,405-454,472-474,476,481-482,485-516,518,521,523-524,526-532,534,551,567,583-585,595,662-663,726-735,803-812,817,822,828,882-883,891
+apps/extension/src/pr/prFeature.ts
+  s_26f5e669d3043c::t_8cd4c59b1ef6d9 105-106
+apps/extension/test/prCreateForm.test.ts
+  s_26f5e669d3043c::t_24d36d3b0697f4 27-40,191,196-197,223-225,438,446-457,461-463,467-616
+packages/host-bridge/src/prProtocol.ts
+  s_26f5e669d3043c::t_fde53da270d0c7 600-601,657-658
+packages/webview-ui/src/pr/prCreate.ts
+  s_26f5e669d3043c::t_1ae10b78ae307a 119,133,307-315,468-481,485-487,495-497,755-757,852-858,974
+packages/webview-ui/src/styles/pr-create.css
+  s_26f5e669d3043c::t_a8aa48ba3356dc 39-43,208-221
+packages/webview-ui/test/fixtures/prCreateFixtures.ts
+  s_26f5e669d3043c::t_e0f90b567f31e6 61-64,92
+packages/webview-ui/test/prCreate.test.ts
+  s_26f5e669d3043c::t_e4627a74d5f4b1 154,169,171,180-248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cf1220d91e8a6fd4307ee93d5d2e925f898bee21",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
