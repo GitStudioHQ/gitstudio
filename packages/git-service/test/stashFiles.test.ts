@@ -123,7 +123,9 @@ test("files: every kind of change, with its staging, its old name and binary con
   const sha = stashEveryKind(r);
   const files = await r.stashes.files(sha);
   const brief = (f: StashFile) =>
-    [f.path, f.status, f.oldPath ?? "", f.staged ?? "", f.binary ? "binary" : ""].join(" ").trimEnd();
+    [f.path, f.status, f.oldPath ?? "", f.staged ?? "", f.binary ? "binary" : "", f.onlyStaged ? "only-staged" : ""]
+      .join(" ")
+      .trimEnd();
   assert.deepEqual(files?.map(brief), [
     "added.ts A  all",
     "bin.dat M   binary",
@@ -133,7 +135,7 @@ test("files: every kind of change, with its staging, its old name and binary con
     "mm.ts M  part",
     "mod.ts M",
     "new.md R old.md all",
-    "reverted.ts M  part",
+    "reverted.ts M  part  only-staged",
     "staged.ts M  all",
   ]);
 });

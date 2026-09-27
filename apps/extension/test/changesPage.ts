@@ -91,21 +91,29 @@ const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
   },
 };
 
-/** Stands in for the host: records every message the page posts, and delivers the host's. */
+/**
+ * Stands in for the host: records every message the page posts, and delivers
+ * the host's. The webview's own state (getState / setState) is kept in
+ * `window.__gsState` — what VS Code keeps for a view across a reload.
+ */
 const HOST_STUB = `
 window.__posted = [];
 window.acquireVsCodeApi = function () {
   return {
     postMessage: function (m) { window.__posted.push(JSON.parse(JSON.stringify(m))); },
-    getState: function () { return undefined; },
-    setState: function () {},
+    getState: function () { return window.__gsState === undefined ? undefined : JSON.parse(JSON.stringify(window.__gsState)); },
+    setState: function (s) { window.__gsState = JSON.parse(JSON.stringify(s)); },
   };
 };
 window.__send = function (msg) { window.dispatchEvent(new MessageEvent("message", { data: msg })); };
 `;
 
-/** The html() template's text, exactly as String.raw hands it over, with its holes filled. */
-export function changesViewHtml(theme: VsCodeTheme): string {
+/**
+ * The html() template's text, exactly as String.raw hands it over, with its
+ * holes filled. `webviewState`: what getState() answers when the page starts,
+ * as after a reload.
+ */
+export function changesViewHtml(theme: VsCodeTheme, webviewState?: unknown): string {
   const source = readFileSync(SRC, "utf8");
   const sf = ts.createSourceFile(SRC, source, ts.ScriptTarget.Latest, true);
   let tpl: ts.TemplateExpression | undefined;
@@ -148,7 +156,10 @@ export function changesViewHtml(theme: VsCodeTheme): string {
     .join(";");
   const swaps: [string, string][] = [
     ['<html lang="en">', `<html lang="en" style="${style}">`],
-    ["<head>", `<head><script>${HOST_STUB}</script>`],
+    [
+      "<head>",
+      `<head><script>${webviewState === undefined ? "" : `window.__gsState = ${JSON.stringify(webviewState)};`}${HOST_STUB}</script>`,
+    ],
     ['<body class="layout-list">', `<body class="layout-list ${BODY_CLASS[theme]}">`],
   ];
   for (const [from, to] of swaps) {
@@ -219,6 +230,10 @@ const KEYS: Record<string, { code: string; vk: number }> = {
   PageDown: { code: "PageDown", vk: 34 },
   Home: { code: "Home", vk: 36 },
   End: { code: "End", vk: 35 },
+  F10: { code: "F10", vk: 121 },
+  Delete: { code: "Delete", vk: 46 },
+  Backspace: { code: "Backspace", vk: 8 },
+  " ": { code: "Space", vk: 32 },
 };
 
 /** The DevTools protocol's modifier bits. */
@@ -240,7 +255,7 @@ export class ChangesPage {
 
   static async open(
     theme: VsCodeTheme,
-    opts: { width?: number; height?: number; scale?: number } = {},
+    opts: { width?: number; height?: number; scale?: number; webviewState?: unknown } = {},
   ): Promise<ChangesPage> {
     const chrome = findChrome();
     if (!chrome) throw new Error("no windowless Chrome on this machine (set GS_CHROME)");
@@ -252,7 +267,7 @@ export class ChangesPage {
     const page = await browser.newPage(width, height, opts.scale ?? 1);
     const dir = mkdtempSync(join(tmpdir(), "gs-changes-page-"));
     const file = join(dir, "changes.html");
-    writeFileSync(file, changesViewHtml(theme));
+    writeFileSync(file, changesViewHtml(theme, opts.webviewState));
     await browser.goto(page, pathToFileURL(file).href);
     await page.waitFor(`typeof window.__send === "function" && !!document.getElementById("branch-pill")`);
     return new ChangesPage(browser, page, dir);

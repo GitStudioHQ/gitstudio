@@ -83,6 +83,12 @@ export interface StashFile {
    * further — or staged and then put back in the working tree).
    */
   staged?: "all" | "part";
+  /**
+   * The stash's working copy is the base's: only its staged version differs
+   * (staged, and then put back in the working tree). Its changes are the
+   * staged ones.
+   */
+  onlyStaged?: true;
   /** Its content is binary: there is no text to diff. */
   binary?: true;
 }
@@ -607,6 +613,7 @@ export class StashProvider {
           ...(r.oldPath !== undefined ? { oldPath: r.oldPath } : {}),
           status: letterOf(r.status),
           staged: "part",
+          onlyStaged: true,
         });
       }
     }

@@ -25,8 +25,8 @@
 //
 // The extension has no twin of this: its reporter fires only from
 // showGitError(), which is reached only after a git command exits non-zero, and
-// its handful of `ok:false` values (stashesWebview's stale-list flag,
-// gitBrain's Test-connection answer, commitView's `commitDone` messages) never
+// its handful of `ok:false` values (gitBrain's Test-connection answer,
+// commitView's `commitDone` messages) never
 // reach ErrorReporter at all. There is nothing there to mark.
 
 import { test } from "node:test";

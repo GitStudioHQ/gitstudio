@@ -20,9 +20,9 @@ import { notifyPaused } from "./pauseNotice";
 /**
  * Every extension door that applies commits — the graph's Cherry-Pick, Revert
  * and Checkout, the Branches view's Checkout, Merge, Rebase and Create and
- * Switch, the Changes view's Checkout Revision, the Stashes view's Apply, Pop
- * and Create Branch — runs its git command through here, and every pull door
- * its pull (`pullOrAsk`).
+ * Switch, the Changes view's Checkout Revision and its stashes' Apply, Pop,
+ * Create Branch and Copy / Move to Changes — runs its git command through
+ * here, and every pull door its pull (`pullOrAsk`).
  *
  * Crash report #18 was a revert refused over the user's uncommitted edit:
  * "Your local changes to the following files would be overwritten by merge …
@@ -44,6 +44,9 @@ export interface Applied {
    *  stopped in an operation that refused it). The caller reports nothing
    *  more. */
   settled?: true;
+  /** With `settled`: the stash a stash op named had left the list, so
+   *  nothing ran (and that was said). */
+  gone?: true;
   /**
    * A stash op run with `index` that could not stage the stash's staged
    * changes again — `busy`: the user's own staged changes are in the way;
@@ -106,7 +109,7 @@ export async function applyOrAsk(ctx: GitContext, op: ApplyOp): Promise<Applied>
 /** A stash named by sha that left the list before git ran: nothing ran. */
 function sayStashGone(result: GitRunResult): Applied {
   void vscode.window.showInformationMessage(`GitStudio: ${STASH_GONE_MESSAGE}`);
-  return { result, settled: true };
+  return { result, settled: true, gone: true };
 }
 
 /**
@@ -188,7 +191,7 @@ async function askStashRetry(v: ChangesInTheWay): Promise<boolean> {
       {
         id: "stash",
         label: "Stash & Retry",
-        icon: "archive",
+        icon: "git-stash",
         description:
           `Stash ${n === 1 ? "it" : `these ${n} files`}, run it again, and put ${n === 1 ? "it" : "them"} back.`,
       },

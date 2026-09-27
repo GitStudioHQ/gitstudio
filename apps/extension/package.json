@@ -125,13 +125,6 @@
           "visibility": "visible"
         },
         {
-          "id": "gitstudio.stashes",
-          "name": "Stashes",
-          "type": "webview",
-          "initialSize": 1,
-          "visibility": "collapsed"
-        },
-        {
           "id": "gitstudio.worktrees",
           "name": "Worktrees",
           "initialSize": 1,
@@ -424,6 +417,30 @@
         "title": "Stash Changes\u2026",
         "category": "GitStudio",
         "icon": "$(add)"
+      },
+      {
+        "command": "gitstudio.stash.apply",
+        "title": "Apply Stash\u2026",
+        "category": "GitStudio",
+        "icon": "$(git-stash-apply)"
+      },
+      {
+        "command": "gitstudio.stash.pop",
+        "title": "Pop Stash\u2026",
+        "category": "GitStudio",
+        "icon": "$(git-stash-pop)"
+      },
+      {
+        "command": "gitstudio.stash.drop",
+        "title": "Drop Stash\u2026",
+        "category": "GitStudio",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "gitstudio.stash.branch",
+        "title": "Create Branch from Stash\u2026",
+        "category": "GitStudio",
+        "icon": "$(git-branch)"
       },
       {
         "command": "gitstudio.worktrees.refresh",
@@ -1447,11 +1464,6 @@
           "group": "9_help@1"
         },
         {
-          "command": "gitstudio.stashes.refresh",
-          "when": "view == gitstudio.stashes",
-          "group": "navigation@2"
-        },
-        {
           "command": "gitstudio.worktree.add",
           "when": "view == gitstudio.worktrees",
           "group": "navigation@1"
@@ -1778,6 +1790,22 @@
         },
         {
           "command": "gitstudio.stash.save",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stash.apply",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stash.pop",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stash.drop",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stash.branch",
           "when": "gitstudio.hasRepo"
         },
         {

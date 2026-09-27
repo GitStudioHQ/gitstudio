@@ -391,6 +391,11 @@ export class RepoManager implements vscode.Disposable {
     for (const [dir, glob] of [
       [targets.gitDir, targets.opStateGlob],
       [targets.commonDir, targets.refsGlob],
+      // The stash list is refs/stash's reflog: dropping any stash but the
+      // newest rewrites only this file, so the refs watcher never saw a
+      // `git stash drop stash@{2}` from a terminal — or from another
+      // worktree, which shares the list.
+      [targets.commonDir, "logs/refs/stash"],
     ] as const) {
       const watcher = vscode.workspace.createFileSystemWatcher(
         new vscode.RelativePattern(vscode.Uri.file(dir), glob),

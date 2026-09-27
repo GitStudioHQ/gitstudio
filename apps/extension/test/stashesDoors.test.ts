@@ -126,7 +126,13 @@ test("Drop: a stash pushed while the confirm is up does not make it drop another
   assert.equal(left, "On main: pushed meanwhile", "the stash pushed meanwhile is kept");
   assert.ok(!shas(git).includes(picked), "the picked stash is the one dropped");
   const confirm = asked.find((s) => s.kind === "confirm");
-  assert.equal(confirm?.title, "Drop “On main: picked”?", "the question names the stash by its message");
+  // By its words, as its row shows them — git's "On main:" is the row's
+  // branch, said there once, not in front of every name.
+  assert.equal(confirm?.title, "Drop “picked”?", "the question names the stash by its message");
+  assert.equal(
+    confirm?.kind === "confirm" ? confirm.message : "",
+    "Its 1 file leaves the stash list. Undo (Ctrl/Cmd+Alt+G Z) puts it back.",
+  );
 });
 
 test("Drop by sha: a stash that has left the list is said, and nothing is dropped", async () => {

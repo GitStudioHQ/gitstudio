@@ -5,8 +5,8 @@ import type { RepoManager } from "../git/repoManager";
 import { codeSpan } from "../ui/markdownCode";
 
 // The tree has two levels: fixed category roots (Local / Remotes / Tags) and
-// the refs grouped under them. Stashes get their own dedicated view
-// (gitstudio.stashes), so they're intentionally not a category here.
+// the refs grouped under them. Stashes are listed in the Changes view (its
+// Stashes group), so they're intentionally not a category here.
 type RefCategory = "local" | "remotes" | "tags";
 
 const CATEGORY_LABELS: Record<RefCategory, string> = {
