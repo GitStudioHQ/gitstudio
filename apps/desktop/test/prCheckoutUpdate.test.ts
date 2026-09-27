@@ -13,7 +13,7 @@ import "./hermeticGit";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeTempRepo } from "./tmpRepo";
@@ -89,4 +89,28 @@ test("pr/7 with commits the PR doesn't have is left exactly as it is — said, n
   assert.match(r.message ?? "", /rename or delete pr\/7, then Check Out again to get the pull request's version\.$/);
   assert.equal(w.git("rev-parse", "refs/heads/pr/7"), mine, "the fix is where it was");
   assert.equal(w.git("symbolic-ref", "--short", "HEAD"), "main");
+});
+
+// The list reads the pull requests of the first GitHub remote (origin, then
+// upstream, then the rest); Check Out fetched from "origin" by name. With a
+// non-GitHub mirror as origin and github.com as upstream, the list showed
+// upstream's PRs and Check Out asked the mirror for pull/7/head.
+test("the PR's head comes from the GitHub remote the list reads — upstream, when origin isn't GitHub", async () => {
+  const w = await world();
+  const mirror = join(w.dir, "..", "mirror.git");
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", mirror]);
+  w.git("push", "-q", mirror, "main");
+  // origin: the mirror (no refs/pull). upstream: github.com — reached, for
+  // this test, through an ssh command that serves the "hub" the PR lives in.
+  const hub = w.git("remote", "get-url", "origin");
+  w.git("remote", "set-url", "origin", mirror);
+  w.git("remote", "add", "upstream", "git@github.com:acme/app.git");
+  const ssh = join(w.dir, "..", "fake-ssh.sh");
+  writeFileSync(ssh, `#!/bin/sh\nexec git-upload-pack '${hub}'\n`);
+  chmodSync(ssh, 0o755);
+  w.git("config", "core.sshCommand", ssh);
+  const r = await w.github.prCheckout(7);
+  assert.equal(r.ok, true, r.message);
+  assert.equal(w.git("symbolic-ref", "--short", "HEAD"), "pr/7");
+  assert.equal(w.git("rev-parse", "HEAD"), w.tip1, "the pull request's head, from upstream");
 });

@@ -69,6 +69,8 @@ export class GitHubBridge {
   }
   private ownerRepoRoot: string | undefined;
   private cachedOwnerRepo: { owner: string; repo: string } | undefined;
+  /** The remote `cachedOwnerRepo` was read from: a PR's head is fetched there. */
+  private cachedRemoteName: string | undefined;
   /** Lazily built: `app.getPath` is only valid once Electron is ready. */
   private store: SecretStore | undefined;
 
@@ -118,11 +120,14 @@ export class GitHubBridge {
     if (this.ownerRepoRoot === ctx.root && this.cachedOwnerRepo) {
       return this.cachedOwnerRepo;
     }
+    let from: string | undefined;
     const tryRemote = async (name: string): Promise<{ owner: string; repo: string } | undefined> => {
       try {
         const r = await ctx.process.run(["remote", "get-url", name]);
         // Through ~/.ssh/config's aliases too, as the extension reads it.
-        return r.code === 0 ? await githubRepoOfRemote(r.stdout.trim()) : undefined;
+        const got = r.code === 0 ? await githubRepoOfRemote(r.stdout.trim()) : undefined;
+        if (got) from = name;
+        return got;
       } catch {
         return undefined;
       }
@@ -142,6 +147,7 @@ export class GitHubBridge {
     }
     this.ownerRepoRoot = ctx.root;
     this.cachedOwnerRepo = hit;
+    this.cachedRemoteName = hit ? from : undefined;
     return hit;
   }
 
@@ -421,7 +427,11 @@ export class GitHubBridge {
       // already here is decided by git-service's planPrHead — the extension's
       // rule too. `git fetch origin pull/<n>/head:pr/<n>` was refused while
       // pr/<n> was checked out, and after any force-push to the PR.
-      const fetched = await fetchPrHead(ctx.process, "origin", n as number);
+      // From the remote the pull requests are read from (origin, then
+      // upstream, then the rest — resolveOwnerRepo), as the extension fetches
+      // from its ctx.remoteName: "origin" by name asked a non-GitHub mirror.
+      const remote = (await this.resolveOwnerRepo()) ? this.cachedRemoteName : undefined;
+      const fetched = await fetchPrHead(ctx.process, remote ?? "origin", n as number);
       if ("error" in fetched) {
         return { ok: false, changed: false, message: fetched.error };
       }
