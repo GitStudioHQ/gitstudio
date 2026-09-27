@@ -485,6 +485,48 @@ test("a stash row says Apply and Pop in words, a stash's file and folder Move an
   assert.deepEqual(await posted(p), [{ type: "stashAct", sha: B, action: "pop" }]);
 });
 
+// The words are buttons on a hovered row: a fill of the ink darkens a light
+// ground and lightens a dark one — towards the ink — so each must be checked
+// on its own fill, at rest and under the pointer, in every theme.
+for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
+  test(`${theme}: Apply, Pop, Move and Copy read at 4.5:1 on their button, at rest and under the pointer, and each button stands apart from its row`, { skip }, async () => {
+    const p = await open(theme, 360);
+    await p.send(state({ layout: "tree" }));
+    await openStash(p, B);
+    type Look = { fill: string; apart: number; text: number; lines: string[] };
+    const hc = theme.startsWith("hc");
+    const centre = (el: string) => p.eval<{ x: number; y: number }>(`(function () { var b = ${el}.getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()`);
+    const pointAt = async (el: string, dx = 0) => {
+      const c = await centre(el);
+      await p.mouseMove(c.x + dx, c.y + 1);
+      await p.mouseMove(c.x + dx, c.y);
+    };
+    for (const [what, row, act] of [
+      ["a stash's Apply", Q.stash(B), "apply"],
+      ["a stash's Pop", Q.stash(B), "pop"],
+      ["a file's Move", Q.stashFile(B, "src/auth/login.ts"), "move"],
+      ["a file's Copy", Q.stashFile(B, "src/auth/login.ts"), "copy"],
+      ["a folder's Move", Q.stashFolder(B, "src/auth"), "move"],
+    ] as const) {
+      const btn = `${row}.querySelector('[data-act="${act}"]')`;
+      // The row under the pointer (its left end), the button at rest.
+      const r = await p.eval<{ x: number; y: number }>(`(function () { var b = ${row}.getBoundingClientRect(); return { x: Math.round(b.left + 50), y: Math.round(b.top + b.height / 2) }; })()`);
+      await p.mouseMove(r.x, r.y + 1);
+      await p.mouseMove(r.x, r.y);
+      const rest = await p.eval<Look>(`window.__look(${btn}, { surface: ${row} })`);
+      await pointAt(btn);
+      const hover = await p.eval<Look>(`window.__look(${btn}, { surface: ${row} })`);
+      for (const [when, l] of [["at rest", rest], ["under the pointer", hover]] as const) {
+        assert.ok(l.text >= 4.5, `${what}, ${when}: its word reads ${l.text}:1 on its button (${JSON.stringify(l)})`);
+        assert.ok(l.apart >= 1.15, `${what}, ${when}: the button stands ${l.apart}:1 apart from its row (${JSON.stringify(l)})`);
+        if (hc) assert.ok(l.lines.length === 1 && /^outline solid/.test(l.lines[0]), `${what}: high contrast keeps its border (${JSON.stringify(l)})`);
+        else assert.deepEqual(l.lines, [], `${what}, ${when}: no line`);
+      }
+      assert.notEqual(hover.fill, rest.fill, `${what}: the pointer on it raises its fill`);
+    }
+  });
+}
+
 // ── The doors behind a drop, against real git ───────────────────────────────
 
 /** A repository with one stash (a.ts edited, n.ts new) and three tracked files. */

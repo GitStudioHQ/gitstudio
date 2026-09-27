@@ -4590,14 +4590,30 @@ export class CommitViewProvider
       font-size: 11px;
       font-weight: 600;
       line-height: 20px;
-      color: var(--gs-fg);
-      background: color-mix(in srgb, var(--gs-fg) 10%, transparent);
+      color: var(--word-ink);
+      background: var(--word-fill);
       border: none;
       border-radius: var(--gs-radius-sm);
       cursor: pointer;
       white-space: nowrap;
     }
-    .row .row-actions .word-btn:hover { background: color-mix(in srgb, var(--gs-fg) 19%, transparent); }
+    .row .row-actions .word-btn:hover { background: var(--word-fill-hover); }
+    /* A fill of the ink darkens the ground in a light theme and lightens it
+       in a dark one — towards the ink either way — so the words are inked
+       past the view's own text colour, never faded by their button: 4.5:1
+       or more on the button at rest and under the pointer, and the button
+       stands apart from the row it is on. */
+    body {
+      --word-ink: color-mix(in srgb, var(--gs-fg) 55%, #ffffff);
+      --word-fill: color-mix(in srgb, var(--gs-fg) 11%, transparent);
+      --word-fill-hover: color-mix(in srgb, var(--gs-fg) 18%, transparent);
+    }
+    body.vscode-light {
+      --word-ink: color-mix(in srgb, var(--gs-fg) 55%, #000000);
+      --word-fill: color-mix(in srgb, var(--gs-fg) 13%, transparent);
+      --word-fill-hover: color-mix(in srgb, var(--gs-fg) 21%, transparent);
+    }
+    body.vscode-high-contrast { --word-ink: var(--gs-fg); }
     body.vscode-high-contrast .row .row-actions .word-btn {
       outline: 1px solid var(--vscode-contrastBorder, transparent);
       outline-offset: -1px;
