@@ -116,7 +116,7 @@ function lineOf(page: WorktreesPage, path: string): Promise<Line | null> {
   })()`);
 }
 
-test("one line per worktree: its folder, its branch, and at most one state in words — no badges, no pills, nothing said twice", { skip }, async () => {
+test("one row per worktree, two lines as a stash's: its folder, then its branch and at most one state in words — no badges, no pills, nothing said twice", { skip }, async () => {
   const page = await open();
   assert.deepEqual(await lineOf(page, LOGIN), {
     name: "app-login",
@@ -130,7 +130,7 @@ test("one line per worktree: its folder, its branch, and at most one state in wo
       "5 uncommitted changes: 2 staged, 2 unstaged, 1 untracked.",
       "2 commits not pushed to origin/feature/login.",
     ].join("\n"),
-    height: 22,
+    height: 38,
   });
   const main = (await lineOf(page, "/code/app"))!;
   assert.deepEqual(main.words, ["app", "main", "3 to pull"], "the main worktree is not labelled on the row");
@@ -161,19 +161,22 @@ test("one line per worktree: its folder, its branch, and at most one state in wo
     assert.deepEqual(tip.filter((l) => l.includes(r.shownPath)), [r.shownPath], `${r.name}: its folder, said once`);
   }
 
-  // Every row: one line, 22px, nothing with an edge or a fill of its own at rest.
+  // Every row: two lines — the name, then the branch and the state on one
+  // line under it — 38px, nothing with an edge or a fill of its own at rest.
   const shape = await page.eval<{ heights: number[]; lines: string[]; edges: string[] }>(`(function () {
     ${COLOUR}
     var out = { heights: [], lines: [], edges: [] };
     document.querySelectorAll(".wt-row").forEach(function (l) {
       out.heights.push(l.getBoundingClientRect().height);
-      var mid = null;
-      l.querySelectorAll(".wt-name, .wt-head, .wt-state").forEach(function (n) {
+      var mid = function (n) { var r = n.getBoundingClientRect(); return r.top + r.height / 2; };
+      var name = mid(l.querySelector(".wt-name"));
+      var second = null;
+      l.querySelectorAll(".wt-head, .wt-state").forEach(function (n) {
         if (!seen(n) || !n.textContent) return;
-        var r = n.getBoundingClientRect();
-        var c = r.top + r.height / 2;
-        if (mid === null) mid = c;
-        else if (Math.abs(c - mid) > 2) out.lines.push(l.dataset.path + ": " + n.className + " is on another line");
+        var c = mid(n);
+        if (c < name + 8) out.lines.push(l.dataset.path + ": " + n.className + " is on the name's line");
+        if (second === null) second = c;
+        else if (Math.abs(c - second) > 2) out.lines.push(l.dataset.path + ": " + n.className + " is on a third line");
       });
       l.querySelectorAll("*").forEach(function (n) {
         if (!seen(n)) return;
@@ -185,7 +188,7 @@ test("one line per worktree: its folder, its branch, and at most one state in wo
     });
     return out;
   })()`);
-  assert.ok(shape.heights.every((h) => h === 22), `every row 22px: ${shape.heights.join(",")}`);
+  assert.ok(shape.heights.every((h) => h === 38), `every row 38px, a stash row's two lines: ${shape.heights.join(",")}`);
   assert.deepEqual(shape.lines, []);
   assert.deepEqual(shape.edges, [], "no badge, no pill");
 
@@ -309,7 +312,8 @@ test("hovered, a row shows at most two buttons — Open in New Window and More �
   await hover("/code/app-checkout");
   const hovered = await buttons("/code/app-checkout");
   assert.deepEqual(hovered.shown, ["Open in New Window", "More actions for app-checkout"]);
-  assert.equal(hovered.state, false, "the buttons cover the state");
+  // Over the row's end, on the hover's fill: they take no room at rest, and
+  // nothing before them moves when they come.
   assert.equal(hovered.rects, before.rects, "the name and the branch do not move");
   // This window's own: no Open — only More. A folder that is gone: only More.
   await hover(LOGIN);
@@ -494,7 +498,7 @@ test("one worktree icon for every worktree, its branch after the branch symbol, 
       var i = l.querySelector(".wt-icon > *");
       return { icon: i ? i.getAttribute("data-icon") || i.getAttribute("class") : "none", glyph: g ? g.className : null, branch: t ? t.textContent : null };
     })`);
-    assert.ok(rows.length > 5 && rows.every((r) => r.icon === "worktree"), `${theme}: every worktree the same worktree icon: ${JSON.stringify(rows.map((r) => r.icon))}`);
+    assert.ok(rows.length > 5 && rows.every((r) => r.icon === "codicon codicon-worktree"), `${theme}: every worktree codicons' own worktree: ${JSON.stringify(rows.map((r) => r.icon))}`);
     for (const r of rows.filter((x) => x.branch)) {
       assert.equal(r.glyph, /^detached/.test(r.branch!) ? "codicon codicon-git-commit" : "codicon codicon-git-branch", `${theme}: ${r.branch} wears its symbol`);
     }
@@ -1103,7 +1107,7 @@ test("only the main worktree: it says what a worktree is for, with New Worktree�
 
 // Arial (Liberation Sans on the Linux runners) draws "…" a whole em wide: the
 // shortest clipped name is wider there than its first five letters.
-for (const font of ["", "Arial"]) test(`a narrow sidebar${font ? ` in ${font}` : ""}: the state is never cut, the name gives way only once the branch has gone, and no word shrinks to a stray letter`, { skip }, async () => {
+for (const font of ["", "Arial"]) test(`a narrow sidebar${font ? ` in ${font}` : ""}: the state is never cut, the branch gives way before it, the name only in its middle, and no word shrinks to a stray letter`, { skip }, async () => {
   // Agents' worktrees: long folder names AND long branches, nested deep.
   const long = [
     row({ path: "/code/app/.claude/worktrees/agent-a2c9ae276dde4d3da", name: "agent-a2c9ae276dde4d3da", relPath: "app/.claude/worktrees/agent-a2c9ae276dde4d3da", branch: "worktree-agent-a2c9ae276dde4d3da", upstream: undefined, status: { changed: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0, unpublished: 2 } }),
@@ -1139,7 +1143,6 @@ for (const font of ["", "Arial"]) test(`a narrow sidebar${font ? ` in ${font}` :
         var headText = head && head.querySelector(".wt-head-text");
         if (seen(head) && (!headText || headText.clientWidth + 0.5 < lead(headText, 4))) out.push(id + ": its branch shows " + (headText ? headText.clientWidth : 0) + "px of words — under 4 letters");
         var clipped = name.textContent !== id;
-        if (seen(head) && (cut(name) || clipped)) out.push(id + ": its name is cut while its branch shows");
         if (textOver(name)) out.push(id + ": its name is cut at its end (" + name.textContent + ")");
         if (name.textContent.replace("…", "").length < Math.min(4, id.length)) out.push(id + ": its name shows under 4 letters (" + name.textContent + ")");
         if (state.textContent && seen(state) && cut(state)) out.push(id + ": its state is cut");
@@ -1157,8 +1160,10 @@ for (const font of ["", "Arial"]) test(`a narrow sidebar${font ? ` in ${font}` :
     await page.resize(width);
     assert.deepEqual(await measure(), [], `at ${width}px`);
     if (width === 180) {
-      const gone = await page.eval<number>(`Array.prototype.filter.call(document.querySelectorAll(".wt-head"), function (h) { return h.getClientRects().length === 0; }).length`);
-      assert.ok(gone > 0, "at its narrowest some branches go whole");
+      // The narrowest a sidebar goes: some branches give way (to an ellipsis,
+      // or whole) — so the rules above were put to work, not idle.
+      const gave = await page.eval<number>(`Array.prototype.filter.call(document.querySelectorAll(".wt-head"), function (h) { var t = h.querySelector(".wt-head-text"); return h.getClientRects().length === 0 || (t && t.scrollWidth > t.clientWidth + 1); }).length`);
+      assert.ok(gave > 0, "at its narrowest some branches give way");
     }
     if (width === 220) {
       // Routine counts give way to eight letters of the name; what needs attention keeps its place — in its one word, if that is what fits.
@@ -1206,12 +1211,17 @@ test("a narrow sidebar never makes two rows read alike: a name keeps its end, an
       assert.equal(new Set(shown).size, shown.length, `${what} at ${width}px: two rows read alike — ${shown.join(" | ")}`);
     }
   }
-  // At 260px this repository's stopped rebase reads whole, in one word: the tooltip says the rest.
+  // At 260px this repository's stopped rebase reads whole — its folder on
+  // its own line, "rebase stopped" on the next; the tooltip says the rest.
   await page.send({ type: "rows", rows: agentRows(), state: "ok", labels: LABELS });
   await page.resize(260);
   const stopped = (await read()).find((n) => n.full === "wf_4b651e91-cc2-3")!;
-  assert.deepEqual([stopped.shown, stopped.state], ["wf_4b651e91-cc2-3", "rebasing"]);
+  assert.deepEqual([stopped.shown, stopped.state], ["wf_4b651e91-cc2-3", "rebase stopped"]);
   assert.match(stopped.tip, /A rebase is stopped in it/);
+  // Where even its line alone cannot hold the words, the one word.
+  await page.resize(120);
+  const narrow = (await read()).find((n) => n.full === "wf_4b651e91-cc2-3")!;
+  assert.equal(narrow.state, "rebasing", "too narrow for the words: the one word, never cut");
   // With room, the whole words.
   await page.resize(400);
   assert.equal((await read()).find((n) => n.full === "wf_4b651e91-cc2-3")!.state, "rebase stopped");

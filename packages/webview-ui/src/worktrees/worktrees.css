@@ -113,11 +113,14 @@ body {
   --gs-fg: color-mix(in srgb, var(--vscode-foreground) 55%, var(--vscode-editor-foreground, #000000));
   color: var(--gs-fg);
 }
+/* Two lines, as a stash row is: its folder, then its branch and how it
+   stands — neither cut to make room for the other at a sidebar's width. */
 .wt-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 22px;
+  height: 38px;
   margin: 0 4px;
   padding: 0 4px 0 2px;
   border-radius: var(--gs-radius-sm);
@@ -159,22 +162,38 @@ body {
 .wt-icon {
   margin-right: 2px;
 }
+/* Codicons' own worktree, as large as a stash's icon. */
 .wt-icon .codicon {
-  font-size: 14px;
-}
-.wt-icon .wt-glyph {
-  width: 16px;
-  height: 16px;
+  font-size: 16px;
 }
 /* The folder's name gives way last — and then in its middle (fitRow), so
    the end that tells "wf_…cc2-1" from "wf_…cc2-2" stays. */
+.wt-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 .wt-name {
-  flex: 0 1 auto;
-  min-width: 3ch;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 13px;
+  line-height: 17px;
 }
+/* The second line: the branch, then how it stands — the quiet ink. */
+.wt-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 15px;
+  color: var(--wt-quiet);
+}
+
 /* This window's worktree: its name at full weight — no label, no line. */
 .wt-row.is-current .wt-name {
   font-weight: 600;
@@ -185,15 +204,13 @@ body {
 /* What it has checked out, quieter, after git's branch symbol — the symbol
    and four letters, or none of it (fitRow): never a lone symbol. */
 .wt-head {
-  flex: 1 1 0;
-  min-width: calc(12px + 3px + 4ch);
-  margin-left: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
+  align-self: center;
   gap: 3px;
   overflow: hidden;
-  font-size: 12px;
-  color: var(--wt-quiet);
 }
 .wt-head .codicon {
   flex: 0 0 auto;
@@ -208,24 +225,16 @@ body {
 .wt-row.is-missing .wt-icon {
   color: var(--wt-quiet);
 }
-/* The end of the row: the state, and — hovered — the buttons over it. One
-   grid cell holds both, so it is as wide as the wider and nothing before it
-   moves when they swap. */
-.wt-end {
-  flex: 0 0 auto;
-  display: grid;
-  align-items: center;
-  justify-items: end;
-  margin-left: auto;
-  padding-left: 8px;
-}
-.wt-state,
-.wt-actions {
-  grid-area: 1 / 1;
-}
+/* How it stands, never cut: the branch gives way before it (fitRow). After
+   a branch shown, a dot between them — drawn, not said (a screen reader
+   hears "feature/login, 5 changed"). */
 .wt-state {
-  font-size: 12px;
-  color: var(--wt-quiet);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.wt-head:not([hidden]) + .wt-state:not(:empty)::before {
+  content: "·" / "";
+  margin-right: 5px;
 }
 /* Something stopped halfway, or a folder that is gone: the words take the
    warning hue, leaned toward the ink so they read at AA. */
@@ -260,20 +269,25 @@ body {
   visibility: visible;
 }
 
-/* ---- A row's buttons: shown on hover, over its state -------------------- */
+/* ---- A row's buttons: shown on hover, over the row's end ---------------- */
+/* On the hover's own fill, centred on the two lines: at rest they take no
+   room from the words. */
 .wt-actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   gap: 1px;
+  padding-left: 6px;
+  border-radius: var(--gs-radius-sm);
+  background: var(--wt-hover);
   visibility: hidden;
 }
 .wt-row:hover .wt-actions,
 .wt-row.has-menu .wt-actions {
   visibility: visible;
-}
-.wt-row:hover .wt-state,
-.wt-row.has-menu .wt-state {
-  visibility: hidden;
 }
 .wt-icon-btn {
   display: inline-flex;

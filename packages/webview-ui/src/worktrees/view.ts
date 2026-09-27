@@ -74,42 +74,6 @@ function codicon(name: string): HTMLElement {
 }
 
 /** An icon button that says what it does in words (tooltip + accessible name). */
-/**
- * A worktree: a folder with a branch badge on its corner, drawn as codicons
- * are (16px, one-pixel strokes, the text's colour). Codicons has no worktree
- * of its own — its "worktree" is a forked arrow, read as "on a branch".
- */
-function worktreeIcon(): SVGSVGElement {
-  const NS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(NS, "svg");
-  const attrs: Record<string, string> = {
-    viewBox: "0 0 16 16",
-    fill: "none",
-    stroke: "currentColor",
-    "stroke-width": "1",
-    "stroke-linecap": "round",
-    "stroke-linejoin": "round",
-    "aria-hidden": "true",
-    class: "wt-glyph",
-    "data-icon": "worktree",
-  };
-  for (const [k, v] of Object.entries(attrs)) svg.setAttribute(k, v);
-  const shape = (tag: string, a: Record<string, string>) => {
-    const n = document.createElementNS(NS, tag);
-    for (const [k, v] of Object.entries(a)) n.setAttribute(k, v);
-    svg.appendChild(n);
-  };
-  // The folder, open where the badge sits on it.
-  shape("path", { d: "M8 13H1.5V2.5h4.3l1.4 1.5h7.3v2.8" });
-  // The branch: two commits above, one below, one joining back.
-  shape("circle", { cx: "10.3", cy: "9", r: "1" });
-  shape("circle", { cx: "13.7", cy: "9", r: "1" });
-  shape("circle", { cx: "10.3", cy: "14", r: "1" });
-  shape("path", { d: "M10.3 10v3" });
-  shape("path", { d: "M13.7 10c0 1.5-1.4 2-3.4 2.4" });
-  return svg;
-}
-
 function iconButton(icon: string, label: string, cls = ""): HTMLButtonElement {
   const b = el("button", `wt-icon-btn${cls ? ` ${cls}` : ""}`);
   b.type = "button";
@@ -492,26 +456,19 @@ export class WorktreesView {
 
     const chev = el("span", "wt-chevron");
     if (caps.expand) chev.appendChild(codicon("chevron-right"));
-    // One icon for every worktree: a folder with a branch on it — a folder
-    // checked out on a branch, which is what a worktree is. Two icons (a
-    // repo's book, codicons' forked arrow) asked the owner to decode them;
-    // which one is the repository's own is said in the tooltip, and the one
-    // this window has open by its name's weight.
+    // A worktree row is a stash row's shape: two lines — its folder, then
+    // what it has checked out and how it stands ("⎇ fix/cart · 2 changed") —
+    // beside codicons' own worktree, as large as a stash's icon. The one this
+    // window has open is its bold name; which is the repository's own is in
+    // the tooltip.
     const icon = el("span", "wt-icon");
-    icon.appendChild(worktreeIcon());
-    line.append(chev, icon, el("span", "wt-name", r.name));
-    // The folder named for its branch says it once. The branch wears git's
-    // branch symbol, so it reads as a branch and not a second name; a
-    // detached HEAD, a commit's.
-    if (r.branch !== r.name) {
-      const head = el("span", "wt-head");
-      head.append(codicon(r.branch ? "git-branch" : "git-commit"), el("span", "wt-head-text", headWords(r)));
-      line.appendChild(head);
-    }
-
-    // The state and the buttons share one place at the end: hovered, the
-    // buttons cover the state, and nothing before them moves.
-    const end = el("span", "wt-end");
+    icon.appendChild(codicon("worktree"));
+    const text = el("span", "wt-text");
+    const meta = el("span", "wt-meta");
+    // The branch wears git's branch symbol, so it reads as a branch and not a
+    // second name; a detached HEAD, a commit's.
+    const head = el("span", "wt-head");
+    head.append(codicon(r.branch ? "git-branch" : "git-commit"), el("span", "wt-head-text", headWords(r)));
     const state = el("span", "wt-state");
     const st = worktreeState(r);
     if (s.busy) {
@@ -523,6 +480,13 @@ export class WorktreesView {
       state.dataset.tone = st.tone;
       if (st.short) state.dataset.short = st.short;
     }
+    state.dataset.full = state.textContent ?? "";
+    meta.append(head, state);
+    text.append(el("span", "wt-name", r.name), meta);
+    line.append(chev, icon, text);
+
+    // Hovered, the buttons sit over the row's end, on its hover's fill; at
+    // rest they take no room.
     const actions = el("span", "wt-actions");
     if (caps.openNew.ok) {
       const open = iconButton("empty-window", "Open in New Window");
@@ -545,8 +509,7 @@ export class WorktreesView {
       b.tabIndex = -1;
       if (s.busy) b.disabled = true;
     }
-    end.append(state, actions);
-    line.appendChild(end);
+    line.appendChild(actions);
 
     const said = (t: string) => t.replace(/\.$/, "");
     const label = [`${r.name}, ${headWords(r)}`, ...(s.busy ? [s.busy] : []), ...worktreeFacts(r).map((f) => said(f.tip)), r.shownPath];
@@ -559,54 +522,47 @@ export class WorktreesView {
   }
 
   /**
-   * Fit a row to its width without making two rows read alike. The folder's
-   * name comes first: the branch gives way before it does — to an ellipsis
-   * after at least four letters, then whole. A state that needs attention
-   * ("merge in progress", "folder missing") says its one word ("merging",
-   * "missing") before the name gives way; a routine one ("3 changed") goes
-   * whole below eight letters of the name — its fact is in the tooltip. What
-   * the row is doing ("Removing…") keeps its place. Only then does the name
-   * give way, in its MIDDLE ("wf_4b…cc2-3"): worktrees' names share their
-   * start (agent-…, wf_4b651e91-cc2-…), and their end is what tells them
-   * apart. The tooltip names whatever the row cannot show whole.
+   * Fit a row to its width without making two rows read alike. Its name has
+   * the first line to itself and gives way only in its MIDDLE ("wf_4b…cc2-3"):
+   * worktrees' names share their start (agent-…, wf_4b651e91-cc2-…), and
+   * their end is what tells them apart. On the second line the state is never
+   * cut: the branch gives way first — to an ellipsis after four letters of
+   * it — then a state with a short word ("merging") says it, and then the
+   * branch goes whole, never a lone symbol. The tooltip names whatever the
+   * row cannot show whole.
    */
   private fitRow(s: RowState): void {
     const line = s.line;
     if (!s.el.isConnected) return;
     const name = line.querySelector<HTMLElement>(".wt-name");
+    const meta = line.querySelector<HTMLElement>(".wt-meta");
     const head = line.querySelector<HTMLElement>(".wt-head");
+    const headText = head?.querySelector<HTMLElement>(".wt-head-text") ?? null;
     const state = line.querySelector<HTMLElement>(".wt-state");
     const over = (n: HTMLElement | null) => !!n && n.clientWidth > 0 && n.scrollWidth > n.clientWidth + 1;
     // The name to the fraction of a pixel: an overflow of 0.4px is below
     // scrollWidth's whole pixels, and still draws the ellipsis that cuts a letter.
     const nameOver = () => !!name && name.clientWidth > 0 && textOver(name);
-    const rowOver = () => line.scrollWidth > line.clientWidth + 1;
+    const metaOver = () => !!meta && meta.clientWidth > 0 && meta.scrollWidth > meta.clientWidth + 1;
+    const branchShort = () => !!head && !head.hidden && !!headText && headText.clientWidth + 0.5 < leadWidth(headText, 4);
     if (name) name.textContent = s.row.name;
-    if (state) {
-      state.hidden = false;
-      if (state.dataset.short) state.textContent = worktreeState(s.row)?.text ?? state.textContent;
-    }
-    if (head) {
-      head.hidden = false;
-      if (line.clientWidth > 0 && (nameOver() || rowOver())) head.hidden = true;
-    }
-    if (state?.textContent && name && line.clientWidth > 0) {
-      if (state.dataset.short && (nameOver() || rowOver())) state.textContent = state.dataset.short;
-      const urgent = state.dataset.tone === "attention" || state.classList.contains("wt-busy");
-      // Room for the name's start and end ("wf…-3") — or all of it, if that
-      // is narrower — beside a state that must stay, measured as drawn: in
-      // Arial and its clones "…" is a whole em. Eight letters of it beside
-      // one that can go.
-      const need = urgent
-        ? Math.min(drawnWidth(name, clipAt(s.row.name, CLIP_MIN)), leadWidth(name, s.row.name.length))
-        : leadWidth(name, 8);
-      const squeezed = rowOver() || name.clientWidth + 0.5 < need;
-      if (squeezed) state.hidden = true;
+    const full = state?.dataset.full ?? "";
+    if (state) state.textContent = full;
+    if (head) head.hidden = false;
+    if (meta && meta.clientWidth > 0 && state && full) {
+      if ((branchShort() || metaOver()) && state.dataset.short) state.textContent = state.dataset.short;
+      if (branchShort() || metaOver()) {
+        if (head) head.hidden = true;
+        // Alone on its line, the state takes its whole words again if they fit.
+        state.textContent = full;
+        if (metaOver() && state.dataset.short) state.textContent = state.dataset.short;
+      }
+    } else if (head && meta && meta.clientWidth > 0 && branchShort()) {
+      head.hidden = true;
     }
     const clipped = !!name && nameOver() && clipMiddle(name, s.row.name);
     const tip = worktreeTip(s.row);
-    const headText = head?.querySelector<HTMLElement>(".wt-head-text") ?? null;
-    const cut = head && (head.hidden || over(headText));
+    const cut = !!head && (head.hidden || over(headText));
     line.dataset.tip = [clipped ? s.row.name : "", cut ? headWords(s.row) : "", tip].filter(Boolean).join("\n");
   }
 
@@ -1086,15 +1042,6 @@ const CLIP_MIN = 4;
 function clipAt(full: string, k: number): string {
   if (full.length <= k) return full;
   return `${full.slice(0, Math.ceil(k / 2))}…${full.slice(full.length - Math.floor(k / 2))}`;
-}
-
-/** How wide `text` is drawn in an element's font. The element keeps its own text. */
-function drawnWidth(el: HTMLElement, text: string): number {
-  const was = el.textContent;
-  el.textContent = text;
-  const w = leadWidth(el, text.length);
-  el.textContent = was;
-  return w;
 }
 
 /** How wide the first `n` letters of an element's text are drawn (all of it, if shorter). */
