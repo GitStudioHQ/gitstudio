@@ -548,9 +548,14 @@ export class WorktreesView {
     if (state?.textContent && name && line.clientWidth > 0) {
       if (state.dataset.short && (nameOver() || rowOver())) state.textContent = state.dataset.short;
       const urgent = state.dataset.tone === "attention" || state.classList.contains("wt-busy");
-      // Room for the name's start and end ("wf…-3") beside a state that must
-      // stay; eight letters of it beside one that can go.
-      const squeezed = rowOver() || name.clientWidth + 0.5 < leadWidth(name, urgent ? 5 : 8);
+      // Room for the name's start and end ("wf…-3") — or all of it, if that
+      // is narrower — beside a state that must stay, measured as drawn: in
+      // Arial and its clones "…" is a whole em. Eight letters of it beside
+      // one that can go.
+      const need = urgent
+        ? Math.min(drawnWidth(name, clipAt(s.row.name, CLIP_MIN)), leadWidth(name, s.row.name.length))
+        : leadWidth(name, 8);
+      const squeezed = rowOver() || name.clientWidth + 0.5 < need;
       if (squeezed) state.hidden = true;
     }
     const clipped = !!name && nameOver() && clipMiddle(name, s.row.name);
@@ -564,6 +569,8 @@ export class WorktreesView {
     for (const s of this.rows.values()) {
       if (!s.el.hidden) this.fitRow(s);
     }
+    // The width the rows were last fitted to: tests wait on it after a resize.
+    this.list.dataset.fitted = String(this.list.clientWidth);
   }
 
   private toggle(s: RowState, open?: boolean): void {
@@ -969,8 +976,8 @@ function textOver(el: HTMLElement): boolean {
  */
 function clipMiddle(el: HTMLElement, full: string): boolean {
   const fits = () => !textOver(el);
-  const at = (k: number) => `${full.slice(0, Math.ceil(k / 2))}…${full.slice(full.length - Math.floor(k / 2))}`;
-  let lo = 4;
+  const at = (k: number) => clipAt(full, k);
+  let lo = CLIP_MIN;
   let hi = full.length - 1;
   if (hi < lo) return false;
   el.textContent = at(lo);
@@ -983,6 +990,24 @@ function clipMiddle(el: HTMLElement, full: string): boolean {
   }
   el.textContent = at(lo);
   return true;
+}
+
+/** The fewest letters a clipped name keeps: two at each end. */
+const CLIP_MIN = 4;
+
+/** A name clipped in its middle to `k` letters — or whole, if it is no longer. */
+function clipAt(full: string, k: number): string {
+  if (full.length <= k) return full;
+  return `${full.slice(0, Math.ceil(k / 2))}…${full.slice(full.length - Math.floor(k / 2))}`;
+}
+
+/** How wide `text` is drawn in an element's font. The element keeps its own text. */
+function drawnWidth(el: HTMLElement, text: string): number {
+  const was = el.textContent;
+  el.textContent = text;
+  const w = leadWidth(el, text.length);
+  el.textContent = was;
+  return w;
 }
 
 /** How wide the first `n` letters of an element's text are drawn (all of it, if shorter). */

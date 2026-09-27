@@ -1039,7 +1039,9 @@ test("only the main worktree: it says what a worktree is for, with New Worktree�
   assert.match(await page.eval<string>(`document.querySelector(".wt-note").textContent`), /Looking for a repository…/);
 });
 
-test("a narrow sidebar: the state is never cut, the name gives way only once the branch has gone, and no word shrinks to a stray letter", { skip }, async () => {
+// Arial (Liberation Sans on the Linux runners) draws "…" a whole em wide: the
+// shortest clipped name is wider there than its first five letters.
+for (const font of ["", "Arial"]) test(`a narrow sidebar${font ? ` in ${font}` : ""}: the state is never cut, the name gives way only once the branch has gone, and no word shrinks to a stray letter`, { skip }, async () => {
   // Agents' worktrees: long folder names AND long branches, nested deep.
   const long = [
     row({ path: "/code/app/.claude/worktrees/agent-a2c9ae276dde4d3da", name: "agent-a2c9ae276dde4d3da", relPath: "app/.claude/worktrees/agent-a2c9ae276dde4d3da", branch: "worktree-agent-a2c9ae276dde4d3da", upstream: undefined, status: { changed: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0, unpublished: 2 } }),
@@ -1049,6 +1051,7 @@ test("a narrow sidebar: the state is never cut, the name gives way only once the
   ];
   const page = await WorktreesPage.open("dark", { width: 300, height: 900 });
   opened.push(page);
+  if (font) await page.eval(`(function () { var s = document.createElement("style"); s.textContent = "body, body * { font-family: ${font} !important; }"; document.head.appendChild(s); })()`);
   await page.send({ type: "rows", rows: [...fixtureRows(), ...long], state: "ok", labels: LABELS });
   const measure = () =>
     page.eval<string[]>(`(function () {
@@ -1087,8 +1090,7 @@ test("a narrow sidebar: the state is never cut, the name gives way only once the
     })()`);
   // 180: a sidebar dragged as narrow as it goes — branches go whole there.
   for (const width of [180, 220, 240, 300, 360]) {
-    await page.page.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
-    await page.settle(80);
+    await page.resize(width);
     assert.deepEqual(await measure(), [], `at ${width}px`);
     if (width === 180) {
       const gone = await page.eval<number>(`Array.prototype.filter.call(document.querySelectorAll(".wt-head"), function (h) { return h.getClientRects().length === 0; }).length`);
@@ -1101,11 +1103,9 @@ test("a narrow sidebar: the state is never cut, the name gives way only once the
     }
   }
   // At a sidebar's usual width every state is there; wide enough, every branch too.
-  await page.page.send("Emulation.setDeviceMetricsOverride", { width: 300, height: 900, deviceScaleFactor: 1, mobile: false });
-  await page.settle(80);
+  await page.resize(300);
   assert.equal(await page.eval<number>(`Array.prototype.filter.call(document.querySelectorAll(".wt-state"), function (h) { return h.textContent && h.getClientRects().length === 0; }).length`), 0, "every state shows at 300px");
-  await page.page.send("Emulation.setDeviceMetricsOverride", { width: 700, height: 900, deviceScaleFactor: 1, mobile: false });
-  await page.settle(80);
+  await page.resize(700);
   const hidden = await page.eval<number>(`Array.prototype.filter.call(document.querySelectorAll(".wt-head, .wt-state"), function (h) { return h.textContent && h.getClientRects().length === 0; }).length`);
   assert.equal(hidden, 0, "nothing hidden when there is room");
 });
@@ -1128,8 +1128,7 @@ test("a narrow sidebar never makes two rows read alike: a name keeps its end, an
   for (const [what, rows] of sets) {
     await page.send({ type: "rows", rows, state: "ok", labels: LABELS });
     for (const width of [180, 200, 220, 240, 260, 300]) {
-      await page.page.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
-      await page.settle(80);
+      await page.resize(width);
       const got = await read();
       for (const n of got) {
         assert.equal(n.cut, false, `${what} at ${width}px: ${n.full} is cut at its end ("${n.shown}")`);
@@ -1145,14 +1144,12 @@ test("a narrow sidebar never makes two rows read alike: a name keeps its end, an
   }
   // At 260px this repository's stopped rebase reads whole, in one word: the tooltip says the rest.
   await page.send({ type: "rows", rows: agentRows(), state: "ok", labels: LABELS });
-  await page.page.send("Emulation.setDeviceMetricsOverride", { width: 260, height: 900, deviceScaleFactor: 1, mobile: false });
-  await page.settle(80);
+  await page.resize(260);
   const stopped = (await read()).find((n) => n.full === "wf_4b651e91-cc2-3")!;
   assert.deepEqual([stopped.shown, stopped.state], ["wf_4b651e91-cc2-3", "rebasing"]);
   assert.match(stopped.tip, /A rebase is stopped in it/);
   // With room, the whole words.
-  await page.page.send("Emulation.setDeviceMetricsOverride", { width: 400, height: 900, deviceScaleFactor: 1, mobile: false });
-  await page.settle(80);
+  await page.resize(400);
   assert.equal((await read()).find((n) => n.full === "wf_4b651e91-cc2-3")!.state, "rebase stopped");
   assert.deepEqual(page.errors(), []);
 });

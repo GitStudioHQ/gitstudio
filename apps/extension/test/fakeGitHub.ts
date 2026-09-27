@@ -101,6 +101,13 @@ export function installFakeGitHub(routes: Route[]): FakeGitHub {
 
 // ── Fixtures in GitHub's own (snake_case) shapes ────────────────────────────────
 
+/**
+ * Every fixture's "three hours ago", read once: a clock read per pull ticks
+ * over mid-list now and then, and the list sorted by last update comes back in
+ * a different order from one page to the next.
+ */
+const THREE_HOURS_AGO = new Date(Date.now() - 3 * 3600e3).toISOString();
+
 export function rawPull(n: number, over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     number: n,
@@ -111,7 +118,7 @@ export function rawPull(n: number, over: Record<string, unknown> = {}): Record<s
     html_url: `https://github.com/acme/app/pull/${n}`,
     user: { login: "alice", avatar_url: null, html_url: null },
     created_at: "2026-01-01T00:00:00Z",
-    updated_at: new Date(Date.now() - 3 * 3600e3).toISOString(),
+    updated_at: THREE_HOURS_AGO,
     merged_at: null,
     head: { ref: `feature-${n}`, sha: `${String(n).padStart(3, "0")}head`, label: `acme:feature-${n}`, repo: { full_name: "acme/app", clone_url: "https://github.com/acme/app.git" } },
     base: { ref: "main", sha: "basesha", label: "acme:main", repo: { full_name: "acme/app", clone_url: "https://github.com/acme/app.git" } },

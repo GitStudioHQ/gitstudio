@@ -280,6 +280,23 @@ export class WorktreesPage {
     await this.click(r.x, r.y, button);
   }
 
+  /**
+   * Resize the page, then wait until the rows are fitted to the new width.
+   * The view refits on a debounced ResizeObserver, and a scrollbar coming or
+   * going resizes it once more: a fixed wait measured half-fitted rows on
+   * slow CI runners.
+   */
+  async resize(width: number, height = 900): Promise<void> {
+    await this.page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+    const deadline = Date.now() + 10_000;
+    for (let steady = 0; steady < 3; ) {
+      if (Date.now() > deadline) throw new Error(`the rows were never fitted to ${width}px`);
+      const fitted = await this.page.eval<boolean>(`(function () { var l = document.querySelector(".wt-list"); return !!l && l.dataset.fitted === String(l.clientWidth); })()`);
+      steady = fitted ? steady + 1 : 0;
+      await this.settle(30);
+    }
+  }
+
   /** Let the page settle: a macrotask, and a frame. */
   async settle(ms = 40): Promise<void> {
     await this.page.eval(`new Promise(function (r) { setTimeout(function () { r(true); }, ${ms}); })`);
