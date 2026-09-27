@@ -34,6 +34,7 @@ import {
 } from "./bridge";
 import { RepoTabStrip, type TabStripItem } from "./repoTabs";
 import { stepTab, tabAtDigit, tabKeyAction } from "./tabModel";
+import { TopbarRead } from "./topbarRead";
 import { saveDraftIn, takeDraftIn } from "./draftStore";
 import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
@@ -452,6 +453,10 @@ class App {
   private activeMonacoView?: { dispose(): void };
   private syncStatus?: SyncStatus;
   private renderSyncWidget?: (s: SyncStatus | undefined) => void;
+  /** The top bar's two reads — the branch pill's and the sync state's — and
+   *  which of their answers may paint (see topbarRead.ts). */
+  private readonly refsRead = new TopbarRead();
+  private readonly syncRead = new TopbarRead();
   private prSubTab = "conversation";
   /** Bumped whenever the visible surface changes; async work captures it and
    *  bails if superseded, so a slow IPC reply can't clobber a newer view. */
@@ -854,6 +859,11 @@ class App {
     // a terminal, an edit in your editor — is found by the same cheap question
     // a window focus asks. Nothing moved, nothing rebuilds.
     void this.refreshIfDiskMoved();
+    // A top-bar read whose newest answer never painted — it failed, or (before
+    // topbarRead.ts) a route threw it away — is asked again now, so the tab in
+    // front never keeps a "…" pill or a sync control from before.
+    if (this.refsRead.owed()) void this.refreshRefs();
+    if (this.syncRead.owed()) void this.updateSync();
     if (this.tabsMoved) this.onTabsChanged(true);
   }
 
@@ -8994,7 +9004,19 @@ class App {
       this.syncStatus = cached;
       this.renderSyncWidget?.(cached);
     }
-    this.syncStatus = await gget("sync:status", undefined, 4000);
+    // The same rule as the pill's (topbarRead.ts): an older answer never
+    // paints over a newer one, and one that failed is asked again when the tab
+    // is next in front.
+    const ticket = this.syncRead.ask();
+    let status: SyncStatus;
+    try {
+      status = await gget("sync:status", undefined, 4000);
+    } catch (e) {
+      this.syncRead.fail(ticket);
+      throw e;
+    }
+    if (!this.syncRead.land(ticket)) return;
+    this.syncStatus = status;
     this.renderSyncWidget?.(this.syncStatus);
   }
 
@@ -10372,24 +10394,32 @@ class App {
   // ── Refs / HEAD (drives the branch switcher) ────────────────────────────────
 
   private async refreshRefs(): Promise<void> {
-    // Whose refs are these? Twelve call sites reach this, and a repo switch does
-    // not cancel one already in flight — so if the OUTGOING repo's request settles
-    // after the incoming one, `this.refs` and the top-bar branch label end up
-    // showing the repo you just left. Most likely when the old repo is large and
-    // cold and the new one is small.
+    // Which answer paints? Twelve call sites reach this, and two of them can be
+    // in flight at once — so an answer asked BEFORE a checkout that lands after
+    // the one asked after it must not put the old branch back (topbarRead.ts).
     //
-    // The cache's epoch guard is not enough on its own: it stops a superseded
-    // value being CACHED, but the pending promise still resolves with it here.
-    const gen = this.routeGen;
-    // Cached: refs/head change rarely between view switches, so reuse a recent
-    // result instead of re-running git on every navigation.
-    const [refs, head] = await Promise.all([
-      gget("refs:list", undefined),
-      gget("head:get", undefined),
-    ]);
-    if (gen !== this.routeGen) {
-      return; // a different repo is on screen now
+    // NOT the route generation. This tab is one repository for its whole life
+    // (issue #32), so no route can make its HEAD wrong — and every route bumps
+    // that generation: an open's landing (Repositories' Open and Clone land on
+    // Code) or the first click while git was still answering threw the answer
+    // away, and the pill said "…" for the rest of the tab's life.
+    const ticket = this.refsRead.ask();
+    let refs: RefInfo[];
+    let head: HeadInfo | undefined;
+    try {
+      // Cached: refs/head change rarely between view switches, so reuse a
+      // recent result instead of re-running git on every navigation.
+      [refs, head] = await Promise.all([
+        gget("refs:list", undefined),
+        gget("head:get", undefined),
+      ]);
+    } catch (e) {
+      // Not painted: the pill is owed, and asks again when the tab is next in
+      // front (activate).
+      this.refsRead.fail(ticket);
+      throw e;
     }
+    if (!this.refsRead.land(ticket)) return; // a newer answer is on screen
     this.refs = refs;
     this.headInfo = head;
     this.syncComposerBranch();

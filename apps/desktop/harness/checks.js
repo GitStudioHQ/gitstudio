@@ -17884,6 +17884,188 @@
       c.eq(text(".nav-item.active"), "Repositories", "the tab it was opened from is still on Repositories");
     },
 
+    /**
+     * The top bar of the tab in front is filled for THAT tab — its branch
+     * pill, its sync control, its editor button — however the tab came to
+     * the front (the owner: "checking out a repo doesn't load the branch").
+     *
+     * Every read here answers late (?slow= on head:get, refs:list and
+     * sync:status), so each answer lands AFTER whatever moves next: an open's
+     * own landing (Repositories' Open and Clone, Home's rows, all land on
+     * Code), or the first click a person makes while git is still answering.
+     * The pill used to be guarded by the route generation, which every route
+     * bumps, so that answer was thrown away and the pill said "…" for the
+     * rest of the tab's life — nothing asked again.
+     *
+     * `arg` is the door: repositories, clone, home, open, recent, worktree,
+     * switch, launch, failed.
+     */
+    "a-tabs-top-bar-fills-however-it-came-to-the-front": async (f) => {
+      const c = check(f);
+      const door = window.__GS_ARG || "repositories";
+      const SLOW = 700;
+      const WEBAPP = "/Users/anton/Code/webapp";
+      const WT = "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2";
+      const invoked = () => window.__GS_INVOKED || [];
+      const asked = (channel, root) => invoked().filter((r) => r.channel === channel && r.root === root).length;
+      const rail = (view) => $(`.nav-item[data-view="${view}"]`);
+      /** The first click a person makes in the new tab, before git answered —
+       *  to a view that reads nothing of the top bar's (Branches re-reads HEAD
+       *  itself, which would fill the pill by another road). */
+      const clickOnAtOnce = async () => {
+        const to = text(".nav-item.active") === "Commits" ? "changes" : "graph";
+        rail(to)?.click();
+        await settle(50);
+      };
+      /**
+       * Everything the top bar says about `root`, once its answers are in.
+       * `once`: the pill filled from the FIRST head:get this tab asked — one
+       * status read, no second one needed to fill it.
+       */
+      const filledFor = (root, want, what, once = true) => {
+        const name = root.split("/").pop();
+        c.eq(activeTabRoot(), root, `${what}: its tab is in front`);
+        c.eq(text(".topbar-branch .switch-name"), want.branch, `${what}: the pill names its branch`);
+        const main = $(".topbar-sync .sync-main");
+        c.ok(!!main && getComputedStyle($(".topbar-sync")).display !== "none", `${what}: the sync control is shown`);
+        c.eq(text(main), want.sync, `${what}: the sync control is its own`);
+        c.match(main?.title || "", new RegExp(name.replace(/\./g, "\\.")), `${what}: …and names the repository it acts on`);
+        const openIn = $(".topbar-openin");
+        c.eq(openIn?.getAttribute("aria-label"), `Open ${name} in an editor`, `${what}: the editor button opens this repository`);
+        c.ok(!!openIn && text(openIn.querySelector(".openin-label")) !== "Open in…", `${what}: …and names its editor (${text(openIn?.querySelector(".openin-label"))})`);
+        if (once) c.eq(asked("head:get", root), 1, `${what}: filled from the first status read`);
+      };
+      // The tab the window starts with is filled before anything moves —
+      // except at launch, where moving while it loads is the point.
+      if (door !== "launch") {
+        await settle(SLOW + 500);
+        c.eq(text(".topbar-branch .switch-name"), "main", "precondition: the first tab's pill is filled");
+      }
+
+      if (door === "repositories" || door === "home") {
+        const want = "/Users/demo/GitStudio/gistudio.dev";
+        const row =
+          door === "home"
+            ? $$(".view-host .dash-line").find((r) => text(r.querySelector(".dash-line-text")) === "gistudio.dev")
+            : $$(".sec-row.repo-row").find((r) => r.dataset.root === want);
+        if (!row) return c.ok(false, `precondition: a ${door} row for gistudio.dev`);
+        row.click();
+        await settle(SLOW + 700);
+        c.eq(text(".nav-item.active"), "Code", "precondition: the open landed on its code");
+        filledFor(want, { branch: "main", sync: "Push 2" }, door);
+        return;
+      }
+      if (door === "clone") {
+        const btn = $$(".view-host .mini-btn").find((b) => text(b) === "Clone…");
+        if (!btn) return c.ok(false, "precondition: Repositories' Clone…");
+        btn.click();
+        await settle(500);
+        const url = $(".clone-card .clone-url-input");
+        if (!url) return c.ok(false, "precondition: the clone dialog");
+        url.value = "https://github.com/libgit2/libgit2.git";
+        url.dispatchEvent(new Event("input", { bubbles: true }));
+        $(".clone-card .clone-choose")?.click();
+        await settle(500);
+        $(".clone-card .clone-go")?.click();
+        await settle(SLOW + 900);
+        c.eq(text(".nav-item.active"), "Code", "precondition: the clone landed on its code");
+        filledFor("/Users/demo/Code/libgit2", { branch: "main", sync: "Push 2" }, "clone");
+        return;
+      }
+      if (door === "open" || door === "recent") {
+        if (door === "open") {
+          window.__gsEmit("menu:command", { command: "openRepo" });
+        } else {
+          $(".repo-tabs-add")?.click();
+          await settle(400);
+          const item = $$(".dropdown .dropdown-item").find((r) => /^gistudio\.dev/.test(text(r)));
+          if (!item) return c.ok(false, `precondition: the + menu's recent gistudio.dev (${$$(".dropdown .dropdown-item").map(text).join(" | ")})`);
+          item.click();
+        }
+        await settle(150);
+        await clickOnAtOnce();
+        await settle(SLOW + 700);
+        if (door === "open") filledFor(WEBAPP, { branch: "feature/login", sync: "Publish" }, "Open…");
+        else filledFor(GS_DEV_ROOT, { branch: "site/pricing", sync: "Pull 1" }, "a recent repository");
+        return;
+      }
+      if (door === "worktree") {
+        const btn = $$(".view-host button.row-btn").find((b) => (b.getAttribute("aria-label") || "").includes("gitstudio-wave2"));
+        if (!btn) return c.ok(false, "precondition: the worktree's Open");
+        btn.click();
+        await settle(150);
+        await clickOnAtOnce();
+        await settle(SLOW + 700);
+        filledFor(WT, { branch: "main", sync: "Push 2" }, "a worktree's Open");
+        return;
+      }
+      if (door === "switch") {
+        // B comes to the front for the first time, is clicked on at once, and
+        // is left for C before any of its answers: they land while B is in the
+        // back, and are painted when B is in front again.
+        tabEl(GS_DEV_ROOT)?.click();
+        await settle(150);
+        await clickOnAtOnce();
+        tabEl(WEBAPP)?.click();
+        await settle(150);
+        await clickOnAtOnce();
+        await settle(SLOW + 700);
+        filledFor(WEBAPP, { branch: "feature/login", sync: "Publish" }, "C");
+        // B's one status read is in; coming back also asks the disk whether
+        // anything moved (refreshIfDiskMoved), which is not a pill read.
+        c.eq(asked("head:get", GS_DEV_ROOT), 1, "B: one status read while it was in the back");
+        tabEl(GS_DEV_ROOT)?.click();
+        await settle(400);
+        filledFor(GS_DEV_ROOT, { branch: "site/pricing", sync: "Pull 1" }, "B, back in front", false);
+        tabEl(GS_ROOT)?.click();
+        await settle(SLOW + 400);
+        filledFor(GS_ROOT, { branch: "main", sync: "Push 2" }, "A, back in front", false);
+        return;
+      }
+      if (door === "launch") {
+        // Both tabs came back at launch (?latetabs=1); the front one's reads
+        // are still out (?slow= is long here). A click on at once.
+        c.eq(text(".topbar-branch .switch-name"), "…", "precondition: the restored tab's reads are still out");
+        await clickOnAtOnce();
+        await settle(2600);
+        filledFor(GS_ROOT, { branch: "main", sync: "Push 2" }, "the restored tab in front");
+        tabEl(GS_DEV_ROOT)?.click();
+        await settle(150);
+        await clickOnAtOnce();
+        await settle(2600);
+        filledFor(GS_DEV_ROOT, { branch: "site/pricing", sync: "Pull 1" }, "the other restored tab");
+        return;
+      }
+      if (door === "failed") {
+        // B's first reads FAIL. Coming back to B later asks again — once.
+        window.__gsFailing.add("head:get");
+        window.__gsFailing.add("sync:status");
+        tabEl(GS_DEV_ROOT)?.click();
+        await settle(SLOW + 500);
+        c.eq(text(".topbar-branch .switch-name"), "…", "precondition: B's reads failed, so its pill has nothing to say");
+        window.__gsFailing.delete("head:get");
+        window.__gsFailing.delete("sync:status");
+        tabEl(GS_ROOT)?.click();
+        await settle(300);
+        const refsBefore = asked("refs:list", GS_DEV_ROOT);
+        tabEl(GS_DEV_ROOT)?.click();
+        await settle(SLOW + 500);
+        filledFor(GS_DEV_ROOT, { branch: "site/pricing", sync: "Pull 1" }, "B, in front again", false);
+        c.eq(asked("refs:list", GS_DEV_ROOT) - refsBefore, 1, "the pill was asked again, once");
+        // Filled now: another round trip owes it nothing.
+        tabEl(GS_ROOT)?.click();
+        await settle(300);
+        const refsFilled = asked("refs:list", GS_DEV_ROOT);
+        const syncFilled = asked("sync:status", GS_DEV_ROOT);
+        tabEl(GS_DEV_ROOT)?.click();
+        await settle(SLOW + 500);
+        c.eq(asked("refs:list", GS_DEV_ROOT), refsFilled, "a filled pill is not asked again on a switch");
+        c.eq(asked("sync:status", GS_DEV_ROOT), syncFilled, "…nor a filled sync control");
+        return;
+      }
+      c.ok(false, `unknown door ${door}`);
+    },
+
     /** Row 3: a watcher event about the tab you LEFT does not refresh this one. */
     "a-background-tabs-disk-event-leaves-the-front-tab-alone": async (f) => {
       const c = check(f);

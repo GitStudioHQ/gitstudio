@@ -715,11 +715,14 @@
   // scene before tabs expected); `?active=K` puts the K-th (1-based) in front.
   // ?norepo=1 opens none. Every tab but gitstudio answers `head:get` with its
   // OWN branch, so a check can see which repository an answer was about.
+  // …and its own sync state (`ahead`/`behind`, or `noUpstream`), so the top
+  // bar's Fetch / Pull N / Push N / Publish says whose answer it painted.
+  // gitstudio keeps the shared `sync:status` fixture every other scene reads.
   const TAB_FIXTURES = [
     { root: "/Users/anton/Developer/GitStudioHQ/gitstudio", name: "gitstudio", branch: "main", dirty: 6 },
-    { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev", branch: "site/pricing", dirty: 3 },
-    { root: "/Users/anton/Code/webapp", name: "webapp", branch: "feature/login", dirty: 0 },
-    { root: "/Users/anton/Code/api-server", name: "api-server", branch: "develop", dirty: 12 },
+    { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev", branch: "site/pricing", dirty: 3, behind: 1 },
+    { root: "/Users/anton/Code/webapp", name: "webapp", branch: "feature/login", dirty: 0, noUpstream: true },
+    { root: "/Users/anton/Code/api-server", name: "api-server", branch: "develop", dirty: 12, ahead: 3 },
     { root: "/Users/anton/Code/design-system", name: "design-system", branch: "main", dirty: 0 },
     { root: "/Users/anton/Code/infrastructure-terraform-modules", name: "infrastructure-terraform-modules", branch: "main", dirty: 1 },
     { root: "/Users/anton/Code/mobile", name: "mobile", branch: "release/2.4", dirty: 0 },
@@ -1928,6 +1931,11 @@
       }
       return window.__gsTabs.state();
     },
+    // Open… (⌘O): main's folder picker, answered as if the person picked
+    // ?openpick= (default: webapp, a repository with no tab yet). It had no
+    // fixture — the mutation fallback answered { ok: true } and opened
+    // nothing — so a tab opened by Open… had never been driven here.
+    "repo:open": () => window.__gsTabs.open(params.get("openpick") || "/Users/anton/Code/webapp"),
     "repo:activate": (root) => window.__gsTabs.activate(String(root)),
     "repo:closeTab": (root) => window.__gsTabs.close(String(root)),
     "repo:moveTab": (req) => window.__gsTabs.move(req && req.root, req && req.index),
@@ -3768,6 +3776,9 @@
   // surfaces launder a read failure into a confident empty state and no check
   // noticed.
   const failing = new Set((params.get("fail") || "").split(",").filter(Boolean));
+  // A check can make a channel fail for a while and then answer again — the
+  // only way to see that a read which failed is asked again later.
+  window.__gsFailing = failing;
 
   /** channel → listeners, for `on()` / `__gsEmit()`. */
   const listeners = {};
@@ -3812,6 +3823,16 @@
     const tabFixture = root ? TAB_FIXTURES.find((t) => t.root === root) : undefined;
     if (channel === "head:get" && tabFixture && tabFixture.name !== "gitstudio") {
       return Promise.resolve({ detached: false, branch: tabFixture.branch, sha: "5a4b3c2" });
+    }
+    if (channel === "sync:status" && tabFixture && tabFixture.name !== "gitstudio") {
+      const t = tabFixture;
+      return Promise.resolve({
+        branch: t.branch,
+        upstream: t.noUpstream ? undefined : `origin/${t.branch}`,
+        ahead: t.ahead || 0,
+        behind: t.behind || 0,
+        noUpstream: !!t.noUpstream,
+      });
     }
     if (channel === "repo:current") {
       const r = scope ? root : tabState.active;
