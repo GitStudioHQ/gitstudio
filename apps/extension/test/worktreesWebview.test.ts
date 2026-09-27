@@ -445,6 +445,46 @@ test("a running action: the row says what it is doing and takes no second one; t
   assert.equal(await page.eval<string>(`document.activeElement.dataset.path`), next, "the next row has the keyboard");
 });
 
+test("a busy row still reads at AA, in every theme: what it is doing, its folder, its branch and its path — busy is said, never faded", { skip }, async () => {
+  for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
+    const page = await open(theme);
+    await page.send({ type: "busy", path: "/code/app-checkout", busy: true, label: "Removing…" });
+    await page.send({ type: "busy", path: LOGIN, busy: true, label: "Pulling…" });
+    await page.settle();
+    const report = await page.eval<{ text: string; ratio: number }[]>(`(function () {
+      function rgb(s) {
+        if (!s || s === "transparent") return { r: 0, g: 0, b: 0, a: 0 };
+        var m = s.replace(/^color\\(srgb/, "").match(/[\\d.]+/g).map(Number);
+        var k = s.indexOf("color(srgb") === 0 ? 255 : 1;
+        return { r: m[0] * k, g: m[1] * k, b: m[2] * k, a: m.length > 3 ? m[3] : 1 };
+      }
+      function over(top, under) { return { r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a), b: top.b * top.a + under.b * (1 - top.a), a: 1 }; }
+      function lum(c) { var f = function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); }
+      var out = [];
+      document.querySelectorAll(".wt-row.is-busy").forEach(function (row) {
+        var w = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+        while (w.nextNode()) {
+          var el = w.currentNode.parentElement;
+          if (!w.currentNode.textContent.trim() || el.closest("button")) continue;
+          var chain = [];
+          for (var n = el; n && n.nodeType === 1; n = n.parentElement) chain.push(n);
+          var bg = rgb(getComputedStyle(document.body).backgroundColor);
+          for (var i = chain.length - 1; i >= 0; i--) bg = over(rgb(getComputedStyle(chain[i]).backgroundColor), bg);
+          var fg = rgb(getComputedStyle(el).color);
+          for (var j = 0; j < chain.length; j++) fg.a *= Number(getComputedStyle(chain[j]).opacity);
+          var ink = over(fg, bg);
+          var l1 = lum(ink), l2 = lum(bg);
+          out.push({ text: w.currentNode.textContent.trim(), ratio: (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05) });
+        }
+      });
+      return out;
+    })()`);
+    const texts = report.map((r) => r.text);
+    for (const t of ["Removing…", "app-checkout", "feature/checkout", "Pulling…", "app-login", "feature/login"]) assert.ok(texts.includes(t), `${theme}: "${t}" is on a busy row (${texts.join(" | ")})`);
+    for (const r of report) assert.ok(r.ratio >= 4.5, `${theme}: "${r.text}" on a busy row reads at ${r.ratio.toFixed(2)}:1`);
+  }
+});
+
 test("the same list again changes nothing on screen: open rows stay open, the focused row keeps the keyboard", { skip }, async () => {
   const page = await open();
   await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);

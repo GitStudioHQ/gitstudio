@@ -1,6 +1,7 @@
 // Every piece of text on the Worktrees page, scored against the colour
-// actually behind it (WCAG), per theme — the list, an open row, and the More
-// menu. Prints the failures; exits 1 if there are any.
+// actually behind it (WCAG), per theme — the list, an open row, rows busy
+// with an action, and the More menu. Prints the failures; exits 1 if there
+// are any.
 //
 //   GS_CHROME=… npx tsx apps/extension/harness/worktrees/contrast.ts
 //
@@ -65,10 +66,17 @@ const PROBE = `(function () {
       await page.send({ type: "details", path: "/code/app-login", details: fixtureDetails() });
       await page.settle();
       const list = await page.eval<string[]>(PROBE);
+      // Rows busy with an action say what they are doing.
+      await page.send({ type: "busy", path: "/code/app-checkout", busy: true, label: "Removing…" });
+      await page.send({ type: "busy", path: "/code/app-login", busy: true, label: "Pulling…" });
+      await page.settle();
+      const busy = await page.eval<string[]>(PROBE);
+      await page.send({ type: "busy", path: "/code/app-checkout", busy: false });
+      await page.send({ type: "busy", path: "/code/app-login", busy: false });
       await page.clickOn('.wt-row[data-path="/code/app/.claude/worktrees/agent-a2c9ae27"] .wt-more');
       await page.settle();
       const menu = await page.eval<string[]>(PROBE);
-      const all = [...new Set([...list, ...menu])];
+      const all = [...new Set([...list, ...busy, ...menu])];
       failures += all.length;
       console.log(`${theme}: ${all.length} below AA`);
       for (const f of all) console.log(`  ${f}`);
