@@ -1,0 +1,21 @@
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_e65266f8a5216e 393-394
+apps/extension/test/stashWatch.test.ts
+  s_26f5e669d3043c::t_554c24d9823bd8 1-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "db6c396fbc4bd2238ffb38ab1bc82201f45084c0",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
