@@ -11289,14 +11289,27 @@ export class CommitViewProvider
      */
     function tipAdds(t, text) {
       const norm = (s) => String(s || "").replace(/\s+/g, " ").trim();
+      const tip = norm(text);
       const shown = norm(t.innerText);
-      if (!shown || norm(text) !== shown) return true;
+      if (!shown) return true;
+      const cut = (n) => n.scrollWidth > n.clientWidth + 1 && getComputedStyle(n).overflowX !== "visible";
       const all = [t].concat(Array.prototype.slice.call(t.querySelectorAll("*")));
-      for (let i = 0; i < all.length; i++) {
+      if (tip === shown) return all.some(cut);
+      // A row's own words, each shown in full on its own: a file's name, its
+      // folder. A tip that is one of them ("README.md" over README.md), or a
+      // path that is the folder and the name both there in full, repeats
+      // them; one that is cut short is still worth its tip.
+      const whole = new Set();
+      for (let i = 1; i < all.length; i++) {
         const n = all[i];
-        if (n.scrollWidth > n.clientWidth + 1 && getComputedStyle(n).overflowX !== "visible") return true;
+        if (!n.getClientRects().length || getComputedStyle(n).visibility === "hidden") continue;
+        let clipped = false;
+        for (let a = n; a && !clipped; a = a === t ? null : a.parentElement) clipped = cut(a);
+        if (!clipped) whole.add(norm(n.innerText));
       }
-      return false;
+      if (whole.has(tip)) return false;
+      const slash = tip.lastIndexOf("/");
+      return !(slash > 0 && whole.has(tip.slice(slash + 1)) && whole.has(tip.slice(0, slash)));
     }
     function showTip() {
       // The hovered node can be swapped out by a live dialog repaint before
