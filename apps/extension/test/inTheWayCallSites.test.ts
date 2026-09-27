@@ -129,7 +129,7 @@ test("every door that applies commits hands the door its own op", async () => {
       /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: entry\.sha, pop \}\)/,
       /applyOrAsk\(a\.ctx, \{ kind: "stash", stash: entry\.sha, branch: name \}\)/,
     ],
-    "changes/commitView.ts": [/checkoutOp\(\["checkout", "--detach", r\]\)/, /pullOrAsk\(entry\.ctx/],
+    "changes/commitView.ts": [/checkoutOp\(\["checkout", "--detach", target\]\)/, /pullOrAsk\(entry\.ctx/],
     "pr/checkoutPr.ts": [/checkoutOp\(\["checkout", local\]\)/],
     "statusBar/syncStatus.ts": [/pullOrAsk\(active\.ctx\)/, /pullOrAsk\(active\.ctx, mode\)/],
   };
