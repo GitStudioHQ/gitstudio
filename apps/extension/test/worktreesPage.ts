@@ -20,9 +20,22 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { findChrome } from "../../../packages/webview-ui/test/headless";
 import { Browser, type Page } from "../../../scripts/merge-e2e/cdp";
-import { BODY_CLASS, VSCODE_THEMES, type VsCodeTheme } from "../../../scripts/merge-e2e/themes";
+import {
+  BODY_CLASS,
+  VSCODE_MODERN_BASE,
+  VSCODE_MODERN_THEMES,
+  VSCODE_THEMES,
+  type VsCodeModernTheme,
+  type VsCodeTheme as ClassicTheme,
+} from "../../../scripts/merge-e2e/themes";
 
-export type { VsCodeTheme };
+/** Every theme this page is rendered in: the four built-in kinds, and Light
+ *  Modern and Dark Modern — a fresh install's defaults. */
+export type VsCodeTheme = ClassicTheme | VsCodeModernTheme;
+
+const isModern = (t: VsCodeTheme): t is VsCodeModernTheme => t in VSCODE_MODERN_BASE;
+/** The theme kind VS Code puts on <body> (a Modern theme is its base's kind). */
+const kindOf = (t: VsCodeTheme): ClassicTheme => (isModern(t) ? VSCODE_MODERN_BASE[t] : t);
 
 const HERE = (p: string): string => fileURLToPath(new URL(p, import.meta.url));
 const ENTRY = HERE("../../../packages/webview-ui/src/worktrees/main.ts");
@@ -79,6 +92,34 @@ const VIEW_TOKENS: Record<VsCodeTheme, Record<string, string>> = {
     "--vscode-editorHoverWidget-background": "#ffffff",
     "--vscode-editorHoverWidget-border": "#0f4a85",
   },
+  // Light Modern leaves the menu, input and hover colours to its defaults:
+  // the dropdown's for the menu, the widget's for the hover.
+  "light-modern": {
+    "--vscode-menu-background": "#ffffff",
+    "--vscode-menu-foreground": "#3b3b3b",
+    "--vscode-menu-border": "#cecece",
+    "--vscode-input-background": "#ffffff",
+    "--vscode-input-foreground": "#3b3b3b",
+    "--vscode-input-border": "#cecece",
+    "--vscode-input-placeholderForeground": "#767676",
+    "--vscode-toolbar-hoverBackground": "rgba(184, 184, 184, 0.31)",
+    "--vscode-editorHoverWidget-background": "#f8f8f8",
+    "--vscode-editorHoverWidget-border": "#c8c8c8",
+    "--vscode-editorHoverWidget-foreground": "#3b3b3b",
+  },
+  "dark-modern": {
+    "--vscode-menu-background": "#1f1f1f",
+    "--vscode-menu-foreground": "#cccccc",
+    "--vscode-menu-border": "#454545",
+    "--vscode-input-background": "#313131",
+    "--vscode-input-foreground": "#cccccc",
+    "--vscode-input-border": "#3c3c3c",
+    "--vscode-input-placeholderForeground": "#989898",
+    "--vscode-toolbar-hoverBackground": "rgba(90, 93, 94, 0.31)",
+    "--vscode-editorHoverWidget-background": "#202020",
+    "--vscode-editorHoverWidget-border": "#454545",
+    "--vscode-editorHoverWidget-foreground": "#cccccc",
+  },
 };
 
 /** Stands in for the host: records every message the page posts, and delivers the host's. */
@@ -117,7 +158,7 @@ export function worktreesBundle(): Promise<{ js: string; css: string }> {
 /** The page VS Code would show, with the theme's variables and the host stub. */
 export async function worktreesHtml(theme: VsCodeTheme): Promise<string> {
   const { js, css } = await worktreesBundle();
-  const vars = { ...VSCODE_THEMES[theme], ...VIEW_TOKENS[theme] };
+  const vars = { ...(isModern(theme) ? VSCODE_MODERN_THEMES[theme] : VSCODE_THEMES[theme]), ...VIEW_TOKENS[theme] };
   const style = Object.entries(vars)
     .map(([k, v]) => `${k}:${v.replace(/"/g, "&quot;")}`)
     .join(";");
@@ -126,7 +167,7 @@ export async function worktreesHtml(theme: VsCodeTheme): Promise<string> {
 <script>${HOST_STUB}</script>
 <link href="${pathToFileURL(CODICONS).href}" rel="stylesheet" />
 <style>${css}</style>
-</head><body class="${BODY_CLASS[theme]}"><div id="root"></div>
+</head><body class="${BODY_CLASS[kindOf(theme)]}"><div id="root"></div>
 <script>${safe(js)}</script>
 </body></html>`;
 }

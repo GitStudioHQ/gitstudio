@@ -8,8 +8,8 @@
 //   merge / rebase / a stale REBASE_HEAD) × lock (none / with a reason /
 //   without).
 //
-// Each cell is asserted by what the row NAMES (its badges, read with the
-// same host-bridge functions the page paints with), what it OFFERS (its
+// Each cell is asserted by what the row NAMES (its facts and the one state it
+// shows, read with the same host-bridge functions the page paints with), what it OFFERS (its
 // capabilities), what opening it shows, and what a diff of one of its files
 // reads — from THAT worktree. And what it costs: the list is three spawns
 // however many worktrees there are; a row's tree is read only when the page
@@ -101,8 +101,9 @@ import {
   orderWorktreeRows,
   prunableCount,
   unpublishedTitle,
-  worktreeBadges,
   worktreeCaps,
+  worktreeFacts,
+  worktreeState,
   type WorktreeDetails,
   type WorktreeRow,
   type WorktreeRowStatus,
@@ -305,7 +306,9 @@ function bigScene() {
   return { base, app, git, wt };
 }
 
-const words = (r: WorktreeRow | undefined) => (r ? worktreeBadges(r).map((b) => b.text) : ["(no row)"]);
+const words = (r: WorktreeRow | undefined) => (r ? worktreeFacts(r).map((b) => b.text) : ["(no row)"]);
+/** The one state the row shows beside its name ("" for none). */
+const state = (r: WorktreeRow | undefined) => (r ? (worktreeState(r)?.text ?? "") : "(no row)");
 const find = (rows: WorktreeRow[], p: string) => rows.find((r) => r.path === p);
 
 test("every cell of the table: what each row names and offers, from real git", async () => {
@@ -340,7 +343,7 @@ test("every cell of the table: what each row names and offers, from real git", a
   assert.equal(worktreeCaps(row("gone")).pull.ok, false);
 
   // No upstream, with remotes: what no remote has — the push review's count.
-  assert.deepEqual(words(row("local")), ["3 not pushed"]);
+  assert.deepEqual(words(row("local")), ["3 unpublished"]);
   assert.equal(Number(at(s.wt("local"))("rev-list", "--count", "HEAD", "--not", "--remotes")), 3);
   assert.deepEqual(words(row("fresh")), ["No upstream"]);
   assert.equal(worktreeCaps(row("fresh")).push.ok, true, "Push publishes it");
@@ -352,7 +355,7 @@ test("every cell of the table: what each row names and offers, from real git", a
   assert.equal(row("dirty").status?.untracked, 1);
 
   // Operation.
-  assert.deepEqual(words(row("merging")), ["Merge in progress · 1 conflict", "1 changed", "1 not pushed"]);
+  assert.deepEqual(words(row("merging")), ["Merge in progress · 1 conflict", "1 changed", "1 unpublished"]);
   assert.deepEqual(worktreeCaps(row("merging")).pull, { ok: false, why: "A merge is in progress in it — continue or abort it first." });
   assert.equal(worktreeCaps(row("merging")).push.ok, false);
   assert.equal(row("rebasing").branch, undefined, "git lists a rebase detached");
@@ -381,6 +384,32 @@ test("every cell of the table: what each row names and offers, from real git", a
   assert.deepEqual(words(row("detached")), []);
   assert.match((worktreeCaps(row("detached")).pull as { why: string }).why, /nothing to pull into/);
   assert.match((worktreeCaps(row("detached")).push as { why: string }).why, /nothing to push/);
+
+  // The one state each row shows, from the same real git: the most pressing.
+  assert.deepEqual(
+    Object.fromEntries(
+      ["app", "even", "ahead", "behind", "diverged", "gone", "local", "fresh", "dirty", "merging", "rebasing", "stale", "locked", "lockedbare", "missing", "missinglocked", "detached"].map((n) => [n, state(row(n))]),
+    ),
+    {
+      app: "",
+      even: "",
+      ahead: "2 to push",
+      behind: "1 to pull",
+      diverged: "diverged",
+      gone: "upstream gone",
+      local: "3 unpublished",
+      fresh: "",
+      dirty: "4 changed",
+      merging: "merge in progress",
+      rebasing: "rebase stopped",
+      stale: "",
+      locked: "locked",
+      lockedbare: "locked",
+      missing: "folder missing",
+      missinglocked: "folder missing",
+      detached: "",
+    },
+  );
 
   // Order: this window, then the rest by name, the missing last.
   const names = orderWorktreeRows(rows).map((r) => r.name);
@@ -416,6 +445,8 @@ test("a folder that isn't a worktree any more — nested in the main one, beside
     assert.deepEqual([c.expand, c.forget, c.reveal, c.pull.ok, c.openNew.ok], [false, true, true, false, false], basename(p));
   }
   assert.deepEqual(words(find(rows, nested)), ["Not a worktree"]);
+  assert.equal(state(find(rows, nested)), "not a worktree");
+  assert.equal(state(find(rows, held)), "not a worktree", "said over its lock");
   assert.equal(find(rows, nested)!.unlinkedWhy, "gitdir file points to non-existent location");
   assert.deepEqual(words(find(rows, held)), ["Locked: agent 9", "Not a worktree"]);
   assert.equal(find(rows, app)!.status?.changed, 1, "the main worktree's change is the main worktree's alone");
@@ -510,6 +541,7 @@ test("no remote at all: 'N not on main'; Pull and Push say the repository has no
   const topic = find(h.rows(), join(base, "app-topic"))!;
   assert.equal(topic.relPath, "app-topic");
   assert.deepEqual(words(topic), ["2 not on main"]);
+  assert.equal(state(topic), "2 not on main");
   assert.deepEqual(worktreeCaps(topic).push, { ok: false, why: "The repository has no remote to push to." });
   assert.deepEqual(worktreeCaps(topic).pull, { ok: false, why: "The repository has no remote to pull from." });
   assert.equal(unpublishedTitle(topic), "Not on main");
@@ -520,7 +552,7 @@ test("no remote at all: 'N not on main'; Pull and Push say the repository has no
   assert.deepEqual(h.details(join(base, "app-topic"))?.unpushed?.commits.map((c) => c.subject), ["t.txt: 2", "t.txt: 1"]);
 });
 
-test("a bare repository's entry: a row with no badges that does not open", async () => {
+test("a bare repository's entry: a row with no facts and no state, that does not open", async () => {
   const base = join(scratch, `bare${++seq}`);
   const seed = join(base, "seed");
   mkdirSync(seed, { recursive: true });
@@ -536,11 +568,12 @@ test("a bare repository's entry: a row with no badges that does not open", async
   const b = find(rows, bare)!;
   assert.equal(b.kind, "bare");
   assert.deepEqual(words(b), []);
+  assert.equal(state(b), "");
   assert.equal(worktreeCaps(b).expand, false);
   assert.equal(orderWorktreeRows(rows)[0].path, bare, "shown first, as the repository it is");
   // A bare clone keeps its remote but no remote-tracking refs: by the push
   // review's rule, main's commit is on no remote this repository knows of.
-  assert.deepEqual(words(find(rows, join(base, "main-wt"))), ["This window", "1 not pushed"]);
+  assert.deepEqual(words(find(rows, join(base, "main-wt"))), ["This window", "1 unpublished"]);
 });
 
 test("the window's worktree is the one it has open — a linked one, or one opened through a symlink — and exactly one", async () => {

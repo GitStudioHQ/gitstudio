@@ -2,12 +2,17 @@
 // posts WorktreesToHost ones; the VS Code webview entry (main.ts) wires it to
 // acquireVsCodeApi, and the desktop can mount the same class.
 //
-// A row is two lines: the folder's name and what it has checked out; then its
-// badges (in words) and where the folder is. It opens — click, Enter, Space,
-// → — to its uncommitted files and its commits not pushed, drawn by the shared
-// rows the push review uses (changeRows.ts). Each row's actions are an Open in
-// New Window button and a More menu of labelled items; an action it cannot
-// take is shown disabled with the reason beside it.
+// A row is one line, as a VS Code tree's is: the folder's name, what it has
+// checked out in quieter ink, and — on the right, only when there is one —
+// the one state that matters most, in words ("3 changed", "2 to push",
+// "folder missing"). Everything else it knows is in its tooltip. The
+// worktree this window has open is its bold name, never a label.
+//
+// It opens — click, Enter, Space, → — to what it has and nothing else: its
+// uncommitted files, its commits not pushed, what it has to pull, drawn by
+// the shared rows the push review uses (changeRows.ts); with none of those,
+// one quiet line says so. Hovered, it shows at most two buttons — Open in
+// New Window and More — over its state; More lists only what can run now.
 //
 // Nothing is rebuilt that did not change: a row belongs to its path for life,
 // a new list patches the rows that differ in place, and the row with the
@@ -19,9 +24,10 @@ import {
   headWords,
   orderWorktreeRows,
   prunableCount,
-  unpublishedTitle,
-  worktreeBadges,
   worktreeCaps,
+  worktreeFacts,
+  worktreeState,
+  worktreeTip,
   type Gate,
   type WorktreeAction,
   type WorktreeDetails,
@@ -30,15 +36,7 @@ import {
   type WorktreesToPage,
 } from "@gitstudio/host-bridge/worktreesProtocol";
 import type { ChangeCommit, ChangeFile } from "@gitstudio/host-bridge/changeRows";
-import {
-  commitRow,
-  emptyNote,
-  fileRow,
-  isCommitOpen,
-  moreLine,
-  sectionLabel,
-  setCommitFiles,
-} from "../changeRows/changeRows";
+import { commitRow, emptyNote, fileRow, isCommitOpen, moreLine, setCommitFiles } from "../changeRows/changeRows";
 
 /** What the host says about the platform — how Reveal reads. */
 export interface WorktreesLabels {
@@ -90,6 +88,7 @@ export class WorktreesView {
   private readonly filterBox: HTMLElement;
   private readonly filter: HTMLInputElement;
   private readonly pruneBtn: HTMLButtonElement;
+  private readonly foot: HTMLElement;
   private readonly list: HTMLElement;
   private readonly note: HTMLElement;
   private readonly rows = new Map<string, RowState>();
@@ -120,14 +119,18 @@ export class WorktreesView {
     this.filter.spellcheck = false;
     this.filter.setAttribute("aria-label", "Filter worktrees");
     this.filterBox.appendChild(this.filter);
-    this.pruneBtn = el("button", "gs-btn wt-prune");
-    this.pruneBtn.type = "button";
-    this.top.append(this.filterBox, this.pruneBtn);
+    this.top.append(this.filterBox);
     this.list = el("div", "wt-list");
     this.list.setAttribute("role", "tree");
     this.list.setAttribute("aria-label", "Worktrees");
+    // Prune is a quiet link under the list — where the rows it forgets are
+    // (the missing sort last) — and there only when git would prune one.
+    this.foot = el("div", "wt-foot");
+    this.pruneBtn = el("button", "wt-prune");
+    this.pruneBtn.type = "button";
+    this.foot.append(this.pruneBtn);
     this.note = el("div", "wt-note");
-    root.replaceChildren(this.top, this.list, this.note);
+    root.replaceChildren(this.top, this.list, this.foot, this.note);
 
     this.filter.addEventListener("input", () => {
       this.query = this.filter.value.trim().toLowerCase();
@@ -225,8 +228,13 @@ export class WorktreesView {
         const s = this.rows.get(msg.path);
         if (!s) return;
         s.busy = msg.busy ? (msg.label ?? "Working…") : undefined;
+        if (s.busy && this.menuFor === s) {
+          // Its menu offers nothing while it runs: gone, the keyboard back on the row.
+          const had = !!this.menu?.contains(document.activeElement);
+          this.closeMenu();
+          if (had) s.line.focus();
+        }
         this.paintRow(s, true);
-        if (s.open) this.paintStrip(s);
         return;
       }
       case "patch": {
@@ -279,7 +287,7 @@ export class WorktreesView {
     if (focusAt >= 0) this.focusIndex(Math.min(focusAt, this.visibleLines().length - 1));
     this.paintChrome();
     this.applyFilter();
-    for (const s of made) this.fitBadges(s);
+    for (const s of made) this.fitRow(s);
     this.syncTreeItems();
   }
 
@@ -298,23 +306,24 @@ export class WorktreesView {
     if (hadFocus) this.focusIndex(Math.max(0, Math.min(idx, this.visibleLines().length - 1)));
   }
 
-  /** The top bar, the explainer, and the "nothing here" states. */
+  /** The filter, Prune, the explainer, and the "nothing here" states. */
   private paintChrome(): void {
     const rows = [...this.rows.values()].map((s) => s.row);
     const n = rows.filter((r) => r.kind !== "bare").length;
     this.filterBox.hidden = n <= WORKTREE_FILTER_AFTER;
     this.filter.placeholder = `Filter ${n} worktrees`;
+    this.top.hidden = this.filterBox.hidden;
     const prunable = prunableCount(rows);
-    // "missing" while every one of them is a folder that is gone; "stale"
-    // once one is a folder still there that isn't a worktree any more.
+    // In whole words, as the view's title menu ("Prune Missing Worktrees…")
+    // and the question it asks say it. Its tooltip says which kind: folders
+    // that are gone, or folders that aren't worktrees any more.
     const allGone = rows.every((r) => !r.unlinked || r.locked);
-    this.pruneBtn.hidden = prunable === 0;
-    this.pruneBtn.replaceChildren(codicon("trash"), el("span", undefined, `Prune ${prunable} ${allGone ? "missing" : "stale"}`));
+    this.foot.hidden = prunable === 0;
+    this.pruneBtn.textContent = `Prune ${prunable} missing worktree${prunable === 1 ? "" : "s"}…`;
     this.pruneBtn.dataset.tip = allGone
       ? `Forget the ${prunable === 1 ? "worktree" : `${prunable} worktrees`} whose folder is gone`
       : `Forget the ${prunable === 1 ? "worktree" : `${prunable} worktrees`} git can prune: ${prunable === 1 ? "its folder is gone, or isn't a worktree any more" : "their folders are gone, or aren't worktrees any more"}`;
     this.pruneBtn.setAttribute("aria-label", this.pruneBtn.dataset.tip);
-    this.top.hidden = this.filterBox.hidden && this.pruneBtn.hidden;
 
     this.note.replaceChildren();
     this.note.hidden = false;
@@ -366,7 +375,7 @@ export class WorktreesView {
       const was = s.el.hidden;
       s.el.hidden = !hit;
       if (hit) shown++;
-      if (hit && was) this.fitBadges(s);
+      if (hit && was) this.fitRow(s);
     }
     this.list.classList.toggle("wt-filtered", !!q);
     if (q && shown === 0) {
@@ -411,17 +420,15 @@ export class WorktreesView {
 
   /**
    * A row's data changed (a status, a patch, a new list): its line is painted
-   * again if what it shows changed, and an open row's strip — its upstream and
-   * Pull / Push… — likewise. Its files and commits are NOT: they change only
-   * when the host sends its details, so an open commit keeps its files and
-   * the row the keyboard is on keeps it. `inList`: part of a new list, whose
-   * chrome is painted once at the end.
+   * again if what it shows changed. Its files and commits are NOT: they
+   * change only when the host sends its details, so an open commit keeps its
+   * files and the row the keyboard is on keeps it. `inList`: part of a new
+   * list, whose chrome is painted once at the end.
    */
   private patchRow(s: RowState, row: WorktreeRow, inList = false): void {
     s.row = row;
     this.paintRow(s);
     if (s.open && !worktreeCaps(row).expand) this.toggle(s, false);
-    else if (s.open) this.paintStrip(s);
     if (inList) return;
     this.paintChrome();
     this.applyFilter();
@@ -430,7 +437,6 @@ export class WorktreesView {
   /** Paint a row's line from its data — only when what it shows changed. */
   private paintRow(s: RowState, force = false): void {
     const r = s.row;
-    const badges = worktreeBadges(r);
     const caps = worktreeCaps(r);
     const sig = JSON.stringify([r, s.busy, s.open]);
     if (!force && sig === s.sig) return;
@@ -442,6 +448,7 @@ export class WorktreesView {
     line.classList.toggle("is-current", r.current);
     line.classList.toggle("is-missing", r.missing || r.unlinked);
     line.classList.toggle("is-busy", !!s.busy);
+    line.classList.toggle("has-menu", this.menuFor === s);
     s.el.classList.toggle("open", s.open);
     line.setAttribute("aria-busy", s.busy ? "true" : "false");
     if (caps.expand) line.setAttribute("aria-expanded", s.open ? "true" : "false");
@@ -449,43 +456,30 @@ export class WorktreesView {
 
     const chev = el("span", "wt-chevron");
     if (caps.expand) chev.appendChild(codicon("chevron-right"));
+    // The repository's own folder (and a bare repository) is a repo; the
+    // others are worktrees. "Main worktree" is said in the tooltip.
     const icon = el("span", "wt-icon");
-    icon.appendChild(codicon(r.kind === "bare" ? "repo" : "worktree"));
-    const body = el("div", "wt-body");
-    const l1 = el("div", "wt-line1");
-    const name = el("span", "wt-name", r.name);
-    l1.append(name);
+    icon.appendChild(codicon(r.kind === "linked" ? "worktree" : "repo"));
+    line.append(chev, icon, el("span", "wt-name", r.name));
     // The folder named for its branch says it once.
-    if (r.branch !== r.name) {
-      const head = el("span", "wt-head");
-      head.append(codicon(r.kind === "bare" ? "repo" : r.branch ? "git-branch" : "git-commit"), el("span", "wt-head-text", headWords(r)));
-      l1.append(head);
-    }
-    const l2 = el("div", "wt-line2");
-    if (s.busy) {
-      l2.append(el("span", "wt-busy", s.busy));
-    } else {
-      for (const b of badges) {
-        const pill = el("span", `wt-badge wt-badge--${b.tone}`, b.text);
-        pill.dataset.badge = b.id;
-        pill.dataset.tip = b.tip;
-        l2.appendChild(pill);
-      }
-    }
-    const where = el("span", "wt-path", r.relPath);
-    l2.appendChild(where);
-    body.append(l1, l2);
+    if (r.branch !== r.name) line.appendChild(el("span", "wt-head", headWords(r)));
 
+    // The state and the buttons share one place at the end: hovered, the
+    // buttons cover the state, and nothing before them moves.
+    const end = el("span", "wt-end");
+    const state = el("span", "wt-state");
+    const st = worktreeState(r);
+    if (s.busy) {
+      state.textContent = s.busy;
+      state.classList.add("wt-busy");
+    } else if (st) {
+      state.textContent = st.text;
+      state.dataset.state = st.id;
+      state.dataset.tone = st.tone;
+      if (st.short) state.dataset.short = st.short;
+    }
     const actions = el("span", "wt-actions");
-    if (caps.forget) {
-      const forget = iconButton("close", "Forget Worktree…", "wt-danger");
-      forget.dataset.action = "forget";
-      forget.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.act(s, "forget");
-      });
-      actions.appendChild(forget);
-    } else if (caps.openNew.ok) {
+    if (caps.openNew.ok) {
       const open = iconButton("empty-window", "Open in New Window");
       open.dataset.action = "openNew";
       open.addEventListener("click", (e) => {
@@ -493,9 +487,6 @@ export class WorktreesView {
         this.act(s, "openNew");
       });
       actions.appendChild(open);
-    } else {
-      // Holds the place, so every row's More sits in the same column.
-      actions.appendChild(el("span", "wt-icon-spacer"));
     }
     const more = iconButton("ellipsis", `More actions for ${r.name}`, "wt-more");
     more.dataset.action = "more";
@@ -509,77 +500,69 @@ export class WorktreesView {
       b.tabIndex = -1;
       if (s.busy) b.disabled = true;
     }
-    line.append(chev, icon, body, actions);
+    end.append(state, actions);
+    line.appendChild(end);
 
-    const label = [
-      r.name,
-      headWords(r),
-      ...badges.map((b) => b.text),
-      r.relPath,
-    ].join(", ");
-    line.setAttribute("aria-label", label);
-    line.dataset.tip = `${r.name} — ${r.shownPath}`;
+    const said = (t: string) => t.replace(/\.$/, "");
+    const label = [`${r.name}, ${headWords(r)}`, ...(s.busy ? [s.busy] : []), ...worktreeFacts(r).map((f) => said(f.tip)), r.shownPath];
+    line.setAttribute("aria-label", label.join(". "));
     if (focusedAction) {
       const again = line.querySelector<HTMLElement>(`[data-action="${focusedAction}"]`);
       (again ?? line).focus();
     }
-    this.fitBadges(s);
+    this.fitRow(s);
   }
 
   /**
-   * Fit a row to its width, never cutting a word at the edge. Line 1: the
-   * branch keeps its symbol and a few letters (CSS gives it that floor, and
-   * the folder's name gives way first); with no room even for that, the
-   * whole branch goes, symbol and all. Line 2: the badges that do not fit go
-   * into one "+N more" badge that names them on hover; the folder, last on
-   * the line, gives way first — whole, never to a stray letter (it is in the
-   * tooltip too). The row's accessible name says everything either way.
+   * Fit a row to its width without making two rows read alike. The folder's
+   * name comes first: the branch gives way before it does — to an ellipsis
+   * after at least four letters, then whole. A state that needs attention
+   * ("merge in progress", "folder missing") says its one word ("merging",
+   * "missing") before the name gives way; a routine one ("3 changed") goes
+   * whole below eight letters of the name — its fact is in the tooltip. What
+   * the row is doing ("Removing…") keeps its place. Only then does the name
+   * give way, in its MIDDLE ("wf_4b…cc2-3"): worktrees' names share their
+   * start (agent-…, wf_4b651e91-cc2-…), and their end is what tells them
+   * apart. The tooltip names whatever the row cannot show whole.
    */
-  private fitBadges(s: RowState): void {
-    const l1 = s.line.querySelector<HTMLElement>(".wt-line1");
-    const l2 = s.line.querySelector<HTMLElement>(".wt-line2");
-    if (!l1 || !l2 || !s.el.isConnected) return;
-    const head = l1.querySelector<HTMLElement>(".wt-head");
+  private fitRow(s: RowState): void {
+    const line = s.line;
+    if (!s.el.isConnected) return;
+    const name = line.querySelector<HTMLElement>(".wt-name");
+    const head = line.querySelector<HTMLElement>(".wt-head");
+    const state = line.querySelector<HTMLElement>(".wt-state");
+    const over = (n: HTMLElement | null) => !!n && n.clientWidth > 0 && n.scrollWidth > n.clientWidth + 1;
+    // The name to the fraction of a pixel: an overflow of 0.4px is below
+    // scrollWidth's whole pixels, and still draws the ellipsis that cuts a letter.
+    const nameOver = () => !!name && name.clientWidth > 0 && textOver(name);
+    const rowOver = () => line.scrollWidth > line.clientWidth + 1;
+    if (name) name.textContent = s.row.name;
+    if (state) {
+      state.hidden = false;
+      if (state.dataset.short) state.textContent = worktreeState(s.row)?.text ?? state.textContent;
+    }
     if (head) {
       head.hidden = false;
-      if (l1.clientWidth > 0 && l1.scrollWidth > l1.clientWidth + 1) head.hidden = true;
+      if (line.clientWidth > 0 && (nameOver() || rowOver())) head.hidden = true;
     }
-    const where = l2.querySelector<HTMLElement>(".wt-path");
-    if (where) where.hidden = false;
-    l2.querySelector(".wt-badge--more")?.remove();
-    const badges = [...l2.querySelectorAll<HTMLElement>(".wt-badge")];
-    for (const b of badges) {
-      b.hidden = false;
-      b.classList.remove("wt-badge--squeezed");
+    if (state?.textContent && name && line.clientWidth > 0) {
+      if (state.dataset.short && (nameOver() || rowOver())) state.textContent = state.dataset.short;
+      const urgent = state.dataset.tone === "attention" || state.classList.contains("wt-busy");
+      // Room for the name's start and end ("wf…-3") beside a state that must
+      // stay; eight letters of it beside one that can go.
+      const squeezed = rowOver() || name.clientWidth + 0.5 < leadWidth(name, urgent ? 5 : 8);
+      if (squeezed) state.hidden = true;
     }
-    const fits = () => l2.scrollWidth <= l2.clientWidth + 1;
-    if (l2.clientWidth === 0 || fits()) return;
-    if (where) {
-      where.hidden = true;
-      if (fits()) return;
-    }
-    const more = el("span", "wt-badge wt-badge--more");
-    more.dataset.badge = "more";
-    more.setAttribute("aria-hidden", "true");
-    l2.insertBefore(more, l2.querySelector(".wt-path"));
-    const hidden: HTMLElement[] = [];
-    for (let i = badges.length - 1; i > 0; i--) {
-      badges[i].hidden = true;
-      hidden.unshift(badges[i]);
-      more.textContent = `+${hidden.length} more`;
-      more.dataset.tip = hidden.map((h) => h.textContent).join(" · ");
-      if (fits()) return;
-    }
-    // Still too wide: the one badge left gives way (its words end in an
-    // ellipsis, whole on hover) so "+N more" is never the thing cut off.
-    if (hidden.length === 0) more.remove();
-    badges[0]?.classList.add("wt-badge--squeezed");
+    const clipped = !!name && nameOver() && clipMiddle(name, s.row.name);
+    const tip = worktreeTip(s.row);
+    const cut = head && (head.hidden || over(head));
+    line.dataset.tip = [clipped ? s.row.name : "", cut ? headWords(s.row) : "", tip].filter(Boolean).join("\n");
   }
 
-  /** The list's width changed: every row's badges are fitted again. */
+  /** The list's width changed: every row is fitted again. */
   private refitAll(): void {
     for (const s of this.rows.values()) {
-      if (!s.el.hidden) this.fitBadges(s);
+      if (!s.el.hidden) this.fitRow(s);
     }
   }
 
@@ -605,65 +588,16 @@ export class WorktreesView {
 
   // ── A row's details ───────────────────────────────────────────────────────
 
-  /** What an open row's strip shows, to repaint it only when that changed. */
-  private stripSig(s: RowState): string {
-    const r = s.row;
-    const caps = worktreeCaps(r);
-    return JSON.stringify([r.name, r.branch, r.upstream, r.upstreamGone, r.hasRemotes, headWords(r), caps.pull, caps.push, s.busy]);
-  }
-
   /**
-   * The way to this worktree's remote: its upstream and the two verbs. The
-   * first item of the row's group — a treeitem, as everything in a tree's
-   * group is, holding Pull and Push… as a row holds its buttons.
-   */
-  private strip(s: RowState): HTMLElement {
-    const r = s.row;
-    const caps = worktreeCaps(r);
-    const strip = el("div", "wt-strip");
-    strip.dataset.sig = this.stripSig(s);
-    strip.setAttribute("role", "treeitem");
-    strip.tabIndex = -1;
-    const where = el("span", "wt-upstream");
-    if (r.branch && r.upstream) {
-      where.append(codicon("cloud"), el("span", undefined, r.upstreamGone ? `${r.upstream} (gone)` : r.upstream));
-    } else if (r.branch && r.hasRemotes) {
-      where.append(codicon("cloud"), el("span", undefined, "No upstream — Push publishes it"));
-    } else if (r.branch) {
-      where.append(codicon("cloud"), el("span", undefined, "No remote"));
-    } else {
-      where.append(codicon("git-commit"), el("span", undefined, `No branch — ${headWords(r)}`));
-    }
-    where.dataset.tip = where.textContent ?? "";
-    strip.setAttribute("aria-label", where.textContent ?? "");
-    strip.appendChild(where);
-    const verbs = el("span", "wt-verbs");
-    verbs.append(
-      this.verb(s, "pull", "repo-pull", "Pull", caps.pull),
-      this.verb(s, "push", "repo-push", "Push…", caps.push),
-    );
-    strip.appendChild(verbs);
-    return strip;
-  }
-
-  /** An open row's strip, painted again in place — only when what it shows changed. */
-  private paintStrip(s: RowState): void {
-    const old = s.details.querySelector<HTMLElement>(":scope > .wt-strip");
-    if (!old || old.dataset.sig === this.stripSig(s)) return;
-    const active = document.activeElement as HTMLElement | null;
-    const focusKey = active && old.contains(active) ? keyOf(active) : undefined;
-    const next = this.strip(s);
-    next.tabIndex = old.tabIndex;
-    old.replaceWith(next);
-    this.syncTreeItems();
-    if (focusKey) [next, ...next.querySelectorAll<HTMLElement>("[data-action]")].find((n) => keyOf(n) === focusKey)?.focus();
-  }
-
-  /**
-   * An open row's details, from what the host last sent. Commit items already
-   * on screen are kept whole — open or not, with the files they loaded — so a
-   * repaint never asks for those files again, never shows "Loading files…"
-   * over them, and never moves the row the keyboard is on.
+   * An open row's details, from what the host last sent — only what there
+   * is: its uncommitted files, its commits not pushed, what it has to pull,
+   * each under a quiet label; with none of them, one line that says so. A
+   * list that is empty is not shown at all, label and all.
+   *
+   * Commit items already on screen are kept whole — open or not, with the
+   * files they loaded — so a repaint never asks for those files again, never
+   * shows "Loading files…" over them, and never moves the row the keyboard
+   * is on.
    */
   private paintDetails(s: RowState): void {
     const r = s.row;
@@ -675,43 +609,39 @@ export class WorktreesView {
     const active = document.activeElement as HTMLElement | null;
     const focusKey = active && d.contains(active) ? keyOf(active) : undefined;
 
-    const parts: HTMLElement[] = [this.strip(s)];
-
+    const parts: HTMLElement[] = [];
     const det = s.loaded;
     if (!det) {
-      parts.push(el("div", "cr-loading wt-loading", "Loading…"));
-      d.replaceChildren(...parts);
+      d.replaceChildren(el("div", "cr-loading wt-loading", "Loading…"));
       this.syncTreeItems();
       return;
     }
-    // Uncommitted.
-    parts.push(sectionLabel("Uncommitted", det.filesUnread ? undefined : det.filesTotal));
     if (det.filesUnread) {
       parts.push(emptyNote("Couldn't read its uncommitted changes."));
-    } else if (det.files.length === 0) {
-      parts.push(emptyNote("No uncommitted changes."));
-    } else {
-      for (const f of det.files) {
-        parts.push(
-          fileRow(f, {
-            onOpen: (file) => this.post({ type: "openFile", path: r.path, file }),
-            role: "treeitem",
-            tabIndex: -1,
-          }),
-        );
+    } else if (det.files.length > 0) {
+      // Grouped as VS Code's Source Control groups them — the label says
+      // which side a file is on, so no file wears a tag for it.
+      for (const [label, areas] of FILE_GROUPS) {
+        const files = det.files.filter((f) => areas.includes(f.area ?? "unstaged"));
+        if (files.length === 0) continue;
+        parts.push(groupLabel(label));
+        for (const f of files) {
+          parts.push(
+            fileRow(f, {
+              onOpen: (file) => this.post({ type: "openFile", path: r.path, file }),
+              role: "treeitem",
+              tabIndex: -1,
+            }),
+          );
+        }
       }
       if (det.filesTotal > det.files.length) {
         parts.push(moreLine(`and ${det.filesTotal - det.files.length} more`));
       }
     }
-    // Not pushed, then to pull.
     for (const sec of [det.unpushed, det.toPull]) {
-      if (!sec) continue;
-      parts.push(sectionLabel(sec.title, sec.more ? undefined : sec.commits.length));
-      if (sec.commits.length === 0) {
-        parts.push(emptyNote(sec === det.unpushed ? unpublishedEmpty(r) : "Nothing to pull."));
-        continue;
-      }
+      if (!sec || sec.commits.length === 0) continue;
+      parts.push(groupLabel(sec.title));
       for (const c of sec.commits) {
         // A sha is the commit's content: the item on screen for it is it.
         const item =
@@ -728,33 +658,13 @@ export class WorktreesView {
       }
       if (sec.more) parts.push(moreLine("and more — the Commit Graph shows them all"));
     }
+    if (parts.length === 0) parts.push(emptyNote("Nothing to commit or push."));
     d.replaceChildren(...parts);
     this.syncTreeItems();
     if (focusKey) {
       const again = [...d.querySelectorAll<HTMLElement>("[role=treeitem], button")].find((n) => keyOf(n) === focusKey);
       again?.focus();
     }
-  }
-
-  /** Pull or Push… in a row's strip: a labelled button, or a disabled one that says why. */
-  private verb(s: RowState, action: WorktreeAction, icon: string, label: string, gate: Gate): HTMLButtonElement {
-    const b = el("button", "gs-btn wt-verb");
-    b.type = "button";
-    b.dataset.action = action;
-    b.append(codicon(icon), el("span", undefined, label));
-    if (gate.ok) {
-      b.dataset.tip = action === "pull" ? `Pull into ${s.row.name}, in its own folder` : `Review what ${s.row.name} would push`;
-      b.addEventListener("click", () => this.act(s, action));
-    } else {
-      // Not `disabled`: a disabled button takes no hover, so its reason could
-      // never be read. It says it is unavailable, and why.
-      b.setAttribute("aria-disabled", "true");
-      b.classList.add("is-disabled");
-      b.dataset.tip = `${label.replace("…", "")} isn't available: ${gate.why}`;
-    }
-    b.setAttribute("aria-label", b.dataset.tip);
-    if (s.busy) b.disabled = true;
-    return b;
   }
 
   private act(s: RowState, action: WorktreeAction): void {
@@ -768,7 +678,15 @@ export class WorktreesView {
 
   // ── The More menu ─────────────────────────────────────────────────────────
 
+  /**
+   * A row's More menu: only what it can do now, in words — an action that
+   * can't run is not listed (Pull and Push with no remote, Remove on the
+   * main worktree, Open on the one this window has open). The host refuses
+   * by the same capabilities, so a stale page can't ask for more.
+   */
   private openMenu(s: RowState, anchor: HTMLElement): void {
+    // A row running an action takes no second one — its menu included.
+    if (s.busy) return;
     this.closeMenu();
     this.hideTip();
     const r = s.row;
@@ -776,70 +694,48 @@ export class WorktreesView {
     const menu = el("div", "wt-menu");
     menu.setAttribute("role", "menu");
     menu.setAttribute("aria-label", `Actions for ${r.name}`);
-    const head = el("div", "wt-menu-head");
-    // The row's own symbol: the menu is about the worktree, not its branch.
-    head.append(codicon(r.kind === "bare" ? "repo" : "worktree"), el("span", undefined, r.name));
-    menu.appendChild(head);
-    const item = (action: WorktreeAction, icon: string, label: string, gate: Gate | boolean, danger = false): void => {
-      const ok = gate === true || (typeof gate === "object" && gate.ok);
-      if (gate === false) return;
-      const b = el("button", `wt-menu-item${danger ? " danger" : ""}`);
-      b.type = "button";
-      b.setAttribute("role", "menuitem");
-      b.dataset.action = action;
-      const text = el("span", "wt-menu-text");
-      text.appendChild(el("span", "wt-menu-label", label));
-      if (!ok && typeof gate === "object" && !gate.ok) {
-        text.appendChild(el("span", "wt-menu-why", gate.why));
-        b.setAttribute("aria-disabled", "true");
-        b.classList.add("is-disabled");
+    const ok = (gate: Gate | boolean): boolean => gate === true || (typeof gate === "object" && gate.ok);
+    type Item = [WorktreeAction, string, string, Gate | boolean, boolean?];
+    const groups: Item[][] = [
+      [
+        // A window, not a folder: Reveal's folder is two items down.
+        ["openHere", "window", "Open in This Window", r.kind === "bare" ? false : caps.openHere],
+        ["openNew", "empty-window", "Open in New Window", r.kind === "bare" ? false : caps.openNew],
+        ["reveal", "folder", this.labels.reveal, caps.reveal],
+        ["terminal", "terminal", "Open in Terminal", caps.terminal],
+        ["copyPath", "copy", "Copy Path", true],
+      ],
+      [
+        ["pull", "repo-pull", "Pull", caps.pull],
+        ["push", "repo-push", "Push…", caps.push],
+      ],
+      [
+        r.locked ? ["unlock", "unlock", "Unlock", caps.unlock] : ["lock", "lock", "Lock…", caps.lock],
+        caps.forget ? ["forget", "close", "Forget Worktree…", true, true] : ["remove", "trash", "Remove Worktree…", caps.remove, true],
+      ],
+    ];
+    for (const group of groups) {
+      const items = group.filter(([, , , gate]) => ok(gate));
+      if (items.length === 0) continue;
+      if (menu.childElementCount > 0) menu.appendChild(el("div", "wt-menu-sep"));
+      for (const [action, icon, label, , danger] of items) {
+        const b = el("button", `wt-menu-item${danger ? " danger" : ""}`);
+        b.type = "button";
+        b.setAttribute("role", "menuitem");
+        b.dataset.action = action;
+        b.append(codicon(icon), el("span", "wt-menu-label", label));
+        b.addEventListener("click", () => {
+          this.closeMenu();
+          s.line.focus();
+          this.act(s, action);
+        });
+        menu.appendChild(b);
       }
-      b.append(codicon(icon), text);
-      b.addEventListener("click", () => {
-        if (!ok) return;
-        this.closeMenu();
-        s.line.focus();
-        this.act(s, action);
-      });
-      menu.appendChild(b);
-    };
-    const sep = (): void => {
-      if (menu.lastElementChild && !menu.lastElementChild.classList.contains("wt-menu-sep") && menu.lastElementChild !== head) {
-        menu.appendChild(el("div", "wt-menu-sep"));
-      }
-    };
-    // A folder that is gone, or that isn't a worktree any more, has nothing
-    // to open, pull or push: its menu is about git's record of it.
-    const there = !r.missing && !r.unlinked;
-    if (there && r.kind !== "bare") {
-      item("openHere", "folder-opened", "Open in This Window", caps.openHere);
-      item("openNew", "empty-window", "Open in New Window", caps.openNew);
-    }
-    item("reveal", "folder", this.labels.reveal, caps.reveal);
-    item("terminal", "terminal", "Open in Terminal", caps.terminal);
-    item("copyPath", "copy", "Copy Path", true);
-    if (r.kind !== "bare" && there) {
-      sep();
-      item("pull", "repo-pull", "Pull", caps.pull);
-      item("push", "repo-push", "Push…", caps.push);
-    }
-    // One of the two, as it stands: Unlock when it is locked, Lock… when not
-    // — and when that one can't run (the main worktree, a missing folder),
-    // it is there, disabled, saying why. A bare repository's entry is not a
-    // working tree: none of its working-tree actions are listed.
-    if (r.kind !== "bare") {
-      sep();
-      if (r.locked) item("unlock", "unlock", "Unlock", caps.unlock);
-      else item("lock", "lock", "Lock…", caps.lock);
-    }
-    if (r.kind !== "bare") {
-      sep();
-      if (caps.forget) item("forget", "close", "Forget Worktree…", true, true);
-      else item("remove", "trash", "Remove Worktree…", caps.remove, true);
     }
     document.body.appendChild(menu);
     this.menu = menu;
     this.menuFor = s;
+    s.line.classList.add("has-menu");
     const PAD = 6;
     const m = menu.getBoundingClientRect();
     const a = anchor.getBoundingClientRect();
@@ -850,8 +746,7 @@ export class WorktreesView {
     menu.style.top = `${Math.round(top)}px`;
     menu.addEventListener("keydown", (e) => this.onMenuKey(e));
     setTimeout(() => document.addEventListener("mousedown", this.onDocDown, true), 0);
-    const first = menu.querySelector<HTMLElement>(".wt-menu-item:not(.is-disabled)") ?? menu.querySelector<HTMLElement>(".wt-menu-item");
-    first?.focus();
+    menu.querySelector<HTMLElement>(".wt-menu-item")?.focus();
   }
 
   private readonly onDocDown = (e: MouseEvent): void => {
@@ -859,6 +754,7 @@ export class WorktreesView {
   };
 
   private closeMenu(): void {
+    this.menuFor?.line.classList.remove("has-menu");
     this.menu?.remove();
     this.menu = undefined;
     this.menuFor = undefined;
@@ -1056,10 +952,52 @@ export class WorktreesView {
   }
 }
 
+/** Its text runs past its box — by any fraction of a pixel (text-overflow
+ *  draws its ellipsis for that too). A range's width is the whole text's,
+ *  drawn or not. */
+function textOver(el: HTMLElement): boolean {
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  return r.getBoundingClientRect().width > el.getBoundingClientRect().width + 0.01;
+}
+
+/**
+ * Clip an element's text in its middle to the width it has — its start, "…",
+ * its end, two letters or more each side — and say whether it did. Its box
+ * shrinks with its text (a flex item's basis is its content), so "fits" is
+ * the element's own verdict: nothing past its edge.
+ */
+function clipMiddle(el: HTMLElement, full: string): boolean {
+  const fits = () => !textOver(el);
+  const at = (k: number) => `${full.slice(0, Math.ceil(k / 2))}…${full.slice(full.length - Math.floor(k / 2))}`;
+  let lo = 4;
+  let hi = full.length - 1;
+  if (hi < lo) return false;
+  el.textContent = at(lo);
+  if (!fits()) return true; // as few letters as tell it apart; the row's end gives way before this
+  while (lo < hi) {
+    const k = Math.ceil((lo + hi) / 2);
+    el.textContent = at(k);
+    if (fits()) lo = k;
+    else hi = k - 1;
+  }
+  el.textContent = at(lo);
+  return true;
+}
+
+/** How wide the first `n` letters of an element's text are drawn (all of it, if shorter). */
+function leadWidth(el: HTMLElement, n: number): number {
+  const t = el.firstChild;
+  if (!t || t.nodeType !== Node.TEXT_NODE) return 0;
+  const r = document.createRange();
+  r.setStart(t, 0);
+  r.setEnd(t, Math.min(n, (t as Text).length));
+  return r.getBoundingClientRect().width;
+}
+
 /** A stable key for a focusable node across a repaint of the details. */
 function keyOf(n: HTMLElement): string {
   if (n.dataset.action) return `a:${n.dataset.action}`;
-  if (n.classList.contains("wt-strip")) return "s:strip";
   const file = n.closest<HTMLElement>(".cr-file");
   const commit = n.closest<HTMLElement>(".cr-commit-item");
   if (file) return `f:${commit?.dataset.sha ?? ""}:${file.dataset.area ?? ""}:${file.dataset.path}`;
@@ -1067,10 +1005,14 @@ function keyOf(n: HTMLElement): string {
   return "";
 }
 
-/** What an empty "not pushed" section says, by its rule. */
-function unpublishedEmpty(r: WorktreeRow): string {
-  const title = unpublishedTitle(r);
-  if (r.branch && r.upstream && !r.upstreamGone) return `Everything is on ${r.upstream}.`;
-  if (r.hasRemotes) return "Every commit is on a remote.";
-  return title ? `Every commit is on ${r.defaultBranch}.` : "";
+/** An open row's uncommitted files, in the groups VS Code's Source Control shows. */
+const FILE_GROUPS: [string, NonNullable<ChangeFile["area"]>[]][] = [
+  ["Conflicts", ["conflicted"]],
+  ["Staged changes", ["staged"]],
+  ["Changes", ["unstaged", "untracked"]],
+];
+
+/** The quiet label over one of an open row's lists — never over an empty one. */
+function groupLabel(text: string): HTMLElement {
+  return el("div", "wt-group-label", text);
 }

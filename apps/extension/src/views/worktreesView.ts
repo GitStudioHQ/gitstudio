@@ -967,7 +967,9 @@ export async function pruneWorktrees(
   }
   const n = prunable.length;
   const ok = await promptConfirm({
-    title: `Prune ${n} ${allGone ? "missing" : "stale"} worktree${n === 1 ? "" : "s"}?`,
+    // The words of the view's link and its title menu ("Prune Missing
+    // Worktrees…"); the message says which are gone and which aren't worktrees.
+    title: `Prune ${n} missing worktree${n === 1 ? "" : "s"}?`,
     message:
       (allGone
         ? `Git forgets ${n === 1 ? "the worktree whose folder is gone" : `the ${n} worktrees whose folders are gone`}:\n`
