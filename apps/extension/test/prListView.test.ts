@@ -52,6 +52,7 @@ import { graphqlWorld, rawPull } from "./fakeGitHub";
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports -- the stand-in's objects */
 const { PullRequestsViewProvider } = require("../src/pr/pullRequestsView") as typeof import("../src/pr/pullRequestsView");
 const { GitHubAuth } = require("../src/pr/githubAuth") as typeof import("../src/pr/githubAuth");
+const { registerPrFeature } = require("../src/pr/prFeature") as typeof import("../src/pr/prFeature");
 
 const OTHER = () => entryFor("/work/other", [{ name: "origin", fetchUrl: "https://github.com/acme/other.git", pushUrl: "" }]);
 const rowOf = (m: any, n: number) => state(m).rows.find((r: any) => r.number === n);
@@ -598,6 +599,222 @@ test("closing, reopening and marking ready move the row between the segments on 
   assert.equal(state(m).rows.find((r: any) => r.number === 36).kind, "open", "a draft marked ready reads Open where it is");
   assert.equal(gql(gh, LIST_QUERY).length, loads, "nothing was answered by GitHub meanwhile");
   held.release();
+});
+
+// A number is not an identity: acme/app#37 and a fork's own me/app#37 are
+// two pull requests. A patch touches the lists of ITS repository — shown or
+// not — and the counts of the lists known to count it (no filters, or the
+// filters of a list that had the row), never another filter's.
+test("a merge patches its own repository's lists only — a fork's own #37 stays — and the counts of the lists that count it", async () => {
+  const repos = world({
+    "me/app": {
+      pulls: () => [rawPull(37, { title: "The fork's own 37", html_url: "https://github.com/me/app/pull/37" }), rawPull(8, { title: "Fork 8", html_url: "https://github.com/me/app/pull/8" })],
+      isFork: true,
+      parent: "acme/app",
+    },
+  });
+  const gh = github(acmeRoutes([], repos));
+  const m = mount(fakeRepos([{ name: "origin", fetchUrl: "git@github.com:me/app.git", pushUrl: "" }]));
+  await settled(m);
+  assert.deepEqual(numbers(m), [37, 36, 3], "the parent");
+  m.view.receive({ type: "target", id: "me/app" });
+  await until(() => state(m).target === "me/app" && !state(m).refreshing && numbers(m).includes(8), "the fork's rows");
+  const fork = { rows: numbers(m), counts: state(m).counts };
+  m.view.receive({ type: "target", id: "acme/app" });
+  await until(() => state(m).target === "acme/app" && !state(m).refreshing && numbers(m).includes(36), "the parent's rows");
+  // What GitHub would say is held: every row below is the patch's own.
+  const held = gh.hold((req) => req.path === "/graphql");
+  m.list.markKind("acme", "app", 37, "merged");
+  assert.deepEqual(numbers(m), [36, 3], "acme/app#37 leaves the parent's Open");
+  m.view.receive({ type: "target", id: "me/app" });
+  await until(() => state(m).target === "me/app", "the fork again, from what is on hand");
+  assert.deepEqual(numbers(m), fork.rows, "me/app#37 is another pull request: it stays");
+  assert.deepEqual(state(m).counts, fork.counts, "…and the fork's counts don't move");
+  // The parent's lists are patched while the fork is shown — and a new pull
+  // request made on the parent joins them, not the fork's.
+  m.list.markKind("acme", "app", 36, "closed");
+  m.list.addPr("acme", "app", { ...m.list.pullRequestFor(37).pr, number: 40, title: "A new one", htmlUrl: "https://github.com/acme/app/pull/40", base: { ...m.list.pullRequestFor(37).pr.base, repoFullName: "acme/app" } });
+  assert.deepEqual(numbers(m), fork.rows, "the fork's list shown is untouched");
+  m.view.receive({ type: "target", id: "acme/app" });
+  await until(() => state(m).target === "acme/app", "the parent again, from what is on hand");
+  assert.deepEqual(numbers(m), [40, 3], "the parent's: the new one on top, #36 closed while it wasn't shown");
+  assert.deepEqual(state(m).counts, { open: 2, merged: 1, closed: 1 });
+  held.release();
+});
+
+test("a merge moves the counts of the lists that count the row — never another author's", async () => {
+  const pulls = () => PULLS().map((p: any) => ({ ...p, user: { login: p.number === 37 ? "bob" : "alice", avatar_url: null } }));
+  const gh = github(acmeRoutes([], world({ "acme/app": { pulls } })));
+  const m = mount(fakeRepos(ORIGIN));
+  await settled(m);
+  const visit = async (filters: Record<string, string>, segment = "open") => {
+    m.view.receive({ type: "segment", segment });
+    m.view.receive({ type: "filters", filters });
+    await until(
+      () => state(m).segment === segment && JSON.stringify(state(m).filters) === JSON.stringify(filters) && state(m).status === "list" && !state(m).refreshing,
+      `${segment} ${JSON.stringify(filters)}`,
+    );
+    return { rows: numbers(m), counts: state(m).counts };
+  };
+  const alice = await visit({ author: "alice" });
+  assert.deepEqual(alice.rows, [36, 3]);
+  const bob = await visit({ author: "bob" });
+  assert.deepEqual(bob.rows, [37]);
+  assert.deepEqual((await visit({ author: "bob" }, "merged")).rows, []);
+  await visit({});
+  const held = gh.hold((req) => req.path === "/graphql");
+  m.list.markKind("acme", "app", 37, "merged"); // bob's
+  assert.deepEqual(numbers(m), [36, 3]);
+  assert.deepEqual(state(m).counts, { open: 2, merged: 1, closed: 0 }, "no filters: counted");
+  const look = async (filters: Record<string, string>, segment = "open") => {
+    m.view.receive({ type: "segment", segment });
+    m.view.receive({ type: "filters", filters });
+    await until(() => state(m).segment === segment && JSON.stringify(state(m).filters) === JSON.stringify(filters), "from what is on hand");
+    return { rows: numbers(m), counts: state(m).counts };
+  };
+  assert.deepEqual(await look({ author: "alice" }), alice, "alice's list never had bob's pull request: rows and counts stay");
+  assert.deepEqual((await look({ author: "bob" })).counts, { ...bob.counts, open: bob.counts.open - 1, merged: bob.counts.merged + 1 }, "bob's: counted");
+  assert.deepEqual((await look({ author: "bob" }, "merged")).rows, [37], "…and it joins bob's Merged, which it now belongs to");
+  held.release();
+});
+
+// A Checkout of a fork's pull request adds the fork's remote (and a failed
+// one removes it again): the repository shown is still there, so the list
+// keeps its rows, its filters and every list on hand — the switcher learns
+// of the new repository, and GitHub is asked nothing. Only the repository
+// shown going away (a remote removed or re-pointed) starts the view over.
+test("a remote added or removed (a fork's, for a checkout) keeps the rows, the filters and every list on hand — GitHub isn't asked", async () => {
+  const gh = github(acmeRoutes([], world({ "alice/app": { pulls: () => [], isFork: true, parent: "acme/app" }, "acme/other": { pulls: () => [rawPull(9)] } })));
+  const remotes: Remote[] = [{ name: "origin", fetchUrl: "git@github.com:acme/app.git", pushUrl: "" }];
+  const repos = fakeRepos(remotes, "/work/app");
+  const m = mount(repos);
+  await settled(m);
+  m.view.receive({ type: "filters", filters: { author: "me" } });
+  await until(() => state(m).filters.author === "me" && state(m).status === "list" && !state(m).refreshing, "a filter");
+  const rows = numbers(m);
+  const lists = gql(gh, LIST_QUERY).length;
+  const asked = gh.requests.length;
+  const posted = m.view.posted.length;
+  // `git remote add alice …`, as checkoutPr.ts does; RepoManager fires.
+  remotes.push({ name: "alice", fetchUrl: "git@github.com:alice/app.git", pushUrl: "" });
+  repos.fire();
+  await until(() => state(m).targets.length === 2, "the switcher to learn of alice/app");
+  assert.deepEqual(state(m).targets.map((t: any) => [t.id, t.detail]), [["acme/app", "remote origin"], ["alice/app", "remote alice"]]);
+  assert.deepEqual(state(m).filters, { author: "me" }, "the filter stays");
+  assert.deepEqual(numbers(m), rows, "the rows stay");
+  const states = m.view.posted.slice(posted).filter((p: any) => p.type === "state").map((p: any) => p.state.status);
+  assert.ok(states.every((x: string) => x === "list"), `never a placeholder: ${states}`);
+  assert.equal(gh.requests.length, asked, "GitHub is asked nothing");
+  // The remote goes again (a Checkout that failed): the same.
+  remotes.pop();
+  repos.fire();
+  await until(() => state(m).targets.length === 1, "the switcher to forget alice/app");
+  assert.deepEqual(state(m).filters, { author: "me" });
+  assert.deepEqual(numbers(m), rows);
+  // Back to no filter: the list on hand, at once.
+  m.view.receive({ type: "filters", filters: {} });
+  assert.deepEqual(numbers(m), [37, 36, 3], "the unfiltered list was kept too");
+  await until(() => !state(m).refreshing, "its refresh");
+  assert.equal(gql(gh, LIST_QUERY).length, lists + 1, "one read: the refresh a list on hand gets when shown again, as before");
+  // The repository shown goes away (origin re-pointed): the view starts over, on the new one.
+  remotes[0] = { name: "origin", fetchUrl: "git@github.com:acme/other.git", pushUrl: "" };
+  repos.fire();
+  await until(() => state(m).target === "acme/other" && numbers(m).join() === "9", "the new repository");
+});
+
+test("an upstream remote added for a fork's parent: checkouts fetch through it from then on — nothing re-read", async () => {
+  const gh = github(acmeRoutes([], world({ "me/app": { pulls: () => [], isFork: true, parent: "acme/app" } })));
+  const remotes: Remote[] = [{ name: "origin", fetchUrl: "git@github.com:me/app.git", pushUrl: "" }];
+  const repos = fakeRepos(remotes);
+  const m = mount(repos);
+  await settled(m);
+  assert.equal(m.list.pullRequestFor(37).ctx.remoteName, "https://github.com/acme/app.git", "no remote names the parent: its URL");
+  const asked = gh.requests.length;
+  remotes.push({ name: "upstream", fetchUrl: "https://github.com/acme/app.git", pushUrl: "" });
+  repos.fire();
+  await until(() => m.list.pullRequestFor(37)?.ctx.remoteName === "upstream", "the parent's remote");
+  assert.equal(state(m).targets[0].detail, "remote upstream — origin was forked from it");
+  assert.deepEqual(numbers(m), [37, 36, 3]);
+  assert.equal(gh.requests.length, asked, "GitHub is asked nothing: whether origin is a fork is known");
+});
+
+test("a refresh re-reads every row on screen — 130 paged in stay 130, read 100 then 30 — and so does the stale poll", async () => {
+  const all = Array.from({ length: 130 }, (_, i) => rawPull(1000 - i, { updated_at: new Date(Date.now() - i * 60e3).toISOString() }));
+  const gh = github(acmeRoutes([], world({ "acme/app": { pulls: () => all } })));
+  const m = mount(fakeRepos(ORIGIN));
+  await settled(m);
+  for (let i = 0; i < 4; i++) {
+    const before = state(m).rows.length;
+    m.view.receive({ type: "loadMore" });
+    await until(() => state(m).rows.length > before && !state(m).loadingMore, `page ${i + 2}`);
+  }
+  assert.equal(state(m).rows.length, 130);
+  const before = gql(gh, LIST_QUERY).length;
+  m.view.receive({ type: "refresh" });
+  await until(() => !state(m).refreshing, "the refresh");
+  assert.equal(state(m).rows.length, 130, "every row paged in stays");
+  assert.equal(new Set(numbers(m)).size, 130, "no row twice");
+  assert.equal(state(m).hasMore, false);
+  const pages = gql(gh, LIST_QUERY).slice(before).map((r: any) => [r.body.variables.first, r.body.variables.after]);
+  assert.deepEqual(pages, [[100, null], [30, "100"]], "a page of 100, then the rest");
+  // 45 on screen: one read of 45.
+  const m2 = mount(fakeRepos(ORIGIN, "/work/two"));
+  await until(() => state(m2).rows.length === 30, "the second list");
+  m2.view.receive({ type: "loadMore" });
+  await until(() => state(m2).rows.length === 60 && !state(m2).loadingMore, "60 rows");
+  const b2 = gql(gh, LIST_QUERY).length;
+  m2.view.receive({ type: "refresh" });
+  await until(() => !state(m2).refreshing, "its refresh");
+  assert.deepEqual(gql(gh, LIST_QUERY).slice(b2).map((r: any) => r.body.variables.first), [60], "what is on screen, in one read");
+  assert.equal(state(m2).rows.length, 60);
+  assert.equal(state(m2).hasMore, true, "and the rest still a page away");
+  // The stale poll, every few minutes while the list is in sight: the same read.
+  const auth = new GitHubAuth();
+  await auth.isConnected();
+  const list = new PullRequestsViewProvider(fakeRepos(ORIGIN, "/work/three") as any, auth, vscode.Uri.file("/ext"), undefined, 600);
+  vscode.window.registerWebviewViewProvider("gitstudio.pullRequests", list);
+  const view = pr.webviewViews.at(-1);
+  onTeardown(() => (list.dispose(), auth.dispose()));
+  view.receive({ type: "ready" });
+  await until(() => view.state()?.rows?.length === 30, "the third list");
+  for (let i = 0; i < 4; i++) {
+    const n = view.state().rows.length;
+    view.receive({ type: "loadMore" });
+    await until(() => view.state().rows.length > n && !view.state().loadingMore, `its page ${i + 2}`);
+  }
+  const b3 = gql(gh, LIST_QUERY).length;
+  await until(() => gql(gh, LIST_QUERY).length >= b3 + 2 && !view.state().refreshing, "the stale list in sight to be read again", 3000);
+  assert.equal(view.state().rows.length, 130, "the poll keeps every row paged in: no list shrinking under the reader");
+});
+
+// The Pull Requests view is collapsed until opened: its page never says
+// "ready", and the list never resolves. The palette's commands and the New
+// pull request form act where the list WOULD — a fork's parent, or the
+// repository chosen in it before — not origin, the fork.
+test("the palette acts where the list would, before the view has ever been opened: a fork's parent — or the one chosen before", async () => {
+  const gh = github([
+    ["GET", /^\/repos\/me\/app\/pulls\?state=open/, () => ({ body: [rawPull(8, { title: "In my fork" })] })],
+    ...acmeRoutes([], world({ "me/app": { pulls: () => [], isFork: true, parent: "acme/app" } })),
+  ]);
+  const register = (store: any) => {
+    const context = { subscriptions: [] as { dispose(): void }[], extensionUri: vscode.Uri.file("/ext"), workspaceState: store };
+    registerPrFeature(context as any, fakeRepos([{ name: "origin", fetchUrl: "git@github.com:me/app.git", pushUrl: "" }]) as any, { isEnabled: async () => false } as any);
+    onTeardown(() => context.subscriptions.forEach((d) => d.dispose()));
+  };
+  const lists = () => gh.requests.filter((r) => /\/pulls\?state=open/.test(r.path)).map((r) => r.path.split("/pulls")[0]);
+  const store = memento();
+  register(store);
+  dialogs.answer = (spec: any) => spec.choices?.[0]?.id;
+  await vscode.commands.executeCommand("gitstudio.pr.copyUrl");
+  assert.deepEqual(lists(), ["/repos/acme/app"], "the parent's open pull requests are offered");
+  assert.equal(dialogs.asked[0].choices[0].detail, "#37");
+  assert.equal(pr.clipboard, "https://github.com/acme/app/pull/37");
+  // Chosen in the list before (a window ago): the fork.
+  const chosen = memento();
+  await chosen.update("gitstudio.pr.target:/work/app", "me/app");
+  register(chosen);
+  await vscode.commands.executeCommand("gitstudio.pr.copyUrl");
+  assert.deepEqual(lists().slice(1), ["/repos/me/app"], "the repository chosen in the list");
 });
 
 test("a row's actions act on THAT pull request, in the repository the list shows", async () => {

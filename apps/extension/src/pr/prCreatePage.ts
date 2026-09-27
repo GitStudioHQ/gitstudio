@@ -55,7 +55,8 @@ import { listGitHubRemotes, type GitHubRemote, type GitHubRepoContext } from "./
 
 /** What the form is told of the list, and tells it. */
 export interface PrCreateList {
-  targetsNow(): { targets: PrTarget[]; target: PrTarget } | undefined;
+  /** The clone's repositories and the one the list shows — or would, resolved its way while the view is closed. */
+  resolveTargets(entry: RepoEntry): Promise<{ targets: PrTarget[]; target: PrTarget } | undefined>;
   addPr(owner: string, repo: string, pr: PullRequest): void;
 }
 
@@ -302,14 +303,14 @@ export class PrCreatePage {
       const git = this.entry.ctx.process;
       this.remotes = await listGitHubRemotes(this.entry);
       if (this.disposed || gen !== this.gen) return;
-      // Where it opens: the list's repository for this clone, else the same rule.
-      const shown = this.deps.list?.targetsNow();
-      const resolved =
-        shown ??
-        (await (async () => {
-          const r = await resolvePrTargets(this.remotes, (o, n) => fetchRepoInfo(this.deps.graphql, o, n));
-          return r ? { targets: r.targets, target: r.targets.find((x) => x.id === r.defaultId) ?? r.targets[0] } : undefined;
-        })().catch(() => undefined));
+      // Where it opens: the list's repository for this clone — resolved the
+      // list's way (a fork's parent, or the one chosen there) whether or not
+      // the view has been opened.
+      const resolved = await (async () => {
+        if (this.deps.list) return this.deps.list.resolveTargets(this.entry);
+        const r = await resolvePrTargets(this.remotes, (o, n) => fetchRepoInfo(this.deps.graphql, o, n));
+        return r ? { targets: r.targets, target: r.targets.find((x) => x.id === r.defaultId) ?? r.targets[0] } : undefined;
+      })().catch(() => undefined);
       if (this.disposed || gen !== this.gen) return;
       if (!resolved) {
         this.fail({

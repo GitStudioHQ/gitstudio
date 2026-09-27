@@ -11,7 +11,8 @@ import { PrPage, type PrPageOpen } from "./prPage";
 import { ReviewController } from "./reviewMode";
 import { checkoutPullRequest } from "./checkoutPr";
 import { PrCreatePage } from "./prCreatePage";
-import { listGitHubRemotes, resolveGitHubContext, type GitHubRepoContext } from "./repoContext";
+import { contextFor as targetContext } from "./prTargets";
+import { listGitHubRemotes, type GitHubRepoContext } from "./repoContext";
 
 // Wires the pull request feature: GitHub auth + API, the Pull Requests list (a
 // webview view: the shared packages/webview-ui list), the pull request's page
@@ -58,19 +59,25 @@ export function registerPrFeature(
   const review = new ReviewController(auth, api, graphql, context.workspaceState);
   context.subscriptions.push(review);
 
-  /** The repository the list shows — a fork's parent — else origin's. */
-  const contextNow = async (): Promise<GitHubRepoContext | undefined> =>
-    list.contextNow() ?? (await resolveGitHubContext(repos)) ?? undefined;
+  /**
+   * The repository the list shows — a fork's parent unless another was
+   * chosen — resolved the list's way even while the view has never been
+   * opened (it is collapsed until it is).
+   */
+  const contextNow = (): Promise<GitHubRepoContext | undefined> => list.contextResolved().catch(() => undefined);
 
   /**
-   * The context the commands act in for owner/repo: the list's when it shows
-   * that repository, else the active clone's remote for it. None when the
-   * clone has no remote for it — its pull requests can't be checked out here.
+   * The context the commands act in for owner/repo: one of the clone's
+   * repositories as the list offers them (a fork's parent is fetched by its
+   * URL when no remote names it), else the active clone's remote for it.
+   * None when the clone has neither — its pull requests can't be checked out
+   * here.
    */
   const contextFor = async (owner: string, repo: string): Promise<GitHubRepoContext | undefined> => {
     const same = (c: { owner: string; repo: string }) => `${c.owner}/${c.repo}`.toLowerCase() === `${owner}/${repo}`.toLowerCase();
-    const shown = list.contextNow();
-    if (shown && same(shown)) return shown;
+    const resolved = await list.resolveTargets().catch(() => undefined);
+    const t = resolved?.targets.find(same);
+    if (resolved && t) return targetContext(t, resolved.entry);
     const entry = repos.getActive();
     if (!entry) return undefined;
     const remote = (await listGitHubRemotes(entry)).find(same);
@@ -108,13 +115,19 @@ export function registerPrFeature(
         return { pr: arg.pr, ctx };
       }
     }
-    // From the palette with no argument: ask the user to pick an open PR.
-    const ctx = await contextNow();
-    if (!ctx) {
+    // From the palette with no argument: ask the user to pick an open PR —
+    // signed in first, so a fork's parent can be asked for.
+    const entry = repos.getActive();
+    if (!entry || (await listGitHubRemotes(entry)).length === 0) {
       void vscode.window.showInformationMessage("This repository isn't connected to GitHub.");
       return undefined;
     }
     if (!(await auth.getToken({ interactive: true }))) {
+      return undefined;
+    }
+    const ctx = await contextNow();
+    if (!ctx) {
+      void vscode.window.showInformationMessage("This repository isn't connected to GitHub.");
       return undefined;
     }
     try {

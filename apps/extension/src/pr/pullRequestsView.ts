@@ -81,6 +81,11 @@ export interface TargetMemory {
 
 interface Loaded {
   key: string;
+  /** The question it answers, in parts: whose clone, which repository (lower case), segment, filters (as in the key). */
+  root: string;
+  target: string;
+  segment: PrListState;
+  filters: string;
   items: PrListItem[];
   total: number;
   hasMore: boolean;
@@ -89,17 +94,32 @@ interface Loaded {
   at: number;
 }
 
+/** The repositories a clone offers, the one the list shows (or would), and the clone. */
+export interface ResolvedTargets {
+  targets: PrTarget[];
+  target: PrTarget;
+  entry: RepoEntry;
+}
+
 type RepoState =
   | { kind: "message"; root: string | undefined; discovering: boolean; message: PrListMessage }
   | { kind: "github"; root: string; sig: string; entry: RepoEntry; remotes: GitHubRemote[]; targets: PrTarget[]; target: PrTarget };
 
-/** The key a list is known by: whose, which segment, which filters. */
-function queryKey(root: string, target: string, segment: PrListState, filters: PrListFilters): string {
-  const f = Object.entries(filters)
-    .filter(([, v]) => typeof v === "string" && v.length > 0)
-    .sort(([a], [b]) => a.localeCompare(b));
-  return `${root}|${target.toLowerCase()}|${segment}|${JSON.stringify(f)}`;
+/** The key a list is known by: whose, which segment, which filters — and those parts. */
+function queryOf(root: string, target: string, segment: PrListState, filters: PrListFilters): Pick<Loaded, "key" | "root" | "target" | "segment" | "filters"> {
+  const f = JSON.stringify(
+    Object.entries(filters)
+      .filter(([, v]) => typeof v === "string" && v.length > 0)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+  const t = target.toLowerCase();
+  return { key: `${root}|${t}|${segment}|${f}`, root, target: t, segment, filters: f };
 }
+
+/** The filters of a list with none. */
+const NO_FILTERS = "[]";
+
+const sameId = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 function remoteSig(remotes: readonly GitHubRemote[]): string {
   return JSON.stringify(remotes.map((r) => [r.name, r.owner.toLowerCase(), r.repo.toLowerCase()]));
@@ -457,21 +477,45 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
 
   // ── What is shown ──────────────────────────────────────────────────────────
 
+  private queryNow(): Pick<Loaded, "key" | "root" | "target" | "segment" | "filters"> | undefined {
+    const r = this.repo;
+    return r?.kind === "github" ? queryOf(r.root, r.target.id, this.segment, this.filters) : undefined;
+  }
+
   private queryKeyNow(): string | undefined {
-    const r = this.repo;
-    return r?.kind === "github" ? queryKey(r.root, r.target.id, this.segment, this.filters) : undefined;
+    return this.queryNow()?.key;
   }
 
-  /** The repository the list shows, as the PR commands act in it — undefined until it knows. */
-  contextNow(): GitHubRepoContext | undefined {
+  /**
+   * The repositories the list offers for a clone (the active one by
+   * default), and the one it shows — resolved the list's way, a fork's
+   * parent unless another was chosen, even while the view has never been
+   * opened (it is collapsed until it is): the palette's commands and the New
+   * pull request form act where the list would. Nothing is listed.
+   */
+  async resolveTargets(entry: RepoEntry | undefined = this.repos.getActive()): Promise<ResolvedTargets | undefined> {
+    if (!entry) return undefined;
     const r = this.repo;
-    return r?.kind === "github" && this.repos.getActive()?.root === r.root ? contextFor(r.target, r.entry) : undefined;
+    if (r?.kind === "github" && r.root === entry.root) return { targets: r.targets, target: r.target, entry: r.entry };
+    return this.pickTarget(entry, await listGitHubRemotes(entry));
   }
 
-  /** The repositories the list offers for the active clone, and the one it shows — undefined until it knows. */
-  targetsNow(): { targets: PrTarget[]; target: PrTarget } | undefined {
-    const r = this.repo;
-    return r?.kind === "github" && this.repos.getActive()?.root === r.root ? { targets: r.targets, target: r.target } : undefined;
+  /** The context the PR commands act in: the repository the list shows, or would. */
+  async contextResolved(): Promise<GitHubRepoContext | undefined> {
+    const t = await this.resolveTargets();
+    return t ? contextFor(t.target, t.entry) : undefined;
+  }
+
+  /** A clone's targets from its GitHub remotes, and the one shown: the one chosen before, else the default (a fork's parent). */
+  private async pickTarget(entry: RepoEntry, remotes: GitHubRemote[]): Promise<ResolvedTargets | undefined> {
+    const resolved = await resolvePrTargets(remotes, (owner, repo) => this.infoFor(owner, repo));
+    if (!resolved) return undefined;
+    const chosen = this.memory?.get(memoryKey(entry.root));
+    const target =
+      resolved.targets.find((t) => !!chosen && sameId(t.id, chosen)) ??
+      resolved.targets.find((t) => t.id === resolved.defaultId) ??
+      resolved.targets[0];
+    return { targets: resolved.targets, target, entry };
   }
 
   /** A row of the list on screen, with the context its commands act in. */
@@ -570,14 +614,9 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
       this.repo = { kind: "message", root: entry.root, discovering: false, message: SIGNED_OUT };
       return;
     }
-    const resolved = await resolvePrTargets(remotes, (owner, repo) => this.infoFor(owner, repo));
+    const resolved = await this.pickTarget(entry, remotes);
     if (!resolved || this.repos.getActive()?.root !== entry.root) return;
-    const chosen = this.memory?.get(memoryKey(entry.root));
-    const target =
-      resolved.targets.find((t) => !!chosen && t.id.toLowerCase() === chosen.toLowerCase()) ??
-      resolved.targets.find((t) => t.id === resolved.defaultId) ??
-      resolved.targets[0];
-    this.repo = { kind: "github", root: entry.root, sig: remoteSig(remotes), entry, remotes, targets: resolved.targets, target };
+    this.repo = { kind: "github", root: entry.root, sig: remoteSig(remotes), entry, remotes, targets: resolved.targets, target: resolved.target };
     void this.readLocalHead(false);
   }
 
@@ -631,8 +670,9 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
   /** Read the first page of the query now — or re-read the rows on screen. */
   private async load(): Promise<void> {
     const r = this.repo;
-    const key = this.queryKeyNow();
-    if (r?.kind !== "github" || !key || this.inFlight.has(key)) {
+    const q = this.queryNow();
+    const key = q?.key;
+    if (r?.kind !== "github" || !q || !key || this.inFlight.has(key)) {
       this.post();
       return;
     }
@@ -640,22 +680,30 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
     const shown = this.current?.key === key ? this.current : undefined;
     this.refreshing = !!shown;
     this.post();
-    const first = shown ? Math.min(REFRESH_MAX, Math.max(PR_PAGE, shown.items.length)) : PR_PAGE;
+    // A refresh re-reads every row on screen — a page of up to 100 at a
+    // time — so the rows paged in stay where they are.
+    const want = shown ? Math.max(PR_PAGE, shown.items.length) : PR_PAGE;
+    const ask = { owner: r.target.owner, repo: r.target.repo, state: this.segment, filters: this.filters };
     try {
-      const page = await fetchPrListPage(this.graphql, {
-        owner: r.target.owner,
-        repo: r.target.repo,
-        state: this.segment,
-        filters: this.filters,
-        first,
-      });
+      const page = await fetchPrListPage(this.graphql, { ...ask, first: Math.min(REFRESH_MAX, want) });
       if (this.queryKeyNow() !== key) return; // the view moved on: another question's answer
+      let items = page.items;
+      let { hasMore, cursor } = page;
+      while (hasMore && cursor && items.length < want) {
+        const next = await fetchPrListPage(this.graphql, { ...ask, first: Math.min(REFRESH_MAX, want - items.length), after: cursor });
+        if (this.queryKeyNow() !== key) return;
+        // Sorted by last update: a row can move to a later page between reads.
+        const seen = new Set(items.map((i) => i.number));
+        items = [...items, ...next.items.filter((i) => !seen.has(i.number))];
+        ({ hasMore, cursor } = next);
+        if (next.items.length === 0) break;
+      }
       const loaded: Loaded = {
-        key,
-        items: page.items,
+        ...q,
+        items,
         total: page.total,
-        hasMore: page.hasMore,
-        cursor: page.cursor,
+        hasMore,
+        cursor,
         counts: page.counts ?? shown?.counts,
         at: Date.now(),
       };
@@ -734,7 +782,7 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
     }
   }
 
-  /** Read the list again (Refresh, a sign-in, a stale list in sight). Rows stay while it runs. */
+  /** Read the list again (Refresh, a sign-in, a stale list in sight). Rows stay while it runs — all of them. */
   async refresh(): Promise<void> {
     if (!this.repo || this.repo.kind === "message") {
       this.forget();
@@ -814,11 +862,34 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
     // A read of its remotes on disk — GitHub is not asked.
     const remotes = await listGitHubRemotes(active);
     if ((r.kind === "github" ? r.sig : remoteSig([])) !== remoteSig(remotes)) {
+      if (r.kind === "github" && (await this.adoptRemotes(r, remotes))) return;
       this.forget();
       void this.ensure();
       return;
     }
     if (r.kind === "github") void this.readLocalHead(true);
+  }
+
+  /**
+   * A remote added or removed — a Checkout adds a fork's, and removes it
+   * again when it fails — while the repository shown is still one of the
+   * clone's: the switcher learns of it, and the rows, the filters and every
+   * list on hand stay. Nothing is read from GitHub but, for a new first
+   * remote, whether it is a fork. False when the repository shown is gone
+   * (or re-pointed): then the view starts over.
+   */
+  private async adoptRemotes(r: Extract<RepoState, { kind: "github" }>, remotes: GitHubRemote[]): Promise<boolean> {
+    if (remotes.length === 0) return false;
+    const resolved = await resolvePrTargets(remotes, (owner, repo) => this.infoFor(owner, repo)).catch(() => undefined);
+    if (this.repo !== r) return true; // changed meanwhile: that change's own check decides
+    const target = resolved?.targets.find((t) => sameId(t.id, r.target.id));
+    if (!resolved || !target) return false;
+    this.repo = { ...r, sig: remoteSig(remotes), remotes, targets: resolved.targets, target };
+    // A repository no longer offered takes its lists with it.
+    for (const [k, l] of this.loaded) if (l.root === r.root && !resolved.targets.some((t) => sameId(t.id, l.target))) this.loaded.delete(k);
+    this.post();
+    void this.readLocalHead(true);
+    return true;
   }
 
   /** Drop what the view shows — it is another repository's — and draw again. */
@@ -866,13 +937,19 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
    */
   markKind(owner: string, repo: string, n: number, kind: PrListItem["kind"]): void {
     const r = this.repo;
-    if (r?.kind !== "github" || r.target.id.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) return;
+    if (r?.kind !== "github") return;
+    // THIS repository's lists only: another one's #n is another pull request
+    // (a fork's own, while the list shows its parent).
+    const lists = this.listsOf(r.root, `${owner}/${repo}`);
     const inSegment = (segment: PrListState, k: PrListItem["kind"]) =>
       segment === "all" || (segment === "open" ? k === "open" || k === "draft" : segment === k);
     const countOf = (k: PrListItem["kind"]): keyof PrListCounts => (k === "draft" ? "open" : k);
     let known: PrListItem | undefined;
-    for (const l of this.loaded.values()) known ??= l.items.find((i) => i.number === n);
+    for (const l of lists) known ??= l.items.find((i) => i.number === n);
     if (!known) return;
+    // The filters it is known to answer: those of a list that had it — and
+    // none at all. A list under other filters may not count it.
+    const answers = new Set([NO_FILTERS, ...lists.filter((l) => l.items.some((i) => i.number === n)).map((l) => l.filters)]);
     const now = new Date().toISOString();
     const next: PrListItem = {
       ...known,
@@ -883,37 +960,39 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
       closedAt: kind === "closed" || kind === "merged" ? (known.closedAt ?? now) : null,
     };
     const was = known.kind;
-    let changed = false;
-    for (const l of this.loaded.values()) {
-      const [, , segment, filters] = l.key.split("|") as [string, string, PrListState, string];
+    for (const l of lists) {
       const had = l.items.some((i) => i.number === n);
-      const belongs = inSegment(segment, kind);
+      const belongs = inSegment(l.segment, kind);
+      const counted = answers.has(l.filters);
       if (had && !belongs) {
         l.items = l.items.filter((i) => i.number !== n);
         l.total = Math.max(0, l.total - 1);
       } else if (had) {
         l.items = l.items.map((i) => (i.number === n ? next : i));
-      } else if (belongs && filters === "[]") {
+      } else if (belongs && counted) {
         l.items = [next, ...l.items];
         l.total += 1;
       }
-      if (l.counts && countOf(was) !== countOf(kind)) {
+      if (counted && l.counts && countOf(was) !== countOf(kind)) {
         l.counts = { ...l.counts, [countOf(was)]: Math.max(0, l.counts[countOf(was)] - 1), [countOf(kind)]: l.counts[countOf(kind)] + 1 };
       }
-      changed = true;
     }
-    if (changed) this.post();
+    this.post();
+  }
+
+  /** The lists on hand of one repository, for one clone. */
+  private listsOf(root: string, repository: string): Loaded[] {
+    return [...this.loaded.values()].filter((l) => l.root === root && sameId(l.target, repository));
   }
 
   /** A PR we just created joins the top of the lists it belongs to. */
   addPr(owner: string, repo: string, pr: PullRequest): void {
     const r = this.repo;
-    if (r?.kind !== "github" || r.target.id.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) return;
+    if (r?.kind !== "github") return;
     const item = itemFromPullRequest(pr);
-    const prefix = `${r.root}|${r.target.id.toLowerCase()}|`;
-    for (const l of this.loaded.values()) {
-      const [, , segment, filters] = l.key.split("|");
-      if (!l.key.startsWith(prefix) || filters !== "[]" || (segment !== "open" && segment !== "all")) continue;
+    // That repository's lists, shown or not — under no filters, where it surely belongs.
+    for (const l of this.listsOf(r.root, `${owner}/${repo}`)) {
+      if (l.filters !== NO_FILTERS || (l.segment !== "open" && l.segment !== "all")) continue;
       if (l.items.some((i) => i.number === item.number)) continue;
       l.items = [item, ...l.items];
       l.total += 1;
