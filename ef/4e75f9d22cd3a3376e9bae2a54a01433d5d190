@@ -1,0 +1,23 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_fd6345a78fbef4 524-527
+packages/engine/src/rebase/todo.ts
+  s_26f5e669d3043c::t_4fb384ee581dbd 32-34,94-101,104-105,115,119-120,122-123,125-143,145-153,155-157,159-161
+packages/engine/test/rebaseTodo.test.ts
+  s_26f5e669d3043c::t_af6e7348e93847 9,208-211,214-218,220,223-257,260-269,287-304
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ef4e75f9d22cd3a3376e9bae2a54a01433d5d190",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
