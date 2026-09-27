@@ -434,6 +434,20 @@ function esc(s: string): string {
 const COMPARE_CSS = `
   * { box-sizing: border-box; }
   body { margin: 0; padding: 0 0 40px; color: var(--gs-fg); font-family: var(--gs-font-ui); font-size: 13px; background: var(--gs-bg); }
+  /* The selected state (tokens.css, --gs-sel-*): lit, never lined. It is in
+     the brand here, as every chosen thing on this page is. --cmp-sel-ink is
+     brand words on a tint: the plain brand read under AA on it. */
+  body {
+    --cmp-sel-fill: color-mix(in srgb, var(--gs-brand) 18%, transparent);
+    --cmp-sel-glow: 0 0 16px -4px color-mix(in srgb, var(--gs-brand) 70%, transparent);
+    --cmp-sel-ink: color-mix(in srgb, var(--gs-brand) 55%, #ffffff);
+  }
+  body.vscode-light {
+    --cmp-sel-fill: color-mix(in srgb, var(--gs-brand) 12%, transparent);
+    --cmp-sel-glow: 0 0 14px -4px color-mix(in srgb, var(--gs-brand) 55%, transparent);
+    --cmp-sel-ink: color-mix(in srgb, var(--gs-brand) 85%, #000000);
+  }
+  body.vscode-high-contrast { --cmp-sel-ink: var(--gs-fg); }
   .codicon { font-size: 14px; vertical-align: -0.12em; }
 
   .cmp-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--gs-border); position: sticky; top: 0; background: var(--gs-bg); z-index: 5; }
@@ -451,7 +465,8 @@ const COMPARE_CSS = `
   .cmp-mode button { height: 28px; padding: 0 10px; border: none; background: transparent; color: var(--gs-fg-muted); font: inherit; cursor: pointer; transition: background var(--gs-motion-fast) var(--gs-ease), color var(--gs-motion-fast) var(--gs-ease); }
   .cmp-mode button:hover:not(.on) { background: var(--gs-hover); color: var(--gs-fg); }
   .cmp-mode button:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -2px; }
-  .cmp-mode button.on { background: color-mix(in srgb, var(--gs-brand) 18%, transparent); color: var(--gs-brand); font-weight: 600; }
+  .cmp-mode button.on { background: var(--cmp-sel-fill); color: var(--cmp-sel-ink); font-weight: 600; }
+  body.vscode-high-contrast .cmp-mode button.on { outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent)); outline-offset: -2px; }
 
   .cmp-diffstat { padding: 12px 14px 10px; border-bottom: 1px solid var(--gs-border-soft); }
   .ds-headline { font-size: 13px; margin-bottom: 6px; }
@@ -470,11 +485,18 @@ const COMPARE_CSS = `
   .ds-behind { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; color: var(--gs-amber); font-weight: 600; }
   .ds-behind .codicon { font-size: 12px; }
 
-  .cmp-seg { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--gs-border); background: var(--gs-bg); z-index: 4; }
-  .cmp-seg button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--gs-fg-muted); font: inherit; cursor: pointer; transition: color var(--gs-motion-fast) var(--gs-ease), border-color var(--gs-motion-fast) var(--gs-ease); }
-  .cmp-seg button:hover:not(.on) { color: var(--gs-fg); }
+  /* The tab in front (Commits / Files) is a lit pill: the brand's tint and a
+     soft glow, and no underline (the owner's rule: nothing chosen wears a
+     line). The strip keeps its baseline as a divider under the row, and
+     pads the tabs so the glow is not cut off. */
+  .cmp-seg { display: flex; gap: 4px; padding: 8px 12px 6px; border-bottom: 1px solid var(--gs-border); background: var(--gs-bg); z-index: 4; }
+  .cmp-seg button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border: none; border-radius: var(--gs-radius); background: transparent; color: var(--gs-fg-muted); font: inherit; cursor: pointer; transition: color var(--gs-motion-fast) var(--gs-ease), background var(--gs-motion-fast) var(--gs-ease), box-shadow var(--gs-motion-fast) var(--gs-ease); }
+  .cmp-seg button:hover:not(.on) { color: var(--gs-fg); background: var(--gs-hover); }
   .cmp-seg button:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -2px; }
-  .cmp-seg button.on { color: var(--gs-fg); border-bottom-color: var(--gs-brand); }
+  .cmp-seg button.on { color: var(--gs-fg); font-weight: 600; background: var(--cmp-sel-fill); box-shadow: var(--cmp-sel-glow); }
+  body.vscode-high-contrast .cmp-seg button.on { outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent)); outline-offset: -1px; }
+  /* The count on the tab in front takes full ink on the tint (the muted read 3.3:1 in Light+). */
+  .cmp-seg button.on .count { color: var(--gs-fg); background: color-mix(in srgb, var(--gs-bg) 55%, transparent); }
   .cmp-seg .count { min-width: 18px; height: 16px; padding: 0 6px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--gs-fg) 11%, transparent); color: var(--gs-fg-muted); }
 
   .files-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--gs-bg); z-index: 3; border-bottom: 1px solid var(--gs-border-soft); flex-wrap: wrap; }
@@ -485,10 +507,14 @@ const COMPARE_CSS = `
   .tb-spacer { flex: 1 1 auto; }
   .tb-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border: 1px solid transparent; border-radius: var(--gs-radius-sm); background: transparent; color: var(--gs-fg-muted); cursor: pointer; }
   .tb-btn:hover { background: var(--gs-hover); color: var(--gs-fg); }
+  /* A pressed toggle (the file tree shown) is lit. It had no look at all. */
+  .tb-btn.on { background: var(--cmp-sel-fill); color: var(--cmp-sel-ink); }
+  body.vscode-high-contrast .tb-btn.on { outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent)); outline-offset: -1px; }
   .tb-group { display: inline-flex; border: 1px solid var(--gs-border); border-radius: var(--gs-radius-sm); overflow: hidden; }
   .tb-seg { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 26px; border: none; background: transparent; color: var(--gs-fg-muted); cursor: pointer; }
   .tb-seg:hover:not(.on) { background: var(--gs-hover); color: var(--gs-fg); }
-  .tb-seg.on { background: color-mix(in srgb, var(--gs-brand) 16%, transparent); color: var(--gs-brand); }
+  .tb-seg.on { background: var(--cmp-sel-fill); color: var(--cmp-sel-ink); }
+  body.vscode-high-contrast .tb-seg.on { outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent)); outline-offset: -2px; }
 
   .commits-list { padding: 8px 12px 0; }
 
@@ -522,7 +548,16 @@ const COMPARE_CSS = `
   .tnav-folder .fname { overflow: hidden; text-overflow: ellipsis; }
   .tnav-file { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: var(--gs-radius-sm); cursor: pointer; color: var(--gs-fg); }
   .tnav-file:hover { background: var(--gs-hover); }
-  .tnav-file.active { background: color-mix(in srgb, var(--gs-brand) 18%, transparent); }
+  .tnav-file.active { background: var(--cmp-sel-fill); }
+  /* Its status letter and counts keep their hue, lifted toward white in dark
+     and black in light, so they clear AA on the tint (Light+'s green read
+     3.4:1). */
+  .tnav-file.active {
+    --gs-status-added: color-mix(in srgb, var(--vscode-charts-green, #3fb950) 62%, var(--gs-sel-lift));
+    --gs-status-modified: color-mix(in srgb, var(--vscode-charts-blue, #58a6ff) 62%, var(--gs-sel-lift));
+    --gs-status-deleted: color-mix(in srgb, var(--vscode-charts-red, #f85149) 62%, var(--gs-sel-lift));
+  }
+  body.vscode-high-contrast .tnav-file.active { outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent)); outline-offset: -1px; }
   .tnav-file .st { flex: 0 0 auto; width: 12px; text-align: center; font-family: var(--gs-font-mono); font-weight: 700; font-size: 10px; }
   .tnav-file .nm { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tnav-file .nums { flex: 0 0 auto; font-family: var(--gs-font-mono); font-size: 10px; font-variant-numeric: tabular-nums; }

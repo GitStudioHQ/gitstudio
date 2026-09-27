@@ -401,6 +401,19 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   checks off "Stage changes & commit" (only the editor's Stage Hunk did).
 
 ### Changed
+- **Whatever you picked is lit, never lined.** A selected thing is marked by
+  a tint of the theme's accent, with a soft glow on a tab, a pill or a
+  button, and no longer by a line. That covers the selected commit in the
+  graph and in the Commits list (the commit the keyboard is on is lit a shade
+  deeper), selected files in Changes and in a stash, the branch menu's
+  highlighted row, a question's highlighted choice, the rebase selection and
+  the action it is set to, the Compare panel's tabs, a pull request's tab,
+  verdict and merge method, and the pull request checked out here. Search
+  matches in the graph and the Commits list are washed a soft yellow.
+  Before, many of these were marked by a bar down an edge, an underline or an
+  accent outline. The words on every tint are at least 4.5:1. High Contrast
+  themes keep VS Code's own whole ring around a selection, and the keyboard's
+  focus ring is unchanged.
 - **A branch's actions are in one order for every kind of ref** — the
   branch you're on, any other, a remote branch, a tag: checkout and what
   starts from it, then compare, merge and rebase, then push and the tracked

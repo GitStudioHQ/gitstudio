@@ -356,6 +356,14 @@ export class AiSettingsPanel {
   .ai-gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 16px 16px; }
   .ai-prov-card { display: flex; align-items: flex-start; gap: 10px; text-align: left; padding: 12px; border: 1px solid var(--app-border); border-radius: 11px; background: var(--app-elevated); color: var(--vscode-foreground); cursor: pointer; font-family: inherit; transition: border-color .12s ease, transform .12s ease, background .12s ease; }
   .ai-prov-card:hover { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); background: var(--app-hover); transform: translateY(-1px); }
+  /* The provider whose form is open below is lit: the accent's tint and a
+     soft glow, its edge the neutral one every card has. It had no look of its
+     own. High contrast: the theme's active border, whole. */
+  .ai-prov-card.active { background: color-mix(in srgb, var(--gs-accent) 14%, var(--app-elevated)); box-shadow: var(--gs-sel-glow-soft); }
+  body.vscode-light .ai-prov-card.active { background: color-mix(in srgb, var(--gs-accent) 9%, var(--app-elevated)); }
+  /* Its blurb takes full ink on the tint (the muted read 4.0:1 in Light+). */
+  .ai-prov-card.active .ai-prov-blurb { color: var(--app-fg); }
+  body.vscode-high-contrast .ai-prov-card.active { background: var(--app-elevated); box-shadow: none; border-color: var(--accent-line); }
   .ai-prov-card > .glyph .codicon, .ai-prov-card > .glyph { font-size: 18px; color: var(--gs-accent-ink); }
   .ai-prov-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .ai-prov-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 650; }
@@ -378,7 +386,11 @@ export class AiSettingsPanel {
   .ai-legacy-import-btn:disabled { opacity: .6; cursor: default; }
   /* The picked provider's connect form spans the full grid width, right under it. */
   .ai-editor-inline { grid-column: 1 / -1; }
-  .ai-editor-inline .ai-conn { border-color: var(--accent-line); box-shadow: 0 0 0 1px color-mix(in srgb, var(--gs-accent) 22%, transparent); }
+  /* The picked provider's form is lit, not ringed: its neutral edge, and a
+     soft glow in the accent (tokens.css, --gs-sel-glow). It used to wear an
+     accent border and a 1px accent ring, and a ring is a line. */
+  .ai-editor-inline .ai-conn { box-shadow: var(--gs-sel-glow); }
+  body.vscode-high-contrast .ai-editor-inline .ai-conn { border-color: var(--accent-line); box-shadow: none; }
 
   /* Connected card: the connection reads as the hero; actions are quiet icon buttons. */
   .ai-conn-actions { display: flex; align-items: center; gap: 2px; margin-left: 8px; }

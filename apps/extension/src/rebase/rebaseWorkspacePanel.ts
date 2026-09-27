@@ -522,9 +522,13 @@ const REBASE_CSS = `
   /* VS Code's own key-label look, as its keybinding hints draw it. */
   .rb-kbd { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 4px; font: 600 10px/1 var(--gs-font-mono); border-radius: 3px; color: var(--vscode-keybindingLabel-foreground, var(--gs-fg)); background: var(--vscode-keybindingLabel-background, color-mix(in srgb, var(--gs-fg-muted) 12%, transparent)); border: 1px solid var(--vscode-keybindingLabel-border, var(--gs-border)); border-bottom-color: var(--vscode-keybindingLabel-bottomBorder, var(--gs-border)); }
 
+  /* A selected commit is lit: the accent's tint (tokens.css, --gs-sel-fill),
+     mixed into the page so it is opaque, because the node's halo is drawn
+     in it. It is the same look as the git-rebase-todo editor's cards. */
+  :root { --rb-sel: color-mix(in srgb, var(--gs-accent) 18%, var(--gs-bg)); }
+  body.vscode-light { --rb-sel: color-mix(in srgb, var(--gs-accent) 12%, var(--gs-bg)); }
   /* The selection's toolbar (#32): the header's second line, so it stays on
      screen however far a long plan scrolls. */
-  :root { --rb-sel: var(--vscode-list-inactiveSelectionBackground, color-mix(in srgb, var(--gs-accent) 16%, transparent)); }
   .rb-tools { flex: 1 0 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 -18px -10px; padding: 8px 18px; border-top: 1px solid var(--gs-border-soft); }
   .rb-selcount { min-width: 78px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .rb-tools-label { font-size: 11.5px; color: var(--gs-fg-muted); }
@@ -534,13 +538,26 @@ const REBASE_CSS = `
   .rb-set:hover:not(:disabled) { background: var(--gs-hover-strong, var(--gs-hover)); }
   .rb-set:disabled { opacity: 0.5; cursor: default; }
   .rb-set:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
-  .rb-set.a-pick { color: var(--gs-status-modified); }
-  .rb-set.a-reword { color: var(--gs-accent); }
-  .rb-set.a-squash, .rb-set.a-fixup { color: var(--gs-brand); }
-  .rb-set.a-edit { color: var(--gs-amber); }
-  .rb-set.a-drop { color: var(--gs-status-deleted); }
-  /* Every selected commit is already set to this one. */
-  .rb-set.is-current { background: var(--rb-sel); box-shadow: inset 0 -2px 0 currentColor; }
+  .rb-set { color: var(--rb-act, var(--gs-fg)); }
+  .rb-set.a-pick { --rb-act: var(--gs-status-modified); }
+  .rb-set.a-reword { --rb-act: var(--gs-accent); }
+  .rb-set.a-squash, .rb-set.a-fixup { --rb-act: var(--gs-brand); }
+  .rb-set.a-edit { --rb-act: var(--gs-amber); }
+  .rb-set.a-drop { --rb-act: var(--gs-status-deleted); }
+  /* Every selected commit is already set to this one: lit in the action's
+     own hue (the button's colour), never underlined. It used to be the
+     neutral selection grey with a 2px rule in that hue along its bottom.
+     .rb-setgroup clips, so the soft glow is drawn inside the segment. High
+     contrast has no tints: VS Code's whole ring there. */
+  .rb-set.is-current {
+    background: color-mix(in srgb, var(--rb-act, var(--gs-accent)) 20%, var(--gs-surface));
+    box-shadow: inset 0 0 10px -3px color-mix(in srgb, var(--rb-act, var(--gs-accent)) 55%, transparent);
+    /* Its name keeps the action's hue, lifted toward white in dark and black
+       in light, so it clears AA on the tint (the brand's Fixup read 2.4:1). */
+    color: color-mix(in srgb, var(--rb-act, var(--gs-fg)) 62%, var(--gs-sel-lift));
+  }
+  body.vscode-light .rb-set.is-current { background: color-mix(in srgb, var(--rb-act, var(--gs-accent)) 13%, var(--gs-surface)); }
+  body.vscode-high-contrast .rb-set.is-current { outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent)); outline-offset: -2px; }
 
   /* Plain-English explainer + action glossary (dismissible). */
   .rb-explain { position: relative; margin: 8px 14px 2px; padding: 12px 34px 12px 14px; border: 1px solid var(--gs-border); border-radius: var(--gs-radius); background: color-mix(in srgb, var(--gs-accent) 7%, var(--gs-surface)); }
@@ -581,6 +598,13 @@ const REBASE_CSS = `
      the pointer, as VS Code's lists do. */
   .rb-row.is-selected, .rb-row.is-selected:hover { background: var(--rb-sel); }
   .rb-row.is-selected .rb-node { box-shadow: 0 0 0 3px var(--rb-sel); }
+  /* A selected commit's words are measured on the tint (AA): the SHA and the
+     age take full ink, and what its action does keeps its hue, lifted. */
+  .rb-row.is-selected .rb-sha, .rb-row.is-selected .rb-meta { color: var(--gs-fg); }
+  .rb-row.is-selected[data-action="squash"] .rb-consequence,
+  .rb-row.is-selected[data-action="fixup"] .rb-consequence { color: color-mix(in srgb, var(--gs-brand) 62%, var(--gs-sel-lift)); }
+  .rb-row.is-selected[data-action="drop"] .rb-consequence { color: color-mix(in srgb, var(--gs-status-deleted) 62%, var(--gs-sel-lift)); }
+  .rb-row.is-selected[data-action="edit"] .rb-consequence { color: color-mix(in srgb, var(--gs-amber) 62%, var(--gs-sel-lift)); }
   /* High contrast has no selection fill; a selection is drawn as an outline. */
   body.vscode-high-contrast .rb-row.is-selected { outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent)); outline-offset: -1px; }
   body.vscode-high-contrast .rb-row.is-selected:focus-visible { outline-style: solid; }

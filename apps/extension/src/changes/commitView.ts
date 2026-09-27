@@ -3390,6 +3390,10 @@ export class CommitViewProvider
       color: inherit;
       background: color-mix(in srgb, currentColor 20%, transparent);
     }
+    /* White on a lighter blue read 4.1:1 in Light+: there the band deepens. */
+    body.vscode-light .bm-branch.is-active .bm-ab {
+      background: color-mix(in srgb, #000000 20%, transparent);
+    }
     /* In-flight items keep the normal cursor — the spinner lives IN the item. */
     .bm-action.is-busy, .bm-subaction.is-busy { opacity: 0.8; cursor: default; }
     /* The upstream starts from nothing and grows into the room the name left,
@@ -3407,15 +3411,23 @@ export class CommitViewProvider
     .bm-branch:hover .bm-bmore { color: var(--gs-fg); }
 
     /* The keyboard highlight: the one row the arrow keys have reached (and
-       the mouse, which moves it too). VS Code's own colours for a focused
-       selection, plus the focus outline, because the high-contrast themes
-       give a selection no background at all and draw it with that outline. */
+       the mouse, which moves it too). It is lit with VS Code's own fill for a
+       focused selection, and never outlined in the light and dark themes (the
+       owner's rule: nothing chosen wears a line). The high-contrast themes
+       give a selection no background at all, so there, and only there, it is
+       VS Code's whole focus ring. */
     .bm-action.is-active,
     .bm-branch.is-active,
     .bm-more.is-active,
     .bm-subaction.is-active {
       background: var(--vscode-list-activeSelectionBackground, var(--gs-hover-strong));
       color: var(--vscode-list-activeSelectionForeground, var(--gs-fg));
+    }
+    body.vscode-high-contrast .bm-action.is-active,
+    body.vscode-high-contrast .bm-branch.is-active,
+    body.vscode-high-contrast .bm-more.is-active,
+    body.vscode-high-contrast .bm-subaction.is-active {
+      background: transparent;
       outline: 1px solid var(--vscode-list-focusOutline, var(--vscode-focusBorder, transparent));
       outline-offset: -1px;
     }
@@ -3436,6 +3448,25 @@ export class CommitViewProvider
       color: var(--vscode-list-focusHighlightForeground, inherit);
       font-weight: 600;
     }
+    /* …but on the light and dark themes' blue that colour read 3.6:1 (VS
+       Code's own pale blue beside white, in Light+). There a match is the
+       row's own white, bold, on a band that deepens the blue in light and
+       lifts it in dark (AA both). High contrast keeps the theme's colour on
+       its black or white ground. */
+    body.vscode-dark .bm-action.is-active .bm-hl,
+    body.vscode-dark .bm-branch.is-active .bm-hl {
+      color: inherit;
+      background: color-mix(in srgb, #ffffff 16%, transparent);
+    }
+    body.vscode-light .bm-action.is-active .bm-hl,
+    body.vscode-light .bm-branch.is-active .bm-hl {
+      color: inherit;
+      background: color-mix(in srgb, #000000 22%, transparent);
+    }
+    body.vscode-high-contrast .bm-action.is-active .bm-hl,
+    body.vscode-high-contrast .bm-branch.is-active .bm-hl {
+      background: transparent;
+    }
     /* The row whose submenu holds the highlight stays marked, as VS Code
        marks a selection whose list is not the focused one. */
     .bm-branch.is-open {
@@ -3448,6 +3479,8 @@ export class CommitViewProvider
     .bm-subaction.danger.is-active {
       background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 20%, transparent);
       color: var(--vscode-errorForeground, #e15a5a);
+    }
+    body.vscode-high-contrast .bm-subaction.danger.is-active {
       outline-color: var(--vscode-errorForeground, #e15a5a);
     }
 
@@ -3648,8 +3681,20 @@ export class CommitViewProvider
     .rp-row .codicon { font-size: 12px; opacity: 0.8; flex: 0 0 auto; }
     .rp-row .rp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .rp-row .rp-kind { margin-left: auto; font-size: 10px; color: var(--gs-fg-subtle); }
-    .rp-row:hover, .rp-row.sel { background: var(--gs-hover); }
-    .rp-row.sel { box-shadow: inset 2px 0 0 var(--gs-accent); }
+    /* The keyboard's row is lit with the accent's tint, rounded inside the
+       list, and plainly not a hovered row. It used to be the hover's grey
+       with a 2px accent bar down its edge, and the bar was the only
+       difference. High contrast has no tints: VS Code's whole ring there. */
+    .rp-row { margin: 0 4px; border-radius: var(--gs-radius-sm); }
+    .rp-row:hover { background: var(--gs-hover); }
+    .rp-row.sel { background: var(--gs-sel-fill); }
+    /* Words on the tint take full ink: the muted description read 3.3:1 in
+       Light+. */
+    .rp-row.sel .rp-kind, .rp-row.sel .rp-choice-desc, .rp-row.sel .rp-choice-detail { color: var(--gs-fg); }
+    body.vscode-high-contrast .rp-row.sel {
+      outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: -1px;
+    }
     .rp-empty { padding: 8px 11px; font-size: 11px; color: var(--gs-fg-subtle); }
     .rp-foot {
       display: flex; justify-content: flex-end; gap: 6px;
@@ -3693,9 +3738,11 @@ export class CommitViewProvider
     /* A question's checkboxes ("Also delete the branch"), between the choices
        and the footer. */
     .rp-options { padding: 6px 11px 8px; border-top: 1px solid var(--gs-border-soft); }
-    .rp-option { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; font-size: 12px; cursor: pointer; }
+    .rp-option { display: flex; align-items: flex-start; gap: 8px; margin: 0 -6px; padding: 3px 6px; border-radius: var(--gs-radius-sm); font-size: 12px; cursor: pointer; }
     .rp-option .rp-check { margin-top: 2px; }
-    .rp-option:focus-within .rp-choice-label { text-decoration: underline; text-underline-offset: 2px; }
+    /* The option the keyboard is on is lit, not underlined. */
+    .rp-option:has(.rp-check:focus-visible) { background: var(--gs-sel-fill); }
+    .rp-option:has(.rp-check:focus-visible) .rp-choice-desc { color: var(--gs-fg); }
     /* A confirm has no list and no input — just the question. */
     .rp-msg { padding: 2px 11px 11px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
     /* Reads as an action, not a footnote — it is the only way to reach the
@@ -4090,14 +4137,26 @@ export class CommitViewProvider
     .groups { margin: 0 0 2px; }
 
     /* ---- Multi-selection, drag-to-stash ---------------------------------- */
-    /* Defined after the :hover rules below so a selected row stays visibly
-       selected while the pointer is over it. */
-    .row.is-file.is-selected { background: var(--vscode-list-inactiveSelectionBackground); }
-    .row.is-file.is-selected:hover { background: var(--vscode-list-hoverBackground); }
-    .row.is-file.is-selected::after {
-      content: "";
-      position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
-      background: var(--vscode-focusBorder);
+    /* A selected file is lit: a calm, rounded accent tint (the row is
+       already rounded), with no glow because this is a dense list. It used
+       to be the inactive-selection grey with a 2px accent bar down its left
+       edge, and on hover the bar was the only cue left, which the owner's
+       rule bans. Hovered, it deepens rather than falling back to the
+       hover's grey. High contrast has no fills: VS Code's whole dashed ring
+       there. This is defined after the :hover rules below, so a selected
+       row stays visibly selected under the pointer. */
+    .row.is-file.is-selected { background: var(--gs-sel-fill); }
+    .row.is-file.is-selected:hover { background: var(--gs-sel-fill-strong); }
+    /* Its words are measured on the tint (AA): the path takes full ink (the
+       muted read 3.9:1 in Light+), and the status letter keeps its hue,
+       lifted toward white in dark and black in light (Light+'s blue M read
+       2.8:1). */
+    .row.is-file.is-selected .dir { color: var(--gs-fg); }
+    .row.is-file.is-selected.is-deleted .name { opacity: 1; }
+    .row.is-file.is-selected .status { color: color-mix(in srgb, var(--gs-row-accent, var(--gs-fg-muted)) 62%, var(--gs-sel-lift)); }
+    body.vscode-high-contrast .row.is-file.is-selected {
+      outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: -1px;
     }
     body.is-dragging-files .row.is-file { cursor: grabbing; }
 
@@ -4339,17 +4398,9 @@ export class CommitViewProvider
       cursor: pointer;
       user-select: none;
     }
-    /* Status accent rail, revealed on hover/focus for a tactile pointer. */
-    .row::before {
-      content: "";
-      position: absolute;
-      left: 0; top: 3px; bottom: 3px;
-      width: 2px;
-      border-radius: 2px;
-      background: transparent;
-      transition: background var(--gs-motion-fast) var(--gs-ease);
-    }
-    .row.is-file:hover::before { background: var(--gs-row-accent, var(--gs-accent)); }
+    /* The hovered row is its fill alone. It used to reveal a 2px rail in the
+       file's status colour down its edge, which is a line. The status is
+       already its letter and its icon's colour. */
     .row:hover { background: var(--gs-hover); }
     .row:focus-visible,
     .group-header:focus-visible { outline: 1px solid var(--vscode-list-focusOutline, var(--gs-accent)); outline-offset: -1px; }
@@ -4422,8 +4473,8 @@ export class CommitViewProvider
     .row .row-actions .codicon,
     .group-actions .icon-btn .codicon { font-size: 17px; }
     /* Status letter: plain colored monospace, not a filled pill. Each row
-       already carries its status via the tinted icon and the hover rail — a
-       third, filled badge per row was the busiest signal in the list. The fixed
+       already carries its status via the tinted icon — a second, filled
+       badge per row was the busiest signal in the list. The fixed
        width keeps the letters column-aligned. */
     .row .status {
       display: inline-flex;

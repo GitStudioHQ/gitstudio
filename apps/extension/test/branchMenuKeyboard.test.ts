@@ -722,15 +722,22 @@ async function highlightLooks(theme: VsCodeTheme): Promise<{
 
 const TRANSPARENT = /^(transparent|rgba\(0, 0, 0, 0\))$/;
 
+// Lit, never outlined, in the light and dark themes (the owner's rule:
+// nothing chosen wears a line). The high-contrast themes give a selection no
+// background at all, so there, and only there, it is VS Code's whole focus
+// ring. selectionIsLit.test.ts sweeps the menu for every other line shape.
 for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
   test(`the highlight is plain to see in ${theme}`, { skip }, async () => {
     const look = await highlightLooks(theme);
-    assert.equal(look.outline, "solid 1px", `outlined (${JSON.stringify(look)})`);
-    assert.ok(!TRANSPARENT.test(look.outlineColor), `with a colour the theme gives it: ${look.outlineColor}`);
-    assert.match(look.subOutline, /^solid 1px /, `a submenu item's highlight too: ${look.subOutline}`);
-    assert.doesNotMatch(look.subOutline, /rgba\(0, 0, 0, 0\)$/);
     if (theme === "dark" || theme === "light") {
-      assert.notEqual(look.bg, look.plainBg, "and filled with the selection colour");
+      assert.notEqual(look.bg, look.plainBg, `filled with the selection colour (${JSON.stringify(look)})`);
+      assert.match(look.outline, /^none /, `and never outlined (${JSON.stringify(look)})`);
+      assert.match(look.subOutline, /^none /, `a submenu item's highlight neither: ${look.subOutline}`);
+    } else {
+      assert.equal(look.outline, "solid 1px", `high contrast: ringed whole (${JSON.stringify(look)})`);
+      assert.ok(!TRANSPARENT.test(look.outlineColor), `with a colour the theme gives it: ${look.outlineColor}`);
+      assert.match(look.subOutline, /^solid 1px /, `a submenu item's highlight too: ${look.subOutline}`);
+      assert.doesNotMatch(look.subOutline, /rgba\(0, 0, 0, 0\)$/);
     }
   });
 }
