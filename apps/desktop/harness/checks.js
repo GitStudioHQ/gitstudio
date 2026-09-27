@@ -17898,7 +17898,10 @@
      * rest of the tab's life — nothing asked again.
      *
      * `arg` is the door: repositories, clone, home, open, recent, worktree,
-     * switch, launch.
+     * switch, launch. With ?norepo=1, repositories and home open from the
+     * window with no tab (a fresh launch, or the last tab closed) — the most
+     * common first open, and another road: the no-repository screen hands its
+     * landing to the new tab.
      */
     "a-tabs-top-bar-fills-however-it-came-to-the-front": async (f) => {
       const c = check(f);
@@ -17936,8 +17939,13 @@
         if (once) c.eq(asked("head:get", root), 1, `${what}: filled from the first status read`);
       };
       // The tab the window starts with is filled before anything moves —
-      // except at launch, where moving while it loads is the point.
-      if (door !== "launch") {
+      // except at launch, where moving while it loads is the point, and in a
+      // window with no tab at all.
+      const norepo = new URLSearchParams(location.search).has("norepo");
+      if (norepo) {
+        await settle(SLOW + 500);
+        c.eq($$(".repo-tab").length, 0, "precondition: no repository is open");
+      } else if (door !== "launch") {
         await settle(SLOW + 500);
         c.eq(text(".topbar-branch .switch-name"), "main", "precondition: the first tab's pill is filled");
       }
@@ -17952,7 +17960,7 @@
         row.click();
         await settle(SLOW + 700);
         c.eq(text(".nav-item.active"), "Code", "precondition: the open landed on its code");
-        filledFor(want, { branch: "main", sync: "Push 2" }, door);
+        filledFor(want, { branch: "main", sync: "Push 2" }, norepo ? `${door}, in a window with no tab` : door);
         return;
       }
       if (door === "clone") {
