@@ -69,6 +69,11 @@ test("the review for another worktree lists THAT worktree's commits, says whose 
   await host.send({ type: "pushCommitFiles", sha });
   const files = host.posted.find((m) => m.type === "pushCommitFiles");
   assert.deepEqual(files, { type: "pushCommitFiles", sha, files: [{ path: "a.txt", oldPath: undefined, status: "M", additions: 1, deletions: 1 }] });
+  // A commit git can't read (gone since the review opened): null — "Couldn't
+  // read this commit's files" — never an empty list, "No file changes".
+  host.posted.length = 0;
+  await host.send({ type: "pushCommitFiles", sha: "0123456789abcdef0123456789abcdef01234567" });
+  assert.deepEqual(host.posted.find((m) => m.type === "pushCommitFiles"), { type: "pushCommitFiles", sha: "0123456789abcdef0123456789abcdef01234567", files: null });
 
   // Push: the worktree's branch reaches origin; this window's branch is untouched.
   const mainBefore = s.repo.git("rev-parse", "main").trim();

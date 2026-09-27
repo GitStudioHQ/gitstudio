@@ -564,6 +564,8 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
     const details: WorktreeDetails = {
       files: files.slice(0, WORKTREE_FILES_SHOWN).map(toChangeFile),
       filesTotal: files.length,
+      // Unread is not clean: the row says it couldn't read them.
+      ...(status?.status ? {} : { filesUnread: true as const }),
       ...(unpushed && title ? { unpushed: { title, commits: unpushed.commits.map(toCommit), more: unpushed.more } } : {}),
       ...(toPull && row.upstream
         ? { toPull: { title: `To pull from ${row.upstream}`, commits: toPull.commits.map(toCommit), more: toPull.more } }
@@ -580,15 +582,17 @@ export class WorktreesWebviewProvider implements vscode.WebviewViewProvider, vsc
   private async sendCommitFiles(p: string, sha: string): Promise<void> {
     const a = this.repos.getActive();
     if (!a || typeof sha !== "string" || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(sha)) return;
+    // null when git can't read the commit — the page says so, where an empty
+    // list would read "No file changes in this commit" (the push review's
+    // sibling, sendPushCommitFiles, answers the same way).
     let files: ChangeFile[] | null;
     try {
       const parents = await a.ctx.process.run(["rev-list", "--parents", "-n", "1", sha]);
-      const first = parents.code === 0 ? parents.stdout.trim().split(" ")[1] : undefined;
-      files = await a.ctx.commitDetails.getCommitFiles(sha, first);
+      files = parents.code === 0 ? await a.ctx.commitDetails.getCommitFiles(sha, parents.stdout.trim().split(" ")[1]) : null;
     } catch {
       files = null;
     }
-    void this.post({ type: "commitFiles", path: p, sha, files: files ?? [] });
+    void this.post({ type: "commitFiles", path: p, sha, files });
   }
 
   // ── Diffs, in THAT worktree ───────────────────────────────────────────────

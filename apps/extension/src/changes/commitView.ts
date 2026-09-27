@@ -2204,11 +2204,12 @@ export class CommitViewProvider
     if (!entry || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(sha)) {
       return;
     }
+    // null when git can't read the commit: getCommitFiles reads an unknown
+    // sha as no files at all, and the review would say "No file changes".
     let files: CompareFile[] | null;
     try {
       const parents = await entry.ctx.process.run(["rev-list", "--parents", "-n", "1", sha]);
-      const first = parents.code === 0 ? parents.stdout.trim().split(" ")[1] : undefined;
-      files = await entry.ctx.commitDetails.getCommitFiles(sha, first);
+      files = parents.code === 0 ? await entry.ctx.commitDetails.getCommitFiles(sha, parents.stdout.trim().split(" ")[1]) : null;
     } catch {
       files = null;
     }

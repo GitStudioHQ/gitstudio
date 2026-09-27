@@ -400,6 +400,9 @@ export interface WorktreeDetails {
   /** Its uncommitted changes (at most `FILES_SHOWN`), and how many there are. */
   files: ChangeFile[];
   filesTotal: number;
+  /** Its working tree could not be read: `files` is empty because nothing is
+   *  known, not because nothing changed. */
+  filesUnread?: true;
   /** The commits it has not pushed, by its rule (see unpublishedTitle). */
   unpushed?: { title: string; commits: ChangeCommit[]; more: boolean };
   /** The commits its upstream has that it doesn't. */
@@ -452,7 +455,8 @@ export type WorktreesToPage =
     }
   | { type: "status"; path: string; status: WorktreeRowStatus | null }
   | { type: "details"; path: string; details: WorktreeDetails }
-  | { type: "commitFiles"; path: string; sha: string; files: ChangeFile[] }
+  /** A commit's own files; null when git could not read them. */
+  | { type: "commitFiles"; path: string; sha: string; files: ChangeFile[] | null }
   /** An action on a row is running (or is over): the row says so and takes no second one. */
   | { type: "busy"; path: string; busy: boolean; label?: string }
   /** Change a row now, before the next list — an optimistic patch, or its rollback. */

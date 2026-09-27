@@ -476,6 +476,19 @@ test("an open row: its uncommitted files (each side named), its commits not push
     files: [{ path: "x.txt", status: "M", additions: 1, deletions: 1, oldPath: undefined }],
   });
 
+  // A commit git can't read: null, said as such — never "No file changes".
+  const gone = "0123456789abcdef0123456789abcdef01234567";
+  await h.send({ type: "commitFiles", path: s.wt("ahead"), sha: gone });
+  assert.deepEqual([...h.posted].reverse().find((m) => m.type === "commitFiles"), { type: "commitFiles", path: s.wt("ahead"), sha: gone, files: null });
+
+  // A tree git can't read (a damaged index): its uncommitted changes are
+  // unread — never "No uncommitted changes".
+  writeFileSync(join(at(s.wt("even"))("rev-parse", "--absolute-git-dir"), "index"), "not an index");
+  await h.send({ type: "expand", path: s.wt("even") });
+  const unread = h.details(s.wt("even"))!;
+  assert.equal(unread.filesUnread, true);
+  assert.deepEqual(unread.files, []);
+
   // A missing or bare row opens to nothing.
   await h.send({ type: "expand", path: s.wt("missing") });
   assert.equal(h.details(s.wt("missing")), undefined);

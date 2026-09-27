@@ -655,8 +655,10 @@ export class WorktreesView {
       return;
     }
     // Uncommitted.
-    parts.push(sectionLabel("Uncommitted", det.filesTotal));
-    if (det.files.length === 0) {
+    parts.push(sectionLabel("Uncommitted", det.filesUnread ? undefined : det.filesTotal));
+    if (det.filesUnread) {
+      parts.push(emptyNote("Couldn't read its uncommitted changes."));
+    } else if (det.files.length === 0) {
       parts.push(emptyNote("No uncommitted changes."));
     } else {
       for (const f of det.files) {

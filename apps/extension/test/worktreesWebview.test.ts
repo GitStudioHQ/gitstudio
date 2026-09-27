@@ -19,8 +19,20 @@ async function open(theme: VsCodeTheme = "dark", width = 300, height = 700): Pro
   const page = await WorktreesPage.open(theme, { width, height });
   opened.push(page);
   await page.send({ type: "rows", rows: fixtureRows(), state: "ok", labels: LABELS });
+  // The page tells the host which rows are in view once they are laid out
+  // (a debounced post): let that land before a test clears what was posted.
+  await page.page.waitFor(`window.__posted.some(function (m) { return m.type === "visible"; })`);
   await page.settle();
   return page;
+}
+
+/**
+ * What the page asked the host for — without its "rows in view" reports,
+ * which follow any layout change (a row opening moves the rest) on a
+ * debounce of their own, and are pinned by their own test.
+ */
+async function asked(page: WorktreesPage): Promise<Record<string, unknown>[]> {
+  return (await page.posted()).filter((m) => m.type !== "visible");
 }
 
 const LOGIN = "/code/app-login";
@@ -146,7 +158,7 @@ test("click opens a row: it asks the host for its details, shows Loading…, the
   const page = await open();
   await page.clearPosted();
   await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);
-  assert.deepEqual(await page.posted(), [{ type: "expand", path: LOGIN }]);
+  assert.deepEqual(await asked(page), [{ type: "expand", path: LOGIN }]);
   assert.equal((await lineOf(page, LOGIN))?.expanded, "true");
   const loading = await page.eval<string>(`document.querySelector('.wt-item[data-path="${LOGIN}"] .wt-details').textContent`);
   assert.match(loading, /Loading…/);
@@ -170,17 +182,17 @@ test("click opens a row: it asks the host for its details, shows Loading…, the
   // A file opens its diff in that worktree: the host is handed the file, side and all.
   await page.clearPosted();
   await page.clickOn(`.wt-item[data-path="${LOGIN}"] .cr-file[data-path="src/auth/login.ts"]`);
-  assert.deepEqual(await page.posted(), [{ type: "openFile", path: LOGIN, file: { path: "src/auth/login.ts", status: "M", area: "staged" } }]);
+  assert.deepEqual(await asked(page), [{ type: "openFile", path: LOGIN, file: { path: "src/auth/login.ts", status: "M", area: "staged" } }]);
 
   // A commit opens to its files; a file under it opens what that commit did.
   const sha = fixtureDetails().unpushed!.commits[0].sha;
   await page.clearPosted();
   await page.clickOn(`.wt-item[data-path="${LOGIN}"] .cr-commit-item[data-sha="${sha}"] .cr-commit`);
-  assert.deepEqual(await page.posted(), [{ type: "commitFiles", path: LOGIN, sha }]);
+  assert.deepEqual(await asked(page), [{ type: "commitFiles", path: LOGIN, sha }]);
   await page.send({ type: "commitFiles", path: LOGIN, sha, files: [{ path: "src/auth/session.ts", status: "M", additions: 24, deletions: 3 }] });
   await page.clearPosted();
   await page.clickOn(`.cr-commit-item[data-sha="${sha}"] .cr-file`);
-  const [msg] = await page.posted();
+  const [msg] = await asked(page);
   assert.deepEqual(msg, {
     type: "openCommitFile",
     path: LOGIN,
@@ -190,6 +202,24 @@ test("click opens a row: it asks the host for its details, shows Loading…, the
   });
   const nums = await page.eval<string>(`document.querySelector('.cr-commit-item[data-sha="${sha}"] .cr-nums').textContent`);
   assert.equal(nums, "+24−3");
+});
+
+test("what couldn't be read says so: a commit's files, a worktree's uncommitted changes — never 'No … changes'", { skip }, async () => {
+  const page = await open();
+  await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);
+  await page.send({ type: "details", path: LOGIN, details: { ...fixtureDetails(), files: [], filesTotal: 0, filesUnread: true } });
+  await page.clickOn(`.wt-item[data-path="${LOGIN}"] .cr-commit`);
+  const sha = fixtureDetails().unpushed!.commits[0].sha;
+  await page.send({ type: "commitFiles", path: LOGIN, sha, files: null });
+  const said = await page.eval<{ uncommitted: string; label: string; commit: string }>(`(function () {
+    var d = document.querySelector('.wt-item[data-path="${LOGIN}"] .wt-details');
+    return {
+      uncommitted: d.querySelector(".cr-empty").textContent,
+      label: d.querySelector(".cr-section-label").textContent,
+      commit: d.querySelector('.cr-commit-item[data-sha="${sha}"] .cr-commit-files').textContent,
+    };
+  })()`);
+  assert.deepEqual(said, { uncommitted: "Couldn't read its uncommitted changes.", label: "Uncommitted", commit: "Couldn't read this commit's files." });
 });
 
 test("the keyboard walks one tree: ↓ ↑ between rows and into an open one, → opens, ← closes and climbs, Enter toggles", { skip }, async () => {
@@ -203,7 +233,7 @@ test("the keyboard walks one tree: ↓ ↑ between rows and into an open one, �
   await page.key("ArrowUp");
   await page.clearPosted();
   await page.key("ArrowRight");
-  assert.deepEqual(await page.posted(), [{ type: "expand", path: LOGIN }]);
+  assert.deepEqual(await asked(page), [{ type: "expand", path: LOGIN }]);
   await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
   await page.key("ArrowRight"); // open → into its first item
   assert.equal(await focused(), "src/auth/login.ts|cr-file");
@@ -214,7 +244,7 @@ test("the keyboard walks one tree: ↓ ↑ between rows and into an open one, �
   await page.clearPosted();
   await page.key("ArrowLeft"); // closes it
   assert.equal((await lineOf(page, LOGIN))?.expanded, "false");
-  assert.deepEqual(await page.posted(), [{ type: "collapse", path: LOGIN }]);
+  assert.deepEqual(await asked(page), [{ type: "collapse", path: LOGIN }]);
   await page.key("Enter");
   assert.equal((await lineOf(page, LOGIN))?.expanded, "true");
   await page.key("End");
@@ -258,7 +288,7 @@ test("More: every action in words; one it can't take is shown with the reason; E
   // A disabled item does nothing.
   await page.clearPosted();
   await page.eval(`Array.prototype.find.call(document.querySelectorAll(".wt-menu-item"), function (b) { return b.textContent.indexOf("Remove Worktree") === 0; }).click()`);
-  assert.deepEqual(await page.posted(), []);
+  assert.deepEqual(await asked(page), []);
 });
 
 /** A row's More menu, opened, as a person reads it: each item's words, why not, and whether it is disabled. */
@@ -298,7 +328,7 @@ test("Lock… is on every worktree's menu — disabled with why where git can't 
   await page.clickOn(`.wt-row[data-path="/code/app"] .wt-more`);
   await page.clearPosted();
   await page.eval(`Array.prototype.find.call(document.querySelectorAll(".wt-menu-item"), function (b) { return b.textContent.indexOf("Lock…") === 0; }).click()`);
-  assert.deepEqual(await page.posted(), []);
+  assert.deepEqual(await asked(page), []);
 });
 
 test("a menu item asks the host for exactly that action on exactly that worktree", { skip }, async () => {
@@ -306,23 +336,23 @@ test("a menu item asks the host for exactly that action on exactly that worktree
   await page.clickOn(`.wt-row[data-path="/code/app-checkout"] .wt-more`);
   await page.clearPosted();
   await page.eval(`Array.prototype.find.call(document.querySelectorAll(".wt-menu-item"), function (b) { return b.textContent.indexOf("Remove Worktree") === 0; }).click()`);
-  assert.deepEqual(await page.posted(), [{ type: "action", path: "/code/app-checkout", action: "remove" }]);
+  assert.deepEqual(await asked(page), [{ type: "action", path: "/code/app-checkout", action: "remove" }]);
   // The row's own button: Open in New Window, at once.
   await page.clearPosted();
   await page.clickOn(`.wt-row[data-path="/code/app-checkout"] [data-action="openNew"]`);
-  assert.deepEqual(await page.posted(), [{ type: "action", path: "/code/app-checkout", action: "openNew" }]);
+  assert.deepEqual(await asked(page), [{ type: "action", path: "/code/app-checkout", action: "openNew" }]);
   // A missing folder's button is Forget — and so is one that isn't a worktree any more.
   for (const gone of ["/code/app-old", UNLINKED]) {
     await page.clearPosted();
     assert.equal(await page.eval<string>(`document.querySelector('.wt-row[data-path="${gone}"] .wt-actions button').getAttribute("aria-label")`), "Forget Worktree…");
     await page.clickOn(`.wt-row[data-path="${gone}"] [data-action="forget"]`);
-    assert.deepEqual(await page.posted(), [{ type: "action", path: gone, action: "forget" }]);
+    assert.deepEqual(await asked(page), [{ type: "action", path: gone, action: "forget" }]);
   }
   // Delete on a row asks to remove it.
   await page.eval(`document.querySelector('.wt-row[data-path="/code/app-spike"]').focus()`);
   await page.clearPosted();
   await page.key("Delete");
-  assert.deepEqual(await page.posted(), [{ type: "action", path: "/code/app-spike", action: "remove" }]);
+  assert.deepEqual(await asked(page), [{ type: "action", path: "/code/app-spike", action: "remove" }]);
 });
 
 test("Unlock paints at once — the lock goes before the host answers — and comes back if git says no", { skip }, async () => {
@@ -330,7 +360,7 @@ test("Unlock paints at once — the lock goes before the host answers — and co
   await page.clickOn(`.wt-row[data-path="${AGENT}"] .wt-more`);
   await page.clearPosted();
   await page.eval(`Array.prototype.find.call(document.querySelectorAll(".wt-menu-item"), function (b) { return b.textContent.indexOf("Unlock") === 0; }).click()`);
-  assert.deepEqual(await page.posted(), [{ type: "action", path: AGENT, action: "unlock" }]);
+  assert.deepEqual(await asked(page), [{ type: "action", path: AGENT, action: "unlock" }]);
   assert.deepEqual((await lineOf(page, AGENT))?.badges.some((b) => b.startsWith("Locked")), false, "unlocked on screen now");
   const sameNode = await page.eval<boolean>(`(window.__agentRow = document.querySelector('.wt-item[data-path="${AGENT}"]'), true)`);
   assert.ok(sameNode);
@@ -352,7 +382,7 @@ test("a running action: the row says what it is doing and takes no second one; t
   assert.equal(busy.ariaBusy, "true");
   await page.clearPosted();
   await page.key("Delete");
-  assert.deepEqual(await page.posted(), [], "no second action while one runs");
+  assert.deepEqual(await asked(page), [], "no second action while one runs");
   const next = await page.eval<string>(`(function () { var ls = document.querySelectorAll(".wt-row"); for (var i = 0; i < ls.length; i++) if (ls[i].dataset.path === "/code/app-checkout") return ls[i + 1].dataset.path; })()`);
   await page.send({ type: "drop", path: "/code/app-checkout" });
   assert.equal(await lineOf(page, "/code/app-checkout"), null);
@@ -407,7 +437,7 @@ test("an open commit and the file row with the keyboard survive a status for tha
     assert.equal(now.filesUnder, before.filesUnder, `${what}: its files stay — never "Loading files…" again`);
     assert.equal(now.height, before.height, `${what}: the open row keeps its height`);
     assert.equal(now.top, before.top, `${what}: nothing moves`);
-    assert.deepEqual((await page.posted()).filter((m) => m.type === "commitFiles"), [], `${what}: the files are not asked for again`);
+    assert.deepEqual((await asked(page)).filter((m) => m.type === "commitFiles"), [], `${what}: the files are not asked for again`);
   };
 
   // 1. A status for THIS row (one more change).
@@ -438,7 +468,7 @@ test("an open commit and the file row with the keyboard survive a status for tha
   await page.settle();
   const moved = await state();
   assert.deepEqual([moved.sameFocus, moved.open, moved.filesUnder], [true, true, before.filesUnder], "new details: the open commit is the same, with its files");
-  assert.deepEqual((await page.posted()).filter((m) => m.type === "commitFiles"), []);
+  assert.deepEqual((await asked(page)).filter((m) => m.type === "commitFiles"), []);
   await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
   await page.settle();
   await settled("the details as they were");
@@ -479,7 +509,7 @@ test("Prune N: shown only when git would prune something — unlocked, missing o
   });
   await page.clearPosted();
   await page.clickOn(".wt-prune");
-  assert.deepEqual(await page.posted(), [{ type: "prune" }]);
+  assert.deepEqual(await asked(page), [{ type: "prune" }]);
   await page.send({ type: "rows", rows: fixtureRows().filter((r) => r.path !== UNLINKED), state: "ok", labels: LABELS });
   assert.deepEqual(await prune(), { hidden: false, text: "Prune 1 missing", tip: "Forget the worktree whose folder is gone" });
   await page.send({ type: "rows", rows: fixtureRows().filter((r) => r.path !== "/code/app-old" && r.path !== UNLINKED), state: "ok", labels: LABELS });
@@ -494,7 +524,7 @@ test("only the main worktree: it says what a worktree is for, with New Worktree�
   assert.match(note, /New Worktree…/);
   await page.clearPosted();
   await page.clickOn(".wt-add");
-  assert.deepEqual(await page.posted(), [{ type: "add" }]);
+  assert.deepEqual(await asked(page), [{ type: "add" }]);
   await page.send({ type: "rows", rows: [], state: "noRepo", labels: LABELS });
   assert.match(await page.eval<string>(`document.querySelector(".wt-note").textContent`), /No repository open/);
   await page.send({ type: "rows", rows: [], state: "discovering", labels: LABELS });
