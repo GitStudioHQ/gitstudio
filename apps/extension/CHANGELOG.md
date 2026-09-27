@@ -83,7 +83,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   `fe` + Enter opens `feature`'s actions instead of fetching, while `fetch`
   still fetches. Every matched letter is marked, on the highlighted row too,
   and a long name whose match is past the row's end is cut in the middle
-  instead (`feature/…/billing-address-val…`), the whole name in its tooltip.
+  instead (`feature/…/billing-address-val…`) — scattered letters too, the
+  name's start kept (`fval`: `feature/…validation-for…`) — the whole name in
+  its tooltip.
   A query that matches no branch or tag offers to make it — *New Branch
   'fix/login'…* — or to check it out as a revision — *Checkout Revision
   'a1b2c3d'…* — each opening its dialog with what you typed. (#32)
@@ -91,8 +93,12 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   branch menu, a branch's actions open in the menu itself, under a back row
   naming the branch (**‹ feature**); the back row, Left and Escape return to
   the list where you left it, and typing returns to it and searches. Where
-  there is room, they open beside the menu as before — and resizing the
-  sidebar moves them between the two, with the same item highlighted. (#32)
+  there is room, they open beside the menu as before — every branch of one
+  menu the same way — and resizing the sidebar moves them between the two.
+  The same action stays highlighted through a resize or a refresh, also one
+  that adds or removes actions above it (an upstream pruned by a fetch). A
+  screen reader hears the back row as a button, *Back to the branches*, and
+  each group's heading in words: *Remote origin, 56 branches*. (#32)
 - **Remote branches are grouped by remote** in the branch menu — origin,
   upstream, a fork's — each under its own heading with its count, its rows
   named without the remote, and shown 40 at a time with **Show more**. A
@@ -133,17 +139,20 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   branch, then rename, copy and favorite, then reset and delete — with a
   separator only between those groups. A branch whose upstream was deleted
   from its remote starts with **Set Tracked Branch…**. The branch you're on
-  has **Tracked Branch…** too, and offers no pull when it tracks nothing.
+  has **Tracked Branch…** too, and offers no pull when it tracks nothing, or
+  a branch deleted from its remote — in its own actions and at the top of
+  the menu alike; searching for Pull then says why.
 - **On a detached HEAD the branch menu offers no Pull or Push**, which had
   no branch to act on; one line says so where they were — *Detached at
-  a1b2c3d — check out a branch to pull or push* — and is read out with the
-  search box.
+  a1b2c3d — check out a branch to pull or push* — with the search box empty,
+  or when you search for Pull or Push, and is read out with the search box.
 - The branch menu's words: **Update (pull)** is **Pull**, as the Changes
   view and the status bar call it (typing "update" still finds it), and
   Rebase no longer wears the pull-request icon.
 - A branch row in the branch menu names its upstream by the remote alone
   (**origin**) when it tracks the branch of the same name there, and in full
-  otherwise; ↑/↓ counts past 999 read **999+** (the tooltip has the number).
+  otherwise — or when that branch is gone from the remote, struck through;
+  ↑/↓ counts past 999 read **999+** (the tooltip has the number).
   An empty favorite star shows only on the row under the pointer or the
   highlight — a set one always — and every row's chevron is shown, saying it
   has actions. On the highlighted row, the ↑/↓ counts take the selection's
@@ -153,9 +162,12 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **Checkout Tag or Revision… no longer hands git an option.** A revision
   typed as `-f` was read by git as its force flag and threw away every
   uncommitted change. A revision starting with "-" is refused, in the dialog
-  and before git sees it.
+  and before git sees it. A tag or branch picked from its list is checked
+  out as exactly that ref, even when a tag and a branch share its name —
+  git took the branch.
 - The branch menu keeps its width while you type a long name, and takes the
-  width all its branches need when they arrive after you started typing.
+  width all its branches need when they arrive after you started typing, or
+  when the view is resized while you type.
 - A branch's actions closed by typing in the branch menu no longer open again
   when the view refreshes, and a tag's actions stay on the tag's row when it
   refreshes — also when a branch has the same name.
