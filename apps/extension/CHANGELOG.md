@@ -156,7 +156,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - The branch menu keeps its width while you type a long name, and takes the
   width all its branches need when they arrive after you started typing.
 - A branch's actions closed by typing in the branch menu no longer open again
-  when the view refreshes.
+  when the view refreshes, and a tag's actions stay on the tag's row when it
+  refreshes — also when a branch has the same name.
 - **Undo puts back what the operation changed — and only that.** Undo used to
   reset whichever branch you were on to the commit HEAD had been at. Undoing
   *Checkout feature* moved `feature` onto your previous branch's commit
