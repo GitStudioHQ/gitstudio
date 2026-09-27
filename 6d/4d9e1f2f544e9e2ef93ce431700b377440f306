@@ -1,0 +1,31 @@
+packages/engine/src/rebase/todo.ts
+  s_26f5e669d3043c::t_e8fc920ade2657 183-186,192-194
+  s_26f5e669d3043c::t_5d3d1bb1537961 31-34
+  s_26f5e669d3043c::t_187865d8e1a078 115-139,195
+packages/engine/test/rebaseTodo.test.ts
+  s_26f5e669d3043c::t_3c7329a3a44a4f 175-237
+packages/git-service/test/rewordKeying.test.ts
+  s_26f5e669d3043c::t_e3cb53a31e3bac 4,129-177
+packages/git-service/test/operationContext.test.ts
+  s_26f5e669d3043c::t_c02e33ba468f89 6-7,359-419
+apps/extension/test/rebaseTodoContinuing.test.ts
+  s_26f5e669d3043c::t_e946a8048d0788 6,69-74,77-78,122-128,146
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_d6f47b0dfa274b 521-526
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6d4d9e1f2f544e9e2ef93ce431700b377440f306",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
