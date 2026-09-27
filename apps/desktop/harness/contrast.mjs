@@ -27,7 +27,11 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PAGE = resolve(HERE, "page/harness.html");
+// $GS_HARNESS_PAGE, like check.mjs and shot.sh: without it an old-vs-new
+// comparison through this ruler measured the same build twice.
+const PAGE = process.env.GS_HARNESS_PAGE
+  ? resolve(process.env.GS_HARNESS_PAGE, "harness.html")
+  : resolve(HERE, "page/harness.html");
 // GS_CHROME, else Playwright's windowless chrome-headless-shell — never the
 // owner's own Chrome while a Playwright build exists (see chrome.mjs).
 const CHROME = harnessChrome();

@@ -37,6 +37,17 @@
     window.cancelAnimationFrame = () => {};
   }
 
+  // `still=1`: no transitions or animations, for a screenshot of a state a
+  // scene step CLICKED into. Headless Chrome's compositor frames do not follow
+  // the virtual clock, so a transition started by the click is shot at its
+  // FIRST frame — a toggle that is on photographs as off (its fill and ink
+  // still the old ones), and the shot says the selection is invisible.
+  if (params.get("still") === "1") {
+    const still = document.createElement("style");
+    still.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}";
+    document.documentElement.appendChild(still);
+  }
+
   // Pre-seed prefs so the app boots straight into the scene's view, terminal
   // collapsed, fixed rail width — deterministic screenshots.
   //

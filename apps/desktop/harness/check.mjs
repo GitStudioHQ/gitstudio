@@ -36,6 +36,10 @@ const CASES = [
   ["menu-closes-siblings", "issues~text:Author~text:Label"],
   ["palette-selects-first", "code~palette~type:gitstudio"],
   ["palette-selection-visible", "code~palette~type:gitstudio"],
+  // …and in light, and on the bare "GO TO" list the owner's screenshot showed.
+  ["palette-selection-visible", "code~palette~type:gitstudio", { theme: "light" }],
+  ["palette-selection-visible", "code~palette"],
+  ["palette-selection-visible", "code~palette", { theme: "light" }],
   ["palette-min-chars", "code~palette~type:gi"],
   ["facet-labels-humanized", "notifications~text:Reason"],
   ["facet-labels-aligned", "notifications~text:Reason"],
@@ -869,6 +873,83 @@ const CASES = [
   ["a-cloned-repository-says-so-in-its-new-tab", "code~palette~type:clone~text:Clone%20repository%E2%80%A6", { extra: "tabs=1" }],
   ["a-live-page-keeps-polling-after-a-tab-round-trip", "actions~open9101", { extra: "tabs=2", arg: "actions:runDetail", budget: 40000 }],
   ["a-live-page-keeps-polling-after-a-tab-round-trip", "actions~open9101~click:.gh-job-log", { extra: "tabs=2", arg: "actions:jobLogChunk|windows", budget: 40000 }],
+  // The owner's rule, swept: nothing selected is marked with a line (a bar, a
+  // rule, an underline, an accent outline, a gradient stripe, a child bar) —
+  // only a tinted fill and a glow — and every word on that tint reads (AA).
+  // `arg` is the surface each scene exists to reach, so a scene that stops
+  // reaching it fails rather than passing over nothing (the rail's own
+  // .nav-item.active used to satisfy "something is selected" everywhere).
+  // Every scene runs in BOTH themes: a tint that clears AA in one does not in
+  // the other.
+  ...[
+    ["dashboard", ".nav-item.active"],
+    ["repositories", ".gh-seg-btn.active"],
+    ["repositories~click:.gh-seg-btn:nth-child(2)", ".gh-seg-btn.active"],
+    ["branches", ".gh-seg-btn.active"],
+    ["branches~text:Worktrees", ".ab-pill.current"],
+    ["changes", ".repo-tab.is-active", "tabs=3"],
+    ["changes~modclick:.dc-file", ".dc-file.is-selected"],
+    ["changes~click:.dock-chevron", ".term-tab.active"],
+    ["changes~click:.dock-chevron", ".term-side-row.active"],
+    ["changes~text:Sign%20off", ".dc-toggle.is-on"],
+    ["code", ".nav-item.active"],
+    ["code~palette", ".cmdk-row.is-selected"],
+    ["code~palette~type:gitstudio", ".cmdk-row.is-selected"],
+    ["code~palette~type:clone~text:Clone%20repository%E2%80%A6", ".gh-seg-btn.active"],
+    ["code~bell", ".gh-seg-btn.active"],
+    ["code~click:.topbar-branch", ".dropdown-item.is-current"],
+    ["graph~click:.chip%5Bdata-ref%5D", ".row-landed"],
+    ["compare", ".cmp-seg-btn.active"],
+    ["compare~text:Changed%20files", ".cmp-mode-btn.active"],
+    ["rebase", ".rb-row.is-selected", "rbmany=1"],
+    ["issues", ".gh-seg-btn.active"],
+    ["issues~text:Author", ".gh-seg-btn.active"],
+    ["issues~text:Author~text:@mira-holt", ".gh-facet-btn.is-active"],
+    ["issues~open31", ".gh-reaction.is-mine"],
+    ["prs", ".gh-seg-btn.active"],
+    ["prs~open106", ".gh-subtab.active"],
+    ["prs~open106~text:Files", ".file-row.active"],
+    ["prs~open106~text:Approve", ".review-verdict.is-selected"],
+    ["prs~open106~text:Commits~text:issues%3A%20full-page%20detail", ".cmt-file.is-current"],
+    ["mywork", ".gh-seg-btn.active"],
+    ["notifications", ".gh-seg-btn.active"],
+    ["explore", ".explore-tab.active"],
+    ["explore~type:git~key:Enter", ".explore-tab.active"],
+    ["explore~type:git~key:Enter~text:GitStudioHQ/gitstudio~text:Go%20to%20file", ".gotofile-row.is-sel"],
+    ["actions", ".gh-seg-btn.active"],
+    ["actions~open9101~click:.gh-job-log", ".joblog-job.is-current"],
+    ["releases", ".gh-seg-btn.active"],
+    ["projects~click:.gh-card.clickable", ".md-tab.is-active"],
+    ["orgs", ".gh-subtab.active"],
+    ["gists~click:.sec-row:nth-of-type(2)", ".gh-subtab.active"],
+    ["settings", ".settings-seg-btn.active"],
+    ["assistant~click:.topbar-assistant", ".topbar-assistant.is-current"],
+  ].flatMap(([scene, arg, extra]) => [
+    ["no-selection-is-drawn-as-a-line", scene, { arg, extra }],
+    ["no-selection-is-drawn-as-a-line", scene, { arg, extra, theme: "light" }],
+  ]),
+  // The shared views (packages/webview-ui, in shadow roots the light-DOM
+  // sweep cannot see): the Commits view's selected commit still wears a 2px
+  // accent bar down its left edge, and the branch popover's active preset an
+  // accent outline. Restyled with the extension; pending until that lands.
+  ...[
+    ["graph~click:.row%20.subject", ".row.selected"],
+    ["graph~click:.gh-branches", ".gh-preset.active"],
+  ].flatMap(([scene, arg]) => [
+    ["no-selection-is-drawn-as-a-line-in-shared-views", scene, { arg, pending: true }],
+    ["no-selection-is-drawn-as-a-line-in-shared-views", scene, { arg, theme: "light", pending: true }],
+  ]),
+  // A segmented control's selected pill keeps its shape without a line — in
+  // light it had lost it (1.03:1 off its neighbour).
+  ...[
+    ["repositories", ".gh-seg-btn.active"],
+    ["settings", ".settings-seg-btn.active"],
+    ["compare", ".cmp-seg-btn.active"],
+    ["explore~type:git~key:Enter", ".explore-tab.active"],
+  ].flatMap(([scene, arg]) => [
+    ["the-selected-segment-reads-as-a-pill", scene, { arg }],
+    ["the-selected-segment-reads-as-a-pill", scene, { arg, theme: "light" }],
+  ]),
 ];
 
 function run(scene, checkId, opts = {}) {

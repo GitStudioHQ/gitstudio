@@ -151,6 +151,26 @@ body.vscode-dark {
   /* Accent washes reused across selected rows, tinted chips, active controls. */
   --accent-soft: color-mix(in srgb, var(--gs-accent) 15%, transparent);
   --accent-line: color-mix(in srgb, var(--gs-accent) 40%, var(--app-border));
+  /* THE SELECTED STATE — lit, never lined. The owner: a bar down a row's edge,
+     a rule on a tab, an underline or an accent outline on the thing you picked
+     is "disgusting". What marks it is a fill tinted with the accent and, on a
+     pill, a tab or a button, a soft glow in it (.repo-tab.is-active first).
+     --sel-fill-strong is for a keyboard cursor (the palette, Go to file): the
+     row Enter will press has to stand clear of its neighbours on fill alone.
+     --sel-glow-soft is the calm one, for rows and for pills inside a track. */
+  --sel-fill: color-mix(in srgb, var(--gs-accent) 18%, transparent);
+  --sel-fill-strong: color-mix(in srgb, var(--gs-accent) 28%, transparent);
+  --sel-glow: 0 0 16px -4px color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  --sel-glow-soft: 0 0 12px -5px color-mix(in srgb, var(--gs-accent) 60%, transparent);
+  /* Accent words ON a selected tint. The plain accent ink measured 4.05:1 on
+     a lit segment in a popover (the Inbox's "Unread", the clone dialog's
+     "URL"): the tint lifts the ground toward the ink. A lighter violet from
+     the same hue clears it. */
+  --sel-ink: color-mix(in srgb, var(--gs-accent-ink) 78%, #fff);
+  /* Secondary words ON a selected tint — a hint, a "current", a time. The
+     muted grey measured 4.21:1 under the review verdict's tint and 4.36:1
+     under the branch menu's current row. */
+  --sel-muted: color-mix(in srgb, var(--app-muted) 72%, var(--vscode-foreground));
   /* The app canvas itself — a barely-there top glow so the window has depth. */
   --canvas: radial-gradient(1200px 520px at 50% -340px,
       color-mix(in srgb, var(--gs-accent) 7%, transparent), transparent 70%),
@@ -305,6 +325,24 @@ body.vscode-light {
   --ring: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 20%, transparent);
   --accent-soft: color-mix(in srgb, var(--gs-accent) 12%, transparent);
   --accent-line: color-mix(in srgb, var(--gs-accent) 34%, var(--app-border));
+  /* The selected state in light: gentler tints (accent ink on them still
+     clears AA) and a gentler glow — see the dark block. */
+  --sel-fill: color-mix(in srgb, var(--gs-accent) 12%, transparent);
+  /* 25%: the palette's cursor measured 1.28:1 on its card at 20% — a wash. */
+  --sel-fill-strong: color-mix(in srgb, var(--gs-accent) 25%, transparent);
+  --sel-glow: 0 0 14px -4px color-mix(in srgb, var(--gs-accent) 55%, transparent);
+  --sel-glow-soft: 0 0 10px -5px color-mix(in srgb, var(--gs-accent) 45%, transparent);
+  /* Accent words ON a selected tint, in light: the accent ink measured 4.42:1
+     on --sel-fill over the page (11px "current", the filtering facet's name),
+     so a deeper violet from the same hue — 5.9:1 there, 7.7:1 on white. */
+  --sel-ink: color-mix(in srgb, var(--gs-accent-ink) 82%, #000);
+  /* The muted grey measured 4.47:1 on the deep-link landing row's tint. */
+  --sel-muted: color-mix(in srgb, var(--app-muted) 80%, #000);
+  /* A lit PILL on a grey track (the segmented controls): a soft accent
+     shadow under it lifts it, a glow around it lights it. Both blurred — a
+     shadow, never a hairline or a ring. */
+  --sel-lift: 0 1px 3px color-mix(in srgb, var(--gs-accent) 32%, transparent),
+    0 0 12px -3px color-mix(in srgb, var(--gs-accent) 60%, transparent);
   --canvas: radial-gradient(1200px 520px at 50% -340px,
       color-mix(in srgb, var(--gs-accent) 6%, transparent), transparent 70%),
     var(--app-bg);
@@ -1094,28 +1132,18 @@ button.repo-folder-chip:focus-visible,
   background: color-mix(in srgb, var(--app-border) 50%, transparent);
 }
 .nav-item:hover .glyph { color: var(--vscode-foreground); }
+/* The view you are on is LIT, not lined: no bar down the rail's edge and no
+   outline (the owner called both "trash"), just the accent-tinted fill and a
+   soft glow in it. */
 .nav-item.active {
   color: var(--vscode-foreground);
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--gs-accent) 20%, transparent),
-    color-mix(in srgb, var(--gs-accent) 13%, transparent));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gs-accent) 22%, transparent);
+    color-mix(in srgb, var(--gs-accent) 22%, transparent),
+    color-mix(in srgb, var(--gs-accent) 15%, transparent));
+  box-shadow: var(--sel-glow-soft);
   font-weight: 650;
 }
 .nav-item.active .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
-/* The signature: a rounded accent bar marking the selected view. */
-.nav-item.active::before {
-  content: "";
-  position: absolute;
-  left: -12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 18px;
-  border-radius: 0 3px 3px 0;
-  background: var(--gs-accent);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--gs-accent) 60%, transparent);
-}
 .nav-item:focus-visible {
   outline: 2px solid var(--gs-focus-ring);
   outline-offset: -2px;
@@ -2276,10 +2304,12 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
 .cmdk-row .glyph { color: var(--app-muted); flex: 0 0 auto; }
 /* The palette is keyboard-only: the highlighted row IS the button Enter will
    press, so it has to read as one. --app-active alone measured 1.14:1 against
-   the panel — a wash, not a state. */
+   the panel — a wash, not a state — and the accent bar that made up for it
+   down the row's left edge is gone (the owner: "trash"). The fill carries it
+   alone now, strong enough to stand clear of the card, with a calm glow. */
 .cmdk-row.is-selected {
-  background: var(--accent-soft);
-  box-shadow: inset 3px 0 0 var(--gs-accent);
+  background: var(--sel-fill-strong);
+  box-shadow: var(--sel-glow-soft);
   color: var(--vscode-foreground);
 }
 .cmdk-row.is-selected .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
@@ -2850,10 +2880,11 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
 /* A reaction you left is a pressed button, not a tally you happen to be in.
    The strip was read-only spans: the app said how many people had reacted and
    gave you no way to be one of them. */
+/* Pressed = lit: the accent fill and a soft glow, the same edge as the others. */
 .gh-reaction.is-mine {
-  border-color: var(--gs-accent);
   background: color-mix(in srgb, var(--gs-accent) 16%, transparent);
-  color: var(--gs-accent-ink, var(--gs-accent));
+  color: var(--sel-ink);
+  box-shadow: var(--sel-glow-soft);
 }
 button.gh-reaction { cursor: pointer; }
 button.gh-reaction:hover { border-color: var(--gs-accent); }
@@ -3555,7 +3586,10 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
 .repo-stars .codicon { font-size: 11px; }
 .sec-row-meta > .repo-lang { width: 92px; flex: 0 0 92px; text-align: right; }
 .sec-row-meta > .repo-stars { width: 62px; flex: 0 0 62px; justify-content: flex-end; }
-.gh-pill.is-current { color: var(--status-add); border-color: var(--status-add); }
+.gh-pill.is-current { color: var(--status-add); }
+/* "open" (the repository open in this window), in light: the status green on
+   the pill's grey wash measured 4.40:1. One step deeper. */
+body.vscode-light .gh-pill.is-current { color: color-mix(in srgb, var(--status-add) 85%, #000); }
 .gh-pill.is-warn {
   color: color-mix(in srgb, var(--status-warn) 90%, var(--vscode-foreground));
   border-color: var(--status-warn);
@@ -3638,7 +3672,8 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
 .cmp-mode-btn:active { transform: translateY(0.5px); }
 .cmp-mode-btn.active {
   background: color-mix(in srgb, var(--gs-accent) 18%, transparent);
-  color: var(--gs-accent-ink, var(--gs-accent));
+  /* --sel-ink: the plain accent ink measured 4.11:1 on this tint in light. */
+  color: var(--sel-ink);
 }
 /* The Commits | Changed files toggle row + summary. */
 .cmp-viewbar {
@@ -4281,7 +4316,7 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
   transition: background 110ms;
 }
 .gh-row:hover { background: var(--app-hover); }
-.gh-row.active { background: var(--app-active); border-color: color-mix(in srgb, var(--gs-accent) 35%, transparent); }
+.gh-row.active { background: var(--sel-fill); }
 .gh-row-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gh-row-sub { font-size: 11px; color: var(--app-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gh-pill {
@@ -4599,8 +4634,10 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
 /* PR detail sub-tabs (Conversation / Commits / Checks / Files). */
 .gh-subtabs {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   margin: 14px 0 12px;
+  /* Room for the lit tab's glow: the strip scrolls sideways, so it clips. */
+  padding: 4px 2px;
   border-bottom: 1px solid var(--app-border);
   /* The STRIP scrolls; the page does not. A gist with several files, or any
      tab set whose labels are long, ran the last tabs off the content column and
@@ -4623,20 +4660,22 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
      neither line. */
   white-space: nowrap;
   flex: 0 0 auto;
-  height: 34px;
+  height: 28px;
   padding: 0 12px;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-radius: 8px;
   background: transparent;
   color: var(--app-muted);
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 550;
   cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
 .gh-subtab .glyph .codicon { font-size: 15px; }
-.gh-subtab:hover { color: var(--vscode-foreground); }
-.gh-subtab.active { color: var(--vscode-foreground); border-bottom-color: var(--gs-accent); }
+.gh-subtab:hover { color: var(--vscode-foreground); background: var(--app-hover); }
+/* The tab you are on is a lit pill — no underline (the owner: no rules). */
+.gh-subtab.active { color: var(--vscode-foreground); background: var(--sel-fill); box-shadow: var(--sel-glow-soft); }
 .gh-subtab.active .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 .gh-subcontent { display: flex; flex-direction: column; }
 .gh-comment {
@@ -6311,7 +6350,6 @@ body.resizing-h .nav-rail { transition: none; }
   padding: 0;
 }
 .nav-rail.collapsed .nav-label { display: none; }
-.nav-rail.collapsed .nav-item.active::before { left: -8px; }
 .nav-rail.collapsed .nav-divider { margin: 9px 10px 8px; justify-content: center; }
 .nav-rail.collapsed .nav-divider-label { display: none; }
 /* Collapsed, the label goes but the RULE stays: hiding both left the three
@@ -6453,8 +6491,8 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .dock-chevron .codicon { font-size: 13px; }
 
 /* ── Footer tabs (Commit details / Output / one-per-shell) — flat, VS-Code-panel
-   style: no boxes, just text that brightens on hover/active, with a thin accent
-   line on the active tab's top edge (connecting it to the panel above). ─────── */
+   style: text that brightens on hover, and the open tab a small lit pill (no
+   underline — the owner: selection is never a line). ─────────────────────── */
 .dock-tabs { display: flex; align-self: stretch; min-width: 0; }
 .term-tabs { display: inline-flex; align-items: stretch; gap: 1px; min-width: 0; }
 .term-tab {
@@ -6463,10 +6501,12 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   align-items: center;
   gap: 6px;
   max-width: 168px;
-  height: 100%;
-  padding: 0 11px;
+  /* A pill centred in the 23px bar, not a full-height slot. */
+  align-self: center;
+  height: 19px;
+  padding: 0 10px;
   border: none;
-  border-radius: 0;
+  border-radius: 6px;
   background: transparent;
   color: var(--app-muted);
   font-family: inherit;
@@ -6474,25 +6514,21 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
-  transition: color var(--dur-1) var(--ease);
+  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
 .term-tab:hover { color: var(--vscode-foreground); }
-.term-tab.active { color: var(--vscode-foreground); }
-/* The only chrome on an active tab: a thin accent underline along its bottom edge. */
-.term-tab.active::after {
-  content: "";
-  position: absolute;
-  left: 9px;
-  right: 9px;
-  bottom: 0;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--gs-accent);
+.term-tab.active {
+  color: var(--vscode-foreground);
+  background: var(--sel-fill);
+  box-shadow: var(--sel-glow-soft);
 }
 /* Collapsed (just the status bar): no active indicator — nothing is "open". */
-.dock-mount.collapsed .term-tab.active::after { display: none; }
-.dock-mount.collapsed .term-tab.active { color: var(--app-muted); }
-/* Icons are small + grayed — no accent; the label + underline carry the state. */
+.dock-mount.collapsed .term-tab.active {
+  color: var(--app-muted);
+  background: transparent;
+  box-shadow: none;
+}
+/* Icons are small + grayed — no accent; the label + the lit pill carry the state. */
 .term-tab .glyph { flex: 0 0 auto; color: var(--app-muted); }
 .term-tab .glyph .codicon { font-size: 12px; }
 .term-tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -6611,19 +6647,10 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
 .term-side-row:hover { background: var(--app-hover); color: var(--vscode-foreground); }
+/* The shell you are typing into: the tinted fill alone, no strip down its edge. */
 .term-side-row.active {
-  background: color-mix(in srgb, var(--gs-accent) 14%, transparent);
+  background: var(--sel-fill);
   color: var(--vscode-foreground);
-}
-.term-side-row.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 5px;
-  bottom: 5px;
-  width: 2px;
-  border-radius: 0 2px 2px 0;
-  background: var(--gs-accent);
 }
 .term-side-row .codicon { font-size: 13px; }
 /* A shell that has exited is not a terminal any more. It used to keep the live
@@ -6903,10 +6930,7 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   background: var(--app-bg);
 }
 .clone-repo { align-items: flex-start; padding: 8px 10px; border-radius: 8px; }
-.clone-repo.is-current {
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gs-accent) 30%, transparent);
-}
+.clone-repo.is-current { background: var(--sel-fill); }
 .clone-repo-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .clone-repo-name {
   display: flex;
@@ -7076,7 +7100,7 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   background: var(--app-panel);
 }
 .settings-copy.is-missing { opacity: 0.55; }
-.settings-copy.is-current { border-color: color-mix(in srgb, var(--app-accent, #6c5cf7) 55%, var(--app-border)); }
+.settings-copy.is-current { background: color-mix(in srgb, var(--gs-accent) 12%, var(--app-panel)); }
 .settings-copy-meta { flex: 1 1 auto; min-width: 0; }
 .settings-copy-name {
   display: flex;
@@ -7153,6 +7177,8 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 }
 .gh-reaction-emoji { font-size: 12px; line-height: 1; }
 .gh-reaction-n { color: var(--app-muted); font-variant-numeric: tabular-nums; }
+/* Your reaction's count is in the pressed chip's ink (muted, it was 4.4:1 on the tint). */
+.gh-reaction.is-mine .gh-reaction-n { color: inherit; }
 /* A requested-but-not-yet-submitted reviewer reads as pending, not done. */
 .det-person { border: 1px solid transparent; }
 .det-person.is-pending {
@@ -7313,8 +7339,9 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 }
 .explore-tab:hover { background: var(--app-hover); color: var(--vscode-foreground); }
 .explore-tab.active {
-  background: var(--app-active);
-  color: var(--gs-accent-ink, var(--gs-accent));
+  background: var(--sel-fill);
+  color: var(--sel-ink);
+  box-shadow: var(--sel-glow-soft);
 }
 .explore-sort { margin-left: auto; }
 .explore-desc {
@@ -7825,10 +7852,7 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
 .gh-row-rich:hover { background: var(--app-hover); }
-.gh-row-rich.active {
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--gs-accent) 30%, transparent);
-}
+.gh-row-rich.active { background: var(--sel-fill); }
 .gh-row-rich:focus-visible {
   outline: 2px solid var(--gs-focus-ring);
   outline-offset: -1px;
@@ -8908,9 +8932,9 @@ body.vscode-light .gh-label-chip {
 .editors-fav .codicon { font-size: 13px; }
 .editors-fav:hover:not(:disabled) { color: var(--vscode-foreground); }
 .editors-fav.is-on {
-  color: var(--gs-accent-ink, var(--gs-accent));
-  border-color: color-mix(in srgb, var(--gs-accent) 35%, transparent);
-  background: color-mix(in srgb, var(--gs-accent) 12%, transparent);
+  color: var(--sel-ink);
+  background: var(--sel-fill);
+  box-shadow: var(--sel-glow-soft);
   opacity: 1;
 }
 .editors-fav.is-on:disabled { opacity: 1; filter: none; cursor: default; }
@@ -9204,9 +9228,9 @@ body.vscode-light .gh-label-chip {
   cursor: progress;
 }
 .rb-chip.is-active {
-  color: var(--gs-accent-ink, var(--gs-accent));
-  border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
-  background: color-mix(in srgb, var(--gs-accent) 12%, transparent);
+  color: var(--sel-ink);
+  background: var(--sel-fill);
+  box-shadow: var(--sel-glow-soft);
 }
 
 .rb-inprogress { margin: 22px auto; max-width: 560px; padding: 18px 20px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-elevated); }
@@ -9247,8 +9271,9 @@ body.vscode-light .gh-label-chip {
 .rb-set.a-squash { color: var(--gs-accent-ink, var(--gs-accent)); }
 .rb-set.a-fixup, .rb-set.a-edit { color: var(--status-warn); }
 .rb-set.a-drop { color: var(--gs-danger); }
-/* Every selected commit is already set to this one. */
-.rb-set.is-current { background: var(--app-active); box-shadow: inset 0 -2px 0 currentColor; }
+/* Every selected commit is already set to this one: tinted in the action's own
+   colour (no bar under it — selection is never a line). */
+.rb-set.is-current { background: color-mix(in srgb, currentColor 16%, transparent); }
 .rb-set.is-current:hover:not(:disabled) { background: color-mix(in srgb, var(--gs-accent) 26%, transparent); }
 
 .rb-hint { flex-wrap: wrap; }
@@ -9269,7 +9294,10 @@ body.vscode-light .gh-label-chip {
    plan is; the footer grows upward over the list, which does not move. */
 .rb-foot > .rb-banner { flex: 1 0 100%; margin: 0; }
 .rb-row.is-selected:hover { background: color-mix(in srgb, var(--gs-accent) 26%, transparent); }
-body.vscode-light .rb-row.is-selected:hover { background: color-mix(in srgb, var(--gs-accent) 20%, var(--app-elevated)); }
+/* 26%, not 20%: at 20% into white the hovered row stood LIGHTER than its
+   resting --app-active (1.30 vs 1.34:1 off a white card) — a selected thing
+   deepens under the pointer. */
+body.vscode-light .rb-row.is-selected:hover { background: color-mix(in srgb, var(--gs-accent) 26%, var(--app-elevated)); }
 /* The node's ring is drawn in the page colour to cut the rail; on a selected
    row it has to be the row's colour, or each dot sits in a dark halo. */
 .rb-row.is-selected .rb-node { box-shadow: 0 0 0 3px var(--app-active); }
@@ -9638,11 +9666,12 @@ body.vscode-light .rb-row.is-selected:hover { background: color-mix(in srgb, var
 .dc-toggle:hover { background: var(--app-hover); border-color: var(--accent-line); color: var(--vscode-foreground); }
 .dc-toggle:active { transform: translateY(0.5px); }
 .dc-toggle:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: -2px; border-radius: 999px; }
+/* On = lit: the accent fill and a soft glow; its edge stays the off one's. */
 .dc-toggle.is-on,
 .dc-toggle[aria-checked="true"] {
   color: var(--gs-accent-ink, var(--gs-accent));
-  border-color: color-mix(in srgb, var(--gs-accent) 42%, var(--app-border));
   background: color-mix(in srgb, var(--gs-accent) 14%, transparent);
+  box-shadow: var(--sheen), var(--sel-glow-soft);
 }
 .dc-toggle.is-on .glyph,
 .dc-toggle.is-on .codicon,
@@ -9651,7 +9680,6 @@ body.vscode-light .rb-row.is-selected:hover { background: color-mix(in srgb, var
 .dc-toggle.is-on:hover,
 .dc-toggle[aria-checked="true"]:hover {
   background: color-mix(in srgb, var(--gs-accent) 20%, transparent);
-  border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
 }
 /* Co-author chips below the toggles. */
 .dc-coauthors {
@@ -10115,14 +10143,8 @@ body.vscode-light .rb-row.is-selected:hover { background: color-mix(in srgb, var
    floor to shrink toward — see the `0 1` basis set on it in renderer.ts. */
 .dc-listcol { min-width: 220px; }
 
-/* The accent bar is absolutely positioned, so the row must be a containing
-   block. .file-row itself is static and shared, so this is set here. */
-.dc-file { position: relative; }
-.dc-file.is-selected { background: color-mix(in srgb, var(--gs-accent) 16%, transparent); }
-.dc-file.is-selected::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
-  background: var(--gs-accent);
-}
+/* A selected file is tinted, not barred: no strip down its left edge. */
+.dc-file.is-selected { background: var(--sel-fill); }
 .dc-file.dragging { opacity: 0.5; }
 
 .dc-selbar {
@@ -10668,17 +10690,20 @@ button.det-person:hover { background: var(--app-hover); }
   color: transparent;
 }
 .gh-facet-btn.is-active .gh-facet-value {
-  background: color-mix(in srgb, var(--gs-accent) 24%, transparent);
-  color: var(--gs-accent-ink, var(--gs-accent));
+  /* 16%, over the lit facet's own tint: at 24% the count measured 4.49:1 in
+     dark and 3.38:1 in light. */
+  background: color-mix(in srgb, var(--gs-accent) 16%, transparent);
+  color: var(--sel-ink);
 }
 .gh-facet-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gh-facet-btn .codicon-chevron-down { font-size: 13px; opacity: 0.65; margin-left: -1px; }
+/* Filtering = lit: the accent fill and a soft glow, not an accent outline. */
 .gh-facet-btn.is-active {
-  color: var(--gs-accent-ink, var(--gs-accent));
-  border-color: var(--accent-line, var(--gs-accent));
-  background: var(--app-active);
+  color: var(--sel-ink);
+  background: var(--sel-fill);
+  box-shadow: var(--sel-glow-soft);
 }
-.gh-facet-btn.is-active .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+.gh-facet-btn.is-active .glyph { color: var(--sel-ink); }
 /* "Clear" only appears while something is actually filtered, so it never
    competes with the facets for attention in the resting state. */
 .gh-facet-clear { color: var(--app-muted); }
@@ -10744,7 +10769,7 @@ button.det-person:hover { background: var(--app-hover); }
 }
 /* In Files mode the tab strip is a flex item of a bounded column, and its own
    overflow-x:auto zeroes its min-height — so the diff below squeezed it to a
-   19px sliver with the labels cut and the active underline never visible. */
+   19px sliver with the labels cut and the active tab never visible. */
 .det-view.det-files-mode .det-main > .gh-subtabs { flex: 0 0 auto; margin-top: 0; }
 
 /* Threads panel bits that used to be inline styles in prs.ts. */
@@ -11295,8 +11320,8 @@ body.vscode-light .log-pane {
 }
 .review-verdict:hover { background: var(--app-hover); }
 .review-verdict.is-selected {
-  border-color: var(--accent-line, var(--gs-accent));
-  background: var(--accent-soft);
+  background: var(--sel-fill);
+  box-shadow: var(--sel-glow-soft);
 }
 .review-verdict-lead { flex: 0 0 auto; display: inline-flex; color: var(--app-muted); }
 .review-verdict.is-selected .review-verdict-lead { color: var(--gs-accent-ink, var(--gs-accent)); }
@@ -11465,10 +11490,10 @@ body.vscode-light .log-pane {
 .gh-adds { flex: 0 0 auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* The Go-to-file cursor. Enter has always opened one of these rows; now you can
-   see which. */
+   see which — by the palette's own lit fill, not a bar down its edge. */
 .gotofile-row.is-sel {
-  background: var(--app-active);
-  box-shadow: inset 2px 0 0 var(--gs-accent);
+  background: var(--sel-fill-strong);
+  box-shadow: var(--sel-glow-soft);
 }
 
 /* The repository above a file's own title — context, set below the title's
@@ -11497,12 +11522,12 @@ body.vscode-light .log-pane {
 
 /* The Assistant launcher, while you are in the Assistant. */
 .topbar-assistant.is-current {
-  background: var(--app-active);
+  background: var(--sel-fill);
   /* See the light segmented-control rule at the end of this file: accent ink
      on the blue selection lands at 4.32:1, so light gets an accent-tinted fill
-     of its own. */
+     of its own. Lit like the repository tab, never outlined. */
   color: var(--gs-accent-ink, var(--gs-accent));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gs-accent) 35%, transparent);
+  box-shadow: var(--sel-glow);
 }
 .topbar-assistant.is-current .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 
@@ -11656,7 +11681,8 @@ body.vscode-light .log-pane {
   border: 1px solid var(--app-border);
   color: var(--app-muted);
 }
-.cmt-ref.is-currentHead { border-color: var(--gs-accent); color: var(--gs-accent); font-weight: 600; }
+/* HEAD's chip is tinted, its edge the same as its neighbours'. */
+.cmt-ref.is-currentHead { background: var(--sel-fill); color: var(--sel-ink); font-weight: 600; }
 .cmt-ref.is-tag { border-style: dashed; }
 .cmt-body-toggle {
   display: inline-flex;
@@ -12413,9 +12439,6 @@ body.vscode-light .log-pane {
   border: 1px solid var(--app-border);
   white-space: nowrap;
 }
-.br-state-col .ab-pill.current {
-  border-color: color-mix(in srgb, var(--gs-accent-ink, var(--gs-accent)) 40%, var(--app-border));
-}
 .br-state-col .ab-pill.gone { border-color: var(--status-warn); }
 
 /* A worktree's state is often TWO pills (this window + main worktree, locked
@@ -12606,9 +12629,11 @@ body.vscode-light .log-pane {
    "on light surfaces the bright blue/purple accents fail under white text or
    as small text". This pill is 10.5px/600 text — the smallest accent-coloured
    text in the app — and it was the one label that never got the light ink. */
+/* "current" is tinted like the ahead/behind pills beside it; its edge is the
+   same as theirs (no accent outline). */
 .ab-pill.current {
-  color: var(--gs-accent-ink, var(--gs-accent));
-  border-color: color-mix(in srgb, var(--gs-accent-ink, var(--gs-accent)) 40%, var(--app-border));
+  color: var(--sel-ink);
+  background: var(--sel-fill);
 }
 .ab-pill.default { color: var(--app-text); }
 .ab-pill.merged { color: var(--app-muted); }
@@ -12687,7 +12712,9 @@ body.vscode-light .log-pane {
   align-self: flex-start;
 }
 .gs-where.is-local {
-  color: var(--gs-accent-ink, var(--gs-accent));
+  /* --sel-ink: the accent words on an accent tint — the plain accent ink
+     measured 4.42:1 on this chip in light. */
+  color: var(--sel-ink);
   border-color: color-mix(in srgb, var(--gs-accent) 40%, transparent);
   background: var(--accent-soft);
 }
@@ -12761,12 +12788,26 @@ body.vscode-light .log-pane {
   from { background: color-mix(in srgb, var(--gs-accent) 42%, transparent); }
 }
 .row-landed {
-  background: color-mix(in srgb, var(--gs-accent) 15%, transparent);
-  box-shadow: inset 2px 0 0 0 var(--gs-accent);
+  background: var(--sel-fill);
   animation: gs-row-land 0.9s var(--ease);
 }
 /* ONE class on purpose: `.sec-row:hover` outranks it, so the landed row still
    lights under the cursor like every other row. */
+
+/* Secondary words inside a selected thing. The tint that marks it lifts the
+   ground toward the muted grey, so inside it, muted means --sel-muted: the
+   verdict's hint (4.21:1 dark), the branch menu's "current" (4.36:1 dark), the
+   landed row's subject and time (4.47:1 light) all read now. */
+.row-landed,
+.review-verdict.is-selected,
+.dropdown-item.is-current {
+  --app-muted: var(--sel-muted);
+}
+/* The landed row's ahead pill in light: its green one step deeper — on its
+   own green wash over the accent wash it measured 3.77:1. */
+body.vscode-light .row-landed .ab-pill.ahead {
+  color: color-mix(in srgb, var(--status-add) 80%, #000);
+}
 @media (prefers-reduced-motion: reduce) {
   .row-landed { animation: none; }
 }
@@ -12821,17 +12862,21 @@ body.vscode-light .notif-read .notif-line-title {
 /* The SELECTED segment, in light. Two things were fighting: a fill dark enough
    to read as "selected" pushed the accent ink under AA (4.32:1 on the blue
    --app-active), and a fill light enough for the ink left the segment with no
-   shape at all. So stop asking the fill to do both — a painted ring carries the
-   edge, which lets the fill stay light enough for the word on top of it.
-     ink vs fill   4.32 → 4.58
-     ring vs page  none → 1.62
-   .explore-tab is the same control wearing a different class. */
+   shape at all. The deeper --sel-ink settles the first, so the fill is free to
+   be a PILL again: 30% of the accent into white stands 1.17:1 off the grey
+   track (the 16% it replaced stood 1.03:1 — the selection rested on the
+   violet word alone; --sel-ink on it is 5.1:1), and --sel-lift lifts and
+   lights it: a soft accent shadow under it, a glow around it. No ring and no
+   hairline — the old white pill's 0.5px outline was a line, and selection is
+   never a line (the owner; see the PILL block below). .explore-tab is the
+   same control wearing a different class. */
 body.vscode-light .gh-seg-btn.active,
 body.vscode-light .settings-seg-btn.active,
 body.vscode-light .cmp-seg-btn.active,
 body.vscode-light .explore-tab.active {
-  background: color-mix(in srgb, var(--gs-accent) 12%, var(--app-elevated));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gs-accent) 42%, transparent);
+  background: color-mix(in srgb, var(--gs-accent) 30%, var(--app-elevated));
+  color: var(--sel-ink);
+  box-shadow: var(--sel-lift);
 }
 
 /* The board's status dots keep their own ink in light. Excluding them from the
@@ -13010,7 +13055,6 @@ body.vscode-light .topbar-assistant.is-current {
 .term-side-row.is-current:hover,
 .explore-tab.active:hover,
 .rb-chip.is-active:hover,
-.gotofile-row.is-sel:hover,
 .review-verdict.is-selected:hover,
 .cmt-file.active:hover,
 .md-tab.active:hover,
@@ -13021,14 +13065,27 @@ body.vscode-light .topbar-assistant.is-current {
 }
 body.vscode-light .dropdown-item.is-current:hover,
 body.vscode-light .nav-item.active:hover,
-body.vscode-light .cmp-seg-btn.active:hover,
-body.vscode-light .settings-seg-btn.active:hover,
-body.vscode-light .gh-seg-btn.active:hover,
 body.vscode-light .gh-subtab.active:hover,
-body.vscode-light .explore-tab.active:hover,
 body.vscode-light .term-tab.active:hover,
 body.vscode-light .list-row.is-current:hover {
   background: color-mix(in srgb, var(--gs-accent) 20%, var(--app-elevated));
+}
+/* The light segment's pill rests at 30% (above), so its hover goes past it. */
+body.vscode-light .cmp-seg-btn.active:hover,
+body.vscode-light .settings-seg-btn.active:hover,
+body.vscode-light .gh-seg-btn.active:hover,
+body.vscode-light .explore-tab.active:hover {
+  background: color-mix(in srgb, var(--gs-accent) 38%, var(--app-elevated));
+}
+
+/* The keyboard cursors rest on --sel-fill-strong (28% dark, 25% light), above
+   the 26% the list gives everything else — which made hovering the Go-to-file
+   row the keyboard is on LIGHTER in dark. Theirs goes past their own rest. */
+.gotofile-row.is-sel:hover {
+  background: color-mix(in srgb, var(--gs-accent) 36%, transparent);
+}
+body.vscode-light .gotofile-row.is-sel:hover {
+  background: color-mix(in srgb, var(--gs-accent) 33%, transparent);
 }
 
 /* A toggle that is ON stops answering too — same mistake, different clothes. */
@@ -13085,12 +13142,15 @@ select.rb-action:hover {
    Fixing the radius per first/last child would only chase it. The real problem
    is asking a clipped child to draw its own edge, so the selection stops being
    an edge: the wrapper gets a little padding and becomes the track, each button
-   rounds itself, and the selected one is a pill floating inside with a soft
-   shadow. That is how a segmented control is drawn on both platforms, it needs
-   no dividers, and there are no corners left to clip.
+   rounds itself, and the selected one is a pill floating inside. It needs no
+   dividers, and there are no corners left to clip.
 
-   The contrast reasoning above still holds — the fill stays light enough for
-   accent ink to clear AA; the SHADOW, not a ring, supplies the shape. */
+   The pill is LIT, in both themes: tinted with the accent and glowing softly
+   in it, like the repository tab in front. (Light used to be a white pill
+   with a drop shadow and a 0.5px hairline ring — a line, which the owner
+   rules out for anything selected.) The contrast reasoning above still holds
+   — the fill stays light enough for accent ink to clear AA; the GLOW, not a
+   ring, supplies the shape. */
 .gh-seg,
 .settings-seg,
 .cmp-seg {
@@ -13120,13 +13180,8 @@ select.rb-action:hover {
 .settings-seg-btn.active,
 .cmp-seg-btn.active {
   background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
-  box-shadow: none;
-}
-body.vscode-light .gh-seg-btn.active,
-body.vscode-light .settings-seg-btn.active,
-body.vscode-light .cmp-seg-btn.active {
-  background: var(--app-elevated);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--sel-glow-soft);
+  color: var(--sel-ink);
 }
 /* Hover on the track's unselected buttons stays inside their own radius. */
 .gh-seg-btn:hover,
@@ -13138,12 +13193,6 @@ body.vscode-light .cmp-seg-btn.active {
 .settings-seg-btn.active:hover,
 .cmp-seg-btn.active:hover {
   background: color-mix(in srgb, var(--gs-accent) 30%, transparent);
-}
-body.vscode-light .gh-seg-btn.active:hover,
-body.vscode-light .settings-seg-btn.active:hover,
-body.vscode-light .cmp-seg-btn.active:hover {
-  background: var(--app-elevated);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
 }
 
 /* The title does not grow, and the account cluster goes to the far right.
@@ -13275,9 +13324,9 @@ body.vscode-light .cmp-seg-btn.active:hover {
    One tab per open repository, in a row across the top of the window — the
    place Fork and GitKraken put theirs. On macOS it is the title bar: the
    traffic lights sit at its left (main.ts trafficLightPosition) and its empty
-   space drags the window. The tab in front wears the top bar's own panel
-   colour and runs into it, with the accent rule VS Code puts on its active
-   editor tab; the rest are quiet text on the window ground.
+   space drags the window. The tab in front is lit — a pill tinted with the
+   accent and glowing softly in it, never a rule or side lines (see
+   .repo-tab.is-active); the rest are quiet text on the window ground.
    AT THE END ON PURPOSE: later rules win at equal specificity in this file. */
 .repo-tabs {
   position: relative;
@@ -13361,11 +13410,11 @@ html.is-mac .repo-tabs { padding-left: 80px; }
   box-sizing: border-box;
   min-width: 120px;
   max-width: 220px;
-  height: 30px;
+  height: 28px;
+  margin-bottom: 4px;
   padding: 0 3px 0 12px;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 8px 8px 0 0;
+  border: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--app-muted);
   font-size: var(--text-sm);
@@ -13373,21 +13422,27 @@ html.is-mac .repo-tabs { padding-left: 80px; }
   line-height: 1;
   cursor: pointer;
   outline: none;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
+              box-shadow var(--dur-2) var(--ease);
 }
 .repo-tab:hover {
   background: color-mix(in srgb, var(--app-hover) 72%, transparent);
   color: var(--vscode-foreground);
 }
+/* The tab in front is lit, not outlined (the owner: no top rule, no side
+   lines): a pill tinted with the accent, glowing softly in it. */
 .repo-tab.is-active {
   z-index: 1;
-  height: 31px;
-  margin-bottom: -1px;
-  background: var(--app-panel);
-  border-color: var(--app-border);
+  background: color-mix(in srgb, var(--gs-accent) 16%, var(--app-panel));
   color: var(--vscode-foreground);
   font-weight: 600;
-  box-shadow: inset 0 2px 0 var(--gs-accent);
+  box-shadow: 0 0 16px -4px color-mix(in srgb, var(--gs-accent) 70%, transparent),
+              0 1px 2px rgba(0, 0, 0, 0.25);
+}
+body.vscode-light .repo-tab.is-active {
+  background: color-mix(in srgb, var(--gs-accent) 11%, var(--app-panel));
+  box-shadow: 0 0 14px -4px color-mix(in srgb, var(--gs-accent) 55%, transparent),
+              0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .repo-tab:focus-visible {
   outline: 2px solid var(--gs-focus-ring);
@@ -13456,8 +13511,8 @@ html.is-mac .repo-tabs { padding-left: 80px; }
 .repo-tab.is-dragging { opacity: 0.5; }
 .repo-tab.drop-before { box-shadow: inset 2px 0 0 var(--gs-accent); }
 .repo-tab.drop-after { box-shadow: inset -2px 0 0 var(--gs-accent); }
-.repo-tab.is-active.drop-before { box-shadow: inset 0 2px 0 var(--gs-accent), inset 2px 0 0 var(--gs-accent); }
-.repo-tab.is-active.drop-after { box-shadow: inset 0 2px 0 var(--gs-accent), inset -2px 0 0 var(--gs-accent); }
+.repo-tab.is-active.drop-before { box-shadow: inset 2px 0 0 var(--gs-accent), 0 0 16px -4px color-mix(in srgb, var(--gs-accent) 70%, transparent); }
+.repo-tab.is-active.drop-after { box-shadow: inset -2px 0 0 var(--gs-accent), 0 0 16px -4px color-mix(in srgb, var(--gs-accent) 70%, transparent); }
 /* On the tabs' own centre line (the row is 36px, a tab is its bottom 30), so
    the + reads as the next tab's place, not as a control floating above. */
 .repo-tabs-add {
