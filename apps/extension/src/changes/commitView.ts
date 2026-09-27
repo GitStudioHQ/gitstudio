@@ -6266,20 +6266,24 @@ export class CommitViewProvider
       // Beside the menu when the view has room for it there — off its right
       // edge, else its left — and otherwise IN it: a submenu laid over the
       // menu hid the list and the very row it belonged to, with no way back
-      // but Escape. Measured as it would cascade, before it is shown.
+      // but Escape. The room it asks for is a ref's actions at their widest
+      // (the submenu's max-width), not this ref's: its labels quote its
+      // name, and one row's actions must not open beside a menu whose next
+      // row's open in it. Measured as it would cascade, before it is shown.
       const SEAM = 2;
       const PAD = 6;
       menu.style.visibility = "hidden";
       document.body.appendChild(menu);
       branchSubmenu = menu;
       const subW = menu.getBoundingClientRect().width;
+      const widest = Math.max(subW, parseFloat(getComputedStyle(menu).maxWidth) || 0);
       const menuRect = branchMenu
         ? branchMenu.getBoundingClientRect()
         : anchor.getBoundingClientRect();
       const W = window.innerWidth;
       let left = -1;
-      if (menuRect.right - SEAM + subW <= W - PAD) left = menuRect.right - SEAM;
-      else if (menuRect.left + SEAM - subW >= PAD) left = menuRect.left + SEAM - subW;
+      if (menuRect.right - SEAM + widest <= W - PAD) left = menuRect.right - SEAM;
+      else if (menuRect.left + SEAM - widest >= PAD) left = menuRect.left + SEAM - subW;
 
       if (left < 0 && branchMenu) {
         // Drilled in: the actions take the list's place, under a back row.

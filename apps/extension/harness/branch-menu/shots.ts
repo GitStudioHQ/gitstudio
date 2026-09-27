@@ -207,7 +207,8 @@ async function shootWindow(theme: VsCodeTheme): Promise<string[]> {
 }
 
 async function shoot(theme: VsCodeTheme, questions: { confirm: DialogSpec; pick: DialogSpec }): Promise<string[]> {
-  const page = await ChangesPage.open(theme, { width: 560, height: 560, scale: 2 });
+  // Wide enough for a branch's actions to open beside the menu.
+  const page = await ChangesPage.open(theme, { width: 620, height: 560, scale: 2 });
   const files: string[] = [];
   const snap = async (name: string): Promise<void> => {
     const file = join(OUT, `${name}-${theme}.png`);

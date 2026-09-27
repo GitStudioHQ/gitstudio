@@ -125,7 +125,7 @@ const REFS: [string, string][] = [
 const WIDE = stateMessage({ local: [...LOCAL, { name: LONG, upstream: "origin/" + LONG }], remote: REMOTE, tags: ["v1.0"] });
 for (const [width, height, names, expect] of [
   [260, 640, "short", "drilled"], [300, 380, "short", "drilled"], [340, 640, "short", "drilled"],
-  [560, 640, "short", "beside"], [560, 640, "long", "drilled"], [900, 640, "long", "beside"],
+  [560, 640, "short", "drilled"], [600, 640, "short", "beside"], [560, 640, "long", "drilled"], [900, 640, "long", "beside"],
 ] as const) {
   test(`${width}×${height}, ${names} names: a ref's actions open ${expect === "drilled" ? "in the menu, under a back row" : "beside the menu"}, every item reachable — for every kind of ref`, { skip }, async () => {
     const p = await open("dark", width, height);
@@ -166,6 +166,44 @@ for (const [width, height, names, expect] of [
     }
   });
 }
+
+// Whether there is room beside the menu is the view's and the menu's to
+// say, not the ref's: a ref's labels quote its name, so its actions' own
+// width differs from row to row, and deciding by it opened one row's
+// actions beside the menu and the next row's in it.
+test("in one menu at one width, every ref's actions open the same way, whatever the length of its name", { skip }, async () => {
+  const state = stateMessage({
+    local: [
+      { name: "main", current: true, upstream: "origin/main", upstreamOnRemote: true },
+      { name: "topic" },
+      { name: "fix/pay-7", upstream: "origin/fix/pay-7", upstreamOnRemote: true },
+      { name: "feat/pay-v2", upstream: "origin/feat/pay-v2", upstreamOnRemote: true },
+    ],
+    remote: ["origin/main", "origin/fix/pay-7"],
+    tags: ["v1.0"],
+  });
+  const keys = ["b:local:main", "b:local:topic", "b:local:fix/pay-7", "b:local:feat/pay-v2", "b:remote:origin/fix/pay-7", "b:tag:v1.0"];
+  const seen: Record<number, string> = {};
+  for (const width of [480, 500, 520, 560, 580, 600, 640, 900]) {
+    const p = await open("dark", width, 640);
+    await openMenu(p, state);
+    const modes: Record<string, { mode: string; sub: number }> = {};
+    for (const key of keys) {
+      await query(p, "");
+      await arrowTo(p, key);
+      await p.key("ArrowRight");
+      const at = await placement(p);
+      modes[key] = { mode: at.mode, sub: Math.round(at.sub.width) };
+      inside(at.sub, { left: 0, top: 0, right: at.vw, bottom: at.vh }, `${width}px ${key}: inside the view`);
+      await p.key("ArrowLeft");
+    }
+    const kinds = new Set(Object.values(modes).map((m) => m.mode));
+    assert.equal(kinds.size, 1, `${width}px: one way for every ref: ${JSON.stringify(modes)}`);
+    seen[width] = [...kinds][0];
+  }
+  assert.equal(seen[480], "drilled");
+  assert.equal(seen[900], "beside");
+});
 
 test("drilled in: the back row, Left and Escape return to the list where it was; typing returns and searches", { skip }, async () => {
   const p = await open("dark", 300, 480);
