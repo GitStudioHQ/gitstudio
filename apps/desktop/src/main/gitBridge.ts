@@ -24,7 +24,7 @@ import { ExpectedError } from "./expectedError";
 import { applyForDoor, checkoutOp, pullForDoor, stashGoneAnswer, type DoorApplied } from "./inTheWay";
 import { newBranchAtHead, type ApplyOp } from "@gitstudio/git-service/changesInTheWay";
 import { basename, extname, join, resolve, sep } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
@@ -53,6 +53,7 @@ import {
 } from "@gitstudio/git-service/SyncOps";
 import { GitProcess } from "@gitstudio/git-service/GitProcess";
 import { sameFolder } from "@gitstudio/git-service/WorktreeProvider";
+import { sshHome } from "@gitstudio/git-service/sshAliases";
 import { worktreeChangedSinceAsked, worktreeRemovalRefusal } from "@gitstudio/host-bridge/worktreeRemoval";
 import type {
   CommitRecord,
@@ -2131,10 +2132,11 @@ export class GitBridge {
     }
   }
 
-  /** List the local SSH public keys under ~/.ssh (read-only). */
+  /** List the local SSH public keys under ~/.ssh (read-only) — the folder
+   *  git's ssh reads (sshHome: %HOME% on Windows when it is set). */
   async sshKeys(): Promise<SshKey[]> {
     try {
-      const dir = join(homedir(), ".ssh");
+      const dir = join(sshHome(), ".ssh");
       const files = await readdir(dir);
       const out: SshKey[] = [];
       for (const f of files) {

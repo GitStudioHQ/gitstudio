@@ -14,11 +14,25 @@ import { join } from "node:path";
 import { parseGitHubRemote, sshConfigHostName } from "@gitstudio/engine/forge/parseRemote";
 
 /**
+ * The home folder whose `.ssh` git's ssh reads.
+ *
+ * On macOS and Linux that is $HOME, which is what os.homedir() answers. On
+ * Windows os.homedir() answers %USERPROFILE% and never reads %HOME% — but git
+ * does: Git for Windows only sets HOME from the profile when it is unset, and
+ * its ssh reads $HOME/.ssh/config. So with HOME set (a custom home, a CI
+ * runner, a test), the aliases ssh resolves live under HOME, and reading the
+ * profile's instead found none of them.
+ */
+export function sshHome(env: NodeJS.ProcessEnv = process.env, platform: string = process.platform): string {
+  return platform === "win32" && env.HOME ? env.HOME : homedir();
+}
+
+/**
  * The HostName ~/.ssh/config gives an SSH alias — the file read on each call
  * (a few lines; a user who just added an alias should not need a restart).
  * No config: every alias stays unresolved.
  */
-export async function sshAliasResolver(home: string = homedir()): Promise<(host: string) => string | undefined> {
+export async function sshAliasResolver(home: string = sshHome()): Promise<(host: string) => string | undefined> {
   let text = "";
   try {
     text = await readFile(join(home, ".ssh", "config"), "utf8");

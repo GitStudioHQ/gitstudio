@@ -232,6 +232,10 @@ but they share the same engine, so most Git behaviour lands in both at once.
   left side was the base branch as it is now: once others had merged, it
   showed their new work as if the pull request removed it, and a comment on
   a removed line was sent for the wrong line.
+- On Windows, SSH host aliases are read from `%HOME%\.ssh\config` when
+  `HOME` is set — where Git for Windows' ssh reads them — not only from the
+  user profile's, and the SSH keys listed in Settings come from the same
+  folder.
 
 ## [2.1.0] - 2026-09-25
 

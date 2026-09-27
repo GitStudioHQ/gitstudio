@@ -5,9 +5,9 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { githubRepoOfRemote, sshAliasResolver } from "../src/sshAliases";
+import { githubRepoOfRemote, sshAliasResolver, sshHome } from "../src/sshAliases";
 import { removeTempRepo } from "./tmpRepo";
 
 const home = mkdtempSync(join(tmpdir(), "gitstudio-sshcfg-"));
@@ -36,4 +36,14 @@ test("the resolver answers the config's HostName, or nothing", async () => {
   const resolve = await sshAliasResolver(home);
   assert.equal(resolve("work"), "github.com");
   assert.equal(resolve("nope"), undefined);
+});
+
+test("the home ssh reads: %HOME% on Windows when it is set — git's ssh reads it, os.homedir() never does there", () => {
+  // Git for Windows sets HOME from the profile only when it is unset, and
+  // its ssh reads $HOME/.ssh/config; os.homedir() answers %USERPROFILE%.
+  assert.equal(sshHome({ HOME: "D:\\home\\me", USERPROFILE: "C:\\Users\\me" }, "win32"), "D:\\home\\me");
+  assert.equal(sshHome({ USERPROFILE: "C:\\Users\\me" }, "win32"), homedir(), "unset: the profile, as git falls back to");
+  assert.equal(sshHome({ HOME: "" }, "win32"), homedir());
+  // Elsewhere os.homedir() already is $HOME.
+  assert.equal(sshHome({ HOME: "/elsewhere" }, "linux"), homedir());
 });

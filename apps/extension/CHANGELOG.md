@@ -524,6 +524,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   reads both the older and the newer form now, keeps a title that itself
   starts with `#`, and a line whose action you change keeps git's own
   spelling.
+- On Windows, SSH host aliases are read from `%HOME%\.ssh\config` when
+  `HOME` is set — where Git for Windows' ssh reads them — so a remote through
+  one is recognised as github.com there too.
 
 ## [1.14.0] - 2026-09-25
 
