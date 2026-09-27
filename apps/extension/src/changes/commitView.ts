@@ -1,4 +1,7 @@
 import * as vscode from "vscode";
+import { failed, NO_REPOSITORY, notifyCopied } from "../ui/notify";
+import { relativeTime } from "../util/relativeTime";
+import { markWalkthrough } from "../ui/walkthroughProgress";
 import type { GitRef } from "@gitstudio/git-service/index";
 import { pushUnseenMessage, type PullResult } from "@gitstudio/git-service/SyncOps";
 import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
@@ -1005,6 +1008,9 @@ export class CommitViewProvider
     } catch {
       // status() is best-effort; the firehose still reconciles eventually.
     }
+    if (failure === undefined && what?.verb === "stage") {
+      markWalkthrough("staged");
+    }
     this.onCommitted();
     await this.pushState();
     return failure === undefined;
@@ -1466,9 +1472,7 @@ export class CommitViewProvider
   private async doCommit(msg: FromWebview): Promise<void> {
     const entry = this.repos.getActive();
     if (!entry) {
-      void vscode.window.showInformationMessage(
-        "GitStudio: no Git repository is active.",
-      );
+      void vscode.window.showInformationMessage(NO_REPOSITORY);
       return;
     }
     const message = (msg.message ?? "").trim();
@@ -1547,9 +1551,7 @@ export class CommitViewProvider
           stderr ||
           result.stdout.trim() ||
           "git refused the commit without saying why. If this repository has a pre-commit hook, check its output.";
-        void vscode.window.showErrorMessage(
-          `GitStudio: commit failed — ${detail}`,
-        );
+        void vscode.window.showErrorMessage(failed("Commit", detail));
         void this.view?.webview.postMessage({
           type: "commitDone",
           ok: false,
@@ -1559,6 +1561,7 @@ export class CommitViewProvider
       }
 
       void vscode.window.setStatusBarMessage("$(check) Committed", 3000);
+      markWalkthrough("committed");
 
       // Clear the box and refresh the views. The commit spinner clears on
       // commitDone; for a Commit & Push the modal then opens for the push step.
@@ -1717,7 +1720,7 @@ export class CommitViewProvider
     // Copy is clipboard-only — no git op, no state refresh.
     if (msg.action === "copyName") {
       await vscode.env.clipboard.writeText(ref);
-      vscode.window.setStatusBarMessage(`Copied “${ref}”`, 2000);
+      notifyCopied(`“${ref}”`);
       return;
     }
     // `diverged` is how SyncOps.pull answers "both sides moved and nobody said
@@ -1983,7 +1986,7 @@ export class CommitViewProvider
     needsForce: boolean;
     additions: number;
     deletions: number;
-    commits: Array<{ sha: string; subject: string; author: string; date: number }>;
+    commits: Array<{ sha: string; subject: string; author: string; date: number; rel: string }>;
     files: CompareFile[];
   } | null> {
     const head = await entry.ctx.refs.getHead();
@@ -2086,6 +2089,10 @@ export class CommitViewProvider
         subject: c.subject || "(no message)",
         author: c.author,
         date: c.authorDate,
+        // The age as every other GitStudio list says it ("3h", "2d"): the
+        // review had its own formatter and said "3h ago" beside a rail
+        // saying "3h" for the same commit.
+        rel: relativeTime(c.authorDate),
       })),
       files,
     };
@@ -2225,9 +2232,7 @@ export class CommitViewProvider
     if (result.ok) {
       vscode.window.setStatusBarMessage("$(check) Pushed", 3000);
     } else if (!settlePushUnseen(result)) {
-      void vscode.window.showErrorMessage(
-        `GitStudio: push failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
-      );
+      void vscode.window.showErrorMessage(failed("Push", result.stderr));
     }
     this.invalidateRefs();
     void entry.repo?.status?.();
@@ -2900,6 +2905,12 @@ export class CommitViewProvider
     }
     .sync-clean.visible { display: inline-flex; }
     .sync-clean svg { width: 12px; height: 12px; }
+    /* Short of room for the branch's name, the pills keep their arrow and
+       count and let the verb go ("up to date" keeps its tick): the name and
+       tip of each still say Push or Pull. */
+    .sync.compact .sync-verb,
+    .sync.compact .sync-clean span { display: none; }
+    .sync.compact .sync-pill { padding: 0 6px 0 4px; }
 
     /* ---- Branch + actions menu (popover; folds in the Branches view) ---- */
     .branch-menu {
@@ -3687,6 +3698,9 @@ export class CommitViewProvider
       border-style: solid;
     }
     .group { margin-top: 4px; }
+    /* An empty group is not drawn; the tree's keyboard skips it too (see
+       shownItem in the script). Hide a treeitem another way, and teach
+       shownItem the same rule. */
     .group.empty { display: none; }
     /* Checkbox model (gitstudio.changes.stagingModel = "checkboxes"). The tick
        is the only staging affordance in this mode, so it gets a real hit area
@@ -3900,7 +3914,8 @@ export class CommitViewProvider
     }
     .row.is-file:hover::before { background: var(--gs-row-accent, var(--gs-accent)); }
     .row:hover { background: var(--gs-hover); }
-    .row:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
+    .row:focus-visible,
+    .group-header:focus-visible { outline: 1px solid var(--vscode-list-focusOutline, var(--gs-accent)); outline-offset: -1px; }
     .row .indent { flex: 0 0 auto; }
     .row .twisty {
       width: 16px; height: 16px;
@@ -4185,11 +4200,15 @@ export class CommitViewProvider
     }
     .pm-commit .subj { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pm-commit .meta { flex: 0 0 auto; font-size: 11px; color: var(--gs-fg-muted); }
+    /* A button (it opens the file's diff), dressed as the row it always was. */
     .pm-file {
       display: flex; align-items: center; gap: 8px;
+      width: 100%; margin: 0; border: 0;
       padding: 4px 8px; border-radius: var(--gs-radius-sm);
+      font: inherit; color: inherit; background: transparent; text-align: left;
     }
     .pm-file:hover { background: var(--gs-hover-strong); }
+    .pm-file:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
     .pm-file.clickable { cursor: pointer; }
     .pm-file.clickable:hover .name { text-decoration: underline; text-underline-offset: 2px; }
     .pm-file .st { flex: 0 0 auto; width: 13px; text-align: center; font-family: var(--gs-font-mono); font-weight: 700; font-size: 11px; }
@@ -4301,15 +4320,25 @@ export class CommitViewProvider
     .pm-empty-note { padding: 14px 10px; text-align: center; color: var(--gs-fg-muted); font-size: 12px; }
 
     /* ---- Operation banner: a stopped merge / rebase / cherry-pick ------- */
+    /* Toned by what the stop needs: amber while something is in the way
+       (conflicts, or a stop git cannot continue from), the accent once
+       nothing is. It was conflict-red in every state — "Every conflict is
+       resolved." sat in an error box. */
     .op-banner {
+      --op-tone: var(--gs-amber);
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
       margin: 0 2px 10px;
-      padding: 8px 10px;
+      padding: 8px 10px 10px;
       border-radius: var(--gs-radius-sm);
-      border: 1px solid color-mix(in srgb, var(--gs-status-conflict) 45%, transparent);
-      background: color-mix(in srgb, var(--gs-status-conflict) 9%, transparent);
+      border: 1px solid color-mix(in srgb, var(--op-tone) 50%, transparent);
+      background: color-mix(in srgb, var(--op-tone) 9%, transparent);
+    }
+    .op-banner.tone-ready { --op-tone: var(--gs-accent); }
+    body.vscode-high-contrast .op-banner {
+      background: transparent;
+      border-color: var(--vscode-contrastBorder, var(--op-tone));
     }
     .op-banner[hidden] { display: none; }
     .op-title {
@@ -4321,16 +4350,46 @@ export class CommitViewProvider
       line-height: 1.35;
       overflow-wrap: anywhere;
     }
-    .op-title .codicon { flex: 0 0 auto; margin-top: 1px; color: var(--gs-status-conflict); }
+    .op-title .codicon { flex: 0 0 auto; margin-top: 1px; color: var(--op-tone); }
+    .op-banner.tone-ready .op-title .codicon { color: var(--gs-accent-text); }
+    /* The step, the direction and the note sit under the title's text, not
+       under its icon. */
+    .op-step,
     .op-direction,
     .op-note {
+      padding-left: 22px;
       font-size: 11.5px;
       line-height: 1.35;
-      color: var(--gs-fg);
       overflow-wrap: anywhere;
     }
-    .op-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    .op-actions button.gs-commit { flex: 0 1 auto; height: 24px; padding: 0 10px; font-size: 12px; }
+    .op-step { color: var(--gs-fg-muted); }
+    .op-direction,
+    .op-note { color: var(--gs-fg); }
+    .op-actions {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .op-actions button.gs-commit {
+      flex: 0 0 auto;
+      min-width: 0;
+      height: 24px;
+      padding: 0 10px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .op-actions .lbl-short { display: none; }
+    .op-actions .lbl-long,
+    .op-actions .lbl-short { overflow: hidden; text-overflow: ellipsis; }
+    /* Too narrow for them all: the lead on its own row, the rest sharing the
+       next one equally, by their first word. */
+    .op-actions.stacked { flex-wrap: wrap; }
+    .op-actions.stacked .op-lead { flex: 1 0 100%; }
+    /* Equal shares while there is room; never less than a word needs. */
+    .op-actions.stacked button.gs-commit:not(.op-lead) { flex: 1 1 0; min-width: max-content; }
+    .op-actions.stacked button.gs-commit:not(.op-lead) .lbl-long { display: none; }
+    .op-actions.stacked button.gs-commit:not(.op-lead) .lbl-short { display: inline; }
   </style>
 </head>
 <body class="layout-list">
@@ -4359,7 +4418,7 @@ export class CommitViewProvider
         <span class="sync-verb">Pull</span>
         <span id="behind-n">0</span>
       </button>
-      <span class="sync-clean" id="sync-clean" title="Up to date with upstream">
+      <span class="sync-clean" id="sync-clean" title="Up to date with upstream" role="img" aria-label="Up to date with upstream">
         <i class="codicon codicon-check" aria-hidden="true"></i>
         <span>up to date</span>
       </span>
@@ -4382,7 +4441,7 @@ export class CommitViewProvider
     <button class="sparkle review" id="review" type="button"
       title="Review changes with AI"
       aria-label="Review changes with AI">
-      <i class="codicon codicon-checklist glyph" aria-hidden="true"></i>
+      <i class="codicon codicon-code-review glyph" aria-hidden="true"></i>
     </button>
     <button class="sparkle connect" id="connect-ai" type="button"
       title="Connect an AI provider — powers commit messages &amp; code review"
@@ -4458,7 +4517,11 @@ export class CommitViewProvider
     </span>
   </div>
 
-  <div class="groups" id="groups"></div>
+  <!-- One tree: group headers, folders, files and a file's changes are its
+       treeitems, with ONE tab stop that the arrow keys move (a roving
+       tabindex). The row buttons stay for the pointer; the keyboard reaches
+       the same actions through the row's menu (Shift+F10). -->
+  <div class="groups" id="groups" role="tree" aria-label="Changed files" aria-multiselectable="true"></div>
 
   <!-- Selection bar: only present while a multi-selection exists, so the view
        is unchanged for anyone who never selects. -->
@@ -4620,18 +4683,217 @@ export class CommitViewProvider
     let rowOrder = [];
     const rowKey = (kind, path) => kind + ":" + path;
 
+    // ---- Keyed rows: the list is PATCHED, never rebuilt -----------------
+    //
+    // Every click that moves a file (Stage, Unstage, a tick) used to clear the
+    // whole list and build every row again — 55,000 elements at 5,000 files,
+    // and the focused row, its hover and its tooltip timer thrown away each
+    // time. Now each row is kept by a key and a signature of everything its
+    // DOM and its handlers were built from: a render reuses the row whose
+    // signature still matches, builds only the rows that changed, and moves
+    // nodes into place — so one Stage builds one row, not the list.
+    //
+    // What changes without rebuilding (selection, a group's count, whether a
+    // group or folder is open) is painted onto the kept row on every render.
+    let rowCache = new Map();
+    let nextRowCache = new Map();
+    function keep(key, sig, build) {
+      const hit = rowCache.get(key);
+      const node = hit && hit.sig === sig ? hit.node : build();
+      nextRowCache.set(key, { sig: sig, node: node });
+      return node;
+    }
+    /** Make parent's children exactly nodes, in order, moving only what is out of place. */
+    function patchChildren(parent, nodes) {
+      let cur = parent.firstChild;
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        if (n === cur) { cur = cur.nextSibling; continue; }
+        parent.insertBefore(n, cur);
+      }
+      while (cur) {
+        const next = cur.nextSibling;
+        parent.removeChild(cur);
+        cur = next;
+      }
+    }
+    function setAttr(node, name, value) {
+      if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+    }
+    function countWords(n, one, many) {
+      return n === 1 ? "1 " + (one || "file") : n + " " + (many || "files");
+    }
+
+    // ---- The tree from the keyboard: one tab stop, arrows move it ---------
+    //
+    // Every row, tick and row button was its own tab stop — 46 of them for six
+    // files — and no arrow key did anything. The list is a tree now: Tab
+    // reaches it once, Up/Down/Home/End move through what is showing,
+    // Right/Left open and close a group, a folder or a file's changes (or step
+    // in and out of one), Enter opens, Space ticks in the checkbox model,
+    // Shift+Up/Down extends the selection and Shift+F10 opens a row's menu.
+    let activeTKey = null;  // the treeitem that holds the one tab stop
+    let rovingEl = null;
+    function itemOf(node) {
+      return node && node.closest ? node.closest('[role="treeitem"]') : null;
+    }
+    /**
+     * Whether a person can see this treeitem: not inside a closed group, and
+     * not in an empty one — an empty group is not drawn (.group.empty), but
+     * its header is still in the DOM. Counting that header put the list's
+     * only tab stop on something nobody could see whenever nothing was staged,
+     * so Tab never reached the list at all.
+     */
+    function shownItem(it) {
+      return !!it && !it.closest(".group.empty, .group.collapsed .group-body");
+    }
+    /** The treeitems a person can see, top to bottom. */
+    function treeItems() {
+      const all = groupsEl.querySelectorAll('[role="treeitem"]');
+      const out = [];
+      for (let i = 0; i < all.length; i++) {
+        if (shownItem(all[i])) out.push(all[i]);
+      }
+      return out;
+    }
+    function itemByTKey(tkey) {
+      if (!tkey) return null;
+      return groupsEl.querySelector('[data-tkey="' + CSS.escape(tkey) + '"]');
+    }
+    function levelOf(it) { return Number(it.getAttribute("aria-level") || "1"); }
+    /**
+     * Put the one tab stop on the active item — or its closed group's
+     * header, or, when neither can be seen, the first item that can. With
+     * nothing to see, the list has no tab stop.
+     */
+    function applyRoving() {
+      let target = itemByTKey(activeTKey);
+      if (target && target.closest(".group.collapsed .group-body")) {
+        target = target.closest(".group").querySelector(".group-header");
+      }
+      if (!shownItem(target)) target = treeItems()[0] || null;
+      if (rovingEl && rovingEl !== target) rovingEl.tabIndex = -1;
+      rovingEl = target;
+      if (target && target.tabIndex !== 0) target.tabIndex = 0;
+    }
+    function focusItem(it) {
+      if (!it) return;
+      activeTKey = it.dataset.tkey || null;
+      applyRoving();
+      it.focus({ preventScroll: true });
+      it.scrollIntoView({ block: "nearest" });
+    }
+    groupsEl.addEventListener("focusin", (ev) => {
+      const it = itemOf(ev.target);
+      if (!it || it.dataset.tkey === activeTKey) return;
+      activeTKey = it.dataset.tkey || null;
+      applyRoving();
+    });
+    // A click on a row's own button or tick acts, and leaves the keyboard on
+    // the row — never on a control that is not in the tab order.
+    groupsEl.addEventListener("mousedown", (ev) => {
+      const it = itemOf(ev.target);
+      if (!it || ev.target === it) return;
+      const ctl = ev.target.closest ? ev.target.closest("button, input") : null;
+      if (!ctl || !it.contains(ctl)) return;
+      ev.preventDefault();
+      activeTKey = it.dataset.tkey || null;
+      applyRoving();
+      it.focus({ preventScroll: true });
+    });
+    /** Shift+Up/Down: the selection runs from its anchor to the file row the keyboard lands on. */
+    function selectThrough(from, to) {
+      if (!to || !to.dataset.key) return;
+      if (!selectionAnchor && from && from.dataset.key) selectionAnchor = from.dataset.key;
+      if (!selectionAnchor) selectionAnchor = to.dataset.key;
+      const a = rowOrder.indexOf(selectionAnchor);
+      const b = rowOrder.indexOf(to.dataset.key);
+      if (a === -1 || b === -1) return;
+      selectedRows.clear();
+      for (let i = Math.min(a, b); i <= Math.max(a, b); i++) selectedRows.add(rowOrder[i]);
+      paintSelection();
+    }
+    groupsEl.addEventListener("keydown", (ev) => {
+      const it = itemOf(ev.target);
+      if (!it || ev.altKey) return;
+      const k = ev.key;
+      const mod = ev.ctrlKey || ev.metaKey;
+      if (k === "ArrowDown" || k === "ArrowUp" || k === "Home" || k === "End" ||
+          k === "PageDown" || k === "PageUp") {
+        const items = treeItems();
+        const i = items.indexOf(it);
+        // A page is what the view shows (the page scrolls, not the list).
+        const page = Math.max(1, Math.floor(window.innerHeight / 24) - 1);
+        const to = k === "ArrowDown" ? i + 1 : k === "ArrowUp" ? i - 1
+          : k === "Home" ? 0 : k === "End" ? items.length - 1
+          : k === "PageDown" ? i + page : i - page;
+        const next = items[Math.max(0, Math.min(items.length - 1, to))];
+        ev.preventDefault();
+        if (!next) return;
+        if (ev.shiftKey && (k === "ArrowDown" || k === "ArrowUp")) selectThrough(it, next);
+        focusItem(next);
+        return;
+      }
+      if (mod && (k === "a" || k === "A") && ev.target === it) {
+        ev.preventDefault();
+        selectedRows.clear();
+        for (let i = 0; i < rowOrder.length; i++) selectedRows.add(rowOrder[i]);
+        selectionAnchor = rowOrder.length ? rowOrder[0] : null;
+        paintSelection();
+        return;
+      }
+      // Enter, Space and the arrows sideways on a row's own button or tick
+      // belong to that control.
+      if (ev.target !== it || mod) return;
+      // Shift+F10 or the menu key: the row's menu — a file's, a folder's or
+      // a group's — which is the keyboard's way to the row's buttons.
+      if (k === "ContextMenu" || (ev.shiftKey && k === "F10")) {
+        if (it.__menu) it.__menu(ev);
+        else ev.preventDefault();
+        return;
+      }
+      const expanded = it.getAttribute("aria-expanded");
+      if (k === "ArrowRight") {
+        ev.preventDefault();
+        if (expanded === "false" && it.__expand) { it.__expand(true); return; }
+        if (expanded === "true") {
+          const items = treeItems();
+          const child = items[items.indexOf(it) + 1];
+          if (child && levelOf(child) > levelOf(it)) focusItem(child);
+        }
+        return;
+      }
+      if (k === "ArrowLeft") {
+        ev.preventDefault();
+        if (expanded === "true" && it.__expand) { it.__expand(false); return; }
+        const items = treeItems();
+        const lvl = levelOf(it);
+        for (let j = items.indexOf(it) - 1; j >= 0; j--) {
+          if (levelOf(items[j]) < lvl) { focusItem(items[j]); return; }
+        }
+        return;
+      }
+      if ((k === "Enter" || k === " ") && it.__activate) {
+        ev.preventDefault();
+        it.__activate(k === " " ? "space" : "enter");
+      }
+    });
+
     /** Paint selection onto the DOM without a full render(), so clicks feel instant. */
     function paintSelection() {
       const rows = groupsEl.querySelectorAll(".row.is-file");
-      for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
-        const on = selectedRows.has(r.dataset.key);
-        r.classList.toggle("is-selected", on);
-        if (on) r.setAttribute("aria-selected", "true");
-        else r.removeAttribute("aria-selected");
-      }
+      for (let i = 0; i < rows.length; i++) paintRowSelected(rows[i]);
       updateSelectionBar();
       updateSelectionChrome();
+    }
+    /** One file row's selected state: its class, and what a screen reader hears. */
+    function paintRowSelected(r) {
+      const on = selectedRows.has(r.dataset.key);
+      if (r.classList.contains("is-selected") !== on) r.classList.toggle("is-selected", on);
+      // In a multi-select tree every selectable item says whether it is
+      // selected, not only the selected ones.
+      const want = on ? "true" : "false";
+      if (r.getAttribute("aria-selected") !== want) r.setAttribute("aria-selected", want);
     }
 
     function clearSelection() {
@@ -5137,6 +5399,9 @@ export class CommitViewProvider
       const hasUpstream = !!state.upstream;
       aheadN.textContent = String(ahead);
       behindN.textContent = String(behind);
+      // The count in the name too: a folded pill shows only an arrow and it.
+      aheadEl.setAttribute("aria-label", "Push " + ahead + (ahead === 1 ? " commit" : " commits"));
+      behindEl.setAttribute("aria-label", "Pull " + behind + (behind === 1 ? " commit" : " commits"));
       aheadEl.classList.toggle("visible", ahead > 0);
       behindEl.classList.toggle("visible", behind > 0);
       syncClean.classList.toggle("visible", hasUpstream && ahead === 0 && behind === 0);
@@ -5160,11 +5425,22 @@ export class CommitViewProvider
     // (Windows' are narrower), with the branch already losing letters. So,
     // measured with the name shown each time: if the branch name is clipped,
     // the name folds away completely; with room again, it comes back.
+    //
+    // Then the sync pills' verbs: at a sidebar's width, "Push 2" and "Pull 3"
+    // kept their full width while the branch was down to "fea…". Folded,
+    // they are an arrow and a count (the pill's name and tip keep the word).
+    // Each pass starts from everything shown, so a wider sidebar gives it all
+    // back and the decision is the same whichever state it starts from.
     function fitRepoPill() {
-      if (repoPill.hidden) return;
+      const clipped = () => branchName.scrollWidth > branchName.clientWidth + 0.5;
       repoPill.classList.remove("folded");
-      const clipped = branchName.scrollWidth > branchName.clientWidth + 0.5;
-      repoPill.classList.toggle("folded", clipped);
+      syncEl.classList.remove("compact");
+      if (!clipped()) return;
+      if (!repoPill.hidden) {
+        repoPill.classList.add("folded");
+        if (!clipped()) return;
+      }
+      syncEl.classList.add("compact");
     }
     new ResizeObserver(() => fitRepoPill()).observe(repoPill.parentElement);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitRepoPill);
@@ -5732,17 +6008,42 @@ export class CommitViewProvider
       }
     }
 
-    // ---- Reusable in-sidebar action popover (file rows: double/right-click) ----
+    // ---- Reusable in-sidebar action popover (files, folders, group headers:
+    // right-click or Shift+F10; files also double-click) ----
     // Opens right at the row inside the sidebar — NOT the VS Code quick-pick.
     let actionMenuEl = null;
-    function closeActionMenu() {
+    // The row (or header) the open menu belongs to. The menu is the
+    // keyboard's only way to a row's Stage, Unstage and Discard, and closing
+    // it dropped the focus on the page: the next arrow key did nothing, and
+    // the row that had just been staged could not hand the keyboard on.
+    let actionMenuAnchor = null;
+    /** Close the menu; with refocus, the keyboard goes back to the row it came from. */
+    function closeActionMenu(refocus) {
+      const anchor = actionMenuAnchor;
+      const hadFocus = !!actionMenuEl && actionMenuEl.contains(document.activeElement);
       if (actionMenuEl) { actionMenuEl.remove(); actionMenuEl = null; }
+      actionMenuAnchor = null;
       document.removeEventListener("mousedown", onActionDocDown, true);
       document.removeEventListener("keydown", onActionKey, true);
       window.removeEventListener("blur", onActionBlur, true);
+      if (refocus && anchor && anchor.isConnected && (hadFocus || isPageFocus())) {
+        anchor.focus({ preventScroll: true });
+      }
+    }
+    /** Nothing in particular has the keyboard: the page itself. */
+    function isPageFocus() {
+      const a = document.activeElement;
+      return !a || a === document.body || a === document.documentElement;
     }
     function onActionDocDown(e) {
-      if (actionMenuEl && !actionMenuEl.contains(e.target)) closeActionMenu();
+      if (!actionMenuEl || actionMenuEl.contains(e.target)) return;
+      const anchor = actionMenuAnchor;
+      closeActionMenu(false);
+      // A click elsewhere goes where it was aimed; only a click on nothing
+      // that takes the keyboard gives it back to the menu's row.
+      setTimeout(() => {
+        if (anchor && anchor.isConnected && isPageFocus()) anchor.focus({ preventScroll: true });
+      }, 0);
     }
     // The webview cannot see clicks in the editor/main area — those never reach
     // this document. Blur is the only signal that focus left the webview, so
@@ -5753,28 +6054,64 @@ export class CommitViewProvider
       }, 0);
     }
     function onActionKey(e) {
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeActionMenu(); }
+      if (!actionMenuEl) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        closeActionMenu(true);
+        return;
+      }
+      // A menu's keys: Up and Down move through its items (round the ends),
+      // Home and End go to the first and last, and Tab stays in the menu.
+      const items = Array.prototype.slice.call(actionMenuEl.querySelectorAll(".bm-subaction"));
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement);
+      let to = -1;
+      if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) to = i < 0 ? 0 : (i + 1) % items.length;
+      else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) to = i <= 0 ? items.length - 1 : i - 1;
+      else if (e.key === "Home") to = 0;
+      else if (e.key === "End") to = items.length - 1;
+      if (to < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      items[to].focus();
     }
-    function openActionMenu(title, items, anchor) {
-      closeActionMenu();
+    /**
+     * The in-sidebar menu for a row, a folder or a group's header, opened
+     * under anchor. icon is the codicon beside its title (none for a group).
+     * Choosing an item gives the keyboard back to anchor BEFORE it acts, so a
+     * row the action takes out of the list hands the keyboard to the next.
+     */
+    function openActionMenu(title, items, anchor, icon) {
+      closeActionMenu(false);
       closeBranchSubmenu();
       const menu = el("div", "branch-submenu action-menu");
+      menu.setAttribute("role", "menu");
+      if (title) menu.setAttribute("aria-label", title);
       if (title) {
         const head = el("div", "bm-subhead");
-        head.appendChild(el("i", "codicon codicon-file"));
+        head.setAttribute("aria-hidden", "true");
+        if (icon !== null) head.appendChild(el("i", "codicon codicon-" + (icon || "file")));
         const nm = el("span", "bm-subhead-name");
         nm.textContent = title;
         head.appendChild(nm);
         menu.appendChild(head);
       }
       const list = el("div", "bm-sublist");
+      list.setAttribute("role", "none");
       menu.appendChild(list);
       for (const it of items) {
         if (it.sep) { subSep(list); continue; }
-        subItem(list, it.icon, it.label, () => { closeActionMenu(); it.fn(); }, it.danger);
+        subItem(list, it.icon, it.label, () => { closeActionMenu(true); it.fn(); }, it.danger);
       }
+      list.querySelectorAll(".bm-subaction").forEach((b) => {
+        b.setAttribute("role", "menuitem");
+        b.tabIndex = -1;
+      });
+      list.querySelectorAll(".bm-subsep").forEach((s) => s.setAttribute("role", "separator"));
       document.body.appendChild(menu);
       actionMenuEl = menu;
+      actionMenuAnchor = anchor || null;
       // Anchor under the row's left edge; flip up / clamp so it never leaves view.
       const PAD = 6;
       const r = menu.getBoundingClientRect();
@@ -6953,15 +7290,18 @@ export class CommitViewProvider
     }
     function onPushKey(e) {
       if (e.key === "Escape" && !pushBusy) { e.preventDefault(); e.stopPropagation(); closePushModal(); }
-    }
-    function relTime(sec) {
-      const d = Math.max(0, Date.now() / 1000 - sec);
-      if (d < 60) return "just now";
-      const m = Math.floor(d / 60); if (m < 60) return m + "m ago";
-      const h = Math.floor(m / 60); if (h < 24) return h + "h ago";
-      const days = Math.floor(h / 24); if (days < 30) return days + "d ago";
-      const mo = Math.floor(days / 30); if (mo < 12) return mo + "mo ago";
-      return Math.floor(mo / 12) + "y ago";
+      // A modal keeps Tab inside it: its file rows, its buttons, round again
+      // — never the list behind the backdrop.
+      if (e.key === "Tab" && pushModal) {
+        const stops = Array.prototype.filter.call(
+          pushModal.querySelectorAll("button"),
+          function (b) { return !b.disabled && b.offsetParent !== null; });
+        if (!stops.length) return;
+        const first = stops[0], last = stops[stops.length - 1];
+        const inside = pushModal.contains(document.activeElement);
+        if (e.shiftKey && (!inside || document.activeElement === first)) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
+      }
     }
     function openPushModal(data) {
       closePushModal();
@@ -7023,7 +7363,7 @@ export class CommitViewProvider
         const row = el("div", "pm-commit");
         row.appendChild(el("span", "sha", esc(c.sha.slice(0, 7))));
         const subj = el("span", "subj"); subj.textContent = c.subject; subj.title = c.subject; row.appendChild(subj);
-        const meta = el("span", "meta"); meta.textContent = c.author + " · " + relTime(c.date); row.appendChild(meta);
+        const meta = el("span", "meta"); meta.textContent = c.author + (c.rel ? " · " + c.rel : ""); row.appendChild(meta);
         body.appendChild(row);
       });
       body.appendChild(el("div", "pm-section-label", "Files changed"));
@@ -7032,8 +7372,15 @@ export class CommitViewProvider
       } else {
         data.files.forEach((f) => {
           const st = (f.status || "M").charAt(0).toUpperCase();
-          const row = el("div", "pm-file " + statusClass(st));
-          row.appendChild(el("span", "st", st));
+          // A button, so Tab reaches it and Enter opens it — it was a
+          // clickable div the keyboard could not get to.
+          const row = el("button", "pm-file " + statusClass(st));
+          row.type = "button";
+          row.setAttribute("aria-label", "Open the diff of " + f.path +
+            (f.oldPath ? ", renamed from " + f.oldPath : ""));
+          const stEl = el("span", "st", st);
+          stEl.setAttribute("aria-hidden", "true");
+          row.appendChild(stEl);
           const name = f.path.split("/").pop() || f.path;
           const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
           const nm = el("span", "name"); nm.textContent = name; row.appendChild(nm);
@@ -7248,22 +7595,59 @@ export class CommitViewProvider
      * in rowOrder, so anything outside it no longer exists.
      */
     function render() {
+      // Where the keyboard is, so a row that leaves the list (staged,
+      // discarded) hands focus to the next row still there — or, with none
+      // after it, the one before — instead of dropping it on the page. The
+      // whole run on each side, not only the neighbours: a folder or a
+      // group takes its files with it.
+      const ae = document.activeElement;
+      const focused = ae && groupsEl.contains(ae) ? itemOf(ae) : null;
+      let was = null;
+      if (focused) {
+        const items = treeItems();
+        const i = items.indexOf(focused);
+        const keyOf = (n) => n.dataset.tkey;
+        was = {
+          tkey: focused.dataset.tkey,
+          after: i < 0 ? [] : items.slice(i + 1).map(keyOf),
+          before: i < 0 ? [] : items.slice(0, i).reverse().map(keyOf),
+          index: i,
+        };
+      }
       renderRows();
       let dropped = false;
       selectedRows.forEach((k) => {
         if (rowOrder.indexOf(k) === -1) { selectedRows.delete(k); dropped = true; }
       });
+      if (dropped) paintSelection();
       if (dropped && selectionAnchor && rowOrder.indexOf(selectionAnchor) === -1) {
         selectionAnchor = null;
+      }
+      applyRoving();
+      // Only to a row that can be seen: the header of a group this render
+      // emptied is still in the DOM (and may still hold the focus for a
+      // frame), and a focus() on it lands nowhere.
+      const now = document.activeElement;
+      const lost = !groupsEl.contains(now) || (!!itemOf(now) && !shownItem(itemOf(now)));
+      if (was && lost) {
+        // One pass over the rows (a Stage All can take thousands at once).
+        const items = treeItems();
+        const shownNow = new Map();
+        for (let j = 0; j < items.length; j++) shownNow.set(items[j].dataset.tkey, items[j]);
+        let to = shownNow.get(was.tkey) || null;
+        for (let j = 0; !to && j < was.after.length; j++) to = shownNow.get(was.after[j]) || null;
+        for (let j = 0; !to && j < was.before.length; j++) to = shownNow.get(was.before[j]) || null;
+        if (!to) to = items[Math.min(Math.max(was.index, 0), items.length - 1)] || null;
+        if (to) focusItem(to);
       }
       updateSelectionBar();
     }
 
     function renderRows() {
       lastRenderSig = stateSig();
-      groupsEl.textContent = "";
       folderKeyAccumulator = [];
       rowOrder = [];
+      nextRowCache = new Map();
       const data = {
         merge: lastState.merge,
         staged: lastState.staged,
@@ -7281,19 +7665,29 @@ export class CommitViewProvider
       // staged nothing and said nothing.
       stageAllTopBtn.disabled = data.unstaged.length === 0;
       stashChangesBtn.disabled = total === 0;
-      changesTotal.textContent = String(total);
-      changesTotal.classList.toggle("visible", total > 0);
+      // "Changed Files" counts files: a partly staged file is one file, in
+      // both groups. It said 4 over a checkbox list of 3.
+      const files = new Set();
+      for (const k of ["merge", "staged", "unstaged"]) {
+        for (const e of data[k]) files.add(e.path);
+      }
+      changesTotal.textContent = String(files.size);
+      changesTotal.classList.toggle("visible", files.size > 0);
+      changesTotal.setAttribute("aria-label", countWords(files.size, "changed file", "changed files"));
 
+      const groups = [];
       if (stagingModel === "checkboxes") {
-        groupsEl.appendChild(renderChecklist(data));
-        return;
+        groups.push(renderChecklist(data));
+      } else {
+        for (const def of GROUP_DEFS) {
+          const list = data[def.kind];
+          if (def.kind === "merge" && list.length === 0) continue;
+          groups.push(renderGroup(def, list));
+        }
       }
-
-      for (const def of GROUP_DEFS) {
-        const list = data[def.kind];
-        if (def.kind === "merge" && list.length === 0) continue;
-        groupsEl.appendChild(renderGroup(def, list));
-      }
+      patchChildren(groupsEl, groups);
+      // What this render did not ask for is gone: its rows are not kept.
+      rowCache = nextRowCache;
     }
 
     // ── Checkbox model (gitstudio.changes.stagingModel = "checkboxes") ─────────
@@ -7361,35 +7755,130 @@ export class CommitViewProvider
       });
       all.sort(function (a, b) { return a.entry.path.localeCompare(b.entry.path); });
 
-      const group = el("div", "group group--all" + (all.length === 0 ? " empty" : ""));
+      // The group and its header are built once and kept: what changes from
+      // render to render (the master tick, the count, the rows it acts on)
+      // is painted onto them below, and read by its handlers from __live.
+      const group = keep("grp|ck", "", buildChecklistShell);
+      const header = group.firstChild;
+      const checkedCount = all.filter(function (f) { return f.staged; }).length;
+      header.__live = { all: all, checkedCount: checkedCount };
+      const wantClass = "group group--all" + (all.length === 0 ? " empty" : "");
+      if (group.className !== wantClass) group.className = wantClass;
+      const master = header.querySelector(".ck-master");
+      master.checked = checkedCount > 0 && checkedCount === all.length;
+      // A partly staged file is some of the changes included, too: the header
+      // said "none" over a staged part.
+      master.indeterminate = !master.checked &&
+        all.some(function (f) { return f.state !== "unstaged"; });
+      const masterTip = master.checked ? "Uncheck all" : "Check all";
+      if (master.dataset.tip !== masterTip) master.dataset.tip = masterTip;
+      setAttr(header, "aria-checked", master.indeterminate ? "mixed" : master.checked ? "true" : "false");
+      setAttr(header, "aria-label", "Changes, " + countWords(all.length));
+      header.querySelector(".gcount").textContent = String(all.length);
+
+      const stagedByPath = new Map();
+      const kindByPath = new Map();
+      const stateByPath = new Map();
+      for (const f of all) {
+        stagedByPath.set(f.entry.path, f.staged);
+        kindByPath.set(f.entry.path, f.kind);
+        stateByPath.set(f.entry.path, f.state);
+      }
+      const defForEntry = function (entry) {
+        const kind = kindByPath.get(entry.path);
+        return kind === "merge"
+          ? GROUP_DEFS[0]
+          : stagedByPath.get(entry.path) ? GROUP_DEFS[1] : GROUP_DEFS[2];
+      };
+
+      /**
+       * The tick (and the changes twisty) for one file row. sig is part of
+       * the row's signature — the tick's handler is built from the state —
+       * and decorate prepends them to a row being built.
+       */
+      const tickFor = function (entry) {
+        const state = stateByPath.get(entry.path) || "unstaged";
+        const kind = kindByPath.get(entry.path);
+        // Any file with changes can be opened up to tick them individually.
+        //
+        // This used to exclude fully staged files, on the reasoning that they
+        // had "nothing left to pick from" — true when the list held only
+        // UNSTAGED changes, and false now that a listed change can be unticked.
+        // The effect was that staging the last change removed the twisty and the
+        // open list in one go, so the whole panel evaporated at exactly the
+        // moment the user finished with it.
+        const expandable = kind !== "merge";
+        return {
+          sig: state + "/" + kind,
+          expandable: expandable,
+          decorate: function (row) { decorateTick(row, entry.path, state, expandable); },
+        };
+      };
+
+      // Both layouts, so the tree/list toggle keeps working in this model. It
+      // used to build a flat list unconditionally, which left that toggle
+      // visible and inert whenever the checkbox model was on.
+      const nodes = [];
+      if (layout === "tree") {
+        renderTreeInto(nodes, GROUP_DEFS[2], all.map(function (f) { return f.entry; }), {
+          defFor: defForEntry,
+          tick: tickFor,
+        });
+      } else {
+        for (const f of all) {
+          renderFileRow(nodes, defForEntry(f.entry), f.entry, 1, tickFor(f.entry));
+        }
+      }
+      patchChildren(group.lastChild, nodes);
+      return group;
+    }
+
+    /** The checkbox model's group and header, built once (see renderChecklist). */
+    function buildChecklistShell() {
+      const group = el("div", "group group--all");
+      group.setAttribute("role", "none");
       const header = el("div", "group-header");
+      header.tabIndex = -1;
+      header.setAttribute("role", "treeitem");
+      header.setAttribute("aria-level", "1");
+      // It holds every file and never closes.
+      header.setAttribute("aria-expanded", "true");
+      header.dataset.tkey = "g:all";
       const master = el("input", "ck ck-master");
       master.type = "checkbox";
-      const checkedCount = all.filter(function (f) { return f.staged; }).length;
-      master.checked = checkedCount > 0 && checkedCount === all.length;
-      master.indeterminate = checkedCount > 0 && checkedCount < all.length;
-      master.title = master.checked ? "Uncheck all" : "Check all";
-      master.addEventListener("click", function (ev) {
-        ev.stopPropagation();
+      // The header itself is the tick for the keyboard (Space) and for a
+      // screen reader (aria-checked); this box is the pointer's.
+      master.tabIndex = -1;
+      master.setAttribute("aria-hidden", "true");
+      const toggleAll = function () {
+        const live = header.__live;
         // Aim at the state the user is asking for, not at a toggle of each row:
         // from indeterminate, one click should mean "include everything".
-        if (checkedCount === all.length && all.length > 0) {
+        if (live.checkedCount === live.all.length && live.all.length > 0) {
           queueGroup("staged", "unstage");
           vscode.postMessage({ type: "unstageAll" });
         } else {
           queueGroup("unstaged", "stage");
           vscode.postMessage({ type: "stageAllForCommit" });
         }
+      };
+      master.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        toggleAll();
       });
+      header.__activate = function (how) { if (how === "space") toggleAll(); };
       const glabel = el("span", "glabel");
       glabel.textContent = "Changes";
       const gcount = el("span", "gcount");
-      gcount.textContent = String(all.length);
       const actions = el("span", "group-actions");
-      actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard All", function (ev) {
-        ev.stopPropagation();
+      const discardAllNow = function () {
         vscode.postMessage({ type: "discardAll", group: "unstaged" });
-      }));
+      };
+      const discardAll = rowBtn(ICON_DISCARD, "Discard All", function (ev) {
+        ev.stopPropagation();
+        discardAllNow();
+      });
+      actions.appendChild(discardAll);
       // Selecting a "section" in this model. There is only one list here — the
       // split into Staged and Unstaged is exactly what the checkbox model does
       // away with — so the sections the user means are the CHECKED rows and the
@@ -7406,7 +7895,7 @@ export class CommitViewProvider
       };
       const keysFor = function (which) {
         const out = [];
-        for (const f of all) {
+        for (const f of header.__live.all) {
           if (which === "checked" && !f.staged) continue;
           if (which === "unchecked" && f.staged) continue;
           const kind = f.kind === "merge" ? "merge" : f.staged ? "staged" : "unstaged";
@@ -7422,8 +7911,9 @@ export class CommitViewProvider
         const allOn = every.length > 0 && every.every(function (k) { return selectedRows.has(k); });
         selectKeys(allOn ? [] : every);
       });
-      header.addEventListener("contextmenu", function (ev) {
+      const menu = function (ev) {
         ev.preventDefault();
+        const all = header.__live.all;
         const checked = keysFor("checked");
         const unchecked = keysFor("unchecked");
         const items = [];
@@ -7442,148 +7932,113 @@ export class CommitViewProvider
           fn: function () { vscode.postMessage({ type: "stashStaged" }); } });
         items.push({ icon: "archive", label: "Stash All Changes",
           fn: function () { vscode.postMessage({ type: "stash" }); } });
-        openActionMenu("Changes", items, header);
-      });
+        // The header's own button, for the keyboard (it is out of the tab order).
+        items.push({ sep: true });
+        items.push({ icon: "discard", label: "Discard All", danger: true, fn: discardAllNow });
+        openActionMenu("Changes", items, header, null);
+      };
+      header.__menu = menu;
+      header.addEventListener("contextmenu", menu);
 
       header.append(master, glabel, actions, gcount);
       group.appendChild(header);
-
       const body = el("div", "group-body");
-      const pendingHunks = new Map();
-      const stagedByPath = new Map();
-      const kindByPath = new Map();
-      const stateByPath = new Map();
-      for (const f of all) {
-        stagedByPath.set(f.entry.path, f.staged);
-        kindByPath.set(f.entry.path, f.kind);
-        stateByPath.set(f.entry.path, f.state);
-      }
-      const defForEntry = function (entry) {
-        const kind = kindByPath.get(entry.path);
-        return kind === "merge"
-          ? GROUP_DEFS[0]
-          : stagedByPath.get(entry.path) ? GROUP_DEFS[1] : GROUP_DEFS[2];
-      };
-
-      /** Prepends the tick (and the changes twisty) to one already-built row. */
-      const decorate = function (row, entry, container) {
-        const f = {
-          entry,
-          staged: !!stagedByPath.get(entry.path),
-          kind: kindByPath.get(entry.path),
-        };
-        const state = stateByPath.get(f.entry.path) || "unstaged";
-        const ck = el("input", "ck");
-        ck.type = "checkbox";
-        // Named by its file: a list of ticks all called "Not included — click
-        // to include it" does not say which is which.
-        ck.setAttribute("aria-label", "Include " + f.entry.path + " in the commit");
-        ck.checked = state === "staged";
-        // Some of this file is staged and some is not. An empty box would claim
-        // none of it is and a ticked one that all of it is; both are false, and
-        // showing it as two rows instead was worse than either.
-        ck.indeterminate = state === "partial";
-        ck.title = state === "staged"
-          ? "Included in the commit \u2014 click to remove it"
-          : state === "partial"
-            ? "Partly included \u2014 click to include the rest"
-            : "Not included \u2014 click to include it";
-        ck.addEventListener("click", function (ev) {
-          // The row itself opens the diff; the tick must not.
-          ev.stopPropagation();
-          // Ticking the file supersedes any hunk view of it — the indexes it was
-          // showing describe a state that no longer exists.
-          expandedHunks.delete(f.entry.path);
-          hunkCache.delete(f.entry.path);
-          // Partial completes rather than reverting: the visible state is "not
-          // finished", so forward is the obvious direction, and unstaging would
-          // discard the part already staged.
-          vscode.postMessage({
-            type: state === "staged" ? "unstage" : "stage",
-            path: f.entry.path,
-          });
-        });
-        row.insertBefore(ck, row.firstChild);
-
-        // Any file with changes can be opened up to tick them individually.
-        //
-        // This used to exclude fully staged files, on the reasoning that they
-        // had "nothing left to pick from" — true when the list held only
-        // UNSTAGED changes, and false now that a listed change can be unticked.
-        // The effect was that staging the last change removed the twisty and the
-        // open list in one go, so the whole panel evaporated at exactly the
-        // moment the user finished with it.
-        const expandable = f.kind !== "merge";
-        if (expandable) {
-          const path = f.entry.path;
-          const open = expandedHunks.has(path);
-          const twist = el("button", "hunk-twisty" + (open ? " open" : ""), ICON_CHEVRON);
-          twist.title = open ? "Hide individual changes" : "Show individual changes";
-          twist.setAttribute("aria-expanded", open ? "true" : "false");
-          twist.addEventListener("click", function (ev) {
-            ev.stopPropagation();
-            // Toggle ONE row in place. This used to call render(), which
-            // rebuilt every group and every row of the whole Changes view to
-            // open a single file -- the lag -- and threw away scroll position
-            // and focus while doing it, which is the glitching. Nothing outside
-            // this row changes, so nothing outside this row is rebuilt.
-            const isOpen = expandedHunks.has(path);
-            const next = !isOpen;
-            twist.classList.toggle("open", next);
-            twist.setAttribute("aria-expanded", next ? "true" : "false");
-            twist.title = next ? "Hide individual changes" : "Show individual changes";
-            const after = row.nextSibling;
-            const panel =
-              after && after.classList && after.classList.contains("hunks")
-                ? after
-                : null;
-            if (isOpen) {
-              expandedHunks.delete(path);
-              if (panel) panel.remove();
-              return;
-            }
-            expandedHunks.add(path);
-            // Ask every time rather than trusting the cache: the file may have
-            // changed on disk since it was last listed.
-            vscode.postMessage({ type: "requestHunks", path: path });
-            if (!panel && row.parentNode) {
-              row.parentNode.insertBefore(renderHunks(path), row.nextSibling);
-            }
-          });
-          row.insertBefore(twist, row.firstChild);
-        }
-        // The tree appends the row itself after this runs, so the changes panel
-        // is queued to follow it rather than appended here.
-        if (expandable && expandedHunks.has(f.entry.path)) {
-          pendingHunks.set(row, f.entry.path);
-        }
-        void container;
-      };
-
-      // Both layouts, so the tree/list toggle keeps working in this model. It
-      // used to build a flat list unconditionally, which left that toggle
-      // visible and inert whenever the checkbox model was on.
-      if (layout === "tree") {
-        renderTreeInto(body, GROUP_DEFS[2], all.map(function (f) { return f.entry; }), {
-          defFor: defForEntry,
-          decorate: decorate,
-        });
-      } else {
-        for (const f of all) {
-          const row = renderFileRow(defForEntry(f.entry), f.entry, 1);
-          decorate(row, f.entry, body);
-          body.appendChild(row);
-        }
-      }
-      // Insert each open changes panel directly after its file row, wherever the
-      // layout ended up putting that row.
-      pendingHunks.forEach(function (path, row) {
-        if (row.parentNode) row.parentNode.insertBefore(renderHunks(path), row.nextSibling);
-      });
-      pendingHunks.clear();
-
+      body.setAttribute("role", "group");
       group.appendChild(body);
       return group;
+    }
+
+    /** Prepends a checkbox-model row's tick (and its changes twisty) as the row is built. */
+    function decorateTick(row, path, state, expandable) {
+      const ck = el("input", "ck");
+      ck.type = "checkbox";
+      // Named by its file for the pointer's tooltip; the ROW is the tick for
+      // the keyboard (Space) and for a screen reader (aria-checked), so the
+      // box itself is out of the tab order and the accessibility tree.
+      ck.setAttribute("aria-label", "Include " + path + " in the commit");
+      ck.tabIndex = -1;
+      ck.setAttribute("aria-hidden", "true");
+      ck.checked = state === "staged";
+      // Some of this file is staged and some is not. An empty box would claim
+      // none of it is and a ticked one that all of it is; both are false, and
+      // showing it as two rows instead was worse than either.
+      ck.indeterminate = state === "partial";
+      row.setAttribute("aria-checked", state === "staged" ? "true" : state === "partial" ? "mixed" : "false");
+      ck.title = state === "staged"
+        ? "Included in the commit — click to remove it"
+        : state === "partial"
+          ? "Partly included — click to include the rest"
+          : "Not included — click to include it";
+      const tick = function () {
+        // Ticking the file supersedes any hunk view of it — the indexes it was
+        // showing describe a state that no longer exists.
+        expandedHunks.delete(path);
+        hunkCache.delete(path);
+        // Partial completes rather than reverting: the visible state is "not
+        // finished", so forward is the obvious direction, and unstaging would
+        // discard the part already staged.
+        vscode.postMessage({
+          type: state === "staged" ? "unstage" : "stage",
+          path: path,
+        });
+      };
+      ck.addEventListener("click", function (ev) {
+        // The row itself opens the diff; the tick must not.
+        ev.stopPropagation();
+        tick();
+      });
+      row.__tick = tick;
+      row.insertBefore(ck, row.firstChild);
+      if (!expandable) return;
+
+      const twist = el("button", "hunk-twisty", ICON_CHEVRON);
+      twist.type = "button";
+      twist.tabIndex = -1;
+      const setOpen = function (next) {
+        // Toggle ONE row in place. This used to call render(), which
+        // rebuilt every group and every row of the whole Changes view to
+        // open a single file -- the lag -- and threw away scroll position
+        // and focus while doing it, which is the glitching. Nothing outside
+        // this row changes, so nothing outside this row is rebuilt.
+        const isOpen = expandedHunks.has(path);
+        if (next === isOpen) return;
+        paintTwist(row, next);
+        const after = row.nextSibling;
+        const panel =
+          after && after.classList && after.classList.contains("hunks")
+            ? after
+            : null;
+        if (isOpen) {
+          expandedHunks.delete(path);
+          if (panel) panel.remove();
+          return;
+        }
+        expandedHunks.add(path);
+        // Ask every time rather than trusting the cache: the file may have
+        // changed on disk since it was last listed.
+        vscode.postMessage({ type: "requestHunks", path: path });
+        if (!panel && row.parentNode) {
+          row.parentNode.insertBefore(renderHunks(path), row.nextSibling);
+        }
+      };
+      twist.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        setOpen(!expandedHunks.has(path));
+      });
+      row.__expand = setOpen;
+      row.insertBefore(twist, row.firstChild);
+      paintTwist(row, expandedHunks.has(path));
+    }
+
+    /** A checkbox-model row's changes toggle, open or closed — on the button and on the row. */
+    function paintTwist(row, open) {
+      const twist = row.querySelector(".hunk-twisty");
+      if (!twist) return;
+      if (twist.classList.contains("open") !== open) twist.classList.toggle("open", open);
+      setAttr(twist, "aria-expanded", open ? "true" : "false");
+      const tip = open ? "Hide individual changes" : "Show individual changes";
+      if (twist.dataset.tip !== tip && twist.getAttribute("title") !== tip) twist.title = tip;
+      setAttr(row, "aria-expanded", open ? "true" : "false");
     }
 
     // The individual changes inside one file, each with its own tick (#20). These
@@ -7591,26 +8046,52 @@ export class CommitViewProvider
     // list on the next refresh, exactly like the file-level tick.
     function renderHunks(path) {
       const wrap = buildHunks(path);
+      hunkPanelEls.set(path, wrap);
       // Register the in-place updater for this panel. Rebuilding calls
       // renderHunks again, so the map always points at the live element; a
-      // panel that has been detached (a full render, or the file collapsed)
+      // panel that has been detached (the file collapsed, or its row gone)
       // reports false and forgets itself.
       hunkPanels.set(path, function () {
         if (!wrap.parentNode) {
           hunkPanels.delete(path);
           return false;
         }
-        wrap.parentNode.replaceChild(renderHunks(path), wrap);
+        const focusedHunk = wrap.contains(document.activeElement)
+          ? itemOf(document.activeElement)
+          : null;
+        const fresh = renderHunks(path);
+        wrap.parentNode.replaceChild(fresh, wrap);
+        // The keyboard was on one of these changes: keep it on the same one.
+        if (focusedHunk) {
+          const again = itemByTKey(focusedHunk.dataset.tkey) || itemOf(fresh.firstChild) || null;
+          if (again) focusItem(again);
+        } else {
+          applyRoving();
+        }
         return true;
       });
       return wrap;
     }
+    // path -> the open changes panel now in the list, so a render keeps it
+    // rather than rebuilding it (and its ticks) on every click elsewhere.
+    const hunkPanelEls = new Map();
+    // path -> the tree level its changes sit at (one below their file's row).
+    const hunkLevels = new Map();
+    function hunkPanelFor(path, level) {
+      hunkLevels.set(path, level);
+      const live = hunkPanelEls.get(path);
+      if (live && live.isConnected && live.dataset.level === String(level)) return live;
+      return renderHunks(path);
+    }
 
     function buildHunks(path) {
       const wrap = el("div", "hunks");
+      wrap.setAttribute("role", "group");
+      const level = hunkLevels.get(path) || 3;
+      wrap.dataset.level = String(level);
       const hunks = hunkCache.get(path);
       if (!hunks) {
-        wrap.appendChild(el("div", "hunk-empty", "Reading changes\u2026"));
+        wrap.appendChild(el("div", "hunk-empty", "Reading changes…"));
         return wrap;
       }
       if (hunks.length === 0) {
@@ -7622,30 +8103,37 @@ export class CommitViewProvider
         const hrow = el("div", "hunk-row hunk-" + state);
         const hck = el("input", "ck");
         hck.type = "checkbox";
+        // The row is the tick for the keyboard and a screen reader (below).
+        hck.tabIndex = -1;
+        hck.setAttribute("aria-hidden", "true");
         // The real state, so a ticked change STAYS in the list showing itself as
         // ticked. It used to be hard-coded false because the list only ever held
         // unstaged changes, which made ticking one look like it deleted the row.
         hck.checked = state === "staged";
         hck.indeterminate = state === "partial";
         hck.title = state === "staged"
-          ? "Staged \u2014 click to unstage this change"
+          ? "Staged — click to unstage this change"
           : state === "partial"
-            ? "Partly staged \u2014 click to stage the rest"
+            ? "Partly staged — click to stage the rest"
             : "Include this change in the commit";
-        hck.addEventListener("click", function (ev) {
-          ev.stopPropagation();
+        const tickHunk = function () {
           // Paint the new state immediately. The host round trip re-reads git
           // and repaints authoritatively a moment later; without this the tick
           // sits visibly unchanged until then, which reads as lag.
           if (state === "staged") { hck.checked = false; hck.indeterminate = false; }
           else { hck.checked = true; hck.indeterminate = false; }
+          hrow.setAttribute("aria-checked", hck.checked ? "true" : "false");
           hrow.classList.add("is-busy");
           vscode.postMessage({ type: "stageHunk", path: path, hunkIndex: h.index });
+        };
+        hck.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          tickHunk();
         });
         const lines = el("span", "hunk-lines");
         // 1-based, matching what the editor's gutter shows.
         lines.textContent = h.lineCount > 1
-          ? "L" + (h.start + 1) + "\u2013" + (h.end + 1)
+          ? "L" + (h.start + 1) + "–" + (h.end + 1)
           : "L" + (h.start + 1);
         const prev = el("span", "hunk-preview");
         prev.textContent = h.preview || "(whitespace only)";
@@ -7654,8 +8142,14 @@ export class CommitViewProvider
         // Clicking the row opens the file's diff at THIS change — the same way
         // clicking the file opens its diff. Without it a change is something you
         // can tick but never actually look at, which is backwards.
-        hrow.tabIndex = 0;
-        hrow.setAttribute("role", "button");
+        hrow.tabIndex = -1;
+        hrow.setAttribute("role", "treeitem");
+        hrow.setAttribute("aria-level", String(level));
+        hrow.setAttribute("aria-checked", state === "staged" ? "true" : state === "partial" ? "mixed" : "false");
+        hrow.setAttribute("aria-label", (h.lineCount > 1
+          ? "Lines " + (h.start + 1) + " to " + (h.end + 1)
+          : "Line " + (h.start + 1)) + ": " + (h.preview || "whitespace only"));
+        hrow.dataset.tkey = "h:" + path + ":" + h.index;
         hrow.dataset.tip = "Open this change in the diff";
         const openHunk = function () {
           vscode.postMessage({
@@ -7663,10 +8157,7 @@ export class CommitViewProvider
           });
         };
         hrow.addEventListener("click", openHunk);
-        hrow.addEventListener("keydown", function (ev) {
-          if (ev.target !== hrow) return;
-          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openHunk(); }
-        });
+        hrow.__activate = function (how) { if (how === "space") tickHunk(); else openHunk(); };
 
         wrap.appendChild(hrow);
       }
@@ -7676,22 +8167,47 @@ export class CommitViewProvider
     function renderGroup(def, list) {
       const collapseKey = "group:" + def.kind;
       const isCollapsed = collapsed[collapseKey] === true;
-      const group = el("div", "group group--" + def.kind +
+      // Kept across renders; its count, its open state and the files its
+      // Ctrl/Cmd-click selects are painted on below.
+      const group = keep("grp|" + def.kind, "", function () { return buildGroupShell(def); });
+      const wantClass = "group group--" + def.kind +
         (list.length === 0 ? " empty" : "") +
-        (isCollapsed ? " collapsed" : ""));
+        (isCollapsed ? " collapsed" : "");
+      if (group.className !== wantClass) group.className = wantClass;
+      const header = group.firstChild;
+      header.__list = list;
+      setAttr(header, "aria-expanded", isCollapsed ? "false" : "true");
+      setAttr(header, "aria-label", def.label + ", " + countWords(list.length));
+      const gcount = header.querySelector(".gcount");
+      if (gcount.textContent !== String(list.length)) gcount.textContent = String(list.length);
 
+      const nodes = [];
+      if (layout === "tree") {
+        renderTreeInto(nodes, def, list);
+      } else {
+        for (const f of list) renderFileRow(nodes, def, f, 1);
+      }
+      patchChildren(group.lastChild, nodes);
+      return group;
+    }
+
+    /** A split-model group and its header, built once per group (see renderGroup). */
+    function buildGroupShell(def) {
+      const collapseKey = "group:" + def.kind;
+      const group = el("div", "group group--" + def.kind);
+      group.setAttribute("role", "none");
       const header = el("div", "group-header");
-      header.tabIndex = 0;
-      header.setAttribute("role", "button");
-      header.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+      header.tabIndex = -1;
+      header.setAttribute("role", "treeitem");
+      header.setAttribute("aria-level", "1");
+      header.dataset.tkey = "g:" + def.kind;
       const twisty = el("span", "twisty", ICON_CHEVRON);
       const gdot = el("span", "gdot");
       const glabel = el("span", "glabel");
       glabel.textContent = def.label;
-      header.title = def.label + " \u2014 click to collapse, " +
-        "Ctrl/Cmd-click to select every file in it";
+      header.title = def.label + " — click to collapse, " +
+        "Ctrl/Cmd-click to select every file in it, right-click for its actions";
       const gcount = el("span", "gcount");
-      gcount.textContent = String(list.length);
 
       // Select the whole section. Ctrl/cmd-click matches the row modifier, and a
       // stash button that already follows the selection then means "stash this
@@ -7700,6 +8216,7 @@ export class CommitViewProvider
         if (!(ev.ctrlKey || ev.metaKey)) return;
         ev.preventDefault();
         ev.stopPropagation();
+        const list = header.__list || [];
         const keys = [];
         for (let i = 0; i < list.length; i++) keys.push(rowKey(def.kind, list[i].path));
         const allOn = keys.length > 0 && keys.every((k) => selectedRows.has(k));
@@ -7711,47 +8228,70 @@ export class CommitViewProvider
         paintSelection();
       });
 
-      const actions = el("span", "group-actions");
+      // The header's buttons, and the same actions in its menu (right-click,
+      // Shift+F10) — the keyboard's way to them, as the buttons are out of
+      // the tab order.
+      const acts = [];
       if (def.kind === "staged") {
-        actions.appendChild(makeIconBtn(ICON_UNSTAGE, "Unstage All", (ev) => {
-          ev.stopPropagation();
+        acts.push({ svg: ICON_UNSTAGE, icon: "remove", label: "Unstage All", fn: () => {
           queueGroup("staged", "unstage");
           vscode.postMessage({ type: "unstageAll", group: def.kind });
-        }));
+        } });
       } else {
-        actions.appendChild(makeIconBtn(ICON_STAGE, "Stage All", (ev) => {
-          ev.stopPropagation();
+        acts.push({ svg: ICON_STAGE, icon: "add", label: "Stage All", fn: () => {
           queueGroup(def.kind, "stage");
           vscode.postMessage({ type: "stageAll", group: def.kind });
-        }));
+        } });
         if (def.kind === "unstaged") {
-          actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard All", (ev) => {
-            ev.stopPropagation();
+          acts.push({ svg: ICON_DISCARD, icon: "discard", label: "Discard All", danger: true, fn: () => {
             vscode.postMessage({ type: "discardAll", group: def.kind });
-          }));
+          } });
         }
       }
+      const actions = el("span", "group-actions");
+      for (const a of acts) {
+        actions.appendChild(rowBtn(a.svg, a.label, (ev) => { ev.stopPropagation(); a.fn(); }));
+      }
+      header.__menu = (ev) => {
+        if (ev) ev.preventDefault();
+        const list = header.__list || [];
+        const items = acts.map((a) => ({ icon: a.icon, label: a.label, fn: a.fn, danger: a.danger }));
+        // What Ctrl/Cmd-click on the header does, from the keyboard.
+        items.push({ sep: true });
+        items.push({ icon: "check-all", label: "Select All (" + list.length + ")", fn: () => {
+          selectedRows.clear();
+          for (let i = 0; i < list.length; i++) selectedRows.add(rowKey(def.kind, list[i].path));
+          selectionAnchor = list.length > 0 ? rowKey(def.kind, list[list.length - 1].path) : null;
+          paintSelection();
+        } });
+        if (def.kind !== "merge") {
+          items.push({ sep: true });
+          items.push(def.kind === "staged"
+            ? { icon: "archive", label: "Stash Everything Staged", fn: () => vscode.postMessage({ type: "stashStaged" }) }
+            : { icon: "archive", label: "Stash All Changes", fn: () => vscode.postMessage({ type: "stash" }) });
+        }
+        openActionMenu(def.label, items, header, null);
+      };
+      header.addEventListener("contextmenu", header.__menu);
 
       header.append(twisty, gdot, glabel, actions, gcount);
-      const toggleGroup = () => {
-        collapsed[collapseKey] = !(collapsed[collapseKey] === true);
+      const setOpen = (open) => {
+        collapsed[collapseKey] = !open;
         render();
       };
-      header.addEventListener("click", toggleGroup);
-      header.addEventListener("keydown", (e) => {
-        // Only act when the header itself is focused — never swallow Enter/Space
-        // meant for a focused action button inside it (Stage All / Unstage All).
-        if (e.target !== header) return;
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleGroup(); }
+      // A Ctrl/Cmd-click selects the group's files (above) and leaves it
+      // open: it used to fold the group away over the selection it had
+      // just made — stopPropagation stops neither listener on one element.
+      header.addEventListener("click", (ev) => {
+        if (ev.ctrlKey || ev.metaKey) return;
+        setOpen(collapsed[collapseKey] === true);
       });
+      header.__expand = setOpen;
+      header.__activate = () => setOpen(collapsed[collapseKey] === true);
       group.appendChild(header);
 
       const body = el("div", "group-body");
-      if (layout === "tree") {
-        renderTreeInto(body, def, list);
-      } else {
-        for (const f of list) body.appendChild(renderFileRow(def, f, 1));
-      }
+      body.setAttribute("role", "group");
       group.appendChild(body);
       return group;
     }
@@ -7761,13 +8301,13 @@ export class CommitViewProvider
      *
      * That model merges staged and unstaged files into one list, so each FILE
      * needs its own def for its row buttons (defFor) and each row needs its tick
-     * prepended (decorate) — while the folder rows keep the single def they are
+     * prepended (tick) — while the folder rows keep the single def they are
      * given. Without this the tree/list toggle was visible but inert in checkbox
      * mode, because the checklist only ever built a flat list.
      */
-    function renderTreeInto(body, def, list, opts) {
+    function renderTreeInto(nodes, def, list, opts) {
       const tree = buildTree(list);
-      renderNode(body, def, tree, 1, opts);
+      renderNode(nodes, def, tree, 1, opts);
     }
 
     // Flatten every file path under a folder node (direct + nested) so a
@@ -7778,7 +8318,7 @@ export class CommitViewProvider
       return out;
     }
 
-    function renderNode(container, def, node, depth, opts) {
+    function renderNode(nodes, def, node, depth, opts) {
       // Folders first (alphabetical), then files.
       const dirs = [...node.dirs.values()].sort((a, b) =>
         a.name.localeCompare(b.name));
@@ -7786,75 +8326,128 @@ export class CommitViewProvider
         const key = "folder:" + def.kind + ":" + dir.path;
         folderKeyAccumulator.push(key);
         const isCollapsed = collapsed[key] === true;
-        const row = el("div", "row" + (isCollapsed ? " collapsed" : ""));
-        row.style.paddingLeft = (depth * 12) + "px";
-        row.tabIndex = 0;
-        // It collapses like a group header, so it says so like one (until the
-        // rows become a tree of treeitems).
-        row.setAttribute("role", "button");
-        row.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
-        row.appendChild(el("span", "twisty", ICON_CHEVRON));
-        row.appendChild(el("span", "file-icon folder-icon", ICON_FOLDER));
-        const name = el("span", "name");
-        name.textContent = dir.name;
-        row.appendChild(name);
-        row.appendChild(el("span", "spacer"));
-        // Folder-level stage/unstage/discard — one git op over every file under
-        // this folder (mirrors the per-file actions; stopPropagation so the
-        // button click never toggles the folder's collapse).
-        const folderPaths = collectFolderFiles(dir, []);
-        const factions = el("span", "row-actions");
-        if (def.staged) {
-          factions.appendChild(makeIconBtn(ICON_UNSTAGE, "Unstage folder", (ev) => {
-            ev.stopPropagation();
-            queueFiles(folderPaths, "unstage");
-            vscode.postMessage({ type: "unstageFolder", paths: folderPaths });
-          }));
-        } else {
-          factions.appendChild(makeIconBtn(ICON_STAGE, "Stage folder", (ev) => {
-            ev.stopPropagation();
-            queueFiles(folderPaths, "stage");
-            vscode.postMessage({ type: "stageFolder", paths: folderPaths });
-          }));
-          if (def.kind === "unstaged") {
-            factions.appendChild(makeIconBtn(ICON_DISCARD, "Discard folder", (ev) => {
-              ev.stopPropagation();
-              vscode.postMessage({ type: "discardFolder", paths: folderPaths });
-            }));
-          }
-        }
-        row.appendChild(factions);
-        const toggle = () => { collapsed[key] = !isCollapsed; render(); };
-        row.addEventListener("click", toggle);
-        row.addEventListener("keydown", (e) => {
-          // Don't hijack Enter/Space aimed at a focused folder action button.
-          if (e.target !== row) return;
-          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
-        });
-        container.appendChild(row);
-        if (!isCollapsed) renderNode(container, def, dir, depth + 1, opts);
+        const row = keep(
+          "fold|" + stagingModel + "|" + def.kind + "|" + dir.path,
+          dir.name + "|" + depth,
+          function () { return buildFolderRow(def, dir.name, dir.path, key, depth); },
+        );
+        // The files a folder's Stage / Unstage / Discard act on are today's.
+        row.__paths = collectFolderFiles(dir, []);
+        if (row.classList.contains("collapsed") !== isCollapsed) row.classList.toggle("collapsed", isCollapsed);
+        setAttr(row, "aria-expanded", isCollapsed ? "false" : "true");
+        setAttr(row, "aria-label", dir.name + ", folder, " + countWords(row.__paths.length));
+        nodes.push(row);
+        if (!isCollapsed) renderNode(nodes, def, dir, depth + 1, opts);
       }
       for (const f of node.files.slice().sort((a, b) =>
         a.name.localeCompare(b.name))) {
         const rowDef = opts && opts.defFor ? opts.defFor(f.entry) : def;
-        const fileRow = renderFileRowTree(rowDef, f, depth);
-        if (opts && opts.decorate) opts.decorate(fileRow, f.entry, container);
-        container.appendChild(fileRow);
+        fileRowNode(nodes, rowDef, f.entry, f.name, null, depth + 1, depth * 12 + 16,
+          opts && opts.tick ? opts.tick(f.entry) : null);
       }
     }
 
-    function renderFileRowTree(def, f, depth) {
-      const row = makeFileRow(def, f.entry, f.name, null);
-      row.style.paddingLeft = (depth * 12 + 16) + "px";
+    function buildFolderRow(def, name, path, key, depth) {
+      const row = el("div", "row");
+      row.style.paddingLeft = (depth * 12) + "px";
+      row.tabIndex = -1;
+      // It opens and closes like a group header: a treeitem one level in.
+      row.setAttribute("role", "treeitem");
+      row.setAttribute("aria-level", String(depth + 1));
+      row.dataset.tkey = "d:" + stagingModel + ":" + def.kind + ":" + path;
+      row.appendChild(el("span", "twisty", ICON_CHEVRON));
+      row.appendChild(el("span", "file-icon folder-icon", ICON_FOLDER));
+      const nameEl = el("span", "name");
+      nameEl.textContent = name;
+      row.appendChild(nameEl);
+      row.appendChild(el("span", "spacer"));
+      // Folder-level stage/unstage/discard — one git op over every file under
+      // this folder (mirrors the per-file actions; stopPropagation so the
+      // button click never toggles the folder's collapse).
+      // The same actions are the folder's menu (right-click, Shift+F10): its
+      // buttons are the pointer's, and out of the tab order.
+      const acts = [];
+      if (def.staged) {
+        acts.push({ svg: ICON_UNSTAGE, icon: "remove", tip: "Unstage folder", label: "Unstage Folder", fn: () => {
+          queueFiles(row.__paths, "unstage");
+          vscode.postMessage({ type: "unstageFolder", paths: row.__paths });
+        } });
+      } else {
+        acts.push({ svg: ICON_STAGE, icon: "add", tip: "Stage folder", label: "Stage Folder", fn: () => {
+          queueFiles(row.__paths, "stage");
+          vscode.postMessage({ type: "stageFolder", paths: row.__paths });
+        } });
+        if (def.kind === "unstaged") {
+          acts.push({ svg: ICON_DISCARD, icon: "discard", tip: "Discard folder", label: "Discard Folder", danger: true, fn: () => {
+            vscode.postMessage({ type: "discardFolder", paths: row.__paths });
+          } });
+        }
+      }
+      const factions = el("span", "row-actions");
+      for (const a of acts) {
+        factions.appendChild(rowBtn(a.svg, a.tip, (ev) => { ev.stopPropagation(); a.fn(); }));
+      }
+      row.appendChild(factions);
+      const setOpen = (open) => { collapsed[key] = !open; render(); };
+      row.addEventListener("click", () => setOpen(collapsed[key] === true));
+      row.__expand = setOpen;
+      row.__activate = () => setOpen(collapsed[key] === true);
+      row.__menu = (ev) => {
+        if (ev) ev.preventDefault();
+        const items = acts.map((a) => ({ icon: a.icon, label: a.label, fn: a.fn, danger: a.danger }));
+        // A conflicted file is not stashed; the other folders' files can be.
+        if (def.kind !== "merge") {
+          items.push({ sep: true });
+          items.push({ icon: "archive", label: "Stash This Folder",
+            fn: () => vscode.postMessage({ type: "stashPaths", paths: row.__paths }) });
+        }
+        openActionMenu(name, items, row, "folder");
+      };
+      row.addEventListener("contextmenu", row.__menu);
       return row;
     }
 
-    function renderFileRow(def, e, depth) {
+    /** A file row in the flat list: its name, then the folder it is in. */
+    function renderFileRow(nodes, def, e, depth, tick) {
       const slash = e.path.lastIndexOf("/");
       const fileName = slash === -1 ? e.path : e.path.slice(slash + 1);
       const dir = slash === -1 ? "" : e.path.slice(0, slash);
-      const row = makeFileRow(def, e, fileName, dir);
-      row.style.paddingLeft = "20px";
+      fileRowNode(nodes, def, e, fileName, dir, depth + 1, 20, tick);
+    }
+
+    /**
+     * One file row, kept by its key while nothing it was built from changes,
+     * followed by its open changes panel in the checkbox model. The row's
+     * handlers are built from def, the path and the status, so all of them
+     * are in its signature; its selection is painted on every render.
+     */
+    function fileRowNode(nodes, def, e, fileName, dir, level, padLeft, tick) {
+      const key = rowKey(def.kind, e.path);
+      rowOrder.push(key);
+      const sig = [
+        def.kind, def.staged ? 1 : 0, e.status, fileName, dir == null ? "\u0000" : dir,
+        level, padLeft, tick ? tick.sig : "",
+      ].join("|");
+      const row = keep("file|" + stagingModel + "|" + key, sig, function () {
+        const r = makeFileRow(def, e, fileName, dir);
+        r.style.paddingLeft = padLeft + "px";
+        r.setAttribute("aria-level", String(level));
+        // In the checkbox model a file keeps its place (and the keyboard) when
+        // it is ticked, though its group changes; in the split model it moves
+        // to the other group, and the keyboard stays where the file was.
+        r.dataset.tkey = stagingModel === "checkboxes"
+          ? "f:ck:" + e.path
+          : "f:" + key;
+        if (tick) tick.decorate(r);
+        return r;
+      });
+      paintRowSelected(row);
+      nodes.push(row);
+      if (tick && tick.expandable) {
+        const open = expandedHunks.has(e.path);
+        paintTwist(row, open);
+        if (open) nodes.push(hunkPanelFor(e.path, level + 1));
+      }
       return row;
     }
 
@@ -7864,8 +8457,12 @@ export class CommitViewProvider
       const row = el("div", "row is-file " + statusClass(letter) +
         (letter === "D" ? " is-deleted" : "") +
         (conflict ? " is-conflict" : ""));
-      row.tabIndex = 0;
-      row.setAttribute("role", "button");
+      row.tabIndex = -1;
+      // A treeitem, not a button: a button's content is read as one name, so
+      // the row was heard as "README.md Stage file Discard changes M". Its
+      // name is the file and what happened to it; its folder is the tip.
+      row.setAttribute("role", "treeitem");
+      row.setAttribute("aria-label", fileName + ", " + statusTitle(letter));
       row.title = e.path;
       // The path is not otherwise recoverable from the DOM: the title attribute
       // is moved to data-tip and removed by upgradeTips, so a delegated handler
@@ -7874,11 +8471,6 @@ export class CommitViewProvider
       row.dataset.path = e.path;
       row.dataset.kind = def.kind;
       row.dataset.key = key;
-      rowOrder.push(key);
-      if (selectedRows.has(key)) {
-        row.classList.add("is-selected");
-        row.setAttribute("aria-selected", "true");
-      }
 
       row.appendChild(el("span", "file-icon", ICON_FILE));
       const name = el("span", "name");
@@ -7900,19 +8492,19 @@ export class CommitViewProvider
 
       const actions = el("span", "row-actions");
       if (def.staged) {
-        actions.appendChild(makeIconBtn(ICON_UNSTAGE, "Unstage file", (ev) => {
+        actions.appendChild(rowBtn(ICON_UNSTAGE, "Unstage file", (ev) => {
           ev.stopPropagation();
           queueOp(e.path, "unstage");
           vscode.postMessage({ type: "unstage", path: e.path });
         }));
       } else {
-        actions.appendChild(makeIconBtn(ICON_STAGE, "Stage file", (ev) => {
+        actions.appendChild(rowBtn(ICON_STAGE, "Stage file", (ev) => {
           ev.stopPropagation();
           queueOp(e.path, "stage");
           vscode.postMessage({ type: "stage", path: e.path });
         }));
         if (def.kind === "unstaged") {
-          actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard changes", (ev) => {
+          actions.appendChild(rowBtn(ICON_DISCARD, "Discard changes", (ev) => {
             ev.stopPropagation();
             vscode.postMessage({ type: "discard", path: e.path });
           }));
@@ -7923,6 +8515,7 @@ export class CommitViewProvider
       const status = el("span", "status " + statusClass(letter));
       status.textContent = letter;
       status.dataset.tip = statusTitle(letter);
+      status.setAttribute("aria-hidden", "true");
       row.appendChild(status);
 
       const open = () => vscode.postMessage({
@@ -7938,7 +8531,7 @@ export class CommitViewProvider
         }
         const multi = selectedRows.has(key) && selectedRows.size > 1;
         if (multi) {
-          openActionMenu(String(selectionPaths().length) + " files", multiItems(), row);
+          openActionMenu(String(selectionPaths().length) + " files", multiItems(), row, "files");
           return;
         }
         const items = [
@@ -7966,7 +8559,7 @@ export class CommitViewProvider
         items.push({ icon: "archive", label: def.staged ? "Stash Everything Staged" : "Stash All Changes",
           fn: () => vscode.postMessage(
             def.staged ? { type: "stashStaged" } : { type: "stash" }) });
-        openActionMenu(fileName, items, row);
+        openActionMenu(fileName, items, row, "file");
       };
       row.addEventListener("click", (ev) => {
         // A modifier click selects; a plain one opens, as it always has.
@@ -7975,6 +8568,11 @@ export class CommitViewProvider
         if (ev.detail > 1) return;
         open();
       });
+      // Enter opens; Space ticks in the checkbox model and opens otherwise.
+      row.__activate = (how) => {
+        if (how === "space" && row.__tick) row.__tick();
+        else open();
+      };
       // Double-click OR right-click a file → an actions menu (open / stage / discard).
       row.addEventListener("dblclick", menu);
       row.addEventListener("contextmenu", menu);
@@ -8006,12 +8604,7 @@ export class CommitViewProvider
         document.body.classList.remove("is-dragging-files");
         hideDropZone();
       });
-      row.addEventListener("keydown", (ev) => {
-        // Don't hijack Enter aimed at a focused stage/unstage/discard button.
-        if (ev.target !== row) return;
-        if (ev.key === "Enter") { ev.preventDefault(); open(); }
-        else if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) menu(ev);
-      });
+      row.__menu = menu;
       return row;
     }
 
@@ -8023,6 +8616,13 @@ export class CommitViewProvider
       b.dataset.tip = title;
       b.setAttribute("aria-label", title);
       b.addEventListener("click", onClick);
+      return b;
+    }
+
+    /** A row's own button: the pointer's, out of the tab order (the tree has one stop). */
+    function rowBtn(svg, title, onClick) {
+      const b = makeIconBtn(svg, title, onClick);
+      b.tabIndex = -1;
       return b;
     }
 
@@ -8040,7 +8640,16 @@ export class CommitViewProvider
     function opButton(label, cls, onClick, tip, locks) {
       const b = el("button", "gs-commit " + cls);
       b.type = "button";
-      b.textContent = label;
+      // Two faces: the whole verb, and its first word for a narrow banner
+      // ("Abort Rebase" / "Abort") — the title above already names the
+      // operation. The name is always the whole verb.
+      const long = el("span", "lbl-long");
+      long.textContent = label;
+      const short = el("span", "lbl-short");
+      short.textContent = label.split(" ")[0];
+      b.appendChild(long);
+      b.appendChild(short);
+      b.setAttribute("aria-label", label);
       if (tip) b.title = tip;
       b.addEventListener("click", function () {
         if (opLocked) return;
@@ -8059,12 +8668,22 @@ export class CommitViewProvider
       lastOp = op || null;
       opBanner.textContent = "";
       if (!op) { opBanner.hidden = true; return; }
+      // Its tone and icon are the host's: amber while something is in the
+      // way, the accent once nothing is (a pause, or every conflict resolved).
+      opBanner.className = "op-banner tone-" + (op.tone || "attention");
       const title = el("div", "op-title");
-      title.appendChild(el("i", "codicon codicon-" + (op.conflicts > 0 ? "warning" : "debug-pause")));
+      const icon = el("i", "codicon codicon-" + (op.icon || "warning"));
+      icon.setAttribute("aria-hidden", "true");
+      title.appendChild(icon);
       const titleText = el("span");
       titleText.textContent = op.title;
       title.appendChild(titleText);
       opBanner.appendChild(title);
+      if (op.step) {
+        const st = el("div", "op-step");
+        st.textContent = op.step;
+        opBanner.appendChild(st);
+      }
       if (op.direction) {
         const d = el("div", "op-direction");
         d.textContent = op.direction;
@@ -8076,13 +8695,16 @@ export class CommitViewProvider
         opBanner.appendChild(n);
       }
       const acts = el("div", "op-actions");
+      // The lead action — the one this stop is waiting for — gets a row of
+      // its own when the banner is too narrow for every button side by side.
       if (op.conflicts > 0) {
-        acts.appendChild(opButton("Resolve Conflicts…", "primary", function () {
+        acts.appendChild(opButton("Resolve Conflicts…", "primary op-lead", function () {
           vscode.postMessage({ type: "resolveConflicts" });
         }, "", false));
       }
       if (op.continueLabel) {
-        const c = opButton(op.continueLabel, op.conflicts > 0 ? "split" : "primary", function () {
+        const lead = !(op.conflicts > 0) && op.canContinue;
+        const c = opButton(op.continueLabel, lead ? "primary op-lead" : "split", function () {
           vscode.postMessage({ type: "operation", verb: "continue" });
         }, op.continueBlocked || "", true);
         c.disabled = !op.canContinue;
@@ -8101,6 +8723,35 @@ export class CommitViewProvider
         opBanner.querySelectorAll("button").forEach(function (x) { x.disabled = true; });
       }
       opBanner.hidden = false;
+      fitOpActions();
+    }
+    /**
+     * Every button side by side when they fit; otherwise the lead action on a
+     * row of its own and the rest sharing one row by their first word
+     * ("Continue", "Skip", "Abort"). At a sidebar's width the buttons used to
+     * wrap into three rows. Measured at the width they want (max-content),
+     * not the width a flex row has already squeezed them to.
+     */
+    function fitOpActions() {
+      const acts = opBanner.querySelector(".op-actions");
+      if (!acts || opBanner.hidden || !acts.classList) return;
+      acts.classList.remove("stacked");
+      const avail = acts.clientWidth;
+      if (!avail) return;
+      const was = acts.style.width;
+      acts.style.width = "max-content";
+      const need = acts.offsetWidth;
+      acts.style.width = was;
+      acts.classList.toggle("stacked", need > avail + 0.5);
+    }
+    if (typeof ResizeObserver === "function") {
+      let lastOpWidth = 0;
+      new ResizeObserver(function (entries) {
+        const w = Math.round(entries[0].contentRect.width);
+        if (w === lastOpWidth) return;
+        lastOpWidth = w;
+        fitOpActions();
+      }).observe(opBanner);
     }
 
     // ---- Host messages ---------------------------------------------------
@@ -8357,6 +9008,23 @@ export class CommitViewProvider
     });
     document.addEventListener("pointerdown", hideTip);
     window.addEventListener("scroll", hideTip, true);
+    // The keyboard gets the tip too: a button reached with Tab says what it
+    // does, as it does under the pointer. Not the tree's rows — their name is
+    // read out, and a tip over the next row at every arrow press is noise.
+    document.addEventListener("focusin", (e) => {
+      const t = e.target;
+      if (!t || !t.getAttribute || !t.getAttribute("data-tip")) return;
+      if (t.getAttribute("role") === "treeitem") return;
+      let keyboard = false;
+      try { keyboard = t.matches(":focus-visible"); } catch (_) { keyboard = false; }
+      if (!keyboard) return;
+      hideTip();
+      tipTarget = t;
+      tipTimer = setTimeout(showTip, 350);
+    });
+    document.addEventListener("focusout", (e) => {
+      if (e.target === tipTarget) hideTip();
+    });
     upgradeTips(document.body);
     new MutationObserver((muts) => {
       for (const m of muts) {

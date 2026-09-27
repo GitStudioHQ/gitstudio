@@ -103,6 +103,38 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   says why instead of letting the rebase fail. The editor that opens for a
   `git rebase -i` run in a terminal does the same in git's own order, oldest
   at the top, so there a commit folds into the kept one above it. (#32)
+- **The Changes list from the keyboard.** The list is one tab stop now, and
+  the arrow keys walk it: **Up**/**Down** (and **Home**, **End**, **PageUp**,
+  **PageDown**) move through what is showing, **Right** and **Left** open and
+  close a group, a folder or a file's changes — or step into and out of one —
+  **Enter** opens a file's diff, **Space** ticks a file (or a single change)
+  in the checkbox view, **Shift+Up/Down** extends the selection and
+  **Ctrl/Cmd+A** selects every file. **Shift+F10** (or the menu key) opens
+  the menu of a file, a folder or a group — with everything its buttons do:
+  Stage, Unstage and Discard, Stage Folder, Stage All, Unstage All and
+  Discard All — and a right-click on a folder or a group opens the same
+  menu. **Up** and **Down** move through a menu, and choosing from it or
+  pressing **Escape** puts you back on the row. A screen reader hears a tree:
+  each row is its file and what happened to it ("README.md, Modified"),
+  whether it is ticked, and whether a group or folder is open — not every
+  button on the row read out together. **Tab** reaches the first row you can
+  see, also when nothing is staged. When a file you are on leaves the list
+  (staged — from its menu too — or discarded), the keyboard moves to the next
+  one. The push review's files are
+  reachable with **Tab** (**Enter** opens one's diff), and **Tab** stays in
+  the dialog. A button reached with **Tab** shows its tip, as it does under
+  the pointer.
+- **GitStudio's settings in groups.** In the Settings editor they are no
+  longer one list sorted with fourteen AI settings first: *General*, *Changes
+  & Staging*, *Commit & Sync*, *Blame*, *Merge & Diff*, *AI* and *Advanced*,
+  each with the setting people reach for first at the top. Every setting keeps
+  its name, so what you have set keeps working.
+- **Get Started shows each step.** Every step of the walkthrough showed the
+  GitStudio logo; each now shows what it leads to — the Commit Graph, a commit
+  opened from a blamed line, the Changes view with a file's changes ticked,
+  Line History, the merge editor on a conflict, the AI settings — in your
+  theme, high contrast included. Staging or committing in the Changes view now
+  checks off "Stage changes & commit" (only the editor's Stage Hunk did).
 
 ### Fixed
 - **Undo puts back what the operation changed — and only that.** Undo used to
@@ -542,6 +574,61 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   "unrecognised plan entry", and the rebase editor showed part of each id in
   front of the commit's title. They run now, and a reworded commit gets its
   new message — also when the rebase is continued after a conflict.
+- **The operation banner reads right.** A stopped merge, rebase or
+  cherry-pick was drawn conflict-red whatever its state, so "Every conflict
+  is resolved." sat in an error box. It is amber while something is in the
+  way (files still conflicted, or a stop git can't continue from) and your
+  theme's accent once nothing is, with a pause or a tick for its icon. It no
+  longer says things twice — "Rebasing feature onto main" is the title and
+  "Commit 2 of 5: …" the line under it, without a "feature → onto → main"
+  line repeating it — and at a sidebar's width its buttons sit on two rows,
+  not three: the action it is waiting for on its own, the rest beside each
+  other by their first word ("Continue", "Skip", "Abort").
+- **Staging in a long list is instant.** Each Stage, Unstage or tick rebuilt
+  every row of the Changes list — thousands of elements on a big change, and
+  your place, hover and tooltip lost each time. Only the rows that changed are
+  rebuilt now.
+- **Saving a file no longer reloads the Commit Graph, blame and the
+  Timeline.** Every save and every window focus made the graph (in the
+  sidebar and the panel) re-read its history, blame forget every file and the
+  Timeline empty. They reload when a branch, a tag or HEAD moves, an operation
+  starts or stops, or you switch repositories; a save only updates the
+  graph's *Uncommitted changes* row when it appears or goes (and its files, if
+  it is open).
+- **A narrow header keeps the branch's name.** With several repositories at
+  sidebar width the branch was down to "fea…" while "Push 2" and "Pull 3" kept
+  their full width. The repository's name still gives way first; then the
+  Push and Pull pills keep their arrow and count.
+- **Changed Files counts files.** A partly staged file — in Staged and in
+  Unstaged — counted twice. The checkbox view's *Changes* tick shows as
+  partly ticked when a file is partly staged, instead of empty.
+- **Only where they can act.** *Open Changes* and *Stage with Ticks* were in
+  the title bar of every file in a repository, a clean one too; they show on a
+  file with changes now, as in Merge Studio. GitStudio's six items in the
+  editor's right-click menu are one **GitStudio** submenu, its staging items
+  (and the gutter's *Stage or Unstage the Change at This Line*) only on a file
+  with changes, and *Annotate with Git Blame* shows whether it is on.
+- **One symbol, one meaning.** *Review changes with AI* wore the same icon as
+  the checkbox view and *Stage with Ticks*, and the Compare panel's unified
+  diff the same as the Staged/Unstaged view. Each has its own now.
+- The Compare panel shows an arrow between the two refs instead of git's
+  `..` / `...` (the buttons beside them already say which comparison it is).
+- **The AI settings panel wears your theme.** It was drawn in the desktop
+  app's own dark palette under every dark theme, with no high-contrast look,
+  and a dark theme drew the providers' names black on near-black. It uses the
+  editor's colours now, high contrast included.
+- **Notifications speak with one voice.** The same failure read "Push failed:
+  …" from the status bar and "GitStudio: push failed — …" from the Changes
+  view; "no repository" was said four ways; the graph's failures read
+  "Cherry-pick failed: error: …" or "git branch failed: …", and a failed
+  branch action (rename, delete, publish, push, fetch, tags, remotes) showed
+  git's words alone. The status bar, the Changes view, the branch actions,
+  Undo, file and line history, rebase, blame, the graph and Compare now say
+  things one way: a notification starts "GitStudio:", a failure names what
+  failed and then git's reason — "GitStudio: Delete branch failed — …" — and
+  a copy is confirmed in the status bar, as the graph's always was (blame's
+  was a notification). The push review gives a commit's age as the rest of
+  GitStudio does ("3h", not "3h ago").
 
 ## [1.14.0] - 2026-09-25
 

@@ -42,10 +42,14 @@ test("nothing stopped and nothing unmerged: no banner", () => {
   );
 });
 
-test("a rebase stopped on conflicts: title, direction in branch names, how many files, Continue disabled", () => {
+test("a rebase stopped on conflicts: what, then where, how many files, Continue disabled", () => {
   const b = operationBanner(view({ continueBlocked: "a.txt still has conflicts" }), { kind: "rebase", unmerged: 2 })!;
-  assert.equal(b.title, "Rebasing test onto master · commit 1 of 3: 1a2b3c4 test change");
-  assert.equal(b.direction, "test → onto → master", "the reporter's own words for #12");
+  // One bold run of both wrapped to three lines in a sidebar: the title says
+  // what is happening, the step where it is.
+  assert.equal(b.title, "Rebasing test onto master");
+  assert.equal(b.step, "Commit 1 of 3: 1a2b3c4 test change");
+  // The title names both sides, so "test → onto → master" only said it again.
+  assert.equal(b.direction, undefined);
   assert.equal(b.note, "2 files have conflicts to resolve.");
   assert.equal(b.conflicts, 2);
   assert.equal(b.continueLabel, "Continue Rebase");
@@ -53,6 +57,35 @@ test("a rebase stopped on conflicts: title, direction in branch names, how many 
   assert.equal(b.continueBlocked, "a.txt still has conflicts");
   assert.equal(b.skipLabel, undefined, "Skip only where git names it");
   assert.equal(b.abortLabel, "Abort Rebase");
+});
+
+test("the direction is kept when the title does not name both sides (#12's words)", () => {
+  const b = operationBanner(view({ title: "", step: { n: 2, m: 5, unit: "commit" } }), { kind: "rebase", unmerged: 1 })!;
+  assert.equal(b.title, "Rebase in progress");
+  assert.equal(b.step, "Commit 2 of 5");
+  assert.equal(b.direction, "test → onto → master", "the reporter's own words for #12");
+});
+
+// The banner's tone and icon, over every kind of stop: amber (and the warning
+// icon) while something is in the way, the accent once nothing is. It was
+// conflict-red in every state, so "Every conflict is resolved." read as an error.
+test("the tone table: attention while something is in the way, ready once nothing is", () => {
+  type Cell = [string, Partial<BannerView>, number, { tone: string; icon: string }];
+  const cells: Cell[] = [
+    ["rebase, files conflicted", {}, 2, { tone: "attention", icon: "warning" }],
+    ["rebase, resolved", { canContinue: true }, 0, { tone: "ready", icon: "pass" }],
+    ["rebase, deliberate pause", { canContinue: true, pause: { detail: "Paused to edit 1a2b3c4" } }, 0, { tone: "ready", icon: "debug-pause" }],
+    ["rebase, emptied: cannot continue, Skip can", { canContinue: false, canSkip: true }, 0, { tone: "attention", icon: "warning" }],
+    ["merge, conflicted", { kind: "merge", verbs: { continue: "Commit Merge", abort: "Abort Merge" } }, 1, { tone: "attention", icon: "warning" }],
+    ["merge, resolved", { kind: "merge", canContinue: true, verbs: { continue: "Commit Merge", abort: "Abort Merge" } }, 0, { tone: "ready", icon: "pass" }],
+    ["cherry-pick, conflicted", { kind: "cherry-pick", verbs: { continue: "Continue Cherry-pick", abort: "Abort Cherry-pick" } }, 1, { tone: "attention", icon: "warning" }],
+    ["stash apply, conflicted", { kind: "stash", title: "", direction: undefined, verbs: { abort: "Cancel" } }, 1, { tone: "attention", icon: "warning" }],
+    ["unmerged files, no operation", { kind: "none", title: "", direction: undefined, verbs: { abort: "Cancel" } }, 3, { tone: "attention", icon: "warning" }],
+  ];
+  for (const [name, over, unmerged, want] of cells) {
+    const b = operationBanner(view(over), { kind: over.kind ?? "rebase", unmerged })!;
+    assert.deepEqual({ tone: b.tone, icon: b.icon }, want, name);
+  }
 });
 
 test("everything resolved: Continue enabled, and the banner says so", () => {
@@ -138,6 +171,7 @@ function extract(name: string): string {
 
 class Node {
   children: Node[] = [];
+  attrs: Record<string, string> = {};
   className = "";
   hidden = true;
   disabled = false;
@@ -160,6 +194,16 @@ class Node {
   }
   addEventListener(type: string, fn: () => void): void {
     this.listeners[type] = fn;
+  }
+  setAttribute(name: string, value: string): void {
+    this.attrs[name] = value;
+  }
+  getAttribute(name: string): string | null {
+    return this.attrs[name] ?? null;
+  }
+  /** No layout here: the fit is measured in a browser (changesOpBannerFit). */
+  querySelector(): null {
+    return null;
   }
   querySelectorAll(sel: string): Node[] {
     const out: Node[] = [];
@@ -186,6 +230,7 @@ function mount() {
      ${extract("el")}
      ${extract("opButton")}
      ${extract("renderOpBanner")}
+     ${extract("fitOpActions")}
      return {
        render: renderOpBanner,
        done() { opLocked = false; renderOpBanner(lastOp, true); },
@@ -195,7 +240,9 @@ function mount() {
     done(): void;
   };
   const buttons = () => banner.querySelectorAll("button");
-  return { banner, posted, api, buttons };
+  /** A button's name: the whole verb, whichever face it shows. */
+  const label = (b: Node) => b.getAttribute("aria-label");
+  return { banner, posted, api, buttons, label };
 }
 
 test("renderer: no operation hides the banner", () => {
@@ -209,7 +256,7 @@ test("renderer: a stopped rebase shows its buttons in order, Continue disabled u
   m.api.render(operationBanner(view(), { kind: "rebase", unmerged: 1 }));
   assert.equal(m.banner.hidden, false);
   assert.deepEqual(
-    m.buttons().map((b) => [b.textContent, b.disabled]),
+    m.buttons().map((b) => [m.label(b), b.disabled]),
     [
       ["Resolve Conflicts…", false],
       ["Continue Rebase", true],
@@ -223,7 +270,7 @@ test("renderer: a stopped rebase shows its buttons in order, Continue disabled u
 test("renderer: a verb locks every button until the host says it finished — a second click sends nothing", () => {
   const m = mount();
   m.api.render(operationBanner(view({ canContinue: true, canSkip: true }), { kind: "rebase", unmerged: 0 }));
-  assert.deepEqual(m.buttons().map((b) => b.textContent), ["Continue Rebase", "Skip this commit", "Abort Rebase"]);
+  assert.deepEqual(m.buttons().map(m.label), ["Continue Rebase", "Skip this commit", "Abort Rebase"]);
   m.buttons()[2].listeners.click();
   m.buttons()[2].listeners.click();
   m.buttons()[0].listeners.click();

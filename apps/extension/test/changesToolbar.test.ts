@@ -59,3 +59,26 @@ test("the layout toggle says which layout it switches to", { skip }, async () =>
   assert.equal(await label(), "View as List");
   assert.equal(await page.eval(`document.getElementById("layout-toggle").dataset.tip`), "View as List");
 });
+
+// "Changed Files" counted rows: a partly staged file, in Staged and in
+// Unstaged, counted twice — 4 over a checkbox list of 3 files.
+test("Changed Files counts files: a partly staged file is one, in either model", { skip }, async () => {
+  const page = await open();
+  const state = {
+    ...BASE,
+    staged: [{ path: "src/a.ts", status: "M" }],
+    unstaged: [
+      { path: "src/a.ts", status: "M" },
+      { path: "src/b.ts", status: "M" },
+    ],
+    merge: [{ path: "src/c.ts", status: "!" }],
+  };
+  const total = () =>
+    page.eval<{ text: string; label: string | null }>(
+      `({ text: document.getElementById("changes-total").textContent, label: document.getElementById("changes-total").getAttribute("aria-label") })`,
+    );
+  for (const stagingModel of ["split", "checkboxes"]) {
+    await page.send({ ...state, stagingModel });
+    assert.deepEqual(await total(), { text: "3", label: "3 changed files" }, stagingModel);
+  }
+});

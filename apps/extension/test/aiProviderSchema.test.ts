@@ -9,12 +9,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { configurationProperties } from "@gitstudio/merge-vscode/contract";
 
 const ROOT = join(__dirname, "..");
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
-  contributes: { configuration: { properties: Record<string, { enum?: string[]; enumDescriptions?: string[] }> } };
+  contributes: { configuration: unknown };
 };
-const provider = pkg.contributes.configuration.properties["gitstudio.ai.provider"];
+// The settings are grouped into titled categories (an array); read them whole.
+const props = configurationProperties(pkg.contributes.configuration) as Record<
+  string,
+  { enum?: string[]; enumDescriptions?: string[] }
+>;
+const provider = props["gitstudio.ai.provider"];
 
 /** The ProviderChoice union, read from the source that writes the setting. */
 function choices(): string[] {

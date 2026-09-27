@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { failed, NO_REPOSITORY, notifyInfo, notifyWarning } from "../ui/notify";
 import { promptConfirm, promptPick, questionsAsked } from "../ui/dialogs";
 import type { RestorePlan, Snapshot } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
@@ -174,8 +175,7 @@ export class UndoLedger {
         : outcome === "failed"
           ? `${entry.label} did not finish.`
           : `${entry.label} — done.`;
-    void vscode.window
-      .showInformationMessage(text, "Undo")
+    void notifyInfo(text, "Undo")
       .then((choice) => {
         if (choice === "Undo") {
           void this.undoThrough(root, entry);
@@ -194,7 +194,7 @@ export class UndoLedger {
     const buffer = this.ledgers.get(root) ?? [];
     const index = buffer.indexOf(entry);
     if (!repo || index < 0) {
-      void vscode.window.showInformationMessage(`"${entry.label}" isn't in the undo history any more.`);
+      void notifyInfo(`"${entry.label}" isn't in the undo history any more`);
       return;
     }
     await this.undoChain(repo, buffer.slice(index).reverse());
@@ -206,13 +206,13 @@ export class UndoLedger {
   async undoLast(): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
-      void vscode.window.showInformationMessage("No active repository.");
+      void vscode.window.showInformationMessage(NO_REPOSITORY);
       return;
     }
     const buffer = this.ledgers.get(active.root);
     const entry = buffer?.[buffer.length - 1];
     if (!entry) {
-      void vscode.window.showInformationMessage("Nothing to undo.");
+      void notifyInfo("Nothing to undo");
       return;
     }
     await this.undoOne(active, entry);
@@ -222,12 +222,12 @@ export class UndoLedger {
   async showHistory(): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
-      void vscode.window.showInformationMessage("No active repository.");
+      void vscode.window.showInformationMessage(NO_REPOSITORY);
       return;
     }
     const buffer = this.ledgers.get(active.root) ?? [];
     if (buffer.length === 0) {
-      void vscode.window.showInformationMessage("No undo history yet.");
+      void notifyInfo("No undo history yet");
       return;
     }
 
@@ -306,7 +306,7 @@ export class UndoLedger {
     try {
       plan = await active.ctx.snapshot.plan(snap);
     } catch (err) {
-      void vscode.window.showErrorMessage(`Undo failed: ${err instanceof Error ? err.message : String(err)}`);
+      void vscode.window.showErrorMessage(failed("Undo", err instanceof Error ? err.message : String(err)));
       return false;
     }
     switch (plan.kind) {
@@ -328,7 +328,7 @@ export class UndoLedger {
         }
         // Left alone, a refused entry would stand in front of every older one
         // for good: Undo would only ever say this. Forget It takes it off.
-        void vscode.window.showWarningMessage(`Can't undo "${entry.label}": ${plan.reason}`, "Forget It").then(async (choice) => {
+        void notifyWarning(`Can't undo "${entry.label}": ${plan.reason}`, "Forget It").then(async (choice) => {
           if (choice === "Forget It") {
             this.remove(active.root, entry);
             await this.save();
@@ -336,7 +336,7 @@ export class UndoLedger {
         });
         return false;
       case "nothing":
-        void vscode.window.showInformationMessage(`Nothing to undo for "${entry.label}" — ${plan.reason}`);
+        void notifyInfo(`Nothing to undo for "${entry.label}" — ${plan.reason}`);
         this.remove(active.root, entry);
         await this.save();
         return true;
@@ -360,7 +360,7 @@ export class UndoLedger {
       // question was up, and then the answer was to a different question.
       const again = await active.ctx.snapshot.plan(snap);
       if (again.kind !== "restore" || again.lines.join(" ") !== plan.lines.join(" ")) {
-        void vscode.window.showWarningMessage(
+        void notifyWarning(
           `The repository changed while you were being asked, so "${entry.label}" wasn't undone. Try Undo again.`,
         );
         return false;
@@ -368,7 +368,7 @@ export class UndoLedger {
       await active.ctx.snapshot.execute(snap, again.steps);
       flash(`Undid ${entry.label}`);
     } catch (err) {
-      void vscode.window.showErrorMessage(err instanceof Error ? err.message : `Undo failed: ${String(err)}`);
+      void vscode.window.showErrorMessage(failed("Undo", err instanceof Error ? err.message : String(err)));
       return false;
     }
     this.remove(active.root, entry);
@@ -409,7 +409,7 @@ export class UndoLedger {
       again.to !== plan.to ||
       again.branch !== plan.branch
     ) {
-      void vscode.window.showWarningMessage(
+      void notifyWarning(
         `The repository changed while you were being asked, so "${entry.label}" wasn't undone. Try Undo again.`,
       );
       return false;
@@ -437,11 +437,9 @@ export class UndoLedger {
     } else if (!stderr) {
       // Non-zero with nothing on stderr means there was nothing left to undo;
       // git explains that on stdout.
-      void vscode.window.showInformationMessage(
-        `Nothing to revert — "${entry.label}" is already undone.`,
-      );
+      void notifyInfo(`Nothing to revert — "${entry.label}" is already undone.`);
     } else {
-      void vscode.window.showErrorMessage(`Revert failed: ${stderr}`);
+      void vscode.window.showErrorMessage(failed("Revert", stderr));
     }
     return false;
   }

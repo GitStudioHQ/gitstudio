@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { failed } from "../ui/notify";
 import { promptPick } from "../ui/dialogs";
 import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
 import { pullOrAsk } from "../git/inTheWay";
@@ -635,8 +636,5 @@ function reportSync(
     notifyPaused(`${verb} hit conflicts. Resolve them, then continue or abort.`);
     return;
   }
-  const stderr = result.stderr.trim();
-  void vscode.window.showErrorMessage(
-    stderr ? `${verb} failed: ${stderr}` : `${verb} failed`,
-  );
+  void vscode.window.showErrorMessage(failed(verb, result.stderr));
 }

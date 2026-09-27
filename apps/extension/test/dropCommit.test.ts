@@ -267,7 +267,7 @@ test("Cancel at the question changes nothing and records no undo", async () => {
     assert.equal(r.git("rev-parse", "HEAD"), tip);
     reset();
     await ledger.undoLast();
-    assert.ok(said.some((s) => s.text === "Nothing to undo."), JSON.stringify(said));
+    assert.ok(said.some((s) => s.text === "GitStudio: Nothing to undo."), JSON.stringify(said));
   } finally {
     r.dispose();
   }
@@ -433,7 +433,7 @@ test("Undo restores the original tip after dropping a middle commit", async () =
     reset();
     await runCommitAction("drop", r.ctx, { sha: a, subject: "A" }, undo);
     assert.deepEqual(r.subjects(), ["B", "base"]);
-    assert.ok(said.some((s) => s.kind === "info" && s.text === `Drop ${a.slice(0, 7)} — done.`), JSON.stringify(said));
+    assert.ok(said.some((s) => s.kind === "info" && s.text === `GitStudio: Drop ${a.slice(0, 7)} — done.`), JSON.stringify(said));
     reset();
     await ledger.undoLast();
     assert.equal(r.git("rev-parse", "HEAD"), tip, "back on the original tip");
@@ -485,7 +485,7 @@ test("a drop refused before it ran records no undo", async () => {
     assert.deepEqual(r.subjects(), ["landed meanwhile", "A", "base"]);
     reset();
     await ledger.undoLast();
-    assert.ok(said.some((s) => s.text === "Nothing to undo."), JSON.stringify(said));
+    assert.ok(said.some((s) => s.text === "GitStudio: Nothing to undo."), JSON.stringify(said));
   } finally {
     r.dispose();
   }

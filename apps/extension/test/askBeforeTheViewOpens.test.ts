@@ -77,7 +77,7 @@ test("nothing ran — a cancel — records no undo entry and offers no Undo; a r
   assert.equal(await ledger.runWithUndo(repo as never, "Revert 1a2b3c4", async () => true), true);
   assert.deepEqual(
     vscode.__said.map((s) => s.message),
-    ["Revert 1a2b3c4 — done."],
+    ["GitStudio: Revert 1a2b3c4 — done."],
   );
   // A run that reports a failure still ran something (its snapshot stays
   // reachable), but is not "done".
@@ -85,7 +85,7 @@ test("nothing ran — a cancel — records no undo entry and offers no Undo; a r
   assert.deepEqual(await ledger.runWithUndo(repo as never, "Pop stash@{0}", async () => ({ ok: false })), { ok: false });
   assert.deepEqual(
     vscode.__said.map((s) => s.message),
-    ["Pop stash@{0} did not finish."],
+    ["GitStudio: Pop stash@{0} did not finish."],
   );
 
   assert.equal(nothingRan(false), true);

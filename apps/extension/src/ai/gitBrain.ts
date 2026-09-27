@@ -9,6 +9,7 @@ import {
   type CommitStyle,
 } from "@gitstudio/engine/ai/gitBrainCore";
 import { SecretStore } from "@gitstudio/secret-store/secretStore";
+import { notice } from "../ui/notify";
 import { AnthropicProvider } from "./anthropicProvider";
 import { VsCodeLmProvider, type LmModelInfo } from "./vscodeLmProvider";
 import { CliProvider, CLI_SPECS } from "./cliProvider";
@@ -164,7 +165,7 @@ export class GitBrain implements vscode.Disposable {
     const onError = (message: string) => {
       this.lastProviderError = message;
       if (!this.suppressErrorToast) {
-        void vscode.window.showWarningMessage(message);
+        void vscode.window.showWarningMessage(notice(message));
       }
     };
     this.anthropic = new AnthropicProvider({

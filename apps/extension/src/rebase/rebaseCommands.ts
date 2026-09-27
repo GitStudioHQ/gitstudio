@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { failed, NO_REPOSITORY, notice, notifyInfo } from "../ui/notify";
 import { promptConfirm } from "../ui/dialogs";
 import { promptRevision } from "../ui/refPrompt";
 import type { GitContext } from "@gitstudio/git-service/index";
@@ -38,13 +39,13 @@ export async function startInteractiveRebase(
 ): Promise<void> {
   const active = repos.getActive();
   if (!active) {
-    void vscode.window.showInformationMessage("No active repository.");
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
     return;
   }
 
   const blocked = operationInProgressMessage(await detectOperation(active.ctx));
   if (blocked) {
-    void vscode.window.showWarningMessage(blocked);
+    void vscode.window.showWarningMessage(notice(blocked));
     return;
   }
 
@@ -98,12 +99,12 @@ export async function startInteractiveRebase(
 export async function abortRebase(repos: RepoManager): Promise<void> {
   const active = repos.getActive();
   if (!active) {
-    void vscode.window.showInformationMessage("No active repository.");
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
     return;
   }
   const result = await abortRebaseLike(active.ctx.operation);
   if (!result.ran) {
-    void vscode.window.showInformationMessage(nothingToAbortText(result.kind));
+    void notifyInfo(nothingToAbortText(result.kind));
     return;
   }
   if (result.outcome.ok) {
@@ -113,7 +114,7 @@ export async function abortRebase(repos: RepoManager): Promise<void> {
     );
   } else {
     void vscode.window.showErrorMessage(
-      `${result.kind === "am" ? "Abort (git am)" : "Abort rebase"} failed: ${result.outcome.message ?? "git refused."}`,
+      failed(result.kind === "am" ? "Abort (git am)" : "Abort rebase", result.outcome.message ?? "git refused"),
     );
   }
 }

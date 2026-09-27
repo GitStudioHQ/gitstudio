@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { failed, notice } from "../ui/notify";
 import { promptPick } from "../ui/dialogs";
 import type { FileHistoryEntry } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
@@ -63,15 +64,11 @@ export class RevisionNavigator implements vscode.Disposable {
         follow: true,
       });
     } catch (err) {
-      void vscode.window.showErrorMessage(
-        `File history failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      void vscode.window.showErrorMessage(failed("File history", err instanceof Error ? err.message : String(err)));
       return;
     }
     if (history.length === 0) {
-      void vscode.window.showInformationMessage(
-        `No history for ${baseName(rel)}.`,
-      );
+      void vscode.window.showInformationMessage(notice(`No history for ${baseName(rel)}.`));
       return;
     }
 
@@ -131,15 +128,11 @@ export class RevisionNavigator implements vscode.Disposable {
 
     const next = base + delta;
     if (next < 0) {
-      void vscode.window.showInformationMessage(
-        "Already at the newest revision.",
-      );
+      void vscode.window.showInformationMessage(notice("Already at the newest revision"));
       return;
     }
     if (next >= history.length) {
-      void vscode.window.showInformationMessage(
-        "Already at the oldest revision.",
-      );
+      void vscode.window.showInformationMessage(notice("Already at the oldest revision"));
       return;
     }
 

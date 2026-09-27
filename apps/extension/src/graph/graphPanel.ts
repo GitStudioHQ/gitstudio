@@ -57,6 +57,9 @@ import { commitWebUrlIn } from "../util/remoteUrl";
 import { relativePath, statusLetter } from "../changes/changesView";
 import type { Change } from "../git/git";
 import { notifyPaused } from "../git/pauseNotice";
+import type { RepoChangeEvent } from "../git/repoChange";
+import { planGraphRefresh } from "./refreshPlan";
+import { notifyCopied } from "../ui/notify";
 
 
 /** Map the details-panel action ids to runCommitAction's ids. */
@@ -173,6 +176,10 @@ export class CommitGraphPanel {
   private readonly disposables: vscode.Disposable[] = [];
   private loadController: AbortController | undefined;
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A working-tree-only change waiting to be looked at (see onRepoChange). */
+  private wipTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The last graphInit carried an Uncommitted changes row. */
+  private wipShown = false;
 
   /** Rows already sent to the webview (for sha→record action lookups). */
   private records = new Map<string, CommitRecord>();
@@ -241,7 +248,7 @@ export class CommitGraphPanel {
       webview.onDidReceiveMessage((msg: GraphWebviewMessage) =>
         this.onMessage(msg),
       ),
-      this.repos.onDidChange(() => this.scheduleRefresh()),
+      this.repos.onDidChange((e) => this.onRepoChange(e)),
     );
     // The branch filter is one selection per repository, shared by every graph
     // surface in the window. A change made in the Commits sidebar has to reach
@@ -384,6 +391,42 @@ export class CommitGraphPanel {
 
   // ── Loading & layout ───────────────────────────────────────────────────────
 
+  /**
+   * A repository change: a reload only when history can have moved (refs,
+   * an operation, another repository) or the Uncommitted changes row comes
+   * or goes; otherwise at most that row's details (planGraphRefresh). A save
+   * or a window focus used to re-read the log, the refs and the layout of
+   * every graph surface.
+   */
+  private onRepoChange(e: RepoChangeEvent | undefined): void {
+    if (planGraphRefresh(e, { shown: false, wanted: false, detailsOnWip: false }) === "reload") {
+      this.scheduleRefresh();
+      return;
+    }
+    if (this.wipTimer !== undefined) clearTimeout(this.wipTimer);
+    this.wipTimer = setTimeout(() => {
+      this.wipTimer = undefined;
+      this.checkWip(e);
+    }, REFRESH_DEBOUNCE_MS);
+  }
+
+  private checkWip(e: RepoChangeEvent | undefined): void {
+    // A reload already on its way, or under way, answers this too.
+    if (!this.ready || !this.initialized || this.refreshTimer !== undefined) return;
+    const active = this.repos.getActive();
+    if (!active || active.root !== this.repoRoot) {
+      this.scheduleRefresh();
+      return;
+    }
+    const plan = planGraphRefresh(e, {
+      shown: this.wipShown,
+      wanted: this.wipWanted(active),
+      detailsOnWip: this.shown === UNCOMMITTED_SHA,
+    });
+    if (plan === "reload") void this.loadInitial();
+    else if (plan === "wipDetails") this.pushWipDetails(active);
+  }
+
   private scheduleRefresh(): void {
     if (this.refreshTimer !== undefined) {
       clearTimeout(this.refreshTimer);
@@ -404,6 +447,7 @@ export class CommitGraphPanel {
 
     const active = this.repos.getActive();
     if (!active) {
+      this.wipShown = false;
       this.records.clear();
       this.loaded = [];
       this.refsBySha.clear();
@@ -1204,29 +1248,35 @@ export class CommitGraphPanel {
   }
 
   /** Prepend a synthetic "Uncommitted changes" node when the tree is dirty. */
-  private injectWipNode(active: RepoEntry): void {
+  /** Whether the graph, as loaded, gets an Uncommitted changes row now. */
+  private wipWanted(active: RepoEntry): boolean {
     if (!this.currentHeadSha || !active.repo) {
       // No WIP node until vscode.git attaches (it drives the dirty check); the
       // commit history still renders from our git-service in the meantime.
-      return;
+      return false;
     }
     if (!headInWalk(this.walk, this.refList, this.records, this.currentHeadSha)) {
       // A filter that leaves the current branch out (issue #30) walks no
       // HEAD, and a WIP node parented on a commit the graph does not have
       // hangs off a lane to nowhere.
-      return;
+      return false;
     }
     const st = active.repo.state;
     // untrackedChanges is populated (instead of workingTreeChanges) when the
     // user sets git.untrackedChanges = "separate" — without it a worktree of
     // only-new files shows no WIP node at all.
-    const dirty =
+    return (
       (st.indexChanges?.length ?? 0) +
         (st.workingTreeChanges?.length ?? 0) +
         (st.untrackedChanges?.length ?? 0) +
         (st.mergeChanges?.length ?? 0) >
-      0;
-    if (!dirty) {
+      0
+    );
+  }
+
+  private injectWipNode(active: RepoEntry): void {
+    this.wipShown = this.wipWanted(active);
+    if (!this.wipShown) {
       return;
     }
     const now = Math.floor(Date.now() / 1000);
@@ -1439,10 +1489,7 @@ export class CommitGraphPanel {
 
   private async doCopy(text: string): Promise<void> {
     await vscode.env.clipboard.writeText(text);
-    void vscode.window.setStatusBarMessage(
-      `$(check) Copied ${text.length > 12 ? text.slice(0, 7) : text}`,
-      2000,
-    );
+    notifyCopied(text.length > 12 ? text.slice(0, 7) : text);
   }
 
   /** Compute + post CHANGES-column stats for the requested (visible) shas. */
@@ -1549,6 +1596,10 @@ export class CommitGraphPanel {
   dispose(): void {
     this.loadController?.abort();
     this.loadController = undefined;
+    if (this.wipTimer !== undefined) {
+      clearTimeout(this.wipTimer);
+      this.wipTimer = undefined;
+    }
     if (this.refreshTimer !== undefined) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = undefined;

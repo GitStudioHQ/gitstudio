@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { failed, NO_REPOSITORY } from "../ui/notify";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
@@ -98,7 +99,7 @@ async function refOrPick(
 function active(repos: RepoManager): RepoEntry | undefined {
   const a = repos.getActive();
   if (!a) {
-    void vscode.window.showInformationMessage("GitStudio: no active repository.");
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
   }
   return a;
 }
@@ -173,7 +174,7 @@ async function runRefCheckout(
     }
   }
   const plan = c.plan;
-  await reportApplied(await applyOrAsk(a.ctx, checkoutOp(plan.args)), plan.success, refresh);
+  await reportApplied(await applyOrAsk(a.ctx, checkoutOp(plan.args)), plan.success, refresh, "Checkout");
 }
 
 /**
@@ -365,11 +366,11 @@ export async function renameBranch(
   }
   const result = await a.ctx.branches.rename(old, neu);
   if (!result.ok) {
-    report(result, `Renamed to ${neu}`, refresh);
+    report(result, `Renamed to ${neu}`, refresh, "Rename branch");
     return;
   }
   await reconcileUpstreamAfterRename(a, old, neu, refresh);
-  report(result, `Renamed to ${neu}`, refresh);
+  report(result, `Renamed to ${neu}`, refresh, "Rename branch");
 }
 
 /**
@@ -517,7 +518,7 @@ export async function deleteBranch(
         }
         result = await a.ctx.branches.delete(name, { force: true });
       }
-      report(result, `Deleted ${name}`, refresh);
+      report(result, `Deleted ${name}`, refresh, "Delete branch");
       return undefined;
     },
     { refsOnly: true },
@@ -584,7 +585,7 @@ export async function pushBranch(
       branch: name,
       setUpstream: true,
     });
-    report(result, `Published ${name} to ${remote}`, refresh);
+    report(result, `Published ${name} to ${remote}`, refresh, "Publish");
     return;
   }
   // Push the ref we were invoked ON, not whatever happens to be checked out.
@@ -598,7 +599,7 @@ export async function pushBranch(
     // would need its own ahead/behind check against that branch's upstream.
     ? await a.ctx.sync.push({ remote, branch: name })
     : await a.ctx.sync.push();
-  report(result, `Pushed ${name}`, refresh);
+  report(result, `Pushed ${name}`, refresh, "Push");
 }
 
 export async function setUpstream(
@@ -647,7 +648,7 @@ export async function setUpstream(
     return;
   }
   const result = await a.ctx.branches.setUpstream(name, upstream);
-  report(result, `Set upstream of ${name} → ${refShortName(upstream)}`, refresh);
+  report(result, `Set upstream of ${name} → ${refShortName(upstream)}`, refresh, "Set upstream");
 }
 
 export async function newBranchFrom(
@@ -710,10 +711,11 @@ export async function newBranchFrom(
       await applyOrAsk(a.ctx, checkoutOp(["checkout", "-b", name, ...(startPoint ? [startPoint] : [])])),
       `Created ${name}`,
       refresh,
+      "Create branch",
     );
     return;
   }
-  report(await a.ctx.branches.create(name, startPoint), `Created ${name}`, refresh);
+  report(await a.ctx.branches.create(name, startPoint), `Created ${name}`, refresh, "Create branch");
 }
 
 /** "Create worktree for this branch" — pick a folder, add a worktree on `ref`.
@@ -799,7 +801,7 @@ export async function deleteRemoteBranch(
     return;
   }
   const result = await a.ctx.branches.deleteRemoteBranch(remote, branch);
-  report(result, `Deleted ${remote}/${branch}`, refresh);
+  report(result, `Deleted ${remote}/${branch}`, refresh, "Delete remote branch");
 }
 
 // ── Tag actions ──────────────────────────────────────────────────────────────
@@ -857,7 +859,7 @@ export async function deleteTag(
   // The name under refs/tags/: beside a branch "release" the tag lists as
   // "tags/release", and `git tag -d tags/release` finds no such tag.
   const result = await a.ctx.tags.delete(name);
-  report(result, `Deleted tag ${name}`, refresh);
+  report(result, `Deleted tag ${name}`, refresh, "Delete tag");
 }
 
 export async function pushTag(
@@ -883,7 +885,7 @@ export async function pushTag(
   // TagOps qualifies it as refs/tags/<name>; "tags/release" would have been
   // refs/tags/tags/release, which is nothing.
   const result = await a.ctx.tags.push(remote, name);
-  report(result, `Pushed tag ${name} to ${remote}`, refresh);
+  report(result, `Pushed tag ${name} to ${remote}`, refresh, "Push tag");
 }
 
 // ── Title actions ────────────────────────────────────────────────────────────
@@ -897,7 +899,7 @@ export async function fetchAll(
     return;
   }
   const result = await a.ctx.sync.fetch({ all: true, prune: pruneOnFetch() });
-  report(result, "Fetched all remotes", refresh);
+  report(result, "Fetched all remotes", refresh, "Fetch");
 }
 
 /** `gitstudio.addRemote` — add a new remote. */
@@ -930,7 +932,7 @@ export async function addRemote(
     return;
   }
   const result = await a.ctx.remotes.add(name.trim(), url.trim());
-  report(result, `Added remote ${name}`, refresh);
+  report(result, `Added remote ${name}`, refresh, "Add remote");
 }
 
 /** `gitstudio.manageRemotes` — pick a remote, then an action. */
@@ -1001,6 +1003,7 @@ export async function manageRemotes(
         await a.ctx.remotes.fetch(remote.name, { prune: pruneOnFetch() }),
         `Fetched ${remote.name}`,
         refresh,
+        "Fetch",
       );
       break;
     case "prune":
@@ -1008,6 +1011,7 @@ export async function manageRemotes(
         await a.ctx.remotes.prune(remote.name),
         `Pruned ${remote.name}`,
         refresh,
+        "Prune",
       );
       break;
     case "url": {
@@ -1025,6 +1029,7 @@ export async function manageRemotes(
         await a.ctx.remotes.setUrl(remote.name, url.trim()),
         `Updated ${remote.name} URL`,
         refresh,
+        "Edit URL",
       );
       break;
     }
@@ -1043,6 +1048,7 @@ export async function manageRemotes(
         await a.ctx.remotes.rename(remote.name, neu.trim()),
         `Renamed remote to ${neu}`,
         refresh,
+        "Rename remote",
       );
       break;
     }
@@ -1059,6 +1065,7 @@ export async function manageRemotes(
         await a.ctx.remotes.remove(remote.name),
         `Removed remote ${remote.name}`,
         refresh,
+        "Remove remote",
       );
       break;
     }
@@ -1120,7 +1127,7 @@ function branchUndo(repos: RepoManager, repo: RepoEntry): BranchUndoRunner | und
  * nothing more, and a stash-and-retry that went through refreshes like any
  * success.
  */
-async function reportApplied(applied: Applied, success: string, refresh: () => void): Promise<void> {
+async function reportApplied(applied: Applied, success: string, refresh: () => void, action: string): Promise<void> {
   if (applied.cancelled) {
     return;
   }
@@ -1128,21 +1135,26 @@ async function reportApplied(applied: Applied, success: string, refresh: () => v
     refresh();
     return;
   }
-  report({ ok: applied.result.code === 0, stderr: applied.result.stderr }, success, refresh);
+  report({ ok: applied.result.code === 0, stderr: applied.result.stderr }, success, refresh, action);
 }
 
+/**
+ * A branch action's outcome: a flash on success; on failure, the action by
+ * name and git's reason — "GitStudio: Delete branch failed — <reason>" — as
+ * every failure reads (ui/notify.ts). It showed git's stderr alone, with no
+ * name, no action, and "error: …" for its first word.
+ */
 function report(
   result: { ok: boolean; stderr: string },
   success: string,
   refresh: () => void,
+  action: string,
 ): void {
   if (result.ok) {
     flash(success);
     refresh();
   } else {
-    void vscode.window.showErrorMessage(
-      result.stderr.trim() || "GitStudio: git operation failed.",
-    );
+    void vscode.window.showErrorMessage(failed(action, result.stderr));
   }
 }
 
@@ -1178,10 +1190,7 @@ async function reportMergeLike(
     refresh();
     return;
   }
-  const stderr = result.stderr.trim();
-  void vscode.window.showErrorMessage(
-    stderr ? `${verb} failed: ${stderr}` : `${verb} failed`,
-  );
+  void vscode.window.showErrorMessage(failed(verb, result.stderr));
 }
 
 /**

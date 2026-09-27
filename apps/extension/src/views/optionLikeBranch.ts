@@ -5,6 +5,7 @@ import {
   type OptionLikeRef,
 } from "@gitstudio/git-service/checkoutRef";
 import { promptInput } from "../ui/dialogs";
+import { failed, notice } from "../ui/notify";
 
 // A checkout refused because the branch's NAME reads as an option (issue #30's
 // follow-up, after 4c72977): planRefCheckout will not hand git "-f", because
@@ -37,7 +38,7 @@ export async function explainOptionLikeCheckout(
   refresh: () => void,
 ): Promise<boolean> {
   const pick = await vscode.window.showWarningMessage(
-    `GitStudio: ${refusal.message}`,
+    notice(refusal.message),
     ...(refusal.local ? [RENAME_OPTION_LIKE] : []),
   );
   if (pick !== RENAME_OPTION_LIKE) {
@@ -65,6 +66,6 @@ export async function explainOptionLikeCheckout(
     refresh();
     return true;
   }
-  void vscode.window.showErrorMessage(r.stderr.trim() || `GitStudio: couldn't rename ${refusal.name}.`);
+  void vscode.window.showErrorMessage(failed(`Rename of '${refusal.name}'`, r.stderr));
   return false;
 }

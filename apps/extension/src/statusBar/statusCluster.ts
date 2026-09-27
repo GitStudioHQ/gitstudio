@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { NO_REPOSITORY } from "../ui/notify";
 import type { RepoManager } from "../git/repoManager";
 import { terminalIcon, terminalLabel, terminalTooltip } from "./terminalBadge";
 
@@ -163,7 +164,7 @@ export class StatusCluster implements vscode.Disposable {
   private openTerminal(): void {
     const active = this.repos.getActive();
     if (!active) {
-      void vscode.window.showInformationMessage("GitStudio: no repository is open.");
+      void vscode.window.showInformationMessage(NO_REPOSITORY);
       return;
     }
     const name = this.terminalName();

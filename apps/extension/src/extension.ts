@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { notice } from "./ui/notify";
 import { ErrorReporter } from "./reporting/errorReporter";
 import { ProcessAudit } from "./debug/processAudit";
 import { RepoManager } from "./git/repoManager";
@@ -829,7 +830,7 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
       console.error("[GitStudio] activation error:", e);
       out.show(true);
       void vscode.window.showErrorMessage(
-        "GitStudio failed to finish loading — see the GitStudio Output channel for the error.",
+        notice("Could not finish loading — see the GitStudio Output channel for the error"),
       );
     }
   }).catch((e) => {

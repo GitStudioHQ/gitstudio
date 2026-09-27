@@ -70,12 +70,26 @@ class RelativePattern {
   }
 }
 
-const watcher = () => ({
-  onDidCreate: () => new Disposable(),
-  onDidChange: () => new Disposable(),
-  onDidDelete: () => new Disposable(),
-  dispose() {},
-});
+/** Every file watcher made, so a test can play a file event through it. */
+const watchers = [];
+const watcher = (pattern) => {
+  const on = { create: new EventEmitter(), change: new EventEmitter(), delete: new EventEmitter() };
+  const w = {
+    pattern,
+    onDidCreate: on.create.event,
+    onDidChange: on.change.event,
+    onDidDelete: on.delete.event,
+    fire(kind = "change") {
+      on[kind].fire(Uri.file(pattern.base.fsPath + "/" + pattern.pattern));
+    },
+    disposed: false,
+    dispose() {
+      w.disposed = true;
+    },
+  };
+  watchers.push(w);
+  return w;
+};
 
 const window = new Proxy(
   {
@@ -114,6 +128,7 @@ const extensions = {
 /** A vscode.git Repository, as much of one as RepoManager and the picker read. */
 function repository(root, head = { name: "main" }, changes = {}) {
   const change = (p) => ({ uri: Uri.file(p) });
+  const stateChanged = new EventEmitter();
   return {
     rootUri: Uri.file(root),
     state: {
@@ -122,7 +137,11 @@ function repository(root, head = { name: "main" }, changes = {}) {
       indexChanges: (changes.staged ?? []).map(change),
       workingTreeChanges: (changes.unstaged ?? []).map(change),
       untrackedChanges: (changes.untracked ?? []).map(change),
-      onDidChange: new EventEmitter().event,
+      onDidChange: stateChanged.event,
+    },
+    /** vscode.git ran status: fire its state event (after changing state as wanted). */
+    __fireState() {
+      stateChanged.fire();
     },
     show: async () => "",
     add: async () => undefined,
@@ -132,6 +151,7 @@ function repository(root, head = { name: "main" }, changes = {}) {
 const __test = {
   contexts,
   repository,
+  watchers,
   /** Focus an editor on this file (undefined: no editor). */
   openEditor(fsPath) {
     current.editor = fsPath ? { document: { uri: Uri.file(fsPath) } } : undefined;

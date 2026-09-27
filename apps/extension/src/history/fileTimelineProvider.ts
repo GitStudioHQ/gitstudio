@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { relative } from "node:path";
 import type { FileHistoryEntry } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { touches } from "../git/repoChange";
 import { relativeTime } from "../util/relativeTime";
 import { historyChangeSides, revisionSideUri } from "./revisionContentProvider";
 import {
@@ -38,9 +39,13 @@ export class FileTimelineProvider implements TimelineProvider {
 
   constructor(private readonly repos: RepoManager) {
     // Repo activity (commit, checkout, rebase) may add/remove history entries.
+    // A file's history is commits: a save or a window focus (vscode.git's
+    // status runs) changes none, and emptied the Timeline each time.
     this.disposables.push(
-      this.repos.onDidChange(() => {
-        this.changeEmitter.fire({ uri: undefined, reset: true });
+      this.repos.onDidChange((e) => {
+        if (touches(e, "refs", "operation", "repos")) {
+          this.changeEmitter.fire({ uri: undefined, reset: true });
+        }
       }),
     );
   }
