@@ -146,7 +146,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
 - **Undo of *Rename on origin*** leaves the branch tracking its own remote
   branch again — it came back tracking the new name.
 - **Undo of *Drop stash*** puts the stash back where it was in the list, not
-  on top of it.
+  on top of it. Its question names the stash by its words and its place in
+  words — "Put the stash “my work” back where it was in the stash list" —
+  not git's "On main: my work" and a stash@{n}.
 - **Rebase: the reason a squash was refused could be off screen.** It was
   written under the list, below the fold of any plan long enough to scroll;
   it is shown just above **Start rebase** now. The commit the keyboard moves
@@ -189,7 +191,10 @@ but they share the same engine, so most Git behaviour lands in both at once.
   makes one whenever a new file is ticked). They are listed now, and open
   with their contents.
 - Apply and Pop on a stash use the stash-apply and stash-pop icons, as the VS
-  Code extension does.
+  Code extension does, and everything else that makes or lists a stash — the
+  Stash button and its drop zone in Changes, the Stash menu items, the
+  Stashes segment and its rows in Branches — wears the stash icon instead of
+  an archive box.
 - **Removing a worktree in Branches ▸ Worktrees.** The question promised that
   uncommitted work would go with it, then git refused any worktree with
   changes — and a locked one could not be removed at all. The question now

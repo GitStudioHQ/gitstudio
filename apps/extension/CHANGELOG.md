@@ -22,7 +22,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   overwritten: it asks, and Stash & Retry keeps both. What is left of a stash
   stays where the stash was in the list, and Undo (Ctrl/Cmd+Alt+G Z) puts the
   whole stash back. A row goes the moment you click and comes back if nothing
-  happened, and the group remembers which stashes you opened. The separate
+  happened, and the group remembers which stashes you opened. A stash made
+  without a message reads "WIP: " and the subject of the commit it was made
+  on. A stash of hundreds of files — a dependency folder stashed with its
+  untracked files — opens 200 files at a time, with **Show 200 more of N**
+  under them, and costs nothing while it is closed. The separate
   Stashes view is gone; the Command Palette has **Apply Stash…**, **Pop
   Stash…**, **Drop Stash…** and **Create Branch from Stash…**, which ask
   which stash.
@@ -328,7 +332,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   back unstaged, and popping a file that was staged and then edited further
   lost the staged version for good. They come back staged now. When your own
   staged changes are in the way, or the staged part no longer applies, it asks
-  first whether to apply the stash unstaged.
+  first whether to apply the stash unstaged — and says a staged version is
+  lost only where one is. A change you had staged and then undone in the file
+  before stashing comes back unstaged too; git alone brought nothing of it
+  back.
 - **The Stash dialog listed a partly staged file twice**, and unticking one of
   its two rows still stashed it. Each file has one row now.
 - **Create Branch from a stash asks about changes in its way.** Over an
@@ -341,16 +348,19 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **Undo names a stash by its message.** "Pop stash@{0} — done." named
   whichever stash was on top by the time you read it, in the toast and in
   Undo History; it reads "Pop “my work” — done." now, and the Drop question
-  says how many files leave the list.
-- **A stash dropped in a terminal, or in another worktree, leaves the list at
-  once.** Dropping any stash but the newest changed nothing GitStudio
-  watched, so the list kept showing it until something else happened.
+  says how many files leave the list. Undo's own question says the same —
+  "Put the stash “my work” back where it was in the stash list", not git's
+  "On main: my work" and a stash@{n}.
 - **The Changes view keeps the keyboard where it was.** Opening a group or a
   folder with Enter, or anything that redrew the list, dropped the keyboard
-  to the top of the view; the same row keeps it now, and Escape or a choice
-  in a row's menu hands it back to the row.
+  to the top of the view; the same row keeps it now — the same tick or row
+  button, when one of those had it — and Escape or a choice in a row's menu
+  hands it back to the row. When the last stash leaves, the row above the
+  Stashes group takes the keyboard.
 - The Changes toolbar's title stays on one line in the tree view at sidebar
   width, and its Stash buttons wear the stash icon the stashes do.
+- The branch menu's last **Show more** row says its number once: "Show 5
+  more", not "Show 5 more of 5".
 - **Removing a locked worktree works.** Remove asked twice and then failed
   with git's "cannot remove a locked working tree". It now asks once, quoting
   the lock's reason, and **Unlock and Remove** removes it.
