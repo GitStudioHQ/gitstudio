@@ -24,6 +24,8 @@ body {
   line-height: 1.35;
   /* An opaque hover, so the buttons over a row's state sit on one colour. */
   --wt-hover: color-mix(in srgb, var(--gs-fg) 7%, var(--gs-bg));
+  /* An open worktree's card: a step off the side bar, under the hover. */
+  --wt-card: color-mix(in srgb, var(--gs-fg) 4%, var(--gs-bg));
 }
 .wt-view *,
 .wt-view *::before,
@@ -176,15 +178,27 @@ body {
 .wt-row.is-current .wt-icon {
   color: var(--gs-fg);
 }
-/* What it has checked out, quieter — four letters or none (fitRow). */
+/* What it has checked out, quieter, after git's branch symbol — the symbol
+   and four letters, or none of it (fitRow): never a lone symbol. */
 .wt-head {
   flex: 1 1 0;
-  min-width: 4ch;
+  min-width: calc(12px + 3px + 4ch);
   margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   overflow: hidden;
-  text-overflow: ellipsis;
   font-size: 12px;
   color: var(--wt-quiet);
+}
+.wt-head .codicon {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+.wt-head-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .wt-row.is-missing .wt-name,
 .wt-row.is-missing .wt-icon {
@@ -286,16 +300,64 @@ body {
 }
 
 /* ---- An open row: only what it has -------------------------------------- */
-.wt-details {
-  padding: 0 4px 4px 22px;
+/* An open worktree: its line and what it holds on one soft card, so what
+   belongs to which reads at a glance — a surface, never a line. */
+.wt-item.open {
+  margin: 2px 6px 6px;
+  padding-bottom: 6px;
+  border-radius: var(--gs-radius);
+  background: var(--wt-card);
 }
-.wt-group-label {
-  padding: 5px 8px 1px;
-  font-size: 11px;
-  color: var(--wt-quiet);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.wt-item.open > .wt-row {
+  margin: 0;
+}
+/* On the card's lighter ground a status letter leans a little further toward
+   the ink (the rows' 18% left Dark+'s red "D" at 4.3:1). */
+.vscode-dark .wt-item.open {
+  --cr-lean-by: 26%;
+}
+/* High contrast paints no tints, and a line marks nothing here: the card is
+   its captions and its indent. */
+.vscode-high-contrast .wt-item.open {
+  background: transparent;
+}
+.wt-details {
+  padding: 0 4px 0 18px;
+}
+/* Its lists' captions, as the push review writes them: small capitals and
+   a count ("STAGED CHANGES 1", "NOT ON MASTER 2"). */
+.wt-details .cr-section-label {
+  padding: 8px 8px 3px;
+}
+/* Pull and Push…, under what they move — drawn only when there is some. */
+.wt-verbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 8px 0;
+}
+.wt-verb {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  /* A button, read as one on the card whatever the theme's secondary fill:
+     a step of fill, never an outline. */
+  color: var(--gs-fg);
+  background: color-mix(in srgb, var(--gs-fg) 10%, var(--wt-card));
+}
+.wt-verb:not([disabled]):hover {
+  background: color-mix(in srgb, var(--gs-fg) 16%, var(--wt-card));
+}
+/* High contrast: the icon and the word, ringed only when focused. */
+.vscode-high-contrast .wt-verb {
+  background: transparent;
+}
+.wt-verb .codicon {
+  font-size: 13px;
+}
+.wt-verb:focus-visible {
+  outline: 1px solid var(--gs-accent);
+  outline-offset: 1px;
 }
 .wt-details .cr-commit,
 .wt-details .cr-file {

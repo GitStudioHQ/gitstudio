@@ -471,13 +471,68 @@ test("a status landing later does not move the row: its height is the same befor
   assert.ok(before.every((h) => h === before[0]), `every row one height: ${before.join(",")}`);
 });
 
+// The owner, looking at the minimal view: "you don't know what those 2 icons
+// mean, one is on branch and one is not" — and the earlier view's look,
+// simplified. One folder icon for every worktree; its branch after git's
+// branch symbol; an open worktree's Pull and Push… back, only where there
+// is something to move — never greyed out — and legible in every theme.
+test("one folder icon for every worktree, its branch after the branch symbol, and an open one's Pull and Push… only where there is something to move", { skip }, async () => {
+  const want: Record<string, string[]> = {
+    "/code/app": ["Pull"], // 3 to pull
+    [LOGIN]: ["Push…"], // 2 to push
+    "/code/app-checkout": ["Pull", "Push…"], // diverged
+    "/code/app/.claude/worktrees/agent-a2c9ae27": ["Push…"], // 4 unpublished, no upstream
+    "/code/app-merge": [], // a merge in progress: neither runs
+    "/code/app-v2": [], // detached: no branch to move
+    "/code/app-hotfix": [], // nothing either way
+  };
+  for (const theme of THEMES) {
+    const page = await open(theme, 360, 900);
+    const rows = await page.eval<{ icon: string; glyph: string | null; branch: string | null }[]>(`Array.prototype.map.call(document.querySelectorAll(".wt-row"), function (l) {
+      var g = l.querySelector(".wt-head .codicon"), t = l.querySelector(".wt-head-text");
+      return { icon: l.querySelector(".wt-icon .codicon").className, glyph: g ? g.className : null, branch: t ? t.textContent : null };
+    })`);
+    assert.ok(rows.length > 5 && rows.every((r) => r.icon === "codicon codicon-folder"), `${theme}: every worktree the same folder: ${JSON.stringify(rows.map((r) => r.icon))}`);
+    for (const r of rows.filter((x) => x.branch)) {
+      assert.equal(r.glyph, /^detached/.test(r.branch!) ? "codicon codicon-git-commit" : "codicon codicon-git-branch", `${theme}: ${r.branch} wears its symbol`);
+    }
+    for (const [path, verbs] of Object.entries(want)) {
+      await page.clickOn(`.wt-row[data-path="${path}"] .wt-name`);
+      await page.send({ type: "details", path, details: fixtureDetails() });
+      await page.settle(40);
+      const got = await page.eval<{ text: string; off: boolean; ratio: number; role: string | null }[]>(`(function () { ${COLOUR}
+        return Array.prototype.map.call(document.querySelectorAll('.wt-item[data-path="${path}"] .wt-verb'), function (b) {
+          return { text: b.textContent, off: b.disabled || b.getAttribute("aria-disabled") === "true", ratio: contrast(b), role: b.getAttribute("role") };
+        });
+      })()`);
+      assert.deepEqual(got.map((v) => v.text), verbs, `${theme}: ${path}`);
+      for (const v of got) {
+        assert.equal(v.off, false, `${theme}: ${path}: ${v.text} is never greyed out`);
+        assert.equal(v.role, "treeitem", `${theme}: ${path}: ${v.text} is an item of the row's group`);
+        assert.ok(v.ratio >= 4.5, `${theme}: ${path}: "${v.text}" reads ${v.ratio.toFixed(2)}:1`);
+      }
+      await page.clickOn(`.wt-row[data-path="${path}"] .wt-name`);
+    }
+    // ↓ reaches Push… and Enter presses it.
+    await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);
+    await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
+    await page.settle(40);
+    await page.eval(`document.querySelector('.wt-item[data-path="${LOGIN}"] .wt-verb').focus()`);
+    await page.clearPosted();
+    await page.key("Enter");
+    assert.deepEqual(await asked(page), [{ type: "action", path: LOGIN, action: "push" }], `${theme}: Enter presses Push…`);
+  }
+});
+
 /** An open row's details, as a person reads them. */
 function detailsOf(page: WorktreesPage, path: string) {
-  return page.eval<{ labels: string[]; files: string[]; commits: string[]; quiet: string[]; tags: number; buttons: number; text: string }>(`(function () {
+  return page.eval<{ labels: string[]; counts: string[]; verbs: string[]; files: string[]; commits: string[]; quiet: string[]; tags: number; buttons: number; text: string }>(`(function () {
     ${COLOUR}
     var d = document.querySelector('.wt-item[data-path="${path}"] .wt-details');
     return {
-      labels: Array.prototype.map.call(d.querySelectorAll(".wt-group-label"), function (n) { return n.textContent; }),
+      labels: Array.prototype.map.call(d.querySelectorAll(".cr-section-label .cr-section-text"), function (n) { return n.textContent; }),
+      counts: Array.prototype.map.call(d.querySelectorAll(".cr-section-label"), function (n) { var c = n.querySelector(".cr-section-count"); return c ? c.textContent : ""; }),
+      verbs: Array.prototype.map.call(d.querySelectorAll(".wt-verb"), function (b) { return b.textContent + (b.disabled || b.getAttribute("aria-disabled") === "true" ? " (disabled)" : ""); }),
       files: Array.prototype.map.call(d.querySelectorAll(":scope > .cr-file"), function (n) { return n.querySelector(".cr-st").textContent + " " + n.querySelector(".cr-name").textContent; }),
       commits: Array.prototype.map.call(d.querySelectorAll(".cr-commit .cr-subj"), function (n) { return n.textContent; }),
       quiet: Array.prototype.map.call(d.querySelectorAll(":scope > .cr-empty, :scope > .cr-loading, :scope > .cr-more"), function (n) { return n.textContent; }),
@@ -488,7 +543,7 @@ function detailsOf(page: WorktreesPage, path: string) {
   })()`);
 }
 
-test("click opens a row: it asks the host for its details, shows Loading…, then its files and commits — grouped, no tags, no buttons", { skip }, async () => {
+test("click opens a row: it asks the host for its details, shows Loading…, then its files and commits — grouped and counted, no tags, and only the verbs that have something to do", { skip }, async () => {
   const page = await open();
   await page.clearPosted();
   await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);
@@ -499,10 +554,15 @@ test("click opens a row: it asks the host for its details, shows Loading…, the
   await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
   const shown = await detailsOf(page, LOGIN);
   assert.deepEqual(shown.labels, ["Staged changes", "Changes", "Not pushed to origin/feature/login"]);
+  assert.deepEqual(shown.counts, ["2", "3", "2"], "each caption counts what is under it");
   assert.deepEqual(shown.files, ["M login.ts", "A session.ts", "M form.tsx", "D oldLogin.ts", "U login-flow.md"]);
   assert.equal(shown.tags, 0, "the group says staged: no file wears a tag");
   assert.deepEqual(shown.commits, ["Remember the session across restarts", "Validate the login form before sending"]);
-  assert.equal(shown.buttons, 0, "no Pull, no Push… — they are in the More menu");
+  // The owner: the earlier view's look, simplified. Its Pull and Push… come
+  // back — only where there is something to move, and never disabled: two
+  // commits to push, nothing to pull.
+  assert.deepEqual(shown.verbs, ["Push…"], "Push… for its two unpushed commits; no Pull with nothing to pull; nothing greyed out");
+  assert.equal(shown.buttons, 1, "no other button in the group");
   assert.doesNotMatch(shown.text, /No remote|No upstream|origin\/feature\/login$/);
 
   // A file opens its diff in that worktree: the host is handed the file, side and all.
@@ -565,7 +625,7 @@ test("what couldn't be read says so: a commit's files, a worktree's uncommitted 
     var d = document.querySelector('.wt-item[data-path="${LOGIN}"] .wt-details');
     return {
       uncommitted: d.querySelector(".cr-empty").textContent,
-      label: d.querySelector(".wt-group-label").textContent,
+      label: d.querySelector(".cr-section-label .cr-section-text").textContent,
       commit: d.querySelector('.cr-commit-item[data-sha="${sha}"] .cr-commit-files').textContent,
     };
   })()`);
@@ -1073,7 +1133,9 @@ for (const font of ["", "Arial"]) test(`a narrow sidebar${font ? ` in ${font}` :
         var head = row.querySelector(".wt-head");
         var state = row.querySelector(".wt-state");
         var right = row.getBoundingClientRect().right;
-        if (seen(head) && head.clientWidth + 0.5 < lead(head, 4)) out.push(id + ": its branch shows " + head.clientWidth + "px — under 4 letters");
+        // Its words, after the branch symbol: four letters of them or none.
+        var headText = head && head.querySelector(".wt-head-text");
+        if (seen(head) && (!headText || headText.clientWidth + 0.5 < lead(headText, 4))) out.push(id + ": its branch shows " + (headText ? headText.clientWidth : 0) + "px of words — under 4 letters");
         var clipped = name.textContent !== id;
         if (seen(head) && (cut(name) || clipped)) out.push(id + ": its name is cut while its branch shows");
         if (textOver(name)) out.push(id + ": its name is cut at its end (" + name.textContent + ")");

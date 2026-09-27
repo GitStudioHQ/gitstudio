@@ -36,7 +36,7 @@ import {
   type WorktreesToPage,
 } from "@gitstudio/host-bridge/worktreesProtocol";
 import type { ChangeCommit, ChangeFile } from "@gitstudio/host-bridge/changeRows";
-import { commitRow, emptyNote, fileRow, isCommitOpen, moreLine, setCommitFiles } from "../changeRows/changeRows";
+import { commitRow, emptyNote, fileRow, isCommitOpen, moreLine, sectionLabel, setCommitFiles } from "../changeRows/changeRows";
 
 /** What the host says about the platform — how Reveal reads. */
 export interface WorktreesLabels {
@@ -456,13 +456,21 @@ export class WorktreesView {
 
     const chev = el("span", "wt-chevron");
     if (caps.expand) chev.appendChild(codicon("chevron-right"));
-    // The repository's own folder (and a bare repository) is a repo; the
-    // others are worktrees. "Main worktree" is said in the tooltip.
+    // One icon for every worktree: the folder each of them is. Two (a repo's
+    // book, a worktree's) asked the owner to decode them; which one is the
+    // repository's own is said in the tooltip, and the one this window has
+    // open by its name's weight.
     const icon = el("span", "wt-icon");
-    icon.appendChild(codicon(r.kind === "linked" ? "worktree" : "repo"));
+    icon.appendChild(codicon("folder"));
     line.append(chev, icon, el("span", "wt-name", r.name));
-    // The folder named for its branch says it once.
-    if (r.branch !== r.name) line.appendChild(el("span", "wt-head", headWords(r)));
+    // The folder named for its branch says it once. The branch wears git's
+    // branch symbol, so it reads as a branch and not a second name; a
+    // detached HEAD, a commit's.
+    if (r.branch !== r.name) {
+      const head = el("span", "wt-head");
+      head.append(codicon(r.branch ? "git-branch" : "git-commit"), el("span", "wt-head-text", headWords(r)));
+      line.appendChild(head);
+    }
 
     // The state and the buttons share one place at the end: hovered, the
     // buttons cover the state, and nothing before them moves.
@@ -560,7 +568,8 @@ export class WorktreesView {
     }
     const clipped = !!name && nameOver() && clipMiddle(name, s.row.name);
     const tip = worktreeTip(s.row);
-    const cut = head && (head.hidden || over(head));
+    const headText = head?.querySelector<HTMLElement>(".wt-head-text") ?? null;
+    const cut = head && (head.hidden || over(headText));
     line.dataset.tip = [clipped ? s.row.name : "", cut ? headWords(s.row) : "", tip].filter(Boolean).join("\n");
   }
 
@@ -631,7 +640,7 @@ export class WorktreesView {
       for (const [label, areas] of FILE_GROUPS) {
         const files = det.files.filter((f) => areas.includes(f.area ?? "unstaged"));
         if (files.length === 0) continue;
-        parts.push(groupLabel(label));
+        parts.push(sectionLabel(label, files.length));
         for (const f of files) {
           parts.push(
             fileRow(f, {
@@ -648,7 +657,7 @@ export class WorktreesView {
     }
     for (const sec of [det.unpushed, det.toPull]) {
       if (!sec || sec.commits.length === 0) continue;
-      parts.push(groupLabel(sec.title));
+      parts.push(sectionLabel(sec.title, sec.more ? undefined : sec.commits.length));
       for (const c of sec.commits) {
         // A sha is the commit's content: the item on screen for it is it.
         const item =
@@ -666,12 +675,50 @@ export class WorktreesView {
       if (sec.more) parts.push(moreLine("and more — the Commit Graph shows them all"));
     }
     if (parts.length === 0) parts.push(emptyNote("Nothing to commit or push."));
+    const verbs = this.verbs(s);
+    if (verbs) parts.push(verbs);
     d.replaceChildren(...parts);
     this.syncTreeItems();
     if (focusKey) {
       const again = [...d.querySelectorAll<HTMLElement>("[role=treeitem], button")].find((n) => keyOf(n) === focusKey);
       again?.focus();
     }
+  }
+
+  /**
+   * An open worktree's Pull and Push…, under what they would move — only
+   * when there is something to move and it can run: a button that can't,
+   * or has nothing to do, is not drawn (the menu keeps both).
+   */
+  private verbs(s: RowState): HTMLElement | undefined {
+    const r = s.row;
+    const caps = worktreeCaps(r);
+    const out = r.ahead > 0 || (r.status?.unpublished ?? 0) > 0;
+    const shown: [WorktreeAction, string, string, string][] = [];
+    if (caps.pull.ok && r.behind > 0) shown.push(["pull", "repo-pull", "Pull", `Pull ${r.behind} commit${r.behind === 1 ? "" : "s"} into ${r.name}, in its own folder`]);
+    if (caps.push.ok && out) shown.push(["push", "repo-push", "Push…", `Review what ${r.name} would push`]);
+    if (shown.length === 0) return undefined;
+    const strip = el("div", "wt-verbs");
+    strip.setAttribute("role", "none");
+    for (const [action, icon, label, tip] of shown) {
+      // Each one an item of the row's group, as its files and commits are:
+      // one tree for a screen reader, ↑/↓ reach it, Enter presses it.
+      const b = el("button", "gs-btn wt-verb");
+      b.type = "button";
+      b.setAttribute("role", "treeitem");
+      b.dataset.action = action;
+      b.dataset.tip = tip;
+      b.setAttribute("aria-label", tip);
+      b.append(codicon(icon), el("span", undefined, label));
+      b.tabIndex = -1;
+      if (s.busy) b.disabled = true;
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.act(s, action);
+      });
+      strip.appendChild(b);
+    }
+    return strip;
   }
 
   private act(s: RowState, action: WorktreeAction): void {
@@ -883,6 +930,9 @@ export class WorktreesView {
         if (rowState) {
           e.preventDefault();
           this.toggle(rowState);
+        } else if (t.classList.contains("wt-verb")) {
+          e.preventDefault();
+          t.click();
         }
         return;
       case "ContextMenu":
@@ -1037,7 +1087,3 @@ const FILE_GROUPS: [string, NonNullable<ChangeFile["area"]>[]][] = [
   ["Changes", ["unstaged", "untracked"]],
 ];
 
-/** The quiet label over one of an open row's lists — never over an empty one. */
-function groupLabel(text: string): HTMLElement {
-  return el("div", "wt-group-label", text);
-}
