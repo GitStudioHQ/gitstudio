@@ -244,6 +244,110 @@ test("move a file the stash had staged over staged work of the user's: the stagi
   assert.deepEqual(await filesOf(f.dir, shas(f)[0]), ["b.ts"]);
 });
 
+// ── Without its staging: a file the stash holds only staged ──────────────────
+//
+// a.ts was staged, then put back in the working tree before the stash was
+// made: the stash's working copy of it is the base, and its change lives only
+// in the stash's index. A plain apply restores working copies — so without
+// its staging nothing of a.ts came back, and a Move then took it out of the
+// stash anyway. The cells: Move, Copy, Pop, Apply, each answered "without
+// staging" over staged work of the user's (c.ts).
+
+/** A stash of a.ts (only staged) and b.ts (an edit), with c.ts staged by the user after. */
+function onlyStagedStash(f: Fixture): string {
+  f.write("a.ts", "a.ts STAGED VERSION\n");
+  f.git("add", "a.ts");
+  f.write("a.ts", "a.ts base\n");
+  f.write("b.ts", "b.ts stashed\n");
+  f.git("stash", "push", "-q", "-m", "reverted a");
+  const [sha] = shas(f);
+  f.write("c.ts", "mine, staged\n");
+  f.git("add", "c.ts");
+  return sha;
+}
+
+/** The "without staging" choice's words, from the question asked. */
+const unstagedChoice = (): string => {
+  const q = asked.find((s) => s.kind === "pick");
+  const c = q && q.kind === "pick" ? q.choices.find((x) => x.id === "unstaged") : undefined;
+  return `${c?.label ?? "(none)"}: ${c?.description ?? ""}`;
+};
+
+test("only staged, Move Unstaged: its staged change comes back as an unstaged one, and leaves the stash", async () => {
+  reset();
+  const f = fixture();
+  const sha = onlyStagedStash(f);
+  answer = () => ({ value: "unstaged" });
+  const out = await withRepo(f.dir, (repos) => stashesView.moveStashFiles(repos, sha, ["a.ts"], () => {}));
+  assert.equal(out.kind, "done");
+  assert.equal(f.read("a.ts"), "a.ts STAGED VERSION\n", "the change came back");
+  assert.equal(status(f), " M a.ts\nM  c.ts", "unstaged, and the user's staged work as it was");
+  assert.deepEqual(await filesOf(f.dir, shas(f)[0]), ["b.ts"]);
+  assert.match(said(), /^status: \$\(check\) Moved 1 file to Changes$/m);
+  assert.match(unstagedChoice(), /^Move Unstaged: Its changes come back unstaged and leave the stash\.$/, "nothing is lost, so nothing is said lost");
+});
+
+test("only staged, Copy Unstaged: its staged change comes back as an unstaged one, and the stash keeps it", async () => {
+  reset();
+  const f = fixture();
+  const sha = onlyStagedStash(f);
+  answer = () => ({ value: "unstaged" });
+  const out = await withRepo(f.dir, (repos) => stashesView.copyStashFiles(repos, sha, ["a.ts"], () => {}));
+  assert.equal(out.kind, "done");
+  assert.equal(f.read("a.ts"), "a.ts STAGED VERSION\n");
+  assert.equal(status(f), " M a.ts\nM  c.ts");
+  assert.deepEqual(shas(f), [sha], "the stash is untouched");
+  assert.match(said(), /^status: \$\(check\) Copied 1 file to Changes$/m);
+});
+
+test("only staged, Pop Unstaged of the whole stash: every change comes back, and the stash is dropped", async () => {
+  reset();
+  const f = fixture();
+  const sha = onlyStagedStash(f);
+  answer = () => ({ value: "unstaged" });
+  const out = await withRepo(f.dir, (repos) => stashesView.popStash(repos, sha, () => {}));
+  assert.equal(out.kind, "done");
+  assert.equal(f.read("a.ts"), "a.ts STAGED VERSION\n");
+  assert.equal(f.read("b.ts"), "b.ts stashed\n");
+  assert.equal(status(f), " M a.ts\n M b.ts\nM  c.ts");
+  assert.deepEqual(shas(f), [], "popped");
+  assert.match(unstagedChoice(), /^Pop Unstaged: Its changes come back unstaged and the stash is dropped\.$/);
+});
+
+test("only staged, Apply Unstaged of the whole stash: every change comes back, and the stash is kept as it was", async () => {
+  reset();
+  const f = fixture();
+  const sha = onlyStagedStash(f);
+  answer = () => ({ value: "unstaged" });
+  const out = await withRepo(f.dir, (repos) => stashesView.applyStash(repos, sha, () => {}));
+  assert.equal(out.kind, "done");
+  assert.equal(f.read("a.ts"), "a.ts STAGED VERSION\n");
+  assert.equal(status(f), " M a.ts\n M b.ts\nM  c.ts");
+  assert.deepEqual(shas(f), [sha]);
+  assert.deepEqual(await filesOf(f.dir, sha), ["a.ts", "b.ts"]);
+});
+
+test("staged, then edited again: without its staging the staged version is lost — and the question says so", async () => {
+  reset();
+  const f = fixture();
+  f.write("a.ts", "a.ts staged\n");
+  f.git("add", "a.ts");
+  f.write("a.ts", "a.ts staged\nand edited after\n");
+  f.write("b.ts", "b.ts stashed\n");
+  f.git("stash", "push", "-q", "-m", "partly staged a");
+  const [sha] = shas(f);
+  f.write("c.ts", "mine, staged\n");
+  f.git("add", "c.ts");
+  answer = () => ({ value: "cancel" });
+  await withRepo(f.dir, (repos) => stashesView.moveStashFiles(repos, sha, ["a.ts"], () => {}));
+  assert.match(unstagedChoice(), /^Move Unstaged: Its changes come back unstaged and leave the stash\. It was staged and then changed again, so its staged version is not kept\.$/);
+  reset();
+  answer = () => ({ value: "cancel" });
+  await withRepo(f.dir, (repos) => stashesView.popStash(repos, sha, () => {}));
+  assert.match(unstagedChoice(), /^Pop Unstaged: Its changes come back unstaged and the stash is dropped\. Where a file was staged and then changed again, its staged version is not kept\.$/);
+  assert.deepEqual(shas(f), [sha], "cancelled: nothing ran");
+});
+
 // ── The list moving while a question is open ─────────────────────────────────
 
 test("the stash dropped while the question is open: nothing runs, the user's edit is untouched, it says so", async () => {
@@ -378,6 +482,35 @@ test("a file's diff: both sides read by the stash's sha, per kind; a binary file
   assert.equal((await open("a.ts")).ok, false);
 });
 
+// ── A stash git named ────────────────────────────────────────────────────────
+
+test("a stash made without a message is named in words, never quotes inside quotes: Drop's question, Undo's labels", async () => {
+  reset();
+  const f = fixture();
+  f.write("a.ts", "x\n");
+  f.write("b.ts", "y\n");
+  f.git("stash", "push", "-q");
+  const [sha] = shas(f);
+  const labels: string[] = [];
+  const ledger = { runWithUndo: async (_a: unknown, label: string, run: () => Promise<unknown>) => (labels.push(label), run()) };
+  const withLedger = <T>(fn: (repos: never) => Promise<T>): Promise<T> =>
+    withRepo(f.dir, (repos) => fn({ ...(repos as object), getUndoLedger: () => ledger } as never));
+  // Drop: asked, and backed out of.
+  await withLedger((repos) => stashesView.dropStash(repos, sha, () => {}));
+  assert.equal(asked[0]?.title, "Drop “WIP: base”?");
+  // Move one file out: the Undo label.
+  const moved = await withLedger((repos) => stashesView.moveStashFiles(repos, sha, ["a.ts"], () => {}));
+  assert.equal(moved.kind, "done");
+  // Pop what is left.
+  const [rest] = shas(f);
+  f.git("checkout", "--", "a.ts");
+  await withLedger((repos) => stashesView.popStash(repos, rest, () => {}));
+  assert.deepEqual(labels, ["Move 1 file out of “WIP: base”", "Pop “WIP: base”"]);
+  for (const words of [asked[0]?.title ?? "", ...labels]) {
+    assert.doesNotMatch(words, /“[^”]*“/, `no quotes inside quotes: ${words}`);
+  }
+});
+
 // ── The palette ──────────────────────────────────────────────────────────────
 
 test("the palette asks which stash, in words, and never by stash@{n}", async () => {
@@ -397,7 +530,7 @@ test("the palette asks which stash, in words, and never by stash@{n}", async () 
   assert.deepEqual(
     q.choices.map((c) => [c.id, c.label, c.description]),
     [
-      [auto, "WIP on “base”", "1 file"],
+      [auto, "WIP: base", "1 file"],
       [typed, "first words", "1 file"],
     ],
   );

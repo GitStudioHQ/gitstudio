@@ -127,7 +127,10 @@ export function stashTitle(message: string): StashTitle {
   if (wip) {
     const subject = wip[2].trim();
     return {
-      text: subject ? `WIP on “${subject}”` : "WIP",
+      // "WIP: subject", never quoted here: every question, label and bar
+      // puts a stash's words in quotes of its own, and quotes inside them
+      // read "Drop “WIP on “Add tests””?".
+      text: subject ? `WIP: ${subject}` : "WIP",
       ...optional("branch", branchOf(wip[1])),
       auto: true,
     };
@@ -651,8 +654,18 @@ export class StashProvider {
    * The two names of a rename travel together: picking either takes both, or
    * the new name would come back as a copy with the old one still there.
    * Paths the stash does not hold are ignored; picking none is refused.
+   *
+   * `unstaged`: the part to apply WITHOUT `--index`, which restores only
+   * working copies. A file the stash holds only staged (`onlyStaged`:
+   * staged, then put back in the working tree) has the base as its working
+   * copy, so nothing of it would come back; here its staged version is its
+   * working copy instead, and its change comes back unstaged.
    */
-  async subset(stash: string, paths: readonly string[], opts?: GitRunOptions): Promise<StashSubsetResult> {
+  async subset(
+    stash: string,
+    paths: readonly string[],
+    opts?: GitRunOptions & { unstaged?: boolean },
+  ): Promise<StashSubsetResult> {
     const signal = opts?.signal;
     const c = await this.contents(stash, opts);
     if (!c) {
@@ -724,7 +737,7 @@ export class StashProvider {
         return r.code === 0 ? { ok: true, sha: r.stdout.trim() } : fail("commit-tree", r);
       };
 
-      const workTree = await treeOf(c.base, c.tree, names);
+      const workTree = await treeOf(c.base, opts?.unstaged ? stagedAsWorking(c, picked) : c.tree, names);
       if (!workTree.ok) return workTree;
       const indexTree = await treeOf(c.base, c.index, names);
       if (!indexTree.ok) return indexTree;
@@ -908,6 +921,21 @@ function sideOf(records: readonly RawRecord[]): StashSide {
   for (const r of records) {
     if (r.status.startsWith("R") && r.oldPath !== undefined) entries.set(r.oldPath, null);
     entries.set(r.path, r.status.startsWith("D") ? null : { mode: r.mode, oid: r.oid });
+  }
+  return { entries };
+}
+
+/**
+ * The stash's working-tree side, with each of `picked` that it holds only
+ * staged taken from its index side instead (see subset's `unstaged`).
+ */
+function stagedAsWorking(c: StashContents, picked: readonly StashFile[]): StashSide {
+  const entries = new Map(c.tree.entries);
+  for (const f of picked) {
+    if (!f.onlyStaged) continue;
+    for (const name of f.oldPath !== undefined ? [f.path, f.oldPath] : [f.path]) {
+      if (c.index.entries.has(name)) entries.set(name, c.index.entries.get(name) ?? null);
+    }
   }
   return { entries };
 }

@@ -208,6 +208,34 @@ test("subset: none of the names in the stash is refused, and nothing is written"
   assert.equal(status(r), "");
 });
 
+test("subset `unstaged`: applied without its staging, a file held only staged comes back from its staged version — every other kind as a plain apply brings it", async () => {
+  const plainly = async (unstaged: boolean) => {
+    const r = repo();
+    const sha = stashEveryKind(r);
+    const every = ((await r.stashes.files(sha)) ?? []).map((f) => f.path);
+    const part = await r.stashes.subset(sha, every, { unstaged });
+    assert.ok(part.ok, part.ok ? "" : part.stderr);
+    const run = await runApplying(r.proc, { kind: "stash", stash: part.sha, cutFrom: sha });
+    assert.equal(run.result.code, 0, run.result.stderr);
+    return { r, sha, status: status(r).split("\n") };
+  };
+  const cut = await plainly(false);
+  const flat = await plainly(true);
+  // Without it, git restores the working copy — the base — and reverted.ts's
+  // change does not come back at all.
+  assert.equal(cut.r.read("reverted.ts"), "reverted.ts base\n");
+  assert.equal(cut.status.some((l) => l.endsWith(" reverted.ts")), false);
+  // With it: back, unstaged; and nothing else differs.
+  assert.equal(flat.r.read("reverted.ts"), "reverted.ts staged\n");
+  assert.deepEqual(flat.status.filter((l) => l.endsWith(" reverted.ts")), [" M reverted.ts"]);
+  assert.deepEqual(flat.status.filter((l) => !l.endsWith(" reverted.ts")), cut.status);
+  assert.equal(flat.r.read("mm.ts"), "mm.ts working\n", "staged then edited: its working copy, as git brings it");
+  // The part only ever differs in the working copy: its index is the stash's.
+  const f = await flat.r.stashes.subset(flat.sha, ["reverted.ts"], { unstaged: true });
+  assert.ok(f.ok);
+  assert.equal(blobAt(flat.r, `${f.sha}^2:reverted.ts`), blobAt(flat.r, `${flat.sha}^2:reverted.ts`));
+});
+
 test("subset: the part keeps the stash's message, author and date", async () => {
   const r = repo();
   const sha = stashEveryKind(r, "dated");
@@ -378,7 +406,9 @@ test("a stash stored by another tool (git's autostash) lists its files and can b
 test("stashTitle: git's messages, a typed one, another tool's, and anything else", () => {
   assert.deepEqual(stashTitle("On main: fix login"), { text: "fix login", branch: "main" });
   assert.deepEqual(stashTitle("On feature/x: a: b"), { text: "a: b", branch: "feature/x" });
-  assert.deepEqual(stashTitle("WIP on main: 1a2b3c4 Add tests"), { text: "WIP on “Add tests”", branch: "main", auto: true });
+  assert.deepEqual(stashTitle("WIP on main: 1a2b3c4 Add tests"), { text: "WIP: Add tests", branch: "main", auto: true });
+  assert.deepEqual(stashTitle("WIP on main: 1a2b3c4 "), { text: "WIP", branch: "main", auto: true });
+  assert.deepEqual(stashTitle("WIP on (no branch): 1a2b3c4 Try it"), { text: "WIP: Try it", auto: true });
   assert.deepEqual(stashTitle("On (no branch): detached work"), { text: "detached work" });
   assert.deepEqual(stashTitle("On main: !!GitHub_Desktop<main>"), { text: "Stashed by GitHub Desktop", branch: "main" });
   assert.deepEqual(stashTitle("autostash"), { text: "Autostash", auto: true });

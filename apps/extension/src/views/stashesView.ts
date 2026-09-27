@@ -448,10 +448,42 @@ async function applyWithStaging(a: RepoEntry, entry: StashEntry, pop: boolean): 
   if (!first.staging) {
     return first;
   }
-  if (!(await askWithoutStaging(entry, first.staging, pop))) {
+  const files = (await a.ctx.stashes.files(entry.sha)) ?? [];
+  if (!(await askWithoutStaging(entry, first.staging, pop, losesStaged(files)))) {
     return { result: first.result, cancelled: true };
   }
-  return applyOrAsk(a.ctx, { kind: "stash", stash: entry.sha, pop });
+  if (!files.some((f) => f.onlyStaged)) {
+    return applyOrAsk(a.ctx, { kind: "stash", stash: entry.sha, pop });
+  }
+  // A file it holds only staged has no working copy of its own to bring
+  // back (see subset's `unstaged`): the whole stash goes as a part whose
+  // working copy of that file is its staged version, and a pop drops the
+  // stash once that applied — as git's pop keeps it after a conflict.
+  const whole = await a.ctx.stashes.subset(entry.sha, files.map((f) => f.path), { unstaged: true });
+  if (!whole.ok) {
+    void vscode.window.showErrorMessage(`GitStudio: ${whole.stderr}`);
+    return { result: first.result, settled: true };
+  }
+  const applied = await applyOrAsk(a.ctx, { kind: "stash", stash: whole.sha, cutFrom: entry.sha });
+  if (pop && applied.result.code === 0 && !applied.cancelled && !applied.settled && !applied.staging) {
+    const dropped = await a.ctx.stashes.drop(entry.sha);
+    if (!dropped.ok) {
+      void vscode.window.showWarningMessage(
+        `GitStudio: its changes are back, but “${stashLabel(entry)}” couldn't be dropped — ${dropped.stderr.trim() || "git refused"}`,
+      );
+    }
+  }
+  return applied;
+}
+
+/**
+ * Would running without `--index` lose anything? Only a file staged and then
+ * changed again: its working copy comes back, its staged version does not.
+ * (A file staged whole has the two the same; one held only staged comes
+ * back from its staged version.)
+ */
+function losesStaged(files: readonly StashFile[]): boolean {
+  return files.some((f) => f.staged === "part" && !f.onlyStaged);
 }
 
 /**
@@ -477,11 +509,27 @@ async function applyPartWithStaging(
   if (!(await askPartWithoutStaging(entry, first.staging, move, picked))) {
     return { result: first.result, cancelled: true };
   }
-  return applyOrAsk(a.ctx, { kind: "stash", stash: part, cutFrom: entry.sha });
+  // A picked file the stash holds only staged comes back from its staged
+  // version (subset's `unstaged`), or nothing of it would.
+  let plain = part;
+  if (picked.some((f) => f.onlyStaged)) {
+    const cut = await a.ctx.stashes.subset(entry.sha, picked.map((f) => f.path), { unstaged: true });
+    if (!cut.ok) {
+      void vscode.window.showErrorMessage(`GitStudio: ${cut.stderr}`);
+      return { result: first.result, settled: true };
+    }
+    plain = cut.sha;
+  }
+  return applyOrAsk(a.ctx, { kind: "stash", stash: plain, cutFrom: entry.sha });
 }
 
 /** Run it with everything unstaged, or not at all? */
-async function askWithoutStaging(entry: StashEntry, why: "busy" | "refused", pop: boolean): Promise<boolean> {
+async function askWithoutStaging(
+  entry: StashEntry,
+  why: "busy" | "refused",
+  pop: boolean,
+  lossy: boolean,
+): Promise<boolean> {
   const verb = pop ? "Pop" : "Apply";
   const choice = await promptPick({
     title: `${verb} the stash without its staging?`,
@@ -495,7 +543,7 @@ async function askWithoutStaging(entry: StashEntry, why: "busy" | "refused", pop
         label: `${verb} Unstaged`,
         icon: pop ? "git-stash-pop" : "git-stash-apply",
         description: pop
-          ? "Its changes come back unstaged and the stash is dropped. Where a file's staged version differed from its working copy, the staged version is not kept."
+          ? `Its changes come back unstaged and the stash is dropped.${lossy ? ` ${LOST_STAGED}` : ""}`
           : "Its changes come back unstaged. The stash is kept, staging and all.",
       },
       {
@@ -510,6 +558,9 @@ async function askWithoutStaging(entry: StashEntry, why: "busy" | "refused", pop
   });
   return choice === "unstaged";
 }
+
+/** What a Pop or a Move without staging loses, said only where it loses it (losesStaged). */
+const LOST_STAGED = "Where a file was staged and then changed again, its staged version is not kept.";
 
 /** The same question for files taken out of a stash, in the words for one file or several. */
 async function askPartWithoutStaging(
@@ -534,7 +585,9 @@ async function askPartWithoutStaging(
         label: `${verb} Unstaged`,
         icon: move ? "git-stash-pop" : "git-stash-apply",
         description: move
-          ? `${one ? "Its changes come back unstaged and leave" : "Their changes come back unstaged and leave"} the stash. Where a staged version differed from the working copy, the staged version is not kept.`
+          ? `${one ? "Its changes come back unstaged and leave" : "Their changes come back unstaged and leave"} the stash.${
+              !losesStaged(picked) ? "" : one ? " It was staged and then changed again, so its staged version is not kept." : ` ${LOST_STAGED}`
+            }`
           : `${one ? "Its changes come" : "Their changes come"} back unstaged. The stash keeps ${one ? "it" : "them"}, staging and all.`,
       },
       {
