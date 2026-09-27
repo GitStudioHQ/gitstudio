@@ -18534,6 +18534,10 @@
       await settle(900);
       c.ok(!/Opened/.test(text("#toast-stack")), `no "Opened" held for the tab it was clicked in (${text("#toast-stack")})`);
       c.ok(!btn.disabled && !btn.classList.contains("is-busy"), "its Open button is not left busy");
+      // Back where it was opened from, its row says another tab has it now:
+      // the list was read again when this tab came to the front.
+      const row = $$(".view-host .worktree-row").find((r) => r.dataset.ref === WT);
+      c.eq(text(row?.querySelector(".br-state-col")), "open in a tab", "back in this tab, its row says the new tab has it open");
     },
 
     /** A worktree another tab of this window has open is marked so on its row,
@@ -18563,6 +18567,40 @@
       await settle(600);
       c.ok(!$(".modal-card"), "nothing is asked");
       c.match(text("#toast-stack"), /is open in another tab of this window, so it can't be removed — .*Close that tab first\./, "it says to close that tab first");
+    },
+
+    /** Which worktree another tab has open is main's to say (#32). The row
+     *  compared a tab's root with git's path as TEXT, so a tab whose root is
+     *  spelled another way — C:\\Users\\… (realpathSync.native) beside git's
+     *  C:/Users/… on Windows, a symlink, a case — lost its "open in a tab"
+     *  while its Remove was still refused. Main marks the row by the same
+     *  comparison it refuses by, and says it again when the tabs change. */
+    "a-worktree-open-in-a-tab-is-marked-however-its-folder-is-spelled": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const GIT = "C:/Users/anton/Developer/GitStudioHQ/gitstudio-wave2";
+      const TAB = "C:\\Users\\anton\\Developer\\GitStudioHQ\\gitstudio-wave2";
+      const row = () => $$(".view-host .worktree-row").find((r) => r.dataset.ref === GIT);
+      c.ok(window.__gsTabs.state().tabs.some((t) => t.root === TAB), "precondition: a tab has it open, its root spelled the Windows way");
+      c.ok(!!row(), "precondition: its row, keyed by git's own path");
+      if (!row()) return;
+      c.eq(text(row().querySelector(".br-state-col")), "open in a tab", "its row says another tab has it open");
+      c.match(row().getAttribute("aria-label") || "", /, open in another tab$/, "and so does its name");
+      // Its Remove is refused by the same comparison — the two never disagree.
+      $$(".lv-menu-btn", row())[0]?.click();
+      await settle(350);
+      const remove = $$(".dropdown .dropdown-item").find((i) => text(i) === "Remove this worktree…");
+      c.ok(!!remove, `precondition: its menu removes it (${$$(".dropdown .dropdown-item").map(text).join(" | ")})`);
+      remove?.click();
+      await settle(600);
+      c.ok(!$(".modal-card"), "nothing is asked");
+      c.match(text("#toast-stack"), /is open in another tab of this window/, "its Remove is refused for the same tab");
+      // The tab closes: main is asked again, and the mark goes.
+      window.__gsTabs.close(TAB);
+      await settle(1200);
+      c.ok(!!row(), "the row is still listed");
+      c.eq(text(row()?.querySelector(".br-state-col")), "", "with that tab closed, the row is not marked");
+      c.ok(!/open in another tab/.test(row()?.getAttribute("aria-label") || ""), "nor named so");
     },
 
     /** A worktree's path is read the system's way and sent back git's way.

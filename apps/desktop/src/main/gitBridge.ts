@@ -321,6 +321,17 @@ function mustSucceed(result: { stdout: string; stderr?: string; code?: number },
 }
 
 /**
+ * Does another repository tab of this window have the folder at `path` open
+ * (#32)? THE comparison: the worktree list marks a row with it (the renderer
+ * cannot resolve a path on disk, and compared git's spelling with the tab's as
+ * text), and a removal is refused by it — so the row's "open in a tab" and
+ * its Remove never disagree.
+ */
+function heldByAnotherTab(path: string, otherTabs: readonly string[]): boolean {
+  return otherTabs.some((root) => sameFolder(path, root));
+}
+
+/**
  * What removing the worktree at `path` takes, as the renderer's one question
  * needs it (git-service's removal): refused outright — the main worktree, this
  * window's own, one another of its tabs has open (while its folder is there),
@@ -337,7 +348,7 @@ async function removalInfo(ctx: GitContext, path: string, otherTabs: readonly st
   }
   // Only while its folder is there: a gone worktree's tab has nothing to lose,
   // and Forget is how that tab's worktree is let go.
-  if (r.kind === "present" && otherTabs.some((root) => sameFolder(r.entry.path, root))) {
+  if (r.kind === "present" && heldByAnotherTab(r.entry.path, otherTabs)) {
     return { kind: "openInTab" };
   }
   return {
@@ -1687,20 +1698,27 @@ export class GitBridge {
       return [];
     }
     try {
-      return (await ctx.worktrees.list()).map((w, i) => ({
-        path: w.path,
-        shownPath: nativePath(w.path),
-        head: w.head,
-        branch: w.branch,
-        bare: w.bare,
-        locked: w.locked,
-        lockReason: w.lockReason,
-        prunable: w.prunable,
-        current: sameFolder(w.path, ctx.root),
-        // git lists the main worktree first.
-        main: i === 0,
-        missing: !w.bare && !existsSync(w.path),
-      }));
+      const otherTabs = this.otherTabRoots(ctx);
+      return (await ctx.worktrees.list()).map((w, i) => {
+        const current = sameFolder(w.path, ctx.root);
+        const missing = !w.bare && !existsSync(w.path);
+        return {
+          path: w.path,
+          shownPath: nativePath(w.path),
+          head: w.head,
+          branch: w.branch,
+          bare: w.bare,
+          locked: w.locked,
+          lockReason: w.lockReason,
+          prunable: w.prunable,
+          current,
+          // git lists the main worktree first.
+          main: i === 0,
+          missing,
+          // As its Remove decides it: only while its folder is there.
+          openInTab: !current && !missing && heldByAnotherTab(w.path, otherTabs),
+        };
+      });
     } catch {
       return [];
     }
@@ -1766,7 +1784,7 @@ export class GitBridge {
         return { ok: false, expected: true, message: worktreeRemovalRefusal("current", "that worktree", "tab") };
       }
       // One whose folder is gone deletes nothing from under its tab: forgetting it goes on.
-      if (existsSync(opts.path) && this.otherTabRoots(ctx).some((root) => sameFolder(opts.path, root))) {
+      if (existsSync(opts.path) && heldByAnotherTab(opts.path, this.otherTabRoots(ctx))) {
         return { ok: false, expected: true, message: worktreeRemovalRefusal("openInTab", "That worktree") };
       }
       // The lock's reason, to put back if git refuses (see removeAsAgreed).

@@ -733,8 +733,22 @@
     active: undefined,
   };
   // ?wttab=1: the repository's worktree gitstudio-wave2 is open in a tab of
-  // its own too, behind the repository's.
-  if (params.get("wttab")) tabState.tabs.push({ root: "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2", name: "gitstudio-wave2" });
+  // its own too, behind the repository's. With ?winpaths=1 the tab's root is
+  // the Windows spelling a tab has (C:\Users\…, realpathSync.native) while
+  // git's worktree list says C:/Users/… — one folder, as main compares it.
+  if (params.get("wttab")) {
+    tabState.tabs.push({
+      root: params.get("winpaths") ? "C:\\Users\\anton\\Developer\\GitStudioHQ\\gitstudio-wave2" : "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2",
+      name: "gitstudio-wave2",
+    });
+  }
+  /** main's folder comparison (git-service's folderKey) without a disk: the
+   *  separators unified, no trailing one, case folded (macOS and Windows). */
+  const folderKeyLikeMain = (p) => String(p).replace(/\\/g, "/").replace(/(?<=[^/:])\/+$/, "").toLowerCase();
+  /** gitBridge's heldByAnotherTab: the ONE comparison the worktree list's
+   *  openInTab and a removal's refusal both make. */
+  window.__gsHeldByAnotherTab = (path) =>
+    tabState.tabs.some((t) => t.root !== tabState.active && folderKeyLikeMain(t.root) === folderKeyLikeMain(path));
   tabState.active = tabState.tabs[Math.max(0, (Number(params.get("active")) || 1) - 1)]?.root ?? tabState.tabs[0]?.root;
   /** Every `repo:tabStatus` request's roots, in order. */
   const tabStatusCalls = [];
@@ -2195,7 +2209,7 @@
       if (w.main) return { kind: "main" };
       if (w.current) return { kind: "current" };
       // As main: another tab has it open (and its folder is there).
-      if (!w.missing && window.__gsTabs.state().tabs.some((t) => t.root === w.path)) return { kind: "openInTab" };
+      if (!w.missing && window.__gsHeldByAnotherTab(w.path)) return { kind: "openInTab" };
       const facts = { branch: w.branch, head: w.head, locked: !!w.locked, lockReason: w.lockReason };
       if (w.missing) return { kind: "missing", ...facts };
       const agent = w.branch === "agent/wave3";
@@ -2931,6 +2945,13 @@
     "tsconfig.json": '{\n  "compilerOptions": {\n    "target": "ES2022",\n    "strict": true\n  }\n}\n',
     "apps/desktop/esbuild.js": 'const esbuild = require("esbuild");\n\nesbuild.build({ entryPoints: ["src/main/main.ts"] });\n',
   };
+  // worktree:list as main answers it: each row says whether another tab has
+  // it open (gitBridge's heldByAnotherTab), asked afresh on every read.
+  dynamic["worktree:list"] = () =>
+    (fixtures["worktree:list"] || []).map((w) => ({
+      ...w,
+      openInTab: !w.current && !w.missing && window.__gsHeldByAnotherTab(w.path),
+    }));
   dynamic["repo:tree"] = (req) => TREE[(req && req.path) || ""] || [];
   dynamic["repo:file"] = (req) => {
     const path = (req && req.path) || "";

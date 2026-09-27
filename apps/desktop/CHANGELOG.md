@@ -203,8 +203,10 @@ but they share the same engine, so most Git behaviour lands in both at once.
   while the question is open — an agent still at work in it — is asked about
   again with what it holds now; nothing the question didn't name is deleted,
   and it keeps its lock. The same words as the VS Code extension's. A
-  worktree open in another repository tab reads *open in a tab* and is not
-  removed from under it: removing it says so, and to close that tab first
+  worktree open in another repository tab reads *open in a tab* — however
+  that tab spells its folder (`C:\Users\…` beside git's `C:/Users/…`, a
+  symlink), and as soon as a tab opens or closes — and is not removed from
+  under it: removing it says so, and to close that tab first
   (one whose folder is gone can still be forgotten). The worktree of the tab
   you are in reads *this tab*.
 - **Removing a worktree that is stopped in a merge, rebase, cherry-pick or

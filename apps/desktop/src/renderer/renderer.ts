@@ -195,12 +195,6 @@ function ideMergeTag(model: ConflictModel): string {
   return `ide-merge:${model.path}:${model.op?.episode ?? ""}`;
 }
 
-/** One folder, however its path ends: a tab's root beside a worktree's path. */
-function samePath(a: string, b: string): boolean {
-  const trim = (p: string) => p.replace(/[\\/]+$/, "");
-  return trim(a) === trim(b);
-}
-
 function sameTargetContent(a: SectionTarget | undefined, b: SectionTarget | undefined): boolean {
   return (
     a?.number === b?.number &&
@@ -857,6 +851,7 @@ class App {
     // a terminal, an edit in your editor — is found by the same cheap question
     // a window focus asks. Nothing moved, nothing rebuilds.
     void this.refreshIfDiskMoved();
+    if (this.tabsMoved) this.onTabsChanged(true);
   }
 
   /** This tab is going to the back: remember where its screen was scrolled
@@ -3424,7 +3419,11 @@ class App {
     const pills: HTMLElement[] = [];
     // A window holds a repository per TAB (#32): the mark is this tab's, and a
     // worktree another tab has open says so — its Remove is refused for it.
-    const inTab = !w.current && !w.missing && this.shell.openRoots().some((root) => samePath(root, w.path));
+    // Main says which, by the comparison that refusal makes: a tab's root and
+    // git's path are two spellings of a folder (a symlink, case, C:\ against
+    // C:/), and only main can ask the disk. Compared here as text, the row lost
+    // its mark where main still refused the remove.
+    const inTab = !!w.openInTab;
     if (w.current) {
       const p = span("this tab", "ab-pill current");
       p.title = "The worktree this tab has open";
@@ -9715,6 +9714,17 @@ class App {
     this.setNotifBadge(n);
   }
 
+  /** A tab opened or closed (#32): which worktree another tab has open is
+   *  main's to say again, in the Branches view that lists them (whichever
+   *  segment is up — the list is read once for all five) — now, or when this
+   *  tab is next in front (Open on a worktree row puts its new tab in front;
+   *  coming back, the row it was opened from says so). */
+  onTabsChanged(inFront: boolean): void {
+    this.tabsMoved = !inFront;
+    if (inFront && this.currentView === "branches") void this.reloadBranchRows?.();
+  }
+  private tabsMoved = false;
+
   /** Forgetting or trashing a clone changes Home's "other repositories" card
    *  and the Repositories list — repaint whichever is showing. */
   onRecentChanged(): void {
@@ -11155,6 +11165,8 @@ class TabShell {
 
   /** main says which tabs are open and which is in front. */
   private apply(next: RepoTabsState): void {
+    const roots = (st: RepoTabsState): string => st.tabs.map((t) => t.root).sort().join("\n");
+    const before = roots(this.state);
     this.state = { tabs: next.tabs ?? [], active: next.active };
     const open = new Set(this.state.tabs.map((t) => t.root));
     const want = this.state.active && open.has(this.state.active) ? this.state.active : this.state.tabs[0]?.root;
@@ -11173,6 +11185,8 @@ class TabShell {
     for (const root of [...this.gone]) if (!open.has(root)) this.gone.delete(root);
     this.renderStrip();
     this.scheduleMarks(0);
+    // Which tabs are open, not their order or which is in front.
+    if (roots(this.state) !== before) for (const app of this.allApps()) app.onTabsChanged(app === this.active);
   }
 
   /** Show `root`'s tab (undefined = the no-repository screen). */

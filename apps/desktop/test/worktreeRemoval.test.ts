@@ -120,6 +120,36 @@ test("a worktree another repository tab has open is refused too — its folder s
   assert.equal((await bridge.worktreeRemoval({ path: s.path("locked") })).kind, "present");
 });
 
+test("the list marks the worktree another tab has open by main's own comparison, however that tab spells it (#32)", async () => {
+  const s = scene();
+  // The worktree's tab was opened through a symlink, and kept that spelling:
+  // its root is not git's path as text (the renderer compared them as text,
+  // and the row lost its "open in a tab" while its Remove was refused).
+  const link = join(s.app, "..", "tab-link-to-clean");
+  symlinkSync(s.path("clean"), link);
+  const repos = new RepoStore([], { discover: async (cwd) => cwd });
+  await repos.open(s.app);
+  await repos.open(link);
+  await repos.open(s.app); // back to the repository's tab
+  const bridge = new GitBridge(repos);
+  const list = await bridge.worktreeList();
+  const by = (b: string) => list.find((w) => w.branch === b);
+  assert.ok(
+    repos.state().tabs.some((t) => t.root === link) && by("clean")?.path !== link,
+    "precondition: the tab's root and git's path are two spellings",
+  );
+  assert.equal(by("clean")?.openInTab, true, "the worktree the other tab has open");
+  assert.deepEqual(await bridge.worktreeRemoval({ path: by("clean")!.path }), { kind: "openInTab" }, "…and its Remove is refused by the same comparison");
+  assert.equal(by("main")?.openInTab, false, "this tab's own is `current`, not another's");
+  assert.equal(by("main")?.current, true);
+  assert.equal(by("locked")?.openInTab, false, "a worktree no tab has open");
+  assert.equal(by("gone")?.openInTab, false, "a gone folder is nobody's to lose");
+
+  // The tab closed: asked again, the list says so.
+  assert.equal(repos.closeTab(link), true);
+  assert.equal((await bridge.worktreeList()).find((w) => w.branch === "clean")?.openInTab, false);
+});
+
 test("a worktree whose folder is gone can be forgotten while its (gone) tab is still open (#32)", async () => {
   const s = scene();
   // The worktree open as a tab of its own, then its folder deleted on disk:

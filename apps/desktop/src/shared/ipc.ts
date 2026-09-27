@@ -598,6 +598,11 @@ export interface WorktreeInfo {
   /** Its folder is gone — whether or not git calls it prunable (a locked one
    *  never is). */
   missing?: boolean;
+  /** Another repository tab of this window has it open (#32) — decided by
+   *  main, by the comparison its Remove is refused by (gitBridge's
+   *  heldByAnotherTab): the renderer cannot resolve a path on disk, and git's
+   *  spelling of a folder need not be the tab's. */
+  openInTab?: boolean;
 }
 
 /**
