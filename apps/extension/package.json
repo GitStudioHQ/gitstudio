@@ -1378,7 +1378,7 @@
           {
             "id": "gitstudio.walkthrough.stage",
             "title": "Stage a hunk & commit",
-            "description": "Stage by hunk or even by line, then commit from the GitStudio commit box (Amend, Sign-off, author override, Commit & Push). When AI is on, the \u2728 button drafts a message from your staged diff.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nShortcut: select lines and press __Ctrl/Cmd+Alt+G S__ to stage them.",
+            "description": "Stage by hunk or even by line, then commit from the GitStudio commit box (Amend, Sign-off, author override, Commit & Push). When AI is on, the \u2728 button drafts a message from your staged diff. Your stashes are listed under your changes: open one to see every file it holds, and **Move to Changes** just the files you want back.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nShortcut: select lines and press __Ctrl/Cmd+Alt+G S__ to stage them.",
             "media": {
               "image": {
                 "light": "media/wordmark-light.png",

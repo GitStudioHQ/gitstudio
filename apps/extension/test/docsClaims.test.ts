@@ -69,6 +69,17 @@ test("the walkthrough places the graph where it is", () => {
   assert.match(graph, /\*\*Commit Graph\*\* panel/);
 });
 
+test("the README's sidebar names only views that ship; stashes are under Changes, as the walkthrough says", () => {
+  const views = new Set(pkg.contributes.views.gitstudio.map((v) => v.name));
+  assert.equal(views.has("Stashes"), false, "the premise: there is no Stashes view any more");
+  const sidebar = /The sidebar reads top-to-bottom as a workflow: (.*?)\. /.exec(readme)?.[1] ?? "";
+  const named = [...sidebar.matchAll(/\*\*([^*]+)\*\*/g)].map((m) => m[1]);
+  assert.ok(named.length > 0, "the README still says how the sidebar reads");
+  assert.deepEqual(named.filter((n) => !views.has(n)), [], "every view the README names is one the sidebar has");
+  assert.doesNotMatch(readme, /Stashes\*\* get a first-class view/);
+  assert.match(step("gitstudio.walkthrough.stage"), /stashes are listed under your changes/);
+});
+
 test("every image in media/ is used by the manifest, the README or the code", () => {
   const sources = [manifestText, readme];
   const walk = (dir: string): void => {

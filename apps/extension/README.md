@@ -78,7 +78,7 @@ Free on public *and* private repos. No account, no sign-up, no analytics, no fea
 
 ## Branches, stashes, worktrees, tags, remotes
 
-- **Stashes** get a first-class view: one-click **Stash Changes**, per-row Apply / Pop / Branch / Drop, plus a stash control in the Changes toolbar.
+- **Stashes** live under your changes, in the Changes view: open one to see every file it holds — staged and untracked ones too — click a file for its diff, and **Move to Changes** (or **Copy to Changes**) just the files you want back. Apply, Pop, Create Branch or Drop a whole stash from its row; stash all your changes, or just the files you selected, from the Changes toolbar.
 - **Worktrees** get their own view: open, create, remove, lock/unlock, prune — the sane way to review a PR without stashing your work.
 - **Tags** support checkout, delete, and push; **remotes** support add, manage, and fetch — all reachable from the branch dialog, the graph, or the Command Palette.
 
@@ -118,7 +118,7 @@ cursor --install-extension gitstudio.gitstudio
 
 …or replace `cursor` with `codium` / `windsurf`, or install from the Open VSX UI.
 
-Then open a folder with a Git repo and click the GitStudio icon in the Activity Bar. The sidebar reads top-to-bottom as a workflow: **Changes** → **Commits** → **Stashes** → **Worktrees** → **Pull Requests**. Run **GitStudio: Get Started** for a guided tour.
+Then open a folder with a Git repo and click the GitStudio icon in the Activity Bar. The sidebar reads top-to-bottom as a workflow: **Changes** (your stashes under them) → **Commits** → **Worktrees** → **Pull Requests**. Run **GitStudio: Get Started** for a guided tour.
 
 > **Prefer a standalone app?** The same engine ships as a native desktop client for macOS, Windows, and Linux — with an integrated terminal, a GitHub home for your repo, and an AI assistant. Grab it from [gitstudio.dev](https://gitstudio.dev).
 
