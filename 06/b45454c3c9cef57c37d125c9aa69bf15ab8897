@@ -1,0 +1,23 @@
+apps/extension/src/pr/pullRequestsView.ts
+  s_26f5e669d3043c::t_92ee6db81f7eaa 304-310,342,696,701,724,744,1012
+apps/extension/test/prListView.test.ts
+  s_26f5e669d3043c::t_19bd1d1d50f08b 790-813
+apps/extension/test/prTestKit.ts
+  s_26f5e669d3043c::t_2e6d2777412b21 120,126-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "06b45454c3c9cef57c37d125c9aa69bf15ab8897",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
