@@ -1,0 +1,30 @@
+scripts/test/no-network-git.mjs
+  s_26f5e669d3043c::t_46dda18c8d4528 16,18-38,46-47,56-57,70-118,126-138,145-147,152-155
+scripts/test/no-network-node.mjs
+  s_26f5e669d3043c::t_768aa25f005bf6 1-122
+  s_26f5e669d3043c::t_9eda51075f802a 123-148
+apps/desktop/test/prCheckoutUpdate.test.ts
+  s_26f5e669d3043c::t_df2ed2a10fac4c 20,109,118-127
+packages/git-service/test/noNetworkGit.test.ts
+  s_26f5e669d3043c::t_f980935031a6bd 3-8,11,17-22,28,186-187,207,214,216-219,224-477
+scripts/test/hermetic-git.mjs
+  s_26f5e669d3043c::t_5ba37a4477d4eb 12-14
+scripts/test/no-network-git.d.mts
+  s_26f5e669d3043c::t_d5da88b8c848c0 7-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e6954b182fb90e303654a16c4c74a3e87a736059",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
