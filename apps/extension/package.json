@@ -227,7 +227,8 @@
         "command": "gitstudio.toggleFileBlame",
         "title": "Annotate with Git Blame",
         "category": "GitStudio",
-        "icon": "$(eye)"
+        "icon": "$(eye)",
+        "toggled": "gitstudio.blameAnnotated"
       },
       {
         "command": "gitstudio.blame.showLineActions",
@@ -1581,7 +1582,7 @@
       "editor/title": [
         {
           "command": "gitstudio.openChanges",
-          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "when": "gitstudio.hasRepo && resourceScheme == file && scmActiveResourceHasChanges && !isInDiffEditor && activeCustomEditorId != 'gitstudio.mergeEditor'",
           "group": "navigation@-1"
         },
         {
@@ -1601,7 +1602,7 @@
         },
         {
           "command": "gitstudio.stageWithTicks",
-          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "when": "gitstudio.hasRepo && resourceScheme == file && scmActiveResourceHasChanges && !isInDiffEditor && activeCustomEditorId != 'gitstudio.mergeEditor'",
           "group": "navigation@9"
         }
       ],
@@ -1650,39 +1651,44 @@
       ],
       "editor/context": [
         {
-          "command": "gitstudio.showLineHistory",
+          "submenu": "gitstudio.editorMenu",
           "when": "editorTextFocus && gitstudio.hasRepo",
-          "group": "navigation@10"
-        },
-        {
-          "command": "gitstudio.openFileAtRevision",
-          "when": "editorTextFocus && gitstudio.hasRepo",
-          "group": "navigation@11"
-        },
-        {
-          "command": "gitstudio.stageSelectedLines",
-          "when": "editorTextFocus && gitstudio.hasRepo && resourceScheme == file",
-          "group": "2_gitstudio@1"
-        },
-        {
-          "command": "gitstudio.unstageSelectedLines",
-          "when": "editorTextFocus && gitstudio.hasRepo && resourceScheme == file",
-          "group": "2_gitstudio@2"
-        },
-        {
-          "command": "gitstudio.stageHunk",
-          "when": "editorTextFocus && gitstudio.hasRepo && resourceScheme == file",
-          "group": "2_gitstudio@3"
-        },
-        {
-          "command": "gitstudio.unstageHunk",
-          "when": "editorTextFocus && gitstudio.hasRepo && resourceScheme == file",
-          "group": "2_gitstudio@4"
+          "group": "1_gitstudio@0"
         },
         {
           "submenu": "gitstudio.blame.annotationsMenu",
           "when": "gitstudio.blameAnnotated",
           "group": "1_gitstudio@1"
+        }
+      ],
+      "gitstudio.editorMenu": [
+        {
+          "command": "gitstudio.showLineHistory",
+          "group": "1_history@1"
+        },
+        {
+          "command": "gitstudio.openFileAtRevision",
+          "group": "1_history@2"
+        },
+        {
+          "command": "gitstudio.stageSelectedLines",
+          "when": "resourceScheme == file && scmActiveResourceHasChanges",
+          "group": "2_staging@1"
+        },
+        {
+          "command": "gitstudio.unstageSelectedLines",
+          "when": "resourceScheme == file && scmActiveResourceHasChanges",
+          "group": "2_staging@2"
+        },
+        {
+          "command": "gitstudio.stageHunk",
+          "when": "resourceScheme == file && scmActiveResourceHasChanges",
+          "group": "2_staging@3"
+        },
+        {
+          "command": "gitstudio.unstageHunk",
+          "when": "resourceScheme == file && scmActiveResourceHasChanges",
+          "group": "2_staging@4"
         }
       ],
       "commandPalette": [
@@ -2329,7 +2335,7 @@
         },
         {
           "command": "gitstudio.toggleStageAtLine",
-          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "when": "gitstudio.hasRepo && resourceScheme == file && scmActiveResourceHasChanges",
           "group": "1_gitstudio@2"
         }
       ],
@@ -2513,6 +2519,10 @@
       ]
     },
     "submenus": [
+      {
+        "id": "gitstudio.editorMenu",
+        "label": "GitStudio"
+      },
       {
         "id": "gitstudio.blame.annotationsMenu",
         "label": "Git Blame Annotations"
