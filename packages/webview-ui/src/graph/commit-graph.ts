@@ -756,11 +756,13 @@ export class CommitGraph extends LitElement {
     .row.is-match:where(:not(.selected)) .chip-overflow {
       color: var(--vscode-foreground);
     }
-    .row.is-nomatch .subject,
-    .row.is-nomatch .refs,
-    .row.is-nomatch .changes,
-    .row.is-nomatch .meta { opacity: 0.4; }
-    .row.is-nomatch .avatar { opacity: 0.45; }
+    /* The rows a search does not match recede, but never a SELECTED one:
+       the commit you picked stays readable while you search. */
+    .row.is-nomatch:where(:not(.selected)) .subject,
+    .row.is-nomatch:where(:not(.selected)) .refs,
+    .row.is-nomatch:where(:not(.selected)) .changes,
+    .row.is-nomatch:where(:not(.selected)) .meta { opacity: 0.4; }
+    .row.is-nomatch:where(:not(.selected)) .avatar { opacity: 0.45; }
 
     @container (max-width: 560px) {
       .gh-search { min-width: 130px; flex-basis: 200px; }
@@ -1550,15 +1552,22 @@ export class CommitGraph extends LitElement {
       background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
       border-radius: 3px;
     }
-    /* On a selected (accent-filled) row, lift chip contrast a touch so the
-       tinted fills don't muddy against the active-selection background. */
+    /* On a selected (accent-filled) row the chips sit on a layer of the
+       editor's own ground, so their inks read as they do on a plain row. At
+       78% the selection showed through enough to take them under AA in
+       Light+ (the branch name 4.16:1, "+3" 4.41:1); at 90% they clear it. */
     .row.selected .chip-head,
     .row.selected .chip-remote,
     .row.selected .chip-tag,
     .row.selected .chip-overflow {
       background: color-mix(in srgb,
-        var(--vscode-editor-background) 78%, transparent);
+        var(--vscode-editor-background) 90%, transparent);
     }
+    /* The "+N" count on a lit row takes the foreground: the secondary ink
+       read 4.29:1 on the lit cursor in the desktop's light theme, and 3.98:1
+       on the cursor's row under the pointer in Light+. */
+    .row.selected .chip-overflow,
+    .row.focused:where(:not(.selected)) .chip-overflow { color: var(--vscode-foreground); }
 
     .subject {
       min-width: 0;

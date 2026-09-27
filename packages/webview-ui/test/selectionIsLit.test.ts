@@ -54,7 +54,19 @@ const LIST_COMMON = `
     sha: sha(i), shortSha: sha(i).slice(0, 7), column: 0, color: 0, isMerge: false,
     segments: [{ fromColumn: 0, toColumn: 0, color: 0 }],
     subject: i === 0 ? "" : "commit " + i, author: "Ada Lovelace", authorEmail: "ada@example.com",
-    authorDate: 1700000000 - i * 3600, refs: [],
+    authorDate: 1700000000 - i * 3600,
+    // Every other commit carries refs, more than fit: its chips and its "+N"
+    // count sit on the selection's fill and are measured there (a fixture
+    // with no refs never measured them, and "+1" read 4.29:1 on the lit row).
+    refs: i > 0 && i % 2 === 0
+      ? [
+          { name: "feature/topic-" + i, fullName: "refs/heads/feature/topic-" + i, kind: "head" },
+          { name: "origin/feature/topic-" + i, fullName: "refs/remotes/origin/feature/topic-" + i, kind: "remoteHead" },
+          { name: "v1." + i + ".0", fullName: "refs/tags/v1." + i + ".0", kind: "tag" },
+          { name: "v1." + i + ".0-rc.1", fullName: "refs/tags/v1." + i + ".0-rc.1", kind: "tag" },
+          { name: "v1." + i + ".0-rc.2", fullName: "refs/tags/v1." + i + ".0-rc.2", kind: "tag" },
+        ]
+      : [],
   });
   const rows = Array.from({ length: 30 }, (_, i) => row(i));
   const tick = () => new Promise((r) => setTimeout(r, 40));
@@ -136,6 +148,10 @@ const LIST_BODY = (tag: string, searchInput: string, branchesButton: string, pre
     );
     expect(apart(cursorMatch, selMatch) >= 12, "and the cursor among the results is lit as the cursor (" + apart(cursorMatch, selMatch).toFixed(0) + ")");
   }
+  // The rows the search does not match recede, but not the one you picked.
+  const faded = (e) => { let o = 1; for (let n = e; n && n !== el.shadowRoot; n = n.parentElement) o *= parseFloat(getComputedStyle(n).opacity); return o; };
+  const plainSubject = selPlain.querySelector(".subject");
+  expect(faded(plainSubject) > 0.99, "a selected commit the search does not match is not faded with the rest (" + faded(plainSubject).toFixed(2) + ")");
   input.value = "";
   input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
   await settle(el);

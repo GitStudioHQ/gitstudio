@@ -628,6 +628,12 @@ export class CommitRail extends LitElement {
         color: var(--gs-fg-subtle);
         font-variant-numeric: tabular-nums;
       }
+      /* On a lit row the "+N" count takes the row's full ink: the subtle ink
+         read 2.35 to 3.33:1 on the selection's fill, the cursor's wash and a
+         match's. */
+      .row.selected .chip.more { color: var(--vscode-list-activeSelectionForeground, var(--gs-fg)); }
+      .row.focused:not(.selected) .chip.more,
+      .row.is-match:not(.selected) .chip.more { color: var(--gs-fg); }
       .chip .cloud { font-size: 9px; opacity: 0.85; }
 
       /* ── Hover actions (VS Code tree idiom): fade in over a scrim ──────── */
@@ -688,7 +694,8 @@ export class CommitRail extends LitElement {
          strip down its edge (the owner's rule covers matched rows as well as
          selected ones). The rows that do not match recede, and the current
          match is lit in the accent (.is-cursor). */
-      .row.is-nomatch { opacity: 0.35; }
+      /* …but never a selected row: the commit you picked stays readable. */
+      .row.is-nomatch:not(.selected) { opacity: 0.35; }
       .row.is-match:not(.selected) {
         background: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 16%, transparent);
         --gs-graph-node-hole: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 16%, var(--gs-bg));
