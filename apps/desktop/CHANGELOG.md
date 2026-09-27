@@ -243,6 +243,11 @@ but they share the same engine, so most Git behaviour lands in both at once.
   `HOME` is set — where Git for Windows' ssh reads them — not only from the
   user profile's, and the SSH keys listed in Settings come from the same
   folder.
+- **Rebasing in a SHA-256 repository.** In a repository whose commit ids are
+  64 characters long (`git init --object-format=sha256`), the Rebase view,
+  Drop Commit and the several-commit actions were refused as an
+  "unrecognised plan entry". They run now, and a reworded commit gets its new
+  message — also when the rebase is continued after a conflict.
 
 ## [2.1.0] - 2026-09-25
 

@@ -535,6 +535,12 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - On Windows, SSH host aliases are read from `%HOME%\.ssh\config` when
   `HOME` is set — where Git for Windows' ssh reads them — so a remote through
   one is recognised as github.com there too.
+- **Rebasing in a SHA-256 repository.** In a repository whose commit ids are
+  64 characters long (`git init --object-format=sha256`), the rebase panel,
+  Drop Commit and the several-commit actions were refused as an
+  "unrecognised plan entry", and the rebase editor showed part of each id in
+  front of the commit's title. They run now, and a reworded commit gets its
+  new message — also when the rebase is continued after a conflict.
 
 ## [1.14.0] - 2026-09-25
 

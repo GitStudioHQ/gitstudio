@@ -139,7 +139,7 @@ try{
     try{
       const done=fs.readFileSync(path.join(gd,d,"done"),"utf8").split("\\n").filter(function(l){return l.trim()});
       const last=done[done.length-1]||"";
-      const m=/^\\s*(?:[a-z-]+)\\s+([0-9a-fA-F]{4,40})\\b/.exec(last);
+      const m=/^\\s*(?:[a-z-]+)\\s+([0-9a-fA-F]{4,64})\\b/.exec(last);
       if(m){sha=m[1];break;}
     }catch(_){}
   }

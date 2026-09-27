@@ -1198,5 +1198,6 @@ function clip(s: string, n: number): string {
 
 function short(ref: string): string {
   if (ref === "--root") return "the root commit";
-  return /^[0-9a-f]{40}$/i.test(ref) ? ref.slice(0, 7) : ref;
+  // A full object name, SHA-1 or SHA-256.
+  return /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(ref) ? ref.slice(0, 7) : ref;
 }

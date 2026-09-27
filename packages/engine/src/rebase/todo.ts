@@ -77,7 +77,7 @@ const ACTION_BY_TOKEN: Readonly<Record<string, RebaseAction>> = {
  * We intentionally do NOT match `update-ref`, `exec`, etc. here — those start
  * with their own tokens and fall through to passthrough.
  */
-const COMMIT_LINE = /^(\s*)([A-Za-z]+)(\s+)([0-9a-fA-F]{4,40})(.*)$/;
+const COMMIT_LINE = /^(\s*)([A-Za-z]+)(\s+)([0-9a-fA-F]{4,64})(.*)$/;
 
 /**
  * Parse a `git-rebase-todo` into a typed line list. Comments, blanks, and any

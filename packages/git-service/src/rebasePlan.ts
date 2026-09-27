@@ -150,7 +150,7 @@ export function buildRebasePlan(
   // runtime, so an unexpected action or a sha-shaped impostor is validated here
   // rather than trusted — an "exec" smuggled through would be executed.
   const bad = plan.find(
-    (r) => !TODO_ACTIONS.has(r.action) || !/^[0-9a-fA-F]{4,40}$/.test(r.sha),
+    (r) => !TODO_ACTIONS.has(r.action) || !/^[0-9a-fA-F]{4,64}$/.test(r.sha),
   );
   if (bad) {
     return {

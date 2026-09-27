@@ -235,6 +235,21 @@ test("an older git's retyped line is written as it always was", () => {
   assert.equal(serializeRebaseTodo(lines).split("\n")[1], "squash 6cd3cec c4");
 });
 
+test("a SHA-256 repository's 64-digit object names are read whole", () => {
+  const sha = "f3a1".repeat(16);
+  const lines = parseRebaseTodo(`pick ${sha} # c3\nreword ${sha.slice(0, 12)} # c4\n`);
+  const commits = lines.filter((l): l is RebaseCommitEntry => l.kind === "commit");
+  assert.deepEqual(
+    commits.map((c) => [c.sha, c.subject]),
+    [
+      [sha, "c3"],
+      [sha.slice(0, 12), "c4"],
+    ],
+  );
+  commits[0].action = "drop";
+  assert.equal(serializeRebaseTodo(lines).split("\n")[0], `drop ${sha} # c3`);
+});
+
 // ── Test helpers ─────────────────────────────────────────────────────────────
 
 /**
