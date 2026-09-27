@@ -521,9 +521,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **Interactive rebase under git 2.55 shows commit titles as they are.**
   git 2.55 writes each line of a rebase plan as `pick <sha> # <title>`, and
   the rebase editor showed that `#` in front of every commit's title. It
-  reads both the older and the newer form now, keeps a title that itself
-  starts with `#`, and a line whose action you change keeps git's own
-  spelling.
+  reads both the older and the newer form now, telling them apart by the
+  whole plan — so a title that itself starts with `#`, and an empty commit
+  with no message (`# empty`), read as git wrote them under either — and a
+  line whose action you change keeps git's own spelling.
 - **A worktree is one folder however its path is spelled.** git names a
   worktree by its resolved path — `C:/Users/you/…` on Windows — and the same
   folder can be reached through a symlink or Windows' short `C:\Users\YOU~1\…`

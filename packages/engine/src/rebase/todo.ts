@@ -29,8 +29,9 @@ export interface RebaseCommitEntry {
   /** The commit object name as it appears in the todo (abbreviated or full). */
   sha: string;
   /**
-   * The commit subject: the remainder of the line after the sha, without the
-   * `# ` a newer git writes in front of it (see {@link todoSubject}).
+   * The commit subject: the remainder of the line after the sha — without the
+   * `# ` git 2.55 writes in front of it, in a todo that git wrote (see
+   * {@link todoSubject}).
    */
   subject: string;
   /**
@@ -90,18 +91,18 @@ export function parseRebaseTodo(text: string): RebaseLine[] {
   // Split on either EOL form. A trailing newline yields a final "" element we
   // drop so we don't synthesize a phantom blank line; serialize re-adds the
   // terminator. Lines keep no embedded "\r" because we strip a trailing one.
-  const rawLines = splitLines(text);
-  const lines: RebaseLine[] = [];
-
-  for (const raw of rawLines) {
-    const entry = parseCommitLine(raw);
-    lines.push(entry ?? { kind: "passthrough", raw });
-  }
-  return lines;
+  const parsed = splitLines(text).map((raw) => ({ raw, commit: parseCommitLine(raw) }));
+  // The subject's spelling is the FILE's, decided once from all its lines.
+  const format = todoSubjectFormat(parsed.flatMap((p) => (p.commit ? [p.commit.rest] : [])));
+  return parsed.map(({ raw, commit }): RebaseLine =>
+    commit
+      ? { kind: "commit", action: commit.action, sha: commit.sha, subject: todoSubject(commit.rest, format), raw }
+      : { kind: "passthrough", raw },
+  );
 }
 
-/** Attempts to read a single line as a commit entry; null if it isn't one. */
-function parseCommitLine(raw: string): RebaseCommitEntry | null {
+/** Reads a single line as a commit line — its verb, object name and the rest — or null. */
+function parseCommitLine(raw: string): { action: RebaseAction; sha: string; rest: string } | null {
   const m = COMMIT_LINE.exec(raw);
   if (!m) {
     return null;
@@ -111,32 +112,53 @@ function parseCommitLine(raw: string): RebaseCommitEntry | null {
   if (!action) {
     return null;
   }
-  const sha = m[4];
-  return { kind: "commit", action, sha, subject: todoSubject(m[5]), raw };
+  return { action, sha: m[4], rest: m[5] };
 }
 
 /**
- * The commit subject from what follows the object name on a todo line.
+ * How the git that wrote a todo spells what follows a commit line's object
+ * name:
  *
- * git writes that part two ways, and both are in the wild:
+ *   "plain"    `pick 0151064 c3`     ← git up to 2.54
+ *   "comment"  `pick 0151064 # c3`   ← git 2.55: the subject is a comment
  *
- *   pick 0151064 c3          ← git up to 2.54
- *   pick 0151064 # c3        ← git 2.55: the subject is written as a comment
+ * A line alone cannot say which: `pick 2255d00 # empty` is an older git's
+ * empty commit with no message, and 2.55's commit whose subject is "empty". The
+ * file can. git 2.55 writes the separator on EVERY commit line (an empty
+ * subject is `# `, or `#` once an editor trims it), and an older git on a line
+ * only when that commit's subject itself starts with `#` — so one commit line
+ * without it makes the file an older git's.
  *
- * so a newer git's subject starts with a `# ` that is not part of it — shown
- * as-is, every commit title read "# c3". The separator is always a literal
- * `#` whatever `core.commentChar` says (verified against git 2.55 with
- * `core.commentChar=;`), and an empty subject is `pick <sha> # ` — or `#`
- * alone once an editor trims the line. Only ONE separator comes off: a
- * subject that itself starts with `#` is written `pick <sha> # # hashtag`
- * and is kept as `# hashtag`.
- *
- * Under an older git a subject that begins `# ` reads the same as the
- * separator and loses it here. That is display only: a line is written back
- * from its own `raw`, never from this.
+ * What the lines cannot settle is an older git's todo in which every subject
+ * begins `# ` or `#` alone; it reads as 2.55's. Nothing else could settle it
+ * exactly either: the file is written by whatever git the terminal ran, not
+ * necessarily the one this app would ask for its version.
  */
-export function todoSubject(rest: string): string {
-  return rest.replace(/^\s+/, "").replace(/^#(?: |$)/, "");
+export function todoSubjectFormat(rests: readonly string[]): "plain" | "comment" {
+  return rests.length > 0 && rests.every((rest) => /^\s+#(?: |$)/.test(rest)) ? "comment" : "plain";
+}
+
+/**
+ * The commit subject from what follows the object name on a todo line, in the
+ * file's {@link todoSubjectFormat}.
+ *
+ * An older git's is the subject as written. git 2.55's starts with a `# `
+ * that is not part of it — shown as-is, every commit title read "# c3". The
+ * separator is always a literal `#` whatever `core.commentChar` says
+ * (verified against git 2.55 with `core.commentChar=;`), and an empty subject
+ * is `pick <sha> # ` — or `#` alone once an editor trims the line. Only ONE
+ * separator comes off: a subject that itself starts with `#` is written
+ * `pick <sha> # # hashtag` and is kept as `# hashtag`, and an empty commit
+ * with no message, `pick <sha> #  # empty`, reads `# empty` — as an older git
+ * writes it.
+ *
+ * Leading space is not part of a subject either way (an older git writes none
+ * there). Display only: a line is written back from its own `raw`, never from
+ * this.
+ */
+export function todoSubject(rest: string, format: "plain" | "comment"): string {
+  const subject = format === "comment" ? rest.replace(/^\s*#(?: |$)/, "") : rest;
+  return subject.replace(/^\s+/, "");
 }
 
 export interface SerializeOptions {

@@ -6,6 +6,7 @@ import {
   detectEol,
   hasTrailingNewline,
   summarizeRebaseTodo,
+  todoSubjectFormat,
   type RebaseCommitEntry,
 } from "../src/rebase/todo";
 
@@ -204,17 +205,83 @@ test("git 2.55's `pick <sha> # <subject>`: the subject has no '# ' in front of i
   assert.deepEqual(subjects(TODO_FROM_2_55), ["c3", "c4", "fixup! c4 # empty", "# hashtag subject # empty"]);
 });
 
-test("git up to 2.54's `pick <sha> <subject>` reads the same subjects", () => {
-  // The one line both formats cannot tell apart is a subject that itself
-  // starts "# " under an older git; it is shown without it. Display only —
-  // the line is written back from its own raw text.
-  assert.deepEqual(subjects(TODO_UP_TO_2_54), ["c3", "c4", "fixup! c4 # empty", "hashtag subject # empty"]);
+test("git up to 2.54's `pick <sha> <subject>` reads the same subjects — a subject starting '# ' as git wrote it", () => {
+  // A line alone cannot say whether its "# " is 2.55's separator or the start
+  // of an older git's subject; the file can, and this one is an older git's.
+  assert.deepEqual(subjects(TODO_UP_TO_2_54), ["c3", "c4", "fixup! c4 # empty", "# hashtag subject # empty"]);
 });
 
-test("an empty subject: '# ' and a trimmed '#' are the separator, not a subject", () => {
-  assert.deepEqual(subjects("pick c76f531 # \npick c76f532 #\npick c76f533\n"), ["", "", ""]);
-  // …while '#' glued to a word is a subject.
+test("an empty subject: '# ' and a trimmed '#' are 2.55's separator, not a subject", () => {
+  assert.deepEqual(subjects("pick c76f531 # \npick c76f532 #\n"), ["", ""]);
+  // An older git writes no separator, and so nothing, for an empty subject.
+  assert.deepEqual(subjects("pick c76f533\npick c76f534 c4\n"), ["", "c4"]);
+  // '#' glued to a word is a subject, in either spelling.
   assert.deepEqual(subjects("pick c76f531 #hashtag\n"), ["#hashtag"]);
+  assert.deepEqual(subjects("pick c76f531 # #hashtag\n"), ["#hashtag"]);
+});
+
+// The same seven commits, in the todo each git wrote for them (captured from
+// git 2.49 and 2.55 with --keep-empty; the \x20 is git's trailing space, kept
+// from any editor that trims it): "   spaced" (kept verbatim), an empty
+// message, an EMPTY commit with an empty message, an empty commit whose
+// subject is "#", a subject "#", "#tag" and "# a # b". Every subject that
+// starts with '#' is the case a per-line rule gets wrong for one of the two.
+const EDGES_UP_TO_2_54 = `pick 6915e63 spaced
+pick a29081d
+pick 2255d00 # empty
+pick aa56608 # # empty
+pick dfe0e27 #
+pick b65720d #tag
+pick 59c642d # a # b
+
+# Rebase 18cd4b4..59c642d onto 18cd4b4 (7 commands)
+`;
+
+const EDGES_FROM_2_55 = `pick 6915e63 #    spaced
+pick a29081d #\x20
+pick 2255d00 #  # empty
+pick aa56608 # # # empty
+pick dfe0e27 # #
+pick b65720d # #tag
+pick 59c642d # # a # b
+
+# Rebase 18cd4b4..59c642d onto 18cd4b4 (7 commands)
+`;
+
+test("subjects that start with '#', and the empty commit with no message, read alike from either git", () => {
+  const expected = ["spaced", "", "# empty", "# # empty", "#", "#tag", "# a # b"];
+  assert.deepEqual(subjects(EDGES_UP_TO_2_54), expected, "an older git's: exactly as it wrote them");
+  assert.deepEqual(subjects(EDGES_FROM_2_55), expected, "2.55's: without only the separator");
+  // And the round trip stays byte-for-byte in both.
+  assert.equal(serializeRebaseTodo(parseRebaseTodo(EDGES_UP_TO_2_54)), EDGES_UP_TO_2_54);
+  assert.equal(serializeRebaseTodo(parseRebaseTodo(EDGES_FROM_2_55)), EDGES_FROM_2_55);
+});
+
+test("an older git's empty commit with no message keeps its '# empty' beside ordinary subjects", () => {
+  assert.deepEqual(subjects("pick 0151064 c3\npick 2255d00 # empty\n"), ["c3", "# empty"]);
+  assert.deepEqual(subjects("pick 0151064 # c3\npick 2255d00 #  # empty\n"), ["c3", "# empty"]);
+});
+
+test("the format is the file's, read from all of its commit lines", () => {
+  assert.equal(todoSubjectFormat([" # c3", " # # hashtag", " #"]), "comment");
+  assert.equal(todoSubjectFormat([" # hashtag", " c3"]), "plain", "one line without the separator: an older git");
+  assert.equal(todoSubjectFormat([]), "plain", "no commit lines (a noop todo)");
+  assert.equal(todoSubjectFormat([" #hashtag"]), "plain", "'#' glued to a word is no separator");
+});
+
+test("a SHA-256 repository's 64-digit object names are read whole", () => {
+  const sha = "f3a1".repeat(16);
+  const lines = parseRebaseTodo(`pick ${sha} # c3\nreword ${sha.slice(0, 12)} # c4\n`);
+  const commits = lines.filter((l): l is RebaseCommitEntry => l.kind === "commit");
+  assert.deepEqual(
+    commits.map((c) => [c.sha, c.subject]),
+    [
+      [sha, "c3"],
+      [sha.slice(0, 12), "c4"],
+    ],
+  );
+  commits[0].action = "drop";
+  assert.equal(serializeRebaseTodo(lines).split("\n")[0], `drop ${sha} # c3`);
 });
 
 test("git 2.55's todo round-trips byte-for-byte, and a retyped line keeps git's '# ' separator", () => {
@@ -233,21 +300,6 @@ test("an older git's retyped line is written as it always was", () => {
   const commits = lines.filter((l): l is RebaseCommitEntry => l.kind === "commit");
   commits[1].action = "squash";
   assert.equal(serializeRebaseTodo(lines).split("\n")[1], "squash 6cd3cec c4");
-});
-
-test("a SHA-256 repository's 64-digit object names are read whole", () => {
-  const sha = "f3a1".repeat(16);
-  const lines = parseRebaseTodo(`pick ${sha} # c3\nreword ${sha.slice(0, 12)} # c4\n`);
-  const commits = lines.filter((l): l is RebaseCommitEntry => l.kind === "commit");
-  assert.deepEqual(
-    commits.map((c) => [c.sha, c.subject]),
-    [
-      [sha, "c3"],
-      [sha.slice(0, 12), "c4"],
-    ],
-  );
-  commits[0].action = "drop";
-  assert.equal(serializeRebaseTodo(lines).split("\n")[0], `drop ${sha} # c3`);
 });
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
