@@ -7,6 +7,35 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 ## [Unreleased]
 
 ### Added
+- **A new Pull Requests list.** The Pull Requests view is rebuilt as a list
+  like the GitStudio desktop app's. **Open**, **Merged**, **Closed** and
+  **All** sit at the top with how many each holds; a search box finds pull
+  requests by their words, and **Filter** narrows them by **Author**,
+  **Review requested** (your teams' requests included), **Assignee** or
+  **Label** — "you" is one click, anyone else can be typed — with each filter
+  shown as a chip you can remove. Each row gives the title and number, who
+  opened it (with their picture), its branch and the branch it goes into (a
+  fork's shows whose), how long since it last changed, its checks (Passed,
+  Failed, Running), its reviews (Approved, Changes requested, Review
+  required), its comments, Draft, its labels in their colours, and
+  **Checked out** on the one whose branch you have checked out. Rows come 30 at
+  a time, and more load as you reach the end (or with **Load More**). Click a
+  row to open its page; hover it (or move to it with the keyboard) for
+  **Check Out**, **Open on GitHub** and **More Actions…** — Start Review,
+  Merge…, Copy Link, offered only where they apply; right-click or Shift+F10
+  opens the same menu. **Up/Down** move through the rows, and Down from the
+  search box gets you there. The list keeps its rows while it refreshes, with
+  a thin bar to show it, and says what to do when there is nothing to show —
+  **Sign in to GitHub**, **Sign in Again**, **Retry**, **Authorize on
+  GitHub**, **Create Pull Request** or **Clear filters**. It is drawn for
+  Dark, Light and both High Contrast themes.
+- **Pull requests of the repository your fork came from.** When `origin` is a
+  fork, the Pull Requests list shows the pull requests of the repository it
+  was forked from — as github.com's own Pull requests button does — with your
+  fork (and any other GitHub remote) one click away in the repository menu at
+  the top. Your choice is remembered for the workspace. Checking out a pull
+  request of that repository fetches it from its `upstream` remote, or from
+  github.com when the clone has none.
 - **Select several commits.** In the Commit Graph and the Commits list,
   **Cmd/Ctrl+click** adds or removes a commit, **Shift+click** selects
   everything from the last one you clicked, and **Shift+Up/Down** extends the
@@ -429,9 +458,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Actions, whether its runs had failed or passed. They read the runs now, with
   any legacy statuses: a failure reads as failed, a pass as passed, "No
   checks" only when there are none. Every row shows it — drafts too, not just
-  the first eight — as its icon, a mark of its own in a colour of its own for
-  passed, failed and running, with the words in its tooltip; rows no longer
-  show the literal text `$(check)`, `$(x)` or `$(circle-filled)`.
+  the first eight — as a mark of its own in a colour of its own, with the word
+  beside it (Passed, Failed, Running); rows no longer show the literal text
+  `$(check)`, `$(x)` or `$(circle-filled)`.
 - **Create Pull Request: Draft creates a draft.** Every pull request was
   created ready for review, whichever you picked. A branch that lives in your
   fork is now sent to GitHub as `owner:branch` — as a bare name, GitHub looked
@@ -503,10 +532,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   arrives after you have switched repositories is not shown over the other
   repository's list. Rows show when each pull request was last updated, the
   order they are in.
-- **No more silent 100-item limits.** Up to 1,000 open pull requests are
-  listed, not the first 100, and the list says when there are more; every
-  changed file is listed (GitHub lists up to 3,000), each one commentable in
-  a review. A page's "Changed files" count is the pull request's own, and a
+- **No more silent 100-item limits.** The Pull Requests list reaches every
+  pull request, a page at a time, and says how many there are; every changed
+  file is listed (GitHub lists up to 3,000), each one commentable in a
+  review. A page's "Changed files" count is the pull request's own, and a
   list that is partial, or failed to load, says so.
 - **github.com under another name.** Remotes using an SSH host alias
   (`git@github.com-work:…`, or any `~/.ssh/config` Host whose HostName is
