@@ -613,10 +613,19 @@ body.vscode-high-contrast .jb-ribbon-trace-edge-removed { stroke: var(--jb-done-
   padding: 0;
   justify-content: center;
 }
+/* A pressed toggle (Synchronized scrolling) is lit: VS Code's option fill and
+ * a soft accent glow. In the desktop it used to wear a 1px ring in the option
+ * colour, which the other buttons do not have: a line marking the pressed
+ * state, by the owner's rule. High contrast paints no fills, so there the
+ * whole ring is the mark. */
 .jb-toolbar-btn.jb-toggled {
   background: var(--vscode-inputOption-activeBackground, rgba(90, 130, 200, 0.25));
-  border-color: var(--vscode-inputOption-activeBorder, transparent);
   color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
+  box-shadow: 0 0 10px -3px color-mix(in srgb, var(--gs-accent, var(--vscode-focusBorder)) 60%, transparent);
+}
+.vscode-high-contrast .jb-toolbar-btn.jb-toggled {
+  border-color: var(--vscode-inputOption-activeBorder, var(--vscode-contrastActiveBorder, transparent));
+  box-shadow: none;
 }
 /* A bordered button must read as a button on every ground. Its border is not
  * `--vscode-button-border`: the desktop declares that one transparent (for

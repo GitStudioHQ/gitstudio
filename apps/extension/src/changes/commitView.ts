@@ -3160,9 +3160,12 @@ export class CommitViewProvider
       letter-spacing: 0.005em;
     }
     .branch .branch-caret { font-size: 12px; opacity: 0.8; margin-left: -1px; }
+    /* Open: lit, the pill's own edge unchanged. Recolouring that edge in the
+       accent drew a ring around the open state, a line by the owner's rule;
+       it glows softly instead. */
     .branch[aria-expanded="true"] {
       background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
-      border-color: color-mix(in srgb, var(--gs-accent) 55%, transparent);
+      box-shadow: var(--gs-sel-glow-soft);
     }
     /* The repository, when the workspace holds more than one (issue #32): the
        branch pill's shape and type, in the neutral foreground so the branch
