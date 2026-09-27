@@ -96,6 +96,30 @@ test("each pill's icon says what its ref is", () => {
   assert.equal(pillIcon(shas, "pick-head"), "git-branch");
 });
 
+// Between the two pills sat git's own ".." or "..." — range syntax, beside
+// the mode buttons that already say in words which comparison it is.
+test("the bar goes from one ref to the other with an arrow, never git's dot syntax", () => {
+  for (const threeDot of [true, false]) {
+    const self = {
+      base: "main",
+      head: "feature",
+      threeDot,
+      extensionUri: {},
+      panel: { webview: { asWebviewUri: (u: unknown) => u, cspSource: "" } },
+    };
+    const html = (ComparePanel.prototype as unknown as { render: (r: CompareResult) => string }).render.call(
+      self,
+      result(2, { baseKind: "branch", headKind: "branch" }),
+    );
+    const bar = html.slice(html.indexOf('<div class="cmp-bar">'), html.indexOf('<div class="cmp-diffstat">'));
+    const between = bar.slice(bar.indexOf('id="pick-base"'), bar.indexOf('id="pick-head"'));
+    assert.doesNotMatch(between, />\s*\.{2,3}\s*</, `no dots between the pills (${threeDot ? "three" : "two"}-dot)`);
+    assert.match(between, /<span class="cmp-arrow" aria-hidden="true"><i class="codicon codicon-arrow-right"><\/i><\/span>/);
+    assert.match(bar, />What feature adds<\/button>/, "the mode buttons say which comparison it is");
+    assert.match(bar, />All differences<\/button>/);
+  }
+});
+
 test("what each ref names, as git resolves it", async () => {
   const dir = mkdtempSync(join(tmpdir(), "gs-compare-summary-"));
   const git = (...a: string[]): string => execFileSync("git", a, { cwd: dir, encoding: "utf8" }).trim();

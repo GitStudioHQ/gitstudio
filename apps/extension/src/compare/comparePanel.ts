@@ -334,7 +334,7 @@ export class ComparePanel {
 <body>
   <div class="cmp-bar">
     <button class="ref-pick" id="pick-base" title="Change base ref"><i class="codicon codicon-${REF_ICON[result.baseKind]}"></i><span class="nm">${esc(this.base)}</span></button>
-    <span class="cmp-dots" title="${this.threeDot ? "Three-dot: changes since the merge-base" : "Two-dot: direct difference"}">${this.threeDot ? "..." : ".."}</span>
+    <span class="cmp-arrow" aria-hidden="true"><i class="codicon codicon-arrow-right"></i></span>
     <button class="ref-pick" id="pick-head" title="Change compare ref"><i class="codicon codicon-${REF_ICON[result.headKind]}"></i><span class="nm">${esc(this.head)}</span></button>
     <button class="icon-btn" id="swap" title="Swap base and compare"><i class="codicon codicon-arrow-swap"></i></button>
     <div class="cmp-mode" role="group" aria-label="Comparison mode">
@@ -377,8 +377,8 @@ export class ComparePanel {
       <button class="tb-btn" id="expand-all" title="Expand all files"><i class="codicon codicon-unfold"></i></button>
       <button class="tb-btn" id="collapse-all" title="Collapse all files"><i class="codicon codicon-fold"></i></button>
       <div class="tb-group" role="group" aria-label="Diff style">
-        <button class="tb-seg on" id="diff-unified" title="Unified diff"><i class="codicon codicon-list-selection"></i></button>
-        <button class="tb-seg" id="diff-split" title="Split diff"><i class="codicon codicon-split-horizontal"></i></button>
+        <button class="tb-seg on" id="diff-unified" title="Unified diff"><i class="codicon codicon-diff-single"></i></button>
+        <button class="tb-seg" id="diff-split" title="Split diff"><i class="codicon codicon-diff-sidebyside"></i></button>
       </div>
     </div>
     <div class="cmp-files-layout" id="files-layout">
@@ -442,7 +442,9 @@ const COMPARE_CSS = `
   .ref-pick:hover { background: var(--gs-hover); border-color: var(--gs-fg-subtle); }
   .ref-pick:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
   .ref-pick .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cmp-dots { color: var(--gs-fg-muted); font-family: var(--gs-font-mono); cursor: default; }
+  /* From the base to what is compared with it. It was git's own ".." / "...",
+     which the mode buttons beside it already say in words. */
+  .cmp-arrow { display: inline-flex; align-items: center; color: var(--gs-fg-muted); cursor: default; }
   .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid transparent; border-radius: var(--gs-radius); background: transparent; color: var(--gs-fg-muted); cursor: pointer; }
   .icon-btn:hover { background: var(--gs-hover); color: var(--gs-fg); }
   .icon-btn:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }

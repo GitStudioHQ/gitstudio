@@ -4427,7 +4427,7 @@ export class CommitViewProvider
     <button class="sparkle review" id="review" type="button"
       title="Review changes with AI"
       aria-label="Review changes with AI">
-      <i class="codicon codicon-checklist glyph" aria-hidden="true"></i>
+      <i class="codicon codicon-code-review glyph" aria-hidden="true"></i>
     </button>
     <button class="sparkle connect" id="connect-ai" type="button"
       title="Connect an AI provider — powers commit messages &amp; code review"
