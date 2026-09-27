@@ -513,8 +513,46 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
 // (stashesPayload.test.ts); a bigger one comes as a count, and the page asks
 // for its files when it is opened. It shows them a page at a time.
 
+// The other direction: the working tree's last row leaving (staged or
+// discarded, from its menu or from the host) keeps the keyboard in the
+// working tree — the row above it — never on the Stashes header below, which
+// is the next treeitem in the list but not a neighbour of the file that left.
+test("the working tree's last row leaving hands the keyboard to the row above it, never down into the Stashes group", { skip }, async () => {
+  const page = await ChangesPage.open("dark", { width: 300, height: 900 });
+  const routes = `document.querySelector('#groups .row.is-file[data-path="src/routes.ts"]')`;
+  const APP = { path: "src/app.ts", status: "M" };
+  const ROUTES = { path: "src/routes.ts", status: "M" };
+  try {
+    for (const [label, list] of [["one stash", stashes().slice(0, 1)], ["several", stashes()], ["none", []]] as const) {
+      // From the host: staged elsewhere, then discarded elsewhere.
+      for (const [how, next] of [
+        ["staged", { unstaged: [APP], staged: [ROUTES], stagedCount: 1 }],
+        ["discarded", { unstaged: [APP] }],
+      ] as const) {
+        await page.send(state({ stashes: list }));
+        await page.eval(`${routes}.focus()`);
+        await page.send(state({ stashes: list, ...next }));
+        assert.equal(await active(page), "f:unstaged:src/app.ts", `${label}, ${how} by the host`);
+      }
+      // From its own menu: Stage, at once (the list patched) and once the host agrees.
+      await page.reload();
+      await page.send(state({ stashes: list }));
+      await page.eval(`${routes}.focus()`);
+      await page.key("F10", { with: ["shift"] });
+      const items = await page.eval<string[]>("Array.from(document.querySelectorAll('.action-menu .bm-subaction')).map((b) => b.textContent.trim())");
+      for (let k = 0; k < items.indexOf("Stage"); k++) await page.key("ArrowDown");
+      await page.key("Enter", { typed: true });
+      assert.equal(await active(page), "f:unstaged:src/app.ts", `${label}, Stage from the menu, at once`);
+      await page.send(state({ stashes: list, unstaged: [APP], staged: [ROUTES], stagedCount: 1 }));
+      assert.equal(await active(page), "f:unstaged:src/app.ts", `${label}, Stage from the menu, once the host agrees`);
+    }
+  } finally {
+    await page.close();
+  }
+});
+
 const BIG = "e".repeat(40);
-const BIG_FILES = Array.from({ length: 450 }, (_, i) => ({ path: `deps/pkg${String(i).padStart(3, "0")}.js`, status: "U" }));
+const BIG_FILES =Array.from({ length: 450 }, (_, i) => ({ path: `deps/pkg${String(i).padStart(3, "0")}.js`, status: "U" }));
 function bigState(over: Record<string, unknown> = {}): Record<string, unknown> {
   const list = stashes();
   list.unshift({ sha: BIG, text: "oops, deps too", branch: "main", message: "On main: oops, deps too", time: now - 60, count: 450 });

@@ -8827,8 +8827,10 @@ export class CommitViewProvider
     /**
      * Where the keyboard is among container's treeitems, and every item
      * showing on each side of it — the whole run, not only the neighbours:
-     * a folder, a group or a stash takes its rows with it. Null when the
-     * keyboard is elsewhere.
+     * a folder, a group or a stash takes its rows with it. The run spans the
+     * whole tree (the working tree's rows and the Stashes group's), so a box
+     * left empty can hand the keyboard across; index counts container's own
+     * rows. Null when the keyboard is elsewhere.
      */
     function focusPlace(container) {
       const ae = document.activeElement;
@@ -8837,18 +8839,25 @@ export class CommitViewProvider
       const items = treeItems();
       const i = items.indexOf(focused);
       const keyOf = (n) => n.dataset.tkey;
+      let own = -1;
+      for (let j = 0; i >= 0 && j <= i; j++) if (container.contains(items[j])) own++;
       return {
         tkey: focused.dataset.tkey,
         after: i < 0 ? [] : items.slice(i + 1).map(keyOf),
         before: i < 0 ? [] : items.slice(0, i).reverse().map(keyOf),
-        index: i,
+        index: own,
       };
     }
     /**
      * After a repaint of container: when the item that had the keyboard is
      * gone (or can no longer be seen), the same item's new row takes it — or
-     * the next one still showing, else the one before. With no item left in
-     * the whole tree, fallback() names the place (never the page itself).
+     * the next one still showing, else the one before — in container first.
+     * The working tree's last file leaving goes up to the file above it, not
+     * down to the Stashes header (the next treeitem, but another box). Only
+     * with nothing left showing in container does the other box take it (the
+     * last stash leaving hands it up to the working tree's last row); with no
+     * item left in the whole tree, fallback() names the place (never the
+     * page itself).
      */
     function handFocusOn(was, container, fallback) {
       if (!was) return;
@@ -8860,12 +8869,23 @@ export class CommitViewProvider
       if (!lost) return;
       // One pass over the rows (a Stage All can take thousands at once).
       const items = treeItems();
-      const shownNow = new Map();
-      for (let j = 0; j < items.length; j++) shownNow.set(items[j].dataset.tkey, items[j]);
-      let to = shownNow.get(was.tkey) || null;
-      for (let j = 0; !to && j < was.after.length; j++) to = shownNow.get(was.after[j]) || null;
-      for (let j = 0; !to && j < was.before.length; j++) to = shownNow.get(was.before[j]) || null;
-      if (!to) to = items[Math.min(Math.max(was.index, 0), items.length - 1)] || null;
+      const here = new Map();
+      const elsewhere = new Map();
+      const mine = [];
+      for (let j = 0; j < items.length; j++) {
+        const it = items[j];
+        if (container.contains(it)) { here.set(it.dataset.tkey, it); mine.push(it); }
+        else elsewhere.set(it.dataset.tkey, it);
+      }
+      const nearest = (shown) => {
+        let to = shown.get(was.tkey) || null;
+        for (let j = 0; !to && j < was.after.length; j++) to = shown.get(was.after[j]) || null;
+        for (let j = 0; !to && j < was.before.length; j++) to = shown.get(was.before[j]) || null;
+        return to;
+      };
+      let to = nearest(here);
+      if (!to && mine.length) to = mine[Math.min(Math.max(was.index, 0), mine.length - 1)];
+      if (!to) to = nearest(elsewhere);
       if (to) { focusItem(to); return; }
       const other = fallback ? fallback() : null;
       if (other) other.focus({ preventScroll: true });
