@@ -370,6 +370,54 @@ test("a branch merged into the default branch: 'Also delete the branch' is offer
   assert.deepEqual(errors(), []);
 });
 
+test("'Also delete the branch' asks git again before deleting: a commit made while the question was open keeps the branch, and says why", async () => {
+  const s = scene();
+  const repos = windowAt(s.app);
+  let agentSha = "";
+  answer = (spec) => {
+    if (spec.kind !== "confirm") return undefined;
+    // An agent in the worktree commits while the question is open: the tree
+    // is clean again, so nothing about the remove itself changes.
+    const w = at(s.path("feat-clean"));
+    writeFileSync(join(s.path("feat-clean"), "agent.txt"), "work\n");
+    w("add", "agent.txt");
+    w("commit", "-qm", "agent work");
+    agentSha = w("rev-parse", "HEAD");
+    return { value: "ok", options: ["deleteBranch"] };
+  };
+  await wt.removeWorktree(repos, s.path("feat-clean"), noop);
+  assert.equal((asked[0] as Confirm).options?.[0]?.description, "It is fully merged into main, so no commit is lost.", "merged when asked");
+  assert.equal(existsSync(s.path("feat-clean")), false, "the worktree itself goes, as agreed");
+  assert.equal(s.git("rev-parse", "refs/heads/feat-clean"), agentSha, "the branch stays, with the commit made on it");
+  assert.match(
+    said.map((m) => m.message).join("\n"),
+    /Removed the worktree feat-clean; the branch feat-clean was kept — a commit was made on it while you were asked, and main doesn't have it/,
+  );
+  assert.doesNotMatch(said.map((m) => m.message).join("\n"), /deleted the branch/);
+  assert.deepEqual(errors(), []);
+});
+
+test("'Also delete the branch' runs through Undo: the branch comes back where it was", async () => {
+  const s = scene();
+  const { UndoLedger } = require("../src/undo/undoLedger") as typeof import("../src/undo/undoLedger");
+  const state = new Map<string, unknown>();
+  let ledger: InstanceType<typeof UndoLedger> | undefined;
+  const base = windowAt(s.app) as unknown as { getActive(): unknown; getAll(): unknown[]; onDidChange(): unknown };
+  const repos = { ...base, getActive: base.getActive, getUndoLedger: () => ledger } as never;
+  ledger = new UndoLedger(repos, { workspaceState: { get: (k: string) => state.get(k), update: async (k: string, v: unknown) => void state.set(k, v) } } as never);
+  const tip = s.git("rev-parse", "refs/heads/feat-clean");
+  answer = (spec) => (spec.kind === "confirm" ? { value: "ok", options: ["deleteBranch"] } : undefined);
+  await wt.removeWorktree(repos, s.path("feat-clean"), noop);
+  assert.equal(s.git("branch", "--list", "feat-clean"), "", "deleted");
+  assert.ok(said.some((m) => m.kind === "info" && m.message === "Delete branch feat-clean — done."), said.map((m) => m.message).join(" | "));
+  asked = [];
+  answer = (spec) => (spec.kind === "confirm" && /^Undo "Delete branch feat-clean"\?$/.test(spec.title) ? "ok" : undefined);
+  await ledger.undoLast();
+  assert.equal(asked.map((q) => q.title).join(" | "), 'Undo "Delete branch feat-clean"?');
+  assert.equal(s.git("rev-parse", "refs/heads/feat-clean"), tip, "Undo put the branch back at its commit");
+  assert.deepEqual(errors(), []);
+});
+
 test("an unmerged branch is never offered for deletion; neither is the default branch", async () => {
   const s = scene();
   at(s.path("feat-clean"))("commit", "-q", "--allow-empty", "-m", "work nobody merged");

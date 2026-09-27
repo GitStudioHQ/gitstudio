@@ -633,8 +633,14 @@ export async function removeWorktree(
   await askAndRemove(repos, r.a, r.entry.path, worktreeLabel(r.entry), refresh, ui);
 }
 
+/** The default branch a branch is fully merged into: how it reads, and its full ref. */
+interface MergedInto {
+  name: string;
+  ref: string;
+}
+
 /** Whether the branch is merged into the default branch — and which that is. */
-async function mergedInto(a: RepoEntry, branch: string | undefined): Promise<string | undefined> {
+async function mergedInto(a: RepoEntry, branch: string | undefined): Promise<MergedInto | undefined> {
   if (!branch) {
     return undefined;
   }
@@ -646,7 +652,7 @@ async function mergedInto(a: RepoEntry, branch: string | undefined): Promise<str
       return undefined;
     }
     const r = await a.ctx.process.run(["merge-base", "--is-ancestor", `refs/heads/${branch}`, d.ref]);
-    return r.code === 0 ? d.name : undefined;
+    return r.code === 0 ? { name: d.name, ref: d.ref } : undefined;
   } catch {
     return undefined;
   }
@@ -692,7 +698,7 @@ async function askAndRemove(
     ...(removal.kind === "stale" && entry.prunableReason ? { staleWhy: entry.prunableReason } : {}),
     operation: removal.kind === "present" ? removal.operation : undefined,
     unmerged: removal.kind === "present" ? removal.unmerged : undefined,
-    mergedInto: merged,
+    mergedInto: merged?.name,
   });
   const answer = await promptChoose({
     title: ask.title,
@@ -711,7 +717,7 @@ async function askAndRemove(
   if (!answer) {
     return;
   }
-  const deleteBranch = !!ask.deleteBranch && answer.options.includes("deleteBranch");
+  const deleteBranch = !!ask.deleteBranch && !!merged && answer.options.includes("deleteBranch");
 
   // What the question listed goes as it said — and only that. A change made
   // since (an agent still at work in it) is never deleted or stashed unasked:
@@ -738,8 +744,8 @@ async function askAndRemove(
     if (res.stashed) {
       said += ` — its changes are in the stash “${worktreeStashMessage(label, tildify(entry.path))}”`;
     }
-    if (deleteBranch && entry.branch) {
-      said += await deleteMergedBranch(repos, a, entry.branch);
+    if (deleteBranch && merged && entry.branch) {
+      said += await deleteMergedBranch(repos, a, entry.branch, merged);
     }
     if (res.stashed) {
       void vscode.window.showInformationMessage(`GitStudio: ${said}.`);
@@ -775,8 +781,20 @@ async function askAndRemove(
  * Delete the branch a removed worktree had, after it was agreed ("Also delete
  * the branch" — offered only for one merged into the default branch). Through
  * the Undo envelope, so it can be put back. Answers what to add to the report.
+ *
+ * "Fully merged, so no commit is lost" was true when the question opened; it
+ * is asked of git again now. A commit made on the branch while the question
+ * was open (an agent at work in the worktree) leaves the tree clean, so
+ * nothing else notices it — and `branch -D` would leave it dangling.
  */
-async function deleteMergedBranch(repos: RepoManager, a: RepoEntry, branch: string): Promise<string> {
+async function deleteMergedBranch(repos: RepoManager, a: RepoEntry, branch: string, into: MergedInto): Promise<string> {
+  const still = await a.ctx.process.run(["merge-base", "--is-ancestor", `refs/heads/${branch}`, into.ref]);
+  if (still.code === 1) {
+    return `; the branch ${branch} was kept — a commit was made on it while you were asked, and ${into.name} doesn't have it`;
+  }
+  if (still.code !== 0) {
+    return `; the branch ${branch} was kept — git couldn't tell whether it is still merged into ${into.name}`;
+  }
   const run = async () => a.ctx.process.run(["branch", "-D", "--", branch]);
   const ledger = repos.getUndoLedger?.();
   const r = ledger
