@@ -2,6 +2,15 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import { GitContext, GitProcess } from "@gitstudio/git-service/index";
 import { gitWatchTargets } from "@gitstudio/merge-vscode/gitWatch";
+import {
+  ALL_REPO_CHANGES,
+  classifyStateEvent,
+  headSignature,
+  repoChange,
+  type HeadStateLike,
+  type RepoChangeEvent,
+  type RepoChangeKind,
+} from "./repoChange";
 import type { API, Repository } from "./git";
 import { getBuiltInGitApi } from "./builtInGit";
 import { isSamePathOrInside } from "../util/repoScope";
@@ -130,11 +139,19 @@ export class RepoManager implements vscode.Disposable {
   private disposed = false;
 
   private readonly disposables: vscode.Disposable[] = [];
-  private readonly changeEmitter = new vscode.EventEmitter<void>();
-  /** Fires (debounced) whenever the active repo's data may have changed. */
+  private readonly changeEmitter = new vscode.EventEmitter<RepoChangeEvent>();
+  /**
+   * Fires (debounced) whenever the active repo's data may have changed, with
+   * the kinds of change behind it (repoChange.ts): a subscriber that only
+   * shows history need not reload when only the working tree moved.
+   */
   readonly onDidChange = this.changeEmitter.event;
 
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The kinds the pending (debounced) event will carry. */
+  private readonly pendingKinds = new Set<RepoChangeKind>();
+  /** Per root: vscode.git's HEAD / upstream / counts as last seen (headSignature). */
+  private readonly headSigs = new Map<string, string>();
 
   private constructor(pickStore?: PickMemento) {
     this.pickStore = pickStore;
@@ -199,7 +216,7 @@ export class RepoManager implements vscode.Disposable {
     if (added) {
       this.recomputeActive();
       this.updateHasRepoContext();
-      this.changeEmitter.fire();
+      this.fireNow();
     }
   }
 
@@ -276,7 +293,7 @@ export class RepoManager implements vscode.Disposable {
     // Repos are now discovered (or confirmed absent) — refresh every subscriber
     // IMMEDIATELY (not via the 400ms debounce) so the views fill the instant git
     // is ready, since registration no longer waits for this.
-    this.changeEmitter.fire();
+    this.fireNow();
 
     // A remembered pick is judged once discovery has SETTLED: vscode.git scans
     // the workspace for repositories after its API is handed out, so a repo
@@ -317,7 +334,7 @@ export class RepoManager implements vscode.Disposable {
       return;
     }
     this.discovered = true;
-    this.changeEmitter.fire();
+    this.fireNow();
   }
 
   /**
@@ -387,11 +404,12 @@ export class RepoManager implements vscode.Disposable {
     if (![...this.bindings.values()].some((b) => b.disposables === into)) {
       return;
     }
-    const poke = () => this.scheduleRefresh();
-    for (const [dir, glob] of [
-      [targets.gitDir, targets.opStateGlob],
-      [targets.commonDir, targets.refsGlob],
+    // The op-state entries include HEAD itself, so a checkout is a ref move too.
+    for (const [dir, glob, kinds] of [
+      [targets.gitDir, targets.opStateGlob, ["operation", "refs"]],
+      [targets.commonDir, targets.refsGlob, ["refs"]],
     ] as const) {
+      const poke = () => this.scheduleRefresh(kinds);
       const watcher = vscode.workspace.createFileSystemWatcher(
         new vscode.RelativePattern(vscode.Uri.file(dir), glob),
       );
@@ -422,8 +440,9 @@ export class RepoManager implements vscode.Disposable {
       }
       // Upgrade an eager (git-service-only) binding with vscode.git's Repository
       // for live working-tree state, reusing its ctx + watchers.
+      this.headSigs.set(root, headSignature(repo.state as HeadStateLike));
       existing.disposables.push(
-        repo.state.onDidChange(() => this.scheduleRefresh()),
+        repo.state.onDidChange(() => this.onGitState(root, repo)),
       );
       this.bindings.set(root, {
         entry: { root, repo, ctx: existing.entry.ctx },
@@ -439,7 +458,8 @@ export class RepoManager implements vscode.Disposable {
     const ctx = new GitContext({ root, gitPath: this.gitPath() });
     const entry: RepoEntry = { root, repo, ctx };
     const disposables = this.makeGitWatchers(ctx);
-    disposables.push(repo.state.onDidChange(() => this.scheduleRefresh()));
+    this.headSigs.set(root, headSignature(repo.state as HeadStateLike));
+    disposables.push(repo.state.onDidChange(() => this.onGitState(root, repo)));
     this.bindings.set(root, { entry, disposables });
 
     this.recomputeActive();
@@ -454,6 +474,7 @@ export class RepoManager implements vscode.Disposable {
       return;
     }
     this.bindings.delete(root);
+    this.headSigs.delete(root);
     for (const d of binding.disposables) {
       d.dispose();
     }
@@ -557,11 +578,7 @@ export class RepoManager implements vscode.Disposable {
     const previous = this.activeRoot;
     this.activeRoot = this.computeActiveRoot();
     if (this.activeRoot !== previous) {
-      if (this.refreshTimer !== undefined) {
-        clearTimeout(this.refreshTimer);
-        this.refreshTimer = undefined;
-      }
-      this.changeEmitter.fire();
+      this.fireNow();
     }
     return true;
   }
@@ -604,14 +621,48 @@ export class RepoManager implements vscode.Disposable {
     );
   }
 
-  private scheduleRefresh(): void {
+  /**
+   * vscode.git ran status: its event fires for a save or a window focus as
+   * much as for a commit. Whether HEAD, its upstream or the counts moved is
+   * what says which — only then is it a ref move.
+   */
+  private onGitState(root: string, repo: Repository): void {
+    const next = headSignature(repo.state as HeadStateLike);
+    const kinds = classifyStateEvent(this.headSigs.get(root), next);
+    this.headSigs.set(root, next);
+    this.scheduleRefresh(kinds);
+  }
+
+  /**
+   * One debounced event for everything that happens inside the window,
+   * carrying every kind of change it gathered. No kinds: all of them (a
+   * repository opened or closed, the active one moved).
+   */
+  private scheduleRefresh(kinds: readonly RepoChangeKind[] = ALL_REPO_CHANGES): void {
+    for (const k of kinds) this.pendingKinds.add(k);
     if (this.refreshTimer !== undefined) {
       clearTimeout(this.refreshTimer);
     }
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined;
-      this.changeEmitter.fire();
+      this.emit();
     }, REFRESH_DEBOUNCE_MS);
+  }
+
+  /** Fire now (a click, discovery settling), taking whatever was pending along. */
+  private fireNow(kinds: readonly RepoChangeKind[] = ALL_REPO_CHANGES): void {
+    if (this.refreshTimer !== undefined) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = undefined;
+    }
+    for (const k of kinds) this.pendingKinds.add(k);
+    this.emit();
+  }
+
+  private emit(): void {
+    const e = repoChange(this.pendingKinds);
+    this.pendingKinds.clear();
+    this.changeEmitter.fire(e);
   }
 
   dispose(): void {

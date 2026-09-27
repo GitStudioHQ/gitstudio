@@ -133,9 +133,12 @@ test("the graph host walks what the filter MEANS for this load — HEAD only whe
   // A detached HEAD still has a commit: the header's "you are here".
   const refs = text.slice(text.indexOf("private async loadRefs("), text.indexOf("private buildRows("));
   assert.match(refs, /if \(!this\.currentHeadSha\) \{[\s\S]*?this\.currentHeadSha = await active\.ctx\.refs\.headCommit\(\);/);
-  // …and the WIP row hangs only off a HEAD the walk has.
-  const wip = text.slice(text.indexOf("private injectWipNode("), text.indexOf("private async pushCommitDetails("));
-  assert.match(wip, /if \(!headInWalk\(this\.walk, this\.refList, this\.records, this\.currentHeadSha\)\) \{\s*[\s\S]*?return;/);
+  // …and the WIP row hangs only off a HEAD the walk has. (wipWanted decides
+  // it — for a load, and for a working-tree-only change that asks whether
+  // the row comes or goes.)
+  const wip = text.slice(text.indexOf("private wipWanted("), text.indexOf("private async pushCommitDetails("));
+  assert.match(wip, /if \(!headInWalk\(this\.walk, this\.refList, this\.records, this\.currentHeadSha\)\) \{\s*[\s\S]*?return false;/);
+  assert.match(wip, /private injectWipNode\(active: RepoEntry\): void \{\s*this\.wipShown = this\.wipWanted\(active\);\s*if \(!this\.wipShown\) \{\s*return;/);
 });
 
 test("the graph host never writes back a prune against a ref listing that failed", async () => {
