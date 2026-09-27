@@ -12,7 +12,10 @@
 //   same repository · checked out, ahead          → nothing moved; says what isn't pushed
 //   same repository · diverged (force-push)       → asked; Cancel and Keep move nothing
 //   same repository · your own, tracking nothing  → "already on it", now tracking
-//   fork · no remote for it · your main in the way → remote added, asked; Checkout as alice-main
+//   fork · no remote for it · your main in the way → remote added, asked; Checkout as alice-main,
+//                                                    which says how a push reaches the PR (real git:
+//                                                    GitStudio's Push and `git push alice HEAD:main`
+//                                                    do; a plain `git push` is refused, names differ)
 //   fork · asked, Cancel                           → nothing changes: the added remote goes too
 //   fork · no edits from maintainers               → says a push will be refused
 //   dirty tree in the way                          → Stash & Retry, and the change comes back
@@ -285,6 +288,11 @@ test("a fork, with no remote for it, from its main: the remote is added, and you
     ["alt", "use", "cancel"],
   );
   assert.equal(q.choices[0].label, "Checkout as alice-main");
+  assert.equal(
+    q.choices[0].description,
+    "A new branch, tracking alice/main. GitStudio's Push reaches the pull request; from a terminal, git push alice HEAD:main.",
+    "what a push from it takes, said before it is chosen",
+  );
   assert.equal(w.git("remote", "get-url", "alice"), w.fork, "the fork's remote, by its github.com URL");
   assert.equal(w.git("config", "--get", "remote.alice.url"), "https://github.com/alice/app.git");
   assert.equal(w.git("symbolic-ref", "--short", "HEAD"), "alice-main");
@@ -292,7 +300,23 @@ test("a fork, with no remote for it, from its main: the remote is added, and you
   assert.equal(upstream(w, "alice-main"), "alice/main");
   assert.equal(w.git("rev-parse", "refs/heads/main"), mainBefore, "your main is untouched");
   assert.equal(upstream(w, "main"), "origin/main", "and still yours");
-  assert.match(said("info").at(-1) ?? "", /Checked out PR #9 as alice-main, tracking alice\/main\. \(Added the remote alice for alice\/app\.\)/);
+  assert.equal(
+    said("info").at(-1),
+    "Checked out PR #9 as alice-main, tracking alice/main. GitStudio's Push reaches the pull request; from a terminal, git push alice HEAD:main. (Added the remote alice for alice/app.)",
+  );
+  // What the words say, in real git (push.default unset: git's own "simple").
+  writeFileSync(join(w.work, "fix.txt"), "one\n");
+  w.git("add", "fix.txt");
+  w.git("commit", "-qm", "fix: one");
+  assert.throws(() => w.git("push", "-q"), /does not match\s+the name of your current branch/, "a plain git push is refused: the names differ");
+  const pushed = await w.entry.ctx.sync.push();
+  assert.ok(pushed.ok, `GitStudio's Push: ${pushed.stderr}`);
+  assert.equal(execFileSync("git", ["--git-dir", w.fork, "rev-parse", "refs/heads/main"], { encoding: "utf8" }).trim(), w.git("rev-parse", "HEAD"), "…reaches alice's main");
+  writeFileSync(join(w.work, "fix.txt"), "two\n");
+  w.git("commit", "-qam", "fix: two");
+  w.git("push", "-q", "alice", "HEAD:main");
+  assert.equal(execFileSync("git", ["--git-dir", w.fork, "rev-parse", "refs/heads/main"], { encoding: "utf8" }).trim(), w.git("rev-parse", "HEAD"), "…and so does the command it names");
+  assert.equal(w.git("rev-parse", "refs/heads/main"), mainBefore, "your main is still untouched");
 });
 
 test("a fork, asked and cancelled: nothing changes — the remote added for it goes too", async () => {

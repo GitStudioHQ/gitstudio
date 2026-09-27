@@ -203,6 +203,9 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
   const n = pr.number;
   const { local, trackingName } = plan;
   const tracking = `tracking ${trackingName}`;
+  // A branch named unlike the one it tracks (alice-main for alice's main):
+  // git's default push (push.default=simple) refuses it, so say how it goes.
+  const how = local === target.headRef ? "" : ` ${pushHint(target)}`;
   switch (plan.kind) {
     case "elsewhere":
       if (!(await saidCheckedOutElsewhere(entry.ctx, plan.ref, "checkout"))) {
@@ -215,7 +218,7 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
     case "create": {
       const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", "-b", local, plan.sha]));
       if (settled(applied, n)) return undefined;
-      return (await tracked(entry, target, plan)) ?? `Checked out PR #${n} as ${local}, ${tracking}.`;
+      return (await tracked(entry, target, plan)) ?? `Checked out PR #${n} as ${local}, ${tracking}.${how}`;
     }
 
     case "current": {
@@ -225,8 +228,8 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
       }
       const failed = await tracked(entry, target, plan);
       if (failed) return failed;
-      if (plan.checkedOut) return `You're already on ${local}, the branch of PR #${n}${plan.setUpstream ? `; it now tracks ${trackingName}` : ""}.`;
-      return `Checked out PR #${n} as ${local}, ${tracking}.`;
+      if (plan.checkedOut) return `You're already on ${local}, the branch of PR #${n}${plan.setUpstream ? `; it now tracks ${trackingName}` : ""}.${how}`;
+      return `Checked out PR #${n} as ${local}, ${tracking}.${how}`;
     }
 
     case "fast-forward": {
@@ -235,7 +238,7 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
         // fast-forward merge, through the door like any other.
         const applied = await applyOrAsk(entry.ctx, { kind: "merge", target: plan.sha, args: ["merge", "--ff-only", plan.sha] });
         if (settled(applied, n)) return undefined;
-        return (await tracked(entry, target, plan)) ?? `Updated ${local} to the latest of PR #${n} (${commitsWord(plan.behind)} brought in).`;
+        return (await tracked(entry, target, plan)) ?? `Updated ${local} to the latest of PR #${n} (${commitsWord(plan.behind)} brought in).${how}`;
       }
       const moved = await moveLocalBranch(entry.ctx.process, plan, `update ${local} to pull request #${n}`);
       if (moved.code !== 0) {
@@ -244,7 +247,7 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
       }
       const applied = await applyOrAsk(entry.ctx, checkoutOp(["checkout", local]));
       if (settled(applied, n)) return undefined;
-      return (await tracked(entry, target, plan)) ?? `Checked out PR #${n} as ${local}, updated to its latest and ${tracking}.`;
+      return (await tracked(entry, target, plan)) ?? `Checked out PR #${n} as ${local}, updated to its latest and ${tracking}.${how}`;
     }
 
     case "ahead": {
@@ -255,7 +258,7 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
       const failed = await tracked(entry, target, plan);
       if (failed) return failed;
       const yours = `${commitsWord(plan.ahead)} of yours ${plan.ahead === 1 ? "isn't" : "aren't"} pushed to it yet`;
-      return plan.checkedOut ? `You're on ${local}, the branch of PR #${n}: ${yours}.` : `Checked out PR #${n} as ${local}, ${tracking}: ${yours}.`;
+      return plan.checkedOut ? `You're on ${local}, the branch of PR #${n}: ${yours}.${how}` : `Checked out PR #${n} as ${local}, ${tracking}: ${yours}.${how}`;
     }
 
     case "diverged": {
@@ -319,7 +322,7 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
           (plan.worktree ? ` It is checked out in the worktree at ${plan.worktree}.` : ""),
         choices: [
           ...(alt
-            ? [{ id: "alt", label: `Checkout as ${alt}`, icon: "git-branch", description: `A new branch, ${tracking}: a push from it reaches the pull request.` }]
+            ? [{ id: "alt", label: `Checkout as ${alt}`, icon: "git-branch", description: `A new branch, ${tracking}. ${pushHint(target)}` }]
             : []),
           ...(plan.relation && plan.relation !== "diverged" && !plan.worktree
             ? [{ id: "use", label: `Use ${local}`, icon: "arrow-swap", description: useWords[plan.relation] }]
@@ -396,6 +399,16 @@ async function applyCopy(entry: RepoEntry, pr: PullRequest, plan: PrHeadPlan): P
       return settled(applied, n) ? undefined : `Checked out ${local} as it was (not updated to PR #${n}).`;
     }
   }
+}
+
+/**
+ * How a branch named unlike the one it tracks reaches the pull request:
+ * GitStudio's Push sends it to the branch it tracks; git's own `git push`
+ * (push.default=simple) refuses a branch whose name differs, and takes the
+ * destination spelled out.
+ */
+function pushHint(t: Pick<PrBranchTarget, "remote" | "headRef">): string {
+  return `GitStudio's Push reaches the pull request; from a terminal, git push ${t.remote} HEAD:${t.headRef}.`;
 }
 
 /** True when the door already said everything (cancelled, refused, failed). */
