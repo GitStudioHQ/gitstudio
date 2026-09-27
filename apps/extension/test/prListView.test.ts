@@ -45,7 +45,7 @@ import {
 } from "./prTestKit";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { graphqlWorld, rawPull } from "./fakeGitHub";
 
@@ -575,4 +575,18 @@ test("a row's actions act on THAT pull request, in the repository the list shows
   m.view.receive({ type: "openOnGitHub", number: 36 });
   await until(() => pr.opened.length === 1, "GitHub to open");
   assert.equal(pr.opened[0], "https://github.com/acme/app/pull/36");
+});
+
+// ── The manifest ───────────────────────────────────────────────────────────
+
+test("the manifest: the view is a webview, with nothing left of the tree that no longer draws", () => {
+  const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
+  const view = pkg.contributes.views.gitstudio.find((v: any) => v.id === "gitstudio.pullRequests");
+  assert.equal(view.type, "webview");
+  // VS Code shows viewsWelcome only in a tree: a connect prompt there would
+  // never appear. The list says it itself.
+  assert.ok(!pkg.contributes.viewsWelcome.some((w: any) => w.view === "gitstudio.pullRequests"));
+  const menus = Object.values(pkg.contributes.menus).flat() as any[];
+  const stale = menus.filter((m) => /view == gitstudio\.pullRequests/.test(m.when ?? "") && /viewItem/.test(m.when ?? ""));
+  assert.deepEqual(stale, [], "no menu on a tree row that no longer exists");
 });

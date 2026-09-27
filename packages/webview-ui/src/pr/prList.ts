@@ -489,6 +489,8 @@ export class PullRequestList {
     const main = button("prl-row-main", `open-${r.number}`, "open");
     main.dataset.number = String(r.number);
     main.tabIndex = active ? 0 : -1;
+    // A title the row cut short is read whole on hover.
+    main.title = `#${r.number} ${r.title}`;
 
     // Line 1: the state's glyph, the title, how long since it changed.
     const lead = el("span", `prl-lead tone-${kind.tone}`);
@@ -511,8 +513,7 @@ export class PullRequestList {
       main.appendChild(age);
     }
 
-    // Line 2: which one, whose, and from where into where — and whether it
-    // is the branch checked out here.
+    // Line 2: which one, whose, and from where into where.
     const meta = el("span", "prl-meta");
     meta.appendChild(el("span", "prl-num", `#${r.number}`));
     meta.appendChild(el("span", "prl-dot", "·"));
