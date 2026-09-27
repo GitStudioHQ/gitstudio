@@ -329,7 +329,10 @@ function mergeShots(): void {
     { cwd: REPO, stdio: ["ignore", "ignore", "inherit"] },
   );
   for (const theme of THEMES) {
-    const shot = readdirSync(out).find((f) => f.includes(`-${theme}-`));
+    // render.ts names a shot <host>-<scenario>-<theme>-<file>.png. Matched by
+    // the whole prefix: "-light-" is also inside "-hc-light-", which sorts
+    // first, so Light+ shipped the high-contrast render.
+    const shot = readdirSync(out).find((f) => f.startsWith(`ext-merge.diff3-${theme}-`));
     if (shot) {
       copyFileSync(join(out, shot), join(OUT, `merge-${theme}.png`));
       console.log("merge", theme);

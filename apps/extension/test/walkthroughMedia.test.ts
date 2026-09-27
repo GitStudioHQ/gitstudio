@@ -12,6 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import Module from "node:module";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -57,8 +58,18 @@ test("every step shows its own image in every theme — none of them the wordmar
       assert.ok(size < 60 * 1024, `${rel} is ${Math.round(size / 1024)} KB — packed with harness/walkthrough/pack.py?`);
       total += size;
     }
-    // The four themes are four renders, not one file four times.
+    // The four themes are four renders, not one file four times — and not
+    // one render under four names: Light+'s merge image was a byte copy of
+    // the high-contrast one (the harness matched "-light-" inside
+    // "-hc-light-"), and four different paths said nothing about that.
     assert.equal(new Set(Object.values(img)).size, 4, `${s.id}: four different files`);
+    const byContent = new Map<string, string>();
+    for (const [theme, rel] of Object.entries(img)) {
+      const hash = createHash("sha256").update(readFileSync(join(ROOT, rel))).digest("hex");
+      const twin = byContent.get(hash);
+      assert.ok(!twin, `${s.id}: ${theme}'s image is the same picture as ${twin}'s (${rel})`);
+      byContent.set(hash, theme);
+    }
     assert.ok(s.media.altText.length > 30 && s.media.altText !== "GitStudio", `${s.id}: its alt text says what it shows`);
   }
   assert.ok(total < 700 * 1024, `the walkthrough's images add ${Math.round(total / 1024)} KB to the VSIX`);
