@@ -8,8 +8,8 @@
 // beside a rail saying "3h" for the same commit.
 //
 // The builders are checked here, and a census over the sources holds every
-// door to them. The Pull Requests, Stashes and Worktrees surfaces are being
-// rebuilt on their own branches and are left out of the census for now.
+// door to them. Every file is in it; one known debt is written down below
+// (PR_SENTENCES_OWED) rather than left out without a word.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -51,7 +51,16 @@ test("a failure: the action, then git's reason, whole, on one line", () => {
 // ── The census ───────────────────────────────────────────────────────────────
 
 const SRC = join(__dirname, "..", "src");
-const OWNED_ELSEWHERE = /^(pr\/|views\/stashes|views\/worktrees)/;
+/**
+ * Known debt, not an exemption from the rules: the Pull Requests surface
+ * (merged from its own branch) still writes about twenty of its toasts as
+ * bare sentences — no "GitStudio: ", GitHub's error text on its own, some
+ * starting with a branch name that notice() would capitalise. They are held
+ * to every other rule here (no "X failed:", NO_REPOSITORY, a copy in the
+ * status bar); only the sentence-builder check below skips them until their
+ * words are reworked. Shrink this, never widen it.
+ */
+const PR_SENTENCES_OWED = /^pr\//;
 
 function files(dir: string): string[] {
   const out: string[] = [];
@@ -68,7 +77,7 @@ function calls(): { rel: string; args: string }[] {
   const out: { rel: string; args: string }[] = [];
   for (const file of files(SRC)) {
     const rel = relative(SRC, file).split("\\").join("/");
-    if (OWNED_ELSEWHERE.test(rel) || rel === "ui/notify.ts") continue;
+    if (rel === "ui/notify.ts") continue;
     const code = readFileSync(file, "utf8").replace(/^\s*(\/\/|\*).*$/gm, "");
     for (const m of code.matchAll(/show(?:Warning|Error|Information)Message\(/g)) {
       let depth = 1;
@@ -135,7 +144,7 @@ test("every toast is built by notice(), failed() or NO_REPOSITORY, or is a 'GitS
   const seen = new Set<number>();
   const hits = calls()
     .filter((c) => {
-      if (built.test(c.args)) return false;
+      if (PR_SENTENCES_OWED.test(c.rel) || built.test(c.args)) return false;
       const i = EXEMPT.findIndex((e) => e.rel === c.rel && e.args.test(c.args.replace(/\s+/g, " ").trim()));
       if (i >= 0) {
         seen.add(i);
