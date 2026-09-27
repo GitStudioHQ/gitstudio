@@ -1,0 +1,31 @@
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_c83b503da1ec16 2207-2208,2212
+apps/extension/src/views/worktreesWebview.ts
+  s_26f5e669d3043c::t_58813701109a1a 567-568,585-587,591,595
+apps/extension/test/pushReviewWorktree.test.ts
+  s_26f5e669d3043c::t_2c316faff680ed 72-76
+apps/extension/test/worktreesStateTable.test.ts
+  s_26f5e669d3043c::t_85d4fe8554d60c 479-491
+apps/extension/test/worktreesWebview.test.ts
+  s_26f5e669d3043c::t_250b4d86541514 22-24,29-37,161,185,191,195,207-224,236,247,291,331,339,343,349,355,363,385,440,471,512,527
+packages/host-bridge/src/worktreesProtocol.ts
+  s_26f5e669d3043c::t_b2bb86508dff78 403-405,458-459
+packages/webview-ui/src/worktrees/view.ts
+  s_26f5e669d3043c::t_b7f9e3dd4108c4 658-661
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9c3b1820991dd2ed62ee555b34a69f49a52210f9",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
