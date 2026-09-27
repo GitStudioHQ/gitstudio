@@ -1,0 +1,23 @@
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_c0ec2e18e20575 140-144
+apps/desktop/harness/requirements.js
+  s_26f5e669d3043c::t_2ea027fbb66023 1116-1138
+docs/desktop-repo-tabs.md
+  s_26f5e669d3043c::t_9681f461389f7a 170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eb33ac577333f1c1d6e712372b30a5b6d927a35b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
