@@ -41,9 +41,15 @@ import { listGitHubRemotes, type GitHubRemote, type GitHubRepoContext } from "./
 //   parent), with the clone's other GitHub repositories in a switcher.
 // - INTO: that repository's default branch, or any of its branches.
 // - FROM: the branch checked out, or any local branch; where it is pushed is
-//   git's own push-remote rule, and a branch in your fork is sent as
-//   `owner:branch`. Not pushed yet, or behind: Create pushes it first, and
-//   the button says so.
+//   git's own push-remote rule — but a branch started from the target's base
+//   (`git switch -c feature upstream/main`) goes to YOUR FORK when the clone
+//   has one, as `gh pr create` would, not into the repository you may not
+//   push to — and the form lets you pick another remote. A branch in your
+//   fork is sent as `owner:branch`. Not pushed yet, or behind: Create pushes
+//   it first, and the button says so.
+// - LIVE: a commit, a pull or a push made while the form is open is read
+//   (git only, never GitHub) — and Create reads the branch once more before
+//   it pushes, so what is created is the branch as it is when pressed.
 // - WHAT IT WILL HAVE: the commits and files of <base>...<head>, against the
 //   base as GitHub has it now (fetched), each file opening its diff.
 // - TITLE and DESCRIPTION: what github.com proposes (engine/forge/prCreate) —
@@ -67,6 +73,8 @@ export interface PrCreateBrain {
 
 export interface PrCreateDeps {
   api: GitHubApi;
+  /** Fires when the repository may have changed (RepoManager.onDidChange: every save, commit, pull, push). */
+  onDidChangeRepo?: vscode.Event<void>;
   graphql: GraphqlFn;
   brain?: PrCreateBrain;
   extensionUri: vscode.Uri;
@@ -124,6 +132,9 @@ function readFailure(err: Described, repo: string): PrListMessage {
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
+/** How long the form waits after a change of the repository before it reads git (RepoManager fires on every save). */
+const GIT_DEBOUNCE_MS = 300;
+
 export class PrCreatePage {
   private static readonly pages = new Map<string, PrCreatePage>();
 
@@ -179,6 +190,13 @@ export class PrCreatePage {
   /** Counts reads: only the latest one started may paint. */
   private gen = 0;
   private loading: Promise<void> | undefined;
+  /** The base's tip as last fetched, so a re-read of git compares without asking GitHub. */
+  private baseTip: { target: string; base: string; sha: string; stale: boolean } | undefined;
+  /** Where the user chose to push a branch, from the form. */
+  private pushChoice: { branch: string; remote: string } | undefined;
+  /** The branches and remote-tracking refs as last read: a change of the repository that leaves them is nothing to read. */
+  private gitSig = "";
+  private gitTimer: ReturnType<typeof setTimeout> | undefined;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -200,6 +218,17 @@ export class PrCreatePage {
       panel.webview.onDidReceiveMessage((m: PrCreateMessageToHost) => void this.onMessage(m)),
       panel.onDidDispose(() => this.dispose()),
     );
+    if (deps.onDidChangeRepo) {
+      this.disposables.push(
+        deps.onDidChangeRepo(() => {
+          if (this.gitTimer !== undefined) clearTimeout(this.gitTimer);
+          this.gitTimer = setTimeout(() => {
+            this.gitTimer = undefined;
+            void this.gitChanged();
+          }, GIT_DEBOUNCE_MS);
+        }),
+      );
+    }
     void deps.brain?.isEnabled().then(
       (on) => {
         this.ai = on;
@@ -232,6 +261,15 @@ export class PrCreatePage {
       ...(data?.viewer ? { viewer: data.viewer } : {}),
       branches: this.branches,
       ...(this.head ? { head: this.head } : {}),
+      pushRemotes: this.remotes.map((r) => ({
+        name: r.name,
+        repo: `${r.owner}/${r.repo}`,
+        ...(data?.viewer && same(r.owner, data.viewer.login) && !(t && same(`${r.owner}/${r.repo}`, t.id))
+          ? { detail: "your fork" }
+          : t && same(`${r.owner}/${r.repo}`, t.id)
+            ? { detail: "where it opens" }
+            : {}),
+      })),
       bases: this.bases(data),
       ...(this.base ? { base: this.base } : {}),
       compare: this.compare,
@@ -328,19 +366,7 @@ export class PrCreatePage {
       this.panel.title = `New pull request · ${this.target.id}`;
 
       // The branches it can come from.
-      const [heads, current] = await Promise.all([
-        git.run(["for-each-ref", "--format=%(refname)", "refs/heads/"]),
-        git.run(["symbolic-ref", "--quiet", "HEAD"]),
-      ]);
-      const cur = current.code === 0 ? current.stdout.trim().replace(/^refs\/heads\//, "") : undefined;
-      this.branches = heads.stdout
-        .split("\n")
-        .map((l) => l.trim())
-        .filter((l) => l.startsWith("refs/heads/"))
-        .map((l) => l.slice("refs/heads/".length))
-        .filter(isSafeBranchName)
-        .map((name) => ({ name, current: name === cur }))
-        .sort((a, b) => (a.current ? -1 : b.current ? 1 : a.name.localeCompare(b.name)));
+      const cur = await this.readBranches();
       if (this.branches.length === 0) {
         this.fail({ icon: "git-branch", tone: "info", title: "This repository has no branches yet", detail: "Commit something first, then open a pull request from its branch.", buttons: [] });
         return;
@@ -364,6 +390,7 @@ export class PrCreatePage {
       if (this.disposed || gen !== this.gen) return;
       await this.readCompare(gen);
       if (this.disposed || gen !== this.gen) return;
+      this.gitSig = await this.readGitSig();
       this.status = "ready";
       this.refreshing = false;
       this.post();
@@ -373,6 +400,56 @@ export class PrCreatePage {
     });
     this.loading = p;
     return p;
+  }
+
+  /** The local branches, the one checked out first; returns that one. */
+  private async readBranches(): Promise<string | undefined> {
+    const git = this.entry.ctx.process;
+    const [heads, current] = await Promise.all([
+      git.run(["for-each-ref", "--format=%(refname)", "refs/heads/"]),
+      git.run(["symbolic-ref", "--quiet", "HEAD"]),
+    ]);
+    const cur = current.code === 0 ? current.stdout.trim().replace(/^refs\/heads\//, "") : undefined;
+    this.branches = heads.stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("refs/heads/"))
+      .map((l) => l.slice("refs/heads/".length))
+      .filter(isSafeBranchName)
+      .map((name) => ({ name, current: name === cur }))
+      .sort((a, b) => (a.current ? -1 : b.current ? 1 : a.name.localeCompare(b.name)));
+    return cur;
+  }
+
+  /** Every branch and remote-tracking ref with its commit, HEAD, and what the branches track and push to: what the form shows of git. */
+  private async readGitSig(): Promise<string> {
+    const git = this.entry.ctx.process;
+    const [refs, head, config] = await Promise.all([
+      git.run(["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/", "refs/remotes/"]),
+      git.run(["symbolic-ref", "--quiet", "HEAD"]),
+      git.run(["config", "--get-regexp", "^(branch\\.|remote\\.pushdefault)"]),
+    ]);
+    return JSON.stringify([refs.stdout, head.stdout, config.stdout]);
+  }
+
+  /**
+   * The repository changed (a save, a commit, a pull, a push): when its
+   * branches did, the branches, the head's push state and the comparison
+   * are read again — from git; the base is not fetched again.
+   */
+  private async gitChanged(): Promise<void> {
+    if (this.disposed || this.status !== "ready" || this.busy || this.loading) return;
+    const sig = await this.readGitSig();
+    if (this.disposed || sig === this.gitSig || this.busy || this.loading) return;
+    this.gitSig = sig;
+    const gen = ++this.gen;
+    const cur = await this.readBranches();
+    if (this.disposed || gen !== this.gen) return;
+    if (!this.headBranch || !this.branches.some((b) => b.name === this.headBranch)) this.headBranch = cur;
+    await this.readHead(gen, "ifMoved");
+    if (this.disposed || gen !== this.gen) return;
+    await this.readCompare(gen, false);
+    if (!this.disposed && gen === this.gen) this.post();
   }
 
   private fail(message: PrListMessage): void {
@@ -392,56 +469,26 @@ export class PrCreatePage {
   }
 
   /**
-   * Where the branch is, or will be, on GitHub — git's own push-remote rule:
-   * branch.<b>.pushRemote, remote.pushDefault, branch.<b>.remote, else origin
-   * (where a clone pushes by default), else the repository it opens on. A
-   * value that reads as an option is no remote name.
+   * The head: where the branch is, or will be, on GitHub (headNow) — and
+   * whether it already has an open pull request, asked of GitHub when the
+   * head is another than before (always, unless `ifMoved`).
    */
-  private async readHead(gen: number): Promise<void> {
+  private async readHead(gen: number, ask: "always" | "ifMoved" = "always"): Promise<void> {
     const branch = this.headBranch;
     const t = this.target;
-    this.existing = undefined;
-    this.existingPr = undefined;
     if (!branch || !t) {
       this.head = undefined;
+      this.existing = undefined;
+      this.existingPr = undefined;
       return;
     }
-    const git = this.entry.ctx.process;
-    const get = async (key: string): Promise<string | undefined> => {
-      const r = await git.run(["config", "--get", key]);
-      const v = r.stdout.trim();
-      return r.code === 0 && v && isSafeRemoteName(v) ? v : undefined;
-    };
-    const tracking = await get(`branch.${branch}.remote`);
-    const origin = this.remotes.find((r) => r.name === "origin")?.name;
-    const remote =
-      (await get(`branch.${branch}.pushRemote`)) ?? (await get("remote.pushDefault")) ?? tracking ?? origin ?? t.remoteName ?? this.remotes[0]?.name;
-    const owner = remote ? this.remotes.find((r) => r.name === remote)?.owner : undefined;
-    let push: PrCreateHead["push"] = "unknown";
-    let ahead = 0;
-    let behind = 0;
-    if (remote && owner) {
-      const there = `refs/remotes/${remote}/${branch}`;
-      const known = (await git.run(["rev-parse", "--verify", "--quiet", `${there}^{commit}`])).code === 0;
-      if (!known) push = "new";
-      else {
-        const c = await git.run(["rev-list", "--left-right", "--count", `refs/heads/${branch}...${there}`]);
-        const [a, b] = c.stdout.trim().split(/\s+/).map((x) => Number.parseInt(x, 10));
-        ahead = Number.isFinite(a) ? a : 0;
-        behind = Number.isFinite(b) ? b : 0;
-        push = ahead > 0 && behind > 0 ? "diverged" : ahead > 0 ? "ahead" : "pushed";
-      }
-    }
+    const was = this.head;
+    const head = await this.headNow(branch, t);
     if (gen !== this.gen) return;
-    this.head = {
-      branch,
-      ...(remote ? { remote } : {}),
-      ...(owner ? { owner } : {}),
-      ref: headForGitHub(branch, owner, t.owner),
-      push,
-      ahead,
-      behind,
-    };
+    this.head = head;
+    if (ask === "ifMoved" && was && was.branch === head.branch && was.ref === head.ref) return;
+    this.existing = undefined;
+    this.existingPr = undefined;
     // An open pull request this head already has: said, with Open.
     const headRef = this.head.ref.includes(":") ? this.head.ref : `${t.owner}:${branch}`;
     void this.deps.api
@@ -458,11 +505,66 @@ export class PrCreatePage {
   private existingPr: PullRequest | undefined;
 
   /**
+   * Where `branch` is pushed, and how it stands there — read from git now.
+   * The remote: the one picked in the form; else git's own rule,
+   * branch.<b>.pushRemote, remote.pushDefault — then, for a branch that
+   * tracks ANOTHER branch of the repository it opens on (started from its
+   * base: `git switch -c feature upstream/main`), your fork when the clone
+   * has a remote for it; else branch.<b>.remote, origin, the repository it
+   * opens on. A value that reads as an option is no remote name.
+   */
+  private async headNow(branch: string, t: PrTarget): Promise<PrCreateHead> {
+    const git = this.entry.ctx.process;
+    const get = async (key: string, check: (v: string) => boolean = isSafeRemoteName): Promise<string | undefined> => {
+      const r = await git.run(["config", "--get", key]);
+      const v = r.stdout.trim();
+      return r.code === 0 && v && check(v) ? v : undefined;
+    };
+    const chosen = this.pushChoice?.branch === branch && this.remotes.some((r) => r.name === this.pushChoice!.remote) ? this.pushChoice.remote : undefined;
+    const configured = (await get(`branch.${branch}.pushRemote`)) ?? (await get("remote.pushDefault"));
+    const tracking = await get(`branch.${branch}.remote`);
+    const merge = await get(`branch.${branch}.merge`, (v) => v.startsWith("refs/heads/"));
+    const trackingRepo = this.remotes.find((r) => r.name === tracking);
+    const viewer = this.repoData.get(t.id.toLowerCase())?.viewer?.login;
+    const fork =
+      viewer && trackingRepo && same(`${trackingRepo.owner}/${trackingRepo.repo}`, t.id) && merge && merge !== `refs/heads/${branch}`
+        ? this.remotes.find((r) => same(r.owner, viewer) && !same(`${r.owner}/${r.repo}`, t.id))?.name
+        : undefined;
+    const origin = this.remotes.find((r) => r.name === "origin")?.name;
+    const remote = chosen ?? configured ?? fork ?? tracking ?? origin ?? t.remoteName ?? this.remotes[0]?.name;
+    const owner = remote ? this.remotes.find((r) => r.name === remote)?.owner : undefined;
+    let push: PrCreateHead["push"] = "unknown";
+    let ahead = 0;
+    let behind = 0;
+    if (remote && owner) {
+      const there = `refs/remotes/${remote}/${branch}`;
+      const known = (await git.run(["rev-parse", "--verify", "--quiet", `${there}^{commit}`])).code === 0;
+      if (!known) push = "new";
+      else {
+        const c = await git.run(["rev-list", "--left-right", "--count", `refs/heads/${branch}...${there}`]);
+        const [a, b] = c.stdout.trim().split(/\s+/).map((x) => Number.parseInt(x, 10));
+        ahead = Number.isFinite(a) ? a : 0;
+        behind = Number.isFinite(b) ? b : 0;
+        push = ahead > 0 && behind > 0 ? "diverged" : ahead > 0 ? "ahead" : "pushed";
+      }
+    }
+    return {
+      branch,
+      ...(remote ? { remote } : {}),
+      ...(owner ? { owner } : {}),
+      ref: headForGitHub(branch, owner, t.owner),
+      push,
+      ahead,
+      behind,
+    };
+  }
+
+  /**
    * <base>...<head>: the commits and files the pull request will have, against
    * the base as GitHub has it NOW — fetched, from the remote that names the
    * repository or its URL; as last fetched when that fails (and said).
    */
-  private async readCompare(gen: number): Promise<void> {
+  private async readCompare(gen: number, refetch = true): Promise<void> {
     const t = this.target;
     const branch = this.head?.branch;
     const base = this.base;
@@ -478,7 +580,9 @@ export class PrCreatePage {
     const where = t.remoteName ?? `https://github.com/${t.owner}/${t.repo}.git`;
     let baseSha: string | undefined;
     let stale = false;
-    const fetched = await fetchRefTip(git, where, `refs/heads/${base}`);
+    const known = this.baseTip && same(this.baseTip.target, t.id) && this.baseTip.base === base ? this.baseTip : undefined;
+    const fetched: Awaited<ReturnType<typeof fetchRefTip>> = !refetch && known ? { sha: known.sha } : await fetchRefTip(git, where, `refs/heads/${base}`);
+    if (!refetch && known) stale = known.stale;
     if ("sha" in fetched) baseSha = fetched.sha;
     else if (t.remoteName) {
       const r = await git.run(["rev-parse", "--verify", "--quiet", `refs/remotes/${t.remoteName}/${base}^{commit}`]);
@@ -488,6 +592,7 @@ export class PrCreatePage {
       }
     }
     if (gen !== this.gen || this.head?.branch !== branch || this.base !== base) return;
+    if (baseSha) this.baseTip = { target: t.id, base, sha: baseSha, stale };
     if (!baseSha) {
       this.compare = {
         status: "failed",
@@ -554,6 +659,8 @@ export class PrCreatePage {
         return this.chooseTarget(m.id);
       case "head":
         return this.chooseHead(m.branch);
+      case "pushRemote":
+        return this.choosePushRemote(m.remote);
       case "base":
         return this.chooseBase(m.branch);
       case "template": {
@@ -613,6 +720,16 @@ export class PrCreatePage {
     if (gen !== this.gen) return;
     this.post();
     await this.readCompare(gen);
+    if (gen === this.gen) this.post();
+  }
+
+  /** Push the branch to another of the clone's GitHub remotes: the head, and where it stands, read again. */
+  private async choosePushRemote(remote: string): Promise<void> {
+    const branch = this.head?.branch;
+    if (!branch || this.busy || !this.remotes.some((r) => r.name === remote) || remote === this.head?.remote) return;
+    this.pushChoice = { branch, remote };
+    const gen = ++this.gen;
+    await this.readHead(gen);
     if (gen === this.gen) this.post();
   }
 
@@ -683,24 +800,32 @@ export class PrCreatePage {
     this.notice = undefined;
     this.post();
     try {
-      if (h.push === "new" || h.push === "ahead") {
-        if (!h.remote) return;
+      // The branch as it is NOW: a commit made since the form read it is pushed too.
+      const now = await this.headNow(h.branch, t);
+      if (this.disposed) return;
+      if (now.push !== h.push || now.ahead !== h.ahead || now.behind !== h.behind || now.remote !== h.remote) {
+        this.head = now;
+        // Moved on somewhere else, or pushed elsewhere now: said beside Create, which waits for another press.
+        if (now.push === "diverged" || now.push === "unknown" || now.remote !== h.remote) return;
+      }
+      if (now.push === "new" || now.push === "ahead") {
+        if (!now.remote) return;
         const tracks = (await this.entry.ctx.process.run(["config", "--get", `branch.${h.branch}.merge`])).code === 0;
         // push-force-reviewed: publishes the pull request's branch, or adds
         // commits to it — a fast-forward, which git refuses rather than
         // overwrite anything.
-        const pushed = await this.entry.ctx.sync.push({ remote: h.remote, branch: h.branch, dest: h.branch, setUpstream: !tracks });
+        const pushed = await this.entry.ctx.sync.push({ remote: now.remote, branch: h.branch, dest: h.branch, setUpstream: !tracks });
         if (!pushed.ok) {
           this.notice = {
             icon: "warning",
             tone: "warning",
-            title: `Couldn't push ${h.branch} to ${h.remote}`,
+            title: `Couldn't push ${h.branch} to ${now.remote}`,
             detail: (pushed.stderr ?? "").split("\n").find((l) => l.trim()) ?? "git refused the push.",
             buttons: [],
           };
           return;
         }
-        this.head = { ...h, push: "pushed", ahead: 0 };
+        this.head = { ...now, push: "pushed", ahead: 0 };
       }
       let pr: PullRequest;
       try {
@@ -754,6 +879,8 @@ export class PrCreatePage {
       if (!this.disposed) {
         this.busy = undefined;
         this.post();
+        // What git has now (a push made, a commit found): read, if it changed.
+        void this.gitChanged();
       }
     }
   }
@@ -761,6 +888,7 @@ export class PrCreatePage {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    if (this.gitTimer !== undefined) clearTimeout(this.gitTimer);
     if (PrCreatePage.pages.get(this.entry.root) === this) PrCreatePage.pages.delete(this.entry.root);
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;

@@ -597,6 +597,8 @@ export interface PrCreateViewState {
   /** The local branches it can be opened from. */
   branches: { name: string; current: boolean }[];
   head?: PrCreateHead;
+  /** The clone's GitHub remotes the head can be pushed to: its name, "owner/repo", and "your fork" / "where it opens". */
+  pushRemotes?: { name: string; repo: string; detail?: string }[];
   /** The branches it can go into, the default first. */
   bases: { name: string; isDefault: boolean }[];
   base?: string;
@@ -652,6 +654,8 @@ export type PrCreateMessageToHost =
   | { type: "ready" }
   | { type: "target"; id: string }
   | { type: "head"; branch: string }
+  /** Push the head to another of the clone's GitHub remotes. */
+  | { type: "pushRemote"; remote: string }
   | { type: "base"; branch: string }
   /** A template's filename, or null for none. */
   | { type: "template"; filename: string | null }

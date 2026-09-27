@@ -116,7 +116,7 @@ const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 
 // ── Pickers ──────────────────────────────────────────────────────────────────
 
-type PickerKind = "base" | "head" | "target" | "template" | "reviewers" | "assignees" | "labels";
+type PickerKind = "base" | "head" | "push" | "target" | "template" | "reviewers" | "assignees" | "labels";
 
 interface PickerItem {
   id: string;
@@ -130,6 +130,7 @@ interface PickerItem {
 const PICKER_WORDS: Record<PickerKind, { title: string; filter: string; empty: string }> = {
   base: { title: "The branch it goes into", filter: "Find a branch, or type one", empty: "No branch matches" },
   head: { title: "The branch it comes from", filter: "Find a branch", empty: "No branch matches" },
+  push: { title: "Push it to", filter: "Find a remote", empty: "No remote matches" },
   target: { title: "The repository it opens on", filter: "Find a repository", empty: "No repository matches" },
   template: { title: "Start the description from", filter: "Find a template", empty: "No template matches" },
   reviewers: { title: "Ask for a review from", filter: "Find someone, or type a login", empty: "No one matches" },
@@ -303,6 +304,15 @@ export class PullRequestCreate {
     const titleRow = el("div", "prp-title-row");
     const h1 = el("h1", "prp-title", PR_ACTIONS.newPullRequest.label);
     titleRow.appendChild(h1);
+    // Read the branches and GitHub again: a commit, a pull or a push made
+    // elsewhere is read on its own; this is for anything else (a branch
+    // pushed from another machine, a template just added on GitHub).
+    const refresh = button("prp-icon-btn prc-refresh", "refresh", "refresh");
+    refresh.appendChild(codicon("refresh"));
+    refresh.title = "Refresh — read the branches and GitHub again";
+    refresh.setAttribute("aria-label", "Refresh: read the branches and GitHub again");
+    refresh.disabled = !!s.busy || s.status === "loading";
+    titleRow.appendChild(refresh);
     head.appendChild(titleRow);
 
     if (s.status !== "message") {
@@ -455,10 +465,26 @@ export class PullRequestCreate {
     const push = s.head ? pushWords(s.head) : undefined;
     // The title's own problem is said at the title; this line is the host's reason.
     const problem = s.problem;
+    // Where the branch is pushed, when a push is in question: another of
+    // the clone's GitHub remotes can be picked (your fork, the repository
+    // it opens on).
+    const elsewhere = (s.pushRemotes ?? []).some((r) => r.name !== s.head?.remote);
+    const pushAt = (line: HTMLElement) => {
+      if (!elsewhere || !s.head) return;
+      const b = button("prp-link prc-push-pick", "pick-push", "pick");
+      b.dataset.picker = "push";
+      b.append(el("span", "", "Push to another remote"), codicon("chevron-down", "prc-push-chevron"));
+      b.title = s.head.remote ? `Pushed to ${s.head.remote} — choose another of this clone's GitHub remotes` : "Choose where to push it";
+      b.setAttribute("aria-haspopup", "listbox");
+      b.disabled = busy;
+      line.append(" ", b);
+    };
     if (push && !s.problem) {
       const p = el("p", "prc-note");
       p.dataset.key = "push-note";
-      p.append(codicon("cloud-upload"), el("span", "", push));
+      const words = el("span", "prc-note-text", push);
+      pushAt(words);
+      p.append(codicon("cloud-upload"), words);
       foot.appendChild(p);
     }
     if (problem) {
@@ -466,7 +492,9 @@ export class PullRequestCreate {
       p.dataset.key = "problem";
       p.id = "prc-problem";
       p.setAttribute("role", "status");
-      p.append(codicon("info"), el("span", "", problem));
+      const words = el("span", "prc-note-text", problem);
+      if (s.head?.push === "diverged" || s.head?.push === "unknown") pushAt(words);
+      p.append(codicon("info"), words);
       foot.appendChild(p);
     }
     const buttons = el("div", "prp-panel-foot prc-buttons");
@@ -724,6 +752,9 @@ export class PullRequestCreate {
       case "create":
         this.create();
         return;
+      case "refresh":
+        this.opts.post({ type: "refresh" });
+        return;
       case "cancel":
         this.opts.post({ type: "cancel" });
         return;
@@ -816,6 +847,13 @@ export class PullRequestCreate {
       case "head":
         return {
           items: s.branches.filter((b) => match(b.name)).map((b) => ({ id: b.name, label: b.name, icon: "git-branch", checked: b.name === s.head?.branch, ...(b.current ? { detail: "checked out" } : {}) })),
+          multi: false,
+        };
+      case "push":
+        return {
+          items: (s.pushRemotes ?? [])
+            .filter((r) => match(`${r.name} ${r.repo}`))
+            .map((r) => ({ id: r.name, label: r.name, icon: "repo", detail: r.detail ? `${r.repo} — ${r.detail}` : r.repo, checked: r.name === s.head?.remote })),
           multi: false,
         };
       case "target":
@@ -933,6 +971,7 @@ export class PullRequestCreate {
     if (!s) return;
     if (kind === "base" && id !== s.base) this.opts.post({ type: "base", branch: id });
     else if (kind === "head" && id !== s.head?.branch) this.opts.post({ type: "head", branch: id });
+    else if (kind === "push" && id !== s.head?.remote) this.opts.post({ type: "pushRemote", remote: id });
     else if (kind === "target" && id !== s.target) this.opts.post({ type: "target", id });
     else if (kind === "template" && (id || undefined) !== s.template) {
       // A template replaces an untouched description, and joins one you wrote.

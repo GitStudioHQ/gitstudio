@@ -151,7 +151,7 @@ test("what stops Create is said beside it, in words; a push it will make is said
     for (const [scene, words] of [
       ["existing", "perf/stream-large-diffs already has an open pull request, #482."],
       ["nothing", "Nothing to compare: perf/stream-large-diffs has no commits that main doesn't."],
-      ["diverged", "perf/stream-large-diffs and origin/perf/stream-large-diffs have both moved on: pull, then create it."],
+      ["diverged", "perf/stream-large-diffs and origin/perf/stream-large-diffs have both moved on: pull, then create it. Push to another remote"],
     ]) {
       show(S[scene]);
       expect(create().disabled, scene + ": Create is off");
@@ -166,14 +166,83 @@ test("what stops Create is said beside it, in words; a push it will make is said
 
     show(S.newBranch);
     expect(!create().disabled && text(create()) === "Push and create pull request", "the button says it pushes: " + text(create()));
-    expect(text($('[data-key="push-note"]')) === "perf/stream-large-diffs isn't on origin yet: it is pushed there first.", "where: " + text($('[data-key="push-note"]')));
+    expect(text($('[data-key="push-note"]')) === "perf/stream-large-diffs isn't on origin yet: it is pushed there first. Push to another remote", "where: " + text($('[data-key="push-note"]')));
     show(S.ahead);
-    expect(text($('[data-key="push-note"]')) === "2 commits aren't on origin/perf/stream-large-diffs yet: they are pushed first.", text($('[data-key="push-note"]')));
+    expect(text($('[data-key="push-note"]')) === "2 commits aren't on origin/perf/stream-large-diffs yet: they are pushed first. Push to another remote", text($('[data-key="push-note"]')));
     show(S.ready);
     expect(text(create()) === "Create pull request" && !$('[data-key="push-note"]'), "pushed already: nothing to say");
     show(S.creating);
     expect(text(create()) === "Pushing and creating…" && create().disabled, "busy: " + text(create()));
     expect($(".prc-title").disabled && $(".prc-body").disabled && $('[data-picker="base"]').disabled, "nothing can change while it is sent");
+  `);
+});
+
+/**
+ * Where the head is pushed, when a push is in question: the clone's other
+ * GitHub remotes can be picked — your fork, or the repository it opens on.
+ *
+ *   head       | remotes | offered?
+ *   new, ahead | two     | yes, in the line that says the push
+ *   diverged   | two     | yes, in the line that says why Create is off
+ *   pushed     | two     | no — nothing is pushed
+ *   new        | one     | no — nowhere else to push
+ */
+test("where the branch is pushed can be picked — your fork or the repository it opens on — when a push is in question", { skip }, async () => {
+  await check(`
+    show(S.newBranch);
+    const pick = $('[data-picker="push"]');
+    expect(pick && text(pick) === "Push to another remote", "offered beside the push: " + text(pick));
+    expect(pick.title === "Pushed to origin — choose another of this clone's GitHub remotes", "its tooltip says where it goes now: " + pick.title);
+    expect(getComputedStyle(pick).color === "rgb(55, 148, 255)", "a link's colour: " + getComputedStyle(pick).color);
+    pick.click();
+    await frame();
+    expect(text($(".prc-picker-title")) === "Push it to", "the list says what it picks: " + text($(".prc-picker-title")));
+    const items = $$(".prc-picker-item").map((b) => text(b));
+    expect(JSON.stringify(items) === JSON.stringify(["origin sam-rivera/webapp — your fork", "upstream acme/webapp — where it opens"]), "each remote, and what it is: " + items);
+    expect($$(".prc-picker-item")[0].getAttribute("aria-selected") === "true", "the one it goes to now is chosen");
+    $$(".prc-picker-item")[1].click();
+    expect(last("pushRemote")?.remote === "upstream", "picks upstream: " + JSON.stringify(last("pushRemote")));
+    expect(!$(".prc-picker"), "and closes");
+    // Picking the one it goes to already says nothing.
+    const sent = posted.filter((m) => m.type === "pushRemote").length;
+    $('[data-picker="push"]').click();
+    await frame();
+    $$(".prc-picker-item")[0].click();
+    expect(posted.filter((m) => m.type === "pushRemote").length === sent, "the same remote: nothing sent");
+    // The keyboard: Escape closes, and the link has it back.
+    $('[data-picker="push"]').click();
+    await frame();
+    key("Escape");
+    await frame();
+    expect(!$(".prc-picker") && document.activeElement === $('[data-picker="push"]'), "Escape: closed, back on the link");
+    show(S.diverged);
+    expect(!!$('.prc-problem [data-picker="push"]'), "diverged: offered in the line that says why");
+    show(S.ready);
+    expect(!$('[data-picker="push"]'), "pushed: nothing to push, nothing offered");
+    show({ ...S.sameRepo, head: { ...S.sameRepo.head, push: "new" } });
+    expect(!!$('[data-key="push-note"]') && !$('[data-picker="push"]'), "one remote: nowhere else to push");
+    show(S.creating);
+    expect($('[data-picker="push"]').disabled, "off while it is sent");
+  `);
+});
+
+test("Refresh reads the branches and GitHub again: in words, at the title's end — off while it is sent", { skip }, async () => {
+  await check(`
+    show(S.ready);
+    const r = $('[data-act="refresh"]');
+    expect(r && r.getAttribute("aria-label") === "Refresh: read the branches and GitHub again" && r.title === "Refresh — read the branches and GitHub again", "said in words: " + (r && r.getAttribute("aria-label")));
+    expect(r.querySelector(".codicon-refresh"), "the refresh glyph");
+    const head = $(".prc-head").getBoundingClientRect();
+    const box = r.getBoundingClientRect();
+    const h1 = $(".prc-head .prp-title").getBoundingClientRect();
+    expect(Math.abs(box.right - head.right) <= 1, "at the header's end: " + box.right + " / " + head.right);
+    expect(box.top >= h1.top - 2 && box.top <= h1.top + 6, "on the title's first line: " + box.top + " / " + h1.top);
+    r.click();
+    expect(last("refresh"), "asks the host");
+    show(S.creating);
+    expect($('[data-act="refresh"]').disabled, "off while it is sent");
+    show(S.loading);
+    expect($('[data-act="refresh"]').disabled, "off while the first read runs");
   `);
 });
 

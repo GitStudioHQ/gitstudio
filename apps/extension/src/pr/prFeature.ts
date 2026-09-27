@@ -102,6 +102,8 @@ export function registerPrFeature(
     api,
     graphql,
     brain,
+    // A commit, pull or push made while the form is open: read (git only).
+    onDidChangeRepo: repos.onDidChange,
     extensionUri: context.extensionUri,
     // The new pull request joins the list: a row patch, not a reload.
     list,

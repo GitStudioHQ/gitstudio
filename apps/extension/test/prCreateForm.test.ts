@@ -24,6 +24,20 @@
 //   signed out / not GitHub → the form says why and what helps
 //   twice                → one form per clone, revealed
 //
+// WHILE IT IS OPEN (git changes under it; RepoManager fires):
+//   a commit on a pushed branch → "Push and create", the commit listed; Create
+//                                 pushes it — GitHub is asked nothing meanwhile
+//   a commit nobody announced   → Create reads the branch again and pushes it
+//   diverged, then pulled       → the problem goes, Create is on again
+//   a save that moves no ref    → nothing read, nothing painted
+//
+// WHERE A BRANCH STARTED FROM THE BASE GOES (`git switch -c feature upstream/main`):
+//   a fork user (origin = your fork)    → your fork, as owner:branch
+//   a maintainer, no fork remote        → the repository itself, under its own name
+//   picked in the form: the repository  → there, under its own name; main untouched
+//   branch.<b>.pushRemote set           → where it says (the user's own choice)
+//   tracks its own name upstream        → there: it already lives there
+//
 // The wizard this replaces asked six questions in the sidebar, proposed the
 // newest commit's subject, never read the template, and requested no one.
 
@@ -174,11 +188,13 @@ function routes(opts: { repos?: Record<string, FakeRepo>; onCreate?: (body: any)
   ];
 }
 
-function mountWith(w: W) {
+function mountWith(w: W): { fire(): void } {
   const changed = new vscode.EventEmitter();
   const context = { subscriptions: [] as { dispose(): void }[], extensionUri: vscode.Uri.file("/ext"), workspaceState: undefined };
   registerPrFeature(context as any, { onDidChange: changed.event, getActive: () => w.entry } as any, { isEnabled: async () => false } as any);
   contexts.push({ dispose: () => context.subscriptions.forEach((d) => d.dispose()) });
+  // RepoManager's event: fired on every save, commit, pull and push.
+  return { fire: () => changed.fire() };
 }
 
 const formPanel = () => pr.panels.find((p: any) => p.viewType === "gitstudio.newPullRequest" && !p.gone);
@@ -204,6 +220,9 @@ const settledState = async (panel: any, what: string) => {
   }, what);
   return panel.state();
 };
+/** What the form asks GitHub — not the Pull Requests list, which reads on RepoManager's event while its view is in sight. */
+const formAsks = (f: FakeGitHub) =>
+  f.requests.filter((r) => !/list: (pullRequests|search)/.test(String((r.body as any)?.query ?? ""))).map((r) => `${r.method} ${r.path}`);
 const create = (over: Record<string, unknown> = {}) => ({ type: "create", title: "Add b", body: TEMPLATE, draft: false, reviewers: [], assignees: [], labels: [], ...over });
 
 test("opens on the fork's parent, into its default branch, from the branch checked out — with GitHub's title, the template, and what it will have", async () => {
@@ -416,7 +435,7 @@ test("a push remote configured as an option-like word is no remote — it never 
   assert.equal(panel.state().head.ref, "me:feature");
 });
 
-test("a branch started from upstream/main (tracking the base) is pushed under its own name — never into main", async () => {
+test("a branch started from upstream/main, by a fork user: pushed to YOUR FORK as owner:branch — never into the parent, and never into main", async () => {
   const w = world();
   w.git("branch", "--set-upstream-to", "upstream/main", "feature");
   const mainBefore = w.tip(w.hub, "main");
@@ -424,14 +443,175 @@ test("a branch started from upstream/main (tracking the base) is pushed under it
   fake = installFakeGitHub(routes({ onCreate: (body) => ((sent = body), { status: 201, body: rawPull(60) }) }));
   mountWith(w);
   const panel = await openForm(w);
-  assert.equal(panel.state().head.remote, "upstream", "git's rule: where it tracks, lacking a push remote");
-  assert.equal(panel.state().head.push, "new", "new there — not 1 commit ahead of upstream/main");
+  const s = panel.state();
+  assert.equal(s.head.remote, "origin", "your fork, as gh pr create would — not upstream, which git's rule names");
+  assert.equal(s.head.ref, "me:feature");
+  assert.equal(s.head.push, "new", "new there — not 1 commit ahead of upstream/main");
+  assert.deepEqual(
+    s.pushRemotes,
+    [
+      { name: "origin", repo: "me/app", detail: "your fork" },
+      { name: "upstream", repo: "acme/app", detail: "where it opens" },
+    ],
+    "the remotes it could go to, said as what they are",
+  );
   panel.receive(create());
   await until(() => !!panel.gone, "created");
   assert.equal(w.tip(w.hub, "main"), mainBefore, "acme's main is untouched");
-  assert.equal(w.tip(w.hub, "feature"), w.git("rev-parse", "refs/heads/feature"), "the branch was published under its own name");
-  assert.equal(sent?.head, "feature", "in acme/app itself: a bare name");
+  assert.equal(w.tip(w.hub, "feature"), undefined, "nothing was published into acme/app");
+  assert.equal(w.tip(w.fork, "feature"), w.git("rev-parse", "refs/heads/feature"), "the fork received the branch");
+  assert.equal(sent?.head, "me:feature");
   assert.equal(w.git("config", "--get", "branch.feature.merge"), "refs/heads/main", "what it tracks is the user's, and stays");
+});
+
+test("a branch started from origin/main by a maintainer with no fork: pushed to the repository itself, under its own name", async () => {
+  const w = world();
+  w.git("remote", "remove", "origin");
+  w.git("remote", "rename", "upstream", "origin");
+  w.git("branch", "--set-upstream-to", "origin/main", "feature");
+  const mainBefore = w.tip(w.hub, "main");
+  let sent: any;
+  fake = installFakeGitHub(routes({ onCreate: (body) => ((sent = body), { status: 201, body: rawPull(62) }) }));
+  mountWith(w);
+  const panel = await openForm(w);
+  assert.equal(panel.state().head.remote, "origin");
+  assert.equal(panel.state().head.ref, "feature");
+  assert.equal(panel.state().pushRemotes.length, 1, "one remote: nothing else to offer");
+  panel.receive(create());
+  await until(() => !!panel.gone, "created");
+  assert.equal(w.tip(w.hub, "main"), mainBefore, "main is untouched");
+  assert.equal(w.tip(w.hub, "feature"), w.git("rev-parse", "refs/heads/feature"), "published under its own name");
+  assert.equal(sent?.head, "feature");
+});
+
+test("picked in the form: the repository it opens on — pushed there under its own name, main untouched; picked back, your fork", async () => {
+  const w = world();
+  w.git("branch", "--set-upstream-to", "upstream/main", "feature");
+  const mainBefore = w.tip(w.hub, "main");
+  let sent: any;
+  fake = installFakeGitHub(routes({ onCreate: (body) => ((sent = body), { status: 201, body: rawPull(63) }) }));
+  mountWith(w);
+  const panel = await openForm(w);
+  assert.equal(panel.state().head.remote, "origin");
+  panel.receive({ type: "pushRemote", remote: "upstream" });
+  await until(() => panel.state().head.remote === "upstream", "the head, read again for upstream");
+  assert.equal(panel.state().head.ref, "feature", "in acme/app itself: a bare name");
+  assert.equal(panel.state().head.push, "new");
+  panel.receive({ type: "pushRemote", remote: "--upload-pack=touch pwned" });
+  panel.receive({ type: "pushRemote", remote: "gitlab" });
+  await sleep(100);
+  assert.equal(panel.state().head.remote, "upstream", "a name that is no GitHub remote of this clone is ignored");
+  panel.receive(create());
+  await until(() => !!panel.gone, "created");
+  assert.equal(w.tip(w.hub, "main"), mainBefore, "acme's main is untouched");
+  assert.equal(w.tip(w.hub, "feature"), w.git("rev-parse", "refs/heads/feature"), "published into acme/app under its own name");
+  assert.equal(w.tip(w.fork, "feature"), undefined);
+  assert.equal(sent?.head, "feature");
+});
+
+test("branch.<b>.pushRemote is the user's own choice and stays it; a branch tracking its own name upstream stays there", async () => {
+  const w = world();
+  w.git("branch", "--set-upstream-to", "upstream/main", "feature");
+  w.git("config", "branch.feature.pushRemote", "upstream");
+  fake = installFakeGitHub(routes());
+  mountWith(w);
+  let panel = await openForm(w);
+  assert.equal(panel.state().head.remote, "upstream", "configured: respected");
+  panel.receive({ type: "cancel" });
+  await until(() => !!panel.gone, "closed");
+  // Tracking upstream/feature — its own name: it already lives there.
+  w.git("config", "--unset", "branch.feature.pushRemote");
+  w.git("push", "-q", "upstream", "feature");
+  w.git("branch", "--set-upstream-to", "upstream/feature", "feature");
+  panel = await openForm(w);
+  assert.equal(panel.state().head.remote, "upstream");
+  assert.equal(panel.state().head.push, "pushed");
+});
+
+// ── While it is open ─────────────────────────────────────────────────────────
+
+test("a commit made while the form is open: read (git only), listed, and pushed by Create — the pull request has it", async () => {
+  const w = world();
+  w.git("push", "-q", "-u", "origin", "feature");
+  let sent: any;
+  fake = installFakeGitHub(routes({ onCreate: (body) => ((sent = body), { status: 201, body: rawPull(64) }) }));
+  const repo = mountWith(w);
+  const panel = await openForm(w);
+  assert.equal(panel.state().head.push, "pushed");
+  assert.deepEqual(panel.state().compare.commits.map((c: any) => c.subject), ["Add b"]);
+  const asked = formAsks(fake).length;
+  writeFileSync(join(w.work, "c.txt"), "c\n");
+  w.git("add", ".");
+  w.git("commit", "-qm", "Add c");
+  repo.fire();
+  await until(() => panel.state().head.push === "ahead" && panel.state().compare.commits.length === 2, "the commit, read");
+  const s = panel.state();
+  assert.equal(s.head.ahead, 1);
+  assert.deepEqual(s.compare.commits.map((c: any) => c.subject), ["Add c", "Add b"]);
+  assert.equal(s.compare.commitsTotal, 2);
+  assert.deepEqual(formAsks(fake).slice(asked), [], "GitHub is asked nothing: the base as fetched, and the same head");
+  panel.receive(create());
+  await until(() => !!panel.gone, "created");
+  assert.equal(w.tip(w.fork, "feature"), w.git("rev-parse", "refs/heads/feature"), "the pull request's branch has Add c");
+  assert.equal(sent?.head, "me:feature");
+});
+
+test("a commit nobody announced: Create reads the branch once more, and pushes it", async () => {
+  const w = world();
+  w.git("push", "-q", "-u", "origin", "feature");
+  fake = installFakeGitHub(routes());
+  mountWith(w);
+  const panel = await openForm(w);
+  assert.equal(panel.state().head.push, "pushed");
+  writeFileSync(join(w.work, "c.txt"), "c\n");
+  w.git("add", ".");
+  w.git("commit", "-qm", "Add c");
+  // No RepoManager event: the form still says "pushed".
+  panel.receive(create());
+  await until(() => !!panel.gone, "created");
+  assert.equal(w.tip(w.fork, "feature"), w.git("rev-parse", "refs/heads/feature"), "pushed before it was created");
+});
+
+test("diverged from its remote, then pulled: the problem goes and Create is on again — with no Refresh", async () => {
+  const w = world();
+  w.git("push", "-q", "-u", "origin", "feature");
+  // Someone else's commit on the fork's feature…
+  w.git("checkout", "-q", "-b", "elsewhere", "origin/feature");
+  writeFileSync(join(w.work, "d.txt"), "d\n");
+  w.git("add", ".");
+  w.git("commit", "-qm", "Add d, elsewhere");
+  w.git("push", "-q", "origin", "elsewhere:feature");
+  w.git("checkout", "-q", "feature");
+  w.git("branch", "-q", "-D", "elsewhere");
+  // …and one of ours.
+  writeFileSync(join(w.work, "c.txt"), "c\n");
+  w.git("add", ".");
+  w.git("commit", "-qm", "Add c");
+  fake = installFakeGitHub(routes());
+  const repo = mountWith(w);
+  const panel = await openForm(w);
+  assert.equal(panel.state().head.push, "diverged");
+  assert.equal(panel.state().problem, "feature and origin/feature have both moved on: pull, then create it.");
+  w.git("pull", "-q", "--no-rebase", "--no-edit", "origin", "feature");
+  repo.fire();
+  await until(() => panel.state().head.push === "ahead", "the pull, read");
+  assert.equal(panel.state().problem, undefined, "nothing stops Create now");
+  assert.equal(panel.state().head.behind, 0);
+});
+
+test("a save that moves no ref reads nothing more and paints nothing", async () => {
+  const w = world();
+  fake = installFakeGitHub(routes());
+  const repo = mountWith(w);
+  const panel = await openForm(w);
+  const posts = panel.posted.length;
+  const asked = formAsks(fake).length;
+  writeFileSync(join(w.work, "a.txt"), "a, edited again\n");
+  repo.fire();
+  repo.fire();
+  await sleep(700);
+  assert.equal(panel.posted.length, posts, "nothing painted");
+  assert.deepEqual(formAsks(fake).slice(asked), [], "nothing asked of GitHub");
 });
 
 test("a triangular branch (pull from upstream, push to your fork) reaches the fork, and the head is there", async () => {

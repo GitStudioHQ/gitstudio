@@ -58,6 +58,10 @@ export function createState(over: Partial<PrCreateViewState> = {}): PrCreateView
       { name: "main", current: false },
     ],
     head: { branch: "perf/stream-large-diffs", remote: "origin", owner: "sam-rivera", ref: "sam-rivera:perf/stream-large-diffs", push: "pushed", ahead: 0, behind: 0 },
+    pushRemotes: [
+      { name: "origin", repo: "sam-rivera/webapp", detail: "your fork" },
+      { name: "upstream", repo: "acme/webapp", detail: "where it opens" },
+    ],
     bases: [
       { name: "main", isDefault: true },
       { name: "release/2.4", isDefault: false },
@@ -85,6 +89,7 @@ export function createScenes(): Record<string, PrCreateViewState> {
     sameRepo: createState({
       targets: [{ id: "acme/webapp", owner: "acme", repo: "webapp", detail: "remote origin" }],
       head: { branch: "perf/stream-large-diffs", remote: "origin", owner: "acme", ref: "perf/stream-large-diffs", push: "pushed", ahead: 0, behind: 0 },
+      pushRemotes: [{ name: "origin", repo: "acme/webapp", detail: "where it opens" }],
     }),
     newBranch: createState({ head: { ...base.head!, push: "new", ahead: 0 } }),
     ahead: createState({ head: { ...base.head!, push: "ahead", ahead: 2 } }),

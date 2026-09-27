@@ -36,6 +36,11 @@
   background: var(--prp-hover);
   color: var(--gs-fg);
 }
+/* Refresh sits at the title's end, on its first line. */
+.prc-refresh {
+  flex: none;
+  margin-top: 1px;
+}
 .prc-flow {
   display: flex;
   flex-wrap: wrap;
@@ -199,6 +204,20 @@
 .prc-note .codicon {
   margin-top: 2px;
   font-size: 14px;
+}
+.prc-note-text {
+  min-width: 0;
+}
+/* "Push to another remote": a link in the sentence, its chevron saying it opens a list. */
+.prc-push-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+.prc-note .prc-push-chevron {
+  margin-top: 0;
+  font-size: 12px;
 }
 .prc-problem .codicon {
   color: var(--prp-pending);
