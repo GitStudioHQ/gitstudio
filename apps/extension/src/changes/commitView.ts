@@ -3572,13 +3572,21 @@ export class CommitViewProvider
       border-radius: 0;
       box-shadow: none;
     }
+    /* The back row is a row of the menu: the pointer lights it as it
+       lights any row — the same tint, and the item below goes dark — with
+       no hover colour of its own and no rule under it. */
     .branch-submenu.is-drilled .bm-subhead {
       margin: 0 -3px 3px;
       padding: 6px 10px 6px 6px;
       border-radius: 0;
+      border-bottom: none;
       cursor: pointer;
     }
-    .branch-submenu.is-drilled .bm-subhead:hover { background: color-mix(in srgb, var(--gs-brand) 24%, transparent); }
+    .branch-submenu.is-drilled .bm-subhead.is-active { background: var(--bm-lit); }
+    body.vscode-high-contrast .branch-submenu.is-drilled .bm-subhead.is-active {
+      outline: 1px solid var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: -1px;
+    }
     .bm-subhead .bm-back { font-size: 14px; color: var(--gs-fg); }
     /* Words for a screen reader only: in the page, not on screen. */
     .bm-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -6491,6 +6499,9 @@ export class CommitViewProvider
     // -1 when the highlight is in the main list.
     let bmActiveKey = "";
     let bmSubActive = -1;
+    // Drilled in, the pointer on the back row ('‹ feature') lights it: the
+    // one row lit, the actions' highlight dark until the arrows move on.
+    let bmBackLit = false;
     let bmOptSeq = 0;
     // Where the pointer last was: a mousemove at the same spot is the list
     // scrolling under a still mouse, not the mouse moving, and must not take
@@ -6520,6 +6531,11 @@ export class CommitViewProvider
     function bmSubItems() {
       return branchSubmenu ? Array.prototype.slice.call(branchSubmenu.querySelectorAll(".bm-subaction")) : [];
     }
+    /** Drilled in, the back row above the actions; otherwise none. */
+    function bmBackRow() {
+      return branchSubmenu && branchSubmenu.classList.contains("is-drilled")
+        ? branchSubmenu.querySelector(".bm-subhead") : null;
+    }
     /** Paint the highlight where the state says it is, and point the box at it. */
     function paintBm(scroll) {
       if (!branchMenu) return;
@@ -6538,6 +6554,14 @@ export class CommitViewProvider
       }
       if (input) {
         input.setAttribute("aria-controls", branchSubmenu ? "bm-list bm-sub" : "bm-list");
+      }
+      const back = bmBackLit ? bmBackRow() : null;
+      if (back) {
+        // Lit as any row is; not an option of the list, so the box points at none.
+        back.classList.add("is-active");
+        if (main) main.classList.add("is-open");
+        if (input) input.removeAttribute("aria-activedescendant");
+        return;
       }
       if (target) {
         target.classList.add("is-active");
@@ -6568,6 +6592,13 @@ export class CommitViewProvider
     function moveBmSub(delta) {
       const items = bmSubItems();
       if (!items.length) return;
+      if (bmBackLit) {
+        // From the back row, down goes into the actions from their top;
+        // up has nowhere to go.
+        if (delta < 0) return;
+        bmBackLit = false;
+        bmSubActive = -1;
+      }
       bmSubActive = Math.max(0, Math.min(items.length - 1, bmSubActive + delta));
       paintBm(true);
     }
@@ -6642,6 +6673,7 @@ export class CommitViewProvider
         // run its first item. Only a fresh press acts.
         if (e.repeat) return;
         if (branchSubmenu) {
+          if (bmBackLit) { closeBmSub(); return; }
           if (bmSubActive < 0) { moveBmSub(1); return; }
           const item = bmSubItems()[bmSubActive];
           if (item) item.click();
@@ -6679,6 +6711,7 @@ export class CommitViewProvider
     function closeBranchSubmenu() {
       if (branchSubmenu) { branchSubmenu.remove(); branchSubmenu = null; }
       bmSubActive = -1;
+      bmBackLit = false;
       // Drilled in: the list comes back, scrolled where it was.
       if (branchMenu && branchMenu.classList.contains("is-drilled")) {
         branchMenu.classList.remove("is-drilled");
@@ -7022,6 +7055,7 @@ export class CommitViewProvider
       if (!branchMenu) return;
       const sub = subMenuFor;
       const keep = subKey !== undefined ? subKey : bmSubActiveKey();
+      const backLit = bmBackLit;
       // Drilled in, the list is hidden: it comes back where it was, under
       // the actions drilled in again below.
       const drillScroll = branchMenu.classList.contains("is-drilled") ? bmDrillScroll : -1;
@@ -7043,6 +7077,8 @@ export class CommitViewProvider
             const i = bmSubItems().findIndex((n) => n.dataset.sub === keep);
             bmSubActive = i >= 0 ? i : 0;
           }
+          // The back row the pointer rests on stays lit, drilled in again.
+          if (backLit && bmBackRow()) { bmBackLit = true; bmSubActive = -1; }
           // The rebuilt submenu starts scrolled to its top; a highlight
           // further down a short view's submenu is brought back into sight.
           paintBm(bmSubActive >= 0);
@@ -7348,9 +7384,19 @@ export class CommitViewProvider
       // from the search box, so the keys keep working after a click.
       menu.addEventListener("mousemove", (e) => {
         if (!bmPointerMoved(e)) return;
-        const item = e.target.closest ? e.target.closest(".bm-subaction") : null;
+        const on = e.target.closest ? e.target : null;
+        // Drilled in, the back row is one of the rows the pointer lights.
+        if (on && on.closest(".bm-subhead") && menu.classList.contains("is-drilled")) {
+          if (bmBackLit) return;
+          bmBackLit = true;
+          bmSubActive = -1;
+          paintBm(false);
+          return;
+        }
+        const item = on ? on.closest(".bm-subaction") : null;
         const i = item ? bmSubItems().indexOf(item) : -1;
-        if (i < 0 || i === bmSubActive) return;
+        if (i < 0 || (i === bmSubActive && !bmBackLit)) return;
+        bmBackLit = false;
         bmSubActive = i;
         paintBm(false);
       });

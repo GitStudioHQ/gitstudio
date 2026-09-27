@@ -21,8 +21,9 @@ import { LOOK_PROBE } from "./litLook";
 //     full; the whole label where it is cut; an explanation where there is one.
 //
 // State table: theme {dark, light, hc-dark, hc-light} × row {top action,
-// branch, current branch, submenu item, submenu danger item, a row menu's
-// item, a row menu's danger item} × how {arrows, pointer}.
+// branch, current branch, submenu item, submenu danger item, the drilled-in
+// back row, a row menu's item, a row menu's danger item} × how {arrows,
+// pointer}.
 
 const LONG = "feature/a-branch-name-long-enough-to-be-cut-in-any-sidebar";
 const STATE = {
@@ -177,7 +178,35 @@ for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
       await p.key("ArrowUp");
       await assertDark(p, what, subItem(label));
     }
-    await p.key("Escape");
+
+    // Drilled in, the back row ('‹ topic') is a row too: the pointer lights
+    // it with the items' own tint — no hover colour of its own, no rule under
+    // it — and the item the arrows had goes dark: one row lit.
+    const back = `document.querySelector(".branch-submenu.is-drilled .bm-subhead")`;
+    assert.ok(await p.eval<boolean>(`!!${back}`), "drilled in at this width");
+    await pointTo(p, subItem("Copy Branch Name"));
+    const item = await look(p, subItem("Copy Branch Name"));
+    await pointTo(p, back);
+    const b = await look(p, back, `${back}.querySelector(".bm-subhead-name")`, `${back}.querySelector(".bm-back")`);
+    assertLit(theme, "the back row", b);
+    assert.equal(b.fill, item.fill, `the back row is lit with the items' tint (${b.fill} / ${item.fill})`);
+    assert.deepEqual(
+      await p.eval<string[]>(`Array.prototype.map.call(document.querySelectorAll(".branch-menu .is-active, .branch-submenu .is-active"), function (n) { return n.textContent.trim(); })`),
+      ["topic"], "the back row is the one row lit",
+    );
+    await assertDark(p, "the item the pointer left for the back row", subItem("Copy Branch Name"));
+    // Down goes into the actions from their top; the back row goes dark.
+    await p.key("ArrowDown");
+    const first = await p.eval<string>(`document.querySelector(".branch-submenu .bm-subaction.is-active").textContent.trim()`);
+    assert.equal(first, await p.eval<string>(`document.querySelector(".branch-submenu .bm-subaction").textContent.trim()`), "Down: the first action");
+    assert.equal(await p.eval<boolean>(`${back}.classList.contains("is-active")`), false, "and the back row is not lit");
+    assert.notEqual((await look(p, back)).fill, b.fill, "nor looks it");
+    // Lit, Enter goes back, as a press on it does.
+    await pointTo(p, `${subItem("Copy Branch Name")}`);
+    await pointTo(p, back);
+    await p.key("Enter");
+    assert.equal(await p.eval<boolean>(`!!document.querySelector(".branch-submenu")`), false, "Enter on the lit back row goes back");
+    assert.equal(await p.eval<string>(`document.querySelector(".bm-list .is-active").dataset.bmkey`), "b:local:topic", "to its branch");
     await p.key("Escape");
 
     // A file row's own menu (right-click): the item the keyboard is on is its highlight.
