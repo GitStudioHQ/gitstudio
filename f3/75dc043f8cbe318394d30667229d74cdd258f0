@@ -1,0 +1,24 @@
+apps/extension/test/worktreesStateTable.test.ts
+  s_26f5e669d3043c::t_06509aabcfd93e 586,590
+apps/extension/src/views/worktreesWebview.ts
+  s_26f5e669d3043c::t_c6db2da9112c69 223,226-227
+  s_26f5e669d3043c::t_536ea5634d2638 165
+  s_26f5e669d3043c::t_bfc141bb7fce24 245
+  s_26f5e669d3043c::t_cb8513a24fccff 549-552
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f375dc043f8cbe318394d30667229d74cdd258f0",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
