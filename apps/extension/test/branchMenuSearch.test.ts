@@ -276,6 +276,23 @@ test("the highlight follows the best match through a repaint — until the arrow
   assert.equal((await highlighted()).key, "b:local:topic");
 });
 
+// A branch and a tag may share a short name. The actions a repaint re-opens
+// belong to the ref they were opened on — found by kind and name, never by
+// the name alone, which is the branch's row first.
+test("a repaint re-opens a ref's actions on its own row when a branch and a tag share its name", { skip }, async () => {
+  const twins = stateMessage({ local: [...LOCAL, { name: "v1" }], remote: REMOTE, tags: ["v1"] });
+  await openMenu(twins);
+  await query("v1");
+  for (let i = 0; i < 10 && (await highlighted()).key !== "b:tag:v1"; i++) await page.key("ArrowDown");
+  assert.equal((await highlighted()).key, "b:tag:v1");
+  await page.key("ArrowRight");
+  assert.equal(await page.eval(`document.querySelector(".branch-submenu .bm-subaction").textContent.trim()`), "Checkout Tag (detached)");
+  await page.send(stateMessage({ local: [...LOCAL.map((b) => (b.name === "feature" ? { ...b, ahead: 9 } : b)), { name: "v1" }], remote: REMOTE, tags: ["v1"] }));
+  assert.equal(await page.eval(`document.querySelector(".branch-submenu .bm-subaction").textContent.trim()`), "Checkout Tag (detached)", "still the tag's actions");
+  await page.key("ArrowLeft");
+  assert.equal((await highlighted()).key, "b:tag:v1", "and Left goes back to the tag, not the branch of the same name");
+});
+
 test("typing leaves an open submenu for good: a host repaint does not bring it back", { skip }, async () => {
   await openMenu();
   await query("featur");

@@ -5978,7 +5978,9 @@ export class CommitViewProvider
         paintBm(true);
       }
       if (sub) {
-        const row = branchMenu.querySelector('.bm-branch[data-bname="' + (window.CSS && CSS.escape ? CSS.escape(sub.name) : sub.name) + '"]');
+        // By kind and name: a branch and a tag can share a short name, and
+        // the name alone finds the branch's row first.
+        const row = bmRowByKey("b:" + sub.kind + ":" + sub.name);
         if (row) {
           openBranchActions(sub.name, sub.kind, sub.current, row);
           bmSubActive = subActive;
