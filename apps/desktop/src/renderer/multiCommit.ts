@@ -100,12 +100,13 @@ async function applyManyFlow(verb: "cherry-pick" | "revert", shas: string[], d: 
   if (res.cancelled) return "cancelled"; // Cancel on "changes in the way": nothing ran
   if (res.ok) {
     const text = applyManyMessage(verb, n, "done");
-    const { before, after } = res;
+    const { before, after, branch } = res;
     if (before && after) {
       d.undoable(text, {
         label: verb === "cherry-pick" ? `Take the ${n} picked commits back off` : `Take the ${n} revert commits back off`,
         undo: async () => {
-          const back = await d.undo({ before, after, what: verb });
+          // The branch it ran on goes back — not whichever HEAD is on by then.
+          const back = await d.undo({ before, after, what: verb, ...(branch !== undefined ? { branch } : {}) });
           if (back.ok) return undefined;
           const why = back.message ?? "Couldn't put the branch back.";
           return back.expected ? { info: why } : why;

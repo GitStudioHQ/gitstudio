@@ -755,13 +755,18 @@ cell({
 
 // ══ Drop N / Squash N (#32) — the renderer's own several-commit flow ════════
 
-async function manyLikeRenderer(f: Fx, action: "drop-many" | "squash-many", targets: string[]): Promise<Undoable | undefined> {
+async function manyLikeRenderer(
+  f: Fx,
+  action: "drop-many" | "squash-many" | "cherry-pick-many" | "revert-many",
+  targets: string[],
+): Promise<Undoable | undefined> {
   let offered: Undoable | undefined;
   const result = await runManyAction(action, targets.map((t) => sha(f, t)), {
     plan: (req) => f.rebase.commitsPlan(req),
     rewrite: (req) => f.rebase.commitsRewrite(req),
     undo: (req) => f.rebase.commitsUndo(req),
-    apply: async () => ({ ok: false, changed: false, message: "not in this table" }),
+    // commit:action, as bridge.ts sends it when nothing is in the way.
+    apply: (req) => f.bridge.commitAction(req),
     confirm: async () => true,
     choose: async () => "cancel",
     message: async (o) => o.value,
@@ -798,6 +803,50 @@ for (const [id, action, verb] of [
       assert.equal(sha(f, "refs/heads/topic"), f.memo.rewritten, "topic — made after the rewrite — is untouched");
       const mainBack = sha(f, "refs/heads/main") === f.memo.C;
       const refused = !mainBack && sha(f, "refs/heads/main") === f.memo.rewritten;
+      assert.ok(mainBack || refused, "main is back, or nothing moved");
+    },
+  });
+}
+
+// Cherry-pick N and Revert N: one git command over the commits (commit:action
+// with `shas`), then the same commits:undo as Drop N — so the same trap: HEAD's
+// commit alone can't say which branch ran it, and a branch made and checked out
+// at the new tip since shares it.
+for (const [id, action, verb] of [
+  ["D15d", "cherry-pick-many", "Cherry-pick"],
+  ["D15e", "revert-many", "Revert"],
+] as const) {
+  cell({
+    id,
+    operation: `${verb} 2 commits (graph menu for a selection), then 'Create branch here' + switch (topic at the new tip)`,
+    state:
+      action === "cherry-pick-many"
+        ? "on main (base); side has A, B; after the pick the user makes and checks out topic at HEAD; Undo"
+        : "on main (base, A, B, C); after the revert the user makes and checks out topic at HEAD; Undo",
+    expected: "main back where it was; topic untouched (or Undo refuses)",
+    setup: (f) => {
+      if (action === "cherry-pick-many") {
+        f.git("checkout", "-q", "-b", "side");
+        f.memo.A = f.commit("A", "a.txt");
+        f.memo.B = f.commit("B", "b.txt");
+        f.git("checkout", "-q", "main");
+      } else {
+        abc(f);
+        f.memo.A = sha(f, "main~2");
+      }
+      f.memo.mainBefore = sha(f, "main");
+    },
+    op: (f) => manyLikeRenderer(f, action, action === "cherry-pick-many" ? ["side", "side~1"] : ["main~1", "main~2"]),
+    between: (f) => {
+      f.memo.applied = sha(f, "main");
+      f.git("checkout", "-q", "-b", "topic");
+    },
+    expect: (f, _s, { row }) => {
+      row.extra = { topicAfterUndo: subjectOf(f, sha(f, "topic")), mainAfterUndo: subjectOf(f, sha(f, "main")) };
+      assert.notEqual(f.memo.applied, f.memo.mainBefore, "the op moved main");
+      assert.equal(sha(f, "refs/heads/topic"), f.memo.applied, "topic — made after the op — is untouched");
+      const mainBack = sha(f, "refs/heads/main") === f.memo.mainBefore;
+      const refused = !mainBack && sha(f, "refs/heads/main") === f.memo.applied;
       assert.ok(mainBack || refused, "main is back, or nothing moved");
     },
   });

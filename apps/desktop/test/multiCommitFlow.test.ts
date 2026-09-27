@@ -101,7 +101,7 @@ function deps(script: {
     apply: async (req) => {
       log.events.push("apply");
       log.applies.push(req);
-      return script.apply ?? { ok: true, changed: true, before: HEAD, after: NEW };
+      return script.apply ?? { ok: true, changed: true, before: HEAD, after: NEW, branch: "refs/heads/main" };
     },
     confirm: async (o) => {
       log.events.push("confirm");
@@ -251,14 +251,20 @@ test("squash N with a branch on a squashed commit asks whether it comes along, a
 
 // Cherry-pick N / Revert N ──────────────────────────────────────────────────
 
-test("cherry-pick N: one commit:action with every sha, no question, Undo with the two tips", async () => {
+test("cherry-pick N: one commit:action with every sha, no question, Undo with the two tips and the branch it ran on", async () => {
   const { d, log } = deps();
   assert.equal(await runManyAction("cherry-pick-many", [B, A], d), "done");
   assert.deepEqual(log.events, ["apply", "undoable", "refresh"]);
   assert.deepEqual(log.applies[0], { action: "cherry-pick", sha: B, shas: [B, A] });
   assert.equal(log.undoables[0].message, "Cherry-picked 2 commits.");
   await log.undoables[0].action.undo();
-  assert.deepEqual(log.undos[0], { before: HEAD, after: NEW, what: "cherry-pick" });
+  // THAT branch goes back, not whichever HEAD is on by the time of the Undo.
+  assert.deepEqual(log.undos[0], { before: HEAD, after: NEW, what: "cherry-pick", branch: "refs/heads/main" });
+  // Run on a detached HEAD: null says so, and main refuses the Undo once HEAD is on a branch.
+  const detached = deps({ apply: { ok: true, changed: true, before: HEAD, after: NEW, branch: null } });
+  assert.equal(await runManyAction("revert-many", [B, A], detached.d), "done");
+  await detached.log.undoables[0].action.undo();
+  assert.deepEqual(detached.log.undos[0], { before: HEAD, after: NEW, what: "revert", branch: null });
 });
 
 test("revert N asks first, as one-commit Revert does in this app", async () => {

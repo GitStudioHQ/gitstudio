@@ -204,7 +204,7 @@ async function sideRepo(w: W): Promise<{ a: string; b: string; c: string }> {
   return { a, b, c };
 }
 
-test("cherry-pick N: oldest first in one run, and the two tips its Undo moves between", async () => {
+test("cherry-pick N: oldest first in one run, and the two tips and the branch its Undo moves between", async () => {
   const w = await workspace();
   try {
     const { a, b, c } = await sideRepo(w);
@@ -214,7 +214,8 @@ test("cherry-pick N: oldest first in one run, and the two tips its Undo moves be
     assert.deepEqual(w.subjects().slice(0, 3), ["C", "B", "A"]);
     assert.equal(r.before, before);
     assert.equal(r.after, w.git("rev-parse", "HEAD"));
-    const back = await w.rebase.commitsUndo({ before: r.before!, after: r.after!, what: "cherry-pick" });
+    assert.equal(r.branch, "refs/heads/main", "the branch it moved, by full name, for its Undo");
+    const back = await w.rebase.commitsUndo({ before: r.before!, after: r.after!, what: "cherry-pick", branch: r.branch });
     assert.equal(back.ok, true);
     assert.equal(w.git("rev-parse", "HEAD"), before);
   } finally {

@@ -450,6 +450,12 @@ export interface CommitActionResult {
   before?: string;
   after?: string;
   /**
+   * With `before`/`after`: the branch the run moved, by full name (null: HEAD
+   * was detached). Its Undo (commits:undo) puts THAT branch back, never
+   * whichever branch HEAD is on by then.
+   */
+  branch?: string | null;
+  /**
    * A cherry-pick or revert of several commits that git stopped part-way for
    * the user — a conflict, an emptied commit — with the operation left open
    * for Changes' Continue / Skip / Abort. (A pull's stop is PullActionResult's
@@ -2197,8 +2203,9 @@ export interface CommitsUndoRequest {
   after: string;
   /** Names it in the refusal's words: "since the squash". */
   what: "drop" | "squash" | "cherry-pick" | "revert";
-  /** The branch a drop or squash rewrote (refs/heads/…), null when HEAD was
-   *  detached: that branch goes back, not whichever HEAD is on by then. */
+  /** The branch a drop, squash, cherry-pick or revert moved (refs/heads/…),
+   *  null when HEAD was detached: that branch goes back, not whichever HEAD
+   *  is on by then. */
   branch?: string | null;
   /** The branches a drop or squash carried: they go back too. */
   carried?: CarriedBranchWire[];

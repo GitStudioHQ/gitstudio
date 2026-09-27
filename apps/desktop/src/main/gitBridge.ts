@@ -42,6 +42,7 @@ import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import { stoppedIn } from "@gitstudio/git-service/stoppedOperation";
 import { applyManyArgs, mergesAmong, orderCommits } from "@gitstudio/git-service/multiCommit";
+import { headBranch } from "@gitstudio/git-service/refRestore";
 import { applyManyMessage } from "@gitstudio/engine/rebase/many";
 import { selectedCommits } from "@gitstudio/host-bridge/graphSelection";
 import {
@@ -3185,6 +3186,10 @@ export class GitBridge {
         const head = async (): Promise<string> =>
           (await ctx.process.run(["rev-parse", "--verify", "--quiet", "HEAD"])).stdout.trim();
         const before = await head();
+        // The branch the run moves, by full name (null: HEAD detached) — its
+        // Undo puts THAT branch back, not whichever HEAD is on by then: a
+        // branch made and checked out at the new tip shares HEAD's commit.
+        const branch = await headBranch(ctx.process);
         const op: ApplyOp = { kind: verb, commit: ordered[0], commits: ordered, args: applyManyArgs(verb, ordered) };
         const applied = await applyForDoor(ctx, op, req.stashFirst);
         if ("answer" in applied) return applied.answer;
@@ -3192,7 +3197,7 @@ export class GitBridge {
         const { code, stdout, stderr } = applied.result;
         if (code === 0) {
           const after = await head();
-          return { ok: true, changed: true, ...(before && after ? { before, after } : {}), ...withNote };
+          return { ok: true, changed: true, ...(before && after ? { before, after, branch } : {}), ...withNote };
         }
         const stop = await stoppedIn(ctx.process);
         if (stop?.operation === verb) {
