@@ -150,6 +150,7 @@ export function toPullRequest(item: PrListItem): PullRequest {
     requestedReviewers: item.reviewRequests
       .filter((r): r is { login: string; avatarUrl?: string | null } => typeof r.login === "string")
       .map((r) => ({ login: r.login, avatarUrl: r.avatarUrl ?? null, htmlUrl: `https://github.com/${r.login}` })),
+    maintainerCanModify: item.maintainerCanModify,
   };
 }
 
@@ -177,7 +178,7 @@ export function itemFromPullRequest(pr: PullRequest): PrListItem {
     baseRef: pr.base.ref,
     baseSha: pr.base.sha,
     isFork: !!headRepo && headRepo.toLowerCase() !== repository.toLowerCase(),
-    maintainerCanModify: false,
+    maintainerCanModify: pr.maintainerCanModify ?? false,
     labels: pr.labels.map((l) => ({ name: l.name, color: l.color })),
     assignees: [],
     reviewRequests: pr.requestedReviewers.map((u) => ({ login: u.login, avatarUrl: u.avatarUrl })),

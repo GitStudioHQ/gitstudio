@@ -801,6 +801,12 @@ export class ReviewController implements vscode.Disposable {
     this.login ??= (await this.api.currentLogin())?.login ?? this.auth.accountLabel();
   }
 
+  /** Who is signed in to GitHub, read once. */
+  async viewerLogin(): Promise<string | undefined> {
+    await this.signedInLogin().catch(() => undefined);
+    return this.login;
+  }
+
   dispose(): void {
     for (const r of this.reviews.values()) for (const t of r.threads.keys()) t.dispose();
     for (const g of this.github.values()) g.thread.dispose();

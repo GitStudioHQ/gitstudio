@@ -158,6 +158,7 @@ export function restPullOf(d: PrDetail, repo: string): PullRequest {
     requestedReviewers: d.reviewers
       .filter((r) => r.requested && r.login)
       .map((r) => ({ login: r.login!, avatarUrl: r.avatarUrl ?? null, htmlUrl: `https://github.com/${r.login}` })),
+    maintainerCanModify: d.maintainerCanModify,
     additions: d.additions,
     deletions: d.deletions,
     changedFiles: d.changedFiles,

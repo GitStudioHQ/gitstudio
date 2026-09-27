@@ -39,6 +39,11 @@ export interface PullRequest {
   base: PrRef;
   labels: PrLabel[];
   requestedReviewers: GitHubUser[];
+  /**
+   * A fork's author lets the base repository's maintainers push to its
+   * branch. (False for a same-repository branch, where it doesn't apply.)
+   */
+  maintainerCanModify?: boolean;
   /** Total additions/deletions/changed files, present on the detail response. */
   additions?: number;
   deletions?: number;
@@ -827,6 +832,7 @@ interface RawPull {
   base: RawRef;
   labels?: { name: string; color: string }[];
   requested_reviewers?: RawUser[];
+  maintainer_can_modify?: boolean;
   additions?: number;
   deletions?: number;
   changed_files?: number;
@@ -917,6 +923,7 @@ function mapPull(p: RawPull): PullRequest {
     requestedReviewers: (p.requested_reviewers ?? [])
       .map(mapUser)
       .filter((u): u is GitHubUser => u !== undefined),
+    maintainerCanModify: p.maintainer_can_modify === true,
     additions: p.additions,
     deletions: p.deletions,
     changedFiles: p.changed_files,
