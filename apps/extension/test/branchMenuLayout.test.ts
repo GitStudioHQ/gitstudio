@@ -472,6 +472,45 @@ test("remote branches are grouped by remote — a slash in a remote's name too �
   assert.deepEqual(g.map((x) => x.name), ["origin", "team"]);
 });
 
+// What a screen reader meets: a group's heading named in words ("Remote
+// origin, 56 branches" — from its text it was "REMOTEorigin 56": the
+// remote's name is set off by a margin, not a space), and, drilled in, a
+// back row that is a button saying where it goes, with the actions' list
+// saying which keys go back.
+test("a screen reader hears each group's heading in words, and the drilled-in back row as a way back", { skip }, async () => {
+  type AXNode = { nodeId: string; role?: { value: string }; name?: { value: string }; description?: { value: string }; ignored?: boolean; backendDOMNodeId?: number };
+  const tree = async (p: ChangesPage): Promise<AXNode[]> =>
+    ((await p.page.send("Accessibility.getFullAXTree", {})) as { nodes: AXNode[] }).nodes.filter((n) => !n.ignored);
+  const p = await open("dark", 300, 640);
+  const state = stateMessage({ local: LOCAL, remote: [...REMOTE, "team/eu/x", "team/eu/y"], tags: ["v1.0"] });
+  (state.branches as Record<string, unknown>).remoteNames = ["origin", "upstream", "team/eu"];
+  await openMenu(p, state);
+  // The headings: every button of the branch menu's list that is not a row (a row is an option).
+  const headings = (await tree(p)).filter((n) => n.role?.value === "button" && /^(Local|Remote|Tags|Favorites|Recents)/i.test(n.name?.value ?? "")).map((n) => n.name?.value);
+  assert.deepEqual(headings, ["Local, 4 branches", "Remote origin, 2 branches", "Remote upstream, 1 branch", "Remote team/eu, 2 branches", "Tags, 1 tag"]);
+
+  await query(p, "feature");
+  await p.key("ArrowRight");
+  assert.equal((await placement(p)).mode, "drilled");
+  const nodes = await tree(p);
+  const back = nodes.filter((n) => n.role?.value === "button" && n.name?.value === "Back to the branches");
+  assert.equal(back.length, 1, "the back row is a button named for where it goes");
+  const head = await p.eval<{ role: string | null; tab: number; focusable: boolean }>(`(function () {
+    var h = document.querySelector(".branch-submenu .bm-subhead");
+    return { role: h.getAttribute("role"), tab: h.tabIndex, focusable: h.tabIndex >= 0 };
+  })()`);
+  assert.deepEqual(head, { role: "button", tab: -1, focusable: false }, "no Tab stop: focus stays in the search box");
+  const listbox = nodes.find((n) => n.role?.value === "listbox" && /^Actions for feature/.test(n.name?.value ?? ""));
+  assert.ok(listbox, "the actions' listbox");
+  assert.equal(listbox.description?.value, "Left or Escape goes back to the branches");
+  const hint = await p.eval<{ w: number; h: number }>(`(function () { var r = document.getElementById("bm-back-hint").getBoundingClientRect(); return { w: r.width, h: r.height }; })()`);
+  assert.ok(hint.w <= 1 && hint.h <= 1, `the hint is for a screen reader only: ${JSON.stringify(hint)}`);
+  // Beside the menu there is no back row: the title band is left out.
+  await p.resize(900, 640);
+  assert.equal((await placement(p)).mode, "beside");
+  assert.equal((await tree(p)).filter((n) => n.name?.value === "Back to the branches").length, 0);
+});
+
 test("a row names its upstream by the remote alone when it tracks the same name there — in full when it is gone; counts past 999 read 999+", { skip }, async () => {
   const p = await open("dark", 560, 640);
   const local: LocalBranch[] = [

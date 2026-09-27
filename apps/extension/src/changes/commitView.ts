@@ -3209,6 +3209,8 @@ export class CommitViewProvider
     }
     .branch-submenu.is-drilled .bm-subhead:hover { background: color-mix(in srgb, var(--gs-brand) 24%, transparent); }
     .bm-subhead .bm-back { font-size: 14px; color: var(--gs-fg); }
+    /* Words for a screen reader only: in the page, not on screen. */
+    .bm-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     /* A set star is always shown. An empty one is a control that only the
        row under the pointer or the highlight offers — a column of 200 hollow
        stars read as 200 things to do — drawn then at a control's contrast
@@ -6295,7 +6297,18 @@ export class CommitViewProvider
         head.removeAttribute("aria-hidden");
         head.insertBefore(el("i", "codicon codicon-chevron-left bm-back"), head.firstChild);
         head.title = "Back to the branches (Left or Escape)";
+        // A way back, as a screen reader meets it: a button that says so —
+        // no Tab stop, as nothing in the menu has one — and the actions'
+        // list says the keys that go back.
+        head.setAttribute("role", "button");
+        head.setAttribute("aria-label", "Back to the branches");
+        head.tabIndex = -1;
         head.addEventListener("click", () => closeBmSub());
+        const hint = el("span", "bm-sr");
+        hint.id = "bm-back-hint";
+        hint.textContent = "Left or Escape goes back to the branches";
+        menu.appendChild(hint);
+        list.setAttribute("aria-describedby", "bm-back-hint");
         branchMenu.appendChild(menu);
         branchMenu.classList.add("is-drilled");
         menu.style.visibility = "";
@@ -6536,6 +6549,10 @@ export class CommitViewProvider
         lab.textContent = label;
         if (remote) lab.appendChild(el("span", "bm-sep-remote", esc(remote)));
         head.querySelector(".bm-sep-count").textContent = String(rows.length);
+        // Its name in words: read from the text it would be "REMOTEorigin 56"
+        // (the remote's name is set off by a margin, not a space).
+        const noun = key === "tags" ? (rows.length === 1 ? " tag" : " tags") : rows.length === 1 ? " branch" : " branches";
+        head.setAttribute("aria-label", (remote ? label + " " + remote : label) + ", " + rows.length + noun);
         head.setAttribute("aria-expanded", collapsed ? "false" : "true");
         head.tabIndex = -1; // a click folds it; Tab never leaves the search box
         const body = el("div", "bm-group-body");
