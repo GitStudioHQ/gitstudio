@@ -140,6 +140,7 @@
         {
           "id": "gitstudio.pullRequests",
           "name": "Pull Requests",
+          "type": "webview",
           "initialSize": 1,
           "visibility": "collapsed"
         }
@@ -158,11 +159,6 @@
         "view": "gitstudio.worktrees",
         "when": "gitstudio.hasRepo",
         "contents": "Work on multiple branches at once with linked worktrees.\n[New Worktree](command:gitstudio.worktree.add)"
-      },
-      {
-        "view": "gitstudio.pullRequests",
-        "when": "gitstudio.hasRepo && !gitstudio.github.connected",
-        "contents": "Connect GitHub to review pull requests.\nSign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests without leaving the editor.\n[Sign in to GitHub](command:gitstudio.pr.signIn)"
       }
     ],
     "customEditors": [
@@ -2162,46 +2158,6 @@
           "command": "gitstudio.worktree.forget",
           "when": "view == gitstudio.worktrees && viewItem =~ /^gitstudio\\.worktree\\.missing(\\.locked)?$/",
           "group": "2_worktree@1"
-        },
-        {
-          "command": "gitstudio.pr.checkout",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.pr.openOnGitHub",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "inline@2"
-        },
-        {
-          "command": "gitstudio.pr.checkout",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "1_pr@1"
-        },
-        {
-          "command": "gitstudio.pr.openDescription",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "1_pr@2"
-        },
-        {
-          "command": "gitstudio.pr.startReview",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "1_pr@3"
-        },
-        {
-          "command": "gitstudio.pr.merge",
-          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
-          "group": "1_pr@4"
-        },
-        {
-          "command": "gitstudio.pr.openOnGitHub",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "2_pr@1"
-        },
-        {
-          "command": "gitstudio.pr.copyUrl",
-          "when": "view == gitstudio.pullRequests && viewItem =~ /^gitstudio\\.pr(\\.draft)?$/",
-          "group": "2_pr@2"
         }
       ],
       "comments/commentThread/context": [

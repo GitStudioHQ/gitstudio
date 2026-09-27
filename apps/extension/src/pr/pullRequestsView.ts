@@ -1,246 +1,317 @@
 import * as vscode from "vscode";
+import {
+  fetchFacetOptions,
+  fetchPrListPage,
+  fetchRepoInfo,
+  isCheckedOut,
+  PrListError,
+  type GraphqlFn,
+  type LocalHead,
+  type PrFacetOptions,
+  type PrListItem,
+  type PrRepoInfo,
+} from "@gitstudio/engine/forge/prList";
+import { prKind } from "@gitstudio/engine/forge/pullRequests";
+import type {
+  PrListAction,
+  PrListCounts,
+  PrListFilters,
+  PrListMessage,
+  PrListMessageToHost,
+  PrListState,
+  PrListViewState,
+  PrPerson,
+} from "@gitstudio/host-bridge/prProtocol";
+import type { RepoEntry, RepoManager } from "../git/repoManager";
+import { getNonce } from "../webview/html";
 import { relativeTime } from "../util/relativeTime";
-import type { RepoManager } from "../git/repoManager";
 import type { GitHubAuth } from "./githubAuth";
 import { GitHubApi, GitHubApiError, type PullRequest } from "./githubApi";
-import { ciWords, type CiState } from "@gitstudio/engine/forge/pullRequests";
+import { prListHtml } from "./prListHtml";
+import { contextFor, resolvePrTargets, type PrTarget } from "./prTargets";
 import {
-  resolveGitHubContext,
+  LOOKING_FOR_A_REPOSITORY,
+  listGitHubRemotes,
   whyNoGitHub,
+  type GitHubRemote,
   type GitHubRepoContext,
 } from "./repoContext";
 
-// The Pull Requests tree (gitstudio.pullRequests). It groups the active GitHub
-// repo's open PRs into "Waiting for my review" / "Created by me" / "All open",
-// using the signed-in login. The view's description names the repository;
-// when there is none on GitHub, the view's message says why.
+// The Pull Requests view (gitstudio.pullRequests): a webview view that mounts
+// the shared list (packages/webview-ui/src/pr/prList.ts) and feeds it. It
+// shows one repository's pull requests — a fork's parent by default, with the
+// clone's other GitHub repositories in a switcher — a segment at a time
+// (Open, Merged, Closed, All), searchable and filtered by author, review
+// requested, assignee and label, a page at a time.
 //
-// WHEN IT TALKS TO GITHUB. On the first show, on Refresh, when the active
-// repository (or its GitHub remote) changes, when sign-in changes, when the
-// view comes back into sight with a list older than STALE_MS, and every
+// WHERE THE ROWS COME FROM. One GraphQL request per page (@gitstudio/engine/
+// forge/prList): every row with its checks' rollup and review decision, and
+// on the first page the segments' counts and the signed-in account.
+//
+// WHEN IT TALKS TO GITHUB. On the first show; on Refresh; when a segment,
+// the search or a filter changes; for the next page; when the active
+// repository (or its GitHub remotes) changes; when sign-in changes; when the
+// view comes back into sight with a list older than STALE_MS; and every
 // STALE_MS while it is in sight in a focused window. Never on working-tree
-// churn: the tree used to reload on every RepoManager change — every file
-// save — even while collapsed, at up to ten requests a time.
+// churn: RepoManager fires on every file save, and the old tree reloaded on
+// each one, in sight or not. A change of the checked-out branch re-reads
+// only git (which row is "Checked out"), never GitHub.
+//
+// AN ANSWER BELONGS TO ITS QUESTION. Every request knows the query it was
+// for — repository, target, segment, filters — and paints nothing if the
+// view has moved on by the time it answers: a slow answer for the
+// repository you left used to paint over the one you switched to.
+//
+// ONE-CLICK MUTATIONS PATCH THE LIST: a merge moves the row, a new pull
+// request joins it, with no reload.
 
 const REFRESH_DEBOUNCE_MS = 400;
-/** A list older than this is refreshed when the view is shown again. */
+/** A list older than this is read again when the view is shown, and while it is in sight. */
 const STALE_MS = 2 * 60 * 1000;
+/** Rows per page. */
+export const PR_PAGE = 30;
+/** How many rows a refresh re-reads at most (the rows on screen, up to GitHub's page). */
+const REFRESH_MAX = 100;
 
-type PrTreeNode = GroupNode | PrNode | MessageNode;
-
-type GroupKind = "review" | "mine" | "open";
-
-const GROUP_LABELS: Record<GroupKind, string> = {
-  review: "Waiting for my review",
-  mine: "Created by me",
-  open: "All open",
-};
-
-const GROUP_ICONS: Record<GroupKind, string> = {
-  review: "eye",
-  mine: "account",
-  open: "git-pull-request",
-};
-
-/** A collapsible group header. */
-class GroupNode extends vscode.TreeItem {
-  readonly kind = "group" as const;
-  constructor(
-    readonly group: GroupKind,
-    readonly prs: PullRequest[],
-  ) {
-    super(
-      GROUP_LABELS[group],
-      prs.length > 0
-        ? vscode.TreeItemCollapsibleState.Expanded
-        : vscode.TreeItemCollapsibleState.Collapsed,
-    );
-    this.description = String(prs.length);
-    this.iconPath = new vscode.ThemeIcon(GROUP_ICONS[group]);
-    this.tooltip = `${GROUP_LABELS[group]} — ${prs.length} pull request${
-      prs.length === 1 ? "" : "s"
-    }`;
-    this.contextValue = `gitstudio.prGroup.${group}`;
-  }
+/** A store for the repository the user chose to see, per clone. */
+export interface TargetMemory {
+  get(key: string): string | undefined;
+  update(key: string, value: string | undefined): Thenable<void> | Promise<void> | void;
 }
 
-/**
- * A row's icon once its checks are known: a glyph AND a colour per state.
- * Colour alone — the same PR icon tinted green, red or yellow — is one colour
- * to a red-green colour-blind eye; the glyph says it without hovering.
- */
-const CI_ICONS: Partial<Record<CiState, { icon: string; color: string }>> = {
-  success: { icon: "pass", color: "charts.green" },
-  failure: { icon: "error", color: "charts.red" },
-  pending: { icon: "clock", color: "charts.yellow" },
-};
-
-/** A single pull request row. */
-export class PrNode extends vscode.TreeItem {
-  readonly kind = "pr" as const;
-  constructor(
-    readonly pr: PullRequest,
-    readonly ctx: GitHubRepoContext,
-    ci?: CiState,
-  ) {
-    super(`#${pr.number} ${pr.title}`, vscode.TreeItemCollapsibleState.None);
-
-    const author = pr.user?.login ?? "unknown";
-
-    // The list is sorted by LAST UPDATE, so that is the age the row shows —
-    // and says so. The creation age beside it made a busy old PR look stale.
-    //
-    // The icon is the checks' state — its own glyph, in a themed colour —
-    // drafts included, so the row stays one clean line; until they are known,
-    // or when there are none, it is the PR's icon. A draft says so in words
-    // too, since its draft icon gives way to the checks'. A TreeItem
-    // description is plain text — `$(check)` there showed as those eight
-    // characters — so the checks' words live in the tooltip and the
-    // accessible label.
-    const state = ci ? CI_ICONS[ci] : undefined;
-    this.iconPath = state
-      ? new vscode.ThemeIcon(state.icon, new vscode.ThemeColor(state.color))
-      : new vscode.ThemeIcon(pr.draft ? "git-pull-request-draft" : "git-pull-request");
-    this.description = `${pr.draft ? "Draft · " : ""}${author} · updated ${ago(Date.parse(pr.updatedAt))}`;
-    this.accessibilityInformation = {
-      label: `Pull request ${pr.number}, ${pr.title}${pr.draft ? ", draft" : ""}, by ${author}${
-        ci ? `, ${ciWords(ci).toLowerCase()}` : ""
-      }`,
-    };
-
-    // Drafts get their own context value: GitHub refuses to merge one, so
-    // Merge… is not offered on it.
-    this.contextValue = pr.draft ? "gitstudio.pr.draft" : "gitstudio.pr";
-    this.tooltip = buildTooltip(pr, ci);
-    this.command = {
-      command: "gitstudio.pr.openDescription",
-      title: "Open Description",
-      arguments: [this],
-    };
-  }
-}
-
-/** A leaf row for a message: an error with its way out, or a note. */
-class MessageNode extends vscode.TreeItem {
-  readonly kind = "message" as const;
-  constructor(label: string, icon = "info", command?: vscode.Command) {
-    super(label, vscode.TreeItemCollapsibleState.None);
-    this.iconPath = new vscode.ThemeIcon(icon);
-    this.contextValue = "gitstudio.prMessage";
-    this.tooltip = label;
-    if (command) {
-      this.command = command;
-    }
-  }
-}
-
-/** The CI line of the tooltip, in words (the tooltip renders icons). */
-function ciLine(ci?: CiState): string | undefined {
-  switch (ci) {
-    case "success":
-      return "$(pass) Checks passed";
-    case "failure":
-      return "$(error) Checks failed";
-    case "pending":
-      return "$(clock) Checks running";
-    case "none":
-      return "No checks";
-    default:
-      return undefined;
-  }
-}
-
-function buildTooltip(pr: PullRequest, ci?: CiState): vscode.MarkdownString {
-  const md = new vscode.MarkdownString(undefined, true);
-  md.supportThemeIcons = true;
-  const headIcon = pr.draft
-    ? "$(git-pull-request-draft)"
-    : "$(git-pull-request)";
-  md.appendMarkdown(`${headIcon} **#${pr.number} ${escapeMd(pr.title)}**\n\n`);
-  const author = pr.user?.login;
-  if (author) {
-    md.appendMarkdown(`$(account) ${escapeMd(author)}\n\n`);
-  }
-  if (pr.draft) {
-    md.appendMarkdown(`$(git-pull-request-draft) Draft\n\n`);
-  }
-  const line = ciLine(ci);
-  if (line) {
-    md.appendMarkdown(`${line}\n\n`);
-  }
-  md.appendMarkdown(
-    `Updated ${escapeMd(relativeTime(Date.parse(pr.updatedAt) / 1000))} ago · opened ${escapeMd(
-      relativeTime(Date.parse(pr.createdAt) / 1000),
-    )} ago\n\n`,
-  );
-  // Inside a `code span` backslash escapes render LITERALLY (CommonMark), so
-  // escapeMd would display "release\-1\.x". Backticks are the only character
-  // that can break the span — neutralize just those.
-  const codeSpan = (s: string) => `\`${s.replace(/`/g, "'")}\``;
-  md.appendMarkdown(
-    `$(git-branch) ${codeSpan(pr.base.ref)} ← ${codeSpan(pr.head.label)}\n\n`,
-  );
-  const body = (pr.body ?? "").trim();
-  if (body.length > 0) {
-    const excerpt = body.length > 240 ? `${body.slice(0, 240)}…` : body;
-    md.appendMarkdown(`${escapeMd(excerpt)}\n`);
-  }
-  return md;
-}
-
-function escapeMd(text: string): string {
-  return text.replace(/[\\`*_{}[\]()#+\-.!|>]/g, "\\$&");
-}
-
-interface LoadedData {
-  /** Which repository this list is: the root and its GitHub owner/repo. */
+interface Loaded {
   key: string;
-  ctx: GitHubRepoContext;
-  pulls: PullRequest[];
-  /** More open PRs exist than were read (the page cap stopped the read). */
-  truncated: boolean;
-  /** The signed-in login, when it could be read. */
-  login: string | undefined;
-  ci: Map<number, CiState>;
+  items: PrListItem[];
+  total: number;
+  hasMore: boolean;
+  cursor: string | null;
+  counts?: PrListCounts;
   at: number;
 }
 
-function identity(ctx: GitHubRepoContext): string {
-  return `${ctx.entry.root}|${ctx.owner}/${ctx.repo}`;
+type RepoState =
+  | { kind: "message"; root: string | undefined; discovering: boolean; message: PrListMessage }
+  | { kind: "github"; root: string; sig: string; entry: RepoEntry; remotes: GitHubRemote[]; targets: PrTarget[]; target: PrTarget };
+
+/** The key a list is known by: whose, which segment, which filters. */
+function queryKey(root: string, target: string, segment: PrListState, filters: PrListFilters): string {
+  const f = Object.entries(filters)
+    .filter(([, v]) => typeof v === "string" && v.length > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+  return `${root}|${target.toLowerCase()}|${segment}|${JSON.stringify(f)}`;
 }
 
-export class PullRequestsTreeProvider
-  implements vscode.TreeDataProvider<PrTreeNode>, vscode.Disposable
-{
-  private readonly emitter = new vscode.EventEmitter<PrTreeNode | undefined>();
-  readonly onDidChangeTreeData = this.emitter.event;
+function remoteSig(remotes: readonly GitHubRemote[]): string {
+  return JSON.stringify(remotes.map((r) => [r.name, r.owner.toLowerCase(), r.repo.toLowerCase()]));
+}
 
+/** "just now" / "3 minutes ago", from epoch milliseconds. */
+function ago(ms: number): string {
+  const r = relativeTime(ms / 1000);
+  if (r === "now") return "just now";
+  const m = /^(\d+)(mo|m|h|d|w|y)$/.exec(r);
+  if (!m) return `${r} ago`;
+  const n = Number(m[1]);
+  const unit = { m: "minute", h: "hour", d: "day", w: "week", mo: "month", y: "year" }[m[2] as "m"];
+  return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+}
+
+// ── A row, to the PR commands and back ─────────────────────────────────────
+
+/** A list row as the PR commands take it (the page fetches the rest). */
+export function toPullRequest(item: PrListItem): PullRequest {
+  const [owner] = item.repository.split("/");
+  return {
+    number: item.number,
+    title: item.title,
+    body: null,
+    state: item.state,
+    draft: item.draft,
+    htmlUrl: item.url,
+    user: item.author ? { login: item.author.login, avatarUrl: item.author.avatarUrl, htmlUrl: `https://github.com/${item.author.login}` } : null,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    mergedAt: item.mergedAt,
+    head: {
+      ref: item.headRef,
+      sha: item.headSha,
+      label: `${item.headOwner ?? owner}:${item.headRef}`,
+      repoFullName: item.headRepo,
+      cloneUrl: item.headUrl ? `${item.headUrl}.git` : null,
+    },
+    base: {
+      ref: item.baseRef,
+      sha: item.baseSha,
+      label: `${owner}:${item.baseRef}`,
+      repoFullName: item.repository,
+      cloneUrl: `https://github.com/${item.repository}.git`,
+    },
+    labels: item.labels.map((l) => ({ name: l.name, color: l.color })),
+    requestedReviewers: item.reviewRequests
+      .filter((r): r is { login: string; avatarUrl?: string | null } => typeof r.login === "string")
+      .map((r) => ({ login: r.login, avatarUrl: r.avatarUrl ?? null, htmlUrl: `https://github.com/${r.login}` })),
+  };
+}
+
+/** A pull request we just made, as a row — until GitHub's own row replaces it. */
+export function itemFromPullRequest(pr: PullRequest): PrListItem {
+  const repository = pr.base.repoFullName ?? "";
+  const headRepo = pr.head.repoFullName;
+  return {
+    number: pr.number,
+    title: pr.title,
+    url: pr.htmlUrl,
+    kind: prKind(pr),
+    draft: pr.draft,
+    state: pr.state === "closed" ? "closed" : "open",
+    mergedAt: pr.mergedAt,
+    closedAt: null,
+    createdAt: pr.createdAt,
+    updatedAt: pr.updatedAt,
+    author: pr.user ? { login: pr.user.login, avatarUrl: pr.user.avatarUrl } : null,
+    headRef: pr.head.ref,
+    headSha: pr.head.sha,
+    headOwner: headRepo ? headRepo.split("/")[0] : null,
+    headRepo,
+    headUrl: headRepo ? `https://github.com/${headRepo}` : null,
+    baseRef: pr.base.ref,
+    baseSha: pr.base.sha,
+    isFork: !!headRepo && headRepo.toLowerCase() !== repository.toLowerCase(),
+    maintainerCanModify: false,
+    labels: pr.labels.map((l) => ({ name: l.name, color: l.color })),
+    assignees: [],
+    reviewRequests: pr.requestedReviewers.map((u) => ({ login: u.login, avatarUrl: u.avatarUrl })),
+    ci: { state: "none", total: 0, failed: 0, pending: 0 },
+    comments: 0,
+    repository,
+  };
+}
+
+// ── What the view says when there is nothing to list ─────────────────────────
+
+interface Described {
+  message: string;
+  kind: GitHubApiError["kind"] | PrListError["kind"] | "unknown";
+  status?: number;
+  helpUrl?: string;
+}
+
+function describe(err: unknown): Described {
+  if (err instanceof GitHubApiError) return { message: err.message, kind: err.kind, status: err.status, helpUrl: err.helpUrl };
+  if (err instanceof PrListError) return { message: err.message, kind: err.kind };
+  return { message: "GitHub didn't answer.", kind: "unknown" };
+}
+
+/** A first load that failed: why, and the one thing that can put it right. */
+export function failureMessage(err: Described, repo: string): PrListMessage {
+  const retry = { label: "Retry", icon: "refresh", action: { kind: "retry" } as PrListAction };
+  if (err.kind === "auth" && err.status === 401) {
+    // Signing in helps only as a NEW sign-in: VS Code hands the refused
+    // session straight back to a plain request for one.
+    return {
+      icon: "warning",
+      tone: "warning",
+      title: "Your GitHub session expired",
+      detail: `Sign in again to see ${repo}'s pull requests.`,
+      buttons: [{ label: "Sign in Again", icon: "sign-in", primary: true, action: { kind: "signIn", again: true } }],
+    };
+  }
+  if (err.kind === "auth" || err.kind === "forbidden") {
+    // Signed in, and refused: a permission, an organization's SSO. GitHub's
+    // page for it, where it names one — a new sign-in would not change it.
+    return {
+      icon: "warning",
+      tone: "warning",
+      title: `GitHub refused to list ${repo}'s pull requests`,
+      detail: err.message,
+      buttons: [
+        err.helpUrl
+          ? {
+              label: "Authorize on GitHub",
+              icon: "link-external",
+              primary: true,
+              action: { kind: "openUrl", url: err.helpUrl },
+              title: "Open GitHub's page that authorizes this sign-in for the organization",
+            }
+          : { label: "Open on GitHub", icon: "link-external", primary: true, action: { kind: "openUrl", url: `https://github.com/${repo}/pulls` } },
+        retry,
+      ],
+    };
+  }
+  if (err.kind === "not-found") {
+    return {
+      icon: "warning",
+      tone: "warning",
+      title: `GitHub has no repository ${repo}`,
+      detail: "Or this GitHub sign-in can't see it: a private repository needs an account with access to it.",
+      buttons: [
+        { label: "Sign in Again", icon: "sign-in", action: { kind: "signIn", again: true }, title: "Sign in to GitHub, with another account if need be" },
+        retry,
+      ],
+    };
+  }
+  if (err.kind === "rate-limit") {
+    return { icon: "clock", tone: "warning", title: "GitHub's rate limit was reached", detail: err.message, buttons: [retry] };
+  }
+  if (err.kind === "network") {
+    return { icon: "error", tone: "error", title: "Couldn't reach GitHub", detail: "Check your network connection.", buttons: [{ ...retry, primary: true }] };
+  }
+  return { icon: "error", tone: "error", title: "Couldn't load pull requests", detail: err.message, buttons: [{ ...retry, primary: true }] };
+}
+
+export const SIGNED_OUT: PrListMessage = {
+  icon: "github",
+  tone: "info",
+  title: "Sign in to GitHub to see pull requests",
+  detail: "GitStudio uses VS Code's GitHub account — no token to paste. Then list, check out, review, merge and create pull requests here.",
+  buttons: [{ label: "Sign in to GitHub", icon: "sign-in", primary: true, action: { kind: "signIn" } }],
+};
+
+// ── The view ─────────────────────────────────────────────────────────────────
+
+export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
+  static readonly viewId = "gitstudio.pullRequests";
+
+  private view: vscode.WebviewView | undefined;
+  private pageReady = false;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly viewDisposables: vscode.Disposable[] = [];
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly pollTimer: ReturnType<typeof setInterval>;
-
   private readonly api: GitHubApi;
-  private data: LoadedData | undefined;
-  private lastError: LoadError | undefined;
-  /** The login, read once per sign-in (GET /user was re-sent on every load). */
-  private login: string | undefined;
-  private view: vscode.TreeView<PrTreeNode> | undefined;
-  /**
-   * What the view last drew for: the repository root, and its GitHub
-   * identity (undefined when it has none). The rows, an error row or the
-   * view's message all belong to it.
-   */
-  private shown: { root: string | undefined; key: string | undefined; discovering?: true } | undefined;
+  private readonly graphql: GraphqlFn;
+
+  private seq = 0;
+  private segment: PrListState = "open";
+  private filters: PrListFilters = {};
+  private repo: RepoState | undefined;
+  /** Resolving the repository (its remotes, a fork's parent) is under way. */
+  private resolving: Promise<void> | undefined;
+  private readonly loaded = new Map<string, Loaded>();
+  private current: Loaded | undefined;
+  private status: PrListViewState["status"] = "loading";
+  private message: PrListMessage | undefined;
+  private notice: PrListMessage | undefined;
+  private refreshing = false;
+  private loadingMore = false;
+  private readonly inFlight = new Set<string>();
+  private viewer: PrPerson | undefined;
+  private readonly repoInfo = new Map<string, Promise<PrRepoInfo | undefined>>();
+  private readonly facets = new Map<string, PrFacetOptions>();
+  private facetsLoading = false;
+  private localHead: LocalHead | undefined;
+  private localHeadSig = "";
 
   constructor(
     private readonly repos: RepoManager,
     private readonly auth: GitHubAuth,
+    private readonly extensionUri: vscode.Uri,
+    private readonly memory?: TargetMemory,
     /** How old a list in sight may get before it is read again. */
     private readonly staleMs: number = STALE_MS,
   ) {
     this.api = new GitHubApi({ getToken: (o) => this.auth.getToken(o) });
-    // A list left open in sight would otherwise never change: the reload on
-    // every file save was the only thing that refreshed it.
+    this.graphql = (query, variables) => this.api.graphqlRaw(query, variables);
     // Checked four times per period, so a list is at most a quarter period
     // past stale when it is read again.
     this.pollTimer = setInterval(() => this.poll(), this.staleMs / 4);
@@ -248,36 +319,446 @@ export class PullRequestsTreeProvider
     this.disposables.push(
       this.repos.onDidChange(() => this.scheduleRepoCheck()),
       this.auth.onDidChange(() => {
-        // Another account (or none): what "mine" means, and what can be seen,
+        // Another account (or none): what can be seen, and who "you" is,
         // are different — start over.
-        this.login = undefined;
-        this.data = undefined;
-        this.lastError = undefined;
-        this.redraw();
+        this.viewer = undefined;
+        this.repoInfo.clear();
+        this.facets.clear();
+        this.forget();
+        if (this.visible()) void this.ensure();
       }),
     );
   }
 
-  /** The view this provider fills: its description and message are ours. */
-  attach(view: vscode.TreeView<PrTreeNode>): void {
+  // ── The webview ────────────────────────────────────────────────────────────
+
+  resolveWebviewView(view: vscode.WebviewView): void {
+    for (const d of this.viewDisposables.splice(0)) d.dispose();
     this.view = view;
-    this.disposables.push(
-      view.onDidChangeVisibility((e) => {
-        if (!e.visible) {
-          return;
-        }
-        if (this.data && Date.now() - this.data.at > this.staleMs) {
-          this.refresh();
-        } else {
-          // Hidden, it did not ask whether the GitHub remote changed.
-          void this.checkRepo();
+    this.pageReady = false;
+    view.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist")],
+    };
+    const dist = (...p: string[]) => view.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", ...p)).toString();
+    view.webview.html = prListHtml({
+      cspSource: view.webview.cspSource,
+      nonce: getNonce(),
+      codiconCss: dist("codicons", "codicon.css"),
+      listCss: dist("webview", "pr-list.css"),
+      listJs: dist("webview", "pr-list.js"),
+    });
+    this.viewDisposables.push(
+      view.webview.onDidReceiveMessage((m: PrListMessageToHost) => void this.onMessage(m)),
+      view.onDidChangeVisibility(() => {
+        if (!view.visible) return;
+        if (this.current && Date.now() - this.current.at > this.staleMs) void this.refresh();
+        else void this.checkRepo();
+      }),
+      view.onDidDispose(() => {
+        if (this.view === view) {
+          this.view = undefined;
+          this.pageReady = false;
         }
       }),
     );
+    this.setDescription();
   }
 
   private visible(): boolean {
-    return this.view?.visible ?? true;
+    return this.view?.visible ?? false;
+  }
+
+  private async onMessage(m: PrListMessageToHost): Promise<void> {
+    switch (m.type) {
+      case "ready":
+        this.pageReady = true;
+        this.post();
+        void this.ensure();
+        return;
+      case "segment":
+        if (m.segment !== this.segment && ["open", "merged", "closed", "all"].includes(m.segment)) {
+          this.segment = m.segment;
+          this.showQuery();
+        }
+        return;
+      case "filters": {
+        const next = cleanFilters(m.filters);
+        if (JSON.stringify(next) !== JSON.stringify(cleanFilters(this.filters))) {
+          this.filters = next;
+          this.showQuery();
+        }
+        return;
+      }
+      case "loadMore":
+        return this.loadMore();
+      case "refresh":
+        return this.refresh();
+      case "open":
+      case "checkout":
+      case "startReview":
+      case "merge":
+      case "copyLink": {
+        const it = this.pullRequestFor(m.number);
+        if (!it) return;
+        const command = {
+          open: "gitstudio.pr.openDescription",
+          checkout: "gitstudio.pr.checkout",
+          startReview: "gitstudio.pr.startReview",
+          merge: "gitstudio.pr.merge",
+          copyLink: "gitstudio.pr.copyUrl",
+        }[m.type];
+        await vscode.commands.executeCommand(command, it);
+        if (m.type === "checkout") void this.readLocalHead(true);
+        return;
+      }
+      case "openOnGitHub": {
+        const it = this.pullRequestFor(m.number);
+        if (it && /^https:\/\/github\.com\//.test(it.pr.htmlUrl)) void vscode.env.openExternal(vscode.Uri.parse(it.pr.htmlUrl));
+        return;
+      }
+      case "target":
+        return this.chooseTarget(m.id);
+      case "facetOptions":
+        return this.loadFacets();
+      case "action":
+        return this.runAction(m.action);
+    }
+  }
+
+  private async runAction(a: PrListAction): Promise<void> {
+    switch (a.kind) {
+      case "signIn":
+        await vscode.commands.executeCommand("gitstudio.pr.signIn", a.again ? { again: true } : undefined);
+        return;
+      case "retry":
+        if (this.current) return this.refresh();
+        this.forget();
+        return this.ensure();
+      case "loadMore":
+        this.notice = undefined;
+        return this.loadMore();
+      case "openUrl":
+        if (/^https:\/\/github\.com\//.test(a.url)) void vscode.env.openExternal(vscode.Uri.parse(a.url));
+        return;
+      case "createPr":
+        await vscode.commands.executeCommand("gitstudio.pr.create");
+        return;
+      case "clearFilters":
+        this.filters = {};
+        this.showQuery();
+        return;
+      case "switchRepository":
+        await vscode.commands.executeCommand("gitstudio.switchRepository");
+        return;
+    }
+  }
+
+  // ── What is shown ──────────────────────────────────────────────────────────
+
+  private queryKeyNow(): string | undefined {
+    const r = this.repo;
+    return r?.kind === "github" ? queryKey(r.root, r.target.id, this.segment, this.filters) : undefined;
+  }
+
+  /** The repository the list shows, as the PR commands act in it — undefined until it knows. */
+  contextNow(): GitHubRepoContext | undefined {
+    const r = this.repo;
+    return r?.kind === "github" && this.repos.getActive()?.root === r.root ? contextFor(r.target, r.entry) : undefined;
+  }
+
+  /** A row of the list on screen, with the context its commands act in. */
+  pullRequestFor(n: number): { pr: PullRequest; ctx: GitHubRepoContext } | undefined {
+    const r = this.repo;
+    const item = this.current?.items.find((i) => i.number === n);
+    if (r?.kind !== "github" || !item) return undefined;
+    return { pr: toPullRequest(item), ctx: contextFor(r.target, r.entry) };
+  }
+
+  /** The state the page is sent. */
+  viewState(): PrListViewState {
+    const r = this.repo;
+    const facets = r?.kind === "github" ? this.facets.get(r.target.id.toLowerCase()) : undefined;
+    const cur = this.current;
+    const status: PrListViewState["status"] = r === undefined ? "loading" : r.kind === "message" ? "message" : this.status;
+    const message = r?.kind === "message" ? r.message : status === "message" ? this.message : undefined;
+    return {
+      seq: this.seq,
+      status,
+      ...(message ? { message } : {}),
+      ...(this.notice && status === "list" ? { notice: this.notice } : {}),
+      targets: r?.kind === "github" ? r.targets.map((t) => ({ id: t.id, owner: t.owner, repo: t.repo, detail: t.detail })) : [],
+      ...(r?.kind === "github" ? { target: r.target.id } : {}),
+      ...(this.viewer ? { viewer: this.viewer } : {}),
+      segment: this.segment,
+      filters: { ...this.filters },
+      ...(status === "list" && cur?.counts ? { counts: cur.counts } : {}),
+      rows: (status === "list" ? (cur?.items ?? []) : []).map((i) => ({ ...i, checkedOut: isCheckedOut(i, this.localHead) })),
+      total: status === "list" ? (cur?.total ?? 0) : 0,
+      hasMore: status === "list" && !!cur?.hasMore,
+      loadingMore: this.loadingMore,
+      refreshing: this.refreshing,
+      ...(facets ? { facetOptions: facets } : {}),
+      ...(this.facetsLoading ? { facetOptionsLoading: true } : {}),
+      now: Date.now(),
+    };
+  }
+
+  private post(): void {
+    this.setDescription();
+    if (!this.view || !this.pageReady) return;
+    this.seq++;
+    void this.view.webview.postMessage({ type: "state", state: this.viewState() });
+  }
+
+  private setDescription(): void {
+    if (!this.view) return;
+    this.view.description = this.repo?.kind === "github" ? this.repo.target.id : undefined;
+  }
+
+  // ── Which repository ───────────────────────────────────────────────────────
+
+  /** Resolve the repository (once), then read what is not read yet. */
+  private async ensure(): Promise<void> {
+    if (!this.repo) {
+      if (!this.resolving) {
+        this.resolving = this.resolveRepo().finally(() => {
+          this.resolving = undefined;
+        });
+      }
+      await this.resolving;
+    }
+    const r = this.repo;
+    if (r?.kind !== "github") {
+      this.post();
+      return;
+    }
+    if (!this.current || this.current.key !== this.queryKeyNow()) this.showQuery();
+  }
+
+  private async resolveRepo(): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      const discovering = !!this.repos.isDiscovering?.();
+      this.repo = {
+        kind: "message",
+        root: undefined,
+        discovering,
+        message: {
+          icon: "repo",
+          tone: "info",
+          title: discovering ? LOOKING_FOR_A_REPOSITORY : "Open a Git repository to see its pull requests.",
+          buttons: [],
+        },
+      };
+      return;
+    }
+    const remotes = await listGitHubRemotes(entry);
+    if (this.repos.getActive()?.root !== entry.root) return; // another one since; its check resolves it
+    if (remotes.length === 0) {
+      this.repo = { kind: "message", root: entry.root, discovering: false, message: noGitHubMessage(await whyNoGitHub(this.repos)) };
+      return;
+    }
+    if (!(await this.auth.isConnected())) {
+      this.repo = { kind: "message", root: entry.root, discovering: false, message: SIGNED_OUT };
+      return;
+    }
+    const resolved = await resolvePrTargets(remotes, (owner, repo) => this.infoFor(owner, repo));
+    if (!resolved || this.repos.getActive()?.root !== entry.root) return;
+    const chosen = this.memory?.get(memoryKey(entry.root));
+    const target =
+      resolved.targets.find((t) => !!chosen && t.id.toLowerCase() === chosen.toLowerCase()) ??
+      resolved.targets.find((t) => t.id === resolved.defaultId) ??
+      resolved.targets[0];
+    this.repo = { kind: "github", root: entry.root, sig: remoteSig(remotes), entry, remotes, targets: resolved.targets, target };
+    void this.readLocalHead(false);
+  }
+
+  /** Is `owner/repo` a fork (and of what)? Asked once per session. */
+  private infoFor(owner: string, repo: string): Promise<PrRepoInfo | undefined> {
+    const key = `${owner}/${repo}`.toLowerCase();
+    let p = this.repoInfo.get(key);
+    if (!p) {
+      p = fetchRepoInfo(this.graphql, owner, repo).catch(() => {
+        // Not known now (offline, refused): asked again next time.
+        this.repoInfo.delete(key);
+        return undefined;
+      });
+      this.repoInfo.set(key, p);
+    }
+    return p;
+  }
+
+  private async chooseTarget(id: string): Promise<void> {
+    const r = this.repo;
+    if (r?.kind !== "github") return;
+    const t = r.targets.find((x) => x.id.toLowerCase() === id.toLowerCase());
+    if (!t || t.id === r.target.id) return;
+    await this.memory?.update(memoryKey(r.root), t.id);
+    // Another repository: its labels and people are its own.
+    this.filters = {};
+    this.repo = { ...r, target: t };
+    this.current = undefined;
+    this.notice = undefined;
+    this.showQuery();
+  }
+
+  // ── Reading ────────────────────────────────────────────────────────────────
+
+  /** Show the list for the query now: what is known of it at once, then GitHub's answer. */
+  private showQuery(): void {
+    const key = this.queryKeyNow();
+    if (!key) {
+      this.post();
+      return;
+    }
+    const cached = this.loaded.get(key);
+    this.current = cached;
+    this.notice = undefined;
+    this.message = undefined;
+    this.status = cached ? "list" : "loading";
+    this.loadingMore = false;
+    void this.load();
+  }
+
+  /** Read the first page of the query now — or re-read the rows on screen. */
+  private async load(): Promise<void> {
+    const r = this.repo;
+    const key = this.queryKeyNow();
+    if (r?.kind !== "github" || !key || this.inFlight.has(key)) {
+      this.post();
+      return;
+    }
+    this.inFlight.add(key);
+    const shown = this.current?.key === key ? this.current : undefined;
+    this.refreshing = !!shown;
+    this.post();
+    const first = shown ? Math.min(REFRESH_MAX, Math.max(PR_PAGE, shown.items.length)) : PR_PAGE;
+    try {
+      const page = await fetchPrListPage(this.graphql, {
+        owner: r.target.owner,
+        repo: r.target.repo,
+        state: this.segment,
+        filters: this.filters,
+        first,
+      });
+      if (this.queryKeyNow() !== key) return; // the view moved on: another question's answer
+      const loaded: Loaded = {
+        key,
+        items: page.items,
+        total: page.total,
+        hasMore: page.hasMore,
+        cursor: page.cursor,
+        counts: page.counts ?? shown?.counts,
+        at: Date.now(),
+      };
+      if (page.viewer) this.viewer = page.viewer;
+      this.loaded.set(key, loaded);
+      this.current = loaded;
+      this.status = "list";
+      this.notice = undefined;
+      this.message = undefined;
+    } catch (err) {
+      if (this.queryKeyNow() !== key) return;
+      const d = describe(err);
+      if (shown) {
+        // The rows on screen are still worth reading; say they are old.
+        this.notice = {
+          icon: "warning",
+          tone: "warning",
+          title: `Couldn't refresh: ${d.message}`,
+          detail: `Showing the list as it was ${ago(shown.at)}.`,
+          buttons:
+            d.kind === "auth" && d.status === 401
+              ? [{ label: "Sign in Again", icon: "sign-in", action: { kind: "signIn", again: true } }]
+              : [{ label: "Retry", icon: "refresh", action: { kind: "retry" } }],
+        };
+      } else {
+        this.status = "message";
+        this.message = failureMessage(d, r.target.id);
+      }
+    } finally {
+      this.inFlight.delete(key);
+      if (this.queryKeyNow() === key) {
+        this.refreshing = false;
+        this.post();
+      }
+    }
+  }
+
+  /** The next page of the list on screen. */
+  private async loadMore(): Promise<void> {
+    const r = this.repo;
+    const cur = this.current;
+    const key = this.queryKeyNow();
+    if (r?.kind !== "github" || !cur || cur.key !== key || !cur.hasMore || !cur.cursor || this.loadingMore) return;
+    this.loadingMore = true;
+    this.notice = undefined;
+    this.post();
+    try {
+      const page = await fetchPrListPage(this.graphql, {
+        owner: r.target.owner,
+        repo: r.target.repo,
+        state: this.segment,
+        filters: this.filters,
+        first: PR_PAGE,
+        after: cur.cursor,
+      });
+      if (this.queryKeyNow() !== key || this.current !== cur) return;
+      // Sorted by last update: a row can move to a later page between reads.
+      const seen = new Set(cur.items.map((i) => i.number));
+      cur.items = [...cur.items, ...page.items.filter((i) => !seen.has(i.number))];
+      cur.hasMore = page.hasMore;
+      cur.cursor = page.cursor;
+      if (page.total) cur.total = page.total;
+    } catch (err) {
+      if (this.queryKeyNow() !== key) return;
+      this.notice = {
+        icon: "warning",
+        tone: "warning",
+        title: `Couldn't load more: ${describe(err).message}`,
+        buttons: [{ label: "Try Again", icon: "refresh", action: { kind: "loadMore" } }],
+      };
+    } finally {
+      if (this.queryKeyNow() === key) {
+        this.loadingMore = false;
+        this.post();
+      }
+    }
+  }
+
+  /** Read the list again (Refresh, a sign-in, a stale list in sight). Rows stay while it runs. */
+  async refresh(): Promise<void> {
+    if (!this.repo || this.repo.kind === "message") {
+      this.forget();
+      return this.ensure();
+    }
+    if (!this.current) {
+      this.showQuery();
+      return;
+    }
+    await this.load();
+  }
+
+  private async loadFacets(): Promise<void> {
+    const r = this.repo;
+    if (r?.kind !== "github" || this.facetsLoading) return;
+    const id = r.target.id.toLowerCase();
+    if (this.facets.has(id)) {
+      this.post();
+      return;
+    }
+    this.facetsLoading = true;
+    this.post();
+    try {
+      this.facets.set(id, await fetchFacetOptions(this.graphql, r.target.owner, r.target.repo));
+    } catch {
+      // The menus offer what the rows show, and a login can be typed.
+      this.facets.set(id, { labels: [], people: [], truncated: false });
+    } finally {
+      this.facetsLoading = false;
+      this.post();
+    }
   }
 
   /**
@@ -286,122 +767,22 @@ export class PullRequestsTreeProvider
    * only once the list is stale. Quiet — the rows stay while it runs.
    */
   private poll(): void {
-    if (!this.data || this.revalidating || !this.visible()) {
-      return;
-    }
-    if (vscode.window.state?.focused === false) {
-      return;
-    }
-    if (Date.now() - this.data.at < this.staleMs) {
-      return;
-    }
-    void this.revalidate();
+    if (!this.current || this.refreshing || !this.visible()) return;
+    if (vscode.window.state?.focused === false) return;
+    if (Date.now() - this.current.at < this.staleMs) return;
+    void this.load();
   }
 
-  /** Resolve the current GitHub context, for commands that need owner/repo. */
-  resolveContext(): Promise<GitHubRepoContext | null> {
-    return resolveGitHubContext(this.repos);
-  }
-
-  getApi(): GitHubApi {
-    return this.api;
-  }
-
-  /** Reload from GitHub (the Refresh button, a sign-in). Rows stay while it runs. */
-  refresh(): void {
-    if (this.data) {
-      void vscode.window.withProgress(
-        { location: { viewId: "gitstudio.pullRequests" } },
-        () => this.revalidate(),
-      );
-    } else {
-      this.lastError = undefined;
-      // Nothing loaded yet — let getChildren do the first (lazy) load.
-      this.emitter.fire(undefined);
-    }
-  }
-
-  /** Repaint from what is loaded (no request). */
-  private redraw(): void {
-    this.emitter.fire(undefined);
-  }
-
-  /**
-   * Optimistic row patches for our own one-click mutations — the list is
-   * edited, never reloaded. A merged PR leaves the open list.
-   */
-  removePr(owner: string, repo: string, n: number): void {
-    const d = this.data;
-    if (!d || d.ctx.owner !== owner || d.ctx.repo !== repo) {
-      return;
-    }
-    const before = d.pulls.length;
-    d.pulls = d.pulls.filter((p) => p.number !== n);
-    if (d.pulls.length !== before) {
-      this.redraw();
-    }
-  }
-
-  /** A PR we just created joins the top of the list. */
-  addPr(owner: string, repo: string, pr: PullRequest): void {
-    const d = this.data;
-    if (!d || d.ctx.owner !== owner || d.ctx.repo !== repo) {
-      return;
-    }
-    d.pulls = [pr, ...d.pulls.filter((p) => p.number !== pr.number)];
-    this.redraw();
-  }
-
-  /**
-   * Is the view still drawing for the repository `key`? An answer from GitHub
-   * arrives whenever it arrives: one for a repository the user has switched
-   * away from painted its rows — or its "Couldn't refresh" — over the list of
-   * the repository now on screen.
-   */
-  private showing(key: string): boolean {
-    return this.shown?.key === key;
-  }
-
-  private revalidating = false;
-  private async revalidate(): Promise<void> {
-    if (this.revalidating) {
-      return;
-    }
-    this.revalidating = true;
-    let key: string | undefined;
-    try {
-      const ctx = await resolveGitHubContext(this.repos);
-      if (ctx && (await this.auth.isConnected())) {
-        key = identity(ctx);
-        const data = await this.load(ctx);
-        if (this.showing(key)) {
-          this.data = data;
-          this.lastError = undefined;
-        }
-      } else {
-        this.data = undefined;
-      }
-    } catch (err) {
-      if (key !== undefined && this.showing(key)) {
-        this.lastError = describe(err);
-      }
-    } finally {
-      this.revalidating = false;
-      this.redraw();
-    }
-  }
+  // ── When the repository changes ────────────────────────────────────────────
 
   /**
    * RepoManager fires on EVERY working-tree change. Only a different
-   * repository (or a different GitHub remote on it) matters to this list:
-   * what the view shows — rows, an error, or why there is no list — is
-   * dropped at once (rows of another repository would aim every action at
-   * it), and the new one loads when in sight.
+   * repository (or a different GitHub remote on it) matters to the list:
+   * what the view shows is dropped at once (rows of another repository would
+   * aim every action at it). The branch checked out is re-read from git.
    */
   private scheduleRepoCheck(): void {
-    if (this.refreshTimer !== undefined) {
-      clearTimeout(this.refreshTimer);
-    }
+    if (this.refreshTimer !== undefined) clearTimeout(this.refreshTimer);
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined;
       void this.checkRepo();
@@ -409,242 +790,163 @@ export class PullRequestsTreeProvider
   }
 
   private async checkRepo(): Promise<void> {
-    const shown = this.shown;
-    if (!shown) {
-      return; // nothing drawn since the last change: the next draw resolves it
-    }
-    if (this.repos.getActive()?.root !== shown.root || (shown.discovering && !this.repos.isDiscovering?.())) {
-      this.forget();
+    const r = this.repo;
+    if (!r) {
+      if (this.visible()) void this.ensure();
       return;
     }
-    if (!this.visible()) {
-      return; // hidden: asked again when the view is shown
+    const active = this.repos.getActive();
+    const discovering = !active && !!this.repos.isDiscovering?.();
+    if (active?.root !== r.root || (r.kind === "message" && r.discovering !== discovering)) {
+      this.forget();
+      if (this.visible()) void this.ensure();
+      return;
     }
+    if (!this.visible() || !active) return; // hidden: asked again when shown
     // The same repository: was a GitHub remote added, removed or re-pointed?
     // A read of its remotes on disk — GitHub is not asked.
-    const ctx = await resolveGitHubContext(this.repos);
-    if ((ctx ? identity(ctx) : undefined) !== shown.key) {
+    const remotes = await listGitHubRemotes(active);
+    if ((r.kind === "github" ? r.sig : remoteSig([])) !== remoteSig(remotes)) {
       this.forget();
+      void this.ensure();
+      return;
     }
+    if (r.kind === "github") void this.readLocalHead(true);
   }
 
   /** Drop what the view shows — it is another repository's — and draw again. */
   private forget(): void {
-    this.shown = undefined;
-    this.data = undefined;
-    this.lastError = undefined;
-    this.redraw();
+    this.repo = undefined;
+    this.loaded.clear();
+    this.current = undefined;
+    this.message = undefined;
+    this.notice = undefined;
+    this.status = "loading";
+    this.refreshing = false;
+    this.loadingMore = false;
+    this.filters = {};
+    this.localHead = undefined;
+    this.localHeadSig = "";
+    this.post();
   }
 
-  getTreeItem(element: PrTreeNode): vscode.TreeItem {
-    return element;
+  /** Which branch is checked out, and what it tracks — git only. */
+  private async readLocalHead(repaint: boolean): Promise<void> {
+    const r = this.repo;
+    if (r?.kind !== "github") return;
+    const head = await readLocalHead(r.entry, r.remotes);
+    const now = this.repo;
+    if (now?.kind !== "github" || now.root !== r.root) return;
+    const sig = JSON.stringify(head ?? null);
+    if (sig === this.localHeadSig) return;
+    this.localHeadSig = sig;
+    this.localHead = head;
+    if (repaint || this.current) this.post();
   }
 
-  async getChildren(element?: PrTreeNode): Promise<PrTreeNode[]> {
-    if (element) {
-      if (element.kind === "group" && this.data) {
-        const d = this.data;
-        return element.prs.map((pr) => new PrNode(pr, d.ctx, d.ci.get(pr.number)));
+  // ── Our own mutations, patched in ──────────────────────────────────────────
+
+  /** A PR was merged here: it leaves Open, and reads Merged everywhere else. */
+  markMerged(owner: string, repo: string, n: number): void {
+    const r = this.repo;
+    if (r?.kind !== "github" || r.target.id.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) return;
+    let changed = false;
+    for (const l of this.loaded.values()) {
+      const segment = l.key.split("|")[2] as PrListState;
+      const was = l.items.find((i) => i.number === n);
+      if (!was || was.kind === "merged") continue;
+      if (segment === "open") {
+        l.items = l.items.filter((i) => i.number !== n);
+        l.total = Math.max(0, l.total - 1);
+      } else {
+        l.items = l.items.map((i) =>
+          i.number === n ? { ...i, kind: "merged", state: "closed", mergedAt: i.mergedAt ?? new Date().toISOString() } : i,
+        );
       }
-      return [];
-    }
-
-    // Root: ensure data is loaded.
-    const ctx = await resolveGitHubContext(this.repos);
-    this.shown = {
-      root: ctx?.entry.root ?? this.repos.getActive()?.root,
-      key: ctx ? identity(ctx) : undefined,
-      // "Looking for a repository…" holds only until discovery settles.
-      ...(!ctx && !this.repos.getActive() && this.repos.isDiscovering?.() ? { discovering: true as const } : {}),
-    };
-    if (!ctx) {
-      // Not a GitHub repo (or no active repo): say which, not a blank view.
-      this.data = undefined;
-      this.setHeader(undefined, (await this.auth.isConnected()) ? await whyNoGitHub(this.repos) : undefined);
-      return [];
-    }
-
-    // Connected? A silent check; the connect-prompt (viewsWelcome) handles the
-    // not-connected case so we don't show a noisy error row.
-    if (!(await this.auth.isConnected())) {
-      this.setHeader(undefined, undefined);
-      return [];
-    }
-    this.setHeader(`${ctx.owner}/${ctx.repo}`, undefined);
-
-    if (this.data && this.data.key !== identity(ctx)) {
-      this.data = undefined;
-    }
-    if (!this.data) {
-      // The same rule as revalidate(): answered after a switch, this load is
-      // another repository's and paints nothing — the view has drawn since.
-      const key = identity(ctx);
-      try {
-        const data = await this.load(ctx);
-        if (!this.showing(key)) {
-          return [];
-        }
-        this.data = data;
-        this.lastError = undefined;
-      } catch (err) {
-        if (!this.showing(key)) {
-          return [];
-        }
-        this.lastError = describe(err);
-        return [this.errorRow(this.lastError, ctx)];
+      if (l.counts && (was.kind === "open" || was.kind === "draft")) {
+        l.counts = { ...l.counts, open: Math.max(0, l.counts.open - 1), merged: l.counts.merged + 1 };
       }
+      changed = true;
     }
-
-    const d = this.data;
-    if (this.lastError) {
-      // A refresh failed; the rows below are the last good list. Say so.
-      this.setHeader(
-        `${ctx.owner}/${ctx.repo}`,
-        `Couldn't refresh: ${this.lastError.message} Showing the list as it was ${ago(d.at)}.`,
-      );
-    }
-    const result: PrTreeNode[] = [];
-    if (d.login) {
-      const review = d.pulls.filter(
-        (pr) =>
-          pr.user?.login !== d.login &&
-          pr.requestedReviewers.some((r) => r.login === d.login),
-      );
-      const mine = d.pulls.filter((pr) => pr.user?.login === d.login);
-      if (review.length > 0) {
-        result.push(new GroupNode("review", review));
-      }
-      result.push(new GroupNode("mine", mine));
-    }
-    // Without a login, "Created by me" would be an empty group claiming you
-    // have none — only the list itself is shown.
-    result.push(new GroupNode("open", d.pulls));
-    if (d.truncated) {
-      result.push(
-        new MessageNode(
-          `Showing the ${d.pulls.length} most recently updated open pull requests — there are more on GitHub.`,
-          "info",
-          {
-            command: "vscode.open",
-            title: "Open on GitHub",
-            arguments: [vscode.Uri.parse(`https://github.com/${d.ctx.owner}/${d.ctx.repo}/pulls`)],
-          },
-        ),
-      );
-    }
-    return result;
+    if (changed) this.post();
   }
 
-  private setHeader(description: string | undefined, message: string | undefined): void {
-    if (!this.view) {
-      return;
+  /** A PR we just created joins the top of the lists it belongs to. */
+  addPr(owner: string, repo: string, pr: PullRequest): void {
+    const r = this.repo;
+    if (r?.kind !== "github" || r.target.id.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) return;
+    const item = itemFromPullRequest(pr);
+    const prefix = `${r.root}|${r.target.id.toLowerCase()}|`;
+    for (const l of this.loaded.values()) {
+      const [, , segment, filters] = l.key.split("|");
+      if (!l.key.startsWith(prefix) || filters !== "[]" || (segment !== "open" && segment !== "all")) continue;
+      if (l.items.some((i) => i.number === item.number)) continue;
+      l.items = [item, ...l.items];
+      l.total += 1;
+      if (l.counts) l.counts = { ...l.counts, open: l.counts.open + 1 };
     }
-    this.view.description = description;
-    this.view.message = message;
-  }
-
-  /**
-   * A list that failed to load, and the one thing that can put it right.
-   * Signing in helps only when GitHub refused the SIGN-IN (401) — and then
-   * only as a NEW sign-in: VS Code hands the refused session straight back.
-   * A 403 is a signed-in user refused (a permission, an organization's SSO):
-   * GitHub's page for it, where it names one, else the pull requests there.
-   */
-  private errorRow(err: LoadError, ctx: GitHubRepoContext): MessageNode {
-    if (err.kind === "auth" && err.status === 403) {
-      const url = err.helpUrl ?? `https://github.com/${ctx.owner}/${ctx.repo}/pulls`;
-      return new MessageNode(
-        `${err.message} Click to ${err.helpUrl ? "authorize this sign-in on GitHub" : "open them on GitHub"}.`,
-        "warning",
-        { command: "vscode.open", title: "Open on GitHub", arguments: [vscode.Uri.parse(url)] },
-      );
-    }
-    if (err.kind === "auth") {
-      return new MessageNode(`${err.message} Click to sign in.`, "warning", {
-        command: "gitstudio.pr.signIn",
-        title: "Sign in to GitHub",
-        arguments: [{ again: true }],
-      });
-    }
-    return new MessageNode(`${err.message} Click to retry.`, "warning", {
-      command: "gitstudio.pr.refresh",
-      title: "Retry",
-    });
-  }
-
-  private async load(ctx: GitHubRepoContext): Promise<LoadedData> {
-    // The pulls list and the current login are independent — fetch them together
-    // rather than one after the other (saves a full GitHub round-trip on first
-    // paint). The login is asked once per sign-in.
-    const [pulls, me] = await Promise.all([
-      this.api.listOpenPulls(ctx.owner, ctx.repo),
-      this.login !== undefined ? Promise.resolve(undefined) : this.api.currentLogin(),
-    ]);
-    if (me?.login) {
-      this.login = me.login;
-    }
-    const data: LoadedData = {
-      key: identity(ctx),
-      ctx,
-      pulls: pulls.items,
-      truncated: pulls.truncated,
-      login: this.login,
-      ci: new Map(),
-      at: Date.now(),
-    };
-    // Checks colour every row, fetched off the first-paint path: one GraphQL
-    // request per 50 PRs (statusCheckRollup, which counts check runs AND
-    // statuses), then a repaint.
-    void this.loadCi(data);
-    return data;
-  }
-
-  private async loadCi(data: LoadedData): Promise<void> {
-    try {
-      data.ci = await this.api.ciForPulls(
-        data.ctx.owner,
-        data.ctx.repo,
-        data.pulls.map((p) => p.number),
-      );
-    } catch {
-      return; // rows keep their plain icons
-    }
-    // Only repaint if this data is still the one on screen — a later refresh may
-    // have replaced it, and we must not clobber fresher rows with stale colours.
-    if (this.data === data) {
-      this.redraw();
-    }
+    this.post();
   }
 
   dispose(): void {
-    if (this.refreshTimer !== undefined) {
-      clearTimeout(this.refreshTimer);
-    }
+    if (this.refreshTimer !== undefined) clearTimeout(this.refreshTimer);
     clearInterval(this.pollTimer);
-    for (const d of this.disposables) {
-      d.dispose();
-    }
+    for (const d of [...this.disposables, ...this.viewDisposables]) d.dispose();
     this.disposables.length = 0;
-    this.emitter.dispose();
+    this.viewDisposables.length = 0;
   }
 }
 
-/** "just now" / "3m ago", from epoch milliseconds. */
-function ago(ms: number): string {
-  const r = relativeTime(ms / 1000);
-  return r === "now" ? "just now" : `${r} ago`;
+function memoryKey(root: string): string {
+  return `gitstudio.pr.target:${root}`;
 }
 
-interface LoadError {
-  message: string;
-  kind?: GitHubApiError["kind"];
-  status?: number;
-  helpUrl?: string;
-}
-
-function describe(err: unknown): LoadError {
-  if (err instanceof GitHubApiError) {
-    return { message: err.message, kind: err.kind, status: err.status, helpUrl: err.helpUrl };
+function cleanFilters(f: PrListFilters | undefined): PrListFilters {
+  const out: PrListFilters = {};
+  for (const k of ["text", "author", "reviewRequested", "assignee", "label"] as const) {
+    const v = f?.[k];
+    if (typeof v === "string" && v.trim().length > 0) out[k] = k === "text" ? v : v.trim();
   }
-  return { message: "Couldn't load pull requests from GitHub." };
+  return out;
+}
+
+/** whyNoGitHub's sentences as a message: a short title, and what it read. */
+function noGitHubMessage(why: string): PrListMessage {
+  if (/^None of this repository's remotes is on github\.com/.test(why)) {
+    return { icon: "repo", tone: "info", title: "This repository isn't on GitHub", detail: why, buttons: [] };
+  }
+  if (/^This repository has no remotes/.test(why)) {
+    return {
+      icon: "repo",
+      tone: "info",
+      title: "This repository has no remotes",
+      detail: "Pull requests show here once a remote points at github.com.",
+      buttons: [],
+    };
+  }
+  return { icon: "repo", tone: "info", title: why, buttons: [] };
+}
+
+/** The branch checked out, and what it tracks (its remote, as a GitHub repository). */
+async function readLocalHead(entry: RepoEntry, remotes: readonly GitHubRemote[]): Promise<LocalHead | undefined> {
+  try {
+    const b = await entry.ctx.process.run(["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    if (b.code !== 0) return {};
+    const branch = b.stdout.trim();
+    if (!branch) return {};
+    const up = await entry.ctx.process.run([
+      "for-each-ref",
+      "--format=%(upstream:remotename)%00%(upstream:remoteref)",
+      `refs/heads/${branch}`,
+    ]);
+    const [remote, ref] = (up.code === 0 ? up.stdout.trim() : "").split("\0");
+    const tracked = ref?.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : undefined;
+    const gh = remotes.find((r) => r.name === remote);
+    return {
+      branch,
+      ...(tracked ? { upstream: { branch: tracked, ...(gh ? { repo: `${gh.owner}/${gh.repo}` } : {}) } } : {}),
+    };
+  } catch {
+    return undefined;
+  }
 }

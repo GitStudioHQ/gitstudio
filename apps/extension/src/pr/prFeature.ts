@@ -4,7 +4,7 @@ import type { RepoManager } from "../git/repoManager";
 import type { GitBrain } from "../ai/gitBrain";
 import { GitHubAuth } from "./githubAuth";
 import { GitHubApi, GitHubApiError, type MergeMethod, type PullRequest } from "./githubApi";
-import { PullRequestsTreeProvider, PrNode } from "./pullRequestsView";
+import { PullRequestsViewProvider } from "./pullRequestsView";
 import { PrContentProvider, PR_SCHEME } from "./prContentProvider";
 import { PrDescriptionPanel } from "./prDescriptionPanel";
 import { ReviewController } from "./reviewMode";
@@ -12,15 +12,18 @@ import { checkoutPullRequest } from "./checkoutPr";
 import { createPullRequest } from "./createPr";
 import { resolveGitHubContext, type GitHubRepoContext } from "./repoContext";
 
-// Wires the whole M11 PR feature: GitHub auth + API, the Pull Requests tree, the
-// PR-blob content provider, the description panel, review mode (Comments API),
-// checkout, merge, and create. Everything degrades gracefully: not a GitHub
-// repo or not signed in → the view is empty + the connect-prompt shows, and no
-// command throws.
+// Wires the whole M11 PR feature: GitHub auth + API, the Pull Requests list (a
+// webview view: the shared packages/webview-ui list), the PR-blob content
+// provider, the description panel, review mode (Comments API), checkout,
+// merge, and create. Everything degrades gracefully: not a GitHub repo or
+// not signed in → the list says so and offers what helps, and no command
+// throws.
 //
-// A command's PR argument may arrive as a PrNode (from the tree), as a
-// { pr, ctx } object (from the description panel / review), or be absent (from
-// the command palette) — `resolvePr` normalises all three.
+// A command's PR argument arrives as a { pr, ctx } object (from the list, the
+// description panel, review) or is absent (from the command palette) —
+// `resolvePr` normalises both. The ctx is the repository the list shows:
+// a fork's parent by default, never "whichever repository is active when
+// clicked" (a number is not an identity).
 
 interface PrCommandArg {
   pr?: PullRequest;
@@ -31,20 +34,14 @@ export function registerPrFeature(
   context: vscode.ExtensionContext,
   repos: RepoManager,
   brain: GitBrain,
-): void {
+): { list: PullRequestsViewProvider } {
   const auth = new GitHubAuth();
   const api = new GitHubApi({ getToken: (o) => auth.getToken(o) });
   context.subscriptions.push(auth);
   void auth.refreshConnected();
 
-  const tree = new PullRequestsTreeProvider(repos, auth);
-  context.subscriptions.push(tree);
-  const view = vscode.window.createTreeView("gitstudio.pullRequests", {
-    treeDataProvider: tree,
-    showCollapseAll: true,
-  });
-  tree.attach(view);
-  context.subscriptions.push(view);
+  const list = new PullRequestsViewProvider(repos, auth, context.extensionUri, context.workspaceState);
+  context.subscriptions.push(list, vscode.window.registerWebviewViewProvider(PullRequestsViewProvider.viewId, list));
 
   // PR-blob content provider (base/head file contents for diffs).
   const contentProvider = new PrContentProvider(api);
@@ -60,20 +57,21 @@ export function registerPrFeature(
   context.subscriptions.push(review);
 
   /** Resolve a PR + its GitHub context from any command argument shape. */
+  /** The repository the list shows — a fork's parent — else origin's. */
+  const contextNow = async (): Promise<GitHubRepoContext | undefined> =>
+    list.contextNow() ?? (await resolveGitHubContext(repos)) ?? undefined;
+
   const resolvePr = async (
-    arg: PrNode | PrCommandArg | undefined,
+    arg: PrCommandArg | undefined,
   ): Promise<{ pr: PullRequest; ctx: GitHubRepoContext } | undefined> => {
-    if (arg instanceof PrNode) {
-      return { pr: arg.pr, ctx: arg.ctx };
-    }
     if (arg && arg.pr) {
-      const ctx = arg.ctx ?? (await resolveGitHubContext(repos)) ?? undefined;
+      const ctx = arg.ctx ?? (await contextNow());
       if (ctx) {
         return { pr: arg.pr, ctx };
       }
     }
     // From the palette with no argument: ask the user to pick an open PR.
-    const ctx = await resolveGitHubContext(repos);
+    const ctx = await contextNow();
     if (!ctx) {
       void vscode.window.showInformationMessage(
         "This repository isn't connected to GitHub.",
@@ -126,7 +124,7 @@ export function registerPrFeature(
   context.subscriptions.push(
     // ── Title actions ──────────────────────────────────────────────────────────
     vscode.commands.registerCommand("gitstudio.pr.refresh", () => {
-      tree.refresh();
+      void list.refresh();
     }),
     vscode.commands.registerCommand("gitstudio.pr.signIn", async (arg?: { again?: boolean }) => {
       // `again`: GitHub refused the session there is (the list's 401 row).
@@ -135,7 +133,7 @@ export function registerPrFeature(
         ? await auth.signInAgain("GitHub no longer accepts this sign-in. Sign in again to see pull requests.")
         : await auth.getToken({ interactive: true });
       if (token) {
-        tree.refresh();
+        void list.refresh();
       }
     }),
     vscode.commands.registerCommand("gitstudio.pr.create", () =>
@@ -143,7 +141,7 @@ export function registerPrFeature(
         // The new PR joins the list — a row patch, not a reload.
         const [owner, repo] = (pr.base.repoFullName ?? "").split("/");
         if (owner && repo) {
-          tree.addPr(owner, repo, pr);
+          list.addPr(owner, repo, pr);
         }
       }),
     ),
@@ -151,7 +149,7 @@ export function registerPrFeature(
     // ── Item actions ─────────────────────────────────────────────────────────────
     vscode.commands.registerCommand(
       "gitstudio.pr.openDescription",
-      async (arg?: PrNode | PrCommandArg) => {
+      async (arg?: PrCommandArg) => {
         const resolved = await resolvePr(arg);
         if (resolved) {
           await openDescription(resolved.pr, resolved.ctx);
@@ -160,7 +158,7 @@ export function registerPrFeature(
     ),
     vscode.commands.registerCommand(
       "gitstudio.pr.checkout",
-      async (arg?: PrNode | PrCommandArg) => {
+      async (arg?: PrCommandArg) => {
         const resolved = await resolvePr(arg);
         if (!resolved) {
           return;
@@ -171,7 +169,7 @@ export function registerPrFeature(
     ),
     vscode.commands.registerCommand(
       "gitstudio.pr.startReview",
-      async (arg?: PrNode | PrCommandArg) => {
+      async (arg?: PrCommandArg) => {
         const resolved = await resolvePr(arg);
         if (!resolved) {
           return;
@@ -204,7 +202,7 @@ export function registerPrFeature(
     ),
     vscode.commands.registerCommand(
       "gitstudio.pr.openOnGitHub",
-      async (arg?: PrNode | PrCommandArg) => {
+      async (arg?: PrCommandArg) => {
         const resolved = await resolvePr(arg);
         if (resolved) {
           void vscode.env.openExternal(vscode.Uri.parse(resolved.pr.htmlUrl));
@@ -213,17 +211,17 @@ export function registerPrFeature(
     ),
     vscode.commands.registerCommand(
       "gitstudio.pr.copyUrl",
-      async (arg?: PrNode | PrCommandArg) => {
+      async (arg?: PrCommandArg) => {
         const resolved = await resolvePr(arg);
         if (resolved) {
           await vscode.env.clipboard.writeText(resolved.pr.htmlUrl);
-          void vscode.window.showInformationMessage("PR URL copied.");
+          void vscode.window.showInformationMessage(`Copied the link to pull request #${resolved.pr.number}.`);
         }
       },
     ),
     vscode.commands.registerCommand(
       "gitstudio.pr.merge",
-      async (arg?: PrNode | PrCommandArg) => {
+      async (arg?: PrCommandArg) => {
         const resolved = await resolvePr(arg);
         if (resolved) {
           const { ctx, pr } = resolved;
@@ -231,7 +229,7 @@ export function registerPrFeature(
           if (merged) {
             // Optimistic: the row leaves the open list and an open page flips
             // to Merged at once (then checks with GitHub) — never a reload.
-            tree.removePr(ctx.owner, ctx.repo, pr.number);
+            list.markMerged(ctx.owner, ctx.repo, pr.number);
             PrDescriptionPanel.markMerged(ctx.owner, ctx.repo, pr.number);
           }
           return merged;
@@ -240,6 +238,7 @@ export function registerPrFeature(
       },
     ),
   );
+  return { list };
 }
 
 /** Merge a PR after one question (the method). True when GitHub merged it. */

@@ -167,6 +167,17 @@ async function main() {
     loader: { ".ttf": "dataurl" },
   });
 
+  // The Pull Requests list (the shared webview-ui PullRequestList). Its .css
+  // import emits dist/webview/pr-list.css alongside the bundle; the view
+  // (src/pr/pullRequestsView.ts) links both.
+  const prListCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(webviewUiSrc, "pr/list-main.ts")],
+    outfile: path.resolve(__dirname, "dist/webview/pr-list.js"),
+    platform: "browser",
+    format: "iife",
+  });
+
   const contexts = [
     extensionCtx,
     webviewCtx,
@@ -176,6 +187,7 @@ async function main() {
     rebaseCtx,
     rebasePlanCtx,
     conflictsCtx,
+    prListCtx,
   ];
 
   if (watch) {

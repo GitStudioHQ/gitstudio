@@ -34,14 +34,14 @@ export interface FakeGitHub {
   /** Requests whose path matches, e.g. count(/\/pulls\?/). */
   count(re: RegExp): number;
   routes: Route[];
-  /** Hold every request whose path matches `re` until released. */
-  hold(re: RegExp): Hold;
+  /** Hold every request whose path matches `re` (or that `re` accepts) until released. */
+  hold(re: RegExp | ((req: FakeRequest) => boolean)): Hold;
   restore(): void;
 }
 
 export function installFakeGitHub(routes: Route[]): FakeGitHub {
   const original = globalThis.fetch;
-  const holds: { re: RegExp; waiting: (() => void)[]; on: boolean }[] = [];
+  const holds: { re: RegExp | ((req: FakeRequest) => boolean); waiting: (() => void)[]; on: boolean }[] = [];
   const fake: FakeGitHub = {
     requests: [],
     routes,
@@ -66,11 +66,6 @@ export function installFakeGitHub(routes: Route[]): FakeGitHub {
     if (url.host !== "api.github.com") throw new Error(`the fake GitHub was asked for ${url.href}`);
     const method = (init?.method ?? "GET").toUpperCase();
     const path = url.pathname + url.search;
-    for (const h of holds) {
-      if (h.on && h.re.test(path)) {
-        await new Promise<void>((go) => h.waiting.push(go));
-      }
-    }
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries((init?.headers ?? {}) as Record<string, string>)) headers[k.toLowerCase()] = v;
     const req: FakeRequest = {
@@ -79,6 +74,11 @@ export function installFakeGitHub(routes: Route[]): FakeGitHub {
       body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
       headers,
     };
+    for (const h of holds) {
+      if (h.on && (typeof h.re === "function" ? h.re(req) : h.re.test(path))) {
+        await new Promise<void>((go) => h.waiting.push(go));
+      }
+    }
     fake.requests.push(req);
     for (const [m, re, reply] of fake.routes) {
       if (m !== method) continue;
@@ -118,6 +118,188 @@ export function rawPull(n: number, over: Record<string, unknown> = {}): Record<s
     labels: [],
     requested_reviewers: [],
     ...over,
+  };
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- GitHub JSON, built field by field */
+// ── GraphQL: the Pull Requests list's questions, answered from REST fixtures ──
+
+/** One repository, as the fake GraphQL endpoint knows it. */
+export interface FakeRepo {
+  /** Its pull requests, in the REST shape (rawPull). */
+  pulls: () => Record<string, unknown>[];
+  /** statusCheckRollup.state per PR number (absent: no checks). */
+  ci?: Record<number, string>;
+  /** reviewDecision per PR number. */
+  review?: Record<number, string>;
+  isFork?: boolean;
+  parent?: string;
+  labels?: { name: string; color: string }[];
+  people?: string[];
+}
+
+const gqlState = (p: Record<string, any>) => (p.merged_at ? "MERGED" : p.state === "closed" ? "CLOSED" : "OPEN");
+
+/** A REST pull request as GitHub's GraphQL PullRequest node. */
+export function gqlNode(p: Record<string, any>, repo: string, world: FakeRepo): Record<string, unknown> {
+  const head = p.head ?? {};
+  const headRepo = head.repo?.full_name ?? null;
+  const ci = world.ci?.[p.number];
+  return {
+    number: p.number,
+    title: p.title,
+    url: p.html_url,
+    state: gqlState(p),
+    isDraft: !!p.draft,
+    mergedAt: p.merged_at ?? null,
+    closedAt: p.closed_at ?? (p.state === "closed" ? p.updated_at : null),
+    createdAt: p.created_at,
+    updatedAt: p.updated_at,
+    repository: { nameWithOwner: repo },
+    author: p.user ? { login: p.user.login, avatarUrl: p.user.avatar_url ?? null } : null,
+    headRefName: head.ref,
+    headRefOid: head.sha,
+    baseRefName: p.base?.ref,
+    baseRefOid: p.base?.sha,
+    isCrossRepository: !!headRepo && headRepo !== repo,
+    maintainerCanModify: !!p.maintainer_can_modify,
+    headRepositoryOwner: headRepo ? { login: headRepo.split("/")[0] } : null,
+    headRepository: headRepo ? { nameWithOwner: headRepo, url: `https://github.com/${headRepo}` } : null,
+    reviewDecision: world.review?.[p.number] ?? null,
+    comments: { totalCount: p.comments ?? 0 },
+    labels: { nodes: p.labels ?? [] },
+    assignees: { nodes: (p.assignees ?? []).map((a: any) => ({ login: a.login, avatarUrl: null })) },
+    reviewRequests: { nodes: (p.requested_reviewers ?? []).map((u: any) => ({ requestedReviewer: { __typename: "User", login: u.login } })) },
+    commits: {
+      nodes: [
+        {
+          commit: {
+            statusCheckRollup: ci
+              ? { state: ci, contexts: { checkRunCountsByState: [{ state: ci === "FAILURE" ? "FAILURE" : ci === "PENDING" ? "IN_PROGRESS" : "SUCCESS", count: 1 }, { state: "SUCCESS", count: 2 }], statusContextCountsByState: [] } }
+              : null,
+          },
+        },
+      ],
+    },
+  };
+}
+
+/** What a search string asks, as far as the fake reads it. */
+function searchMatches(p: Record<string, any>, q: string, viewer: string): boolean {
+  const words = q.match(/(?:[^\s"]+|"[^"]*")+/g) ?? [];
+  for (const w of words) {
+    const [k, ...rest] = w.split(":");
+    const v = rest.join(":").replace(/^"|"$/g, "");
+    if (w === "is:pr" || k === "repo" || k === "sort") continue;
+    if (w === "is:open" && gqlState(p) !== "OPEN") return false;
+    if (w === "is:merged" && gqlState(p) !== "MERGED") return false;
+    if (w === "is:closed" && gqlState(p) === "OPEN") return false;
+    if (w === "is:unmerged" && gqlState(p) === "MERGED") return false;
+    if (k === "author" && (p.user?.login ?? "") !== (v === "@me" ? viewer : v)) return false;
+    if (k === "label" && !(p.labels ?? []).some((l: any) => l.name === v)) return false;
+    if (k === "review-requested" && !(p.requested_reviewers ?? []).some((u: any) => u.login === (v === "@me" ? viewer : v))) return false;
+    if (k === "assignee" && !(p.assignees ?? []).some((u: any) => u.login === (v === "@me" ? viewer : v))) return false;
+    if (w === "no:assignee" && (p.assignees ?? []).length > 0) return false;
+    if (!rest.length && !String(p.title).toLowerCase().includes(w.toLowerCase())) return false;
+  }
+  return true;
+}
+
+/**
+ * POST /graphql for the Pull Requests list: the page queries (list and
+ * search shapes, with their counts and the viewer), a repository's fork
+ * parent, and the filter menus' labels and people. `repos` is keyed
+ * "owner/repo". Anything else falls through to `other`.
+ */
+export function graphqlWorld(
+  repos: Record<string, FakeRepo>,
+  opts: { viewer?: string; other?: (req: FakeRequest) => FakeReply } = {},
+): (req: FakeRequest) => FakeReply {
+  const viewer = opts.viewer ?? "me";
+  return (req) => {
+    const body = req.body as { query: string; variables: Record<string, any> };
+    const q = body.query;
+    const v = body.variables ?? {};
+    const byUpdate = (a: any, b: any) => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : b.number - a.number);
+    const page = (all: Record<string, any>[], repo: string, world: FakeRepo) => {
+      const start = v.after ? Number(v.after) : 0;
+      const slice = all.slice(start, start + v.first);
+      const end = start + slice.length;
+      return {
+        nodes: slice.map((p) => gqlNode(p, repo, world)),
+        pageInfo: { hasNextPage: end < all.length, endCursor: String(end) },
+      };
+    };
+    if (/list: pullRequests/.test(q)) {
+      const repo = `${v.owner}/${v.name}`;
+      const world = repos[repo];
+      if (!world) return { body: { data: { repository: null }, errors: [{ type: "NOT_FOUND", message: `Could not resolve to a Repository with the name '${repo}'.` }] } };
+      const all = world.pulls().sort(byUpdate);
+      const of = (s: string) => all.filter((p) => gqlState(p) === s);
+      const listed = v.states ? all.filter((p) => v.states.includes(gqlState(p))) : all;
+      return {
+        body: {
+          data: {
+            ...(/viewer \{/.test(q) ? { viewer: { login: viewer, avatarUrl: null } } : {}),
+            repository: {
+              nameWithOwner: repo,
+              ...(/open: pullRequests/.test(q)
+                ? { open: { totalCount: of("OPEN").length }, merged: { totalCount: of("MERGED").length }, closed: { totalCount: of("CLOSED").length } }
+                : {}),
+              list: { totalCount: listed.length, ...page(listed, repo, world) },
+            },
+          },
+        },
+      };
+    }
+    if (/list: search/.test(q)) {
+      const repo = /repo:(\S+)/.exec(String(v.q))?.[1] ?? "";
+      const world = repos[repo] ?? { pulls: () => [] };
+      const all = world.pulls().sort(byUpdate);
+      const hits = (s: string) => all.filter((p) => searchMatches(p, s, viewer));
+      const listed = hits(String(v.q));
+      return {
+        body: {
+          data: {
+            ...(/viewer \{/.test(q) ? { viewer: { login: viewer, avatarUrl: null } } : {}),
+            ...(v.qOpen ? { open: { issueCount: hits(v.qOpen).length }, merged: { issueCount: hits(v.qMerged).length }, closed: { issueCount: hits(v.qClosed).length } } : {}),
+            list: { issueCount: listed.length, ...page(listed, repo, world) },
+          },
+        },
+      };
+    }
+    if (/isFork/.test(q)) {
+      const repo = `${v.owner}/${v.name}`;
+      const world = repos[repo];
+      if (!world) return { body: { data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve" }] } };
+      return {
+        body: {
+          data: {
+            repository: {
+              nameWithOwner: repo,
+              url: `https://github.com/${repo}`,
+              isFork: !!world.isFork,
+              defaultBranchRef: { name: "main" },
+              parent: world.parent ? { nameWithOwner: world.parent, url: `https://github.com/${world.parent}` } : null,
+            },
+          },
+        },
+      };
+    }
+    if (/assignableUsers/.test(q)) {
+      const world = repos[`${v.owner}/${v.name}`];
+      return {
+        body: {
+          data: {
+            repository: {
+              labels: { totalCount: world?.labels?.length ?? 0, nodes: world?.labels ?? [] },
+              assignableUsers: { totalCount: world?.people?.length ?? 0, nodes: (world?.people ?? []).map((login) => ({ login, avatarUrl: null })) },
+            },
+          },
+        },
+      };
+    }
+    return opts.other ? opts.other(req) : { status: 400, body: { message: "The fake GitHub has no answer to this query." } };
   };
 }
 

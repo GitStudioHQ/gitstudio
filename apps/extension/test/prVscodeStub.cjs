@@ -148,6 +148,7 @@ const pr = {
   contexts: {},
   said: [],
   views: [],
+  webviewViews: [],
   panels: [],
   controllers: [],
   providers: new Map(),
@@ -261,6 +262,61 @@ const window = {
     pr.panels.push(panel);
     return panel;
   },
+  /**
+   * A sidebar webview view, resolved at once and in sight — as VS Code does
+   * when the view is open. `receive(m)` is a message from the page;
+   * `posted` is everything the host sent it, `state()` the last state.
+   */
+  registerWebviewViewProvider: (id, provider) => {
+    const received = new EventEmitter();
+    const visibility = new EventEmitter();
+    const disposed = new EventEmitter();
+    const view = {
+      id,
+      provider,
+      title: undefined,
+      description: undefined,
+      visible: true,
+      posted: [],
+      htmlWrites: 0,
+      webview: {
+        cspSource: "vscode-webview:",
+        options: undefined,
+        _html: "",
+        get html() {
+          return this._html;
+        },
+        set html(v) {
+          this._html = v;
+          view.htmlWrites++;
+        },
+        asWebviewUri: (u) => u,
+        onDidReceiveMessage: received.event,
+        postMessage: (m) => {
+          view.posted.push(JSON.parse(JSON.stringify(m)));
+          return Promise.resolve(true);
+        },
+      },
+      onDidChangeVisibility: visibility.event,
+      onDidDispose: disposed.event,
+      receive: (m) => received.fire(m),
+      setVisible(v) {
+        this.visible = v;
+        visibility.fire();
+      },
+      state() {
+        const s = [...this.posted].reverse().find((m) => m.type === "state");
+        return s ? s.state : undefined;
+      },
+      dispose() {
+        disposed.fire();
+      },
+    };
+    pr.webviewViews.push(view);
+    provider.resolveWebviewView(view, {}, new CancellationTokenSource().token);
+    return new Disposable();
+  },
+  state: { focused: true },
   createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
   activeTextEditor: undefined,
   onDidChangeActiveTextEditor: new EventEmitter().event,
