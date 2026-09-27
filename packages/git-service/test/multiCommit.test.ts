@@ -407,7 +407,8 @@ test("a carried branch that moved since refuses the undo, and nothing changes â€
     const back = await undoRewrite(r.ctx.process, { before: out.before!, after: out.after!, carried: out.carried }, "squash");
     assert.equal(back.ok, false);
     assert.equal(!back.ok && back.expected, true);
-    assert.match(back.ok ? "" : back.message, /feature has moved since the squash, so undoing it now would throw that away too\. Nothing was changed\./);
+    // refRestore's words, as undoOnBranch's: one set for the same state.
+    assert.equal(back.ok ? "" : back.message, `'feature' has moved since (it is at ${more.slice(0, 7)} now), and putting it back would throw that away.`);
     assert.equal(r.git("rev-parse", "HEAD"), out.after, "HEAD stays where the squash left it");
     assert.equal(r.git("rev-parse", "feature"), more, "and so does feature");
   } finally {

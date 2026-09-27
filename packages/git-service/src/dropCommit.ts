@@ -451,13 +451,18 @@ async function undoOnBranch(
       return { ok: false, expected: true, message: operationInTheWayMessage({ ...pick(stop), kind: "reset" }) };
     }
   }
-  const reflog = what === "drop" ? "GitStudio undo: drop commit" : `GitStudio undo: ${what}`;
+  const reflog = undoReflog(what);
   try {
     await putRefBack(proc, own, reflog, { here });
   } catch (err) {
     return here ? keepRefused(proc, err instanceof Error ? err.message : String(err), what) : { ok: false, message: String(err instanceof Error ? err.message : err) };
   }
   return putCarriedBack(proc, u.carried, what, reflog);
+}
+
+/** The reflog entry an undo of `what` writes on each branch it puts back. */
+function undoReflog(what: string): string {
+  return what === "drop" ? "GitStudio undo: drop commit" : `GitStudio undo: ${what}`;
 }
 
 /** The carried branches back, each by compare-and-swap. */
@@ -543,35 +548,12 @@ export async function undoRewrite(
       message: `The branch has moved since the ${what}, so undoing it now would throw that away too. Nothing was changed.`,
     };
   }
-  for (const c of carried) {
-    const now = await revParse(proc, `refs/heads/${c.branch}`);
-    if (now !== c.after) {
-      return {
-        ok: false,
-        expected: true,
-        message: `${c.branch} has moved since the ${what}, so undoing it now would throw that away too. Nothing was changed.`,
-      };
-    }
-  }
-  if (carried.length > 0) {
-    // Moved from here, a branch checked out in another worktree would leave
-    // that worktree's files describing a commit its branch is no longer on.
-    const wt = await proc.run([
-      "for-each-ref",
-      "--format=%(refname)%00%(worktreepath)",
-      ...carried.map((c) => `refs/heads/${c.branch}`),
-    ]);
-    for (const line of wt.code === 0 ? wt.stdout.split("\n") : []) {
-      const [ref, path] = line.split("\0");
-      if (ref && path) {
-        const name = ref.replace(/^refs\/heads\//, "");
-        return {
-          ok: false,
-          expected: true,
-          message: `${name} is checked out in another worktree now, at ${path}, so it can't be put back from here. Nothing was changed.`,
-        };
-      }
-    }
+  // The carried branches through the same checks and the same way back as
+  // undoOnBranch's — every one checked before anything moves.
+  const moves = carried.map(carriedMove);
+  const why = await whyRefsNotRestorable(proc, moves, `the ${what}`);
+  if (why) {
+    return { ok: false, expected: true, message: why };
   }
   const stop = await stoppedIn(proc);
   if (stop) {
@@ -581,21 +563,5 @@ export async function undoRewrite(
   if (r.code !== 0) {
     return keepRefused(proc, r.stderr, what);
   }
-  // Each one compared-and-swapped against where the rewrite left it.
-  const stuck: string[] = [];
-  let why = "";
-  for (const c of carried) {
-    const moved = await proc.run(["update-ref", "-m", `GitStudio: undo ${what}`, `refs/heads/${c.branch}`, c.before, c.after]);
-    if (moved.code !== 0) {
-      stuck.push(c.branch);
-      why ||= moved.stderr.trim();
-    }
-  }
-  if (stuck.length > 0) {
-    return {
-      ok: false,
-      message: `The branch is back, but ${stuck.join(", ")} could not be put back${why ? `: ${why}` : "."}`,
-    };
-  }
-  return { ok: true };
+  return putCarriedBack(proc, moves, what, undoReflog(what));
 }
