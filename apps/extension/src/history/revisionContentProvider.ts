@@ -1,7 +1,10 @@
 import * as vscode from "vscode";
+import { existsSync } from "node:fs";
 import type { RepoManager } from "../git/repoManager";
 import type { BlameCommit } from "@gitstudio/host-bridge/blame";
 import type { FileHistoryEntry } from "@gitstudio/git-service/index";
+import { HistoryProvider } from "@gitstudio/git-service/HistoryProvider";
+import { sameFolder } from "@gitstudio/git-service/WorktreeProvider";
 
 /** The URI scheme our historical file contents are served under. */
 export const REVISION_SCHEME = "gitstudio-rev";
@@ -190,17 +193,26 @@ export class RevisionContentProvider
     token: vscode.CancellationToken,
   ): Promise<string> {
     const { root, rev, readPath } = fromRevisionUri(uri);
-    const entry = this.repos
-      .getAll()
-      .find((e) => e.root === root) ?? this.repos.getActive();
-    if (!entry) {
+    const open = this.repos.getAll().find((e) => e.root === root || (root !== "" && sameFolder(e.root, root)));
+    const active = this.repos.getActive();
+    // A root no open repository has — another worktree's, from the Worktrees
+    // view — is read IN that folder. Falling back to the active repository
+    // was harmless for a commit (the objects are shared) and wrong for HEAD
+    // and the index (rev "HEAD" / ""), which are each worktree's own: the
+    // diff showed THIS window's staged file as the other worktree's.
+    const history = open
+      ? open.ctx.history
+      : active && root && existsSync(root)
+        ? new HistoryProvider(active.ctx.process.at(root))
+        : active?.ctx.history;
+    if (!history) {
       return "";
     }
 
     const ac = new AbortController();
     token.onCancellationRequested(() => ac.abort());
     try {
-      return await entry.ctx.history.fileAtRevision(rev, readPath, {
+      return await history.fileAtRevision(rev, readPath, {
         signal: ac.signal,
       });
     } catch {
