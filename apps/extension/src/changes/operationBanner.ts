@@ -20,12 +20,33 @@ import {
 /** The operation the banner describes (OperationProvider.view()). */
 export type BannerView = OperationView;
 
+/**
+ * How the banner is drawn — decided here, with the facts, not re-derived by
+ * the page. "attention": something is in the way (files still conflicted, or
+ * a stop git cannot continue from); "ready": nothing is — a deliberate pause,
+ * or every conflict resolved. It was red in every state, so "Every conflict
+ * is resolved." read as an error.
+ */
+export type BannerTone = "attention" | "ready";
+
 export interface OperationBannerData {
   kind: string;
-  /** One line: what git is doing ("Rebasing test onto master · commit 1 of 3: …"). */
+  /** What git is doing, in one line: "Rebasing test onto master". */
   title: string;
-  /** "test → onto → master", when the operation has a direction. */
+  /**
+   * Where in it, when git says: "Commit 1 of 3: 1a2b3c4 test change",
+   * "2 more queued" — the title's second half, on its own line.
+   */
+  step?: string;
+  /**
+   * "test → onto → master", when the operation has a direction the title
+   * does not already give (it does whenever it names both sides — then the
+   * line only said the title again).
+   */
   direction?: string;
+  tone: BannerTone;
+  /** The banner's codicon: warning, debug-pause (a deliberate stop) or pass (all resolved). */
+  icon: "warning" | "debug-pause" | "pass";
   /** Why the user is here and what Continue will do, in plain words. */
   note?: string;
   /** Files still unmerged. */
@@ -58,14 +79,23 @@ export function operationBanner(
     return undefined;
   }
   const conflicts = detected.unmerged;
-  let title = view.title || opChipLabel(view);
+  let full = view.title || opChipLabel(view);
   if (!view.title && view.step) {
-    title += ` · ${view.step.unit} ${view.step.n} of ${view.step.m}`;
+    full += ` · ${view.step.unit} ${view.step.n} of ${view.step.m}`;
   }
+  // "Rebasing test onto master · commit 1 of 3: …" is two things: what is
+  // happening, and where it is. One bold run of both wrapped to three lines
+  // in a sidebar.
+  const cut = full.indexOf(" · ");
+  const title = cut > 0 ? full.slice(0, cut) : full;
+  const rest = cut > 0 ? full.slice(cut + 3).trim() : "";
+  const step = rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : undefined;
   const d = view.direction;
+  const from = d ? view[d.from].name : "";
+  const to = d ? view[d.to].name : "";
   const direction =
-    d && view[d.from].name && view[d.to].name
-      ? `${view[d.from].name} → ${d.verb} → ${view[d.to].name}`
+    d && from && to && !(title.includes(from) && title.includes(to))
+      ? `${from} → ${d.verb} → ${to}`
       : undefined;
 
   let note: string | undefined;
@@ -81,14 +111,20 @@ export function operationBanner(
     note = "Every conflict is resolved.";
   }
 
+  const blockedStop = !!view.verbs.continue && !view.canContinue;
+  const tone: BannerTone = conflicts > 0 || blockedStop ? "attention" : "ready";
+  const icon = tone === "attention" ? "warning" : view.pause ? "debug-pause" : "pass";
   const banner: OperationBannerData = {
     kind: view.kind,
     title,
+    tone,
+    icon,
     conflicts,
     canContinue: view.canContinue,
     // A bare "Cancel" (stash / none) says what it cancels.
     abortLabel: abortLabel(view),
   };
+  if (step) banner.step = step;
   if (direction) banner.direction = direction;
   if (note) banner.note = note;
   if (view.verbs.continue) banner.continueLabel = view.verbs.continue;

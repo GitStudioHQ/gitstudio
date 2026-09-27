@@ -13,6 +13,8 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
+import { operationBanner } from "../../src/changes/operationBanner";
 import { ChangesPage, stateMessage, type VsCodeTheme } from "../../test/changesPage";
 
 const OUT = process.argv[2] ?? fileURLToPath(new URL("../../../../out/changes/", import.meta.url));
@@ -60,37 +62,48 @@ export function base(): Record<string, unknown> {
   };
 }
 
-const REBASE_CONFLICTS = {
-  kind: "rebase",
-  title: "Rebasing feature/checkout-flow onto main · commit 2 of 5: Add the payment step",
-  note: "2 files have conflicts to resolve.",
-  conflicts: 2,
-  continueLabel: "Continue Rebase",
-  canContinue: false,
-  continueBlocked: "Resolve the 2 conflicted files first.",
-  skipLabel: "Skip This Commit",
-  abortLabel: "Abort Rebase",
-};
+/** A stopped operation as OperationProvider describes it; the banner is built by the real operationBanner(). */
+function view(over: Partial<OperationView>): OperationView {
+  return {
+    kind: "rebase",
+    episode: "rebase:1a2b3c4",
+    title: "Rebasing feature/checkout-flow onto main · commit 2 of 5: 1a2b3c4 Add the payment step",
+    yours: { role: "yours", stage: 3, name: "feature/checkout-flow", paneTitle: "", description: "" },
+    theirs: { role: "theirs", stage: 2, name: "main", paneTitle: "", description: "" },
+    direction: { from: "yours", verb: "onto", to: "theirs" },
+    verbs: { continue: "Continue Rebase", skip: "Skip This Commit", abort: "Abort Rebase" },
+    canContinue: false,
+    canSkip: true,
+    ...over,
+  } as OperationView;
+}
 
-const MERGE_RESOLVED = {
-  kind: "merge",
-  title: "Merging main into feature/checkout-flow",
-  note: "Every conflict is resolved.",
-  conflicts: 0,
-  continueLabel: "Commit Merge",
-  canContinue: true,
-  abortLabel: "Abort Merge",
-};
+const REBASE_CONFLICTS = (unmerged: number) =>
+  operationBanner(view({ continueBlocked: "Resolve the conflicted files first." }), { kind: "rebase", unmerged });
 
-const REBASE_PAUSED = {
-  kind: "rebase",
-  title: "Rebasing feature/checkout-flow onto main · commit 3 of 5: Validate the card number",
-  note: "Paused to edit 1a2b3c4 Validate the card number. Amend it, then continue.",
-  conflicts: 0,
-  continueLabel: "Continue Rebase",
-  canContinue: true,
-  abortLabel: "Abort Rebase",
-};
+const MERGE_RESOLVED = operationBanner(
+  view({
+    kind: "merge",
+    title: "Merging main into feature/checkout-flow",
+    yours: { role: "yours", stage: 2, name: "feature/checkout-flow", paneTitle: "", description: "" },
+    theirs: { role: "theirs", stage: 3, name: "main", paneTitle: "", description: "" },
+    direction: { from: "theirs", verb: "into", to: "yours" },
+    verbs: { continue: "Commit Merge", abort: "Abort Merge" },
+    canContinue: true,
+    canSkip: false,
+  }),
+  { kind: "merge", unmerged: 0 },
+);
+
+const REBASE_PAUSED = operationBanner(
+  view({
+    title: "Rebasing feature/checkout-flow onto main · commit 3 of 5: 9f8e7d6 Validate the card number",
+    pause: { detail: "Paused to edit 9f8e7d6 Validate the card number. Amend it, then continue." },
+    canContinue: true,
+    canSkip: false,
+  }),
+  { kind: "rebase", unmerged: 0 },
+);
 
 const PUSH_PREVIEW = {
   type: "pushPreview",
@@ -175,7 +188,7 @@ const scenes: Scene[] = [
         staged: [{ path: "src/lib/cart.ts", status: "M" }],
         unstaged: [],
         detached: true,
-        operation: REBASE_CONFLICTS,
+        operation: REBASE_CONFLICTS(2),
       }),
   },
   {
@@ -198,7 +211,7 @@ const scenes: Scene[] = [
         staged: [],
         unstaged: [],
         detached: true,
-        operation: { ...REBASE_CONFLICTS, conflicts: 1, note: "1 file has conflicts to resolve." },
+        operation: REBASE_CONFLICTS(1),
       }),
   },
   {

@@ -4306,15 +4306,25 @@ export class CommitViewProvider
     .pm-empty-note { padding: 14px 10px; text-align: center; color: var(--gs-fg-muted); font-size: 12px; }
 
     /* ---- Operation banner: a stopped merge / rebase / cherry-pick ------- */
+    /* Toned by what the stop needs: amber while something is in the way
+       (conflicts, or a stop git cannot continue from), the accent once
+       nothing is. It was conflict-red in every state — "Every conflict is
+       resolved." sat in an error box. */
     .op-banner {
+      --op-tone: var(--gs-amber);
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
       margin: 0 2px 10px;
-      padding: 8px 10px;
+      padding: 8px 10px 10px;
       border-radius: var(--gs-radius-sm);
-      border: 1px solid color-mix(in srgb, var(--gs-status-conflict) 45%, transparent);
-      background: color-mix(in srgb, var(--gs-status-conflict) 9%, transparent);
+      border: 1px solid color-mix(in srgb, var(--op-tone) 50%, transparent);
+      background: color-mix(in srgb, var(--op-tone) 9%, transparent);
+    }
+    .op-banner.tone-ready { --op-tone: var(--gs-accent); }
+    body.vscode-high-contrast .op-banner {
+      background: transparent;
+      border-color: var(--vscode-contrastBorder, var(--op-tone));
     }
     .op-banner[hidden] { display: none; }
     .op-title {
@@ -4326,16 +4336,46 @@ export class CommitViewProvider
       line-height: 1.35;
       overflow-wrap: anywhere;
     }
-    .op-title .codicon { flex: 0 0 auto; margin-top: 1px; color: var(--gs-status-conflict); }
+    .op-title .codicon { flex: 0 0 auto; margin-top: 1px; color: var(--op-tone); }
+    .op-banner.tone-ready .op-title .codicon { color: var(--gs-accent-text); }
+    /* The step, the direction and the note sit under the title's text, not
+       under its icon. */
+    .op-step,
     .op-direction,
     .op-note {
+      padding-left: 22px;
       font-size: 11.5px;
       line-height: 1.35;
-      color: var(--gs-fg);
       overflow-wrap: anywhere;
     }
-    .op-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    .op-actions button.gs-commit { flex: 0 1 auto; height: 24px; padding: 0 10px; font-size: 12px; }
+    .op-step { color: var(--gs-fg-muted); }
+    .op-direction,
+    .op-note { color: var(--gs-fg); }
+    .op-actions {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .op-actions button.gs-commit {
+      flex: 0 0 auto;
+      min-width: 0;
+      height: 24px;
+      padding: 0 10px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .op-actions .lbl-short { display: none; }
+    .op-actions .lbl-long,
+    .op-actions .lbl-short { overflow: hidden; text-overflow: ellipsis; }
+    /* Too narrow for them all: the lead on its own row, the rest sharing the
+       next one equally, by their first word. */
+    .op-actions.stacked { flex-wrap: wrap; }
+    .op-actions.stacked .op-lead { flex: 1 0 100%; }
+    /* Equal shares while there is room; never less than a word needs. */
+    .op-actions.stacked button.gs-commit:not(.op-lead) { flex: 1 1 0; min-width: max-content; }
+    .op-actions.stacked button.gs-commit:not(.op-lead) .lbl-long { display: none; }
+    .op-actions.stacked button.gs-commit:not(.op-lead) .lbl-short { display: inline; }
   </style>
 </head>
 <body class="layout-list">
@@ -8434,7 +8474,16 @@ export class CommitViewProvider
     function opButton(label, cls, onClick, tip, locks) {
       const b = el("button", "gs-commit " + cls);
       b.type = "button";
-      b.textContent = label;
+      // Two faces: the whole verb, and its first word for a narrow banner
+      // ("Abort Rebase" / "Abort") — the title above already names the
+      // operation. The name is always the whole verb.
+      const long = el("span", "lbl-long");
+      long.textContent = label;
+      const short = el("span", "lbl-short");
+      short.textContent = label.split(" ")[0];
+      b.appendChild(long);
+      b.appendChild(short);
+      b.setAttribute("aria-label", label);
       if (tip) b.title = tip;
       b.addEventListener("click", function () {
         if (opLocked) return;
@@ -8453,12 +8502,22 @@ export class CommitViewProvider
       lastOp = op || null;
       opBanner.textContent = "";
       if (!op) { opBanner.hidden = true; return; }
+      // Its tone and icon are the host's: amber while something is in the
+      // way, the accent once nothing is (a pause, or every conflict resolved).
+      opBanner.className = "op-banner tone-" + (op.tone || "attention");
       const title = el("div", "op-title");
-      title.appendChild(el("i", "codicon codicon-" + (op.conflicts > 0 ? "warning" : "debug-pause")));
+      const icon = el("i", "codicon codicon-" + (op.icon || "warning"));
+      icon.setAttribute("aria-hidden", "true");
+      title.appendChild(icon);
       const titleText = el("span");
       titleText.textContent = op.title;
       title.appendChild(titleText);
       opBanner.appendChild(title);
+      if (op.step) {
+        const st = el("div", "op-step");
+        st.textContent = op.step;
+        opBanner.appendChild(st);
+      }
       if (op.direction) {
         const d = el("div", "op-direction");
         d.textContent = op.direction;
@@ -8470,13 +8529,16 @@ export class CommitViewProvider
         opBanner.appendChild(n);
       }
       const acts = el("div", "op-actions");
+      // The lead action — the one this stop is waiting for — gets a row of
+      // its own when the banner is too narrow for every button side by side.
       if (op.conflicts > 0) {
-        acts.appendChild(opButton("Resolve Conflicts…", "primary", function () {
+        acts.appendChild(opButton("Resolve Conflicts…", "primary op-lead", function () {
           vscode.postMessage({ type: "resolveConflicts" });
         }, "", false));
       }
       if (op.continueLabel) {
-        const c = opButton(op.continueLabel, op.conflicts > 0 ? "split" : "primary", function () {
+        const lead = !(op.conflicts > 0) && op.canContinue;
+        const c = opButton(op.continueLabel, lead ? "primary op-lead" : "split", function () {
           vscode.postMessage({ type: "operation", verb: "continue" });
         }, op.continueBlocked || "", true);
         c.disabled = !op.canContinue;
@@ -8495,6 +8557,35 @@ export class CommitViewProvider
         opBanner.querySelectorAll("button").forEach(function (x) { x.disabled = true; });
       }
       opBanner.hidden = false;
+      fitOpActions();
+    }
+    /**
+     * Every button side by side when they fit; otherwise the lead action on a
+     * row of its own and the rest sharing one row by their first word
+     * ("Continue", "Skip", "Abort"). At a sidebar's width the buttons used to
+     * wrap into three rows. Measured at the width they want (max-content),
+     * not the width a flex row has already squeezed them to.
+     */
+    function fitOpActions() {
+      const acts = opBanner.querySelector(".op-actions");
+      if (!acts || opBanner.hidden || !acts.classList) return;
+      acts.classList.remove("stacked");
+      const avail = acts.clientWidth;
+      if (!avail) return;
+      const was = acts.style.width;
+      acts.style.width = "max-content";
+      const need = acts.offsetWidth;
+      acts.style.width = was;
+      acts.classList.toggle("stacked", need > avail + 0.5);
+    }
+    if (typeof ResizeObserver === "function") {
+      let lastOpWidth = 0;
+      new ResizeObserver(function (entries) {
+        const w = Math.round(entries[0].contentRect.width);
+        if (w === lastOpWidth) return;
+        lastOpWidth = w;
+        fitOpActions();
+      }).observe(opBanner);
     }
 
     // ---- Host messages ---------------------------------------------------
