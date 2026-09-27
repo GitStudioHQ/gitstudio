@@ -205,6 +205,161 @@ test("the review box: a verdict, a summary and the pending comments; your own pu
   `);
 });
 
+/**
+ * A box asked for by the host (the list's Merge…, the palette's Merge and
+ * Submit Review) arrives with the page's FIRST state — while the pull
+ * request is still loading — and the same focus comes again with the
+ * loaded one. The state table, one row each:
+ *
+ *   asked      | then the pull request is       | the page
+ *   merge      | mergeable                      | the merge box, its method has the keyboard
+ *   merge      | a draft / blocked / read-only  | no box; the keyboard on the status line that says why
+ *   merge      | merged                         | no box; the keyboard on how it ended
+ *   merge      | unreadable (a message)         | no box — nor later, once it is read
+ *   review     | open                           | the review box, its summary has the keyboard
+ *
+ * And a box that closes hands the keyboard back: to the button that opened
+ * it, or — when that button is off (Merge, while blocked) — the first header
+ * control that can be pressed. Never to <body>.
+ */
+test("a box asked for before the pull request has loaded opens once it has — or the keyboard lands on why not; a closed box hands the keyboard back", { skip }, async () => {
+  await check(`
+    const asked = (open, seq) => ({ seq, open });
+    const where = () => {
+      const a = document.activeElement;
+      return a === document.body || !a ? "BODY" : a.getAttribute("data-key") || a.getAttribute("data-act") || a.className;
+    };
+    // Mergeable: the box opens once the pull request is here.
+    show({ ...S.loading, focus: asked("merge", 5) });
+    await frame();
+    expect(!document.querySelector(".prp-method"), "no box over a skeleton");
+    show({ ...S.mergeBox, focus: asked("merge", 5) });
+    await frame();
+    expect(!!document.querySelector(".prp-method"), "loaded: the merge box is open, with its methods");
+    expect($('[data-act="merge"]').getAttribute("aria-expanded") === "true", "Merge says its box is open");
+    expect(document.activeElement === $(".prp-method.is-on input"), "the chosen method has the keyboard: " + where());
+    // …and Escape hands the keyboard to Merge, which opened it.
+    key("Escape");
+    await frame();
+    expect(!$(".prp-merge") && document.activeElement === $('[data-act="merge"]'), "Escape: closed, Merge has the keyboard: " + where());
+
+    // A draft: no box — the keyboard on the line that says why, ringed.
+    show({ ...S.loading, focus: asked("merge", 6) });
+    show({ ...S.draft, focus: asked("merge", 6) });
+    await frame();
+    expect(!$(".prp-merge"), "a draft: no merge box");
+    const whyDraft = $('[data-key="status-merge"]');
+    expect(document.activeElement === whyDraft, "the keyboard is on why: " + where());
+    expect(text(whyDraft) === "This pull request is still a draft Mark it ready for review to merge it.", "why, in words: " + text(whyDraft));
+    const ring = getComputedStyle(whyDraft);
+    expect(ring.outlineStyle === "solid" && ring.outlineColor === "rgb(0, 127, 212)", "ringed in the focus colour: " + ring.outlineStyle + " " + ring.outlineColor);
+    // A paint from the host keeps it; the keyboard moving on takes the ring away.
+    show({ ...S.draft, focus: asked("merge", 6) });
+    await frame();
+    expect(document.activeElement === whyDraft && getComputedStyle(whyDraft).outlineStyle === "solid", "kept across a paint");
+    $('[data-act="checkout"]').focus();
+    expect(getComputedStyle(whyDraft).outlineStyle === "none", "gone once the keyboard moves on: " + getComputedStyle(whyDraft).outlineStyle);
+
+    // Blocked (changes requested, checks failed): the same.
+    show({ ...S.loading, focus: asked("merge", 7) });
+    show({ ...S.open, focus: asked("merge", 7) });
+    await frame();
+    expect(!$(".prp-merge") && document.activeElement === $('[data-key="status-merge"]'), "blocked: the keyboard on why: " + where());
+    expect(text($('[data-key="status-merge"]')).startsWith("Merging is blocked"), "…which says so");
+
+    // Read-only: no Merge at all, and why.
+    show({ ...S.loading, focus: asked("merge", 8) });
+    show({ ...S.reader, focus: asked("merge", 8) });
+    await frame();
+    expect(document.activeElement === $('[data-key="status-merge"]'), "a reader: the keyboard on why: " + where());
+
+    // Merged meanwhile: the keyboard on how it ended.
+    show({ ...S.loading, focus: asked("merge", 9) });
+    show({ ...S.merged, focus: asked("merge", 9) });
+    await frame();
+    expect(!$(".prp-merge") && document.activeElement === $('[data-key="status-done"]'), "merged: the keyboard on how it ended: " + where());
+
+    // Unreadable: no box, not even once it is read later.
+    show({ ...S.loading, focus: asked("merge", 10) });
+    show({ ...S.failed, focus: asked("merge", 10) });
+    await frame();
+    show({ ...S.mergeBox, focus: asked("merge", 10) });
+    await frame();
+    expect(!$(".prp-merge"), "a pull request that couldn't be read opens no box when a Retry reads it");
+
+    // Review, asked while loading: the box and its summary.
+    show({ ...S.loading, focus: asked("review", 11) });
+    show({ ...S.open, focus: asked("review", 11) });
+    await frame();
+    expect(!!$(".prp-review") && document.activeElement === $(".prp-review-body"), "the review box, its summary has the keyboard: " + where());
+  `);
+});
+
+test("closing a box hands the keyboard back to the button that opened it — or the first one on, never <body>", { skip }, async () => {
+  await check(`
+    const where = () => {
+      const a = document.activeElement;
+      return a === document.body || !a ? "BODY" : a.getAttribute("data-key") || a.getAttribute("data-act") || a.className;
+    };
+    // Blocked: Merge is off. Review, then Escape from the summary: back on Review.
+    show(S.open);
+    expect(primary().disabled, "Merge is off (blocked)");
+    const review = $('[data-act="review"]');
+    review.focus();
+    review.click();
+    await frame();
+    expect(document.activeElement === $(".prp-review-body"), "the summary has the keyboard");
+    key("Escape");
+    await frame();
+    expect(!$(".prp-review"), "closed");
+    expect(document.activeElement === $('[data-act="review"]'), "Escape: back on Review, which opened it: " + where());
+    // Approve, then Escape: back on Approve.
+    $('[data-act="approve"]').click();
+    await frame();
+    key("Escape");
+    await frame();
+    expect(document.activeElement === $('[data-act="approve"]'), "back on Approve: " + where());
+    // Asked by the host: back on the button that would have opened it.
+    show({ ...S.open, focus: { seq: 20, open: "review" } });
+    await frame();
+    key("Escape");
+    await frame();
+    expect(document.activeElement === $('[data-act="review"]'), "asked by the host: back on Review: " + where());
+    // The merge box open, then merging is blocked from elsewhere: the box
+    // closes, and Merge — which opened it — is off: the first control that is on.
+    show(S.ready);
+    primary().click();
+    await frame();
+    expect(document.activeElement === $(".prp-method.is-on input"), "the method has the keyboard");
+    show(S.open);
+    await frame();
+    const firstOn = $$(".prp-actions button").find((b) => !b.disabled);
+    expect(!$(".prp-merge") && document.activeElement === firstOn, "blocked meanwhile: on " + (firstOn && firstOn.getAttribute("data-act")) + ", got " + where());
+    // Discard's question: Escape answers No, and keeps the box — Discard has the keyboard.
+    show({ ...S.reviewBox, focus: { seq: 21, open: "review" } });
+    await frame();
+    $('[data-act="discard"]').click();
+    await frame();
+    key("Escape");
+    await frame();
+    expect(!!$(".prp-review") && document.activeElement === $('[data-act="discard"]'), "Escape on the question: back on Discard: " + where());
+    // The merge box's Cancel: back on Merge.
+    show(S.ready);
+    primary().click();
+    await frame();
+    $('[data-act="closePanel"]').click();
+    await frame();
+    expect(!$(".prp-merge") && document.activeElement === primary(), "Cancel: back on Merge: " + where());
+    // Sent from the host while the summary has the keyboard: back on Review.
+    show({ ...S.reviewBox, focus: { seq: 22, open: "review" } });
+    await frame();
+    expect(document.activeElement === $(".prp-review-body"), "the summary has the keyboard again");
+    show({ ...S.reviewBox, focus: { seq: 22, open: "review" }, sent: { seq: 30, key: "review" }, review: undefined });
+    await frame();
+    expect(!$(".prp-review") && document.activeElement === $('[data-act="review"]'), "sent: back on Review: " + where());
+  `);
+});
+
 test("the conversation: the body as GitHub draws it, references and people as links, threads under their review — reply and resolve in place", { skip }, async () => {
   await check(`
     show(S.open);

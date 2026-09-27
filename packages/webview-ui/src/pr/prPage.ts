@@ -233,6 +233,10 @@ function prose(src: string, repo: string, key: string, empty?: string): HTMLElem
 
 const TABS: PrPageTab[] = ["conversation", "commits", "checks", "files"];
 const PR_ACTIONS_MORE = PR_ACTIONS.more;
+/** Where the keyboard goes when the merge box opens: the method chosen. */
+const MERGE_FOCUS = ".prp-method.is-on input";
+/** Where it goes when the merge box can't open: the status line that says why. */
+const WHY_NO_MERGE = '[data-key="status-merge"], [data-key="status-done"]';
 
 /** The tabs: the desktop's words and glyphs (the shared PR_TABS). */
 const TAB_WORDS: Record<PrPageTab, { label: string; icon: string }> = PR_TABS;
@@ -265,6 +269,10 @@ export class PullRequestPage {
   private sentSeq = -1;
   /** An element to focus once the next paint is on screen. */
   private focusAfter: string | undefined;
+  /** A box the host asked to open, waiting for the pull request to arrive. */
+  private asked: "merge" | "review" | undefined;
+  /** The data-key of the header button that opened the box: the keyboard goes back to it. */
+  private opener: string | undefined;
 
   constructor(
     private readonly root: HTMLElement,
@@ -307,8 +315,13 @@ export class PullRequestPage {
       this.focusSeq = state.focus.seq;
       if (state.focus.tab) this.tab = state.focus.tab;
       if (state.focus.open) {
+        // Asked for from elsewhere (the list's Merge…, the palette): the box
+        // opens once the pull request is here — the host asks as soon as the
+        // page is ready, which is before GitHub has answered.
         this.panel = state.focus.open;
-        this.focusAfter = state.focus.open === "merge" ? ".prp-method.is-on input" : ".prp-review-body";
+        this.asked = state.focus.open;
+        this.opener = `act-${state.focus.open}`;
+        this.confirmDiscard = false;
       }
     }
     let restored: string | undefined;
@@ -329,16 +342,35 @@ export class PullRequestPage {
       }
     }
     const pr = state.pr;
-    // A box whose reason has gone closes: a merged pull request has nothing to merge.
-    if (this.panel === "merge" && (!pr || !mergeBoxOf(pr)?.canMerge)) this.panel = undefined;
-    if (this.panel === "review" && pr && pr.kind !== "open" && pr.kind !== "draft") this.panel = undefined;
+    if (pr) {
+      // A box whose reason has gone closes: a merged pull request has nothing
+      // to merge, a blocked one can't be merged.
+      if (this.panel === "merge" && !mergeBoxOf(pr)?.canMerge) this.panel = undefined;
+      if (this.panel === "review" && pr.kind !== "open" && pr.kind !== "draft") this.panel = undefined;
+      if (this.asked) {
+        // The box asked for, and the keyboard in it — or, when it can't open,
+        // on the status line that says why.
+        const wanted = this.asked;
+        this.asked = undefined;
+        this.focusAfter =
+          this.panel === "merge" ? MERGE_FOCUS : this.panel === "review" ? ".prp-review-body" : wanted === "merge" ? WHY_NO_MERGE : undefined;
+      }
+    } else if (state.status === "message") {
+      // The pull request couldn't be read: nothing to open a box on.
+      this.panel = undefined;
+      this.asked = undefined;
+    }
+    // Where the keyboard was, when a paint takes its box away (sent, merged,
+    // closed from the host): it goes back where the box came from.
+    const active = document.activeElement as HTMLElement | null;
+    const inBox = !!active && this.view.contains(active) && !!active.closest(".prp-panel");
     const fresh = el("div");
     this.build(fresh, state);
     patchChildren(this.view, fresh, {
       // A rendered body is keyed by its text: while that is unchanged, what
       // the reader did to it (an opened <details>) stays.
       opaque: (live) => (live.classList.contains("prp-md") ? ["data-key"] : undefined),
-      runtimeClasses: ["is-pressed"],
+      runtimeClasses: ["is-pressed", "is-asked"],
     });
     this.syncControls();
     // Words the host sent back go into their box even while it has the
@@ -352,8 +384,28 @@ export class PullRequestPage {
     if (this.focusAfter) {
       const sel = this.focusAfter;
       this.focusAfter = undefined;
-      this.view.querySelector<HTMLElement>(sel)?.focus();
+      const target = this.view.querySelector<HTMLElement>(sel);
+      if (target && sel === WHY_NO_MERGE) {
+        // Ringed while it has the keyboard, however the page was reached —
+        // and not when a click lands on it.
+        target.classList.add("is-asked");
+        target.addEventListener("blur", () => target.classList.remove("is-asked"), { once: true });
+      }
+      target?.focus();
+    } else if (inBox && (!document.activeElement || document.activeElement === document.body)) {
+      this.focusBack();
     }
+  }
+
+  /**
+   * The keyboard, back where a box came from once it closes: the button that
+   * opened it — or, when that is off (Merge, while merging is blocked) or
+   * gone, the first header control that can be pressed.
+   */
+  private focusBack(): void {
+    const opener = this.opener ? this.view.querySelector<HTMLButtonElement>(`.prp-actions [data-key="${this.opener}"]`) : null;
+    const target = opener && !opener.disabled ? opener : this.view.querySelector<HTMLElement>(".prp-actions button:not(:disabled)");
+    target?.focus();
   }
 
   // ── Building ───────────────────────────────────────────────────────────────
@@ -590,6 +642,8 @@ export class PullRequestPage {
     if (pr.kind === "merged" || pr.kind === "closed") {
       const line = el("div", `prp-status-row tone-${PR_STATES[pr.kind].tone}`);
       line.dataset.key = "status-done";
+      // Where the keyboard lands when Merge… was asked of a pull request that has ended.
+      line.tabIndex = -1;
       const glyph = el("span", "prp-status-glyph");
       glyph.appendChild(codicon(PR_STATES[pr.kind].codicon));
       line.appendChild(glyph);
@@ -640,6 +694,8 @@ export class PullRequestPage {
     const m = mergeBoxOf(pr);
     if (m) {
       const row = this.statusRow("status-merge", m.tone, m.icon, m.title, m.detail);
+      // Where the keyboard lands when Merge… was asked and the box can't open: why.
+      row.tabIndex = -1;
       // The fix, unless the header's own primary action is already it.
       if (m.fix && !(m.fix === "markReady" && prPageActions(pr).primary === "markReady")) {
         const words = {
@@ -1490,10 +1546,15 @@ export class PullRequestPage {
     }
     if (e.key === "Escape" && this.panel && (t.closest(".prp-panel") || t === document.body)) {
       e.preventDefault();
-      if (this.confirmDiscard) this.confirmDiscard = false;
-      else this.panel = undefined;
+      if (this.confirmDiscard) {
+        this.confirmDiscard = false;
+        this.repaint();
+        this.view.querySelector<HTMLElement>('[data-act="discard"]')?.focus();
+        return;
+      }
+      this.panel = undefined;
       this.repaint();
-      this.view.querySelector<HTMLElement>(this.panel ? '[data-act="discard"]' : '[data-key^="act-"]')?.focus();
+      this.focusBack();
     }
   }
 
@@ -1554,11 +1615,13 @@ export class PullRequestPage {
         return;
       case "merge":
         this.panel = this.panel === "merge" ? undefined : "merge";
-        this.focusAfter = this.panel ? ".prp-method.is-on input" : undefined;
+        this.opener = t.dataset.key;
+        this.focusAfter = this.panel ? MERGE_FOCUS : undefined;
         this.repaint();
         return;
       case "review":
         this.panel = this.panel === "review" ? undefined : "review";
+        this.opener = t.dataset.key;
         this.confirmDiscard = false;
         this.focusAfter = this.panel ? ".prp-review-body" : undefined;
         this.repaint();
@@ -1567,6 +1630,7 @@ export class PullRequestPage {
         // The review box, with Approve chosen: an approval is a public, named
         // act, and the box is where its summary is written — as on the desktop.
         this.panel = "review";
+        this.opener = t.dataset.key;
         this.verdict = "APPROVE";
         this.confirmDiscard = false;
         this.focusAfter = ".prp-review-body";
@@ -1576,6 +1640,7 @@ export class PullRequestPage {
         this.panel = undefined;
         this.confirmDiscard = false;
         this.repaint();
+        this.focusBack();
         return;
       case "mergeConfirm": {
         const pr = this.state?.pr;

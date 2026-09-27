@@ -472,6 +472,11 @@
   min-height: 40px;
   padding: 8px 12px;
 }
+/* The line that says why Merge… can't open has the keyboard: ringed inside the box, which clips. */
+.prp-status-row.is-asked:focus {
+  outline: 1px solid var(--prp-focus);
+  outline-offset: -1px;
+}
 .prp-status-row + .prp-status-row {
   border-top: 1px solid var(--prp-line-soft);
 }
