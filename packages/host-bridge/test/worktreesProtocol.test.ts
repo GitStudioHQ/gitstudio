@@ -282,6 +282,22 @@ test("dirty: Stash & Remove first (the safe default), Discard Changes and Remove
   assert.match(a.choices[0].description, /stash you can apply from any worktree/);
 });
 
+test("the words agree with the count: one change goes and is deleted, two go and are", () => {
+  const one = worktreeRemovalAsk({ ...facts, changes: ["a.txt"] });
+  assert.deepEqual(one.choices.map((c) => c.description), [
+    "Its 1 uncommitted change goes into a stash you can apply from any worktree of this repository; then its folder is deleted.",
+    "Its 1 uncommitted change is deleted with its folder, and nothing can bring it back.",
+  ]);
+  assert.match(one.message, /It has 1 uncommitted change:\n {2}a\.txt/);
+  const two = worktreeRemovalAsk({ ...facts, changes: ["a.txt", "b.txt"] });
+  assert.deepEqual(two.choices.map((c) => c.description), [
+    "Its 2 uncommitted changes go into a stash you can apply from any worktree of this repository; then its folder is deleted.",
+    "Its 2 uncommitted changes are deleted with its folder, and nothing can bring them back.",
+  ]);
+  const unread = worktreeRemovalAsk({ ...facts, changes: undefined });
+  assert.equal(unread.choices[0].description, "Its uncommitted changes are deleted with its folder, and nothing can bring them back.");
+});
+
 test("dirty and locked: both choices unlock first, and say so", () => {
   const a = worktreeRemovalAsk({ ...facts, changes: ["a.txt"], locked: true, lockReason: "agent 7" });
   assert.deepEqual(a.choices.map((c) => c.label), ["Unlock, Stash & Remove", "Unlock, Discard Changes and Remove"]);

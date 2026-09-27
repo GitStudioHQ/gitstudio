@@ -47,12 +47,15 @@ export interface WorktreeUi {
   drop?(path: string): void;
 }
 
-/** How a worktree is named in words: its folder, then what it has checked out. */
+/**
+ * How a worktree is named in words: by its folder, as every row of the list
+ * and its More menu name it — one vocabulary across the view, its questions
+ * and its reports. What it has checked out is said beside it where it
+ * matters (the removal question's "The branch … stays").
+ */
 export function worktreeLabel(entry: WorktreeEntry): string {
-  if (entry.bare) {
-    return `${path.basename(entry.path)} (bare)`;
-  }
-  return entry.branch ?? `${entry.head.slice(0, 7)} (detached)`;
+  const folder = path.basename(entry.path);
+  return entry.bare ? `${folder} (bare)` : folder;
 }
 
 /**
@@ -579,7 +582,7 @@ async function askFolderAndCreate(
     const holder = (await a.ctx.worktrees.list()).find((e) => sameFolder(e.path, target));
     if (holder) {
       const gone = !existsSync(holder.path);
-      hint = `git still has a worktree at ${tildify(target)} (${worktreeLabel(holder)})${gone ? ", though its folder is gone" : ""} — ${gone ? "forget" : "remove"} that worktree in Worktrees, or choose another folder. ${intro}`;
+      hint = `git still has a worktree at ${tildify(target)} (${holder.branch ?? `detached at ${holder.head.slice(0, 7)}`})${gone ? ", though its folder is gone" : ""} — ${gone ? "forget" : "remove"} that worktree in Worktrees, or choose another folder. ${intro}`;
       continue;
     }
     break;

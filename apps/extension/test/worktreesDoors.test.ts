@@ -314,6 +314,23 @@ test("Stash & Remove: the folder is gone and every change it had is in the stash
   assert.match(said.map((m) => m.message).join("\n"), /its changes are in the stash/);
 });
 
+test("the question, the stash and the report name the worktree by its folder, as the list does — its branch in the body", async () => {
+  const s = scene();
+  const folder = join(s.base, "wt", "app-login");
+  s.git("worktree", "add", "-q", "-b", "feature/login", folder);
+  writeFileSync(join(folder, "a.txt"), "login work\n");
+  const repos = windowAt(s.app);
+  answer = (spec) => (spec.kind === "pick" ? "stash" : undefined);
+  await wt.removeWorktree(repos, folder, noop);
+  const q = asked[0] as Pick;
+  assert.equal(q.title, "Remove worktree app-login?");
+  assert.match(q.message ?? "", /^Deletes its folder, .*wt\/app-login\./);
+  assert.match(q.message ?? "", /The branch feature\/login and its commits stay\./);
+  assert.match(s.git("stash", "list"), /^stash@\{0\}: On feature\/login: Changes from worktree app-login \(.*wt\/app-login\), stashed before removing it$/);
+  assert.match(said.map((m) => m.message).join("\n"), /^GitStudio: Removed the worktree app-login — its changes are in the stash “Changes from worktree app-login/m);
+  assert.deepEqual(errors(), []);
+});
+
 test("Discard Changes and Remove: the folder is gone, nothing is stashed", async () => {
   const s = scene();
   const repos = windowAt(s.app);

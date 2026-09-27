@@ -134,7 +134,9 @@ export function worktreeRemovalQuestion(f: WorktreeRemovalFacts): WorktreeRemova
     changes === undefined
       ? "Its uncommitted changes couldn't be read; any it has are deleted with it."
       : changes.length > 0
-        ? `Its ${changes.length} uncommitted change${changes.length === 1 ? "" : "s"} go with it, and nothing can bring them back:\n` +
+        ? (changes.length === 1
+            ? "Its 1 uncommitted change goes with it, and nothing can bring it back:\n"
+            : `Its ${changes.length} uncommitted changes go with it, and nothing can bring them back:\n`) +
           changes
             .slice(0, NAMED)
             .map((c) => `  ${c}`)
@@ -267,6 +269,8 @@ export function worktreeRemovalAsk(f: WorktreeRemovalChoiceFacts): WorktreeRemov
   const changes = f.changes;
   const n = changes?.length ?? 0;
   const them = changes === undefined ? "Its uncommitted changes" : `Its ${n} uncommitted change${n === 1 ? "" : "s"}`;
+  // The verbs agree with the count: one change goes, two go.
+  const one = n === 1;
   const listed =
     changes === undefined
       ? "Its uncommitted changes couldn't be read."
@@ -282,7 +286,7 @@ export function worktreeRemovalAsk(f: WorktreeRemovalChoiceFacts): WorktreeRemov
   // the plain list: the choices below say where they go.
   const paragraphs = q.message
     .split("\n\n")
-    .map((p) => (p.startsWith("Its ") && (p.includes("go with it") || p.includes("couldn't be read")) ? listed : p));
+    .map((p) => (p.startsWith("Its ") && (/\bgoe?s? with it\b/.test(p) || p.includes("couldn't be read")) ? listed : p));
   if (!canStash) {
     paragraphs.push(
       changes === undefined
@@ -295,14 +299,14 @@ export function worktreeRemovalAsk(f: WorktreeRemovalChoiceFacts): WorktreeRemov
     choices.push({
       id: "stash",
       label: `${unlock}Stash & Remove`,
-      description: `${them} go into a stash you can apply from any worktree of this repository; then its folder is deleted.`,
+      description: `${them} ${one ? "goes" : "go"} into a stash you can apply from any worktree of this repository; then its folder is deleted.`,
       danger: false,
     });
   }
   choices.push({
     id: "discard",
     label: f.locked ? "Unlock, Discard Changes and Remove" : "Discard Changes and Remove",
-    description: `${them} are deleted with its folder, and nothing can bring them back.`,
+    description: `${them} ${one ? "is" : "are"} deleted with its folder, and nothing can bring ${one ? "it" : "them"} back.`,
     danger: true,
   });
   return { title: q.title, message: paragraphs.join("\n\n"), choices, ...extra };

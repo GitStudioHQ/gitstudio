@@ -125,7 +125,7 @@ async function shootChanges(theme: VsCodeTheme): Promise<string[]> {
     await page.key("Escape");
     const ask = worktreeRemovalAsk({
       kind: "present",
-      label: "feature/login",
+      label: "app-login",
       shownPath: "~/code/app-login",
       branch: "feature/login",
       head: p,

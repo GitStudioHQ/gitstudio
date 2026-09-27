@@ -28,7 +28,9 @@ test("dirty: names five of the files, counts the rest, and agrees to discard the
   const q = worktreeRemovalQuestion({ ...base, changes: ["a", "b", "c", "d", "e", "f", "g"] });
   assert.equal(q.confirmLabel, "Discard Changes and Remove");
   assert.equal(q.discardChanges, true);
-  assert.match(q.message, /Its 7 uncommitted changes go with it/);
+  assert.match(q.message, /Its 7 uncommitted changes go with it, and nothing can bring them back:/);
+  const one = worktreeRemovalQuestion({ ...base, changes: ["a.txt"] });
+  assert.match(one.message, /Its 1 uncommitted change goes with it, and nothing can bring it back:\n {2}a\.txt/);
   assert.match(q.message, / {2}e\n {2}and 2 more/);
   assert.ok(!q.message.includes("  f"));
 });
