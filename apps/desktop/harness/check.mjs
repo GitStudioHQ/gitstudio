@@ -13,6 +13,7 @@
 // Exit code is non-zero if any case fails, so it can gate a commit.
 
 import { harnessChrome } from "./chrome.mjs";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { chromeProfile } from "./profile.mjs";
 import { existsSync } from "node:fs";
@@ -884,8 +885,7 @@ function run(scene, checkId, opts = {}) {
   return new Promise((res) => {
     execFile(
       CHROME,
-      [
-        "--headless",
+      headlessChromeArgs([
         "--disable-gpu",
         "--hide-scrollbars",
         profile.flag,
@@ -895,7 +895,7 @@ function run(scene, checkId, opts = {}) {
         `--virtual-time-budget=${opts.budget ?? 12000}`,
         "--dump-dom",
         url,
-      ],
+      ]),
       // A page that never lets virtual time run out (an unbounded animation, a
       // self-rescheduling timer) hangs headless Chrome forever, and without a
       // timeout that hangs the WHOLE suite with no clue which case did it.

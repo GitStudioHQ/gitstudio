@@ -5,6 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, w
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 
 /**
  * Every harness launcher finds its browser the way packages/webview-ui's
@@ -13,6 +14,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * a system Chrome. Each used to fall back to /Applications/Google Chrome.app
  * whenever GS_CHROME was unset, and one run launched the owner's own Chrome 111
  * times.
+ *
+ * And every one launches it off the network (scripts/test/no-network-chrome.mjs):
+ * its argv starts from headlessChromeArgs() — for a shell launcher, the same
+ * list the helper prints — so no launcher spells --headless itself. The
+ * repository-wide census is packages/webview-ui/test/chromeNoNetwork.test.ts.
  */
 
 const HARNESS = fileURLToPath(new URL("../harness/", import.meta.url));
@@ -26,7 +32,7 @@ function launchers(): { name: string; src: string }[] {
     .filter(({ src }) => /\bCHROME\b/.test(src));
 }
 
-test("no harness launcher names the system Chrome, and every one asks the shared discovery", () => {
+test("no harness launcher names the system Chrome, every one asks the shared discovery, and none reaches the network", () => {
   const found = launchers();
   // check, validate, probe, perf, contrast, affordance, fit and shot.sh
   assert.ok(found.length >= 8, `found only ${found.map((f) => f.name).join(", ")}`);
@@ -35,9 +41,21 @@ test("no harness launcher names the system Chrome, and every one asks the shared
     if (name.endsWith(".mjs")) {
       assert.match(src, /import \{ harnessChrome \} from "\.\/chrome\.mjs";/, `${name} does not import harnessChrome`);
       assert.match(src, /const CHROME = harnessChrome\(\);/, `${name} does not take CHROME from harnessChrome()`);
+      assert.match(
+        src,
+        /import \{ headlessChromeArgs \} from "\.\.\/\.\.\/\.\.\/scripts\/test\/no-network-chrome\.mjs";/,
+        `${name} does not import headlessChromeArgs`,
+      );
+      assert.match(src, /execFile\(\s*CHROME,\s*headlessChromeArgs\(\[/, `${name} does not launch CHROME with headlessChromeArgs()`);
     } else {
       assert.match(src, /packages\/webview-ui\/test\/findChrome\.mjs/, `${name} does not ask findChrome.mjs`);
+      assert.match(src, /scripts\/test\/no-network-chrome\.mjs/, `${name} does not take the switches no-network-chrome.mjs prints`);
     }
+    const code = src
+      .split("\n")
+      .filter((l) => !/^\s*(#|\/\/|\/\*|\*)/.test(l))
+      .join("\n");
+    assert.doesNotMatch(code, /["'`\s]--headless\b/, `${name} spells --headless itself, not from headlessChromeArgs()`);
   }
 });
 
@@ -47,7 +65,8 @@ test("no harness launcher names the system Chrome, and every one asks the shared
  *  so extension-less fakes there were never found, and discovery went on to
  *  the runner's own installed Chrome. */
 function fakeCache(dir: string, log: string) {
-  const script = `#!/bin/sh\necho "$0" >> "${log}"\nfor a in "$@"; do case "$a" in --screenshot=*) : > "\${a#--screenshot=}";; esac; done\nexit 0\n`;
+  // Each launch's argv goes to `${log}.argv`, one argument per line.
+  const script = `#!/bin/sh\necho "$0" >> "${log}"\nprintf '%s\\n' "$@" >> "${log}.argv"\nfor a in "$@"; do case "$a" in --screenshot=*) : > "\${a#--screenshot=}";; esac; done\nexit 0\n`;
   const exe = process.platform === "win32" ? ".exe" : "";
   const put = (rel: string) => {
     const p = join(dir, rel);
@@ -67,6 +86,17 @@ function envWithout(cache: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, PLAYWRIGHT_BROWSERS_PATH: cache };
   delete env.GS_CHROME;
   return env;
+}
+
+/**
+ * A shell launcher's Chrome got the guard whole: headlessChromeArgs() first, each
+ * switch ONE argument — the resolver rule has spaces and a `*`, which a shell
+ * splits and globs unless told not to.
+ */
+function assertGuarded(argv: string, who: string) {
+  const got = argv.split("\n").filter(Boolean);
+  const want = headlessChromeArgs();
+  assert.deepEqual(got.slice(0, want.length), want, `${who} launches Chrome with the guard's switches, first and intact`);
 }
 
 test("harnessChrome() with GS_CHROME unset is the newest Playwright headless shell", () => {
@@ -103,6 +133,7 @@ test("brand/rasterise.sh asks the shared discovery, launches the newest headless
       encoding: "utf8",
     });
     assert.deepEqual(readFileSync(log, "utf8").trim().split("\n"), [newest]);
+    assertGuarded(readFileSync(`${log}.argv`, "utf8"), "rasterise.sh");
     // Pointed at the desktop Chrome (a fake one here), outside CI it refuses.
     const fakeDesktop = join(dir, "Google Chrome.app", "Contents", "MacOS", "Google Chrome");
     mkdirSync(dirname(fakeDesktop), { recursive: true });
@@ -131,6 +162,7 @@ test("shot.sh with GS_CHROME unset launches the newest Playwright headless shell
       encoding: "utf8",
     });
     assert.deepEqual(readFileSync(log, "utf8").trim().split("\n"), [newest]);
+    assertGuarded(readFileSync(`${log}.argv`, "utf8"), "shot.sh");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -25,6 +25,14 @@ case "$CHROME" in
     fi
     ;;
 esac
+# --headless and no network but this machine's, as every test's Chrome
+# (scripts/test/no-network-chrome.mjs prints the switches, one per line; the
+# resolver rule has spaces and a `*`, so split on newlines only, no globbing).
+GUARD="$(node "$HERE/../scripts/test/no-network-chrome.mjs")"
+set -f; IFS='
+'
+set -- $GUARD
+unset IFS; set +f
 TMP=$(mktemp -d)
 cat > "$TMP/p.html" <<EOF
 <!doctype html><html><head><style>
@@ -32,7 +40,7 @@ html,body{margin:0;padding:0;background:transparent}
 img{width:${SIZE}px;height:${SIZE}px;display:block}
 </style></head><body><img src="file://$SRC"></body></html>
 EOF
-"$CHROME" --headless --disable-gpu \
+"$CHROME" "$@" --disable-gpu \
   --user-data-dir="$TMP/prof" --default-background-color=00000000 \
   --force-device-scale-factor=1 --window-size="$SIZE,$SIZE" \
   --virtual-time-budget=4000 --screenshot="$OUT" "file://$TMP/p.html" >/dev/null 2>&1

@@ -19,6 +19,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { headlessChromeArgs } from "../../../../scripts/test/no-network-chrome.mjs";
 import { decodeVerdictTitle, type Verdict } from "../headless";
 
 export { findChrome } from "../headless";
@@ -136,8 +137,8 @@ window.addEventListener("unhandledrejection", (e) => {
   return new Promise((res) => {
     execFile(
       chrome,
-      [
-        "--headless",
+      // Off the network, as every test's Chrome is (no-network-chrome.mjs).
+      headlessChromeArgs([
         "--disable-gpu",
         "--hide-scrollbars",
         "--no-sandbox",
@@ -146,7 +147,7 @@ window.addEventListener("unhandledrejection", (e) => {
         "--virtual-time-budget=20000",
         "--dump-dom",
         `file://${page}`,
-      ],
+      ]),
       { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
       (err, stdout) => {
         rmSync(page, { force: true });

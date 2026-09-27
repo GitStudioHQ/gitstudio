@@ -22,6 +22,7 @@
 // Everything here is a count, and counts are what survive that. For real
 // timings, drive the packaged app over CDP instead.
 import { harnessChrome } from "./chrome.mjs";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { chromeProfile } from "./profile.mjs";
 import { existsSync, readFileSync } from "node:fs";
@@ -169,8 +170,7 @@ function originOf(map, frame) {
 const profile = chromeProfile("gs-perf-");
 execFile(
   CHROME,
-  [
-    "--headless",
+  headlessChromeArgs([
     "--disable-gpu",
     "--hide-scrollbars",
     profile.flag,
@@ -181,7 +181,7 @@ execFile(
     "--js-flags=--expose-gc",
     "--dump-dom",
     url,
-  ],
+  ]),
   { maxBuffer: 128 * 1024 * 1024, timeout: 180_000, killSignal: "SIGKILL" },
   (err, stdout) => {
     profile.cleanup();

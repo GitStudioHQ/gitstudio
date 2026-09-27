@@ -16,6 +16,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { decodeVerdictTitle, findChrome } from "../../../packages/webview-ui/test/headless";
 
 export { findChrome };
@@ -181,8 +182,8 @@ function launch(chrome: string, page: string, args: string[], size: { width: num
       new Promise<string>((resolve, reject) => {
         execFile(
           chrome,
-          [
-            "--headless",
+          // Off the network, as every test's Chrome is (no-network-chrome.mjs).
+          headlessChromeArgs([
             "--disable-gpu",
             "--hide-scrollbars",
             "--no-sandbox",
@@ -193,7 +194,7 @@ function launch(chrome: string, page: string, args: string[], size: { width: num
             ...args,
             ...extra,
             pathToFileURL(file).href,
-          ],
+          ]),
           { maxBuffer: 64 * 1024 * 1024, timeout: 60_000, killSignal: "SIGKILL" },
           (err, stdout) => (err && !stdout ? reject(err) : resolve(stdout)),
         );

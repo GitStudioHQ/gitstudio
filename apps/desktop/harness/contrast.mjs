@@ -19,6 +19,7 @@
 // Exit code is 1 when anything fails, so it can gate a run.
 
 import { harnessChrome } from "./chrome.mjs";
+import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -330,12 +331,12 @@ function run(scene) {
   return new Promise((done) => {
     execFile(
       CHROME,
-      [
-        "--headless", "--disable-gpu", "--hide-scrollbars",
-       `--user-data-dir=${PROFILE}`,
+      headlessChromeArgs([
+        "--disable-gpu", "--hide-scrollbars",
+        `--user-data-dir=${PROFILE}`,
         `--window-size=${width},1000`, "--virtual-time-budget=12000",
         "--dump-dom", url,
-      ],
+      ]),
       { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
       (err, stdout) => {
         const m = /<title>PROBE ([\s\S]*?)<\/title>/.exec(stdout || "");

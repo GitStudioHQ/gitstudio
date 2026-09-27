@@ -27,7 +27,11 @@ npm run check-purity
 `npm test` runs every workspace's tests. Some render pages in headless
 Chrome: they find Chrome through `GS_CHROME` (a path to a Chrome or
 chrome-headless-shell binary), then the usual install location, and skip when
-there is none.
+there is none. Every such Chrome reaches this machine and nothing else: a
+launcher takes its argv from `headlessChromeArgs()` in
+`scripts/test/no-network-chrome.mjs` (a shell script runs that file for the
+switches), and `packages/webview-ui/test/chromeNoNetwork.test.ts` fails on one
+that does not.
 
 CI runs the same on Linux, macOS and Windows, so a test that depends on your
 machine (a global git config, a path separator, a locale) will show there.

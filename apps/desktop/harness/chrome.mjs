@@ -7,6 +7,10 @@
 // file for the path. Before it, every launcher here fell back to
 // /Applications/Google Chrome.app whenever GS_CHROME was unset — one run
 // launched the owner's own Chrome 111 times.
+//
+// Each launcher takes its argv from headlessChromeArgs()
+// (scripts/test/no-network-chrome.mjs): --headless, and no network but this
+// machine's. A scene's remote image went out on every one of ~1,000 launches.
 
 import { findChrome } from "../../../packages/webview-ui/test/findChrome.mjs";
 
