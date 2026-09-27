@@ -1,0 +1,25 @@
+apps/extension/harness/worktrees/narrow.ts
+  s_26f5e669d3043c::t_fe978ebee4a75f 1-6,14-19,25,28
+apps/extension/harness/worktrees/shots.ts
+  s_26f5e669d3043c::t_e34d7b6b60bab5 9-12,61-72,140-164
+apps/extension/test/worktreesWebview.test.ts
+  s_26f5e669d3043c::t_0ec6c6330e85e1 225-244
+packages/webview-ui/src/changeRows/changeRows.css
+  s_26f5e669d3043c::t_86cee860c7618a 68-70,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dcce183d24dac5039e5a831c05cfcf60ba6a8452",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
