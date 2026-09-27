@@ -1,0 +1,158 @@
+apps/extension/src/blame/blameController.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 6-7,213-220,679,871-874
+apps/extension/src/ui/walkthroughProgress.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-26
+apps/extension/test/aiProviderSchema.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 12,16,18-23
+apps/extension/harness/walkthrough/pack.py
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-49
+apps/extension/src/changes/lineStaging.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 9,266
+apps/extension/test/changesAccessibleNames.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 40-59,62-76,94-96,101,106-111,116,121-123,128-138
+  s_26f5e669d3043c::t_7c256ea2530a10 139-140
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,833
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,102,177,369,373,521,588,602,651,714,718,804,862,888,902,935,1006,1014,1032,1051,1068,1130,1138,1141-1146,1151,1157,1193
+apps/extension/package.json
+  s_26f5e669d3043c::t_e2e1e0032ac274 230-231,990-1037,1040-1148,1150-1178,1180,1183-1202,1204-1405,1408,1419,1422-1425,1427,1435-1436,1439-1442,1444,1452-1453,1456-1459,1461,1465-1467,1473,1476-1479,1481,1491,1494-1497,1499,1512-1515,1517,1593,1613,1662,1664-1675,1679,1683-1684,1688-1689,1693-1694,1698-1699,2346,2530-2533
+apps/extension/src/ai/aiCommands.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,211,316,482,521,552
+apps/extension/src/changes/operationBanner.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 23-31,34,36-45,47-49,82,84,86-92,94-95,97-98,114-116,120-121,127
+apps/extension/src/graph/refreshPlan.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-31
+apps/extension/harness/ai-settings/shots.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-50
+apps/extension/src/history/reflog.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,31,39,43
+apps/extension/src/rebase/rebaseCommands.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,42,48,102,107,117
+apps/extension/test/changesOperationBanner.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 45,47-52,62-90,174,198-207,233,243-245,259,273
+apps/extension/test/docsClaims.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 18,26,56-57
+apps/extension/test/iconMeanings.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-60
+apps/extension/harness/walkthrough/shots.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-353
+apps/extension/test/settingsLayout.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-123
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 60-62,179-182,251,394-429,450,1251-1252,1256,1262,1268,1273-1279,1492,1599-1602
+apps/extension/test/undoHistory.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 100,134,151,196,212
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,69,77,94-98,193
+apps/extension/test/changesToolbar.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 62-84
+apps/extension/src/undo/undoLedger.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,178,197,209,215,225,230,309,331,339,363,371,412,440,442
+apps/extension/src/history/fileTimelineProvider.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 5,42-43,45-48
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_e2e1e0032ac274 106-137,577-631
+apps/extension/test/dropCommit.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 270,436,488
+apps/extension/test/repoChangeKinds.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-355
+apps/extension/src/compare/comparePanel.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,57,336,379-380,444-446
+apps/extension/src/git/repoChange.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-75
+apps/extension/src/git/pauseNotice.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 3,11,17
+apps/extension/src/statusBar/statusCluster.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,167
+apps/extension/test/changesTreeKeyboard.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-527
+apps/extension/src/ai/gitBrain.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 12,168
+apps/extension/test/changesRowMenus.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-333
+apps/extension/src/ui/notify.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-65
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,319,334,455,473,490,530,642,646,719,983,1122,1132,1140,1147,1171,1173-1175,1187,1191-1192,1195
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2-4,1011-1013,1475,1554,1564,1723,1989,2092-2095,2235,2908-2913,3701-3703,3917-3918,4203,4206,4208,4211,4323-4326,4328,4331,4333,4335-4341,4353-4357,4360,4365-4392,4421,4444,4520-4524,4686-4881,4885,4889-4897,5402-5404,5428-5433,5435,5437-5443,6011-6012,6015-6023,6025,6029-6036,6039-6046,6057-6077,6079-6086,6089-6090,6093-6094,6101,6105,6107-6111,6114,7293-7304,7366,7375-7383,7598-7616,7622,7626-7642,7650,7668-7672,7674-7676,7678-7686,7688-7690,7758-7839,7841-7846,7849-7854,7857,7864-7867,7869,7874,7876-7881,7898,7914,7916,7935-7941,7946-7949,7951-7982,7984-8014,8016-8021,8024-8026,8028-8031,8033-8041,8049,8052,8059-8070,8075-8085,8089-8091,8094,8106-8108,8115,8117,8119,8125,8128-8131,8136,8145-8152,8160,8170-8173,8175-8192,8194-8198,8200-8203,8208-8209,8219,8231-8234,8236,8239,8241,8244,8246,8248,8251-8275,8278-8279,8282-8287,8289-8290,8294,8304,8308,8310,8321,8329-8340,8345-8384,8386-8406,8410-8411,8415-8450,8460-8465,8495,8501,8507,8518,8534,8562,8571-8575,8607,8622-8628,8643-8652,8671-8673,8675-8677,8682-8686,8698-8699,8701,8706-8707,8726-8754,9011-9027
+apps/extension/src/history/lineHistory.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,45,51
+apps/extension/src/git/repoPicker.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,183
+apps/extension/test/changesRowPatching.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-181
+apps/extension/src/ai/aiSettingsPanel.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 49,232-237,239-253,258-265,267-274,316-318,344-345,348,357,394
+apps/extension/src/git/repoManager.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 5-13,142-147,151-154,219,296,337,407-420,422,453,455,471-472,487,591,634-652,658,662-676
+  s_26f5e669d3043c::t_7d415cea09e0b7 677
+apps/extension/test/walkthroughMedia.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-102
+apps/extension/harness/compare/shots.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-98
+apps/extension/src/history/revisionNavigation.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,67,71,131,135
+apps/extension/test/branchResetDoor.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 166,224,241
+apps/extension/test/compareSummary.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 99-122
+apps/extension/test/refFilterStore.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 136-141
+apps/extension/harness/changes/shots.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-313
+apps/extension/src/history/historyContext.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,23,36
+apps/extension/test/aiSettingsTheme.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-92
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 2,639
+apps/extension/harness/changes/check-script.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-27
+apps/extension/src/views/optionLikeBranch.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 8,41,69
+apps/extension/test/failureWording.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-195
+apps/extension/test/vscodeRepoStub.cjs
+  s_26f5e669d3043c::t_e2e1e0032ac274 73-92,131,140-144,154
+apps/extension/test/editorMenus.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-90
+apps/extension/src/git/inTheWay.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 19,173,175,177
+apps/extension/test/changesOpBannerFit.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-173
+apps/extension/README.md
+  s_26f5e669d3043c::t_e2e1e0032ac274 141-142,145
+  s_26f5e669d3043c::t_41a611904a6d5c 146
+apps/extension/test/notifyStyle.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-157
+apps/extension/src/rebase/rebaseTodoEditor.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 12,164
+apps/extension/test/changesHeaderFit.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-112
+apps/extension/test/aiSettingsPage.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 1-172
+apps/extension/test/askBeforeTheViewOpens.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 80,88
+apps/extension/test/changesPage.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 222-225,269-279,291-294,299-307
+apps/extension/test/undoStateTable.test.ts
+  s_26f5e669d3043c::t_e2e1e0032ac274 268-270,650,937,1023,1040,1097,1414,1585,1632,1654,1687,1722,1749
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8bccf2e5960f62d19bd257754417506fc23bd67c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
