@@ -221,6 +221,8 @@ const KEYS: Record<string, { code: string; vk: number }> = {
   End: { code: "End", vk: 35 },
   " ": { code: "Space", vk: 32 },
   a: { code: "KeyA", vk: 65 },
+  F10: { code: "F10", vk: 121 },
+  ContextMenu: { code: "ContextMenu", vk: 93 },
 };
 
 /** The DevTools protocol's modifier bits. */

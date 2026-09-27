@@ -210,6 +210,155 @@ for (const model of ["split", "checkboxes"] as Model[]) {
   }
 }
 
+// ── Every shape of the lists ─────────────────────────────────────────────────
+//
+// An empty group is not drawn (.group.empty), but its header stayed in the
+// page's list of rows: with nothing staged — the usual state — the list's one
+// tab stop was the hidden "Staged" header, and Tab never reached the list;
+// End on the last staged row moved the tab stop onto the hidden "Unstaged"
+// header; and staging the last unstaged file handed the keyboard to that
+// header, which dropped it on the page. The table: {split, checkbox model} ×
+// {list, tree} × every shape the three lists can take (each group empty or
+// not, conflicts alone) × (where the tab stop is, where Tab from the message
+// box lands, every movement key on every row, and every file leaving the
+// list or moving group). What is "visible" is measured by layout here, never
+// read from the page's bookkeeping.
+
+type Entry = { path: string; status: string };
+const MERGE = [{ path: "src/m.ts", status: "!" }];
+const SHAPES: { name: string; merge: Entry[]; staged: Entry[]; unstaged: Entry[] }[] = [
+  { name: "nothing staged", merge: [], staged: [], unstaged: UNSTAGED },
+  { name: "one unstaged file", merge: [], staged: STAGED, unstaged: [UNSTAGED[0]] },
+  { name: "everything staged", merge: [], staged: [...STAGED, ...UNSTAGED], unstaged: [] },
+  { name: "only conflicts", merge: MERGE, staged: [], unstaged: [] },
+  { name: "conflicts and unstaged", merge: MERGE, staged: [], unstaged: UNSTAGED },
+  { name: "conflicts and staged", merge: MERGE, staged: STAGED, unstaged: [] },
+  { name: "all three", merge: MERGE, staged: STAGED, unstaged: UNSTAGED },
+  { name: "clean", merge: [], staged: [], unstaged: [] },
+];
+const MOVES = ["ArrowDown", "ArrowUp", "Home", "End", "PageDown", "PageUp"];
+
+/** Where the keyboard is, and every element of the list that holds a tab stop, seen or not. */
+async function keyboardAt(page: ChangesPage): Promise<{ focus: string | null; focusShown: boolean; stops: { tkey: string; shown: boolean }[] }> {
+  return page.eval(`(function () {
+    var a = document.activeElement;
+    var groups = document.getElementById("groups");
+    var inList = groups.contains(a) && a.dataset && a.dataset.tkey;
+    return {
+      focus: inList ? a.dataset.tkey : null,
+      focusShown: !!inList && a.offsetParent !== null,
+      stops: Array.prototype.filter.call(groups.querySelectorAll("*"), function (n) { return n.tabIndex >= 0; })
+        .map(function (n) { return { tkey: n.dataset.tkey || n.tagName, shown: n.offsetParent !== null }; }),
+    };
+  })()`);
+}
+
+for (const model of ["split", "checkboxes"] as Model[]) {
+  for (const layout of ["list", "tree"] as Layout[]) {
+    test(`every shape of the lists: ${model} model, ${layout} layout — the tab stop, Tab, every move and every file leaving`, { skip }, async () => {
+      const page = await ChangesPage.open("dark", { width: 460, height: 720 });
+      opened.push(page);
+      const failures: string[] = [];
+      let cells = 0;
+      const stateOf = (shape: { merge: Entry[]; staged: Entry[]; unstaged: Entry[] }) => ({
+        ...stateMessage({ local: [{ name: "main", current: true }] }),
+        merge: shape.merge,
+        staged: shape.staged,
+        unstaged: shape.unstaged,
+        stagingModel: model,
+        layout,
+      });
+      for (const shape of SHAPES) {
+        const fresh = async () => {
+          await page.reload();
+          await page.send(stateOf(shape));
+        };
+        await fresh();
+        const start = await visible(page);
+        const where = (s: string) => `${shape.name}: ${s}`;
+
+        // The tab stop: one, and on a row that can be seen — none with nothing to see.
+        cells++;
+        const at = await keyboardAt(page);
+        const hiddenStops = at.stops.filter((x) => !x.shown).map((x) => x.tkey);
+        if (hiddenStops.length) failures.push(where(`a tab stop nobody can see: ${hiddenStops}`));
+        if (start.length > 0 && at.stops.length !== 1) failures.push(where(`${at.stops.length} tab stops in the list`));
+
+        // Tab from the message box reaches the list (and lands on a row that can be seen).
+        cells++;
+        await page.eval(`document.getElementById("message").focus()`);
+        let reached: { focus: string | null; focusShown: boolean } | null = null;
+        for (let i = 0; i < 24; i++) {
+          await page.key("Tab");
+          const k = await keyboardAt(page);
+          if (k.focus) {
+            reached = k;
+            break;
+          }
+          if (await page.eval<boolean>(`document.activeElement === document.getElementById("message")`)) break;
+        }
+        if (start.length > 0 && !reached) failures.push(where("Tab from the message box never reaches the list"));
+        if (reached && !reached.focusShown) failures.push(where(`Tab lands on ${reached.focus}, which nobody can see`));
+        if (start.length === 0 && reached) failures.push(where(`Tab reaches ${reached.focus} in an empty list`));
+
+        // Every movement key on every row: to the row worked out from what is showing.
+        for (const it of start) {
+          for (const key of MOVES) {
+            cells++;
+            const now = await visible(page);
+            if (fingerprint(now) !== fingerprint(start)) await fresh();
+            await page.eval(`document.querySelector('[data-tkey="${it.tkey}"]').focus()`);
+            await page.key(key);
+            const i = start.findIndex((x) => x.tkey === it.tkey);
+            const pageRows = Math.max(1, Math.floor(720 / 24) - 1);
+            const to =
+              key === "ArrowDown" ? i + 1 : key === "ArrowUp" ? i - 1 : key === "Home" ? 0 : key === "End" ? start.length - 1
+              : key === "PageDown" ? i + pageRows : i - pageRows;
+            const want = start[Math.max(0, Math.min(start.length - 1, to))].tkey;
+            const k = await keyboardAt(page);
+            const stopKeys = k.stops.map((x) => x.tkey);
+            if (k.focus !== want) failures.push(where(`${it.tkey} + ${key}: focus ${k.focus}, expected ${want}`));
+            if (stopKeys.length !== 1 || stopKeys[0] !== want) failures.push(where(`${it.tkey} + ${key}: tab stop on ${stopKeys}, expected ${want}`));
+          }
+        }
+
+        // Every file leaving the list (discarded, committed) or moving group
+        // (staged, unstaged): the keyboard stays on a row that can be seen,
+        // and the tab stop goes with it.
+        for (const it of start.filter((x) => x.kind === "file")) {
+          for (const how of ["gone", "moved"] as const) {
+            if (how === "moved" && (model === "checkboxes" || !it.path || shape.merge.some((m) => m.path === it.path))) continue;
+            cells++;
+            await fresh();
+            await page.eval(`document.querySelector('[data-tkey="${it.tkey}"]').focus()`);
+            const drop = (list: Entry[]) => list.filter((e) => e.path !== it.path);
+            const entry = [...shape.merge, ...shape.staged, ...shape.unstaged].find((e) => e.path === it.path)!;
+            const next =
+              how === "gone"
+                ? { merge: drop(shape.merge), staged: drop(shape.staged), unstaged: drop(shape.unstaged) }
+                : it.staged
+                  ? { merge: shape.merge, staged: drop(shape.staged), unstaged: [...shape.unstaged, entry] }
+                  : { merge: shape.merge, staged: [...shape.staged, entry], unstaged: drop(shape.unstaged) };
+            await page.send(stateOf(next));
+            const k = await keyboardAt(page);
+            const after = await visible(page);
+            const tag = where(`${it.tkey} ${how}`);
+            if (after.length === 0) {
+              if (k.stops.some((x) => !x.shown)) failures.push(`${tag}: a tab stop nobody can see`);
+              continue;
+            }
+            if (!k.focus || !k.focusShown) failures.push(`${tag}: focus ${k.focus ?? "left the list"}${k.focus ? " (hidden)" : ""}`);
+            const stopKeys = k.stops.map((x) => x.tkey);
+            if (stopKeys.length !== 1 || stopKeys[0] !== k.focus) failures.push(`${tag}: tab stop on ${stopKeys}, focus on ${k.focus}`);
+          }
+        }
+      }
+      assert.ok(cells > 100, `${cells} cells`);
+      assert.deepEqual(failures, [], `${failures.length} of ${cells} cells wrong`);
+    });
+  }
+}
+
 test("one tab stop: Tab reaches the list once, lands on a row, and leaves it on the next Tab", { skip }, async () => {
   const page = await ChangesPage.open("dark", { width: 460, height: 720 });
   opened.push(page);

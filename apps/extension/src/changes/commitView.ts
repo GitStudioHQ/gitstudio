@@ -3698,6 +3698,9 @@ export class CommitViewProvider
       border-style: solid;
     }
     .group { margin-top: 4px; }
+    /* An empty group is not drawn; the tree's keyboard skips it too (see
+       shownItem in the script). Hide a treeitem another way, and teach
+       shownItem the same rule. */
     .group.empty { display: none; }
     /* Checkbox model (gitstudio.changes.stagingModel = "checkboxes"). The tick
        is the only staging affordance in this mode, so it gets a real hit area
@@ -4734,12 +4737,22 @@ export class CommitViewProvider
     function itemOf(node) {
       return node && node.closest ? node.closest('[role="treeitem"]') : null;
     }
+    /**
+     * Whether a person can see this treeitem: not inside a closed group, and
+     * not in an empty one — an empty group is not drawn (.group.empty), but
+     * its header is still in the DOM. Counting that header put the list's
+     * only tab stop on something nobody could see whenever nothing was staged,
+     * so Tab never reached the list at all.
+     */
+    function shownItem(it) {
+      return !!it && !it.closest(".group.empty, .group.collapsed .group-body");
+    }
     /** The treeitems a person can see, top to bottom. */
     function treeItems() {
       const all = groupsEl.querySelectorAll('[role="treeitem"]');
       const out = [];
       for (let i = 0; i < all.length; i++) {
-        if (!all[i].closest(".group.collapsed .group-body")) out.push(all[i]);
+        if (shownItem(all[i])) out.push(all[i]);
       }
       return out;
     }
@@ -4748,13 +4761,17 @@ export class CommitViewProvider
       return groupsEl.querySelector('[data-tkey="' + CSS.escape(tkey) + '"]');
     }
     function levelOf(it) { return Number(it.getAttribute("aria-level") || "1"); }
-    /** Put the one tab stop on the active item (or the first, or its closed group's header). */
+    /**
+     * Put the one tab stop on the active item — or its closed group's
+     * header, or, when neither can be seen, the first item that can. With
+     * nothing to see, the list has no tab stop.
+     */
     function applyRoving() {
       let target = itemByTKey(activeTKey);
       if (target && target.closest(".group.collapsed .group-body")) {
         target = target.closest(".group").querySelector(".group-header");
       }
-      if (!target) target = groupsEl.querySelector('[role="treeitem"]');
+      if (!shownItem(target)) target = treeItems()[0] || null;
       if (rovingEl && rovingEl !== target) rovingEl.tabIndex = -1;
       rovingEl = target;
       if (target && target.tabIndex !== 0) target.tabIndex = 0;
@@ -4828,6 +4845,13 @@ export class CommitViewProvider
       // Enter, Space and the arrows sideways on a row's own button or tick
       // belong to that control.
       if (ev.target !== it || mod) return;
+      // Shift+F10 or the menu key: the row's menu — a file's, a folder's or
+      // a group's — which is the keyboard's way to the row's buttons.
+      if (k === "ContextMenu" || (ev.shiftKey && k === "F10")) {
+        if (it.__menu) it.__menu(ev);
+        else ev.preventDefault();
+        return;
+      }
       const expanded = it.getAttribute("aria-expanded");
       if (k === "ArrowRight") {
         ev.preventDefault();
@@ -5987,14 +6011,38 @@ export class CommitViewProvider
     // ---- Reusable in-sidebar action popover (file rows: double/right-click) ----
     // Opens right at the row inside the sidebar — NOT the VS Code quick-pick.
     let actionMenuEl = null;
-    function closeActionMenu() {
+    // The row (or header) the open menu belongs to. The menu is the
+    // keyboard's only way to a row's Stage, Unstage and Discard, and closing
+    // it dropped the focus on the page: the next arrow key did nothing, and
+    // the row that had just been staged could not hand the keyboard on.
+    let actionMenuAnchor = null;
+    /** Close the menu; with refocus, the keyboard goes back to the row it came from. */
+    function closeActionMenu(refocus) {
+      const anchor = actionMenuAnchor;
+      const hadFocus = !!actionMenuEl && actionMenuEl.contains(document.activeElement);
       if (actionMenuEl) { actionMenuEl.remove(); actionMenuEl = null; }
+      actionMenuAnchor = null;
       document.removeEventListener("mousedown", onActionDocDown, true);
       document.removeEventListener("keydown", onActionKey, true);
       window.removeEventListener("blur", onActionBlur, true);
+      if (refocus && anchor && anchor.isConnected && (hadFocus || isPageFocus())) {
+        anchor.focus({ preventScroll: true });
+      }
+    }
+    /** Nothing in particular has the keyboard: the page itself. */
+    function isPageFocus() {
+      const a = document.activeElement;
+      return !a || a === document.body || a === document.documentElement;
     }
     function onActionDocDown(e) {
-      if (actionMenuEl && !actionMenuEl.contains(e.target)) closeActionMenu();
+      if (!actionMenuEl || actionMenuEl.contains(e.target)) return;
+      const anchor = actionMenuAnchor;
+      closeActionMenu(false);
+      // A click elsewhere goes where it was aimed; only a click on nothing
+      // that takes the keyboard gives it back to the menu's row.
+      setTimeout(() => {
+        if (anchor && anchor.isConnected && isPageFocus()) anchor.focus({ preventScroll: true });
+      }, 0);
     }
     // The webview cannot see clicks in the editor/main area — those never reach
     // this document. Blur is the only signal that focus left the webview, so
@@ -6005,28 +6053,64 @@ export class CommitViewProvider
       }, 0);
     }
     function onActionKey(e) {
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeActionMenu(); }
+      if (!actionMenuEl) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        closeActionMenu(true);
+        return;
+      }
+      // A menu's keys: Up and Down move through its items (round the ends),
+      // Home and End go to the first and last, and Tab stays in the menu.
+      const items = Array.prototype.slice.call(actionMenuEl.querySelectorAll(".bm-subaction"));
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement);
+      let to = -1;
+      if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) to = i < 0 ? 0 : (i + 1) % items.length;
+      else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) to = i <= 0 ? items.length - 1 : i - 1;
+      else if (e.key === "Home") to = 0;
+      else if (e.key === "End") to = items.length - 1;
+      if (to < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      items[to].focus();
     }
-    function openActionMenu(title, items, anchor) {
-      closeActionMenu();
+    /**
+     * The in-sidebar menu for a row, a folder or a group's header, opened
+     * under anchor. icon is the codicon beside its title (none for a group).
+     * Choosing an item gives the keyboard back to anchor BEFORE it acts, so a
+     * row the action takes out of the list hands the keyboard to the next.
+     */
+    function openActionMenu(title, items, anchor, icon) {
+      closeActionMenu(false);
       closeBranchSubmenu();
       const menu = el("div", "branch-submenu action-menu");
+      menu.setAttribute("role", "menu");
+      if (title) menu.setAttribute("aria-label", title);
       if (title) {
         const head = el("div", "bm-subhead");
-        head.appendChild(el("i", "codicon codicon-file"));
+        head.setAttribute("aria-hidden", "true");
+        if (icon !== null) head.appendChild(el("i", "codicon codicon-" + (icon || "file")));
         const nm = el("span", "bm-subhead-name");
         nm.textContent = title;
         head.appendChild(nm);
         menu.appendChild(head);
       }
       const list = el("div", "bm-sublist");
+      list.setAttribute("role", "none");
       menu.appendChild(list);
       for (const it of items) {
         if (it.sep) { subSep(list); continue; }
-        subItem(list, it.icon, it.label, () => { closeActionMenu(); it.fn(); }, it.danger);
+        subItem(list, it.icon, it.label, () => { closeActionMenu(true); it.fn(); }, it.danger);
       }
+      list.querySelectorAll(".bm-subaction").forEach((b) => {
+        b.setAttribute("role", "menuitem");
+        b.tabIndex = -1;
+      });
+      list.querySelectorAll(".bm-subsep").forEach((s) => s.setAttribute("role", "separator"));
       document.body.appendChild(menu);
       actionMenuEl = menu;
+      actionMenuAnchor = anchor || null;
       // Anchor under the row's left edge; flip up / clamp so it never leaves view.
       const PAD = 6;
       const r = menu.getBoundingClientRect();
@@ -7511,18 +7595,21 @@ export class CommitViewProvider
      */
     function render() {
       // Where the keyboard is, so a row that leaves the list (staged,
-      // discarded) hands focus to its neighbour instead of dropping it on
-      // the page.
+      // discarded) hands focus to the next row still there — or, with none
+      // after it, the one before — instead of dropping it on the page. The
+      // whole run on each side, not only the neighbours: a folder or a
+      // group takes its files with it.
       const ae = document.activeElement;
       const focused = ae && groupsEl.contains(ae) ? itemOf(ae) : null;
       let was = null;
       if (focused) {
         const items = treeItems();
         const i = items.indexOf(focused);
+        const keyOf = (n) => n.dataset.tkey;
         was = {
           tkey: focused.dataset.tkey,
-          next: items[i + 1] ? items[i + 1].dataset.tkey : null,
-          prev: items[i - 1] ? items[i - 1].dataset.tkey : null,
+          after: i < 0 ? [] : items.slice(i + 1).map(keyOf),
+          before: i < 0 ? [] : items.slice(0, i).reverse().map(keyOf),
           index: i,
         };
       }
@@ -7536,12 +7623,20 @@ export class CommitViewProvider
         selectionAnchor = null;
       }
       applyRoving();
-      if (was && !groupsEl.contains(document.activeElement)) {
-        let to = itemByTKey(was.tkey) || itemByTKey(was.next) || itemByTKey(was.prev);
-        if (!to) {
-          const items = treeItems();
-          to = items[Math.min(Math.max(was.index, 0), items.length - 1)] || null;
-        }
+      // Only to a row that can be seen: the header of a group this render
+      // emptied is still in the DOM (and may still hold the focus for a
+      // frame), and a focus() on it lands nowhere.
+      const now = document.activeElement;
+      const lost = !groupsEl.contains(now) || (!!itemOf(now) && !shownItem(itemOf(now)));
+      if (was && lost) {
+        // One pass over the rows (a Stage All can take thousands at once).
+        const items = treeItems();
+        const shownNow = new Map();
+        for (let j = 0; j < items.length; j++) shownNow.set(items[j].dataset.tkey, items[j]);
+        let to = shownNow.get(was.tkey) || null;
+        for (let j = 0; !to && j < was.after.length; j++) to = shownNow.get(was.after[j]) || null;
+        for (let j = 0; !to && j < was.before.length; j++) to = shownNow.get(was.before[j]) || null;
+        if (!to) to = items[Math.min(Math.max(was.index, 0), items.length - 1)] || null;
         if (to) focusItem(to);
       }
       updateSelectionBar();
@@ -7775,9 +7870,12 @@ export class CommitViewProvider
       glabel.textContent = "Changes";
       const gcount = el("span", "gcount");
       const actions = el("span", "group-actions");
+      const discardAllNow = function () {
+        vscode.postMessage({ type: "discardAll", group: "unstaged" });
+      };
       const discardAll = rowBtn(ICON_DISCARD, "Discard All", function (ev) {
         ev.stopPropagation();
-        vscode.postMessage({ type: "discardAll", group: "unstaged" });
+        discardAllNow();
       });
       actions.appendChild(discardAll);
       // Selecting a "section" in this model. There is only one list here — the
@@ -7833,13 +7931,13 @@ export class CommitViewProvider
           fn: function () { vscode.postMessage({ type: "stashStaged" }); } });
         items.push({ icon: "archive", label: "Stash All Changes",
           fn: function () { vscode.postMessage({ type: "stash" }); } });
-        openActionMenu("Changes", items, header);
+        // The header's own button, for the keyboard (it is out of the tab order).
+        items.push({ sep: true });
+        items.push({ icon: "discard", label: "Discard All", danger: true, fn: discardAllNow });
+        openActionMenu("Changes", items, header, null);
       };
+      header.__menu = menu;
       header.addEventListener("contextmenu", menu);
-      header.addEventListener("keydown", function (ev) {
-        if (ev.target !== header) return;
-        if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) menu(ev);
-      });
 
       header.append(master, glabel, actions, gcount);
       group.appendChild(header);
@@ -8107,7 +8205,7 @@ export class CommitViewProvider
       const glabel = el("span", "glabel");
       glabel.textContent = def.label;
       header.title = def.label + " — click to collapse, " +
-        "Ctrl/Cmd-click to select every file in it";
+        "Ctrl/Cmd-click to select every file in it, right-click for its actions";
       const gcount = el("span", "gcount");
 
       // Select the whole section. Ctrl/cmd-click matches the row modifier, and a
@@ -8129,26 +8227,51 @@ export class CommitViewProvider
         paintSelection();
       });
 
-      const actions = el("span", "group-actions");
+      // The header's buttons, and the same actions in its menu (right-click,
+      // Shift+F10) — the keyboard's way to them, as the buttons are out of
+      // the tab order.
+      const acts = [];
       if (def.kind === "staged") {
-        actions.appendChild(rowBtn(ICON_UNSTAGE, "Unstage All", (ev) => {
-          ev.stopPropagation();
+        acts.push({ svg: ICON_UNSTAGE, icon: "remove", label: "Unstage All", fn: () => {
           queueGroup("staged", "unstage");
           vscode.postMessage({ type: "unstageAll", group: def.kind });
-        }));
+        } });
       } else {
-        actions.appendChild(rowBtn(ICON_STAGE, "Stage All", (ev) => {
-          ev.stopPropagation();
+        acts.push({ svg: ICON_STAGE, icon: "add", label: "Stage All", fn: () => {
           queueGroup(def.kind, "stage");
           vscode.postMessage({ type: "stageAll", group: def.kind });
-        }));
+        } });
         if (def.kind === "unstaged") {
-          actions.appendChild(rowBtn(ICON_DISCARD, "Discard All", (ev) => {
-            ev.stopPropagation();
+          acts.push({ svg: ICON_DISCARD, icon: "discard", label: "Discard All", danger: true, fn: () => {
             vscode.postMessage({ type: "discardAll", group: def.kind });
-          }));
+          } });
         }
       }
+      const actions = el("span", "group-actions");
+      for (const a of acts) {
+        actions.appendChild(rowBtn(a.svg, a.label, (ev) => { ev.stopPropagation(); a.fn(); }));
+      }
+      header.__menu = (ev) => {
+        if (ev) ev.preventDefault();
+        const list = header.__list || [];
+        const items = acts.map((a) => ({ icon: a.icon, label: a.label, fn: a.fn, danger: a.danger }));
+        // What Ctrl/Cmd-click on the header does, from the keyboard.
+        items.push({ sep: true });
+        items.push({ icon: "check-all", label: "Select All (" + list.length + ")", fn: () => {
+          selectedRows.clear();
+          for (let i = 0; i < list.length; i++) selectedRows.add(rowKey(def.kind, list[i].path));
+          selectionAnchor = list.length > 0 ? rowKey(def.kind, list[list.length - 1].path) : null;
+          paintSelection();
+        } });
+        if (def.kind !== "merge") {
+          items.push({ sep: true });
+          items.push(def.kind === "staged"
+            ? { icon: "archive", label: "Stash Everything Staged", fn: () => vscode.postMessage({ type: "stashStaged" }) }
+            : { icon: "archive", label: "Stash All Changes", fn: () => vscode.postMessage({ type: "stash" }) });
+        }
+        openActionMenu(def.label, items, header, null);
+      };
+      header.addEventListener("contextmenu", header.__menu);
 
       header.append(twisty, gdot, glabel, actions, gcount);
       const setOpen = (open) => {
@@ -8240,31 +8363,46 @@ export class CommitViewProvider
       // Folder-level stage/unstage/discard — one git op over every file under
       // this folder (mirrors the per-file actions; stopPropagation so the
       // button click never toggles the folder's collapse).
-      const factions = el("span", "row-actions");
+      // The same actions are the folder's menu (right-click, Shift+F10): its
+      // buttons are the pointer's, and out of the tab order.
+      const acts = [];
       if (def.staged) {
-        factions.appendChild(rowBtn(ICON_UNSTAGE, "Unstage folder", (ev) => {
-          ev.stopPropagation();
+        acts.push({ svg: ICON_UNSTAGE, icon: "remove", tip: "Unstage folder", label: "Unstage Folder", fn: () => {
           queueFiles(row.__paths, "unstage");
           vscode.postMessage({ type: "unstageFolder", paths: row.__paths });
-        }));
+        } });
       } else {
-        factions.appendChild(rowBtn(ICON_STAGE, "Stage folder", (ev) => {
-          ev.stopPropagation();
+        acts.push({ svg: ICON_STAGE, icon: "add", tip: "Stage folder", label: "Stage Folder", fn: () => {
           queueFiles(row.__paths, "stage");
           vscode.postMessage({ type: "stageFolder", paths: row.__paths });
-        }));
+        } });
         if (def.kind === "unstaged") {
-          factions.appendChild(rowBtn(ICON_DISCARD, "Discard folder", (ev) => {
-            ev.stopPropagation();
+          acts.push({ svg: ICON_DISCARD, icon: "discard", tip: "Discard folder", label: "Discard Folder", danger: true, fn: () => {
             vscode.postMessage({ type: "discardFolder", paths: row.__paths });
-          }));
+          } });
         }
+      }
+      const factions = el("span", "row-actions");
+      for (const a of acts) {
+        factions.appendChild(rowBtn(a.svg, a.tip, (ev) => { ev.stopPropagation(); a.fn(); }));
       }
       row.appendChild(factions);
       const setOpen = (open) => { collapsed[key] = !open; render(); };
       row.addEventListener("click", () => setOpen(collapsed[key] === true));
       row.__expand = setOpen;
       row.__activate = () => setOpen(collapsed[key] === true);
+      row.__menu = (ev) => {
+        if (ev) ev.preventDefault();
+        const items = acts.map((a) => ({ icon: a.icon, label: a.label, fn: a.fn, danger: a.danger }));
+        // A conflicted file is not stashed; the other folders' files can be.
+        if (def.kind !== "merge") {
+          items.push({ sep: true });
+          items.push({ icon: "archive", label: "Stash This Folder",
+            fn: () => vscode.postMessage({ type: "stashPaths", paths: row.__paths }) });
+        }
+        openActionMenu(name, items, row, "folder");
+      };
+      row.addEventListener("contextmenu", row.__menu);
       return row;
     }
 
@@ -8392,7 +8530,7 @@ export class CommitViewProvider
         }
         const multi = selectedRows.has(key) && selectedRows.size > 1;
         if (multi) {
-          openActionMenu(String(selectionPaths().length) + " files", multiItems(), row);
+          openActionMenu(String(selectionPaths().length) + " files", multiItems(), row, "files");
           return;
         }
         const items = [
@@ -8420,7 +8558,7 @@ export class CommitViewProvider
         items.push({ icon: "archive", label: def.staged ? "Stash Everything Staged" : "Stash All Changes",
           fn: () => vscode.postMessage(
             def.staged ? { type: "stashStaged" } : { type: "stash" }) });
-        openActionMenu(fileName, items, row);
+        openActionMenu(fileName, items, row, "file");
       };
       row.addEventListener("click", (ev) => {
         // A modifier click selects; a plain one opens, as it always has.
@@ -8465,10 +8603,7 @@ export class CommitViewProvider
         document.body.classList.remove("is-dragging-files");
         hideDropZone();
       });
-      row.addEventListener("keydown", (ev) => {
-        if (ev.target !== row) return;
-        if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) menu(ev);
-      });
+      row.__menu = menu;
       return row;
     }
 

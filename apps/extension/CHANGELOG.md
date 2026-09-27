@@ -109,12 +109,18 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   close a group, a folder or a file's changes — or step into and out of one —
   **Enter** opens a file's diff, **Space** ticks a file (or a single change)
   in the checkbox view, **Shift+Up/Down** extends the selection and
-  **Ctrl/Cmd+A** selects every file; **Shift+F10** opens a row's menu, with
-  its Stage, Unstage and Discard. A screen reader hears a tree: each row is
-  its file and what happened to it ("README.md, Modified"), whether it is
-  ticked, and whether a group or folder is open — not every button on the row
-  read out together. When a file you are on leaves the list (staged,
-  discarded), the keyboard moves to the next one. The push review's files are
+  **Ctrl/Cmd+A** selects every file. **Shift+F10** (or the menu key) opens
+  the menu of a file, a folder or a group — with everything its buttons do:
+  Stage, Unstage and Discard, Stage Folder, Stage All, Unstage All and
+  Discard All — and a right-click on a folder or a group opens the same
+  menu. **Up** and **Down** move through a menu, and choosing from it or
+  pressing **Escape** puts you back on the row. A screen reader hears a tree:
+  each row is its file and what happened to it ("README.md, Modified"),
+  whether it is ticked, and whether a group or folder is open — not every
+  button on the row read out together. **Tab** reaches the first row you can
+  see, also when nothing is staged. When a file you are on leaves the list
+  (staged — from its menu too — or discarded), the keyboard moves to the next
+  one. The push review's files are
   reachable with **Tab** (**Enter** opens one's diff), and **Tab** stays in
   the dialog. A button reached with **Tab** shows its tip, as it does under
   the pointer.

@@ -176,6 +176,35 @@ const scenes: Scene[] = [
       await p.key("ArrowDown");
     },
   },
+  {
+    // A folder's menu, from the keyboard: its buttons' actions (Shift+F10).
+    name: "08-folder-menu",
+    steps: async (p) => {
+      await p.send({ ...base(), layout: "tree" });
+      await p.eval(`document.querySelector('[data-tkey^="d:split:unstaged:"]').focus()`);
+      await p.key("F10", { with: ["shift"] });
+      await p.key("ArrowDown");
+    },
+  },
+  {
+    // A group header's menu: Stage All, Discard All, Select All, Stash.
+    name: "09-group-menu",
+    steps: async (p) => {
+      await p.send(base());
+      await focusRow(p, "g:unstaged");
+      await p.key("F10", { with: ["shift"] });
+    },
+  },
+  {
+    // Nothing staged: Tab from the toolbar lands on the Unstaged header, the
+    // first row that is drawn (it was the hidden Staged header).
+    name: "13-nothing-staged-tab",
+    steps: async (p) => {
+      await p.send({ ...base(), staged: [], stagedCount: 0 });
+      await p.eval(`document.getElementById("refresh").focus()`);
+      await p.key("Tab");
+    },
+  },
   { name: "07-clean", steps: async (p) => p.send({ ...base(), staged: [], unstaged: [], stagedCount: 0, ahead: 0, behind: 0, unpushed: 0 }) },
   {
     name: "10-rebase-conflicts",
