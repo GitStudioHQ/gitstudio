@@ -1,0 +1,25 @@
+apps/extension/test/compareSummary.test.ts
+  s_26f5e669d3043c::t_863e944bb208e6 99-122
+apps/extension/test/iconMeanings.test.ts
+  s_26f5e669d3043c::t_a70591f560178c 1-60
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_1ae705c70015a1 4430
+apps/extension/src/compare/comparePanel.ts
+  s_26f5e669d3043c::t_1ae705c70015a1 337,380-381,445-447
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5b2a908e2e2405ed087143ae34d3ffb2ad6b76ce",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
