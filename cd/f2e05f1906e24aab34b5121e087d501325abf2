@@ -1,0 +1,27 @@
+apps/extension/src/pr/checkoutPr.ts
+  s_26f5e669d3043c::t_f02ecf23700fc8 17,74-86,317-319,324,333
+apps/extension/test/branchInAnotherWorktree.test.ts
+  s_26f5e669d3043c::t_798330ca9631e7 43,170,172-173,176-190,198,200,202,206
+apps/extension/test/prCheckoutBranch.test.ts
+  s_26f5e669d3043c::t_007e81b15ccb9c 20-21,358-372
+packages/git-service/src/prBranch.ts
+  s_26f5e669d3043c::t_fc52b0e7d8663e 89,154-167,177,192-204,206-216,218-233,235-248,251
+packages/git-service/test/prBranch.test.ts
+  s_26f5e669d3043c::t_b6319b4b253b9e 16,210-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cdf2e05f1906e24aab34b5121e087d501325abf2",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
