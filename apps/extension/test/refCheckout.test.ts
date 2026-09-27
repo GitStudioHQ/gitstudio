@@ -18,7 +18,7 @@ import { listedRefCheckout, planListedRefCheckout, resolveListedRef } from "../s
 // does with what it is handed.
 
 // Hermetic git: a global config brings hooks, LFS filters and a trace2
-// listener that races teardown (see git-service/test/hermetic.ts).
+// listener that races teardown (see scripts/test/hermetic-git.mjs).
 const CFG = join(mkdtempSync(join(tmpdir(), "gs-ext-co-cfg-")), "config");
 writeFileSync(CFG, "");
 process.env.GIT_CONFIG_GLOBAL = CFG;

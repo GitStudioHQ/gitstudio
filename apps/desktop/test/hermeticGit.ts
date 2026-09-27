@@ -1,11 +1,10 @@
 // Pin every git this test process runs — the fixtures' own execFileSync calls
 // AND the GitBridge's GitProcess, which inherits this environment — to an
-// empty, isolated config.
+// empty, isolated config, with no network and no credential helper.
 //
-// The same discipline as packages/git-service/test/hermetic.ts, which the
-// engine suite loads with `--import`. The desktop suite has no such preload,
-// so a test that shells out to real git and whose outcome depends on config
-// imports this FIRST:
+// The desktop suite's `test` script loads scripts/test/hermetic-git.mjs before
+// every file, as every workspace's does. A test whose outcome depends on git's
+// config still imports this FIRST, so it is hermetic however it is run:
 //
 //     import "./hermeticGit";
 //
@@ -15,20 +14,7 @@
 // with `pull.rebase=true` in ~/.gitconfig, a diverged pull rebased instead of
 // asking, and three of pullDiverged.test.ts's eight cases failed for a reason
 // that had nothing to do with the code under test.
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-const cfg = join(mkdtempSync(join(tmpdir(), "gitstudio-desktop-test-cfg-")), "config");
-writeFileSync(cfg, "");
-
-process.env.GIT_CONFIG_GLOBAL = cfg;
-process.env.GIT_CONFIG_SYSTEM = cfg;
-process.env.GIT_CONFIG_NOSYSTEM = "1";
-process.env.GIT_OPTIONAL_LOCKS = "0";
-delete process.env.GIT_TRACE2;
-delete process.env.GIT_TRACE2_EVENT;
-delete process.env.GIT_TRACE2_PERF;
+import { HERMETIC_GIT_CONFIG as CONFIG } from "../../../scripts/test/hermetic-git.mjs";
 
 /** The pinned (empty) global config file, for a test that wants to prove it. */
-export const HERMETIC_GIT_CONFIG = cfg;
+export const HERMETIC_GIT_CONFIG: string = CONFIG;

@@ -1,7 +1,7 @@
 // Real-git fixtures for the operation / conflict tests (PLAN §4 P2 "Tests").
 //
-// Hermetic on top of test/hermetic.ts (which pins an empty global/system
-// config): every repo sets its own identity, `core.autocrlf=false`,
+// Hermetic on top of scripts/test/hermetic-git.mjs (which pins an empty
+// global/system config): every repo sets its own identity, `core.autocrlf=false`,
 // `merge.conflictStyle=diff3` and `gc.auto=0`. GIT_EDITOR is set to `false`
 // for the whole suite, so any code path that would open an editor FAILS
 // instead of silently accepting — the tool shell running these tests exports

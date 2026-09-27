@@ -12,6 +12,9 @@
 // 3. Proves the checker itself catches a shrunken matrix — a check that cannot
 //    fail is not one (memory: adversarial-resweep).
 
+// Run by hand, outside `npm test`: no network, no credential helper, like every
+// test here (scripts/test/no-network-git.mjs).
+import "../test/no-network-git.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";

@@ -1,4 +1,4 @@
-// Real git repositories for the tests (hermetic config via test/hermetic.ts).
+// Real git repositories for the tests (hermetic config via scripts/test/hermetic-git.mjs).
 //
 // Operation views are HAND-BUILT here (the contract's instruction for a fake
 // OperationSource): a rebase view puts Yours on stage 3. They are never built

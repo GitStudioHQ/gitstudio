@@ -8,7 +8,7 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "test": "tsx --import ./test/hermetic.ts --test \"test/**/*.test.ts\"",
+    "test": "tsx --import ../../scripts/test/hermetic-git.mjs --test \"test/**/*.test.ts\"",
     "check-types": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

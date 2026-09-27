@@ -69,6 +69,12 @@ export async function openGitHubRepo(
   dest?: string,
   /** Per-action folder-name override. */
   nameOverride?: string,
+  /**
+   * Where `owner/repo` is cloned from: `<base>/<owner>/<repo>.git`. Injectable
+   * for tests, which clone from a folder on disk (a file:// base) — never from
+   * github.com, where a clone waits on the network and a credential helper.
+   */
+  cloneBase: string = "https://github.com",
 ): Promise<GhOpenResult> {
   const [owner, repo] = fullName.split("/", 2);
   if (!owner || !repo) {
@@ -130,7 +136,7 @@ export async function openGitHubRepo(
     };
   }
   const result = await startClone(
-    { url: `https://github.com/${fullName}.git`, parentDir: parent, name },
+    { url: `${cloneBase}/${fullName}.git`, parentDir: parent, name },
     onProgress,
   );
   if (!result.ok || !result.root) {

@@ -18,6 +18,9 @@
 // 4. git's own conflicted file is never "already resolved", and the file
 //    resolved by hand always is.
 
+// Run by hand, outside `npm test`: no network, no credential helper, like every
+// test here (scripts/test/no-network-git.mjs).
+import "../test/no-network-git.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

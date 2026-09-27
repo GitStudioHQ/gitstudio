@@ -15,7 +15,7 @@
     "start": "node esbuild.js && electron .",
     "package": "node esbuild.js --production && electron-builder --dir",
     "dist": "node esbuild.js --production && electron-builder",
-    "test": "tsx --test \"test/**/*.test.ts\"",
+    "test": "tsx --import ../../scripts/test/hermetic-git.mjs --test \"test/**/*.test.ts\"",
     "check-types": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.renderer.json"
   },
   "dependencies": {

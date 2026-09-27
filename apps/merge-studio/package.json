@@ -546,7 +546,7 @@
     "watch": "node esbuild.js --watch",
     "package": "node esbuild.js --production",
     "check-types": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test \"test/**/*.test.ts\" && node --test \"../../scripts/merge-studio/test/*.test.mjs\"",
+    "test": "tsx --import ../../scripts/test/hermetic-git.mjs --test \"test/**/*.test.ts\" && node --import ../../scripts/test/no-network-git.mjs --test \"../../scripts/merge-studio/test/*.test.mjs\"",
     "vscode:prepublish": "npm run package"
   },
   "dependencies": {

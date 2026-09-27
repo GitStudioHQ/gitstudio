@@ -124,8 +124,8 @@ test("parseWorktreePorcelain handles bare, detached, locked, and prunable", () =
 
 
 test("a differently-named branch from a remote start point gets no upstream unless told", async () => {
-  // A remote-tracking ref to start from. The hermetic env (test/hermetic.ts)
-  // blanks global config, so git's default branch.autoSetupMerge=true applies —
+  // A remote-tracking ref to start from. The hermetic env (scripts/test/
+  // hermetic-git.mjs) blanks global config, so git's default branch.autoSetupMerge=true applies —
   // exactly the situation WorktreeProvider.add()'s noTrack exists for.
   const remoteDir = mkdtempSync(join(tmpdir(), "gitstudio-remote-"));
   git(["init", "--bare", remoteDir]);

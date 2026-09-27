@@ -10,7 +10,7 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test \"test/**/*.test.ts\""
+    "test": "tsx --import ../../scripts/test/hermetic-git.mjs --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@gitstudio/engine": "*",

@@ -28,7 +28,7 @@ import {
 // the only thing keeping those two on the error path. The last four tests cover
 // exactly that.
 
-// Hermetic git, for the reason packages/git-service/test/hermetic.ts spells out:
+// Hermetic git, for the reason scripts/test/hermetic-git.mjs spells out:
 // against a developer's real global config, git inherits LFS filters, hooks, and
 // — the actual culprit behind an intermittent ENOTEMPTY teardown flake — a trace2
 // listener that writes to the repo asynchronously AFTER the foreground command

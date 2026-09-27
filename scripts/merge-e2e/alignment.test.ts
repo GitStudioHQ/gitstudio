@@ -14,6 +14,9 @@
 // with the webview package's own tests (packages/webview-ui/test/
 // mergeMatrixSlice.test.ts).
 
+// Run by hand, outside `npm test`: no network, no credential helper, like every
+// test here (scripts/test/no-network-git.mjs).
+import "../test/no-network-git.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
