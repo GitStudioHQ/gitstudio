@@ -1,0 +1,35 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_6c861c60465148 184,186-198,227-228,240-244
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_5826fb4a0339c6 970-972
+apps/extension/test/worktreesDoors.test.ts
+  s_26f5e669d3043c::t_7b2f9eb299d1c0 787
+apps/extension/test/worktreesStateTable.test.ts
+  s_26f5e669d3043c::t_79cfcb7b659ac9 346,358,400,576
+apps/extension/test/worktreesWebview.test.ts
+  s_26f5e669d3043c::t_8c34e791a47b0c 12,14,18-21,77-79,147,158-162,204-208,233-236,238-246,249-267,270-274,279-282,327-380,398,402,404-407,409,414-444,719-736,814,816-819,821-822,830-845,1010,1022,1074-1077,1084,1098-1100,1113-1159
+packages/host-bridge/src/worktreesProtocol.ts
+  s_26f5e669d3043c::t_e4c4e084192dca 166,175,193,238-240,245,269-288,301-302,304,325
+packages/host-bridge/test/worktreesProtocol.test.ts
+  s_26f5e669d3043c::t_82b62c67fd4929 123,168,170-172,230-231,259,281-321
+packages/webview-ui/src/worktrees/view.ts
+  s_26f5e669d3043c::t_548c7ab470dce5 231-236,317-319,322,479,517-526,535-543,546,549,551-553,556,559,688-689,701-702,955-987
+packages/webview-ui/src/worktrees/worktrees.css
+  s_26f5e669d3043c::t_4a2baaa2eca460 94-109,148,163-164,187,191,210,234-243,295,476-478,481
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "25fd463edc6f8891ce9307bef633cc6ba4c2c288",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
