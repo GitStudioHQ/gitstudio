@@ -73,11 +73,15 @@ test("a row says what it is: its state's glyph in the state's ink, the checks an
     const wordInk = colour(stat(482, 0).querySelector(".prl-stat-word"));
     expect(wordInk !== RED, "the word is text, not the tone: " + wordInk);
     expect(stat(482, 0).querySelector(".codicon-close") && stat(476, 0).querySelector(".codicon-check") && stat(479, 0).querySelector(".codicon-sync"), "a glyph per result, not a colour alone");
-    // The branch checked out here: said in words where the eye starts, and a brand edge.
+    // The branch checked out here: said in words where the eye starts, and
+    // lit with a calm brand tint, never an edge (the owner's rule).
     const pill = rowEl(482).querySelector(".prl-pill.is-current");
     expect(pill && pill.textContent === "Checked out", "Checked out, in words");
     expect(!rowEl(482).querySelector(".prl-age"), "…in place of the age");
-    expect(getComputedStyle(rowEl(482), "::before").content !== "none", "and an edge of the brand");
+    const fillOf = (n) => getComputedStyle(rowEl(n).querySelector(".prl-row-main")).backgroundColor;
+    expect(fillOf(482) !== fillOf(476) && fillOf(482) !== "rgba(0, 0, 0, 0)", "and a tint of its own: " + fillOf(482) + " beside " + fillOf(476));
+    const edge = getComputedStyle(rowEl(482), "::before");
+    expect(edge.content === "none" || edge.content === "normal", "no edge down its side: " + edge.content);
     expect(!rowEl(476).querySelector(".prl-pill.is-current"), "only that row");
     // A fork's branch says whose.
     const branch = rowEl(476).querySelector(".prl-branch");

@@ -130,6 +130,38 @@
   --gs-shadow-2: 0 2px 6px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.14);
   --gs-glow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 24%, transparent);
 
+  /* ---- The selected state: lit, never lined --------------------------------
+   * The owner's rule for both products: nothing selected, active, current or
+   * matched is marked with a LINE. That bans a bar down an edge (an inset
+   * shadow, a border-left, a ::before strip), a rule on top, an underline,
+   * and an accent outline or accent border that the unselected sibling does
+   * not have. What marks the state instead is a fill tinted with the accent,
+   * plus a soft glow on a pill, a tab or a button. These are the desktop's
+   * --sel-* tokens (apps/desktop/src/renderer/styles/app.css), built from the
+   * webview's accent with the same numbers per scheme. hostTokens.ts mirrors
+   * them for the shadow-DOM components.
+   *   --gs-sel-fill         a selected row, chip or pill: 18% dark, 12% light
+   *   --gs-sel-fill-strong  a keyboard cursor, which has to stand clear of
+   *                         its neighbours on fill alone: 28% / 25%
+   *   --gs-sel-glow         tabs, pills, buttons
+   *   --gs-sel-glow-soft    the calm glow, for pills inside a track
+   *   --gs-sel-ink          accent words ON a tint. Dark+'s link blue read
+   *                         4.2:1 on the fill, so the ink is lifted toward
+   *                         white in dark and toward black in light.
+   *   --gs-sel-lift         that direction, for any coloured word on a tint
+   *                         (a status letter, an action's name):
+   *                         color-mix(in srgb, <its colour> 62%, var(--gs-sel-lift))
+   *                         keeps its hue and clears AA in every theme.
+   * High contrast themes paint no fills. There a selection is VS Code's own
+   * contrastActiveBorder ring, drawn whole and never as one side. Each
+   * surface adds that ring. */
+  --gs-sel-fill: color-mix(in srgb, var(--gs-accent) 18%, transparent);
+  --gs-sel-fill-strong: color-mix(in srgb, var(--gs-accent) 28%, transparent);
+  --gs-sel-glow: 0 0 16px -4px color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  --gs-sel-glow-soft: 0 0 12px -5px color-mix(in srgb, var(--gs-accent) 60%, transparent);
+  --gs-sel-ink: color-mix(in srgb, var(--gs-accent-text) 72%, #ffffff);
+  --gs-sel-lift: #ffffff;
+
   /* ---- Motion ----------------------------------------------------------- */
   --gs-motion-fast: 110ms;
   --gs-motion: 170ms;
@@ -162,6 +194,22 @@
      toward the foreground it keeps its red and reads 5.5:1 (Light+'s darker
      #A1260D only gets darker). */
   --gs-danger: color-mix(in srgb, var(--vscode-errorForeground, #e51400) 60%, var(--vscode-foreground, #000000));
+  /* The selected state in light: gentler tints and glow (see :root). */
+  --gs-sel-fill: color-mix(in srgb, var(--gs-accent) 12%, transparent);
+  --gs-sel-fill-strong: color-mix(in srgb, var(--gs-accent) 25%, transparent);
+  --gs-sel-glow: 0 0 14px -4px color-mix(in srgb, var(--gs-accent) 55%, transparent);
+  --gs-sel-glow-soft: 0 0 10px -5px color-mix(in srgb, var(--gs-accent) 45%, transparent);
+  --gs-sel-ink: color-mix(in srgb, var(--gs-accent-text) 82%, #000000);
+  --gs-sel-lift: #000000;
+}
+/* High contrast (dark and light): the theme's own ink on a tint. The HC
+   link colours are tuned for a bare black or white ground, and mixing them
+   toward white or black only weakens them. */
+.vscode-high-contrast {
+  --gs-sel-ink: var(--gs-fg);
+}
+.vscode-high-contrast-light {
+  --gs-sel-lift: #000000;
 }
 /* The merge shell's danger ink (.ms-shell's --ms-danger, shell.css) IS this
    one, so on a light theme the no-text panel's Delete the file clears AA too. */
@@ -305,7 +353,7 @@
   gap: var(--gs-space-2);
   min-height: var(--gs-row-height);
   padding: 0 var(--gs-pad-row);
-  border-left: 2px solid transparent;
+  border-radius: var(--gs-radius-sm);
   color: var(--gs-fg);
   font: var(--gs-text-base) var(--gs-font-ui);
   cursor: pointer;
@@ -315,11 +363,19 @@
 .gs-row.is-hover {
   background: var(--gs-hover);
 }
+/* Selected: lit, never barred. A calm rounded tint, with no glow, because
+   this is a dense list. */
 .gs-row.is-selected,
 .gs-row[aria-selected="true"] {
-  background: var(--gs-selection-bg);
-  color: var(--gs-selection-fg);
-  border-left-color: var(--gs-accent);
+  background: var(--gs-sel-fill);
+}
+/* High contrast paints no fill: VS Code's dashed ring, whole. Its accent
+   (focusBorder) IS the theme's contrastActiveBorder colour, and the desktop
+   declares no contrast tokens (apps/desktop/test/cssTokens.test.ts). */
+.vscode-high-contrast .gs-row.is-selected,
+.vscode-high-contrast .gs-row[aria-selected="true"] {
+  outline: 1px dashed var(--gs-accent);
+  outline-offset: -1px;
 }
 
 /* ---- Focus ring --------------------------------------------------------- */

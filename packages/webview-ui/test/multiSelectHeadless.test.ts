@@ -117,19 +117,27 @@ const BODY = (tag: string, ready: string, extra: string) => `
   await click(el, 1, { shiftKey: true, metaKey: true });
   expect(eq(selectedRows(el), [1, 2, 3, 4, 5, 6, 7]), "Cmd+Shift+click adds the range: " + selectedRows(el));
 
-  // ── Looks: every selected row filled, the focused one barred, in computed style ──
+  // ── Looks: every selected row filled, the focused one LIT (a stronger
+  //    fill), never barred — in computed style (the owner's rule: nothing
+  //    selected wears a line; selectionIsLit.test.ts sweeps the rest) ──
   const bg = (i) => getComputedStyle(R(el, i)).backgroundColor;
-  const bar = (i) => getComputedStyle(R(el, i)).${tag === "gitstudio-graph" ? "borderLeftColor" : "getPropertyValue('--x')"};
   const clear = (c) => c === "rgba(0, 0, 0, 0)" || c === "transparent" || c === "";
   expect(!clear(bg(2)) && bg(2) === bg(5), "selected rows share a fill (" + bg(2) + " / " + bg(5) + ")");
   expect(bg(9) !== bg(2), "an unselected row does not have it (" + bg(9) + ")");
-  ${tag === "gitstudio-graph"
-    ? `expect(!clear(getComputedStyle(R(el, 1)).borderLeftColor), "the focused row has the accent bar");
-       expect(clear(getComputedStyle(R(el, 5)).borderLeftColor), "a selected row that is not focused has no bar (" + getComputedStyle(R(el, 5)).borderLeftColor + ")");`
-    : `const before = (i) => getComputedStyle(R(el, i), "::before");
-       expect(before(1).content !== "none" && !clear(before(1).backgroundColor), "the focused row has the accent bar");
-       expect(before(5).content === "none", "a selected row that is not focused has no bar (" + before(5).content + ")");`}
-  void bar;
+  expect(!clear(bg(1)) && bg(1) !== bg(5), "the focused row is lit: a fill of its own (" + bg(1) + " / " + bg(5) + ")");
+  const lines = (i) => {
+    const s = getComputedStyle(R(el, i));
+    const strip = (w) => { const p = getComputedStyle(R(el, i), w); return p.content !== "none" && p.content !== "normal" && !clear(p.backgroundColor); };
+    return [
+      clear(s.borderLeftColor) || parseFloat(s.borderLeftWidth) === 0 ? "" : "border-left " + s.borderLeftColor,
+      s.boxShadow === "none" ? "" : "box-shadow " + s.boxShadow,
+      s.outlineStyle === "none" ? "" : "outline " + s.outlineStyle,
+      strip("::before") ? "::before strip" : "",
+      strip("::after") ? "::after strip" : "",
+    ].filter(Boolean).join(", ");
+  };
+  expect(lines(1) === "", "the focused row wears no line (" + lines(1) + ")");
+  expect(lines(5) === "", "nor does a selected one (" + lines(5) + ")");
 
   // ── Right-click ──
   actions.length = 0;
