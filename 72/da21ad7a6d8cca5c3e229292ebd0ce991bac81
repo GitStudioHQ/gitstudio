@@ -1,0 +1,41 @@
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_268621473d2351 80,82,618,870-871,882,890-891,913,919,932-933,937,940-941,943,949,996-998,1002
+apps/extension/package.json
+  s_26f5e669d3043c::t_b1760b089921e3 671,673,695,701
+apps/extension/src/pr/prFeature.ts
+  s_26f5e669d3043c::t_27e335b8b46950 31
+apps/extension/src/pr/prPage.ts
+  s_26f5e669d3043c::t_3e219926faadea 36,104,127,381,589
+apps/extension/src/pr/pullRequestsView.ts
+  s_26f5e669d3043c::t_ed0332f20b5168 217,249,680
+packages/engine/src/forge/prPage.ts
+  s_26f5e669d3043c::t_3062a69d32c219 38,584,586,591,593-603,614-620,631,633
+packages/engine/test/prPage.test.ts
+  s_26f5e669d3043c::t_3b71ddb30b4407 25,260-264,271-272,279-291,296-313
+packages/webview-ui/src/pr/prList.ts
+  s_26f5e669d3043c::t_8efb7c241f48ab 37,466,596-598,602,608,626,875-876,882-885,967
+packages/webview-ui/src/pr/prPage.ts
+  s_26f5e669d3043c::t_6505f1de26cde0 40,235-238,522-524,526,535-536,542,544,556,563-565,634,646-648,809,842,850,855,1134,1221,1310,1566-1574,1718-1727
+packages/webview-ui/src/styles/pr-page.css
+  s_26f5e669d3043c::t_e57a9e3e6382ff 165-176,1634-1638
+packages/webview-ui/test/prList.test.ts
+  s_26f5e669d3043c::t_81b665ea1aa389 173-176,198,204,208
+packages/webview-ui/test/prPage.test.ts
+  s_26f5e669d3043c::t_1c9a09e7adc799 72,76-90,94,100,106,108-109,112,115,118,290-291,343-344,349-350,353,358,362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "72da21ad7a6d8cca5c3e229292ebd0ce991bac81",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
