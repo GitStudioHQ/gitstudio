@@ -7142,8 +7142,11 @@ export class CommitViewProvider
       });
       // The pointer moves the keyboard's item, as it moves the branch
       // window's highlight: the focused item is the one lit item, under the
-      // pointer or the arrows alike.
+      // pointer or the arrows alike. Only a pointer that really moved: the
+      // list scrolling under a still one (the arrows in a short view) must
+      // not take the item from the keys.
       menu.addEventListener("mousemove", (e) => {
+        if (!bmPointerMoved(e)) return;
         const item = e.target.closest ? e.target.closest(".bm-subaction") : null;
         if (item && document.activeElement !== item) item.focus({ preventScroll: true });
       });

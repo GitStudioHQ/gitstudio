@@ -264,3 +264,28 @@ test("an item's tip that repeats its label is not also its description", { skip 
   const tracked = await p.eval<string | null>(`${subItem("Set Tracked Branch…")}.getAttribute("aria-description")`);
   assert.match(String(tracked), /^Choose the remote branch/, "an explanation still is");
 });
+
+// A row's own menu follows the pointer only when the pointer MOVES: a list
+// scrolling under a still pointer (the arrows, in a short view) sends the page
+// a mousemove at the same spot, and that must not take the item from the keys.
+test("a row menu's item stays with the keys when the pointer has not moved", { skip }, async () => {
+  const p = await open("dark");
+  const row = await p.eval<{ x: number; y: number }>(`(function () {
+    var b = document.querySelector('.row.is-file[data-key="unstaged:src/app.ts"] .name').getBoundingClientRect();
+    return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
+  })()`);
+  await p.page.send("Input.dispatchMouseEvent", { type: "mousePressed", x: row.x, y: row.y, button: "right", clickCount: 1 });
+  await p.page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: row.x, y: row.y, button: "right", clickCount: 1 });
+  await p.page.waitFor(`!!document.querySelector(".action-menu .bm-subaction")`);
+  await pointTo(p, menuItem("Stage"));
+  assert.ok(await p.eval<boolean>(`document.activeElement === ${menuItem("Stage")}`), "the pointer moved onto Stage: it has the keyboard");
+  await p.key("ArrowDown");
+  const keys = await p.eval<string>(`document.activeElement.textContent.trim()`);
+  assert.notEqual(keys, "Stage");
+  const at = await p.eval<{ x: number; y: number }>(`(function () {
+    var b = ${menuItem("Stage")}.getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
+  })()`);
+  await p.mouseMove(at.x, at.y); // the same spot: a still pointer
+  assert.equal(await p.eval<string>(`document.activeElement.textContent.trim()`), keys, "the keys keep their item");
+  await p.key("Escape");
+});
