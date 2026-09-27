@@ -129,28 +129,39 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   can't work (a detached HEAD, a merge in progress, no upstream, no remote,
   nothing to push) the button says why instead.
 - **Every worktree action says what it does.** A row has **Open in New
-  Window** (or **Forget Worktree…** when its folder is gone) and a **More**
-  menu: Open in This Window, Reveal in Finder, Open in Terminal, Copy Path,
-  Pull, Push…, Lock…/Unlock, Remove Worktree…. An action a worktree can't
-  take is shown with the reason — "This window has it open.", "The main
-  worktree holds the repository itself, so git never removes it." The whole
-  list works from the keyboard (arrows, Home/End, Enter, the context-menu
-  key, Delete). Unlock shows at once, and comes back if git refuses.
+  Window** (or **Forget Worktree…** when its folder is gone, or isn't a
+  worktree any more) and a **More** menu: Open in This Window, Reveal in
+  Finder, Open in Terminal, Copy Path, Pull, Push…, Lock… (or Unlock),
+  Remove Worktree…. An action a worktree can't take is shown with the
+  reason — "This window has it open.", "The main worktree holds the
+  repository itself, so git never removes it.", "A rebase is stopped in it —
+  continue or abort it first." The whole list works from the keyboard
+  (arrows, Home/End, Enter, the context-menu key, Delete — on a Mac also
+  Cmd+Delete), and a screen reader hears an open worktree's files and
+  commits as that worktree's. Unlock shows at once, and comes back if git
+  refuses. A row busy with an action says so ("Removing…") without fading
+  its words, and while a row is open, a status landing for it (or for any
+  other row) leaves its open commits and the keyboard where they are.
 - **Stash & Remove.** Removing a worktree with uncommitted changes offers
   **Stash & Remove** first: its changes go into a stash you can apply from
   any worktree, then its folder is deleted. **Discard Changes and Remove** is
   still there, second. When its branch is fully merged into the default
   branch, the question also offers **Also delete the branch**, unchecked;
-  Undo (Ctrl/Cmd+Alt+G Z) brings a deleted branch back.
+  it is deleted only if it is still fully merged when you answer — a commit
+  made on it meanwhile (an agent at work in the worktree) keeps it, and the
+  report says why. Undo (Ctrl/Cmd+Alt+G Z) brings a deleted branch back.
 - **Prune N missing.** When worktrees' folders are gone, Worktrees shows
-  **Prune N missing** with the count; it asks first, naming them, and says
-  that a locked one is kept.
+  **Prune N missing** with the count (**Prune N stale** when some of them
+  are folders that aren't worktrees any more); it asks first, naming them,
+  and says that a locked one is kept.
 - **New Worktree suggests where the folder goes**: beside your project,
   named `<project>-<branch>` (`app-feature-login`), in the question itself,
   ready to edit — a relative folder lands beside the project, `~` is home.
-  It no longer opens a system folder picker. A folder that is taken is asked
-  for again with why. The `gitstudio.worktrees.prefixWithProjectName`
-  setting is no longer used.
+  With the repository in a hidden folder inside the project (`project/.bare`,
+  its worktrees beside it) it suggests `project/feature-login`. It no longer
+  opens a system folder picker. A folder that is taken is asked for again
+  with why. The `gitstudio.worktrees.prefixWithProjectName` setting is no
+  longer used.
 - **The push review's commits open to their files.** Click a commit in the
   review (or press Enter or →) to see the files that commit changed; click
   one for what that commit did to it. The list of every file changed is
@@ -390,7 +401,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   with git's "cannot remove a locked working tree". It now asks once, quoting
   the lock's reason, and **Unlock and Remove** removes it.
 - **Removing a worktree says what goes with it.** The question names the
-  worktree by its branch, lists the uncommitted files that are deleted (five,
+  worktree by its folder, as the list does, and its branch in the body; it
+  lists the uncommitted files that are deleted (five,
   then how many more) and says the branch and its commits stay; the button
   reads **Discard Changes and Remove** when there are any. A worktree that
   changed before you answered — an agent still at work in it — is asked about
@@ -408,6 +420,16 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   has one). For a locked one the question says that a folder on a drive that
   isn't connected is no longer a worktree when the drive comes back. It used
   to open a window onto the missing folder.
+- **A worktree folder whose `.git` is gone** — still listed by git, but no
+  longer a worktree — reads *Not a worktree*, and is never read, opened,
+  pulled, pushed or removed as one: git in that folder reads the repository
+  around it, which for a worktree nested in your project (as agents'
+  `.claude/worktrees/…` are) is your main worktree. Its only actions are
+  Reveal and **Forget Worktree…**, which clears git's record of that one
+  worktree and leaves the folder and its files alone, and **Prune** counts
+  it. Removing one used to fail with git's "validation failed". The
+  **GitStudio: Forget Worktree…** command offers only the worktrees there is
+  something to forget for, and never deletes a folder.
 - **New Worktree no longer leaves a stray branch behind when it fails**, so
   trying again with the same name works. Folders are named for the whole
   branch (`feature/login` → `app-feature-login`), so `bugfix/login` beside it

@@ -236,6 +236,15 @@ but they share the same engine, so most Git behaviour lands in both at once.
   break** as one worktree — it read as two broken ones. The list is read in
   git's NUL-separated form where git has it (2.36 and later), as the VS Code
   extension's Worktrees view reads it.
+- **A worktree folder whose `.git` is gone** reads *not a worktree* in
+  Branches ▸ Worktrees, offers no **Open**, and its ⋯ menu reads **Forget this
+  worktree…**, which clears git's record of it and leaves the folder and its
+  files alone. Asking to remove one used to list the main worktree's
+  uncommitted changes as its own — git in that folder reads the repository
+  around it, and for a worktree nested in the main one that is the main
+  worktree — and then failed with git's "validation failed".
+- The remove question says "Its 1 uncommitted change goes with it, and
+  nothing can bring it back" — it read "go … them".
 
 ## [2.1.0] - 2026-09-25
 
