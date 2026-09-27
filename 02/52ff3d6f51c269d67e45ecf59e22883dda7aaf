@@ -1,0 +1,25 @@
+apps/extension/src/pr/prCreatePage.ts
+  s_26f5e669d3043c::t_9977b0415bf743 58-59,306-313
+apps/extension/src/pr/prFeature.ts
+  s_26f5e669d3043c::t_d51970b71c2d3c 14-15,62-67,70-74,78-80,118-121,128-132
+apps/extension/src/pr/pullRequestsView.ts
+  s_26f5e669d3043c::t_4a85d3df14093d 84-88,97-103,108-116,119-123,480,482,485-486,489-497,499-518,617,619,673-675,683-686,688,690-700,702-703,705-706,785,865,873-894,940-943,948,950-952,963,965-966,972,976,980-985,991,993-995
+apps/extension/test/prListView.test.ts
+  s_26f5e669d3043c::t_33f7ec23104ba4 55,604-819
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0252ff3d6f51c269d67e45ecf59e22883dda7aaf",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
