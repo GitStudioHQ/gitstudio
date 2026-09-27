@@ -4197,10 +4197,11 @@ export class CommitViewProvider
     #empty-state.is-drop-over .drop-hint { flex: 0 0 auto; flex-direction: column; align-items: center; gap: 2px; }
     #empty-state.is-drop-over .drop-alt { margin-left: 0; }
     /* High contrast paints no tints: there the target is ringed, as VS Code
-       rings a drop target. */
+       rings a drop target — just outside it, where a group's header held in
+       sight cannot paint over it. */
     body.vscode-high-contrast .is-drop-over {
       outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
-      outline-offset: -1px;
+      outline-offset: 1px;
     }
     .group { margin-top: 4px; }
     /* An empty group is not drawn; the tree's keyboard skips it too (see
@@ -5783,16 +5784,21 @@ export class CommitViewProvider
       dropAlt = !!alt;
       paintDrop();
     }
-    /** A drag of ours starts: what it carries, and the rows that go with it (dimmed). */
+    /**
+     * A drag of ours starts: what it carries, and the rows that go with it
+     * (dimmed). Files carry their paths as plain text too, so a drop in a
+     * terminal or an editor pastes something sensible; a stash carries only
+     * its sha, in a type of its own — let go over an editor by mistake, it
+     * must not type its message into a file.
+     */
     function beginDrag(ev, what, rows, text) {
       drag = what;
       dropKey = null;
       dropAlt = false;
       if (ev.dataTransfer) {
         ev.dataTransfer.effectAllowed = "copyMove";
-        // Plain text too, so a drop in a terminal or an editor pastes
-        // something sensible rather than nothing.
-        ev.dataTransfer.setData("text/plain", text);
+        if (what.kind === "stash") ev.dataTransfer.setData("application/x-gitstudio-stash", what.sha);
+        else ev.dataTransfer.setData("text/plain", text);
       }
       rows.forEach((r) => r.classList.add("is-dragged"));
       // A drag of the working tree's files needs the Stashes header, even
@@ -10620,7 +10626,7 @@ export class CommitViewProvider
       row.draggable = !busy;
       row.addEventListener("dragstart", (ev) => {
         if (stashPending.has(s.sha)) { ev.preventDefault(); return; }
-        beginDrag(ev, { kind: "stash", sha: s.sha }, [row], s.message);
+        beginDrag(ev, { kind: "stash", sha: s.sha }, [row], "");
       });
       row.addEventListener("dragend", endDrag);
       return row;

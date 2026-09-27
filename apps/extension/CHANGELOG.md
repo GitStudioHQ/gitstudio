@@ -12,13 +12,15 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   main:"), the branch it was made on, how long ago, and how many files — and
   opens to every file it holds, staged and untracked ones too, as Changes
   rows. Click a file to see its diff against the commit the stash was made
-  on. **Move to Changes** (the button on a file's row) brings the file back as
-  it was stashed — staged, if it was — and takes it out of the stash; **Copy
-  to Changes** (in its menu) brings it back and leaves the stash as it is.
-  Ctrl/Cmd-click and Shift-click select several files to move or copy
-  together; in the tree view a folder moves too. A stash's row has **Apply**
-  and **Pop**, and its menu **Open All Changes**, **Create Branch…** and
-  **Drop…** (Delete asks too). A file you have changed yourself is never
+  on. **Move** (on a file's row) brings the file back as it was stashed —
+  staged, if it was — and takes it out of the stash; **Copy** brings it back
+  and leaves the stash as it is. Ctrl/Cmd-click and Shift-click select
+  several files to move or copy together; in the tree view a folder moves
+  too. A stash's row has **Apply** (its changes come back, the stash stays)
+  and **Pop** (they come back, the stash goes) — words, not look-alike icons,
+  on the row the pointer is on, each with a tip saying what happens — and its
+  menu **Open All Changes**, **Create Branch…** and **Drop…** (Delete asks
+  too). A file you have changed yourself is never
   overwritten: it asks, and Stash & Retry keeps both. What is left of a stash
   stays where the stash was in the list, and Undo (Ctrl/Cmd+Alt+G Z) puts the
   whole stash back. A row goes the moment you click and comes back if nothing
@@ -30,6 +32,17 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Stashes view is gone; the Command Palette has **Apply Stash…**, **Pop
   Stash…**, **Drop Stash…** and **Create Branch from Stash…**, which ask
   which stash.
+- **Drag between your changes and your stashes.** Drag a stash onto Staged,
+  Changes or "Working tree clean" to apply it — hold Alt (Option on a Mac)
+  as you let go to pop it instead. Drag a stash's files (or the ones you've
+  selected, or a folder of them) there to move them out of the stash — Alt
+  or Option copies them. Drag changed files — one, your selection, or a
+  folder — onto the **Stashes** header to stash exactly those. The place
+  under the pointer lights up and says what letting go does ("Drop to
+  apply · Hold Option to pop"); a stash itself takes no drop, since git
+  can't add to a stash. It runs what the menus run, so Stash & Retry, the
+  staging question, conflicts and Undo work as they do there. This replaces
+  the "Drop to stash" box.
 - **Checkout puts you on the pull request's own branch.** **Checkout** on a
   pull request — in the list, on its page, or in the Command Palette — checks
   out its real branch (`feature`, not a `pr/37` copy), tracking it where it
@@ -401,6 +414,16 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   checks off "Stage changes & commit" (only the editor's Stage Hunk did).
 
 ### Changed
+- **The branch menu's highlighted row is lit, not outlined.** The row the
+  arrow keys or the pointer are on — an action, a branch, one of a branch's
+  actions, a Delete — is a soft tint of your theme's accent with its words
+  at full strength, the same under the pointer as from the keyboard, and
+  only one row is lit at a time. Under the pointer, an item used to turn
+  grey inside a blue outline with its words faded. A row's own menu (a
+  file's, a stash's) highlights its items the same way. High contrast
+  themes keep their border. A tooltip now shows only when it adds
+  something — a name that is cut short, or an explanation — never the words
+  already on the row.
 - **A branch's actions are in one order for every kind of ref** — the
   branch you're on, any other, a remote branch, a tag: checkout and what
   starts from it, then compare, merge and rebase, then push and the tracked

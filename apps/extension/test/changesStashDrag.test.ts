@@ -137,7 +137,7 @@ window.__dnd = {
     this.src = null;
   },
   /** What the drag carries for a drop outside the view: its plain text, and what it allows. */
-  carries: function () { return { text: this.dt.getData("text/plain"), allowed: this.dt.effectAllowed }; },
+  carries: function () { return { text: this.dt.getData("text/plain"), stash: this.dt.getData("application/x-gitstudio-stash") || undefined, allowed: this.dt.effectAllowed }; },
   /** Nothing of a drag is left on the page. */
   clean: function () {
     return document.querySelectorAll(".is-drop-over, .is-drop-ready, .row.is-dragged").length === 0 &&
@@ -193,8 +193,8 @@ test("a stash: Changes, Staged and nothing else are places; the place under the 
   await p.send(state());
   assert.equal(await p.eval<boolean>(`!!document.getElementById("stash-drop")`), false, "one mechanism: the old drop box is gone");
   assert.ok(await start(p, Q.stash(B)), "a stash row can be dragged");
-  assert.deepEqual(await p.eval(`window.__dnd.carries()`), { text: "On main: Fix login redirect", allowed: "copyMove" },
-    "dropped outside the view, it is its message; inside, apply (copy) or pop (move)");
+  assert.deepEqual(await p.eval(`window.__dnd.carries()`), { text: "", stash: B, allowed: "copyMove" },
+    "it carries no text an editor would paste — only its sha, in a type of its own; apply (copy) or pop (move)");
   assert.equal(await p.eval<string>(`${Q.stash(B)}.classList.contains("is-dragged") ? "dim" : ""`), "dim", "what is dragged is dimmed");
 
   let o = await over(p, Q.file("unstaged", "src/routes.ts"));
