@@ -1,8 +1,7 @@
 // The Worktrees view at a sidebar's narrowest (180px), a narrow one (240px)
-// and a wide one (520px), dark — for a look at how rows give way: badges
-// fold into "+N more", names clip with an ellipsis before a branch does, a
-// branch keeps a few letters or goes whole, a folder goes whole rather than
-// to a stray letter, buttons stay put. Agents' rows (long folder AND long
+// and a wide one (520px), dark — for a look at how rows give way: a branch
+// keeps a few letters or goes whole before the folder's name is cut, the
+// state is never cut (at the narrowest it goes whole, into the tooltip). Agents' rows (long folder AND long
 // branch) are added, as those are the ones that squeeze.
 //
 //   GS_CHROME=… npx tsx apps/extension/harness/worktrees/narrow.ts [outDir]

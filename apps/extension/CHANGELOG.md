@@ -175,45 +175,54 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   the top. Your choice is remembered for the workspace, and **New pull
   request** and the Command Palette's pull request commands use it too —
   even before the Pull Requests view has been opened.
-- **Worktrees, rebuilt: every worktree says what it holds.** Each row names
-  the worktree's folder and the branch it has checked out (or *detached at
-  1a2b3c4*, or the branch a stopped rebase is rebasing), where the folder is,
-  and — in words — what state it is in: *This window*, *Main worktree*,
-  *5 changed*, *2 to push*, *1 to pull*, *3 not pushed* (a branch with no
-  upstream), *2 not on main* (a repository with no remote), *Upstream gone*,
-  *Locked: on a USB drive* (its reason), *Merge in progress · 1 conflict*, *Rebase stopped*,
-  *Folder missing*. Badges that don't fit a narrow sidebar become *+2 more*,
-  naming them on hover. This window's worktree comes first, then the main
-  one, the rest by name and the missing ones last; past eight worktrees a
-  filter appears.
-- **Open a worktree's row to see its changes and its commits.** Click it (or
-  press Enter or →): its uncommitted files — staged ones tagged, each opening
-  its diff read from that worktree, not this window's — and its commits not
-  pushed (not on its upstream; with no upstream, not on any remote, as the
-  push review counts them; with no remote at all, not on the default branch),
-  plus what it has to pull. Each commit opens to the files it changed, as in
-  the push review.
-- **Pull and Push… for any worktree, from its row.** **Pull** runs in that
+- **Worktrees, rebuilt: one quiet line per worktree.** Each row names the
+  worktree's folder, the branch it has checked out in quieter ink (or
+  *detached at 1a2b3c4*, or the branch a stopped rebase is rebasing) and —
+  on the right, only when there is something to say — the one state that
+  matters most, in words: *merge in progress*, *rebase stopped*,
+  *2 conflicts*, *folder missing*, *not a worktree*, *5 changed*,
+  *2 to push*, *1 to pull*, *diverged*, *3 not pushed* (a branch with no
+  upstream), *2 not on main* (a repository with no remote),
+  *upstream gone*, *locked*. Something stopped halfway, or a folder that is
+  gone, is in the warning colour. Everything else — where the folder is, a
+  lock's reason, how many changes are staged, the main worktree, both sides
+  of a divergence — is in the row's tooltip. The worktree this window has
+  open is its bold name, and comes first, then the main one, the rest by
+  name and the missing ones last; past eight worktrees a filter appears. In
+  a narrow sidebar the branch gives way before the folder's name, and a
+  state is never cut.
+- **Open a worktree's row to see what it has — and only that.** Click it (or
+  press Enter or →): its uncommitted files, grouped as Source Control groups
+  them (*Conflicts*, *Staged changes*, *Changes*), each opening its diff read
+  from that worktree, not this window's; its commits not pushed (not on its
+  upstream; with no upstream, not on any remote, as the push review counts
+  them; with no remote at all, not on the default branch); and what it has
+  to pull. A list with nothing in it isn't shown; with nothing at all, the
+  row says *Nothing to commit or push.* Each commit opens to the files it
+  changed, as in the push review.
+- **Pull and Push… for any worktree, from its menu.** **Pull** runs in that
   worktree's own folder, with the questions every Pull asks (Stash & Retry,
   Merge or Rebase); a stop is said naming the worktree, with **Open in New
   Window**. **Push…** opens the push review for that worktree — its commits,
   its files, "From the worktree …" — and pushes its branch. Where either
   can't work (a detached HEAD, a merge in progress, no upstream, no remote,
-  nothing to push) the button says why instead.
-- **Every worktree action says what it does.** A row has **Open in New
-  Window** (or **Forget Worktree…** when its folder is gone, or isn't a
-  worktree any more) and a **More** menu: Open in This Window, Reveal in
-  Finder, Open in Terminal, Copy Path, Pull, Push…, Lock… (or Unlock),
-  Remove Worktree…. An action a worktree can't take is shown with the
-  reason — "This window has it open.", "The main worktree holds the
-  repository itself, so git never removes it.", "A rebase is stopped in it —
-  continue or abort it first." The whole list works from the keyboard
-  (arrows, Home/End, Enter, the context-menu key, Delete — on a Mac also
+  nothing to push) it isn't offered.
+- **Every worktree action says what it does.** Hovering a row shows two
+  buttons over its state: **Open in New Window** and **More**. More — the
+  row's right-click menu too — lists what that worktree can do now: Open in
+  This Window, Open in New Window, Reveal in Finder, Open in Terminal, Copy
+  Path, Pull, Push…, Lock… (or Unlock), Remove Worktree… (or Forget
+  Worktree… when its folder is gone, or isn't a worktree any more). What it
+  can't do isn't listed: the main worktree has no Remove, the one this
+  window has open no Open. The whole list works from the keyboard (arrows,
+  Home/End, Enter, the context-menu key, Delete — on a Mac also
   Cmd+Delete), and a screen reader hears an open worktree's files and
-  commits as that worktree's. Unlock shows at once, and comes back if git
-  refuses. A row busy with an action says so ("Removing…") without fading
-  its words, and while a row is open, a status landing for it (or for any
-  other row) leaves its open commits and the keyboard where they are.
+  commits as that worktree's, and each row's tooltip as its name. Unlock
+  shows at once, and comes back if git refuses. A row busy with an action
+  says so ("Removing…") without fading its words, and while a row is open,
+  a status landing for it (or for any other row) leaves its open commits
+  and the keyboard where they are. Nothing hovered or open is drawn with a
+  line — a soft fill, in every theme, High Contrast too.
 - **Stash & Remove.** Removing a worktree with uncommitted changes offers
   **Stash & Remove** first: its changes go into a stash you can apply from
   any worktree, then its folder is deleted. **Discard Changes and Remove** is
@@ -222,10 +231,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   it is deleted only if it is still fully merged when you answer — a commit
   made on it meanwhile (an agent at work in the worktree) keeps it, and the
   report says why. Undo (Ctrl/Cmd+Alt+G Z) brings a deleted branch back.
-- **Prune N missing.** When worktrees' folders are gone, Worktrees shows
-  **Prune N missing** with the count (**Prune N stale** when some of them
-  are folders that aren't worktrees any more); it asks first, naming them,
-  and says that a locked one is kept.
+- **Prune N missing.** When worktrees' folders are gone, a quiet
+  **Prune N missing** link sits under the list, where those rows are
+  (**Prune N stale** when some of them are folders that aren't worktrees
+  any more); it asks first, naming them, and says that a locked one is kept.
 - **New Worktree suggests where the folder goes**: beside your project,
   named `<project>-<branch>` (`app-feature-login`), in the question itself,
   ready to edit — a relative folder lands beside the project, `~` is home.

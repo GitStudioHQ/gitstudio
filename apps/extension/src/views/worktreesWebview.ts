@@ -49,7 +49,7 @@ import {
 
 // The Worktrees view — a webview (it was a native tree that could show one
 // line per worktree and nothing else). Its page is packages/webview-ui's
-// worktrees/ entry; its rows, badges and what each row offers come from
+// worktrees/ entry; what its rows say and what each one offers come from
 // host-bridge/worktreesProtocol, the same functions the tests pin.
 //
 // What it reads, and when (git-service/worktreeState.ts has the why):

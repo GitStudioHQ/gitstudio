@@ -2,10 +2,11 @@
 //
 // The extension host builds WorktreeRow from git-service's WorktreeSummary
 // (tier 0) and WorktreeStatus (tier 1); the webview renders it. What a row
-// SAYS (its badges) and what it OFFERS (its capabilities, each refusal with
-// its reason) are decided here, once, by pure functions: the page paints
-// them, the host refuses by them, and the state-table tests pin them without
-// a browser. The desktop's Worktrees list can adopt the same functions.
+// SAYS (its one state beside the name, and every fact behind it in its
+// tooltip) and what it OFFERS (its capabilities, each refusal with its
+// reason) are decided here, once, by pure functions: the page paints them,
+// the host refuses by them, and the state-table tests pin them without a
+// browser. The desktop's Worktrees list can adopt the same functions.
 
 import type { ChangeCommit, ChangeFile } from "./changeRows";
 import { unlinkedWhy } from "./worktreeRemoval";
@@ -75,14 +76,15 @@ export interface WorktreeRow {
   status?: WorktreeRowStatus;
 }
 
-/** A badge's colour role — a CSS token, never a hard colour. */
-export type BadgeTone = "accent" | "neutral" | "info" | "warn" | "danger";
+/** How much a fact matters — a CSS token, never a hard colour. */
+export type FactTone = "accent" | "neutral" | "info" | "warn" | "danger";
 
-/** One badge on a row: words, a role, and the sentence behind it. */
-export interface WorktreeBadge {
+/** One fact about a row: its name in words, how much it matters, and the
+ *  sentence behind it — the sentence is what the row's tooltip says. */
+export interface WorktreeFact {
   id: string;
   text: string;
-  tone: BadgeTone;
+  tone: FactTone;
   /** Said on hover and to a screen reader. */
   tip: string;
 }
@@ -129,21 +131,21 @@ export function headWords(r: WorktreeRow): string {
   return `detached at ${r.head.slice(0, 7)}`;
 }
 
-/** The badges a row shows, in the order it shows them. */
-export function worktreeBadges(r: WorktreeRow): WorktreeBadge[] {
-  const out: WorktreeBadge[] = [];
+/** Every fact about a row, in the order its tooltip says them. */
+export function worktreeFacts(r: WorktreeRow): WorktreeFact[] {
+  const out: WorktreeFact[] = [];
   if (r.kind === "bare") {
     return out;
   }
   if (r.current) {
-    out.push({ id: "current", text: "This window", tone: "accent", tip: "This window has this worktree open." });
+    out.push({ id: "current", text: "This window", tone: "accent", tip: "Current — open in this window." });
   }
   if (r.kind === "main") {
     out.push({
       id: "main",
       text: "Main worktree",
       tone: "neutral",
-      tip: "The main worktree holds the repository itself, so git never removes it.",
+      tip: "Main worktree — the repository's own folder.",
     });
   }
   if (r.locked) {
@@ -233,7 +235,7 @@ export function worktreeBadges(r: WorktreeRow): WorktreeBadge[] {
       });
     }
   } else if (r.hasRemotes) {
-    // One badge, not two: "N not pushed" already says there is nowhere it went.
+    // One fact, not two: "N not pushed" already says there is nowhere it went.
     out.push(
       s?.unpublished
         ? {
@@ -253,6 +255,67 @@ export function worktreeBadges(r: WorktreeRow): WorktreeBadge[] {
     });
   }
   return out;
+}
+
+/** The one state a row shows beside its name, in a few lower-case words. */
+export interface WorktreeState {
+  /** Which fact it is (the ids of worktreeFacts). */
+  id: "missing" | "unlinked" | "operation" | "changed" | "sync" | "locked";
+  text: string;
+  /** "attention" when something is wrong or stopped halfway; else "muted". */
+  tone: "muted" | "attention";
+}
+
+/**
+ * The most pressing thing to say about a row, or nothing: a folder that is
+ * gone first, then an operation stopped halfway (or files left unmerged),
+ * then uncommitted changes, then what is to push or pull, then a lock. Its
+ * other facts are in the tooltip (worktreeTip). "This window" and "Main
+ * worktree" are never the state: the name says the first (it is bold), the
+ * icon and the tooltip the second.
+ */
+export function worktreeState(r: WorktreeRow): WorktreeState | undefined {
+  if (r.kind === "bare") return undefined;
+  if (r.missing) return { id: "missing", text: "folder missing", tone: "attention" };
+  if (r.unlinked) return { id: "unlinked", text: "not a worktree", tone: "attention" };
+  const s = r.status;
+  if (s?.operation) return { id: "operation", text: operationWords(s.operation).toLowerCase(), tone: "attention" };
+  if (s && s.conflicted > 0) return { id: "operation", text: plural(s.conflicted, "conflict"), tone: "attention" };
+  if (s && s.changed > 0) return { id: "changed", text: `${s.changed} changed`, tone: "muted" };
+  const sync = syncState(r);
+  if (sync) return { id: "sync", text: sync, tone: "muted" };
+  if (r.locked) return { id: "locked", text: "locked", tone: "muted" };
+  return undefined;
+}
+
+/** What is to push or pull, in a few words — undefined when nothing is. */
+function syncState(r: WorktreeRow): string | undefined {
+  if (!r.branch) return undefined;
+  if (r.upstream && r.upstreamGone) return "upstream gone";
+  if (r.upstream) {
+    if (r.ahead > 0 && r.behind > 0) return "diverged";
+    if (r.ahead > 0) return `${r.ahead} to push`;
+    if (r.behind > 0) return `${r.behind} to pull`;
+    return undefined;
+  }
+  const n = r.status?.unpublished;
+  if (!n) return undefined;
+  if (r.hasRemotes) return `${n} not pushed`;
+  return r.defaultBranch ? `${n} not on ${r.defaultBranch}` : undefined;
+}
+
+/**
+ * A row's tooltip, one line each: where its folder is, then every fact
+ * about it as a sentence — the state's too, which says more there ("3
+ * uncommitted changes: 1 staged, 2 unstaged.") — and, with nothing to push
+ * or pull, that it is up to date with its upstream.
+ */
+export function worktreeTip(r: WorktreeRow): string {
+  const lines = [r.shownPath, ...worktreeFacts(r).map((f) => f.tip)];
+  if (r.branch && r.upstream && !r.upstreamGone && r.ahead === 0 && r.behind === 0 && !r.missing && !r.unlinked) {
+    lines.push(`Up to date with ${r.upstream}.`);
+  }
+  return lines.join("\n");
 }
 
 /** An action a row can take, or why it can't — said where the action is. */
