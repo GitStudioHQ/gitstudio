@@ -7,6 +7,56 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 ## [Unreleased]
 
 ### Added
+- **A page for each pull request.** Opening a pull request — from the list,
+  the Command Palette, or a link in another one — opens its own editor tab,
+  titled with its repository and number (`acme/app#37`); opening it again
+  brings that tab forward. The page says what the pull request is and where
+  it stands: its state, who wants to merge what into where, whether its
+  branch is the one checked out, and a status box for its reviews, its checks
+  and whether it can be merged — with the one thing that helps when it can't:
+  **Update Branch** when the base has moved on, **Check Out to Resolve** for
+  conflicts, **Mark Ready for Review** for a draft. Its actions are the ones
+  its state allows: **Merge…**, **Mark Ready for Review** or **Reopen** first,
+  then **Check Out**, **Review…** and **More** (Close Pull Request, Copy Link),
+  with Refresh and Open on GitHub beside them. Four tabs:
+  - **Conversation**: the description as GitHub draws it — tables, task lists,
+    images, code, collapsible sections — with `#12`, `owner/repo#12` and
+    `@people` as links (a pull request of the same repository opens its own
+    page); every comment, review (with its verdict) and event; review threads
+    under their review, with **Reply** and **Resolve Conversation**; and a box
+    to comment. Reviewers with their verdicts, assignees and labels sit
+    beside it.
+  - **Commits**, each opening to its changed files, and each file to that
+    commit's diff.
+  - **Checks**: every check on the latest commit, failing first, with how long
+    it took (or has been running), whether it is required, and **Details**.
+  - **Files Changed**: the changed files as a tree, with their line counts and
+    how many conversations each has; a file opens VS Code's diff, and a
+    renamed one is compared with its old name.
+  What you change there shows at once and is then sent; if GitHub refuses it,
+  the page goes back and says why, with what to do. While checks run, the page
+  keeps itself up to date. It replaces the old description panel, and is drawn
+  for Dark, Light and both High Contrast themes.
+- **Merge from the pull request's page.** **Merge…** lists only the methods
+  the repository allows, the one set in `gitstudio.pr.defaultMergeMethod`
+  first, each saying what it does ("The 4 commits become one commit on
+  main."), with the commit title to use and an option to delete the branch on
+  GitHub afterwards. GitHub refuses the merge if the branch has moved on since
+  the page read it, and the page says so. The list's **Merge…** opens this box;
+  nothing is asked in the Changes view any more.
+- **Review in the editor, submit from the page.** A pull request's diffs take
+  comments as soon as its page has read it — only on the lines GitHub accepts
+  — and your first comment starts your review. GitHub's own threads show on
+  the diff too, with **Reply** and **Resolve Conversation**. Your pending
+  comments are listed on the page (each opens where it is) and counted on the
+  **Review** button, the **Files Changed** tab, each file and the status bar
+  ("Reviewing #37 · 3 pending"). They are kept with the workspace, so
+  reloading the window keeps them. Submit them from the page's **Review…** box
+  as **Comment**, **Approve** or **Request changes**, with a summary — Approve
+  and Request changes aren't offered on your own pull request — or **Discard**
+  them there. Reviews of several pull requests can be under way at once, and
+  comments written before the pull request moved on say so, and are sent on
+  the commit they were written on.
 - **A new Pull Requests list.** The Pull Requests view is rebuilt as a list
   like the GitStudio desktop app's. **Open**, **Merged**, **Closed** and
   **All** sit at the top with how many each holds; a search box finds pull
@@ -498,17 +548,18 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   threw and deleted nothing. A comment already posted to GitHub no longer
   offers it.
 - **Pending review comments are no longer thrown away.** Starting a review of
-  another pull request, or Cancel Review, asks first — submit them, discard
-  them, or keep reviewing — and a pull request whose files fail to load leaves
-  your queued comments alone. The question counts the comments that are
-  pending, and discarding them leaves the ones already posted.
+  another pull request leaves the one you were writing as it was — each pull
+  request keeps its own — and **Discard Pending Review** asks first, counting
+  the comments that are pending; discarding them leaves the ones already
+  posted. A pull request whose files fail to load leaves your queued comments
+  alone.
 - **Check Out on a pull request you already have** brings `pr/<n>` up to
   date. It failed while `pr/<n>` was checked out, and it silently threw away
   any commits you had made on it; now a `pr/<n>` with commits the pull request
   doesn't have is never moved without asking. On the pull request's own
   branch already, it says so instead of moving you to a `pr/<n>` copy. The
   progress notification ends before "Checked out" appears, and its Open
-  Description opens that pull request even after you have switched
+  Pull Request opens that pull request even after you have switched
   repositories (it opened the same number in the repository active then).
 - **A pull request's page:** label chips wear their colours (the page's own
   security policy dropped them, and every label was grey); a merged pull
