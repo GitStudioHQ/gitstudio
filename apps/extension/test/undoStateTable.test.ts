@@ -46,7 +46,7 @@ vscode.workspace = { getConfiguration: () => ({ get: (_k: string, d?: unknown) =
 const { registerDialogHost } = require("../src/ui/dialogs") as typeof import("../src/ui/dialogs");
 const branchActions = require("../src/views/branchActions") as typeof import("../src/views/branchActions");
 const stashesView = require("../src/views/stashesView") as typeof import("../src/views/stashesView");
-const { runCommitAction, refActionId } = require("../src/graph/commitActions") as typeof import("../src/graph/commitActions");
+const { runCommitAction, refActionId, runMultiCommitAction } = require("../src/graph/commitActions") as typeof import("../src/graph/commitActions");
 const { UndoLedger } = require("../src/undo/undoLedger") as typeof import("../src/undo/undoLedger");
 const { startInteractiveRebase } = require("../src/rebase/rebaseCommands") as typeof import("../src/rebase/rebaseCommands");
 const { runRebasePlan } = require("../src/rebase/rebaseRunner") as typeof import("../src/rebase/rebaseRunner");
@@ -219,6 +219,9 @@ function state(f: Fx): RepoState {
     ["REVERT_HEAD", "revert"],
     ["rebase-merge", "rebase"],
     ["rebase-apply", "rebase(apply)"],
+    // A cherry-pick or revert of several commits queues the rest here; git
+    // status (and its Continue) still see the operation while it exists.
+    ["sequencer", "sequence"],
   ]
     .filter(([p]) => existsSync(join(gitDir, p)))
     .map(([, n]) => n);
@@ -1629,5 +1632,75 @@ cell({
     assert.ok(undoSaid.includes("info: Nothing to undo."), undoSaid.join(" / "));
     assert.equal(f.read("f.txt"), "typed while the question was open\n");
     assert.equal(f.read("feat.txt"), "uncommitted\n");
+  },
+});
+
+// ══ 13. Cherry-pick N / Revert N (#32) that stopped, then Undo ═══════════════
+//
+// One git command over several commits writes .git/sequencer beside
+// CHERRY_PICK_HEAD / REVERT_HEAD. `reset --hard` clears the *_HEAD but not the
+// sequence: git status still says the op is in progress, and its Continue
+// replays the rest of what Undo just took back.
+
+const manyHost = { compare: async () => {} };
+
+cell({
+  id: "E59",
+  operation: "Cherry-pick 3 commits A, B, C (graph menu for a selection)",
+  state: "on main (base, main edit on f.txt); side has A, B (f.txt), C — stops on B",
+  expected: "main back where it was, and no cherry-pick left in progress",
+  setup: (f) => {
+    f.git("checkout", "-q", "-b", "side");
+    f.memo.A = f.commit("A", "a.txt");
+    f.memo.B = f.commit("B", "f.txt", "side\n");
+    f.memo.C = f.commit("C", "c.txt");
+    f.git("checkout", "-q", "main");
+    f.memo.before = f.commit("main edit", "f.txt", "main\n");
+  },
+  op: async (f) => {
+    await runMultiCommitAction("cherryPickMany", f.ctx, [f.memo.C, f.memo.B, f.memo.A], manyHost, f.undoRunner);
+    assert.equal(state(f).op, "cherry-pick,sequence", "stopped on B, with C still queued");
+  },
+  expect: async (f, s, { undoAsked }) => {
+    assert.equal(sha(f, "HEAD"), f.memo.before, "main back where it was");
+    assert.equal(s.op, "none", "no cherry-pick left in progress");
+    assert.deepEqual(s.status, []);
+    assert.equal((await f.ctx.operation.detect()).kind, "none", "GitStudio's own detector agrees");
+    const q = undoAsked.find((a) => a.kind === "confirm");
+    assert.match(q && "message" in q ? (q.message ?? "") : "", /The cherry-pick in progress is abandoned\./);
+  },
+  followUp: (f, row) => {
+    // What was the bug: the leftover sequence's Continue re-applied C.
+    let cont = "exit 0";
+    try {
+      f.gitEnv({ GIT_EDITOR: "true" }, "cherry-pick", "--continue");
+    } catch (err) {
+      cont = String((err as { stderr?: string }).stderr ?? err).trim().split("\n")[0];
+    }
+    row.extra = { cherryPickContinueSaid: cont, afterContinue: describe(state(f)) };
+  },
+});
+
+cell({
+  id: "E60",
+  operation: "Revert 2 commits B, A (graph menu for a selection)",
+  state: "on main (base, A, B on f.txt, D on f.txt) — stops on the first, B",
+  expected: "main where it was, and no revert left in progress",
+  setup: (f) => {
+    f.memo.A = f.commit("A", "a.txt");
+    f.memo.B = f.commit("B", "f.txt", "b\n");
+    f.memo.before = f.commit("D", "f.txt", "d\n");
+  },
+  op: async (f) => {
+    await runMultiCommitAction("revertMany", f.ctx, [f.memo.B, f.memo.A], manyHost, f.undoRunner);
+    assert.equal(state(f).op, "revert,sequence", "stopped on B, with A still queued");
+  },
+  expect: async (f, s, { undoAsked }) => {
+    assert.equal(sha(f, "HEAD"), f.memo.before, "main where it was");
+    assert.equal(s.op, "none", "no revert left in progress");
+    assert.deepEqual(s.status, []);
+    assert.equal((await f.ctx.operation.detect()).kind, "none", "GitStudio's own detector agrees");
+    const q = undoAsked.find((a) => a.kind === "confirm");
+    assert.match(q && "message" in q ? (q.message ?? "") : "", /The revert in progress is abandoned\./);
   },
 });

@@ -77,6 +77,13 @@ export interface OpMark {
   onto?: string;
   /** merge / cherry-pick / revert: the commit in MERGE_HEAD etc. */
   head?: string;
+  /**
+   * cherry-pick / revert of several commits in one command: git keeps the
+   * rest of the run in `.git/sequencer`. `reset --hard` clears the *_HEAD
+   * but not that — `git status` still says the op is in progress, and its
+   * Continue replays the rest of it — so an Undo of the op ends it too.
+   */
+  sequence?: true;
 }
 
 /** The remote-tracking branches that contain a commit — or how many, when there are lots. */
@@ -186,7 +193,9 @@ export type RestoreStep =
   | { do: "ref"; move: MovedRef; here: boolean }
   | { do: "stash"; entry: DroppedStash }
   /** Take a stash the op made off the stack again — its work is back in the tree. */
-  | { do: "drop-stash"; entry: StashSlot };
+  | { do: "drop-stash"; entry: StashSlot }
+  /** End the op's own cherry-pick / revert run (`--quit`: HEAD and the tree are already back). */
+  | { do: "quit-sequence"; kind: "cherry-pick" | "revert" };
 
 /** What undoing a snapshot means right now. */
 export type RestorePlan =
@@ -550,6 +559,7 @@ export class SnapshotProvider {
           );
         }
         lines.push(`${said} goes back to ${shortSha(to)}.`);
+        if (oursStop) lines.push(`The ${settled.op!.kind} in progress is abandoned.`);
         if (!snap.stashSha && s.tree !== CLEAN_TREE) {
           // Something was uncommitted before and there is no copy of it (git
           // won't copy a conflict in progress). Nothing uncommitted now may be
@@ -629,6 +639,17 @@ export class SnapshotProvider {
           danger = true;
         }
       }
+    }
+
+    // The op's own several-commit run: the reset above cleared its *_HEAD,
+    // but git keeps the rest of the run queued, and would call it in progress.
+    if (
+      oursStop &&
+      opNow?.sequence &&
+      (opNow.kind === "cherry-pick" || opNow.kind === "revert") &&
+      steps.some((st) => st.do === "reset" || st.do === "tree")
+    ) {
+      steps.push({ do: "quit-sequence", kind: opNow.kind });
     }
 
     // ── The other branches it moved, created or deleted ─────────────────────
@@ -770,6 +791,13 @@ export class SnapshotProvider {
         case "stash": {
           const r = await restoreStash(this.process, st.entry, st.entry, opts);
           if (!r.ok) throw new Error(r.message);
+          break;
+        }
+        case "quit-sequence": {
+          const r = await this.process.run([st.kind, "--quit"], opts);
+          if (r.code !== 0) {
+            throw new Error(`Undo put things back, but couldn't end the ${st.kind} in progress: ${r.stderr.trim() || "git refused"}`);
+          }
           break;
         }
         case "drop-stash": {
@@ -1107,7 +1135,11 @@ export class SnapshotProvider {
       ["REVERT_HEAD", "revert"],
     ] as const) {
       const f = await at(file);
-      if (f && existsSync(f)) return { kind, head: readText(f) };
+      if (!f || !existsSync(f)) continue;
+      if (kind === "merge") return { kind, head: readText(f) };
+      // A single pick never writes sequencer/; a run of several keeps the rest there.
+      const seq = await at("sequencer");
+      return { kind, head: readText(f), ...(seq && isDir(seq) ? { sequence: true as const } : {}) };
     }
     return undefined;
   }
