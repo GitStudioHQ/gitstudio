@@ -1,0 +1,28 @@
+packages/host-bridge/src/worktreeRemoval.ts
+  s_26f5e669d3043c::t_5d189da521aa61 165-273
+packages/host-bridge/src/worktreesProtocol.ts
+  s_26f5e669d3043c::t_2f7192faea595b 1-218,230-342,345-431
+  s_26f5e669d3043c::t_f2ccb98fe64b03 343-344
+  s_26f5e669d3043c::t_e6ce46656f7f54 219-229
+packages/host-bridge/src/changeRows.ts
+  s_26f5e669d3043c::t_0dee7aa0036b93 1-46
+packages/host-bridge/test/worktreesProtocol.test.ts
+  s_26f5e669d3043c::t_e94f9a63c0f7a1 1-137,139,142-276
+  s_26f5e669d3043c::t_ded4aa04d3b928 138,140-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0477d95368874a45e6ed2902117d463941045fda",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
