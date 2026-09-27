@@ -86,7 +86,7 @@ export interface PrBranchPlan {
   ahead?: number;
   /** Commits the pull request's branch has that <local> doesn't. */
   behind?: number;
-  /** Elsewhere: the worktree it is checked out in. */
+  /** The other worktree that has it checked out (elsewhere; or taken, where it rules out Use). */
   worktree?: string;
   /** Once landed, point its upstream (and push remote) at the pull request's branch. */
   setUpstream: boolean;
@@ -151,19 +151,21 @@ export async function fetchPrBranch(
 
 // ── Plan ─────────────────────────────────────────────────────────────────────
 
-/** What checking out the pull request's branch as `local` means for the branch that is there. */
-export async function planPrBranch(
-  proc: PrGitRunner,
-  t: PrBranchTarget,
-  sha: string,
-  local: string = t.headRef,
-  opts?: { signal?: AbortSignal },
-): Promise<PrBranchPlan> {
-  const bad = nameProblem(t, local);
-  if (bad) throw new Error(bad);
+/** The local branch of that name as it is: where it points, what it tracks, who holds it. */
+interface LocalBranch {
+  exists: boolean;
+  localSha?: string;
+  checkedOut: boolean;
+  tracks: PrBranchPlan["tracks"];
+  tracksName?: string;
+  /** Another worktree that has it checked out. */
+  worktree?: string;
+  /** It is the pull request's branch (tracks it, or — same repository — tracks nothing). */
+  isPrs: boolean;
+}
+
+async function readLocal(proc: PrGitRunner, t: PrBranchTarget, local: string, opts?: { signal?: AbortSignal }): Promise<LocalBranch> {
   const ref = `refs/heads/${local}`;
-  const tracking = `refs/remotes/${t.remote}/${t.headRef}`;
-  const base = { local, ref, tracking, trackingName: `${t.remote}/${t.headRef}`, sha };
   const [existing, head, worktrees, remoteCfg, mergeCfg] = await Promise.all([
     proc.run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], opts),
     proc.run(["symbolic-ref", "--quiet", "HEAD"], opts),
@@ -172,11 +174,7 @@ export async function planPrBranch(
     proc.run(["config", "--get", `branch.${local}.merge`], opts),
   ]);
   const checkedOut = head.code === 0 && head.stdout.trim() === ref;
-  if (existing.code !== 0) {
-    return { ...base, kind: "create", checkedOut: false, tracks: "none", setUpstream: true };
-  }
-  const localSha = existing.stdout.trim();
-
+  if (existing.code !== 0) return { exists: false, checkedOut: false, tracks: "none", isPrs: false };
   const upRemote = remoteCfg.code === 0 ? remoteCfg.stdout.trim() : "";
   const upMerge = mergeCfg.code === 0 ? mergeCfg.stdout.trim() : "";
   const names = new Set([t.remote, ...(t.remoteAliases ?? [])]);
@@ -191,22 +189,66 @@ export async function planPrBranch(
     const branch = upMerge.replace(/^refs\/heads\//, "");
     tracksName = upRemote === "." ? `the local branch ${branch}` : `${upRemote}/${branch}`;
   }
+  const worktree = checkedOut ? undefined : worktreeHolding(worktrees.stdout, ref);
+  return {
+    exists: true,
+    localSha: existing.stdout.trim(),
+    checkedOut,
+    tracks,
+    ...(tracksName ? { tracksName } : {}),
+    ...(worktree ? { worktree } : {}),
+    // Not the pull request's branch: a same-named one that tracks something
+    // else, or a fork's head name on a branch of yours that tracks nothing.
+    isPrs: tracks === "pr" || (tracks === "none" && t.sameRepo),
+  };
+}
 
-  const rel = await relation(proc, localSha, sha, opts);
-  const known = { ...base, checkedOut, localSha, tracks, ...(tracksName ? { tracksName } : {}), ...rel };
+/**
+ * The worktree that has the pull request's own branch checked out, when it is
+ * another one — asked before anything is fetched: that checkout can't happen
+ * here, and saying so takes no network. (A same-named branch that isn't the
+ * pull request's is asked about instead, with a name that is free.)
+ */
+export async function prBranchElsewhere(proc: PrGitRunner, t: PrBranchTarget, opts?: { signal?: AbortSignal }): Promise<string | undefined> {
+  if (nameProblem(t, t.headRef)) return undefined;
+  const b = await readLocal(proc, t, t.headRef, opts);
+  return b.exists && b.isPrs ? b.worktree : undefined;
+}
 
-  if (!checkedOut) {
-    const other = worktreeHolding(worktrees.stdout, ref);
-    if (other) return { ...known, kind: "elsewhere", worktree: other, setUpstream: false };
+/** What checking out the pull request's branch as `local` means for the branch that is there. */
+export async function planPrBranch(
+  proc: PrGitRunner,
+  t: PrBranchTarget,
+  sha: string,
+  local: string = t.headRef,
+  opts?: { signal?: AbortSignal },
+): Promise<PrBranchPlan> {
+  const bad = nameProblem(t, local);
+  if (bad) throw new Error(bad);
+  const ref = `refs/heads/${local}`;
+  const tracking = `refs/remotes/${t.remote}/${t.headRef}`;
+  const base = { local, ref, tracking, trackingName: `${t.remote}/${t.headRef}`, sha };
+  const b = await readLocal(proc, t, local, opts);
+  if (!b.exists || !b.localSha) {
+    return { ...base, kind: "create", checkedOut: false, tracks: "none", setUpstream: true };
   }
-  // Not the pull request's branch: a same-named one that tracks something
-  // else, or a fork's head name on a branch of yours that tracks nothing.
-  if (tracks === "other" || (tracks === "none" && !t.sameRepo)) {
-    return { ...known, kind: "taken", setUpstream: false };
-  }
+  const rel = await relation(proc, b.localSha, sha, opts);
+  const known = {
+    ...base,
+    checkedOut: b.checkedOut,
+    localSha: b.localSha,
+    tracks: b.tracks,
+    ...(b.tracksName ? { tracksName: b.tracksName } : {}),
+    ...(b.worktree ? { worktree: b.worktree } : {}),
+    ...rel,
+  };
+  // Not the pull request's: the user decides (another worktree holding it
+  // only takes Use off the table).
+  if (!b.isPrs) return { ...known, kind: "taken", setUpstream: false };
+  if (b.worktree) return { ...known, kind: "elsewhere", setUpstream: false };
   const kind: PrBranchKind =
     rel.relation === "same" ? "current" : rel.relation === "behind" ? "fast-forward" : rel.relation === "ahead" ? "ahead" : "diverged";
-  return { ...known, kind, setUpstream: tracks === "none" };
+  return { ...known, kind, setUpstream: b.tracks === "none" };
 }
 
 async function relation(

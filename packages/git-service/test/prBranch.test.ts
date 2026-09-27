@@ -13,6 +13,7 @@ import {
   moveLocalBranch,
   newRemoteName,
   planPrBranch,
+  prBranchElsewhere,
   remoteUrlLike,
   trackPrBranch,
   type PrBranchTarget,
@@ -203,6 +204,23 @@ test("plan: checked out in another worktree → elsewhere, and named", async () 
   const p = await planPrBranch(w.proc, w.same, w.tip1);
   assert.equal(p.kind, "elsewhere");
   assert.ok(p.worktree && p.worktree.endsWith("other"), p.worktree);
+  w.proc.dispose();
+});
+
+test("elsewhere is known before any fetch — for the PR's own branch only; another branch of that name elsewhere is still asked about", async () => {
+  const w = world();
+  await fetchPrBranch(w.proc, w.same);
+  w.git("branch", "--track", "feature", "origin/feature");
+  w.git("worktree", "add", "-q", join(w.base, "held"), "feature");
+  assert.ok((await prBranchElsewhere(w.proc, w.same))?.endsWith("held"), "the PR's branch, held by another worktree");
+  // A fork's PR from a branch named like yours, which another worktree holds.
+  const fork: PrBranchTarget = { n: 9, headRef: "feature", remote: "alice", sameRepo: false, headOwner: "alice" };
+  w.git("remote", "add", "alice", w.fork);
+  const theirs = w.push(w.fork, "feature", "main", "alice: feature");
+  assert.equal(await prBranchElsewhere(w.proc, fork), undefined, "yours, not theirs: nothing to say before the fetch");
+  const p = await planPrBranch(w.proc, fork, theirs);
+  assert.equal(p.kind, "taken", "asked about — with a free name — not refused");
+  assert.ok(p.worktree?.endsWith("held"), "…knowing it can't be used here");
   w.proc.dispose();
 });
 

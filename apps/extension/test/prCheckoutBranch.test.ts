@@ -17,7 +17,8 @@
 //   fork · no edits from maintainers               → says a push will be refused
 //   dirty tree in the way                          → Stash & Retry, and the change comes back
 //   head branch gone                               → pr/<n> at its last commit, said
-//   checked out in another worktree               → said where; nothing moves
+//   checked out in another worktree               → said where, before any fetch; nothing moves
+//   a fork's name on your branch held elsewhere   → asked, with a free name; never Use
 //
 // The old command made pr/<n> from refs/pull/<n>/head with no upstream: every
 // row below that asserts an upstream fails on it.
@@ -352,6 +353,21 @@ test("checked out in another worktree: said where, and nothing moves here", asyn
   await checkout(w);
   assert.equal(w.git("symbolic-ref", "--short", "HEAD"), "main");
   assert.match(said("warning").join("\n"), /feature-7/);
+});
+
+test("a fork's branch named like one of yours that another worktree holds: asked, with a free name — never Use, never refused", async () => {
+  const w = world();
+  const theirs = w.push(w.fork, "topic", "main", "alice: topic", []);
+  w.git("worktree", "add", "-q", "-b", "topic", join(w.base, "mine"), "main");
+  mountWith(w.entry);
+  answer = (spec) => (spec.kind === "pick" && /already a branch named topic/.test(spec.title) ? "alt" : undefined);
+  await checkout(w, { n: 9, head: "topic", repo: "alice/app", sha: theirs, canModify: true });
+  const q = asked.find((a) => /already a branch named topic/.test(a.title));
+  assert.ok(q, `asked (${asked.map((a) => a.title).join(" / ")})`);
+  assert.deepEqual(q.choices.map((c: any) => c.id), ["alt", "cancel"], "Use can't work while another worktree holds it");
+  assert.match(q.hint, /It is checked out in the worktree at .*mine/);
+  assert.equal(w.git("symbolic-ref", "--short", "HEAD"), "alice-topic");
+  assert.equal(upstream(w, "alice-topic"), "alice/topic");
 });
 
 test("the toast's Open Pull Request opens THAT pull request — not the same number in the repository active when it is clicked", async () => {

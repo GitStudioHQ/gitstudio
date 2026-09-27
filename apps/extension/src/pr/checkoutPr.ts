@@ -14,6 +14,7 @@ import {
   moveLocalBranch,
   newRemoteName,
   planPrBranch,
+  prBranchElsewhere,
   remoteUrlLike,
   trackPrBranch,
   type PrBranchPlan,
@@ -69,6 +70,19 @@ export async function checkoutPullRequest(ctx: GitHubRepoContext, pr: PullReques
   const baseRepo = `${ctx.owner}/${ctx.repo}`;
   const headRepo = pr.head.repoFullName;
   const sameRepo = !!headRepo && same(headRepo, baseRepo);
+
+  // Its branch checked out in another worktree: said where, before anything
+  // runs — no fetch for a checkout that can't happen here.
+  if (headRepo) {
+    const found = await remoteFor(entry, headRepo);
+    if (found) {
+      const t = { n, headRef: pr.head.ref, remote: found.name, remoteAliases: found.aliases, sameRepo, headOwner: headRepo.split("/")[0] ?? "" };
+      if (await prBranchElsewhere(entry.ctx.process, t)) {
+        await saidCheckedOutElsewhere(entry.ctx, `refs/heads/${pr.head.ref}`, "checkout");
+        return;
+      }
+    }
+  }
 
   const outcome = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Checking out PR #${n}…`, cancellable: true },
@@ -300,12 +314,14 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
       };
       const choice = await promptPick({
         title: `There's already a branch named ${local}`,
-        hint: `${local} tracks ${plan.tracksName ?? "no remote branch"} — it isn't ${trackingName}, the branch of PR #${n}.`,
+        hint:
+          `${local} tracks ${plan.tracksName ?? "no remote branch"} — it isn't ${trackingName}, the branch of PR #${n}.` +
+          (plan.worktree ? ` It is checked out in the worktree at ${plan.worktree}.` : ""),
         choices: [
           ...(alt
             ? [{ id: "alt", label: `Checkout as ${alt}`, icon: "git-branch", description: `A new branch, ${tracking}: a push from it reaches the pull request.` }]
             : []),
-          ...(plan.relation && plan.relation !== "diverged"
+          ...(plan.relation && plan.relation !== "diverged" && !plan.worktree
             ? [{ id: "use", label: `Use ${local}`, icon: "arrow-swap", description: useWords[plan.relation] }]
             : []),
           { id: "cancel", label: "Cancel", icon: "close", description: "Nothing changes." },
@@ -314,7 +330,7 @@ async function land(entry: RepoEntry, pr: PullRequest, target: PrBranchTarget, p
       if (choice === "alt" && alt) {
         return land(entry, pr, target, await planPrBranch(entry.ctx.process, target, plan.sha, alt), true);
       }
-      if (choice === "use" && plan.relation && plan.relation !== "diverged") {
+      if (choice === "use" && plan.relation && plan.relation !== "diverged" && !plan.worktree) {
         const kind = plan.relation === "same" ? "current" : plan.relation === "behind" ? "fast-forward" : "ahead";
         return land(entry, pr, target, { ...plan, kind, tracks: "pr", setUpstream: true }, true);
       }
