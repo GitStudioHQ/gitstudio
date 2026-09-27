@@ -9554,8 +9554,9 @@
 
     /**
      * Cmd-click and Shift-click select several; every selected row has the
-     * selection fill and ONLY the focused one the accent bar (computed, in
-     * whichever theme the scene runs); aria says so; the details pane becomes
+     * selection fill, the focused one is lit with a fill of its own, and no
+     * row wears a line (computed, in whichever theme the scene runs); aria
+     * says so; the details pane becomes
      * "N commits selected" with the actions that apply — never one commit's
      * details — and Escape keeps only the focused row.
      */
@@ -9577,7 +9578,20 @@
       };
       const selected = () => $$('.row[aria-selected="true"]', sr).map((r) => r.dataset.sha);
       const bg = (sha) => getComputedStyle(row(sha)).backgroundColor;
-      const barOf = (sha) => getComputedStyle(row(sha)).borderLeftColor;
+      // Any line a row wears: a coloured border down its side, a shadow, an
+      // outline, a ::before/::after strip. The owner's rule is that nothing
+      // selected wears one; the focused row is LIT instead (a fill of its own).
+      const linesOf = (sha) => {
+        const s = getComputedStyle(row(sha));
+        const strip = (w) => { const p = getComputedStyle(row(sha), w); return p.content !== "none" && p.content !== "normal" && !clear(p.backgroundColor); };
+        return [
+          clear(s.borderLeftColor) || parseFloat(s.borderLeftWidth) === 0 ? "" : `border-left ${s.borderLeftColor}`,
+          s.boxShadow === "none" ? "" : `box-shadow ${s.boxShadow}`,
+          s.outlineStyle === "none" ? "" : `outline ${s.outlineStyle}`,
+          strip("::before") ? "::before strip" : "",
+          strip("::after") ? "::after strip" : "",
+        ].filter(Boolean).join(", ");
+      };
       const clear = (v) => v === "rgba(0, 0, 0, 0)" || v === "transparent";
       const sent = (ch) => window.__GS_INVOKED.filter((r) => r.channel === ch);
 
@@ -9585,10 +9599,11 @@
       await click(S[2], { metaKey: true });
       c.eq(selected().join(","), [S[0], S[2]].join(","), "Cmd+click adds a row");
       c.eq(sr.querySelector(".scroller")?.getAttribute("aria-multiselectable"), "true", "the grid says it is multi-select");
-      c.ok(!clear(bg(S[0])) && bg(S[0]) === bg(S[2]), `both selected rows are filled alike (${bg(S[0])} / ${bg(S[2])})`);
-      c.ok(bg(S[1]) !== bg(S[0]), `the row between them is not (${bg(S[1])})`);
-      c.ok(!clear(barOf(S[2])), `the focused row has the accent bar (${barOf(S[2])})`);
-      c.ok(clear(barOf(S[0])), `a selected row that is not focused has none (${barOf(S[0])})`);
+      c.ok(!clear(bg(S[0])) && bg(S[1]) !== bg(S[0]), `a selected row is filled, the row between them is not (${bg(S[0])} / ${bg(S[1])})`);
+      c.ok(!clear(bg(S[2])) && bg(S[2]) !== bg(S[0]) && bg(S[2]) !== bg(S[1]),
+        `the focused row is lit: a fill of its own (${bg(S[2])} / ${bg(S[0])})`);
+      c.eq(linesOf(S[2]), "", "the focused row wears no line");
+      c.eq(linesOf(S[0]), "", "nor does a selected row that is not focused");
       c.eq(sr.querySelector(".scroller")?.getAttribute("aria-activedescendant"), row(S[2])?.id, "aria-activedescendant is the focused row");
 
       const pane = $(".graph-details gitstudio-commit-details");
