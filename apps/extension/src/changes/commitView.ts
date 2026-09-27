@@ -6321,7 +6321,8 @@ export class CommitViewProvider
 
     /**
      * The top actions. Pull and Push have no branch to act on at a detached
-     * HEAD, where one line says so in their place. "terms" are other words a
+     * HEAD, and Pull nothing to pull from for a branch with no upstream (or
+     * a gone one): one line says so in their place. "terms" are other words a
      * person may look for one by ("update" was Pull's old name): they find
      * it, but never outrank a name the query really matches.
      */
@@ -6408,18 +6409,33 @@ export class CommitViewProvider
       // itself spins until the real op finishes, and the branch rows' ↑/↓
       // badges refresh live.
       const busyLabels = { fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" };
-      // On a detached HEAD, Pull and Push are not offered, and one line says
-      // why where they would be — with the box empty, or when the query is
-      // looking for one of them.
-      const why = detached && (!q || bmScoreAction(q, BM_ACTIONS[1]) || bmScoreAction(q, BM_ACTIONS[2]));
+      // Nothing to pull into the branch HEAD is on when it tracks nothing, or
+      // tracks a branch gone from its remote — the pull could only fail. Its
+      // own actions offer no Pull then either (openBranchActions): one rule.
+      const cur = detached ? null : (branchData.local || []).find((b) => b.current);
+      const noPull = !!cur && (!cur.upstream || !!cur.gone);
+      /** The query is looking for this action: its name or a term found by
+       *  a start or a word's start, not by one letter somewhere inside. */
+      const lookingFor = (it) => {
+        const m = bmScoreAction(q, it);
+        return !!m && m.s >= BM_TIER.word;
+      };
+      // Where Pull and Push are not offered, one line says why, in their
+      // place: on a detached HEAD with the box empty too (both are gone);
+      // otherwise only when the query is looking for the one that is gone.
+      const why = detached ? !q || lookingFor(BM_ACTIONS[1]) || lookingFor(BM_ACTIONS[2])
+        : noPull && !!q && lookingFor(BM_ACTIONS[1]);
       for (const it of BM_ACTIONS) {
         const live = it.a === "fetch" || it.a === "pull" || it.a === "push";
-        if (detached && (it.a === "pull" || it.a === "push")) {
+        if ((detached && (it.a === "pull" || it.a === "push")) || (noPull && it.a === "pull")) {
           if (it.a === "pull" && why) {
             const line = el("div", "bm-why", bIcon("info") + "<span></span>");
             line.id = "bm-why";
-            line.querySelector("span").textContent =
-              "Detached at " + (hs.branch || "HEAD") + " — check out a branch to pull or push";
+            line.querySelector("span").textContent = detached
+              ? "Detached at " + (hs.branch || "HEAD") + " — check out a branch to pull or push"
+              : cur.gone
+                ? "'" + cur.name + "' tracks " + cur.upstream + ", which no longer exists on the remote"
+                : "'" + cur.name + "' has no upstream to pull from";
             list.appendChild(line);
           }
           continue;

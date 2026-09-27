@@ -24,7 +24,11 @@ import { ChangesPage, stateMessage, type LocalBranch } from "./changesPage";
 //     the highlight back on the best match (branches that arrived after the
 //     query was typed); after, it stays where they put it;
 //   · on a detached HEAD, Pull and Push are not offered, and one line says
-//     why where they would be — read out with the search box;
+//     why where they would be — read out with the search box — with the box
+//     empty, or a query looking for one of them by a start ("pu", "u" for
+//     update), never for a letter inside them ("t");
+//   · the branch you're on with no upstream, or a gone one, offers no Pull
+//     at the top, as its own actions offer none; looked for, a line says why;
 //   · Pull is "Pull" everywhere, and still found by "update".
 
 const chrome = ChangesPage.chrome();
@@ -388,16 +392,22 @@ test("on a detached HEAD, Pull and Push are not offered, and one line says why",
   assert.equal(await page.eval(`document.querySelector(".bm-list .bm-why").previousElementSibling.dataset.bmkey`), "a:fetch");
   assert.equal(await page.eval(`document.querySelector(".bm-list .bm-why").hasAttribute("data-bmkey")`), false, "not a row the arrows visit");
 
-  for (const q of ["pu", "push", "update"]) {
+  // Looking for one of them: its name or "update" by a start, or a word's.
+  for (const q of ["p", "pu", "pull", "push", "u", "update"]) {
     await query(q);
     l = await look();
     assert.ok(!l.actions.includes("a:pull") && !l.actions.includes("a:push"), `${q}: ${l.actions.join(" | ")}`);
     assert.ok(l.why, `${q}: the query looks for one of them, so the line says why it is not here`);
+    assert.equal(l.describedBy, "bm-why", `${q}: read out with the box`);
   }
-  await query("feature");
-  l = await look();
-  assert.equal(l.why, null, "a query for something else does not");
-  assert.equal(l.describedBy, null);
+  // Not: a letter somewhere inside "Pull", "Push" or "update" — 't' is
+  // looking for topic.
+  for (const q of ["t", "d", "e", "a", "s", "h", "l", "ul", "feature"]) {
+    await query(q);
+    l = await look();
+    assert.equal(l.why, null, `'${q}' is not looking for Pull or Push`);
+    assert.equal(l.describedBy, null, `'${q}': nothing read out with the box`);
+  }
 
   // Back on a branch (checked out from elsewhere, with the menu open): both return.
   await query("");
@@ -405,6 +415,53 @@ test("on a detached HEAD, Pull and Push are not offered, and one line says why",
   l = await look();
   assert.deepEqual(l.actions, ["a:fetch", "a:pull", "a:push", "a:new", "a:checkoutRef"]);
   assert.equal(l.why, null);
+});
+
+// The branch HEAD is on tracks nothing, or tracks a branch deleted from its
+// remote: a pull could only fail, and its own actions offer none. The top
+// Pull follows the same rule — gone, and said why when looked for.
+test("with no upstream, or a gone one, the branch you're on offers no Pull — at the top as in its own actions", { skip }, async () => {
+  const on = (b: LocalBranch): Record<string, unknown> =>
+    stateMessage({ local: [b, ...LOCAL.filter((x) => x.name !== "main")], remote: REMOTE });
+  const look = (): Promise<{ actions: string[]; why: string | null; describedBy: string | null }> =>
+    page.eval(`(function () {
+      var w = document.querySelector(".bm-list .bm-why");
+      return {
+        actions: Array.prototype.map.call(document.querySelectorAll(".bm-list .bm-action"), function (b) { return b.dataset.bmkey; }),
+        why: w ? w.textContent.trim() : null,
+        describedBy: document.querySelector(".bm-search input").getAttribute("aria-describedby"),
+      };
+    })()`);
+  /** Whether the branch's own actions offer a pull. */
+  const ownPull = async (): Promise<boolean> => {
+    await query("main");
+    await page.key("ArrowRight");
+    const labels = await page.eval<string[]>(`Array.prototype.map.call(document.querySelectorAll(".branch-submenu .bm-subaction"), function (b) { return b.textContent.trim(); })`);
+    await page.key("ArrowLeft");
+    return labels.some((x) => /^Pull/.test(x));
+  };
+  const cells: [string, LocalBranch, string | null][] = [
+    ["tracks origin/main", { name: "main", current: true, upstream: "origin/main", upstreamOnRemote: true }, null],
+    ["tracks nothing", { name: "main", current: true }, "'main' has no upstream to pull from"],
+    ["tracks a gone branch", { name: "main", current: true, upstream: "origin/main", gone: true }, "'main' tracks origin/main, which no longer exists on the remote"],
+  ];
+  for (const [what, b, line] of cells) {
+    await openMenu(on(b));
+    let l = await look();
+    const pull = line === null;
+    assert.equal(l.actions.includes("a:pull"), pull, `${what}: Pull at the top ${pull ? "offered" : "not offered"}: ${l.actions.join(" | ")}`);
+    assert.ok(l.actions.includes("a:push"), `${what}: Push still offered (it publishes)`);
+    assert.equal(l.why, null, `${what}: no line with the box empty`);
+    assert.equal(await ownPull(), pull, `${what}: its own actions agree`);
+    for (const q of ["pull", "pu", "update"]) {
+      await query(q);
+      l = await look();
+      assert.equal(l.why, line, `${what}, '${q}': ${line ? "the line says why" : "no line"}`);
+      assert.equal(l.describedBy, line ? "bm-why" : null);
+    }
+    await query("t");
+    assert.equal((await look()).why, null, `${what}, 't': not looking for Pull`);
+  }
 });
 
 test("Pull is called Pull", { skip }, async () => {
