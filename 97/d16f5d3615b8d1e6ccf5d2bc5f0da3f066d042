@@ -1,0 +1,30 @@
+apps/extension/test/worktreesPage.ts
+  s_26f5e669d3043c::t_7188254313af5e 23-30,32-38
+  s_26f5e669d3043c::t_ca919b143015d7 161
+  s_26f5e669d3043c::t_c69ce50f9d5c6d 95-122
+  s_26f5e669d3043c::t_b76811cca0e00b 170
+scripts/merge-e2e/themes.ts
+  s_26f5e669d3043c::t_3db2d6a5da165d 260-344
+apps/extension/harness/worktrees/contrast.ts
+  s_26f5e669d3043c::t_325837eed5122d 61
+apps/extension/harness/worktrees/scenes.ts
+  s_26f5e669d3043c::t_eb65d540d003ee 2-3,8,15,19-20,83-84,112-113,119,144,170-173
+apps/extension/test/worktreesFixtures.ts
+  s_26f5e669d3043c::t_acab896e72fd45 156-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "97d16f5d3615b8d1e6ccf5d2bc5f0da3f066d042",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
