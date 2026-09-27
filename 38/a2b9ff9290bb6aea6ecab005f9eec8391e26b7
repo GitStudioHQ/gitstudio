@@ -1,0 +1,30 @@
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_575ae9c046dbe8 9003,9005
+  s_26f5e669d3043c::t_841c5d23d7f3c4 10395-10400
+apps/desktop/src/renderer/topbarRead.ts
+  s_26f5e669d3043c::t_09ab43b1c118d3 15,17,27
+apps/desktop/test/topbarRead.test.ts
+  s_26f5e669d3043c::t_3b9979e2e9818e 1-3,11,46
+docs/desktop-repo-tabs.md
+  s_26f5e669d3043c::t_1cf744c8fd8a4d 170
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_4bc8740a678659 143
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_6187b36c51a8a0 17901
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "38a2b9ff9290bb6aea6ecab005f9eec8391e26b7",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
