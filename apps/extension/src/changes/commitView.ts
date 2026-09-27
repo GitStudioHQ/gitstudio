@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import { failed, NO_REPOSITORY, notifyCopied } from "../ui/notify";
+import { relativeTime } from "../util/relativeTime";
 import type { GitRef } from "@gitstudio/git-service/index";
 import { pushUnseenMessage, type PullResult } from "@gitstudio/git-service/SyncOps";
 import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
@@ -1466,9 +1468,7 @@ export class CommitViewProvider
   private async doCommit(msg: FromWebview): Promise<void> {
     const entry = this.repos.getActive();
     if (!entry) {
-      void vscode.window.showInformationMessage(
-        "GitStudio: no Git repository is active.",
-      );
+      void vscode.window.showInformationMessage(NO_REPOSITORY);
       return;
     }
     const message = (msg.message ?? "").trim();
@@ -1717,7 +1717,7 @@ export class CommitViewProvider
     // Copy is clipboard-only — no git op, no state refresh.
     if (msg.action === "copyName") {
       await vscode.env.clipboard.writeText(ref);
-      vscode.window.setStatusBarMessage(`Copied “${ref}”`, 2000);
+      notifyCopied(`“${ref}”`);
       return;
     }
     // `diverged` is how SyncOps.pull answers "both sides moved and nobody said
@@ -1983,7 +1983,7 @@ export class CommitViewProvider
     needsForce: boolean;
     additions: number;
     deletions: number;
-    commits: Array<{ sha: string; subject: string; author: string; date: number }>;
+    commits: Array<{ sha: string; subject: string; author: string; date: number; rel: string }>;
     files: CompareFile[];
   } | null> {
     const head = await entry.ctx.refs.getHead();
@@ -2086,6 +2086,10 @@ export class CommitViewProvider
         subject: c.subject || "(no message)",
         author: c.author,
         date: c.authorDate,
+        // The age as every other GitStudio list says it ("3h", "2d"): the
+        // review had its own formatter and said "3h ago" beside a rail
+        // saying "3h" for the same commit.
+        rel: relativeTime(c.authorDate),
       })),
       files,
     };
@@ -2225,9 +2229,7 @@ export class CommitViewProvider
     if (result.ok) {
       vscode.window.setStatusBarMessage("$(check) Pushed", 3000);
     } else if (!settlePushUnseen(result)) {
-      void vscode.window.showErrorMessage(
-        `GitStudio: push failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
-      );
+      void vscode.window.showErrorMessage(failed("Push", result.stderr));
     }
     this.invalidateRefs();
     void entry.repo?.status?.();
@@ -7212,15 +7214,6 @@ export class CommitViewProvider
         else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
       }
     }
-    function relTime(sec) {
-      const d = Math.max(0, Date.now() / 1000 - sec);
-      if (d < 60) return "just now";
-      const m = Math.floor(d / 60); if (m < 60) return m + "m ago";
-      const h = Math.floor(m / 60); if (h < 24) return h + "h ago";
-      const days = Math.floor(h / 24); if (days < 30) return days + "d ago";
-      const mo = Math.floor(days / 30); if (mo < 12) return mo + "mo ago";
-      return Math.floor(mo / 12) + "y ago";
-    }
     function openPushModal(data) {
       closePushModal();
       closeBranchMenu();
@@ -7281,7 +7274,7 @@ export class CommitViewProvider
         const row = el("div", "pm-commit");
         row.appendChild(el("span", "sha", esc(c.sha.slice(0, 7))));
         const subj = el("span", "subj"); subj.textContent = c.subject; subj.title = c.subject; row.appendChild(subj);
-        const meta = el("span", "meta"); meta.textContent = c.author + " · " + relTime(c.date); row.appendChild(meta);
+        const meta = el("span", "meta"); meta.textContent = c.author + (c.rel ? " · " + c.rel : ""); row.appendChild(meta);
         body.appendChild(row);
       });
       body.appendChild(el("div", "pm-section-label", "Files changed"));

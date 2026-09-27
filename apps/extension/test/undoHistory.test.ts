@@ -97,7 +97,7 @@ test("Undo History: an older entry is undone after every newer one, newest first
 
     vscode.__said.length = 0;
     await f.ledger.undoLast();
-    assert.ok(vscode.__said.some((s) => s.message === "Nothing to undo."), "both entries are done with");
+    assert.ok(vscode.__said.some((s) => s.message === "GitStudio: Nothing to undo."), "both entries are done with");
   } finally {
     f.ctx.dispose();
   }
@@ -131,7 +131,7 @@ test("a confirm answered after the repository moved is not acted on", async () =
 
 test("the toast's Undo undoes ITS operation — after the newer ones, each asked — not whatever is newest", async () => {
   const f = fixture();
-  // Hold every "<label> — done." toast open, to press its Undo later.
+  // Hold every "GitStudio: <label> — done." toast open, to press its Undo later.
   const toasts = new Map<string, () => void>();
   const shown = vscode.window.showInformationMessage;
   vscode.window.showInformationMessage = (message: string, ...items: string[]) =>
@@ -148,7 +148,7 @@ test("the toast's Undo undoes ITS operation — after the newer ones, each asked
     asked = [];
     answer = (spec) => (spec.kind === "confirm" ? "ok" : undefined);
     // The OLDER toast's Undo, pressed after the newer op.
-    toasts.get("Commit X — done.")!();
+    toasts.get("GitStudio: Commit X — done.")!();
     for (let i = 0; i < 200 && f.git("rev-parse", "main") !== m; i++) await new Promise((r) => setTimeout(r, 25));
     assert.deepEqual(
       asked.filter((a) => a.kind === "confirm").map((a) => a.title),
@@ -193,7 +193,7 @@ test("Undo History: a newer entry that can't be undone can be forgotten, and the
     assert.equal(f.git("log", "-1", "--format=%s"), "my own work since", "and main is untouched");
     vscode.__said.length = 0;
     await f.ledger.undoLast();
-    assert.ok(vscode.__said.some((s) => s.message === "Nothing to undo."), JSON.stringify(vscode.__said));
+    assert.ok(vscode.__said.some((s) => s.message === "GitStudio: Nothing to undo."), JSON.stringify(vscode.__said));
   } finally {
     f.ctx.dispose();
   }
@@ -209,7 +209,7 @@ test("Undo History: declining to forget the refused entry changes nothing", asyn
     // Both still recorded: the next Undo is the pick again.
     vscode.__said.length = 0;
     await f.ledger.undoLast();
-    assert.ok(vscode.__said.some((s) => s.kind === "warning" && s.message.startsWith(`Can't undo "Cherry-pick 1234567"`)), JSON.stringify(vscode.__said));
+    assert.ok(vscode.__said.some((s) => s.kind === "warning" && s.message.startsWith(`GitStudio: Can't undo "Cherry-pick 1234567"`)), JSON.stringify(vscode.__said));
   } finally {
     f.ctx.dispose();
   }

@@ -268,8 +268,10 @@ export class ChangesPage {
   async reload(): Promise<void> {
     await this.page.eval("window.__gsStale = true");
     await this.page.send("Page.reload", { ignoreCache: true });
+    // The page's own "ready" (its script's last line): the stub's __send and the
+    // markup exist before the script has run, and a message sent then is lost.
     await this.page.waitFor(
-      `!window.__gsStale && typeof window.__send === "function" && !!document.getElementById("branch-pill")`,
+      `!window.__gsStale && document.readyState === "complete" && window.__posted.some(function (m) { return m.type === "ready"; })`,
     );
   }
 

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { notice } from "../ui/notify";
 import { relative } from "node:path";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
@@ -19,9 +20,7 @@ export function resolveActiveFile(repos: RepoManager): ActiveFile | undefined {
   const editor = vscode.window.activeTextEditor;
   const uri = editor?.document.uri;
   if (!uri || uri.scheme !== "file") {
-    void vscode.window.showInformationMessage(
-      "Open a file in a Git repository first.",
-    );
+    void vscode.window.showInformationMessage(notice("Open a file in a Git repository first"));
     return undefined;
   }
 
@@ -34,9 +33,7 @@ export function resolveActiveFile(repos: RepoManager): ActiveFile | undefined {
     }
   }
   if (!best) {
-    void vscode.window.showInformationMessage(
-      "This file is not inside an open Git repository.",
-    );
+    void vscode.window.showInformationMessage(notice("This file is not inside an open Git repository"));
     return undefined;
   }
 

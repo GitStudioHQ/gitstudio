@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { notice } from "../ui/notify";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GraphMenuItem } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
@@ -638,7 +639,7 @@ async function revert(
     // Reverting a merge twice is an easy thing to do now that it works at all.
     if (!stderr) {
       void vscode.window.showInformationMessage(
-        `Nothing to revert — ${short(commit.sha)} is already undone on this branch.`,
+        notice(`Nothing to revert — ${short(commit.sha)} is already undone on this branch.`),
       );
       return true;
     }
@@ -1177,7 +1178,7 @@ async function showGitError(
     // In the stopped operation's own words: a rebase or a pick CONTINUES.
     const stop = await stoppedIn(ctx.process).catch(() => null);
     void vscode.window.showWarningMessage(
-      `${title} — ${unresolvedConflictsMessage(unmerged, stop)}`,
+      notice(`${title} — ${unresolvedConflictsMessage(unmerged, stop)}`),
     );
     return;
   }

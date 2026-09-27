@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { failed, NO_REPOSITORY, notifyInfo } from "../ui/notify";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { RepoManager } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
@@ -27,7 +28,7 @@ interface ReflogEntry {
 export async function showReflog(repos: RepoManager): Promise<void> {
   const active = repos.getActive();
   if (!active) {
-    void vscode.window.showInformationMessage("No active Git repository.");
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
     return;
   }
 
@@ -35,13 +36,11 @@ export async function showReflog(repos: RepoManager): Promise<void> {
   try {
     entries = await loadReflog(active.ctx);
   } catch (err) {
-    void vscode.window.showErrorMessage(
-      `Reflog failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    void vscode.window.showErrorMessage(failed("Reflog", err instanceof Error ? err.message : String(err)));
     return;
   }
   if (entries.length === 0) {
-    void vscode.window.showInformationMessage("The reflog is empty.");
+    void notifyInfo("The reflog is empty");
     return;
   }
 

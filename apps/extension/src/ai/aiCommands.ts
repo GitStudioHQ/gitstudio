@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { NO_REPOSITORY, notice } from "../ui/notify";
 import { promptInput, promptPick, type DialogChoice } from "../ui/dialogs";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import {
@@ -207,9 +208,7 @@ export async function generateCommitMessageCommand(
 
   const entry = repos.getActive();
   if (!entry) {
-    void vscode.window.showInformationMessage(
-      "GitStudio: no Git repository is active.",
-    );
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
     return;
   }
   if (!(await brain.isEnabled())) {
@@ -314,7 +313,7 @@ function asSourceControl(arg: unknown): SourceControlLike | undefined {
 /** Offer a one-click path into the model picker when no provider is set up. */
 async function offerAiSetup(): Promise<void> {
   const choice = await vscode.window.showInformationMessage(
-    "Set up GitStudio AI to draft commit messages.",
+    notice("Set up AI to draft commit messages"),
     "Select AI Model…",
   );
   if (choice === "Select AI Model…") {
@@ -480,9 +479,7 @@ export async function explainDiffCommand(
 ): Promise<void> {
   const entry = repos.getActive();
   if (!entry) {
-    void vscode.window.showInformationMessage(
-      "GitStudio: no Git repository is active.",
-    );
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
     return;
   }
   const diff = await activeDiff(entry);
@@ -521,9 +518,7 @@ export async function summarizeChangesCommand(
 ): Promise<void> {
   const entry = repos.getActive();
   if (!entry) {
-    void vscode.window.showInformationMessage(
-      "GitStudio: no Git repository is active.",
-    );
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
     return;
   }
   const diff = await activeDiff(entry);
@@ -554,9 +549,7 @@ export async function reviewChangesCommand(
 ): Promise<void> {
   const entry = repos.getActive();
   if (!entry) {
-    void vscode.window.showInformationMessage(
-      "GitStudio: no Git repository is active.",
-    );
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
     return;
   }
   const diff = await activeDiff(entry);

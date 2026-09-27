@@ -59,6 +59,7 @@ import type { Change } from "../git/git";
 import { notifyPaused } from "../git/pauseNotice";
 import type { RepoChangeEvent } from "../git/repoChange";
 import { planGraphRefresh } from "./refreshPlan";
+import { notifyCopied } from "../ui/notify";
 
 
 /** Map the details-panel action ids to runCommitAction's ids. */
@@ -1488,10 +1489,7 @@ export class CommitGraphPanel {
 
   private async doCopy(text: string): Promise<void> {
     await vscode.env.clipboard.writeText(text);
-    void vscode.window.setStatusBarMessage(
-      `$(check) Copied ${text.length > 12 ? text.slice(0, 7) : text}`,
-      2000,
-    );
+    notifyCopied(text.length > 12 ? text.slice(0, 7) : text);
   }
 
   /** Compute + post CHANGES-column stats for the requested (visible) shas. */

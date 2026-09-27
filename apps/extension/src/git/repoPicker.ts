@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { NO_REPOSITORY } from "../ui/notify";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { promptPick, type DialogChoice } from "../ui/dialogs";
@@ -179,7 +180,7 @@ export function repoRows(repos: RepoManager): RepoRow[] {
 export async function switchRepository(repos: RepoManager): Promise<void> {
   const rows = repoRows(repos);
   if (rows.length === 0) {
-    void vscode.window.showInformationMessage("GitStudio: no repository is open.");
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
     return;
   }
   const picked = repos.getPicked();

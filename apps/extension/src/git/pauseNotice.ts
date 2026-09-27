@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { announcePause, type DetectedOperation, type PauseNoticeUi } from "./pausedForUser";
+import { notice } from "../ui/notify";
 
 // The VS Code side of the "paused for you" notice (pausedForUser.ts keeps the
 // logic vscode-free). One adapter, so every door that can leave git stopped —
@@ -13,7 +14,7 @@ const VS_CODE_UI: PauseNoticeUi = {
 
 /** "… hit conflicts" with a Resolve Conflicts… button that opens the dashboard. */
 export function notifyPaused(message: string): void {
-  void announcePause(VS_CODE_UI, message);
+  void announcePause(VS_CODE_UI, notice(message));
 }
 
 /** OperationProvider.detect(), never throwing (a failed read is "nothing in progress"). */

@@ -4,6 +4,7 @@ import type { BlameResult, BlameCommit } from "@gitstudio/git-service/index";
 import { UNCOMMITTED_SHA } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { touches } from "../git/repoChange";
+import { notice, notifyCopied } from "../ui/notify";
 import { relativeTime } from "../util/relativeTime";
 import { commitWebUrlIn } from "../util/remoteUrl";
 import { blameChangeSides, openSidesDiff, toRevisionUri } from "../history/revisionContentProvider";
@@ -675,7 +676,7 @@ export class BlameController implements vscode.Disposable {
       return;
     }
     await vscode.env.clipboard.writeText(at.commit.sha);
-    void vscode.window.showInformationMessage(`Copied ${short(at.commit.sha)}`);
+    notifyCopied(short(at.commit.sha));
   }
 
   /**
@@ -867,8 +868,10 @@ export class BlameController implements vscode.Disposable {
         );
       }
       void vscode.window.showInformationMessage(
-        "GitStudio inline blame is on; disabled the built-in blame to avoid " +
-          "duplicate annotations. You can re-enable it in settings.",
+        notice(
+          "Inline blame is on, so the editor's built-in blame is turned off — " +
+            "each line is not annotated twice. You can turn it back on in Settings.",
+        ),
       );
     } catch {
       // Best-effort: a settings write failure shouldn't break activation.

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { NO_REPOSITORY, notifyInfo } from "../ui/notify";
 import { promptConfirm } from "../ui/dialogs";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import { promptRevision } from "../ui/refPrompt";
@@ -65,7 +66,7 @@ export class RebaseWorkspacePanel {
   ): Promise<void> {
     const active = repos.getActive();
     if (!active) {
-      void vscode.window.showInformationMessage("GitStudio: no active repository.");
+      void vscode.window.showInformationMessage(NO_REPOSITORY);
       return;
     }
     // Anything already stopped (a rebase, a merge, a cherry-pick…)? Send them
@@ -187,7 +188,7 @@ export class RebaseWorkspacePanel {
           vscode.window.setStatusBarMessage(`$(discard) ${result?.kind === "am" ? "Patch series abandoned" : "Rebase aborted"}`, 2500);
           this.dispose();
         } else if (result && !result.ran) {
-          void vscode.window.showInformationMessage(nothingToAbortText(result.kind));
+          void notifyInfo(nothingToAbortText(result.kind));
         }
         return;
       }

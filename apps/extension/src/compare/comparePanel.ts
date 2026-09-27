@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { NO_REPOSITORY } from "../ui/notify";
 import type { RepoManager } from "../git/repoManager";
 import { getNonce } from "../webview/html";
 import { relativeTime } from "../util/relativeTime";
@@ -53,9 +54,7 @@ export class ComparePanel {
   ): Promise<void> {
     const active = repos.getActive();
     if (!active) {
-      void vscode.window.showInformationMessage(
-        "GitStudio: no active repository to compare.",
-      );
+      void vscode.window.showInformationMessage(NO_REPOSITORY);
       return;
     }
     const headRef = await active.ctx.refs.getHead();

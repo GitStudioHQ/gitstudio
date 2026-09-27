@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { failed, notice } from "../ui/notify";
 import type { LineHistoryEntry } from "@gitstudio/git-service/index";
 import type { RepoEntry, RepoManager } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
@@ -41,15 +42,13 @@ export async function showLineHistory(repos: RepoManager): Promise<void> {
         }),
     );
   } catch (err) {
-    void vscode.window.showErrorMessage(
-      `Line history failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    void vscode.window.showErrorMessage(failed("Line history", err instanceof Error ? err.message : String(err)));
     return;
   }
 
   if (entries.length === 0) {
     void vscode.window.showInformationMessage(
-      `No history for lines ${startLine}–${endLine} of ${baseName(active.rel)}.`,
+      notice(`No history for lines ${startLine}–${endLine} of ${baseName(active.rel)}.`),
     );
     return;
   }

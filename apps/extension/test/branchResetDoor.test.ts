@@ -163,7 +163,7 @@ test("the menu's Reset on a branch that is not checked out: asks, resets it alon
     assert.equal(c.git("symbolic-ref", "HEAD"), "refs/heads/main");
     assert.equal(readFileSync(join(c.dir, "f.txt"), "utf8"), "my edit on main\n");
     assert.ok(said("status").some((m) => /Reset feature to origin\/feature/.test(m)), said("status").join(" | "));
-    assert.ok(said("info").includes("Reset feature to origin/feature — done."), "the Undo toast");
+    assert.ok(said("info").includes("GitStudio: Reset feature to origin/feature — done."), "the Undo toast");
     assert.deepEqual(said("error"), []);
 
     reset();
@@ -221,7 +221,7 @@ test("nothing to lose and nothing to gain: said, not asked — and nothing is re
     assert.ok(said("info").some((m) => /'feature' already matches 'origin\/feature'\. Nothing to reset\./.test(m)), said("info").join(" | "));
     reset();
     await c.ledger.undoLast();
-    assert.ok(said("info").includes("Nothing to undo."));
+    assert.ok(said("info").includes("GitStudio: Nothing to undo."));
   } finally {
     c.ctx.dispose();
   }
@@ -238,7 +238,7 @@ test("backing out of the question changes nothing and records nothing", async ()
     assert.equal(c.git("rev-parse", "refs/heads/feature"), before);
     reset();
     await c.ledger.undoLast();
-    assert.ok(said("info").includes("Nothing to undo."));
+    assert.ok(said("info").includes("GitStudio: Nothing to undo."));
   } finally {
     c.ctx.dispose();
   }

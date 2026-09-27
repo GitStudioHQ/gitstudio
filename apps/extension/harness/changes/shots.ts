@@ -123,8 +123,9 @@ const PUSH_PREVIEW = {
       subject: "Add the payment step to the checkout flow",
       author: "Dev One",
       date: 1_700_000_000,
+      rel: "2h",
     },
-    { sha: "abcdef1234567890abcdef1234567890abcdef12", subject: "Validate the card number", author: "Dev One", date: 1_699_990_000 },
+    { sha: "abcdef1234567890abcdef1234567890abcdef12", subject: "Validate the card number", author: "Dev One", date: 1_699_990_000, rel: "5h" },
   ],
   files: [
     { path: "src/checkout/CheckoutForm.tsx", status: "M", additions: 80, deletions: 10 },

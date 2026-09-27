@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { failed, NO_REPOSITORY } from "../ui/notify";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
@@ -98,7 +99,7 @@ async function refOrPick(
 function active(repos: RepoManager): RepoEntry | undefined {
   const a = repos.getActive();
   if (!a) {
-    void vscode.window.showInformationMessage("GitStudio: no active repository.");
+    void vscode.window.showInformationMessage(NO_REPOSITORY);
   }
   return a;
 }
@@ -1178,10 +1179,7 @@ async function reportMergeLike(
     refresh();
     return;
   }
-  const stderr = result.stderr.trim();
-  void vscode.window.showErrorMessage(
-    stderr ? `${verb} failed: ${stderr}` : `${verb} failed`,
-  );
+  void vscode.window.showErrorMessage(failed(verb, result.stderr));
 }
 
 /**

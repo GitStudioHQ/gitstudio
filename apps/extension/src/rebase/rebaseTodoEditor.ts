@@ -9,6 +9,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as vscode from "vscode";
+import { notice } from "../ui/notify";
 import { promptConfirm } from "../ui/dialogs";
 import {
   parseRebaseTodo,
@@ -160,9 +161,7 @@ export class RebaseTodoEditorProvider
     const ok = await vscode.workspace.applyEdit(edit);
     if (!ok) {
       this.selfWrites.delete(newText);
-      void vscode.window.showErrorMessage(
-        "GitStudio could not write the rebase plan.",
-      );
+      void vscode.window.showErrorMessage(notice("Could not write the rebase plan"));
       return;
     }
     await document.save();
