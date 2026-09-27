@@ -4805,7 +4805,8 @@ export class CommitViewProvider
           k === "PageDown" || k === "PageUp") {
         const items = treeItems();
         const i = items.indexOf(it);
-        const page = Math.max(1, Math.floor(groupsEl.clientHeight / 24) - 1);
+        // A page is what the view shows (the page scrolls, not the list).
+        const page = Math.max(1, Math.floor(window.innerHeight / 24) - 1);
         const to = k === "ArrowDown" ? i + 1 : k === "ArrowUp" ? i - 1
           : k === "Home" ? 0 : k === "End" ? items.length - 1
           : k === "PageDown" ? i + page : i - page;
@@ -8154,7 +8155,13 @@ export class CommitViewProvider
         collapsed[collapseKey] = !open;
         render();
       };
-      header.addEventListener("click", () => setOpen(collapsed[collapseKey] === true));
+      // A Ctrl/Cmd-click selects the group's files (above) and leaves it
+      // open: it used to fold the group away over the selection it had
+      // just made — stopPropagation stops neither listener on one element.
+      header.addEventListener("click", (ev) => {
+        if (ev.ctrlKey || ev.metaKey) return;
+        setOpen(collapsed[collapseKey] === true);
+      });
       header.__expand = setOpen;
       header.__activate = () => setOpen(collapsed[collapseKey] === true);
       group.appendChild(header);

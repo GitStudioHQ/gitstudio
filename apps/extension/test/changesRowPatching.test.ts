@@ -144,6 +144,8 @@ test("a kept folder row stages the files under it now; a kept header selects the
   await page.page.send("Input.dispatchMouseEvent", { type: "mousePressed", x: header.x, y: header.y, button: "left", clickCount: 1, modifiers: 4 });
   await page.page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: header.x, y: header.y, button: "left", clickCount: 1, modifiers: 4 });
   assert.equal(await page.eval<string>(`document.getElementById("selbar-count").textContent`), "4 files selected");
+  // …and leaves the group open: the click folded it away over its own selection.
+  assert.equal(await page.eval<string>(`document.querySelector('[data-tkey="g:unstaged"]').getAttribute("aria-expanded")`), "true");
 });
 
 // A kept row is only kept while what it shows is true: a status that changes

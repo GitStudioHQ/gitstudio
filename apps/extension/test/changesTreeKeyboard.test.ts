@@ -258,6 +258,27 @@ test("Shift+Down and Shift+Up extend the selection from the keyboard; Ctrl/Cmd+A
   assert.equal((await sel()).length, 4);
 });
 
+test("PageDown and PageUp move a view's height of rows, not to the ends of a long list", { skip }, async () => {
+  const page = await ChangesPage.open("dark", { width: 460, height: 480 });
+  opened.push(page);
+  const files = Array.from({ length: 80 }, (_, i) => ({ path: `src/f${String(i).padStart(2, "0")}.ts`, status: "M" }));
+  await page.send({ ...stateMessage({ local: [{ name: "main", current: true }] }), unstaged: files });
+  await page.eval(`document.querySelector('[data-tkey="g:unstaged"]').focus()`);
+  const at = () => page.eval<number>(`Array.prototype.indexOf.call(document.querySelectorAll('#groups [role="treeitem"]'), document.activeElement)`);
+  await page.key("PageDown");
+  const one = await at();
+  assert.ok(one > 5 && one < 30, `one PageDown moved to row ${one} of 81`);
+  const onScreen = await page.eval<boolean>(`(function () {
+    var r = document.activeElement.getBoundingClientRect();
+    return r.top >= 0 && r.bottom <= innerHeight;
+  })()`);
+  assert.ok(onScreen, "and the row it lands on is scrolled into view");
+  await page.key("PageDown");
+  assert.ok((await at()) > one, "a second goes further");
+  await page.key("PageUp");
+  assert.equal(await at(), one, "and PageUp comes back the same way");
+});
+
 test("a row that leaves the list hands the keyboard to the row after it", { skip }, async () => {
   const page = await ChangesPage.open("dark", { width: 460, height: 720 });
   opened.push(page);
