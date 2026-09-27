@@ -531,18 +531,24 @@ test("the PR whose branch is checked out says so — and a branch switch re-read
 
 // ── Our own mutations ──────────────────────────────────────────────────────
 
-test("a merge moves the row out of Open and the counts with it; a new PR joins the top — neither reloads the list", async () => {
+test("a merge from the page moves the row out of Open and the counts with it; a new PR joins the top — neither reloads the list", async () => {
+  let merged = false;
+  const pulls = () => PULLS().map((p) => (merged && p.number === 3 ? { ...p, state: "closed", merged_at: "2026-09-26T00:00:00Z" } : p));
   const gh = github([
-    ["GET", /^\/repos\/acme\/app$/, () => ({ body: { default_branch: "main" } })],
-    ["PUT", /^\/repos\/acme\/app\/pulls\/3\/merge$/, () => ({ body: { merged: true } })],
-    ...acmeRoutes(),
+    ["PUT", /^\/repos\/acme\/app\/pulls\/3\/merge$/, () => ((merged = true), { body: { merged: true } })],
+    ...acmeRoutes([], world({ "acme/app": { pulls } })),
   ]);
   const m = mount(fakeRepos(ORIGIN));
   await settled(m);
   const loads = gql(gh, LIST_QUERY).length;
-  dialogs.answer = (spec) => (spec.kind === "pick" && /^Merge PR #3/.test(spec.title) ? "squash" : undefined);
-  const merged = await vscode.commands.executeCommand("gitstudio.pr.merge", m.list.pullRequestFor(3));
-  assert.equal(merged, true);
+  // The row's Merge… opens the page's merge box; the merge happens there.
+  await vscode.commands.executeCommand("gitstudio.pr.merge", m.list.pullRequestFor(3));
+  const page = pr.panels.find((p: any) => p.title === "acme/app#3");
+  page.receive({ type: "ready" });
+  await until(() => page.state()?.status === "ready", "the page");
+  assert.deepEqual(dialogs.asked, [], "no question in the sidebar");
+  page.receive({ type: "merge", method: "squash", deleteBranch: false });
+  await until(() => numbers(m).length === 2, "the row to leave Open");
   assert.deepEqual(numbers(m), [37, 36]);
   assert.deepEqual(state(m).counts, { open: 2, merged: 1, closed: 0 });
   m.list.addPr("acme", "app", {
@@ -553,6 +559,44 @@ test("a merge moves the row out of Open and the counts with it; a new PR joins t
   assert.deepEqual(numbers(m), [40, 37, 36]);
   assert.deepEqual(state(m).counts, { open: 3, merged: 1, closed: 0 });
   assert.equal(gql(gh, LIST_QUERY).length, loads, "patched, not reloaded");
+});
+
+test("closing, reopening and marking ready move the row between the segments on hand — patched, never read again", async () => {
+  const gh = github(acmeRoutes([], world({ "acme/app": { pulls: () => [...PULLS(), rawPull(20, { state: "closed", updated_at: "2026-09-01T00:00:00Z" })] } })));
+  const m = mount(fakeRepos(ORIGIN));
+  await settled(m);
+  m.view.receive({ type: "segment", segment: "closed" });
+  await until(() => state(m).segment === "closed" && state(m).status === "list" && !state(m).refreshing, "Closed");
+  m.view.receive({ type: "segment", segment: "all" });
+  await until(() => state(m).segment === "all" && state(m).status === "list" && !state(m).refreshing, "All");
+  m.view.receive({ type: "segment", segment: "open" });
+  await until(() => state(m).segment === "open" && !state(m).refreshing, "Open");
+  // What GitHub would say is held: every row below is the patch's own.
+  const held = gh.hold((req) => req.path === "/graphql");
+  const loads = gql(gh, LIST_QUERY).length;
+  const asksNothing = async (what: string) => {
+    const before = held.held();
+    await sleep(40);
+    assert.equal(held.held(), before, `${what}: GitHub is asked nothing`);
+  };
+  m.list.markKind("acme", "app", 37, "closed");
+  await asksNothing("closed");
+  assert.deepEqual(numbers(m), [36, 3], "closed: out of Open");
+  assert.deepEqual(state(m).counts, { open: 2, merged: 0, closed: 2 });
+  m.view.receive({ type: "segment", segment: "closed" });
+  await until(() => state(m).segment === "closed", "Closed again");
+  assert.deepEqual(numbers(m).slice(0, 1), [37], "…and at the top of Closed, at once");
+  m.list.markKind("acme", "app", 37, "open");
+  await asksNothing("reopened");
+  assert.ok(!numbers(m).includes(37), "reopened: out of Closed");
+  m.view.receive({ type: "segment", segment: "open" });
+  await until(() => state(m).segment === "open", "Open again");
+  assert.equal(numbers(m)[0], 37, "back in Open");
+  m.list.markKind("acme", "app", 36, "open");
+  await asksNothing("ready");
+  assert.equal(state(m).rows.find((r: any) => r.number === 36).kind, "open", "a draft marked ready reads Open where it is");
+  assert.equal(gql(gh, LIST_QUERY).length, loads, "nothing was answered by GitHub meanwhile");
+  held.release();
 });
 
 test("a row's actions act on THAT pull request, in the repository the list shows", async () => {

@@ -5,7 +5,6 @@ import type { RepoManager } from "../git/repoManager";
 import type { GitBrain } from "../ai/gitBrain";
 import { GitHubApi, GitHubApiError, type CreatePrInput, type PullRequest } from "./githubApi";
 import { listGitHubRemotes, resolveGitHubContext } from "./repoContext";
-import { PrDescriptionPanel } from "./prDescriptionPanel";
 
 // Create a pull request without leaving the editor. The flow:
 //   1. Resolve the GitHub repo + the current branch; ensure it's pushed (offer
@@ -14,7 +13,7 @@ import { PrDescriptionPanel } from "./prDescriptionPanel";
 //   3. Prefill the title as GitHub does — a single commit's subject, else the
 //      branch name in words — and the body from the commit list; offer an ✨
 //      AI-drafted body when GitBrain is enabled.
-//   4. Choose draft vs. ready, POST /pulls, and open the new PR's description.
+//   4. Choose draft vs. ready, POST /pulls, and open the new PR's page.
 // "PR already exists" (422) opens the PR that exists.
 //
 // WHERE THE BRANCH LIVES. It is pushed to the remote git pushes it to
@@ -169,7 +168,7 @@ export async function createPullRequest(
 
   if (outcome.kind === "created") {
     onCreated?.(outcome.pr);
-    await PrDescriptionPanel.show({ api, ctx, extensionUri }, outcome.pr);
+    await vscode.commands.executeCommand("gitstudio.pr.openDescription", { pr: outcome.pr, ctx });
     void vscode.window.showInformationMessage(
       `Created ${input.draft ? "draft " : ""}PR #${outcome.pr.number}.`,
     );
@@ -179,7 +178,7 @@ export async function createPullRequest(
     void vscode.window.showInformationMessage(
       `${where.branch} already has an open pull request: #${outcome.pr.number}.`,
     );
-    await PrDescriptionPanel.show({ api, ctx, extensionUri }, outcome.pr);
+    await vscode.commands.executeCommand("gitstudio.pr.openDescription", { pr: outcome.pr, ctx });
     return;
   }
   void vscode.window.showErrorMessage(`GitHub couldn't create the PR: ${outcome.message}`);

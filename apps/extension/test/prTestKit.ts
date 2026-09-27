@@ -105,6 +105,7 @@ export interface Mounted {
   /** The Pull Requests view, as the stand-in holds it. */
   view: any;
   list: any;
+  review: any;
   controller: any;
   dispose(): void;
 }
@@ -112,13 +113,14 @@ let mounted: { dispose(): void }[] = [];
 let fakes: FakeGitHub[] = [];
 export function mount(repos: ReturnType<typeof fakeRepos>, workspaceState = memento()): Mounted {
   const context = { subscriptions: [] as { dispose(): void }[], extensionUri: vscode.Uri.file("/ext"), workspaceState };
-  const { list } = registerPrFeature(context as any, repos as any, { isEnabled: async () => false } as any);
+  const { list, review } = registerPrFeature(context as any, repos as any, { isEnabled: async () => false } as any);
   const view = pr.webviewViews.at(-1);
   // The page, loaded: it announces itself and the host answers.
   view.receive({ type: "ready" });
   const m = {
     view,
     list,
+    review,
     controller: pr.controllers.at(-1),
     dispose: () => context.subscriptions.forEach((d) => d.dispose()),
   };
@@ -210,6 +212,33 @@ export function acmeRoutes(extra: Route[] = [], repos: Record<string, FakeRepo> 
     ["GET", /^\/repos\/acme\/app\/pulls\/(\d+)\/files/, () => ({ body: [] })],
     ["GET", /^\/repos\/acme\/app\/pulls\/(\d+)$/, (_r, m) => ({ body: PULLS().find((p) => p.number === Number(m[1])) ?? rawPull(Number(m[1])) })],
   ];
+}
+
+// ── A pull request's page ──────────────────────────────────────────────────
+
+/** The page of acme/app#n, as the stand-in holds it (its editor tab). */
+export function pagePanel(n: number, repo = "acme/app"): any {
+  return pr.panels.find((p: any) => p.title === `${repo}#${n}` && p.viewType === "gitstudio.pullRequest");
+}
+
+/** Open #n's page from its row, as the list does; the page loads and says so. */
+export async function openPage(m: Mounted, n: number, open: Record<string, unknown> = {}): Promise<any> {
+  const row = await rowArg(m, n);
+  await vscode.commands.executeCommand(open.merge ? "gitstudio.pr.merge" : "gitstudio.pr.openDescription", row);
+  const page = pagePanel(n);
+  if (!page) throw new Error(`no page for #${n}`);
+  if (!page.ready) {
+    page.receive({ type: "ready" });
+    page.ready = true;
+  }
+  await until(() => page.state()?.status === "ready" || page.state()?.status === "message", `#${n}'s page to load`);
+  await until(() => !page.state()?.refreshing, `#${n}'s page to settle`);
+  return page;
+}
+
+/** The last state a page was sent. */
+export function pageState(page: any): any {
+  return page.state();
 }
 
 /** A row of the list, as the PR commands take it: `{ pr, ctx }`. */

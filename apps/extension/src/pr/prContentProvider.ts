@@ -20,6 +20,8 @@ interface PrContentRef {
   repo: string;
   sha: string;
   path: string;
+  /** The pull request whose diff the file is shown in (a review's comments are its). */
+  pr?: number;
 }
 
 /** Encodes (owner, repo, sha, path) into a `gitstudio-pr` URI. */
@@ -31,17 +33,20 @@ export function toPrContentUri(ref: PrContentRef): vscode.Uri {
     query:
       `owner=${encodeURIComponent(ref.owner)}` +
       `&repo=${encodeURIComponent(ref.repo)}` +
-      `&sha=${encodeURIComponent(ref.sha)}`,
+      `&sha=${encodeURIComponent(ref.sha)}` +
+      (ref.pr ? `&pr=${ref.pr}` : ""),
   });
 }
 
 export function fromPrContentUri(uri: vscode.Uri): PrContentRef {
   const params = new URLSearchParams(uri.query);
+  const pr = Number(params.get("pr"));
   return {
     owner: params.get("owner") ?? "",
     repo: params.get("repo") ?? "",
     sha: params.get("sha") ?? "",
     path: uri.path.replace(/^\/+/, ""),
+    ...(Number.isSafeInteger(pr) && pr > 0 ? { pr } : {}),
   };
 }
 

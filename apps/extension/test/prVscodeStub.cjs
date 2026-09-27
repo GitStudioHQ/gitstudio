@@ -151,6 +151,8 @@ const pr = {
   webviewViews: [],
   panels: [],
   controllers: [],
+  statusBars: [],
+  shown: [],
   providers: new Map(),
   opened: [],
   clipboard: undefined,
@@ -163,6 +165,8 @@ const pr = {
     this.executed.length = 0;
     this.said.length = 0;
     this.opened.length = 0;
+    this.shown.length = 0;
+    this.statusBars.length = 0;
     this.answer = () => undefined;
   },
 };
@@ -232,6 +236,8 @@ const window = {
       viewType,
       title,
       options,
+      visible: true,
+      reveals: 0,
       htmlWrites: 0,
       posted: [],
       webview: {
@@ -253,7 +259,14 @@ const window = {
       },
       /** A message from the page, as the webview would deliver it. */
       receive: (m) => received.fire(m),
-      reveal() {},
+      /** The last state the page was sent. */
+      state() {
+        const s = [...this.posted].reverse().find((m) => m && m.type === "state");
+        return s ? s.state : undefined;
+      },
+      reveal() {
+        panel.reveals++;
+      },
       onDidDispose: disposed.event,
       dispose() {
         disposed.fire();
@@ -317,7 +330,29 @@ const window = {
     return new Disposable();
   },
   state: { focused: true },
-  createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
+  createStatusBarItem: () => {
+    const item = {
+      text: "",
+      tooltip: undefined,
+      command: undefined,
+      shown: false,
+      show() {
+        this.shown = true;
+      },
+      hide() {
+        this.shown = false;
+      },
+      dispose() {
+        this.shown = false;
+      },
+    };
+    pr.statusBars.push(item);
+    return item;
+  },
+  showTextDocument: async (uri, options) => {
+    pr.shown.push({ uri, options });
+    return {};
+  },
   activeTextEditor: undefined,
   onDidChangeActiveTextEditor: new EventEmitter().event,
 };
@@ -361,7 +396,12 @@ const api = {
         id,
         label,
         commentingRangeProvider: undefined,
-        createCommentThread: (uri, range, comments) => makeThread(uri, range, comments),
+        threads: [],
+        createCommentThread(uri, range, comments) {
+          const t = makeThread(uri, range, comments);
+          this.threads.push(t);
+          return t;
+        },
         dispose() {},
       };
       pr.controllers.push(controller);

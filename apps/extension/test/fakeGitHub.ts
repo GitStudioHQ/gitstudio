@@ -136,6 +136,87 @@ export interface FakeRepo {
   parent?: string;
   labels?: { name: string; color: string }[];
   people?: string[];
+  /** The signed-in account's role in it (GraphQL viewerPermission); WRITE when absent. */
+  permission?: string;
+  /** The merge methods it allows; all three when absent. */
+  methods?: ("merge" | "squash" | "rebase")[];
+  /** What a pull request's page reads beyond its REST fixture, per number. */
+  page?: Record<number, FakePage>;
+}
+
+/** A pull request's page, beyond what its REST fixture says. */
+export interface FakePage {
+  mergeState?: string;
+  /** GraphQL reviewThreads nodes. */
+  threads?: Record<string, unknown>[];
+  /** GraphQL timelineItems nodes. */
+  timeline?: Record<string, unknown>[];
+  /** GraphQL latestReviews nodes. */
+  reviews?: Record<string, unknown>[];
+  viewerIsAuthor?: boolean;
+  canUpdate?: boolean;
+  canDeleteBranch?: boolean;
+  /** GraphQL statusCheckRollup.contexts nodes of the head. */
+  checks?: Record<string, unknown>[];
+}
+
+/** A REST pull request as the page's GraphQL answer (engine/forge/prPage's PR_PAGE_QUERY). */
+export function gqlPage(p: Record<string, any>, repo: string, world: FakeRepo, viewer: string): Record<string, unknown> {
+  const node = gqlNode(p, repo, world);
+  const page = world.page?.[p.number] ?? {};
+  const methods = world.methods ?? ["merge", "squash", "rebase"];
+  const ci = world.ci?.[p.number];
+  const checks =
+    page.checks ??
+    (ci
+      ? [
+          {
+            __typename: "CheckRun",
+            name: "test",
+            status: ci === "PENDING" ? "IN_PROGRESS" : "COMPLETED",
+            conclusion: ci === "PENDING" ? null : ci,
+            startedAt: "2026-09-26T10:00:00Z",
+            completedAt: ci === "PENDING" ? null : "2026-09-26T10:05:00Z",
+            detailsUrl: "https://github.com/acme/app/actions/runs/1/job/1",
+            isRequired: true,
+            checkSuite: { app: { name: "GitHub Actions" }, workflowRun: { workflow: { name: "CI" } } },
+          },
+        ]
+      : []);
+  return {
+    viewer: { login: viewer, avatarUrl: null },
+    repository: {
+      nameWithOwner: repo,
+      viewerPermission: world.permission ?? "WRITE",
+      mergeCommitAllowed: methods.includes("merge"),
+      squashMergeAllowed: methods.includes("squash"),
+      rebaseMergeAllowed: methods.includes("rebase"),
+      deleteBranchOnMerge: false,
+      viewerDefaultMergeMethod: "SQUASH",
+      pullRequest: {
+        ...node,
+        id: `PR_node_${p.number}`,
+        body: p.body ?? "",
+        mergedBy: p.merged_at ? { login: viewer, avatarUrl: null } : null,
+        additions: p.additions ?? 0,
+        deletions: p.deletions ?? 0,
+        changedFiles: p.changed_files ?? 0,
+        mergeStateStatus: page.mergeState ?? (p.draft ? "DRAFT" : "CLEAN"),
+        viewerDidAuthor: page.viewerIsAuthor ?? (p.user?.login === viewer),
+        viewerCanUpdate: page.canUpdate ?? true,
+        viewerCanUpdateBranch: true,
+        viewerCanDeleteHeadRef: page.canDeleteBranch ?? true,
+        latestReviews: { nodes: page.reviews ?? [] },
+        commits: {
+          totalCount: 1,
+          nodes: [{ commit: { oid: p.head?.sha, abbreviatedOid: String(p.head?.sha ?? "").slice(0, 7), messageHeadline: p.title, messageBody: "", committedDate: p.updated_at, author: { name: p.user?.login ?? "", user: p.user ? { login: p.user.login, avatarUrl: null } : null }, statusCheckRollup: ci ? { state: ci } : null } }],
+        },
+        checks: { nodes: [{ commit: { oid: p.head?.sha, statusCheckRollup: ci || checks.length ? { state: ci ?? "SUCCESS", contexts: { totalCount: checks.length, nodes: checks } } : null } }] },
+        timelineItems: { totalCount: (page.timeline ?? []).length, nodes: page.timeline ?? [] },
+        reviewThreads: { totalCount: (page.threads ?? []).length, nodes: page.threads ?? [] },
+      },
+    },
+  };
 }
 
 const gqlState = (p: Record<string, any>) => (p.merged_at ? "MERGED" : p.state === "closed" ? "CLOSED" : "OPEN");
@@ -267,6 +348,14 @@ export function graphqlWorld(
           },
         },
       };
+    }
+    if (/pullRequest\(number: \$n\)/.test(q)) {
+      const repo = `${v.owner}/${v.name}`;
+      const world = repos[repo];
+      if (!world) return { body: { data: { repository: null }, errors: [{ type: "NOT_FOUND", message: `Could not resolve to a Repository with the name '${repo}'.` }] } };
+      const p = world.pulls().find((x) => x.number === v.n);
+      if (!p) return { body: { data: { viewer: { login: viewer }, repository: { nameWithOwner: repo, pullRequest: null } }, errors: [{ type: "NOT_FOUND", message: `Could not resolve to a PullRequest with the number of ${v.n}.` }] } };
+      return { body: { data: gqlPage(p, repo, world, viewer) } };
     }
     if (/isFork/.test(q)) {
       const repo = `${v.owner}/${v.name}`;

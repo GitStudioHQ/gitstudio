@@ -76,8 +76,8 @@ export async function checkoutPullRequest(
     return;
   }
   onCheckedOut?.();
-  const open = await vscode.window.showInformationMessage(done, "Open Description");
-  if (open === "Open Description") {
+  const open = await vscode.window.showInformationMessage(done, "Open Pull Request");
+  if (open === "Open Pull Request") {
     // With its repository: the toast waits until clicked, and a number alone
     // is resolved against the repository active THEN — #7 of another one.
     void vscode.commands.executeCommand("gitstudio.pr.openDescription", { pr, ctx });

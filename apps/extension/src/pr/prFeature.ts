@@ -1,29 +1,35 @@
 import * as vscode from "vscode";
-import { promptPick } from "../ui/dialogs";
+import { promptConfirm, promptPick } from "../ui/dialogs";
 import type { RepoManager } from "../git/repoManager";
 import type { GitBrain } from "../ai/gitBrain";
+import type { GraphqlFn } from "@gitstudio/engine/forge/prList";
 import { GitHubAuth } from "./githubAuth";
-import { GitHubApi, GitHubApiError, type MergeMethod, type PullRequest } from "./githubApi";
-import { PullRequestsViewProvider } from "./pullRequestsView";
+import { GitHubApi, GitHubApiError, type PullRequest } from "./githubApi";
+import { PullRequestsViewProvider, readLocalHead } from "./pullRequestsView";
 import { PrContentProvider, PR_SCHEME } from "./prContentProvider";
-import { PrDescriptionPanel } from "./prDescriptionPanel";
+import { PrPage, type PrPageOpen } from "./prPage";
 import { ReviewController } from "./reviewMode";
 import { checkoutPullRequest } from "./checkoutPr";
 import { createPullRequest } from "./createPr";
-import { resolveGitHubContext, type GitHubRepoContext } from "./repoContext";
+import { listGitHubRemotes, resolveGitHubContext, type GitHubRepoContext } from "./repoContext";
 
-// Wires the whole M11 PR feature: GitHub auth + API, the Pull Requests list (a
-// webview view: the shared packages/webview-ui list), the PR-blob content
-// provider, the description panel, review mode (Comments API), checkout,
-// merge, and create. Everything degrades gracefully: not a GitHub repo or
-// not signed in → the list says so and offers what helps, and no command
-// throws.
+// Wires the pull request feature: GitHub auth + API, the Pull Requests list (a
+// webview view: the shared packages/webview-ui list), the pull request's page
+// (an editor tab: the shared page), the PR-blob content provider, review (the
+// Comments API — reviews of several pull requests side by side, kept across
+// a reload), checkout and create. Everything degrades gracefully: not a
+// GitHub repo or not signed in → the list says so and offers what helps, and
+// no command throws.
 //
 // A command's PR argument arrives as a { pr, ctx } object (from the list, the
-// description panel, review) or is absent (from the command palette) —
-// `resolvePr` normalises both. The ctx is the repository the list shows:
-// a fork's parent by default, never "whichever repository is active when
-// clicked" (a number is not an identity).
+// page) or is absent (from the command palette) — `resolvePr` normalises
+// both. The ctx is the repository the list shows: a fork's parent by
+// default, never "whichever repository is active when clicked" (a number is
+// not an identity).
+//
+// Merging and submitting a review happen on the page, in its own boxes —
+// the list's Merge… and the palette's Submit Review open the page there —
+// never in a question asked in the sidebar.
 
 interface PrCommandArg {
   pr?: PullRequest;
@@ -34,9 +40,10 @@ export function registerPrFeature(
   context: vscode.ExtensionContext,
   repos: RepoManager,
   brain: GitBrain,
-): { list: PullRequestsViewProvider } {
+): { list: PullRequestsViewProvider; review: ReviewController } {
   const auth = new GitHubAuth();
   const api = new GitHubApi({ getToken: (o) => auth.getToken(o) });
+  const graphql: GraphqlFn = (query, variables) => api.graphqlRaw(query, variables);
   context.subscriptions.push(auth);
   void auth.refreshConnected();
 
@@ -45,25 +52,46 @@ export function registerPrFeature(
 
   // PR-blob content provider (base/head file contents for diffs).
   const contentProvider = new PrContentProvider(api);
-  context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider(
-      PR_SCHEME,
-      contentProvider,
-    ),
-  );
+  context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(PR_SCHEME, contentProvider));
 
-  // Review mode (one CommentController + the pending-thread registry).
-  const review = new ReviewController(auth, api);
+  // Review (one CommentController; the pending reviews kept in the workspace's state).
+  const review = new ReviewController(auth, api, graphql, context.workspaceState);
   context.subscriptions.push(review);
 
-  /** Resolve a PR + its GitHub context from any command argument shape. */
   /** The repository the list shows — a fork's parent — else origin's. */
   const contextNow = async (): Promise<GitHubRepoContext | undefined> =>
     list.contextNow() ?? (await resolveGitHubContext(repos)) ?? undefined;
 
-  const resolvePr = async (
-    arg: PrCommandArg | undefined,
-  ): Promise<{ pr: PullRequest; ctx: GitHubRepoContext } | undefined> => {
+  /**
+   * The context the commands act in for owner/repo: the list's when it shows
+   * that repository, else the active clone's remote for it. None when the
+   * clone has no remote for it — its pull requests can't be checked out here.
+   */
+  const contextFor = async (owner: string, repo: string): Promise<GitHubRepoContext | undefined> => {
+    const same = (c: { owner: string; repo: string }) => `${c.owner}/${c.repo}`.toLowerCase() === `${owner}/${repo}`.toLowerCase();
+    const shown = list.contextNow();
+    if (shown && same(shown)) return shown;
+    const entry = repos.getActive();
+    if (!entry) return undefined;
+    const remote = (await listGitHubRemotes(entry)).find(same);
+    return remote ? { owner: remote.owner, repo: remote.repo, remoteName: remote.name, entry } : undefined;
+  };
+
+  const pageDeps = {
+    api,
+    graphql,
+    review,
+    extensionUri: context.extensionUri,
+    list,
+    localHead: async (ctx: GitHubRepoContext) => readLocalHead(ctx.entry, await listGitHubRemotes(ctx.entry)),
+    contextFor,
+    mergeMethod: () => vscode.workspace.getConfiguration("gitstudio.pr").get<string>("defaultMergeMethod", "squash"),
+  };
+
+  const openPage = (pr: PullRequest, ctx: GitHubRepoContext | undefined, open: PrPageOpen = {}, ref?: { owner: string; repo: string }) =>
+    PrPage.show(pageDeps, ref ?? { owner: ctx!.owner, repo: ctx!.repo }, pr.number, ctx, { preview: pr, ...open });
+
+  const resolvePr = async (arg: PrCommandArg | undefined): Promise<{ pr: PullRequest; ctx: GitHubRepoContext } | undefined> => {
     if (arg && arg.pr) {
       const ctx = arg.ctx ?? (await contextNow());
       if (ctx) {
@@ -73,20 +101,14 @@ export function registerPrFeature(
     // From the palette with no argument: ask the user to pick an open PR.
     const ctx = await contextNow();
     if (!ctx) {
-      void vscode.window.showInformationMessage(
-        "This repository isn't connected to GitHub.",
-      );
+      void vscode.window.showInformationMessage("This repository isn't connected to GitHub.");
       return undefined;
     }
     if (!(await auth.getToken({ interactive: true }))) {
       return undefined;
     }
     try {
-      const pulls = (
-        await api.listOpenPulls(ctx.owner, ctx.repo, {
-          interactiveAuth: true,
-        })
-      ).items;
+      const pulls = (await api.listOpenPulls(ctx.owner, ctx.repo, { interactiveAuth: true })).items;
       if (pulls.length === 0) {
         void vscode.window.showInformationMessage("No open pull requests.");
         return undefined;
@@ -109,16 +131,35 @@ export function registerPrFeature(
     }
   };
 
-  const openDescription = async (pr: PullRequest, ctx: GitHubRepoContext) => {
-    await PrDescriptionPanel.show(
-      {
-        api,
-        ctx,
-        extensionUri: context.extensionUri,
-        openReviewed: (n, path) => review.openReviewedFile(ctx.owner, ctx.repo, n, path),
-      },
-      pr,
-    );
+  /**
+   * Which review a palette (or status bar, or thread title) command means:
+   * the thread's, the active editor's, the only one — or the one picked.
+   */
+  const reviewKeyFor = async (thread: unknown, verb: string): Promise<string | undefined> => {
+    const keys = review.reviewKeys();
+    if (keys.length === 0) {
+      void vscode.window.showInformationMessage("No review is under way. Start one from a pull request's page.");
+      return undefined;
+    }
+    const fromThread = thread && typeof thread === "object" && "comments" in (thread as object) ? review.keyOfThread(thread as vscode.CommentThread) : undefined;
+    const direct = fromThread ?? review.reviewOfActiveEditor() ?? (keys.length === 1 ? keys[0] : undefined);
+    if (direct) return direct;
+    return promptPick({
+      title: `${verb} which review?`,
+      choices: keys.map((k) => {
+        const r = review.reviewInfo(k)!;
+        const n = review.pendingCount(k);
+        return { id: k, label: `${r.owner}/${r.repo}#${r.number}`, icon: "comment-discussion", description: r.title, detail: `${n} pending` };
+      }),
+    });
+  };
+
+  /** A review's page, opened on its review box. */
+  const openReviewPage = async (key: string, open: PrPageOpen): Promise<void> => {
+    const r = review.reviewInfo(key);
+    if (!r) return;
+    const ctx = await contextFor(r.owner, r.repo);
+    await PrPage.show(pageDeps, { owner: r.owner, repo: r.repo }, r.number, ctx, open);
   };
 
   context.subscriptions.push(
@@ -147,177 +188,92 @@ export function registerPrFeature(
     ),
 
     // ── Item actions ─────────────────────────────────────────────────────────────
-    vscode.commands.registerCommand(
-      "gitstudio.pr.openDescription",
-      async (arg?: PrCommandArg) => {
-        const resolved = await resolvePr(arg);
-        if (resolved) {
-          await openDescription(resolved.pr, resolved.ctx);
-        }
-      },
+    vscode.commands.registerCommand("gitstudio.pr.openDescription", async (arg?: PrCommandArg) => {
+      const resolved = await resolvePr(arg);
+      if (resolved) {
+        await openPage(resolved.pr, resolved.ctx);
+      }
+    }),
+    vscode.commands.registerCommand("gitstudio.pr.checkout", async (arg?: PrCommandArg) => {
+      const resolved = await resolvePr(arg);
+      if (!resolved) {
+        return;
+      }
+      // The open-PR list doesn't change with a checkout: nothing to reload.
+      await checkoutPullRequest(resolved.ctx, resolved.pr);
+    }),
+    vscode.commands.registerCommand("gitstudio.pr.startReview", async (arg?: PrCommandArg) => {
+      const resolved = await resolvePr(arg);
+      if (!resolved) {
+        return;
+      }
+      if (!(await auth.getToken({ interactive: true }))) {
+        return;
+      }
+      await review.signedInLogin();
+      const page = await openPage(resolved.pr, resolved.ctx, { tab: "files" });
+      await page.startReview();
+    }),
+    vscode.commands.registerCommand("gitstudio.pr.submitReview", async (thread?: unknown) => {
+      const key = await reviewKeyFor(thread, "Submit");
+      if (key) await openReviewPage(key, { open: "review" });
+    }),
+    vscode.commands.registerCommand("gitstudio.pr.cancelReview", async () => {
+      const key = await reviewKeyFor(undefined, "Discard");
+      if (!key) return;
+      const r = review.reviewInfo(key)!;
+      const n = review.pendingCount(key);
+      if (n > 0) {
+        const ok = await promptConfirm({
+          title: `Discard ${n} pending comment${n === 1 ? "" : "s"} on #${r.number}?`,
+          message: "They haven't been sent to GitHub, and discarding them can't be undone.",
+          confirmLabel: "Discard",
+          danger: true,
+        });
+        if (!ok) return;
+      }
+      review.discard(key);
+    }),
+    // The comment is signed with the account's login, read once.
+    vscode.commands.registerCommand("gitstudio.pr.addReviewComment", (reply: vscode.CommentReply) =>
+      review.signedInLogin().then(
+        () => review.addComment(reply),
+        () => review.addComment(reply),
+      ),
     ),
-    vscode.commands.registerCommand(
-      "gitstudio.pr.checkout",
-      async (arg?: PrCommandArg) => {
-        const resolved = await resolvePr(arg);
-        if (!resolved) {
-          return;
-        }
-        // The open-PR list doesn't change with a checkout: nothing to reload.
-        await checkoutPullRequest(resolved.ctx, resolved.pr);
-      },
-    ),
-    vscode.commands.registerCommand(
-      "gitstudio.pr.startReview",
-      async (arg?: PrCommandArg) => {
-        const resolved = await resolvePr(arg);
-        if (!resolved) {
-          return;
-        }
-        if (!(await auth.getToken({ interactive: true }))) {
-          return;
-        }
-        await review.startReview(resolved.ctx, resolved.pr);
-      },
-    ),
-    vscode.commands.registerCommand("gitstudio.pr.submitReview", () =>
-      review.submitReview(),
-    ),
-    vscode.commands.registerCommand("gitstudio.pr.cancelReview", () =>
-      review.cancelReview(),
-    ),
-    vscode.commands.registerCommand(
-      "gitstudio.pr.addReviewComment",
-      (reply: vscode.CommentReply) => review.addComment(reply),
-    ),
-    vscode.commands.registerCommand(
-      "gitstudio.pr.addSingleComment",
-      (reply: vscode.CommentReply) => void review.addSingleComment(reply),
-    ),
+    vscode.commands.registerCommand("gitstudio.pr.addSingleComment", (reply: vscode.CommentReply) => void review.addSingleComment(reply)),
     vscode.commands.registerCommand(
       "gitstudio.pr.deleteReviewComment",
       // From comments/comment/title VS Code passes OUR comment object — which
       // keeps its parent thread; from elsewhere, a thread.
       (arg: unknown) => review.deleteComment(arg),
     ),
-    vscode.commands.registerCommand(
-      "gitstudio.pr.openOnGitHub",
-      async (arg?: PrCommandArg) => {
-        const resolved = await resolvePr(arg);
-        if (resolved) {
-          void vscode.env.openExternal(vscode.Uri.parse(resolved.pr.htmlUrl));
-        }
-      },
-    ),
-    vscode.commands.registerCommand(
-      "gitstudio.pr.copyUrl",
-      async (arg?: PrCommandArg) => {
-        const resolved = await resolvePr(arg);
-        if (resolved) {
-          await vscode.env.clipboard.writeText(resolved.pr.htmlUrl);
-          void vscode.window.showInformationMessage(`Copied the link to pull request #${resolved.pr.number}.`);
-        }
-      },
-    ),
-    vscode.commands.registerCommand(
-      "gitstudio.pr.merge",
-      async (arg?: PrCommandArg) => {
-        const resolved = await resolvePr(arg);
-        if (resolved) {
-          const { ctx, pr } = resolved;
-          const merged = await mergePr(api, ctx, pr);
-          if (merged) {
-            // Optimistic: the row leaves the open list and an open page flips
-            // to Merged at once (then checks with GitHub) — never a reload.
-            list.markMerged(ctx.owner, ctx.repo, pr.number);
-            PrDescriptionPanel.markMerged(ctx.owner, ctx.repo, pr.number);
-          }
-          return merged;
-        }
-        return false;
-      },
-    ),
-  );
-  return { list };
-}
-
-/** Merge a PR after one question (the method). True when GitHub merged it. */
-async function mergePr(
-  api: GitHubApi,
-  ctx: GitHubRepoContext,
-  pr: PullRequest,
-): Promise<boolean> {
-  if (pr.draft) {
-    void vscode.window.showInformationMessage(
-      `PR #${pr.number} is a draft. GitHub merges it only once it's marked ready for review.`,
-    );
-    return false;
-  }
-  const configured = vscode.workspace
-    .getConfiguration("gitstudio.pr")
-    .get<MergeMethod>("defaultMergeMethod", "squash");
-
-  const labels: Record<MergeMethod, string> = {
-    merge: "Merge Commit",
-    squash: "Squash and Merge",
-    rebase: "Rebase and Merge",
-  };
-  // Only the methods the repository allows: GitHub refuses the others (405).
-  // When the settings can't be read, all three are offered, as before.
-  const allowed = await api
-    .repoSettings(ctx.owner, ctx.repo)
-    .then((s) => s.mergeMethods)
-    .catch((): MergeMethod[] => ["merge", "squash", "rebase"]);
-  if (allowed.length === 0) {
-    void vscode.window.showWarningMessage(
-      `${ctx.owner}/${ctx.repo} allows no merge method GitStudio can use. Merge PR #${pr.number} on GitHub.`,
-    );
-    return false;
-  }
-  // Configured default first, so the common answer is the leftmost button.
-  const order: MergeMethod[] = [...allowed].sort((a, b) =>
-    a === configured ? -1 : b === configured ? 1 : 0,
-  );
-
-  // One dialog instead of a pick followed by a confirm: the choice IS the
-  // confirmation, so asking twice was pure friction.
-  const descriptions: Record<string, string> = {
-    merge: "Keep every commit and add a merge commit.",
-    squash: "Combine all commits into one.",
-    rebase: "Replay the commits onto the base branch.",
-  };
-  const picked = await promptPick({
-    title: `Merge PR #${pr.number} into ${pr.base.ref}?`,
-    hint: pr.title,
-    choices: order.map((m) => ({
-      id: m,
-      label: labels[m],
-      icon: "git-merge",
-      detail: m === configured ? "default" : undefined,
-      description: descriptions[m],
-    })),
-  });
-  if (!picked) {
-    return false;
-  }
-  const method = picked as MergeMethod;
-
-  const merged = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `Merging PR #${pr.number}…` },
-    async () => {
-      try {
-        await api.mergePull(ctx.owner, ctx.repo, pr.number, method);
-        return true;
-      } catch (err) {
-        await warn(err, "Couldn't merge the pull request.");
-        return false;
+    vscode.commands.registerCommand("gitstudio.pr.replyThread", (reply: vscode.CommentReply) => void review.replyFromEditor(reply)),
+    vscode.commands.registerCommand("gitstudio.pr.resolveThread", (thread?: vscode.CommentThread) => void review.resolveFromEditor(thread, true)),
+    vscode.commands.registerCommand("gitstudio.pr.unresolveThread", (thread?: vscode.CommentThread) => void review.resolveFromEditor(thread, false)),
+    vscode.commands.registerCommand("gitstudio.pr.openOnGitHub", async (arg?: PrCommandArg) => {
+      const resolved = await resolvePr(arg);
+      if (resolved) {
+        void vscode.env.openExternal(vscode.Uri.parse(resolved.pr.htmlUrl));
       }
-    },
+    }),
+    vscode.commands.registerCommand("gitstudio.pr.copyUrl", async (arg?: PrCommandArg) => {
+      const resolved = await resolvePr(arg);
+      if (resolved) {
+        await vscode.env.clipboard.writeText(resolved.pr.htmlUrl);
+        void vscode.window.showInformationMessage(`Copied the link to pull request #${resolved.pr.number}.`);
+      }
+    }),
+    vscode.commands.registerCommand("gitstudio.pr.merge", async (arg?: PrCommandArg) => {
+      // The merge box is the page's: which methods the repository allows,
+      // what each does, the commit title, the branch — then Confirm.
+      const resolved = await resolvePr(arg);
+      if (resolved) {
+        await openPage(resolved.pr, resolved.ctx, { open: "merge" });
+      }
+    }),
   );
-  if (merged) {
-    void vscode.window.showInformationMessage(`Merged PR #${pr.number}.`);
-  }
-  return merged;
+  return { list, review };
 }
 
 async function warn(err: unknown, fallback: string): Promise<void> {

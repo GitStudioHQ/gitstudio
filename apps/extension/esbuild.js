@@ -178,6 +178,17 @@ async function main() {
     format: "iife",
   });
 
+  // A pull request's page (the shared webview-ui PullRequestPage). Its .css
+  // import emits dist/webview/pr-page.css alongside the bundle; the page's
+  // editor tab (src/pr/prPage.ts) links both.
+  const prPageCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(webviewUiSrc, "pr/page-main.ts")],
+    outfile: path.resolve(__dirname, "dist/webview/pr-page.js"),
+    platform: "browser",
+    format: "iife",
+  });
+
   const contexts = [
     extensionCtx,
     webviewCtx,
@@ -188,6 +199,7 @@ async function main() {
     rebasePlanCtx,
     conflictsCtx,
     prListCtx,
+    prPageCtx,
   ];
 
   if (watch) {

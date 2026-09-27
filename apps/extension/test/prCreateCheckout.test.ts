@@ -198,7 +198,7 @@ test("checkout: on the PR's own branch already, it says so instead of moving you
   assert.match(said("info").join("\n"), /already on feature-7, the branch of PR #7/);
 });
 
-test("checkout: the toast's Open Description opens THAT pull request — not the same number in the repository active when it is clicked", async () => {
+test("checkout: the toast's Open Pull Request opens THAT pull request — not the same number in the repository active when it is clicked", async () => {
   const w = world();
   let active: any = w.entry;
   const changed = new vscode.EventEmitter();
@@ -218,17 +218,21 @@ test("checkout: the toast's Open Description opens THAT pull request — not the
   ]);
   // The toast waits until clicked; the user switched repositories meanwhile.
   pr.answer = (_kind: string, _message: string, items: string[]) => {
-    if (items.includes("Open Description")) {
+    if (items.includes("Open Pull Request")) {
       active = { root: other, ctx: otherCtx };
-      return "Open Description";
+      return "Open Pull Request";
     }
     return undefined;
   };
   await checkout(w);
   await new Promise((r) => setTimeout(r, 200));
   const paths = fake.requests.map((r) => r.path);
-  assert.ok(paths.includes("/repos/acme/app/pulls/7"), `acme/app#7 opens (asked: ${paths.join(", ")})`);
-  assert.deepEqual(paths.filter((p) => p.startsWith("/repos/acme/other/")), [], "never acme/other#7");
+  const titles = pr.panels.map((p: any) => p.title);
+  assert.ok(titles.includes("acme/app#7"), `acme/app#7 opens (tabs: ${titles.join(", ")})`);
+  assert.ok(!titles.includes("acme/other#7"), "never acme/other#7");
+  assert.deepEqual(paths.filter((p) => p.startsWith("/repos/acme/other/")), [], "nothing of acme/other is asked");
+  const asked = fake.requests.filter((r) => r.path === "/graphql").map((r) => (r.body as any)?.variables);
+  assert.ok(!asked.some((v) => v?.owner === "acme" && v?.name === "other"), "…not even by GraphQL");
 });
 
 // ── Create pull request ─────────────────────────────────────────────────────
@@ -294,7 +298,7 @@ test("create: Draft creates a draft; a branch in your fork is sent as owner:bran
   assert.equal(sent.draft, true, "the Draft choice");
   assert.equal(sent.head, "me:feature", "GitHub reads a bare name as a branch of acme/app");
   assert.equal(sent.base, "main");
-  assert.ok(pr.panels.some((p: any) => p.title === "PR #50"), "the new PR's page opens");
+  assert.ok(pr.panels.some((p: any) => p.title === "acme/app#50"), "the new PR's page opens");
 
   sent = undefined;
   asked = [];
@@ -330,7 +334,7 @@ test("create: 'already exists' opens the PR that exists", async () => {
   mountWith(w.entry);
   answer = wizard("ready");
   await vscode.commands.executeCommand("gitstudio.pr.create");
-  assert.ok(pr.panels.some((p: any) => p.title === "PR #44"), `the existing PR opens (said: ${JSON.stringify(pr.said)})`);
+  assert.ok(pr.panels.some((p: any) => p.title === "acme/app#44"), `the existing PR opens (said: ${JSON.stringify(pr.said)})`);
 });
 
 test("create: the title proposed is GitHub's — the one commit's subject, else the branch in words, never the newest commit's", async () => {

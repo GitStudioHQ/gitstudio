@@ -848,23 +848,50 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
 
   /** A PR was merged here: it leaves Open, and reads Merged everywhere else. */
   markMerged(owner: string, repo: string, n: number): void {
+    this.markKind(owner, repo, n, "merged");
+  }
+
+  /**
+   * A PR's state changed here (merged, closed, reopened, marked ready): each
+   * list on hand moves the row — out of a segment it no longer belongs to,
+   * into the top of one it now does, the counts with it. A patch, never a
+   * reload; the next read of GitHub has the last word.
+   */
+  markKind(owner: string, repo: string, n: number, kind: PrListItem["kind"]): void {
     const r = this.repo;
     if (r?.kind !== "github" || r.target.id.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) return;
+    const inSegment = (segment: PrListState, k: PrListItem["kind"]) =>
+      segment === "all" || (segment === "open" ? k === "open" || k === "draft" : segment === k);
+    const countOf = (k: PrListItem["kind"]): keyof PrListCounts => (k === "draft" ? "open" : k);
+    let known: PrListItem | undefined;
+    for (const l of this.loaded.values()) known ??= l.items.find((i) => i.number === n);
+    if (!known) return;
+    const now = new Date().toISOString();
+    const next: PrListItem = {
+      ...known,
+      kind,
+      draft: kind === "draft" ? true : kind === "open" ? false : known.draft,
+      state: kind === "open" || kind === "draft" ? "open" : "closed",
+      mergedAt: kind === "merged" ? (known.mergedAt ?? now) : null,
+      closedAt: kind === "closed" || kind === "merged" ? (known.closedAt ?? now) : null,
+    };
+    const was = known.kind;
     let changed = false;
     for (const l of this.loaded.values()) {
-      const segment = l.key.split("|")[2] as PrListState;
-      const was = l.items.find((i) => i.number === n);
-      if (!was || was.kind === "merged") continue;
-      if (segment === "open") {
+      const [, , segment, filters] = l.key.split("|") as [string, string, PrListState, string];
+      const had = l.items.some((i) => i.number === n);
+      const belongs = inSegment(segment, kind);
+      if (had && !belongs) {
         l.items = l.items.filter((i) => i.number !== n);
         l.total = Math.max(0, l.total - 1);
-      } else {
-        l.items = l.items.map((i) =>
-          i.number === n ? { ...i, kind: "merged", state: "closed", mergedAt: i.mergedAt ?? new Date().toISOString() } : i,
-        );
+      } else if (had) {
+        l.items = l.items.map((i) => (i.number === n ? next : i));
+      } else if (belongs && filters === "[]") {
+        l.items = [next, ...l.items];
+        l.total += 1;
       }
-      if (l.counts && (was.kind === "open" || was.kind === "draft")) {
-        l.counts = { ...l.counts, open: Math.max(0, l.counts.open - 1), merged: l.counts.merged + 1 };
+      if (l.counts && countOf(was) !== countOf(kind)) {
+        l.counts = { ...l.counts, [countOf(was)]: Math.max(0, l.counts[countOf(was)] - 1), [countOf(kind)]: l.counts[countOf(kind)] + 1 };
       }
       changed = true;
     }
@@ -928,7 +955,7 @@ function noGitHubMessage(why: string): PrListMessage {
 }
 
 /** The branch checked out, and what it tracks (its remote, as a GitHub repository). */
-async function readLocalHead(entry: RepoEntry, remotes: readonly GitHubRemote[]): Promise<LocalHead | undefined> {
+export async function readLocalHead(entry: RepoEntry, remotes: readonly GitHubRemote[]): Promise<LocalHead | undefined> {
   try {
     const b = await entry.ctx.process.run(["symbolic-ref", "--quiet", "--short", "HEAD"]);
     if (b.code !== 0) return {};
