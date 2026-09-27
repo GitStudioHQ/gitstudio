@@ -191,6 +191,10 @@ async function shoot(theme: VsCodeTheme, data: Awaited<ReturnType<typeof realSta
     // 5. A clean working tree: the stashes under "Working tree clean".
     await page.send(state(data.rows, { unstaged: [] }));
     await snap("clean");
+    // 5b. The narrowest sidebar: nothing overlaps, the words give way first.
+    await page.resize(240, 760, 2);
+    await snap("narrow");
+    await page.resize(300, 760, 2);
     // 6. The questions the doors ask.
     await page.send(state(data.rows));
     await page.send({ type: "dialog", dialogId: "shot-1", spec: data.drop });

@@ -4258,6 +4258,18 @@ export class CommitViewProvider
       color: var(--gs-fg-muted);
       white-space: nowrap;
     }
+    /* At the narrowest widths the words that name things keep their room: a
+       stash row keeps only More Actions (its menu has Apply and Pop), and a
+       file row drops the staged word (its status letter's tip says it). The
+       row is the container, so a deep row in the tree gives way sooner. */
+    .row.stash-row,
+    .row.stash-file { container-type: inline-size; }
+    @container (max-width: 229px) {
+      .stash-row .row-actions .stash-quick { display: none; }
+    }
+    @container (max-width: 199px) {
+      .stash-file .stash-staged { display: none; }
+    }
     .selbar-count {
       min-width: 0;
       overflow: hidden;
@@ -8649,10 +8661,13 @@ export class CommitViewProvider
       row.title = s.message + " — " + new Date(s.time * 1000).toLocaleString();
 
       const actions = el("span", "row-actions");
-      actions.appendChild(makeIconBtn('<i class="codicon codicon-git-stash-apply" aria-hidden="true"></i>',
-        "Apply — bring its changes back and keep the stash", (ev) => { ev.stopPropagation(); stashAct(s, "apply"); }));
-      actions.appendChild(makeIconBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
-        "Pop — bring its changes back and remove the stash", (ev) => { ev.stopPropagation(); stashAct(s, "pop"); }));
+      const applyBtn = makeIconBtn('<i class="codicon codicon-git-stash-apply" aria-hidden="true"></i>',
+        "Apply — bring its changes back and keep the stash", (ev) => { ev.stopPropagation(); stashAct(s, "apply"); });
+      const popBtn = makeIconBtn('<i class="codicon codicon-git-stash-pop" aria-hidden="true"></i>',
+        "Pop — bring its changes back and remove the stash", (ev) => { ev.stopPropagation(); stashAct(s, "pop"); });
+      applyBtn.classList.add("stash-quick");
+      popBtn.classList.add("stash-quick");
+      actions.append(applyBtn, popBtn);
       actions.appendChild(makeIconBtn('<i class="codicon codicon-ellipsis" aria-hidden="true"></i>',
         "More Actions…", (ev) => { ev.stopPropagation(); openActionMenu(s.text, stashItems(s), row, "git-stash"); }));
       row.appendChild(actions);
@@ -8787,7 +8802,9 @@ export class CommitViewProvider
       row.appendChild(actions);
       const status = el("span", "status " + statusClass(letter));
       status.textContent = letter;
-      status.dataset.tip = statusTitle(letter);
+      // The staged word gives way at the narrowest widths; its tip keeps it.
+      status.dataset.tip = statusTitle(letter) +
+        (f.staged === "all" ? ", staged" : f.staged === "part" ? ", partly staged" : "");
       row.appendChild(status);
 
       const open = () => vscode.postMessage({ type: "stashOpenFile", sha: s.sha, path: f.path });

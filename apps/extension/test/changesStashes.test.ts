@@ -262,6 +262,10 @@ for (const theme of ["dark", "light"] as VsCodeTheme[]) {
       assert.equal((await shown(page)).files.length, 4);
       await page.send({ type: "stashDone", sha: R, action: "move", outcome: { kind: "kept" } });
       assert.equal((await shown(page)).files.length, 5);
+      // Moving a stash's last file takes the stash with it.
+      await page.eval(`${row(A)}.click()`);
+      await page.eval(`${fileRow(A, "src/app.ts")}.querySelector(".row-actions .icon-btn").click()`);
+      assert.deepEqual((await shown(page)).rows.map((r) => r.split(" | ")[0]), ["Fix login redirect", "Release notes"]);
     } finally {
       await page.close();
     }
@@ -407,8 +411,19 @@ for (const theme of ["dark", "light", "hc-dark", "hc-light"] as VsCodeTheme[]) {
           deletedStruck: cs(${fileRow(B, "src/routes.ts")}.querySelector(".name")).textDecorationLine,
           over,
           pageScroll: document.documentElement.scrollWidth > innerWidth,
+          // At 240px the names keep their room: every file's name is whole,
+          // Apply / Pop give way to More Actions, the staged word to its tip.
+          namesCut: Array.from(document.querySelectorAll("#stashes .row.is-file .name"))
+            .filter((n) => n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent),
+          quick: Array.from(open.querySelectorAll(".row-actions .icon-btn")).map((b) => cs(b).display !== "none"),
+          stagedShown: Array.from(document.querySelectorAll("#stashes .stash-staged")).some((w) => cs(w).display !== "none"),
+          stagedTip: ${fileRow(B, "src/auth/login.ts")}.querySelector(".status").dataset.tip,
         };
       })()`);
+      assert.deepEqual(m.namesCut, [], "no file name is cut at 240px");
+      assert.deepEqual(m.quick, [false, false, true], "only More Actions at 240px");
+      assert.equal(m.stagedShown, false);
+      assert.equal(m.stagedTip, "Modified, partly staged");
       assert.equal(m.sameHeader, true, "the same header as Staged / Changes");
       assert.equal(m.dotIsBrand, true);
       assert.equal(m.rowHeight, 38, "a stash row is two lines");
