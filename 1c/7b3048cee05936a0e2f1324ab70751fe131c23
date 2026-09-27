@@ -1,0 +1,40 @@
+packages/git-service/src/prBranch.ts
+  s_26f5e669d3043c::t_09a3e6002a23f7 1-365
+  s_26f5e669d3043c::t_a5ce10a79786ba 366-369
+apps/extension/src/pr/checkoutPr.ts
+  s_26f5e669d3043c::t_7c80fb5166e10c 9-21,24,29-46,49-50,52-71,74,78-98,100-102,104,111-124,126-127,136-181,184-186,188,190-191,194,203-204,208-210,212-215,222-224,226,232-244,250-272,275,277-278,281,287-288,292-379,381
+  s_26f5e669d3043c::t_d738bbca2e70c3 380,391
+packages/git-service/test/prBranch.test.ts
+  s_26f5e669d3043c::t_61d743ca78c21f 1-272
+  s_26f5e669d3043c::t_cb392f4030a6aa 273-274
+apps/extension/test/prCheckoutBranch.test.ts
+  s_26f5e669d3043c::t_3379bd2b1bd1b6 1-401
+apps/extension/src/pr/githubApi.ts
+  s_26f5e669d3043c::t_2fe0c5d35096f8 42-46,835,926
+apps/extension/src/pr/prFeature.ts
+  s_26f5e669d3043c::t_ec3dbaeb8448eb 203
+apps/extension/src/pr/prPage.ts
+  s_26f5e669d3043c::t_fb476303a3a5e6 161
+apps/extension/src/pr/pullRequestsView.ts
+  s_26f5e669d3043c::t_056c78b1eddf80 153,181
+apps/extension/src/pr/reviewMode.ts
+  s_26f5e669d3043c::t_9816a2539ae178 804-809
+apps/extension/test/prCreateCheckout.test.ts
+  s_26f5e669d3043c::t_e6115fb354b109 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1c7b3048cee05936a0e2f1324ab70751fe131c23",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
