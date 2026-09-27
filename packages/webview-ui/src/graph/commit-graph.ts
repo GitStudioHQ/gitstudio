@@ -739,18 +739,21 @@ export class CommitGraph extends LitElement {
 
     /* Search highlight: matches are washed in a soft yellow and the rest
        recede. There is no bar down the edge; a match is a highlight, and the
-       owner's rule covers matched rows as well as selected ones. */
-    .row.is-match {
+       owner's rule covers matched rows as well as selected ones. A SELECTED
+       match keeps the selection's fill (.row.selected.is-match below); the
+       :where() keeps these at the specificity they had, so hover still
+       wins over the wash. */
+    .row.is-match:where(:not(.selected)) {
       background: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 16%, transparent);
     }
     /* On the wash the muted words take the foreground's ink: Dark+'s
        secondary text read 4.37:1 on it, the SHA 3.95:1 and the desktop's
        "+1" chip 3.90:1. A match reads at full strength anyway, beside the
        rows that recede. */
-    .row.is-match .meta,
-    .row.is-match .changes,
-    .row.is-match .sha,
-    .row.is-match .chip-overflow {
+    .row.is-match:where(:not(.selected)) .meta,
+    .row.is-match:where(:not(.selected)) .changes,
+    .row.is-match:where(:not(.selected)) .sha,
+    .row.is-match:where(:not(.selected)) .chip-overflow {
       color: var(--vscode-foreground);
     }
     .row.is-nomatch .subject,
@@ -1276,6 +1279,18 @@ export class CommitGraph extends LitElement {
       background: color-mix(in srgb, var(--gs-accent) 10%, transparent);
       --gs-graph-node-hole: color-mix(in srgb, var(--gs-accent) 10%,
         var(--vscode-editor-background, #1e1e1e));
+    }
+    /* A selected commit that is also a search match stays selected: the
+       selection's own fill, with a little of the match's yellow mixed in so
+       it still reads as a match. Never the match wash alone (the rail's
+       did that once and hid the selection). */
+    .row.selected.is-match {
+      --gs-row-fill: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 14%,
+        var(--vscode-list-activeSelectionBackground));
+    }
+    .row.selected.focused.is-match {
+      --gs-row-fill: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 14%,
+        color-mix(in srgb, var(--gs-accent) 28%, var(--vscode-list-activeSelectionBackground)));
     }
     /* Words on a lit row take full ink. Light+'s secondary text read 4.35:1
        on the cursor's wash and the SHA 2.83:1. The selection foreground at

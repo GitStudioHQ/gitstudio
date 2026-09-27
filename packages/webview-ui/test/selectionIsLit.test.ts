@@ -107,6 +107,35 @@ const LIST_BODY = (tag: string, searchInput: string, branchesButton: string, pre
   expect(el.shadowRoot.querySelectorAll(".row.is-match").length > 1, "the search matches rows");
   // (A search box holding a query is a field with words in it, not a chosen thing.)
   sweep("a search's matches", HC ? {} : { targets: ${JSON.stringify(tag === "gitstudio-graph" ? [".row.is-match:not(.selected)"] : [".row.is-match:not(.selected):not(.is-cursor)", ".row.is-cursor"])}, fillSkip: ".gh-search" });
+
+  // Results clicked: a selected match stays SELECTED. Its fill is the
+  // selection's with a little of the match's yellow in it, never the match
+  // wash in its place (the rail's wash was declared after .row.selected and
+  // won: white words on pale yellow, 1.29:1 in Light+). Row 25 (selected
+  // before the search, no match) is the plain selection to hold it to.
+  await click(el, 12, { metaKey: true });
+  await click(el, 14, { metaKey: true });
+  const selMatch = R(el, 12), cursorMatch = R(el, 14), selPlain = R(el, 25), washed = R(el, 13);
+  expect(
+    selMatch.classList.contains("selected") && selMatch.classList.contains("is-match") && !selMatch.classList.contains("focused") &&
+      cursorMatch.classList.contains("focused") && cursorMatch.classList.contains("is-match") &&
+      selPlain.classList.contains("selected") && !selPlain.classList.contains("is-match") &&
+      washed.classList.contains("is-match") && !washed.classList.contains("selected"),
+    "two results selected, the cursor on one, beside a plain selection and an unselected result",
+  );
+  if (HC) {
+    const ring = (e) => getComputedStyle(e).outlineStyle;
+    expect(ring(selMatch) === "dashed" && ring(cursorMatch) === "solid", "high contrast: a selected result is ringed as any selection is (" + ring(selMatch) + " / " + ring(cursorMatch) + ")");
+    sweep("selected results");
+  } else {
+    sweep("selected results", { targets: [".row.selected.is-match"], fillSkip: ".gh-search" });
+    expect(apart(selMatch, washed) >= 40, "a selected result is not the match wash (" + apart(selMatch, washed).toFixed(0) + " from an unselected result)");
+    expect(
+      apart(selMatch, selPlain) >= 6 && apart(selMatch, selPlain) < 0.8 * apart(selMatch, washed),
+      "it keeps the selection's fill (nearer it than the wash), with a match cue that is no line (" + apart(selMatch, selPlain).toFixed(0) + " from the plain selection, " + apart(selMatch, washed).toFixed(0) + " from the wash)",
+    );
+    expect(apart(cursorMatch, selMatch) >= 12, "and the cursor among the results is lit as the cursor (" + apart(cursorMatch, selMatch).toFixed(0) + ")");
+  }
   input.value = "";
   input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
   await settle(el);

@@ -394,6 +394,21 @@ export class CommitRail extends LitElement {
         background: color-mix(in srgb, var(--gs-accent) 10%, transparent);
         --gs-graph-node-hole: color-mix(in srgb, var(--gs-accent) 10%, var(--gs-bg));
       }
+      /* A selected commit that is also a search match (you clicked a
+         result) stays SELECTED: the selection's own fill, with a little of
+         the match's yellow mixed in so it still reads as a match. The match
+         wash used to be declared after .row.selected and replaced it, which
+         left the selection foreground (white) on pale yellow, 1.29:1 in
+         Light+. The wash and the current match's tint below apply only to
+         rows that are not selected. */
+      .row.selected.is-match {
+        --gs-row-fill: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 14%,
+          var(--vscode-list-activeSelectionBackground));
+      }
+      .row.selected.focused.is-match {
+        --gs-row-fill: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 14%,
+          color-mix(in srgb, var(--gs-accent) 28%, var(--vscode-list-activeSelectionBackground)));
+      }
       .row.selected .subject,
       .row.selected .who,
       .row.selected .age {
@@ -674,11 +689,11 @@ export class CommitRail extends LitElement {
          selected ones). The rows that do not match recede, and the current
          match is lit in the accent (.is-cursor). */
       .row.is-nomatch { opacity: 0.35; }
-      .row.is-match {
+      .row.is-match:not(.selected) {
         background: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 16%, transparent);
         --gs-graph-node-hole: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 16%, var(--gs-bg));
       }
-      .row.is-cursor {
+      .row.is-cursor:not(.selected) {
         background: color-mix(in srgb, var(--gs-accent-text) 12%, transparent);
         --gs-graph-node-hole: color-mix(in srgb, var(--gs-accent-text) 12%, var(--gs-bg));
       }
