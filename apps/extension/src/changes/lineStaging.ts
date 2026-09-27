@@ -6,6 +6,7 @@ import {
 } from "@gitstudio/engine/staging/applyLineChanges";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativePath } from "./changesView";
+import { failed } from "../ui/notify";
 
 // Line / hunk staging commands — the headline differentiator. These operate on
 // the active editor (a working file, or the modified side of a diff editor): the
@@ -262,9 +263,7 @@ function finishStaging(
   refresh: StagingRefresh,
 ): void {
   if (!ok) {
-    void vscode.window.showErrorMessage(
-      `GitStudio: staging failed — ${stderr.trim() || "unknown error"}`,
-    );
+    void vscode.window.showErrorMessage(failed("Staging", stderr));
     return;
   }
   void vscode.window.setStatusBarMessage(`$(check) ${label}`, 2500);

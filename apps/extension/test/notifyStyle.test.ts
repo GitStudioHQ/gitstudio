@@ -36,8 +36,11 @@ test("the sentence: GitStudio once, a capital, a full stop", () => {
   assert.equal(notice("  spaced  "), "GitStudio: Spaced.");
 });
 
-test("a failure: the action, then git's reason — its first line", () => {
-  assert.equal(failed("Push", "rejected: non-fast-forward\nhint: pull first"), "GitStudio: Push failed — rejected: non-fast-forward.");
+test("a failure: the action, then git's reason, whole, on one line", () => {
+  assert.equal(
+    failed("Push", "rejected: non-fast-forward\nhint: pull first"),
+    "GitStudio: Push failed — rejected: non-fast-forward hint: pull first.",
+  );
   assert.equal(failed("Pull", ""), "GitStudio: Pull failed.");
   assert.equal(failed("Undo"), "GitStudio: Undo failed.");
   assert.equal(failed("Revert", "\n\nerror: could not revert 1a2b3c4.\n"), "GitStudio: Revert failed — error: could not revert 1a2b3c4.");
@@ -81,8 +84,10 @@ function calls(): { rel: string; args: string }[] {
   return out;
 }
 
-test("no toast says 'X failed: …': a failure goes through failed()", () => {
-  const hits = calls().filter((c) => /failed: /.test(c.args)).map((c) => `${c.rel}: ${c.args.slice(0, 90)}`);
+test("no toast writes its own 'X failed: …' or 'x failed — …': a failure goes through failed()", () => {
+  const hits = calls()
+    .filter((c) => /failed: |failed —/.test(c.args))
+    .map((c) => `${c.rel}: ${c.args.slice(0, 90)}`);
   assert.deepEqual(hits, []);
 });
 

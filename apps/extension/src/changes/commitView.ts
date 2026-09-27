@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { failed, NO_REPOSITORY, notifyCopied } from "../ui/notify";
 import { relativeTime } from "../util/relativeTime";
+import { markWalkthrough } from "../ui/walkthroughProgress";
 import type { GitRef } from "@gitstudio/git-service/index";
 import { pushUnseenMessage, type PullResult } from "@gitstudio/git-service/SyncOps";
 import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
@@ -1007,6 +1008,9 @@ export class CommitViewProvider
     } catch {
       // status() is best-effort; the firehose still reconciles eventually.
     }
+    if (failure === undefined && what?.verb === "stage") {
+      markWalkthrough("staged");
+    }
     this.onCommitted();
     await this.pushState();
     return failure === undefined;
@@ -1547,9 +1551,7 @@ export class CommitViewProvider
           stderr ||
           result.stdout.trim() ||
           "git refused the commit without saying why. If this repository has a pre-commit hook, check its output.";
-        void vscode.window.showErrorMessage(
-          `GitStudio: commit failed — ${detail}`,
-        );
+        void vscode.window.showErrorMessage(failed("Commit", detail));
         void this.view?.webview.postMessage({
           type: "commitDone",
           ok: false,
@@ -1559,6 +1561,7 @@ export class CommitViewProvider
       }
 
       void vscode.window.setStatusBarMessage("$(check) Committed", 3000);
+      markWalkthrough("committed");
 
       // Clear the box and refresh the views. The commit spinner clears on
       // commitDone; for a Commit & Push the modal then opens for the push step.
@@ -7565,8 +7568,15 @@ export class CommitViewProvider
       // staged nothing and said nothing.
       stageAllTopBtn.disabled = data.unstaged.length === 0;
       stashChangesBtn.disabled = total === 0;
-      changesTotal.textContent = String(total);
-      changesTotal.classList.toggle("visible", total > 0);
+      // "Changed Files" counts files: a partly staged file is one file, in
+      // both groups. It said 4 over a checkbox list of 3.
+      const files = new Set();
+      for (const k of ["merge", "staged", "unstaged"]) {
+        for (const e of data[k]) files.add(e.path);
+      }
+      changesTotal.textContent = String(files.size);
+      changesTotal.classList.toggle("visible", files.size > 0);
+      changesTotal.setAttribute("aria-label", countWords(files.size, "changed file", "changed files"));
 
       const groups = [];
       if (stagingModel === "checkboxes") {

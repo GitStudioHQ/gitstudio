@@ -29,10 +29,14 @@ export function notice(text: string): string {
   return PREFIX + t;
 }
 
-/** "GitStudio: Push failed — <reason>." (the reason's first line, as git said it). */
+/** "GitStudio: Push failed — <reason>." (the reason whole, its lines run together). */
 export function failed(action: string, reason?: string): string {
-  const why = (reason ?? "").trim().split(/\r?\n/).find((l) => l.trim()) ?? "";
-  return notice(why ? `${action} failed — ${why.trim()}` : `${action} failed`);
+  const why = (reason ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join(" ");
+  return notice(why ? `${action} failed — ${why}` : `${action} failed`);
 }
 
 /** The one sentence for "there is no repository to act on". */
