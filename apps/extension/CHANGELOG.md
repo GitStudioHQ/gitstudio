@@ -30,7 +30,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Cherry-Pick and Revert are left out when a merge commit is selected, Squash
   and Drop when the commits are not all on your current branch — and Squash
   also when there are other commits between them. Undo (Ctrl/Cmd+Alt+G Z)
-  covers every one. (#32)
+  covers every one, and after a drop or squash with "move those branches" it
+  puts those branches back too. (#32)
 - **Drop Commit… in the commit menu.** Right-click a commit on your current
   branch — in the Commit Graph or the Commits list — and choose **Drop
   Commit…** to take it out of the branch; the commits after it are replayed
@@ -45,7 +46,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   anything. If a later commit conflicts, the rebase stops and **Resolve
   Conflicts…** takes you to the Conflicts dashboard to continue, skip or
   abort — abort puts the branch back as it was. Undo (Ctrl/Cmd+Alt+G Z)
-  restores the branch afterwards. (#32)
+  restores the branch afterwards — and, after "move those branches", the
+  branches it carried. (#32)
 - **Switch Repository.** When the folder you open holds more than one
   repository — a parent folder of checkouts, a multi-root workspace, a repo
   inside another's folder — the Changes view's header shows which one it is
@@ -147,10 +149,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   longer resets the branch to where it was at launch, dropping the commits
   you made since — nor puts back a branch you rebased yourself afterwards.
   Its Undo names the base as a short sha, not all forty characters.
-- **Undo after reordering, dropping or squashing commits with "move those
-  branches"** puts those branches back too, not just the current one — as
-  long as nothing has been committed on them since; if something has, Undo
-  says so and changes nothing. (#32)
+- **Undo after reordering commits with "move those branches"** puts those
+  branches back too, not just the current one — as long as nothing has been
+  committed on them since; if something has, Undo says so and changes
+  nothing. (#32)
 - **Undo of an amend** brings your staged changes back staged. Once the
   amended commit has been pushed, Undo adds a commit that undoes just the
   amendment — it used to revert the whole commit. A commit you make while
@@ -263,9 +265,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   changes toggle (a closed one showed ˄ and an open one ›).
 - Before the Changes view has read anything it says "Reading changes…", not
   "Working tree clean"; while repositories are still being found, it, the
-  Commit Graph and the Commits view say "Looking for a repository…", not "No
-  repository open". With no repository, the Commit Graph and Commits view say
-  so instead of "No commits yet".
+  Commit Graph, the Commits view and Pull Requests say "Looking for a
+  repository…", not "No repository open". With no repository, the Commit
+  Graph and Commits view say so instead of "No commits yet".
 - GitStudio's AI sparkle no longer appears in VS Code's own commit box while
   AI is off, and the Connect-AI plug leaves the commit box once you turn AI
   off.
@@ -509,7 +511,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **github.com under another name.** Remotes using an SSH host alias
   (`git@github.com-work:…`, or any `~/.ssh/config` Host whose HostName is
   github.com), `ssh.github.com` (SSH over port 443) or `www.github.com` turned
-  the pull request features off without a word. They are github.com now.
+  the pull request features off without a word. They are github.com now —
+  and **Open on GitHub** and blame's **View in Browser** open their commits
+  on github.com too (an `ssh://` remote was "not a GitHub address", and an
+  alias opened `https://github.com-work/…`).
 - **A pull request's diff that can't be loaded says why** — signed out, rate
   limited, offline — instead of an empty pane that claimed the file was added
   or deleted. A binary or very large file shows a note, not its bytes.

@@ -37,7 +37,8 @@ but they share the same engine, so most Git behaviour lands in both at once.
   Cherry-pick and Revert are left out when a merge commit is selected, Squash
   and Drop when the commits are not all on your current branch — and Squash
   also when there are other commits between them. Each one can be undone
-  straight afterwards. (#32)
+  straight afterwards: Undo puts back the branch it ran on, and the branches
+  a drop or squash carried. (#32)
 - **Repositories open as tabs.** The top row of the window holds a tab for
   every repository you have open — its name, **●** with the number of changed
   files when it has any, a spinner while a push, pull or other operation runs
@@ -95,8 +96,11 @@ but they share the same engine, so most Git behaviour lands in both at once.
   a merge, rebase, cherry-pick or revert still in progress, it says so before
   asking anything. If a later commit conflicts, the rebase stops and you land
   in Changes, where the conflicts dashboard offers Continue, Skip and Abort —
-  Abort puts the branch back as it was. **Undo** on the toast, or ⌘Z,
-  restores the branch. The same drop as the VS Code extension's. (#32)
+  Abort puts the branch back as it was. **Undo** on the toast, or ⌘Z, puts
+  back the branch the drop rewrote — even after you've made and switched to
+  a branch at the new tip — and, after *Drop and move those branches*, the
+  branches it carried, each only while it is still where the drop left it.
+  The same drop as the VS Code extension's. (#32)
 - **Set the action of several commits at once in an interactive rebase.** In
   the Rebase view, click a commit, then Shift-click or ⌘-click (Ctrl-click)
   others — or use **Shift+↑/↓**, **Home**/**End** and **⌘A**; **Escape** goes
@@ -133,12 +137,6 @@ but they share the same engine, so most Git behaviour lands in both at once.
 
 ### Fixed
 
-- **Undo of *Drop commit* put back the wrong branch.** If you made and
-  switched to a branch at the new tip after dropping, Undo reset THAT branch
-  to the old commits, left the dropped one as it was, and said it had undone
-  the drop. Undo now puts back the branch the drop rewrote — and, after
-  *Drop and move those branches*, the branches it carried too — each only
-  while it is still where the drop left it. (#32)
 - **Undo of *Discard changes*, and ⌘Z after *Accept Yours / Theirs*, no longer
   overwrite edits you made since.** Discard, type something new, Undo: the new
   text was replaced by the discarded one; resolve a conflict, polish the file
@@ -204,9 +202,11 @@ but they share the same engine, so most Git behaviour lands in both at once.
   is no longer a worktree when the drive comes back. A worktree that changes
   while the question is open — an agent still at work in it — is asked about
   again with what it holds now; nothing the question didn't name is deleted,
-  and it keeps its lock. A worktree open in another repository tab is not
-  removed from under it: removing it says so, and to close that tab first.
-  The same words as the VS Code extension's.
+  and it keeps its lock. The same words as the VS Code extension's. A
+  worktree open in another repository tab reads *open in a tab* and is not
+  removed from under it: removing it says so, and to close that tab first
+  (one whose folder is gone can still be forgotten). The worktree of the tab
+  you are in reads *this tab*.
 - **Removing a worktree that is stopped in a merge, rebase, cherry-pick or
   revert says so**, and that removing it abandons the operation — a worktree
   stopped in a rebase with nothing uncommitted went without a word.
@@ -221,11 +221,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   doesn't — yours, or the ones a force-push to the pull request replaced — it
   is left exactly as it is and the app says why, and how to get the pull
   request's version, where git's refusal was reported as an error. The same
-  rule as the VS Code extension's.
+  rule as the VS Code extension's. It is fetched from the remote the pull
+  requests are listed from — `upstream`, when `origin` isn't on GitHub — where
+  it always asked `origin`.
 - Repositories whose GitHub remote uses `ssh.github.com` (SSH over port 443),
   `www.github.com`, or a host alias of `~/.ssh/config` whose HostName is
-  github.com (`git@work:owner/repo`) are recognised as GitHub repositories —
-  the alias, as the VS Code extension already did.
+  github.com (`git@work:owner/repo`) are recognised as GitHub repositories,
+  as the VS Code extension now does.
 - **A pull request's file diff starts where its branch left the base.** Its
   left side was the base branch as it is now: once others had merged, it
   showed their new work as if the pull request removed it, and a comment on
