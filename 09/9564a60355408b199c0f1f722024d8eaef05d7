@@ -1,0 +1,41 @@
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_dd297ff751b188 15-24,36-49,441-466,785-786
+apps/extension/README.md
+  s_26f5e669d3043c::t_5c5dda30c022da 81
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_ac7bcf2a680859 3318-3320,3412-3432,3436-3440,3447-3448,3451-3452,3456,3458,3461-3483,3486-3488,3536-3538,3554-3556,3578-3580,3585,3588-3592,3768,4154-4169,4174,4193-4222,4224-4268,4475,4610-4611,4613-4656,4665-4669,4671-4675,4677-4678,5194-5195,5739-5744,5755-5787,5790-5794,5796-5964,5966-5969,5971-5974,5976-5977,5979-5982,5984-5986,6603-6605,6635-6639,6659-6666,6696-6702,6777,6815,7100-7109,7113,7125,7159,7181-7182,7287,7293-7302,7488-7497,7499-7500,9250,10084-10091,10265-10268,10271-10274,10276-10277,10300-10347,10501,10503,10528-10532,10547,10581-10583,10724-10725,10758-10759,10761,10763,10807-10813,10827,10839-10840,10843-10847,10849-10855,10865-10866,10924-10928,10957-10958,10970-10971,10985-10996,11405-11434,11440,11453,11457-11463,11465-11466
+apps/extension/test/branchMenuFit.test.ts
+  s_26f5e669d3043c::t_0f14253fbfb038 150-152,156-159,163
+apps/extension/test/branchMenuKeyboard.test.ts
+  s_26f5e669d3043c::t_ec7afb05252ae2 726-728,732,737
+apps/extension/test/branchMenuLit.test.ts
+  s_26f5e669d3043c::t_2a6eb389d8076d 1-338
+apps/extension/test/changesHost.ts
+  s_26f5e669d3043c::t_fd73a26c584317 46,55-56
+apps/extension/test/changesRowLook.test.ts
+  s_26f5e669d3043c::t_ab6172fab40c9a 1-84
+apps/extension/test/changesRowTips.test.ts
+  s_26f5e669d3043c::t_97a9c9b1f7efb5 1-172
+apps/extension/test/changesStashDrag.test.ts
+  s_26f5e669d3043c::t_8d8990fb60cc4b 1-849
+apps/extension/test/changesStashes.test.ts
+  s_26f5e669d3043c::t_c88453826ebb2b 201,211,225,253,266,272,633,664,736-737
+apps/extension/test/litLook.ts
+  s_26f5e669d3043c::t_bcfed709e7b9a7 1-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "099564a60355408b199c0f1f722024d8eaef05d7",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
