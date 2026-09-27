@@ -1,0 +1,24 @@
+packages/engine/src/forge/prPage.ts
+  s_26f5e669d3043c::t_5549d91c234674 1-818
+  s_26f5e669d3043c::t_228105518a67b3 819-867
+packages/engine/test/prPage.test.ts
+  s_26f5e669d3043c::t_1025729f95d80b 1-437
+packages/host-bridge/src/prProtocol.ts
+  s_26f5e669d3043c::t_9cad076f6eb907 226-525
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "da8d1d2be644940d7cd38407acb3de4b4592e5cd",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
