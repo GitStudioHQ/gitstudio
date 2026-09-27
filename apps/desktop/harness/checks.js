@@ -251,11 +251,19 @@
   // switches on. selectionLines() looks for each of them.
 
   /** The states that mean "this one": a class, or what aria says. */
-  const SELECTED_STATE =
+  const CHOSEN_STATE =
     '.active, .is-active, .is-selected, .is-sel, .selected, .is-current, .current, .is-on, .row-landed, ' +
-    ".is-mine, .focused, .checked, .is-checked, " +
+    ".is-mine, .focused, .checked, .is-checked, .is-hit, .toggled, .is-toggled, .jb-toggled, " +
+    '[class*="--active"], [class*="--selected"], [class*="--current"], ' +
     '[aria-selected="true"], [aria-current]:not([aria-current="false"]), [aria-pressed="true"], [aria-checked="true"]';
-  const STATE_CLASS = /^(active|is-active|is-selected|is-sel|selected|is-current|current|is-on|row-landed|is-mine|focused|checked|is-checked)$/;
+  /**
+   * Open things — a menu's trigger, an expanded group, a drawer: states for
+   * LINES (a bar down an open group is a line like any other), but their
+   * fill and their words are their own, not a selection's.
+   */
+  const OPEN_TRIGGER = '[aria-expanded="true"]:not(input):not(textarea):not(select), .is-open';
+  const SELECTED_STATE = `${CHOSEN_STATE}, ${OPEN_TRIGGER}`;
+  const STATE_CLASS = /^(active|is-active|is-selected|is-sel|selected|is-current|current|is-on|row-landed|is-mine|focused|checked|is-checked|is-open|is-hit|toggled|is-toggled|jb-toggled|[\w-]+--(active|selected|current)|gs-force-hover)$/;
   /**
    * A computed colour as {r,g,b,a} in 0–1. Reads rgb()/rgba() and the
    * "color(srgb …)" a color-mix() computes to — which an rgb() parser reads as
@@ -372,25 +380,48 @@
     for (const i of path) t = t?.children[i];
     return t && t.tagName === kid.tagName ? t : null;
   };
-  /** A pseudo-element drawn as a strip (≤ 4px across one axis, painted). */
-  const strip = (node, pe) => {
+  /** A box's painted size: content, padding and border, as computed. */
+  const paintedSize = (p) => {
+    let w = parseFloat(p.width), h = parseFloat(p.height);
+    if (p.boxSizing !== "border-box") {
+      const n = (k) => parseFloat(p[k]) || 0;
+      if (!Number.isNaN(w)) w += n("paddingLeft") + n("paddingRight") + n("borderLeftWidth") + n("borderRightWidth");
+      if (!Number.isNaN(h)) h += n("paddingTop") + n("paddingBottom") + n("borderTopWidth") + n("borderBottomWidth");
+    }
+    return { w, h };
+  };
+  /** A pseudo-element that is drawn at all: content, not hidden or faded or
+   *  scaled away, and not of no size (a bar that GROWS from width 0 is absent
+   *  on the sibling, not present there). */
+  const pseudoDrawn = (node, pe) => {
     if (!node) return null;
     const p = getComputedStyle(node, pe);
     if (!p.content || p.content === "none" || p.content === "normal" || !drawn(p)) return null;
-    const w = parseFloat(p.width), h = parseFloat(p.height);
+    const { w, h } = paintedSize(p);
+    if ((!Number.isNaN(w) && w < 0.5) || (!Number.isNaN(h) && h < 0.5)) return null;
+    return p;
+  };
+  /** A pseudo-element drawn as a strip (≤ 4px across one axis, painted). */
+  const strip = (node, pe) => {
+    const p = pseudoDrawn(node, pe);
+    if (!p) return null;
+    const { w, h } = paintedSize(p);
     if (Number.isNaN(w) || Number.isNaN(h)) return null;
     if (!((w <= 4 && h > 4) || (h <= 4 && w > 4))) return null;
     const cols = [p.backgroundColor, ...coloursIn(/gradient/.test(p.backgroundImage) ? p.backgroundImage : ""),
       ...["Top", "Right", "Bottom", "Left"].filter((s) => (parseFloat(p[`border${s}Width`]) || 0) > 0).map((s) => p[`border${s}Color`])];
     if (!cols.some(paints)) return null;
     // A 1px grey rule across a row is the list's divider, worn by every row
-    // but the first — not a mark.
-    if (Math.min(w, h) <= 1 && !cols.some(hued)) return null;
+    // but the first — not a mark, when another unselected row wears it too
+    // (the caller checks: a grey hairline only the selected tab has is an
+    // underline).
+    if (Math.min(w, h) <= 1 && !cols.some(hued)) return `hairline ${Math.round(w)}×${Math.round(h)} ${cols.find(paints)}`;
     return `${Math.round(w)}×${Math.round(h)} ${cols.find(paints)}`;
   };
   /** A thin painted part: a bar made of an element. */
   const barOf = (k) => {
     const kr = k.getBoundingClientRect();
+    if (Math.min(kr.width, kr.height) < 0.5) return null; // of no size: absent, not a bar
     if (!((kr.width <= 4 && kr.height >= 6) || (kr.height <= 4 && kr.width >= 10))) return null;
     const kc = getComputedStyle(k);
     const cols = [kc.backgroundColor, ...coloursIn(/gradient/.test(kc.backgroundImage) ? kc.backgroundImage : ""),
@@ -404,6 +435,82 @@
     return true;
   };
   /**
+   * What one shadow draws: "bar" (an inset band down a side), "rule" (an
+   * outer band beyond a side), "ring" (a hard band all round), or "" (a
+   * glow, a soft lift, the neutral 1px sheen a raised surface wears). A band
+   * is a line while its blur is narrower than it would take to dissolve it:
+   * an inset 3px bar blurred 2px is still a bar (the first guard called any
+   * blur over 1px soft, and passed the owner's GO TO bar drawn that way).
+   * packages/webview-ui/test/selectionProbe.js and selectionStatic.ts use
+   * the same model.
+   */
+  const shadowKind = (s) => {
+    if (!paints(s.colour)) return "";
+    const off = Math.max(Math.abs(s.x), Math.abs(s.y));
+    if (off > 0) {
+      if (off <= 1 && s.spread <= 0 && !hued(s.colour)) return "";
+      if (s.inset) {
+        const band = off + Math.min(s.spread, 0);
+        return band >= 0.5 && s.blur < 3 * band + 4 ? "bar" : "";
+      }
+      const band = off + s.spread;
+      return band >= 1 && s.blur < band ? "rule" : "";
+    }
+    return s.spread > 0 && s.spread < 8 && s.blur < 2 * s.spread + 1.5 ? "ring" : "";
+  };
+  /** A filter's drop-shadow()s, as outer shadows. */
+  const dropShadowsOf = (v) =>
+    [...String(v || "").matchAll(/drop-shadow\(((?:[^()]|\((?:[^()]|\([^()]*\))*\))*)\)/g)].map((m) => {
+      const colour = (/(rgba?\([^)]*\)|color\([^)]*\))/.exec(m[1]) || [""])[0];
+      const lens = m[1].replace(colour, "").match(/-?[\d.]+px/g) || [];
+      const [x, y, blur] = [0, 1, 2].map((i) => parseFloat(lens[i] || "0"));
+      return { inset: false, x, y, blur, spread: 0, colour, text: m[0] };
+    });
+  /**
+   * The line-shaped marks of one box (an element, a pseudo-element, a part):
+   * [{key, text, colour}]. `key` is the shape, compared with the twin's.
+   * Whole rings are left out for a part (a chip's own border is a chip).
+   */
+  const boxMarks = (p, { part = false, focused = false, sides = true } = {}) => {
+    const out = [];
+    for (const s of shadowsOf(p.boxShadow)) {
+      const k = shadowKind(s);
+      if (!k || (k === "ring" && (part || focused))) continue;
+      out.push({ key: `${k}${s.inset ? " inset" : ""} ${s.x},${s.y},${s.spread}`, text: `${k === "bar" ? "an inset bar" : k === "rule" ? "a hard outer line" : "a ring"} (box-shadow ${s.x}px ${s.y}px ${s.blur}px ${s.spread}px, ${s.colour})`, colour: s.colour });
+    }
+    for (const s of dropShadowsOf(p.filter)) {
+      const k = shadowKind(s);
+      if (k) out.push({ key: `drop ${s.x},${s.y}`, text: `a ${k} drawn by a filter (${s.text})`, colour: s.colour });
+    }
+    if (!focused && p.outlineStyle !== "none" && parseFloat(p.outlineWidth) > 0 && paints(p.outlineColor)) {
+      out.push({ key: `outline ${p.outlineStyle} ${parseFloat(p.outlineWidth)}`, text: `an outline (${p.outlineWidth} ${p.outlineStyle} ${p.outlineColor})`, colour: p.outlineColor });
+    }
+    if (sides) {
+      const on = ["Top", "Right", "Bottom", "Left"].filter((sd) =>
+        (parseFloat(p[`border${sd}Width`]) || 0) > 0 && !/none|hidden/.test(p[`border${sd}Style`]) && paints(p[`border${sd}Color`]));
+      const whole = on.length === 4;
+      if (!(whole && part)) {
+        for (const sd of on) {
+          const w = parseFloat(p[`border${sd}Width`]);
+          const col = p[`border${sd}Color`];
+          // Inside a part a grey hairline is a divider; a hued or thick side is a rule.
+          if (part && !hued(col) && w < 2) continue;
+          out.push({ key: `border-${sd.toLowerCase()} ${Math.round(w * 2) / 2}`, text: `a ${sd.toLowerCase()} border (${w}px ${col})`, colour: col });
+        }
+      }
+    }
+    return out;
+  };
+  const hasMark = (list, m, geometryOnly) => (list || []).some((x) => x.key === m.key && (geometryOnly || sameColour(x.colour, m.colour)));
+  /**
+   * A ::before/::after of any size that carries a line: a full-size overlay
+   * with a border side, an inset bar or a ring (strip() finds the thin ones).
+   */
+  const overlayMarks = (node, pe) => {
+    const p = pseudoDrawn(node, pe);
+    return p ? boxMarks(p, { part: false }) : null;
+  };
+  /**
    * Every line a selected element — or its ::before/::after, or anything
    * inside it — draws that an unselected sibling of its kind does not:
    * returns a list of phrases.
@@ -413,27 +520,29 @@
     const cs = getComputedStyle(el);
     const ss = sib ? getComputedStyle(sib) : null;
     const focused = el.matches(":focus-visible");
-    // A bar: an inset shadow pushed to one side, hard-edged. Any colour but a
+    // Its shadows and drop-shadow filters: a bar (an inset band pushed to
+    // one side, blurred or not), a hard outer rule, a ring. Any colour but a
     // neutral 1px sheen (the "lit from above" bevel raised surfaces wear).
-    const sibShadows = ss ? shadowsOf(ss.boxShadow) : [];
-    for (const s of shadowsOf(cs.boxShadow)) {
-      if (!paints(s.colour)) continue;
-      const offset = Math.max(Math.abs(s.x), Math.abs(s.y));
-      const hard = s.blur <= 1;
-      const had = sibShadows.some((t) => t.inset === s.inset && t.x === s.x && t.y === s.y && t.spread === s.spread && sameColour(t.colour, s.colour));
-      if (s.inset && offset > 0 && hard) {
-        if (!hued(s.colour) && offset <= 1 && !s.spread) continue;
-        if (!had) out.push(`an inset bar (box-shadow ${s.x}px ${s.y}px, ${s.colour})`);
-      } else if (s.inset && !offset && s.spread > 0 && hard && !focused && !had) {
-        out.push(`an inset outline ring (${s.spread}px, ${s.colour})`);
-      } else if (!s.inset && hard && !focused && !had && (offset > 0 || s.spread > 0)) {
-        out.push(`a hard outer line (box-shadow ${s.x}px ${s.y}px ${s.blur}px ${s.spread}px, ${s.colour})`);
-      }
+    const sibOwn = ss ? boxMarks(ss, { sides: false }) : [];
+    for (const m of boxMarks(cs, { focused, sides: false })) {
+      if (m.key.startsWith("outline")) continue; // below, with its own wording
+      if (!hasMark(sibOwn, m)) out.push(m.text);
     }
     // A border side: one the sibling does not have, wider than the sibling's,
     // or in a colour (a hue) the sibling's is not. A grey 1px side the sibling
-    // lacks is a segmented group's divider (`.x + .x { border-left }` — the
-    // first button has none), not a mark.
+    // lacks is a divider when another unselected one of its kind wears it (a
+    // segmented group's `.x + .x { border-left }`, a list's rule between
+    // rows — the first has none); a grey hairline only the selected tab has
+    // is an underline.
+    const others = el.parentElement
+      ? [...el.parentElement.children].filter((n) => n !== el && n !== sib && n.tagName === el.tagName && !n.matches(SELECTED_STATE) && n.getClientRects().length > 0).slice(0, 12).map((n) => getComputedStyle(n))
+      : [];
+    // A grey hairline all round is the thing's own edge (a pill, a card), and
+    // an OPEN thing's grey frame (an expanded section's rules) is the
+    // disclosure's structure; a hued side is a mark either way.
+    const sidesOn = ["Top", "Right", "Bottom", "Left"].filter((sd) =>
+      (parseFloat(cs[`border${sd}Width`]) || 0) > 0 && !/none|hidden/.test(cs[`border${sd}Style`]) && paints(cs[`border${sd}Color`]));
+    const greyEdge = sidesOn.length === 4 || !el.matches(CHOSEN_STATE);
     for (const side of ["Top", "Right", "Bottom", "Left"]) {
       const w = parseFloat(cs[`border${side}Width`]) || 0;
       const col = cs[`border${side}Color`];
@@ -441,7 +550,11 @@
       const sw = ss ? parseFloat(ss[`border${side}Width`]) || 0 : 0;
       const sv = ss && sw > 0 && !/none|hidden/.test(ss[`border${side}Style`]) && paints(ss[`border${side}Color`]);
       if (!sv) {
-        if (hued(col) || w > 1) out.push(`a ${side.toLowerCase()} border (${w}px ${col}) its sibling does not have`);
+        // (A grey hairline down a side is a segmented group's divider,
+        // `.x + .x { border-left }`: in a group of two, no other has it.)
+        const divider = !hued(col) && w <= 1 && (greyEdge || side === "Left" || side === "Right" ||
+          others.some((o) => (parseFloat(o[`border${side}Width`]) || 0) > 0 && !/none|hidden/.test(o[`border${side}Style`]) && paints(o[`border${side}Color`])));
+        if (!divider) out.push(`a ${side.toLowerCase()} border (${w}px ${col}) its sibling does not have`);
       } else if (w > sw + 0.5) {
         out.push(`a ${side.toLowerCase()} border ${w}px wide where its sibling's is ${sw}px`);
       } else if (hued(col) && !sameColour(col, ss[`border${side}Color`])) {
@@ -461,7 +574,15 @@
     // DRAWN: the sibling's copy at opacity 0 is no copy at all.
     for (const pe of ["::before", "::after"]) {
       const mine = strip(el, pe);
-      if (mine && !strip(sib, pe)) out.push(`a ${pe} strip (${mine})`);
+      const hairlineShared = () =>
+        el.parentElement && [...el.parentElement.children].some((n) => n !== el && n.tagName === el.tagName && !n.matches(SELECTED_STATE) && strip(n, pe));
+      if (mine && !strip(sib, pe) && !(mine.startsWith("hairline") && hairlineShared())) out.push(`a ${pe} strip (${mine})`);
+      // …and one of any size carrying a side, a bar or a ring: a full-size
+      // overlay drew the owner's GO TO bar past the first guard.
+      const theirs = sib ? overlayMarks(sib, pe) : null;
+      for (const m of overlayMarks(el, pe) || []) {
+        if (!hasMark(theirs, m)) out.push(`a ${pe} overlay with ${m.text}`);
+      }
     }
     // Inside it: an underline or overline on its text, a child element used as
     // a bar, a child's own strip, a child's border on one side — anything its
@@ -483,7 +604,29 @@
       if (bar && !(twinShown && barOf(twin))) out.push(`a child bar (${name} ${bar})`);
       for (const pe of ["::before", "::after"]) {
         const mine = strip(k, pe);
-        if (mine && !(twinShown && strip(twin, pe))) out.push(`a ${pe} strip on ${name} (${mine})`);
+        // (A part's grey hairline is a divider inside it.)
+        if (mine && !mine.startsWith("hairline") && !(twinShown && strip(twin, pe))) out.push(`a ${pe} strip on ${name} (${mine})`);
+        const theirs = twinShown ? overlayMarks(twin, pe) : null;
+        for (const m of overlayMarks(k, pe) || []) {
+          if (!hasMark(theirs, m)) out.push(`a ${pe} overlay on ${name} with ${m.text}`);
+        }
+      }
+      // A part's own shadow (an inset underline on a label), drop-shadow or
+      // outline, against its twin's shape: a part's ring follows its row's
+      // fill (an avatar's hole), so its colour is not compared.
+      {
+        const kc0 = getComputedStyle(k);
+        const tm = twinShown ? boxMarks(getComputedStyle(twin), { part: true, sides: false }) : [];
+        // A knockout in the colour of the ground it sits on (an avatar's
+        // ring in the page's own colour) shows as nothing.
+        const under = k.parentElement ? groundsOf(k.parentElement)[0] : null;
+        const knockout = (col) => {
+          const q = rgbaOf(col);
+          return !!q && !!under && q.a > 0.9 && Math.abs(q.r - under.r) + Math.abs(q.g - under.g) + Math.abs(q.b - under.b) < 0.06;
+        };
+        for (const m of boxMarks(kc0, { part: true, focused: k.matches(":focus-visible"), sides: false })) {
+          if (!hasMark(tm, m, true) && !knockout(m.colour)) out.push(`${m.text} on ${name}`);
+        }
       }
       // A rule on one to three sides of a part; a chip's full outline is a
       // chip, not a line.
@@ -689,10 +832,87 @@
   const selectedTextReads = (c, marked) => {
     const told = new Set();
     for (const el of marked) {
+      // An open menu's trigger is judged for lines; its words are the control's own.
+      if (!el.matches(CHOSEN_STATE)) continue;
       for (const u of unreadableIn(el)) {
         if (told.has(u.el)) continue;
         told.add(u.el);
         c.ok(false, `${describeEl(u.el)} in ${describeEl(el)} reads ${u.ratio.toFixed(2)}:1 (needs ${u.need}): ${u.ink} on ${u.ground}`);
+      }
+    }
+  };
+
+  // ── …and under the pointer ───────────────────────────────────────────────
+  // The selected row you hover is still the selected row: it has to read,
+  // and it must not grow a line. A page cannot hover an element, so every
+  // :hover rule on the page — renderer.css (readable because check.mjs runs
+  // Chrome with --allow-file-access-from-files) and every shadow root's —
+  // is rewritten in place to :is(:hover, .gs-force-hover), which keeps its
+  // order and its weight, and the class goes on the element and everything
+  // above it. Hover on a lit thing was never measured, and a fix raised the
+  // rebase row's hover past what its words could take.
+  const FORCE = "gs-force-hover";
+  /** Rewrites the page's :hover rules; returns whether the document's own sheet could be read. */
+  const prepareHover = () => {
+    const walk = (list) => {
+      for (const r of list) {
+        if (r.selectorText && r.selectorText.includes(":hover") && !r.selectorText.includes(FORCE)) {
+          try { r.selectorText = r.selectorText.replace(/:hover(?![\w-])/g, `:is(:hover, .${FORCE})`); } catch { /* not writable */ }
+        }
+        if (r.cssRules && r.cssRules.length) walk(r.cssRules);
+      }
+    };
+    let readable = false;
+    for (const sh of document.styleSheets) {
+      try { walk(sh.cssRules); readable = true; } catch { /* a sheet from elsewhere */ }
+    }
+    for (const root of shadowRoots()) {
+      const sheets = [...(root.adoptedStyleSheets || []), ...[...root.querySelectorAll("style")].map((x) => x.sheet).filter(Boolean)];
+      for (const sh of sheets) {
+        try { walk(sh.cssRules); } catch { /* unreadable */ }
+      }
+    }
+    return readable;
+  };
+  const setHover = (el, on) => {
+    for (let n = el; n && n.classList; n = n.parentElement || n.getRootNode?.().host || null) n.classList.toggle(FORCE, on);
+  };
+  /**
+   * Every selected element, hovered: its words read (AA) on the hover's
+   * fill, and it draws no line under the pointer that its sibling has
+   * neither at rest nor hovered (a hover every row wears is not a mark).
+   * Only what the pointer changes is reported.
+   */
+  const underThePointer = (c, marked) => {
+    c.ok(prepareHover(), "the page's stylesheet can be read, so hover can be forced (check.mjs passes --allow-file-access-from-files)");
+    const told = new Set();
+    for (const el of marked) {
+      const sib = unselectedSibling(el);
+      const restLines = new Set(selectionLines(el, sib));
+      const restWords = new Set(el.matches(CHOSEN_STATE) ? unreadableIn(el).map((u) => u.el) : []);
+      setHover(el, true);
+      try {
+        if (el.matches(CHOSEN_STATE)) {
+          for (const u of unreadableIn(el)) {
+            if (restWords.has(u.el) || told.has(u.el)) continue;
+            told.add(u.el);
+            c.ok(false, `${describeEl(u.el)} in ${describeEl(el)} under the pointer reads ${u.ratio.toFixed(2)}:1 (needs ${u.need}): ${u.ink} on ${u.ground}`);
+          }
+        }
+        // With no unselected sibling there is nothing to tell a hover every
+        // one of its kind wears from a mark of the state (the static guard
+        // reads the :hover rules of a state).
+        if (sib) {
+          const vsRest = selectionLines(el, sib);
+          setHover(sib, true);
+          const vsHovered = new Set(selectionLines(el, sib));
+          for (const line of vsRest) {
+            if (vsHovered.has(line) && !restLines.has(line)) c.ok(false, `${describeEl(el)} under the pointer is marked with ${line}`);
+          }
+        }
+      } finally {
+        if (sib) setHover(sib, false);
+        setHover(el, false);
       }
     }
   };
@@ -19397,6 +19617,7 @@
       const marked = selectedOnScreen();
       litNotLined(c, marked, window.__GS_ARG);
       selectedTextReads(c, marked);
+      underThePointer(c, marked);
     },
     /**
      * The same sweep INSIDE the shared views' shadow roots — the graph's
@@ -19416,7 +19637,103 @@
         root.appendChild(st);
       }
       await settle(120);
-      litNotLined(c, onScreen(shadowRoots().flatMap((r) => [...r.querySelectorAll(SELECTED_STATE)])), window.__GS_ARG);
+      const marked = onScreen(shadowRoots().flatMap((r) => [...r.querySelectorAll(SELECTED_STATE)]));
+      litNotLined(c, marked, window.__GS_ARG);
+      // …and every word on them reads, at rest and under the pointer (the
+      // "+1" chip on the lit commit read 4.29:1 in light, never measured).
+      selectedTextReads(c, marked);
+      underThePointer(c, marked);
+    },
+    /**
+     * The guard itself has to SEE every shape a line can take: a review drew
+     * the owner's GO TO bar through a full-size ::before, blurred an inset bar
+     * 2px, grew a ::before from width 0, put an underline on a label by
+     * box-shadow and a drop-shadow under a segment, and the sweep passed all
+     * of it. Each shape here is a small list of rows, one of them selected
+     * and wearing the shape; selectionLines() must report it (a hover shape,
+     * with the pointer forced onto it). The rows beside them — a tint and a
+     * glow, a soft lift, the neutral sheen, a divider every row has, an
+     * avatar's ring in the page's colour, a hover that deepens — must not be.
+     */
+    "the-line-guard-sees-every-shape": async (f) => {
+      const c = check(f);
+      await settle(200);
+      noAnimation();
+      const A = "#7c5cf0";
+      const SHAPES = [
+        ["a hard inset bar", `.X.is-selected { box-shadow: inset 3px 0 0 ${A}; }`],
+        ["an inset bar blurred 2px", `.X.is-selected { box-shadow: inset 3px 0 2px ${A}; }`],
+        ["an inset bar blurred 4px", `.X.is-selected { box-shadow: inset 2px 0 4px ${A}; }`],
+        ["a hard outer underline", `.X.is-selected { box-shadow: 0 2px 0 ${A}; }`],
+        ["an outer ring", `.X.is-selected { box-shadow: 0 0 0 1px ${A}; }`],
+        ["a drop-shadow filter underline", `.X.is-selected { filter: drop-shadow(0 2px 0 ${A}); }`],
+        ["a full-size ::after carrying a border side", `.X::after { content: ""; position: absolute; inset: 0; pointer-events: none; } .X.is-selected::after { border-bottom: 2px solid ${A}; }`],
+        ["a full-size ::before carrying an inset bar (the GO TO bar)", `.X.is-selected::before { content: ""; position: absolute; inset: 0; box-shadow: inset 3px 0 0 ${A}; pointer-events: none; }`],
+        ["a ::before grown from width 0", `.X::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 0; background: ${A}; } .X.is-selected::before { width: 3px; }`],
+        ["an ::after grown from height 0", `.X::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 0; background: ${A}; } .X.is-selected::after { height: 2px; }`],
+        ["a ::before at opacity 0 switched on", `.X::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 3px; background: ${A}; opacity: 0; } .X.is-selected::before { opacity: 1; }`],
+        ["an inset underline on a label", `.X.is-selected .lbl { box-shadow: inset 0 -2px 0 ${A}; }`],
+        ["an outline on a label", `.X.is-selected .lbl { outline: 1px solid ${A}; outline-offset: 2px; }`],
+        ["a border under a label", `.X.is-selected .lbl { border-bottom: 2px solid ${A}; }`],
+        ["an underline on a label", `.X.is-selected .lbl { text-decoration: underline; }`],
+        ["a child made into a bar", `.X.is-selected .lbl { display: inline-block; width: 3px; height: 16px; background: ${A}; overflow: hidden; }`],
+        ["a child bar grown from width 0", `.X .lbl { display: inline-block; width: 0; height: 16px; background: ${A}; overflow: hidden; } .X.is-selected .lbl { width: 3px; }`],
+        ["a gradient with a hard stop", `.X.is-selected { background: linear-gradient(90deg, ${A} 0 3px, transparent 3px); }`],
+        ["a border side", `.X.is-selected { border-left: 2px solid ${A}; }`],
+        ["an accent outline", `.X.is-selected { outline: 1px solid ${A}; outline-offset: -1px; }`],
+        ["a grey hairline underline only the selected one has", `.X.is-selected { border-bottom: 1px solid var(--app-fg, #888); }`],
+        ["a grey hairline ::after only the selected one has", `.X.is-selected::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 2px; height: 1px; background: #888; }`],
+      ];
+      const FINE = [
+        ["a tint and a glow", `.X.is-selected { box-shadow: 0 0 16px -4px color-mix(in srgb, ${A} 70%, transparent); }`],
+        ["the neutral sheen", `.X.is-selected { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055); }`],
+        ["a soft lift", `.X.is-selected { box-shadow: 0 1px 3px color-mix(in srgb, ${A} 32%, transparent), 0 0 12px -3px color-mix(in srgb, ${A} 60%, transparent); }`],
+        ["a soft drop-shadow filter", `.X.is-selected { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4)); }`],
+        ["a divider every row has", `.X { border-bottom: 1px solid #444; }`],
+        ["a rule between rows (the first has none)", `.X + .X { border-top: 1px solid #444; }`],
+        ["an avatar's ring in the page's colour", `.X .lbl { outline: 2px solid var(--app-bg); }`],
+        ["a hover that deepens the tint", `.X.is-selected:hover { background: color-mix(in srgb, ${A} 32%, transparent); }`],
+      ];
+      const HOVER = [["a bar only under the pointer", `.X.is-selected:hover { box-shadow: inset 3px 0 0 ${A}; }`]];
+      const all = [...SHAPES.map((x, i) => ["shape-" + i, ...x]), ...HOVER.map((x, i) => ["hover-" + i, ...x]), ...FINE.map((x, i) => ["fine-" + i, ...x])];
+      const st = document.createElement("style");
+      st.textContent =
+        ".gsg-grp { position: relative; width: 320px; } .gsg-row { position: relative; display: flex; gap: 6px; align-items: center; height: 22px; padding: 0 8px; color: var(--vscode-foreground); } .gsg-row.is-selected { background: var(--sel-fill); }\n" +
+        all.map(([k, , css]) => css.replace(/\.X\b/g, ".gsg-row." + k)).join("\n");
+      document.head.appendChild(st);
+      const host = document.createElement("div");
+      host.style.cssText = "position: fixed; left: 0; top: 0; z-index: 99999; background: var(--app-bg); max-height: 100vh; overflow: auto";
+      const groups = new Map();
+      for (const [k] of all) {
+        const g = document.createElement("div");
+        g.className = "gsg-grp";
+        const rows = [0, 1, 2].map((i) => {
+          const r = document.createElement("div");
+          r.className = "gsg-row " + k + (i === 1 ? " is-selected" : "");
+          r.innerHTML = '<span class="lbl">Row ' + i + '</span><span class="word">feature/checkout</span>';
+          g.appendChild(r);
+          return r;
+        });
+        host.appendChild(g);
+        groups.set(k, rows);
+      }
+      document.body.appendChild(host);
+      c.ok(prepareHover(), "hover can be forced (the stylesheets can be read)");
+      for (const [k, what, css] of all) {
+        const [before, sel] = groups.get(k);
+        let lines = selectionLines(sel, before);
+        if (k.startsWith("hover-")) {
+          setHover(sel, true);
+          const vsRest = selectionLines(sel, before);
+          setHover(before, true);
+          const vsHovered = new Set(selectionLines(sel, before));
+          setHover(before, false);
+          setHover(sel, false);
+          lines = vsRest.filter((l) => vsHovered.has(l) && !lines.includes(l));
+        }
+        if (k.startsWith("fine-")) c.eq(lines.join("; "), "", `not a line: ${what}`);
+        else c.ok(lines.length > 0, `seen: ${what} (${css})`);
+      }
     },
     /**
      * The contrast half of the sweep on its own (the sweep runs it too): every
@@ -19432,6 +19749,7 @@
       const want = window.__GS_ARG;
       if (want) c.ok(marked.some((el) => el.matches(want)), `precondition: the scene reaches ${want}`);
       selectedTextReads(c, marked);
+      underThePointer(c, marked);
     },
     /**
      * A segmented control's selected pill keeps its SHAPE with no line. Light
@@ -19461,6 +19779,7 @@
       c.ok(glow.length > 0, `it glows in the accent past its own edge (${cs.boxShadow})`);
       c.eq(selectionLines(on, off).join("; "), "", "it is marked with no line of any kind");
       c.eq(unreadableIn(on).map((u) => `"${u.text}" ${u.ratio.toFixed(2)}:1`).join("; "), "", "its label reads");
+      underThePointer(c, [on]);
     },
   };
 })();

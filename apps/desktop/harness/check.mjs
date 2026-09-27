@@ -929,16 +929,20 @@ const CASES = [
     ["no-selection-is-drawn-as-a-line", scene, { arg, extra, theme: "light" }],
   ]),
   // The shared views (packages/webview-ui, in shadow roots the light-DOM
-  // sweep cannot see): the Commits view's selected commit still wears a 2px
-  // accent bar down its left edge, and the branch popover's active preset an
-  // accent outline. Restyled with the extension; pending until that lands.
+  // sweep cannot see): the Commits view's selected commit (it wore a 2px
+  // accent bar down its left edge) and the branch popover's active preset
+  // (an accent outline), both lit now, with every word on them read at
+  // rest and under the pointer.
   ...[
     ["graph~click:.row%20.subject", ".row.selected"],
     ["graph~click:.gh-branches", ".gh-preset.active"],
   ].flatMap(([scene, arg]) => [
-    ["no-selection-is-drawn-as-a-line-in-shared-views", scene, { arg, pending: true }],
-    ["no-selection-is-drawn-as-a-line-in-shared-views", scene, { arg, theme: "light", pending: true }],
+    ["no-selection-is-drawn-as-a-line-in-shared-views", scene, { arg }],
+    ["no-selection-is-drawn-as-a-line-in-shared-views", scene, { arg, theme: "light" }],
   ]),
+  // The line guard sees every shape a line can take (and none that is not).
+  ["the-line-guard-sees-every-shape", "dashboard"],
+  ["the-line-guard-sees-every-shape", "dashboard", { theme: "light" }],
   // A segmented control's selected pill keeps its shape without a line — in
   // light it had lost it (1.03:1 off its neighbour).
   ...[
@@ -971,6 +975,10 @@ function run(scene, checkId, opts = {}) {
       headlessChromeArgs([
         "--disable-gpu",
         "--hide-scrollbars",
+        // The page is file://, and a file:// page cannot read its own
+        // stylesheet's rules without this: the selection sweeps rewrite its
+        // :hover rules to measure a lit thing under the pointer.
+        "--allow-file-access-from-files",
         profile.flag,
         `--window-size=${width},${height}`,
         // A case that has to watch a poller across a tab round trip needs
