@@ -10,7 +10,7 @@ import { PrContentProvider, PR_SCHEME } from "./prContentProvider";
 import { PrPage, type PrPageOpen } from "./prPage";
 import { ReviewController } from "./reviewMode";
 import { checkoutPullRequest } from "./checkoutPr";
-import { createPullRequest } from "./createPr";
+import { PrCreatePage } from "./prCreatePage";
 import { listGitHubRemotes, resolveGitHubContext, type GitHubRepoContext } from "./repoContext";
 
 // Wires the pull request feature: GitHub auth + API, the Pull Requests list (a
@@ -90,6 +90,16 @@ export function registerPrFeature(
 
   const openPage = (pr: PullRequest, ctx: GitHubRepoContext | undefined, open: PrPageOpen = {}, ref?: { owner: string; repo: string }) =>
     PrPage.show(pageDeps, ref ?? { owner: ctx!.owner, repo: ctx!.repo }, pr.number, ctx, { preview: pr, ...open });
+
+  const createDeps = {
+    api,
+    graphql,
+    brain,
+    extensionUri: context.extensionUri,
+    // The new pull request joins the list: a row patch, not a reload.
+    list,
+    openPr: (pr: PullRequest, ctx: GitHubRepoContext) => openPage(pr, ctx),
+  };
 
   const resolvePr = async (arg: PrCommandArg | undefined): Promise<{ pr: PullRequest; ctx: GitHubRepoContext } | undefined> => {
     if (arg && arg.pr) {
@@ -177,15 +187,16 @@ export function registerPrFeature(
         void list.refresh();
       }
     }),
-    vscode.commands.registerCommand("gitstudio.pr.create", () =>
-      createPullRequest(repos, brain, api, context.extensionUri, (pr) => {
-        // The new PR joins the list — a row patch, not a reload.
-        const [owner, repo] = (pr.base.repoFullName ?? "").split("/");
-        if (owner && repo) {
-          list.addPr(owner, repo, pr);
-        }
-      }),
-    ),
+    vscode.commands.registerCommand("gitstudio.pr.create", (arg?: { head?: string }) => {
+      // One form, in an editor tab: where it goes, from which branch, what it
+      // says and who looks at it — and what it will have.
+      const entry = repos.getActive();
+      if (!entry) {
+        void vscode.window.showInformationMessage("Open a Git repository to open a pull request from it.");
+        return;
+      }
+      PrCreatePage.show(createDeps, entry, typeof arg?.head === "string" ? { head: arg.head } : {});
+    }),
 
     // ── Item actions ─────────────────────────────────────────────────────────────
     vscode.commands.registerCommand("gitstudio.pr.openDescription", async (arg?: PrCommandArg) => {

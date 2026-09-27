@@ -30,6 +30,7 @@ import { tmpdir } from "node:os";
 import { test, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { installFakeGitHub, rawPull, type FakeGitHub } from "./fakeGitHub";
+import { configuredRemotes } from "./prGitWorld";
 
 type Resolver = { _resolveFilename: (request: unknown, ...rest: unknown[]) => string };
 const resolver = Module as unknown as Resolver;
@@ -139,22 +140,7 @@ function world() {
   };
   const tip1 = push(hub, "feature-7", "main", "pr: first", ["refs/pull/7/head"]);
   const ctx = new GitContext({ root: work });
-  // `git remote -v` shows a URL after insteadOf; the clone's CONFIG says
-  // github.com, and that is what a real clone's list reads.
-  const real = ctx.remotes;
-  (ctx as any).remotes = Object.assign(Object.create(Object.getPrototypeOf(real)), real, {
-    list: async () => {
-      const out = git("config", "--get-regexp", "^remote\\..*\\.url$");
-      return out
-        .split("\n")
-        .filter(Boolean)
-        .map((l) => {
-          const [key, url] = l.split(" ");
-          const name = key.replace(/^remote\./, "").replace(/\.url$/, "");
-          return { name, fetchUrl: url, pushUrl: url };
-        });
-    },
-  });
+  configuredRemotes(ctx, work);
   contexts.push({ dispose: () => ctx.dispose() });
   const entry = { root: work, ctx };
   const ghCtx = { owner: "acme", repo: "app", remoteName: "origin", entry };

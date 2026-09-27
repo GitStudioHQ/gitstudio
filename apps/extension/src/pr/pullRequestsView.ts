@@ -468,6 +468,12 @@ export class PullRequestsViewProvider implements vscode.WebviewViewProvider, vsc
     return r?.kind === "github" && this.repos.getActive()?.root === r.root ? contextFor(r.target, r.entry) : undefined;
   }
 
+  /** The repositories the list offers for the active clone, and the one it shows — undefined until it knows. */
+  targetsNow(): { targets: PrTarget[]; target: PrTarget } | undefined {
+    const r = this.repo;
+    return r?.kind === "github" && this.repos.getActive()?.root === r.root ? { targets: r.targets, target: r.target } : undefined;
+  }
+
   /** A row of the list on screen, with the context its commands act in. */
   pullRequestFor(n: number): { pr: PullRequest; ctx: GitHubRepoContext } | undefined {
     const r = this.repo;

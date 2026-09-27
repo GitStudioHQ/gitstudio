@@ -61,6 +61,57 @@ export function desktopPrKind(pr: PrStateFields): "open-pr" | "draft" | "merged"
   return k === "open" ? "open-pr" : k;
 }
 
+// ── Actions ─────────────────────────────────────────────────────────────────
+
+/** Everything a pull request surface lets you do, by one name. */
+export type PrActionId =
+  | "open"
+  | "checkout"
+  | "review"
+  | "approve"
+  | "merge"
+  | "markReady"
+  | "updateBranch"
+  | "close"
+  | "reopen"
+  | "copyLink"
+  | "openOnGitHub"
+  | "refresh"
+  | "more"
+  | "newPullRequest";
+
+/**
+ * The words and codicon for each action — the desktop's words, so a pull
+ * request is acted on in the same words in both products: "Checkout", not
+ * "Check Out"; "Mark ready", "Update branch", "Copy link" in sentence case;
+ * "Merge" and "Review" plain, a chevron beside them where they open a box or a
+ * menu. `title` is what the control says on hover, in words.
+ */
+export const PR_ACTIONS: Record<PrActionId, { label: string; icon: string; title: string }> = {
+  open: { label: "Open", icon: "git-pull-request", title: "Open the pull request's page" },
+  checkout: { label: "Checkout", icon: "git-branch", title: "Check out its branch here, tracking it on GitHub, so a push reaches the pull request" },
+  review: { label: "Review", icon: "comment", title: "Comment, approve or request changes" },
+  approve: { label: "Approve", icon: "check", title: "Approve this pull request — opens the review box" },
+  merge: { label: "Merge", icon: "git-merge", title: "Merge this pull request — choose how" },
+  markReady: { label: "Mark ready", icon: "eye", title: "Convert this draft to ready for review" },
+  updateBranch: { label: "Update branch", icon: "git-merge", title: "Merge the base branch into this one, on GitHub" },
+  close: { label: "Close pull request", icon: "git-pull-request-closed", title: "Close it without merging (you can reopen it)" },
+  reopen: { label: "Reopen pull request", icon: "git-pull-request", title: "Reopen this pull request" },
+  copyLink: { label: "Copy link", icon: "copy", title: "Copy the pull request's link" },
+  openOnGitHub: { label: "Open on GitHub", icon: "link-external", title: "Open this pull request on GitHub" },
+  refresh: { label: "Refresh", icon: "refresh", title: "Read the pull request again" },
+  more: { label: "More actions", icon: "ellipsis", title: "More actions" },
+  newPullRequest: { label: "New pull request", icon: "git-pull-request", title: "Open a new pull request" },
+};
+
+/** A pull request page's sections — the desktop's tabs, in its words and glyphs. */
+export const PR_TABS = {
+  conversation: { label: "Conversation", icon: "comment-discussion" },
+  commits: { label: "Commits", icon: "git-commit" },
+  checks: { label: "Checks", icon: "play" },
+  files: { label: "Files", icon: "code" },
+} as const;
+
 // ── Reviews ─────────────────────────────────────────────────────────────────
 
 /**

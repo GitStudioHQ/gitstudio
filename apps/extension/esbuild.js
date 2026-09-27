@@ -189,6 +189,17 @@ async function main() {
     format: "iife",
   });
 
+  // A new pull request's form (the shared webview-ui PullRequestCreate). Its
+  // .css import emits dist/webview/pr-create.css alongside the bundle; the
+  // form's editor tab (src/pr/prCreatePage.ts) links both.
+  const prCreateCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(webviewUiSrc, "pr/create-main.ts")],
+    outfile: path.resolve(__dirname, "dist/webview/pr-create.js"),
+    platform: "browser",
+    format: "iife",
+  });
+
   const contexts = [
     extensionCtx,
     webviewCtx,
@@ -200,6 +211,7 @@ async function main() {
     conflictsCtx,
     prListCtx,
     prPageCtx,
+    prCreateCtx,
   ];
 
   if (watch) {

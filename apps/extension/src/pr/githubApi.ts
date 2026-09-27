@@ -678,6 +678,16 @@ export class GitHubApi {
     return (raw?.files ?? []).map(mapFile);
   }
 
+  /** `POST /repos/{owner}/{repo}/issues/{n}/labels` — add labels (a pull request is an issue here). */
+  async addLabels(owner: string, repo: string, number: number, labels: string[]): Promise<void> {
+    await this.request("POST", `/repos/${enc(owner)}/${enc(repo)}/issues/${number}/labels`, { labels }, { interactiveAuth: true });
+  }
+
+  /** `POST /repos/{owner}/{repo}/issues/{n}/assignees`. */
+  async addAssignees(owner: string, repo: string, number: number, assignees: string[]): Promise<void> {
+    await this.request("POST", `/repos/${enc(owner)}/${enc(repo)}/issues/${number}/assignees`, { assignees }, { interactiveAuth: true });
+  }
+
   /** `POST /repos/{owner}/{repo}/pulls/{n}/requested_reviewers`. */
   async requestReviewers(
     owner: string,

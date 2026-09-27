@@ -142,6 +142,10 @@ export interface FakeRepo {
   methods?: ("merge" | "squash" | "rebase")[];
   /** What a pull request's page reads beyond its REST fixture, per number. */
   page?: Record<number, FakePage>;
+  /** The New pull request form's reading: templates, branches, default branch. */
+  templates?: { filename: string; body: string }[];
+  branches?: string[];
+  defaultBranch?: string;
 }
 
 /** A pull request's page, beyond what its REST fixture says. */
@@ -370,6 +374,29 @@ export function graphqlWorld(
               isFork: !!world.isFork,
               defaultBranchRef: { name: "main" },
               parent: world.parent ? { nameWithOwner: world.parent, url: `https://github.com/${world.parent}` } : null,
+            },
+          },
+        },
+      };
+    }
+    if (/pullRequestTemplates/.test(q)) {
+      // The New pull request form's one question.
+      const repo = `${v.owner}/${v.name}`;
+      const world = repos[repo];
+      if (!world) return { body: { data: { viewer: { login: viewer, avatarUrl: null }, repository: null }, errors: [{ type: "NOT_FOUND", message: `Could not resolve to a Repository with the name '${repo}'.` }] } };
+      const branches = world.branches ?? [world.defaultBranch ?? "main"];
+      return {
+        body: {
+          data: {
+            viewer: { login: viewer, avatarUrl: null },
+            repository: {
+              nameWithOwner: repo,
+              viewerPermission: world.permission ?? "WRITE",
+              defaultBranchRef: { name: world.defaultBranch ?? "main" },
+              pullRequestTemplates: world.templates ?? [],
+              refs: { totalCount: branches.length, nodes: branches.map((name) => ({ name })) },
+              labels: { totalCount: world.labels?.length ?? 0, nodes: world.labels ?? [] },
+              assignableUsers: { totalCount: world.people?.length ?? 0, nodes: (world.people ?? []).map((login) => ({ login, avatarUrl: null })) },
             },
           },
         },

@@ -523,3 +523,143 @@ export type PrPageMessageToHost =
   | { type: "submitReview"; event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES"; body: string }
   | { type: "discardReview" }
   | { type: "action"; action: PrListAction };
+
+// ── A new pull request ───────────────────────────────────────────────────────
+//
+// THE FORM CONTRACT (packages/webview-ui/src/pr/create-main.ts): the same as
+// the page's — `ready` from the form once it listens, then a full
+// `{ type: "state", state }` from the host after every change. The form keeps
+// what is typed and picked (title, description, draft, reviewers, labels,
+// assignees) and takes the host's PROPOSED title and description only while
+// the field is untouched: `proposed.key` changes when what they were proposed
+// from (head, base, template) does.
+
+/** A commit the pull request will have. */
+export interface PrCreateCommit {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  author: string;
+  /** ISO time it was committed. */
+  date: string;
+}
+
+/** A file the pull request will change, against the merge base. */
+export interface PrCreateFile {
+  path: string;
+  /** A rename's old path. */
+  previousPath?: string;
+  status: PrPageFile["status"];
+  additions: number;
+  deletions: number;
+  binary: boolean;
+}
+
+export interface PrCreateLabel {
+  name: string;
+  /** Six hex digits, no `#`. */
+  color: string;
+  description?: string;
+}
+
+/** Where the pull request's branch is, or will be, on GitHub. */
+export interface PrCreateHead {
+  /** The local branch. */
+  branch: string;
+  /** The remote it is (or will be) pushed to. */
+  remote?: string;
+  /** The owner of that remote's repository — a fork's owner. */
+  owner?: string;
+  /** What GitHub is sent as the head: `branch`, or `owner:branch` from a fork. */
+  ref: string;
+  /**
+   * `new`: not on the remote yet. `ahead`: commits to push. `pushed`: up to
+   * date there. `diverged`: the remote has commits this branch doesn't.
+   * `unknown`: no remote to push it to.
+   */
+  push: "new" | "ahead" | "pushed" | "diverged" | "unknown";
+  ahead: number;
+  behind: number;
+}
+
+export interface PrCreateViewState {
+  seq: number;
+  /** `loading`: the first read is on its way. `message`: nothing to create from — why, and what to do. */
+  status: "loading" | "ready" | "message";
+  message?: PrListMessage;
+  /** Said above the form: a read or a create that failed, and what can be done. */
+  notice?: PrListMessage;
+  /** The repositories it can be opened on; a switcher when there is more than one. */
+  targets: PrListTarget[];
+  /** The one it opens on ("owner/repo"). */
+  target: string;
+  viewer?: PrPerson;
+  /** The local branches it can be opened from. */
+  branches: { name: string; current: boolean }[];
+  head?: PrCreateHead;
+  /** The branches it can go into, the default first. */
+  bases: { name: string; isDefault: boolean }[];
+  base?: string;
+  compare: {
+    status: "idle" | "loading" | "ready" | "failed";
+    /** Newest first; at most the first few hundred. */
+    commits: PrCreateCommit[];
+    commitsTotal: number;
+    files: PrCreateFile[];
+    additions: number;
+    deletions: number;
+    error?: string;
+    /** Compared with the base as last fetched: GitHub couldn't be asked for it now. */
+    stale?: boolean;
+  };
+  /** What the form proposes for an untouched title and description. */
+  proposed: { key: string; title: string; body: string; bodyFrom: "template" | "commit" | "commits" | "empty" };
+  /** The repository's pull request templates. */
+  templates: { filename: string }[];
+  template?: string;
+  /** Who and what can be asked for, once read. */
+  options?: { labels: PrCreateLabel[]; people: PrPerson[]; truncated: boolean };
+  /** The viewer may set reviewers, labels and assignees on this repository. */
+  canSetMetadata: boolean;
+  /** Why they can't, in words. */
+  metadataNote?: string;
+  /** An open pull request this head already has. */
+  existing?: { number: number; title: string; url: string; draft: boolean };
+  /** Why Create can't run as things are, in words (nothing to compare, head is base, one exists). */
+  problem?: string;
+  busy?: "create" | "ai";
+  /** An AI draft of the description is offered. */
+  ai: boolean;
+  /** A drafted description, to put in the box (`seq` makes each one new). */
+  aiBody?: { seq: number; body: string };
+  refreshing: boolean;
+  /** The host's clock (epoch ms). */
+  now: number;
+}
+
+export type PrCreateHostMessage = { type: "state"; state: PrCreateViewState };
+
+export interface PrCreateRequest {
+  title: string;
+  body: string;
+  draft: boolean;
+  reviewers: string[];
+  assignees: string[];
+  labels: string[];
+}
+
+export type PrCreateMessageToHost =
+  | { type: "ready" }
+  | { type: "target"; id: string }
+  | { type: "head"; branch: string }
+  | { type: "base"; branch: string }
+  /** A template's filename, or null for none. */
+  | { type: "template"; filename: string | null }
+  /** Open a file's diff, base against head. */
+  | { type: "openFile"; path: string }
+  | { type: "openExisting" }
+  | { type: "aiDraft" }
+  | { type: "refresh" }
+  | { type: "cancel" }
+  | ({ type: "create" } & PrCreateRequest)
+  | { type: "action"; action: PrListAction };
