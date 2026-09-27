@@ -1,0 +1,29 @@
+apps/extension/harness/worktrees/shots.ts
+  s_26f5e669d3043c::t_50cc2875ec0636 128
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_e43b06e5b7daac 50-55,57-58,585
+apps/extension/test/worktreesDoors.test.ts
+  s_26f5e669d3043c::t_99e7cc208102fa 317-333
+packages/host-bridge/src/worktreeRemoval.ts
+  s_26f5e669d3043c::t_380641597c11e2 137-139,272-273,289,302,309
+packages/host-bridge/test/worktreeRemoval.test.ts
+  s_26f5e669d3043c::t_4f0fc6d88f10b2 31-33
+packages/host-bridge/test/worktreesProtocol.test.ts
+  s_26f5e669d3043c::t_7fc0b933a82dc3 285-300
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d9e225c7cbb2f392f6eb68fe164a6d3578ad3f46",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
