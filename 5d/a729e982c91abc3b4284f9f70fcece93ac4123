@@ -1,0 +1,21 @@
+apps/extension/package.json
+  s_26f5e669d3043c::t_dc8e145c7f0693 230-231,1585,1605,1654,1656-1667,1671,1675-1676,1680-1681,1685-1686,1690-1691,2338,2522-2525
+apps/extension/test/editorMenus.test.ts
+  s_26f5e669d3043c::t_499c7e975ad3d9 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5da729e982c91abc3b4284f9f70fcece93ac4123",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
