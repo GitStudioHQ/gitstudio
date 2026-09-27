@@ -142,6 +142,7 @@ const KEYS: Record<string, { code: string; vk: number }> = {
   Home: { code: "Home", vk: 36 },
   End: { code: "End", vk: 35 },
   Delete: { code: "Delete", vk: 46 },
+  Backspace: { code: "Backspace", vk: 8 },
   " ": { code: "Space", vk: 32 },
   F10: { code: "F10", vk: 121 },
 };

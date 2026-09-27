@@ -342,6 +342,19 @@ body {
   padding: 2px 8px 4px;
   min-height: 28px;
 }
+.wt-strip {
+  border-radius: var(--gs-radius-sm);
+}
+.wt-strip:focus {
+  outline: 1px solid var(--gs-accent);
+  outline-offset: -1px;
+}
+.wt-strip:focus:not(:focus-visible) {
+  outline: none;
+}
+.vscode-high-contrast .wt-strip:focus {
+  outline-color: var(--vscode-contrastActiveBorder, var(--gs-accent));
+}
 .wt-upstream {
   flex: 1 1 auto;
   min-width: 0;

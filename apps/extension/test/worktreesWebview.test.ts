@@ -235,7 +235,10 @@ test("the keyboard walks one tree: ↓ ↑ between rows and into an open one, �
   await page.key("ArrowRight");
   assert.deepEqual(await asked(page), [{ type: "expand", path: LOGIN }]);
   await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
-  await page.key("ArrowRight"); // open → into its first item
+  await page.key("ArrowRight"); // open → into its first item: its upstream, Pull and Push… in it
+  assert.equal(await focused(), "|wt-strip");
+  assert.equal(await page.eval<string>(`document.activeElement.getAttribute("aria-label")`), "origin/feature/login");
+  await page.key("ArrowDown");
   assert.equal(await focused(), "src/auth/login.ts|cr-file");
   await page.key("ArrowDown");
   assert.equal(await focused(), "src/auth/session.ts|cr-file");
@@ -252,6 +255,59 @@ test("the keyboard walks one tree: ↓ ↑ between rows and into an open one, �
   // One tab stop for the tree: every other item is -1.
   const tabStops = await page.eval<number>(`document.querySelectorAll('.wt-list [role=treeitem][tabindex="0"]').length`);
   assert.equal(tabStops, 1);
+});
+
+test("a screen reader hears one tree: an open row OWNS its group, and every item in the group is a treeitem — its upstream (with Pull and Push… in it), its files, its commits", { skip }, async () => {
+  const page = await open("dark", 320, 900);
+  await page.clickOn(`.wt-row[data-path="${LOGIN}"] .wt-name`);
+  await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
+  await page.settle(60);
+  await page.page.send("Accessibility.enable", {});
+  const { nodes } = (await page.page.send("Accessibility.getFullAXTree", {})) as {
+    nodes: { nodeId: string; ignored?: boolean; role?: { value: string }; name?: { value: string }; childIds?: string[]; properties?: { name: string; value: { value: unknown } }[] }[];
+  };
+  const byId = new Map(nodes.map((n) => [n.nodeId, n]));
+  // The children a screen reader sees: ignored and generic wrappers are looked through.
+  const kids = (id: string): typeof nodes => {
+    const out: typeof nodes = [];
+    for (const c of byId.get(id)?.childIds ?? []) {
+      const n = byId.get(c);
+      if (!n) continue;
+      if (n.ignored || n.role?.value === "generic" || n.role?.value === "none" || n.role?.value === "StaticText" || n.role?.value === "InlineTextBox") out.push(...kids(c));
+      else out.push(n);
+    }
+    return out;
+  };
+  const level = (n: (typeof nodes)[number]) => n.properties?.find((x) => x.name === "level")?.value.value;
+  const tree = nodes.find((n) => n.role?.value === "tree")!;
+  const login = kids(tree.nodeId).find((n) => n.role?.value === "treeitem" && (n.name?.value ?? "").startsWith("app-login"))!;
+  assert.ok(login, "the row is a treeitem of the tree");
+  assert.ok(!kids(tree.nodeId).some((n) => n.role?.value === "group"), "no group hangs off the tree beside its row");
+  const group = kids(login.nodeId).find((n) => n.role?.value === "group");
+  assert.ok(group, `the open row owns its group: ${kids(login.nodeId).map((n) => n.role?.value).join(", ")}`);
+  const items = kids(group!.nodeId);
+  assert.deepEqual([...new Set(items.map((n) => n.role?.value))], ["treeitem"], `only treeitems in the group: ${items.map((n) => `${n.role?.value} ${n.name?.value}`).join(" | ")}`);
+  assert.equal(items[0].name?.value, "origin/feature/login");
+  assert.deepEqual(kids(items[0].nodeId).filter((n) => n.role?.value === "button").map((n) => n.name?.value), [
+    "Pull into app-login, in its own folder",
+    "Review what app-login would push",
+  ]);
+  assert.deepEqual(items.map(level), items.map(() => 2), "all at level 2, under the row at level 1");
+  assert.equal(level(login), 1);
+});
+
+test("⌘⌫ on a row asks to remove it, as Delete does — a Mac's delete key sends Backspace", { skip }, async () => {
+  const page = await open();
+  await page.eval(`document.querySelector('.wt-row[data-path="/code/app-spike"]').focus()`);
+  await page.clearPosted();
+  await page.key("Backspace");
+  assert.deepEqual(await asked(page), [], "Backspace alone is not a delete");
+  await page.key("Backspace", { with: ["meta"] });
+  assert.deepEqual(await asked(page), [{ type: "action", path: "/code/app-spike", action: "remove" }]);
+  await page.eval(`document.querySelector('.wt-row[data-path="/code/app-old"]').focus()`);
+  await page.clearPosted();
+  await page.key("Backspace", { with: ["meta"] });
+  assert.deepEqual(await asked(page), [{ type: "action", path: "/code/app-old", action: "forget" }]);
 });
 
 test("More: every action in words; one it can't take is shown with the reason; Escape gives the row back the keyboard", { skip }, async () => {

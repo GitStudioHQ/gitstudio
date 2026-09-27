@@ -59,6 +59,9 @@ interface RowState {
   sig: string;
 }
 
+/** For ids a row's group is owned by (aria-owns). */
+let groupSeq = 0;
+
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -388,6 +391,10 @@ export class WorktreesView {
     const details = el("div", "wt-details cr-list");
     details.setAttribute("role", "group");
     details.hidden = true;
+    // The row OWNS its group: a screen reader hears its files and commits as
+    // the row's, not as more items of the tree beside it.
+    details.id = `wt-group-${++groupSeq}`;
+    line.setAttribute("aria-owns", details.id);
     item.append(line, details);
     const s: RowState = { row: r, el: item, line, details, open: false, sig: "" };
     line.addEventListener("click", (e) => {
@@ -590,12 +597,18 @@ export class WorktreesView {
     return JSON.stringify([r.name, r.branch, r.upstream, r.upstreamGone, r.hasRemotes, headWords(r), caps.pull, caps.push, s.busy]);
   }
 
-  /** The way to this worktree's remote: its upstream and the two verbs. */
+  /**
+   * The way to this worktree's remote: its upstream and the two verbs. The
+   * first item of the row's group — a treeitem, as everything in a tree's
+   * group is, holding Pull and Push… as a row holds its buttons.
+   */
   private strip(s: RowState): HTMLElement {
     const r = s.row;
     const caps = worktreeCaps(r);
     const strip = el("div", "wt-strip");
     strip.dataset.sig = this.stripSig(s);
+    strip.setAttribute("role", "treeitem");
+    strip.tabIndex = -1;
     const where = el("span", "wt-upstream");
     if (r.branch && r.upstream) {
       where.append(codicon("cloud"), el("span", undefined, r.upstreamGone ? `${r.upstream} (gone)` : r.upstream));
@@ -607,6 +620,7 @@ export class WorktreesView {
       where.append(codicon("git-commit"), el("span", undefined, `No branch — ${headWords(r)}`));
     }
     where.dataset.tip = where.textContent ?? "";
+    strip.setAttribute("aria-label", where.textContent ?? "");
     strip.appendChild(where);
     const verbs = el("span", "wt-verbs");
     verbs.append(
@@ -624,9 +638,10 @@ export class WorktreesView {
     const active = document.activeElement as HTMLElement | null;
     const focusKey = active && old.contains(active) ? keyOf(active) : undefined;
     const next = this.strip(s);
+    next.tabIndex = old.tabIndex;
     old.replaceWith(next);
     this.syncTreeItems();
-    if (focusKey) [...next.querySelectorAll<HTMLElement>("[data-action]")].find((n) => keyOf(n) === focusKey)?.focus();
+    if (focusKey) [next, ...next.querySelectorAll<HTMLElement>("[data-action]")].find((n) => keyOf(n) === focusKey)?.focus();
   }
 
   /**
@@ -960,6 +975,9 @@ export class WorktreesView {
         }
         return;
       case "Delete":
+      case "Backspace":
+        // ⌘⌫ too — a Mac's delete key sends Backspace (VS Code's lists take it).
+        if (e.key === "Backspace" && !e.metaKey) return;
         if (rowState && !rowState.busy) {
           const caps = worktreeCaps(rowState.row);
           if (caps.forget || caps.remove.ok) {
@@ -1026,6 +1044,7 @@ export class WorktreesView {
 /** A stable key for a focusable node across a repaint of the details. */
 function keyOf(n: HTMLElement): string {
   if (n.dataset.action) return `a:${n.dataset.action}`;
+  if (n.classList.contains("wt-strip")) return "s:strip";
   const file = n.closest<HTMLElement>(".cr-file");
   const commit = n.closest<HTMLElement>(".cr-commit-item");
   if (file) return `f:${commit?.dataset.sha ?? ""}:${file.dataset.area ?? ""}:${file.dataset.path}`;
