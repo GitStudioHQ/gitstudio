@@ -4134,15 +4134,27 @@ export class CommitViewProvider
     .groups { margin: 0 0 2px; }
 
     /* ---- Multi-selection, drag-to-stash ---------------------------------- */
-    /* Defined after the :hover rules below so a selected row stays visibly
-       selected while the pointer is over it. */
-    .row.is-file.is-selected { background: var(--vscode-list-inactiveSelectionBackground); }
-    .row.is-file.is-selected:hover { background: var(--vscode-list-hoverBackground); }
-    .row.is-file.is-selected::after {
-      content: "";
-      position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
-      background: var(--vscode-focusBorder);
+    /* A selected row is lit, never barred: a tint of the accent that stands
+       apart from the view in every theme (the list's own inactive-selection
+       grey did not in Light+, and high contrast paints none), stronger under
+       the pointer; high contrast rings it, dashed, as its lists do. A 2px
+       bar down the left edge used to mark it. Declared on body, where the
+       theme's class is. */
+    body {
+      --sel-fill: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+      --sel-fill-hover: color-mix(in srgb, var(--gs-accent) 28%, transparent);
     }
+    body.vscode-light {
+      --sel-fill: color-mix(in srgb, var(--gs-accent) 15%, transparent);
+      --sel-fill-hover: color-mix(in srgb, var(--gs-accent) 18%, transparent);
+    }
+    .row.is-file.is-selected { background: var(--sel-fill); }
+    .row.is-file.is-selected:hover { background: var(--sel-fill-hover); }
+    body.vscode-high-contrast .row.is-file.is-selected {
+      outline: 1px dashed var(--vscode-contrastActiveBorder, var(--gs-accent));
+      outline-offset: -1px;
+    }
+    body.vscode-high-contrast .row.is-file.is-selected:focus-visible { outline-style: solid; }
 
     .selbar {
       display: flex; align-items: center; gap: 8px;
@@ -4443,17 +4455,7 @@ export class CommitViewProvider
       cursor: pointer;
       user-select: none;
     }
-    /* Status accent rail, revealed on hover/focus for a tactile pointer. */
-    .row::before {
-      content: "";
-      position: absolute;
-      left: 0; top: 3px; bottom: 3px;
-      width: 2px;
-      border-radius: 2px;
-      background: transparent;
-      transition: background var(--gs-motion-fast) var(--gs-ease);
-    }
-    .row.is-file:hover::before { background: var(--gs-row-accent, var(--gs-accent)); }
+    /* The row under the pointer: its fill, and no rail down its edge. */
     .row:hover { background: var(--gs-hover); }
     .row:focus-visible,
     .group-header:focus-visible { outline: 1px solid var(--vscode-list-focusOutline, var(--gs-accent)); outline-offset: -1px; }

@@ -418,6 +418,12 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   checks off "Stage changes & commit" (only the editor's Stage Hunk did).
 
 ### Changed
+- **A selected file row is lit, not barred.** In the Changes view a
+  selected file — a changed file or one of a stash's — is a soft tint of
+  your theme's accent, a little stronger under the pointer, instead of a
+  grey with a blue bar down its left edge; the row under the pointer no
+  longer grows a coloured rail either. High contrast themes ring a
+  selected row, dashed.
 - **The branch menu's highlighted row is lit, not outlined.** The row the
   arrow keys or the pointer are on — an action, a branch, one of a branch's
   actions, a Delete — is a soft tint of your theme's accent with its words
