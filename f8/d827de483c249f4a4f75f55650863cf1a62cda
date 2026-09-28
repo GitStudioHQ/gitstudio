@@ -1,0 +1,25 @@
+scripts/test/chrome-run.mjs
+  s_26f5e669d3043c::t_9f9d8c94b1b4b3 1-65,68,70,72-77
+  s_26f5e669d3043c::t_0aa2a0231eae36 66-67,69
+  s_26f5e669d3043c::t_280a6e701e00d5 71
+scripts/test/chrome-run.d.mts
+  s_26f5e669d3043c::t_b13e33df2f6634 1-15
+scripts/merge-e2e/cdp.ts
+  s_26f5e669d3043c::t_0aeb760dd8b043 16,154-155,157,229-232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f8d827de483c249f4a4f75f55650863cf1a62cda",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
