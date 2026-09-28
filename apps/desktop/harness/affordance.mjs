@@ -31,6 +31,7 @@
 // Exit code is 1 when anything fails.
 
 import { harnessChrome } from "./chrome.mjs";
+import { probeFile } from "./probe-file.mjs";
 import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -383,8 +384,8 @@ function run(scene) {
     .replace("__HOVER__", JSON.stringify(STATE.hover))
     .replace("__FOCUS__", JSON.stringify(STATE.focus))
     .replace("__EXPECT__", JSON.stringify(EXPECT));
-  const probe = encodeURIComponent(body);
-  const url = `file://${PAGE}?scene=${encodeURIComponent(scene)}&theme=${theme}&probe=${probe}`;
+  const probe = probeFile(PAGE, body);
+  const url = `file://${PAGE}?scene=${encodeURIComponent(scene)}&theme=${theme}&probe=${probe.param}`;
   return new Promise((done) => {
     execFile(
       CHROME,
@@ -393,6 +394,7 @@ function run(scene) {
        `--window-size=${width},1000`, "--virtual-time-budget=12000", "--dump-dom", url]),
       { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
       (err, stdout) => {
+        probe.cleanup();
         const m = /<title>PROBE ([\s\S]*?)<\/title>/.exec(stdout || "");
         if (!m) return done({ scene, error: "no probe output" });
         const decode = (t) =>

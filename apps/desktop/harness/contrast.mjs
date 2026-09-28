@@ -19,6 +19,7 @@
 // Exit code is 1 when anything fails, so it can gate a run.
 
 import { harnessChrome } from "./chrome.mjs";
+import { probeFile } from "./probe-file.mjs";
 import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -324,14 +325,15 @@ return JSON.stringify(out.slice(0, 40));
 `;
 
 function run(scene) {
-  // Same contract probe.mjs uses: the body is encoded into ?probe=, the page
-  // runs it and puts the JSON result in its own <title>. Matching it exactly
+  // Same contract probe.mjs uses: the body is written to a file ?probe=
+  // names (probe-file.mjs), the page runs it and puts the JSON result in its
+  // own <title>. Matching it exactly
   // matters — the page has one injection path, not two.
   // NOT wrapped in an IIFE: the page already wraps the body in a function, so
   // wrapping here produced an expression statement whose value was discarded
   // and every scene came back null.
-  const probe = encodeURIComponent(AUDIT);
-  const url = `file://${PAGE}?scene=${encodeURIComponent(scene)}&theme=${theme}&probe=${probe}`;
+  const probe = probeFile(PAGE, AUDIT);
+  const url = `file://${PAGE}?scene=${encodeURIComponent(scene)}&theme=${theme}&probe=${probe.param}`;
   return new Promise((done) => {
     execFile(
       CHROME,
@@ -343,6 +345,7 @@ function run(scene) {
       ]),
       { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
       (err, stdout) => {
+        probe.cleanup();
         const m = /<title>PROBE ([\s\S]*?)<\/title>/.exec(stdout || "");
         if (!m) return done({ scene, error: "no probe output" });
         const decode = (t) =>

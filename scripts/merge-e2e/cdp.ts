@@ -127,7 +127,10 @@ export class Browser {
       if (msg.sessionId) {
         this.pages.get(msg.sessionId)?.dispatch(msg);
       } else if (msg.id !== undefined) {
-        this.pending.get(msg.id)?.(msg.result ?? {});
+        // The id comes off the socket: answer only a request of ours, whose
+        // resolver is a function we put there.
+        const resolve = this.pending.get(msg.id);
+        if (typeof resolve === "function") resolve(msg.result ?? {});
         this.pending.delete(msg.id);
       }
     });

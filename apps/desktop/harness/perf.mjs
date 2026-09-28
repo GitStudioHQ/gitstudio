@@ -25,6 +25,7 @@ import { harnessChrome } from "./chrome.mjs";
 import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { chromeProfile } from "./profile.mjs";
+import { probeFile } from "./probe-file.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -89,9 +90,9 @@ const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 if (!window.__gsPerf) return { error: "perf.js did not install — is the page built by a gen.sh that copies it?" };
 `;
 
-const probe = encodeURIComponent(PRELUDE + "\n" + body);
+const probe = probeFile(PAGE, PRELUDE + "\n" + body);
 const extra = flags.extra ? `&${flags.extra}` : "";
-const url = `file://${PAGE}?scene=${scene}&theme=${flags.theme ?? "dark"}&perf=1${flags.gc ? "&gc=1" : ""}&probe=${probe}${extra}`;
+const url = `file://${PAGE}?scene=${scene}&theme=${flags.theme ?? "dark"}&perf=1${flags.gc ? "&gc=1" : ""}&probe=${probe.param}${extra}`;
 
 // ── source maps ────────────────────────────────────────────────────────────
 // A frame reads `renderer.js:12345:67`. Without this it names the bundle, which
@@ -185,6 +186,7 @@ execFile(
   { maxBuffer: 128 * 1024 * 1024, timeout: 180_000, killSignal: "SIGKILL" },
   (err, stdout) => {
     profile.cleanup();
+    probe.cleanup();
     if (err && !stdout) {
       console.error("chrome failed:", err.message);
       process.exit(1);

@@ -24,6 +24,7 @@
 // Exit code is 1 when anything fails.
 
 import { harnessChrome } from "./chrome.mjs";
+import { probeFile } from "./probe-file.mjs";
 import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -250,8 +251,8 @@ const EXPECT = String(flags["expect-shadow"] ?? "")
   });
 
 function run(scene, width) {
-  const probe = encodeURIComponent(AUDIT.replace("__EXPECT__", JSON.stringify(EXPECT)));
-  const url = `file://${PAGE}?scene=${encodeURIComponent(scene)}&theme=${theme}&probe=${probe}`;
+  const probe = probeFile(PAGE, AUDIT.replace("__EXPECT__", JSON.stringify(EXPECT)));
+  const url = `file://${PAGE}?scene=${encodeURIComponent(scene)}&theme=${theme}&probe=${probe.param}`;
   return new Promise((done) => {
     execFile(
       CHROME,
@@ -259,6 +260,7 @@ function run(scene, width) {
        `--window-size=${width},1000`, "--virtual-time-budget=12000", "--dump-dom", url]),
       { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
       (err, stdout) => {
+        probe.cleanup();
         const m = /<title>PROBE ([\s\S]*?)<\/title>/.exec(stdout || "");
         // A scene that measured nothing has not passed: say so.
         if (!m) return done({ error: "no probe output" });

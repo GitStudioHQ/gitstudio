@@ -30,6 +30,7 @@ import { harnessChrome } from "./chrome.mjs";
 import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { chromeProfile } from "./profile.mjs";
+import { probeFile } from "./probe-file.mjs";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -92,11 +93,11 @@ const text = (x) => { const n = _el(x); return n ? (n.textContent || "").trim() 
 const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 `;
 
-const probe = encodeURIComponent(PRELUDE + "\n" + body);
+const probe = probeFile(PAGE, PRELUDE + "\n" + body);
 // --extra=k=v[&k=v] appends the shim's own scene switches (staging=checkboxes,
 // many=1, ask=1) so a mode reachable only through a pref can still be measured.
 const extra = flags.extra ? `&${flags.extra}` : "";
-const url = `file://${PAGE}?scene=${scene}&theme=${theme}&probe=${probe}${extra}`;
+const url = `file://${PAGE}?scene=${scene}&theme=${theme}&probe=${probe.param}${extra}`;
 
 const profile = chromeProfile("gs-probe-");
 execFile(
@@ -116,6 +117,7 @@ execFile(
   { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
   (err, stdout) => {
     profile.cleanup();
+    probe.cleanup();
     if (err && !stdout) {
       console.error("chrome failed:", err.message);
       process.exit(1);

@@ -591,9 +591,14 @@
       const n = Math.max(0, Number(params.get("conflicts") || 0) || 0);
       return POOL.slice(0, n).map((path) => ({ path, shape: "text" }));
     };
+    // ?op= names one of the views above. Looked up in a Map and called only
+    // when it is a function there: a URL word like "constructor" or
+    // "toString" is no view, not a way to call what an object inherits.
+    const named = new Map(Object.entries(views)).get(kind);
+    const viewOf = typeof named === "function" ? named : null;
     const state = {
       step: 1,
-      op: FIX ? FIX.op : kind && (views[kind] || ctx) ? (ctx === "three" ? rebaseStep(1, 3) : views[kind]()) : NONE,
+      op: FIX ? FIX.op : kind && (viewOf || ctx) ? (ctx === "three" ? rebaseStep(1, 3) : viewOf()) : NONE,
       files: FIX ? FIX.files.map((f) => ({ ...f, status: "pending" })) : kind ? filesFor().map((f) => ({ ...f, status: "pending" })) : [],
       settings: {
         autoApplyNonConflicting: false,
@@ -4095,12 +4100,33 @@
     // publish the result in the title. This is how an investigator inspects a
     // surface — geometry, computed styles, aria, focus — without having to add
     // a named case to the shared checks file first.
+    // The URL names the probe; its body is a file the tool wrote beside this
+    // page (probes/<id>.js, see probe-file.mjs). Nothing read from the URL is
+    // ever run as code: a name that is not one of ours is refused.
     const probe = params.get("probe");
     if (probe) {
       let out;
       try {
-        // eslint-disable-next-line no-new-func
-        out = await new Function(`"use strict"; return (async () => { ${probe} })()`)();
+        if (!/^[A-Za-z0-9-]+$/.test(probe)) throw new Error(`not a probe name: ${probe}`);
+        let thrown = null;
+        const onError = (e) => { thrown = thrown || e.error || new Error(e.message); };
+        window.addEventListener("error", onError);
+        try {
+          await new Promise((res, rej) => {
+            const s = document.createElement("script");
+            s.src = `probes/${probe}.js`;
+            s.onload = res;
+            s.onerror = () => rej(new Error(`no probe file probes/${probe}.js`));
+            document.head.appendChild(s);
+          });
+        } finally {
+          window.removeEventListener("error", onError);
+        }
+        // A body that does not parse fails here, with the parser's own words.
+        if (thrown) throw thrown;
+        const run = window.__gsProbe;
+        if (typeof run !== "function") throw new Error(`probes/${probe}.js set no probe`);
+        out = await run();
       } catch (e) {
         out = { error: String((e && e.stack) || e) };
       }

@@ -22,6 +22,7 @@ import { harnessChrome } from "./chrome.mjs";
 import { headlessChromeArgs } from "../../../scripts/test/no-network-chrome.mjs";
 import { execFile } from "node:child_process";
 import { chromeProfile } from "./profile.mjs";
+import { probeFile } from "./probe-file.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -80,14 +81,14 @@ try {
   return { id: req.id, says: req.says, met: false, detail: "threw: " + (e && e.message ? e.message : String(e)) };
 }
 `;
-    const probe = encodeURIComponent(body);
+    const probe = probeFile(PAGE, body);
     const extra = req.extra ? `&${req.extra}` : "";
     // A clause may need a THEME or a WIDTH: "nail the light mode" cannot be
     // judged in dark, and "use the full screen" cannot be judged at 1600px.
     // Both default to what every earlier clause already assumed.
     const theme = req.theme ?? "dark";
     const width = req.width ?? 1600;
-    const url = `file://${PAGE}?scene=${req.scene}&theme=${theme}&probe=${probe}${extra}`;
+    const url = `file://${PAGE}?scene=${req.scene}&theme=${theme}&probe=${probe.param}${extra}`;
     const profile = chromeProfile("gs-validate-");
     execFile(
       CHROME,
@@ -95,6 +96,7 @@ try {
       { maxBuffer: 64 * 1024 * 1024, timeout: 120_000, killSignal: "SIGKILL" },
       (err, stdout) => {
         profile.cleanup();
+        probe.cleanup();
         const m = /<title>PROBE ([\s\S]*?)<\/title>/.exec(stdout || "");
         if (!m) {
           done({ id: req.id, says: req.says, met: false, detail: "the scene did not answer" });
