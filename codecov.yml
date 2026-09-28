@@ -1,0 +1,15 @@
+# Coverage is reported, never a gate. Codecov's checks show the numbers on
+# every pull request and never fail one: much of GitStudio's UI is exercised by
+# the headless harnesses (apps/desktop/harness, the webview checks), which do
+# not report coverage, so a patch percentage alone would block good changes.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+# The coverage shows on the checks and on codecov.io; no bot comment per PR.
+comment: false

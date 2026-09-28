@@ -24,6 +24,7 @@ package-lock.json
 CONTRIBUTING.md
 RELEASING.md
 SHOTS.md
+codecov.yml
 VENDORED_FROM.json
 # Store artwork is served from GitHub: the release passes --baseImagesUrl, so
 # vsce rewrites the README's relative image links and none of these ship.
