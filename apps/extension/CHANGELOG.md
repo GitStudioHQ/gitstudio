@@ -4,7 +4,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.16.0] - 2026-09-28
 
 ### Removed
 - **Handing merges and diffs to a JetBrains IDE is gone.** The **Merge with
@@ -14,6 +14,14 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   Conflicts always open in GitStudio's own merge editor, and diffs in its own
   diff. If you had set one of those settings to use a JetBrains IDE, it is
   ignored.
+
+### Security
+- **Hardened against hostile data from GitHub and from files.** A pull
+  request's avatar image is rebuilt from GitHub's own avatar address instead
+  of used as given; commit-graph rows never treat text or counts as HTML;
+  Markdown comments are stripped by a scanner that can't be tricked into
+  leaving one behind; and a handful of path and label parsers that a crafted
+  string could stall for seconds now finish at once.
 
 ## [1.15.0] - 2026-09-28
 

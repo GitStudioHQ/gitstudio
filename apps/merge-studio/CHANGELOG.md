@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-09-28
 
 ### Removed
 
 - **Handing merges and diffs to a JetBrains IDE is gone.** The **Merge with JetBrains IDE** and **Diff with JetBrains IDE** commands, the walkthrough's "Optional: a JetBrains IDE" step, and the `jbMerge.conflictResolver`, `jbMerge.diffTool`, `jbMerge.preferredIde` and `jbMerge.jetbrainsPath` settings are removed. Conflicts always open in Merge Studio's own merge editor, and diffs in its own diff. If you had set one of those settings to use a JetBrains IDE, it is ignored.
+
+### Security
+
+- **Hardened against hostile file contents.** A few path and label parsers that a crafted string could stall for seconds now finish at once.
 
 ## 1.0.2 — 2026-09-28
 

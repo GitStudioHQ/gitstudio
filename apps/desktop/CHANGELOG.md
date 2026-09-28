@@ -9,7 +9,12 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
-## [Unreleased]
+## [2.3.0] - 2026-09-28
+
+### Changed
+- **Built on Electron 41** (from 33), with its security fixes. GitStudio now
+  needs **macOS 12 Monterey or later**; macOS 11 is no longer supported by
+  Electron.
 
 ### Removed
 - **Handing merges and diffs to a JetBrains IDE is gone.** Settings ▸ Merge
@@ -20,6 +25,14 @@ but they share the same engine, so most Git behaviour lands in both at once.
   there, that choice is ignored. **Open in** no longer lists JetBrains IDEs
   either; VS Code, Cursor and the other editors are still there, and you can
   still add any editor yourself in Settings ▸ Editors.
+
+### Security
+- **Hardened against hostile data from GitHub and from files.** A pull
+  request's avatar image is rebuilt from GitHub's own avatar address instead
+  of used as given; commit-graph rows never treat text or counts as HTML;
+  Markdown comments are stripped by a scanner that can't be tricked into
+  leaving one behind; and a handful of path and label parsers that a crafted
+  string could stall for seconds now finish at once.
 
 ## [2.2.1] - 2026-09-28
 
