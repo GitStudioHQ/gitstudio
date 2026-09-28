@@ -25,6 +25,7 @@ import type {
   PrCreateFile,
   PrCreateMessageToHost,
   PrCreateViewState,
+  PrListAction,
   PrListButton,
   PrListMessage,
   PrPerson,
@@ -63,11 +64,22 @@ function button(cls: string, key: string, act: string, label?: string): HTMLButt
   return b;
 }
 
+/**
+ * A button's action, kept with the button — never written into the page and
+ * parsed back out of it, where anything that can touch the DOM could change it.
+ */
+const BUTTON_ACTIONS = new WeakMap<Element, PrListAction>();
+
+/** An avatar's src: GitHub's avatar host over https, or an inline image — nothing else loads. */
 function avatarSrc(url: string | null | undefined): string | undefined {
   if (!url) return undefined;
-  if (/^https:\/\/avatars\.githubusercontent\.com\//.test(url)) return url;
   if (/^data:image\/(png|svg\+xml|jpeg|gif|webp);/.test(url)) return url;
-  return undefined;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && u.hostname === "avatars.githubusercontent.com" ? u.href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function hueOf(login: string): number {
@@ -707,7 +719,7 @@ export class PullRequestCreate {
 
   private actionButton(b: PrListButton, key: string): HTMLButtonElement {
     const btn = button(`gs-btn prp-btn${b.primary ? " gs-btn--primary" : ""}`, key, "action");
-    btn.dataset.action = JSON.stringify(b.action);
+    BUTTON_ACTIONS.set(btn, b.action);
     if (b.icon) btn.appendChild(codicon(b.icon));
     btn.appendChild(el("span", "prp-btn-label", b.label));
     if (b.title) btn.title = b.title;
@@ -788,10 +800,9 @@ export class PullRequestCreate {
         this.paint();
         return;
       case "action":
-        try {
-          this.opts.post({ type: "action", action: JSON.parse(t.dataset.action ?? "{}") });
-        } catch {
-          /* not an action */
+        {
+          const action = BUTTON_ACTIONS.get(t);
+          if (action) this.opts.post({ type: "action", action });
         }
         return;
     }

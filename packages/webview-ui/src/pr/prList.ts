@@ -115,11 +115,22 @@ export function ageWords(iso: string, now: number): string {
 }
 
 /** Only GitHub's avatar host (and data: images) — anything else is the initials disc. */
+/**
+ * A button's action, kept with the button — never written into the page and
+ * parsed back out of it, where anything that can touch the DOM could change it.
+ */
+const BUTTON_ACTIONS = new WeakMap<Element, PrListAction>();
+
+/** An avatar's src: GitHub's avatar host over https, or an inline image — nothing else loads. */
 function avatarSrc(url: string | null | undefined): string | undefined {
   if (!url) return undefined;
-  if (/^https:\/\/avatars\.githubusercontent\.com\//.test(url)) return url;
   if (/^data:image\/(png|svg\+xml|jpeg|gif|webp);/.test(url)) return url;
-  return undefined;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && u.hostname === "avatars.githubusercontent.com" ? u.href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** A hue for a login's initials disc — the same for the same person, everywhere. */
@@ -440,7 +451,7 @@ export class PullRequestList {
 
   private actionButton(b: PrListButton, key: string): HTMLButtonElement {
     const btn = button(`gs-btn prl-btn${b.primary ? " gs-btn--primary" : ""}`, key, "action");
-    btn.dataset.action = JSON.stringify(b.action);
+    BUTTON_ACTIONS.set(btn, b.action);
     if (b.icon) btn.appendChild(codicon(b.icon));
     btn.appendChild(el("span", "", b.label));
     if (b.title) btn.title = b.title;
@@ -773,12 +784,8 @@ export class PullRequestList {
         if (this.state?.hasMore && !this.state.loadingMore) this.opts.post({ type: "loadMore" });
         return;
       case "action": {
-        let action: PrListAction | undefined;
-        try {
-          action = JSON.parse(t.dataset.action ?? "") as PrListAction;
-        } catch {
-          return;
-        }
+        const action = BUTTON_ACTIONS.get(t);
+        if (!action) return;
         if (action.kind === "clearFilters") this.clearAll();
         else this.opts.post({ type: "action", action });
         return;

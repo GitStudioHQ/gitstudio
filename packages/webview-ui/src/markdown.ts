@@ -239,16 +239,22 @@ export function sanitizeHtml(html: string): string {
   // so a crafted body can never forge one and smuggle markup past the escape.
   let s = html.split(TAG_SENT).join("");
 
-  // 1. Drop dangerous elements together with their contents (closed or not).
-  for (const tag of DROP_WITH_CONTENT) {
-    s = s.replace(new RegExp(`<${tag}\\b[\\s\\S]*?<\\/${tag}\\s*>`, "gi"), "");
-    s = s.replace(new RegExp(`<\\/?${tag}\\b[^>]*>`, "gi"), "");
+  // 1–2, until nothing more goes: a removal can join what was around it into
+  // a new one ("<!<!---->--" is "<!--" once its inner comment is gone). Step 4
+  // escapes whatever is left anyway; this keeps the markup honest too.
+  for (let before = ""; before !== s; ) {
+    before = s;
+    // 1. Drop dangerous elements together with their contents (closed or not).
+    for (const tag of DROP_WITH_CONTENT) {
+      s = s.replace(new RegExp(`<${tag}\\b[\\s\\S]*?<\\/${tag}\\s*>`, "gi"), "");
+      s = s.replace(new RegExp(`<\\/?${tag}\\b[^>]*>`, "gi"), "");
+    }
+    // 2. Drop comments, doctypes, processing instructions, CDATA.
+    s = s.replace(/<!--[\s\S]*?-->/g, "");
+    s = s.replace(/<!\[CDATA\[[\s\S]*?\]\]>/gi, "");
+    s = s.replace(/<![^>]*>/g, "");
+    s = s.replace(/<\?[\s\S]*?\?>/g, "");
   }
-  // 2. Drop comments, doctypes, processing instructions, CDATA.
-  s = s.replace(/<!--[\s\S]*?-->/g, "");
-  s = s.replace(/<!\[CDATA\[[\s\S]*?\]\]>/gi, "");
-  s = s.replace(/<![^>]*>/g, "");
-  s = s.replace(/<\?[\s\S]*?\?>/g, "");
 
   // 3. Rewrite every remaining tag through the allowlist. The attribute-aware
   //    pattern tolerates `>` inside quoted attribute values.
