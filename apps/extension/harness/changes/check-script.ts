@@ -16,7 +16,9 @@ const html = changesViewHtml("dark");
 const dir = mkdtempSync(join(tmpdir(), "gs-changes-script-"));
 let n = 0;
 try {
-  for (const m of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) {
+  // Any case, and a closing tag with space or junk before its `>`: the
+  // browser ends a script at each of those, so the check must too.
+  for (const m of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi)) {
     const file = join(dir, `script-${n++}.js`);
     writeFileSync(file, m[1]);
     execFileSync(process.execPath, ["--check", file], { stdio: "inherit" });

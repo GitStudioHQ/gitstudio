@@ -41,11 +41,13 @@ function scriptsIn(file: string, text: string): { js: string; at: number }[] {
       ts.isNoSubstitutionTemplateLiteral(node);
     if (isTemplate) {
       const raw = node.getText(sf);
-      if (raw.includes("<script") && raw.includes("</script>")) {
+      if (/<script\b/i.test(raw) && /<\/script\b/i.test(raw)) {
         // ${...} holes become a harmless literal so the surrounding JS parses.
         // Nested braces inside a hole are why this counts depth by hand.
         const flat = flattenHoles(raw);
-        for (const m of flat.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) {
+        // Any case, and a closing tag with space or junk before its `>`
+        // (`</script >`, `</SCRIPT\n>`): the browser ends the script there too.
+        for (const m of flat.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi)) {
           const js = m[1];
           if (js.trim().length > 200) {
             found.push({
@@ -90,7 +92,7 @@ test("every webview's inline script is syntactically valid JavaScript", async ()
 
   for (const file of files) {
     const text = await readFile(file, "utf8");
-    if (!text.includes("<script")) continue;
+    if (!/<script\b/i.test(text)) continue;
     for (const { js, at } of scriptsIn(file, text)) {
       checked++;
       try {
@@ -110,4 +112,20 @@ test("every webview's inline script is syntactically valid JavaScript", async ()
     `webview script(s) failed to parse:\n${failures.join("\n")}`,
   );
   assert.ok(checked > 0, "found no webview scripts to check — the scan broke");
+});
+
+test("the scan finds a script whatever the case of its tags, and however its closing tag is spelled", () => {
+  // Each of these ends a script in a browser; a scan that misses one leaves
+  // that script unparsed, and a broken one ships.
+  const body = `var x = 1; ${"x += 1; ".repeat(40)}`;
+  for (const [open, close] of [
+    ["<script>", "</script>"],
+    ["<SCRIPT>", "</SCRIPT>"],
+    ['<script type="module">', "</script >"],
+    ["<Script>", "</script\t\n bar>"],
+  ]) {
+    const found = scriptsIn("probe.ts", `const html = \`${open}${body}${close}\`;`);
+    assert.equal(found.length, 1, `${open}…${JSON.stringify(close)}: found`);
+    assert.equal(found[0].js, body, `${open}…${JSON.stringify(close)}: its whole body, and nothing past it`);
+  }
 });

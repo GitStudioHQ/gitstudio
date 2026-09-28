@@ -18689,7 +18689,7 @@
         const main = $(".topbar-sync .sync-main");
         c.ok(!!main && getComputedStyle($(".topbar-sync")).display !== "none", `${what}: the sync control is shown`);
         c.eq(text(main), want.sync, `${what}: the sync control is its own`);
-        c.match(main?.title || "", new RegExp(name.replace(/\./g, "\\.")), `${what}: …and names the repository it acts on`);
+        c.match(main?.title || "", new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${what}: …and names the repository it acts on`);
         const openIn = $(".topbar-openin");
         c.eq(openIn?.getAttribute("aria-label"), `Open ${name} in an editor`, `${what}: the editor button opens this repository`);
         c.ok(!!openIn && text(openIn.querySelector(".openin-label")) !== "Open in…", `${what}: …and names its editor (${text(openIn?.querySelector(".openin-label"))})`);

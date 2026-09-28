@@ -449,7 +449,7 @@ export function selectionLines(css: string, opts: Options = {}): string[] {
           // base rule's `box-shadow: inset var(--bar, 0) 0 0 accent` with the
           // state setting --bar: 3px. Only a line that is not there while the
           // property keeps its unselected value counts.
-          const esc = name.replace(/-/g, "\\-");
+          const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           const uses = new RegExp(`var\\(\\s*${esc}(?![\\w-])`);
           const call = new RegExp(`var\\(\\s*${esc}\\s*(?:,((?:[^()]|\\([^()]*\\))*))?\\)`, "g");
           for (const b of baseDecls) {

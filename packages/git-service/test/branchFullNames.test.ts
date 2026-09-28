@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
@@ -142,7 +142,7 @@ test("a conflicted merge leaves the right message waiting in MERGE_MSG", async (
     const r = await ctx.branches.merge("refs/heads/release");
     assert.equal(r.ok, false, "it stops on the conflict");
     const msg = git(dir, "rev-parse", "--git-path", "MERGE_MSG").trim();
-    const text = execFileSync("cat", [join(dir, msg)], { encoding: "utf8" });
+    const text = readFileSync(join(dir, msg), "utf8");
     assert.match(text, /^Merge branch 'release'\n/);
   } finally {
     removeTempRepo(dir);
@@ -217,7 +217,7 @@ test("a branch named like an option is renamed and deleted as a NAME, after --",
     const del = await ctx.branches.delete("-x", { force: true });
     assert.equal(del.ok, true, del.stderr);
     assert.equal(exists(dir, "refs/heads/-x"), false);
-    assert.equal(execFileSync("cat", [join(dir, "m.txt")], { encoding: "utf8" }), "uncommitted\n", "nothing was read as a flag");
+    assert.equal(readFileSync(join(dir, "m.txt"), "utf8"), "uncommitted\n", "nothing was read as a flag");
   } finally {
     removeTempRepo(dir);
     removeTempRepo(upstream);

@@ -1016,10 +1016,11 @@ function run(scene, checkId, opts = {}) {
         try {
           const decoded = m[1]
             .replace(/&quot;/g, '"')
-            .replace(/&amp;/g, "&")
             .replace(/&lt;/g, "<")
             .replace(/&gt;/g, ">")
-            .replace(/&#39;/g, "'");
+            .replace(/&#39;/g, "'")
+            // Last: an escaped "&lt;" is "&amp;lt;", and must come out "&lt;".
+            .replace(/&amp;/g, "&");
           res(JSON.parse(decoded));
         } catch (e) {
           res({ fails: [`unparseable verdict: ${m[1].slice(0, 160)}`] });

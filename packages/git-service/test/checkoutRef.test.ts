@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { optionLikeCheckout, planRefCheckout, refShortName, renameArgs, suggestedRename } from "../src/checkoutRef";
@@ -212,7 +212,7 @@ test("a branch whose name starts with a dash is refused, never handed to git as 
       assert.equal(p, undefined, `${full} is refused (${JSON.stringify(p?.args)})`);
     }
     assert.equal(
-      execFileSync("cat", [join(dir, "f.txt")], { encoding: "utf8" }),
+      readFileSync(join(dir, "f.txt"), "utf8"),
       "uncommitted work\n",
       "the working tree is untouched",
     );

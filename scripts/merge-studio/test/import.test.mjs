@@ -306,7 +306,7 @@ test("a path outside the mapping is refused before anything changes, and --exclu
       },
     );
     for (const path of [".github/workflows/release.yml", "docs/index.md", "NEWS.md", "vendor/gitstudio/extra/helper.ts", "scripts/release.mjs", "assets/new.png"]) {
-      assert.match(refused.message, new RegExp(`^  ${path.replace(/[./]/g, "\\$&")} \\([0-9a-f]{7}\\): `, "m"), path);
+      assert.match(refused.message, new RegExp(`^  ${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\([0-9a-f]{7}\\): `, "m"), path);
     }
     assert.doesNotMatch(refused.message, /mergeModel/, "the mapped path is not listed");
     assert.match(refused.message, /nothing was changed/);

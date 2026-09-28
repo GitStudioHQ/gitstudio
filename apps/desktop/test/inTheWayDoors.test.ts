@@ -106,7 +106,7 @@ function assertAsked(r: CommitActionResult, kind: string, files: string[], root:
   assert.deepEqual(r.inTheWay, { kind, files, root }, `${what}: which files, and where`);
   assert.equal(filed(r), undefined, `${what}: nothing is filed`);
   assert.doesNotMatch(r.message ?? "", /overwritten by|Aborting|fatal:|error:/, `${what}: not git's text`);
-  assert.match(r.message ?? "", new RegExp(files[0].replace(/\./g, "\\.")), `${what}: the sentence names the file`);
+  assert.match(r.message ?? "", new RegExp(files[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${what}: the sentence names the file`);
 }
 
 // ── report #18's own door, and the other commit actions ──────────────────────
