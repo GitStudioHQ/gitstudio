@@ -13,6 +13,7 @@ import { basename, resolve } from "node:path";
 import { GitContext, NodeGitAdapter } from "@gitstudio/git-service/index";
 import type { GitRunEvent, GitRunHook } from "@gitstudio/git-service/index";
 import type { RepoInfo, RepoTabsState } from "../shared/ipc";
+import { gitAvailability } from "./gitCheck";
 
 const MAX_RECENT = 12;
 
@@ -60,6 +61,8 @@ export interface RepoStoreDeps {
   discover?: (cwd: string) => Promise<string | undefined>;
   realpath?: (path: string) => string;
   createContext?: (root: string, onRun: GitRunHook) => GitContext;
+  /** Does git itself run? (main/gitCheck.ts by default.) */
+  gitReady?: () => Promise<boolean>;
 }
 
 /** Resolve symlinks, falling back to a lexical resolve for a path that is gone. */
@@ -111,6 +114,7 @@ export class RepoStore {
   private readonly discover: (cwd: string) => Promise<string | undefined>;
   private readonly realpath: (path: string) => string;
   private readonly createContext: (root: string, onRun: GitRunHook) => GitContext;
+  private readonly gitReady: () => Promise<boolean>;
   /** The open tabs, in the order the tab row shows them. */
   private tabs: Tab[] = [];
   private activeRoot: string | undefined;
@@ -118,6 +122,12 @@ export class RepoStore {
   private openSeq = 0;
   /** The launch restore, while (and after) it runs — see settledState. */
   private restoring?: Promise<unknown>;
+  /**
+   * The tabs a launch could not restore because GIT would not run — not
+   * because their folders are gone. Kept (and saved) as they were, and
+   * restored by resumeDeferredRestore once git answers.
+   */
+  private deferred?: { open: string[]; current?: string };
   /**
    * The roots closed while each open in flight was still finding its
    * repository — one set per open (see openTab). A close is the later word
@@ -151,6 +161,7 @@ export class RepoStore {
     this.createContext =
       deps.createContext ??
       ((root, onRun) => new GitContext({ root, gitPath: this.adapter.gitPath(), onRun }));
+    this.gitReady = deps.gitReady ?? (async () => (await gitAvailability()).ok);
     // The persisted list is plain JSON that outlives upgrades, so de-duplicate
     // on the way in rather than trusting it. Order is preserved; the first
     // spelling of each root wins.
@@ -232,6 +243,11 @@ export class RepoStore {
   /** Serializable state to persist between sessions. `current` is the active
    *  tab; `open` is every tab, in order. */
   serialize(): { recent: string[]; current?: string; open: string[] } {
+    // Tabs held back for want of git are still the session: saved as they
+    // were, so a relaunch after installing Git brings them back.
+    if (this.deferred && this.tabs.length === 0) {
+      return { recent: this.recent, current: this.deferred.current, open: [...this.deferred.open] };
+    }
     return { recent: this.recent, current: this.activeRoot, open: this.tabs.map((t) => t.root) };
   }
 
@@ -329,6 +345,19 @@ export class RepoStore {
     return run;
   }
 
+  /**
+   * Git works now (the window's "Check again"): restore the tabs a launch
+   * without it held back. Nothing to do — undefined — when there were none;
+   * otherwise the tabs whose folders really are gone, to be said once.
+   */
+  async resumeDeferredRestore(): Promise<string[] | undefined> {
+    const held = this.deferred;
+    if (!held) return undefined;
+    this.deferred = undefined;
+    const { dropped } = await this.restore(held.open, held.current);
+    return dropped;
+  }
+
   private async restoreTabs(open: readonly string[], current?: string): Promise<{ dropped: string[] }> {
     const dropped: string[] = [];
     for (const want of open) {
@@ -340,6 +369,17 @@ export class RepoStore {
       }
       if (this.find(root)) continue;
       this.addTab(root);
+    }
+    // A folder that would not open because GIT would not run is not gone.
+    // Without git every discovery fails, and dropping those tabs threw away —
+    // and then saved away — the session the user wants back the moment Git is
+    // installed. Asked only when something failed, so a normal launch never
+    // waits on it.
+    if (dropped.length > 0 && this.tabs.length === 0 && !(await this.gitReady().catch(() => false))) {
+      this.deferred = { open: [...open], current };
+      this.activeRoot = undefined;
+      this.emit();
+      return { dropped: [] };
     }
     // The active tab is found by the same rule as any other (real path), so a
     // `current` persisted under another spelling still wins its seat.

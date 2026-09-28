@@ -65,6 +65,7 @@ import { renderMarkdown } from "./markdown";
 import { renderAssistant, seedAssistantGoal } from "./assistant";
 import { aiModelsCard, agentAccessCard } from "./aiSettings";
 import { openInButton, REVEAL_LABEL } from "./openIn";
+import { waitForGit } from "./noGit";
 import { editorsCard } from "./views/editorsCard";
 import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled } from "./aiAssist";
 import { toast, clearToasts, confirmDialog, promptInline, promptChoice, promptMessage, openModal, type ToastAction } from "./dialogs";
@@ -11122,6 +11123,12 @@ class TabShell {
       // An "auto" dock icon must follow the OS flip too.
       this.active?.syncDock();
     });
+    // No Git, no app: before anything that needs it is built, a machine
+    // without a working Git is told so, and how to get it (noGit.ts) — then,
+    // once Check again finds it, the window carries on from here.
+    const root = document.getElementById("root")!;
+    await waitForGit(root);
+    if (root.firstElementChild !== this.strip.el) root.replaceChildren(this.strip.el, this.stage);
     window.addEventListener("keydown", (e) => this.onKey(e));
     window.addEventListener("keydown", (e) => this.live()?.handleHelpKey(e));
     window.addEventListener("mouseup", (e) => this.live()?.handleMouseUp(e));

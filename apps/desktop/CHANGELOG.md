@@ -39,6 +39,18 @@ but they share the same engine, so most Git behaviour lands in both at once.
   list of open tabs, so the next launch opened on Home instead of the
   repositories you had open. The tabs are now saved before anything shuts
   down, and they come back as they were.
+- **A computer without Git is told so, and how to get it.** GitStudio uses
+  the Git installed on your computer. Without one, every view failed with
+  "spawn git ENOENT", a folder you opened was said to have a damaged `.git`
+  folder, and the tabs from your last session were dropped as gone. Now the
+  window says Git isn't installed (on a Mac, that Apple's Command Line Tools
+  are missing), shows the command that installs it on your system, and
+  carries on, tabs and all, when you click **Check again**. Your tabs are
+  kept until then.
+- **Git installed by Homebrew or the Windows installer is found** even when
+  it isn't on the PATH GitStudio was started with: an app opened from the
+  Dock doesn't get your shell's PATH, and a Windows app keeps the PATH it
+  started with.
 
 ## [2.3.0] - 2026-09-28
 

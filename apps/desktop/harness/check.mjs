@@ -413,6 +413,16 @@ const CASES = [
   ["focus-survives-a-rebuild", "issues", { arg: ".gh-refresh" }],
   ["focus-survives-a-rebuild", "releases", { arg: ".gh-seg-btn:not(.active)" }],
   ["settings-checkbox-styled", "code~text:Settings"],
+  // A machine without Git (renderer/noGit.ts): what is wrong and how to fix
+  // it on each OS, and Check again.
+  ["a-machine-without-git-is-told-how-to-get-it", "changes", { arg: "missing:darwin", extra: "nogit=missing" }],
+  ["a-machine-without-git-is-told-how-to-get-it", "changes", { arg: "xcode:darwin", extra: "nogit=xcode" }],
+  ["a-machine-without-git-is-told-how-to-get-it", "changes", { arg: "missing:win32", extra: "nogit=missing&gitplatform=win32" }],
+  ["a-machine-without-git-is-told-how-to-get-it", "changes", { arg: "missing:linux", extra: "nogit=missing&gitplatform=linux" }],
+  ["a-machine-without-git-is-told-how-to-get-it", "changes", { arg: "broken:linux", extra: "nogit=broken&gitplatform=linux" }],
+  ["a-machine-without-git-is-told-how-to-get-it", "changes", { arg: "missing:darwin", extra: "nogit=missing", theme: "light" }],
+  ["check-again-carries-on-once-git-is-there", "changes", { arg: "still", extra: "nogit=missing" }],
+  ["check-again-carries-on-once-git-is-there", "changes", { arg: "fixed", extra: "nogit=missing&gitfix=1" }],
   // Author pictures and the Gravatar switch (Settings ▸ Appearance). Each
   // "off" has its "on" control: the same scene with the switch on must be
   // seen asking, or an "off" pass means nothing.

@@ -1623,7 +1623,28 @@
 
   /** The Assistant's saved agent choices (ai:settings / ai:setAgentConfig). */
   const agentConfig = { permission: "write", thinking: "medium", modelId: "claude-opus-5" };
+  // Is Git there (app:gitCheck, main/gitCheck.ts)? Yes, unless the scene says:
+  // ?nogit=missing|xcode|broken is what the launch check finds, on
+  // ?gitplatform=darwin|win32|linux (darwin by default), and ?gitfix=1 means a
+  // "Check again" then finds it — the user installed Git meanwhile.
+  const noGit = params.get("nogit");
+  let gitChecks = 0;
   const dynamic = {
+    "app:gitCheck": (req) => {
+      gitChecks++;
+      window.__gsGitChecks = gitChecks;
+      if (!noGit || (req && req.recheck && params.get("gitfix") === "1")) return { ok: true, version: "2.46.0" };
+      return {
+        ok: false,
+        reason: noGit,
+        platform: params.get("gitplatform") || "darwin",
+        ...(noGit === "xcode"
+          ? { detail: "xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools), missing xcrun at: /Library/Developer/CommandLineTools/usr/bin/xcrun" }
+          : noGit === "broken"
+            ? { detail: "error while loading shared libraries: libpcre2-8.so.0: cannot open shared object file" }
+            : {}),
+      };
+    },
     // A READ that the fallback used to answer with a mutation shape. Present so
     // the AI-gating path is exercised instead of silently failing open.
     // ?ai=1 → a CONNECTED model. Without this the Assistant is permanently

@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, lstatSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ExpectedError } from "./expectedError";
+import type { GitAvailability } from "../shared/ipc";
 
 /** An in-app notice (`app:notice`) — never a native alert. */
 export interface RepoNotice {
@@ -111,6 +112,20 @@ export function cannotOpenNotice(path: string, probe: Partial<RepoNoticeProbe> =
     kind: "warn",
     message: `${root} is a Git repository, but Git can't read it — its .git folder may be damaged.`,
   };
+}
+
+/**
+ * A folder did not open because GIT would not run (gitCheck.ts), not because
+ * of anything about the folder — so say that, and nothing about the folder.
+ */
+export function gitMissingNotice(git: Extract<GitAvailability, { ok: false }>): RepoNotice {
+  const why =
+    git.reason === "xcode"
+      ? "Git on this Mac needs Apple's Command Line Tools. Install them (run xcode-select --install in Terminal)"
+      : git.reason === "broken"
+        ? `Git didn't run${git.detail ? ` ("${git.detail}")` : ""}. Reinstall it`
+        : "Git isn't installed. Install it";
+  return { kind: "warn", message: `GitStudio can't open repositories without Git. ${why}, then open the folder again.` };
 }
 
 /**

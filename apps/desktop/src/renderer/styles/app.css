@@ -610,6 +610,72 @@ body {
    unreachable without a pointer. */
 .recent-card-row:hover .recent-card-forget,
 .recent-card-forget:focus-visible { opacity: 1; }
+
+/* ── No Git (renderer/noGit.ts) ────────────────────────────────────────────
+   The welcome stage — full window, the drag region on macOS — with one card:
+   what is wrong, the ways to fix it on this OS, and Check again. It scrolls
+   when a short window cannot hold every way. */
+.screen.welcome.no-git { overflow-y: auto; padding: 48px 24px; justify-content: safe center; }
+.no-git-card { width: min(600px, 92vw); gap: 10px; text-align: center; }
+.no-git-title {
+  margin: 4px 0 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--vscode-foreground);
+}
+.no-git-lead {
+  margin: 0;
+  max-width: 520px;
+  font-size: var(--text-md);
+  line-height: 1.55;
+  color: var(--app-muted);
+}
+.no-git-detail {
+  margin: 0;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  color: var(--vscode-foreground);
+  user-select: text;
+}
+.no-git-ways {
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+.no-git-way { display: flex; flex-direction: column; gap: 6px; }
+.no-git-way-label { font-size: var(--text-sm); line-height: 1.5; color: var(--vscode-foreground); }
+.no-git-cmd { display: flex; align-items: center; gap: 8px; }
+.no-git-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-sm);
+  color: var(--vscode-foreground);
+  overflow-x: auto;
+  white-space: nowrap;
+  user-select: text;
+}
+.no-git-copy { flex: 0 0 auto; }
+.no-git-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 14px; }
+.no-git-status { min-height: 1.5em; font-size: var(--text-sm); color: var(--app-muted); }
 .recent-card-forget:hover {
   color: var(--status-del);
   border-color: var(--app-border);

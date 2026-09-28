@@ -24,7 +24,8 @@ import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "no
 import { mkdirSync, writeFileSync } from "node:fs";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore, repoScope } from "./repoStore";
-import { cannotOpenNotice, droppedTabsNotice, tabsFullNotice, missingFolderError, missingFolderResult } from "./repoNotice";
+import { cannotOpenNotice, droppedTabsNotice, gitMissingNotice, tabsFullNotice, missingFolderError, missingFolderResult } from "./repoNotice";
+import { gitAvailability } from "./gitCheck";
 import { menuDelivery, type MenuCommand } from "./menuDelivery";
 import { supportMenuItems } from "./supportMenu";
 import { GitBridge } from "./gitBridge";
@@ -637,7 +638,11 @@ async function openRepoPathSaying(path: string): Promise<{ info?: RepoInfo; said
     // And not "not inside a Git repository" about a repository this account
     // cannot read: git says the same sentence for both, so the notice asks
     // the filesystem which one it is (see cannotOpenNotice).
-    send("app:notice", cannotOpenNotice(path));
+    //
+    // Nor "its .git folder may be damaged" when it is GIT that will not run:
+    // without it, every folder fails to open the same way (gitCheck.ts).
+    const git = await gitAvailability();
+    send("app:notice", git.ok ? cannotOpenNotice(path) : gitMissingNotice(git));
   }
   buildMenu();
   void saveState();
@@ -1137,6 +1142,17 @@ function registerIpc(): void {
 
   // App info + updates (poll → confirm → pull → apply).
   handle("app:info", async () => ({ version: app.getVersion(), platform: process.platform }));
+  // Is Git there? (gitCheck.ts; the window's answer to "no" is renderer/noGit.ts.)
+  // Once it is, the tabs a launch without it held back come back — and any
+  // whose folders really are gone are named, as at a normal launch.
+  handle("app:gitCheck", async (req) => {
+    const git = await gitAvailability(!!req?.recheck);
+    if (git.ok) {
+      const dropped = await repos.resumeDeferredRestore();
+      if (dropped?.length) send("app:notice", droppedTabsNotice(dropped));
+    }
+    return git;
+  });
   // ── Open in editor ──
   const editorsNow = (force = false) => withIcons(editorsView(appSettings.editorPrefs(), force));
   handle("editors:list", () => editorsNow());

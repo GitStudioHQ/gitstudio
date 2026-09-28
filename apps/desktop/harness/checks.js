@@ -5060,6 +5060,70 @@
       c.eq(getComputedStyle(box).appearance, "none", "checkbox must not be the native control");
     },
 
+    // ── a machine without Git ────────────────────────────────────────────────
+    // The app runs the git on the machine and does not bundle one. Without it
+    // every view used to fail on its own with "spawn git ENOENT", and a folder
+    // you opened was called damaged. Now the window says what is wrong and how
+    // to fix it on this OS, before anything that needs git is built. `arg`:
+    // "<reason>:<platform>" — what the launch check found, and where.
+    "a-machine-without-git-is-told-how-to-get-it": async (f) => {
+      const c = check(f);
+      const [reason, platform] = String(window.__GS_ARG || "missing:darwin").split(":");
+      for (let i = 0; i < 30 && !$(".no-git"); i++) await settle(100);
+      c.ok(!!$(".no-git"), "the no-Git screen is shown");
+      if (!$(".no-git")) return;
+      c.ok(!$(".screen.repo") && !$(".repo-tab"), "and nothing that needs git was built behind it");
+      const title = text(".no-git-title");
+      const want = { missing: /^Git isn't installed$/, xcode: /^Git needs Apple's Command Line Tools$/, broken: /^Git isn't working$/ }[reason];
+      c.match(title, want, "the title says what is wrong");
+      const commands = $$(".no-git-code").map((n) => n.textContent.trim());
+      const expected = {
+        darwin: ["xcode-select --install", "brew install git"],
+        win32: ["winget install --id Git.Git -e --source winget"],
+        linux: ["sudo apt install git", "sudo dnf install git", "sudo pacman -S git", "sudo zypper install git"],
+      }[platform];
+      c.eq(JSON.stringify(commands), JSON.stringify(expected), `the ways to get Git on ${platform}`);
+      if (platform === "win32") c.match(text(".no-git-ways"), /git-scm\.com/, "Windows is pointed at the installer");
+      if (reason !== "missing") c.ok(text(".no-git-detail").length > 0, "what git said is shown as it said it");
+      else c.ok(!$(".no-git-detail"), "nothing to quote when there is no git at all");
+      const page = document.body.textContent || "";
+      c.ok(!/ENOENT|spawn git|\bat [\w.]+ \(/.test(page), "no error code or stack trace reaches the page");
+      const retry = $(".no-git-retry");
+      c.ok(!!retry && /Check again/.test(retry.textContent || ""), "there is a Check again");
+      c.eq(document.activeElement, retry, "and the keyboard starts on it");
+      c.ok(!!$(".no-git-download"), "and a way to the download page");
+      for (const copy of $$(".no-git-copy")) {
+        c.ok(/^Copy /.test(copy.getAttribute("aria-label") || ""), `each command has a named Copy (${copy.getAttribute("aria-label")})`);
+      }
+    },
+
+    // Check again: still missing says so and stays; found (the user installed
+    // Git meanwhile, ?gitfix=1) carries straight on into the app.
+    "check-again-carries-on-once-git-is-there": async (f) => {
+      const c = check(f);
+      const fixed = window.__GS_ARG === "fixed";
+      for (let i = 0; i < 30 && !$(".no-git-retry"); i++) await settle(100);
+      const retry = $(".no-git-retry");
+      c.ok(!!retry, "the no-Git screen offers Check again");
+      if (!retry) return;
+      const before = window.__gsGitChecks || 0;
+      const tabsAsked = (window.__gsSent?.(/^repo:tabs$/) || []).length;
+      c.eq(tabsAsked, 0, "the tabs are not asked for while Git is missing");
+      retry.click();
+      for (let i = 0; i < 30 && $(".no-git"); i++) await settle(100);
+      c.ok((window.__gsGitChecks || 0) > before, "Check again asks again");
+      if (fixed) {
+        c.ok(!$(".no-git"), "found: the screen goes");
+        for (let i = 0; i < 40 && !$(".screen"); i++) await settle(100);
+        c.ok(!!$(".repo-tabs, .repo-tab, .screen.repo, .rail"), "and the app is built");
+        c.ok((window.__gsSent?.(/^repo:tabs$/) || []).length > 0, "…starting with the tabs");
+      } else {
+        c.ok(!!$(".no-git"), "still missing: the screen stays");
+        c.match(text(".no-git-status"), /Still no working Git/, "and says so");
+        c.eq(retry.disabled, false, "Check again can be pressed again");
+      }
+    },
+
     // ── author pictures follow the Gravatar switch ──────────────────────────
     // A commit author's picture is a request to a third party that names them:
     // an MD5 hash of their email to www.gravatar.com, or a GitHub noreply
