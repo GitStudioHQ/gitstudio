@@ -51,8 +51,9 @@ test("the launch screen is in the page before the bundle, and is decorative", ()
 });
 
 test("no inline script — the CSP stays closed to one", () => {
-  for (const m of html.matchAll(/<script\b([^>]*)>/g)) {
-    assert.match(m[1], /\bsrc="\.\//, `every script is a same-origin file: <script${m[1]}>`);
+  // Case-insensitive: HTML tag and attribute names are (CodeQL, #59).
+  for (const m of html.matchAll(/<script\b([^>]*)>/gi)) {
+    assert.match(m[1], /\bsrc="\.\//i, `every script is a same-origin file: <script${m[1]}>`);
   }
   const csp = /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(html)?.[1] ?? "";
   const scriptSrc = /(?:^|;)\s*script-src\s([^;]*)/.exec(csp)?.[1] ?? "";
