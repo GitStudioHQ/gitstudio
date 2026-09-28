@@ -260,9 +260,16 @@ test("a machine's own config cannot outrank the guard: core.sshCommand, core.git
   // dropped — so an unguarded run reaches this, never the network.
   const seen: string[] = [];
   const recorder = createNetServer((s) => {
-    s.once("data", (d) => seen.push(String(d).split("\r\n")[0]));
+    // Let a connection go once it has said what it wanted, not on a clock: a
+    // flat 50 ms cut slow Windows runners off before git had sent its CONNECT
+    // line, and "exact host AND host-and-path" counted 1 of 2.
+    s.once("data", (d) => {
+      seen.push(String(d).split("\r\n")[0]);
+      s.destroy();
+    });
     s.on("error", () => {});
-    setTimeout(() => s.destroy(), 50);
+    // …and one that never speaks, eventually.
+    setTimeout(() => s.destroy(), 10_000).unref();
   });
   await new Promise<void>((r) => recorder.listen(0, "127.0.0.1", r));
   const REC = `http://127.0.0.1:${(recorder.address() as AddressInfo).port}`;

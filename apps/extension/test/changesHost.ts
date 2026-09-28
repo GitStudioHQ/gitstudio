@@ -132,7 +132,13 @@ export function changesHost(root: string): {
     send: (msg) => onMessage(msg),
     idle: async () => {
       const p = provider as unknown as { pushing: boolean; pushQueued: boolean };
-      for (let i = 0; i < 200 && (p.pushing || p.pushQueued); i++) {
+      // Until it IS idle. This gave up after 2 s and returned while a push was
+      // still running, so on a slow Windows runner the caller found no state
+      // posted yet ("the host posted its state") — a flake, not a bug. A host
+      // that is still busy after 30 s says so instead.
+      const deadline = Date.now() + 30_000;
+      while (p.pushing || p.pushQueued) {
+        if (Date.now() > deadline) throw new Error("changesHost: still pushing state after 30 s");
         await new Promise((r) => setTimeout(r, 10));
       }
     },
