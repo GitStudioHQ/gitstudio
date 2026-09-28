@@ -108,6 +108,7 @@ import {
   type WorktreeRow,
   type WorktreeRowStatus,
 } from "@gitstudio/host-bridge/worktreesProtocol";
+import { folderKey, sameFolder } from "@gitstudio/git-service/folderPath";
 
 // ── Hermetic git ─────────────────────────────────────────────────────────────
 const cfg = join(mkdtempSync(join(tmpdir(), "gs-ext-wtt-cfg-")), "config");
@@ -116,7 +117,9 @@ process.env.GIT_CONFIG_GLOBAL = cfg;
 process.env.GIT_CONFIG_SYSTEM = cfg;
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 process.env.GIT_OPTIONAL_LOCKS = "0";
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "gs-ext-wtt-")));
+// Resolved natively (Windows' long spelling, as git writes it); folders are
+// still compared with sameFolder — git spells them C:/Users/…, node C:\Users\….
+const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), "gs-ext-wtt-")));
 const contexts: InstanceType<typeof GitContext>[] = [];
 after(() => {
   for (const c of contexts) c.dispose();
@@ -207,7 +210,7 @@ function host(root: string, opts: { workspaceFolders?: string[] } = {}) {
     reviews,
     ctx,
     send: async (m: unknown) => {
-      await handle(m);
+      await handle(asRowPaths(m));
       await idle();
     },
     idle,
@@ -221,7 +224,14 @@ function host(root: string, opts: { workspaceFolders?: string[] } = {}) {
       await idle();
     },
     /** The rows as the page holds them: the last list, with every status and patch since. */
-    rows(): WorktreeRow[] {
+    rows: currentRows,
+    details(p: string): WorktreeDetails | undefined {
+      const d = [...posted].reverse().find((m) => m.type === "details" && sameFolder(m.path as string, p));
+      return d?.details as WorktreeDetails | undefined;
+    },
+  };
+
+  function currentRows(): WorktreeRow[] {
       let rows: WorktreeRow[] = [];
       for (const m of posted) {
         if (m.type === "rows") rows = (m.rows as WorktreeRow[]).map((r) => ({ ...r }));
@@ -234,12 +244,23 @@ function host(root: string, opts: { workspaceFolders?: string[] } = {}) {
         } else if (m.type === "drop") rows = rows.filter((x) => x.path !== m.path);
       }
       return rows;
-    },
-    details(p: string): WorktreeDetails | undefined {
-      const d = [...posted].reverse().find((m) => m.type === "details" && m.path === p);
-      return d?.details as WorktreeDetails | undefined;
-    },
-  };
+  }
+
+  /**
+   * A path the page sends is always one the host gave it (a row's). A test
+   * names a folder its own way — node's C:\Users\… for git's C:/Users/… —
+   * so it is sent as the row it names.
+   */
+  function asRowPaths(m: unknown): unknown {
+    const rows = currentRows();
+    const pick = (p: unknown) => (typeof p === "string" ? (rows.find((r) => sameFolder(r.path, p))?.path ?? p) : p);
+    const msg = m as { path?: unknown; paths?: unknown };
+    return {
+      ...(m as object),
+      ...("path" in msg ? { path: pick(msg.path) } : {}),
+      ...(Array.isArray(msg.paths) ? { paths: msg.paths.map(pick) } : {}),
+    };
+  }
 }
 
 /** The whole table in one repository: a clone of a bare origin, and a worktree per cell. */
@@ -309,7 +330,7 @@ function bigScene() {
 const words = (r: WorktreeRow | undefined) => (r ? worktreeFacts(r).map((b) => b.text) : ["(no row)"]);
 /** The one state the row shows beside its name ("" for none). */
 const state = (r: WorktreeRow | undefined) => (r ? (worktreeState(r)?.text ?? "") : "(no row)");
-const find = (rows: WorktreeRow[], p: string) => rows.find((r) => r.path === p);
+const find = (rows: WorktreeRow[], p: string) => rows.find((r) => sameFolder(r.path, p));
 
 test("every cell of the table: what each row names and offers, from real git", async () => {
   const s = bigScene();
@@ -621,7 +642,7 @@ test("a diff of another worktree's file reads THAT worktree's index and HEAD —
   const [unstagedL, unstagedR] = diffs[1].args as [FakeUri, FakeUri];
   assert.match(stagedTitle, /f\.txt \(HEAD ↔ Index\) — fé ature x/);
   assert.equal(unstagedR.scheme, "file");
-  assert.equal(unstagedR.fsPath, join(other, "f.txt"), "the working file is the worktree's own");
+  assert.ok(sameFolder(unstagedR.fsPath, join(other, "f.txt")), "the working file is the worktree's own");
 
   const reader = new RevisionContentProvider({ getAll: () => [{ root: app, ctx: h.ctx }], getActive: () => ({ root: app, ctx: h.ctx }) } as never);
   const token = { onCancellationRequested: () => new Disposable() } as never;
@@ -643,7 +664,7 @@ test("what it costs: the list is three spawns for thirty worktrees; a row's tree
   await h.send({ type: "ready" });
   // The window's own worktree is read at once; nothing else.
   const tier0 = h.spawns.filter((a) => !a.includes("-C"));
-  const others = h.spawns.filter((a) => a.includes("-C") && !a.includes(app));
+  const others = h.spawns.filter((a) => a.includes("-C") && !a.some((x) => sameFolder(x, app)));
   assert.equal(tier0.filter((a) => a[0] === "worktree" || a[0] === "for-each-ref" || a[0] === "remote").length, 3, tier0.map((a) => a.join(" ")).join("\n"));
   assert.deepEqual(others, [], "no row's tree before the page says it is in view");
 
@@ -651,7 +672,7 @@ test("what it costs: the list is three spawns for thirty worktrees; a row's tree
   const two = [join(base, "wt", "agent-3"), join(base, "wt", "agent-7")];
   await h.send({ type: "visible", paths: two });
   const read = new Set(h.spawns.filter((a) => a[0] === "-C").map((a) => a[1]));
-  assert.deepEqual([...read].sort(), two.sort(), "exactly the rows in view");
+  assert.deepEqual([...read].map((p) => folderKey(p)).sort(), two.map((p) => folderKey(p)).sort(), "exactly the rows in view");
 
   // In view again soon after: fresh, so not read again.
   h.spawns.length = 0;
@@ -683,7 +704,7 @@ test("nothing is sent that did not change: a second identical read posts no list
   const mark = h.posted.length;
   await h.repoChanged();
   const sent = h.posted.slice(mark);
-  assert.deepEqual(sent.map((m) => [m.type, m.path]), [["status", s.wt("even")]]);
+  assert.deepEqual(sent.map((m) => [m.type, folderKey(m.path as string)]), [["status", folderKey(s.wt("even"))]]);
 });
 
 test("Push… for another worktree opens the push review with that worktree; for the window's own, the review as it is", async () => {
@@ -694,7 +715,7 @@ test("Push… for another worktree opens the push review with that worktree; for
   await h.send({ type: "action", path: s.wt("ahead"), action: "push" });
   const t = h.reviews[0] as { name: string; entry: { root: string } };
   assert.equal(t.name, "ahead");
-  assert.equal(t.entry.root, s.wt("ahead"));
+  assert.ok(sameFolder(t.entry.root, s.wt("ahead")), `${t.entry.root} is ${s.wt("ahead")}`);
   // A row that can't push says why and opens nothing.
   await h.send({ type: "action", path: s.wt("detached"), action: "push" });
   assert.equal(h.reviews.length, 1);

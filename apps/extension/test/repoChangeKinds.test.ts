@@ -290,9 +290,12 @@ test("every way git moves a ref reaches a watcher: a packed branch or tag delete
     snap = snapshot(gitDir);
     act();
     const changed = changedBetween(snap, snapshot(gitDir));
-    const hits = mine().filter((w) =>
-      changed.some((p) => p.startsWith(w.pattern.base.fsPath + "/") && globMatches(w.pattern.pattern, p.slice(w.pattern.base.fsPath.length + 1))),
-    );
+    // As VS Code matches a RelativePattern: either separator is one.
+    const slash = (x: string) => x.split("\\").join("/");
+    const hits = mine().filter((w) => {
+      const base = slash(w.pattern.base.fsPath);
+      return changed.some((p) => slash(p).startsWith(base + "/") && globMatches(w.pattern.pattern, slash(p).slice(base.length + 1)));
+    });
     if (hits.length === 0) {
       failures.push(`${name}: no watcher covers what changed (${changed.map((p) => p.slice(gitDir.length + 1)).join(", ")})`);
       continue;

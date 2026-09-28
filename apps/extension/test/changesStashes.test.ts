@@ -555,7 +555,9 @@ const BIG = "e".repeat(40);
 const BIG_FILES =Array.from({ length: 450 }, (_, i) => ({ path: `deps/pkg${String(i).padStart(3, "0")}.js`, status: "U" }));
 function bigState(over: Record<string, unknown> = {}): Record<string, unknown> {
   const list = stashes();
-  list.unshift({ sha: BIG, text: "oops, deps too", branch: "main", message: "On main: oops, deps too", time: now - 60, count: 450 });
+  // A minute before the page reads it — this moment's, not the file's load: a
+  // slow runner is minutes into the file by now.
+  list.unshift({ sha: BIG, text: "oops, deps too", branch: "main", message: "On main: oops, deps too", time: Math.floor(Date.now() / 1000) - 60, count: 450 });
   return state({ stashes: list, ...over });
 }
 const reads = async (page: ChangesPage) => (await posted(page, "stashReadFiles")).map((m) => m.sha);

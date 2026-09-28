@@ -10,12 +10,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
+import { sameFolder } from "../src/folderPath";
 import { parseWorktreePorcelain, parseWorktreePorcelainZ, WorktreeProvider } from "../src/WorktreeProvider";
 import { parseRefFacts, unpublishedRange, unpublishedRule, type WorktreeSummary, type WorktreesSnapshot } from "../src/worktreeState";
 import type { GitProcess } from "../src/GitProcess";
 import { removeTempRepo } from "./tmpRepo";
 
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "gitstudio-wt-state-")));
+// Resolved natively: on Windows that is the long spelling (RUNNER~1 → runneradmin),
+// as git writes it. Folders are still compared with sameFolder — git spells
+// them C:/Users/…, node C:\Users\….
+const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), "gitstudio-wt-state-")));
 const contexts: GitContext[] = [];
 after(() => {
   for (const c of contexts) c.dispose();
@@ -118,7 +122,7 @@ test("a git without `list -z` (usage, exit 129) is asked once, then read the old
   assert.equal(calls.filter((a) => a.includes("-z")).length, 1, "the -z form is tried once");
 });
 
-test("a path holding a newline lists whole through the provider (real git, -z)", async () => {
+test("a path holding a newline lists whole through the provider (real git, -z)", { skip: process.platform === "win32" && "Windows allows no newline in a file name" }, async () => {
   const r = repo();
   const odd = join(r.base, "wt", "fe\nat x");
   r.git("worktree", "add", "-q", "-b", "feat", odd);
@@ -164,7 +168,7 @@ test("main, linked, detached, locked (with and without a reason), missing, missi
   const goneLocked = byBranch(snap, "feat-gone-locked");
   assert.equal(goneLocked.missing, true, "the filesystem says so");
   assert.equal(goneLocked.prunable, false, "git never calls a locked one prunable");
-  const det = snap.worktrees.find((w) => w.path === r.wt("detached"));
+  const det = snap.worktrees.find((w) => sameFolder(w.path, r.wt("detached")));
   assert.ok(det);
   assert.equal(det.detached, true);
   assert.equal(det.branch, undefined);
@@ -316,7 +320,7 @@ test("status names what git is stopped in there: merge, rebase (both backends), 
 
   const snap = await r.ctx.worktrees.snapshot();
   // Mid-rebase git lists the worktree detached; it is found by its folder.
-  const row = (c: string) => snap.worktrees.find((w) => w.path === r.wt(c))!;
+  const row = (c: string) => snap.worktrees.find((w) => sameFolder(w.path, r.wt(c)))!;
   const op = async (c: string) => (await r.ctx.worktrees.status(row(c), snap))?.operation;
   assert.equal(await op("merge"), "merge");
   assert.equal(await op("rebase-merge"), "rebase");
@@ -512,7 +516,7 @@ test("a folder whose .git is gone — nested in the main worktree, beside it, or
   const x = byBranch(snap, "x");
   const side = byBranch(snap, "side");
   const held = byBranch(snap, "held");
-  assert.equal(x.path, nested);
+  assert.ok(sameFolder(x.path, nested), `${x.path} is ${nested}`);
   for (const w of [x, side, held]) {
     assert.equal(w.missing, false, `${w.branch}: its folder is there`);
     assert.equal(w.unlinked, true, `${w.branch}: but it is not a worktree any more`);
@@ -575,7 +579,7 @@ test("Forget never drops the record of a folder that is a worktree again, nor of
   const { r, nested } = unlinkedScene();
   // Its .git is back (as `git worktree repair` writes it): a worktree again, removed as one.
   writeFileSync(join(nested, ".git"), `gitdir: ${join(r.app, ".git", "worktrees", "x")}\n`);
-  assert.equal(at(nested)("rev-parse", "--show-toplevel"), nested);
+  assert.ok(sameFolder(at(nested)("rev-parse", "--show-toplevel"), nested));
   assert.equal((await r.ctx.worktrees.removal(nested)).kind, "present");
   const held = await r.ctx.worktrees.removeAsAgreed(r.wt("held"), {});
   assert.equal(held.ok, false, "locked: nothing is forgotten");

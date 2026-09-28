@@ -315,7 +315,7 @@ test("Stash & Remove: the folder is gone and every change it had is in the stash
   assert.deepEqual(errors(), []);
   assert.equal(existsSync(s.path("feat-dirty")), false);
   assert.equal(s.git("branch", "--list", "feat-dirty"), "feat-dirty");
-  assert.match(s.git("stash", "list"), /Changes from worktree feat-dirty \(.*wt\/feat-dirty\), stashed before removing it/);
+  assert.match(s.git("stash", "list"), /Changes from worktree feat-dirty \(.*wt[\\/]feat-dirty\), stashed before removing it/);
   const inStash = s.git("stash", "show", "--include-untracked", "--name-only", "stash@{0}").split("\n").sort();
   assert.deepEqual(inStash, ["a.txt", "new.txt", "staged.txt"]);
   assert.match(said.map((m) => m.message).join("\n"), /its changes are in the stash/);
@@ -331,9 +331,9 @@ test("the question, the stash and the report name the worktree by its folder, as
   await wt.removeWorktree(repos, folder, noop);
   const q = asked[0] as Pick;
   assert.equal(q.title, "Remove worktree app-login?");
-  assert.match(q.message ?? "", /^Deletes its folder, .*wt\/app-login\./);
+  assert.match(q.message ?? "", /^Deletes its folder, .*wt[\\/]app-login\./);
   assert.match(q.message ?? "", /The branch feature\/login and its commits stay\./);
-  assert.match(s.git("stash", "list"), /^stash@\{0\}: On feature\/login: Changes from worktree app-login \(.*wt\/app-login\), stashed before removing it$/);
+  assert.match(s.git("stash", "list"), /^stash@\{0\}: On feature\/login: Changes from worktree app-login \(.*wt[\\/]app-login\), stashed before removing it$/);
   assert.match(said.map((m) => m.message).join("\n"), /^GitStudio: Removed the worktree app-login — its changes are in the stash “Changes from worktree app-login/m);
   assert.deepEqual(errors(), []);
 });
@@ -770,7 +770,7 @@ test("not a worktree any more: Open, Terminal, Pull and Push… run nothing and 
   assert.deepEqual(terminals, []);
   const warnings = said.filter((m) => m.kind === "warning").map((m) => m.message);
   assert.equal(warnings.length, 5);
-  for (const w of warnings) assert.match(w, /^GitStudio: x's folder isn't a worktree any more — .*\.claude\/worktrees\/x\. Forget the worktree in Worktrees to clear it from the list\.$/);
+  for (const w of warnings) assert.match(w, /^GitStudio: x's folder isn't a worktree any more — .*\.claude[\\/]worktrees[\\/]x\. Forget the worktree in Worktrees to clear it from the list\.$/);
   await wt.revealWorktree(repos, x);
   assert.deepEqual(executed.map((e) => e.command), ["revealFileInOS"]);
   mainIntact();
@@ -787,7 +787,7 @@ test("Prune counts a folder that is not a worktree any more (git would prune it)
   assert.equal(q.title, "Prune 2 missing worktrees?", "the words the view's link and its title menu use");
   assert.equal(q.confirmLabel, "Prune 2");
   assert.match(q.message, /feat-gone — .* \(folder gone\)/);
-  assert.match(q.message, /\n {2}x — .*\.claude\/worktrees\/x \(not a worktree any more\)/);
+  assert.match(q.message, /\n {2}x — .*\.claude[\\/]worktrees[\\/]x \(not a worktree any more\)/);
   assert.match(q.message, /Nothing on disk changes/);
   assert.ok(!listed(s).includes("x") && !listed(s).includes("feat-gone"));
   assert.ok(existsSync(join(x, "mine.txt")));
@@ -974,7 +974,7 @@ test("New worktree into the folder of a worktree git still has, though its folde
     await wt.addWorktree(repos, noop);
     assert.deepEqual(errors(), [], `${gone}: not git's "missing but already registered worktree; use 'add -f'"`);
     const folderQs = asked.filter((q) => q.kind === "input" && q.title.startsWith("New worktree for ")) as (DialogSpec & { kind: "input" })[];
-    assert.match(folderQs[1].hint ?? "", new RegExp(`git still has a worktree at .*wt/${gone} \\(${gone}\\), though its folder is gone — forget that worktree in Worktrees`));
+    assert.match(folderQs[1].hint ?? "", new RegExp(`git still has a worktree at .*wt[\\\\/]${gone} \\(${gone}\\), though its folder is gone — forget that worktree in Worktrees`));
     assert.equal(s.git("branch", "--list", `x/${gone}`), "", "no branch made");
     assert.ok(listed(s).includes(gone), "the registered worktree is untouched");
   }
@@ -1038,7 +1038,7 @@ test("New worktree from a branch named like an option never offers it directly �
 test("the bare-repository layout (project/.bare, its worktrees beside it): New Worktree suggests project/<branch>, never a hidden .bare-<branch>", async () => {
   assert.equal(wt.suggestWorktreeFolder("/x/project/.bare", "feature/login", () => true, true), join("/x/project", "feature-login"));
   assert.equal(wt.suggestWorktreeFolder("/x/project/.git", "fix", () => true, true), join("/x/project", "fix"), "a bare .git inside the project too");
-  assert.equal(wt.suggestWorktreeFolder("/x/project/.bare", "a", (p) => !p.endsWith("/a"), true), join("/x/project", "a-2"));
+  assert.equal(wt.suggestWorktreeFolder("/x/project/.bare", "a", (p) => !/[\\/]a$/.test(p), true), join("/x/project", "a-2"));
   assert.equal(wt.suggestWorktreeFolder("/x/repo.git", "a", () => true, true), join("/x", "repo-a"), "a bare repo.git beside its worktrees is as before");
 
   // Through the door, on a real layout.
@@ -1069,7 +1069,7 @@ test("the suggestion for a bare repository's worktrees names the project without
   assert.equal(wt.projectName("/code/repo.git"), "repo");
   assert.equal(wt.suggestWorktreeFolder("/code/repo.git", "feature/a", () => true), join("/code", "repo-feature-a"));
   assert.equal(wt.suggestWorktreeFolder("/code/app", "a", (p) => !p.endsWith("app-a")), join("/code", "app-a-2"));
-  assert.equal(dirname(wt.suggestWorktreeFolder("/code/app", "x")), "/code");
+  assert.equal(dirname(wt.suggestWorktreeFolder("/code/app", "x")), join("/code"));
 });
 
 // ── Pull and Push, in the worktree's own folder ──────────────────────────────

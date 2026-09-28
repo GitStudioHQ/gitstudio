@@ -45,15 +45,17 @@ test("unicode, spaces, a tab and a rename: every file is named as it is on disk,
   git("commit", "-qm", "base");
   const base = git("rev-parse", "HEAD");
   writeFileSync(join(dir, "été.txt"), "a\nb\n");
-  writeFileSync(join(dir, "tab\there.txt"), "t\n");
+  // A tab is a legal character in a file name everywhere but Windows.
+  const tab = process.platform !== "win32";
+  if (tab) writeFileSync(join(dir, "tab\there.txt"), "t\n");
   git("mv", "old name.txt", "new näme.txt");
   writeFileSync(join(dir, "new näme.txt"), "one\ntwo\nthree\nfour\nfive\nsix\n");
   git("add", ".");
   git("commit", "-qm", "names");
   const files = await collectCompareFiles({ root: dir, ctx } as never, base, "HEAD", false);
   const byPath = new Map(files.map((f) => [f.path, f]));
-  assert.deepEqual([...byPath.keys()].sort(), ["new näme.txt", "tab\there.txt", "été.txt"]);
+  assert.deepEqual([...byPath.keys()].sort(), ["new näme.txt", ...(tab ? ["tab\there.txt"] : []), "été.txt"]);
   assert.deepEqual(byPath.get("été.txt"), { path: "été.txt", status: "A", additions: 2, deletions: 0, oldPath: undefined });
-  assert.deepEqual(byPath.get("tab\there.txt")?.additions, 1);
+  if (tab) assert.deepEqual(byPath.get("tab\there.txt")?.additions, 1);
   assert.deepEqual(byPath.get("new näme.txt"), { path: "new näme.txt", status: "R", additions: 1, deletions: 0, oldPath: "old name.txt" });
 });
