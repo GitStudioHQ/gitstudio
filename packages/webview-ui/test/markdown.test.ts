@@ -374,6 +374,28 @@ test("remoteImages: false loads no image from the web, whichever way it is writt
   assert.doesNotMatch(renderMarkdown("![a](a.png)", 0, { ...opts, resolveImage: (r) => `https://raw.example/${r}` }), /raw\.example/);
 });
 
+test("a network-path reference is https, never the page's own scheme", () => {
+  // The desktop app's page is file:, where "//host/a.png" means
+  // file://host/a.png: on Windows a UNC path, and an SMB connection offering
+  // the host your credentials, from viewing a pull request.
+  for (const [md, want] of [
+    ["![x](//evil.example/share/a.png)", "https://evil.example/share/a.png"],
+    ["![x](///evil.example/share/a.png)", "https://evil.example/share/a.png"],
+    ["![x](\\\\evil.example\\share\\a.png)", "https://evil.example/share/a.png"],
+    ["![x](/\\evil.example/share/a.png)", "https://evil.example/share/a.png"],
+    ['<img alt="x" src="//evil.example/share/a.png">', "https://evil.example/share/a.png"],
+    ['<img alt="x" src="\\\\evil.example\\share\\a.png">', "https://evil.example/share/a.png"],
+    ["[a link](//evil.example/share)", "https://evil.example/share"],
+  ] as const) {
+    const html = renderMarkdown(md);
+    assert.ok(html.includes(`"${want}"`), `${md} → ${html}`);
+    assert.doesNotMatch(html, /(src|href)="(\/\/|\\\\|\/\\)/, md);
+  }
+  // A path of this page's own stays a path.
+  assert.match(renderMarkdown("![x](img/a.png)"), /src="img\/a\.png"/);
+  assert.match(renderMarkdown("![x](/img/a.png)"), /src="\/img\/a\.png"/);
+});
+
 test("remoteImages: false lasts one render: the next one loads web images as before", () => {
   renderMarkdown("![a](https://attacker.example/a.png)", 0, { remoteImages: false });
   assert.match(renderMarkdown("![b](https://img.shields.io/b.svg)"), /src="https:\/\/img\.shields\.io\/b\.svg"/);

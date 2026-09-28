@@ -114,6 +114,19 @@ function safeUrl(raw: string): string {
   if (/^(javascript|vbscript|file|blob):/i.test(flat)) {
     return "#";
   }
+  // A network-path reference — "//host/x", and every spelling a URL parser
+  // reads the same way: "\\host\x", "/\host", "///host", with tabs or line
+  // breaks anywhere — takes the SCHEME of the page it sits on. The desktop
+  // app's page is file:, so `![](//host/share/a.png)` in a pull request became
+  // file://host/share/a.png: on Windows a UNC path, and an SMB connection that
+  // offers the host your Windows credentials, from merely viewing the page. On
+  // the web it would be https, so here it is https too. (Read the way the URL
+  // parser reads it: leading control characters and spaces dropped, tabs and
+  // line breaks dropped anywhere.)
+  const parsed = url.replace(/[\t\n\r]/g, "").replace(/^[\u0000- ]+/, "");
+  if (/^[\\/]{2}/.test(parsed)) {
+    return encodeUrl(`https://${parsed.replace(/^[\\/]+/, "").replace(/\\/g, "/")}`);
+  }
   if (/^https?:\/\//i.test(url) || /^mailto:/i.test(url)) {
     return encodeUrl(url);
   }

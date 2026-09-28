@@ -80,6 +80,12 @@ but they share the same engine, so most Git behaviour lands in both at once.
   read could make it write an image whose address carries what it read to
   someone else, fetched the moment the reply appeared. An image in a reply now
   shows its description instead.
+- **An image in Markdown could make Windows connect to a file share.** An
+  image written as `//server/share/a.png` (or with backslashes) in a pull
+  request, an issue or a README took the scheme of the app's own page, which
+  is a local file, and on Windows that is a network share: viewing the page
+  made Windows connect to the server and offer it your sign-in credentials.
+  Such an address now means https, as it does on the web.
 
 ## [2.3.0] - 2026-09-28
 

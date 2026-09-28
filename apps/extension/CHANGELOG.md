@@ -28,6 +28,11 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   setting that turns each one off. The crash-report setting's description now
   says exactly what is scrubbed, including that a remote's host name is kept.
 
+### Fixed
+- **An image in a pull request written as `//host/a.png` shows.** An address
+  that starts with two slashes now means https, as it does on GitHub; it used
+  to resolve against the page itself and show as a broken image.
+
 ### Security
 - **Crash reports no longer carry a commit's subject.** When a rebase,
   cherry-pick, revert or `git am` stopped, git's message named the commit by
