@@ -1,0 +1,29 @@
+apps/extension/test/compareFilesNames.test.ts
+  s_26f5e669d3043c::t_b92235a8fc9add 48-50,57,59
+apps/extension/test/changesStashes.test.ts
+  s_26f5e669d3043c::t_b92235a8fc9add 558-560
+apps/extension/test/repoChangeKinds.test.ts
+  s_26f5e669d3043c::t_2c17ff05f3d524 293-298
+apps/extension/test/worktreesStateTable.test.ts
+  s_26f5e669d3043c::t_853aeba4c742e8 111,120-122,213,227-234,247-263,333,645,667,675,707,718
+packages/git-service/test/worktreeState.test.ts
+  s_26f5e669d3043c::t_66a0fd508890e2 13,19-22,125,171,323,519,582
+apps/extension/test/worktreesDoors.test.ts
+  s_26f5e669d3043c::t_e34d425a1d70cf 318,334,336,773,790,977,1041,1072
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "43715217afdb62251b13cc078c37598e311fa4cd",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
