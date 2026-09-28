@@ -37,6 +37,7 @@ import type {
 import { CI_STATES, PR_ACTIONS, PR_STATES, REVIEW_DECISIONS, ciWords } from "@gitstudio/engine/forge/pullRequests";
 import { NO_ONE, PR_FACETS, PR_FACET_WORDS, PR_LIST_STATES, PR_LIST_STATE_WORDS, countFor } from "@gitstudio/engine/forge/prList";
 import { patchChildren } from "../conflicts/patch";
+import { avatarSrc } from "./avatarSrc";
 
 export interface PrListTimers {
   set(fn: () => void, ms: number): number;
@@ -114,24 +115,12 @@ export function ageWords(iso: string, now: number): string {
   return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
 }
 
-/** Only GitHub's avatar host (and data: images) — anything else is the initials disc. */
 /**
  * A button's action, kept with the button — never written into the page and
  * parsed back out of it, where anything that can touch the DOM could change it.
  */
 const BUTTON_ACTIONS = new WeakMap<Element, PrListAction>();
 
-/** An avatar's src: GitHub's avatar host over https, or an inline image — nothing else loads. */
-function avatarSrc(url: string | null | undefined): string | undefined {
-  if (!url) return undefined;
-  if (/^data:image\/(png|svg\+xml|jpeg|gif|webp);/.test(url)) return url;
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" && u.hostname === "avatars.githubusercontent.com" ? u.href : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /** A hue for a login's initials disc — the same for the same person, everywhere. */
 function hueOf(login: string): number {

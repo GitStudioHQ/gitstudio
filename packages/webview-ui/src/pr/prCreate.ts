@@ -35,6 +35,7 @@ import { FILE_STATUS } from "@gitstudio/engine/forge/prPage";
 import { commitList, pushWords } from "@gitstudio/engine/forge/prCreate";
 import { patchChildren } from "../conflicts/patch";
 import { ageWords } from "./prList";
+import { avatarSrc } from "./avatarSrc";
 
 export interface PullRequestCreateOptions {
   post(message: PrCreateMessageToHost): void;
@@ -70,17 +71,6 @@ function button(cls: string, key: string, act: string, label?: string): HTMLButt
  */
 const BUTTON_ACTIONS = new WeakMap<Element, PrListAction>();
 
-/** An avatar's src: GitHub's avatar host over https, or an inline image — nothing else loads. */
-function avatarSrc(url: string | null | undefined): string | undefined {
-  if (!url) return undefined;
-  if (/^data:image\/(png|svg\+xml|jpeg|gif|webp);/.test(url)) return url;
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" && u.hostname === "avatars.githubusercontent.com" ? u.href : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 function hueOf(login: string): number {
   let h = 0;
