@@ -222,7 +222,19 @@ test("comments, doctypes and CDATA are removed", () => {
 });
 
 test("dropComments removes exactly what the old /<!--[\\s\\S]*?-->/g removed", () => {
-  const old = (s: string) => s.replace(/<!--[\s\S]*?-->/g, "");
+  // The old regex as the oracle — walked with exec() and the text between the
+  // matches kept, so the test itself is not a one-pass strip (which is what
+  // CodeQL rightly flags); the output is identical to s.replace(re, "").
+  const old = (s: string) => {
+    const re = /<!--[\s\S]*?-->/g;
+    let out = "";
+    let at = 0;
+    for (let m = re.exec(s); m; m = re.exec(s)) {
+      out += s.slice(at, m.index);
+      at = m.index + m[0].length;
+    }
+    return out + s.slice(at);
+  };
   const cases = [
     "", "plain", "<!-- a -->", "x<!-- a -->y<!-- b -->z", "<!---->", "<!--->", "<!-->", "<!-- unclosed",
     "a --> b", "<!-- a --> --> b", "<!-- <!-- --> -->", "<!<!---->--", "<!--\n<p>x</p>\n-->",
