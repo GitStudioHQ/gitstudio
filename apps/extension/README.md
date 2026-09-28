@@ -18,6 +18,10 @@
   <img src="media/banner.png" alt="GitStudio — the complete Git suite for VS Code and Cursor">
 </p>
 
+<p align="center">
+  <img src="media/shots/hero.gif" width="1200" alt="GitStudio in VS Code on a small TypeScript project. In the Commit Graph, three commits are picked with Cmd-click and the details pane offers Cherry-Pick, Revert, Squash and Drop for all three; in the Changes view a stash opens to its two files; in GitStudio's diff of src/sitemap.ts one of its two changes is ticked, so the file shows as partly staged; a commit message is typed and Commit puts the new commit at the top of the graph and the Commits rail, with Push 3 waiting.">
+</p>
+
 VS Code's built-in Git is functional but flat. GitLens is excellent at *information* — blame, history, lenses — but the *doing* (merging, staging, rebasing, resolving) still sends you to a terminal or a separate app. And the moment you want a commit graph or worktrees, you hit a paywall.
 
 **GitStudio owns both halves, and charges for neither.** A real commit graph, inline blame, file and line history, hunk- and line-level staging, a three-pane merge editor, drag-to-reorder interactive rebase with a universal Undo, first-class branches, stashes, worktrees and tags, in-editor GitHub pull-request review, and an optional bring-your-own-key AI layer.
@@ -41,11 +45,19 @@ Free on public *and* private repos. No account, no sign-up, no analytics, no fea
 
 **A real graph, not a log with lines drawn on it.** Colored branch lanes, ref chips, and author avatars riding the commit nodes. It stays fast at tens of thousands of commits because rendering is virtualized — it draws what's on screen and streams the rest as you scroll. Check out, cherry-pick, branch, tag, or reset from any commit, with full keyboard navigation and theme-aware light, dark, and high-contrast palettes.
 
-<p align="center"><img src="media/shots/graph-panel.png" alt="The full Commit Graph panel: colored branch lanes, ref chips, and author avatars on the commit nodes, with commit details alongside"></p>
+<p align="center"><img src="media/shots/graph-panel.png" alt="The Commit Graph panel, maximized: Uncommitted changes at the top, then colored lanes for main, a merged release branch and two open feature branches, with chips for local branches, remote branches such as origin/main and tags such as v1.0.0 and v1.1.0-beta.1, author initials on the commit nodes, and Changes, Author and Date columns."></p>
+
+The lanes, chips and avatars follow your theme — the same graph in Light Modern:
+
+<p align="center"><img src="media/shots/graph-panel-light.png" width="720" alt="The same Commit Graph in VS Code's Light Modern theme."></p>
+
+**Pick several commits, act on them once.** Cmd/Ctrl-click or Shift-click commits and the details pane becomes one card for the whole selection: cherry-pick, revert, squash or drop them together, or copy their SHAs. With exactly two, it also offers to compare them.
+
+<p align="center"><img src="media/shots/graph-multi-select.png" alt="Three commits selected in the Commit Graph with Cmd-click. The details pane reads 3 commits selected, by Maya Chen and Sofia Marino, 7d ago to 2d ago, lists the three, and offers Cherry-Pick 3 Commits, Revert 3 Commits, Squash 3 Commits, Drop 3 Commits and Copy SHAs."></p>
 
 **The graph also lives in your sidebar** — built for that width, not shrunk to fit. Compact two-line rows (message on top; refs, author, age below) show 3–4× more history at a glance, the true branch topology renders as a rail with mini author avatars, and remote branches fold into their local chip. Scoped search (message, author, SHA, refs) sits in the header. Every commit action is on right-click; double-click promotes a commit into the full graph for deep work.
 
-<p align="center"><img src="media/shots/commits-rail.png" width="330" alt="The Commits sidebar view: compact two-line commit rows with a branch topology rail, mini author avatars, and scoped search"></p>
+<p align="center"><img src="media/shots/commits-rail.png" width="330" alt="The Commits view in the side bar: a search box, Uncommitted changes, then two-line commit rows (the subject; a branch, remote or tag chip, the author's short name and the age) along a lane rail with author initials."></p>
 
 ## Staging and sync, without the wait
 
@@ -57,8 +69,17 @@ Free on public *and* private repos. No account, no sign-up, no analytics, no fea
 
 <table>
   <tr>
-    <td width="50%"><img src="media/shots/changes-view.png" alt="The Changes view: staged and unstaged groups, the guided commit box, and live Push/Pull buttons with ahead/behind counts"></td>
-    <td width="50%"><img src="media/shots/branch-dialog.png" alt="The branch dialog: per-branch ahead/behind badges, in-place fetch, and pull-without-checkout from a branch submenu"></td>
+    <td width="50%" valign="top"><img src="media/shots/changes-view.png" alt="The Changes view: the main branch chip with Push 2 and Pull 1, the commit box with Amend, Sign-off, Author, Commit 2 and Commit and Push, then Staged, Unstaged, and a Stashes group with one stash opened to its two files, cache.ts marked staged and retry.ts untracked, and Apply and Pop on its row."></td>
+    <td width="50%" valign="top"><img src="media/shots/branch-dialog.png" alt="The branch menu opened from the main chip: a search box, Fetch, Pull, Push, New Branch and Checkout Tag or Revision, then local branches with their upstream and ahead/behind badges (main up 2 down 1, feature/search-filters down 1, hotfix/cache-errors up 1), the remote branches of origin, and tags, each with a submenu."></td>
+  </tr>
+</table>
+
+**Tick exactly what goes into the commit.** *Stage Changes with Ticks* (the checklist button on a changed file's editor) opens GitStudio's own diff with a tick beside every change. Or switch the Changes view to checkboxes (the toolbar's *Switch to checkboxes*, or `gitstudio.changes.stagingModel`): one list with a tick per file, and a file opens up to a tick per change. Either way, a file you tick only partly stays partly staged.
+
+<table>
+  <tr>
+    <td width="64%" valign="top"><img src="media/shots/diff-ticks.png" alt="Stage Changes with Ticks on src/sitemap.ts: GitStudio's side-by-side diff of HEAD and the working tree with a tick beside each of its two changes, the first one ticked; the Changes view beside it lists sitemap.ts under both Staged and Unstaged and reads Commit 3."></td>
+    <td width="36%" valign="top"><img src="media/shots/changes-checkboxes.png" alt="The Changes view in the checkbox model: one list with a tick per file; sitemap.ts is opened to its two changes, lines 2 to 3 ticked and lines 6 to 7 not, so its own tick shows it partly staged."></td>
   </tr>
 </table>
 
@@ -66,13 +87,21 @@ Free on public *and* private repos. No account, no sign-up, no analytics, no fea
 
 **Authorship where you're reading.** Current-line blame renders inline at the end of the line and in the status bar. Toggle full-file annotations (`Ctrl/Cmd+Alt+G B`) for a code-age heatmap — recent changes warm, old changes cool — with rich hovers that link straight to the commit.
 
+<p align="center"><img src="media/shots/blame.png" alt="Full-file blame on src/build.ts: each line's date and author in a gutter tinted by age, the newest lines warmest, and the current line's inline blame, Priya Raman, 9d, fix(cache): cached pages keep their titles, repeated in the status bar."></p>
+
 **History at three depths.** Per-file history, **line history** (blame-over-time for the code under your cursor, `Ctrl/Cmd+Alt+G H`), and revision navigation that steps a file backward and forward through its versions. When something goes truly wrong, **Show Reflog (Time Machine)** lists every place HEAD has been — so lost commits are recoverable, not gone.
+
+<p align="center"><img src="media/shots/line-history.png" alt="Line History for lines 19 to 23 of src/build.ts, opened with Cmd+Alt+G H on a selection: the four commits that shaped those lines, newest first, each with its author, age and short SHA, ready to diff against its parent."></p>
 
 ## Merge, rebase, and a real Undo
 
 **Yours, result, theirs — the JetBrains layout.** Conflicted files open in a three-pane merge editor with one-click accept ribbons per conflict, and conflicts auto-open as they appear during a merge, rebase, or cherry-pick. No hand-editing `<<<<<<<` markers.
 
+<p align="center"><img src="media/shots/merge-editor.png" alt="The three-pane merge editor on the built-in sample (Open Sample Merge), rebasing feature/session-hardening onto main, commit 2 of 3: yours on the left, the result in the middle, theirs on the right, a legend naming each kind of change with its count, an arrow and a cross beside every change to take or ignore it, and Accept Yours, Accept Theirs, Close sample and Apply at the bottom."></p>
+
 **Rebase you can see.** *Start Interactive Rebase…* opens a drag-to-reorder workspace — pick, reword, edit, squash, fixup, drop — with a plain-English preview of what each action does, instead of a todo file in a text buffer.
+
+<p align="center"><img src="media/shots/interactive-rebase.png" alt="Interactive Rebase of main onto HEAD~6: six commits, newest first; the top one set to Squash, which folds down into the commit below it and keeps both messages; one set to Reword with its new message typed in; one set to Edit, where the rebase pauses; the rest Pick. The legend of actions sits above, and 6 to 5 commits, Cancel and Start Rebase below."></p>
 
 **Undo is universal.** GitStudio snapshots the reflog before every destructive operation, and `Ctrl/Cmd+Alt+G Z` reverses the last one — a bad rebase, a wrong reset, an accidental branch delete. History that's already pushed falls back to a safe Revert rather than rewriting shared commits. Undo never hijacks your editor's `Ctrl/Cmd+Z`.
 
@@ -81,6 +110,8 @@ Free on public *and* private repos. No account, no sign-up, no analytics, no fea
 - **Stashes** live under your changes, in the Changes view: open one to see every file it holds — staged and untracked ones too — click a file for its diff, and **Move** (or **Copy**) just the files you want back. Apply, Pop, Create Branch or Drop a whole stash from its row; stash all your changes, or just the files you selected, from the Changes toolbar. Or drag: a stash onto your changes applies it (hold Alt/Option to pop), its files move back (Alt/Option copies), and changed files dropped on the Stashes header are stashed.
 - **Worktrees** get their own view: every worktree with its branch and, in words, what it holds — changes, commits to push or pull, a lock and its reason, a merge or rebase stopped in it, a folder that's gone or is no longer a worktree. Open a row to see its uncommitted files and its commits not pushed, each commit opening to its files, diffs read from that worktree. Pull in place, review its push, open it here or in a new window, lock it, remove it (Stash & Remove keeps its changes), forget or prune the ones that are gone — the sane way to review a PR without stashing your work. New Worktree suggests a folder beside your project, named for the branch.
 - **Tags** support checkout, delete, and push; **remotes** support add, manage, and fetch — all reachable from the branch dialog, the graph, or the Command Palette.
+
+<p align="center"><img src="media/shots/worktrees-view.png" width="330" alt="The Worktrees view with both worktrees opened: lumen on main, with its staged changes, its changes, 2 commits not pushed to origin/main and 1 to pull, and Pull and Push buttons; and lumen-hotfix on hotfix/cache-errors, with 1 changed file and its commit not pushed, opened to the file it changed, and a Push button."></p>
 
 ## GitHub pull requests, in-editor
 

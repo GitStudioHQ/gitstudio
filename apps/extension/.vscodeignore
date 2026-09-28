@@ -20,3 +20,5 @@ media/*.svg
 # raw.githubusercontent.com and none of these need to ship in the vsix.
 media/shots/**
 media/banner.png
+# How the README media is made: for the repository, not the extension.
+SHOTS.md
