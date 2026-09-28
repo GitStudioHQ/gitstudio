@@ -518,7 +518,9 @@ test("a button reached with Tab shows its tip, as it does under the pointer", { 
   await page.eval(`document.getElementById("layout-toggle").focus()`);
   await page.key("Tab");
   assert.equal(await page.eval<string>(`document.activeElement.id`), "model-toggle");
-  await page.eval("new Promise(function (r) { setTimeout(r, 500); })");
+  // Until it is painted: the tip fades in after its delay, and a slow runner
+  // was still at opacity 0 after a fixed 500ms.
+  await page.page.waitFor(`(function () { var t = document.querySelector(".gs-tip"); return !!t && t.classList.contains("show") && getComputedStyle(t).opacity !== "0"; })()`);
   const tip = await page.eval<{ shown: boolean; text: string; opacity: string }>(`(function () {
     var t = document.querySelector(".gs-tip");
     return { shown: t.classList.contains("show"), text: t.textContent, opacity: getComputedStyle(t).opacity };
