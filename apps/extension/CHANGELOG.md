@@ -13,6 +13,13 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   tip) and opens the one you pick in your browser. It is in the command
   palette, at the bottom of the Changes view's **…** menu, and on the last
   step of Get Started. It never opens by itself.
+- **A switch for commit authors' pictures.** To show an author's picture in
+  the Commit Graph, the Commits view and commit details, GitStudio sends an
+  MD5 hash of their email address to Gravatar (`www.gravatar.com`), or, for a
+  GitHub noreply address, asks GitHub (`avatars.githubusercontent.com`) for
+  that account's picture. The new `gitstudio.avatars.gravatar` setting (on by
+  default, as before) turns that off: every author is drawn as coloured
+  initials, and neither request is sent.
 
 ## [1.16.0] - 2026-09-28
 

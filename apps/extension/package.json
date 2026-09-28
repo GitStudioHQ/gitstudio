@@ -1052,6 +1052,12 @@
             "default": "squash",
             "description": "Default method offered first when merging a pull request.",
             "order": 4
+          },
+          "gitstudio.avatars.gravatar": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Show commit authors' pictures in the Commit Graph, the Commits view and commit details. To find one, GitStudio sends an MD5 hash of each author's email address to Gravatar (`www.gravatar.com`, run by Automattic); for a GitHub noreply address (`…@users.noreply.github.com`) it asks GitHub (`avatars.githubusercontent.com`) for that account's picture instead. Turn this off to show every author as coloured initials and send neither request. While you are signed in to GitHub, the pictures GitHub itself returns (on pull requests, and for the authors of a GitHub repository's recent commits) still show. See [PRIVACY.md](https://github.com/GitStudioHQ/gitstudio/blob/main/apps/extension/PRIVACY.md).",
+            "order": 5
           }
         }
       },

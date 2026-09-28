@@ -103,6 +103,9 @@
     return (n?.textContent ?? "").trim();
   };
   const left = (el) => Math.round(el.getBoundingClientRect().left);
+  /** Where a commit author's picture is looked up: Gravatar, or GitHub's
+   *  avatar host for a noreply address (webview-ui's graph/avatar.ts). */
+  const PICTURE_HOST = /^https:\/\/(www\.)?gravatar\.com\/|^https:\/\/avatars\.githubusercontent\.com\//;
   /**
    * Whether a computed paint — a background's image and colour, as one string
    * — has a red in it: a destructive button's face, asserted by what it looks
@@ -5055,6 +5058,122 @@
       c.ok(!!box, "the ask-where checkbox exists");
       if (!box) return;
       c.eq(getComputedStyle(box).appearance, "none", "checkbox must not be the native control");
+    },
+
+    // ── author pictures follow the Gravatar switch ──────────────────────────
+    // A commit author's picture is a request to a third party that names them:
+    // an MD5 hash of their email to www.gravatar.com, or a GitHub noreply
+    // address's account name to avatars.githubusercontent.com. Settings ▸
+    // Appearance turns that off, and off has to mean NO <img> pointing there
+    // was ever attached — not a hidden one, not one that failed and was
+    // swapped for initials, not one that loads lazily later. So these read
+    // what the page ASKED for (the shim's ?imgwatch=1 log), not only what is
+    // left in the DOM at the end. `arg` is on|off; the scene sets the pref
+    // (?gravatar=0) for "off". "on" is the control: the same page with the
+    // switch on DOES ask, so a check that could not see a lookup cannot pass
+    // for the wrong reason.
+    "author-pictures-follow-the-gravatar-switch": async (f) => {
+      const c = check(f);
+      const on = window.__GS_ARG !== "off";
+      c.ok(typeof window.__gsImgSrcs === "function", "the scene records image requests (?imgwatch=1)");
+      if (typeof window.__gsImgSrcs !== "function") return;
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph element is mounted");
+      if (!sr) return;
+      for (let i = 0; i < 40 && !sr.querySelector(".row .avatar .fallback"); i++) await settle(100);
+      const discs = sr.querySelectorAll(".row .avatar .fallback").length;
+      c.ok(discs > 0, `the graph draws its authors (${discs} initials discs)`);
+      const rowPics = sr.querySelectorAll(".row .avatar img").length;
+      if (on) c.ok(rowPics > 0, `switch on: the rows carry pictures (${rowPics})`);
+      else c.eq(rowPics, 0, "switch off: no graph row has a picture element");
+      // The details header draws the selected commit's author too — for a
+      // commit the fixture has details for (most rows have none).
+      let row;
+      for (const r of sr.querySelectorAll(".row[data-sha]")) {
+        if (!r.querySelector(".avatar .fallback")) continue;
+        if (await window.gitstudio.invoke("commit:details", r.dataset.sha)) {
+          row = r;
+          break;
+        }
+      }
+      c.ok(!!row, "a commit row with details to select");
+      if (!row) return;
+      (row.querySelector(".subject") || row).click();
+      let head;
+      for (let i = 0; i < 40; i++) {
+        head = $("gitstudio-commit-details")?.shadowRoot?.querySelector(".head .avatar");
+        if (head) break;
+        await settle(100);
+      }
+      c.ok(!!head, "the commit's details open with its author");
+      if (head) {
+        const pic = head.querySelector("img");
+        if (on) c.ok(!!pic, "switch on: the details header carries a picture");
+        else c.ok(!pic, "switch off: the details header draws initials and no picture element");
+      }
+      const asked = window.__gsImgSrcs().filter((s) => PICTURE_HOST.test(s));
+      if (on) {
+        c.ok(asked.some((s) => /gravatar\.com\/avatar\/[0-9a-f]{32}\?/.test(s)), `switch on: Gravatar was asked (${asked.length} lookups)`);
+      } else {
+        c.eq(asked.length, 0, `switch off: no picture host was ever asked (${asked.slice(0, 2).join(", ")})`);
+      }
+    },
+
+    // The Branches list draws each branch's people from the same helper — its
+    // tip author at once, then creator and contributors, some with GitHub
+    // noreply addresses (the path to avatars.githubusercontent.com).
+    "branch-people-follow-the-gravatar-switch": async (f) => {
+      const c = check(f);
+      const on = window.__GS_ARG !== "off";
+      c.ok(typeof window.__gsImgSrcs === "function", "the scene records image requests (?imgwatch=1)");
+      if (typeof window.__gsImgSrcs !== "function") return;
+      for (let i = 0; i < 30 && !$(".br-people-stack"); i++) await settle(100);
+      const faces = $$(".br-people .av").length;
+      c.ok(faces > 0, `branch rows draw their people (${faces})`);
+      const asked = window.__gsImgSrcs().filter((s) => PICTURE_HOST.test(s));
+      if (on) {
+        c.ok(asked.some((s) => /avatars\.githubusercontent\.com\//.test(s)), "switch on: a noreply author is looked up on GitHub");
+        c.ok(asked.some((s) => /gravatar\.com\/avatar\//.test(s)), "switch on: another author is looked up on Gravatar");
+      } else {
+        c.eq(asked.length, 0, `switch off: no picture host was ever asked (${asked.slice(0, 2).join(", ")})`);
+        c.eq($$(".br-people img").length, 0, "switch off: no branch row has a picture element");
+      }
+    },
+
+    // The switch itself: on by default, a click turns it off, the choice is
+    // saved with the other preferences, and the graph honours it at once.
+    "the-gravatar-switch-is-kept-and-honoured": async (f) => {
+      const c = check(f);
+      c.ok(typeof window.__gsImgSrcs === "function", "the scene records image requests (?imgwatch=1)");
+      if (typeof window.__gsImgSrcs !== "function") return;
+      const box = $('.settings-gravatar-row input[type="checkbox"]');
+      c.ok(!!box, "Settings ▸ Appearance has the author-picture switch");
+      if (!box) return;
+      c.match(text(".settings-gravatar-row"), /MD5 hash .*gravatar\.com/, "it says what is sent, and to whom");
+      c.ok(box.checked, "it is on by default");
+      box.click();
+      await settle(200);
+      c.ok(!box.checked, "a click turns it off");
+      let saved;
+      try {
+        saved = JSON.parse(localStorage.getItem("gitstudio.ui.prefs") || "{}").gravatar;
+      } catch {
+        saved = undefined;
+      }
+      c.eq(saved, false, "the choice is saved with the other preferences");
+      const before = window.__gsImgSrcs().length;
+      $('[data-view="graph"]')?.click();
+      let sr;
+      for (let i = 0; i < 40; i++) {
+        sr = $("gitstudio-graph")?.shadowRoot;
+        if (sr?.querySelector(".row .avatar .fallback")) break;
+        await settle(100);
+      }
+      c.ok(!!sr?.querySelector(".row .avatar .fallback"), "the graph draws its authors");
+      c.eq(sr?.querySelectorAll(".row .avatar img").length ?? -1, 0, "…with no picture element, right after the switch");
+      const after = window.__gsImgSrcs().slice(before).filter((s) => PICTURE_HOST.test(s));
+      c.eq(after.length, 0, `nothing asked a picture host after the switch went off (${after.slice(0, 2).join(", ")})`);
     },
     "settings-local-copies": (f) => {
       const c = check(f);

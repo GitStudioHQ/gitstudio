@@ -413,6 +413,14 @@ const CASES = [
   ["focus-survives-a-rebuild", "issues", { arg: ".gh-refresh" }],
   ["focus-survives-a-rebuild", "releases", { arg: ".gh-seg-btn:not(.active)" }],
   ["settings-checkbox-styled", "code~text:Settings"],
+  // Author pictures and the Gravatar switch (Settings ▸ Appearance). Each
+  // "off" has its "on" control: the same scene with the switch on must be
+  // seen asking, or an "off" pass means nothing.
+  ["author-pictures-follow-the-gravatar-switch", "graph", { arg: "on", extra: "imgwatch=1" }],
+  ["author-pictures-follow-the-gravatar-switch", "graph", { arg: "off", extra: "imgwatch=1&gravatar=0" }],
+  ["branch-people-follow-the-gravatar-switch", "branches", { arg: "on", extra: "imgwatch=1" }],
+  ["branch-people-follow-the-gravatar-switch", "branches", { arg: "off", extra: "imgwatch=1&gravatar=0" }],
+  ["the-gravatar-switch-is-kept-and-honoured", "code~text:Settings", { extra: "imgwatch=1" }],
   // These two moved with the list they assert about: the clone manager is its
   // own surface now, not a card in Settings.
   ["settings-local-copies", "repositories"],

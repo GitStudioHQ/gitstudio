@@ -43,7 +43,7 @@ import { renderIssueCompose } from "./views/issueCompose";
 import { renderRefDetail } from "./views/refDetail";
 import "@gitstudio/webview-ui/styles/graph.css";
 import "@gitstudio/webview-ui/commit-details";
-import { gravatarUrl } from "@gitstudio/webview-ui/graph/avatar";
+import { gravatarUrl, setGravatarEnabled } from "@gitstudio/webview-ui/graph/avatar";
 import "./styles/app.css";
 // The COMPLETE codicon codepoint map from the real @vscode/codicons library —
 // imported last so its correct codepoints override any legacy hand-typed one.
@@ -346,6 +346,13 @@ class App {
   private stagingModelPref: "split" | "checkboxes" = "split";
   /** Fetch with --prune so branches deleted on the remote drop out — issue #23. */
   private pruneOnFetchPref = true;
+  /**
+   * Look commit authors' pictures up on Gravatar (Settings ▸ Appearance). One
+   * switch for every surface that draws an author — the flag itself lives in
+   * webview-ui's graph/avatar.ts, which decides every such URL; this is the
+   * persisted copy. On by default, as every release before it behaved.
+   */
+  private gravatarPref = true;
   /** Paths whose individual changes are currently showing (#20). */
   private expandedHunks = new Set<string>();
   /**
@@ -761,6 +768,12 @@ class App {
     if (typeof prefs.pruneOnFetch === "boolean") {
       this.pruneOnFetchPref = prefs.pruneOnFetch;
     }
+    if (typeof prefs.gravatar === "boolean") {
+      this.gravatarPref = prefs.gravatar;
+    }
+    // Before this tab draws anything: the graph, the commit details and the
+    // branch lists all ask graph/avatar.ts, which is one switch for the window.
+    setGravatarEnabled(this.gravatarPref);
     if (prefs.themeMode === "system" || prefs.themeMode === "light" || prefs.themeMode === "dark") {
       this.themeMode = prefs.themeMode;
     }
@@ -1383,6 +1396,7 @@ class App {
       currentView: this.currentView,
       stagingModel: this.stagingModelPref,
       pruneOnFetch: this.pruneOnFetchPref,
+      gravatar: this.gravatarPref,
       compareFileListW: this.compareFileListW,
       compareView: this.compareView,
       branchTab: this.branchTab,
@@ -5546,8 +5560,29 @@ class App {
     }
     markSegment(logoSeg, logoLabel);
     syncLogoPreview();
+
+    // Author pictures. A lookup is a request to a third party that names the
+    // author, so it is the user's to turn off — and the words say exactly what
+    // is sent, and to whom (PRIVACY.md says the same).
+    const picRow = el("label", "settings-check settings-gravatar-row");
+    const picBox = document.createElement("input");
+    picBox.type = "checkbox";
+    picBox.checked = this.gravatarPref;
+    picBox.setAttribute("aria-label", "Load author pictures from Gravatar");
+    const picText = el("div", "settings-check-text");
+    const picTitle = el("div", "settings-check-title");
+    picTitle.textContent = "Load author pictures from Gravatar";
+    const picSub = el("div", "settings-sub");
+    picSub.textContent =
+      "Sends an MD5 hash of each commit author's email address to gravatar.com (a GitHub noreply " +
+      "address is looked up on GitHub instead). Off, authors show as coloured initials and nothing " +
+      "is sent. Pictures on pull requests and issues come from GitHub and still show.";
+    picText.append(picTitle, picSub);
+    picRow.append(picBox, picText);
+    picBox.addEventListener("change", () => this.setGravatarPref(picBox.checked));
+
     // Let a theme change from anywhere else — ⌘K, the menu, an OS flip — bring
-    // these two controls up to date without rebuilding the page around them.
+    // these controls up to date without rebuilding the page around them.
     this.syncAppearanceCard = (): void => {
       // NOT gated on `seg.isConnected`. Settings is a keep-alive view, so
       // leaving it PARKS this card — detached, and re-attached verbatim on
@@ -5570,6 +5605,7 @@ class App {
         b.setAttribute("aria-pressed", String(b.classList.contains("active")));
       }
       syncLogoPreview();
+      picBox.checked = this.gravatarPref;
     };
     // The preview trails the segment so the card's two segmented controls keep
     // one left edge. What made it read as a fourth segment was its BORDER —
@@ -5577,9 +5613,21 @@ class App {
     // so it lost the border, gained a plinth, and stands off by --sp-4.
     logoRow.append(logoSeg, preview);
 
-
-    body.append(sub, seg, logoLabel, logoSub, logoRow);
+    body.append(sub, seg, logoLabel, logoSub, logoRow, picRow);
     return card;
+  }
+
+  /**
+   * The author-picture switch: applied to every surface at once, then saved.
+   * The graph, its details pane and its author card repaint themselves (they
+   * listen to graph/avatar.ts); a list drawn before the flip and parked since
+   * — Branches' people, the tags — is rebuilt on its next visit, in every tab.
+   */
+  private setGravatarPref(on: boolean): void {
+    this.gravatarPref = on;
+    setGravatarEnabled(on);
+    this.persist();
+    this.shell.dropEveryTabsKeptViews();
   }
 
   /** Fetch behavior (issue #23): whether fetch passes --prune. Default on —

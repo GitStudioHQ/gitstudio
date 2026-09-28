@@ -9,6 +9,7 @@ import "../styles/graph.css";
 import "./commit-graph";
 import "../commit-details";
 import { applyGraphInitRefs } from "./graphInit";
+import { setGravatarEnabled } from "./avatar";
 import type { CommitGraph, GraphAction } from "./commit-graph";
 import type { CommitDetails, RefMenuRequest, SelectionActionRequest } from "../commit-details";
 import { summaryCommits } from "./selectionSummary";
@@ -371,6 +372,12 @@ function handle(
       graph.authorAvatars = message.avatars;
       // The details pane shows the same person — give it the same photos.
       details.authorAvatars = message.avatars;
+      break;
+    }
+    case "avatarPrefs": {
+      // `gitstudio.avatars.gravatar`. The graph, its author card and the
+      // details header all ask gravatarUrl(), and each repaints on a change.
+      setGravatarEnabled(message.gravatar !== false);
       break;
     }
     case "commitMenu": {

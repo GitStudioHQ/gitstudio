@@ -13,7 +13,7 @@
 import { LitElement, html, css, nothing } from "lit";
 import { codiconStyles } from "./styles/codicons";
 import { hostTokens } from "./styles/hostTokens";
-import { gravatarUrl, avatarHue, authorInitials } from "./graph/avatar";
+import { gravatarUrl, avatarHue, authorInitials, onGravatarChange } from "./graph/avatar";
 import { absTime } from "./graph/format";
 import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import type {
@@ -152,6 +152,8 @@ export class CommitDetails extends LitElement {
   private copiedTimer: ReturnType<typeof setTimeout> | undefined;
   /** Pending containment request, so fast navigation coalesces into one. */
   private containsTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Unsubscribes from the author-picture switch (see graph/avatar.ts). */
+  private disposeGravatar: (() => void) | undefined;
 
   constructor() {
     super();
@@ -267,6 +269,8 @@ export class CommitDetails extends LitElement {
       clearTimeout(this.containsTimer);
       this.containsTimer = undefined;
     }
+    this.disposeGravatar?.();
+    this.disposeGravatar = undefined;
   }
 
   connectedCallback(): void {
@@ -277,6 +281,8 @@ export class CommitDetails extends LitElement {
     } catch {
       /* storage unavailable — keep the default width */
     }
+    // The header's picture follows the author-picture switch.
+    this.disposeGravatar = onGravatarChange(() => this.requestUpdate());
   }
 
   static styles = [
@@ -963,7 +969,8 @@ export class CommitDetails extends LitElement {
     const hue = avatarHue(d.authorEmail);
     const initials = authorInitials(d.author, d.authorEmail);
     // Prefer the host-resolved photo (GitHub et al) — the same map the graph
-    // rows use — and fall back to Gravatar only when there isn't one.
+    // rows use — and fall back to Gravatar only when there isn't one. With
+    // author pictures turned off there is no URL, and no <img>: the initials.
     const url =
       this._authorAvatars[(d.authorEmail || "").toLowerCase()] ??
       gravatarUrl(d.authorEmail, 72);
@@ -972,9 +979,11 @@ export class CommitDetails extends LitElement {
     return html`<div class="head">
       <span class="avatar" style="--av-hue:${hue}">
         <span class="fallback">${initials}</span>
-        <img class="av-img" src=${url} alt="" loading="lazy" decoding="async"
-          @load=${(e: Event) => (e.target as HTMLElement).classList.add("is-loaded")}
-          @error=${(e: Event) => ((e.target as HTMLElement).style.display = "none")} />
+        ${url
+          ? html`<img class="av-img" src=${url} alt="" loading="lazy" decoding="async"
+              @load=${(e: Event) => (e.target as HTMLElement).classList.add("is-loaded")}
+              @error=${(e: Event) => ((e.target as HTMLElement).style.display = "none")} />`
+          : nothing}
       </span>
       <div class="id">
         <div class="author" title=${d.authorEmail}>${d.author}

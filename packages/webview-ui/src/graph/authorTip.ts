@@ -127,11 +127,13 @@ function cardHtml(f: AuthorFacts): string {
   // violation on every card. The img instead starts hidden and is revealed by a
   // load listener (see AuthorTip.paint) — the same reveal-on-load the row
   // avatars use, which also means a 404 or blocked host silently leaves the
-  // initials disc rather than a broken-image glyph.
+  // initials disc rather than a broken-image glyph. With author pictures
+  // turned off there is no URL and no <img> at all.
+  const url = gravatarUrl(f.email, 96);
   const face =
     `<span class="atip-face" style="--atip-hue:${hue}">` +
     `<span class="atip-initials">${escapeTip(initials)}</span>` +
-    `<img class="atip-img" alt="" loading="lazy" src="${escapeTip(gravatarUrl(f.email, 96))}">` +
+    (url ? `<img class="atip-img" alt="" loading="lazy" src="${escapeTip(url)}">` : "") +
     `</span>`;
 
   const span =

@@ -48,6 +48,37 @@
     document.documentElement.appendChild(still);
   }
 
+  // `imgwatch=1`: record the source of every <img> the page ever attaches,
+  // in the document AND in every shadow root (the graph, the commit details),
+  // in order. The DOM at the end of a scene cannot say what was ASKED for: a
+  // picture that fails to load — every remote one here, where Chrome reaches
+  // nothing — is swapped for initials (the desktop's avatar()) or hidden (the
+  // graph's rows), and the request it made is gone with it. The author-picture
+  // checks read `__gsImgSrcs()`: what was requested, not what is left.
+  if (params.get("imgwatch") === "1") {
+    const seen = [];
+    const note = (node) => {
+      if (!node || node.nodeType !== 1) return;
+      if (node.tagName === "IMG" && node.getAttribute("src")) seen.push(node.getAttribute("src"));
+      for (const img of node.querySelectorAll?.("img[src]") ?? []) seen.push(img.getAttribute("src"));
+    };
+    const watcher = new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.type === "attributes") note(r.target);
+        else r.addedNodes.forEach(note);
+      }
+    });
+    const watch = (root) => watcher.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["src"] });
+    watch(document.documentElement);
+    const attachShadow = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function (init) {
+      const root = attachShadow.call(this, init);
+      watch(root);
+      return root;
+    };
+    window.__gsImgSrcs = () => seen.slice();
+  }
+
   // Pre-seed prefs so the app boots straight into the scene's view, terminal
   // collapsed, fixed rail width — deterministic screenshots.
   //
@@ -70,6 +101,9 @@
       // in, the ticks that ARE the staging model in that mode were unreachable
       // from the harness and never looked at.
       stagingModel: params.get("staging") === "checkboxes" ? "checkboxes" : "split",
+      // ?gravatar=0: Settings ▸ Appearance ▸ "Load author pictures from
+      // Gravatar" turned off. Left out, the app's own default (on) applies.
+      ...(params.get("gravatar") === "0" ? { gravatar: false } : {}),
       // ?tabviews=1: the last session left gistudio.dev's tab on Branches
       // (#32) — each restored tab comes back on its own view.
       ...(params.get("tabviews")

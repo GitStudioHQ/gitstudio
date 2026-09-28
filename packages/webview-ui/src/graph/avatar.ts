@@ -1,13 +1,15 @@
 // Per-row author avatars for the commit graph.
 //
 // A deterministic Gravatar URL is derived from md5(lowercased, trimmed email)
-// — the canonical Gravatar identity hash — with `d=identicon` so every author
-// still gets a stable generated glyph when they have no uploaded avatar. When
-// the image can't load (offline, blocked, or no network), we fall back to a
-// colored initials disc whose hue is derived from the same email hash, so the
-// fallback is stable and visually distinct per author. The CSP already allows
-// `img-src https: data:`, so both the remote image and the inline SVG fallback
-// load without relaxing it.
+// — the canonical Gravatar identity hash — with `d=404`, so an author with no
+// uploaded picture gets nothing back. Every avatar is drawn over a coloured
+// initials disc whose hue comes from the same hash, so when the picture is
+// missing, can't load (offline, blocked), or is never asked for, the disc is
+// what shows — stable and visually distinct per author.
+//
+// Asking is the user's choice (setGravatarEnabled, below): a lookup is a
+// request to a third party that names the author. Off, gravatarUrl() produces
+// no URL at all and only the disc is drawn.
 //
 // md5 is implemented inline (tiny, synchronous, dependency-free) because the
 // virtualizer builds row HTML on the hot path and can't await SubtleCrypto.
@@ -201,8 +203,55 @@ export function emailHash(email: string): string {
 const GH_NOREPLY_RE =
   /^(?:\d+\+)?([a-z\d](?:[a-z\d-]*[a-z\d])?)@users\.noreply\.github\.com$/i;
 
+/* ── Whether authors' pictures are looked up at all ─────────────────────────
+ *
+ * The user's switch: `gitstudio.avatars.gravatar` in the extension, Settings ▸
+ * Appearance ▸ "Load author pictures from Gravatar" in the desktop app. Looking
+ * a picture up is a request to a third party that names the author:
+ * gravatarUrl() sends an MD5 hash of the email address to www.gravatar.com,
+ * and a GitHub noreply address names its GitHub account to
+ * avatars.githubusercontent.com. Off, gravatarUrl() produces no URL at all.
+ *
+ * Module state rather than a parameter, because it is ONE decision behind many
+ * doors — the graph's rows, the rail's, the details header, the author card,
+ * the desktop's branch lists — and a door that forgot to pass a flag along
+ * would be a request the user had turned off. Anything already drawn repaints
+ * through onGravatarChange().
+ *
+ * On until a host says otherwise: that is what every release before the
+ * switch did, and a host that never sends the preference keeps it.
+ */
+let gravatarOn = true;
+const gravatarListeners = new Set<() => void>();
+
+/** Turn author-picture lookups on or off, and repaint whatever drew one. */
+export function setGravatarEnabled(on: boolean): void {
+  if (on === gravatarOn) return;
+  gravatarOn = on;
+  for (const listener of [...gravatarListeners]) {
+    try {
+      listener();
+    } catch {
+      // One surface's repaint must not stop the next one's.
+    }
+  }
+}
+
+export function gravatarEnabled(): boolean {
+  return gravatarOn;
+}
+
+/** Call `listener` whenever the switch flips. Returns the unsubscribe. */
+export function onGravatarChange(listener: () => void): () => void {
+  gravatarListeners.add(listener);
+  return () => {
+    gravatarListeners.delete(listener);
+  };
+}
+
 /**
- * Best avatar URL for a commit author's email.
+ * Best avatar URL for a commit author's email, or "" when lookups are off
+ * (setGravatarEnabled) — every caller then draws the initials disc alone.
  * - GitHub noreply emails resolve to the user's REAL GitHub profile picture
  *   (avatars.githubusercontent.com serves by login, already CSP-allowed).
  * - Everything else tries Gravatar with `d=404` — a real uploaded photo or
@@ -210,6 +259,7 @@ const GH_NOREPLY_RE =
  *   identicon noise.
  */
 export function gravatarUrl(email: string, size = 40): string {
+  if (!gravatarOn) return "";
   const gh = GH_NOREPLY_RE.exec(email.trim());
   if (gh) {
     return `https://avatars.githubusercontent.com/${gh[1]}?size=${size}`;
@@ -254,6 +304,9 @@ export function authorInitials(name: string, email: string): string {
  * IMMEDIATELY so a row recycled during scroll shows the cached photo instantly
  * instead of flashing the initials disc while it waits for a fresh load event.
  * A first-ever load still starts hidden (a 404 stays hidden).
+ *
+ * No `resolvedUrl` (lookups are off, see gravatarUrl) draws the disc with no
+ * <img> at all — not an <img src="">, which is still an element that loads.
  */
 export function avatarHtml(
   author: string,
@@ -266,11 +319,14 @@ export function avatarHtml(
   const hue = avatarHue(email);
   const initials = esc(authorInitials(author, email));
   const cls = preloaded ? "av-img is-loaded" : "av-img";
+  const photo = resolvedUrl
+    ? `<img class="${cls}" src="${esc(resolvedUrl)}" alt="" loading="lazy" decoding="async" />`
+    : "";
   return (
     `<span class="avatar" style="--gs-av-hue:${hue};--gs-av-x:${cx}px;` +
     `--gs-av-ring:${esc(ring)}" aria-hidden="true">` +
     `<span class="fallback">${initials}</span>` +
-    `<img class="${cls}" src="${esc(resolvedUrl)}" alt="" loading="lazy" decoding="async" />` +
+    photo +
     `</span>`
   );
 }

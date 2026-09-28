@@ -26,6 +26,13 @@ but they share the same engine, so most Git behaviour lands in both at once.
   tip) open the page in your browser, and so do the two buttons in **Settings
   ▸ About**, the two entries in the **⌘K** palette, and one small line at the
   foot of Home. Nothing pops up and nothing ever asks.
+- **A switch for commit authors' pictures.** To show an author's picture in
+  the graph, commit details and the Branches list, GitStudio sends an MD5 hash
+  of their email address to Gravatar (`www.gravatar.com`), or, for a GitHub
+  noreply address, asks GitHub (`avatars.githubusercontent.com`) for that
+  account's picture. **Settings ▸ Appearance ▸ Load author pictures from
+  Gravatar** (on by default, as before) turns that off: every author is drawn
+  as coloured initials, and neither request is sent.
 
 ### Fixed
 - **Your tabs come back after you quit.** Quitting GitStudio saved an empty

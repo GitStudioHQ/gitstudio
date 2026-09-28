@@ -32,6 +32,7 @@ import {
 import type { RepoManager, RepoEntry, UndoOptions } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
+import { gravatarAllowed, onGravatarSettingChange } from "./avatarPrefs";
 import { getRefFilterStore } from "./refFilterStore";
 import {
   commitMenuItems,
@@ -249,6 +250,11 @@ export class CommitGraphPanel {
         this.onMessage(msg),
       ),
       this.repos.onDidChange((e) => this.onRepoChange(e)),
+      // A page that is up repaints its authors when the switch flips; one
+      // still loading hears it with its "ready" (onMessage).
+      onGravatarSettingChange(() => {
+        if (this.ready) this.postAvatarPrefs();
+      }),
     );
     // The branch filter is one selection per repository, shared by every graph
     // surface in the window. A change made in the Commits sidebar has to reach
@@ -270,6 +276,9 @@ export class CommitGraphPanel {
     switch (msg.type) {
       case "ready":
         this.ready = true;
+        // Before the first rows, so an author is never looked up on a page
+        // whose user turned lookups off (`gitstudio.avatars.gravatar`).
+        this.postAvatarPrefs();
         // A (re)loaded page has no ref list, whatever was sent to the one
         // before it: the next graphInit carries it whole.
         this.refListCourier.forget();
@@ -349,6 +358,11 @@ export class CommitGraphPanel {
 
   private post(message: GraphHostMessage): void {
     void this.webview.postMessage(message);
+  }
+
+  /** Tell the page whether it may look authors' pictures up (see avatarPrefs.ts). */
+  private postAvatarPrefs(): void {
+    this.post({ type: "avatarPrefs", gravatar: gravatarAllowed() });
   }
 
   /**

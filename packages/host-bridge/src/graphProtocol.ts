@@ -203,6 +203,24 @@ export interface GraphAuthorAvatarsMessage {
   avatars: Record<string, string>;
 }
 
+/**
+ * Whether the page may look commit authors' pictures up on the internet: the
+ * extension's `gitstudio.avatars.gravatar` setting. The host posts it before
+ * its first graphInit and again whenever the setting changes (the desktop,
+ * which has no webview between it and the graph, sets it directly — see
+ * webview-ui's setGravatarEnabled).
+ *
+ * Off, the page produces no Gravatar URL, so nothing is requested from
+ * www.gravatar.com — nor, for a GitHub noreply address, from
+ * avatars.githubusercontent.com — and every author is drawn as initials.
+ * Photos the HOST resolved (`authorAvatars`, from a signed-in GitHub
+ * account's data) are separate, and still shown.
+ */
+export interface GraphAvatarPrefsMessage {
+  type: "avatarPrefs";
+  gravatar: boolean;
+}
+
 /** One item in the in-graph commit actions popover (host builds the list). */
 export interface GraphMenuItem {
   /** Action id posted back as `commitMenuAction` (empty for a separator). */
@@ -251,6 +269,7 @@ export type GraphHostMessage =
   | GraphRowStatsMessage
   | GraphRevealMessage
   | GraphAuthorAvatarsMessage
+  | GraphAvatarPrefsMessage
   | GraphCommitMenuMessage
   | GraphCommitsSummaryMessage
   | GraphCommitContainsMessage

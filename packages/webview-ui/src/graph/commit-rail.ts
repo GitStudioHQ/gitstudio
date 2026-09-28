@@ -43,7 +43,7 @@ import type {
 } from "@gitstudio/host-bridge/graphProtocol";
 import { renderRowGutterSVG } from "./gutter";
 import { paletteForTheme, observeGraphTheme } from "./lanePalette";
-import { gravatarUrl, avatarHtml } from "./avatar";
+import { gravatarUrl, avatarHtml, onGravatarChange } from "./avatar";
 import { RefTip, refTipStyles, tipAriaLabel, tipData } from "./refTip";
 import { esc, relTime, absTime } from "./format";
 import {
@@ -1094,6 +1094,8 @@ export class CommitRail extends LitElement {
   );
   private palette: readonly string[] = paletteForTheme();
   private disposeTheme: (() => void) | undefined;
+  /** Unsubscribes from the author-picture switch (see avatar.ts). */
+  private disposeGravatar: (() => void) | undefined;
   private shaToIndex = new Map<string, number>();
   private loadMoreArmed = true;
   /** scrollKey of the filter the current rows were built under (see updated). */
@@ -1156,12 +1158,17 @@ export class CommitRail extends LitElement {
       this.palette = palette;
       this.renderRows();
     });
+    // Author pictures turned off (or back on): rebuild the drawn rows, so no
+    // <img> is left behind to load.
+    this.disposeGravatar = onGravatarChange(() => this.renderRows());
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this.disposeTheme?.();
     this.disposeTheme = undefined;
+    this.disposeGravatar?.();
+    this.disposeGravatar = undefined;
     this.teardownVirtualizer();
     document.removeEventListener("pointerdown", this.onDocPointerDown, true);
     document.removeEventListener("keydown", this.onDocKeyDown, true);

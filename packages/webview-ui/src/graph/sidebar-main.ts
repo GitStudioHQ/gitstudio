@@ -8,6 +8,7 @@ import { installSolidAccent } from "../styles/solidAccent";
 import "../styles/graph-sidebar.css";
 import "./commit-rail";
 import { applyGraphInitRefs } from "./graphInit";
+import { setGravatarEnabled } from "./avatar";
 import type { CommitRail, RailAction } from "./commit-rail";
 import type {
   GraphHostMessage,
@@ -128,6 +129,10 @@ function start(root: HTMLElement): void {
       case "authorAvatars":
         // Host-resolved author photos (e.g. GitHub) — repaint nodes in place.
         rail.authorAvatars = message.avatars;
+        break;
+      case "avatarPrefs":
+        // `gitstudio.avatars.gravatar`: the rail repaints itself on a change.
+        setGravatarEnabled(message.gravatar !== false);
         break;
       // The sidebar renders no details dock or CHANGES bars — these host
       // pushes are for the editor-area graph.

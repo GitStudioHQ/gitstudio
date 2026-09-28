@@ -48,7 +48,7 @@ import {
   paletteForTheme,
   observeGraphTheme,
 } from "./lanePalette";
-import { gravatarUrl, avatarHtml } from "./avatar";
+import { gravatarUrl, avatarHtml, onGravatarChange } from "./avatar";
 import { esc, relTime, absTime, DAY, statCount } from "./format";
 import {
   type SearchScope,
@@ -1979,6 +1979,8 @@ export class CommitGraph extends LitElement {
   private restoreScrollPending = false;
   private cleanupVirtualizer: (() => void) | undefined;
   private disposeTheme: (() => void) | undefined;
+  /** Unsubscribes from the author-picture switch (see avatar.ts). */
+  private disposeGravatar: (() => void) | undefined;
   private shaToIndex = new Map<string, number>();
   /** CHANGES-column stats by sha (lazily fetched for visible rows). */
   private rowStats = new Map<string, RowStat>();
@@ -2033,6 +2035,11 @@ export class CommitGraph extends LitElement {
       this.palette = palette;
       this.renderRows();
     });
+    // Author pictures turned off (or back on): every drawn row is rebuilt, so
+    // its <img> goes — an overscan row's too, whose lazy load has not started
+    // yet — and the open author card closes (renderRows hides it), since its
+    // picture was built when it opened.
+    this.disposeGravatar = onGravatarChange(() => this.renderRows());
     // The Branch/Tag auto-fit is a function of the host width (see
     // autoRefsWidth), and the CSS container queries that handle the rest of the
     // responsive behaviour never call back into JS. Without this the track
@@ -2054,6 +2061,8 @@ export class CommitGraph extends LitElement {
     this.resizeObs = undefined;
     this.disposeTheme?.();
     this.disposeTheme = undefined;
+    this.disposeGravatar?.();
+    this.disposeGravatar = undefined;
     this.endColumnDrag();
     if (this.copiedTimer !== undefined) {
       clearTimeout(this.copiedTimer);
