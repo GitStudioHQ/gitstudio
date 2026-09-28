@@ -13,6 +13,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { headlessChromeArgs } from "../test/no-network-chrome.mjs";
+import { killChromeTree } from "../test/chrome-run.mjs";
 
 const HEADLESS_SHELL = join(
   homedir(),
@@ -150,12 +151,10 @@ export class Browser {
       ]),
       { stdio: ["ignore", "ignore", "pipe"] },
     );
+    // Its whole tree: on Windows Chrome's helpers outlive a killed chrome.exe
+    // and hold its stderr open, and the test file can never exit.
     const cleanup = () => {
-      try {
-        proc.kill("SIGKILL");
-      } catch {
-        /* gone */
-      }
+      killChromeTree(proc);
       removeProfile(profile);
     };
     process.once("exit", cleanup);
@@ -227,11 +226,10 @@ export class Browser {
     // The browser may exit before it answers.
     await Promise.race([this.send("Browser.close"), new Promise((r) => setTimeout(r, 1000))]);
     this.ws.close();
-    try {
-      this.proc.kill("SIGKILL");
-    } catch {
-      /* gone */
-    }
+    // The tree, not chrome.exe alone (see launch), and nothing of ours left
+    // listening on a pipe a helper may still hold.
+    killChromeTree(this.proc);
+    this.proc.stderr?.destroy();
     removeProfile(this.profile);
   }
 }
