@@ -8,8 +8,10 @@ import {
   MS_DEFERS_CONTEXT_KEY,
   MS_MERGE_VIEW_TYPES,
   MS_OPERATION_CONTEXT_KEY,
+  MS_SUPPORT_COMMAND,
   MS_WALKTHROUGH_ID,
 } from "../src/ids";
+import { MS_SPONSOR_URL } from "../src/links";
 
 // Merge Studio's own listing: the manifest's brand slots, the walkthrough, the
 // README and the CHANGELOG (POLISH B1, B2, B4, B5). The shared merge contract
@@ -166,6 +168,39 @@ test("the walkthrough shows captures from the final build, never a placeholder",
       assert.doesNotMatch(readFileSync(join(ROOT, f)).toString("latin1"), /Screenshot pending|Placeholder/, `${s.id}: ${f}`);
     }
   }
+});
+
+// ── Support Merge Studio… ───────────────────────────────────────────────────
+//
+// Visible, not annoying: only ever asked for. The Marketplace's ♥ Sponsor
+// button (the manifest's `sponsor` field), the command in the palette, and one
+// line at the end of the walkthrough — nothing in a menu that shows on its own
+// while you merge, no toast, no status-bar item.
+
+test("the Marketplace's Sponsor button is the same GitHub Sponsors page the command opens", () => {
+  assert.equal((pkg as unknown as { sponsor?: { url?: string } }).sponsor?.url, MS_SPONSOR_URL);
+});
+
+test("Support Merge Studio… is declared under jbMerge, listed in the palette, and in no other menu", () => {
+  assert.equal(MS_SUPPORT_COMMAND, "jbMerge.support");
+  const cmd = pkg.contributes.commands.find((c) => c.command === MS_SUPPORT_COMMAND) as unknown;
+  assert.deepEqual(cmd, { command: "jbMerge.support", title: "Support Merge Studio…", category: "Merge Studio", icon: "$(heart)" });
+  const where: string[] = [];
+  for (const [menu, entries] of Object.entries(pkg.contributes.menus)) {
+    for (const e of entries) if (e.command === MS_SUPPORT_COMMAND) where.push(`${menu}${e.when ? ` when ${e.when}` : ""}`);
+  }
+  assert.deepEqual(where, ["commandPalette"]);
+});
+
+test("the walkthrough ends on one quiet line: a link inside a sentence, not a button, not a step", () => {
+  const steps = walkthrough!.steps;
+  const last = steps[steps.length - 1];
+  assert.equal(last.id, "mergeStudio.tryDiff", "the step both variants of the walkthrough end on");
+  const lines = last.description.split("\n");
+  // A line that is ONLY a link renders as a button; text around it keeps it a link.
+  assert.equal(lines[lines.length - 1], "Merge Studio is free and open source. [Support Merge Studio…](command:jbMerge.support)");
+  assert.ok(!(last.completionEvents ?? []).some((e) => e.includes(MS_SUPPORT_COMMAND)), "supporting is never a task to tick off");
+  for (const s of steps.slice(0, -1)) assert.doesNotMatch(s.description, /jbMerge\.support/, `${s.id} does not ask`);
 });
 
 // ── README (POLISH B4) ──────────────────────────────────────────────────────

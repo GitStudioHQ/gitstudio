@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Support Merge Studio…** Merge Studio is free and open source, and if it saves you time you can now support it: **Merge Studio: Support Merge Studio…** offers **Sponsor on GitHub** (recurring support) or **Buy me a coffee** (a one-off tip) and opens the one you pick in your browser. It is in the command palette and on the last step of Get Started. It never opens by itself.
+
 ## 1.1.0 — 2026-09-28
 
 ### Removed

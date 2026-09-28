@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { shouldDeferToGitStudio, type MergeRepo, type RepoLocator } from "@gitstudio/merge-vscode/product";
 import {
   MS_034_COEXIST_KEY,
@@ -10,11 +12,14 @@ import {
 } from "../src/ids";
 import { LateLocator } from "../src/lateLocator";
 import {
+  MS_COFFEE_URL,
   MS_MARKETPLACE_REVIEWS_URL,
   MS_OPENVSX_REVIEWS_URL,
+  MS_SPONSOR_URL,
   rateUrl,
   reportProblemUrl,
   supportLinks,
+  supportPick,
   type EditorFacts,
 } from "../src/links";
 import { buildMsProduct } from "../src/msProduct";
@@ -208,6 +213,29 @@ test("the dashboard's support links are https pages only (the panel refuses anyt
   );
   for (const l of links) assert.match(l.url, /^https:\/\//);
   assert.equal(links[1].url, MS_OPENVSX_REVIEWS_URL);
+});
+
+test("Support Merge Studio…: the two ways in the README's words, each opening exactly its page", () => {
+  const pick = supportPick();
+  assert.equal(pick.title, "Support Merge Studio");
+  assert.equal(pick.placeHolder, "Merge Studio is free and open source. If it saves you time, you can support it.");
+  assert.deepEqual(pick.items, [
+    { label: "$(heart) Sponsor on GitHub", description: "recurring support", url: "https://github.com/sponsors/antonarnaudov" },
+    {
+      label: "$(coffee) Buy me a coffee",
+      description: "a one-off tip",
+      url: "https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d",
+    },
+  ]);
+  assert.equal(pick.items[0].url, MS_SPONSOR_URL, "the dashboard's Sponsor link is the same page");
+  assert.equal(pick.items[1].url, MS_COFFEE_URL);
+  // Each label leads with a codicon the editor draws: both are in the icon
+  // font Merge Studio builds with (VS Code's own set has them too).
+  const codicons = readFileSync(createRequire(import.meta.url).resolve("@vscode/codicons/dist/codicon.css"), "utf8");
+  for (const item of pick.items) {
+    const icon = /^\$\(([a-z-]+)\) /.exec(item.label)?.[1];
+    assert.ok(icon && codicons.includes(`.codicon-${icon}:before`), `${item.label}: codicon-${icon} exists`);
+  }
 });
 
 // ── LateLocator ─────────────────────────────────────────────────────────────

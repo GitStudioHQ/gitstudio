@@ -64,6 +64,13 @@ export const MS_WALKTHROUGH_COMMAND = "jbMerge.openWalkthrough";
 export const MS_WALKTHROUGH_ID = "mergeStudio.gettingStarted";
 export const MS_WALKTHROUGH_FULL_ID = `${MS_EXTENSION_ID}#${MS_WALKTHROUGH_ID}`;
 
+/**
+ * Support Merge Studio… (a brand slot like the walkthrough: each product has
+ * its own, GitStudio's is gitstudio.support), under the `jbMerge.` prefix like
+ * every other id.
+ */
+export const MS_SUPPORT_COMMAND = "jbMerge.support";
+
 /** globalState: the walkthrough opened once (0.3.4's key, so upgraders are not shown it again). */
 export const MS_WALKTHROUGH_SHOWN_KEY = "jbMerge.walkthroughShown";
 

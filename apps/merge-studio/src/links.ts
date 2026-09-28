@@ -1,12 +1,15 @@
 // The conflicts dashboard's support-link slot for Merge Studio (POLISH A5.10,
-// B7). vscode-free: the editor facts come in as plain values, so the URLs are
-// unit-tested.
+// B7), and the quick pick behind Support Merge Studio…. vscode-free: the
+// editor facts come in as plain values, so the URLs are unit-tested.
 //
 // Where the links render (only on the success card, one quiet "Report a
 // problem" mid-operation) is the shared dashboard's job, not the shell's.
 
 export const MS_REPO_URL = "https://github.com/GitStudioHQ/merge-studio";
+/** GitHub Sponsors: recurring support. The manifest's `sponsor` field is the same page. */
 export const MS_SPONSOR_URL = "https://github.com/sponsors/antonarnaudov";
+/** Buy me a coffee: a one-off tip, through Revolut. */
+export const MS_COFFEE_URL = "https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d";
 export const MS_MARKETPLACE_REVIEWS_URL =
   "https://marketplace.visualstudio.com/items?itemName=gitstudio.merge-studio&ssr=false#review-details";
 export const MS_OPENVSX_REVIEWS_URL = "https://open-vsx.org/extension/gitstudio/merge-studio/reviews";
@@ -60,4 +63,27 @@ export function supportLinks(facts: EditorFacts): { label: string; url: string }
     { label: "Rate Merge Studio", url: rateUrl(facts.uriScheme) },
     { label: "Sponsor", url: MS_SPONSOR_URL },
   ];
+}
+
+/** One row of Support Merge Studio…'s quick pick: a QuickPickItem and the page it opens. */
+export interface SupportPickItem {
+  /** A codicon, then the README's words. */
+  label: string;
+  description: string;
+  url: string;
+}
+
+/**
+ * Support Merge Studio… — the command's quick pick. Only ever asked for (the
+ * command palette, the walkthrough's last line); nothing opens it by itself.
+ */
+export function supportPick(): { title: string; placeHolder: string; items: SupportPickItem[] } {
+  return {
+    title: "Support Merge Studio",
+    placeHolder: "Merge Studio is free and open source. If it saves you time, you can support it.",
+    items: [
+      { label: "$(heart) Sponsor on GitHub", description: "recurring support", url: MS_SPONSOR_URL },
+      { label: "$(coffee) Buy me a coffee", description: "a one-off tip", url: MS_COFFEE_URL },
+    ],
+  };
 }

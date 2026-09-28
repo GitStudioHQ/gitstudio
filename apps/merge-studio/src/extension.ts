@@ -5,8 +5,8 @@
 // extension) and hands it to @gitstudio/merge-vscode's registrar, which
 // registers the merge editor, the conflicts dashboard, routing, the status
 // item, the diff panel and the coexistence question. What stays here is
-// brand-only: the walkthrough and the context key that switches its "Using
-// GitStudio too?" step.
+// brand-only: the walkthrough, the context key that switches its "Using
+// GitStudio too?" step, and Support Merge Studio….
 //
 // When a GitStudio with this same merge experience is installed with
 // `gitstudio.merge.autoOpen` on, GitStudio owns everything automatic (decision
@@ -24,12 +24,13 @@ import {
   MS_DEFERS_CONTEXT_KEY,
   MS_LAST_VERSION_KEY,
   MS_SIDES_TIP_KEY,
+  MS_SUPPORT_COMMAND,
   MS_WALKTHROUGH_COMMAND,
   MS_WALKTHROUGH_FULL_ID,
   MS_WALKTHROUGH_SHOWN_KEY,
 } from "./ids";
 import { LateLocator } from "./lateLocator";
-import { supportLinks } from "./links";
+import { supportLinks, supportPick } from "./links";
 import { buildMsProduct } from "./msProduct";
 import {
   decideWalkthrough,
@@ -123,6 +124,7 @@ export function activate(context: vscode.ExtensionContext): MergeStudioApi {
   );
 
   registerWalkthrough(context, locator);
+  registerSupport(context);
   // GitStudio reads this: a question answered here (or by 0.3.4, counted by
   // legacyStateUpdates above) is not asked again when GitStudio owns it.
   return { mergePeer: experience.peerApi };
@@ -161,6 +163,23 @@ function registerWalkthrough(context: vscode.ExtensionContext, locator: LateLoca
       await open();
     }
   });
+}
+
+/**
+ * Support Merge Studio…: a quick pick of the two ways (links.ts), and the one
+ * chosen opens in the browser. Only ever asked for — the command palette and
+ * the walkthrough's last line; nothing opens it by itself.
+ */
+function registerSupport(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand(MS_SUPPORT_COMMAND, async () => {
+      const { title, placeHolder, items } = supportPick();
+      const chosen = await vscode.window.showQuickPick(items, { title, placeHolder });
+      if (chosen) {
+        await vscode.env.openExternal(vscode.Uri.parse(chosen.url));
+      }
+    }),
+  );
 }
 
 /**

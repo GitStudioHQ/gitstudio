@@ -227,7 +227,7 @@
           {
             "id": "mergeStudio.tryDiff",
             "title": "Compare two files",
-            "description": "Select two files in the Explorer, right-click, and choose Compare in Merge Studio. Or start with a sample.\n[Open sample diff](command:jbMerge.openDemoDiff)",
+            "description": "Select two files in the Explorer, right-click, and choose Compare in Merge Studio. Or start with a sample.\n[Open sample diff](command:jbMerge.openDemoDiff)\nMerge Studio is free and open source. [Support Merge Studio…](command:jbMerge.support)",
             "media": {
               "image": {
                 "dark": "media/walkthrough/diff-dark.png",
@@ -298,6 +298,12 @@
         "title": "Open Getting Started",
         "category": "Merge Studio",
         "icon": "$(rocket)"
+      },
+      {
+        "command": "jbMerge.support",
+        "title": "Support Merge Studio…",
+        "category": "Merge Studio",
+        "icon": "$(heart)"
       },
       {
         "command": "jbMerge.openDemo",
@@ -386,6 +392,9 @@
       "commandPalette": [
         {
           "command": "jbMerge.openWalkthrough"
+        },
+        {
+          "command": "jbMerge.support"
         },
         {
           "command": "jbMerge.openDemo"

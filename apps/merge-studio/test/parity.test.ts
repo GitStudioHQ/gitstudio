@@ -16,7 +16,7 @@ import {
   hasSharedMergeExperience,
   type MergeCommandIds,
 } from "@gitstudio/merge-vscode/product";
-import { MS_MERGE_COMMANDS, MS_SETTINGS_SECTION, MS_WALKTHROUGH_COMMAND } from "../src/ids";
+import { MS_MERGE_COMMANDS, MS_SETTINGS_SECTION, MS_SUPPORT_COMMAND, MS_WALKTHROUGH_COMMAND } from "../src/ids";
 
 // "No diff between the standalone extension and the combined one, no parts
 // missing" (POLISH §3 iii), as a test: Merge Studio's package.json against
@@ -51,6 +51,7 @@ const gs = readJson<Manifest>(join(GS_ROOT, "package.json"));
 let GS_COMMANDS: MergeCommandIds;
 let GS_SECTION: string;
 let GS_WALKTHROUGH: string;
+let GS_SUPPORT: string;
 
 before(async () => {
   // GitStudio's ids module (vscode-free). Loaded by path, so the same test
@@ -59,22 +60,40 @@ before(async () => {
     GITSTUDIO_MERGE_COMMANDS: MergeCommandIds;
     GITSTUDIO_MERGE_SECTION: string;
     GITSTUDIO_WALKTHROUGH_COMMAND: string;
+    GITSTUDIO_SUPPORT_COMMAND: string;
   };
   GS_COMMANDS = ids.GITSTUDIO_MERGE_COMMANDS;
   GS_SECTION = ids.GITSTUDIO_MERGE_SECTION;
   GS_WALKTHROUGH = ids.GITSTUDIO_WALKTHROUGH_COMMAND;
+  GS_SUPPORT = ids.GITSTUDIO_SUPPORT_COMMAND;
 });
 
-type Role = CommandRole | "openWalkthrough";
+/**
+ * A merge role, or one of the two brand slots: the walkthrough, and Support
+ * <product>… — each product has its own, so each must have one.
+ */
+type Role = CommandRole | "openWalkthrough" | "support";
 
-function roleIn(ids: MergeCommandIds, walkthrough: string, command: string | undefined): Role | undefined {
+function roleIn(
+  ids: MergeCommandIds,
+  brand: { walkthrough: string; support: string },
+  command: string | undefined,
+): Role | undefined {
   if (!command) return undefined;
-  if (command === walkthrough) return "openWalkthrough";
+  if (command === brand.walkthrough) return "openWalkthrough";
+  if (command === brand.support) return "support";
   return (Object.keys(ids) as CommandRole[]).find((r) => ids[r] === command);
 }
 
-const msRole = (command: string | undefined) => roleIn(MS_MERGE_COMMANDS, MS_WALKTHROUGH_COMMAND, command);
-const gsRole = (command: string | undefined) => roleIn(GS_COMMANDS, GS_WALKTHROUGH, command);
+const msRole = (command: string | undefined) =>
+  roleIn(MS_MERGE_COMMANDS, { walkthrough: MS_WALKTHROUGH_COMMAND, support: MS_SUPPORT_COMMAND }, command);
+const gsRole = (command: string | undefined) =>
+  roleIn(GS_COMMANDS, { walkthrough: GS_WALKTHROUGH, support: GS_SUPPORT }, command);
+/** The command the other product registers for a role. */
+const gsTwin = (role: Role) =>
+  role === "openWalkthrough" ? GS_WALKTHROUGH : role === "support" ? GS_SUPPORT : GS_COMMANDS[role];
+const msTwin = (role: Role) =>
+  role === "openWalkthrough" ? MS_WALKTHROUGH_COMMAND : role === "support" ? MS_SUPPORT_COMMAND : MS_MERGE_COMMANDS[role];
 const declared = (m: Manifest) => new Set(m.contributes.commands.map((c) => c.command));
 
 test("Merge Studio's manifest satisfies the shared merge contract (the same table GitStudio's is checked against)", () => {
@@ -96,7 +115,7 @@ test("every jbMerge.* command Merge Studio declares has a declared gitstudio.* t
       problems.push(`${command}: not a merge role — add it to MergeCommandIds (both products) or remove it`);
       continue;
     }
-    const twin = role === "openWalkthrough" ? GS_WALKTHROUGH : GS_COMMANDS[role];
+    const twin = gsTwin(role);
     if (!gsDeclared.has(twin)) problems.push(`${command} → ${twin} is not declared by GitStudio`);
   }
   assert.deepEqual(problems, []);
@@ -114,7 +133,7 @@ test("every merge command GitStudio declares has a declared jbMerge.* twin", () 
       problems.push(`${command}: a gitstudio.merge.* command with no role in MergeCommandIds`);
       continue;
     }
-    const twin = role === "openWalkthrough" ? MS_WALKTHROUGH_COMMAND : MS_MERGE_COMMANDS[role];
+    const twin = msTwin(role);
     if (!msDeclared.has(twin)) problems.push(`${command} → ${twin} is not declared by Merge Studio`);
   }
   // …and every role GitStudio registers, declared or not (a registered command
@@ -172,6 +191,12 @@ const MENU_EXCEPTIONS: ReadonlyArray<{ product: "gitstudio" | "merge-studio"; me
     menu: "view/title",
     role: "openWalkthrough",
     why: "GitStudio's Changes view title; Merge Studio has no view of its own",
+  },
+  {
+    product: "gitstudio",
+    menu: "view/title",
+    role: "support",
+    why: "the bottom of GitStudio's Changes view \"…\" menu; Merge Studio has no view of its own",
   },
 ];
 
