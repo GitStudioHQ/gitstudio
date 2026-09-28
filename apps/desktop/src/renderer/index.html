@@ -207,12 +207,11 @@
                 <linearGradient id="launch-top" x1="0.1" y1="0" x2="0.7" y2="1"><stop offset="0" class="lc-top-a" /><stop offset="1" class="lc-top-b" /></linearGradient>
                 <linearGradient id="launch-left" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="lc-left-a" /><stop offset="1" class="lc-left-b" /></linearGradient>
                 <linearGradient id="launch-right" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" class="lc-right-a" /><stop offset="1" class="lc-right-b" /></linearGradient>
-                <mask id="launch-holes" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
-                  <rect width="512" height="512" fill="#fff" />
-                  <circle cx="124.4" cy="174" r="9.2" /><circle cx="387.6" cy="174" r="9.2" /><circle cx="256" cy="402" r="9.2" /><circle cx="256" cy="250" r="10.4" />
-                </mask>
               </defs>
-              <g mask="url(#launch-holes)">
+              <!-- Solid: the eyelets are punched in the graph layer, so the
+                   body shows through them (brand/README.md) — and a cube
+                   waiting for its graph has no holes in it. -->
+              <g>
                 <path d="M256,98 L387.6,174 L256,250 L124.4,174 Z" fill="url(#launch-top)" />
                 <path d="M387.6,174 L387.6,326 L256,402 L256,250 Z" fill="url(#launch-right)" />
                 <path d="M256,250 L256,402 L124.4,326 L124.4,174 Z" fill="url(#launch-left)" />
