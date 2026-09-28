@@ -1,0 +1,92 @@
+name: Bug report
+description: Something in the desktop app, the GitStudio extension or Merge Studio doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **A security problem?** Please don't file it here. Report it privately from the [Security tab](https://github.com/GitStudioHQ/gitstudio/security/advisories/new) instead.
+
+        Before you paste output or attach a screenshot, check it for things you'd rather not publish: private repository or branch names, file paths, tokens.
+  - type: dropdown
+    id: product
+    attributes:
+      label: Product
+      description: The desktop app and the two extensions share a lot of their screens, so please say which one this happened in.
+      options:
+        - Desktop app (GitStudio for macOS, Windows or Linux)
+        - GitStudio extension (in VS Code, Cursor or another editor)
+        - Merge Studio extension
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Desktop app: Settings ▸ About. An extension: its page in your editor's Extensions view."
+      placeholder: "2.3.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: With its version, and Intel or Apple Silicon on a Mac.
+      placeholder: "macOS 15.1, Apple Silicon"
+    validations:
+      required: true
+  - type: dropdown
+    id: editor
+    attributes:
+      label: Editor
+      description: For the extensions. Choose "Not applicable" for the desktop app.
+      options:
+        - Not applicable (desktop app)
+        - VS Code
+        - Cursor
+        - Other (please say which, and its version, below)
+    validations:
+      required: true
+  - type: input
+    id: git
+    attributes:
+      label: Git version
+      description: What `git --version` prints.
+      placeholder: "git version 2.46.0"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, step by step, starting from something we can set up too (a new repository, a merge with a conflict, a pull request).
+      placeholder: |
+        1. Open a repository with a merge conflict
+        2. Click …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Including any message the app showed, word for word.
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or a recording
+      description: Drag images or a short video in here. A screenshot also tells us at a glance which product and which screen you were in.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "If a Git command failed: the desktop app's Output tab, or the extension's GitStudio output channel (View ▸ Output)."
+      render: text

@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/GitStudioHQ/gitstudio/security/advisories/new
+    about: Please report security problems privately, not in a public issue.
+  - name: Sponsor on GitHub
+    url: https://github.com/sponsors/antonarnaudov
+    about: Recurring support for GitStudio, which is free and open source.
+  - name: Buy me a coffee
+    url: https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d
+    about: A one-off tip.

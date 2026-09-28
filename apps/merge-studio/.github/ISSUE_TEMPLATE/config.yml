@@ -1,0 +1,18 @@
+# Blank issues stay on: the Conflicts dashboard's "Report a problem" link opens
+# /issues/new with the version, editor and platform already filled in, and a
+# repository with blank issues off would send it to the template chooser
+# instead, losing them.
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/GitStudioHQ/merge-studio/security/advisories/new
+    about: Please report security problems privately, not in a public issue.
+  - name: Using GitStudio?
+    url: https://github.com/GitStudioHQ/gitstudio/issues
+    about: The merge editor inside GitStudio is reported there.
+  - name: Sponsor on GitHub
+    url: https://github.com/sponsors/antonarnaudov
+    about: Recurring support for Merge Studio, which is free and open source.
+  - name: Buy me a coffee
+    url: https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d
+    about: A one-off tip.

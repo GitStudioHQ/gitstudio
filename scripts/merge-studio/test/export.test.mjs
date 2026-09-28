@@ -22,7 +22,7 @@ import {
   VENDOR_GITATTRIBUTES,
   VENDORED_PACKAGES,
 } from "../export.mjs";
-import { toGitstudio } from "../layout.mjs";
+import { shellFiles, toGitstudio } from "../layout.mjs";
 
 /**
  * The blob git makes of gitstudio's file `rel`: what an export writes for it,
@@ -238,7 +238,7 @@ test("a shell file the previous export wrote and gitstudio no longer has is remo
       "media/old-shot.png": "gone from gitstudio",
       "docs/walkthrough/old.md": "gone from gitstudio, and its folder with it",
       "OLD.md": "gone from gitstudio",
-      "SECURITY.md": "merge-studio's own: never listed",
+      "test-fixtures/own.sh": "merge-studio's own: never listed",
       "package-lock.json": "generated: an export without --no-lock writes it",
       ".git/config": "never",
       "escape/kept.txt": "through a symbolic link",
@@ -262,7 +262,7 @@ test("a shell file the previous export wrote and gitstudio no longer has is remo
     assert.ok(existsSync(join(into, "media/icon.png")), "the shell's own media stay");
     assert.ok(existsSync(join(into, "README.md")), "written by this export too");
     assert.ok(existsSync(join(into, "vendor/gitstudio/LICENSE")), "the vendored copy is never removed");
-    assert.equal(readFileSync(join(into, "SECURITY.md"), "utf8"), files["SECURITY.md"]);
+    assert.equal(readFileSync(join(into, "test-fixtures/own.sh"), "utf8"), files["test-fixtures/own.sh"]);
     assert.equal(readFileSync(join(into, "package-lock.json"), "utf8"), files["package-lock.json"], "generated: --no-lock leaves it be");
     assert.equal(readFileSync(join(into, ".git/config"), "utf8"), files[".git/config"]);
     assert.ok(existsSync(join(outside, "outside.txt")));
@@ -360,6 +360,51 @@ test("the export writes merge-studio's FUNDING.yml: GitStudio's own, byte for by
     assert.deepEqual(toGitstudio(".github/FUNDING.yml", { shell: new Set() }), { kind: "copied", gitstudio: ".github/FUNDING.yml", shell: false });
     // It is the repository's, never the extension's: .github/ is not packaged.
     assert.match(readFileSync(join(GITSTUDIO_ROOT, "apps/merge-studio/.vscodeignore"), "utf8"), /^\.github\/\*\*$/m);
+  } finally {
+    rmSync(into, { recursive: true, force: true });
+  }
+});
+
+test("the export carries Merge Studio's security policy, privacy note and issue forms, and leaves merge-studio's own release workflow alone", () => {
+  const into = mkdtempSync(join(tmpdir(), "ms-export-policy-"));
+  try {
+    // What merge-studio had before: its own, stale policy (supported: 0.3.x),
+    // and the release workflow that stays its own.
+    mkdirSync(join(into, ".github/workflows"), { recursive: true });
+    writeFileSync(join(into, "SECURITY.md"), "# Security Policy\n\n| 0.3.x | :white_check_mark: |\n");
+    writeFileSync(join(into, ".github/workflows/release.yml"), "name: Release\n");
+    exportTo({ into, allowDirty: true, lock: false });
+
+    const carried = [
+      "SECURITY.md",
+      "PRIVACY.md",
+      ".github/ISSUE_TEMPLATE/bug_report.yml",
+      ".github/ISSUE_TEMPLATE/feature_request.yml",
+      ".github/ISSUE_TEMPLATE/config.yml",
+    ];
+    const manifest = JSON.parse(readFileSync(join(into, "VENDORED_FROM.json"), "utf8"));
+    for (const rel of carried) {
+      assert.equal(blobId(readFileSync(join(into, rel))), gitstudioBlobId(`apps/merge-studio/${rel}`), `${rel} is the shell's, byte for byte`);
+      assert.ok(rel in manifest.shell, `${rel} is recorded with the shell files`);
+    }
+    // Merge Studio's, not GitStudio's: its own repository's private reporting.
+    const security = readFileSync(join(into, "SECURITY.md"), "utf8");
+    assert.match(security, /github\.com\/GitStudioHQ\/merge-studio\/security\/advisories\/new/);
+    assert.doesNotMatch(security, /0\.3\.x/, "the stale supported-versions table is gone");
+    const bug = readFileSync(join(into, ".github/ISSUE_TEMPLATE/bug_report.yml"), "utf8");
+    assert.match(bug, /^ {8}- Merge Studio extension$/m, "the bug form's product is Merge Studio");
+    assert.match(bug, /merge-studio\/security\/advisories\/new/);
+    // The prefilled "Report a problem" link opens /issues/new, which blank issues keep working.
+    assert.match(readFileSync(join(into, ".github/ISSUE_TEMPLATE/config.yml"), "utf8"), /^blank_issues_enabled: true$/m);
+    assert.equal(readFileSync(join(into, ".github/workflows/release.yml"), "utf8"), "name: Release\n", "merge-studio's own release workflow is left alone");
+    // The forms are the repository's, not the extension's: the VSIX leaves .github out.
+    assert.match(readFileSync(join(into, ".vscodeignore"), "utf8"), /^\.github\/\*\*$/m);
+    // A merge-studio change to them comes back to the shell.
+    const shell = new Set(shellFiles(GITSTUDIO_ROOT));
+    for (const rel of carried) {
+      assert.deepEqual(toGitstudio(rel, { shell }), { kind: "copied", gitstudio: `apps/merge-studio/${rel}`, shell: true }, rel);
+    }
+    assert.equal(toGitstudio(".github/workflows/release.yml", { shell }).kind, "unmapped", "merge-studio's own stays its own");
   } finally {
     rmSync(into, { recursive: true, force: true });
   }

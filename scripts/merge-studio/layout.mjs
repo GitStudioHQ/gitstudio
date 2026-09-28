@@ -9,12 +9,15 @@
 // - COPIED: the bytes of one gitstudio file. The vendored packages, GitStudio's
 //   LICENSE and NOTICE, the two files the parity test reads, check-parity and
 //   its test, the CI workflow that runs them, GitStudio's FUNDING.yml (the
-//   Sponsor button), and the shell (apps/merge-studio) at the repository root.
+//   Sponsor button), and the shell (apps/merge-studio) at the repository
+//   root — which includes SECURITY.md, PRIVACY.md and the issue forms under
+//   .github/ISSUE_TEMPLATE/, so merge-studio's security policy and bug form
+//   are kept with GitStudio's.
 // - GENERATED: computed by the export (VENDORED_FROM.json, the standalone
 //   package.json, tsconfig.json, package-lock.json, vendor/gitstudio/.gitattributes).
 // - merge-studio's own: everything else (the rest of .github/, docs/,
-//   SECURITY.md, …). The export never writes or removes these, and the import
-//   refuses them.
+//   test-fixtures/, …). The export never writes or removes these, and the
+//   import refuses them.
 
 import { join, posix } from "node:path";
 import { listFiles, MANIFEST_FILE, VENDOR_DIR } from "./check-parity.mjs";

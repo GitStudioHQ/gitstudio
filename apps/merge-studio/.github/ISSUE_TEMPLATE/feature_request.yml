@@ -1,0 +1,35 @@
+name: Feature request
+description: Something Merge Studio could do, or do better.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. The most useful requests start from what you were trying to get done, not from the solution.
+  - type: dropdown
+    id: product
+    attributes:
+      label: Product
+      options:
+        - Merge Studio extension
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The merge you were resolving, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: How you imagine it working. A sketch, or a screenshot of another merge tool that does it well, is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today
+      description: A workaround, another tool, or nothing.

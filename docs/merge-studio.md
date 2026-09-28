@@ -48,7 +48,7 @@ The owner chose one copy, kept here (23 Sep 2026):
 | `packages/webview-ui` | The pages: the merge editor with its legend and colours, the diff, the Conflicts dashboard. | `vendor/gitstudio/webview-ui` |
 | `packages/merge-vscode` | The VS Code side, written once for both extensions: the merge editor and diff panels, the dashboard panel, which file opens where, the sample merge. Each extension gives it a product description (its ids, brand and settings). | `vendor/gitstudio/merge-vscode` |
 | `apps/extension` | GitStudio. `src/merge/` holds its product description (`gitstudio.*` ids); the rest is the Git client. | two files the parity test reads, under `vendor/gitstudio/extension` |
-| `apps/merge-studio` | Merge Studio's shell: the manifest, walkthrough, media, README, CHANGELOG, CONTRIBUTING and RELEASING, and `src/` (its `jbMerge.*` ids and the few decisions only it makes). | the repository root |
+| `apps/merge-studio` | Merge Studio's shell: the manifest, walkthrough, media, README, CHANGELOG, CONTRIBUTING and RELEASING, SECURITY and PRIVACY, the issue forms (`.github/ISSUE_TEMPLATE/`), and `src/` (its `jbMerge.*` ids and the few decisions only it makes). | the repository root |
 | `apps/desktop` | The desktop app. It mounts the same merge editor and dashboard natively; it is not part of Merge Studio. | not exported |
 | `scripts/merge-studio` | `export.mjs`, `import.mjs`, `layout.mjs` (the one map between the two repositories, which both scripts follow), `check-parity.mjs` and `merge-studio-ci.yml`. | `scripts/check-parity.mjs`, `.github/workflows/ci.yml` |
 | `scripts/merge-e2e` | The all-cases conflict matrix every merge change is tested against: every conflict shape, in every git operation that can stop, in every conflict style. | not exported |
@@ -58,8 +58,10 @@ The Merge Studio repository holds the export of those, plus GitStudio's
 links), plus files the export computes (`VENDORED_FROM.json`, a standalone
 `package.json`, `tsconfig.json` and `package-lock.json`, and
 `vendor/gitstudio/.gitattributes`), plus its own files, which the export never
-writes or removes: `release.yml`, `SECURITY.md`, `docs/`, `test-fixtures/`,
-`brand-assets/` and the like.
+writes or removes: `release.yml`, `docs/`, `test-fixtures/`, `brand-assets/`
+and the like. (`SECURITY.md` and the issue forms used to be merge-studio's
+own; they come from the shell now, so both repositories ask for a
+vulnerability report, and a bug report, the same way.)
 
 ## A contributor's pull request, from merge-studio to GitStudio and back
 

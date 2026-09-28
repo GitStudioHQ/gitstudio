@@ -1,0 +1,88 @@
+name: Bug report
+description: Something in Merge Studio doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **A security problem?** Please don't file it here. Report it privately from the [Security tab](https://github.com/GitStudioHQ/merge-studio/security/advisories/new) instead.
+
+        Before you paste output or attach a screenshot, check it for things you'd rather not publish: private repository or branch names, file paths, file contents.
+  - type: dropdown
+    id: product
+    attributes:
+      label: Product
+      description: Merge Studio's merge editor also ships inside GitStudio, and the two look alike. If this happened in GitStudio, please report it at github.com/GitStudioHQ/gitstudio instead.
+      options:
+        - Merge Studio extension
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Merge Studio's page in your editor's Extensions view shows it.
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: With its version, and Intel or Apple Silicon on a Mac.
+      placeholder: "macOS 15.1, Apple Silicon"
+    validations:
+      required: true
+  - type: dropdown
+    id: editor
+    attributes:
+      label: Editor
+      options:
+        - VS Code
+        - Cursor
+        - Other (please say which, and its version, below)
+    validations:
+      required: true
+  - type: dropdown
+    id: operation
+    attributes:
+      label: Which operation stopped with the conflict?
+      options:
+        - Merge
+        - Rebase
+        - Cherry-pick
+        - Revert
+        - Stash pop or apply
+        - git am
+        - Not a conflict (the diff, the dashboard, something else)
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, step by step, ideally from a small repository we can build too.
+      placeholder: |
+        1. Merge branch …
+        2. Open the conflicted file in Merge Studio
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Including any message Merge Studio showed, word for word.
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or a recording
+      description: Drag images or a short video in here. The three panes and the colours usually say more than words.
