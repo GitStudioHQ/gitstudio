@@ -27,6 +27,7 @@ import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { jsLiteral } from "../../../scripts/test/js-literal.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP = resolve(HERE, "../release/mac-arm64/GitStudio.app/Contents/MacOS/GitStudio");
@@ -237,7 +238,7 @@ async function main() {
       // Always arrive from somewhere else, so a switch is a real switch and not
       // a no-op re-route the app is entitled to skip.
       await cdp.eval(`document.querySelector('[data-view="changes"]')?.click(); await new Promise(r=>setTimeout(r,250)); return 1;`);
-      const s = await cdp.eval(`return await window.__gsLive.switchTo(${JSON.stringify(view)});`);
+      const s = await cdp.eval(`return await window.__gsLive.switchTo(${jsLiteral(view)});`);
       switches.push(s);
       await sleep(200);
     }

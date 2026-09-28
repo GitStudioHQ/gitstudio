@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from "./changesPage";
+import { jsLiteral } from "../../../scripts/test/js-literal.mjs";
 
 // The Changes view's branch menu from the keyboard (issue #32: "search a
 // branch → arrow to select it → right arrow to show options for that branch,
@@ -342,7 +343,7 @@ test("the pointer moves the highlight — but not a list scrolling under a still
 async function pointerMovesTheHighlight(): Promise<void> {
   await openMenu(page);
   const centre = (sel: string): Promise<{ x: number; y: number }> =>
-    page.eval(`(function () { var r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+    page.eval(`(function () { var r = document.querySelector(${jsLiteral(sel)}).getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
   const topic = await centre(`.bm-branch[data-bname="topic"]`);
   await page.mouseMove(topic.x, topic.y);
   assert.equal((await snap(page)).main, "b:local:topic", "hover moves the highlight");
@@ -507,7 +508,7 @@ test("a press anywhere in the menu or a submenu leaves focus in the search box",
   /** A real mouse press on `sel` — its centre, or just inside its left edge (its padding). */
   const pressOn = async (sel: string, at: "centre" | "edge" = "centre"): Promise<Snap> => {
     const c = await page.eval<{ x: number; y: number } | null>(`(function () {
-      var n = document.querySelector(${JSON.stringify(sel)}); if (!n) return null;
+      var n = document.querySelector(${jsLiteral(sel)}); if (!n) return null;
       var r = n.getBoundingClientRect();
       return { x: ${at === "edge" ? "r.left + 2" : "r.left + r.width / 2"}, y: r.top + r.height / 2 };
     })()`);

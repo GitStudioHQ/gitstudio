@@ -1,6 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from "./changesPage";
+import { jsLiteral } from "../../../scripts/test/js-literal.mjs";
 
 // The branch menu's layout, as a state table over the view's size, the
 // theme, the kind of ref and the query — in the real page commitView.ts
@@ -76,7 +77,7 @@ async function arrowTo(p: ChangesPage, key: string): Promise<void> {
 
 interface Box { left: number; top: number; right: number; bottom: number; width: number; height: number }
 const box = (p: ChangesPage, sel: string): Promise<Box> =>
-  p.eval<Box>(`(function () { var r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; })()`);
+  p.eval<Box>(`(function () { var r = document.querySelector(${jsLiteral(sel)}).getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; })()`);
 function inside(inner: Box, outer: { left: number; top: number; right: number; bottom: number }, what: string): void {
   const m = 0.5;
   assert.ok(

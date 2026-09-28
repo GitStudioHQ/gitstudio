@@ -22,6 +22,7 @@ import { SIDEBAR_EXTRA } from "./themeExtras";
 import { prListHtml } from "../../src/pr/prListHtml";
 import { listScenes, PEOPLE } from "../../../../packages/webview-ui/test/fixtures/prListFixtures";
 import type { PrListViewState } from "@gitstudio/host-bridge/prProtocol";
+import { jsLiteral } from "../../../../scripts/test/js-literal.mjs";
 
 const ROOT = join(__dirname, "..", "..", "..", "..");
 const OUT = process.argv[2] && !process.argv[2].startsWith("-") ? process.argv[2] : join(ROOT, "out", "pr-list");
@@ -42,7 +43,7 @@ async function mouse(page: Page, type: "mouseMoved" | "mousePressed" | "mouseRel
 
 async function centerOf(page: Page, selector: string): Promise<{ x: number; y: number }> {
   const r = await page.eval<{ x: number; y: number } | null>(
-    `(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`,
+    `(() => { const e = document.querySelector(${jsLiteral(selector)}); if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`,
   );
   if (!r) throw new Error(`nothing matches ${selector}`);
   return r;
@@ -63,7 +64,7 @@ async function hover(page: Page, selector: string): Promise<void> {
 }
 
 function post(state: PrListViewState): string {
-  return `window.postMessage(${JSON.stringify({ type: "state", state })}, "*")`;
+  return `window.postMessage(${jsLiteral({ type: "state", state })}, "*")`;
 }
 
 function shots(): Shot[] {
@@ -181,9 +182,9 @@ async function main(): Promise<void> {
       // The theme, as VS Code hands it over: through the CSSOM, before the
       // bundle runs — never an inline style the page's own policy refuses.
       const boot = `<script nonce="${nonce}">
-        const vars = ${JSON.stringify(vars)};
+        const vars = ${jsLiteral(vars)};
         for (const [k, v] of Object.entries(vars)) document.documentElement.style.setProperty(k, v);
-        document.body.className = ${JSON.stringify(BODY_CLASS[theme])};
+        document.body.className = ${jsLiteral(BODY_CLASS[theme])};
         window.__posted = [];
         window.acquireVsCodeApi = () => ({ postMessage: (m) => window.__posted.push(m), getState: () => undefined, setState: () => undefined });
       </script>`;

@@ -67,6 +67,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, 
 import { basename, join, resolve } from "node:path";
 import { crop, decodePng, encodePng, sheet, shrink, type Image } from "./png";
 import { buildMatrix } from "./oracle";
+import { jsLiteral } from "../test/js-literal.mjs";
 
 const APP = process.env.GS_VSCODE_APP ?? "/Applications/Visual Studio Code.app";
 const CODE_CLI = join(APP, "Contents/Resources/app/bin/code");
@@ -307,7 +308,7 @@ async function dashboards(c: Cdp, pageSid: string): Promise<(Frame & { brand: st
     // A webview can come and go between the listing and the question: skip it.
     try {
       const id = new URL(t.url).searchParams.get("id") ?? "";
-      const inPage = await c.eval<boolean>(pageSid, `[...document.querySelectorAll('iframe')].some((f) => (f.src || '').includes(${JSON.stringify(id)}))`);
+      const inPage = await c.eval<boolean>(pageSid, `[...document.querySelectorAll('iframe')].some((f) => (f.src || '').includes(${jsLiteral(id)}))`);
       if (!inPage) continue;
       const sid = await c.attach(t.targetId);
       const brand = await c.eval<string | null>(
@@ -347,7 +348,7 @@ async function findDashboard(c: Cdp, pageSid: string): Promise<Frame> {
 async function frameRect(c: Cdp, pageSid: string, f: Frame): Promise<{ x: number; y: number; w: number; h: number }> {
   const outer = await c.eval<{ x: number; y: number; w: number; h: number } | null>(
     pageSid,
-    `(() => { const f = [...document.querySelectorAll('iframe')].find((f) => (f.src || '').includes(${JSON.stringify(f.id)})); if (!f) return null; const r = f.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`,
+    `(() => { const f = [...document.querySelectorAll('iframe')].find((f) => (f.src || '').includes(${jsLiteral(f.id)})); if (!f) return null; const r = f.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`,
   );
   if (!outer) throw new Error("the dashboard's frame is not in the workbench");
   const inner = await c.eval<{ x: number; y: number }>(f.sid, `(() => { const r = document.querySelector('iframe#active-frame').getBoundingClientRect(); return { x: r.left, y: r.top }; })()`);
@@ -375,7 +376,7 @@ const PROBE = (path: string) => `(() => { ${INNER}
   const dash = D.querySelector('.cd-dash');
   dash.__gsNode = W.__gsDoc;
   const P = W.__gsProbe = { msgs: [], muts: [], looks: [], events: [], doc: W.__gsDoc };
-  const PATH = ${JSON.stringify(path)};
+  const PATH = ${jsLiteral(path)};
   const rowOf = new WeakMap();
   const note = (root, p) => { const w = D.createTreeWalker(root, W.NodeFilter.SHOW_ALL); for (let n = w.currentNode; n; n = w.nextNode()) rowOf.set(n, p); };
   for (const r of D.querySelectorAll('.cd-row')) note(r, r.dataset.path);
@@ -570,7 +571,7 @@ async function runScenario(
     const r = await c.eval<{ x: number; y: number; w: number; h: number } | null>(
       dash.sid,
       // A long list scrolls: bring the row into view first (before anything is recorded).
-      `(async () => { ${INNER} const b = D.querySelector('[data-key="' + CSS.escape(${JSON.stringify(act.key)}) + '"]'); if (!b) return null; b.scrollIntoView({ block: 'nearest' }); await new Promise((res) => setTimeout(res, 300)); const r = b.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`,
+      `(async () => { ${INNER} const b = D.querySelector('[data-key="' + CSS.escape(${jsLiteral(act.key)}) + '"]'); if (!b) return null; b.scrollIntoView({ block: 'nearest' }); await new Promise((res) => setTimeout(res, 300)); const r = b.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`,
     );
     if (!r) throw new Error(`${s.name}: no button ${act.key}`);
     x = at.x + r.x + r.w / 2;

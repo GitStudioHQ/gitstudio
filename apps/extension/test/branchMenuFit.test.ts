@@ -1,6 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { ChangesPage, stateMessage, type LocalBranch, type VsCodeTheme } from "./changesPage";
+import { jsLiteral } from "../../../scripts/test/js-literal.mjs";
 
 // The Changes view's branch menu ("Search for branches and actions") where
 // the sidebar is narrow or short, in the real page commitView.ts serves, in a
@@ -68,7 +69,7 @@ async function arrowTo(p: ChangesPage, key: string): Promise<void> {
 
 interface Box { left: number; top: number; right: number; bottom: number; width: number; height: number }
 const box = (p: ChangesPage, sel: string): Promise<Box> =>
-  p.eval<Box>(`(function () { var r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; })()`);
+  p.eval<Box>(`(function () { var r = document.querySelector(${jsLiteral(sel)}).getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; })()`);
 const viewport = (p: ChangesPage): Promise<{ w: number; h: number }> => p.eval(`({ w: innerWidth, h: innerHeight })`);
 
 function assertInside(b: Box, vp: { w: number; h: number }, what: string): void {

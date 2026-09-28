@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import type { WorktreeRow } from "@gitstudio/host-bridge/worktreesProtocol";
 import { WorktreesPage, type VsCodeTheme } from "./worktreesPage";
 import { agentRows, fixtureDetails, fixtureRows, row } from "./worktreesFixtures";
+import { jsLiteral } from "../../../scripts/test/js-literal.mjs";
 
 const skip = WorktreesPage.chrome() ? false : "no windowless Chrome on this machine (set GS_CHROME)";
 const LABELS = { reveal: "Reveal in Finder" };
@@ -375,7 +376,7 @@ const LINES = `
 function linesAt(page: WorktreesPage, sel: string): Promise<{ lines: string[]; fill: boolean }> {
   return page.eval<{ lines: string[]; fill: boolean }>(`(function () {
     ${COLOUR}${LINES}
-    var n = document.querySelector(${JSON.stringify(sel)});
+    var n = document.querySelector(${jsLiteral(sel)});
     if (!n) return { lines: ["nothing matches ${sel.replace(/"/g, "'")}"], fill: false };
     return { lines: linesOf(n), fill: rgb(getComputedStyle(n).backgroundColor).a > 0 };
   })()`);
@@ -388,7 +389,7 @@ test("nothing hovered, open, current or with its menu open is drawn with a line 
     await page.send({ type: "details", path: LOGIN, details: fixtureDetails() });
     await page.settle();
     const hoverOn = async (sel: string) => {
-      const at = await page.eval<{ x: number; y: number }>(`(function () { var b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.left + 12, y: b.top + b.height / 2 }; })()`);
+      const at = await page.eval<{ x: number; y: number }>(`(function () { var b = document.querySelector(${jsLiteral(sel)}).getBoundingClientRect(); return { x: b.left + 12, y: b.top + b.height / 2 }; })()`);
       await page.mouseMove(at.x, at.y);
     };
     for (const sel of [
@@ -442,7 +443,7 @@ test("the line probe sees every way a line can be drawn — so its passing means
   ];
   for (const target of new Set(shapes.map(([, , t]) => t))) assert.deepEqual((await linesAt(page, target)).lines, [], `${target}: nothing drawn before a shape is added`);
   for (const [what, css, target] of shapes) {
-    await page.eval(`(function () { var st = document.createElement("style"); st.id = "shape"; st.textContent = ${JSON.stringify(css)}; document.head.appendChild(st); })()`);
+    await page.eval(`(function () { var st = document.createElement("style"); st.id = "shape"; st.textContent = ${jsLiteral(css)}; document.head.appendChild(st); })()`);
     const got = await linesAt(page, target);
     await page.eval(`document.getElementById("shape").remove()`);
     assert.ok(got.lines.length > 0, `the probe misses ${what}`);

@@ -2,6 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { ChangesPage, stateMessage, type VsCodeTheme } from "./changesPage";
 import { LOOK_PROBE } from "./litLook";
+import { jsLiteral } from "../../../scripts/test/js-literal.mjs";
 
 // The branch window's highlight, and its rows' tooltips, in the real page
 // commitView.ts serves (a windowless Chrome, real keys and a real pointer).
@@ -85,9 +86,9 @@ async function pointTo(p: ChangesPage, el: string): Promise<void> {
 
 const mainRow = (key: string) => `document.querySelector('.bm-list [data-bmkey="${key}"]')`;
 const subItem = (label: string) =>
-  `Array.prototype.find.call(document.querySelectorAll(".branch-submenu .bm-subaction"), function (b) { return b.textContent.trim() === ${JSON.stringify(label)}; })`;
+  `Array.prototype.find.call(document.querySelectorAll(".branch-submenu .bm-subaction"), function (b) { return b.textContent.trim() === ${jsLiteral(label)}; })`;
 const menuItem = (label: string) =>
-  `Array.prototype.find.call(document.querySelectorAll(".action-menu .bm-subaction"), function (b) { return b.textContent.trim() === ${JSON.stringify(label)}; })`;
+  `Array.prototype.find.call(document.querySelectorAll(".action-menu .bm-subaction"), function (b) { return b.textContent.trim() === ${jsLiteral(label)}; })`;
 
 /** The arrows, up or down, until the highlight is on the row keyed `key`. */
 async function keyToMain(p: ChangesPage, key: string): Promise<void> {
@@ -97,7 +98,7 @@ async function keyToMain(p: ChangesPage, key: string): Promise<void> {
       var keys = rows.map(function (n) { return n.dataset.bmkey; });
       var a = document.querySelector(".bm-list .is-active");
       var at = a ? keys.indexOf(a.dataset.bmkey) : -1;
-      return keys.indexOf(${JSON.stringify(key)}) - at;
+      return keys.indexOf(${jsLiteral(key)}) - at;
     })()`);
     if (where === 0) return;
     await p.key(where > 0 ? "ArrowDown" : "ArrowUp");
@@ -106,7 +107,7 @@ async function keyToMain(p: ChangesPage, key: string): Promise<void> {
 }
 async function keyToSub(p: ChangesPage, label: string): Promise<void> {
   for (let i = 0; i < 30; i++) {
-    if (await p.eval<boolean>(`(function () { var a = document.querySelector(".branch-submenu .is-active"); return !!a && a.textContent.trim() === ${JSON.stringify(label)}; })()`)) return;
+    if (await p.eval<boolean>(`(function () { var a = document.querySelector(".branch-submenu .is-active"); return !!a && a.textContent.trim() === ${jsLiteral(label)}; })()`)) return;
     await p.key("ArrowDown");
   }
   throw new Error(`the arrows never reached ${label}`);

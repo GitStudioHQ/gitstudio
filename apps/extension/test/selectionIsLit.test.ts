@@ -29,6 +29,7 @@ import { SELECTION_PROBE, type ProbeOptions, type ProbeResult } from "../../../p
 import { findChrome } from "../../../packages/webview-ui/test/headless";
 import { Browser, type Page } from "../../../scripts/merge-e2e/cdp";
 import { BODY_CLASS, VSCODE_THEMES, type VsCodeTheme } from "../../../scripts/merge-e2e/themes";
+import { jsLiteral } from "../../../scripts/test/js-literal.mjs";
 import { ChangesPage, stateMessage } from "./changesPage";
 import { RebasePanelPage } from "./rebasePanelPage";
 import { AiSettingsPage, aiStatus } from "./aiSettingsPage";
@@ -79,7 +80,7 @@ async function sweep(page: Evaluates, theme: VsCodeTheme, label: string, opts: P
     }
   })()`);
   const hc = theme.startsWith("hc");
-  const r = await page.eval<ProbeResult>(`window.gsSelectionProbe(${JSON.stringify({ hc, fillAll: !hc, ...opts })})`);
+  const r = await page.eval<ProbeResult>(`window.gsSelectionProbe(${jsLiteral({ hc, fillAll: !hc, ...opts })})`);
   return [
     ...r.lines.map((l) => `${label}: ${l}`),
     ...r.fills.map((f) => `${label}: ${f}`),
@@ -89,7 +90,7 @@ async function sweep(page: Evaluates, theme: VsCodeTheme, label: string, opts: P
 
 /** What the page says about an element, computed. */
 const outlineOf = (page: Evaluates, sel: string): Promise<string> =>
-  page.eval<string>(`(function () { var e = document.querySelector(${JSON.stringify(sel)}); return e ? getComputedStyle(e).outlineStyle : "missing"; })()`);
+  page.eval<string>(`(function () { var e = document.querySelector(${jsLiteral(sel)}); return e ? getComputedStyle(e).outlineStyle : "missing"; })()`);
 
 const settle = (page: Evaluates, ms = 80) => page.eval(`new Promise(function (r) { setTimeout(r, ${ms}); })`);
 

@@ -1,6 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { ChangesPage, stateMessage, type VsCodeTheme } from "./changesPage";
+import { jsLiteral } from "../../../scripts/test/js-literal.mjs";
 
 // The Changes view's filled danger buttons — a danger confirm's Discard /
 // Delete, and the push review's Force push — carry their label at AA
@@ -147,7 +148,7 @@ for (const theme of [...THEMES, "cursor-dark"] as const) {
     await page.send(stateMessage({ local: [{ name: "main", current: true }] }));
     const measure = (sel: string) =>
       page.eval<number>(`(function () { ${SEEN_CONTRAST}
-        var b = document.querySelector(${JSON.stringify(sel)});
+        var b = document.querySelector(${jsLiteral(sel)});
         if (!b) throw new Error("no ${sel.replace(/"/g, "")}");
         return seenContrast(b);
       })()`);
@@ -161,10 +162,10 @@ for (const theme of [...THEMES, "cursor-dark"] as const) {
       const ratio = await measure(sel);
       assert.ok(ratio >= 4.5, `${danger ? "the danger" : "the"} primary reads ${ratio.toFixed(2)}:1`);
       // Under a real pointer too: no filter the computed colours cannot see.
-      const at = await page.eval<{ x: number; y: number }>(`(function () { var b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()`);
+      const at = await page.eval<{ x: number; y: number }>(`(function () { var b = document.querySelector(${jsLiteral(sel)}).getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()`);
       await page.mouseMove(at.x, at.y + 1);
       await page.mouseMove(at.x, at.y);
-      const hover = await page.eval<{ on: boolean; filter: string }>(`(function () { var b = document.querySelector(${JSON.stringify(sel)}); return { on: b.matches(":hover"), filter: getComputedStyle(b).filter }; })()`);
+      const hover = await page.eval<{ on: boolean; filter: string }>(`(function () { var b = document.querySelector(${jsLiteral(sel)}); return { on: b.matches(":hover"), filter: getComputedStyle(b).filter }; })()`);
       assert.ok(hover.on, "the pointer is on it");
       assert.equal(hover.filter, "none", `a filter would repaint what is measured (${hover.filter})`);
       const hovered = await measure(sel);
