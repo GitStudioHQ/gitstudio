@@ -281,8 +281,11 @@ export class CommitDetails extends LitElement {
     } catch {
       /* storage unavailable — keep the default width */
     }
-    // The header's picture follows the author-picture switch.
+    // The header's picture follows the author-picture switch — including a
+    // flip made while this pane was parked (the desktop keeps views alive
+    // detached, and a detached pane hears nothing), so re-render on attach.
     this.disposeGravatar = onGravatarChange(() => this.requestUpdate());
+    this.requestUpdate();
   }
 
   static styles = [
