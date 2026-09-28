@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { renderMarkdown, sanitizeHtml } from "../src/markdown";
+import { dropComments, renderMarkdown, sanitizeHtml } from "../src/markdown";
 
 // renderMarkdown output goes straight into innerHTML for READMEs, issue/PR
 // bodies, release notes, gists and AI chat — i.e. fully untrusted input from any
@@ -219,6 +219,41 @@ test("comments, doctypes and CDATA are removed", () => {
   assert.equal(sanitizeHtml("<!-- <script>alert(1)</script> -->"), "");
   assert.ok(!sanitizeHtml("<!DOCTYPE html><p>x</p>").includes("DOCTYPE"));
   assert.ok(!sanitizeHtml("<![CDATA[<script>alert(1)</script>]]>").includes("alert"));
+});
+
+test("dropComments removes exactly what the old /<!--[\\s\\S]*?-->/g removed", () => {
+  const old = (s: string) => s.replace(/<!--[\s\S]*?-->/g, "");
+  const cases = [
+    "", "plain", "<!-- a -->", "x<!-- a -->y<!-- b -->z", "<!---->", "<!--->", "<!-->", "<!-- unclosed",
+    "a --> b", "<!-- a --> --> b", "<!-- <!-- --> -->", "<!<!---->--", "<!--\n<p>x</p>\n-->",
+  ];
+  for (const c of cases) assert.equal(dropComments(c), old(c), JSON.stringify(c));
+  // And over a pile of random strings from the characters that matter.
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const alphabet = ["<", "!", "-", ">", "a", " "];
+  for (let n = 0; n < 3000; n++) {
+    let s = "";
+    for (let i = Math.floor(rnd() * 24); i > 0; i--) s += alphabet[Math.floor(rnd() * alphabet.length)];
+    assert.equal(dropComments(s), old(s), JSON.stringify(s));
+  }
+});
+
+test("a comment that one removal would assemble is removed too", () => {
+  // "<!<!---->--" is "<!--" once its inner comment goes — the loop takes it next.
+  for (const body of ["<!<!---->-- <script>alert(1)</script> -->", "<<!---->!-- x -->", "<!-<!---->- y -->"]) {
+    const out = sanitizeHtml(body);
+    assert.ok(!out.includes("<!--") && !out.includes("<script"), `${body} -> ${out}`);
+  }
+});
+
+test("comment stripping is linear on hostile input", () => {
+  // 50k unclosed openers took the old regex ~2s (every "<!--" re-scanned to the end).
+  const t = Date.now();
+  assert.equal(dropComments("<!--".repeat(50_000)), "<!--".repeat(50_000));
+  assert.equal(dropComments("<!-- ".repeat(25_000) + "-->".repeat(25_000)), "-->".repeat(24_999));
+  dropComments("<!<!---->--".repeat(10_000));
+  assert.ok(Date.now() - t < 200, `took ${Date.now() - t}ms`);
 });
 
 test("attribute values containing '>' cannot break out of the tag", () => {

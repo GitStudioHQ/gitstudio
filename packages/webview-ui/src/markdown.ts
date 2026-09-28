@@ -231,6 +231,27 @@ function filterAttrs(tag: string, rawAttrs: string): string {
 }
 
 /**
+ * Every `<!-- … -->` removed, each from its opening to the first `-->` after
+ * it (the same matches as /<!--[\s\S]*?-->/g); an unclosed one is left for
+ * step 4 to escape. A linear scan, not a regex strip: a removal can still
+ * join its neighbours into a new comment ("<!<!---->--"), which is why
+ * sanitizeHtml runs it again until a pass removes nothing.
+ */
+export function dropComments(s: string): string {
+  let out = "";
+  let from = 0;
+  for (;;) {
+    const open = s.indexOf("<!--", from);
+    if (open < 0) break;
+    const close = s.indexOf("-->", open + 4);
+    if (close < 0) break;
+    out += s.slice(from, open);
+    from = close + 3;
+  }
+  return out + s.slice(from);
+}
+
+/**
  * Strict allowlist filter over a finished HTML string. Everything not explicitly
  * permitted is removed. This is the security boundary for all rendered markdown.
  */
@@ -250,7 +271,7 @@ export function sanitizeHtml(html: string): string {
       s = s.replace(new RegExp(`<\\/?${tag}\\b[^>]*>`, "gi"), "");
     }
     // 2. Drop comments, doctypes, processing instructions, CDATA.
-    s = s.replace(/<!--[\s\S]*?-->/g, "");
+    s = dropComments(s);
     s = s.replace(/<!\[CDATA\[[\s\S]*?\]\]>/gi, "");
     s = s.replace(/<![^>]*>/g, "");
     s = s.replace(/<\?[\s\S]*?\?>/g, "");
