@@ -25,8 +25,10 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **What the extension sends, in one place.** A new
   [PRIVACY.md](PRIVACY.md) lists every connection GitStudio makes (crash
   reports, authors' pictures, GitHub, AI), when, what it carries, and the
-  setting that turns each one off. The crash-report setting's description now
-  says exactly what is scrubbed, including that a remote's host name is kept.
+  setting that turns each one off, and the times crash reports carried more
+  than they should have, with the release that fixed each. The crash-report
+  setting's description now says what is scrubbed, including that a remote's
+  host name is kept.
 
 ### Fixed
 - **An image in a pull request written as `//host/a.png` shows.** An address
@@ -34,10 +36,12 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   to resolve against the page itself and show as a broken image.
 
 ### Security
-- **Crash reports no longer carry a commit's subject.** When a rebase,
-  cherry-pick, revert or `git am` stopped, git's message named the commit by
-  its subject line, and the scrubber let those words through. It now takes
-  the subject out.
+- **Crash reports no longer carry a commit's subject, or a branch name git
+  prints without quotes.** When a rebase, cherry-pick, revert or `git am`
+  stopped, git's message named the commit by its subject line, and the
+  scrubber let those words through. So it did a branch name in the failures
+  where git doesn't quote one, such as pulling a branch the remote doesn't
+  have or pushing one with no upstream. It now takes both out.
 
 ## [1.16.0] - 2026-09-28
 

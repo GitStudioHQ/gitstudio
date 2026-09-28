@@ -44,7 +44,8 @@ but they share the same engine, so most Git behaviour lands in both at once.
   while you're signed in, images inside Markdown, and AI once you connect a
   provider are there too now, each with when it happens, what it carries, and
   how to turn it off where it can be. It also corrects one detail about crash
-  reports: a remote's host name is kept.
+  reports (a remote's host name is kept), and lists the times reports carried
+  more than it says they may, with the release that fixed each.
 
 ### Fixed
 - **Your tabs come back after you quit.** Quitting GitStudio saved an empty
@@ -71,10 +72,12 @@ but they share the same engine, so most Git behaviour lands in both at once.
   started with.
 
 ### Security
-- **Crash reports no longer carry a commit's subject.** When a rebase,
-  cherry-pick, revert or `git am` stopped, git's message named the commit by
-  its subject line, and the scrubber let those words through. It now takes
-  the subject out.
+- **Crash reports no longer carry a commit's subject, or a branch name git
+  prints without quotes.** When a rebase, cherry-pick, revert or `git am`
+  stopped, git's message named the commit by its subject line, and the
+  scrubber let those words through. So it did a branch name in the failures
+  where git doesn't quote one, such as pulling a branch the remote doesn't
+  have or pushing one with no upstream. It now takes both out.
 - **The Assistant's replies no longer load images from the web.** A reply is
   Markdown, and text hidden in a file, commit or pull request the Assistant
   read could make it write an image whose address carries what it read to

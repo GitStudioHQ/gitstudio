@@ -62,15 +62,32 @@ file and folder names in them (a stack trace keeps its line and column); the
 organisation, repository, query and any credentials in a URL, and the path of
 an SSH remote (the host name is kept, for example `github.com` or a
 self-hosted server's name); email addresses; IP addresses; access tokens, API
-keys, JWTs and private keys; and full commit SHAs, which are cut to 7
-characters. From git's output it also removes quoted branch and ref names,
-file lists, repository-relative paths, file names, and the commit subject git
-prints when a rebase, cherry-pick, revert or `git am` stops.
+keys, JWTs and private keys; a quoted name with a slash in it, such as a
+repository's `owner/name` in an error message; and full commit SHAs, which
+are cut to 7 characters. From a failed git command's output it also removes
+branch and ref names (every one git quotes, and the ones it prints bare in
+the failures reported most, such as a push with no upstream), file lists,
+repository-relative paths, file names, and the commit subject git prints when
+a rebase, cherry-pick, revert or `git am` stops.
 
 The scrubber works by recognising patterns, and it is tested on each of the
-cases above. It can still miss a name that looks like ordinary words, such as
-an unquoted file name with spaces in it. If that is a risk you don't want to
-take, turn crash reports off.
+cases above. It can still miss a name that looks like ordinary words: a file
+name with spaces in it that git doesn't quote, a branch name in a git message
+the scrubber doesn't know, or a name inside an error's message, which gets the
+first of the two lists above but not the second. If that is a risk you don't
+want to take, turn crash reports off.
+
+**Past mistakes.** Reports have carried more than this page says they may:
+
+- before 1.1.0, git's error output was scrubbed like any other text, so a
+  file name, branch name or repository-relative path in it was sent as it was;
+- before 2.0.0, on Windows and in any path with a space in it, the end of an
+  absolute path (a project's folder and file names) got through;
+- before 2.1.0, so did a repository's `owner/name` when an error message
+  quoted it, as GitHub's does when it can't find a repository;
+- in 2.3.0 and earlier, a commit's subject when a rebase, cherry-pick, revert
+  or `git am` stopped, and a branch name git prints without quotes. The
+  release after 2.3.0 takes both out.
 
 **Turn it off:** **Help ▸ Send Anonymous Crash Reports** is a checkbox, and
 the app remembers your choice. It is kept in `error-reporting.json` in the

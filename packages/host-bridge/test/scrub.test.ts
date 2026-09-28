@@ -136,11 +136,37 @@ test("scrubGitMessage takes out the commit subject git prints when an operation 
     ["error: could not revert 1a2b3c4... Revert \"Launch Acme pricing\"", "error: could not revert 1a2b3c4... <subject>"],
     // (The quoted hint goes too — every quoted span does, by the rule below.)
     ["Patch failed at 0003 Wire the Acme billing webhook\nhint: Use 'git am --show-current-patch=diff'", "Patch failed at 0003 <subject>\nhint: Use '<ref>'"],
+    // git am names every patch it applies, the one that failed included.
+    [
+      "Applying: Wire the Acme billing webhook\nerror: patch failed: src/billing.ts:12\nPatch failed at 0001 Wire the Acme billing webhook",
+      "Applying: <subject>\nerror: patch failed: <path>:12\nPatch failed at 0001 <subject>",
+    ],
+    // An edit or break stop names the commit the same way.
+    ["Stopped at 1a2b3c4...  Add billing for Acme Corp", "Stopped at 1a2b3c4... <subject>"],
   ] as const) {
     const out = scrubGitMessage(input);
     assert.equal(out, expected, JSON.stringify(input));
     assert.doesNotMatch(out, /Acme|billing|secret/i);
   }
+});
+
+test("scrubGitMessage takes out the branch names git prints without quotes", () => {
+  for (const [input, expected] of [
+    ["fatal: couldn't find remote ref acme-billing", "fatal: couldn't find remote ref <ref>"],
+    ["error: src refspec acme-billing does not match any", "error: src refspec <ref> does not match any"],
+    [
+      "fatal: The current branch acme-billing has no upstream branch.\nTo push the current branch and set the remote as upstream, use\n\n    git push --set-upstream origin acme-billing\n",
+      "fatal: The current branch <ref> has no upstream branch.\nTo push the current branch and set the remote as upstream, use\n\n\t<path>",
+    ],
+    ["fatal: invalid reference: acme-billing", "fatal: invalid reference: <ref>"],
+    ["On branch acme-billing\nnothing to commit, working tree clean", "On branch <ref>\nnothing to commit, working tree clean"],
+  ] as const) {
+    const out = scrubGitMessage(input);
+    assert.equal(out, expected, JSON.stringify(input));
+    assert.doesNotMatch(out, /acme|billing/i);
+  }
+  // The sentence around a name is kept: it is what says which failure this is.
+  assert.equal(scrubGitMessage("hint: Updates were rejected because the tip of your current branch is behind"), "hint: Updates were rejected because the tip of your current branch is behind");
 });
 
 test("scrubGitMessage is empty-safe", () => {

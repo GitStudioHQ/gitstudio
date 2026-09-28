@@ -135,7 +135,7 @@ export function scrub(input: string): string {
  * stderr routinely names the things PRIVACY.md promises never to send:
  *   "error: Your local changes to the following files would be overwritten by
  *    merge:\n\tsrc/billing/secret-project.ts"
- *   "fatal: couldn't find remote ref 'feature/acme-migration'"
+ *   "fatal: a branch named 'feature/acme-migration' already exists"
  * Both the file list and the quoted ref are repo-relative, so nothing above
  * touches them. This keeps the diagnostic sentence and redacts the identifiers.
  */
@@ -147,13 +147,26 @@ export function scrubGitMessage(input: string): string {
     scrub(input)
       // A commit's SUBJECT, which git prints after the abbreviated sha when a
       // rebase, cherry-pick or revert stops ("could not apply 1a2b3c4... Add
-      // billing for Acme") and after the patch number when `git am` does
-      // ("Patch failed at 0001 Add billing for Acme"). Commit messages are on
-      // PRIVACY.md's list of what never leaves the machine, and these two
-      // lines carried them through every rule below: the subject is plain
-      // unquoted words. The rest of the line goes, whatever it says.
-      .replace(/(\bcould not (?:apply|revert|pick) [0-9a-f]{4,40}\.\.\.)[^\n]*/gi, "$1 <subject>")
+      // billing for Acme", "Stopped at 1a2b3c4...  Add billing for Acme"),
+      // and for each patch `git am` applies ("Applying: Add billing for
+      // Acme") and the one it stops at ("Patch failed at 0001 Add billing for
+      // Acme"). Commit messages are on PRIVACY.md's list of what never leaves
+      // the machine, and these lines carried them through every rule below:
+      // the subject is plain unquoted words. The rest of the line goes,
+      // whatever it says.
+      .replace(/(\b(?:could not (?:apply|revert|pick)|Stopped at) [0-9a-f]{4,40}\.\.\.)[^\n]*/gi, "$1 <subject>")
       .replace(/(\bPatch failed at \d+)[^\n]*/gi, "$1 <subject>")
+      .replace(/^(Applying:)[^\n]*/gim, "$1 <subject>")
+      // A branch or ref name git prints WITHOUT quotes, in the failures that
+      // get reported most: pulling a branch the remote doesn't have, pushing
+      // one with no commits or no upstream, naming one that doesn't exist, and
+      // the "On branch" line of git's status. A name with a slash in it was
+      // caught as a path below; "acme-billing" was not.
+      .replace(/(\bcouldn't find remote ref )[^\s'"]+/gi, "$1<ref>")
+      .replace(/(\bsrc refspec )[^\s'"]+/gi, "$1<ref>")
+      .replace(/(\bThe current branch )[^\s'"]+(?= has no upstream)/gi, "$1<ref>")
+      .replace(/(\binvalid reference: )[^\s'"]+/gi, "$1<ref>")
+      .replace(/^(On branch )[^\s'"]+/gim, "$1<ref>")
       // git quotes refs, branches and pathspecs in single quotes. The opening
       // quote must NOT follow a letter, or the apostrophe in "couldn't" opens a
       // bogus span and eats the rest of the sentence.
