@@ -33,12 +33,22 @@ but they share the same engine, so most Git behaviour lands in both at once.
   account's picture. **Settings ▸ Appearance ▸ Load author pictures from
   Gravatar** (on by default, as before) turns that off: every author is drawn
   as coloured initials, and neither request is sent.
+- **The updater knows which macOS a release needs.** When a future release
+  needs a newer macOS than your Mac runs, it isn't offered to you, and
+  **Check for updates** says why instead of saying you're up to date with
+  nothing more.
 
 ### Fixed
 - **Your tabs come back after you quit.** Quitting GitStudio saved an empty
   list of open tabs, so the next launch opened on Home instead of the
   repositories you had open. The tabs are now saved before anything shuts
   down, and they come back as they were.
+- **Installing on macOS 11 is refused before anything downloads.** GitStudio
+  2.3.0 and later need macOS 12 Monterey. The Homebrew cask now tells
+  Homebrew so, and the one-line installer stops on macOS 11 and points you to
+  2.2.1, the last version for it (`GITSTUDIO_VERSION=2.2.1` installs that).
+- **Releases no longer carry a stray `builder-debug.yml`**, an electron-builder
+  debug file that was uploaded with the Windows installer.
 - **A computer without Git is told so, and how to get it.** GitStudio uses
   the Git installed on your computer. Without one, every view failed with
   "spawn git ENOENT", a folder you opened was said to have a damaged `.git`

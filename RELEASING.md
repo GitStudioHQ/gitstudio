@@ -131,6 +131,29 @@ that might have been re-run.
 
 **Auto-update:** Windows and Linux update in-app through electron-updater (`latest.yml` / `latest-linux.yml` ship with the release). macOS ships no `latest-mac.yml` (two per-arch runners would clobber each other's, and unsigned builds can't apply Squirrel.Mac updates), so the app polls the GitHub API for a newer `app-v*` release itself, downloads the right `.dmg` into `~/Downloads` on confirmation, and opens it — see `apps/desktop/src/main/autoUpdate.ts`.
 
+The Windows upload takes `latest.yml` by name, not `*.yml`: the glob also
+matched electron-builder's `builder-debug.yml`, which then shipped on every
+release (`apps/desktop/test/releaseAssets.test.ts` holds the globs to this).
+
+**The lowest macOS.** 2.3.0 moved to Electron 41, which runs on macOS 12
+Monterey or later; 2.2.1 is the last release for macOS 11. Four places know
+the minimum, and the release that raises it (when an Electron upgrade drops a
+macOS) changes all four together:
+
+- `Casks/gitstudio.rb`: `depends_on macos: :monterey` (a bare version means
+  "this or later"). It reaches the tap with the next `finalize-release`, or by
+  copying the file to GitStudioHQ/homebrew-gitstudio by hand.
+- `scripts/install.sh`: `MIN_MACOS`, `FIRST_NEEDING_MIN` and the last release
+  for the macOS below (`LAST_FOR_MACOS_11`). gitstudio.dev serves a copy of
+  this file as `/install.sh`; update that copy too.
+- The release notes (`docs/releases/app-vX.Y.Z.md`): a line
+  `<!-- minimum-macos: 13 -->`. It is invisible on the release page; the
+  in-app updater reads it and does not offer that release (or any later one,
+  since a minimum only rises) to an older Mac, and says why when asked. Only
+  builds that have this check honour it, so it guards the next raise, not the
+  2.3.0 one: 2.2.1 and older on macOS 11 are still offered 2.3.0.
+- `docs/releases/`, the README and gitstudio.dev: say it in words.
+
 > Unsigned builds: Windows shows SmartScreen ("More info → Run anyway"). On macOS a quarantined unsigned app is refused outright on 15+ ("damaged") — the cask and `install.sh` strip the quarantine attribute; a direct `.dmg` download needs `xattr -d -r -s com.apple.quarantine /Applications/GitStudio.app` once. The app's own updater downloads with Node `fetch`, which sets no quarantine, so in-app updates are unaffected. Add the signing secrets above to remove all of this; macOS notarization also needs the Apple secrets.
 
 ---

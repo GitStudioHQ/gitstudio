@@ -38,6 +38,8 @@ export interface AutoUpdateOptions {
   /** Test seams: the running version and the platform's path (default: Electron's). */
   current?: string;
   mac?: boolean;
+  /** Test seam: this Mac's macOS version (default: process.getSystemVersion()). */
+  macosVersion?: string;
 }
 
 export interface UpdateManager {
@@ -53,6 +55,15 @@ export interface UpdateManager {
    * announced — to the old window, or to none — was never told.
    */
   windowReady(): void;
+}
+
+/** This Mac's macOS version ("14.6.1"), or "" outside Electron or when unknown. */
+function macosVersion(): string {
+  try {
+    return typeof process.getSystemVersion === "function" ? process.getSystemVersion() : "";
+  } catch {
+    return "";
+  }
 }
 
 /** Where a mac user goes if the in-app download can't find an asset. */
@@ -89,6 +100,8 @@ interface RawRelease {
   tag_name?: string;
   draft?: boolean;
   prerelease?: boolean;
+  /** The release notes (Markdown), where `minimum-macos` is declared. */
+  body?: string | null;
   assets?: RawAsset[];
 }
 
@@ -97,22 +110,68 @@ export function latestDesktopVersion(releases: RawRelease[]): string | undefined
   return latestDesktopRelease(releases)?.version;
 }
 
+/** Every published desktop (`app-v*`) release in a payload, with its version. */
+function desktopReleases(releases: RawRelease[]): Array<{ version: string; release: RawRelease }> {
+  if (!Array.isArray(releases)) {
+    return [];
+  }
+  // The repo also tags the VS Code extension (`ext-v*`) — only `app-v*` is us.
+  return releases
+    .filter((r) => !r.draft && !r.prerelease && typeof r.tag_name === "string")
+    .filter((r) => (r.tag_name as string).startsWith("app-v"))
+    .map((r) => ({ version: (r.tag_name as string).replace(/^app-v/, ""), release: r }));
+}
+
 /** As {@link latestDesktopVersion}, but keeps the release (for its assets). */
 export function latestDesktopRelease(
   releases: RawRelease[],
 ): { version: string; release: RawRelease } | undefined {
-  if (!Array.isArray(releases)) {
-    return undefined;
-  }
-  // The repo also tags the VS Code extension (`ext-v*`) — only `app-v*` is us.
-  const desktop = releases
-    .filter((r) => !r.draft && !r.prerelease && typeof r.tag_name === "string")
-    .filter((r) => (r.tag_name as string).startsWith("app-v"))
-    .map((r) => ({ version: (r.tag_name as string).replace(/^app-v/, ""), release: r }));
+  const desktop = desktopReleases(releases);
   if (desktop.length === 0) {
     return undefined;
   }
   return desktop.reduce((best, r) => (compareVersions(r.version, best.version) > 0 ? r : best));
+}
+
+/**
+ * The macOS a release says it needs: `<!-- minimum-macos: 13 -->` in its notes,
+ * invisible on the release page (RELEASING.md). Undefined when it says nothing.
+ */
+export function declaredMinimumMacos(body: string | null | undefined): string | undefined {
+  return /<!--\s*minimum-macos:\s*(\d+(?:\.\d+)*)\s*-->/i.exec(body ?? "")?.[1];
+}
+
+/**
+ * The newest desktop release THIS Mac can run, and the newest one of all when
+ * that is a different one (with the macOS it needs), so a check can say why it
+ * is not offered.
+ *
+ * Electron drops old macOS versions from time to time — 2.3.0's Electron 41
+ * needs macOS 12 — and an updater that offers such a release to an older Mac
+ * downloads an app that will not open. A release declares what it needs in its
+ * notes, and a minimum only ever rises: a release that says nothing needs at
+ * least what the newest release before it declared. (Written for the NEXT
+ * rise: 2.2.1 and older, the builds on macOS 11, predate this, and nothing
+ * here reaches them.)
+ */
+export function latestDesktopReleaseFor(
+  releases: RawRelease[],
+  macos: string,
+): {
+  runnable?: { version: string; release: RawRelease };
+  newest?: { version: string; release: RawRelease; needs?: string };
+} {
+  const ascending = desktopReleases(releases).sort((a, b) => compareVersions(a.version, b.version));
+  let needs: string | undefined;
+  let runnable: { version: string; release: RawRelease } | undefined;
+  let newest: { version: string; release: RawRelease; needs?: string } | undefined;
+  for (const r of ascending) {
+    const declared = declaredMinimumMacos(r.release.body);
+    if (declared && (!needs || compareVersions(declared, needs) > 0)) needs = declared;
+    newest = { ...r, ...(needs ? { needs } : {}) };
+    if (!needs || compareVersions(macos, needs) >= 0) runnable = r;
+  }
+  return { runnable, newest };
 }
 
 /** Pick the mac installer asset for this machine from a release's asset list.
@@ -197,8 +256,24 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
       if (!res.ok) {
         return { status: "error", current, message: `GitHub responded ${res.status}.` };
       }
-      const latest = latestDesktopRelease((await res.json()) as RawRelease[]);
+      const releases = (await res.json()) as RawRelease[];
+      // Only what this Mac can run (a release's `minimum-macos`). A macOS
+      // version that cannot be read filters nothing: never offering an update
+      // again would be the worse mistake.
+      const macos = opts.macosVersion ?? macosVersion();
+      const pick = macos ? latestDesktopReleaseFor(releases, macos) : { runnable: latestDesktopRelease(releases) };
+      const latest = pick.runnable;
       if (!latest || compareVersions(latest.version, current) <= 0) {
+        const newer = "newest" in pick ? pick.newest : undefined;
+        if (newer?.needs && compareVersions(newer.version, current) > 0) {
+          return {
+            status: "uptodate",
+            current,
+            message:
+              `GitStudio ${newer.version} needs macOS ${newer.needs} or later, and this Mac runs macOS ${macos}. ` +
+              `You have the newest version for it (${current}).`,
+          };
+        }
         return { status: "uptodate", current };
       }
       state = "available";

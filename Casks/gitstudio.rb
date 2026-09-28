@@ -39,7 +39,15 @@ cask "gitstudio" do
   end
 
   auto_updates false
-  depends_on :macos
+  # 2.3.0 moved to Electron 41, which runs on macOS 12 Monterey or later; on
+  # macOS 11 the app would install and then not open. Homebrew refuses up
+  # front instead. (2.2.1 is the last release for macOS 11.) A bare version
+  # means "this or later" — Homebrew 5.1.11+, which `depends_on :macos` needed
+  # already — and the old ">= :monterey" string now prints a deprecation
+  # warning on every install. Raise it with the Electron that drops the next
+  # macOS, together with scripts/install.sh's MIN_MACOS and a `minimum-macos`
+  # note in that release's notes (RELEASING.md).
+  depends_on macos: :monterey
 
   app "GitStudio.app"
 

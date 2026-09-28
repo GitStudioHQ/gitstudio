@@ -6061,7 +6061,8 @@ class App {
       try {
         const r = await host.invoke("update:check", undefined);
         if (r.status === "uptodate") {
-          status.textContent = `You're on the latest version (${r.current}).`;
+          // A newer release this Mac's macOS cannot run is said, not hidden.
+          status.textContent = r.message ?? `You're on the latest version (${r.current}).`;
         } else if (r.status === "available" && r.version) {
           status.textContent = `GitStudio ${r.version} is available.`;
           void this.promptUpdateAvailable({ version: r.version, current: r.current }, true);
@@ -9204,7 +9205,7 @@ class App {
             label: "Check for updates",
             run: () => {
               void host.invoke("update:check", undefined).then((r) => {
-                if (r.status === "uptodate") toast(`You're on the latest version (${r.current}).`, "success");
+                if (r.status === "uptodate") toast(r.message ?? `You're on the latest version (${r.current}).`, r.message ? "info" : "success");
                 else if (r.status === "available" && r.version)
                   void this.promptUpdateAvailable({ version: r.version, current: r.current }, true);
                 else if (r.message) toast(r.message, "info");

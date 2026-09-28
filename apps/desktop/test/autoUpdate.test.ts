@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   compareVersions,
+  declaredMinimumMacos,
   latestDesktopRelease,
+  latestDesktopReleaseFor,
   latestDesktopVersion,
   pickMacAsset,
 } from "../src/main/autoUpdate";
@@ -170,4 +172,72 @@ test("asking from Settings shows the answer in the window but raises no notifica
   assert.equal(r.status, "available");
   assert.equal(sent.length, 1);
   assert.deepEqual(notified, []);
+});
+
+// ── A release this Mac cannot run is not offered ──
+//
+// 2.3.0's Electron 41 needs macOS 12, and 2.2.1 on macOS 11 was offered it
+// anyway: nothing in a release said what it needs. Nothing here can reach
+// those builds, but the next time Electron drops a macOS, the notes of the
+// release that needs more carry `<!-- minimum-macos: N -->` (RELEASING.md),
+// and a minimum only ever rises.
+
+test("a release's notes declare the macOS it needs; saying nothing declares nothing", () => {
+  assert.equal(declaredMinimumMacos("Notes.\n\n<!-- minimum-macos: 13 -->\n"), "13");
+  assert.equal(declaredMinimumMacos("<!--minimum-macos:13.5-->"), "13.5");
+  assert.equal(declaredMinimumMacos("Needs macOS 13 or later."), undefined, "prose is not a declaration");
+  assert.equal(declaredMinimumMacos(null), undefined);
+  assert.equal(declaredMinimumMacos(undefined), undefined);
+});
+
+test("the newest release this Mac can run is offered, and the one it cannot is named with what it needs", () => {
+  const releases = [
+    { tag_name: "app-v3.1.0", body: "No note: needs what 3.0.0 said, at least." },
+    { tag_name: "ext-v1.20.0", body: "<!-- minimum-macos: 99 -->" }, // the extension's tags are not ours
+    { tag_name: "app-v3.0.0", body: "Electron 50.\n<!-- minimum-macos: 13 -->" },
+    { tag_name: "app-v2.9.1", body: "<!-- minimum-macos: 12 -->" },
+    { tag_name: "app-v2.9.0" },
+    { tag_name: "app-v3.2.0", draft: true, body: "" },
+  ];
+  const on12 = latestDesktopReleaseFor(releases, "12.7.6");
+  assert.equal(on12.runnable?.version, "2.9.1", "macOS 12 is offered the last release that runs there");
+  assert.deepEqual({ version: on12.newest?.version, needs: on12.newest?.needs }, { version: "3.1.0", needs: "13" }, "3.1.0 inherits 3.0.0's minimum");
+  const on13 = latestDesktopReleaseFor(releases, "13.0");
+  assert.equal(on13.runnable?.version, "3.1.0");
+  const on11 = latestDesktopReleaseFor(releases, "11.7.10");
+  assert.equal(on11.runnable?.version, "2.9.0", "a release that declares nothing, before any that do, runs anywhere");
+  assert.equal(latestDesktopReleaseFor([], "14.0").runnable, undefined);
+});
+
+test("a Mac that cannot run the newest release hears why, and is not offered it", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const restore = withFeed([
+    { tag_name: "app-v3.0.0", body: "<!-- minimum-macos: 13 -->", assets: [{ name: "GitStudio-3.0.0-arm64.dmg", browser_download_url: "https://dl/3.dmg" }] },
+    { tag_name: "app-v2.2.0" },
+  ]);
+  t.after(() => {
+    restore();
+    mock.timers.reset();
+  });
+  const sent: Sent[] = [];
+  const notified: string[] = [];
+  const updates = initAutoUpdate({
+    isDev: false,
+    current: "2.2.0",
+    mac: true,
+    macosVersion: "12.7.6",
+    send: (event, data) => sent.push({ event, data }),
+    notify: (v) => notified.push(v),
+  });
+  const r = await updates.check(true);
+  assert.equal(r.status, "uptodate");
+  assert.equal(
+    r.message,
+    "GitStudio 3.0.0 needs macOS 13 or later, and this Mac runs macOS 12.7.6. You have the newest version for it (2.2.0).",
+  );
+  mock.timers.tick(20_000);
+  await settle();
+  assert.deepEqual(sent, [], "nothing is announced");
+  assert.deepEqual(notified, []);
+  assert.equal((await updates.download()).ok, false, "and nothing can be downloaded");
 });

@@ -7,6 +7,9 @@
 #   GITSTUDIO_VERSION=2.0.0  pin a version instead of taking the latest
 #   GITSTUDIO_PREFIX=~/.local  where Linux puts the AppImage (default ~/.local)
 #
+# macOS 12 Monterey or later; on macOS 11 it refuses and points at 2.2.1, the
+# last release that runs there (GITSTUDIO_VERSION=2.2.1 installs it).
+#
 # It resolves the newest `app-v*` release, picks the asset for this OS and
 # architecture, verifies it downloaded whole, and installs it where the platform
 # expects. Nothing is installed system-wide on Linux and nothing needs sudo; the
@@ -41,6 +44,55 @@ esac
 # Linux ships one universal x86_64 AppImage; there is no arm64 build yet.
 if [ "$plat" = linux ] && [ "$cpu" != x64 ]; then
   die "Linux builds are x86_64 only for now. Build from source: https://github.com/${REPO}"
+fi
+
+# ── Which macOS? ─────────────────────────────────────────────────────────────
+# 2.3.0 moved to Electron 41, which runs on macOS 12 Monterey or later; on an
+# older Mac the app installs and then does not open. Refuse before downloading
+# anything, and name the last release that does run there. A pinned
+# GITSTUDIO_VERSION older than the first release that needs 12 is let through:
+# that is how you install that last release. Raise MIN_MACOS together with the
+# cask's `depends_on macos:` and the release notes' `minimum-macos` (RELEASING.md).
+MIN_MACOS=12
+FIRST_NEEDING_MIN="2.3.0"
+LAST_FOR_MACOS_11="2.2.1"
+
+# True when dotted version $1 is older than $2 (2.2.1 < 2.3.0).
+version_lt() {
+  local -a a b
+  IFS=. read -r -a a <<< "$1"
+  IFS=. read -r -a b <<< "$2"
+  local i x y
+  for i in 0 1 2; do
+    x="${a[i]:-0}"; y="${b[i]:-0}"
+    x="${x%%[!0-9]*}"; y="${y%%[!0-9]*}"
+    [ "${x:-0}" -lt "${y:-0}" ] && return 0
+    [ "${x:-0}" -gt "${y:-0}" ] && return 1
+  done
+  return 1
+}
+
+if [ "$plat" = mac ]; then
+  macos="$(sw_vers -productVersion 2>/dev/null || true)"
+  macos_major="${macos%%.*}"
+  case "$macos_major" in ''|*[!0-9]*) macos_major="" ;; esac
+  pinned="${GITSTUDIO_VERSION:-}"
+  pinned="${pinned#app-v}"
+  pinned="${pinned#v}"
+  if [ -n "$macos_major" ] && [ "$macos_major" -lt "$MIN_MACOS" ] \
+     && { [ -z "$pinned" ] || ! version_lt "$pinned" "$FIRST_NEEDING_MIN"; }; then
+    {
+      printf '\033[1;31m✗\033[0m GitStudio %s and later need macOS %s Monterey or newer, and this Mac runs macOS %s.\n' \
+        "$FIRST_NEEDING_MIN" "$MIN_MACOS" "$macos"
+      if [ "$macos_major" -ge 11 ]; then
+        printf '  The last version that runs on it is %s:\n' "$LAST_FOR_MACOS_11"
+        printf '    https://github.com/%s/releases/tag/app-v%s\n' "$REPO" "$LAST_FOR_MACOS_11"
+        printf '  or install it with this script:\n'
+        printf '    curl -fsSL https://gitstudio.dev/install.sh | GITSTUDIO_VERSION=%s bash\n' "$LAST_FOR_MACOS_11"
+      fi
+    } >&2
+    exit 1
+  fi
 fi
 
 # ── Which release? ───────────────────────────────────────────────────────────

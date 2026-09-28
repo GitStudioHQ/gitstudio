@@ -3024,7 +3024,8 @@ export interface UpdateCheckResult {
   current: string;
   /** For available/downloading/ready: the newer version in question. */
   version?: string;
-  /** For error/disabled: why. */
+  /** For error/disabled: why. For uptodate: set when a newer release exists
+   *  that this Mac's macOS cannot run (its `minimum-macos`), and says so. */
   message?: string;
 }
 

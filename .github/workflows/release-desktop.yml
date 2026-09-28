@@ -91,8 +91,11 @@ jobs:
             artifact: 'apps/desktop/release/*.dmg apps/desktop/release/*.zip'
           - os: macos-15-intel
             artifact: 'apps/desktop/release/*.dmg apps/desktop/release/*.zip'
+          # latest.yml BY NAME: a *.yml glob also took electron-builder's
+          # builder-debug.yml, which then shipped as an asset of every release.
+          # (apps/desktop/test/releaseAssets.test.ts holds these globs to that.)
           - os: windows-latest
-            artifact: 'apps/desktop/release/*.exe apps/desktop/release/*.yml apps/desktop/release/*.blockmap'
+            artifact: 'apps/desktop/release/*.exe apps/desktop/release/latest.yml apps/desktop/release/*.blockmap'
           # ubuntu-22.04 (not -latest): the AppImage links the build host's glibc,
           # so building on 24.04 (glibc 2.39) breaks Ubuntu 22.04/Debian 12 users.
           # No *.blockmap here — AppImage/deb don't emit one, and a non-matching
