@@ -486,6 +486,8 @@ const CASES = [
   ["a-locked-token-still-reads-as-signed-in", "changes", { extra: "unlocked=0" }],
   ["the-update-question-outlives-the-watchers-refresh", "changes"],
   ["settings-never-calls-the-account-you", "settings", { extra: "unlocked=0" }],
+  ["settings-names-the-account-after-leaving-and-coming-back", "settings", { extra: "unlocked=0" }],
+  ["a-manual-update-check-asks-once", "settings"],
   ["a-locked-token-still-reads-as-signed-in", "changes"],
   ["no-view-hides-its-own-content-or-locks-out-the-keyboard", "changes"],
   ["no-view-hides-its-own-content-or-locks-out-the-keyboard", "issues"],

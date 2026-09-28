@@ -6738,19 +6738,6 @@
     },
 
     /**
-     * Being signed in must not read as "Sign in".
-     *
-     * `github:status` deliberately does NOT decrypt the token — that raises the
-     * OS keychain prompt on every launch — so a signed-in user gets
-     * `{connected: true, login: undefined}` until some real request unlocks it.
-     * The chip branched on `connected && login`, which put that state in the
-     * ELSE: it told a signed-in user to sign in, then flipped to their name
-     * once anything else made a request. Two strings one character apart that
-     * mean opposite things.
-     *
-     * `?unlocked=0` is that launch state.
-     */
-    /**
      * The update question is the window's, and only the user answers it.
      *
      * It was a plain confirm: the repository watcher's refresh re-routed the
@@ -6784,6 +6771,55 @@
      * "Signed in to GitHub" under GitHub's mark — it said "you" in a "YO" tile —
      * and puts the name in when it arrives, without being reopened.
      */
+    /**
+     * …and the name still comes in when the user has left Settings and come
+     * back. Settings is kept alive: the page restored is the same card, whose
+     * asking stopped the first time it found itself off screen — it said
+     * "Signed in to GitHub" until something happened to rebuild it.
+     */
+    "settings-names-the-account-after-leaving-and-coming-back": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const name = $(".settings-account-name");
+      c.eq(text(name), "Signed in to GitHub", "precondition: the name is not known yet");
+      $('[data-view="changes"]')?.click();
+      await settle(3800); // past one 3 s ask, made while the card was away
+      const orig = window.gitstudio.invoke.bind(window.gitstudio);
+      window.gitstudio.invoke = (ch, p) =>
+        ch === "github:status"
+          ? Promise.resolve({ connected: true, login: "antonarnaudov" })
+          : orig(ch, p);
+      try {
+        $('[data-view="settings"]')?.click();
+        await settle(900);
+        c.ok($(".settings-account-name") === name, "precondition: Settings came back from the keep-alive cache, not rebuilt");
+        c.eq(text(".settings-account-name"), "antonarnaudov", "the name comes in on the card that was kept");
+      } finally {
+        window.gitstudio.invoke = orig;
+      }
+    },
+
+    /**
+     * A manual "Check for updates" both answers with the version and hears the
+     * check's own announcement of it: two identical questions stacked, both
+     * held until answered, and the second Download said "No update is waiting
+     * to download." One question.
+     */
+    "a-manual-update-check-asks-once": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const btn = $$(".settings-view button").find((b) => /Check for updates/.test(text(b)));
+      c.ok(!!btn, "Settings offers Check for updates");
+      if (!btn) return;
+      btn.click();
+      await settle(700);
+      const asked = $$(".modal-title").filter((t) => /GitStudio 9\.9\.7 is available/.test(text(t)));
+      c.eq(asked.length, 1, "the version is asked about once");
+      $$(".modal-actions button").find((b) => /Cancel/.test(text(b)))?.click();
+      await settle(400);
+      c.eq($$(".modal-title").length, 0, "and one Cancel answers it");
+    },
+
     "settings-never-calls-the-account-you": async (f) => {
       const c = check(f);
       await settle(600);
@@ -6807,6 +6843,19 @@
       }
     },
 
+    /**
+     * Being signed in must not read as "Sign in".
+     *
+     * `github:status` deliberately does NOT decrypt the token — that raises the
+     * OS keychain prompt on every launch — so a signed-in user gets
+     * `{connected: true, login: undefined}` until some real request unlocks it.
+     * The chip branched on `connected && login`, which put that state in the
+     * ELSE: it told a signed-in user to sign in, then flipped to their name
+     * once anything else made a request. Two strings one character apart that
+     * mean opposite things.
+     *
+     * `?unlocked=0` is that launch state.
+     */
     "a-locked-token-still-reads-as-signed-in": async (f) => {
       const c = check(f);
       const chip = $(".topbar-acct");

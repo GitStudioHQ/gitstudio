@@ -136,6 +136,13 @@ function send<E extends keyof IpcEvents>(event: E, data: IpcEvents[E]): void {
  * back, where the update question is waiting (a new window is told on load —
  * UpdateManager.windowReady). In front, the in-app question is enough.
  */
+/**
+ * The notification on screen. Held here because a Notification only a local
+ * variable holds can be garbage-collected, and its click then reaches no
+ * handler: the one clicked hours later, window closed, is the one this is for.
+ */
+let updateNotification: Notification | undefined;
+
 function notifyUpdate(version: string): void {
   const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
   if (win?.isFocused()) return;
@@ -145,7 +152,12 @@ function notifyUpdate(version: string): void {
       title: `GitStudio ${version} is available`,
       body: "Click to update.",
     });
+    const done = (): void => {
+      if (updateNotification === n) updateNotification = undefined;
+    };
+    n.on("close", done);
     n.on("click", () => {
+      done();
       const w = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
       if (w) {
         if (w.isMinimized()) w.restore();
@@ -155,6 +167,7 @@ function notifyUpdate(version: string): void {
         void createWindow();
       }
     });
+    updateNotification = n;
     n.show();
   } catch {
     // A notification is a courtesy; the in-app question still stands.

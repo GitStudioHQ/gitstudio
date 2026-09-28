@@ -3761,6 +3761,12 @@
   };
   // A confirmed update download starts; its progress and "ready" are events.
   dynamic["update:download"] = () => ({ ok: true });
+  // A manual check that finds a version answers with it — and, as main does,
+  // announces it as an event first.
+  dynamic["update:check"] = () => {
+    window.__gsEmit?.("update:available", { version: "9.9.7", current: "2.2.0" });
+    return { status: "available", version: "9.9.7", current: "2.2.0" };
+  };
 
   // Every routeView the app performs, in order. Created HERE so production
   // never has it — the renderer only pushes when the array exists.
