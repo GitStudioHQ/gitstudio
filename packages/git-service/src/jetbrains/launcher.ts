@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
@@ -107,7 +108,17 @@ function launch(ide: JetBrainsIdeInfo, args: string[], dir: string | undefined):
   // Toolbox's Windows launchers are .cmd scripts, which only cmd.exe can run —
   // through a command line cmd cannot reinterpret (see windowsCmdLine).
   const script = process.platform === "win32" && /\.(cmd|bat)$/i.test(ide.command);
-  const run = script ? windowsCmdLine(ide.command, args) : { file: ide.command, args };
+  let run = { file: ide.command, args };
+  if (script) {
+    // cmd.exe itself always starts, so a launcher that is not there would
+    // read as "launched" and only cmd's own "is not recognized" would know.
+    // Only a script that exists is handed to cmd.
+    if (!existsSync(ide.command)) {
+      void dispose();
+      return Promise.resolve({ ...refused(ide, new Error(`${ide.command} does not exist`)), dispose });
+    }
+    run = windowsCmdLine(ide.command, args);
+  }
   return new Promise((resolveLaunch) => {
     let settled = false;
     const settle = (value: JetBrainsLaunch): void => {
@@ -155,13 +166,33 @@ const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
  * its own.
  */
 export function windowsCmdLine(command: string, args: string[]): { file: string; args: string[] } {
-  const arg = (a: string): string => {
-    let s = a.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1");
-    s = `"${s}"`;
-    return s.replace(CMD_META, "^$1");
-  };
+  const arg = (a: string): string => `"${programQuoted(a)}"`.replace(CMD_META, "^$1");
   const line = [command.replace(CMD_META, "^$1"), ...args.map(arg)].join(" ");
   return { file: process.env.comspec || "cmd.exe", args: ["/d", "/s", "/c", `"${line}"`] };
+}
+
+/**
+ * An argument's inside, ready for double quotes and the Windows C runtime's
+ * parser: every backslash run before a `"` doubled and the quote escaped
+ * (`\"`), and a backslash run that ends the argument doubled so it cannot
+ * escape the closing quote. Any other backslash stays single.
+ *
+ * A single walk over the argument. It was /(\\*)"/g then /(\\*)$/ — the
+ * second retried from each backslash of a run that did not end the string,
+ * quadratic in the run's length; the result is the same.
+ */
+export function programQuoted(a: string): string {
+  let out = "";
+  let slashes = 0;
+  for (const ch of a) {
+    if (ch === "\\") {
+      slashes++;
+      continue;
+    }
+    out += ch === '"' ? `${"\\".repeat(slashes * 2)}\\"` : `${"\\".repeat(slashes)}${ch}`;
+    slashes = 0;
+  }
+  return out + "\\".repeat(slashes * 2);
 }
 
 function refused(ide: JetBrainsIdeInfo, err: unknown): JetBrainsLaunch {

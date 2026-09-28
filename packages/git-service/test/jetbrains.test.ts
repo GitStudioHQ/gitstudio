@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { locateJetBrainsIde } from "../src/jetbrains/locator";
-import { launchJetBrainsDiff, launchJetBrainsMerge, windowsCmdLine } from "../src/jetbrains/launcher";
+import { locateJetBrainsIde, trimSeparators } from "../src/jetbrains/locator";
+import { launchJetBrainsDiff, launchJetBrainsMerge, programQuoted, windowsCmdLine } from "../src/jetbrains/launcher";
 import { reporterRepo } from "./opRepo";
 
 // W5 (PLAN §3.5): the JetBrains hand-off. The locator is Merge Studio's plus
@@ -214,6 +214,63 @@ test("Windows: a .cmd launcher's command line leaves no %VAR% or metacharacter f
   assert.match(cmd, /say\^ \\\^"hi\\\^"/);
   // A trailing backslash is doubled so it cannot escape the closing quote.
   assert.match(cmd, /space\\\\\^"/);
+});
+
+test("programQuoted escapes for the Windows C runtime exactly as the old two replaces did, in linear time", () => {
+  const old = (a: string) => a.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1");
+  for (const a of ["", "plain", 'a"b', 'a\\"b', 'a\\\\"b', "dir\\", "dir\\\\", 'x\\"', '"', "\\", "C:\\a b\\c.txt", 'say "hi".txt']) {
+    assert.equal(programQuoted(a), old(a), JSON.stringify(a));
+  }
+  let seed = 11;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const alphabet = ["\\", '"', "a", " ", "%"];
+  for (let n = 0; n < 3000; n++) {
+    let s = "";
+    for (let i = Math.floor(rnd() * 20); i > 0; i--) s += alphabet[Math.floor(rnd() * alphabet.length)];
+    assert.equal(programQuoted(s), old(s), JSON.stringify(s));
+  }
+  const t = Date.now();
+  const run = "\\".repeat(50_000);
+  assert.equal(programQuoted(`${run}x`), `${run}x`);
+  assert.equal(programQuoted(run), run + run);
+  windowsCmdLine("C:\\scripts\\webstorm.cmd", [`${run}x`, `${run}"`]);
+  assert.ok(Date.now() - t < 500, `took ${Date.now() - t}ms`);
+});
+
+test("Windows: a .cmd launcher that is not there is refused, not handed to cmd.exe", async () => {
+  // cmd.exe itself always starts, so a missing script used to read as launched.
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { ...platform, value: "win32" });
+  try {
+    const launch = await launchJetBrainsDiff({
+      ide: { id: "webstorm", name: "WebStorm", command: join(tmpdir(), "no-such-dir", "webstorm.cmd") },
+      left: { path: join(tmpdir(), "a.txt") },
+      right: { path: join(tmpdir(), "b.txt") },
+    });
+    assert.equal(launch.ok, false);
+    assert.match(launch.message ?? "", /^Couldn't launch WebStorm — .*webstorm\.cmd does not exist$/);
+    await launch.dispose();
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+  }
+});
+
+test("trimSeparators drops trailing / and \\ only, in linear time", () => {
+  assert.equal(trimSeparators("/Applications/WebStorm.app/"), "/Applications/WebStorm.app");
+  assert.equal(trimSeparators("C:\\JetBrains\\WebStorm\\\\/"), "C:\\JetBrains\\WebStorm");
+  assert.equal(trimSeparators("///"), "");
+  assert.equal(trimSeparators("a/b"), "a/b");
+  const t = Date.now();
+  assert.equal(trimSeparators(`${"/".repeat(50_000)}x`), `${"/".repeat(50_000)}x`);
+  assert.equal(trimSeparators(`x${"\\/".repeat(25_000)}`), "x");
+  assert.ok(Date.now() - t < 200, `took ${Date.now() - t}ms`);
+});
+
+test("an explicit path of 50k slashes is looked up without stalling", async () => {
+  const t = Date.now();
+  const hit = await locateJetBrainsIde({ platform: "linux", env: {}, homeDir: "/h", explicitPath: `${"/".repeat(50_000)}x`, ...fs([]) });
+  assert.equal(hit, undefined);
+  assert.ok(Date.now() - t < 500, `took ${Date.now() - t}ms`);
 });
 
 test("nothing installed: undefined", async () => {
