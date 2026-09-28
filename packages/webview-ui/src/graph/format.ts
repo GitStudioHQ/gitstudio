@@ -12,6 +12,16 @@ export function esc(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * A CHANGES-column count as a whole, non-negative number: anything else the
+ * host could send (a string, NaN, Infinity, a negative) counts as 0. The
+ * graph writes these into row HTML, so a value that is not a number never
+ * gets there as it was sent.
+ */
+export function statCount(n: unknown): number {
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
 export const MINUTE = 60;
 export const HOUR = 60 * MINUTE;
 export const DAY = 24 * HOUR;

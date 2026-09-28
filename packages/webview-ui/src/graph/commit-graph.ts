@@ -49,7 +49,7 @@ import {
   observeGraphTheme,
 } from "./lanePalette";
 import { gravatarUrl, avatarHtml } from "./avatar";
-import { esc, relTime, absTime, DAY } from "./format";
+import { esc, relTime, absTime, DAY, statCount } from "./format";
 import {
   type SearchScope,
   SEARCH_SCOPES,
@@ -3098,15 +3098,21 @@ export class CommitGraph extends LitElement {
       clearTimeout(this.copiedTimer);
       this.copiedTimer = undefined;
     }
-    const label = cell.getAttribute("data-label") ?? esc(sha.slice(0, 7));
+    // The label is read back as TEXT (an attribute's value is already
+    // unescaped) and written back as a text node — never re-parsed as HTML.
+    const label = cell.getAttribute("data-label") ?? sha.slice(0, 7);
+    const glyph = (name: string): HTMLElement => {
+      const icon = document.createElement("span");
+      icon.className = `codicon codicon-${name}`;
+      icon.setAttribute("aria-hidden", "true");
+      return icon;
+    };
     const done = () => {
       cell.classList.add("copied");
-      cell.innerHTML =
-        `<span class="codicon codicon-check" aria-hidden="true"></span>Copied`;
+      cell.replaceChildren(glyph("check"), document.createTextNode("Copied"));
       this.copiedTimer = window.setTimeout(() => {
         cell.classList.remove("copied");
-        cell.innerHTML =
-          `${label}<span class="codicon codicon-copy" aria-hidden="true"></span>`;
+        cell.replaceChildren(document.createTextNode(label), glyph("copy"));
         this.copiedTimer = undefined;
       }, 1000);
     };
@@ -3202,10 +3208,19 @@ export class CommitGraph extends LitElement {
     return this.chainBranches;
   }
 
-  /** Merge in CHANGES-column stats and repaint the visible rows. */
+  /**
+   * Merge in CHANGES-column stats and repaint the visible rows. The counts are
+   * written into the rows' HTML and they arrive by postMessage, so only what
+   * is really a count is kept (statCount) — never the value as it was sent.
+   */
   setRowStats(stats: RowStat[]): void {
     for (const s of stats) {
-      this.rowStats.set(s.sha, s);
+      this.rowStats.set(s.sha, {
+        sha: s.sha,
+        files: statCount(s.files),
+        additions: statCount(s.additions),
+        deletions: statCount(s.deletions),
+      });
       this.pendingStats.delete(s.sha);
     }
     this.renderRows();
