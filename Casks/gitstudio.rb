@@ -13,15 +13,15 @@
 # the result is pushed to the tap repository. Do not hand-edit them; they will
 # be overwritten.
 cask "gitstudio" do
-  version "2.1.0"
+  version "2.2.0"
 
   on_arm do
-    sha256 "4d91f8c1a9197d21c9cacb730d0962e5a87068391ade5fa2d44faf5a9423a778"
+    sha256 "f048e7544d70e50daab6155bed7aac949edb8dacac78c85555b151bfd63f78a1"
 
     url "https://github.com/GitStudioHQ/gitstudio/releases/download/app-v#{version}/GitStudio-#{version}-arm64.dmg"
   end
   on_intel do
-    sha256 "ac6cad08f68915855f98c39e50413fa037ffeea9e3d8d03330914aefe03f0878"
+    sha256 "322b519504039831bbdfee0ea10bdc083a7dd3596bdd7b66e1615d7effab08f2"
 
     url "https://github.com/GitStudioHQ/gitstudio/releases/download/app-v#{version}/GitStudio-#{version}-x64.dmg"
   end
