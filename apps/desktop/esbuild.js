@@ -218,6 +218,9 @@ async function main() {
     platform: "browser",
     format: "iife",
     target: "chrome120",
+    // The bundle's first statement asks main to show the window — see
+    // src/renderer/launch-reveal.js for why there, and why not a module.
+    banner: { js: fs.readFileSync(path.join(rendererDir, "launch-reveal.js"), "utf8") },
     // FILE, not dataurl. Six stylesheets declare @font-face for the same
     // @vscode/codicons TTF — app.css plus the shared webview-ui sheets the
     // desktop pulls in — and `dataurl` inlines the bytes at every import site.

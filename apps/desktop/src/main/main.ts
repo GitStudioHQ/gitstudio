@@ -308,10 +308,11 @@ async function createWindow(): Promise<void> {
     mainWindow?.webContents.send(channel, payload),
   );
 
-  // Shown on the launch screen's first frame (theme-boot.js asks, see
-  // "window:launchPainted") — ready-to-show waits for the page to finish
-  // parsing, which was the whole bundle, so the window used to appear only
-  // once the app had run. ready-to-show stays as the fallback.
+  // Shown once the page's launch screen is painted and its bundle has started
+  // to run (the renderer asks, see "window:launchPainted") — ready-to-show
+  // waits for the page to finish parsing, which was the whole bundle, so the
+  // window used to appear only once the app had run. ready-to-show stays as
+  // the fallback.
   const win = mainWindow;
   win.once("ready-to-show", () => revealWindow(win));
   // Every load — a window reopened from the Dock, a reload — hears about an
@@ -1464,7 +1465,8 @@ function registerIpc(): void {
     setDockIcon(payload.variant);
   });
 
-  // The launch screen is on screen in the page: show its window.
+  // The launch screen is painted in the page and the bundle is running: show
+  // its window (src/renderer/launch-reveal.js says why not earlier).
   handle("window:launchPainted", async (payload, event) => {
     const theme = payload?.theme === "light" || payload?.theme === "dark" ? payload.theme : undefined;
     revealWindow(BrowserWindow.fromWebContents(event.sender) ?? undefined, theme);

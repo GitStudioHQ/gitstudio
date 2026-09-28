@@ -53,16 +53,20 @@
 
   // The launch screen's first frame. The markup right after this script is
   // parsed before the page's first rendering opportunity, so the frame this
-  // callback follows is the branded one; once it exists, main shows the
-  // window (it starts hidden, and `ready-to-show` alone waited for the whole
-  // bundle). The theme travels along so the window's own background matches
-  // the frame when it is revealed. `ready-to-show` stays the fallback.
-  var told = false;
-  function painted() {
-    if (told) return;
-    told = true;
+  // callback follows is the branded one.
+  //
+  // The window starts hidden, and it is normally shown as the bundle starts
+  // executing (launch-reveal.js, the bundle's first statement): showing it on
+  // this frame instead held the main process while the bundle was still
+  // streaming out of app.asar, and starts paid for it. This is the fallback
+  // for a start whose bundle is slow to arrive: 150ms after the branded frame,
+  // ask anyway. Whichever asks first wins; `ready-to-show` stays the last
+  // resort. The theme travels along so the window's own background matches.
+  function askForWindow() {
+    if (window.__gsWindowAsked) return;
+    window.__gsWindowAsked = true;
     try {
-      performance.mark("gs:launch-painted");
+      performance.mark("gs:window-asked");
     } catch (e) {
       /* marks are for measuring only */
     }
@@ -76,9 +80,19 @@
       }
     }
   }
+  var painted = false;
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(function () {
-      setTimeout(painted, 0);
+      setTimeout(function () {
+        if (painted) return;
+        painted = true;
+        try {
+          performance.mark("gs:launch-painted");
+        } catch (e) {
+          /* marks are for measuring only */
+        }
+        setTimeout(askForWindow, 150);
+      }, 0);
     });
   }
 

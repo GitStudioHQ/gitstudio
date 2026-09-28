@@ -2892,8 +2892,9 @@ export interface IpcChannels {
    *  the effective variant (it alone knows the in-app theme override). */
   "appearance:dockIcon": [{ variant: "dark" | "light" }, void];
   // ── Window ──
-  /** The launch screen's first frame is painted (theme-boot.js): show the
-   *  window now, in that frame's theme, instead of waiting for the bundle. */
+  /** The launch screen is painted and the bundle has started (launch-reveal.js;
+   *  theme-boot.js as a fallback): show the still-hidden window now, in that
+   *  screen's theme, instead of after the whole bundle. */
   "window:launchPainted": [{ theme: "dark" | "light" }, void];
 }
 

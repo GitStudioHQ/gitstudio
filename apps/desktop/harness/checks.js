@@ -1061,6 +1061,11 @@
       if (ready != null && handoff != null) {
         c.ok(handoff - ready < 20, `it leaves the moment the app is ready, never held for show (${Math.round(handoff - ready)}ms)`);
       }
+      // The window starts hidden: the page asked main to show it (the bundle's
+      // first statement, launch-reveal.js), and did so before the app was up.
+      const asked = at("gs:window-asked");
+      c.ok(asked != null, "the page asked main to show its window (window:launchPainted)");
+      if (asked != null && ready != null) c.ok(asked <= ready, "…before the app was ready, not after");
       const focus = document.activeElement;
       c.ok(!focus || !focus.closest("#launch"), "focus is not left on it");
     },

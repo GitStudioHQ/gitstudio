@@ -17,6 +17,7 @@ const html = readFileSync(join(SRC, "renderer/index.html"), "utf8");
 const appCss = readFileSync(join(SRC, "renderer/styles/app.css"), "utf8");
 const mainTs = readFileSync(join(SRC, "main/main.ts"), "utf8");
 const themeBoot = readFileSync(join(SRC, "renderer/theme-boot.js"), "utf8");
+const launchReveal = readFileSync(join(SRC, "renderer/launch-reveal.js"), "utf8");
 
 function between(a: string, b: string): string {
   const i = html.indexOf(a);
@@ -143,11 +144,20 @@ test("the hand-off never holds the app back for the animation's sake", () => {
   assert.doesNotMatch(body.slice(ready, leaving), /setTimeout|await|requestAnimationFrame/, "nothing waits in between");
 });
 
-/** Run theme-boot.js against a fake page; returns the body class and what it told main. */
-function boot(o: { search?: string; prefs?: string | null; osLight?: boolean }): { theme: string; told: unknown[] } {
-  const told: unknown[] = [];
+/**
+ * Run theme-boot.js against a fake page, on a fake clock. `until` is how far
+ * the clock runs (ms after the first frame); `bundleAt`, when set, is when the
+ * bundle starts executing — its first statement is launch-reveal.js.
+ * Returns the body class and what the page told main, with when.
+ */
+function boot(o: { search?: string; prefs?: string | null; osLight?: boolean; until?: number; bundleAt?: number }): {
+  theme: string;
+  told: Array<[string, unknown, number]>;
+} {
+  const told: Array<[string, unknown, number]> = [];
   const frames: Array<() => void> = [];
-  const timers: Array<() => void> = [];
+  let now = 0;
+  let timers: Array<{ at: number; f: () => void }> = [];
   const body = { className: "" };
   const win: Record<string, unknown> = {
     location: { search: o.search ?? "" },
@@ -164,10 +174,10 @@ function boot(o: { search?: string; prefs?: string | null; osLight?: boolean }):
     },
     performance: { mark: () => undefined },
     requestAnimationFrame: (f: () => void) => frames.push(f),
-    setTimeout: (f: () => void) => timers.push(f),
+    setTimeout: (f: () => void, ms = 0) => timers.push({ at: now + ms, f }),
     gitstudio: {
       invoke: (channel: string, payload: unknown) => {
-        told.push(JSON.parse(JSON.stringify([channel, payload])));
+        told.push([channel, JSON.parse(JSON.stringify(payload)), now]);
         return Promise.resolve();
       },
     },
@@ -175,11 +185,27 @@ function boot(o: { search?: string; prefs?: string | null; osLight?: boolean }):
   };
   win.window = win;
   runInNewContext(themeBoot, win);
-  // Only the timer the frame queues; the one queued while the script ran is
-  // the 20s failsafe.
-  const before = timers.length;
+  // The first frame; the clock starts there.
   for (const f of frames.splice(0)) f();
-  for (const f of timers.splice(before)) f();
+  const until = o.until ?? 1000;
+  const bundle = o.bundleAt;
+  let bundleRan = false;
+  for (;;) {
+    timers.sort((x, y) => x.at - y.at);
+    const next = timers[0];
+    const nextAt = next && next.at <= until ? next.at : Infinity;
+    if (bundle !== undefined && !bundleRan && bundle <= nextAt && bundle <= until) {
+      now = bundle;
+      bundleRan = true;
+      // The bundle's first statement (esbuild's banner), against the same page.
+      runInNewContext(launchReveal, win);
+      continue;
+    }
+    if (nextAt === Infinity) break;
+    timers = timers.slice(1);
+    now = next.at;
+    next.f();
+  }
   return { theme: body.className, told };
 }
 
@@ -193,7 +219,33 @@ test("the first frame is painted in the theme the person picked", () => {
   assert.equal(boot({ osLight: true, prefs: '{"themeMode":"dark"}', search: "?theme=light" }).theme, "vscode-light", "?theme= (the harness) wins");
 });
 
-test("once the launch frame exists, main is told to show the window in its theme", () => {
-  assert.deepEqual(boot({ osLight: false, prefs: '{"themeMode":"light"}' }).told, [["window:launchPainted", { theme: "light" }]]);
-  assert.deepEqual(boot({ osLight: false }).told, [["window:launchPainted", { theme: "dark" }]]);
+test("the window is asked for as the bundle starts, in the launch screen's theme — once", () => {
+  // The usual start: the bundle runs 30ms after the branded frame.
+  const t = boot({ osLight: false, prefs: '{"themeMode":"light"}', bundleAt: 30 });
+  assert.deepEqual(t.told, [["window:launchPainted", { theme: "light" }, 30]], "asked once, from the bundle, in Light");
+  assert.deepEqual(boot({ osLight: false, bundleAt: 30 }).told, [["window:launchPainted", { theme: "dark" }, 30]]);
+});
+
+test("a bundle slow to arrive still gets its window 150ms after the branded frame", () => {
+  // Showing the window any earlier stalled the bundle's delivery out of
+  // app.asar (launchScreen.ts); later than this and a slow start looks dead.
+  const slow = boot({ osLight: false, bundleAt: 900 });
+  assert.equal(slow.told.length, 1, `asked once (${JSON.stringify(slow.told)})`);
+  assert.equal(slow.told[0][0], "window:launchPainted");
+  assert.equal(slow.told[0][2], 150, "by theme-boot.js, 150ms after the frame");
+  // …and with no bundle at all (it failed to load), still.
+  assert.equal(boot({ osLight: true, until: 1000 }).told.length, 1);
+  // Nothing is asked before either: the frame alone is not the signal.
+  assert.deepEqual(boot({ osLight: false, until: 149 }).told, []);
+});
+
+test("the window request is the renderer bundle's first statement, and keeps it strict", () => {
+  // A module cannot be first — esbuild hoists hundreds of modules above what
+  // renderer.ts imports first — so esbuild.js prepends launch-reveal.js.
+  const build = readFileSync(join(__dirname, "../esbuild.js"), "utf8");
+  const renderer = build.slice(build.indexOf("const rendererCtx"), build.indexOf("});", build.indexOf("const rendererCtx")));
+  assert.match(renderer, /banner:\s*\{\s*js:\s*fs\.readFileSync\(path\.join\(rendererDir, "launch-reveal\.js"\)/, "the renderer build's banner is launch-reveal.js");
+  // The bundle's own "use strict" is no longer the file's first statement, so
+  // the banner has to open with one or the whole bundle would run sloppy.
+  assert.match(launchReveal, /^"use strict";\n/, "launch-reveal.js opens with \"use strict\"");
 });

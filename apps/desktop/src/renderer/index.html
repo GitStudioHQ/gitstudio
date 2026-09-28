@@ -19,9 +19,10 @@
     <style>
       /* THE LAUNCH SCREEN (#launch, below). It is the window's first frame: it
          is painted from this file alone — inline CSS and inline SVG, no bundle,
-         no network — so main can show the window the moment it exists
-         (theme-boot.js reports that frame), rather than after the 5 MB bundle
-         has run. launchScreen.ts fades it out once the shell is up.
+         no network — so the window can go up as soon as the bundle starts
+         running (launch-reveal.js, or theme-boot.js 150ms after this frame),
+         rather than after the 5.7 MB bundle has run.
+         launchScreen.ts fades it out once the shell is up.
 
          Colours are the app's own: the ground is --app-bg for the theme
          (test/launchScreen.test.ts keeps the two equal), the mark is
