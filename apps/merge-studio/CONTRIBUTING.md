@@ -15,14 +15,15 @@ repository of its own that builds, tests and packages without it.
   GitStudio commit named in `VENDORED_FROM.json`: the merge engine, the git
   service, the merge editor and dashboard pages, and the VS Code host they run
   in.
-- `src/`, `test/`, `media/`, the README, CHANGELOG and this file are Merge
+- `src/`, `test/`, `media/`, the README, CHANGELOG, SECURITY.md, PRIVACY.md,
+  the issue forms in `.github/ISSUE_TEMPLATE/` and this file are Merge
   Studio's own shell (`apps/merge-studio` in GitStudio).
 - A few files are written by the export: `VENDORED_FROM.json`,
   `package-lock.json`, `tsconfig.json`, `.github/workflows/ci.yml`,
   `.github/FUNDING.yml`, `scripts/check-parity.mjs`, and in `package.json` the
   dependency lists and the `check-types`, `test` and `check-parity` scripts.
-- Everything else (`release.yml`, `SECURITY.md`, `docs/`, `test-fixtures/`,
-  `brand-assets/`) belongs to this repository alone.
+- Everything else (`release.yml`, `docs/`, `test-fixtures/`, `brand-assets/`)
+  belongs to this repository alone.
 
 GitStudio's [`docs/merge-studio.md`](https://github.com/GitStudioHQ/gitstudio/blob/main/docs/merge-studio.md)
 explains why, and where every part of the code lives.
@@ -63,8 +64,8 @@ and generated scripts. The rest of `package.json` (the version, commands,
 settings) is carried over. If your change needs a new dependency, say so in
 the pull request and a maintainer adds it in GitStudio.
 
-A change to this repository's own files (`release.yml`, `SECURITY.md`,
-`docs/`, `test-fixtures/`, …) is merged here directly.
+A change to this repository's own files (`release.yml`, `docs/`,
+`test-fixtures/`, …) is merged here directly.
 
 You can also send a change to GitStudio itself: change `apps/merge-studio` or
 `packages/*` there, and the next export brings it here.

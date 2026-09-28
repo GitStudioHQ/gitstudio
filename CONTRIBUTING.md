@@ -6,6 +6,10 @@ repository holds the VS Code / Cursor extension, the desktop app, the MCP
 server, the Merge Studio extension, and the packages they share; the
 [README](README.md#monorepo-layout) maps them.
 
+Everyone taking part is asked to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). A security problem is reported
+privately, not in an issue: see [SECURITY.md](SECURITY.md).
+
 ## Set up
 
 Requires **Node 22+** and git.

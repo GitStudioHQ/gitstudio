@@ -72,8 +72,11 @@ manifest then records the export as dirty). It:
   has (the previous `VENDORED_FROM.json` lists them), and writes the new
   `VENDORED_FROM.json`: the gitstudio sha, and a sha256 for every file.
 
-It never touches merge-studio's own files (`release.yml`, `SECURITY.md`,
-`docs/`, `test-fixtures/`, …), and it commits, pushes and publishes nothing.
+It never touches merge-studio's own files (`release.yml`, `docs/`,
+`test-fixtures/`, …), and it commits, pushes and publishes nothing.
+`SECURITY.md`, `PRIVACY.md` and the issue forms (`.github/ISSUE_TEMPLATE/`)
+are the shell's, not merge-studio's own: the first export that carries them
+replaces merge-studio's hand-kept `SECURITY.md`.
 
 Then check it in merge-studio, as its CI will:
 
@@ -170,7 +173,7 @@ gitstudio and exporting again:
      gitstudio (`npm install` in the workspace that needs it). Each commit
      lists what was left out in `Import-note:` trailers.
    - *Refused*, with nothing changed: a path that is not gitstudio's, such as
-     merge-studio's own `release.yml`, `docs/` or `SECURITY.md`, or a new file
+     merge-studio's own `release.yml` or `docs/`, or a new file
      outside the shell's folders. Merge that part in merge-studio directly
      and run the import again with `--exclude <path>`. Merge commits in the
      range (ask for a rebase, or import the squashed diff), `main`, and
