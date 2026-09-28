@@ -3276,6 +3276,43 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
   white-space: nowrap;
 }
 
+/* The foot of Home: one quiet line — GitStudio is free and open source, and
+   the two ways to support it. Small and muted, below every card and part of
+   none, centred like a page's fine print. The two links are plain muted words
+   until the pointer is on one, which fills softly like every hover here; they
+   wear no underline, no rule and no colour of their own. */
+.dash-support {
+  margin: var(--sp-6) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px var(--sp-1);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--app-muted);
+}
+.dash-support-lead { margin-right: var(--sp-1); }
+/* Small words, but a full 24px target (WCAG 2.2's minimum): the padding, not
+   the type, makes the room. */
+.dash-support-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.dash-support-link .codicon { font-size: 12px; }
+.dash-support-link:hover { color: var(--vscode-foreground); background: var(--app-hover); }
+.dash-support-link:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: 2px; }
+
 /* ── Repositories ───────────────────────────────────────────────────────────
    The folder a repo was found in is the grouping, because that is how people
    describe where their work is ("the client stuff is in ~/work"). The header

@@ -9,6 +9,16 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Added
+- **Ways to support GitStudio.** GitStudio is free and open source, and if it
+  saves you time you can now support it: **Help ▸ Sponsor GitStudio on
+  GitHub…** (recurring support) and **Help ▸ Buy Me a Coffee…** (a one-off
+  tip) open the page in your browser, and so do the two buttons in **Settings
+  ▸ About**, the two entries in the **⌘K** palette, and one small line at the
+  foot of Home. Nothing pops up and nothing ever asks.
+
 ## [2.3.0] - 2026-09-28
 
 ### Changed

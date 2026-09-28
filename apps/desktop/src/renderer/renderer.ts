@@ -72,6 +72,7 @@ import { worktreeRemovalQuestion, worktreeRemovalRefusal } from "@gitstudio/host
 import { checkedOutElsewhereMessage } from "@gitstudio/host-bridge/branchElsewhere";
 import { createBranchFlow } from "./branchCreate";
 import type { BranchStart } from "../shared/branchStart";
+import { SUPPORT_LINKS, SUPPORT_SENTENCE } from "../shared/support";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
 import { gget, peek, bust, bustEverywhere, dropCacheScope, setCacheScope, swr, sameData} from "./cache";
@@ -6038,7 +6039,27 @@ class App {
       window.open("https://github.com/GitStudioHQ/gitstudio", "_blank"),
     );
     updRow.insertBefore(repo, status);
-    body.append(sub, versionRow, updRow);
+
+    // Support GitStudio: a place people come looking, so it can say it plainly
+    // — one sentence and the two ways, in the READMEs' words, in the card's own
+    // action language (shared/support.ts; Home's foot line and ⌘K offer the
+    // same two). Nothing here, or anywhere, opens by itself.
+    const supportLabel = el("div", "settings-field-label");
+    supportLabel.textContent = "Support GitStudio";
+    const supportSub = el("div", "settings-sub");
+    supportSub.textContent = SUPPORT_SENTENCE;
+    const supportRow = el("div", "settings-actions settings-support");
+    supportRow.setAttribute("role", "group");
+    supportRow.setAttribute("aria-label", "Support GitStudio");
+    for (const link of SUPPORT_LINKS) {
+      const b = el("button", "mini-btn") as HTMLButtonElement;
+      b.dataset.support = link.id;
+      b.title = `${link.label} — ${link.blurb}`;
+      b.append(glyph(link.icon), span(link.label));
+      b.addEventListener("click", () => window.open(link.url, "_blank"));
+      supportRow.appendChild(b);
+    }
+    body.append(sub, versionRow, updRow, supportLabel, supportSub, supportRow);
     return card;
   }
 
@@ -9140,6 +9161,17 @@ class App {
               });
             },
           },
+          // Last of the actions: the two ways to support GitStudio, the same
+          // pages Help and Settings ▸ About open (shared/support.ts).
+          ...SUPPORT_LINKS.map(
+            (link): PaletteItem => ({
+              icon: link.icon,
+              label: link.paletteLabel,
+              hint: link.blurb,
+              keywords: link.keywords,
+              run: () => void window.open(link.url, "_blank"),
+            }),
+          ),
         ];
 
         return [

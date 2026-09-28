@@ -14,6 +14,8 @@
 //   · your REPOSITORIES, recency-ranked, each one click from open
 //   · what NEEDS YOU across every repository you touch — not just this one —
 //     plus the Inbox door and this branch's CI
+//   · and at the very foot, one small muted line: GitStudio is free and open
+//     source, with the two ways to support it (no card, no count, no nag)
 //
 // Boot-cheap by rule: disk-priced reads fill immediately and independently;
 // GitHub-priced reads are one search call at a 60s TTL and one runs read
@@ -36,6 +38,7 @@ import type {
   SyncStatus,
   WorkflowRun,
 } from "../../shared/ipc";
+import { SUPPORT_LEAD, SUPPORT_LINKS } from "../../shared/support";
 import { perTab } from "../tabState";
 
 /**
@@ -83,6 +86,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   const workCol = column("Needs you", "bell", "My Work", () => nav("mywork"));
   grid.append(reposCol.root, workCol.root);
   view.appendChild(grid);
+  view.appendChild(supportLine());
   wrap.replaceChildren(view);
 
   // Independent fills: disk never waits on GitHub, and either column arriving
@@ -90,6 +94,33 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   void fillHero(hero, nav, live);
   void fillRepos(reposCol.body, nav, live);
   void fillWork(workCol.body, nav, live);
+}
+
+/**
+ * The page's last line: GitStudio is free and open source, and the two ways
+ * to support it (shared/support.ts). Small, muted, below everything, and part
+ * of no card — the hero and the two columns, and their doors, are exactly what
+ * they were. It asks nothing and never moves: static text, painted with the
+ * page.
+ */
+function supportLine(): HTMLElement {
+  const foot = el("p", "dash-support");
+  foot.appendChild(span(SUPPORT_LEAD, "dash-support-lead"));
+  SUPPORT_LINKS.forEach((link, i) => {
+    if (i > 0) {
+      const dot = span("·", "dash-support-sep");
+      dot.setAttribute("aria-hidden", "true");
+      foot.appendChild(dot);
+    }
+    const b = el("button", "dash-support-link") as HTMLButtonElement;
+    b.type = "button";
+    b.dataset.support = link.id;
+    b.title = `${link.label} — ${link.blurb}`;
+    b.append(glyph(link.icon), span(link.label));
+    b.addEventListener("click", () => window.open(link.url, "_blank"));
+    foot.appendChild(b);
+  });
+  return foot;
 }
 
 function greeting(): string {

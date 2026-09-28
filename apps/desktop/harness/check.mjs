@@ -606,6 +606,14 @@ const CASES = [
   ["the-back-arrow-goes-where-it-says", "issues"],
   ["the-keyboard-works-before-a-repository-does", "changes", { extra: "norepo=1" }],
   ["home-is-a-workbench", "dashboard"],
+  // Support GitStudio — visible, never in the way (shared/support.ts): Home's
+  // foot line in both themes and a narrow window, Settings ▸ About, and ⌘K.
+  ["home-ends-on-one-quiet-support-line", "dashboard"],
+  ["home-ends-on-one-quiet-support-line", "dashboard", { theme: "light" }],
+  ["home-ends-on-one-quiet-support-line", "dashboard", { width: 900 }],
+  ["the-about-card-offers-both-ways-to-support", "settings"],
+  ["the-about-card-offers-both-ways-to-support", "settings", { theme: "light" }],
+  ["the-palette-offers-both-ways-to-support", "code"],
   ["the-cleanup-line-never-counts-the-default-branch", "dashboard", { extra: "onfeature=1" }],
   ["needs-you-reaches-across-repositories", "dashboard"],
   ["the-issue-rail-says-who-is-fixing-it", "issues~open31"],

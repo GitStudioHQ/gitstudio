@@ -125,6 +125,38 @@
     },
   });
 
+  // ── Support GitStudio (shared/support.ts) ─────────────────────────────────
+  /** The two pages, spelled out here so a check pins them, not the source. */
+  const SUPPORT_URLS = {
+    sponsor: "https://github.com/sponsors/antonarnaudov",
+    coffee: "https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d",
+  };
+  /**
+   * What the page asks the host to open in the browser while `fn` runs.
+   * window.open is the renderer's one door out: main's window-open handler
+   * hands the address to openExternalSafely (http/https only) and opens no
+   * window. Recorded as [url, target] and put back afterwards.
+   */
+  const recordOpens = async (fn) => {
+    const opened = [];
+    const real = window.open;
+    window.open = (url, target) => {
+      opened.push([String(url), target]);
+      return null;
+    };
+    try {
+      await fn();
+    } finally {
+      window.open = real;
+    }
+    return opened;
+  };
+  /** A codicon that really draws: its class has a glyph in the shipped font map. */
+  const drawsGlyph = (el) => {
+    const content = el ? getComputedStyle(el, "::before").content : "";
+    return !!content && content !== "none" && content !== "normal" && content !== '""';
+  };
+
   // ── the Rebase view's selection (#32) ────────────────────────────────────
   // Driven the way a person drives it: keys land on the FOCUSED element
   // (never on document — see harness-synthetic-events), and "selected" is read
@@ -9107,6 +9139,202 @@
       if (cols.length === 2) {
         const dy = Math.abs(cols[0].getBoundingClientRect().top - cols[1].getBoundingClientRect().top);
         c.ok(dy < 4, `side by side, not stacked (Δy ${Math.round(dy)}px)`);
+      }
+    },
+
+    // ── Support GitStudio: visible, never in the way ────────────────────────
+    //
+    // The owner's words for it: visible but not annoying. So the two ways to
+    // support GitStudio (GitHub Sponsors, and a one-off coffee through
+    // Revolut) are only where people go looking — Help, Settings ▸ About, ⌘K
+    // — plus ONE quiet line at the foot of Home. Nothing opens by itself.
+
+    /**
+     * The foot of Home: one small, muted line below everything, in no card.
+     * The workbench's contract holds around it (three .dash-card regions,
+     * the hero and two columns exactly where they would be without it), its
+     * words read, its links wear no line and no colour of their own, and each
+     * asks the host to open exactly its page.
+     */
+    "home-ends-on-one-quiet-support-line": async (f) => {
+      const c = check(f);
+      await settle(1600);
+      noAnimation();
+      await settle(120);
+      const dash = $(".dash");
+      const foot = $(".dash .dash-support");
+      c.ok(!!dash && !!foot, "Home has its support line");
+      if (!dash || !foot) return;
+      c.ok(dash.lastElementChild === foot, `it is the page's last thing (the last is "${dash.lastElementChild?.className}")`);
+      c.ok(!foot.closest(".dash-card"), "and part of no card");
+      c.eq($$(".dash-card").length, 3, "the workbench is still a hero and two columns");
+      const lowest = Math.max(...$$(".dash .dash-card").map((x) => x.getBoundingClientRect().bottom));
+      c.ok(foot.getBoundingClientRect().top >= lowest + 8, `it sits below every card (${Math.round(foot.getBoundingClientRect().top)} vs ${Math.round(lowest)})`);
+      c.eq(text(foot), "GitStudio is free and open source.Sponsor on GitHub·Buy me a coffee", "one sentence, then the two ways");
+
+      // Quiet: small and muted, like the page's hints — never a banner.
+      const fs = getComputedStyle(foot);
+      const lineSize = parseFloat(getComputedStyle($(".dash-line") || dash).fontSize);
+      c.ok(parseFloat(fs.fontSize) <= 12 && parseFloat(fs.fontSize) < lineSize, `small (${fs.fontSize}, the rows ${lineSize}px)`);
+      const probe = document.createElement("span");
+      probe.style.color = "var(--app-muted)";
+      dash.appendChild(probe);
+      const muted = getComputedStyle(probe).color;
+      probe.remove();
+      c.eq(fs.color, muted, "muted");
+      c.eq(fs.animationName, "none", "it does not move");
+      c.eq(unreadableIn(foot).map((u) => `"${u.text}" ${u.ratio.toFixed(2)}:1`).join("; "), "", "every word of it reads (AA)");
+
+      // It pushes nothing: the head, the hero and the columns keep their places.
+      const places = () =>
+        [$(".dash-head"), ...$$(".dash .dash-card")]
+          .map((x) => {
+            const r = x.getBoundingClientRect();
+            return [r.left, r.top, r.width, r.height].map(Math.round).join(",");
+          })
+          .join(" | ");
+      const withLine = places();
+      foot.style.display = "none";
+      const without = places();
+      foot.style.display = "";
+      c.eq(withLine, without, "the page above it is laid out exactly as without it");
+      c.ok(dash.scrollWidth <= dash.clientWidth + 1, "and it never widens the page");
+
+      const links = $$(".dash-support-link", foot);
+      c.eq(links.map((l) => `${l.tagName} ${l.dataset.support} ${text(l)}`).join(" | "), "BUTTON sponsor Sponsor on GitHub | BUTTON coffee Buy me a coffee", "two real buttons, named by their words");
+      for (const [l, icon, blurb] of [[links[0], "heart", "recurring support"], [links[1], "coffee", "a one-off tip"]]) {
+        if (!l) continue;
+        c.ok(drawsGlyph(l.querySelector(`.codicon-${icon}`)), `${text(l)} wears the ${icon} codicon`);
+        c.match(l.title, new RegExp(blurb), `${text(l)}'s tooltip says what kind of support it is`);
+        const box = l.getBoundingClientRect();
+        c.ok(box.height >= 24 && box.width >= 24, `${text(l)} is a full target (${Math.round(box.width)}×${Math.round(box.height)}, WCAG 2.2 asks 24×24)`);
+        const ls = getComputedStyle(l);
+        c.eq(ls.textDecorationLine, "none", `${text(l)} wears no underline`);
+        c.eq(ls.borderTopWidth + ls.borderBottomWidth + ls.borderLeftWidth + ls.borderRightWidth, "0px0px0px0px", `${text(l)} wears no border`);
+        c.eq(ls.color, muted, `${text(l)} is as muted as the sentence at rest`);
+      }
+      const asked = (window.__GS_INVOKED || []).length;
+      const opened = await recordOpens(async () => {
+        links[0]?.click();
+        links[1]?.click();
+        await settle(200);
+      });
+      c.eq(JSON.stringify(opened), JSON.stringify([[SUPPORT_URLS.sponsor, "_blank"], [SUPPORT_URLS.coffee, "_blank"]]), "each asks the host to open exactly its page");
+      c.eq((window.__GS_INVOKED || []).slice(asked).map((r) => r.channel).join(", "), "", "and asks nothing else of the app");
+    },
+
+    /**
+     * Settings ▸ About: a Support GitStudio group — one sentence, and the two
+     * ways as the card's own buttons, each opening exactly its page.
+     */
+    "the-about-card-offers-both-ways-to-support": async (f) => {
+      const c = check(f);
+      await settle(800);
+      noAnimation();
+      await settle(120);
+      const about = $$(".settings-card").find((x) => text(x.querySelector(".settings-card-title")) === "About");
+      c.ok(!!about, "Settings has its About card");
+      if (!about) return;
+      const group = about.querySelector(".settings-support");
+      c.ok(!!group, "the About card offers support");
+      if (!group) return;
+      c.eq(group.getAttribute("role"), "group", "as one group");
+      c.eq(group.getAttribute("aria-label"), "Support GitStudio", "named for a screen reader");
+      const sentence = group.previousElementSibling;
+      const label = sentence?.previousElementSibling;
+      c.eq(text(label), "Support GitStudio", "under its label");
+      c.ok(!!label?.classList.contains("settings-field-label"), "in the card's label type");
+      c.eq(text(sentence), "GitStudio is free and open source. If it saves you time, you can support it.", "one sentence says why");
+      const last = about.lastElementChild?.lastElementChild;
+      c.ok(last === group, `at the foot of the card (the last is "${last?.className}")`);
+
+      const btns = $$("button", group);
+      c.eq(btns.map((b) => text(b)).join(" | "), "Sponsor on GitHub | Buy me a coffee", "the two ways, in the READMEs' words");
+      const update = $$("button", about).find((b) => /Check for updates/.test(text(b)));
+      c.ok(!!update, "beside the card's other actions");
+      for (const [b, icon, id, blurb] of [[btns[0], "heart", "sponsor", "recurring support"], [btns[1], "coffee", "coffee", "a one-off tip"]]) {
+        if (!b) continue;
+        const g = b.querySelector(`.codicon-${icon}`);
+        c.ok(drawsGlyph(g), `${text(b)} wears the ${icon} codicon`);
+        c.eq(g?.getAttribute("aria-hidden"), "true", `${text(b)}'s icon is decoration: its words are its name`);
+        c.eq(b.dataset.support, id, `${text(b)} is the ${id} link`);
+        c.match(b.title, new RegExp(blurb), `${text(b)}'s tooltip says what kind of support it is`);
+        if (update) {
+          const a = getComputedStyle(b), u = getComputedStyle(update);
+          c.eq(`${a.height} ${a.borderRadius} ${a.fontSize} ${a.fontWeight}`, `${u.height} ${u.borderRadius} ${u.fontSize} ${u.fontWeight}`, `${text(b)} is the card's own kind of button`);
+        }
+      }
+      const unread = [label, sentence, group].filter(Boolean).flatMap((x) => unreadableIn(x));
+      c.eq(unread.map((u) => `"${u.text}" ${u.ratio.toFixed(2)}:1`).join("; "), "", "every word of it reads (AA)");
+
+      const asked = (window.__GS_INVOKED || []).length;
+      const opened = await recordOpens(async () => {
+        btns[0]?.click();
+        btns[1]?.click();
+        await settle(200);
+      });
+      c.eq(JSON.stringify(opened), JSON.stringify([[SUPPORT_URLS.sponsor, "_blank"], [SUPPORT_URLS.coffee, "_blank"]]), "each asks the host to open exactly its page");
+      c.eq((window.__GS_INVOKED || []).slice(asked).map((r) => r.channel).join(", "), "", "and asks nothing else of the app");
+    },
+
+    /**
+     * ⌘K: both ways are the last two actions, found by the words people type
+     * for them, and running one opens exactly its page and closes the palette.
+     */
+    "the-palette-offers-both-ways-to-support": async (f) => {
+      const c = check(f);
+      await settle(600);
+      noAnimation();
+      const openPalette = async () => {
+        if ($(".cmdk-input")) return;
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+        await settle(400);
+      };
+      await openPalette();
+      const list = $(".cmdk-list");
+      c.ok(!!list, "the palette is open");
+      if (!list) return;
+      let group = "";
+      const actions = [];
+      for (const n of list.children) {
+        if (n.classList.contains("cmdk-group")) group = text(n);
+        else if (/^actions$/i.test(group) && n.classList.contains("cmdk-row")) actions.push(n);
+      }
+      c.eq(
+        actions.slice(-2).map((r) => `${text(r.querySelector(".cmdk-label"))} · ${text(r.querySelector(".cmdk-hint"))}`).join(" | "),
+        "Sponsor GitStudio on GitHub · recurring support | Buy me a coffee · a one-off tip",
+        "the last two actions, each saying what kind of support it is",
+      );
+      for (const [query, label, url, icon] of [
+        ["sponsor", "Sponsor GitStudio on GitHub", SUPPORT_URLS.sponsor, "heart"],
+        ["donate", "Sponsor GitStudio on GitHub", SUPPORT_URLS.sponsor, "heart"],
+        ["coffee", "Buy me a coffee", SUPPORT_URLS.coffee, "coffee"],
+        ["tip", "Buy me a coffee", SUPPORT_URLS.coffee, "coffee"],
+      ]) {
+        await openPalette();
+        const input = $(".cmdk-input");
+        if (!input) {
+          c.ok(false, `the palette opens again for "${query}"`);
+          continue;
+        }
+        input.value = query;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await settle(450);
+        const find = () => $$(".cmdk-row").find((r) => text(r.querySelector(".cmdk-label")) === label);
+        const row = find();
+        c.ok(!!row, `"${query}" finds ${label}`);
+        if (!row) continue;
+        c.ok(drawsGlyph(row.querySelector(`.codicon-${icon}`)), `${label} wears the ${icon} codicon`);
+        const asked = (window.__GS_INVOKED || []).length;
+        const opened = await recordOpens(async () => {
+          // Found again and clicked in one go: a search group landing late
+          // rebuilds the rows, and a click on the old node reaches nothing.
+          find()?.click();
+          await settle(200);
+        });
+        c.eq(JSON.stringify(opened), JSON.stringify([[url, "_blank"]]), `"${query}" → ${label} asks the host to open exactly its page`);
+        c.eq((window.__GS_INVOKED || []).slice(asked).map((r) => r.channel).join(", "), "", "and asks nothing else of the app");
+        c.ok(!$(".cmdk-overlay"), "and the palette closes");
       }
     },
 

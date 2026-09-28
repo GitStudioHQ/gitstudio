@@ -25,6 +25,7 @@ import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore, repoScope } from "./repoStore";
 import { cannotOpenNotice, droppedTabsNotice, tabsFullNotice, missingFolderError, missingFolderResult } from "./repoNotice";
 import { menuDelivery, type MenuCommand } from "./menuDelivery";
+import { supportMenuItems } from "./supportMenu";
 import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
 import { RebaseBridge } from "./rebaseBridge";
@@ -528,6 +529,10 @@ function buildMenu(): void {
           click: () =>
             openExternalSafely("https://github.com/GitStudioHQ/gitstudio/issues"),
         },
+        { type: "separator" as const },
+        // Sponsor GitStudio on GitHub… / Buy Me a Coffee… (shared/support.ts),
+        // through the same http(s)-only door as every link above.
+        ...supportMenuItems(openExternalSafely),
         { type: "separator" as const },
         {
           label: "Send Anonymous Crash Reports",
