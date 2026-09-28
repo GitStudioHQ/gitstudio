@@ -29,3 +29,6 @@ __pycache__/
 
 # Build outputs collected by download.sh.
 downloads/
+
+# c8 coverage reports (CI uploads them to Codecov)
+coverage/

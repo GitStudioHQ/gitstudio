@@ -60,8 +60,24 @@ jobs:
       - name: Type-check
         run: npm run check-types
 
+      # Coverage is collected on the Ubuntu leg only: c8 records V8's own
+      # coverage from every process the tests start (tsx, child node, git
+      # helpers), so the tests run exactly as they do on the other legs.
       - name: Test
+        if: matrix.os != 'ubuntu-latest'
         run: npm test
+
+      - name: Test (with coverage)
+        if: matrix.os == 'ubuntu-latest'
+        run: npx --yes c8@10 --reporter=lcov --report-dir=coverage --include='src/**' --include='vendor/gitstudio/*/src/**' npm test
+
+      - name: Upload coverage reports to Codecov
+        if: matrix.os == 'ubuntu-latest' && !cancelled()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: GitStudioHQ/merge-studio
+          files: coverage/lcov.info
 
       - name: Package (smoke-test the build)
         if: matrix.os == 'ubuntu-latest'
