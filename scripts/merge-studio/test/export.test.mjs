@@ -22,6 +22,7 @@ import {
   VENDOR_GITATTRIBUTES,
   VENDORED_PACKAGES,
 } from "../export.mjs";
+import { toGitstudio } from "../layout.mjs";
 
 /**
  * The blob git makes of gitstudio's file `rel`: what an export writes for it,
@@ -328,6 +329,37 @@ test("the export writes merge-studio's CI: check-parity in a job of its own, neu
     assert.ok(".github/workflows/ci.yml" in manifest.shell);
     writeFileSync(join(into, ".github/workflows/ci.yml"), `${yml}# local edit\n`);
     assert.match(checkParity(into).warnings.join("\n"), /shell modified: \.github\/workflows\/ci\.yml/);
+  } finally {
+    rmSync(into, { recursive: true, force: true });
+  }
+});
+
+test("the export writes merge-studio's FUNDING.yml: GitStudio's own, byte for byte, over the one merge-studio kept by hand", () => {
+  const into = mkdtempSync(join(tmpdir(), "ms-export-funding-"));
+  try {
+    // merge-studio's hand-kept file before the first export that writes it:
+    // GitHub Sponsors alone, without the one-off tip.
+    mkdirSync(join(into, ".github"), { recursive: true });
+    writeFileSync(join(into, ".github/FUNDING.yml"), "github: antonarnaudov\n");
+    exportTo({ into, allowDirty: true, lock: false });
+
+    const bytes = readFileSync(join(into, ".github/FUNDING.yml"));
+    assert.equal(blobId(bytes), gitstudioBlobId(".github/FUNDING.yml"), "GitStudio's file, byte for byte as git stores it");
+    const yml = bytes.toString("utf8");
+    assert.match(yml, /^github: \[antonarnaudov\]$/m, "GitHub Sponsors");
+    assert.match(yml, /^custom: \["https:\/\/checkout\.revolut\.com\/pay\/7a6070ab-99ba-4170-a125-c5911b1a5c1d"\]$/m, "and the one-off tip");
+    assert.doesNotMatch(yml, /apps\/|scripts\//, "it names no path that exists in only one of the two repositories");
+
+    // Recorded with the shell files: a hand edit in merge-studio is reported,
+    // and an export that no longer writes it removes it.
+    const manifest = JSON.parse(readFileSync(join(into, "VENDORED_FROM.json"), "utf8"));
+    assert.ok(".github/FUNDING.yml" in manifest.shell);
+    writeFileSync(join(into, ".github/FUNDING.yml"), `${yml}# local edit\n`);
+    assert.match(checkParity(into).warnings.join("\n"), /shell modified: \.github\/FUNDING\.yml/);
+    // The import maps a pull request's change to it back to the same file.
+    assert.deepEqual(toGitstudio(".github/FUNDING.yml", { shell: new Set() }), { kind: "copied", gitstudio: ".github/FUNDING.yml", shell: false });
+    // It is the repository's, never the extension's: .github/ is not packaged.
+    assert.match(readFileSync(join(GITSTUDIO_ROOT, "apps/merge-studio/.vscodeignore"), "utf8"), /^\.github\/\*\*$/m);
   } finally {
     rmSync(into, { recursive: true, force: true });
   }

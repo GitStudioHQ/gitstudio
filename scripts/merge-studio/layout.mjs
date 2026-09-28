@@ -8,12 +8,13 @@
 // Every path in a merge-studio checkout is one of three things:
 // - COPIED: the bytes of one gitstudio file. The vendored packages, GitStudio's
 //   LICENSE and NOTICE, the two files the parity test reads, check-parity and
-//   its test, the CI workflow that runs them, and the shell (apps/merge-studio)
-//   at the repository root.
+//   its test, the CI workflow that runs them, GitStudio's FUNDING.yml (the
+//   Sponsor button), and the shell (apps/merge-studio) at the repository root.
 // - GENERATED: computed by the export (VENDORED_FROM.json, the standalone
 //   package.json, tsconfig.json, package-lock.json, vendor/gitstudio/.gitattributes).
-// - merge-studio's own: everything else (.github/, docs/, SECURITY.md, …). The
-//   export never writes or removes these, and the import refuses them.
+// - merge-studio's own: everything else (the rest of .github/, docs/,
+//   SECURITY.md, …). The export never writes or removes these, and the import
+//   refuses them.
 
 import { join, posix } from "node:path";
 import { listFiles, MANIFEST_FILE, VENDOR_DIR } from "./check-parity.mjs";
@@ -47,6 +48,9 @@ export const COPIED = [
   // is the check's, so it is kept beside it. merge-studio's other workflows
   // (release.yml) are its own.
   { gitstudio: "scripts/merge-studio/merge-studio-ci.yml", mergeStudio: ".github/workflows/ci.yml" },
+  // The repository's Sponsor button: the same two links as GitStudio's, from
+  // the one file, so the two repositories cannot drift apart.
+  { gitstudio: ".github/FUNDING.yml", mergeStudio: ".github/FUNDING.yml" },
   { gitstudio: `${SHELL_DIR}/`, mergeStudio: "", shell: true },
 ];
 

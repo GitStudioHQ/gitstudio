@@ -202,7 +202,7 @@ test("the 1.14.0 and 2.1.0 changelogs carry the shared git fixes each product sh
 
 test("the docs name the files the export writes and the ones it never touches, as layout.mjs has them", () => {
   const guide = readFileSync(join(GITSTUDIO_ROOT, "apps/merge-studio/CONTRIBUTING.md"), "utf8");
-  for (const f of ["VENDORED_FROM.json", "package-lock.json", "tsconfig.json", ".github/workflows/ci.yml", "scripts/check-parity.mjs"]) {
+  for (const f of ["VENDORED_FROM.json", "package-lock.json", "tsconfig.json", ".github/workflows/ci.yml", ".github/FUNDING.yml", "scripts/check-parity.mjs"]) {
     assert.ok(guide.includes(`\`${f}\``), `CONTRIBUTING.md names ${f} as written by the export`);
   }
   const releasing = readFileSync(join(GITSTUDIO_ROOT, "apps/merge-studio/RELEASING.md"), "utf8");

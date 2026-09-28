@@ -19,8 +19,8 @@ repository of its own that builds, tests and packages without it.
   Studio's own shell (`apps/merge-studio` in GitStudio).
 - A few files are written by the export: `VENDORED_FROM.json`,
   `package-lock.json`, `tsconfig.json`, `.github/workflows/ci.yml`,
-  `scripts/check-parity.mjs`, and in `package.json` the dependency lists and
-  the `check-types`, `test` and `check-parity` scripts.
+  `.github/FUNDING.yml`, `scripts/check-parity.mjs`, and in `package.json` the
+  dependency lists and the `check-types`, `test` and `check-parity` scripts.
 - Everything else (`release.yml`, `SECURITY.md`, `docs/`, `test-fixtures/`,
   `brand-assets/`) belongs to this repository alone.
 

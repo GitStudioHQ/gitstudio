@@ -27,8 +27,10 @@
 //    that runs it (scripts/merge-studio/merge-studio-ci.yml) to
 //    .github/workflows/ci.yml: check-parity in a job of its own, reporting a
 //    pull request's change to vendor/ for a maintainer to import and failing
-//    only on main. Then it writes VENDORED_FROM.json: the gitstudio sha, and a
-//    sha256 for every vendored file (checked) and every shell file (reported).
+//    only on main. GitStudio's .github/FUNDING.yml goes to the same place in
+//    merge-studio, so both repositories' Sponsor buttons carry the same links.
+//    Then it writes VENDORED_FROM.json: the gitstudio sha, and a sha256 for
+//    every vendored file (checked) and every shell file (reported).
 //
 // Every file is written with the bytes git stores for it (gitBytes), so an
 // export from a Windows checkout, whose working tree has CRLF line endings

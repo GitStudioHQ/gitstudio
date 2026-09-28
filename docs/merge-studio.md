@@ -53,11 +53,13 @@ The owner chose one copy, kept here (23 Sep 2026):
 | `scripts/merge-studio` | `export.mjs`, `import.mjs`, `layout.mjs` (the one map between the two repositories, which both scripts follow), `check-parity.mjs` and `merge-studio-ci.yml`. | `scripts/check-parity.mjs`, `.github/workflows/ci.yml` |
 | `scripts/merge-e2e` | The all-cases conflict matrix every merge change is tested against: every conflict shape, in every git operation that can stop, in every conflict style. | not exported |
 
-The Merge Studio repository holds the export of those, plus files the export
-computes (`VENDORED_FROM.json`, a standalone `package.json`, `tsconfig.json`
-and `package-lock.json`, and `vendor/gitstudio/.gitattributes`), plus its own
-files, which the export never writes or removes: `release.yml`, `SECURITY.md`,
-`docs/`, `test-fixtures/`, `brand-assets/` and the like.
+The Merge Studio repository holds the export of those, plus GitStudio's
+`.github/FUNDING.yml` (so both repositories' Sponsor buttons carry the same
+links), plus files the export computes (`VENDORED_FROM.json`, a standalone
+`package.json`, `tsconfig.json` and `package-lock.json`, and
+`vendor/gitstudio/.gitattributes`), plus its own files, which the export never
+writes or removes: `release.yml`, `SECURITY.md`, `docs/`, `test-fixtures/`,
+`brand-assets/` and the like.
 
 ## A contributor's pull request, from merge-studio to GitStudio and back
 
@@ -88,7 +90,8 @@ files, which the export never writes or removes: `release.yml`, `SECURITY.md`,
    `Imported-from: GitStudioHQ/merge-studio#<n> / <sha>` trailer. It maps
    `vendor/gitstudio/<package>/src/**` to `packages/<package>/src/**`,
    `.github/workflows/ci.yml` to `scripts/merge-studio/merge-studio-ci.yml`,
-   and the files at merge-studio's root to `apps/merge-studio/**`. It leaves
+   `.github/FUNDING.yml` to GitStudio's own, and the files at merge-studio's
+   root to `apps/merge-studio/**`. It leaves
    out what the export generates, refuses what is merge-studio's own, and
    finishes by exporting the result and comparing it with the contributor's
    files ("identical", or "merged" where GitStudio had changed the same file
@@ -131,8 +134,8 @@ files, which the export never writes or removes: `release.yml`, `SECURITY.md`,
 
 An export is step 5 above: `export.mjs` replaces merge-studio's `src/`,
 `test/` and `vendor/gitstudio/` with GitStudio's, copies the shell files,
-`scripts/check-parity.mjs` and `.github/workflows/ci.yml`, and writes the
-generated files. It refuses to run from a gitstudio checkout with uncommitted
+`scripts/check-parity.mjs`, `.github/workflows/ci.yml` and
+`.github/FUNDING.yml`, and writes the generated files. It refuses to run from a gitstudio checkout with uncommitted
 changes in the exported paths, and it never commits, pushes or publishes:
 what it wrote is a working-tree change for a person to review.
 

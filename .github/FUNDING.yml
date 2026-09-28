@@ -1,4 +1,8 @@
-# Renders the "Sponsor" button on the repository page. The Marketplace gets the
-# same link from the `sponsor` field in apps/extension/package.json.
+# Renders the "Sponsor" button on the repository page: GitHub Sponsors
+# (recurring support) and Buy me a coffee (a one-off tip, through Revolut).
+# The extensions' Marketplace pages take the Sponsors link from the `sponsor`
+# field in their package.json. GitStudioHQ/merge-studio's copy of this file is
+# written from GitStudioHQ/gitstudio's by the Merge Studio export: change it
+# there.
 github: [antonarnaudov]
 custom: ["https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d"]

@@ -60,7 +60,8 @@ manifest then records the export as dirty). It:
 - copies `apps/merge-studio`'s files to the repository root, and
   `scripts/merge-studio/check-parity.mjs` (and its test) to `scripts/`;
 - writes `.github/workflows/ci.yml` from `scripts/merge-studio/merge-studio-ci.yml`
-  (see "merge-studio's CI" below);
+  (see "merge-studio's CI" below), and `.github/FUNDING.yml` from GitStudio's
+  own, so both repositories' Sponsor buttons carry the same two links;
 - writes what differs standalone: `package.json` (no `@gitstudio/*`
   workspace dependencies, and every version pinned to what gitstudio builds
   with), `tsconfig.json` (`@gitstudio/*` resolved into `vendor/gitstudio`),
@@ -157,6 +158,7 @@ gitstudio and exporting again:
    trailer. It maps paths by `scripts/merge-studio/layout.mjs`, the same table
    the export writes by: `vendor/gitstudio/<pkg>/src/**` → `packages/<pkg>/src/**`,
    `.github/workflows/ci.yml` → `scripts/merge-studio/merge-studio-ci.yml`,
+   `.github/FUNDING.yml` → GitStudio's `.github/FUNDING.yml`,
    the shell's files at the root → `apps/merge-studio/**`.
 3. **Read what it says.**
    - *Not imported*: the files the export writes itself (`VENDORED_FROM.json`,

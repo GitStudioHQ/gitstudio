@@ -904,6 +904,8 @@ test("the table: new files map by the folder they land in; merge-studio's own fi
   assert.equal(map("README.md").gitstudio, "apps/merge-studio/README.md");
   // The CI workflow the export writes comes back to the template it is written from.
   assert.deepEqual(map(".github/workflows/ci.yml"), { kind: "copied", gitstudio: "scripts/merge-studio/merge-studio-ci.yml", shell: false });
+  // …and the Sponsor button's FUNDING.yml to GitStudio's own, the one file both repositories use.
+  assert.deepEqual(map(".github/FUNDING.yml"), { kind: "copied", gitstudio: ".github/FUNDING.yml", shell: false });
   for (const p of ["package.json", "package-lock.json", "tsconfig.json", "VENDORED_FROM.json", "vendor/gitstudio/.gitattributes"]) {
     assert.equal(map(p).kind, "generated", p);
   }
