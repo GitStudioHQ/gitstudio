@@ -12,6 +12,14 @@ but they share the same engine, so most Git behaviour lands in both at once.
 ## [Unreleased]
 
 ### Added
+- **A launch screen.** GitStudio's window now opens straight onto the
+  GitStudio mark — the cube settles in, its commit graph snaps together and
+  the name follows — instead of appearing late and painting itself in pieces.
+  It is in your chosen theme from the very first frame (light, dark, or the
+  system's), fades into the app the moment the app is ready, and you can drag
+  the window by it. On a quick start you'll barely see it; with **Reduce
+  motion** turned on it simply fades in and out. The window also appears
+  sooner than before.
 - **Ways to support GitStudio.** GitStudio is free and open source, and if it
   saves you time you can now support it: **Help ▸ Sponsor GitStudio on
   GitHub…** (recurring support) and **Help ▸ Buy Me a Coffee…** (a one-off

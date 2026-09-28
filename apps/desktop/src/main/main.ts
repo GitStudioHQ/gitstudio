@@ -282,7 +282,7 @@ async function createWindow(): Promise<void> {
     show: false,
     // Match the renderer's --app-bg for the chosen theme so the window frame
     // doesn't flash the wrong shade before the page paints.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d1016" : "#eef1f5",
+    backgroundColor: windowBackground(nativeTheme.shouldUseDarkColors ? "dark" : "light"),
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     // Vertically center the traffic lights in the 36px repository tab row —
     // the window's title bar on macOS since repositories became tabs (#32).
@@ -308,7 +308,12 @@ async function createWindow(): Promise<void> {
     mainWindow?.webContents.send(channel, payload),
   );
 
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  // Shown on the launch screen's first frame (theme-boot.js asks, see
+  // "window:launchPainted") — ready-to-show waits for the page to finish
+  // parsing, which was the whole bundle, so the window used to appear only
+  // once the app had run. ready-to-show stays as the fallback.
+  const win = mainWindow;
+  win.once("ready-to-show", () => revealWindow(win));
   // Every load — a window reopened from the Dock, a reload — hears about an
   // update that is already waiting.
   mainWindow.webContents.on("did-finish-load", () => updates?.windowReady());
@@ -326,6 +331,20 @@ async function createWindow(): Promise<void> {
   // app-level "web-contents-created" handler registered in boot().
 
   await mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+}
+
+/** The window's own background for a theme: the renderer's --app-bg, which
+ *  is also the launch screen's ground (test/launchScreen.test.ts). */
+function windowBackground(theme: "dark" | "light"): string {
+  return theme === "light" ? "#eef1f5" : "#0d1016";
+}
+
+/** Show a window that is still hidden, once — in `theme`'s colour when the
+ *  renderer said which theme its first frame was painted in. */
+function revealWindow(win: BrowserWindow | undefined, theme?: "dark" | "light"): void {
+  if (!win || win.isDestroyed() || win.isVisible()) return;
+  if (theme) win.setBackgroundColor(windowBackground(theme));
+  win.show();
 }
 
 /** The dock/window brand mark for a theme variant (dev/window icon; electron-builder
@@ -1443,6 +1462,12 @@ function registerIpc(): void {
   // which brand variant the dock should wear.
   handle("appearance:dockIcon", async (payload) => {
     setDockIcon(payload.variant);
+  });
+
+  // The launch screen is on screen in the page: show its window.
+  handle("window:launchPainted", async (payload, event) => {
+    const theme = payload?.theme === "light" || payload?.theme === "dark" ? payload.theme : undefined;
+    revealWindow(BrowserWindow.fromWebContents(event.sender) ?? undefined, theme);
   });
 }
 

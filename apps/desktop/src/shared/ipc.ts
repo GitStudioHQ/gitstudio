@@ -2891,6 +2891,10 @@ export interface IpcChannels {
   /** Set the macOS dock icon to the light/dark brand mark. Renderer resolves
    *  the effective variant (it alone knows the in-app theme override). */
   "appearance:dockIcon": [{ variant: "dark" | "light" }, void];
+  // ── Window ──
+  /** The launch screen's first frame is painted (theme-boot.js): show the
+   *  window now, in that frame's theme, instead of waiting for the bundle. */
+  "window:launchPainted": [{ theme: "dark" | "light" }, void];
 }
 
 export type IpcChannel = keyof IpcChannels;

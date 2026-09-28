@@ -51,6 +51,7 @@ import "./styles/codicons-full.css";
 import { host } from "./bridge";
 import { applyTheme, followSystemTheme, resolveTheme } from "./desktopTheme";
 import type { AppTheme, ThemeMode, LogoMode } from "./desktopTheme";
+import { dismissLaunchScreen } from "./launchScreen";
 import { GraphMount } from "./graphMount";
 import { DiffPanel, type ConflictHandlers } from "./diffPanel";
 import {
@@ -11806,7 +11807,11 @@ function savePrefs(p: Record<string, unknown>): void {
   }
 }
 
-new TabShell().start().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error("Renderer failed:", err);
-});
+new TabShell()
+  .start()
+  .catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error("Renderer failed:", err);
+  })
+  // The shell is up (or has said why not): the launch screen hands off.
+  .finally(dismissLaunchScreen);

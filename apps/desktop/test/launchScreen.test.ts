@@ -1,0 +1,199 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { runInNewContext } from "node:vm";
+import { LAUNCH_FADE_MS } from "../src/renderer/launchScreen";
+
+// The launch screen is the window's first frame: inline CSS + inline SVG in
+// index.html, painted before the bundle runs, faded out by launchScreen.ts.
+// These pin what it must never lose — its colours are the app's, it animates
+// only what the compositor can run while the bundle holds the main thread,
+// it needs no inline script (the CSP forbids one), and the theme it is painted
+// in is the theme the person picked.
+
+const SRC = join(__dirname, "../src");
+const html = readFileSync(join(SRC, "renderer/index.html"), "utf8");
+const appCss = readFileSync(join(SRC, "renderer/styles/app.css"), "utf8");
+const mainTs = readFileSync(join(SRC, "main/main.ts"), "utf8");
+const themeBoot = readFileSync(join(SRC, "renderer/theme-boot.js"), "utf8");
+
+function between(a: string, b: string): string {
+  const i = html.indexOf(a);
+  const j = html.indexOf(b);
+  assert.ok(i >= 0 && j > i, `${a} … ${b} in index.html`);
+  return html.slice(i, j);
+}
+const style = between("<!-- launch:style -->", "<!-- /launch:style -->");
+const screen = between("<!-- launch:screen -->", "<!-- /launch:screen -->");
+
+/** A custom property's value inside the first rule matching `selector`. */
+function tokenIn(css: string, selector: string, name: string): string {
+  const at = css.indexOf(`${selector} {`);
+  assert.ok(at >= 0, `rule ${selector}`);
+  const body = css.slice(at, css.indexOf("}", at));
+  const m = new RegExp(`${name}:\\s*([^;]+);`).exec(body);
+  assert.ok(m, `${name} in ${selector}`);
+  return m[1].trim().toLowerCase();
+}
+
+test("the launch screen is in the page before the bundle, and is decorative", () => {
+  const boot = html.indexOf('src="./theme-boot.js"');
+  const launch = html.indexOf('<div id="launch"');
+  const root = html.indexOf('<div id="root">');
+  const bundle = html.indexOf('src="./renderer.js"');
+  assert.ok(boot >= 0 && boot < launch, "after theme-boot.js, so its theme class is already on <body>");
+  assert.ok(launch < root && root < bundle, "before the app root and the bundle");
+  assert.match(screen, /<div id="launch" aria-hidden="true">/, "hidden from assistive tech; #boot keeps the words");
+  assert.match(html, /<div id="boot">Loading GitStudio…<\/div>/, "the spoken loading text is still there");
+  assert.doesNotMatch(screen, /\b(href|src)=/, "nothing to fetch: the mark and the wordmark are inline");
+});
+
+test("no inline script — the CSP stays closed to one", () => {
+  for (const m of html.matchAll(/<script\b([^>]*)>/g)) {
+    assert.match(m[1], /\bsrc="\.\//, `every script is a same-origin file: <script${m[1]}>`);
+  }
+  const csp = /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(html)?.[1] ?? "";
+  const scriptSrc = /(?:^|;)\s*script-src\s([^;]*)/.exec(csp)?.[1] ?? "";
+  assert.doesNotMatch(scriptSrc, /unsafe-inline|unsafe-eval/, `script-src is not loosened (${scriptSrc})`);
+});
+
+test("the bundle is deferred, so the launch screen paints while it compiles", () => {
+  assert.match(html, /<script defer src="\.\/renderer\.js"><\/script>/);
+  assert.match(html, /<script src="\.\/theme-boot\.js"><\/script>/, "theme-boot stays synchronous: it sets the theme before paint");
+});
+
+test("its ground is the app's canvas and the window's own background, in both themes", () => {
+  const darkApp = tokenIn(appCss, "body.vscode-dark", "--app-bg");
+  const lightApp = tokenIn(appCss, "body.vscode-light", "--app-bg");
+  assert.equal(tokenIn(style, "#launch", "--lc-bg"), darkApp, "dark launch ground = dark --app-bg");
+  assert.equal(tokenIn(style, "body.vscode-light #launch", "--lc-bg"), lightApp, "light launch ground = light --app-bg");
+  const win = /function windowBackground[\s\S]*?return theme === "light" \? "(#[0-9a-f]+)" : "(#[0-9a-f]+)";/.exec(mainTs);
+  assert.ok(win, "main.ts windowBackground()");
+  assert.equal(win[1], lightApp, "main's light window background");
+  assert.equal(win[2], darkApp, "main's dark window background");
+});
+
+test("it animates only transform and opacity, and reduced motion is a plain fade", () => {
+  const frames = [...style.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\}\s*\}/g)];
+  assert.ok(frames.length >= 5, "the launch keyframes are found");
+  for (const [, name, body] of frames) {
+    const props = [...body.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1]);
+    for (const p of props) assert.ok(p === "opacity" || p === "transform", `@keyframes ${name} animates ${p}`);
+  }
+  const transitions = [...style.matchAll(/transition:\s*([^;]+);/g)].map((m) => m[1]);
+  assert.ok(transitions.length >= 2, "the dissolve's transitions are found");
+  for (const value of transitions) {
+    // "transform 240ms cubic-bezier(…), opacity 140ms …": one property per comma, once the
+    // easing functions' own commas are out of the way.
+    for (const part of value.replace(/\([^)]*\)/g, "").split(",")) {
+      const prop = part.trim().split(/\s+/)[0];
+      assert.ok(prop === "opacity" || prop === "transform", `a transition on ${prop}`);
+    }
+  }
+  const reduce = style.slice(style.indexOf("@media (prefers-reduced-motion: reduce)"));
+  assert.ok(reduce.length > 40, "a reduced-motion block");
+  assert.match(reduce, /animation: launch-fade/, "the mark only fades in");
+  assert.match(reduce, /\.launch-progress \{ display: none; \}/, "no sweeping progress bar");
+  // Leaving hands the pointer and the title-bar drag straight to the app.
+  assert.match(style, /#launch\.is-leaving \{ opacity: 0; pointer-events: none; -webkit-app-region: no-drag; \}/);
+  assert.match(style, /-webkit-app-region: drag;/, "until then the screen drags the window");
+});
+
+test("every moving part is an HTML box, never an <svg> — those animate on the main thread", () => {
+  // Chromium runs a CSS animation on an SVG element on the main thread, and
+  // the bundle holds the main thread for most of a cold start: with the
+  // classes on the <svg>s, the graph and the wordmark sat frozen at their
+  // first frame, invisible, until the app was nearly up.
+  const animated = new Set<string>();
+  for (const m of style.matchAll(/(#launch \.[\w-]+(?: > \w+)?)\s*\{[^}]*\banimation:\s*launch-/g)) animated.add(m[1]);
+  assert.ok(animated.size >= 5, `the animated selectors are found (${[...animated].join(", ")})`);
+  for (const sel of animated) {
+    const m = /^#launch \.([\w-]+)(?: > (\w+))?$/.exec(sel);
+    assert.ok(m, sel);
+    if (m[2]) {
+      assert.notEqual(m[2], "svg", `${sel} animates an <svg>`);
+      continue;
+    }
+    const tags = [...screen.matchAll(new RegExp(`<(\\w+)[^>]*\\bclass="${m[1]}"`, "g"))].map((t) => t[1]);
+    assert.ok(tags.length > 0, `.${m[1]} is in the markup`);
+    for (const t of tags) assert.equal(t, "div", `.${m[1]} is a <${t}>, not an HTML box`);
+  }
+});
+
+test("the screen is removed once its dissolve has run, not before and not long after", () => {
+  // launchScreen.ts removes the element on a timer (a transition that never
+  // runs must not leave it behind), so the timer has to match the CSS.
+  const at = style.indexOf("#launch {");
+  const rule = style.slice(at, style.indexOf("}", at));
+  const fade = /transition: opacity (\d+)ms/.exec(rule);
+  assert.ok(fade, "#launch dissolves by an opacity transition");
+  assert.equal(Number(fade[1]), LAUNCH_FADE_MS, "launchScreen.ts's LAUNCH_FADE_MS is the dissolve's duration");
+  assert.ok(LAUNCH_FADE_MS <= 300, "a dissolve, not a curtain");
+});
+
+test("the hand-off never holds the app back for the animation's sake", () => {
+  const src = readFileSync(join(SRC, "renderer/launchScreen.ts"), "utf8");
+  const body = src.slice(src.indexOf("export function dismissLaunchScreen"));
+  // The leaving class goes on in the same call that marks the app ready —
+  // no timer, no await in between.
+  const ready = body.indexOf('mark("gs:app-ready")');
+  const leaving = body.indexOf('el.classList.add("is-leaving")');
+  assert.ok(ready >= 0 && leaving > ready, "is-leaving is added in dismissLaunchScreen itself");
+  assert.doesNotMatch(body.slice(ready, leaving), /setTimeout|await|requestAnimationFrame/, "nothing waits in between");
+});
+
+/** Run theme-boot.js against a fake page; returns the body class and what it told main. */
+function boot(o: { search?: string; prefs?: string | null; osLight?: boolean }): { theme: string; told: unknown[] } {
+  const told: unknown[] = [];
+  const frames: Array<() => void> = [];
+  const timers: Array<() => void> = [];
+  const body = { className: "" };
+  const win: Record<string, unknown> = {
+    location: { search: o.search ?? "" },
+    URLSearchParams,
+    localStorage: {
+      getItem: (k: string) => (k === "gitstudio.ui.prefs" ? (o.prefs ?? null) : null),
+    },
+    matchMedia: (q: string) => ({ matches: q.includes("light") ? !!o.osLight : !o.osLight }),
+    navigator: { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", platform: "MacIntel" },
+    document: {
+      body,
+      documentElement: { classList: { add: () => undefined } },
+      getElementById: () => null,
+    },
+    performance: { mark: () => undefined },
+    requestAnimationFrame: (f: () => void) => frames.push(f),
+    setTimeout: (f: () => void) => timers.push(f),
+    gitstudio: {
+      invoke: (channel: string, payload: unknown) => {
+        told.push(JSON.parse(JSON.stringify([channel, payload])));
+        return Promise.resolve();
+      },
+    },
+    JSON,
+  };
+  win.window = win;
+  runInNewContext(themeBoot, win);
+  // Only the timer the frame queues; the one queued while the script ran is
+  // the 20s failsafe.
+  const before = timers.length;
+  for (const f of frames.splice(0)) f();
+  for (const f of timers.splice(before)) f();
+  return { theme: body.className, told };
+}
+
+test("the first frame is painted in the theme the person picked", () => {
+  assert.equal(boot({ osLight: false }).theme, "vscode-dark", "System on a dark OS");
+  assert.equal(boot({ osLight: true }).theme, "vscode-light", "System on a light OS");
+  assert.equal(boot({ osLight: false, prefs: '{"themeMode":"light"}' }).theme, "vscode-light", "Light pinned on a dark OS");
+  assert.equal(boot({ osLight: true, prefs: '{"themeMode":"dark"}' }).theme, "vscode-dark", "Dark pinned on a light OS");
+  assert.equal(boot({ osLight: true, prefs: '{"themeMode":"system"}' }).theme, "vscode-light", "System, said out loud");
+  assert.equal(boot({ osLight: true, prefs: "{not json" }).theme, "vscode-light", "a broken blob follows the OS");
+  assert.equal(boot({ osLight: true, prefs: '{"themeMode":"dark"}', search: "?theme=light" }).theme, "vscode-light", "?theme= (the harness) wins");
+});
+
+test("once the launch frame exists, main is told to show the window in its theme", () => {
+  assert.deepEqual(boot({ osLight: false, prefs: '{"themeMode":"light"}' }).told, [["window:launchPainted", { theme: "light" }]]);
+  assert.deepEqual(boot({ osLight: false }).told, [["window:launchPainted", { theme: "dark" }]]);
+});

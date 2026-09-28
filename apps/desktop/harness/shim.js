@@ -1755,6 +1755,8 @@
     // (git:opState — the paused operation a stopped pull leaves behind — is
     // read from `mp` below, which sync:pull's stop moves: mp.stopForPull.)
     "appearance:dockIcon": () => undefined,
+    // theme-boot.js tells main the launch screen has painted (main shows the window).
+    "window:launchPainted": () => undefined,
     // A REAL gap: the run page's Artifacts section read undefined and rendered
     // whatever that produced, unchecked, for as long as this harness has run.
     "actions:artifacts": (runId) =>
