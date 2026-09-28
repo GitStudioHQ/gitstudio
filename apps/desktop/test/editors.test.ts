@@ -38,10 +38,20 @@ test("a macOS app bundle is found without any CLI on PATH", () => {
   assert.equal(detectEditor(spec("vscode"), e), undefined);
 });
 
-test("~/Applications and the JetBrains Toolbox folder count as app dirs", () => {
-  const e = env("darwin", ["/Users/dev/Applications/JetBrains Toolbox/WebStorm.app", "/Users/dev/Applications/Zed.app"]);
-  assert.equal(detectEditor(spec("webstorm"), e)?.location, "/Users/dev/Applications/JetBrains Toolbox/WebStorm.app");
+test("~/Applications counts as an app dir", () => {
+  const e = env("darwin", ["/Users/dev/Applications/Zed.app"]);
+  assert.equal(detectEditor(spec("zed"), e)?.location, "/Users/dev/Applications/Zed.app");
   assert.equal(detectEditor(spec("zed"), e)?.via, "app");
+});
+
+test("Open in lists none of the IntelliJ-platform IDEs any more", () => {
+  // The owner's call when the external-IDE merge hand-off went: GitStudio no
+  // longer names or launches those IDEs anywhere.
+  const ids = EDITOR_CATALOG.map((s) => s.id);
+  for (const gone of ["webstorm", "intellij", "pycharm", "goland", "phpstorm", "rider", "clion", "rubymine", "rustrover", "fleet"]) {
+    assert.ok(!ids.includes(gone), `${gone} is still in the catalog`);
+  }
+  assert.ok(ids.includes("vscode") && ids.includes("cursor"), "VS Code and Cursor stay");
 });
 
 test("a CLI in Homebrew's bin is found even with a minimal PATH", () => {
@@ -66,8 +76,8 @@ test("Windows finds the .cmd shim, then the known install path", () => {
   // host's separator and only agreed with the detector by accident, on a host
   // that happened to be the same platform.
   const local = "C:\\Users\\dev\\AppData\\Local";
-  const cli = env("win32", [win32.join(local, "JetBrains", "Toolbox", "scripts", "webstorm.cmd")], { localAppData: local });
-  assert.equal(detectEditor(spec("webstorm"), cli)?.via, "cli");
+  const cli = env("win32", [win32.join("C:\\tools", "code.cmd")], { localAppData: local, path: "C:\\tools" });
+  assert.equal(detectEditor(spec("vscode"), cli)?.via, "cli");
   const installed = env("win32", [win32.join(local, "Programs/cursor/Cursor.exe")], { localAppData: local });
   const hit = detectEditor(spec("cursor"), installed);
   assert.equal(hit?.via, "path");

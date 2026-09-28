@@ -5,8 +5,7 @@
 // launched from the Dock or Finder inherits a minimal PATH (no ~/.zshrc, no
 // Homebrew), so "is `code` on PATH?" answers no on most Macs where VS Code is
 // plainly installed. Each editor is therefore found three ways — its app
-// bundle in /Applications or ~/Applications (also JetBrains Toolbox's folder),
-// its CLI in the handful of directories those CLIs actually live in, and, on
+// bundle in /Applications or ~/Applications, its CLI in the handful of directories those CLIs actually live in, and, on
 // Windows, its known install path — and opened by whichever was found: `open
 // -a <bundle>` on macOS needs no CLI at all.
 //
@@ -35,14 +34,6 @@ export interface EditorSpec {
   win: string[];
 }
 
-const jb = (id: string, name: string, cli: string, more: string[] = []): EditorSpec => ({
-  id,
-  name,
-  apps: [name, ...more],
-  cli: [cli],
-  win: [],
-});
-
 /** Every editor GitStudio knows how to find. Order is the order the Open-in
  *  menu lists them in when nothing else decides. */
 export const EDITOR_CATALOG: readonly EditorSpec[] = [
@@ -52,16 +43,6 @@ export const EDITOR_CATALOG: readonly EditorSpec[] = [
   { id: "windsurf", name: "Windsurf", apps: ["Windsurf"], cli: ["windsurf"], win: ["local:Programs/Windsurf/Windsurf.exe"] },
   { id: "zed", name: "Zed", apps: ["Zed"], cli: ["zed"], win: ["local:Programs/Zed/Zed.exe"] },
   { id: "sublime", name: "Sublime Text", apps: ["Sublime Text"], cli: ["subl"], win: ["pf:Sublime Text/sublime_text.exe"] },
-  jb("webstorm", "WebStorm", "webstorm"),
-  jb("intellij", "IntelliJ IDEA", "idea", ["IntelliJ IDEA CE", "IntelliJ IDEA Ultimate"]),
-  jb("pycharm", "PyCharm", "pycharm", ["PyCharm CE", "PyCharm Professional"]),
-  jb("goland", "GoLand", "goland"),
-  jb("phpstorm", "PhpStorm", "phpstorm"),
-  jb("rider", "Rider", "rider"),
-  jb("clion", "CLion", "clion"),
-  jb("rubymine", "RubyMine", "rubymine"),
-  jb("rustrover", "RustRover", "rustrover"),
-  jb("fleet", "Fleet", "fleet"),
   { id: "android-studio", name: "Android Studio", apps: ["Android Studio"], cli: ["studio"], win: ["pf:Android/Android Studio/bin/studio64.exe"] },
   { id: "nova", name: "Nova", apps: ["Nova"], cli: ["nova"], win: [] },
   { id: "textmate", name: "TextMate", apps: ["TextMate"], cli: ["mate"], win: [] },
@@ -118,12 +99,7 @@ function pathDelimiter(platform: NodeJS.Platform): string {
 function cliDirs(env: DetectEnv): string[] {
   const j = joiner(env.platform);
   const fromPath = env.path ? env.path.split(pathDelimiter(env.platform)).filter(Boolean) : [];
-  if (env.platform === "win32") {
-    return [
-      ...fromPath,
-      ...(env.localAppData ? [j(env.localAppData, "JetBrains", "Toolbox", "scripts")] : []),
-    ];
-  }
+  if (env.platform === "win32") return fromPath;
   return [
     ...fromPath,
     "/usr/local/bin",
@@ -131,19 +107,13 @@ function cliDirs(env: DetectEnv): string[] {
     "/usr/bin",
     "/snap/bin",
     j(env.home, ".local", "bin"),
-    j(env.home, "Library", "Application Support", "JetBrains", "Toolbox", "scripts"),
-    j(env.home, ".local", "share", "JetBrains", "Toolbox", "scripts"),
   ];
 }
 
 /** Where a macOS app bundle can be. */
 function appDirs(env: DetectEnv): string[] {
   const j = joiner(env.platform);
-  return [
-    "/Applications",
-    j(env.home, "Applications"),
-    j(env.home, "Applications", "JetBrains Toolbox"),
-  ];
+  return ["/Applications", j(env.home, "Applications")];
 }
 
 /** Find one editor. App bundle first (needs no CLI), then a CLI, then a
@@ -286,7 +256,7 @@ export function editorsView(prefs: EditorPrefs, force = false): { editors: Edito
  *
  * `app.getFileIcon` asks the platform for the icon it already shows in Finder,
  * Explorer or the file manager — so the list shows the real VS Code, Cursor and
- * JetBrains marks without this app shipping (or approximating) anybody's logo.
+ * Zed marks without this app shipping (or approximating) anybody's logo.
  * Cached by path: an installed application's icon does not change while we run.
  */
 const iconCache = new Map<string, string | undefined>();
