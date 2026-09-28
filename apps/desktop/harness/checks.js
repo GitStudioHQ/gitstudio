@@ -6750,6 +6750,63 @@
      *
      * `?unlocked=0` is that launch state.
      */
+    /**
+     * The update question is the window's, and only the user answers it.
+     *
+     * It was a plain confirm: the repository watcher's refresh re-routed the
+     * view below it (as does a tab switch), a re-route tears floating layers
+     * down, and the question was answered "Cancel" by nobody — with the version
+     * already marked asked, it never came back that session. The owner "never
+     * got a prompt" on 2.2.0.
+     */
+    "the-update-question-outlives-the-watchers-refresh": async (f) => {
+      const c = check(f);
+      await settle(600);
+      c.ok(
+        window.__gsEmit("update:available", { version: "9.9.9", current: "2.2.0" }) > 0,
+        "precondition: the window listens for updates",
+      );
+      await settle(500);
+      c.match(text(".modal-title"), /GitStudio 9\.9\.9 is available/, "a found update is asked about");
+      const routesBefore = (window.__GS_ROUTES || []).length;
+      c.ok(window.__gsEmit("repo:filesChanged", { gitDir: true }) > 0, "precondition: the app listens for the watcher");
+      await settle(1500);
+      c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the watcher's refresh re-routed underneath");
+      c.match(text(".modal-title"), /GitStudio 9\.9\.9 is available/, "the question is still there after the refresh");
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "update:download").length, 0, "nothing downloads unasked");
+      $(".modal-ok")?.click();
+      await settle(500);
+      c.eq(window.__GS_INVOKED.filter((r) => r.channel === "update:download").length, 1, "the answer starts the download");
+    },
+
+    /**
+     * Signed in, name not known yet (offline at launch): the Settings card says
+     * "Signed in to GitHub" under GitHub's mark — it said "you" in a "YO" tile —
+     * and puts the name in when it arrives, without being reopened.
+     */
+    "settings-never-calls-the-account-you": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const name = $(".settings-account-name");
+      c.ok(!!name, "Settings shows the account");
+      if (!name) return;
+      c.eq(text(name), "Signed in to GitHub", "an account whose name is not known yet is not called \"you\"");
+      c.ok(!!$(".settings-account-who .settings-account-mark .codicon-github"), "…under GitHub's mark, not a YO tile");
+      c.ok(!$$(".settings-account-who .av").some((a) => /YO/.test(text(a))), "no YO tile");
+      const orig = window.gitstudio.invoke.bind(window.gitstudio);
+      window.gitstudio.invoke = (ch, p) =>
+        ch === "github:status"
+          ? Promise.resolve({ connected: true, login: "antonarnaudov" })
+          : orig(ch, p);
+      try {
+        await settle(3800);
+        c.eq(text(".settings-account-name"), "antonarnaudov", "the name comes in when GitHub has said it");
+        c.ok(!$(".settings-account-mark"), "…with the account's own picture");
+      } finally {
+        window.gitstudio.invoke = orig;
+      }
+    },
+
     "a-locked-token-still-reads-as-signed-in": async (f) => {
       const c = check(f);
       const chip = $(".topbar-acct");

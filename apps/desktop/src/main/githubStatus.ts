@@ -19,9 +19,9 @@ import type { GitHubStatus } from "../shared/ipc";
  *
  * Three states, and they are genuinely different:
  *   - a token in memory        → connected; `login` when we know it
- *   - a token on disk, locked  → connected; the name fills in after the first
- *                                real request (asking here would raise the OS
- *                                keychain prompt on every launch)
+ *   - a token on disk, unread  → connected; the name comes with the read (a
+ *                                remembered one at once, GitHub's after its
+ *                                first answer)
  *   - no token anywhere        → not connected
  */
 export function githubStatus(o: {

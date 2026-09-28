@@ -14,6 +14,12 @@ import { SecretStore } from "@gitstudio/secret-store/secretStore";
 
 /** Secret name for the GitHub PAT inside the keychain-free store. */
 const TOKEN_SECRET = "github.token";
+/**
+ * The account name last seen for that token, kept beside it so a launch can
+ * say who you are before GitHub has answered. Not a secret, but it lives and
+ * dies with the token.
+ */
+const LOGIN_SECRET = "github.login";
 import { GitHubClient } from "./githubClient";
 import { requestDeviceCode, pollForToken } from "./githubAuth";
 import type { RepoStore } from "./repoStore";
@@ -53,7 +59,14 @@ import type {
 export class GitHubBridge {
   private token: string | undefined;
   private login: string | undefined;
-  private loaded = false;
+  /** The one read of the stored token (and its remembered login). */
+  private loading: Promise<void> | undefined;
+  /** Bumped by every sign-in and sign-out, so a read that started before one never undoes it. */
+  private authGen = 0;
+  /** GitHub has confirmed `login` for this token in this session. */
+  private loginConfirmed = false;
+  /** The one `/user` request in flight. */
+  private loginAsk: Promise<string | undefined> | undefined;
   private readonly client = new GitHubClient(() => this.token);
 
   /**
@@ -86,12 +99,27 @@ export class GitHubBridge {
     return this.store;
   }
 
-  private async ensureLoaded(): Promise<void> {
-    if (this.loaded) {
-      return;
-    }
-    this.loaded = true;
-    this.token = await this.secrets().get(TOKEN_SECRET);
+  /**
+   * Read the stored token once. Every caller waits for the same read: a flag
+   * set before the read finished let a second caller through with no token
+   * (the store is keychain-free, so reading it never prompts — see
+   * @gitstudio/secret-store).
+   */
+  private ensureLoaded(): Promise<void> {
+    this.loading ??= this.load().catch((e: unknown) => {
+      this.loading = undefined; // a failed read is tried again, not remembered
+      throw e;
+    });
+    return this.loading;
+  }
+
+  private async load(): Promise<void> {
+    const gen = this.authGen;
+    const token = await this.secrets().get(TOKEN_SECRET);
+    const login = token === undefined ? undefined : await this.secrets().get(LOGIN_SECRET).catch(() => undefined);
+    if (gen !== this.authGen) return; // signed in or out meanwhile: that wins
+    this.token = token;
+    this.login = login;
     if (this.token === undefined) {
       // NO KEYRING, EVER. A pre-1.4 safeStorage blob could only be read
       // through the OS keychain, whose ACL is bound to the app's code
@@ -153,19 +181,25 @@ export class GitHubBridge {
 
   async status(): Promise<GitHubStatus> {
     const repo = await this.resolveOwnerRepo();
-    // DO NOT decrypt here. The Changes view asks for status on every launch just
-    // to decide whether to show "Create pull request", and decrypting means
-    // touching the login keychain — which raises the OS password prompt on
-    // every start (and again after any rebuild, because the keychain ACL is
-    // bound to the app's code signature). Whether a token FILE exists is enough
-    // to answer "connected"; the token itself is decrypted lazily, the first
-    // time an actual GitHub call needs it.
+    // The token is read here. It used to be left locked until some other
+    // GitHub call needed it (reading it once meant the OS keychain prompt), so
+    // every launch showed "you" / "Signed in" for an account the app had on
+    // disk, and Settings kept "you" until it was reopened. The store has been
+    // keychain-free since 1.4; nothing prompts.
+    // read-failure-reviewed: an unreadable token file leaves the name unknown,
+    // not the answer — `connected` still comes from whether the file exists
+    // (hasStoredToken, which does reject), and the next status reads again.
+    await this.ensureLoaded().catch(() => {});
     if (this.token && !this.login) {
       // Best effort. `currentLogin` swallows its own failures and answers
       // undefined, and THAT used to decide `connected` — so one flaky request
       // signed the user out of the top bar while Settings, holding the same
       // account, went on showing them signed in.
-      this.login = await this.client.currentLogin();
+      await this.askLogin();
+    } else if (this.token && !this.loginConfirmed) {
+      // The remembered name answers now; GitHub confirms it (or a rename)
+      // behind it, once a session.
+      void this.askLogin();
     }
     return githubStatus({
       hasToken: !!this.token,
@@ -173,6 +207,41 @@ export class GitHubBridge {
       login: this.login,
       repo,
     });
+  }
+
+  /** Ask GitHub who the token belongs to, once at a time, and remember the answer. */
+  private askLogin(): Promise<string | undefined> {
+    if (this.loginAsk) return this.loginAsk;
+    const gen = this.authGen;
+    const ask = this.client.currentLogin().then(async (login) => {
+      if (this.loginAsk === ask) this.loginAsk = undefined;
+      if (!login || gen !== this.authGen || !this.token) return login;
+      this.loginConfirmed = true;
+      if (login !== this.login) {
+        this.login = login;
+        await this.rememberLogin(login);
+      }
+      return login;
+    });
+    this.loginAsk = ask;
+    return ask;
+  }
+
+  /** Keep the account name beside the token (best effort: it is only a head start). */
+  private async rememberLogin(login: string): Promise<void> {
+    // read-failure-reviewed: a WRITE, and nothing renders its result — a name
+    // not remembered is asked of GitHub again at the next launch.
+    await this.secrets()
+      .set(LOGIN_SECRET, login)
+      .catch(() => {});
+  }
+
+  /** A sign-in or sign-out: whatever was being read or asked for the old token is stale. */
+  private newAuth(): void {
+    this.authGen++;
+    this.loading = Promise.resolve();
+    this.loginAsk = undefined;
+    this.loginConfirmed = false;
   }
 
   /** Is there a stored token, WITHOUT decrypting it? Only the keychain-free
@@ -184,10 +253,12 @@ export class GitHubBridge {
   }
 
   async connect(pat: string): Promise<OkResult & { login?: string }> {
+    this.newAuth();
     this.token = pat.trim();
     this.login = await this.client.currentLogin();
     if (!this.login) {
       this.token = undefined;
+      this.loading = undefined; // the account already stored (if any) is still the one
       // A token the user pasted that GitHub will not accept is an auth state,
       // not a defect (see main/expectedError.ts) — the sign-in panel already
       // says so, and this filed a report for every mistyped paste.
@@ -198,7 +269,8 @@ export class GitHubBridge {
       };
     }
     await this.persistToken(this.token);
-    this.loaded = true;
+    this.loginConfirmed = true;
+    await this.rememberLogin(this.login);
     return { ok: true, login: this.login };
   }
 
@@ -258,21 +330,30 @@ export class GitHubBridge {
     if (r.state !== "authorized") {
       return { state: r.state, message: r.message };
     }
+    this.newAuth();
     this.token = r.accessToken;
     this.login = await this.client.currentLogin();
     if (!this.login) {
       this.token = undefined;
+      this.loading = undefined; // the account already stored (if any) is still the one
       return { state: "error", message: "Signed in, but GitHub didn't return a user." };
     }
     await this.persistToken(r.accessToken);
-    this.loaded = true;
+    this.loginConfirmed = true;
+    await this.rememberLogin(this.login);
     return { state: "authorized", login: this.login };
   }
 
   async disconnect(): Promise<void> {
+    this.newAuth();
     this.token = undefined;
     this.login = undefined;
     await this.secrets().delete(TOKEN_SECRET);
+    // read-failure-reviewed: deleting a remembered name that may not exist;
+    // with the token gone it is never read again.
+    await this.secrets()
+      .delete(LOGIN_SECRET)
+      .catch(() => {});
     try {
       await unlink(this.legacyTokenPath());
     } catch {

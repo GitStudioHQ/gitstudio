@@ -29,6 +29,15 @@ export interface AutoUpdateOptions {
   isDev: boolean;
   /** Push an event to the renderer (main.ts's `send`). */
   send: <E extends keyof IpcEvents>(event: E, data: IpcEvents[E]) => void;
+  /**
+   * Tell the user outside the window — a system notification — when a
+   * background check finds a version. main.ts decides whether it is needed
+   * (no window in front) and what a click does.
+   */
+  notify?: (version: string) => void;
+  /** Test seams: the running version and the platform's path (default: Electron's). */
+  current?: string;
+  mac?: boolean;
 }
 
 export interface UpdateManager {
@@ -38,6 +47,12 @@ export interface UpdateManager {
   download(): Promise<OkResult>;
   /** Apply a ready update: restart into it, or open the downloaded installer. */
   install(): Promise<OkResult>;
+  /**
+   * A window has loaded: tell it what is waiting. On macOS the app outlives
+   * its window, and a window opened from the Dock after the check had
+   * announced — to the old window, or to none — was never told.
+   */
+  windowReady(): void;
 }
 
 /** Where a mac user goes if the in-app download can't find an asset. */
@@ -47,6 +62,10 @@ const RELEASES_API = "https://api.github.com/repos/GitStudioHQ/gitstudio/release
 const POLL_MS = 4 * 60 * 60 * 1000;
 /** Delay the startup check so it never competes with first paint / repo load. */
 const FIRST_CHECK_DELAY_MS = 20_000;
+/** After a failed background check (offline at launch, rate limited): try again this soon, not in 4 hours. */
+const RETRY_MS = 15 * 60 * 1000;
+/** A freshly loaded window hears about a waiting update once it has settled. */
+const WINDOW_READY_DELAY_MS = 3_000;
 
 /** Compare dotted numeric versions. > 0 when `a` is newer than `b`. */
 export function compareVersions(a: string, b: string): number {
@@ -114,7 +133,7 @@ export function pickMacAsset(
 }
 
 export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
-  const current = app.getVersion();
+  const current = opts.current ?? app.getVersion();
   const send = opts.send;
 
   // ── shared state machine ──
@@ -142,6 +161,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
       check: async () => disabled,
       download: async () => ({ ok: false, expected: true, message: disabled.message }),
       install: async () => ({ ok: false, expected: true, message: disabled.message }),
+      windowReady: () => {},
     };
   }
 
@@ -151,6 +171,7 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     }
     announced.add(version);
     send("update:available", { version, current });
+    if (!userInitiated) opts.notify?.(version);
   };
 
   const sendProgress = (() => {
@@ -354,19 +375,46 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     return { ok: true };
   };
 
-  const isMac = process.platform === "darwin";
+  const isMac = opts.mac ?? process.platform === "darwin";
   const manager: UpdateManager = {
     check: (userInitiated = false) => (isMac ? macCheck(userInitiated) : elCheck(userInitiated)),
     download: () => (isMac ? macDownload() : elDownload()),
     install: () => (isMac ? macInstall() : elInstall()),
+    windowReady: () => {
+      const t = setTimeout(() => {
+        if (!availableVersion) return;
+        if (state === "available") send("update:available", { version: availableVersion, current });
+        else if (state === "ready") {
+          send(
+            "update:ready",
+            isMac && readyPath
+              ? { version: availableVersion, kind: "installer", path: readyPath }
+              : { version: availableVersion, kind: "restart" },
+          );
+        }
+      }, WINDOW_READY_DELAY_MS);
+      t.unref?.();
+    },
   };
 
   // Poll: shortly after startup (never competing with first paint), then on an
   // interval for as long as the app stays open. Background polls announce a
-  // version once; the rest is the user's call.
-  setTimeout(() => void manager.check(false), FIRST_CHECK_DELAY_MS);
+  // version once; the rest is the user's call. A check that failed (no
+  // network at launch, a rate limit) is tried again in minutes: waiting the
+  // full interval left a launch-time failure silent for four hours.
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  const background = async (): Promise<void> => {
+    if (retry) clearTimeout(retry);
+    retry = undefined;
+    const r = await manager.check(false);
+    if (r.status === "error") {
+      retry = setTimeout(() => void background(), RETRY_MS);
+      retry.unref?.();
+    }
+  };
+  setTimeout(() => void background(), FIRST_CHECK_DELAY_MS);
   const timer = setInterval(() => {
-    if (state === "idle" || state === "available") void manager.check(false);
+    if (state === "idle" || state === "available") void background();
   }, POLL_MS);
   timer.unref?.();
 

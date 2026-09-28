@@ -9,6 +9,24 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [2.2.1] - 2026-09-28
+
+### Fixed
+- **You're told about an update every time.** The question could close itself
+  a moment after it appeared — a background refresh or a tab switch answered
+  it "Cancel" — and then it didn't come back until you quit. On macOS, a window
+  reopened from the Dock was never told about an update that had already been
+  found. The question now stays until you answer it. A window that opens
+  later asks as well. When GitStudio isn't in front, a system notification
+  says a new version is out. A check that fails at launch (offline, say) is
+  tried again in 15 minutes instead of 4 hours.
+- **Your GitHub account shows at launch.** The top bar said "Signed in" and
+  Settings said "you" (in a "YO" tile) until something else happened to ask
+  GitHub who you are. The account name is read with the sign-in and
+  remembered, so it's there as soon as the window is. While the name really
+  isn't known, Settings says "Signed in to GitHub" and fills the name in when
+  it comes.
+
 ## [2.2.0] - 2026-09-28
 
 ### Added

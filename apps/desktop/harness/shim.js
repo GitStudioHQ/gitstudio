@@ -3759,6 +3759,8 @@
     connected = false;
     return { ok: true, changed: true };
   };
+  // A confirmed update download starts; its progress and "ready" are events.
+  dynamic["update:download"] = () => ({ ok: true });
 
   // Every routeView the app performs, in order. Created HERE so production
   // never has it — the renderer only pushes when the array exists.

@@ -4251,6 +4251,12 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
 .settings-account-who { display: flex; align-items: center; gap: 9px; }
 .settings-account-who .codicon { font-size: 18px; }
 .settings-account-name { font-size: 14px; font-weight: 650; color: var(--vscode-foreground); }
+.settings-account-mark {
+  width: 36px; height: 36px; border-radius: 50%; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+}
+.settings-account-who .settings-account-mark .codicon { font-size: 20px; }
 .settings-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .mini-btn.danger { color: var(--vscode-errorForeground, #e15a5a); }
 .mini-btn.danger:hover { border-color: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 45%, var(--app-border)); }

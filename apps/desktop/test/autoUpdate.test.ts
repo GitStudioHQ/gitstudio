@@ -55,3 +55,119 @@ test("pickMacAsset prefers this arch's dmg, falls back to its zip", () => {
   assert.equal(pickMacAsset(assets, "x64")?.name, "GitStudio-1.6.0-x64.dmg");
   assert.equal(pickMacAsset([{ name: "notes.txt" }], "arm64"), undefined);
 });
+
+// ── The state machine: who hears about an update, and when ──
+//
+// The owner never saw an update prompt on 2.2.0. On macOS the app outlives
+// its window: the 20 s check announced to a window since closed (or to none),
+// a window reopened from the Dock was never told, and a check that failed at
+// launch waited four hours to try again.
+
+import { mock } from "node:test";
+import { initAutoUpdate } from "../src/main/autoUpdate";
+
+type Sent = { event: string; data: unknown };
+
+function withFeed(releases: unknown[] | Error): () => void {
+  const real = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    if (releases instanceof Error) throw releases;
+    return new Response(JSON.stringify(releases), { status: 200 });
+  }) as typeof fetch;
+  return () => {
+    globalThis.fetch = real;
+  };
+}
+
+/** Let the stubbed fetch and the check's awaits run. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await new Promise((r) => setImmediate(r));
+}
+
+function start(sent: Sent[], notified: string[]) {
+  return initAutoUpdate({
+    isDev: false,
+    current: "2.2.0",
+    mac: true,
+    send: (event, data) => sent.push({ event, data }),
+    notify: (v) => notified.push(v),
+  });
+}
+
+test("a window that loads after the check is told the update is waiting", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const restore = withFeed([{ tag_name: "app-v2.2.1", assets: [] }]);
+  t.after(() => {
+    restore();
+    mock.timers.reset();
+  });
+  const sent: Sent[] = [];
+  const notified: string[] = [];
+  const updates = start(sent, notified);
+
+  mock.timers.tick(20_000);
+  await settle();
+  assert.deepEqual(sent, [{ event: "update:available", data: { version: "2.2.1", current: "2.2.0" } }]);
+  assert.deepEqual(notified, ["2.2.1"], "a background find is said outside the window too");
+
+  // The window closes, the app runs on; one is opened from the Dock.
+  sent.length = 0;
+  updates.windowReady();
+  assert.deepEqual(sent, [], "not before the window has settled");
+  mock.timers.tick(3_000);
+  assert.deepEqual(sent, [{ event: "update:available", data: { version: "2.2.1", current: "2.2.0" } }]);
+  assert.deepEqual(notified, ["2.2.1"], "a replay to a window is not a second notification");
+});
+
+test("a window with nothing waiting is told nothing", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const restore = withFeed([{ tag_name: "app-v2.2.0" }]);
+  t.after(() => {
+    restore();
+    mock.timers.reset();
+  });
+  const sent: Sent[] = [];
+  const updates = start(sent, []);
+  mock.timers.tick(20_000);
+  await settle();
+  updates.windowReady();
+  mock.timers.tick(3_000);
+  assert.deepEqual(sent, []);
+});
+
+test("a check that failed at launch is tried again in minutes, not hours", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  let restore = withFeed(new Error("offline"));
+  t.after(() => {
+    restore();
+    mock.timers.reset();
+  });
+  const sent: Sent[] = [];
+  start(sent, []);
+  mock.timers.tick(20_000);
+  await settle();
+  assert.deepEqual(sent, []);
+
+  restore();
+  restore = withFeed([{ tag_name: "app-v2.2.1" }]);
+  mock.timers.tick(15 * 60 * 1000);
+  await settle();
+  assert.deepEqual(sent, [{ event: "update:available", data: { version: "2.2.1", current: "2.2.0" } }]);
+});
+
+test("asking from Settings shows the answer in the window but raises no notification", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const restore = withFeed([{ tag_name: "app-v2.2.1" }]);
+  t.after(() => {
+    restore();
+    mock.timers.reset();
+  });
+  const sent: Sent[] = [];
+  const notified: string[] = [];
+  const updates = start(sent, notified);
+  const r = await updates.check(true);
+  assert.equal(r.status, "available");
+  assert.equal(sent.length, 1);
+  assert.deepEqual(notified, []);
+});

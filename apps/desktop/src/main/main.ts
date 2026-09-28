@@ -14,6 +14,7 @@ import { session,
   ipcMain,
   Menu,
   nativeTheme,
+  Notification,
   shell,
 } from "electron";
 import type { IpcMainInvokeEvent, MenuItemConstructorOptions, WebContents } from "electron";
@@ -130,6 +131,37 @@ function send<E extends keyof IpcEvents>(event: E, data: IpcEvents[E]): void {
 }
 
 /**
+ * A background check found a version while GitStudio is not in front (or has
+ * no window): say so where the user is looking. A click brings the window
+ * back, where the update question is waiting (a new window is told on load —
+ * UpdateManager.windowReady). In front, the in-app question is enough.
+ */
+function notifyUpdate(version: string): void {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  if (win?.isFocused()) return;
+  try {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({
+      title: `GitStudio ${version} is available`,
+      body: "Click to update.",
+    });
+    n.on("click", () => {
+      const w = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+      if (w) {
+        if (w.isMinimized()) w.restore();
+        w.show();
+        w.focus();
+      } else {
+        void createWindow();
+      }
+    });
+    n.show();
+  } catch {
+    // A notification is a courtesy; the in-app question still stands.
+  }
+}
+
+/**
  * Hand a menu item's work to the renderer — once there is a renderer to hear
  * it. On macOS the app runs on with its window closed, and `send` to no window
  * is a no-op: Open Recent, Open… and Clone… did nothing there. Those bring the
@@ -230,6 +262,9 @@ async function createWindow(): Promise<void> {
   );
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  // Every load — a window reopened from the Dock, a reload — hears about an
+  // update that is already waiting.
+  mainWindow.webContents.on("did-finish-load", () => updates?.windowReady());
   mainWindow.on("closed", () => {
     terminal?.killAll();
     // Nothing left to notify, and holding a recursive watch on a directory after
@@ -1516,7 +1551,7 @@ async function boot(): Promise<void> {
     ? repos.restore(state.open, state.current).catch(() => ({ dropped: [] as string[] }))
     : undefined;
   await createWindow();
-  updates = initAutoUpdate({ isDev: !app.isPackaged, send });
+  updates = initAutoUpdate({ isDev: !app.isPackaged, send, notify: notifyUpdate });
 
   if (restoring) {
     const { dropped } = await restoring;

@@ -484,6 +484,8 @@ const CASES = [
   ["a-detail-page-back-pops-the-history", "issues~open31"],
   ["a-deleted-file-does-not-look-like-a-renamed-one", "prs~open106~text:Files"],
   ["a-locked-token-still-reads-as-signed-in", "changes", { extra: "unlocked=0" }],
+  ["the-update-question-outlives-the-watchers-refresh", "changes"],
+  ["settings-never-calls-the-account-you", "settings", { extra: "unlocked=0" }],
   ["a-locked-token-still-reads-as-signed-in", "changes"],
   ["no-view-hides-its-own-content-or-locks-out-the-keyboard", "changes"],
   ["no-view-hides-its-own-content-or-locks-out-the-keyboard", "issues"],
