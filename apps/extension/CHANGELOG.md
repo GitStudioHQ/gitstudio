@@ -39,9 +39,9 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 - **Crash reports no longer carry a commit's subject, or a branch name git
   prints without quotes.** When a rebase, cherry-pick, revert or `git am`
   stopped, git's message named the commit by its subject line, and the
-  scrubber let those words through. So it did a branch name in the failures
-  where git doesn't quote one, such as pulling a branch the remote doesn't
-  have or pushing one with no upstream. It now takes both out.
+  scrubber let those words through. It let a branch name through too, in the
+  failures where git doesn't quote one, such as pulling a branch the remote
+  doesn't have or pushing one with no upstream. It now takes both out.
 
 ## [1.16.0] - 2026-09-28
 

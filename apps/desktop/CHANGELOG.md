@@ -75,9 +75,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
 - **Crash reports no longer carry a commit's subject, or a branch name git
   prints without quotes.** When a rebase, cherry-pick, revert or `git am`
   stopped, git's message named the commit by its subject line, and the
-  scrubber let those words through. So it did a branch name in the failures
-  where git doesn't quote one, such as pulling a branch the remote doesn't
-  have or pushing one with no upstream. It now takes both out.
+  scrubber let those words through. It let a branch name through too, in the
+  failures where git doesn't quote one, such as pulling a branch the remote
+  doesn't have or pushing one with no upstream. It now takes both out.
 - **The Assistant's replies no longer load images from the web.** A reply is
   Markdown, and text hidden in a file, commit or pull request the Assistant
   read could make it write an image whose address carries what it read to
