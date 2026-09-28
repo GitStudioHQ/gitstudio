@@ -350,7 +350,7 @@ test("every cell of the table: what each row names and offers, from real git", a
   assert.equal(worktreeCaps(main).openNew.ok, false);
   assert.ok(sameFolder(orderWorktreeRows(rows)[0].path, s.app), "this window's first");
   assert.equal(row("even").relPath, "wt/even");
-  assert.equal(row("even").shownPath.endsWith("wt/even"), true);
+  assert.match(row("even").shownPath, /wt[\\/]even$/, "shown in the system's spelling");
 
   // Sync against an upstream.
   assert.deepEqual(words(row("even")), []);
