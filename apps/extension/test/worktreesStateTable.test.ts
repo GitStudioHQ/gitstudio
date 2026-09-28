@@ -348,7 +348,7 @@ test("every cell of the table: what each row names and offers, from real git", a
   assert.deepEqual(words(main), ["This window", "Main worktree"]);
   assert.equal(worktreeCaps(main).remove.ok, false);
   assert.equal(worktreeCaps(main).openNew.ok, false);
-  assert.equal(orderWorktreeRows(rows)[0].path, s.app, "this window's first");
+  assert.ok(sameFolder(orderWorktreeRows(rows)[0].path, s.app), "this window's first");
   assert.equal(row("even").relPath, "wt/even");
   assert.equal(row("even").shownPath.endsWith("wt/even"), true);
 
@@ -519,11 +519,13 @@ test("an open row: its uncommitted files (each side named), its commits not push
 
   // A commit opens to its files — what THAT commit changed.
   const sha = ahead.unpushed!.commits[0].sha;
+  // The host answers in the row's own spelling of its folder (git's).
+  const aheadPath = find(h.rows(), s.wt("ahead"))!.path;
   await h.send({ type: "commitFiles", path: s.wt("ahead"), sha });
   const files = [...h.posted].reverse().find((m) => m.type === "commitFiles");
   assert.deepEqual(files, {
     type: "commitFiles",
-    path: s.wt("ahead"),
+    path: aheadPath,
     sha,
     files: [{ path: "x.txt", status: "M", additions: 1, deletions: 1, oldPath: undefined }],
   });
@@ -531,7 +533,7 @@ test("an open row: its uncommitted files (each side named), its commits not push
   // A commit git can't read: null, said as such — never "No file changes".
   const gone = "0123456789abcdef0123456789abcdef01234567";
   await h.send({ type: "commitFiles", path: s.wt("ahead"), sha: gone });
-  assert.deepEqual([...h.posted].reverse().find((m) => m.type === "commitFiles"), { type: "commitFiles", path: s.wt("ahead"), sha: gone, files: null });
+  assert.deepEqual([...h.posted].reverse().find((m) => m.type === "commitFiles"), { type: "commitFiles", path: aheadPath, sha: gone, files: null });
 
   // A tree git can't read (a damaged index): its uncommitted changes are
   // unread — never "No uncommitted changes".
@@ -591,7 +593,7 @@ test("a bare repository's entry: a row with no facts and no state, that does not
   assert.deepEqual(words(b), []);
   assert.equal(state(b), "");
   assert.equal(worktreeCaps(b).expand, false);
-  assert.equal(orderWorktreeRows(rows)[0].path, bare, "shown first, as the repository it is");
+  assert.ok(sameFolder(orderWorktreeRows(rows)[0].path, bare), "shown first, as the repository it is");
   // A bare clone keeps its remote but no remote-tracking refs: by the push
   // review's rule, main's commit is on no remote this repository knows of.
   assert.deepEqual(words(find(rows, join(base, "main-wt"))), ["This window", "1 unpublished"]);
@@ -609,7 +611,7 @@ test("the window's worktree is the one it has open — a linked one, or one open
   symlinkSync(s.app, link);
   const viaLink = host(link);
   await viaLink.send({ type: "ready" });
-  assert.deepEqual(viaLink.rows().filter((r) => r.current).map((r) => r.path), [s.app]);
+  assert.deepEqual(viaLink.rows().filter((r) => r.current).map((r) => folderKey(r.path)), [folderKey(s.app)]);
 });
 
 test("a diff of another worktree's file reads THAT worktree's index and HEAD — never this window's — through a path with spaces and unicode", async () => {
