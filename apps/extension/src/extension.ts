@@ -54,7 +54,8 @@ import { showLineHistory } from "./history/lineHistory";
 import { RevisionNavigator } from "./history/revisionNavigation";
 import { showReflog } from "./history/reflog";
 import { registerGitStudioMerge } from "./merge/gitstudioMerge";
-import { GITSTUDIO_COEXISTENCE_PROMPT_KEY } from "./merge/mergeIds";
+import { GITSTUDIO_COEXISTENCE_PROMPT_KEY, GITSTUDIO_SUPPORT_COMMAND } from "./merge/mergeIds";
+import { askAndOpenSupport } from "./ui/support";
 import type { MergePeerApi } from "@gitstudio/merge-vscode/product";
 import { setUpSidesTip, SIDES_WHY_URL } from "@gitstudio/merge-vscode/upgradeTip";
 import { StagedGutter } from "./changes/stagedGutter";
@@ -86,7 +87,7 @@ import {
   reviewChangesCommand,
 } from "./ai/aiCommands";
 import { registerPrFeature } from "./pr/prFeature";
-import { promptConfirm, registerDialogHost } from "./ui/dialogs";
+import { promptConfirm, promptPick, registerDialogHost } from "./ui/dialogs";
 
 // GitStudio extension entry point.
 //
@@ -156,6 +157,14 @@ export function activate(context: vscode.ExtensionContext): GitStudioApi {
         false,
       );
     }),
+    // Support GitStudio…: only ever asked for (the palette, the bottom of the
+    // Changes view's "…" menu, the walkthrough's last line) — see ui/support.ts.
+    vscode.commands.registerCommand(GITSTUDIO_SUPPORT_COMMAND, () =>
+      askAndOpenSupport(
+        (spec) => promptPick(spec),
+        (url) => vscode.env.openExternal(vscode.Uri.parse(url)),
+      ),
+    ),
   );
 
   // First-run nudge: auto-open the Getting Started walkthrough once, guarded by

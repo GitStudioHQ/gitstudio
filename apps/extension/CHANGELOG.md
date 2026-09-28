@@ -4,6 +4,16 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Support GitStudio…** GitStudio is free and open source, and if it saves
+  you time you can now support it: **GitStudio: Support GitStudio…** offers
+  **Sponsor on GitHub** (recurring support) or **Buy me a coffee** (a one-off
+  tip) and opens the one you pick in your browser. It is in the command
+  palette, at the bottom of the Changes view's **…** menu, and on the last
+  step of Get Started. It never opens by itself.
+
 ## [1.16.0] - 2026-09-28
 
 ### Removed

@@ -189,6 +189,12 @@
         "icon": "$(rocket)"
       },
       {
+        "command": "gitstudio.support",
+        "title": "Support GitStudio…",
+        "category": "GitStudio",
+        "icon": "$(heart)"
+      },
+      {
         "command": "gitstudio.refreshCommits",
         "title": "Refresh Commits",
         "category": "GitStudio",
@@ -1473,7 +1479,7 @@
           {
             "id": "gitstudio.walkthrough.connect",
             "title": "Connect GitHub & set up GitBrain (optional)",
-            "description": "Sign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests in-editor. GitBrain AI is optional: it uses Copilot's (or Cursor's) model when there is one, with nothing to set up; otherwise connect Anthropic, an OpenAI-compatible endpoint or a local agent CLI for commit messages, explain-this-diff, and summaries. It never gates a Git operation, and Disable AI Features turns it off.\n[Sign in to GitHub](command:gitstudio.pr.signIn)\n[Connect AI Provider](command:gitstudio.ai.connect)",
+            "description": "Sign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests in-editor. GitBrain AI is optional: it uses Copilot's (or Cursor's) model when there is one, with nothing to set up; otherwise connect Anthropic, an OpenAI-compatible endpoint or a local agent CLI for commit messages, explain-this-diff, and summaries. It never gates a Git operation, and Disable AI Features turns it off.\n[Sign in to GitHub](command:gitstudio.pr.signIn)\n[Connect AI Provider](command:gitstudio.ai.connect)\nGitStudio is free and open source. [Support GitStudio…](command:gitstudio.support)",
             "media": {
               "image": {
                 "light": "media/walkthrough/connect-light.png",
@@ -1507,6 +1513,11 @@
           "command": "gitstudio.openWalkthrough",
           "when": "view == gitstudio.commit",
           "group": "9_help@1"
+        },
+        {
+          "command": "gitstudio.support",
+          "when": "view == gitstudio.commit",
+          "group": "z_support@1"
         },
         {
           "command": "gitstudio.worktree.add",

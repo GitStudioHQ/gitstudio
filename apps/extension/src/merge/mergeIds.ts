@@ -33,6 +33,12 @@ export const GITSTUDIO_MERGE_SECTION = "gitstudio.merge";
 /** The walkthrough (a brand slot, Merge Studio's is jbMerge.openWalkthrough). */
 export const GITSTUDIO_WALKTHROUGH_COMMAND = "gitstudio.openWalkthrough";
 
+/**
+ * Support GitStudio… (a brand slot like the walkthrough: each product has its
+ * own, Merge Studio's is jbMerge.support). Here so the parity test can pair them.
+ */
+export const GITSTUDIO_SUPPORT_COMMAND = "gitstudio.support";
+
 /** globalState: the ANSWER to the question about VS Code's own merge UI (merge-vscode coexistence.ts). */
 export const GITSTUDIO_COEXISTENCE_PROMPT_KEY = "gitstudio.merge.coexistencePromptShown";
 
