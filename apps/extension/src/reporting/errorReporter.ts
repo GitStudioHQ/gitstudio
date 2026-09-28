@@ -22,9 +22,11 @@ import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "@gitstu
  * What it captures: the SHAPE of a failure only — a scrubbed error name/message/
  * stack, or the failed git operation + scrubbed stderr — tagged with a random,
  * rotatable install id (never identity), the extension/editor versions, and the
- * OS. Absolute paths, home dirs, emails, remote URLs (host/org/repo), tokens,
- * and full SHAs are stripped before anything leaves the machine. Never repo
- * contents, file names, commit messages, or branch names.
+ * OS. Absolute paths, home dirs, emails, a remote URL's credentials and
+ * org/repo (its HOST is kept), tokens, and full SHAs are stripped before
+ * anything leaves the machine; git messages also lose file and branch names
+ * and commit subjects. Never repo contents. What is sent, and how to turn it
+ * off, is apps/extension/PRIVACY.md.
  */
 
 const INSTALL_ID_KEY = "gitstudio.errorReporting.installId.v1";

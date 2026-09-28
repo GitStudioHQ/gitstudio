@@ -145,6 +145,15 @@ export function scrubGitMessage(input: string): string {
   }
   return (
     scrub(input)
+      // A commit's SUBJECT, which git prints after the abbreviated sha when a
+      // rebase, cherry-pick or revert stops ("could not apply 1a2b3c4... Add
+      // billing for Acme") and after the patch number when `git am` does
+      // ("Patch failed at 0001 Add billing for Acme"). Commit messages are on
+      // PRIVACY.md's list of what never leaves the machine, and these two
+      // lines carried them through every rule below: the subject is plain
+      // unquoted words. The rest of the line goes, whatever it says.
+      .replace(/(\bcould not (?:apply|revert|pick) [0-9a-f]{4,40}\.\.\.)[^\n]*/gi, "$1 <subject>")
+      .replace(/(\bPatch failed at \d+)[^\n]*/gi, "$1 <subject>")
       // git quotes refs, branches and pathspecs in single quotes. The opening
       // quote must NOT follow a letter, or the apostrophe in "couldn't" opens a
       // bogus span and eats the rest of the sentence.

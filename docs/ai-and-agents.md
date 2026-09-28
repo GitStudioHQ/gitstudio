@@ -26,9 +26,14 @@ before.
 Pick from a catalog of platforms — **Anthropic (Claude), OpenAI, OpenRouter,
 Google Gemini, Groq, Mistral, xAI (Grok), DeepSeek, Together, Azure** — or run a
 **local model** with **Ollama** or **LM Studio** (no key, nothing leaves your
-machine). Add your API key (encrypted at rest with the OS keychain via Electron
-`safeStorage`; it never reaches the renderer or a web context). You can keep
-several connections (e.g. "My Claude" + "Local Ollama") and choose a default.
+machine). Add your API key: it is encrypted at rest in the app's own store in
+its data folder — deliberately **not** the OS keychain, which on macOS asked
+for your password after every update (see
+`packages/secret-store/src/secretStore.ts` for the trade-off) — and it never
+reaches the renderer or a web context. You can
+keep several connections (e.g. "My Claude" + "Local Ollama") and choose a
+default. What each AI feature sends, and to whom, is in
+[the desktop app's privacy notes](../apps/desktop/PRIVACY.md#ai).
 
 Two wire protocols cover the whole field: Anthropic's Messages API and the
 OpenAI-compatible `/chat/completions` API.

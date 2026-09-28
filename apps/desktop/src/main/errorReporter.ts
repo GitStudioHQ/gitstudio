@@ -19,8 +19,9 @@ import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "@gitstu
  * `enabled` flag (default on), surfaced as a menu checkbox and documented in
  * PRIVACY.md. What's captured is only the SHAPE of a failure — a scrubbed error
  * name/message/stack, or a failed operation + scrubbed message — tagged with a
- * random install id and the OS/app/Electron versions. Never repo contents, file
- * names, commit messages, branch names, or remotes.
+ * random install id and the OS/app/Electron versions. The scrub takes out file
+ * and branch names, commit subjects, paths, emails, tokens and a remote's
+ * org/repo (its host name is kept); never repo contents.
  */
 
 const DEFAULT_ENDPOINT = "https://gitstudio.dev/api/errors";

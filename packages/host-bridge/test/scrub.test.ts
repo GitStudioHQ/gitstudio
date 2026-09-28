@@ -129,6 +129,20 @@ test("scrubGitMessage redacts a conflicted path", () => {
   assert.match(out, /Merge conflict in/);
 });
 
+test("scrubGitMessage takes out the commit subject git prints when an operation stops", () => {
+  for (const [input, expected] of [
+    ["error: could not apply 1a2b3c4... Add billing for Acme Corp\nhint: Resolve all conflicts manually", "error: could not apply 1a2b3c4... <subject>\nhint: Resolve all conflicts manually"],
+    ["Could not apply 9f8e7d6c5b... Rename the secret project", "Could not apply 9f8e7d6c5b... <subject>"],
+    ["error: could not revert 1a2b3c4... Revert \"Launch Acme pricing\"", "error: could not revert 1a2b3c4... <subject>"],
+    // (The quoted hint goes too — every quoted span does, by the rule below.)
+    ["Patch failed at 0003 Wire the Acme billing webhook\nhint: Use 'git am --show-current-patch=diff'", "Patch failed at 0003 <subject>\nhint: Use '<ref>'"],
+  ] as const) {
+    const out = scrubGitMessage(input);
+    assert.equal(out, expected, JSON.stringify(input));
+    assert.doesNotMatch(out, /Acme|billing|secret/i);
+  }
+});
+
 test("scrubGitMessage is empty-safe", () => {
   assert.equal(scrubGitMessage(""), "");
 });

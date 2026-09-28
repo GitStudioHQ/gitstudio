@@ -38,6 +38,14 @@ but they share the same engine, so most Git behaviour lands in both at once.
   **Check for updates** says why instead of saying you're up to date with
   nothing more.
 
+### Changed
+- **PRIVACY.md now lists everything the app sends.** It used to say crash
+  reports were the one thing; the update check, authors' pictures, GitHub
+  while you're signed in, images inside Markdown, and AI once you connect a
+  provider are there too now, each with when it happens, what it carries, and
+  how to turn it off where it can be. It also corrects one detail about crash
+  reports: a remote's host name is kept.
+
 ### Fixed
 - **Your tabs come back after you quit.** Quitting GitStudio saved an empty
   list of open tabs, so the next launch opened on Home instead of the
@@ -61,6 +69,17 @@ but they share the same engine, so most Git behaviour lands in both at once.
   it isn't on the PATH GitStudio was started with: an app opened from the
   Dock doesn't get your shell's PATH, and a Windows app keeps the PATH it
   started with.
+
+### Security
+- **Crash reports no longer carry a commit's subject.** When a rebase,
+  cherry-pick, revert or `git am` stopped, git's message named the commit by
+  its subject line, and the scrubber let those words through. It now takes
+  the subject out.
+- **The Assistant's replies no longer load images from the web.** A reply is
+  Markdown, and text hidden in a file, commit or pull request the Assistant
+  read could make it write an image whose address carries what it read to
+  someone else, fetched the moment the reply appeared. An image in a reply now
+  shows its description instead.
 
 ## [2.3.0] - 2026-09-28
 

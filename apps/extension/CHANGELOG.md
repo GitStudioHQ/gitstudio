@@ -21,6 +21,19 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   default, as before) turns that off: every author is drawn as coloured
   initials, and neither request is sent.
 
+### Changed
+- **What the extension sends, in one place.** A new
+  [PRIVACY.md](PRIVACY.md) lists every connection GitStudio makes (crash
+  reports, authors' pictures, GitHub, AI), when, what it carries, and the
+  setting that turns each one off. The crash-report setting's description now
+  says exactly what is scrubbed, including that a remote's host name is kept.
+
+### Security
+- **Crash reports no longer carry a commit's subject.** When a rebase,
+  cherry-pick, revert or `git am` stopped, git's message named the commit by
+  its subject line, and the scrubber let those words through. It now takes
+  the subject out.
+
 ## [1.16.0] - 2026-09-28
 
 ### Removed

