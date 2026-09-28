@@ -40,6 +40,15 @@ const live: { dispose(): void }[] = [];
 after(() => live.forEach((m) => m.dispose()));
 
 const settle = (ms = 150) => new Promise((r) => setTimeout(r, ms));
+/**
+ * Wait until `cond` holds, up to `ms`. Settling runs RepoManager's own look at
+ * the folder (a git process), and a fixed 150 ms was not always enough for it
+ * on a Windows runner: the first test read "still discovering" there (#56).
+ */
+async function until(cond: () => boolean, ms = 10_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!cond() && Date.now() < deadline) await settle(10);
+}
 
 test("while vscode.git is still scanning, no repository is 'not found yet'; once it settles, it is 'none'", async () => {
   vs.reset({ state: "uninitialized" });
@@ -53,7 +62,7 @@ test("while vscode.git is still scanning, no repository is 'not found yet'; once
   let told = 0;
   m.onDidChange(() => told++);
   vs.gitSettle();
-  await settle();
+  await until(() => !m.isDiscovering());
   assert.equal(m.isDiscovering(), false);
   assert.ok(told >= 1, "the views are told, so a waiting one can now say there is none");
 });
@@ -71,13 +80,15 @@ test("with vscode.git already settled, discovery settles as soon as our own look
 test("a vscode.git that never finishes its first scan does not keep 'not found yet' for good", async () => {
   vs.reset({ state: "uninitialized" });
   vs.setFolders([{ name: "plain", fsPath: plain }]);
-  const m = await RepoManager.create(undefined, { discoveryLimitMs: 300 });
+  // The limit's clock starts inside create(), whose own look is a git process:
+  // a limit of 300 ms could run out before the first assertion on a slow runner.
+  const m = await RepoManager.create(undefined, { discoveryLimitMs: 2_000 });
   live.push(m);
   await settle(100);
   assert.equal(m.isDiscovering(), true, "still within the limit");
   let told = 0;
   m.onDidChange(() => told++);
-  await settle(400);
+  await until(() => !m.isDiscovering());
   assert.equal(m.isDiscovering(), false, "past the limit: there is none, as far as anyone can tell");
   assert.ok(told >= 1, "and the views are told");
 });
