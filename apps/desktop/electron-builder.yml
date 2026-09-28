@@ -5,7 +5,7 @@ copyright: Copyright © GitStudio. Licensed under Apache-2.0.
 # In an npm-workspaces repo `electron` is hoisted to the root node_modules, so
 # electron-builder can't infer the version from the local package tree; pin it
 # explicitly (kept in step with the devDependency in package.json).
-electronVersion: 33.4.11
+electronVersion: 41.10.7
 
 # node-pty ships N-API prebuilds that already load in Electron's ABI, so DON'T
 # let electron-builder rebuild native modules from source (node-gyp needs Python
