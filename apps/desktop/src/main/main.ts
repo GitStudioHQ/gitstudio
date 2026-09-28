@@ -21,6 +21,7 @@ import type { IpcMainInvokeEvent, MenuItemConstructorOptions, WebContents } from
 import { AsyncLocalStorage } from "node:async_hooks";
 import { join, basename, extname, dirname, resolve as resolvePath } from "node:path";
 import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "node:fs/promises";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore, repoScope } from "./repoStore";
 import { cannotOpenNotice, droppedTabsNotice, tabsFullNotice, missingFolderError, missingFolderResult } from "./repoNotice";
@@ -116,12 +117,44 @@ async function loadState(): Promise<{ recent: string[]; current?: string; open: 
   }
 }
 
+/** Bumped by every save, so a slower, older one never lands on a newer one. */
+let saveGen = 0;
+
+/**
+ * Persist the open tabs and recents. The state is read NOW, before the first
+ * await: it was read after `mkdir`, and `before-quit` disposes the store right
+ * after calling this, so quitting saved `"open": []` and every restart came
+ * back with no tabs (the promise of #32: the tabs you had open come back).
+ */
 async function saveState(): Promise<void> {
+  const gen = ++saveGen;
+  let json: string;
+  try {
+    json = JSON.stringify(repos.serialize(), null, 2);
+  } catch {
+    return; // nothing to save yet
+  }
   try {
     await mkdir(app.getPath("userData"), { recursive: true });
-    await writeFile(statePath(), JSON.stringify(repos.serialize(), null, 2));
+    if (gen !== saveGen) return; // a newer save owns the file
+    await writeFile(statePath(), json);
   } catch {
     // Persistence is best-effort; never block on it.
+  }
+}
+
+/**
+ * The quit-time save: synchronous, because the app is going away and an async
+ * write can be cut off with it. It also retires any async save still in flight.
+ */
+function saveStateNow(): void {
+  saveGen++;
+  try {
+    const json = JSON.stringify(repos.serialize(), null, 2);
+    mkdirSync(app.getPath("userData"), { recursive: true });
+    writeFileSync(statePath(), json);
+  } catch {
+    // Best-effort, as above.
   }
 }
 
@@ -1607,7 +1640,8 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
-  void saveState();
+  // Before anything is disposed: the store's tabs are what gets written.
+  saveStateNow();
   ai?.dispose();
   repos?.dispose();
 });

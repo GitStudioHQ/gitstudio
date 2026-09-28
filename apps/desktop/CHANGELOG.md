@@ -19,6 +19,12 @@ but they share the same engine, so most Git behaviour lands in both at once.
   ▸ About**, the two entries in the **⌘K** palette, and one small line at the
   foot of Home. Nothing pops up and nothing ever asks.
 
+### Fixed
+- **Your tabs come back after you quit.** Quitting GitStudio saved an empty
+  list of open tabs, so the next launch opened on Home instead of the
+  repositories you had open. The tabs are now saved before anything shuts
+  down, and they come back as they were.
+
 ## [2.3.0] - 2026-09-28
 
 ### Changed
