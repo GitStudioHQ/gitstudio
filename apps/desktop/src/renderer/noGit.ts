@@ -10,7 +10,7 @@
 // how to fix it on this OS (noGitHelp.ts), and offers Check again — which,
 // once Git answers, carries straight on into the app, tabs and all.
 
-import { host } from "./bridge";
+import { shellHost } from "./bridge";
 import { el, glyph, span, copyText } from "./ui";
 import { gitInstallHelp, type GitMissing } from "./noGitHelp";
 
@@ -19,9 +19,14 @@ import { gitInstallHelp, type GitMissing } from "./noGitHelp";
  * do about it and resolve only once a Check again finds it. Resolves at once,
  * touching nothing, when Git is there — or when the answer is unreadable: a
  * window must never be held hostage by the check that exists to help it.
+ *
+ * Through `shellHost`, not `host`: the question is the window's, asked before
+ * any tab exists, so it belongs to no tab and carries no tab's stamp. Sent the
+ * tab way, it went out stamped "no repository", which reads as a call from
+ * whichever tab is in front — a gone folder's tab included.
  */
 export async function waitForGit(root: HTMLElement): Promise<void> {
-  const first = await host.invoke("app:gitCheck", undefined).catch(() => undefined);
+  const first = await shellHost.invoke("app:gitCheck", undefined).catch(() => undefined);
   if (!first || first.ok !== false) return;
   await new Promise<void>((done) => render(root, first, done));
 }
@@ -78,7 +83,7 @@ function render(root: HTMLElement, git: GitMissing, done: () => void): void {
   retry.addEventListener("click", async () => {
     retry.disabled = true;
     status.textContent = "Looking for Git…";
-    const again = await host.invoke("app:gitCheck", { recheck: true }).catch(() => undefined);
+    const again = await shellHost.invoke("app:gitCheck", { recheck: true }).catch(() => undefined);
     retry.disabled = false;
     if (again && again.ok) {
       status.textContent = `Found Git ${again.version}.`;
