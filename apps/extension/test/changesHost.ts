@@ -66,7 +66,16 @@ export function scratchRepo(prefix: string): { dir: string; git: (...a: string[]
   for (const [k, v] of [["user.email", "t@example.com"], ["user.name", "t"], ["commit.gpgsign", "false"], ["gc.auto", "0"]]) {
     git("config", k, v);
   }
-  return { dir, git, done: () => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) };
+  // A temp folder left behind is no failure: on Windows a git that has just
+  // exited can still hold it (EBUSY), and a whole file failed in its hook.
+  const done = () => {
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+    } catch {
+      /* the system's temp cleanup takes it */
+    }
+  };
+  return { dir, git, done };
 }
 
 type Provider = InstanceType<typeof CommitViewProvider>;
