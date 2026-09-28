@@ -29,6 +29,5 @@ This product also bundles third-party software, including:
 - DOMPurify (Apache-2.0 / MPL-2.0)
 - @vscode/codicons (CC-BY-4.0 for the icon font, MIT for the code), Microsoft Corporation
 
-JetBrains, IntelliJ IDEA, WebStorm, PyCharm, PhpStorm, GoLand, CLion, Rider,
-RubyMine and DataGrip are trademarks of JetBrains s.r.o. Merge Studio is an
-independent project and is not affiliated with, or endorsed by, JetBrains.
+JetBrains is a trademark of JetBrains s.r.o. Merge Studio is an independent
+project and is not affiliated with, or endorsed by, JetBrains.

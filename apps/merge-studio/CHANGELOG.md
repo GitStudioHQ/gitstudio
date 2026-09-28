@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- **Handing merges and diffs to a JetBrains IDE is gone.** The **Merge with JetBrains IDE** and **Diff with JetBrains IDE** commands, the walkthrough's "Optional: a JetBrains IDE" step, and the `jbMerge.conflictResolver`, `jbMerge.diffTool`, `jbMerge.preferredIde` and `jbMerge.jetbrainsPath` settings are removed. Conflicts always open in Merge Studio's own merge editor, and diffs in its own diff. If you had set one of those settings to use a JetBrains IDE, it is ignored.
+
 ## 1.0.2 — 2026-09-28
 
 - **Merge Studio reads in Cursor.** Cursor's own dark theme draws its focus colour at 15% white, and Merge Studio's accent was that colour, so a selected row, a pressed toggle and a lit control were nearly invisible there. Where a theme's focus colour is see-through, the accent is now that theme's own button colour; every other theme looks as it did.

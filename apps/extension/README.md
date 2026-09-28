@@ -186,4 +186,4 @@ Bugs and feature requests: [github.com/GitStudioHQ/gitstudio/issues](https://git
 
 ---
 
-<sub>JetBrains, IntelliJ IDEA, and WebStorm are trademarks of JetBrains s.r.o. GitLens, GitKraken, and Sourcetree are trademarks of their respective owners. GitStudio is an independent project and is not affiliated with, or endorsed by, any of them.</sub>
+<sub>JetBrains is a trademark of JetBrains s.r.o. GitLens, GitKraken, and Sourcetree are trademarks of their respective owners. GitStudio is an independent project and is not affiliated with, or endorsed by, any of them.</sub>

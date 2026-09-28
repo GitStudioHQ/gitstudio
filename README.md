@@ -125,7 +125,7 @@ packages/
   webview-ui/    Shared webview front-ends: commit graph, diff/merge (Monaco), conflicts
                  dashboard, rebase.
   merge-vscode/  The VS Code side of the merge experience, shared by the extension and
-                 Merge Studio: merge editor, conflicts dashboard, routing, JetBrains hand-off.
+                 Merge Studio: merge editor, conflicts dashboard, routing, diff panel.
   ai/            Host-agnostic AI layer: multi-provider model registry, git AI tasks, agent
                  loop, and the shared git tool catalog that also backs the MCP server.
 apps/

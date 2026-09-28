@@ -39,7 +39,7 @@ machine (a global git config, a path separator, a locale) will show there.
 ## The merge code, and Merge Studio
 
 The merge editor, the Conflicts dashboard, Continue / Skip / Abort and the
-JetBrains IDE hand-off are shared by GitStudio, the desktop app and the
+side-by-side diff are shared by GitStudio, the desktop app and the
 [Merge Studio](https://github.com/GitStudioHQ/merge-studio) extension, and
 they are kept here. Merge Studio's own repository is exported from this one,
 and pull requests opened there are imported back. Read

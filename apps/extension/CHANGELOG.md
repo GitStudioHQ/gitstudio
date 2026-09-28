@@ -4,6 +4,17 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- **Handing merges and diffs to a JetBrains IDE is gone.** The **Merge with
+  JetBrains IDE** and **Diff with JetBrains IDE** commands are removed, and so
+  are the `gitstudio.merge.conflictResolver`, `gitstudio.merge.diffTool`,
+  `gitstudio.merge.preferredIde` and `gitstudio.merge.jetbrainsPath` settings.
+  Conflicts always open in GitStudio's own merge editor, and diffs in its own
+  diff. If you had set one of those settings to use a JetBrains IDE, it is
+  ignored.
+
 ## [1.15.0] - 2026-09-28
 
 ### Added

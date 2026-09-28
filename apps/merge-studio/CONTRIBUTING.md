@@ -78,7 +78,7 @@ You can also send a change to GitStudio itself: change `apps/merge-studio` or
 | `src/msProduct.ts`, `src/shell.ts`, `src/links.ts`, `src/lateLocator.ts` | The shell's few decisions, each testable without VS Code. |
 | `test/parity.test.ts` | Every `jbMerge.*` command, setting and menu has its `gitstudio.*` twin, and the reverse. |
 | `test/manifest.test.ts` | The listing: manifest, walkthrough, README and CHANGELOG rules. |
-| `vendor/gitstudio/merge-vscode` (`packages/merge-vscode` in GitStudio) | The shared VS Code host: merge editor, dashboard, routing, JetBrains hand-off, diff panel. |
+| `vendor/gitstudio/merge-vscode` (`packages/merge-vscode` in GitStudio) | The shared VS Code host: merge editor, dashboard, routing, diff panel. |
 | `vendor/gitstudio/webview-ui` (`packages/webview-ui`) | The pages: merge editor, legend, diff, Conflicts dashboard. |
 | `vendor/gitstudio/engine`, `vendor/gitstudio/git-service` (`packages/…`) | The merge model and git. |
 

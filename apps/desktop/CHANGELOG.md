@@ -9,6 +9,18 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Removed
+- **Handing merges and diffs to a JetBrains IDE is gone.** Settings ▸ Merge
+  no longer offers a JetBrains IDE for **Resolve conflicts with** or **Show
+  diffs with**, nor an IDE picker or a launcher path, and the merge editor has
+  no **Open in** button for an IDE. Conflicts always open in GitStudio's own
+  merge editor, and diffs in its own diff. If you had chosen a JetBrains IDE
+  there, that choice is ignored. **Open in** no longer lists JetBrains IDEs
+  either; VS Code, Cursor and the other editors are still there, and you can
+  still add any editor yourself in Settings ▸ Editors.
+
 ## [2.2.1] - 2026-09-28
 
 ### Fixed

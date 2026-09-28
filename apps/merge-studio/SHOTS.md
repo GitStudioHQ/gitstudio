@@ -59,6 +59,5 @@ themes use the dark and light files).
 | Choose your merge editor | `choose-editor-{dark,light}.png` | The first-conflict notification with Turn them off / Not now / Don't ask again. |
 | Using GitStudio too? | `gitstudio-{dark,light}.png` | The `gitstudio.merge.autoOpen` setting. |
 | Compare two files | `diff-{dark,light}.png` | Two Explorer files compared in Merge Studio's diff. |
-| Optional: a JetBrains IDE | `jetbrains-{dark,light}.png` | The `jbMerge.conflictResolver` setting with its two labelled values. |
 
 Do not reuse `media/banner.png` as walkthrough media (POLISH B7).

@@ -2,7 +2,7 @@
 
 Merge Studio (`gitstudio.merge-studio`) is the merge-only VS Code extension:
 the three-pane merge editor, the Conflicts dashboard with Continue / Skip /
-Abort, the side-by-side diff and the JetBrains IDE hand-off. GitStudio ships
+Abort, and the side-by-side diff. GitStudio ships
 the same merge experience inside the full Git client. This page says where
 that code lives, how it gets to the Merge Studio repository, and how a pull
 request opened there comes back here.
@@ -43,10 +43,10 @@ The owner chose one copy, kept here (23 Sep 2026):
 | Path | What it is | In Merge Studio |
 | --- | --- | --- |
 | `packages/engine` | The merge model: blocks and their kinds (conflict, the same on both sides, one side only), the text written back with conflict markers, which side is Yours in each operation, and the words for every operation. No editor, no git process. | `vendor/gitstudio/engine` |
-| `packages/git-service` | git itself: reading a stopped operation, Continue / Skip / Abort, taking a side, restoring a conflict, finding and starting a JetBrains IDE. | `vendor/gitstudio/git-service` |
+| `packages/git-service` | git itself: reading a stopped operation, Continue / Skip / Abort, taking a side, restoring a conflict. | `vendor/gitstudio/git-service` |
 | `packages/host-bridge` | The messages between a host (an extension, the desktop app) and its pages. | `vendor/gitstudio/host-bridge` |
 | `packages/webview-ui` | The pages: the merge editor with its legend and colours, the diff, the Conflicts dashboard. | `vendor/gitstudio/webview-ui` |
-| `packages/merge-vscode` | The VS Code side, written once for both extensions: the merge editor and diff panels, the dashboard panel, which file opens where, the JetBrains hand-off, the sample merge. Each extension gives it a product description (its ids, brand and settings). | `vendor/gitstudio/merge-vscode` |
+| `packages/merge-vscode` | The VS Code side, written once for both extensions: the merge editor and diff panels, the dashboard panel, which file opens where, the sample merge. Each extension gives it a product description (its ids, brand and settings). | `vendor/gitstudio/merge-vscode` |
 | `apps/extension` | GitStudio. `src/merge/` holds its product description (`gitstudio.*` ids); the rest is the Git client. | two files the parity test reads, under `vendor/gitstudio/extension` |
 | `apps/merge-studio` | Merge Studio's shell: the manifest, walkthrough, media, README, CHANGELOG, CONTRIBUTING and RELEASING, and `src/` (its `jbMerge.*` ids and the few decisions only it makes). | the repository root |
 | `apps/desktop` | The desktop app. It mounts the same merge editor and dashboard natively; it is not part of Merge Studio. | not exported |

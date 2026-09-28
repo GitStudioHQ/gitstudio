@@ -102,20 +102,12 @@ Run **Merge Studio: Open Sample Merge** from the Command Palette. A rebase stop 
 | --- | --- | --- |
 | `jbMerge.autoOpen` | `true` | Open conflicted files in Merge Studio and show the Conflicts dashboard when an operation stops. |
 | `jbMerge.autoApplyNonConflicting` | `false` | When a file opens, apply every change only one side made, and every edit both sides made identically. Conflicts are never applied automatically. |
-| `jbMerge.conflictResolver` | `embedded` | Where conflicted files open: `embedded` (Merge Studio) or `jetbrains` (an installed JetBrains IDE). |
-| `jbMerge.diffTool` | `embedded` | Which diff Compare and Open Changes use: `embedded` or `jetbrains`. |
-| `jbMerge.preferredIde` | `auto` | Which installed JetBrains IDE to hand merges and diffs to. |
-| `jbMerge.jetbrainsPath` | `""` | A JetBrains IDE launcher to use instead of detection. User settings only. |
 
 ## Using GitStudio too?
 
 [GitStudio](https://marketplace.visualstudio.com/items?itemName=gitstudio.gitstudio), the full Git GUI for VS Code and Cursor, ships this same merge editor and Conflicts dashboard. With both installed, GitStudio opens conflicts automatically and Merge Studio stays quiet, and says so the first time. Its commands (Resolve Conflicts…, Open Sample Merge, Compare) still work and open the same screens. To let Merge Studio do it instead, set `gitstudio.merge.autoOpen` to `false`. An older GitStudio without the Conflicts dashboard changes nothing: Merge Studio keeps opening conflicts itself.
 
 Want only a merge tool? Use Merge Studio. Want the commit graph, blame, staging and interactive rebase too? Use GitStudio.
-
-## Open in a JetBrains IDE
-
-Prefer to resolve in a JetBrains IDE? Set `jbMerge.conflictResolver` to `jetbrains` (or `jbMerge.diffTool` for diffs) and Merge Studio hands the file to your installed IntelliJ IDEA, WebStorm, PyCharm, PhpStorm, GoLand, CLion, Rider, RubyMine or DataGrip, with your side as the IDE's left side. IDEs in the usual install folders on macOS, Windows and Linux are found automatically, including JetBrains Toolbox installs. Anywhere else, put the IDE's launcher on your `PATH` or set `jbMerge.jetbrainsPath`.
 
 ## Install
 
@@ -166,4 +158,4 @@ Merge Studio's own files are [MIT](LICENSE). It bundles GitStudio's shared merge
 
 ---
 
-<sub>JetBrains, IntelliJ IDEA, WebStorm, PyCharm, PhpStorm, GoLand, CLion, Rider, RubyMine and DataGrip are trademarks of JetBrains s.r.o. Merge Studio is an independent project and is not affiliated with, or endorsed by, JetBrains.</sub>
+<sub>JetBrains is a trademark of JetBrains s.r.o. Merge Studio is an independent project and is not affiliated with, or endorsed by, JetBrains.</sub>
