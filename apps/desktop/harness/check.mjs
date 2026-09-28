@@ -30,6 +30,10 @@ const CHROME = harnessChrome();
 
 /** id → the scene that sets up the state the assertion needs. */
 const CASES = [
+  // The window's first frame, in both themes and under reduced motion.
+  ["the-launch-screen-covers-the-start-and-hands-off", "dashboard"],
+  ["the-launch-screen-covers-the-start-and-hands-off", "dashboard", { theme: "light" }],
+  ["the-launch-screen-covers-the-start-and-hands-off", "code", { arg: "reduced", flags: ["--force-prefers-reduced-motion"] }],
   ["count-badge-filtered", "issues~text:Author~text:@mira-holt"],
   ["count-badge-unfiltered", "issues"],
   ["menu-dismissed-on-route", "notifications~text:Type~text:Releases"],
@@ -999,6 +1003,8 @@ function run(scene, checkId, opts = {}) {
         "--allow-file-access-from-files",
         profile.flag,
         `--window-size=${width},${height}`,
+        // A case's own browser switches (--force-prefers-reduced-motion).
+        ...(opts.flags ?? []),
         // A case that has to watch a poller across a tab round trip needs
         // more virtual time than the rest (`budget`).
         `--virtual-time-budget=${opts.budget ?? 12000}`,

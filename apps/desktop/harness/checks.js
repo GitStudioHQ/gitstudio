@@ -13,6 +13,61 @@
 // taste stays in the screenshot review.
 
 (function () {
+  /**
+   * The launch screen as it stood BEFORE the bundle ran.
+   *
+   * This file is parsed after the launch screen's markup and before
+   * renderer.js (gen.sh), so what it sees here is the window's first frame:
+   * no app code has run yet — #boot is still in #root. The check below
+   * compares it with what is there once the app is up. Its leaving state is
+   * caught too, the moment the hand-off starts, since by the time a check
+   * runs the element is long gone.
+   */
+  const launchAtBoot = (() => {
+    const l = document.getElementById("launch");
+    if (!l) return null;
+    const cs = getComputedStyle(l);
+    const r = l.getBoundingClientRect();
+    const mid = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    const colour = (sel, prop) => {
+      const n = l.querySelector(sel);
+      return n ? getComputedStyle(n)[prop] : null;
+    };
+    const anims = {};
+    for (const sel of [".launch-glow", ".launch-cube", ".launch-graph", ".launch-word"]) {
+      const n = l.querySelector(sel);
+      anims[sel] = n ? getComputedStyle(n).animationName : null;
+    }
+    const snap = {
+      theme: document.body.className,
+      bundleNotRun: !!document.querySelector("#root > #boot"),
+      bg: cs.backgroundColor,
+      opacity: cs.opacity,
+      display: cs.display,
+      zIndex: cs.zIndex,
+      pointerEvents: cs.pointerEvents,
+      appRegion: cs.getPropertyValue("-webkit-app-region") || cs.webkitAppRegion || "",
+      covers: r.left <= 0 && r.top <= 0 && r.right >= innerWidth && r.bottom >= innerHeight,
+      onTop: !!(mid && mid.closest("#launch")),
+      ariaHidden: l.getAttribute("aria-hidden"),
+      ink: colour(".launch-word-git", "fill"),
+      cubeTop: colour(".lc-top-a", "stopColor"),
+      node: colour(".launch-node", "fill"),
+      anims,
+      leaving: null,
+    };
+    new MutationObserver((_m, obs) => {
+      if (!l.classList.contains("is-leaving")) return;
+      const lc = getComputedStyle(l);
+      snap.leaving = {
+        pointerEvents: lc.pointerEvents,
+        appRegion: lc.getPropertyValue("-webkit-app-region") || lc.webkitAppRegion || "",
+        shellUp: !!document.querySelector(".tab-stage")?.children.length,
+      };
+      obs.disconnect();
+    }).observe(l, { attributes: true, attributeFilter: ["class"] });
+    return snap;
+  })();
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel, root) => [...(root || document).querySelectorAll(sel)];
   /** Let a click that re-renders behind an await actually land. */
@@ -950,6 +1005,65 @@
   };
 
   window.__GS_CHECKS = {
+    /**
+     * The launch screen covers the start and hands off to the app.
+     *
+     * It must be there, on top and covering the window, in the first frame —
+     * before any bundle code — painted in the theme's own canvas and ink (the
+     * ground is compared with the app's --app-bg as it computes once the app
+     * is up, not with a literal, so the two cannot drift). And once the shell
+     * is up it must leave: gone from the page, nothing of it under the pointer,
+     * and from the first frame of leaving it takes neither clicks nor the
+     * window drag. `?arg=reduced` runs under prefers-reduced-motion and asks
+     * for a plain fade.
+     */
+    "the-launch-screen-covers-the-start-and-hands-off": async (f) => {
+      const c = check(f);
+      const b = launchAtBoot;
+      c.ok(!!b, "the launch screen is in the page before the bundle runs");
+      if (!b) return;
+      const light = new URLSearchParams(location.search).get("theme") === "light";
+      c.ok(b.bundleNotRun, "…and was captured before any app code ran (#boot still in #root)");
+      c.eq(b.theme, light ? "vscode-light" : "vscode-dark", "painted in the right theme from the first frame");
+      c.eq(b.display, "grid", "it is displayed");
+      c.eq(b.opacity, "1", "the ground is opaque (only the mark animates in)");
+      c.ok(b.covers, "it covers the whole window");
+      c.ok(b.onTop, "it is on top of everything at the start");
+      c.eq(b.ariaHidden, "true", "decorative: hidden from assistive tech");
+      c.eq(b.pointerEvents, "auto", "while it is up, clicks do not fall through to an invisible app");
+      c.eq(b.appRegion, "drag", "while it is up, it drags the window like a title bar");
+      c.eq(b.bg, getComputedStyle(document.body).backgroundColor, "its ground is the app's own canvas (--app-bg)");
+      c.eq(b.bg, light ? "rgb(238, 241, 245)" : "rgb(13, 16, 22)", "…which is the theme's canvas");
+      c.eq(b.ink, light ? "rgb(27, 31, 42)" : "rgb(245, 243, 255)", "the wordmark's 'Git' is the theme's ink");
+      c.eq(b.cubeTop, light ? "rgb(123, 121, 166)" : "rgb(78, 76, 106)", "the cube wears the theme's brand slate");
+      c.eq(b.node, light ? "rgb(180, 155, 255)" : "rgb(169, 140, 255)", "the commit graph is the brand violet");
+      const reduced = window.__GS_ARG === "reduced";
+      for (const [sel, name] of Object.entries(b.anims)) {
+        if (reduced) c.eq(name, "launch-fade", `reduced motion: ${sel} only fades`);
+        else c.ok(name && name !== "none" && name !== "launch-fade", `${sel} has its entrance (${name})`);
+      }
+      // The hand-off.
+      await settle(700);
+      c.eq(document.getElementById("launch"), null, "it is gone once the app is ready");
+      const mid = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+      c.ok(mid && !mid.closest("#launch"), "nothing of it is under the pointer");
+      c.ok(!!document.querySelector(".tab-stage")?.children.length, "the app is what is on screen");
+      c.ok(!!b.leaving, "it left through its leaving state");
+      if (b.leaving) {
+        c.eq(b.leaving.pointerEvents, "none", "leaving, it takes no clicks");
+        c.eq(b.leaving.appRegion, "no-drag", "leaving, it no longer drags the window");
+        c.ok(b.leaving.shellUp, "it left only once the shell was up beneath it");
+      }
+      const at = (n) => performance.getEntriesByName(n)[0]?.startTime;
+      const ready = at("gs:app-ready");
+      const handoff = at("gs:launch-handoff");
+      c.ok(ready != null && handoff != null, "the hand-off is marked (gs:app-ready, gs:launch-handoff)");
+      if (ready != null && handoff != null) {
+        c.ok(handoff - ready < 20, `it leaves the moment the app is ready, never held for show (${Math.round(handoff - ready)}ms)`);
+      }
+      const focus = document.activeElement;
+      c.ok(!focus || !focus.closest("#launch"), "focus is not left on it");
+    },
     // ── the count badge reports what is on screen ────────────────────────────
     "count-badge-filtered": (f) => {
       const c = check(f);

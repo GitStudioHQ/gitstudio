@@ -84,3 +84,12 @@ profiles and 2.2GB in the temp folder.
 with fixtures for the GitStudio repo itself. Unstubbed channels log
 `[shim missing] <channel>` to the console and resolve safely — add a fixture
 when a view needs one. `harness/page/` and `harness/out/` are generated.
+
+Every scene starts the way the app does: under the launch screen, which
+`gen.sh` copies out of the built `dist/renderer/index.html` (its `launch:*`
+markers) so the two cannot drift. The shell's real hand-off takes it out of
+the way as the app comes up — no pointer events from its first frame of
+leaving, gone from the page a quarter second later, before any check
+measures; `the-launch-screen-covers-the-start-and-hands-off`
+checks the first frame (captured by `checks.js` before the bundle runs) and
+the hand-off, in both themes and under reduced motion.
