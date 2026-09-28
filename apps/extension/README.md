@@ -9,6 +9,7 @@
   <a href="https://marketplace.visualstudio.com/items?itemName=gitstudio.gitstudio"><img src="https://vsmarketplacebadges.dev/version-short/gitstudio.gitstudio.svg?style=flat&label=VS%20Marketplace&logo=visualstudiocode&logoColor=white&color=8E78F6" alt="VS Marketplace version"></a>
   <a href="https://open-vsx.org/extension/gitstudio/gitstudio"><img src="https://img.shields.io/open-vsx/v/gitstudio/gitstudio?label=Open%20VSX&logo=eclipseide&logoColor=white&color=C36BF0" alt="Open VSX version"></a>
   <a href="https://github.com/GitStudioHQ/gitstudio/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/GitStudioHQ/gitstudio/ci.yml?branch=main&label=build&logo=githubactions&logoColor=white" alt="CI build status"></a>
+  <a href="https://codecov.io/gh/GitStudioHQ/gitstudio"><img src="https://img.shields.io/codecov/c/github/GitStudioHQ/gitstudio?logo=codecov&logoColor=white&label=coverage" alt="Code coverage"></a>
   <a href="https://github.com/GitStudioHQ/gitstudio/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-44a248" alt="License: Apache-2.0"></a>
   <a href="https://github.com/sponsors/antonarnaudov"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
   <a href="https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d"><img src="https://img.shields.io/badge/Buy_me_a_coffee-FF813F?logo=buymeacoffee&logoColor=white" alt="Buy me a coffee"></a>

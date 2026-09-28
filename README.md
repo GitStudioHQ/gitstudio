@@ -13,7 +13,10 @@
   <a href="https://open-vsx.org/extension/gitstudio/gitstudio"><img alt="Open VSX" src="https://img.shields.io/open-vsx/v/gitstudio/gitstudio?label=Open%20VSX&color=6f5bd7"></a>
   <a href="https://github.com/GitStudioHQ/gitstudio/releases/latest"><img alt="Desktop app" src="https://img.shields.io/github/v/release/GitStudioHQ/gitstudio?filter=app-v*&label=Desktop&color=6f5bd7"></a>
   <a href="https://github.com/GitStudioHQ/gitstudio/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/GitStudioHQ/gitstudio/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://codecov.io/gh/GitStudioHQ/gitstudio"><img alt="Code coverage" src="https://img.shields.io/codecov/c/github/GitStudioHQ/gitstudio?label=coverage"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <a href="https://github.com/sponsors/antonarnaudov"><img alt="Sponsor on GitHub" src="https://img.shields.io/badge/Sponsor-EA4AAA?logo=githubsponsors&logoColor=white"></a>
+  <a href="https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy_me_a_coffee-FF813F?logo=buymeacoffee&logoColor=white"></a>
 </p>
 
 <p align="center"><sub>Logo &amp; brand assets live in <a href="brand/">brand/</a>.</sub></p>
