@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# Read the code, nothing more: both jobs only check out, build and test. The
+# npm cache and the uploaded .vsix go through the Actions runtime token, which
+# these scopes do not govern, so neither needs a write.
+permissions:
+  contents: read
+
 jobs:
   # Tests run on every OS the release workflows build on — otherwise a tagged
   # release is the FIRST time the suite ever executes on windows/mac, and a
