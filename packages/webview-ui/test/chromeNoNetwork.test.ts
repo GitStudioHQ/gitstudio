@@ -212,6 +212,7 @@ const SH = new Set([".sh", ".bash", ".zsh", ".py"]);
 const NOT_A_TEST_CHROME: Record<string, string> = {
   "apps/desktop/harness/live.mjs": "drives the real GitStudio app over CDP — the app under measurement, which talks to GitHub by design",
   "scripts/merge-e2e/dashboardClicks.ts": "launches the real VS Code with the packaged extension installed, the editor under test",
+  "scripts/extension-shots/vscode.ts": "launches the real VS Code, hidden, with the extension's test VSIX installed, to capture its README media",
   "apps/extension/harness/pylance-rename/runui.sh": "the real VS Code, with Pylance from the Marketplace",
   "brand/margined.py": "a docstring telling a person how to rasterise the tile by hand; nothing here launches",
 };
